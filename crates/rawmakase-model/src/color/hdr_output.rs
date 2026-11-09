@@ -201,6 +201,20 @@ pub fn roll_off(v: f32, peak: f32) -> f32 {
     }
 }
 
+/// An HDR master's pixel (linear ProPhoto, 1 = graphics white) as extended sRGB for a
+/// window whose surface holds it (macOS's extended sRGB colour space): linear sRGB
+/// primaries, negative where outside sRGB, each channel's magnitude held to the
+/// display's `headroom` by [`roll_off`], then the sRGB curve, mirrored below 0. A
+/// value that isn't finite shows as 0. Display presentation only: nothing decoded,
+/// cached or exported carries the headroom.
+pub fn extended_srgb(p: [f32; 3], headroom: f32) -> [f32; 3] {
+    let to_srgb = HdrGamut::Rec709.prophoto_to_rgb();
+    super::mul(to_srgb, p).map(|v| {
+        let v = if v.is_finite() { v } else { 0. };
+        v.signum() * super::srgb_encode(roll_off(v.abs(), headroom))
+    })
+}
+
 /// SMPTE ST 2084's inverse EOTF: absolute luminance (cd/m²) to signal (0–1).
 pub fn pq_encode(nits: f32) -> f32 {
     let (m1, m2) = (2610. / 16384., 2523. / 4096. * 128.);

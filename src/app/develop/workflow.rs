@@ -524,6 +524,10 @@ impl Editor {
                 },
             );
             self.request_ai_denoise(&image, &geometry, region);
+            // After the view's edge and region above: what the HDR preview is due
+            // for reads them.
+            let hdr = self.hdr_preview_due().ok().map(|due| due.key.headroom());
+            self.preview.last_hdr = hdr;
             let replaced = self.renderer.submit(RenderJob {
                 pane: crate::app::worker::Pane::After,
                 max_edge,
@@ -540,6 +544,7 @@ impl Editor {
                 overlay: self.overlay(),
                 ai,
                 drawn: self.preview.presented(),
+                hdr,
             });
             if let Some(replaced) = replaced {
                 self.preview.replaced(replaced);
@@ -591,8 +596,9 @@ impl Editor {
         region: bool,
         (id, size): (egui::TextureId, [usize; 2]),
         navigator: Option<(egui::TextureId, [usize; 2])>,
+        hdr: Option<crate::app::worker::HdrTexture>,
     ) {
-        let picture = Some(Picture::presented(id, size));
+        let picture = Some(Picture::presented_with(id, size, hdr));
         if region {
             self.preview.region = picture;
             self.preview.stand_in = None;

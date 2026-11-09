@@ -357,7 +357,8 @@ impl Editor {
                             id,
                             size,
                             navigator,
-                        } => self.set_presented(region, (id, size), navigator),
+                            hdr,
+                        } => self.set_presented(region, (id, size), navigator, hdr),
                     }
                     // Pixels asked for by a hover or loupe that has since ended are
                     // not kept.

@@ -34,6 +34,10 @@ pub(crate) struct Variant {
     pub(crate) local: bool,
     /// Dehaze.
     pub(crate) dehaze: bool,
+    /// An HDR master: the scene tone stage's HDR Whites and Blacks, and the profile's
+    /// HDR finish, written unclipped as linear ProPhoto in place of display values
+    /// (`pixel_params_hdr`).
+    pub(crate) hdr: bool,
 }
 impl Variant {
     /// Everything.
@@ -43,12 +47,22 @@ impl Variant {
         color: true,
         local: true,
         dehaze: true,
+        hdr: false,
+    };
+    /// An HDR master's: what an HDR edit uses (`model::hdr::check_recipe`).
+    #[cfg(test)]
+    pub(crate) const HDR: Self = Self {
+        masks: false,
+        color: false,
+        local: false,
+        dehaze: false,
+        hdr: true,
     };
     /// The WGSL constants `develop.wgsl` reads.
     pub(crate) fn constants(self) -> String {
         format!(
-            "const V_MASKS: bool = {};\nconst V_COLOR: bool = {};\nconst V_LOCAL: bool = {};\nconst V_DEHAZE: bool = {};\n",
-            self.masks, self.color, self.local, self.dehaze
+            "const V_MASKS: bool = {};\nconst V_COLOR: bool = {};\nconst V_LOCAL: bool = {};\nconst V_DEHAZE: bool = {};\nconst V_HDR: bool = {};\n",
+            self.masks, self.color, self.local, self.dehaze, self.hdr
         )
     }
     /// What a pass with `params` needs.
@@ -66,6 +80,7 @@ impl Variant {
             local: set(slot::LOCAL),
             // A mask's Dehaze adds to the recipe's.
             dehaze: set(slot::DEHAZE) || masks,
+            hdr: at(slot::HDR),
         }
     }
 }

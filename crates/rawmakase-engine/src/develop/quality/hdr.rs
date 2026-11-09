@@ -4,8 +4,9 @@ use super::*;
 use rawmakase_cancel::Cancel;
 
 /// The HDR master of an edit with HDR on, on the CPU: the whole photo within
-/// `max_edge`. Every other render of such an edit is its SDR rendition
-/// (`Recipe::resolved`); the GPU never renders an HDR master.
+/// `max_edge`, the reference for every other render of it: its SDR rendition is
+/// `Recipe::resolved`'s, and the GPU's preview of the master
+/// (`PreviewRenderer::render_hdr_to`) is checked against this.
 ///
 /// Sharpening and resizing work on the master's sRGB-curve-encoded values, the
 /// encoding SDR renders sharpen and resize in, extended above white and unclipped;
@@ -746,20 +747,66 @@ mod tests {
         Ok(())
     }
 
-    /// The GPU never renders an HDR edit, nor an HDR profile's tables.
+    /// The GPU port's SDR rendition has HDR off; its master preview covers ordinary
+    /// profiles alone, and neither renders an HDR profile's tables or an HDR file.
     #[test]
-    fn the_gpu_port_leaves_hdr_to_the_cpu() {
-        use crate::develop::pipeline::pixel_params::supported;
+    fn the_gpu_port_renders_masters_of_ordinary_profiles_only() {
+        use crate::develop::pipeline::pixel_params::{supported, supported_hdr};
         let im = grays(&[0.5]);
         let mut r = hdr_recipe(&im);
-        assert!(!supported(&r));
+        assert!(!supported(&r), "the SDR rendition's port has HDR off");
+        assert!(supported_hdr(&r, &im.metadata));
+        // Each of what renders after the profile's finish leaves the master to the CPU.
+        let past_the_profile: [fn(&mut Recipe); 7] = [
+            |r| r.contrast = 0.2,
+            |r| r.white_point = 0.9,
+            |r| r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]],
+            |r| r.effects.parametric[0] = 0.3,
+            |r| r.saturation = 0.2,
+            |r| r.effects.monochrome = true,
+            |r| r.effects.texture = 0.3,
+        ];
+        for (i, set) in past_the_profile.iter().enumerate() {
+            let mut edited = r.clone();
+            set(&mut edited);
+            assert!(!supported_hdr(&edited, &im.metadata), "case {i}");
+        }
+        r.highlights = -0.4;
+        assert!(
+            !supported_hdr(&r, &im.metadata),
+            "a master that doesn't render"
+        );
+        r.highlights = 0.;
         r.hdr.enabled = false;
-        assert!(supported(&r));
+        assert!(supported(&r) && !supported_hdr(&r, &im.metadata));
         let hdr = r.profile.as_deref().unwrap().clone().as_hdr_for_test();
         r.profile = Some(std::sync::Arc::new(hdr));
         assert!(
             !supported(&r),
             "an HDR profile's SDR rendition renders on the CPU"
+        );
+        r.hdr.enabled = true;
+        assert!(
+            !supported_hdr(&r, &im.metadata),
+            "an HDR profile's master renders on the CPU"
+        );
+        let mut looked = hdr_recipe(&im);
+        let profile = looked.profile.as_deref().unwrap().clone();
+        looked.profile = Some(std::sync::Arc::new(profile.with_test_look(
+            2,
+            |_| 1.,
+            &[[0., 0.], [1., 1.]],
+        )));
+        assert!(
+            !supported_hdr(&looked, &im.metadata),
+            "a look's master renders on the CPU"
+        );
+        let file = hdr_file(2, 2, |_, _| [2.; 3]);
+        let r = Recipe::for_new_rendered(&file.metadata);
+        assert!(r.hdr.is_active());
+        assert!(
+            !supported_hdr(&r, &file.metadata),
+            "an HDR file's light renders on the CPU"
         );
     }
 

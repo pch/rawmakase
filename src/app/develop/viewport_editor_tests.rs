@@ -435,3 +435,99 @@ fn an_hdr_edit_refused_by_the_display_waits_for_it() {
     };
     assert!(!e.hdr_awaits_display(), "shown in HDR");
 }
+
+/// An editor showing an HDR edit in Fit on a display with headroom 4.
+fn hdr_editor(ctx: &egui::Context) -> crate::app::Editor {
+    use crate::app::shell::display::HdrDisplay;
+    let (mut e, _) = crate::app::testing::editor_with_blue_photo(ctx, Default::default(), true);
+    e.preview.last_fit_edge = 64;
+    e.view.viewport = egui::Vec2::new(16., 12.);
+    e.view.hdr_display = HdrDisplay {
+        headroom: 4.,
+        potential: 16.,
+        float_surface: true,
+    };
+    e.document.edit.setup_mut().hdr.enabled = true;
+    e
+}
+
+/// The GPU's HDR master, presented with the picture the viewport draws, shows while
+/// the master is due at the headroom it was presented for, and the Basic panel says
+/// so; at another headroom the CPU's renders, and the GPU's texture is kept from
+/// being written while it is drawn.
+#[test]
+fn the_gpus_hdr_master_shows_where_it_was_presented_at_the_headroom_due() {
+    use crate::app::develop::hdr_preview::Presentation;
+    use crate::app::develop::state::Picture;
+    use crate::app::worker::HdrTexture;
+    let ctx = egui::Context::default();
+    let mut e = hdr_editor(&ctx);
+    let headroom = e.hdr_preview_due().unwrap().key.headroom();
+    let hdr = HdrTexture {
+        id: egui::TextureId::User(2),
+        size: [16, 12],
+        headroom,
+    };
+    e.preview.texture = Some(Picture::presented_with(
+        egui::TextureId::User(1),
+        [16, 12],
+        Some(hdr),
+    ));
+    assert_eq!(e.hdr_presentation(), Presentation::Hdr { stops: 2. });
+    let drawn = e.preview.presented();
+    assert!(drawn.contains(&egui::TextureId::User(1)) && drawn.contains(&hdr.id));
+    // Brighter: the display's headroom moved; until the GPU presents for it, the CPU's.
+    e.view.hdr_display.headroom = 8.;
+    assert_eq!(e.hdr_presentation(), Presentation::Rendering);
+    e.view.hdr_display.headroom = 4.;
+    // Not due (the clipping warning): the SDR rendition, whatever was presented.
+    e.view
+        .clipping
+        .toggle(crate::app::develop::clipping::ClipSide::Highlights);
+    assert!(matches!(e.hdr_presentation(), Presentation::Sdr(_)));
+    e.view
+        .clipping
+        .toggle(crate::app::develop::clipping::ClipSide::Highlights);
+    // An SDR picture alone: the CPU's master.
+    e.preview.texture = Some(Picture::presented(egui::TextureId::User(1), [16, 12]));
+    assert_eq!(e.hdr_presentation(), Presentation::Rendering);
+
+    // Drawn by the GPU, the master asks for EDR without a CPU render.
+    let g = crate::develop::Geometry::new(e.document.full().unwrap(), &e.effective_recipe(), 0);
+    let mut output = ctx.run_ui(Default::default(), |ui| {
+        let painter = ui.painter().clone();
+        let gpu = crate::app::develop::viewport::GpuHdr {
+            whole: true,
+            region: false,
+        };
+        let due = e.hdr_preview_due();
+        e.hdr_preview_ui(&painter, ui.max_rect(), &g, due, false, gpu);
+    });
+    output.textures_delta.clear();
+    assert!(e.view.hdr_shown);
+}
+
+/// An HDR edit's render asks the GPU for its master at the headroom due, and renders
+/// again when the display's headroom moves or the master stops being due; nothing
+/// else renders it again.
+#[test]
+fn an_hdr_edits_render_asks_for_the_master_at_the_headroom_due() {
+    let ctx = egui::Context::default();
+    let mut e = hdr_editor(&ctx);
+    e.schedule();
+    let asked = e.preview.last_hdr.expect("the master is due");
+    assert!((asked - 4.).abs() < 0.1);
+    let id = e.preview.task.id();
+    e.follow_hdr_display();
+    assert_eq!(e.preview.task.id(), id, "nothing changed");
+    e.view.hdr_display.headroom = 4.1;
+    e.follow_hdr_display();
+    assert_eq!(e.preview.task.id(), id, "within a tenth of a stop");
+    e.view.hdr_display.headroom = 8.;
+    e.follow_hdr_display();
+    assert_ne!(e.preview.task.id(), id);
+    assert!((e.preview.last_hdr.unwrap() - 8.).abs() < 0.1);
+    e.document.edit.setup_mut().hdr.enabled = false;
+    e.follow_hdr_display();
+    assert_eq!(e.preview.last_hdr, None, "an SDR edit asks for no master");
+}

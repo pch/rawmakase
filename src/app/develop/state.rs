@@ -113,6 +113,8 @@ pub(in crate::app) struct Picture {
     size: [usize; 2],
     /// Keeps an uploaded texture alive; presented ones belong to the renderer.
     handle: Option<egui::TextureHandle>,
+    /// The HDR master's preview of the same view, presented with it on the GPU.
+    hdr: Option<crate::app::worker::HdrTexture>,
 }
 impl Picture {
     pub(in crate::app) fn presented(id: egui::TextureId, size: [usize; 2]) -> Self {
@@ -120,10 +122,26 @@ impl Picture {
             id,
             size,
             handle: None,
+            hdr: None,
+        }
+    }
+    /// As [`Self::presented`], with the HDR master's preview presented with it.
+    pub(in crate::app) fn presented_with(
+        id: egui::TextureId,
+        size: [usize; 2],
+        hdr: Option<crate::app::worker::HdrTexture>,
+    ) -> Self {
+        Self {
+            hdr,
+            ..Self::presented(id, size)
         }
     }
     pub(in crate::app) fn id(&self) -> egui::TextureId {
         self.id
+    }
+    /// The HDR master's preview presented with this picture, if any.
+    pub(in crate::app) fn hdr(&self) -> Option<crate::app::worker::HdrTexture> {
+        self.hdr
     }
     /// Presented into a texture the renderer registered, rather than uploaded.
     fn is_presented(&self) -> bool {
@@ -161,6 +179,7 @@ impl From<egui::TextureHandle> for Picture {
             id: handle.id(),
             size: handle.size(),
             handle: Some(handle),
+            hdr: None,
         }
     }
 }
@@ -247,6 +266,9 @@ pub(in crate::app) struct PreviewState {
     pub(in crate::app) status: String,
     pub(in crate::app) last_fit_edge: u32,
     pub(in crate::app) last_region: Option<[u32; 4]>,
+    /// The display headroom the last render of the edit asked for its HDR master's
+    /// GPU preview at (`RenderJob::hdr`): when what is due changes, it renders again.
+    pub(in crate::app) last_hdr: Option<f32>,
     pub(in crate::app) mode: TextureMode,
     /// The crop `texture` was rendered with, when known: until a render for a new
     /// crop lands, the old one is placed where its crop sits instead of stretched.
@@ -280,6 +302,7 @@ impl Default for PreviewState {
             status: String::new(),
             last_fit_edge: 0,
             last_region: None,
+            last_hdr: None,
             mode: TextureMode::Whole,
             crop: None,
             before: Default::default(),
@@ -691,7 +714,8 @@ impl PreviewState {
         .into_iter()
         .flatten()
         .filter(|p| p.is_presented())
-        .map(Picture::id)
+        .flat_map(|p| [Some(p.id), p.hdr.map(|h| h.id)])
+        .flatten()
         .collect()
     }
     /// Stops drawing textures the renderer presented into, once it has freed them.

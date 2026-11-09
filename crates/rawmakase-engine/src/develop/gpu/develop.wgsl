@@ -252,6 +252,46 @@ fn enhanced_curve(rgb: vec3<f32>) -> vec3<f32> {
     let r = rgb_tone_values(q, lut(base, 4096u, lo), lut(base, 4096u, hi), lo, hi);
     return vec3(srgb_decode(r.x), srgb_decode(r.y), srgb_decode(r.z));
 }
+// The HDR tone curve (`HdrTone::evaluate`) from its samples over log2 scene value
+// (`pixel_params::hdr_tone_table`): log2–log2 interpolation, linear below the first
+// sample, and the last samples' slope above the last.
+fn hdr_curve(x: f32) -> f32 {
+    if !(x > 0.0) {
+        return 0.0;
+    }
+    let base = offset(P_HDR + 1u);
+    let n = HDR_TONE.z;
+    let f = (log2(x) - HDR_TONE.x) / HDR_TONE.y;
+    if f <= 0.0 {
+        return x * exp2(table(base) - HDR_TONE.x);
+    }
+    if f >= n - 1.0 {
+        let a = table(base + i32(n) - 2);
+        let b = table(base + i32(n) - 1);
+        return exp2(b + (b - a) * (f - (n - 1.0)));
+    }
+    let i = floor(f);
+    return exp2(mix(table(base + i32(i)), table(base + i32(i) + 1), f - i));
+}
+// CameraProfile::finish_hdr for an ordinary profile, then `HdrFinish::finish`: the look
+// table on unclipped values, the HDR tone curve DNG RGBTone fashion; linear ProPhoto
+// in and out, not negative.
+fn hdr_finish(pro: vec3<f32>) -> vec3<f32> {
+    var q = max(pro, vec3(0.0));
+    if offset(P_LOOK) >= 0 {
+        q = table_apply(table_at(P_LOOK), q, -1, 0.0);
+    }
+    q = max(q, vec3(0.0));
+    let low = min(min(q.x, q.y), q.z);
+    let high = max(max(q.x, q.y), q.z);
+    let a = hdr_curve(low);
+    let b = hdr_curve(high);
+    var out = vec3(b);
+    if high - low > 1e-8 {
+        out = a + (b - a) * (q - low) / (high - low);
+    }
+    return max(out, vec3(0.0));
+}
 // CameraProfile::finish: linear ProPhoto in, linear sRGB primaries out.
 fn profile_finish(pro: vec3<f32>) -> vec3<f32> {
     var q = pro;
@@ -339,6 +379,24 @@ fn white_curve(whites: f32, x_in: f32) -> f32 {
     }
     return y;
 }
+// hdr_whites::gain: an HDR render's Whites gain (log2) at scene value `x`.
+fn hdr_gain(x: f32) -> f32 {
+    let base = offset(P_HDR);
+    let n = SCENE_H.z;
+    if !(x > 0.0) {
+        return table(base);
+    }
+    let f = clamp((log2(x) - SCENE_H.x) / SCENE_H.y, 0.0, n - 1.0);
+    let i = min(floor(f), n - 2.0);
+    return mix(table(base + i32(i)), table(base + i32(i) + 1), f - i);
+}
+// GlobalTone::white_at in an HDR render: the identity from HDR_IDENTITY_FROM up, the
+// default black point's toe below it (the white curve at Whites 0, which `hdr` builds
+// the rows at), each times the Whites gain.
+fn hdr_white(x: f32) -> f32 {
+    let toe = select(white_curve(0.0, x), x, x >= HDR_IDENTITY_FROM);
+    return toe * exp2(hdr_gain(x));
+}
 // global::mask_curve: a mask's Whites (`kind` 0) or Blacks (1) at `s` on output `y`.
 fn mask_row(kind: u32, row: u32, y: f32) -> f32 {
     let n = u32(SCENE_Y.z);
@@ -385,8 +443,15 @@ fn scene_global(q: vec3<f32>) -> vec3<f32> {
     let whites = p(P_SCENE_KEYS + 3u);
     let lo = min(min(q.x, q.y), q.z);
     let hi = max(max(q.x, q.y), q.z);
-    let ya = white_curve(whites, lo);
-    let yb = white_curve(whites, hi);
+    var ya: f32;
+    var yb: f32;
+    if V_HDR {
+        ya = hdr_white(lo);
+        yb = hdr_white(hi);
+    } else {
+        ya = white_curve(whites, lo);
+        yb = white_curve(whites, hi);
+    }
     var out = vec3(ya);
     if hi - lo > 1e-12 {
         out = ya + (yb - ya) * (q - lo) / (hi - lo);
@@ -405,7 +470,13 @@ fn scene_global(q: vec3<f32>) -> vec3<f32> {
     }
     let blacks = offset(P_SCENE_BLACKS);
     if blacks >= 0 {
-        out = vec3(log_curve(blacks, SCENE_Y, out.x), log_curve(blacks, SCENE_Y, out.y), log_curve(blacks, SCENE_Y, out.z));
+        let curved = vec3(log_curve(blacks, SCENE_Y, out.x), log_curve(blacks, SCENE_Y, out.y), log_curve(blacks, SCENE_Y, out.z));
+        // In HDR, Blacks leaves values above white alone (`GlobalTone::apply`).
+        if V_HDR {
+            out = select(curved, out, out >= vec3(1.0));
+        } else {
+            out = curved;
+        }
     }
     return out;
 }
@@ -1157,6 +1228,10 @@ fn process_pixel(i: u32, pos: vec2<f32>) -> vec3<f32> {
     }
     let clarity_lum = dot(clarity_scene, vec3(0.2880402, 0.7118741, 0.0000857));
     let scene = scene_stage(scene_in, pos, clarity_lum);
+    // An HDR master is written as it is after the profile, unclipped.
+    if V_HDR {
+        return hdr_finish(scene);
+    }
     // S4: profile_stage.
     var rgb = profile_finish(scene);
     // color_stage

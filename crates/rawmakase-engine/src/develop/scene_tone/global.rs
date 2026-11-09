@@ -462,6 +462,11 @@ impl GlobalTone {
     pub(crate) fn default_black_samples(&self) -> Option<&[f32]> {
         self.default_black.as_deref().map(|b| &b[..])
     }
+    /// An HDR render's Whites gains ([`Self::hdr`]) over log2 scene value, for the GPU
+    /// port; `None` renders SDR.
+    pub(crate) fn hdr_gains(&self) -> Option<&[f32]> {
+        self.hdr.as_deref().map(|g| &g[..])
+    }
     /// The blacks curve's samples, for the GPU port.
     pub(crate) fn blacks_samples(&self) -> Option<&[f32]> {
         self.blacks_curve.as_deref().map(|b| &b[..])

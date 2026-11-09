@@ -43,16 +43,30 @@ pub(crate) fn output_size(width: u32, height: u32, max_edge: u32) -> (u32, u32) 
 pub enum Output {
     Pixels(Rendered),
     Frame(Box<develop::gpu::Frame>),
+    /// An HDR master's preview, presented for the window (`PreviewRenderer::render_hdr_to`).
+    Hdr(Box<develop::gpu::HdrFrame>),
 }
 impl Output {
     /// The pixels of a render made without a display, which is never a frame.
     pub fn pixels(self) -> Rendered {
         match self {
             Output::Pixels(pixels) => pixels,
-            Output::Frame(_) => unreachable!("Frames are only presented to a display"),
+            Output::Frame(_) | Output::Hdr(_) => {
+                unreachable!("Frames are only presented to a display")
+            }
         }
     }
 }
+/// An HDR master's preview the GPU port doesn't render; the CPU's master
+/// (`render_hdr`) is the fallback, never an SDR stage.
+#[derive(Debug)]
+pub(crate) struct HdrNotOnGpu;
+impl std::fmt::Display for HdrNotOnGpu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("The GPU doesn't render this HDR preview")
+    }
+}
+impl std::error::Error for HdrNotOnGpu {}
 pub fn resize(image: Rendered, max_edge: u32) -> Rendered {
     let mut out = resize_unbounded(image, max_edge);
     for p in &mut out.pixels {
@@ -113,7 +127,7 @@ pub(crate) use detail::*;
 pub use hdr::{render_hdr, render_hdr_region};
 pub use highlights::*;
 pub(crate) use local::*;
-pub(crate) use prepare::{Resolved, resolve};
+pub(crate) use prepare::{Resolved, resolve, resolve_hdr};
 pub use render::*;
 pub use samples::*;
 

@@ -47,3 +47,39 @@ fn compact_inspector_keeps_canvas_and_before_preserves_edits() {
     assert_eq!(editor.effective_recipe().crop, saved.crop);
     assert_eq!(editor.effective_recipe().exposure, 0.);
 }
+
+/// Before beside an HDR edit asks the GPU for its own master at the headroom due when
+/// its settings have HDR on, and for none when they have it off.
+#[test]
+fn before_asks_for_its_own_hdr_master() {
+    use crate::app::develop::before_after::{Axis, Compare};
+    use crate::app::shell::display::HdrDisplay;
+    let ctx = egui::Context::default();
+    let (mut e, _) = crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), true);
+    e.preview.last_fit_edge = 64;
+    e.view.viewport = Vec2::new(16., 12.);
+    e.view.hdr_display = HdrDisplay {
+        headroom: 4.,
+        potential: 16.,
+        float_surface: true,
+    };
+    e.document.edit.setup_mut().hdr.enabled = true;
+    let mut before = e.document.edit.recipe().clone();
+    e.document.before = Some(before.clone());
+    e.view.compare = Compare::SideBySide(Axis::LeftRight);
+    e.schedule_before();
+    let asked = e.preview.before.submitted.as_ref().unwrap().hdr;
+    assert!(asked.is_some_and(|h| (h - 4.).abs() < 0.1), "{asked:?}");
+    let id = e.preview.before.task.id();
+    e.view.hdr_display.headroom = 8.;
+    e.schedule_before();
+    assert_ne!(
+        e.preview.before.task.id(),
+        id,
+        "a new headroom renders again"
+    );
+    before.hdr.enabled = false;
+    e.document.before = Some(before);
+    e.schedule_before();
+    assert_eq!(e.preview.before.submitted.as_ref().unwrap().hdr, None);
+}

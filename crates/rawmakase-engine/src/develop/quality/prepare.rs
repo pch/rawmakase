@@ -30,6 +30,13 @@ pub(crate) fn resolve<'a>(image: &CameraImage, recipe: &'a ValidRecipe<'_>) -> R
     Resolved { recipe, geometry }
 }
 
+/// As [`resolve`], with HDR kept ([`Recipe::resolved_hdr`]): for an HDR master.
+pub(crate) fn resolve_hdr<'a>(image: &CameraImage, recipe: &'a ValidRecipe<'_>) -> Resolved<'a> {
+    let recipe = recipe.resolved_hdr(&image.metadata);
+    let geometry = Geometry::new(image, &recipe, 0);
+    Resolved { recipe, geometry }
+}
+
 impl Resolved<'_> {
     /// The source the stages sample: the camera check (a profile made for another
     /// camera is an error), Auto CA's measurement primed, and the recovered image with

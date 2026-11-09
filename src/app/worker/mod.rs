@@ -326,7 +326,19 @@ pub(crate) enum Preview {
         id: egui::TextureId,
         size: [usize; 2],
         navigator: Option<(egui::TextureId, [usize; 2])>,
+        /// The HDR master's preview of the same view, when the job asked for it
+        /// (`RenderJob::hdr`) and the GPU renders it.
+        hdr: Option<HdrTexture>,
     },
+}
+/// An HDR master's preview presented on the GPU (`PreviewRenderer::render_hdr_to`):
+/// extended sRGB half floats held to `headroom`, the display headroom it was
+/// rendered for.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct HdrTexture {
+    pub id: egui::TextureId,
+    pub size: [usize; 2],
+    pub headroom: f32,
 }
 pub(crate) struct LoadJob {
     pub id: u64,
@@ -384,6 +396,9 @@ pub(crate) struct RenderJob {
     pub ai: Option<crate::develop::AiSource>,
     /// Presented textures the viewport draws until this job's preview arrives.
     pub drawn: Vec<egui::TextureId>,
+    /// Also present the HDR master's preview, held to this display headroom: where
+    /// the viewport is due to show the master (`Editor::hdr_preview_due`).
+    pub hdr: Option<f32>,
 }
 fn send(tx: &Sender<Event>, ctx: &egui::Context, event: Event) {
     let _ = tx.send(event);

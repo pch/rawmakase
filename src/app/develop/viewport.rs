@@ -352,13 +352,22 @@ impl Editor {
         };
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
         let painter = ui.painter().with_clip_rect(panes.after.clip);
+        // The GPU's HDR master presented with a picture shows over it while the master
+        // is due at that headroom; the CPU's renders where there is none.
+        let due = self.hdr_preview_due();
+        let gpu_hdr = |picture: &crate::app::develop::state::Picture| {
+            gpu_hdr_for(Some(picture), due.as_ref().ok())
+        };
+        let mut gpu_whole = false;
         if self.preview.texture.is_some() {
+            let hdr = gpu_hdr(&texture);
+            gpu_whole = hdr.is_some();
             // Opening or leaving the Crop tool changes the crop before the render for
             // it lands: the old render goes where its crop sits, clipped to the new one.
             let now = geometry
                 .as_ref()
                 .map_or(self.effective_recipe().crop, |g| g.crop());
-            match self.preview.crop {
+            let (at, clipped) = match self.preview.crop {
                 Some(then) if then != now && geometry.is_some() => {
                     let size = rect.size() / Vec2::new(now[2] - now[0], now[3] - now[1]);
                     let whole = rect.min - Vec2::new(now[0], now[1]) * size;
@@ -366,21 +375,28 @@ impl Editor {
                         whole + Vec2::new(then[0], then[1]) * size,
                         whole + Vec2::new(then[2], then[3]) * size,
                     );
-                    painter
-                        .with_clip_rect(panes.after.clip.intersect(rect))
-                        .image(texture.id(), at, uv, Color32::WHITE);
+                    (at, painter.with_clip_rect(panes.after.clip.intersect(rect)))
                 }
-                _ => {
-                    painter.image(texture.id(), rect, uv, Color32::WHITE);
-                }
+                _ => (rect, painter.clone()),
+            };
+            for id in std::iter::once(texture.id()).chain(hdr.map(|h| h.id)) {
+                clipped.image(id, at, uv, Color32::WHITE);
             }
         }
+        let mut gpu_region = false;
         if let (Some(region), Some(at)) = (&region_texture, region_rect) {
-            painter.image(region.id(), at, uv, Color32::WHITE);
+            let hdr = gpu_hdr(region);
+            gpu_region = hdr.is_some();
+            for id in std::iter::once(region.id()).chain(hdr.map(|h| h.id)) {
+                painter.image(id, at, uv, Color32::WHITE);
+            }
         }
         if let Some(g) = &geometry {
-            let due = self.hdr_preview_due();
-            self.hdr_preview_ui(&painter, rect, g, due, false);
+            let gpu = GpuHdr {
+                whole: gpu_whole,
+                region: gpu_region,
+            };
+            self.hdr_preview_ui(&painter, rect, g, due, false, gpu);
         }
         if self.view.compare.renders_before_alone() {
             before_after::badge(ui, area, "Before");
@@ -930,6 +946,24 @@ impl Editor {
     }
 }
 
+/// The GPU's HDR master preview presented with `picture`, when it is the master `due`
+/// shows at the same headroom.
+pub(in crate::app) fn gpu_hdr_for(
+    picture: Option<&crate::app::develop::state::Picture>,
+    due: Option<&HdrDue>,
+) -> Option<crate::app::worker::HdrTexture> {
+    let due = due?;
+    picture?.hdr().filter(|h| h.headroom == due.key.headroom())
+}
+
+/// Which parts of a side the GPU's HDR master preview was drawn over: there the CPU's
+/// isn't asked for.
+#[derive(Clone, Copy, Debug, Default)]
+pub(in crate::app) struct GpuHdr {
+    pub(in crate::app) whole: bool,
+    pub(in crate::app) region: bool,
+}
+
 /// Why a side shows its SDR rendition when its settings have HDR off.
 pub(in crate::app) const HDR_OFF: &str = "HDR is off";
 
@@ -1016,7 +1050,7 @@ impl crate::app::Editor {
             && self.view.hdr_display.unavailable().is_some()
     }
     /// Why no HDR preview shows anywhere in Develop's viewport, if none can.
-    fn hdr_refused(&self) -> Result<(), &'static str> {
+    pub(in crate::app) fn hdr_refused(&self) -> Result<(), &'static str> {
         let refuse = |no: bool, why| if no { Err(why) } else { Ok(()) };
         if let Some(why) = self.view.hdr_display.unavailable() {
             return Err(why);
@@ -1043,7 +1077,7 @@ impl crate::app::Editor {
     }
     /// The HDR preview due for `recipe` of `image`, shown as `part` with `under` it
     /// (see [`HdrDue`]), or why its SDR rendition shows.
-    fn hdr_due_for(
+    pub(in crate::app) fn hdr_due_for(
         &self,
         image: &std::sync::Arc<crate::camera_data::CameraImage>,
         recipe: &crate::model::recipe::Recipe,
@@ -1095,11 +1129,26 @@ impl crate::app::Editor {
             .ok_or("nothing is beside the edit")?;
         self.hdr_due_for(side.image, side.recipe, side.region, side.max_edge)
     }
+    /// Renders the edit again when what its GPU render is to present of the HDR
+    /// master changed since it was asked for (`RenderJob::hdr`): the display's
+    /// headroom moved by a tenth of a stop (its brightness, or another monitor), or
+    /// the master became due or stopped being due. Before's job compares its own
+    /// (`schedule_before`). A view change, never an edit.
+    pub(in crate::app) fn follow_hdr_display(&mut self) {
+        if self.module == Module::Develop
+            && self.document.full().is_some()
+            && self.hdr_preview_due().ok().map(|due| due.key.headroom()) != self.preview.last_hdr
+        {
+            self.schedule();
+        }
+    }
     /// What Develop shows of the open edit, for the Basic panel's note.
     pub(in crate::app) fn hdr_presentation(
         &self,
     ) -> crate::app::develop::hdr_preview::Presentation {
-        self.presentation_of(self.hdr_preview_due(), false)
+        let due = self.hdr_preview_due();
+        let gpu = self.gpu_hdr_shown(due.as_ref().ok(), false);
+        self.presentation_of(due, false, gpu)
     }
     /// What Develop shows of the side beside the edit, named (Before, or the
     /// reference photo), while one is shown.
@@ -1115,16 +1164,46 @@ impl crate::app::Editor {
         } else {
             "Before"
         };
-        Some((side, self.presentation_of(self.hdr_second_side_due(), true)))
+        let due = self.hdr_second_side_due();
+        let gpu = self.gpu_hdr_shown(due.as_ref().ok(), true);
+        Some((side, self.presentation_of(due, true, gpu)))
+    }
+    /// Whether the GPU's HDR master preview shows the part of a side `due` names:
+    /// presented with the picture drawn there, at the headroom due.
+    fn gpu_hdr_shown(&self, due: Option<&HdrDue>, before: bool) -> bool {
+        use crate::app::develop::hdr_preview::Part;
+        let Some(due) = due else {
+            return false;
+        };
+        let (whole, region, mode) = if before {
+            let b = &self.preview.before;
+            (&b.texture, &b.region, b.mode)
+        } else {
+            (
+                &self.preview.texture,
+                &self.preview.region,
+                self.preview.mode,
+            )
+        };
+        let picture = match (due.key.part(), mode) {
+            (Part::Region(_), TextureMode::Region(_)) => region.as_ref(),
+            (Part::Region(_), TextureMode::Whole) => None,
+            (Part::Whole(_), _) => whole.as_ref().or(region.as_ref()),
+        };
+        gpu_hdr_for(picture, Some(due)).is_some()
     }
     fn presentation_of(
         &self,
         due: Result<HdrDue, &'static str>,
         before: bool,
+        gpu: bool,
     ) -> crate::app::develop::hdr_preview::Presentation {
         use crate::app::develop::hdr_preview::Presentation;
         match due {
             Err(why) => Presentation::Sdr(why),
+            Ok(_) if gpu => Presentation::Hdr {
+                stops: self.view.hdr_display.headroom.log2(),
+            },
             Ok(due) => {
                 let (slot, _) = due.slots(before);
                 match self.hdr_preview.failure(slot, &due.key) {
@@ -1150,9 +1229,19 @@ impl crate::app::Editor {
         g: &Geometry,
         due: Result<HdrDue, &'static str>,
         before: bool,
+        gpu: GpuHdr,
     ) {
-        let state = self.render_state.clone();
-        let (Some(state), Ok(due)) = (state, due) else {
+        use crate::app::develop::hdr_preview::Part;
+        let Ok(due) = due else {
+            return;
+        };
+        // Where the GPU drew the master, it is shown: no CPU master is asked for.
+        let region = matches!(due.key.part(), Part::Region(_));
+        if (region && gpu.region) || (!region && gpu.whole) {
+            self.view.hdr_shown = true;
+            return;
+        }
+        let Some(state) = self.render_state.clone() else {
             return;
         };
         let (slot, other) = due.slots(before);
@@ -1171,7 +1260,8 @@ impl crate::app::Editor {
         // under it would hide it. So the whole photo's preview shows under a region
         // only with the region's.
         let shown = self.hdr_preview.texture(slot, &due.key, &state).is_some();
-        if let Some(under) = &due.under {
+        // Under a region the GPU's whole photo may already show; then not the CPU's.
+        if let Some(under) = due.under.as_ref().filter(|_| !gpu.whole) {
             self.hdr_preview.keep(other);
             if shown {
                 draw(&mut self.hdr_preview, other, under);

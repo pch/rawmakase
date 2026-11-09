@@ -104,6 +104,17 @@ fn rgb_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {
         [b; 3]
     }
 }
+/// Whether an HDR master of `r` renders more after its profile than its profile's
+/// finish: Contrast, the tone curves, the colour mixer (Saturation and Vibrance among
+/// them) or the black & white mix, as [`HdrFinish::finish`] applies them. The GPU
+/// port's HDR master renders the profile's finish alone
+/// (`pixel_params::supported_hdr`).
+pub(crate) fn hdr_finishes_past_the_profile(r: &Recipe) -> bool {
+    r.contrast != 0.
+        || HdrCurves::new(r).is_some()
+        || crate::develop::color_mixer::ColorMixer::new(r).is_some()
+        || r.effects.monochrome
+}
 impl HdrFinish {
     /// For a recipe with HDR on and a profile whose curve renders in HDR.
     pub(super) fn new(r: &Recipe) -> Option<Self> {

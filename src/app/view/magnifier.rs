@@ -490,6 +490,7 @@ impl Editor {
             overlay: crate::app::worker::Overlay::None,
             ai: job.ai,
             drawn,
+            hdr: None,
         });
     }
     /// A magnifier render arrived.

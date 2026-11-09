@@ -33,6 +33,9 @@ pub(crate) const SAMPLES: usize = POSITIVE_SAMPLES;
 const FIRST: f32 = POSITIVE_FIRST;
 const STEP: f32 = POSITIVE_STEP;
 const _: () = assert!(WHITES_FIRST == POSITIVE_FIRST && WHITES_STEP == POSITIVE_STEP);
+/// The gains' grid over log2 scene value: the first sample and the step, for the GPU
+/// port, which reads [`gain`]'s samples as they are.
+pub(crate) const GRID: [f32; 2] = [FIRST, STEP];
 /// Scene values from here up render as themselves in HDR at Whites 0; below, the
 /// default black point's toe applies as in SDR.
 pub(crate) const IDENTITY_FROM: f32 = 0.5;

@@ -81,7 +81,8 @@ impl Key {
             headroom: (headroom.log2() * 10.).round() as i32,
         }
     }
-    fn headroom(&self) -> f32 {
+    /// The display headroom this preview is for, to a tenth of a stop.
+    pub(in crate::app) fn headroom(&self) -> f32 {
         (self.headroom as f32 / 10.).exp2()
     }
     pub(in crate::app) fn part(&self) -> Part {
@@ -411,21 +412,13 @@ fn render(job: &Job) -> anyhow::Result<Done> {
 }
 
 /// HDR master pixels (linear ProPhoto, 1 = graphics white) as extended sRGB half
-/// floats for the window: linear sRGB primaries (negative where outside sRGB, which
-/// extended sRGB keeps), each channel held to `headroom` by the HDR limit's roll-off,
-/// then the sRGB curve, mirrored below 0.
+/// floats for the window ([`crate::color::hdr_output::extended_srgb`]), RGBA.
 pub(in crate::app) fn encode(pixels: &[[f32; 3]], headroom: f32) -> Vec<u16> {
-    use crate::color::hdr_output::{HdrGamut, roll_off};
-    let to_srgb = HdrGamut::Rec709.prophoto_to_rgb();
     pixels
         .iter()
         .flat_map(|p| {
-            let rgb = crate::color::mul(to_srgb, *p).map(|v| {
-                let v = if v.is_finite() { v } else { 0. };
-                let encoded = crate::color::srgb_encode(roll_off(v.abs(), headroom));
-                half(v.signum() * encoded)
-            });
-            [rgb[0], rgb[1], rgb[2], half(1.)]
+            let [r, g, b] = crate::color::hdr_output::extended_srgb(*p, headroom).map(half);
+            [r, g, b, half(1.)]
         })
         .collect()
 }

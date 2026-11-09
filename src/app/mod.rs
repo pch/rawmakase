@@ -552,6 +552,7 @@ impl eframe::App for Editor {
         self.draw(ui);
         // HDR previews the frame didn't draw are of views that are gone.
         self.hdr_preview.sweep(self.render_state.as_ref());
+        self.follow_hdr_display();
         if self.view.monitor.follows_system() {
             if self.view.system_display.update(frame) {
                 self.schedule();
