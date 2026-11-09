@@ -118,8 +118,9 @@ A deserialised `hdr_source` without a decoded `HdrLight` renders nothing:
 Orientation is applied once, to the samples, before both are built; JPEG XL's
 decoder has applied it already. Neither path goes through moxcms's bounded tables.
 
-Formats: TIFF, PNG, JPEG XL and AVIF. HDR HEIC, gain maps, animation and the
-existing refusals are unchanged.
+Formats: TIFF, PNG, JPEG XL and AVIF; HEIC since a later increment, where the system's
+decoder gives its signal back as coded ([HDR HEIC](../hdr.md#hdr-heic)). Gain maps,
+animation and the existing refusals are unchanged.
 
 ## The master of an HDR file
 
@@ -243,8 +244,8 @@ reduction.
   - A light whose dimensions no longer match is refused.
 - **Lifecycle.** A replaced or deleted file, a late completion and a failure in the
   HDR preview; opening again decodes a new light.
-- **Refusals.** HDR HEIC, animation, unsupported primaries and HDR without CICP stay
-  refused. Gain maps were refused in the first increment and open since the second.
+- **Refusals.** Animation, unsupported primaries and HDR without CICP stay
+  refused, and so does HDR HEIC on Windows. Gain maps were refused in the first increment and open since the second.
 
 ## Gain-map input (second increment)
 

@@ -22,6 +22,28 @@ impl Nclx {
     pub(super) fn hdr(self) -> bool {
         matches!(self.transfer, 16 | 18)
     }
+
+    /// Why a HEIC of this HDR `nclx` can't open as an HDR edit, if it can't; `None`
+    /// for an SDR one. Its signal decodes exactly only where the system decoder gives
+    /// it back as coded, converted to RGB by a matrix it applies as a matrix:
+    /// - **"HDR"** on Windows, whose decoder isn't checked, and with an ICC profile
+    ///   beside the `nclx`, which then describes the pixels instead, and with
+    ///   primaries other than BT.709, BT.2020 and Display P3 (1, 9 and 12), which
+    ///   RAWmakase doesn't decode HDR in;
+    /// - **"HDR matrix N"** for any matrix but BT.709 (1), BT.601 (5, 6) and BT.2020's
+    ///   non-constant luminance (9): constant luminance and ICtCp aren't matrices.
+    pub(super) fn hdr_refusal(self, icc: bool) -> Option<super::Unsupported> {
+        use super::Unsupported;
+        if !self.hdr() {
+            None
+        } else if cfg!(windows) || icc || ![1, 9, 12].contains(&self.primaries) {
+            Some(Unsupported("HDR".into()))
+        } else if ![1, 5, 6, 9].contains(&self.matrix) {
+            Some(Unsupported(format!("HDR matrix {}", self.matrix)))
+        } else {
+            None
+        }
+    }
 }
 
 /// An item's colour: its ICC profile and its `nclx`, either when it has one.

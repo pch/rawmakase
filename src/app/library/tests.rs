@@ -343,12 +343,8 @@ fn an_unsupported_jpeg_says_why_in_develop() -> Result<()> {
     Ok(())
 }
 
-/// A phone's HEIC is added with a folder and opens in Develop as a JPEG does;
-/// an HDR one is shown in the Library but Develop says why it can't edit it;
-/// where this system decodes HEIC (macOS, and Linux with libheif).
 #[cfg(not(windows))]
-/// An HDR AVIF opens in Develop, as an HDR edit; HDR HEIC files are still refused
-/// (see below).
+/// An HDR AVIF opens in Develop, as an HDR edit.
 #[test]
 fn an_hdr_avif_is_not_refused_for_develop() -> Result<()> {
     let formats = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/formats");
@@ -364,8 +360,12 @@ fn an_hdr_avif_is_not_refused_for_develop() -> Result<()> {
     Ok(())
 }
 
+/// A phone's HEIC is added with a folder and opens in Develop as a JPEG does, and
+/// an HDR one as an HDR edit, where this system decodes HEIC (macOS, and Linux with
+/// libheif). On Windows, whose decoder isn't checked for HDR, Develop says why it
+/// can't edit an HDR one.
 #[test]
-fn a_heic_opens_in_develop_and_an_hdr_one_says_why_not() -> Result<()> {
+fn a_heic_opens_in_develop_and_so_does_an_hdr_one() -> Result<()> {
     if let Err(why) = crate::raster::heif_decoder() {
         // CI's Arch job requires one (see raster's tests).
         assert!(
@@ -396,9 +396,13 @@ fn a_heic_opens_in_develop_and_an_hdr_one_says_why_not() -> Result<()> {
     };
     let (heic, hdr) = (photo("IMG_0001.HEIC"), photo("IMG_0002.HEIC"));
     assert_eq!(develop_refusal(&heic, true), None);
-    let refusal = develop_refusal(&hdr, true).expect("refused");
-    assert_eq!(refusal.label(), "HEIC file");
-    assert_eq!(refusal.detail(), "RAWmakase can't edit HDR images");
+    if cfg!(windows) {
+        let refusal = develop_refusal(&hdr, true).expect("refused");
+        assert_eq!(refusal.label(), "HEIC file");
+        assert_eq!(refusal.detail(), "RAWmakase can't edit HDR images");
+    } else {
+        assert_eq!(develop_refusal(&hdr, true), None);
+    }
     let mut editor = crate::app::Editor::with_context(&ctx, None, Default::default(), None);
     editor.library = Some(Box::new(library));
     editor.module = Module::Library;
