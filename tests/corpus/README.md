@@ -147,7 +147,8 @@ All run from the repository root with a Python that has numpy (`/opt/homebrew/bi
 - `scripts/corpus/parametric-curve.py`: renders the parametric curve's fitting cases (about 380 region and split settings) on `synthetic-d65` and fits `crates/rawmakase-engine/src/develop/parametric.bin` from them. The renders' patch means stay outside the repository.
 - `scripts/corpus/pixls.py`: `manifest` (rebuild `pixls.json`), `download` (checks hashes and the budget), `cameras` (rebuild `cameras.json` from the corpus RAWs).
 - `scripts/corpus/gate.py`: photo gates against frozen Camera Raw references (issue #420's level 3, the scene tone stage's gates): `survey`, `split` and `reference` make and freeze the references through Photoshop (`camera_raw.py`); `render` develops each photo once with every case's sidecar through `rawmakase render-batch <raw> <jobs.json>` (`--data-dir` for a library with Adobe Standard); `score` measures median ΔE00, ΔL* per brightness band and clipping; `accept` applies the acceptance rules to a candidate's scores against a baseline's: by default (`--rule regression`) no setting's median more than 0.1 ΔE00 worse per brightness stratum, no photo worse by more than a limit (tone 1.0 or 2.0; colour families their own, derived from `main`'s baseline with `color-limits`), no more clipping, and no photo that stops rendering; `--rule switch` is the scene tone engine's rule, which also asks far-off tone settings to improve; `--exclude <file>` leaves listed photos (SHA-256 prefixes) out of the verdict. Photos, references and renders stay outside the repository.
-- `scripts/corpus/hdr_reference.py` and `scripts/corpus/hdr_validate.py`: the separate HDR reference family ([HDR](../../docs/hdr.md)). `capture CONFIG OUT` renders a local job list in Camera Raw to P3 PQ (or Display P3 for SDR jobs) and keeps linear, reduced copies; `validate FAMILY BINARY OUT` renders each HDR job with `rawmakase render --hdr` and reports the HDR tolerances of docs/records/hdr-stage1-results.md. Neither reads or writes the SDR corpus; families and their configs stay local.
+- `scripts/corpus/hdr_reference.py` and `scripts/corpus/hdr_validate.py`: the separate HDR reference family ([HDR](../../docs/hdr.md)). `capture CONFIG OUT` renders a local job list in Camera Raw to P3 PQ (or Display P3 for SDR jobs) and keeps linear, reduced copies; `validate FAMILY BINARY OUT` renders each HDR job with `rawmakase render --hdr` and reports the HDR tolerances of docs/records/hdr-stage1-results.md (`--dataset` reads the dataset's frozen family, below). Neither reads or writes the SDR corpus; families and their configs stay local.
+- `scripts/corpus/hdr_gate.py`: the broad HDR gate ([HDR references](#hdr-references)): `capture` freezes Camera Raw's neutral HDR render of each selected photo as linear block means, `run` renders and scores a build, `report` and `accept` judge it.
 - `scripts/corpus/migrate-references.py`: reduce existing reference TIFFs (sweeps, Lightroom exports) to block files.
 - `scripts/corpus/parity-report.py`: groups the Camera Raw comparison by Develop control (mean and p95 ΔE00, distance above the default render, worst cases and patches) into `report.json` and a self-contained `report.html`; `--previous` marks changes against an earlier report. It reads RAWmakase's patch values from the parity test:
 
@@ -241,6 +242,47 @@ Generate it only when Photoshop and baseline generation are idle; new reference
 sets then participate in `dataset-gate.py` automatically. Slider variants cannot
 substitute for sensor clipping or capture underexposure. Missing stress strata
 must be supplied with additional captures, not waived by the script.
+
+### HDR references
+
+Camera Raw 18.7 HDR references live in the dataset, apart from the SDR references, in
+`$RAWMAKASE_DATASET/baselines/hdr/` (local) with their indexes committed in the dataset
+repository's `references/camera-raw-18.7-hdr/`. Every photo is a CC0 raw.pixls.us sample;
+the rest are synthetic. Its `scripts/hdr.py` freezes, verifies and indexes them.
+
+- **The family** (`family/`): every distinct job the HDR stages measured, once: the
+  twelve validation and holdout photos at neutral HDR and each measured setting (with
+  their SDR captures), the six HDRMerge floating-point DNGs at neutral HDR and SDR, and the
+  synthetic ramps and patches. Each keeps the requested and
+  returned XMP, source and profile hashes, the output encoding and the factor-8 linear
+  Display P3 reduction: float16 for photos (the stage 1 metrics move by at most 0.0006
+  stop and 0.006 ΔE_ITP against the float64 array), float64 for synthetic jobs.
+  `hdr_validate.py validate <family> <build> <out> --dataset $RAWMAKASE_DATASET` scores a
+  build on it as on a capture folder.
+- **The gate set** (`gate/`): Camera Raw's neutral HDR render (Adobe Standard, HDR
+  limit 4) of photos from in-scope cameras with highlights above white, spread over
+  makes, split by camera model as the SDR references are, kept as 48-across linear block
+  means with the factor-8 peak.
+
+```
+lib=<Adobe profile library>   # as for dataset-gate.py
+gate=$RAWMAKASE_DATASET/baselines/hdr/gate
+python3 scripts/corpus/hdr_gate.py --dataset $RAWMAKASE_DATASET run $gate target/release/rawmakase $gate/runs/<name> --data-dir $lib
+python3 scripts/corpus/hdr_gate.py report $gate/runs/<name> --split validation
+python3 scripts/corpus/hdr_gate.py accept --candidate $gate/runs/<name> --baseline $gate/runs/main-<commit> --refs $gate --exclude $gate/excluded.txt
+```
+
+`run` deletes each render once it is reduced, and resumes. `accept` judges validation by
+default (`--split holdout` at the decision): it fails a photo that gets further from
+Camera Raw than in the baseline by more than a margin (0.02 stop on the median above
+white and below 0.5, 0.05 on the p95 above white, 0.02 on the peak, 0.5 and 1.5 ΔE_ITP
+on the mean and p95), that leaves a stage 1 tolerance it met, or that either run did not
+score. Photos the baseline cannot render are listed with their reason in the gate's
+`excluded.txt` and left out; a photo only the candidate renders is reported.
+The baseline is a run of `main`, recorded once and replaced only when `main`'s HDR
+rendering changes. Blocks average small highlights away: the gate sees large bright
+areas and the peak, and the family's factor-8 references remain the test for specular
+detail.
 
 Synthetic gate regressions run in CI without RAWs or Photoshop:
 `python3 -m unittest discover -s scripts/corpus` (numpy and Pillow required).

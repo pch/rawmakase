@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -35,6 +36,24 @@ class HdrValidateTest(unittest.TestCase):
     def test_an_xmp_loses_only_its_camera_profile(self):
         xmp = '<x crs:Exposure2012="1" crs:CameraProfile="Adobe Standard" crs:HDREditMode="1"/>'
         self.assertEqual(hv.without_profile(xmp), '<x crs:Exposure2012="1" crs:HDREditMode="1"/>')
+
+    def test_a_frozen_family_reads_its_stored_arrays_and_dataset_sources(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            family = Path(folder)
+            (family / 'arrays').mkdir()
+            (family / '000').mkdir()
+            linear = np.array([[[0.25, 2.0, 15.5]]])
+            np.savez_compressed(family / 'arrays' / 'a.npz', linear=linear.astype(np.float16))
+            np.save(family / '000' / 'linear-p3.npy', linear)
+            frozen = dict(stored_array='arrays/a.npz')
+            read = hv.load_reference(family, 0, frozen)
+            self.assertEqual(read.dtype, np.float64)
+            np.testing.assert_array_equal(read, linear)  # these values are exact in float16
+            np.testing.assert_array_equal(hv.load_reference(family, 0, {}), linear)
+            self.assertEqual(hv.source({'source': 'raws/x.NEF'}, Path('/data')), '/data/raws/x.NEF')
+            self.assertEqual(hv.source({'source': '/abs/x.NEF'}, Path('/data')), '/abs/x.NEF')
+            self.assertEqual(hv.source({'source': '/abs/x.NEF'}, None), '/abs/x.NEF')
 
 
 if __name__ == '__main__':
