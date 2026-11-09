@@ -54,6 +54,7 @@ pub(crate) struct Editor {
     reference_loader: Latest<worker::ReferenceJob>,
     /// Develop's HDR preview and its worker.
     hdr_preview: crate::app::develop::hdr_preview::HdrPreview,
+    hdr_histogram: crate::app::develop::hdr_histogram::HdrHistograms,
     /// The window's wgpu state this frame, for the HDR preview's texture.
     render_state: Option<eframe::egui_wgpu::RenderState>,
     clipboard: Option<crate::app::develop::settings_transfer::Clipboard>,
@@ -319,6 +320,7 @@ impl Editor {
             reference: Default::default(),
             reference_loader,
             hdr_preview: crate::app::develop::hdr_preview::HdrPreview::new(ctx.clone()),
+            hdr_histogram: crate::app::develop::hdr_histogram::HdrHistograms::new(ctx.clone()),
             render_state: None,
             clipboard: None,
             previous_settings: None,

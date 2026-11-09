@@ -139,6 +139,87 @@ pub struct HdrImage {
     pub peak: f32,
 }
 
+/// Bins per stop in an [`HdrHistogram`]'s section above graphics white.
+pub const HDR_BINS_PER_STOP: usize = 32;
+/// How many stops above graphics white an [`HdrHistogram`] holds: the largest HDR
+/// limit ([`crate::model::hdr::LIMIT_RANGE`]).
+pub const HDR_HISTOGRAM_STOPS: usize = 8;
+const HDR_BINS: usize = HDR_BINS_PER_STOP * HDR_HISTOGRAM_STOPS;
+/// The most a channel of graphics white reaches through a primaries conversion's
+/// rounding: values up to it count as white, not as light above it.
+const WHITE_ROUNDING: f32 = 1.001;
+
+/// An HDR master's histogram, as Lightroom divides it: channels at or below graphics
+/// white by their sRGB-encoded value, as [`Histogram`] bins the SDR rendition, and
+/// channels above it by stops above white. Channels are the master's in linear sRGB
+/// primaries, as the HDR preview shows them; negative values count as 0. Nothing in
+/// it depends on a display: headroom is applied by whoever draws it
+/// ([`HdrHistogram::above`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct HdrHistogram {
+    /// 256 bins per channel from 0 to graphics white, by sRGB-encoded value.
+    pub sdr: [[u32; 256]; 3],
+    /// [`HDR_BINS_PER_STOP`] bins per stop above graphics white, up to
+    /// [`HDR_HISTOGRAM_STOPS`]: bin `i` holds values from 2^(i/32) up to 2^((i+1)/32).
+    pub hdr: [[u32; HDR_BINS]; 3],
+    /// Per channel, the pixels whose encoded value is at or below [`SHADOW_CLIP`], as
+    /// [`Clipped::shadows`].
+    pub shadows: [u32; 3],
+    /// Per ProPhoto channel, the pixels at the HDR limit: at or above
+    /// [`HIGHLIGHT_CLIP`] of [`HdrImage::peak`], where its roll-off flattens them.
+    pub at_limit: [u32; 3],
+    /// The master's HDR limit, in stops above graphics white.
+    pub limit: f32,
+}
+impl HdrHistogram {
+    /// The number of pixels counted.
+    pub fn total(&self) -> u32 {
+        self.sdr[1].iter().sum::<u32>() + self.hdr[1].iter().sum::<u32>()
+    }
+    /// Per channel, the pixels above `stops` over graphics white, to a bin: what a
+    /// display with 2^`stops` of headroom can't show. At 0 stops or less, every pixel
+    /// above white.
+    pub fn above(&self, stops: f32) -> [u32; 3] {
+        let from = (stops.max(0.) * HDR_BINS_PER_STOP as f32).ceil() as usize;
+        self.hdr
+            .map(|bins| bins.get(from..).map_or(0, |b| b.iter().sum()))
+    }
+}
+
+impl HdrImage {
+    /// The master's histogram ([`HdrHistogram`]).
+    pub fn histogram(&self) -> HdrHistogram {
+        let to_srgb = crate::color::hdr_output::HdrGamut::Rec709.prophoto_to_rgb();
+        let mut h = HdrHistogram {
+            sdr: [[0; 256]; 3],
+            hdr: [[0; HDR_BINS]; 3],
+            shadows: [0; 3],
+            at_limit: [0; 3],
+            limit: self.peak.log2(),
+        };
+        let top = HIGHLIGHT_CLIP * self.peak;
+        for p in &self.pixels {
+            for (c, &v) in p.iter().enumerate() {
+                h.at_limit[c] += (v >= top) as u32;
+            }
+            for (c, v) in crate::color::mul(to_srgb, *p).into_iter().enumerate() {
+                let v = if v.is_finite() { v.max(0.) } else { 0. };
+                // Graphics white converts to sRGB primaries a rounding above 1; it
+                // stays white.
+                if v <= WHITE_ROUNDING {
+                    let encoded = crate::color::srgb_encode(v.min(1.));
+                    h.sdr[c][(encoded * 255.) as usize] += 1;
+                    h.shadows[c] += (encoded <= SHADOW_CLIP) as u32;
+                } else {
+                    let bin = (v.log2() * HDR_BINS_PER_STOP as f32) as usize;
+                    h.hdr[c][bin.min(HDR_BINS - 1)] += 1;
+                }
+            }
+        }
+        h
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +282,48 @@ mod tests {
             .shader_flags(),
             3
         );
+    }
+
+    /// Below white the master is binned as the SDR histogram bins its rendition; above
+    /// it by stops, so a display's headroom picks out what it can't show.
+    #[test]
+    fn an_hdr_histogram_bins_light_above_white_in_stops() {
+        let master = HdrImage {
+            width: 5,
+            height: 1,
+            // White, 1 and 2.5 stops above it, the limit's top, and black.
+            pixels: vec![[1.; 3], [2.; 3], [2f32.powf(2.5); 3], [15.99; 3], [0.; 3]],
+            peak: 16.,
+        };
+        let h = master.histogram();
+        assert_eq!(h.total(), 5);
+        assert!((h.limit - 4.).abs() < 1e-6);
+        // Neutrals stay neutral in sRGB primaries, to rounding.
+        for c in 0..3 {
+            assert_eq!(h.sdr[c][255] + h.sdr[c][254], 1, "white, channel {c}");
+            assert_eq!(h.sdr[c][0], 1);
+            assert_eq!(h.shadows[c], 1);
+            assert_eq!(h.hdr[c].iter().sum::<u32>(), 3);
+        }
+        assert_eq!(h.at_limit, [1; 3]);
+        // A display with 2 stops of headroom can't show the two brightest; with 3
+        // stops only the one at the limit; with none, all three above white.
+        assert_eq!(h.above(2.), [2; 3]);
+        assert_eq!(h.above(3.), [1; 3]);
+        assert_eq!(h.above(0.), [3; 3]);
+        assert_eq!(h.above(-1.), [3; 3]);
+        assert_eq!(h.above(8.), [0; 3]);
+        // Light beyond the bins' 8 stops lands in the last; a pixel that isn't a
+        // number counts as black.
+        let bright = HdrImage {
+            width: 2,
+            height: 1,
+            pixels: vec![[1e6; 3], [f32::NAN, 0., -2.]],
+            peak: 256.,
+        }
+        .histogram();
+        assert_eq!(bright.total(), 2);
+        assert_eq!(bright.above(7.9), [1; 3]);
+        assert_eq!(bright.sdr.map(|c| c[0]), [1; 3]);
     }
 }

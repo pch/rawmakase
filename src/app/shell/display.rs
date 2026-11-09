@@ -28,6 +28,16 @@ impl HdrDisplay {
     pub(in crate::app) fn available(&self) -> bool {
         self.float_surface && self.potential > 1.05
     }
+    /// The headroom light above graphics white has on this display now (linear, 1 =
+    /// none): what the histogram and the readout mark as shown. None where HDR can't
+    /// show at all.
+    pub(in crate::app) fn shown_headroom(&self) -> f32 {
+        if self.available() {
+            self.headroom.max(1.)
+        } else {
+            1.
+        }
+    }
     /// The display as the window sees it now.
     pub(in crate::app) fn of(frame: &eframe::Frame) -> Self {
         let float_surface = frame

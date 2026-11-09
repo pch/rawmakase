@@ -7,6 +7,7 @@ pub(in crate::app) mod camera_look;
 pub(in crate::app) mod camera_thumbnail;
 pub(in crate::app) mod clipping;
 pub(in crate::app) mod editing;
+pub(in crate::app) mod hdr_histogram;
 pub(in crate::app) mod hdr_preview;
 pub(in crate::app) mod lensfun;
 #[cfg(test)]

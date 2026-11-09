@@ -21,6 +21,7 @@ pub(in crate::app) enum Kind {
     Renderer,
     ReferenceLoader,
     HdrPreview,
+    HdrHistogram,
     Export,
     Batch,
     FolderChange,
@@ -131,6 +132,16 @@ const WORK: &[Row] = &[
         slows_previews: false,
         pauses_checksums: false,
         stop: Some(|e| vec![e.hdr_preview.stop()]),
+    },
+    // Develop's HDR histogram, on a worker of its own.
+    Row {
+        kind: Kind::HdrHistogram,
+        running: None,
+        closing: None,
+        status: None,
+        slows_previews: false,
+        pauses_checksums: false,
+        stop: Some(|e| vec![e.hdr_histogram.stop()]),
     },
     // Its progress in the bar. Queued exports count, not only the one running.
     Row {
