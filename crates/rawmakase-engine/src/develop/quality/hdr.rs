@@ -92,8 +92,10 @@ fn master(
     let r = resolved.recipe.as_ref();
     let g = resolved.geometry;
     // A region renders with the margin sharpening reads around it, as SDR regions do,
-    // and is cropped to it after.
-    let sigma = Sharpener::new(r).sigma;
+    // and is cropped to it after. Radii are the photo's: a reduced decode sizes them by
+    // its photo scale, as SDR renders do.
+    let scale = im.photo_scale();
+    let sigma = Sharpener::new(r).sigma * scale;
     let halo = if r.sharpening > 0. {
         (3. * sigma).ceil() as u32
     } else {
@@ -107,7 +109,7 @@ fn master(
         (x + w + halo).min(g.width) - left,
         (y + h + halo).min(g.height) - top,
     ];
-    let (toned, tonal_recipe) = local_stage(&source.image, &source, r, 1., cancel, None)?;
+    let (toned, tonal_recipe) = local_stage(&source.image, &source, r, scale, cancel, None)?;
     let srgb = crate::color::OutputSpace::Srgb;
     let (mut out, _) =
         develop::render_base(&toned, &tonal_recipe, &g, base, 0., cancel, None, srgb)?;

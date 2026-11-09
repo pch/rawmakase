@@ -37,12 +37,31 @@ reduced to twice the output size (four times the pixels) and resized it afterwar
 
 Radius-based effects are scaled to the output: sharpening uses the full-resolution
 radius times the output scale (a three-tap kernel of the same variance below half a
-pixel), Clarity and Texture radii follow the level size, and grain keeps its
-full-resolution pattern with the amplitude a resized export would have. Fit is
+pixel), Texture radii follow the level size, Clarity's are fractions of the
+Shadows/Highlights map whatever the level, and grain keeps its full-resolution
+pattern with the amplitude a resized export would have. Fit is
 therefore an approximation of the export resized, not identical to it; a unit test
 bounds the mean difference on a textured image with sharpening, local and spatial
-effects, and the benchmark checks each photo. 100% regions and exports are
-unchanged.
+effects, and the benchmark checks each photo. The pyramid leaves 100% regions and
+exports as they were.
+
+"Full-resolution" is the photo's. A reduced decode (the half-size draft, which keeps
+the photo's metadata; `CameraImage::photo_scale`) sharpens and grains as its photo
+resized, in Fit, whole renders and 100% regions alike. Before 2026-11-07 it was
+sharpened as if it were the photo, at about twice the radius, with grain about 2.4
+times too strong. Exports never render one: they decode the photo in full.
+
+Its noise reduction works at the photo's scales too. Each pyramid level of a reduced
+decode shows the photo's level `−log₂(photo_scale)` further on (about one for a
+half-size draft, 1.2 for 2560 pixels of a 6000-pixel photo): it takes the photo's
+settings there, interpolated between two levels, and a level that straddles the
+start of the photo's unfiltered residual is filtered in proportion to its part
+before it. The thresholds still follow the noise measured in the decode itself.
+Before 2026-11-07 a half-size draft was filtered as if its pixels were the photo's:
+colour noise reduction gave the photo's second level the thresholds of its finest,
+and both filtered one level coarser than the photo's last. A unit test compares the
+share of noise kept at each scale with the photo's denoised and resized ([rendering
+quality](rendering-quality.md#noise-reduction-on-a-reduced-decode)).
 
 `examples/preview_benchmark`, release build, Apple M1 Pro, 1600-pixel Fit, median of
 three exposure changes after a warm-up. "Local" adds Shadows +40, Highlights −30
@@ -490,6 +509,9 @@ the stored preview scaled to the Fit and the live Fit, in 8-bit sRGB on a 0–1 
 | Building it from the full decode instead | 3.9 s | 8.5 s |
 | Handoff difference, half-size build | 0.0038 | 0.0173 |
 | Handoff difference, full-decode build | 0.0036 | 0.0164 |
+
+These were measured before half-size builds sharpened, grained and reduced noise at
+their photo's scale (2026-11-07), and have not been measured again since.
 
 The stored preview is therefore on screen within about 20 ms on both cameras,
 against 0.3–2 s for the first render. On the A7CR it also arrives well before the
