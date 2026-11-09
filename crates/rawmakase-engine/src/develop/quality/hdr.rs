@@ -783,24 +783,22 @@ mod tests {
         let mut r = hdr_recipe(&im);
         assert!(!supported(&r), "the SDR rendition's port has HDR off");
         assert!(supported_hdr(&r, &im.metadata));
-        // Contrast and the tone curves render on the GPU; Texture and the colour stage
-        // leave the master to the CPU.
-        let on_the_gpu: [fn(&mut Recipe); 4] = [
+        // Contrast, the tone curves and the colour stage render on the GPU; Texture
+        // leaves the master to the CPU.
+        let on_the_gpu: [fn(&mut Recipe); 6] = [
             |r| r.contrast = 0.2,
             |r| r.white_point = 0.9,
             |r| r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]],
             |r| r.effects.parametric[0] = 0.3,
+            |r| r.saturation = 0.2,
+            |r| r.effects.monochrome = true,
         ];
         for (i, set) in on_the_gpu.iter().enumerate() {
             let mut edited = r.clone();
             set(&mut edited);
             assert!(supported_hdr(&edited, &im.metadata), "GPU case {i}");
         }
-        let on_the_cpu: [fn(&mut Recipe); 3] = [
-            |r| r.saturation = 0.2,
-            |r| r.effects.monochrome = true,
-            |r| r.effects.texture = 0.3,
-        ];
+        let on_the_cpu: [fn(&mut Recipe); 1] = [|r| r.effects.texture = 0.3];
         for (i, set) in on_the_cpu.iter().enumerate() {
             let mut edited = r.clone();
             set(&mut edited);

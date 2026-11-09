@@ -2016,7 +2016,30 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
     together.contrast = 0.35;
     together.effects.parametric = parametric.effects.parametric;
     (together.black_point, together.white_point, together.midtone) = (0.02, 1., 0.9);
+    // The colour stage: Saturation up and fading to gray, Vibrance, the colour mixer's
+    // hue and saturation bands, and black & white.
+    let mut bands = base.clone();
+    bands.hsl[0] = [0.4, 0.5, 0.];
+    bands.hsl[4] = [-0.3, -0.6, 0.];
+    let mut mono = base.clone();
+    mono.effects.monochrome = true;
+    mono.effects.gray_mix = [0.3, -0.7, 0.1, 0.2, -0.2, 0.9, 0., -0.4];
     let variants = variants.into_iter().chain([
+        Recipe {
+            saturation: 0.4,
+            ..base.clone()
+        },
+        Recipe {
+            saturation: -0.8,
+            vibrance: 0.3,
+            ..base.clone()
+        },
+        Recipe {
+            vibrance: 0.6,
+            ..base.clone()
+        },
+        bands,
+        mono,
         Recipe {
             contrast: 0.45,
             ..base.clone()
@@ -2094,7 +2117,23 @@ fn gpu_develop_matches_cpu_hdr_master() -> Result<()> {
             .copied()
             .fold(0f32, f32::max);
         assert!(top > 2., "recipe {i}: the master reaches {top}");
-        let (max, p999, mean) = hdr_differences(&actual.pixels, &expected.pixels);
+        // A neutral colour's hue is undefined: under the colour stage both renders give
+        // its float noise a hue, each its own, and the grids change value with hue even
+        // at no saturation. Its pixels are left out of those recipes' comparison.
+        let colour = recipe.saturation != 0.
+            || recipe.vibrance != 0.
+            || recipe.hsl.iter().flatten().any(|v| *v != 0.)
+            || recipe.effects.monochrome;
+        let compared = |pixels: &[[f32; 3]]| -> Vec<[f32; 3]> {
+            pixels
+                .iter()
+                .zip(&samples.pixels)
+                .filter(|(_, s)| !colour || s[0] != s[1] || s[1] != s[2])
+                .map(|(p, _)| *p)
+                .collect()
+        };
+        let (max, p999, mean) =
+            hdr_differences(&compared(&actual.pixels), &compared(&expected.pixels));
         eprintln!("recipe {i}: max {max:.6}, 99.9% {p999:.6}, mean {mean:.8}");
         assert!(
             p999 < 2e-3 && max < 1e-2 && mean < 2e-4,
@@ -2211,11 +2250,26 @@ fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
                     .collect();
                 let top = wanted.iter().flatten().copied().fold(0f32, f32::max);
                 assert!(top > 1.2, "recipe {i}: shown up to {top}");
+                // As in the pixel stage's test: under the colour stage, a neutral colour's
+                // undefined hue is left out.
+                let colour = recipe.saturation != 0.
+                    || recipe.vibrance != 0.
+                    || recipe.hsl.iter().flatten().any(|v| *v != 0.)
+                    || recipe.effects.monochrome;
+                let [ox, oy, ..] = region.unwrap_or([0; 4]);
+                let neutral = |k: usize| {
+                    let (x, y) = (k as u32 % expected.width, k as u32 / expected.width);
+                    let s = image.pixels[((y + oy) * image.width + x + ox) as usize];
+                    s[0] == s[1] && s[1] == s[2]
+                };
                 let d: Vec<f32> = actual
                     .iter()
-                    .flatten()
-                    .zip(wanted.iter().flatten())
-                    .map(|(a, b)| (a - b).abs() / b.abs().max(0.05))
+                    .zip(&wanted)
+                    .enumerate()
+                    .filter(|(k, _)| !colour || !neutral(*k))
+                    .flat_map(|(_, (a, b))| {
+                        (0..3).map(move |c| (a[c] - b[c]).abs() / b[c].abs().max(0.05))
+                    })
                     .collect();
                 let mut sorted = d.clone();
                 sorted.sort_by(f32::total_cmp);
@@ -2254,12 +2308,10 @@ fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
     // A master the port doesn't render, and an SDR edit, are left to the CPU.
     let mut sdr = recipes[0].clone();
     sdr.hdr.enabled = false;
-    // Saturation is the colour stage, which the port leaves to the CPU.
-    let saturated = Recipe {
-        saturation: 0.3,
-        ..recipes[0].clone()
-    };
-    for recipe in [sdr, saturated] {
+    // Texture's image is made on the CPU, which the port leaves the master to.
+    let mut textured = recipes[0].clone();
+    textured.effects.texture = 0.3;
+    for recipe in [sdr, textured] {
         let none = renderer.render_hdr_to(
             &image,
             &recipe,
