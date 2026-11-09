@@ -19,6 +19,11 @@
 //! composited over black, as CoreGraphics premultiplies it; photos rarely
 //! have any.
 //!
+//! A gain map ([`super::Map`]) is decoded with the image, from the same source:
+//! ImageIO's auxiliary data of its kind (`kCGImageAuxiliaryDataTypeISOGainMap` or
+//! `HDRGainMap`), a bitmap of 8-bit grey or RGB samples in the image's stored frame,
+//! which is turned as the image is.
+//!
 //! The image ImageIO makes is not turned (RAWmakase turns it by the header's
 //! `irot` and `imir`); whether it is cropped by the `clap` or not, the caller
 //! crops what it was not. It all runs in an autorelease pool, so nothing the
@@ -32,13 +37,14 @@
 //! shows the background, and is an error. An image transparent everywhere
 //! shows the background too, so one with alpha that shows nothing is taken
 //! as drawn when its decoded pixels are there to read.
-use super::super::heif;
-use super::{HeicFile, Pixels};
+use super::super::{Unsupported, gain_map, heif};
+use super::{HeicFile, Map, MapKind, Pixels};
 use anyhow::{Result, anyhow, ensure};
 use moxcms::{ColorProfile, DataColorSpace};
 use objc2::rc::autoreleasepool;
 use objc2_core_foundation::{
-    CFBoolean, CFData, CFDictionary, CFRetained, CFString, CGPoint, CGRect, CGSize, kCFBooleanTrue,
+    CFBoolean, CFData, CFDictionary, CFNumber, CFRetained, CFString, CFType, CGPoint, CGRect,
+    CGSize, kCFBooleanTrue,
 };
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColorSpace, CGColorSpaceModel, CGContext, CGDataProvider, CGImage,
@@ -46,7 +52,12 @@ use objc2_core_graphics::{
     kCGColorSpaceDisplayP3_PQ, kCGColorSpaceITUR_709_HLG, kCGColorSpaceITUR_709_PQ,
     kCGColorSpaceITUR_2100_HLG, kCGColorSpaceITUR_2100_PQ, kCGColorSpaceSRGB,
 };
-use objc2_image_io::{CGImageSource, CGImageSourceStatus, kCGImageSourceShouldCacheImmediately};
+use objc2_image_io::{
+    CGImageSource, CGImageSourceStatus, kCGImageAuxiliaryDataInfoData,
+    kCGImageAuxiliaryDataInfoDataDescription, kCGImageAuxiliaryDataTypeHDRGainMap,
+    kCGImageAuxiliaryDataTypeISOGainMap, kCGImagePropertyBytesPerRow, kCGImagePropertyHeight,
+    kCGImagePropertyPixelFormat, kCGImagePropertyWidth, kCGImageSourceShouldCacheImmediately,
+};
 
 pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
     // Read through the file the header was read from, not opened again by
@@ -192,6 +203,11 @@ fn decode(file: &HeicFile, bytes: &[u8]) -> Result<Pixels> {
     let image =
         unsafe { source.image_at_index(index, Some(options.as_ref())) }.ok_or_else(failed)?;
     ensure!(drawn(&image)?, "macOS could not decode the HEIF image");
+    if let Ok(Some(map)) = &file.map {
+        let _ = map
+            .decoded
+            .set(gain_map(&source, index, map, file.orientation));
+    }
     let (width, height) = (CGImage::width(Some(&image)), CGImage::height(Some(&image)));
     ensure!(
         file.expects(u32::try_from(width)?, u32::try_from(height)?),
@@ -240,4 +256,103 @@ fn decode(file: &HeicFile, bytes: &[u8]) -> Result<Pixels> {
         height: u32::try_from(height)?,
         rgb,
     })
+}
+
+/// The gain map `map` of image `index` of `source`, from ImageIO's auxiliary data of
+/// its kind: a bitmap of `Width` × `Height` samples, `BytesPerRow` apart, in 8-bit grey
+/// (`L008`) or RGB (`24RG`, `RGBA`, `BGRA`), its header's size, then turned by the
+/// image's `orientation`. Anything else is [`gain_map::damaged`].
+fn gain_map(
+    source: &CGImageSource,
+    index: usize,
+    map: &Map,
+    orientation: image::metadata::Orientation,
+) -> std::result::Result<gain_map::Samples, Unsupported> {
+    let damaged = gain_map::damaged;
+    // SAFETY: constants ImageIO defines.
+    let kind = unsafe {
+        match map.kind {
+            MapKind::Iso(_) => kCGImageAuxiliaryDataTypeISOGainMap,
+            MapKind::Apple { .. } => kCGImageAuxiliaryDataTypeHDRGainMap,
+        }
+    };
+    // SAFETY: the index is the source's own, the type an ImageIO constant.
+    let info = unsafe { source.auxiliary_data_info_at_index(index, kind) }.ok_or_else(damaged)?;
+    // SAFETY: ImageIO's auxiliary data info is a dictionary keyed by strings.
+    let info: &CFDictionary<CFString, CFType> = unsafe { info.cast_unchecked() };
+    // SAFETY: constants ImageIO defines.
+    let (data_key, description_key) = unsafe {
+        (
+            kCGImageAuxiliaryDataInfoData,
+            kCGImageAuxiliaryDataInfoDataDescription,
+        )
+    };
+    let data = info
+        .get(data_key)
+        .and_then(|d| d.downcast::<CFData>().ok())
+        .ok_or_else(damaged)?
+        .to_vec();
+    let description = info
+        .get(description_key)
+        .and_then(|d| d.downcast::<CFDictionary>().ok())
+        .ok_or_else(damaged)?;
+    // SAFETY: a description is a dictionary keyed by strings.
+    let description: &CFDictionary<CFString, CFType> = unsafe { description.cast_unchecked() };
+    let number = |key: &CFString| -> std::result::Result<usize, Unsupported> {
+        description
+            .get(key)
+            .and_then(|n| n.downcast::<CFNumber>().ok())
+            .and_then(|n| n.as_i64())
+            .and_then(|n| usize::try_from(n).ok())
+            .ok_or_else(damaged)
+    };
+    // SAFETY: constants ImageIO defines.
+    let (width, height, row, format) = unsafe {
+        (
+            number(kCGImagePropertyWidth)?,
+            number(kCGImagePropertyHeight)?,
+            number(kCGImagePropertyBytesPerRow)?,
+            number(kCGImagePropertyPixelFormat)?,
+        )
+    };
+    if (u32::try_from(width).ok(), u32::try_from(height).ok())
+        != (Some(map.size.0), Some(map.size.1))
+    {
+        return Err(damaged());
+    }
+    // A pixel's bytes, and where its red, green and blue are.
+    let (bytes, rgb): (usize, Option<[usize; 3]>) = match &(format as u32).to_be_bytes() {
+        b"L008" => (1, None),
+        [0, 0, 0, 0x18] => (3, Some([0, 1, 2])),
+        b"RGBA" => (4, Some([0, 1, 2])),
+        b"BGRA" => (4, Some([2, 1, 0])),
+        _ => return Err(damaged()),
+    };
+    let used = width.checked_mul(bytes).ok_or_else(damaged)?;
+    let needed = row
+        .checked_mul(height - 1)
+        .and_then(|n| n.checked_add(used));
+    if row < used || needed.is_none_or(|n| n > data.len()) {
+        return Err(damaged());
+    }
+    let rows = (0..height).flat_map(|y| &data[y * row..y * row + used]);
+    let (w, h) = (map.size.0, map.size.1);
+    let mut image = match rgb {
+        None => image::DynamicImage::ImageLuma8(
+            image::GrayImage::from_raw(w, h, rows.copied().collect()).ok_or_else(damaged)?,
+        ),
+        Some(at) => {
+            let pixels: Vec<u8> = rows
+                .copied()
+                .collect::<Vec<u8>>()
+                .chunks_exact(bytes)
+                .flat_map(|p| at.map(|i| p[i]))
+                .collect();
+            image::DynamicImage::ImageRgb8(
+                image::RgbImage::from_raw(w, h, pixels).ok_or_else(damaged)?,
+            )
+        }
+    };
+    image.apply_orientation(orientation);
+    Ok(gain_map::Samples::from_image(image))
 }

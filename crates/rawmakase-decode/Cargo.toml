@@ -54,7 +54,7 @@ tempfile.workspace = true
 objc2.workspace = true
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes", "CFData", "CFDictionary", "CFNumber"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGBitmapContext", "CGColorSpace", "CGContext", "CGDataProvider", "CGImage"] }
-objc2-image-io = { version = "0.3", default-features = false, features = ["std", "CGImageSource", "objc2-core-graphics"] }
+objc2-image-io = { version = "0.3", default-features = false, features = ["std", "CGImageProperties", "CGImageSource", "objc2-core-graphics"] }
 
 # Background threads' scheduling priority (raw::spawn_background).
 [target.'cfg(target_os = "linux")'.dependencies]

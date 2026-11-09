@@ -278,6 +278,9 @@ decisions this increment made:
    as in the first increment, whatever map it carries.
 7. **Provenance.** `HdrSource::gain_map` records that the light came from a map;
    `transfer` is `Linear` for these files.
+8. **HEIC maps, on macOS.** A later increment reads a HEIC's ISO 21496-1 `tmap` and
+   Apple's own map, decoded by ImageIO with the image, on this same contract; Apple's
+   by the formula of its documentation ([HEIC gain maps](../hdr.md#heic-gain-maps)).
 
 ## Decisions on revision 1's open questions
 
