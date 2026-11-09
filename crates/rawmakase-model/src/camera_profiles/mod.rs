@@ -776,6 +776,35 @@ impl CameraProfile {
         self.dynamic_range = DynamicRange::High;
         self
     }
+    /// This profile with linearly encoded 3D hue/saturation tables and a 3D look table,
+    /// which an HDR profile looks up on overrange-encoded values, for GPU tests. As in
+    /// real profiles, the tables change nothing at no saturation, where a near-neutral
+    /// colour's hue is undefined.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_test_hdr_tables(mut self) -> Self {
+        let table = |dims: [usize; 3], seed: f32| Table {
+            dims,
+            data: (0..dims.iter().product::<usize>())
+                .map(|i| {
+                    let f = i as f32 * 0.37 + seed;
+                    // The saturation division, 0 to 1 (`Table::lookup`'s layout).
+                    let s = (i % dims[1]) as f32 / (dims[1] - 1) as f32;
+                    [
+                        f.sin() * 8. * s,
+                        1. + 0.15 * f.cos() * s,
+                        1. + 0.08 * (f * 1.7).sin() * s,
+                    ]
+                })
+                .collect(),
+            srgb: false,
+        };
+        self.hue1 = Some(table([90, 30, 8], 0.));
+        self.hue2 = Some(table([90, 30, 8], 1.));
+        self.kelvin1 = 2856.;
+        self.kelvin2 = 6504.;
+        self.look = Some(table([36, 8, 16], 2.));
+        self
+    }
     /// A profile with hue/saturation, look and enhanced-look tables for GPU tests.
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_test_tables(mut self) -> Self {

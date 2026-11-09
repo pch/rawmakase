@@ -747,8 +747,9 @@ mod tests {
         Ok(())
     }
 
-    /// The GPU port's SDR rendition has HDR off; its master preview covers ordinary
-    /// profiles alone, and neither renders an HDR profile's tables or an HDR file.
+    /// The GPU port's SDR rendition has HDR off and leaves an HDR profile to the CPU;
+    /// its master preview covers ordinary and HDR profiles and looks, up to the
+    /// profile's finish, and leaves an HDR file to the CPU.
     #[test]
     fn the_gpu_port_renders_masters_of_ordinary_profiles_only() {
         use crate::develop::pipeline::pixel_params::{supported, supported_hdr};
@@ -787,8 +788,8 @@ mod tests {
         );
         r.hdr.enabled = true;
         assert!(
-            !supported_hdr(&r, &im.metadata),
-            "an HDR profile's master renders on the CPU"
+            supported_hdr(&r, &im.metadata),
+            "an HDR profile's master renders on the GPU"
         );
         let mut looked = hdr_recipe(&im);
         let profile = looked.profile.as_deref().unwrap().clone();
@@ -798,8 +799,8 @@ mod tests {
             &[[0., 0.], [1., 1.]],
         )));
         assert!(
-            !supported_hdr(&looked, &im.metadata),
-            "a look's master renders on the CPU"
+            supported_hdr(&looked, &im.metadata),
+            "a look's master renders on the GPU"
         );
         let file = hdr_file(2, 2, |_, _| [2.; 3]);
         let r = Recipe::for_new_rendered(&file.metadata);
