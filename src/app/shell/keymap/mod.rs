@@ -69,13 +69,6 @@ pub(in crate::app) struct Default {
     pub repeats: bool,
     pub platform: Platform,
     /// Whether the reference card shows this chord.
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "Preferences and the generated card read it (#963)"
-        )
-    )]
     pub card: bool,
 }
 
@@ -145,13 +138,6 @@ impl Default {
         self.keys.iter().map(|k| Chord::new(*k, self.mods))
     }
     /// The chord as the reference card writes it ("Cmd+Shift+E"): its first key's.
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "Preferences and the generated card read it (#963)"
-        )
-    )]
     pub(in crate::app) fn label(&self) -> String {
         self.chords()
             .next()
@@ -247,10 +233,6 @@ pub(in crate::app) enum PerFrame {
 pub(in crate::app) struct Binding {
     /// The command's id in [`crate::app::shell::commands::registry::COMMANDS`].
     pub command: &'static str,
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "conflicts and Preferences read it (#963)")
-    )]
     pub context: Context,
     /// Tried in order: the first chord with a press not yet taken wins, as a
     /// chain of `consume_key` calls tries its patterns.

@@ -11,13 +11,6 @@ use crate::app::shell::keymap::{Binding, Context, Default, Mods, Tool};
 use eframe::egui::Key;
 
 /// A command: its id and what it does.
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "Preferences > Shortcuts and the generated card read the commands (#963)"
-    )
-)]
 pub(in crate::app) struct Command {
     pub id: &'static str,
     /// What it does, for Preferences and for a message naming it.
@@ -27,13 +20,6 @@ pub(in crate::app) struct Command {
     pub rebindable: bool,
 }
 
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "Preferences > Shortcuts and the generated card read the commands (#963)"
-    )
-)]
 const fn command(id: &'static str, title: &'static str) -> Command {
     Command {
         id,
@@ -41,13 +27,6 @@ const fn command(id: &'static str, title: &'static str) -> Command {
         rebindable: true,
     }
 }
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "Preferences > Shortcuts and the generated card read the commands (#963)"
-    )
-)]
 const fn fixed(id: &'static str, title: &'static str) -> Command {
     Command {
         id,
@@ -56,13 +35,6 @@ const fn fixed(id: &'static str, title: &'static str) -> Command {
     }
 }
 
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "Preferences > Shortcuts and the generated card read the commands (#963)"
-    )
-)]
 pub(in crate::app) static COMMANDS: &[Command] = &[
     // The automation and MIDI actions (`Action::NAMED`), in their order.
     fixed("undo", "Undo"),
@@ -235,13 +207,6 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
 ];
 
 /// The command `id` names.
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "Preferences > Shortcuts and the generated card read the commands (#963)"
-    )
-)]
 pub(in crate::app) fn command_by_id(id: &str) -> Option<&'static Command> {
     COMMANDS.iter().find(|c| c.id == id)
 }

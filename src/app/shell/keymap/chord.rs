@@ -77,13 +77,6 @@ pub(in crate::app) struct Chord {
 }
 
 /// Why a chord's text doesn't read.
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "the key map file and Preferences read chords (#963)"
-    )
-)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::app) enum ChordError {
     /// Nothing, or a modifier with no key after it ("Cmd+").
@@ -121,13 +114,6 @@ impl Chord {
     /// Reads a chord's text: the modifiers in any order, each once, then the
     /// key. Modifier names don't depend on case; `Command`, `Control` and
     /// `Option` are read as well.
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "the key map file and Preferences read chords (#963)"
-        )
-    )]
     pub(in crate::app) fn parse(text: &str) -> Result<Self, ChordError> {
         let text = text.trim();
         // The `+` key ends a chord as `++`, or is the whole of it.
@@ -214,13 +200,6 @@ fn key_text(key: Key) -> &'static str {
     }
 }
 
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "the key map file and Preferences read chords (#963)"
-    )
-)]
 fn key_from_text(text: &str) -> Option<Key> {
     match text {
         "Page Up" => return Some(Key::PageUp),
@@ -239,13 +218,6 @@ fn key_from_text(text: &str) -> Option<Key> {
     })
 }
 
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "the key map file and Preferences read chords (#963)"
-    )
-)]
 fn modifier_from_text(text: &str) -> Option<Mods> {
     Some(match text.to_ascii_lowercase().as_str() {
         "cmd" | "command" => Mods::CMD,
