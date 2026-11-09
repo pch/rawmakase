@@ -112,7 +112,14 @@ pub(crate) fn gray_grid(mix: [f32; 8]) -> Vec<[f32; 3]> {
 
 /// The gray a color (linear display RGB) becomes under `grid`, as linear luminance.
 pub(crate) fn gray(grid: &[[f32; 3]], rgb: [f32; 3]) -> f32 {
-    let scaled = super::color_mixer::tables(grid, rgb.map(|v| v.max(0.)));
+    gray_in(grid, rgb, super::color_mixer::Lookup::Sdr)
+}
+
+/// [`gray`], looked up as `lookup` says: an HDR master's gray is unclipped above white,
+/// and the mix's factor is the one at [`super::color_mixer::HDR_VALUE`] there, as Camera
+/// Raw 18.7 renders it (docs/hdr.md#the-colour-stage).
+pub(crate) fn gray_in(grid: &[[f32; 3]], rgb: [f32; 3], lookup: super::color_mixer::Lookup) -> f32 {
+    let scaled = super::color_mixer::tables_in(grid, rgb.map(|v| v.max(0.)), lookup);
     (crate::color::luminance(scaled)).max(0.)
 }
 

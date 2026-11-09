@@ -114,7 +114,37 @@ pub(crate) struct ColorMixer {
     /// The other sliders' grid, whose result gives the gray its luminance while
     /// colors fade; `None` when they are all at 0 and the color's own is used.
     pub(crate) gray_source: Option<Vec<[f32; 3]>>,
+    /// An HDR master's: the part of `delta`'s and `gray_source`'s log2 value factors
+    /// that Vibrance makes, which Camera Raw applies below white only
+    /// ([`Lookup::Hdr`]). `None` for every other render.
+    hdr: Option<[Vec<f32>; 2]>,
 }
+
+/// How a render looks a color up in a grid.
+#[derive(Clone, Copy)]
+pub(crate) enum Lookup<'a> {
+    /// At the color's own value, clamped to 1: the grids' measured domain.
+    Sdr,
+    /// An HDR master's, as Camera Raw 18.7 renders HDR (docs/hdr.md#the-colour-stage):
+    /// hue, saturation and value changes looked up at the color's value up to
+    /// [`HDR_VALUE`], and the same change above it, so a color keeps them at any
+    /// brightness. The value factors Vibrance makes (the slice, one log2 factor per
+    /// cell) are looked up at the color's own value and fade out from [`HDR_FADE`] to
+    /// graphics white. Band Luminance is not rendered in HDR
+    /// (`model::hdr::check_recipe`).
+    Hdr(Option<&'a [f32]>),
+}
+
+/// The value up to which an HDR master looks up the grids at the color's own value.
+/// Camera Raw's SDR renders, on which the grids were fitted, roll off from about 0.5;
+/// its HDR renders keep the low-value response at every brightness (Saturation +100
+/// scales saturation by 1.73 to 1.74 from 0.125 to 8 times white).
+pub(crate) const HDR_VALUE: f32 = 0.2;
+/// The value from which an HDR master's Vibrance value factors fade, linearly, to
+/// none at graphics white. Camera Raw's HDR renders apply them in full at 0.5 and not
+/// from white up (Vibrance +100: value ×1.06 at 0.5, ×1.01 at 1 to 8 on colours of
+/// saturation 0.3).
+pub(crate) const HDR_FADE: f32 = 0.5;
 impl ColorMixer {
     pub(crate) fn new(r: &Recipe) -> Option<Self> {
         debug_assert_eq!(CHART.len(), TABLES * TABLE * 2);
@@ -155,33 +185,72 @@ impl ColorMixer {
         };
         let gray_source = (saturation_gray > 0. && (!others.is_empty() || chart_vibrance))
             .then(|| with_vibrance(grid(&others)));
+        // Vibrance's value factors, which fade above white.
+        let fading = |active: &[(usize, f32)]| {
+            let vibrance: Vec<_> = active
+                .iter()
+                .copied()
+                .filter(|(t, _)| *t == 50 || *t == 51)
+                .collect();
+            let mut g = grid(&vibrance);
+            if chart_vibrance {
+                add_vibrance(&mut g, r.vibrance);
+            }
+            g.into_iter().map(|d| d[2]).collect::<Vec<_>>()
+        };
+        let hdr = r
+            .hdr
+            .is_active()
+            .then(|| [fading(&active), fading(&others)]);
         Some(Self {
             delta: with_vibrance(grid(&active)),
             saturation_gray,
             gray_source,
+            hdr,
         })
     }
 
-    /// `rgb` is linear display RGB (sRGB primaries).
+    /// `rgb` is linear display RGB (sRGB primaries); above white in an HDR master.
     pub(crate) fn apply(&self, rgb: [f32; 3]) -> [f32; 3] {
-        let mixed = tables(&self.delta, rgb);
+        let lookup = |i: usize| match &self.hdr {
+            Some(fading) => Lookup::Hdr(Some(&fading[i])),
+            None => Lookup::Sdr,
+        };
+        let mixed = tables_in(&self.delta, rgb, lookup(0));
         if self.saturation_gray == 0. {
             return mixed;
         }
         // Camera Raw's −100 keeps the luminance the color has without Saturation.
-        let source = self.gray_source.as_ref().map_or(rgb, |g| tables(g, rgb));
+        let source = self
+            .gray_source
+            .as_ref()
+            .map_or(rgb, |g| tables_in(g, rgb, lookup(1)));
         let y = crate::color::luminance(source);
         mixed.map(|v| v + self.saturation_gray * (y - v))
     }
 }
 
-/// `rgb` (linear display RGB) through a grid of changes.
-pub(crate) fn tables(delta: &[[f32; 3]], rgb: [f32; 3]) -> [f32; 3] {
+/// `rgb` (linear display RGB) through a grid of changes, looked up as `lookup` says.
+pub(crate) fn tables_in(delta: &[[f32; 3]], rgb: [f32; 3], lookup: Lookup) -> [f32; 3] {
     let p = mul(crate::camera_profiles::RGB_TO_PRO, rgb).map(|v| v.max(0.));
     let Some([h, s, max]) = hsv(p) else {
         return rgb;
     };
-    let [dh, ds, dv] = lookup_with(h, s, max, |cell| delta[cell]);
+    let [dh, ds, dv] = match lookup {
+        Lookup::Sdr => lookup_with(h, s, max, |cell| delta[cell]),
+        Lookup::Hdr(fading) => {
+            let [dh, ds, dv] = lookup_with(h, s, max.min(HDR_VALUE), |cell| delta[cell]);
+            let dv = match fading {
+                Some(f) => {
+                    let one = |at: f32| lookup_with(h, s, at, |cell| [0., 0., f[cell]])[2];
+                    let fade = ((1. - max) / (1. - HDR_FADE)).clamp(0., 1.);
+                    dv - one(max.min(HDR_VALUE)) + fade * one(max)
+                }
+                None => dv,
+            };
+            [dh, ds, dv]
+        }
+    };
     let h = (h + dh).rem_euclid(1.) * 6.;
     let s = (s * ds.exp2()).clamp(0., 1.);
     let v = max * dv.exp2();

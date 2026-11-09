@@ -445,6 +445,109 @@ compared by luminance in 8× linear blocks:
   HDR-off render, a median 0.2 stop from Camera Raw's on this photo; gain-map exports
   carry it as their base.
 
+### Colour stage
+
+Measured with Camera Raw 18.7 on synthetic colour patches through `probe_dng.py`
+(12 hues, HSV saturations 0.3, 0.6 and 0.9 and a gray, at 0.125 to 8 times white,
+and densely from 0.2 to 3; a linear profile and the ACR3 curve; HDR limit 8 and SDR),
+with each control at its extremes: Saturation and Vibrance ±50 and ±100, every
+band's Hue, Saturation and Luminance at ±100 (and single bands), Calibration's
+primaries and Shadows tint, and Black & White with a zero and a strong mix.
+Camera Raw renders Saturation −100 and Black & White in SDR as grayscale
+documents, which the harness doesn't read, so those were captured in HDR only.
+
+- **Below 0.25 the HDR and SDR renders agree** for every control (median ΔE_ITP
+  0.04–0.3, the default's 0.22). From 0.5 up, SDR rolls off what the controls
+  brighten (stage 1's 0.074-stop gap between 0.5 and white), so the two differ:
+  Saturation +100 at 0.5, ΔE_ITP 8–27.
+- **Hue and saturation changes don't depend on brightness in HDR.** Saturation +100
+  multiplies HSV saturation by 1.73 (saturation 0.3) at 0.125 and 1.74 at 8 times
+  white, and value by 1.15 at all of them; its SDR render gives 1.78 and 1.13 at 0.5.
+  The colour mixer's grids were fitted on SDR renders and carry the roll-off in
+  their top values. Looking them up at the colour's value only up to 0.2 and at 0.2
+  above it (`color_mixer::HDR_VALUE`; 0.15–0.3 score alike) halves the error above
+  white: Saturation +100 32–35 → 16–17 median ΔE_ITP, the colour mixer's Saturation
+  +100 31–35 → 13–15, Vibrance +100 25 → 8, Saturation −50 6 → 2, Hue ±100 3.5 → 3.4.
+  These match the grids' own error at low values (12, 10, 7.7, 1.7 and 2.6), which
+  is SDR's.
+- **Vibrance's value change applies below white only:** ×1.06–1.09 at 0.125–0.5,
+  ×1.01 from 1 up. It fades from 0.5 to white (`color_mixer::HDR_FADE`; where the
+  fade starts and ends changes the error by less than 0.3).
+- **The colour mixer's Luminance is not a gain above white.** Luminance +100 of every
+  band: value ×1.67 at 0.5 and ×1.00 at 1, 2, 4 and 8, but a colour at white turns
+  almost gray (saturation ×0.06) and one at twice white loses a little saturation;
+  Camera Raw changes the channels below about white and not the ones above. No
+  lookup or fade rule fitted it: through the ACR3 curve the best left 30–60 median
+  ΔE_ITP between 0.4 and 1.25 times white (the SDR grids' error at 0.2: 12–28).
+  **Decision: band Luminance stays refused in HDR.**
+- **Black & White:** the mix's gray with the same lookup, unclipped above white: a
+  strong mix 12.7 → 5.5 above white (4.8 at 0.125), a zero mix 3.2 → 0.9.
+- **Calibration renders as in SDR** with no change: its matrix works on scene colour
+  before Exposure, and Shadows tint fades out below white. Hue +100 of red 1.3,
+  saturation −100 0.7, a mix 6.0 above white (SDR 1.0, 0.5, 4.9).
+
+The rendered values match a Python port of the rule to ΔE_ITP 0.8.
+
+**Photos.** Saturation +30 and −40, Vibrance +40, a colour mixer edit (Red Hue +15,
+Orange Saturation +30, Green Saturation −40, Blue Hue −20 and Saturation +25),
+Calibration (Red Hue +20, Green Saturation −15, Blue Saturation +30) and Black &
+White (the gray ramp's Auto mix), Adobe Standard, HDR limit 4, on the twelve photos
+of [Validation](#validation):
+
+| Setting (split) | Photos | Above white, median / p95 (worst) | Peak (worst) | ΔE_ITP mean / p95 (worst) |
+| --- | --- | --- | --- | --- |
+| Default (validation) | 5 | 0.061 / 0.131 | +0.108 | 2.9 / 7.0 |
+| Saturation +30 (validation) | 5 | 0.068 / 0.138 | +0.110 | 5.3 / 14.8 |
+| Saturation −40 (validation) | 5 | 0.058 / 0.125 | +0.104 | 1.9 / 5.1 |
+| Vibrance +40 (validation) | 5 | 0.064 / 0.121 | +0.107 | 3.8 / 9.3 |
+| Colour mixer (validation) | 5 | 0.061 / 0.151 | +0.107 | 3.0 / 7.1 |
+| Calibration (validation) | 5 | 0.060 / 0.121 | +0.108 | 3.3 / 7.7 |
+| Black & White (validation) | 5 | 0.079 / 0.183 | +0.103 | 3.0 / 14.4 |
+| Default (holdout) | 3 | 0.045 / 0.061 | +0.082 | 4.0 / 8.2 |
+| Saturation +30 (holdout) | 3 | 0.041 / 0.051 | +0.065 | 4.6 / 9.6 |
+| Saturation −40 (holdout) | 3 | 0.047 / 0.071 | +0.106 | 2.3 / 4.6 |
+| Vibrance +40 (holdout) | 3 | 0.018 / 0.042 | +0.032 | 5.6 / 11.9 |
+| Colour mixer (holdout) | 3 | 0.032 / 0.043 | +0.035 | 2.4 / 6.7 |
+| Calibration (holdout) | 3 | 0.042 / 0.061 | +0.036 | 4.2 / 9.0 |
+| Black & White (holdout) | 3 | 0.073 / 0.094 | +0.125 | 2.5 / 6.3 |
+
+Worst case over the photos whose default render passes; the two Panasonics, the K-1 II
+and the X100V, which fail at their defaults for the reasons under
+[Validation](#validation), score with each control as at their default (median above
+white within 0.03 stop of it).
+
+- Luminance above white stays within its tolerances (median ≤ 0.15, p95 ≤ 0.35 stop)
+  with every control on these photos.
+- The peak tolerance (0.1 stop) is exceeded on two photos. The Z6 III's peak is
+  +0.108 at its default (rebuilt highlights) and +0.103 to +0.110 with the controls.
+  The Z50 II's +0.082 becomes +0.106 with Saturation −40 and +0.125 with Black & White,
+  while its median above white stays at 0.004–0.006 stop. The peak is the brightest
+  reduced pixel.
+- Colour stays within mean 5 and p95 15 except Saturation +30 on the Z 8 (mean 5.3,
+  default 2.9) and Vibrance +40 on the Z5 II (5.6, default 4.0). On the Z 8, Saturation
+  +30's added error is mostly below white: mean ΔE_ITP below 0.18 luminance 2.5 → 4.4,
+  from 0.18 to white 2.9 → 7.6, above white 5.1 → 5.4. Looked up as SDR does (the A/B
+  below), the same edit scores 4.87, so most of the added error is in the Saturation
+  grid itself rather than in the cap; the cap adds 0.4.
+
+**Decision: Saturation, Vibrance, the colour mixer's Hue and Saturation, Calibration
+and Black & White render in the HDR master;** the colour mixer's Luminance stays
+refused.
+
+On the validation photos the Saturation +30 lookup was also compared with the grids
+looked up as SDR does (up to white): that scores slightly closer for Saturation +30
+(Z8 ΔE_ITP mean 4.87 against 5.26, above white 0.053 against 0.068 stop) and further
+for Vibrance +40 (Z8 above white 0.121 against 0.064). The capped lookup stays, as the
+patches above show it at larger slider values.
+
+**SDR is unchanged.** SDR renders and the GPU look the grids up as before
+(`Lookup::Sdr`); an HDR lookup exists only while a master renders. Rendered by the parent commit and by
+this change, 12 photos of the dataset's render corpus (every 150th, 600 px), each with
+a colour edit (Saturation, Vibrance, the colour mixer's Hue, Saturation and Luminance,
+Calibration and Shadows tint) and a Black & White edit, with HDR off and with HDR on
+(its SDR rendition), give 48 of 48 bit-identical renders. The render snapshots and
+the SDR photo gate were not run: they score these same SDR renders.
+
 ### Decisions
 
 - **The SDR rendition is the edit with HDR off.** Camera Raw's own is a local tone
@@ -499,7 +602,8 @@ compared by luminance in 8× linear blocks:
 
 ## Open
 
-- Positive Whites, Highlights, Shadows and the colour stage in HDR.
+- Positive Whites, Highlights and Shadows in HDR; the colour mixer's Luminance
+  ([Colour stage](#colour-stage)), Point Color, Color Grading, Defringe.
 - A channel's point curve and Refine Saturation in HDR ([Tone curves](#tone-curves)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
   and its sliders.
@@ -539,8 +643,10 @@ compared by luminance in 8× linear blocks:
   else; the release guard lifted with Develop's HDR switch and SDR-rendition status;
   `rawmakase render --hdr`; looks of a table and a curve, Adobe Color among them
   ([Looks](#looks)); Contrast ([Contrast](#contrast)); the master point curve, the
-  parametric curve and Levels ([Tone curves](#tone-curves)). Open: positive Whites, Highlights, Shadows,
-  the colour stage, the other looks, channel curves, the SDR rendition sliders, 52552 grouping (library only,
+  parametric curve and Levels ([Tone curves](#tone-curves)); Saturation, Vibrance, the
+  colour mixer's Hue and Saturation, Calibration and Black & White
+  ([Colour stage](#colour-stage)). Open: positive Whites, Highlights, Shadows, the colour
+  mixer's Luminance, the other looks, channel curves, the SDR rendition sliders, 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
   P3, Rec. 709; CICP-tagged ICC; #908), checked against Camera Raw's PQ TIFF through an

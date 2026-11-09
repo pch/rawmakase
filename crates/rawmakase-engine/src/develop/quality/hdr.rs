@@ -334,7 +334,12 @@ mod tests {
     /// camera matrix profile renders neutral), one per column of a strip 8 pixels
     /// high.
     fn grays(levels: &[f32]) -> CameraImage {
-        let (w, h) = (levels.len() as u32 * 8, 8);
+        patches(&levels.iter().map(|v| [*v; 3]).collect::<Vec<_>>())
+    }
+    /// The scene colours `colors` (white-balanced camera values), one per 8-pixel
+    /// column of a strip 8 pixels high.
+    fn patches(colors: &[[f32; 3]]) -> CameraImage {
+        let (w, h) = (colors.len() as u32 * 8, 8);
         let metadata = Metadata {
             width: w,
             height: h,
@@ -348,9 +353,7 @@ mod tests {
             width: w,
             height: h,
             recovered: Default::default(),
-            pixels: (0..w * h)
-                .map(|i| [levels[(i % w / 8) as usize]; 3])
-                .collect(),
+            pixels: (0..w * h).map(|i| colors[(i % w / 8) as usize]).collect(),
             metadata,
             fast: false,
             scale_factor: 1.,
@@ -625,6 +628,83 @@ mod tests {
                 assert!((got / want - 1.).abs() < 1e-3, "{i}: {got} {want}");
             }
         }
+        Ok(())
+    }
+
+    /// The colour stage renders above white as Camera Raw 18.7 renders it in HDR
+    /// (docs/hdr.md#the-colour-stage): Saturation changes a colour's saturation as much
+    /// at 20 times white as at a quarter of it, Vibrance's brightening leaves colours
+    /// above white alone, a black & white master is gray and unclipped, and
+    /// Calibration renders. Band Luminance refuses the master.
+    #[test]
+    fn the_colour_stage_renders_above_white_as_camera_raw_does() -> anyhow::Result<()> {
+        // An orange that the ACR3 curve renders at about a quarter of white, and with
+        // Exposure +5 at about 20 times white.
+        let im = patches(&[[0.1, 0.08, 0.07]]);
+        // The patch's colour, HSV saturation and luminance (linear ProPhoto RGB).
+        let colour = |out: &crate::rendered::HdrImage| {
+            let p = out.pixels[4 * out.width as usize + 4];
+            let max = p.into_iter().fold(0f32, f32::max);
+            let min = p.into_iter().fold(f32::INFINITY, f32::min);
+            (
+                p,
+                (max - min) / max,
+                crate::develop::scene_tone::luminance(p),
+            )
+        };
+        let at = |exposure: f32, edit: fn(&mut Recipe)| {
+            let mut r = hdr_recipe(&im);
+            r.exposure = exposure;
+            edit(&mut r);
+            render_hdr(&im, &r.checked().unwrap(), None, 0, Cancel::NEVER).map(|o| colour(&o))
+        };
+        let both =
+            |edit: fn(&mut Recipe)| -> anyhow::Result<_> { Ok([at(0., edit)?, at(5., edit)?]) };
+        let [(_, s_low, y_low), (base_high, s_high, y_high)] = both(|_| {})?;
+        assert!(y_low < 0.5 && y_high > 8., "{y_low} {y_high}");
+
+        // With Contrast, Saturation follows it, as in SDR's colour stage.
+        let [_, (p, _, _)] = both(|r| {
+            r.contrast = 0.3;
+            r.saturation = 0.3;
+        })?;
+        let [_, (q, _, _)] = both(|r| r.contrast = 0.3)?;
+        assert!(p != q && p.iter().all(|v| v.is_finite()), "{p:?} {q:?}");
+        // And the point curve, too.
+        let [_, (p, _, _)] = both(|r| {
+            r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
+            r.saturation = 0.3;
+        })?;
+        let [_, (q, _, _)] = both(|r| r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]])?;
+        assert!(p != q && p.iter().all(|v| v.is_finite()), "{p:?} {q:?}");
+
+        let [(_, low, _), (_, high, _)] = both(|r| r.saturation = 1.)?;
+        let [low, high] = [low / s_low, high / s_high];
+        assert!(
+            low > 1.2 && (high / low - 1.).abs() < 0.03,
+            "{low} {high} ({s_low} {s_high})"
+        );
+
+        // Vibrance's change to HSV value, the brightest channel.
+        let value = |p: [f32; 3]| p.into_iter().fold(0f32, f32::max);
+        let [(base_low, _, _), _] = both(|_| {})?;
+        let [(low, _, _), (high, _, _)] = both(|r| r.vibrance = 1.)?;
+        let [low, high] = [value(low) / value(base_low), value(high) / value(base_high)];
+        assert!(low > 1.02 && (high - 1.).abs() < 0.01, "{low} {high}");
+        assert!(
+            at(0., |r| r.hsl[1][2] = 0.5).is_err(),
+            "band Luminance is not rendered in HDR"
+        );
+
+        let [_, (p, _, y)] = both(|r| r.effects.monochrome = true)?;
+        assert!(p.iter().all(|v| (v - p[0]).abs() < 1e-3 * p[0]), "{p:?}");
+        assert!(y > 8., "{y}");
+
+        let [_, (p, _, _)] = both(|r| r.effects.calibration[0] = [0.6, -0.4])?;
+        assert!(
+            (0..3).any(|c| (p[c] / base_high[c] - 1.).abs() > 0.1),
+            "{p:?} {base_high:?}"
+        );
         Ok(())
     }
 

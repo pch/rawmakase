@@ -40,9 +40,11 @@ pub(super) struct CurveSet {
 }
 /// How an HDR render finishes after the scene tone stage: the profile's tables and
 /// curve, and its look's, unclipped ([`crate::camera_profiles::CameraProfile::finish_hdr`]),
-/// then Contrast ([`crate::develop::basic_tone::HdrContrast`]) and the tone curves
-/// ([`HdrCurves`]). The colour stage's controls are not rendered: an HDR edit that uses
-/// them does not validate (`model::hdr::check_recipe`).
+/// then Contrast ([`crate::develop::basic_tone::HdrContrast`]), the tone curves
+/// ([`HdrCurves`]), and the colour mixer, Saturation and Vibrance ([`CurveSet::mixer`])
+/// and the black & white mix ([`CurveSet::gray_grid`]) as SDR renders apply them, above
+/// white too (docs/hdr.md#the-colour-stage). The colour stage's other controls are not
+/// rendered: an HDR edit that uses them does not validate (`model::hdr::check_recipe`).
 pub(super) struct HdrFinish {
     tone: crate::camera_profiles::hdr_tone::HdrTone,
     look: Option<crate::camera_profiles::hdr_look::LookTone>,
@@ -118,7 +120,7 @@ impl HdrFinish {
     }
     /// Linear ProPhoto RGB from the scene tone stage to the HDR master before its
     /// limit: linear ProPhoto RGB, 1 = graphics white, not negative.
-    pub(super) fn finish(&self, scene: [f32; 3], r: &Recipe) -> [f32; 3] {
+    pub(super) fn finish(&self, scene: [f32; 3], r: &Recipe, lut: &CurveSet) -> [f32; 3] {
         let rgb = match &r.profile {
             Some(profile) => profile.finish_hdr(scene, &self.tone, self.look.as_ref()),
             None => mul(crate::camera_profiles::PRO_TO_RGB, scene),
@@ -131,8 +133,21 @@ impl HdrFinish {
             None => pro,
         }
         .map(|v| v.max(0.));
-        // The limit applies once, after sharpening and resizing (`render_hdr`).
-        self.curves.as_ref().map_or(pro, |c| c.apply(pro))
+        let pro = self.curves.as_ref().map_or(pro, |c| c.apply(pro));
+        // The colour mixer and the black & white mix follow Contrast and the tone
+        // curves, as in SDR's colour stage.
+        if lut.mixer.is_none() && lut.gray_grid.is_none() {
+            // The limit applies once, after sharpening and resizing (`render_hdr`).
+            return pro;
+        }
+        let rgb = mul(crate::camera_profiles::PRO_TO_RGB, pro);
+        let rgb = lut.mixer.as_ref().map_or(rgb, |m| m.apply(rgb));
+        // The gray's luminance, unclipped: SDR renders clip it at white.
+        let rgb = lut.gray_grid.as_ref().map_or(rgb, |g| {
+            let lookup = crate::develop::color_mixer::Lookup::Hdr(None);
+            [crate::develop::black_white::gray_in(g, rgb, lookup); 3]
+        });
+        mul(crate::camera_profiles::RGB_TO_PRO, rgb).map(|v| v.max(0.))
     }
     #[cfg(test)]
     pub(super) fn has_contrast(&self) -> bool {
