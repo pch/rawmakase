@@ -244,7 +244,7 @@ fn import_takes_the_edit_and_its_bitmaps_from_one_store() -> Result<()> {
         .write(true)
         .open(&primary)?
         .set_modified(old)?;
-    let (imported, bitmaps) = import_at(&raw, &store)?.unwrap();
+    let (imported, bitmaps) = import_at(&raw, &store, None)?.unwrap();
     assert_eq!(imported.recipe.exposure, 0.9);
     assert_eq!(bitmaps, [bitmap(2)]);
     assert_eq!(load_at(&raw, &store)?.unwrap().recipe, imported.recipe);
