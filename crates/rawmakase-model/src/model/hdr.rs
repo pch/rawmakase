@@ -164,7 +164,8 @@ impl HdrSettings {
 ///
 /// Measured: white balance, Exposure, Contrast, negative Whites, Blacks, the HDR limit,
 /// the master point curve and the parametric curve, and Levels as a point curve of its
-/// shape ([`crate::color::hdr_curve`]), camera profiles
+/// shape ([`crate::color::hdr_curve`]), Texture (on the camera's samples, as in SDR),
+/// camera profiles
 /// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks of a table
 /// and a curve ([`crate::camera_profiles::hdr_look`]) at 100%, and what works
 /// on the camera's samples before tone: lens corrections, geometry, noise reduction,
@@ -216,7 +217,7 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
         ),
         (
             "Presence",
-            r.effects.clarity != 0. || r.effects.texture != 0. || r.effects.dehaze != 0.,
+            r.effects.clarity != 0. || r.effects.dehaze != 0.,
         ),
         // Camera Raw keeps band Luminance's change below white, but not as a gain
         // above it: it changes channels above about white less, one by one, which
@@ -474,6 +475,7 @@ mod tests {
         r.whites = -0.5;
         r.blacks = -0.3;
         r.sharpening = 0.4;
+        r.effects.texture = 0.5;
         assert!(check_recipe(&r).is_ok());
         r.contrast = -0.4;
         assert!(check_recipe(&r).is_ok());
@@ -492,7 +494,7 @@ mod tests {
             |r| r.hsl[5][2] = -0.2,
             |r| r.shadows = 0.1,
             |r| r.effects.clarity = 0.1,
-            |r| r.effects.texture = 0.1,
+            |r| r.effects.dehaze = 0.1,
             |r| {
                 r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
                 r.curve_saturation = 0.5;

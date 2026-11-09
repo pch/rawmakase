@@ -708,6 +708,26 @@ mod tests {
         Ok(())
     }
 
+    /// Texture renders in the master, on the camera image before tone as in SDR;
+    /// Clarity and Dehaze still refuse it.
+    #[test]
+    fn texture_renders_in_the_master_and_clarity_and_dehaze_do_not() -> anyhow::Result<()> {
+        let im = grays(&[0.2, 0.6, 1.5, 3.]);
+        let mut r = hdr_recipe(&im);
+        r.effects.texture = 0.5;
+        render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        for change in [
+            |r: &mut Recipe| r.effects.clarity = 0.5,
+            |r: &mut Recipe| r.effects.dehaze = 0.3,
+        ] {
+            let mut edit = r.clone();
+            change(&mut edit);
+            let error = render_hdr(&im, &edit.checked()?, None, 0, Cancel::NEVER).unwrap_err();
+            assert!(error.to_string().contains("Presence"), "{error}");
+        }
+        Ok(())
+    }
+
     /// The limit's roll-off applies once: a channel at the peak renders where
     /// `roll_off` puts it, not rolled off twice.
     #[test]

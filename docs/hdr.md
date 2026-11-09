@@ -173,8 +173,8 @@ HDR reference family):
 | HDR limit | Each channel rolled off to 2^limit from 97% of it (`model::hdr::roll_off`), last. |
 | Sharpening, resizing | On sRGB-curve-encoded values of the master's primaries, unclipped, with ProPhoto luminance; the limit applies after them. |
 
-Lens corrections, geometry, noise reduction, AI Denoise and Heal and Clone work on
-camera samples before tone and render as in SDR.
+Lens corrections, geometry, noise reduction, AI Denoise, Heal and Clone, and Texture
+work on camera samples before tone and render as in SDR.
 
 ### The colour stage
 
@@ -204,7 +204,7 @@ Measurements and validation: [colour stage](records/hdr-stage1-results.md#colour
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
 something without a measured HDR rendering: Highlights, Shadows, positive
 Whites, a channel's point curve, Refine Saturation other than 100%, a point
-curve whose last point is left of white, Presence (Clarity, Texture, Dehaze), the
+curve whose last point is left of white, Presence (Clarity, Dehaze), the
 colour mixer's Luminance, Point Color, Color Grading, Defringe, grain and vignette,
 masks, Red Eye, the SDR rendition's
 sliders, looks other than a table and a curve at 100% (looks with an RGB table, such

@@ -292,6 +292,29 @@ curve of the same shape, by the rule above: as in SDR up to white, then along th
 slope at white, 1 / (midtone (1 − black)); a white point below white leaves a slope of
 0, as Camera Raw's curve through (230, 255) holds white (0.89 by scene 15).
 
+### Presence
+
+Measured on five validation and holdout photos (Nikon Z 8, Z f and Z5 II, Sony A7R III,
+Canon 850D; Adobe Standard DCPs, HDR limit 4) with Texture +50, Clarity +50 and Dehaze
+±30, in HDR and in SDR. The effect is each render's luminance against the same photo's
+default render, ours against Camera Raw's, in stops (8× linear blocks).
+
+| Slider | SDR effect error, median | HDR effect error, median | HDR tolerances (above white median / p95, peak) |
+| --- | --- | --- | --- |
+| Texture +50 | 0.001–0.027 | 0.001–0.029 | all pass but the 850D's peak, +0.108 (its default +0.025) |
+| Clarity +50 | 0.07–0.54 | 0.08–0.55 | A7R III 0.47 / 0.53; Z 8 p95 0.85, peak +0.70; Z f peak +0.39; 850D peak −0.30 |
+| Dehaze +30 | 0.08–0.19 | 0.09–0.19 | A7R III p95 0.52 |
+| Dehaze −30 | 0.04–0.24 | 0.04–0.26 | A7R III 0.70 / 1.07, peak +0.99 |
+
+- **Texture renders in HDR.** It works on the camera's samples before tone, and its
+  HDR effect matches Camera Raw's as closely as its SDR effect does; median and p95
+  above white are within the tolerances on all five photos, and the 850D's brightest
+  block is 0.008 stop past the peak tolerance.
+- **Clarity and Dehaze stay refused.** Their SDR operators already depart from Camera
+  Raw's effect by up to 0.54 and 0.24 stop median on these photos, and in HDR they
+  fail the tolerances on four photos (Clarity) and one (Dehaze, by up to 1.07 stop
+  at p95). They need their SDR parity first.
+
 ### Looks
 
 Measured on gray ramps (sensor white +4 and +6 stops, a linear and the ACR3 profile
@@ -637,6 +660,7 @@ the SDR photo gate were not run: they score these same SDR renders.
 - Positive Whites, Highlights and Shadows in HDR; the colour mixer's Luminance
   ([Colour stage](#colour-stage)), Point Color, Color Grading, Defringe.
 - A channel's point curve and Refine Saturation in HDR ([Tone curves](#tone-curves)).
+- Clarity and Dehaze in HDR, after their SDR parity ([Presence](#presence)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
   and its sliders.
 - Looks with an RGB table, their own sliders, B&W, Profile Amount and Camera Looks in
@@ -676,7 +700,7 @@ the SDR photo gate were not run: they score these same SDR renders.
   else; the release guard lifted with Develop's HDR switch and SDR-rendition status;
   `rawmakase render --hdr`; looks of a table and a curve, Adobe Color among them
   ([Looks](#looks)); Contrast ([Contrast](#contrast)); the master point curve, the
-  parametric curve and Levels ([Tone curves](#tone-curves)); Saturation, Vibrance, the
+  parametric curve and Levels ([Tone curves](#tone-curves)); Texture ([Presence](#presence)); Saturation, Vibrance, the
   colour mixer's Hue and Saturation, Calibration and Black & White
   ([Colour stage](#colour-stage)). Open: positive Whites, Highlights, Shadows, the colour
   mixer's Luminance, the other looks, channel curves, the SDR rendition sliders, 52552 grouping (library only,
