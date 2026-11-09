@@ -415,7 +415,13 @@ mod tests {
     /// the next edit asks again.
     #[test]
     fn a_failed_or_panicking_render_is_the_edits_failure() {
+        /// Closed while the test checks that the next edit is still rendering: a
+        /// render that panics at once could otherwise finish before the check.
+        static OPEN: AtomicBool = AtomicBool::new(true);
         fn panics(_: &Job) -> anyhow::Result<Measured> {
+            while !OPEN.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
             panic!("boom")
         }
         let ctx = egui::Context::default();
@@ -432,8 +438,10 @@ mod tests {
         let mut next = hdr_recipe();
         next.exposure = 0.5;
         let next = Key::new(&image, &next);
+        OPEN.store(false, Ordering::SeqCst);
         h.request(next.clone(), image.clone());
         assert!(matches!(h.shown(&next), Shown::Rendering));
+        OPEN.store(true, Ordering::SeqCst);
         finished(&h);
         assert!(matches!(h.shown(&next), Shown::Failed(_)));
         let _ = h.stop();
