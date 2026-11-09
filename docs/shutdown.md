@@ -50,7 +50,8 @@ with nothing else rendering (up to four renders on every core but one, one per
 `previews::Pace`), and drop back to one render on two threads, cancelling the
 wider renders under way, when it is not. Build Editable Previews follows the same
 rule without counting itself (`Editor::editable_build_pace`): one photo at a time
-on every core but one, or on two threads, and a photo under way at the wider pace
+on every core but one, or on two to four threads (half as many, by the cores),
+and a photo under way at the wider pace
 when it drops is cancelled and built again at the pace then. Its thumbnail workers (two to four, by
 core count) run at normal priority, as the one worker before them did, so the
 grid fills first.

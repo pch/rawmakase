@@ -250,7 +250,8 @@ Automation and MCP get `build_editable_previews`.
 Builds take the computer as the Library's edited previews do
 (`Editor::editable_build_pace`): with the Library in front and nothing else
 rendering, each photo is built on every core but one, and the JPEG XL encoder's
-threads are sized by that pool; otherwise on two background threads. Unlike
+threads are sized by that pool; otherwise on half that pool's threads, from two
+to four (four from nine cores, two up to six). Unlike
 edited previews, the builds don't count themselves as work that slows them. A
 photo under way at full pace when the pace drops (Develop opened, an export
 started) is cancelled and built again at the pace then, counted once; one
@@ -281,6 +282,19 @@ On two threads the ten took 12.3 s instead of 15.1 (−18%), on every core but
 one 3.6 s instead of 4.2 (−14%), with about 20% less CPU time. Three side by
 side on that pool took 3.3 s, 8% less than one at a time, for about 0.5 GB
 more, so photos are still built one at a time.
+
+The background pace was widened from two threads to four on the same Mac,
+measured against a Develop render standing in for the foreground: a 2560 px
+render of the 45 MP R5, over and over (1.9 s each alone). With a build of the
+ten beside it on two threads, the build took 16 s and each render 8% longer; on
+four, 9–10 s and 20–25% longer; on eight, 7 s and 25–45% longer. Four was
+chosen: builds while Develop is open finish about 1.7 times sooner, and a render
+is slower only while one runs beside it. Set aside: macOS's utility quality of
+service for the background threads, as Linux's nice and Windows's lower priority
+are. It kept builds to the efficiency cores even with the performance cores
+idle (the ten took 11.3 s on 17 threads, against 3.6 s at the normal priority),
+and beside the render it was no faster than two threads at the normal priority
+(17–18 s), though the render was only 5% slower.
 
 Set aside: building from the half-size decode (`Decode::Half`), with Auto CA
 measured on it. On two threads it took 0.35 of the time (the Bayer photos 0.2–0.4,

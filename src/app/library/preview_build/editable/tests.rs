@@ -13,6 +13,8 @@ use std::time::{Duration, Instant};
 static OPENED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 /// The thread each opening ran on, by file: which pool, so which pace.
 static OPENED_ON: Mutex<Vec<(PathBuf, String)>> = Mutex::new(Vec::new());
+/// The threads of the pool each opening ran on, by file.
+static OPENED_WIDTH: Mutex<Vec<(PathBuf, usize)>> = Mutex::new(Vec::new());
 /// "slow" builds that have started, and those let go.
 static STARTED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 static RELEASED: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
@@ -46,6 +48,10 @@ fn test_open(item: &Item, _: &Identity, cancel: Cancel<'_>) -> anyhow::Result<Or
     OPENED.lock().unwrap().push(item.path.clone());
     let thread = std::thread::current().name().unwrap_or_default().to_owned();
     OPENED_ON.lock().unwrap().push((item.path.clone(), thread));
+    OPENED_WIDTH
+        .lock()
+        .unwrap()
+        .push((item.path.clone(), rayon::current_num_threads()));
     let name = item.path.file_name().unwrap().to_string_lossy().to_string();
     if name.starts_with("panic") {
         panic!("test panic");
@@ -140,6 +146,16 @@ fn opened_at_full(path: &Path) -> Vec<bool> {
         .iter()
         .filter(|(p, _)| p == path)
         .map(|(_, thread)| thread.starts_with("editable-previews-full"))
+        .collect()
+}
+/// The threads each opening of `path` so far had.
+fn opened_width(path: &Path) -> Vec<usize> {
+    OPENED_WIDTH
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(p, _)| p == path)
+        .map(|(_, width)| *width)
         .collect()
 }
 fn wait_opens(path: &Path, n: usize) {
@@ -1097,4 +1113,38 @@ fn a_photo_stopped_or_discarded_around_giving_way_is_not_built_again() {
     settle(&mut e);
     assert_eq!(opens_of(&path), 1, "a discarded photo was built again");
     assert!(recorded(&e, ids[0]).is_none() && files(&e).is_empty());
+}
+
+#[test]
+fn the_background_pace_takes_half_the_full_pace_s_threads_from_two_to_four() {
+    // Every core but one is 9 threads: four in the background; 3: two, as before.
+    for (full, background) in [(9, 4), (3, 2)] {
+        let (_dir, mut e, ids) = editor(&["back.ARW", "front.ARW"]);
+        e.editable_builds.full_threads = full;
+        let (back, front) = (
+            id_named(&e, &ids, "back.ARW"),
+            id_named(&e, &ids, "front.ARW"),
+        );
+        e.build_editable_previews(&[back]).unwrap();
+        settle(&mut e);
+        assert_eq!(
+            opened_width(&path_of(&e, back)),
+            [background],
+            "{full} at full pace"
+        );
+        e.editable_builds.set_pace(Pace::Full);
+        e.build_editable_previews(&[front]).unwrap();
+        settle(&mut e);
+        assert_eq!(opened_width(&path_of(&e, front)), [full]);
+    }
+}
+
+#[test]
+fn six_cores_or_fewer_keep_two_background_threads_and_nine_or_more_take_four() {
+    // Every core but one at full pace, at least two.
+    let by_cores = |cores: usize| background_threads(cores.saturating_sub(1).max(2));
+    assert_eq!(
+        [1, 2, 3, 4, 6, 7, 8, 9, 18, 64].map(by_cores),
+        [2, 2, 2, 2, 2, 3, 3, 4, 4, 4]
+    );
 }

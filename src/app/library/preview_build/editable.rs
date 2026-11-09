@@ -23,9 +23,10 @@
 //! record raced the discard, discards it again (see [`State::discarded_since`]).
 //!
 //! Each photo is built on one of two pools, by the pace when it starts
-//! ([`Editor::editable_build_pace`]): two background threads, or, with the
-//! Library in front and nothing else rendering, every core but one, as the
-//! Library's edited previews take ([`Pace`]). A photo under way at full pace when
+//! ([`Editor::editable_build_pace`]): two to four background threads, by the
+//! cores ([`background_threads`]), or, with the Library in front and nothing else
+//! rendering, every core but one, as the Library's edited previews take
+//! ([`Pace`]). A photo under way at full pace when
 //! the pace drops is stopped and waits at the front to be built again at the
 //! pace then, unless it was discarded or the builds were cancelled meanwhile; it
 //! is counted done once. With three cores or fewer the two pools are the same,
@@ -334,8 +335,14 @@ impl Shared {
     }
 }
 
-/// Threads a photo is built on at the background pace.
-const BACKGROUND_THREADS: usize = 2;
+/// Threads a photo is built on at the background pace, with `full` at full pace:
+/// half of them, from two to four. On 18 cores four took about 1.7 times less
+/// time than two while a render ran beside them, and slowed it by about a
+/// fifth rather than a twelfth (docs/editable-previews.md, Stage 4). A computer
+/// with six cores or fewer keeps two, seven or eight take three.
+fn background_threads(full: usize) -> usize {
+    (full / 2).clamp(2, 4)
+}
 
 /// The build queue and the thread that works through it.
 struct Builder {
@@ -353,10 +360,11 @@ impl Builder {
         full_threads: usize,
         changed: impl Fn() + Send + 'static,
     ) -> Self {
+        let background_threads = background_threads(full_threads);
         let shared = Arc::new(Shared {
             state: Mutex::new(State {
                 pace,
-                full_is_wider: full_threads > BACKGROUND_THREADS,
+                full_is_wider: full_threads > background_threads,
                 ..State::default()
             }),
             wake: Condvar::new(),
@@ -365,7 +373,7 @@ impl Builder {
         let worker = shared.clone();
         let thread = crate::raw::spawn_background(move || {
             let background =
-                crate::raw::background_pool(BACKGROUND_THREADS, "editable-previews").ok();
+                crate::raw::background_pool(background_threads, "editable-previews").ok();
             let full = crate::raw::background_pool(full_threads, "editable-previews-full").ok();
             let mut catalog: Option<Catalog> = None;
             while let Some((item, cancel, at_full)) = worker.next() {
