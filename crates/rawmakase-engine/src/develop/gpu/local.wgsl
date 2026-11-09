@@ -6,6 +6,8 @@
 // Sampling parameters, at the `S_*` offsets that `sampling::wgsl_prelude` puts
 // before this file; radial tables follow the header (`sampling::HEADER`).
 @group(0) @binding(10) var<storage, read> photo: array<f32>;
+// The transparency mask (`Metadata::coverage`), four values to a word.
+@group(0) @binding(11) var<storage, read> coverage: array<u32>;
 @group(0) @binding(12) var<storage, read> sp: array<f32>;
 @group(0) @binding(14) var<storage, read_write> samples: array<f32>;
 @group(0) @binding(15) var<storage, read_write> positions: array<f32>;
@@ -233,6 +235,19 @@ fn source(u: f32, v: f32) -> vec2<f32> {
         (s(S_INSET + 1u) + oy * s(S_INSET + 3u)) * s(S_HEIGHT) - 0.5,
     );
 }
+// `CameraImage::empty_at`: whether photo position `pos` lies where the file has
+// no image, the nearest pixel of its transparency mask less than half covered.
+fn empty(pos: vec2<f32>) -> bool {
+    let cw = su(S_COVERAGE);
+    if cw == 0u {
+        return false;
+    }
+    let ch = su(S_COVERAGE + 1u);
+    let cx = u32(clamp(floor((pos.x + 0.5) / s(S_WIDTH) * f32(cw)), 0.0, f32(cw - 1u)));
+    let cy = u32(clamp(floor((pos.y + 0.5) / s(S_HEIGHT) * f32(ch)), 0.0, f32(ch - 1u)));
+    let i = cy * cw + cx;
+    return ((coverage[i / 4u] >> (8u * (i % 4u))) & 255u) < 128u;
+}
 @compute @workgroup_size(256)
 fn sample_region(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) local: u32) {
     let i = (group.y * su(S_COUNT) + group.x) * 256u + local;
@@ -257,6 +272,12 @@ fn sample_region(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocat
         } else {
             p = footprint_sample(at.x, at.y);
             pos = at;
+        }
+        // Where the file has no image (a panorama's empty corners), white, as
+        // outside the photo.
+        if empty(pos) {
+            p = vec3(1.0);
+            pos = vec2(OUTSIDE);
         }
     }
     samples[3u * i] = p.x;

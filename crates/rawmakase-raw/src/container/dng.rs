@@ -54,6 +54,9 @@ pub(crate) struct DngPlan {
     pub curve: Vec<u16>,
     /// OpcodeList1 and OpcodeList2's opcodes applied here.
     pub opcodes: [Vec<Opcode>; 2],
+    /// The image's transparency mask (DNG 1.4's TransparencyMask), when it
+    /// has one this reader can read: one sample a pixel, the image's size.
+    pub mask: Option<Box<DngPlan>>,
 }
 
 /// Reads a DNG's header facts. `t` is the parsed TIFF.
@@ -393,8 +396,71 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         little: t.little(),
         curve,
         opcodes: [list(&t, ifd, 51008), list(&t, ifd, 51009)],
+        mask: mask(&t, width, height).map(Box::new),
     });
     Ok(info)
+}
+
+/// The plan of the transparency mask over a `width` × `height` raw image:
+/// the directory of NewSubFileType bit 2 (transparency) and
+/// PhotometricInterpretation 4, of one 8- or 16-bit integer sample a pixel at
+/// the image's size (DNG 1.4), stored in a way the image's decoders read.
+/// Lightroom writes one for a panorama whose stitched area leaves empty
+/// corners. `None` when there is none, or one this reader can't use: the
+/// image then opens as it always has.
+fn mask(t: &TiffFile, width: u32, height: u32) -> Option<DngPlan> {
+    // The first that fits: a preview's mask (NewSubFileType 5) may come
+    // before the raw image's.
+    let ifd = t.ifds.iter().find(|ifd| {
+        t.int(ifd, 254).unwrap_or(0) & 5 == 4
+            && t.int(ifd, 262) == Some(4)
+            && t.int(ifd, 256) == Some(width)
+            && t.int(ifd, 257) == Some(height)
+            && t.int(ifd, 277).unwrap_or(1) == 1
+            && matches!(t.int(ifd, 258).unwrap_or(1), 8 | 16)
+            && t.int(ifd, 339).unwrap_or(1) == 1
+            // No prediction, or horizontal differences: what `read_tiles`
+            // undoes for integers.
+            && matches!(t.int(ifd, 317).unwrap_or(1), 1 | 2)
+            && matches!(t.int(ifd, 259).unwrap_or(1), 1 | 7 | 8 | JPEG_XL)
+    })?;
+    let bps = t.int(ifd, 258).unwrap_or(1);
+    let compression = t.int(ifd, 259).unwrap_or(1);
+    let (tile, tiles) = layout(t, ifd, width, height, 1).ok()?;
+    Some(DngPlan {
+        samples: 1,
+        width,
+        height,
+        bps,
+        compression,
+        sample_format: 1,
+        predictor: t.int(ifd, 317).unwrap_or(1),
+        tile,
+        tiles,
+        little: t.little(),
+        ..DngPlan::default()
+    })
+}
+
+/// How much of each stored pixel the image covers, 0 (none: transparent) to
+/// 255 (all), row by row at the stored size, from the DNG's transparency
+/// mask; `None` when it has none (see [`mask`]).
+pub(crate) fn transparency(
+    plan: &DngPlan,
+    bytes: &[u8],
+    cancel: Cancel<'_>,
+) -> Result<Option<Vec<u8>>> {
+    let Some(mask) = &plan.mask else {
+        return Ok(None);
+    };
+    let values = read_tiles(mask, bytes, cancel)?;
+    let top = f32::from(((1u32 << mask.bps) - 1) as u16);
+    Ok(Some(
+        values
+            .into_iter()
+            .map(|v| (f32::from(v) / top * 255.).round() as u8)
+            .collect(),
+    ))
 }
 
 /// The data of record `name` in Adobe's DNGPrivateData ("Adobe\0", then
@@ -619,14 +685,10 @@ fn cfa(t: &TiffFile, ifd: &Ifd) -> Result<Cfa> {
     Ok(crate::info::second_green(Cfa { rows, cols, colors }))
 }
 
-/// Decodes the raw image: every tile into the full stored image, then the
-/// linearization table.
-pub(crate) fn decode(
-    info: &RawInfo,
-    plan: &DngPlan,
-    bytes: &[u8],
-    cancel: Cancel<'_>,
-) -> Result<Sensor> {
+/// The stored samples of the image (or mask) `plan` describes, row by row,
+/// `samples` a pixel: its tiles or strips decoded and put in place, before
+/// any opcode, table or level.
+fn read_tiles(plan: &DngPlan, bytes: &[u8], cancel: Cancel<'_>) -> Result<Vec<u16>> {
     let (width, height) = (plan.width as usize, plan.height as usize);
     let spp = plan.samples as usize;
     let mut data = vec![0u16; crate::io::samples(plan.width, plan.height, plan.samples)?];
@@ -716,6 +778,20 @@ pub(crate) fn decode(
             }
         }
     }
+    Ok(data)
+}
+
+/// Decodes the raw image: every tile into the full stored image, then the
+/// linearization table.
+pub(crate) fn decode(
+    info: &RawInfo,
+    plan: &DngPlan,
+    bytes: &[u8],
+    cancel: Cancel<'_>,
+) -> Result<Sensor> {
+    let (width, height) = (plan.width as usize, plan.height as usize);
+    let spp = plan.samples as usize;
+    let mut data = read_tiles(plan, bytes, cancel)?;
     // OpcodeList1 works on the stored image.
     let mut stored = opcodes::Image {
         data: &mut data,
@@ -1563,6 +1639,79 @@ pub(crate) mod tests {
                 assert_eq!(s.data[at..at + 3], want, "({x}, {y})");
             }
         }
+    }
+
+    /// `f` with a transparency mask (NewSubFileType `kind`: 4 the raw
+    /// image's, 5 a preview's) chained after its last directory: an
+    /// uncompressed strip of one 8-bit sample a pixel, `width` × `height`.
+    fn with_mask(mut f: Vec<u8>, kind: u32, width: u32, height: u32, mask: &[u8]) -> Vec<u8> {
+        let le16 = |v: u16| v.to_le_bytes().to_vec();
+        let le32 = |v: u32| v.to_le_bytes().to_vec();
+        let mut ifd = u32::from_le_bytes(f[4..8].try_into().unwrap()) as usize;
+        let next = loop {
+            let count = u16::from_le_bytes([f[ifd], f[ifd + 1]]) as usize;
+            let next = ifd + 2 + 12 * count;
+            match u32::from_le_bytes(f[next..next + 4].try_into().unwrap()) {
+                0 => break next,
+                at => ifd = at as usize,
+            }
+        };
+        let strip_at = f.len() as u32;
+        f.extend(mask);
+        f.resize(f.len() + f.len() % 2, 0);
+        let at = f.len() as u32;
+        f[next..next + 4].copy_from_slice(&le32(at));
+        let entries: [(u16, u16, Vec<u8>); 9] = [
+            (254, 4, le32(kind)),
+            (256, 4, le32(width)),
+            (257, 4, le32(height)),
+            (258, 3, le16(8)),
+            (259, 3, le16(1)),
+            (262, 3, le16(4)),
+            (273, 4, le32(strip_at)),
+            (278, 4, le32(height)),
+            (279, 4, le32(mask.len() as u32)),
+        ];
+        f.extend(le16(entries.len() as u16));
+        for (tag, kind, v) in entries {
+            f.extend(le16(tag));
+            f.extend(le16(kind));
+            f.extend(le32(1));
+            f.extend(v.iter().copied().chain([0; 4]).take(4));
+        }
+        f.extend([0; 4]);
+        f
+    }
+
+    /// A panorama's transparency mask (Lightroom's, over the corners its
+    /// stitch leaves empty) is read beside the image as coverage per stored
+    /// pixel, past a preview's mask that comes first; one that doesn't fit
+    /// the image is passed over, and the image still opens.
+    #[test]
+    fn a_transparency_mask_is_read_as_coverage() {
+        let le16s = |v: &[u16]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+        let mut extra = linear_raw();
+        extra.push((50717, 3, 3, le16s(&[4095, 4095, 4095])));
+        let f = with_samples(dng(3, 2, &extra), &[100; 18]);
+        let preview = with_mask(f.clone(), 5, 2, 1, &[0, 0]);
+        let masked = with_mask(preview, 4, 3, 2, &[0, 255, 128, 255, 255, 0]);
+        let info = crate::open(&masked).unwrap();
+        let coverage = crate::transparency(&info, &masked, Cancel::NEVER).unwrap();
+        assert_eq!(coverage, Some(vec![0, 255, 128, 255, 255, 0]));
+        assert_eq!(
+            decode(&masked).data,
+            decode(&f).data,
+            "the image is as before"
+        );
+
+        let none = crate::open(&f).unwrap();
+        assert_eq!(crate::transparency(&none, &f, Cancel::NEVER).unwrap(), None);
+        let wrong = with_mask(f, 4, 2, 2, &[0; 4]);
+        let info = crate::open(&wrong).unwrap();
+        assert_eq!(
+            crate::transparency(&info, &wrong, Cancel::NEVER).unwrap(),
+            None
+        );
     }
 
     /// Linear raw of one sample (monochrome sensors, film scanners) opens

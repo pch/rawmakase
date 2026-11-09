@@ -268,6 +268,51 @@ pub struct Metadata {
     /// camera (`camera_profiles::builtin` reads it); rebuilt from the file on open.
     #[serde(skip)]
     pub embedded_dcp: Option<std::sync::Arc<[u8]>>,
+    /// Where the file's image is empty, from a DNG's transparency mask
+    /// (Lightroom's panoramas: the corners their stitch leaves); rendering
+    /// shows white there, as Lightroom does. Read again on open, not saved.
+    #[serde(skip)]
+    pub coverage: Option<std::sync::Arc<Coverage>>,
+}
+
+/// How much of each decoded pixel the file's image covers, 0 (none) to 255,
+/// row by row over the decoded image's grid (the visible area, not
+/// oriented), from a DNG's transparency mask.
+pub struct Coverage {
+    pub width: u32,
+    pub height: u32,
+    pub values: Vec<u8>,
+}
+
+impl std::fmt::Debug for Coverage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Coverage({} × {})", self.width, self.height)
+    }
+}
+
+impl Coverage {
+    /// `values` over `width` × `height` pixels; `None` when they don't fill it.
+    pub fn new(width: u32, height: u32, values: Vec<u8>) -> Option<Self> {
+        (width > 0 && height > 0 && values.len() == width as usize * height as usize).then_some(
+            Self {
+                width,
+                height,
+                values,
+            },
+        )
+    }
+    /// Whether position (`x`, `y`) of an image of `width` × `height` pixels
+    /// decoded from the file (pixel centres at whole numbers: a reduced copy's
+    /// positions scale to the mask's) lies where the file has no image: the
+    /// nearest pixel of the mask less than half covered.
+    pub fn empty(&self, x: f32, y: f32, width: u32, height: u32) -> bool {
+        let at = |v: f32, size: u32, own: u32| {
+            (((v + 0.5) / size.max(1) as f32 * own as f32).floor() as i64).clamp(0, own as i64 - 1)
+                as usize
+        };
+        let (cx, cy) = (at(x, width, self.width), at(y, height, self.height));
+        self.values[cy * self.width as usize + cx] < 128
+    }
 }
 impl Metadata {
     pub fn is_rendered(&self) -> bool {
@@ -514,6 +559,15 @@ impl CameraImage {
         } else {
             1.
         }
+    }
+    /// Whether position (`x`, `y`) of this image's pixels lies where the
+    /// file has no image (its [`Metadata::coverage`]): rendering shows white
+    /// there, as for an area a transform leaves uncovered.
+    pub fn empty_at(&self, x: f32, y: f32) -> bool {
+        self.metadata
+            .coverage
+            .as_ref()
+            .is_some_and(|c| c.empty(x, y, self.width, self.height))
     }
     /// `self` paired with `light`, its HDR light, which records the source fact in
     /// the metadata; refused when their sizes differ.

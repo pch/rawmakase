@@ -1142,6 +1142,46 @@ fn transform_scales_and_fills_uncovered_area_with_white() {
     r.transform.scale = 2.;
     assert!(r.validate().is_err());
 }
+/// Where a DNG's transparency mask says the file has no image (a panorama's
+/// empty corners), the render is white whatever the edit, as Lightroom shows
+/// it and as an area a transform leaves uncovered; the rest renders as
+/// without a mask. A mask at another size than the image (the photo's, over a
+/// reduced copy) marks the same area.
+#[test]
+fn a_transparency_mask_renders_its_empty_area_white() {
+    let plain = fixture();
+    let mut r = Recipe::for_metadata(&plain.metadata);
+    r.exposure = -1.5;
+    let r = r.checked().unwrap();
+    let without = render(&plain, &r, 0, Cancel::NEVER).unwrap();
+    for scale in [1, 2] {
+        let (w, h) = (12 * scale, 8 * scale);
+        let values = (0..w * h)
+            .map(|i| if i % w < 4 * scale { 0 } else { 255 })
+            .collect();
+        let mut im = fixture();
+        im.metadata.coverage = Some(std::sync::Arc::new(
+            crate::camera_data::Coverage::new(w, h, values).unwrap(),
+        ));
+        let out = render(&im, &r, 0, Cancel::NEVER).unwrap();
+        let region = render_region(&im, &r, [0, 0, 12, 8]).unwrap();
+        for y in 0..8 {
+            for x in 0..12 {
+                let i = (y * 12 + x) as usize;
+                if x < 4 {
+                    assert_eq!(out.pixels[i], [1.; 3], "({x}, {y}) of a {w} × {h} mask");
+                    assert_eq!(region.pixels[i], [1.; 3]);
+                } else if x >= 6 {
+                    let (p, q) = (out.pixels[i], without.pixels[i]);
+                    assert!(
+                        (0..3).all(|c| (p[c] - q[c]).abs() < 0.02),
+                        "({x}, {y}): {p:?} {q:?}"
+                    );
+                }
+            }
+        }
+    }
+}
 #[test]
 fn fringe_selector_reaches_the_hue_defringe_tests() {
     // A purple and a green fringe as Defringe sees them.

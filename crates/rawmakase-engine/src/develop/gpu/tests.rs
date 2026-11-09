@@ -1659,6 +1659,47 @@ fn installed_zoom_profile_cpu_gpu_agree() -> Result<()> {
     Ok(())
 }
 
+/// A DNG's transparency mask (a panorama's empty corners) renders white alike on
+/// the CPU and the GPU, through the lens warp, at Fit, full size and a region.
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn a_transparency_mask_renders_white_on_the_gpu_as_on_the_cpu() -> Result<()> {
+    use crate::{
+        camera_data::{Coverage, Metadata},
+        optics::{LensCorrection, Radial},
+    };
+    let knots: Vec<f32> = (0..9).map(|i| i as f32 / 8. * 1.3).collect();
+    let lens = LensCorrection {
+        source: "Synthetic".into(),
+        distortion: Some(Radial {
+            values: knots.iter().map(|r| 1. - 0.05 * r * r).collect(),
+            knots,
+        }),
+        ..Default::default()
+    };
+    assert!(lens.validate());
+    let (w, h) = (150u32, 100u32);
+    // A corner and a band with no image, as a stitch leaves them.
+    let values = (0..w * h)
+        .map(|i| {
+            let (x, y) = (i % w, i / w);
+            if x + y < 60 || x > 130 { 0 } else { 255 }
+        })
+        .collect();
+    let metadata = Metadata {
+        make: "Synthetic".into(),
+        width: w,
+        height: h,
+        lens: Some(lens),
+        coverage: Some(std::sync::Arc::new(Coverage::new(w, h, values).unwrap())),
+        ..Default::default()
+    };
+    check_lens_render(metadata, None, &|r: &mut Recipe| {
+        r.lens_builtin = true;
+        r.lens_profile = false;
+    })
+}
+
 /// A Lensfun-style correction (see `optics::lensfun`): tables of more knots than the
 /// 64 the GPU search once allowed, and lateral CA as a function of green's source
 /// radius, render alike on the CPU and the GPU at Distortion amounts 0, 100% and

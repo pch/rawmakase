@@ -353,10 +353,16 @@ pub(crate) fn sample_region(
             if g.outside(sx, sy) {
                 return ([1.; 3], [f32::NAN; 2]);
             }
-            match &warp {
+            let (p, pos) = match &warp {
                 Some(w) => (w.sample(im, sx, sy, spread), w.map.forward(sx, sy)),
                 None => (footprint_sample(im, sx, sy, spread), [sx, sy]),
+            };
+            // Where the file has no image (a panorama's empty corners), white,
+            // as outside the photo.
+            if im.empty_at(pos[0], pos[1]) {
+                return ([1.; 3], [f32::NAN; 2]);
             }
+            (p, pos)
         })
         .unzip();
     ensure!(!cancel.is_cancelled(), "Render superseded");
@@ -525,6 +531,9 @@ pub(super) fn render_region_inner(
             Some(w) => (w.sample(im, sx, sy, spread), w.map.forward(sx, sy)),
             None => (footprint_sample(im, sx, sy, spread), [sx, sy]),
         };
+        if im.empty_at(pos[0], pos[1]) {
+            return [1.; 3];
+        }
         process_pixel(p, r, &lut, camera, pos, None)
     };
     pixels.par_iter_mut().enumerate().for_each(|(i, p)| {

@@ -41,6 +41,8 @@ slots! {
     MANUAL: 3,
     // Protect reconstructed X-Trans stripe colour during CA remapping.
     XTRANS: 1,
+    // The transparency mask's width and height (`Metadata::coverage`), 0 without one.
+    COVERAGE: 2,
 }
 
 /// `S_*` offset constants for `local.wgsl`, and `RADIAL_STEPS`, the halvings its
@@ -103,8 +105,9 @@ mod tests {
                 ("COUNT", 51),
                 ("MANUAL", 52),
                 ("XTRANS", 55),
+                ("COVERAGE", 56),
             ]
         );
-        assert_eq!(HEADER, 56);
+        assert_eq!(HEADER, 58);
     }
 }

@@ -44,8 +44,9 @@ pub fn analysis_image(im: &CameraImage, r: &Recipe) -> (Vec<f32>, usize, usize) 
     let step = (iw.max(ih) as f32 / w.max(h) as f32).max(1.);
     let taps = (step.round() as usize).clamp(1, 4);
     let mut out = vec![0f32; w * h];
-    // Taps with no photo behind them (manual Distortion's white border), which render
-    // white; they are set to white once the white level is known.
+    // Taps with no photo behind them (manual Distortion's white border, a
+    // panorama's empty corners), which render white; they are set to white
+    // once the white level is known.
     let mut blank = vec![0u8; w * h];
     for y in 0..h {
         for x in 0..w {
@@ -60,6 +61,10 @@ pub fn analysis_image(im: &CameraImage, r: &Recipe) -> (Vec<f32>, usize, usize) 
                         continue;
                     }
                     let [sx, sy] = lens.as_ref().map_or([sx, sy], |l| l.forward(sx, sy));
+                    if im.empty_at(sx, sy) {
+                        blank[y * w + x] += 1;
+                        continue;
+                    }
                     // Clamped to the edge, as rendering samples.
                     sum += at(sx.max(0.) as usize, sy.max(0.) as usize);
                 }
