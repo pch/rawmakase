@@ -1,15 +1,18 @@
-//! The Metadata filter's controls. A strip under the filter bar shows four
-//! columns, as Lightroom's Library Filter › Metadata does, each header
-//! choosing its attribute. The bar has a button for camera, lens and
-//! keyword, and for any other attribute with a choice, that opens the same
-//! list. Each list starts with All and its count, then one row per value
-//! with its count; clicking a row adds the value or takes it out.
+//! The Metadata filter's controls. In the bar, Metadata opens a strip under
+//! it with four columns, as Lightroom's Library Filter › Metadata does, each
+//! header choosing its attribute; then a button for camera, lens and keyword,
+//! and for any other attribute with a choice, opens the same list. Each list
+//! starts with All and its count, then one row per value with its count;
+//! clicking a row adds the value or takes it out. The buttons are the
+//! Library bars' 22-point buttons ([`bar_button`]), so they line up with the
+//! bar's other controls.
 use super::Library;
 use super::facets::{Attribute, Counts};
 use super::filter::toggle;
-use super::grid::filter_caption;
 use crate::app::ui::design::{Tone, radius, size, space, text};
+use crate::app::ui::icons::{self, Icon};
 use crate::app::ui::theme;
+use crate::app::ui::widgets::{menu_item, toolbar_action_sized};
 use eframe::egui::{self, Vec2};
 use std::collections::HashMap;
 
@@ -19,6 +22,10 @@ const QUICK: [Attribute; 3] = [Attribute::Camera, Attribute::Lens, Attribute::Ke
 const FIND_FROM: usize = 12;
 /// The height of the strip's lists.
 const STRIP_LIST: f32 = 150.;
+/// The narrowest a strip column gets; narrower, the strip scrolls sideways.
+const COLUMN_WIDTH: f32 = 190.;
+/// The width of a bar button's list.
+const POPUP_WIDTH: f32 = 260.;
 
 /// The strip and the lists' Find fields, kept while RAWmakase runs.
 pub(super) struct MetadataBar {
@@ -45,20 +52,15 @@ impl Default for MetadataBar {
 }
 
 impl Library {
-    /// The bar's part: the strip's switch, then a button per quick attribute
-    /// and per other attribute with a choice.
+    /// The bar's part: Metadata, which opens and closes the strip, then a
+    /// button per quick attribute and per other attribute with a choice.
     pub(super) fn metadata_buttons(&mut self, ui: &mut egui::Ui, compact: bool) -> bool {
-        let palette = theme::palette(ui.ctx());
-        if !compact {
-            ui.label(filter_caption(&palette, "Metadata"));
-        }
         let open = self.metadata_bar.open;
-        if ui
-            .selectable_label(open, egui::RichText::new("☰").size(text::LABEL))
+        if bar_button(ui, "Metadata", open)
             .on_hover_text(if open {
                 "Hide the metadata columns"
             } else {
-                "Show the metadata columns, as Lightroom's Metadata filter"
+                "Show the metadata columns: camera, lens, settings, file type and keyword"
             })
             .clicked()
         {
@@ -76,7 +78,8 @@ impl Library {
         changed
     }
     /// The strip under the filter bar, while it is open: four columns, each
-    /// header a menu choosing its attribute.
+    /// header a menu choosing its attribute, divided by hairlines. A window
+    /// too narrow for them scrolls the strip sideways.
     pub(super) fn metadata_strip(&mut self, ui: &mut egui::Ui) -> bool {
         if !self.metadata_bar.open {
             return false;
@@ -84,41 +87,104 @@ impl Library {
         self.update_metadata_counts();
         let palette = theme::palette(ui.ctx());
         let mut changed = false;
-        egui::Frame::new()
-            .fill(palette.tone(Tone::BAR))
-            .inner_margin(egui::Margin::symmetric(space::L as i8, space::S as i8))
+        let frame = egui::Frame::new()
+            .fill(palette.tone(Tone::FIELD))
+            .inner_margin(egui::Margin {
+                left: space::L as i8,
+                right: space::L as i8,
+                top: 0,
+                bottom: space::S as i8,
+            })
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                let gap = space::L;
-                let width = ((ui.available_width() - 3. * gap) / 4.).max(120.);
-                ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing.x = gap;
-                    for column in 0..4 {
-                        ui.vertical(|ui| {
-                            ui.set_width(width);
-                            self.column_header(ui, column, width);
-                            let attribute = self.metadata_bar.columns[column];
-                            changed |= self.value_list(ui, attribute, width, STRIP_LIST);
+                let gap = space::XL;
+                let width = ((ui.available_width() - 3. * gap) / 4.).max(COLUMN_WIDTH);
+                // A solid scroll bar shows whenever the columns don't fit, so
+                // it is plain that the strip scrolls; the lists in it keep the
+                // app's floating ones.
+                let floating = ui.spacing().scroll;
+                ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
+                egui::ScrollArea::horizontal()
+                    .id_salt("metadata-strip")
+                    .show(ui, |ui| {
+                        ui.spacing_mut().scroll = floating;
+                        ui.horizontal_top(|ui| {
+                            ui.spacing_mut().item_spacing.x = 0.;
+                            for column in 0..4 {
+                                if column > 0 {
+                                    divider(ui, gap);
+                                }
+                                ui.vertical(|ui| {
+                                    ui.set_width(width);
+                                    ui.spacing_mut().item_spacing.y = 0.;
+                                    self.column_header(ui, column, width);
+                                    let attribute = self.metadata_bar.columns[column];
+                                    changed |= self.value_list(ui, attribute, width, STRIP_LIST);
+                                });
+                            }
                         });
-                    }
-                });
+                    });
             });
+        // A hairline under the strip, as under the bar.
+        let bottom = frame.response.rect.bottom();
+        ui.painter().hline(
+            frame.response.rect.x_range(),
+            bottom,
+            egui::Stroke::new(1., palette.tone(Tone::OUTLINE)),
+        );
         changed
     }
+    /// A strip column's header: its attribute, left-aligned with a chevron,
+    /// opening a menu of the attributes.
     fn column_header(&mut self, ui: &mut egui::Ui, column: usize, width: f32) {
         let palette = theme::palette(ui.ctx());
-        let shown = &mut self.metadata_bar.columns[column];
-        egui::ComboBox::from_id_salt(("metadata-column", column))
-            .selected_text(filter_caption(&palette, shown.name()))
-            .width(width)
-            .show_ui(ui, |ui| {
-                for attribute in Attribute::ALL {
-                    ui.selectable_value(shown, attribute, attribute.name());
+        let shown = self.metadata_bar.columns[column];
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(width, size::CONTROL), egui::Sense::click());
+        let hovered = response.hovered();
+        if hovered {
+            ui.painter()
+                .rect_filled(rect, radius::CONTROL, palette.tone(Tone::OUTLINE));
+        }
+        let ink = palette.tone(if hovered {
+            Tone::STRONG
+        } else {
+            Tone::SECONDARY
+        });
+        let name = ui.painter().layout_no_wrap(
+            shown.name().to_string(),
+            egui::FontId::proportional(text::SMALL),
+            ink,
+        );
+        let left = rect.left() + space::S;
+        ui.painter().galley(
+            egui::pos2(left, rect.center().y - name.size().y / 2.),
+            name.clone(),
+            ink,
+        );
+        icons::paint_at(
+            ui.painter(),
+            Icon::ChevronDown,
+            egui::pos2(left + name.size().x + space::S + 4., rect.center().y),
+            10.,
+            ink,
+        );
+        let response = response
+            .on_hover_text("Choose what this column lists")
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        egui::Popup::menu(&response).show(|ui| {
+            ui.set_width(170.);
+            ui.spacing_mut().item_spacing.y = 0.;
+            for attribute in Attribute::ALL {
+                if menu_item(ui, attribute.name(), "", true, attribute == shown) {
+                    self.metadata_bar.columns[column] = attribute;
+                    ui.close();
                 }
-            });
+            }
+        });
     }
-    /// A bar button: the attribute's name, with the value chosen or how many,
-    /// opening its list.
+    /// A bar button: the attribute's name, or the value chosen, or the name
+    /// and how many, with a chevron; it opens the attribute's list.
     fn attribute_button(&mut self, ui: &mut egui::Ui, attribute: Attribute) -> bool {
         let chosen = self.filters.metadata.get(&attribute);
         let label = match chosen.map(|c| c.iter().collect::<Vec<_>>()).as_deref() {
@@ -127,21 +193,20 @@ impl Library {
             Some(more) => format!("{} ({})", attribute.name(), more.len()),
         };
         let on = chosen.is_some_and(|c| !c.is_empty());
-        let button = egui::Button::selectable(
-            on,
-            egui::RichText::new(format!("{} ▾", elided(&label, 24))).size(text::LABEL),
-        );
-        let response = ui.add(button).on_hover_text(if on {
-            format!("{}: {label}", attribute.name())
-        } else {
-            format!("Filter by {}", attribute.name().to_lowercase())
-        });
+        let response =
+            bar_button(ui, &format!("{} ▾", elided(&label, 24)), on).on_hover_text(if on {
+                format!("{}: {label}", attribute.name())
+            } else {
+                format!("Filter by {}", attribute.name().to_lowercase())
+            });
         let mut changed = false;
         egui::Popup::menu(&response)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
+                ui.set_width(POPUP_WIDTH);
+                ui.spacing_mut().item_spacing.y = 0.;
                 self.update_metadata_counts();
-                changed = self.value_list(ui, attribute, 260., 280.);
+                changed = self.value_list(ui, attribute, POPUP_WIDTH, 280.);
             });
         changed
     }
@@ -221,6 +286,30 @@ impl Library {
         }
         changed
     }
+}
+
+/// A Library bar button as wide as its label: 22 points high like the bar's
+/// other controls, filled when `on`.
+pub(super) fn bar_button(ui: &mut egui::Ui, label: &str, on: bool) -> egui::Response {
+    let text = ui.painter().layout_no_wrap(
+        label.to_string(),
+        egui::FontId::proportional(text::LABEL),
+        egui::Color32::WHITE,
+    );
+    let width = text.size().x + 2. * space::M;
+    toolbar_action_sized(ui, label, Vec2::new(width, size::CONTROL), on, true, 0)
+}
+
+/// A hairline between strip columns, with `gap` around it.
+fn divider(ui: &mut egui::Ui, gap: f32) {
+    let palette = theme::palette(ui.ctx());
+    let height = size::CONTROL + STRIP_LIST + size::ROW;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(gap, height), egui::Sense::hover());
+    ui.painter().vline(
+        rect.center().x,
+        rect.y_range().shrink(space::XS),
+        egui::Stroke::new(1., palette.tone(Tone::OUTLINE)),
+    );
 }
 
 /// A list row: the value on one line, cut short with its full text on hover,
