@@ -15,7 +15,7 @@ use std::io::{self, Read, Write};
 
 /// The protocol this build speaks. A worker that answers with another version
 /// is refused, not half understood.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// The largest frame accepted, in either direction: two coverages of the
 /// largest raster the renderer stores (4096 × 4096, base64) plus room for the
@@ -60,6 +60,9 @@ pub enum Op {
         /// most [`MAX_IMAGE_BYTES`].
         #[serde(with = "base64_bytes")]
         pixels: Vec<u8>,
+        /// The subject model's `processing_version` the app expects; a worker
+        /// running another refuses rather than answer with a different pipeline.
+        processing: u32,
     },
     /// What one click or box marks on a photo the worker analysed.
     Segment {
@@ -78,6 +81,8 @@ pub enum Op {
         /// most [`MAX_IMAGE_BYTES`].
         #[serde(with = "base64_bytes")]
         pixels: Vec<u8>,
+        /// The sky model's `processing_version` the app expects.
+        processing: u32,
     },
     /// Asks the worker to stop a request; it is answered with [`Reply::Ack`].
     Cancel {
@@ -189,7 +194,8 @@ pub enum Code {
     Cancelled,
     /// The request was not something this protocol allows.
     Invalid,
-    /// The worker speaks another protocol version.
+    /// The worker speaks another protocol version, or runs another
+    /// processing version of the model the request named.
     Unsupported,
     /// The worker no longer holds the analysis this `key` named; ask for it
     /// again with `analyze`.
@@ -465,6 +471,7 @@ mod tests {
                 width: 2,
                 height: 1,
                 pixels: vec![1, 2, 3, 4, 5, 6],
+                processing: 1,
             },
         };
         let text = serde_json::to_vec(&request).unwrap();

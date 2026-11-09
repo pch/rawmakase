@@ -7,7 +7,7 @@
 //! working.
 
 use rawmakase_cancel::Cancel;
-use rawmakase_inference::{Coverage, Prompt, RgbImage};
+use rawmakase_inference::{Coverage, Prompt, RgbImage, SKY, SUBJECT};
 use std::io::{self, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Arc;
@@ -160,6 +160,7 @@ impl RemoteSession {
                 width,
                 height,
                 pixels,
+                processing: SUBJECT.processing_version,
             },
             cancel,
         )? {
@@ -179,6 +180,7 @@ impl RemoteSession {
                 width,
                 height,
                 pixels,
+                processing: SKY.processing_version,
             },
             cancel,
         )? {
