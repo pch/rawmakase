@@ -858,7 +858,9 @@ the SDR photo gate were not run: they score these same SDR renders.
   CC0 Z 8 photo), and zoomed out, in 100% regions, Before Only, Before/After and
   Reference View (#924). The master's preview on the GPU during slider drags (#983),
   for ordinary and HDR profiles and looks (#984), Contrast and the tone curves (#986)
-  and the colour stage (#987), checked against the CPU master in float space; Texture,
-  HDR files and AI Denoise still show the CPU master. The HDR histogram in stops above white, the HDR readout,
+  the colour stage (#987) and Texture (#988), checked against the CPU master in float
+  space. HDR files still show the CPU master (their scene carries Exposure as a gain
+  of the light, which a GPU path would rebuild on every change); AI Denoise shows no
+  HDR preview yet. The HDR histogram in stops above white, the HDR readout,
   and what lies beyond the display's headroom marked in the histogram and its
   highlight triangle. Open: the rest of the stage (above).
