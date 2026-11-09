@@ -593,6 +593,41 @@ mod tests {
         Ok(())
     }
 
+    /// Strong but valid Levels extend far past every limit; with sharpening the master
+    /// stays finite and rolls off to the limit, not to black.
+    #[test]
+    fn strong_levels_roll_off_to_the_limit_through_sharpening() -> anyhow::Result<()> {
+        let im = grays(&[1., 4., 16.]);
+        let mut r = hdr_recipe(&im);
+        (r.black_point, r.white_point, r.midtone) = (0.8, 1., 0.1);
+        r.sharpening = 0.5;
+        let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let darkest = out.pixels.iter().flatten().fold(f32::MAX, |a, v| a.min(*v));
+        assert!(darkest > out.peak * 0.9, "{darkest}");
+        Ok(())
+    }
+
+    /// Levels renders in the master as a point curve of its shape: on encoded values,
+    /// as in SDR up to white and along its slope at white above it.
+    #[test]
+    fn levels_render_in_the_master_as_a_curve_of_their_shape() -> anyhow::Result<()> {
+        use crate::color::hdr_curve::{decode, encode, levels};
+        let im = grays(&[0.1, 0.5, 1.2, 4.]);
+        let r = hdr_recipe(&im);
+        let plain = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        for (black, white, midtone) in [(0.05, 1., 1.3), (0., 0.9, 0.8)] {
+            let mut edit = r.clone();
+            (edit.black_point, edit.white_point, edit.midtone) = (black, white, midtone);
+            let out = render_hdr(&im, &edit.checked()?, None, 0, Cancel::NEVER)?;
+            for i in 0..4 {
+                let want = decode(levels(encode(centre(&plain, i)), black, white, midtone));
+                let got = centre(&out, i);
+                assert!((got / want - 1.).abs() < 1e-3, "{i}: {got} {want}");
+            }
+        }
+        Ok(())
+    }
+
     /// The limit's roll-off applies once: a channel at the peak renders where
     /// `roll_off` puts it, not rolled off twice.
     #[test]

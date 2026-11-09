@@ -163,8 +163,8 @@ impl HdrSettings {
 /// with HDR off, or with nothing but measured adjustments, passes.
 ///
 /// Measured: white balance, Exposure, Contrast, negative Whites, Blacks, the HDR limit,
-/// the master point curve and the parametric curve ([`crate::color::hdr_curve`]), camera
-/// profiles
+/// the master point curve and the parametric curve, and Levels as a point curve of its
+/// shape ([`crate::color::hdr_curve`]), camera profiles
 /// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks of a table
 /// and a curve ([`crate::camera_profiles::hdr_look`]) at 100%, and what works
 /// on the camera's samples before tone: lens corrections, geometry, noise reduction,
@@ -188,8 +188,7 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
         r.hdr.sdr == SdrRendition::default(),
         "The SDR rendition's adjustments are not supported in HDR yet"
     );
-    let defaults = super::recipe::Recipe::default();
-    let unmeasured: [(&str, bool); 16] = [
+    let unmeasured: [(&str, bool); 15] = [
         // Camera Raw stretches a photo whose brightest areas are below about twice
         // graphics white much further than the measured gain (+3.8 stops at scene 0.3
         // on a ramp peaking at 0.5); negative Whites follows no photo statistic.
@@ -197,12 +196,6 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
         (
             "Highlights and Shadows",
             r.highlights != 0. || r.shadows != 0.,
-        ),
-        (
-            "Levels",
-            r.black_point != defaults.black_point
-                || r.white_point != defaults.white_point
-                || r.midtone != defaults.midtone,
         ),
         // Point curves were measured ending at white; one whose last point is left
         // of it holds its value beyond, which Camera Raw was not seen to do above
@@ -512,6 +505,9 @@ mod tests {
         // left of white does not.
         r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
         r.effects.parametric = [0.1, -0.2, 0.3, -0.4];
+        r.black_point = 0.05;
+        r.white_point = 0.9;
+        r.midtone = 1.2;
         assert!(check_recipe(&r).is_ok());
         r.curve.points = vec![[0.2, 0.], [1., 1.]];
         assert!(check_recipe(&r).is_ok());
