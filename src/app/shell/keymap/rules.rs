@@ -211,6 +211,19 @@ fn is_f_key(key: Key) -> bool {
         .is_some_and(|n| n.parse::<u8>().is_ok())
 }
 
+/// How far a context's bindings take precedence over others on the same chord:
+/// a tool's over Develop's, a Library view's over the Library's, a module's
+/// over those that work everywhere. The reference card's window is modal.
+pub(in crate::app) fn level(context: Context) -> u8 {
+    use Context::*;
+    match context {
+        Everywhere => 0,
+        Library | Develop | LoupeZoom => 1,
+        Grid | Loupe | Compare | Survey | Tool(_) => 2,
+        ShortcutSheet => 3,
+    }
+}
+
 impl Context {
     /// Whether bindings in `self` and `other` can both be eligible for one press.
     pub(in crate::app) fn overlaps(self, other: Self) -> bool {

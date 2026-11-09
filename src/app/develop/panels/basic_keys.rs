@@ -138,7 +138,7 @@ impl Editor {
     /// `typing` says whether a text field had the keys as the frame began: a field
     /// that took a `-` and gave up the keys on Return in this frame keeps that `-`.
     pub(in crate::app) fn develop_key_steps(&mut self, ctx: &egui::Context, typing: bool) {
-        let keys = FrameKeys::of(ctx);
+        let keys = self.keys(ctx);
         let actions: Vec<(Press, Action)> = keys
             .presses()
             .into_iter()

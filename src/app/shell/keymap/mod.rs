@@ -20,6 +20,7 @@ pub(in crate::app) use chord::{Chord, Mods};
 pub(in crate::app) use effective::Effective;
 
 pub(in crate::app) mod chord;
+pub(in crate::app) mod conflicts;
 mod effective;
 pub(in crate::app) mod file;
 #[cfg(test)]
@@ -351,11 +352,42 @@ impl Press {
     }
 }
 
-/// The presses taken in the pass `pass`.
+/// The presses taken in the pass `pass`, and those left to a binding of
+/// higher precedence (by its address).
 #[derive(Clone, Default)]
 struct Taken {
     pass: u64,
     presses: Vec<Press>,
+    reserved: Vec<(Press, usize)>,
+}
+
+/// A binding's identity: bindings are statics.
+fn address(binding: &Binding) -> usize {
+    std::ptr::from_ref(binding) as usize
+}
+
+/// The contexts active now, which the editor says as it goes through the
+/// frame ([`FrameKeys::set_live`]): what a press can be left to, or conflict
+/// with.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(in crate::app) struct Live(Vec<Context>);
+
+impl Live {
+    pub(in crate::app) fn new(contexts: Vec<Context>) -> Self {
+        Self(contexts)
+    }
+    pub(in crate::app) fn has(&self, context: Context) -> bool {
+        self.0.contains(&context)
+    }
+}
+
+/// What becomes of a press a binding matches.
+enum Verdict {
+    Run,
+    /// Left to a binding of higher precedence, which may take it later.
+    Leave,
+    /// Another binding of the same precedence has it too: neither runs.
+    Conflict(&'static Binding),
 }
 
 fn taken_id() -> egui::Id {
@@ -363,6 +395,12 @@ fn taken_id() -> egui::Id {
 }
 fn effective_id() -> egui::Id {
     egui::Id::new("keymap-effective")
+}
+fn live_id() -> egui::Id {
+    egui::Id::new("keymap-live")
+}
+fn reports_id() -> egui::Id {
+    egui::Id::new("keymap-conflicts")
 }
 
 /// The frame's key presses, for the handlers to take.
@@ -387,12 +425,29 @@ impl<'a> FrameKeys<'a> {
             .unwrap_or_default();
         Self { ctx, map }
     }
-    /// Starts the frame with `map`'s chords in effect: nothing taken yet.
+    /// Starts the frame with `map`'s chords in effect: nothing taken yet,
+    /// and no context known to be active until [`Self::set_live`].
     pub(in crate::app) fn begin(ctx: &'a egui::Context, map: Arc<Effective>) -> Self {
-        ctx.data_mut(|d| d.insert_temp(effective_id(), map.clone()));
+        ctx.data_mut(|d| {
+            d.insert_temp(effective_id(), map.clone());
+            d.remove::<Live>(live_id());
+        });
         let keys = Self { ctx, map };
         keys.set_taken(Vec::new());
         keys
+    }
+    /// The contexts active from now on, until the editor says otherwise. A
+    /// user's chord defers to a binding of higher precedence, or conflicts
+    /// with one of the same, only in an active context.
+    pub(in crate::app) fn set_live(&self, live: Live) {
+        self.ctx.data_mut(|d| d.insert_temp(live_id(), live));
+    }
+    /// The messages about conflicting chords since the last call: one for
+    /// each press that ran neither of two commands.
+    pub(in crate::app) fn take_reports(&self) -> Vec<String> {
+        self.ctx
+            .data_mut(|d| d.remove_temp::<Vec<String>>(reports_id()))
+            .unwrap_or_default()
     }
 
     /// `binding`'s chords in effect: the user's for its command, or its defaults.
@@ -403,7 +458,7 @@ impl<'a> FrameKeys<'a> {
     /// taken: for a handler that walks [`Self::presses`] and takes the press
     /// it acts on.
     pub(in crate::app) fn is(&self, press: &Press, binding: &Binding) -> bool {
-        matches_any(&self.chords_of(binding), press, binding.variants)
+        matches_any(&self.chords_of(binding), press, binding.variants) && self.runs(press, binding)
     }
     /// Whether a press of `key` at `physical` is one of `binding`'s keys in
     /// effect, whatever the modifiers.
@@ -426,7 +481,7 @@ impl<'a> FrameKeys<'a> {
         let chords = self.chords_of(binding);
         let (default, press) = chords.iter().find_map(|d| {
             open.iter()
-                .find(|p| d.matches(p, binding.variants))
+                .find(|p| d.matches(p, binding.variants) && self.runs(p, binding))
                 .map(|p| (d, *p))
         })?;
         let mut taken = match binding.per_frame {
@@ -474,6 +529,87 @@ impl<'a> FrameKeys<'a> {
         Some((index, press.modifiers))
     }
 
+    /// Whether `binding`, which matches `press`, runs it, by the user's chords'
+    /// precedence: a press another binding has been left is that binding's;
+    /// one a binding of higher precedence matches in an active context is
+    /// left to it; and one a binding of the same precedence matches too runs
+    /// neither, is taken, and is reported. Only where the user's chords are
+    /// involved: the defaults keep their explicit order.
+    fn runs(&self, press: &Press, binding: &Binding) -> bool {
+        match self.verdict(press, binding) {
+            Verdict::Run => true,
+            Verdict::Leave => false,
+            Verdict::Conflict(other) => {
+                self.take_press(press);
+                let chord = self
+                    .chords_of(binding)
+                    .iter()
+                    .find(|d| d.matches(press, binding.variants))
+                    .map(Default::label)
+                    .unwrap_or_default();
+                let title = |b: &Binding| {
+                    crate::app::shell::commands::registry::command_by_id(b.command)
+                        .map_or(b.command, |c| c.title)
+                };
+                let report = format!(
+                    "{chord} is the key of both \u{201c}{}\u{201d} and \u{201c}{}\u{201d}, so neither ran. \
+                     Change one in Preferences > Shortcuts.",
+                    title(binding),
+                    title(other)
+                );
+                self.ctx.data_mut(|d| {
+                    d.get_temp_mut_or_default::<Vec<String>>(reports_id())
+                        .push(report)
+                });
+                false
+            }
+        }
+    }
+    fn verdict(&self, press: &Press, binding: &Binding) -> Verdict {
+        let state = self.state();
+        // Taken by a conflict earlier in a handler's walk of the presses.
+        if state.presses.contains(press) {
+            return Verdict::Leave;
+        }
+        if let Some((_, owner)) = state.reserved.iter().find(|(p, _)| p == press) {
+            return if *owner == address(binding) {
+                Verdict::Run
+            } else {
+                Verdict::Leave
+            };
+        }
+        if self.map.is_default() {
+            return Verdict::Run;
+        }
+        let Some(live) = self.ctx.data(|d| d.get_temp::<Live>(live_id())) else {
+            return Verdict::Run;
+        };
+        let mine = rules::level(binding.context);
+        let others = || {
+            crate::app::shell::commands::registry::bindings::ALL
+                .iter()
+                .copied()
+                .filter(|other| {
+                    other.command != binding.command
+                        && live.has(other.context)
+                        && other.context.overlaps(binding.context)
+                        && (self.map.overrides(other.command)
+                            || self.map.overrides(binding.command))
+                        && matches_any(&self.chords_of(other), press, other.variants)
+                })
+        };
+        if let Some(higher) = others().find(|o| rules::level(o.context) > mine) {
+            let mut state = state;
+            state.reserved.push((*press, address(higher)));
+            self.set_state(state);
+            return Verdict::Leave;
+        }
+        match others().find(|o| rules::level(o.context) == mine) {
+            Some(other) => Verdict::Conflict(other),
+            None => Verdict::Run,
+        }
+    }
+
     /// The presses no handler has taken yet, in the order they came, for a
     /// handler that walks them as the views' key loops do.
     pub(in crate::app) fn presses(&self) -> Vec<Press> {
@@ -502,24 +638,32 @@ impl<'a> FrameKeys<'a> {
         self.ctx
             .input(|i| number(i.events.iter().filter_map(Press::of)))
     }
-    fn taken(&self) -> Vec<Press> {
+    fn state(&self) -> Taken {
         let pass = self.ctx.cumulative_pass_nr();
         self.ctx
             .data(|d| d.get_temp::<Taken>(taken_id()))
             .filter(|t| t.pass == pass)
-            .map(|t| t.presses)
-            .unwrap_or_default()
+            .unwrap_or(Taken {
+                pass,
+                ..Taken::default()
+            })
+    }
+    fn set_state(&self, state: Taken) {
+        self.ctx.data_mut(|d| d.insert_temp(taken_id(), state));
+    }
+    fn taken(&self) -> Vec<Press> {
+        self.state().presses
     }
     fn set_taken(&self, presses: Vec<Press>) {
-        let pass = self.ctx.cumulative_pass_nr();
-        self.ctx
-            .data_mut(|d| d.insert_temp(taken_id(), Taken { pass, presses }));
+        let mut state = self.state();
+        state.presses = presses;
+        self.set_state(state);
     }
     /// Takes the presses `gone` picks out of egui's input. The presses left
     /// keep whether they were taken, numbered again among identical ones.
     fn remove(&self, gone: impl Fn(&Press) -> bool) {
         let before = self.read();
-        let taken = self.taken();
+        let state = self.state();
         let keep: Vec<bool> = before.iter().map(|p| !gone(p)).collect();
         if keep.iter().all(|k| *k) {
             return;
@@ -541,15 +685,25 @@ impl<'a> FrameKeys<'a> {
                 .filter(|(_, k)| **k)
                 .map(|(p, _)| *p),
         );
-        let still: Vec<Press> = before
-            .iter()
-            .zip(&keep)
-            .filter(|(_, k)| **k)
-            .zip(&left)
-            .filter(|((p, _), _)| taken.contains(p))
+        let kept = || before.iter().zip(&keep).filter(|(_, k)| **k).zip(&left);
+        let presses = kept()
+            .filter(|((p, _), _)| state.presses.contains(p))
             .map(|(_, renumbered)| *renumbered)
             .collect();
-        self.set_taken(still);
+        let reserved = kept()
+            .filter_map(|((p, _), renumbered)| {
+                state
+                    .reserved
+                    .iter()
+                    .find(|(r, _)| r == p)
+                    .map(|(_, owner)| (*renumbered, *owner))
+            })
+            .collect();
+        self.set_state(Taken {
+            pass: state.pass,
+            presses,
+            reserved,
+        });
     }
 }
 

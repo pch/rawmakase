@@ -29,6 +29,10 @@ impl Effective {
     pub(in crate::app) fn user_chords(&self, command: &str) -> Option<&[Chord]> {
         self.user.get(command).map(Vec::as_slice)
     }
+    /// Whether the key map names no command: the defaults alone.
+    pub(in crate::app) fn is_default(&self) -> bool {
+        self.user.is_empty()
+    }
     /// Whether the key map names `command`.
     pub(in crate::app) fn overrides(&self, command: &str) -> bool {
         self.user.contains_key(command)

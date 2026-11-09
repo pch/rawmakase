@@ -22,7 +22,6 @@ pub(super) struct Survey {
 }
 
 impl Library {
-    #[cfg(test)]
     pub(crate) fn survey_open(&self) -> bool {
         self.survey.open
     }
@@ -130,12 +129,11 @@ impl Library {
         use crate::app::shell::commands::registry::bindings as b;
         for press in presses {
             // B, Cmd+B and Cmd+Shift+B first, then the view's own keys.
-            if keys.is(press, &b::SURVEY_QUICK_TOGGLE)
-                || keys.is(press, &b::SURVEY_QUICK_SHOW)
-                || keys.is(press, &b::SURVEY_QUICK_CLEAR)
+            if let Some(command) =
+                super::selection::quick_command(keys, press, &super::selection::QUICK_SURVEY)
             {
                 let ids = self.selection.active.into_iter().collect();
-                self.quick_key(press.modifiers, ids)
+                self.quick_key(command, ids)
             } else if keys.is(press, &b::SURVEY_PREVIOUS) {
                 self.step_surveyed(-1)
             } else if keys.is(press, &b::SURVEY_NEXT) {

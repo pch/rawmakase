@@ -531,3 +531,37 @@ fn a_users_chord_on_a_punctuation_key_reads_as_the_binding_does() {
         "Shift, the variant, is passed on"
     );
 }
+
+#[test]
+fn a_press_two_commands_share_is_reported_once_and_runs_neither() {
+    use crate::app::shell::commands::registry::bindings as b;
+    let f9 = Chord::new(Key::F9, Mods::NONE);
+    let map = std::sync::Arc::new(Effective::new(
+        [("grid:cell_style", vec![f9]), ("library:compare", vec![f9])]
+            .into_iter()
+            .collect(),
+    ));
+    let ctx = egui::Context::default();
+    let (ran, reports) = frame(&ctx, vec![press(Key::F9, Modifiers::NONE)], |ctx| {
+        let keys = FrameKeys::begin(ctx, map.clone());
+        keys.set_live(Live::new(vec![
+            Context::Everywhere,
+            Context::Library,
+            Context::Grid,
+        ]));
+        // As the grid's key loop asks each of its bindings in turn.
+        let presses = keys.presses();
+        let ran: Vec<&str> = [&b::GRID_COMPARE, &b::GRID_CELL_STYLE, &b::GRID_SURVEY]
+            .iter()
+            .filter(|binding| presses.iter().any(|p| keys.is(p, binding)))
+            .map(|binding| binding.command)
+            .collect();
+        (ran, keys.take_reports())
+    });
+    assert_eq!(ran, Vec::<&str>::new());
+    assert_eq!(reports.len(), 1, "{reports:?}");
+    assert!(
+        reports[0].starts_with("F9 is the key of both"),
+        "{reports:?}"
+    );
+}

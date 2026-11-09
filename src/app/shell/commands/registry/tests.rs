@@ -27,10 +27,10 @@ fn every_binding_runs_a_command_and_has_a_chord() {
             "no command {}",
             b.command
         );
-        // Masking's at-once close has no key by default: Escape steps back.
-        assert!(
-            !b.defaults.is_empty() || std::ptr::eq(*b, &bindings::CLOSE_MASKING),
-            "{} has no keys",
+        assert_eq!(
+            b.defaults.is_empty(),
+            bindings::keyless(b),
+            "{} has keys, or none",
             b.command
         );
         for d in b.defaults {
@@ -40,6 +40,17 @@ fn every_binding_runs_a_command_and_has_a_chord() {
     }
     for b in bindings::METADATA {
         assert!(ALL.iter().any(|a| std::ptr::eq(*a, b)));
+    }
+}
+
+#[test]
+fn a_users_keys_reach_every_command_but_the_fixed_ones() {
+    for c in COMMANDS.iter().filter(|c| c.rebindable) {
+        assert!(
+            ALL.iter().any(|b| b.command == c.id),
+            "{} has no binding for a key to run it",
+            c.id
+        );
     }
 }
 

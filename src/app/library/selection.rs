@@ -1,8 +1,9 @@
 //! Lightroom's Grid selection: an active photo, the photos selected with it,
 //! and the anchor a Shift range starts from.
-use super::Library;
+use super::quick::QuickKey;
+use super::{DeleteKey, Library, StackAction};
 use crate::app::shell::commands::registry::bindings as b;
-use crate::app::shell::keymap::{FrameKeys, Press};
+use crate::app::shell::keymap::{Binding, FrameKeys, Press};
 use crate::catalog::PhotoId;
 use eframe::egui;
 use std::collections::HashSet;
@@ -290,39 +291,19 @@ impl Library {
                 self.open_survey()
             } else if keys.is(press, &b::GRID_CELL_STYLE) {
                 self.cell_style = self.cell_style.next()
-            } else if keys.is(press, &b::GRID_QUICK_TOGGLE)
-                || keys.is(press, &b::GRID_QUICK_SHOW)
-                || keys.is(press, &b::GRID_QUICK_CLEAR)
-            {
+            } else if let Some(command) = quick_command(keys, press, &QUICK_GRID) {
                 // The grid applies B to every selected photo, once per press.
-                self.quick_key(press.modifiers, self.selected_ids())
-            } else if keys.is(press, &b::GRID_DELETE)
-                || keys.is(press, &b::GRID_REMOVE_FROM_CATALOG)
-                || keys.is(press, &b::GRID_DELETE_REJECTED)
-                || keys.is(press, &b::GRID_TRASH)
-            {
+                self.quick_key(command, self.selected_ids())
+            } else if let Some(command) = delete_command(keys, press, &DELETE_GRID) {
                 // Once per press: a held Delete must not ask again.
                 let ids = self.selected_ids();
-                self.delete_press(press.modifiers, ids)
+                self.delete_command(command, ids)
             } else if keys.is(press, &b::GRID_RENAME) {
                 let ids = self.selected_ids();
                 self.request_rename(ids)
-            } else if keys.is(press, &b::STACK_GROUP) || keys.is(press, &b::STACK_UNSTACK) {
+            } else if let Some(action) = stack_command(keys, press, &STACK_GRID) {
                 // Lightroom's stacks: Cmd+G groups, Cmd+Shift+G unstacks,
                 // S collapses or expands and Shift+S moves to the top.
-                let action = if shift {
-                    super::StackAction::Unstack
-                } else {
-                    super::StackAction::Group
-                };
-                self.stack_key(action, self.selected_ids())
-            } else if keys.is(press, &b::GRID_STACK_TOGGLE) || keys.is(press, &b::GRID_STACK_TO_TOP)
-            {
-                let action = if shift {
-                    super::StackAction::MoveToTop
-                } else {
-                    super::StackAction::Toggle
-                };
                 self.stack_key(action, self.selected_ids())
             } else if keys.is(press, &b::GRID_SELECT_ALL) {
                 self.select_all()
@@ -366,14 +347,10 @@ impl Library {
                 self.step(Step::End, false)
             } else if keys.is(press, &b::LOUPE_CLOSE) {
                 self.close_loupe()
-            } else if keys.is(press, &b::LOUPE_DELETE)
-                || keys.is(press, &b::LOUPE_REMOVE_FROM_CATALOG)
-                || keys.is(press, &b::LOUPE_DELETE_REJECTED)
-                || keys.is(press, &b::LOUPE_TRASH)
-            {
+            } else if let Some(command) = delete_command(keys, press, &DELETE_LOUPE) {
                 // The Loupe's photo, once per press.
                 let ids = self.selection.active.into_iter().collect();
-                self.delete_press(press.modifiers, ids)
+                self.delete_command(command, ids)
             } else if keys.is(press, &b::LOUPE_RENAME) {
                 let ids = self.selection.active.into_iter().collect();
                 self.request_rename(ids)
@@ -381,26 +358,16 @@ impl Library {
                 self.open_compare()
             } else if keys.is(press, &b::LOUPE_SURVEY) {
                 self.open_survey()
-            } else if keys.is(press, &b::LOUPE_QUICK_TOGGLE)
-                || keys.is(press, &b::LOUPE_QUICK_SHOW)
-                || keys.is(press, &b::LOUPE_QUICK_CLEAR)
-            {
+            } else if let Some(command) = quick_command(keys, press, &QUICK_LOUPE) {
                 // The Loupe applies B to the photo shown, once per press.
                 let ids = self.selection.active.into_iter().collect();
-                self.quick_key(press.modifiers, ids)
+                self.quick_key(command, ids)
             } else if keys.is(press, &b::LOUPE_INFO) {
                 // Once per press: a held I must not flicker through them.
                 self.cycle_loupe_info()
-            } else if keys.is(press, &b::LOUPE_STACK_TOGGLE)
-                || keys.is(press, &b::LOUPE_STACK_TO_TOP)
-            {
+            } else if let Some(action) = stack_command(keys, press, &STACK_LOUPE) {
                 // As in the grid: S collapses or expands the photo's stack
                 // and Shift+S moves it to the top.
-                let action = if press.modifiers.shift {
-                    super::StackAction::MoveToTop
-                } else {
-                    super::StackAction::Toggle
-                };
                 self.stack_key(action, self.selection.active.into_iter().collect())
             } else {
                 continue;
@@ -408,6 +375,84 @@ impl Library {
             keys.take_press(press);
         }
     }
+}
+
+/// Each view's Quick Collection bindings, with what they do.
+pub(super) type QuickBindings = [(&'static Binding, QuickKey); 3];
+pub(super) static QUICK_GRID: QuickBindings = [
+    (&b::GRID_QUICK_TOGGLE, QuickKey::Toggle),
+    (&b::GRID_QUICK_SHOW, QuickKey::Show),
+    (&b::GRID_QUICK_CLEAR, QuickKey::Clear),
+];
+static QUICK_LOUPE: QuickBindings = [
+    (&b::LOUPE_QUICK_TOGGLE, QuickKey::Toggle),
+    (&b::LOUPE_QUICK_SHOW, QuickKey::Show),
+    (&b::LOUPE_QUICK_CLEAR, QuickKey::Clear),
+];
+pub(super) static QUICK_COMPARE: QuickBindings = [
+    (&b::COMPARE_QUICK_TOGGLE, QuickKey::Toggle),
+    (&b::COMPARE_QUICK_SHOW, QuickKey::Show),
+    (&b::COMPARE_QUICK_CLEAR, QuickKey::Clear),
+];
+pub(super) static QUICK_SURVEY: QuickBindings = [
+    (&b::SURVEY_QUICK_TOGGLE, QuickKey::Toggle),
+    (&b::SURVEY_QUICK_SHOW, QuickKey::Show),
+    (&b::SURVEY_QUICK_CLEAR, QuickKey::Clear),
+];
+/// The Quick Collection command of the first of `bindings` `press` runs.
+pub(super) fn quick_command(
+    keys: &FrameKeys,
+    press: &Press,
+    bindings: &QuickBindings,
+) -> Option<QuickKey> {
+    bindings
+        .iter()
+        .find(|(binding, _)| keys.is(press, binding))
+        .map(|(_, command)| *command)
+}
+
+static DELETE_GRID: [(&Binding, DeleteKey); 4] = [
+    (&b::GRID_DELETE, DeleteKey::Delete),
+    (&b::GRID_REMOVE_FROM_CATALOG, DeleteKey::Remove),
+    (&b::GRID_DELETE_REJECTED, DeleteKey::DeleteRejected),
+    (&b::GRID_TRASH, DeleteKey::Trash),
+];
+static DELETE_LOUPE: [(&Binding, DeleteKey); 4] = [
+    (&b::LOUPE_DELETE, DeleteKey::Delete),
+    (&b::LOUPE_REMOVE_FROM_CATALOG, DeleteKey::Remove),
+    (&b::LOUPE_DELETE_REJECTED, DeleteKey::DeleteRejected),
+    (&b::LOUPE_TRASH, DeleteKey::Trash),
+];
+fn delete_command(
+    keys: &FrameKeys,
+    press: &Press,
+    bindings: &[(&'static Binding, DeleteKey); 4],
+) -> Option<DeleteKey> {
+    bindings
+        .iter()
+        .find(|(binding, _)| keys.is(press, binding))
+        .map(|(_, command)| *command)
+}
+
+static STACK_GRID: [(&Binding, StackAction); 4] = [
+    (&b::STACK_GROUP, StackAction::Group),
+    (&b::STACK_UNSTACK, StackAction::Unstack),
+    (&b::GRID_STACK_TOGGLE, StackAction::Toggle),
+    (&b::GRID_STACK_TO_TOP, StackAction::MoveToTop),
+];
+static STACK_LOUPE: [(&Binding, StackAction); 2] = [
+    (&b::LOUPE_STACK_TOGGLE, StackAction::Toggle),
+    (&b::LOUPE_STACK_TO_TOP, StackAction::MoveToTop),
+];
+fn stack_command(
+    keys: &FrameKeys,
+    press: &Press,
+    bindings: &[(&'static Binding, StackAction)],
+) -> Option<StackAction> {
+    bindings
+        .iter()
+        .find(|(binding, _)| keys.is(press, binding))
+        .map(|(_, action)| *action)
 }
 
 #[cfg(test)]

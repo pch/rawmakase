@@ -70,7 +70,8 @@ fn edit_for_command(id: &str) -> Option<Edit> {
         "toggle_pick" => Edit::TogglePick,
         "rating:lower" => Edit::RatingDelta(-1),
         "rating:raise" => Edit::RatingDelta(1),
-        _ => return None,
+        // Setting a label, or none: automation's actions.
+        id => return crate::app::shell::commands::Action::parse(id)?.metadata(),
     })
 }
 

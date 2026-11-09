@@ -50,7 +50,6 @@ impl Compare {
 }
 
 impl Library {
-    #[cfg(test)]
     pub(crate) fn compare_open(&self) -> bool {
         self.compare.open
     }
@@ -323,12 +322,11 @@ impl Library {
         use crate::app::shell::commands::registry::bindings as b;
         for press in presses {
             // B, Cmd+B and Cmd+Shift+B, for the active photo, once per press.
-            if keys.is(press, &b::COMPARE_QUICK_TOGGLE)
-                || keys.is(press, &b::COMPARE_QUICK_SHOW)
-                || keys.is(press, &b::COMPARE_QUICK_CLEAR)
+            if let Some(command) =
+                super::selection::quick_command(keys, press, &super::selection::QUICK_COMPARE)
             {
                 let ids = self.selection.active.into_iter().collect();
-                self.quick_key(press.modifiers, ids)
+                self.quick_key(command, ids)
             } else if keys.is(press, &b::COMPARE_PREVIOUS) {
                 self.step_candidate(-1)
             } else if keys.is(press, &b::COMPARE_NEXT) {

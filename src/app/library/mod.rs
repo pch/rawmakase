@@ -82,6 +82,17 @@ pub(crate) enum CopyAction {
     /// Asks first, as Lightroom does.
     Remove(PhotoId),
 }
+/// What a delete key does (see [`Library::delete_command`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum DeleteKey {
+    /// Move to Trash, or Remove from Catalog, as [`Library::delete_key`] decides.
+    Delete,
+    /// Remove from Catalog.
+    Remove,
+    DeleteRejected,
+    /// Move to Trash.
+    Trash,
+}
 /// A file operation the Library asked for, for the editor to plan and
 /// confirm.
 #[derive(Clone, Debug, PartialEq)]
@@ -778,22 +789,18 @@ impl Library {
             self.ask(outbox::Request::File(FileRequest::Delete(ids)));
         }
     }
-    /// Delete and Backspace with `modifiers`, for `ids`: alone, as
-    /// [`Self::delete_key`]; with Option, Remove from Catalog, even in a
-    /// collection; with ⌘⌥⇧, Move to Trash; with ⌘, Delete Rejected Photos
-    /// (Ctrl for ⌘ off the Mac).
-    pub(in crate::app) fn delete_press(&mut self, modifiers: egui::Modifiers, ids: Vec<PhotoId>) {
-        match (modifiers.command, modifiers.alt, modifiers.shift) {
-            (true, true, true) => self.request_trash(ids),
-            (true, false, false) => self.ask(outbox::Request::File(FileRequest::DeleteRejected)),
-            (false, alt, false) if !modifiers.ctrl => {
-                if alt {
-                    self.request_removal(ids)
-                } else {
-                    self.delete_key(ids)
-                }
+    /// The delete command a key ran, for `ids`. By default Delete and
+    /// Backspace: alone, as [`Self::delete_key`]; with Option, Remove from
+    /// Catalog, even in a collection; with ⌘⌥⇧, Move to Trash; with ⌘, Delete
+    /// Rejected Photos (Ctrl for ⌘ off the Mac).
+    pub(in crate::app) fn delete_command(&mut self, command: DeleteKey, ids: Vec<PhotoId>) {
+        match command {
+            DeleteKey::Trash => self.request_trash(ids),
+            DeleteKey::DeleteRejected => {
+                self.ask(outbox::Request::File(FileRequest::DeleteRejected))
             }
-            _ => {}
+            DeleteKey::Remove => self.request_removal(ids),
+            DeleteKey::Delete => self.delete_key(ids),
         }
     }
     /// Rename Photo… or Rename Photos… for `ids` (F2, the thumbnail menu),

@@ -327,6 +327,14 @@ pub(in crate::app) mod bindings {
         // Shift+[ and Shift+] type `{` and `}` on US layouts.
         RATING_LOWER = rating("rating:lower", &[rate(OPEN_BRACKETS)]);
         RATING_RAISE = rating("rating:raise", &[rate(CLOSE_BRACKETS)]);
+        // No key by default; a key the user gives them runs them as these do.
+        SET_LABEL_RED = rating("label:red", &[]);
+        SET_LABEL_YELLOW = rating("label:yellow", &[]);
+        SET_LABEL_GREEN = rating("label:green", &[]);
+        SET_LABEL_BLUE = rating("label:blue", &[]);
+        SET_LABEL_PURPLE = rating("label:purple", &[]);
+        SET_LABEL_NONE = rating("label:none", &[]);
+        LABEL_PURPLE = rating("toggle_label:purple", &[]);
 
         // The Library's views (`Library::selection_keys`).
         FILTERS = b("filters", Library, &[d(&[Key::L], CMD).once_per_press()]);
@@ -595,6 +603,17 @@ pub(in crate::app) mod bindings {
         NEW_LINEAR_MASK = b("mask:new_linear", Develop, &[d(&[Key::M], NONE)]);
         NEW_RADIAL_MASK = b("mask:new_radial", Develop, &[d(&[Key::M], SHIFT)]);
         NEW_COLOR_RANGE_MASK = b("mask:new_color_range", Develop, &[d(&[Key::J], SHIFT)]);
+        // Develop's commands with no key by default, which run as automation
+        // runs them once the user gives them one.
+        AUTO_WHITE_BALANCE = b("auto_white_balance", Develop, &[]);
+        CURVE_LINEAR = b("curve:linear", Develop, &[]);
+        CURVE_MEDIUM_CONTRAST = b("curve:medium_contrast", Develop, &[]);
+        CURVE_STRONG_CONTRAST = b("curve:strong_contrast", Develop, &[]);
+        TREATMENT_BLACK_WHITE = b("treatment:bw", Develop, &[]);
+        TREATMENT_COLOR = b("treatment:color", Develop, &[]);
+        MIXER_HUE = b("mixer:hue", Develop, &[]);
+        MIXER_SATURATION = b("mixer:sat", Develop, &[]);
+        MIXER_LUMINANCE = b("mixer:lum", Develop, &[]);
 
         // The tools' keys (`Editor::crop_keys` and the rest).
         CROP_SWAP_ORIENTATION = b("crop:swap_orientation", Context::Tool(Tool::Crop), &[
@@ -672,7 +691,7 @@ pub(in crate::app) mod bindings {
     }
 
     /// The rating, flag and label keys, in the order a press is matched.
-    pub(in crate::app) static METADATA: [&Binding; 18] = [
+    pub(in crate::app) static METADATA: [&Binding; 25] = [
         &FLAG_RAISE,
         &FLAG_LOWER,
         &RATING_0,
@@ -691,7 +710,39 @@ pub(in crate::app) mod bindings {
         &TOGGLE_PICK,
         &RATING_LOWER,
         &RATING_RAISE,
+        &SET_LABEL_RED,
+        &SET_LABEL_YELLOW,
+        &SET_LABEL_GREEN,
+        &SET_LABEL_BLUE,
+        &SET_LABEL_PURPLE,
+        &SET_LABEL_NONE,
+        &LABEL_PURPLE,
     ];
+
+    /// Develop's commands with no key by default, run as automation runs them.
+    pub(in crate::app) static DEVELOP_ACTIONS: [&Binding; 9] = [
+        &AUTO_WHITE_BALANCE,
+        &CURVE_LINEAR,
+        &CURVE_MEDIUM_CONTRAST,
+        &CURVE_STRONG_CONTRAST,
+        &TREATMENT_BLACK_WHITE,
+        &TREATMENT_COLOR,
+        &MIXER_HUE,
+        &MIXER_SATURATION,
+        &MIXER_LUMINANCE,
+    ];
+
+    /// The bindings with no key by default: Masking's at-once close, as
+    /// Escape steps back, and the commands only automation ran before the
+    /// key map.
+    #[cfg(test)]
+    pub(in crate::app) fn keyless(binding: &Binding) -> bool {
+        std::ptr::eq(binding, &CLOSE_MASKING)
+            || METADATA
+                .iter()
+                .any(|b| std::ptr::eq(*b, binding) && b.defaults.is_empty())
+            || DEVELOP_ACTIONS.iter().any(|b| std::ptr::eq(*b, binding))
+    }
 }
 
 #[cfg(test)]

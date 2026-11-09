@@ -201,7 +201,7 @@ impl Editor {
         }
         // Cmd+/ closes it again; other keys stay with the sheet.
         use crate::app::shell::commands::registry::bindings;
-        let keys = crate::app::shell::keymap::FrameKeys::of(ctx);
+        let keys = self.keys(ctx);
         if keys.take(&bindings::SHORTCUTS_CLOSE).is_some() {
             self.view.shortcuts = false;
             return;

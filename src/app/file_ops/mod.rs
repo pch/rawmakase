@@ -1211,17 +1211,26 @@ impl Editor {
         {
             return;
         }
-        // Whether it was pressed, and with what (see `Library::delete_press`).
+        // Which of the delete commands was pressed (see `Library::delete_command`).
         use crate::app::shell::commands::registry::bindings as b;
-        let pressed = crate::app::shell::keymap::FrameKeys::of(ctx)
+        let pressed = self
+            .keys(ctx)
             .take_first(&[
                 &b::DEVELOP_DELETE,
                 &b::DEVELOP_REMOVE_FROM_CATALOG,
                 &b::DEVELOP_DELETE_REJECTED,
                 &b::DEVELOP_TRASH,
             ])
-            .map(|(_, modifiers)| modifiers);
-        let (Some(modifiers), Some(open), Some(library)) =
+            .map(|(i, _)| {
+                use crate::app::library::DeleteKey;
+                [
+                    DeleteKey::Delete,
+                    DeleteKey::Remove,
+                    DeleteKey::DeleteRejected,
+                    DeleteKey::Trash,
+                ][i]
+            });
+        let (Some(command), Some(open), Some(library)) =
             (pressed, self.document.catalog_photo, self.library.as_mut())
         else {
             return;
@@ -1232,7 +1241,7 @@ impl Editor {
         } else {
             vec![open]
         };
-        library.delete_press(modifiers, ids);
+        library.delete_command(command, ids);
     }
 
     /// The plan came back: it is asked about, or nothing is to be done. A

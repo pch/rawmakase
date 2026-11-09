@@ -328,7 +328,8 @@ impl Editor {
         // Shift+Tab before Tab and Shift+F8 before F8: the plain patterns also
         // match with Shift held.
         use crate::app::shell::commands::registry::bindings as b;
-        let change = crate::app::shell::keymap::FrameKeys::of(ctx)
+        let change = self
+            .keys(ctx)
             .take_any(&[
                 &b::PANELS_ALL,
                 &b::PANELS_SIDES,
