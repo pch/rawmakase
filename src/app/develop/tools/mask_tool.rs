@@ -282,31 +282,30 @@ impl Editor {
     }
     /// The Masking tool's keys: `[` `]` brush size (Shift: feather), O overlay, Delete
     /// removes the selected mask, `/` switches between brushes A and B.
-    pub(in crate::app) fn mask_keys(&mut self, i: &egui::InputState) {
-        use egui::Key;
+    pub(in crate::app) fn mask_keys(&mut self, ctx: &egui::Context) {
+        use crate::app::shell::commands::registry::bindings as b;
         if self.view.masking.renaming.is_some() {
             return;
         }
-        // Each key with the modifiers held for it.
-        let press =
-            |keys: &[Key]| crate::app::shell::key_match::press(i, keys, |m| !m.command && !m.alt);
+        // Each key with the modifiers held for it; Shift feathers.
+        let keys = crate::app::shell::keymap::FrameKeys::of(ctx);
         let t = &mut self.view.masking;
         let brush = &mut t.brushes[t.brush];
-        if let Some(m) = press(&[Key::OpenBracket, Key::OpenCurlyBracket]) {
+        if let Some(m) = keys.take(&b::MASK_SMALLER) {
             if m.shift {
                 brush.feather = (brush.feather - 0.1).max(0.);
             } else {
                 brush.size = (brush.size / 1.15).max(0.002);
             }
         }
-        if let Some(m) = press(&[Key::CloseBracket, Key::CloseCurlyBracket]) {
+        if let Some(m) = keys.take(&b::MASK_LARGER) {
             if m.shift {
                 brush.feather = (brush.feather + 0.1).min(1.);
             } else {
                 brush.size = (brush.size * 1.15).min(0.5);
             }
         }
-        if press(&[Key::Escape]).is_some() {
+        if keys.take(&b::MASK_BACK).is_some() {
             // First Escape stops aiming; the next closes Masking.
             if self.selection.prompting.is_some() {
                 self.selection.end_prompting();
@@ -317,15 +316,13 @@ impl Editor {
             }
             return;
         }
-        if crate::app::shell::key_match::press(i, &[Key::O], |m| !m.command && !m.alt && !m.shift)
-            .is_some()
-        {
+        if keys.take(&b::MASK_OVERLAY).is_some() {
             t.overlay ^= true;
         }
-        if press(&[Key::Slash, Key::Questionmark]).is_some() {
+        if keys.take(&b::MASK_SWITCH_BRUSH).is_some() {
             t.brush = if t.brush == 0 { 1 } else { 0 };
         }
-        if press(&[Key::Delete, Key::Backspace]).is_some()
+        if keys.take(&b::MASK_DELETE).is_some()
             && let Some(m) = self.selected_mask()
         {
             self.document.edit.recipe_mut().masks.remove(m);

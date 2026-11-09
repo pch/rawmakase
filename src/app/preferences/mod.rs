@@ -191,14 +191,16 @@ impl Editor {
     }
     /// ⌘, (Ctrl+, elsewhere) opens Preferences, as in Lightroom.
     pub(in crate::app) fn preferences_shortcut(&mut self, ctx: &egui::Context) {
+        use crate::app::shell::commands::registry::bindings;
+        let keys = crate::app::shell::keymap::FrameKeys::of(ctx);
         if !self.preferences.open
             && !self.activity.is_busy()
-            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Comma))
+            && keys.take(&bindings::PREFERENCES).is_some()
         {
             self.open_preferences(Tab::General);
         }
         // Lightroom's Cmd+/: the keyboard shortcuts.
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Slash)) {
+        if keys.take(&bindings::SHORTCUTS).is_some() {
             self.view.shortcuts = !self.view.shortcuts;
         }
     }

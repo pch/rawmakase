@@ -122,27 +122,34 @@ impl Library {
         }
         Ok(())
     }
-    pub(super) fn survey_keys(&mut self, presses: &[super::selection::Press]) {
-        use egui::Key;
+    pub(super) fn survey_keys(
+        &mut self,
+        keys: crate::app::shell::keymap::FrameKeys,
+        presses: &[crate::app::shell::keymap::Press],
+    ) {
+        use crate::app::shell::commands::registry::bindings as b;
         for press in presses {
-            if press.key == Key::B {
-                if !press.repeat {
-                    let ids = self.selection.active.into_iter().collect();
-                    self.quick_key(press.modifiers, ids)
-                }
+            // B first, with any modifiers; the rest refuse Cmd and Alt.
+            if press.is(&b::SURVEY_QUICK_TOGGLE)
+                || press.is(&b::SURVEY_QUICK_SHOW)
+                || press.is(&b::SURVEY_QUICK_CLEAR)
+            {
+                let ids = self.selection.active.into_iter().collect();
+                self.quick_key(press.modifiers, ids)
+            } else if press.is(&b::SURVEY_PREVIOUS) {
+                self.step_surveyed(-1)
+            } else if press.is(&b::SURVEY_NEXT) {
+                self.step_surveyed(1)
+            } else if press.is(&b::SURVEY_CLOSE) {
+                self.close_survey()
+            } else if press.is(&b::SURVEY_LOUPE) {
+                self.open_loupe()
+            } else if press.is(&b::SURVEY_COMPARE) {
+                self.open_compare()
+            } else {
                 continue;
             }
-            if press.modifiers.command || press.modifiers.alt {
-                continue;
-            }
-            match press.key {
-                Key::ArrowLeft | Key::ArrowUp => self.step_surveyed(-1),
-                Key::ArrowRight | Key::ArrowDown => self.step_surveyed(1),
-                Key::Escape => self.close_survey(),
-                Key::E | Key::Enter => self.open_loupe(),
-                Key::C if !press.modifiers.any() => self.open_compare(),
-                _ => {}
-            }
+            keys.take_press(press);
         }
     }
     /// Survey in place of the grid: the photos tiled, with a toolbar.

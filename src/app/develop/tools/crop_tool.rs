@@ -416,36 +416,28 @@ impl crate::app::Editor {
     /// The Crop tool's keys: X swaps the crop's orientation, A locks or unlocks its
     /// aspect, O cycles the guide overlay
     /// and Shift+O turns it. The caller leaves them alone while a text field has focus.
-    pub(in crate::app) fn crop_keys(&mut self, i: &egui::InputState) {
+    pub(in crate::app) fn crop_keys(&mut self, ctx: &egui::Context) {
+        use crate::app::shell::commands::registry::bindings as b;
+        let keys = crate::app::shell::keymap::FrameKeys::of(ctx);
         // The modifiers held with each key press, which a quick release of Shift
         // before the frame does not change.
-        for event in &i.events {
-            let egui::Event::Key {
-                key,
-                pressed: true,
-                modifiers,
-                ..
-            } = event
-            else {
-                continue;
-            };
-            if modifiers.command || modifiers.alt || modifiers.ctrl {
-                continue;
-            }
-            match key {
-                egui::Key::X if !modifiers.shift => self.swap_crop_orientation(),
-                egui::Key::A if !modifiers.shift => self.toggle_aspect_lock(),
-                egui::Key::O => {
-                    let mut guides = self.view.crop_guides;
-                    if modifiers.shift {
-                        guides.turn();
-                    } else {
-                        guides.cycle();
-                    }
-                    self.set_crop_guides(guides);
+        for press in keys.presses() {
+            if press.is(&b::CROP_SWAP_ORIENTATION) {
+                self.swap_crop_orientation();
+            } else if press.is(&b::CROP_ASPECT_LOCK) {
+                self.toggle_aspect_lock();
+            } else if press.is(&b::CROP_NEXT_OVERLAY) || press.is(&b::CROP_TURN_OVERLAY) {
+                let mut guides = self.view.crop_guides;
+                if press.is(&b::CROP_TURN_OVERLAY) {
+                    guides.turn();
+                } else {
+                    guides.cycle();
                 }
-                _ => {}
+                self.set_crop_guides(guides);
+            } else {
+                continue;
             }
+            keys.take_press(&press);
         }
     }
     /// Picks `aspect` from the Crop tool's menu: the crop takes it now, even when an

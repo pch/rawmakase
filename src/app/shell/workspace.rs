@@ -2,7 +2,9 @@ use crate::app::Editor;
 use crate::app::Module;
 use crate::app::develop::state::Tool;
 use crate::app::develop::workflow::Flushed;
+use crate::app::shell::commands::registry::bindings;
 use crate::app::shell::dialogs::{CatalogDialog, FolderAction};
+use crate::app::shell::keymap::FrameKeys;
 use crate::app::shell::messages::Topic;
 use crate::app::shell::panels::WorkspacePanel;
 use crate::app::ui::design::{self, Tone, inset, space, text};
@@ -127,12 +129,12 @@ impl Editor {
         if shortcut.is_some() {
             self.finish_wheel_gesture();
         }
-        if let Some((edit, advance, index)) = shortcut
+        if let Some((edit, advance, press)) = shortcut
             && self.library.is_some()
         {
             // The press is the edit's alone: German Shift+7 types `/`, which
             // would also deselect in the grid, or pick the next spot source.
-            ctx.input_mut(|i| i.events.remove(index));
+            FrameKeys::of(ctx).remove_press(&press);
             if let Err(error) = self.command_metadata(edit, None, advance) {
                 self.messages
                     .fail(format!("Metadata could not be saved: {}", error.message));
@@ -168,6 +170,8 @@ impl Editor {
     }
     pub(in crate::app) fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        // Every shortcut below takes its keys from here.
+        FrameKeys::of(&ctx).begin();
         // Before any field takes this frame's keys, or gives them up.
         let typing = ctx.text_edit_focused();
         // Already done by `logic` this pass in the app; a pass run without it
@@ -220,7 +224,7 @@ impl Editor {
             // while it is not. A menu open over the view closes first.
             if self.chrome.hidden(self.module)
                 && !egui::Popup::is_any_open(&ctx)
-                && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+                && FrameKeys::of(&ctx).take(&bindings::SHOW_CHROME).is_some()
             {
                 let shown = self.chrome.show();
                 self.chrome_view(shown);
@@ -419,16 +423,7 @@ impl Editor {
     }
     fn workspace_shortcuts(&mut self, ctx: &egui::Context) {
         if !self.activity.is_busy() && !ctx.text_edit_focused() {
-            // Cmd+G and Cmd+D are other commands (Stack, Select None).
-            let plain = |key| {
-                // The modifiers held for that key, not at the end of the frame.
-                ctx.input(|i| {
-                    i.events.iter().any(|e| {
-                        matches!(e, egui::Event::Key { key: k, pressed: true, modifiers, .. }
-                            if *k == key && !(modifiers.command || modifiers.ctrl || modifiers.alt))
-                    })
-                })
-            };
+            let keys = FrameKeys::of(ctx);
             // The Loupe zooms with Develop's keys, whatever the photo; a menu
             // or popup takes the keys first.
             if self.module == Module::Library
@@ -441,23 +436,18 @@ impl Editor {
             if self.module == Module::Library {
                 // Consumed, with the modifiers held for the key, so an undo
                 // that opens Develop is not run again by Develop's keys.
-                use egui::{Key, Modifiers};
-                // Redo first: `consume_key` ignores an extra Shift, so the plain
-                // Cmd+Z pattern would also take Cmd+Shift+Z.
-                let (undo, redo) = ctx.input_mut(|i| {
-                    let redo = i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z)
-                        || (!cfg!(target_os = "macos")
-                            && i.consume_key(Modifiers::COMMAND, Key::Y));
-                    let undo = i.consume_key(Modifiers::COMMAND, Key::Z);
-                    (undo, redo)
-                });
+                // Redo first: Cmd+Z's pattern ignores an extra Shift, so it
+                // would also take Cmd+Shift+Z.
+                let redo = keys.take(&bindings::LIBRARY_REDO).is_some();
+                let undo = keys.take(&bindings::LIBRARY_UNDO).is_some();
                 if undo {
                     self.undo();
                 } else if redo {
                     self.redo();
                 }
             }
-            if plain(egui::Key::G) && self.flush() {
+            // Cmd+G and Cmd+D are other commands (Stack, Select None).
+            if keys.take(&bindings::LIBRARY).is_some() && self.flush() {
                 self.module = Module::Library;
                 if let Some(library) = &mut self.library {
                     library.show_grid();
@@ -465,7 +455,7 @@ impl Editor {
             }
             // E from Develop: the photo in the Library's Loupe.
             if self.module == Module::Develop
-                && plain(egui::Key::E)
+                && keys.take(&bindings::LOUPE_FROM_DEVELOP).is_some()
                 && self.flush()
                 && let (Some(library), Some(id)) = (&mut self.library, self.document.catalog_photo)
             {
@@ -475,11 +465,7 @@ impl Editor {
             }
             // Lightroom's Create Virtual Copy, in Library and Develop.
             // Only the first key-down: a held key must not make copy after copy.
-            let create = ctx.input(|i| {
-                crate::app::shell::key_match::fresh_press(i, &[egui::Key::Quote], |m| m.command)
-                    .is_some()
-            });
-            if create {
+            if keys.take(&bindings::VIRTUAL_COPY).is_some() {
                 let id = if self.module == Module::Library {
                     self.library.as_ref().and_then(|l| l.selected())
                 } else {
@@ -495,25 +481,10 @@ impl Editor {
             // Shift+F is not it; the event's own modifiers, which a quick
             // key-up cannot outrun. Held, it changes once, and the setup view
             // has no chrome to hide.
-            let hide = !self.onboarding.visible
-                && ctx.input(|i| {
-                    i.events.iter().any(|e| {
-                        matches!(
-                            e,
-                            egui::Event::Key {
-                                key: egui::Key::F,
-                                pressed: true,
-                                repeat: false,
-                                modifiers,
-                                ..
-                            } if !modifiers.any()
-                        )
-                    })
-                });
-            if hide {
+            if !self.onboarding.visible && keys.take(&bindings::CHROME).is_some() {
                 self.toggle_chrome();
             }
-            if plain(egui::Key::D) {
+            if keys.take(&bindings::DEVELOP).is_some() {
                 if self.module == Module::Library {
                     if let Some(id) = self.library.as_mut().and_then(|l| l.selected_or_first()) {
                         self.develop_catalog_photo(id);
@@ -986,45 +957,25 @@ impl Editor {
         // Export… and Export with Previous work in the Library too, on its selection.
         // Behind any dialog they don't; the chord is read from the key press itself.
         if !self.command_modal() && !self.activity.is_busy() && !ctx.text_edit_focused() {
-            let export = ctx.input(|i| {
-                i.events.iter().find_map(|event| match event {
-                    egui::Event::Key {
-                        key,
-                        pressed: true,
-                        repeat: false,
-                        modifiers,
-                        ..
-                    } if *key == egui::Key::E && modifiers.command && modifiers.shift => {
-                        Some(modifiers.alt)
-                    }
-                    _ => None,
-                })
-            });
+            let keys = FrameKeys::of(&ctx);
+            let export = keys.take_first(&[
+                &bindings::LIBRARY_EXPORT,
+                &bindings::LIBRARY_EXPORT_PREVIOUS,
+            ]);
             match export {
-                Some(true) => self.export_with_previous(),
-                Some(false) => self.open_export_dialog(),
+                Some((1, _)) => self.export_with_previous(),
+                Some(_) => self.open_export_dialog(),
                 None => {}
             }
             // Lightroom's Sync Settings, from the active photo to the rest of the
             // selection.
-            let sync = ctx.input_mut(|i| {
-                i.consume_key(
-                    egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-                    egui::Key::S,
-                )
-            });
+            let sync = keys.take(&bindings::LIBRARY_SYNC).is_some();
             if sync && !self.sync_targets().is_empty() {
                 self.open_copy_dialog(crate::app::develop::settings_transfer::Transfer::Sync);
             }
             // Lightroom's Auto Settings, here on each selected photo; in Develop it
             // stays the open photo's.
-            let auto = ctx.input_mut(|i| {
-                i.consume_key(
-                    egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-                    egui::Key::U,
-                )
-            });
-            if auto {
+            if keys.take(&bindings::LIBRARY_AUTO).is_some() {
                 self.start_batch(crate::app::library::sync::BatchChange::AutoSettings);
             }
         }
@@ -1372,45 +1323,29 @@ impl Editor {
     /// step through the zoom levels, Z toggles Fit and the last zoom. F is not
     /// here: it hides the chrome (see `chrome`), as Lightroom's does.
     pub(in crate::app) fn zoom_keys(&mut self, ctx: &egui::Context) {
-        use crate::app::shell::key_match::shortcut_key;
-        use egui::Key;
+        let keys = FrameKeys::of(ctx);
         // Each key with the modifiers held for it, which a quick shortcut
         // can release in the same frame.
-        let presses: Vec<(Key, Option<Key>, egui::Modifiers, bool)> = ctx.input(|i| {
-            i.events
-                .iter()
-                .filter_map(|e| match e {
-                    egui::Event::Key {
-                        key,
-                        physical_key,
-                        pressed: true,
-                        repeat,
-                        modifiers,
-                    } => Some((*key, *physical_key, *modifiers, *repeat)),
-                    _ => None,
-                })
-                .collect()
-        });
-        for (key, physical, modifiers, repeat) in presses {
-            match key {
-                // Cmd+0 (and Lightroom's Cmd+Option+0): 100%; Cmd+1 fits. The
-                // number row goes by its place (`key_match`).
-                _ if shortcut_key(key, physical) == Key::Num0
-                    && modifiers.command
-                    && !modifiers.shift =>
-                {
-                    self.set_zoom(1.)
-                }
-                _ if shortcut_key(key, physical) == Key::Num1 && modifiers.command_only() => {
-                    self.set_zoom(0.)
-                }
-                Key::Plus | Key::Equals if modifiers.command => self.step_zoom(1),
-                Key::Minus if modifiers.command => self.step_zoom(-1),
+        for press in keys.presses() {
+            // Cmd+0 (and Lightroom's Cmd+Option+0): 100%; Cmd+1 fits. The
+            // number row goes by its place (`key_match`).
+            if press.is(&bindings::ZOOM_100) {
+                self.set_zoom(1.)
+            } else if press.is(&bindings::ZOOM_FIT) {
+                self.set_zoom(0.)
+            } else if press.is(&bindings::ZOOM_IN) {
+                self.step_zoom(1)
+            } else if press.is(&bindings::ZOOM_OUT) {
+                self.step_zoom(-1)
+            } else if press.is(&bindings::ZOOM) {
                 // Once per press: a held Z must not flicker the zoom.
-                Key::Z if !modifiers.any() && !repeat => self.view.zoom.on = !self.view.zoom.on,
-                Key::Z if modifiers.shift_only() && !repeat => self.toggle_magnifier(),
-                _ => {}
+                self.view.zoom.on = !self.view.zoom.on
+            } else if press.is(&bindings::MAGNIFIER) {
+                self.toggle_magnifier()
+            } else {
+                continue;
             }
+            keys.take_press(&press);
         }
     }
     pub(in crate::app) fn develop_shortcuts(&mut self, ctx: &egui::Context) {
@@ -1418,234 +1353,196 @@ impl Editor {
         if !self.activity.is_busy() && !ctx.text_edit_focused() {
             self.zoom_keys(ctx);
             self.develop_delete_key(ctx);
+            // Every key is read with the modifiers held for it, not the frame's,
+            // which a quick shortcut can release before the frame ends. Each
+            // read lets go of egui's lock before its command runs: a shortcut
+            // that opens a photo uploads a texture, which waits for the lock.
+            use bindings as b;
+            let keys = FrameKeys::of(ctx);
             let (copy, paste, previous, treatment, reset, sync, match_exposures);
             let (new_preset, auto, export, transfer);
-            let mut select_all = false;
-            let mut select_none = false;
             let mut targeted = None;
+            // Lightroom's Copy After's Settings to Before (←), Copy Before's to
+            // After (→) and Swap (↑), with Cmd+Option+Shift.
             {
-                // A copy: `ctx.input` holds the context's lock, and a shortcut that
-                // opens a photo uploads a texture, which waits for it forever.
-                let i = &ctx.input(|i| i.clone());
-                // Every key is read with the modifiers held for it, not the frame's,
-                // which a quick shortcut can release before the frame ends.
-                use crate::app::shell::key_match::{fresh_press, press};
-                use egui::Key;
-                let all = |m: egui::Modifiers| m.command && m.alt && m.shift;
-                // Lightroom's Copy After's Settings to Before (←), Copy Before's to
-                // After (→) and Swap (↑), with Cmd+Option+Shift.
-                {
-                    use crate::app::develop::before_after::Transfer;
-                    transfer = [
-                        (Key::ArrowLeft, Transfer::AfterToBefore),
-                        (Key::ArrowRight, Transfer::BeforeToAfter),
-                        (Key::ArrowUp, Transfer::Swap),
-                    ]
-                    .into_iter()
-                    .find(|(key, _)| press(i, &[*key], all).is_some())
-                    .map(|(_, t)| t);
+                use crate::app::develop::before_after::Transfer;
+                transfer = keys
+                    .take_any(&[&b::COPY_TO_BEFORE, &b::COPY_TO_AFTER, &b::SWAP_BEFORE_AFTER])
+                    .map(|(i, _)| {
+                        [
+                            Transfer::AfterToBefore,
+                            Transfer::BeforeToAfter,
+                            Transfer::Swap,
+                        ][i]
+                    });
+            }
+            if transfer.is_none() {
+                if keys.take(&b::NEXT).is_some() {
+                    self.navigate(1);
+                } else if keys.take(&b::PREVIOUS).is_some() {
+                    self.navigate(-1);
                 }
-                if transfer.is_none() {
-                    if press(i, &[Key::ArrowRight], |m| !all(m)).is_some() {
-                        self.navigate(1);
-                    } else if press(i, &[Key::ArrowLeft], |m| !all(m)).is_some() {
-                        self.navigate(-1);
+            }
+            // Y: Before/After left and right, Option+Y top and bottom, Shift+Y
+            // split. By what the key types: egui-winit gives the key's place when
+            // Option types a character it can't name (`key_match`).
+            if let Some((i, _)) = keys.take_first(&[
+                &b::BEFORE_AFTER_LEFT_RIGHT,
+                &b::BEFORE_AFTER_TOP_BOTTOM,
+                &b::BEFORE_AFTER_SPLIT,
+            ]) {
+                use crate::app::develop::before_after::{Axis, Compare};
+                let view = [
+                    Compare::SideBySide(Axis::LeftRight),
+                    Compare::SideBySide(Axis::TopBottom),
+                    Compare::Split(Axis::LeftRight),
+                ][i];
+                self.set_compare(self.view.compare.toggled(view));
+            }
+            copy = keys.take(&b::COPY_SETTINGS).is_some();
+            paste = keys.take(&b::PASTE_SETTINGS).is_some();
+            // Lightroom's Paste Settings from Previous. With Cmd held, macOS types
+            // the letter Option would change.
+            previous = keys.take(&b::PASTE_PREVIOUS).is_some();
+            // Lightroom's Match Total Exposures.
+            match_exposures = keys.take(&b::MATCH_EXPOSURES).is_some();
+            // Lightroom's New Develop Preset.
+            new_preset = keys.take(&b::NEW_PRESET).is_some();
+            // Lightroom's Targeted Adjustment Tools: Cmd+Option+Shift and T (Tone
+            // Curve), H, S, L (the Color Mixer's Hue, Saturation, Luminance) or G
+            // (B&W).
+            {
+                use crate::develop::targeted::{HslChannel, Target};
+                for (binding, target) in [
+                    (&b::TARGETED_TONE_CURVE, Target::ToneCurve),
+                    (&b::TARGETED_HUE, Target::Hsl(HslChannel::Hue)),
+                    (&b::TARGETED_SATURATION, Target::Hsl(HslChannel::Saturation)),
+                    (&b::TARGETED_LUMINANCE, Target::Hsl(HslChannel::Luminance)),
+                    (&b::TARGETED_BLACK_WHITE, Target::BlackWhite),
+                ] {
+                    if keys.take(binding).is_some() {
+                        targeted = Some(target);
                     }
                 }
-                // Y: Before/After left and right, Option+Y top and bottom, Shift+Y
-                // split. By what the key types: egui-winit gives the key's place when
-                // Option types a character it can't name (`key_match`).
-                if let Some(m) = fresh_press(i, &[Key::Y], |m| !m.command) {
-                    use crate::app::develop::before_after::{Axis, Compare};
-                    let view = if m.alt {
-                        Compare::SideBySide(Axis::TopBottom)
-                    } else if m.shift {
-                        Compare::Split(Axis::LeftRight)
-                    } else {
-                        Compare::SideBySide(Axis::LeftRight)
-                    };
-                    self.set_compare(self.view.compare.toggled(view));
-                }
-                // With the modifiers held for the key, which a quick shortcut can
-                // release in the same frame.
-                let shift_command = |want: egui::Key| {
-                    i.events.iter().any(|event| {
-                        matches!(event, egui::Event::Key { key, pressed: true, modifiers, .. }
-                            if *key == want && modifiers.command && modifiers.shift)
-                    })
-                };
-                copy = shift_command(egui::Key::C);
-                paste = shift_command(egui::Key::V);
-                // Lightroom's Paste Settings from Previous. With Cmd held, macOS types
-                // the letter Option would change.
-                previous = i.events.iter().any(|event| {
-                    matches!(event, egui::Event::Key { key: egui::Key::V, pressed: true, repeat: false, modifiers, .. }
-                        if modifiers.command && modifiers.alt && !modifiers.shift)
-                });
-                // Lightroom's Match Total Exposures.
-                match_exposures = fresh_press(i, &[Key::M], all).is_some();
-                // Lightroom's New Develop Preset.
-                new_preset = press(i, &[Key::N], |m| m.command && m.shift).is_some();
-                // Lightroom's Targeted Adjustment Tools: Cmd+Option+Shift and T (Tone
-                // Curve), H, S, L (the Color Mixer's Hue, Saturation, Luminance) or G
-                // (B&W).
-                {
-                    use crate::develop::targeted::{HslChannel, Target};
-                    for (key, target) in [
-                        (Key::T, Target::ToneCurve),
-                        (Key::H, Target::Hsl(HslChannel::Hue)),
-                        (Key::S, Target::Hsl(HslChannel::Saturation)),
-                        (Key::L, Target::Hsl(HslChannel::Luminance)),
-                        (Key::G, Target::BlackWhite),
-                    ] {
-                        if fresh_press(i, &[key], all).is_some() {
-                            targeted = Some(target);
-                        }
-                    }
-                }
-                // Lightroom's Sync Settings.
-                sync = press(i, &[Key::S], |m| m.command && m.shift && !m.alt).is_some();
-                reset = press(i, &[Key::R], |m| m.command && m.shift).is_some();
-                // Lightroom's Convert to Black & White.
-                // Once per press: holding V does not flip it back and forth. With the
-                // key's own modifiers: Shift+Cmd+V released in the same frame pastes.
-                treatment = i.events.iter().any(|event| {
-                    matches!(event, egui::Event::Key { key: egui::Key::V, pressed: true, repeat: false, modifiers, .. }
-                        if !modifiers.any())
-                });
-                // Lightroom's Auto Settings.
-                auto = press(i, &[Key::U], |m| m.command && m.shift).is_some();
-                // Shift+Cmd+E exports, Option+Shift+Cmd+E exports with the previous
-                // choices.
-                export = fresh_press(i, &[Key::E], |m| m.command && m.shift).map(|m| m.alt);
-                // Lightroom's Select All, as in the Library grid: every photo in
-                // the filmstrip joins the selection so Sync reaches them all. Read
-                // from the event, whose modifiers are those held for the press,
-                // not the frame's, which a quick Cmd+A can outrun.
-                if i.events.iter().any(|event| {
-                    matches!(event, egui::Event::Key { key: egui::Key::A, pressed: true, modifiers, .. }
-                        if modifiers.command)
-                }) {
-                    select_all = true;
-                }
-                // Lightroom's Select None, as in the Library grid.
-                if i.events.iter().any(|event| {
-                    matches!(event, egui::Event::Key { key: egui::Key::D, pressed: true, modifiers, .. }
-                        if modifiers.command)
-                }) {
-                    select_none = true;
-                }
-                // Cmd+Z / Cmd+Shift+Z on macOS, Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y elsewhere.
-                if let Some(m) = press(i, &[Key::Z], |m| m.command) {
-                    if m.shift {
-                        self.redo();
-                    } else {
-                        self.undo();
-                    }
-                }
-                if !cfg!(target_os = "macos")
-                    && press(i, &[Key::Y], |m| m.command && !m.shift).is_some()
-                {
-                    self.redo();
-                }
-                // Shift+R is Reference View, below. C with its own modifiers, as
-                // Shift+Cmd+C released in the same frame copies.
-                let c = i.events.iter().any(|event| {
-                    matches!(event, egui::Event::Key { key: egui::Key::C, pressed: true, modifiers, .. }
-                        if !modifiers.command)
-                });
-                if c || press(i, &[Key::R], |m| !m.shift && !m.command).is_some() {
-                    self.view.toggle(Tool::Crop);
-                }
-                if press(i, &[Key::R], |m| m.shift && !m.command && !m.alt).is_some() {
-                    self.toggle_reference_view();
-                }
-                // Lightroom's I: the photo info overlay, Info 1, Info 2 or off.
-                // Once per press: a held I must not flicker through them. With the
-                // modifiers held for it, which a quick shortcut can release in the
-                // same frame.
-                let info = i.events.iter().any(|event| {
-                    matches!(event, egui::Event::Key { key: egui::Key::I, pressed: true, repeat: false, modifiers, .. } if !modifiers.any())
-                });
-                if info && let Some(library) = &mut self.library {
-                    library.cycle_loupe_info();
-                }
-                // Shift+J makes a colour range mask, below.
-                if press(i, &[Key::J], |m| !m.any()).is_some() {
-                    self.view.clipping.toggle_both();
-                }
-                // Shift+\\ arrives as | on most layouts.
-                let backslash = press(i, &[Key::Backslash], |_| true);
-                if press(i, &[Key::Pipe], |_| true).is_some() || backslash.is_some_and(|m| m.shift)
-                {
-                    self.toggle_camera_thumbnail();
-                } else if backslash.is_some() {
-                    let view = self
-                        .view
-                        .compare
-                        .toggled(crate::app::develop::before_after::Compare::BeforeOnly);
-                    self.set_compare(view);
-                }
-                if i.key_pressed(egui::Key::Enter)
-                    && (self.view.is(Tool::Crop) || self.view.is(Tool::Guided))
-                {
-                    self.view.tool = Tool::None;
-                }
-                if press(i, &[Key::W], |m| !m.any()).is_some() {
-                    self.view.toggle(Tool::WhiteBalance);
-                }
-                if press(i, &[Key::Q], |m| !m.any()).is_some() {
-                    self.view.toggle(Tool::Remove);
-                }
-                if press(i, &[Key::W], |m| m.shift && !m.command).is_some() {
-                    self.view.toggle(Tool::Mask);
-                }
-                if press(i, &[Key::T], |m| m.shift && !m.command).is_some() {
-                    self.toggle_guided_tool();
-                }
-                // egui lets go of a text field on Escape before this runs; a mask's
-                // name field still takes that Escape to keep the old name.
-                // Masking takes a plain Escape itself, step by step (`mask_keys`):
-                // stop aiming, drop the mask not yet drawn, then close. With Cmd or
-                // Alt, which its keys refuse, it closes at once, leaving nothing.
-                if i.key_pressed(egui::Key::Escape) && !self.view.masking.is_renaming() {
-                    if !self.view.is(Tool::Mask) {
+            }
+            // Lightroom's Sync Settings.
+            sync = keys.take(&b::DEVELOP_SYNC).is_some();
+            reset = keys.take(&b::RESET).is_some();
+            // Lightroom's Convert to Black & White.
+            // Once per press: holding V does not flip it back and forth. With the
+            // key's own modifiers: Shift+Cmd+V released in the same frame pastes.
+            treatment = keys.take(&b::TOGGLE_BLACK_WHITE).is_some();
+            // Lightroom's Auto Settings.
+            auto = keys.take(&b::DEVELOP_AUTO).is_some();
+            // Shift+Cmd+E exports, Option+Shift+Cmd+E exports with the previous
+            // choices.
+            export = keys
+                .take_first(&[&b::DEVELOP_EXPORT, &b::DEVELOP_EXPORT_PREVIOUS])
+                .map(|(i, _)| i == 1);
+            // Lightroom's Select All, as in the Library grid: every photo in
+            // the filmstrip joins the selection so Sync reaches them all.
+            let select_all = keys.take(&b::DEVELOP_SELECT_ALL).is_some();
+            // Lightroom's Select None, as in the Library grid.
+            let select_none = keys.take(&b::DEVELOP_SELECT_NONE).is_some();
+            // Cmd+Z / Cmd+Shift+Z on macOS, Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y elsewhere.
+            match keys.take_first(&[&b::DEVELOP_UNDO, &b::DEVELOP_REDO]) {
+                Some((0, _)) => self.undo(),
+                Some(_) => self.redo(),
+                None => {}
+            }
+            if keys.take(&b::DEVELOP_REDO_Y).is_some() {
+                self.redo();
+            }
+            // C, or R without Shift (Shift+R is Reference View, below). C with
+            // its own modifiers, as Shift+Cmd+C released in the same frame copies.
+            if keys.take(&b::CROP).is_some() {
+                self.view.toggle(Tool::Crop);
+            }
+            if keys.take(&b::REFERENCE_VIEW).is_some() {
+                self.toggle_reference_view();
+            }
+            // Lightroom's I: the photo info overlay, Info 1, Info 2 or off.
+            // Once per press: a held I must not flicker through them.
+            if keys.take(&b::DEVELOP_INFO).is_some()
+                && let Some(library) = &mut self.library
+            {
+                library.cycle_loupe_info();
+            }
+            // Shift+J makes a colour range mask, below.
+            if keys.take(&b::CLIPPING).is_some() {
+                self.view.clipping.toggle_both();
+            }
+            if keys.take(&b::CAMERA_THUMBNAIL).is_some() {
+                self.toggle_camera_thumbnail();
+            } else if keys.take(&b::BEFORE_ONLY).is_some() {
+                let view = self
+                    .view
+                    .compare
+                    .toggled(crate::app::develop::before_after::Compare::BeforeOnly);
+                self.set_compare(view);
+            }
+            if (self.view.is(Tool::Crop) && keys.take(&b::FINISH_CROP).is_some())
+                || (self.view.is(Tool::Guided) && keys.take(&b::FINISH_GUIDED).is_some())
+            {
+                self.view.tool = Tool::None;
+            }
+            if keys.take(&b::WHITE_BALANCE).is_some() {
+                self.view.toggle(Tool::WhiteBalance);
+            }
+            if keys.take(&b::REMOVE).is_some() {
+                self.view.toggle(Tool::Remove);
+            }
+            if keys.take(&b::MASK).is_some() {
+                self.view.toggle(Tool::Mask);
+            }
+            if keys.take(&b::GUIDED_UPRIGHT).is_some() {
+                self.toggle_guided_tool();
+            }
+            // egui lets go of a text field on Escape before this runs; a mask's
+            // name field still takes that Escape to keep the old name.
+            // Masking takes a plain Escape itself, step by step (`mask_keys`):
+            // stop aiming, drop the mask not yet drawn, then close. With Cmd or
+            // Alt, which its keys refuse, it closes at once, leaving nothing.
+            if !self.view.masking.is_renaming() {
+                if !self.view.is(Tool::Mask) {
+                    if keys.take(&b::CLOSE_TOOL).is_some() {
                         self.view.tool = Tool::None;
-                    } else if press(i, &[Key::Escape], |m| m.command || m.alt).is_some() {
-                        self.close_masking();
                     }
+                } else if keys.take(&b::CLOSE_MASKING).is_some() {
+                    self.close_masking();
                 }
-                if self.view.is(Tool::Crop) {
-                    self.crop_keys(i);
-                }
-                if self.view.is(Tool::Remove) {
-                    self.retouch_keys(i);
-                }
-                if self.view.is(Tool::RedEye) {
-                    self.red_eye_keys(i);
-                }
-                if self.view.is(Tool::Mask) {
-                    self.mask_keys(i);
-                }
-                if self.view.is(Tool::Guided) {
-                    self.guided_keys(i);
-                }
-                // New masks: K brush, M linear, Shift+M radial, Shift+J colour range.
+            }
+            if self.view.is(Tool::Crop) {
+                self.crop_keys(ctx);
+            }
+            if self.view.is(Tool::Remove) {
+                self.retouch_keys(ctx);
+            }
+            if self.view.is(Tool::RedEye) {
+                self.red_eye_keys(ctx);
+            }
+            if self.view.is(Tool::Mask) {
+                self.mask_keys(ctx);
+            }
+            if self.view.is(Tool::Guided) {
+                self.guided_keys(ctx);
+            }
+            // New masks: K brush, M linear, Shift+M radial, Shift+J colour range.
+            {
+                use crate::app::develop::tools::mask_tool::Kind;
+                let kind = if keys.take(&b::NEW_BRUSH_MASK).is_some() {
+                    Some(Kind::Brush)
+                } else if let Some((i, _)) =
+                    keys.take_first(&[&b::NEW_LINEAR_MASK, &b::NEW_RADIAL_MASK])
                 {
-                    use crate::app::develop::tools::mask_tool::Kind;
-                    let plain = |m: egui::Modifiers| !m.command && !m.alt;
-                    let kind = if press(i, &[Key::K], |m| plain(m) && !m.shift).is_some() {
-                        Some(Kind::Brush)
-                    } else if let Some(m) = press(i, &[Key::M], plain) {
-                        Some(if m.shift { Kind::Radial } else { Kind::Linear })
-                    } else if press(i, &[Key::J], |m| plain(m) && m.shift).is_some() {
-                        Some(Kind::Color)
-                    } else {
-                        None
-                    };
-                    if let Some(kind) = kind {
-                        self.create_mask(kind, None);
-                    }
+                    Some(if i == 1 { Kind::Radial } else { Kind::Linear })
+                } else if keys.take(&b::NEW_COLOR_RANGE_MASK).is_some() {
+                    Some(Kind::Color)
+                } else {
+                    None
+                };
+                if let Some(kind) = kind {
+                    self.create_mask(kind, None);
                 }
             }
             // Select All takes the filmstrip's shown photos, so a following Sync

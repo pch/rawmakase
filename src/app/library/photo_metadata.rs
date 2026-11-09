@@ -1,4 +1,6 @@
 //! Lightroom-compatible catalog metadata and keyboard commands.
+use crate::app::shell::commands::registry::bindings;
+use crate::app::shell::keymap::{Binding, FrameKeys, Press};
 use crate::app::ui::design::{Tone, size, space, text};
 use crate::app::ui::theme;
 use crate::catalog::Photo;
@@ -47,70 +49,56 @@ impl Edit {
     }
 }
 
-/// The metadata edit a key stands for, held with no modifier but Shift.
-fn edit_for_key(key: Key) -> Option<Edit> {
-    Some(match key {
-        Key::Num0 => Edit::Rating(0),
-        Key::Num1 => Edit::Rating(1),
-        Key::Num2 => Edit::Rating(2),
-        Key::Num3 => Edit::Rating(3),
-        Key::Num4 => Edit::Rating(4),
-        Key::Num5 => Edit::Rating(5),
-        Key::Num6 => Edit::ToggleLabel("Red".into()),
-        Key::Num7 => Edit::ToggleLabel("Yellow".into()),
-        Key::Num8 => Edit::ToggleLabel("Green".into()),
-        Key::Num9 => Edit::ToggleLabel("Blue".into()),
-        Key::P => Edit::Flag(1),
-        Key::U => Edit::Flag(0),
-        Key::X => Edit::Flag(-1),
-        Key::Backtick => Edit::TogglePick,
-        // Shift+[ and Shift+] type `{` and `}` on US layouts.
-        Key::OpenBracket | Key::OpenCurlyBracket => Edit::RatingDelta(-1),
-        Key::CloseBracket | Key::CloseCurlyBracket => Edit::RatingDelta(1),
+/// The metadata edit the command `id` of a rating, flag or label key stands for.
+fn edit_for_command(id: &str) -> Option<Edit> {
+    Some(match id {
+        "flag:raise" => Edit::FlagDelta(1),
+        "flag:lower" => Edit::FlagDelta(-1),
+        "rating:0" => Edit::Rating(0),
+        "rating:1" => Edit::Rating(1),
+        "rating:2" => Edit::Rating(2),
+        "rating:3" => Edit::Rating(3),
+        "rating:4" => Edit::Rating(4),
+        "rating:5" => Edit::Rating(5),
+        "toggle_label:red" => Edit::ToggleLabel("Red".into()),
+        "toggle_label:yellow" => Edit::ToggleLabel("Yellow".into()),
+        "toggle_label:green" => Edit::ToggleLabel("Green".into()),
+        "toggle_label:blue" => Edit::ToggleLabel("Blue".into()),
+        "pick" => Edit::Flag(1),
+        "unflag" => Edit::Flag(0),
+        "reject" => Edit::Flag(-1),
+        "toggle_pick" => Edit::TogglePick,
+        "rating:lower" => Edit::RatingDelta(-1),
+        "rating:raise" => Edit::RatingDelta(1),
         _ => return None,
     })
+}
+
+/// Whether Cmd+Up or Cmd+Down: the flag keys, which never go on to the next photo.
+fn is_flag_step(binding: &Binding) -> bool {
+    matches!(binding.command, "flag:raise" | "flag:lower")
 }
 
 /// Whether a press of `key` at `physical`, with neither Cmd, Ctrl nor Alt held,
 /// is a rating, flag or label key.
 pub(in crate::app) fn is_shortcut_key(key: Key, physical: Option<Key>) -> bool {
-    edit_for_key(crate::app::shell::key_match::shortcut_key(key, physical)).is_some()
+    bindings::METADATA
+        .iter()
+        .any(|b| !is_flag_step(b) && b.has_key(key, physical))
 }
 
 /// The frame's first rating, flag or label key: its edit, whether Shift was held
-/// for it (to go on to the next photo), and the index of its event in the frame's
-/// input, for the caller to take once it applies the edit.
-pub(crate) fn shortcut(ctx: &egui::Context) -> Option<(Edit, bool, usize)> {
+/// for it (to go on to the next photo), and its press, for the caller to take
+/// once it applies the edit. The number row goes by its place, so Shift+5's `%`
+/// and AZERTY's unshifted digit row still rate; anything else by what it types.
+pub(in crate::app) fn shortcut(ctx: &egui::Context) -> Option<(Edit, bool, Press)> {
     if ctx.text_edit_focused() {
         return None;
     }
-    ctx.input(|i| {
-        i.events.iter().enumerate().find_map(|(index, event)| {
-            let egui::Event::Key {
-                key,
-                physical_key,
-                pressed: true,
-                repeat: false,
-                modifiers,
-            } = event
-            else {
-                return None;
-            };
-            if modifiers.command && !modifiers.shift && !modifiers.alt {
-                return match key {
-                    Key::ArrowUp => Some((Edit::FlagDelta(1), false, index)),
-                    Key::ArrowDown => Some((Edit::FlagDelta(-1), false, index)),
-                    _ => None,
-                };
-            }
-            if modifiers.command || modifiers.ctrl || modifiers.alt || modifiers.mac_cmd {
-                return None;
-            }
-            // The number row by its place, so Shift+5's `%` and AZERTY's
-            // unshifted digit row still rate; anything else by what it types.
-            let key = crate::app::shell::key_match::shortcut_key(*key, *physical_key);
-            edit_for_key(key).map(|edit| (edit, modifiers.shift, index))
-        })
+    FrameKeys::of(ctx).presses().into_iter().find_map(|press| {
+        let binding = bindings::METADATA.iter().find(|b| press.is(b))?;
+        let edit = edit_for_command(binding.command)?;
+        Some((edit, press.modifiers.shift && !is_flag_step(binding), press))
     })
 }
 

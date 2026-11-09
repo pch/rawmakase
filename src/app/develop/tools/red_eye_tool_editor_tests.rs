@@ -61,7 +61,7 @@ fn red_eye_tool_adds_moves_and_deletes_one_history_step_each() {
                 ..Default::default()
             },
             |ui| {
-                ctx.input(|i| editor.red_eye_keys(i));
+                editor.red_eye_keys(ui.ctx());
                 editor.viewport_ui(ui);
             },
         );

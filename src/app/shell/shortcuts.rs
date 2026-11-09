@@ -200,7 +200,9 @@ impl Editor {
             return;
         }
         // Cmd+/ closes it again; other keys stay with the sheet.
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Slash)) {
+        use crate::app::shell::commands::registry::bindings;
+        let keys = crate::app::shell::keymap::FrameKeys::of(ctx);
+        if keys.take(&bindings::SHORTCUTS_CLOSE).is_some() {
             self.view.shortcuts = false;
             return;
         }
@@ -208,8 +210,7 @@ impl Editor {
         let opened = stored.is_none();
         let mut query = stored.unwrap_or_default();
         // Esc clears a search before it closes the sheet, and typing goes on.
-        let cleared = !query.is_empty()
-            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+        let cleared = !query.is_empty() && keys.take(&bindings::SHORTCUTS_CLEAR_SEARCH).is_some();
         if cleared {
             query.clear();
         }

@@ -113,7 +113,7 @@ fn a_mask_brush_paints_live_and_preserves_the_overlay_choice() {
     };
     in_edit_frame(&ctx, &mut editor, |editor| {
         ctx.input_mut(|i| i.events.push(o));
-        ctx.input(|i| editor.mask_keys(i));
+        editor.mask_keys(&ctx);
     });
     assert_eq!(editor.overlay(), Overlay::None);
     // Further strokes start away from the mask's pin, which a drag would move.
@@ -497,11 +497,9 @@ fn masking_tool_draws_gradients_paints_brushes_and_edits_handles() {
             },
             |ui| {
                 let frame = editor.begin_edit_frame();
-                ctx.input(|i| {
-                    if editor.view.is(crate::app::develop::state::Tool::Mask) {
-                        editor.mask_keys(i)
-                    }
-                });
+                if editor.view.is(crate::app::develop::state::Tool::Mask) {
+                    editor.mask_keys(ui.ctx())
+                }
                 editor.viewport_ui(ui);
                 editor.finish_edit_frame(frame, &ctx);
             },

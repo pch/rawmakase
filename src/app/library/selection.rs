@@ -1,8 +1,10 @@
 //! Lightroom's Grid selection: an active photo, the photos selected with it,
 //! and the anchor a Shift range starts from.
 use super::Library;
+use crate::app::shell::commands::registry::bindings as b;
+use crate::app::shell::keymap::{FrameKeys, Press};
 use crate::catalog::PhotoId;
-use eframe::egui::{self, Key};
+use eframe::egui;
 use std::collections::HashSet;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -251,13 +253,13 @@ impl Library {
         if egui::Popup::is_any_open(ctx) {
             return;
         }
-        let presses = presses(ctx);
+        let keys = FrameKeys::of(ctx);
+        let presses = keys.presses();
         // Cmd+L turns the filter bar off and on, in the grid and the Loupe,
         // and from the Search field too.
         for press in &presses {
-            let cmd_l =
-                press.key == Key::L && press.modifiers.matches_exact(egui::Modifiers::COMMAND);
-            if cmd_l && !press.repeat {
+            if press.is(&b::FILTERS) {
+                keys.take_press(press);
                 self.toggle_filters()
             }
         }
@@ -265,150 +267,144 @@ impl Library {
             return;
         }
         if self.survey.open {
-            self.survey_keys(&presses);
+            self.survey_keys(keys, &presses);
         } else if self.compare.open {
-            self.compare_keys(&presses);
+            self.compare_keys(keys, &presses);
         } else if self.loupe.open {
-            self.loupe_keys(&presses);
+            self.loupe_keys(keys, &presses);
         } else {
-            self.grid_keys(&presses);
+            self.grid_keys(keys, &presses);
         }
     }
-    fn grid_keys(&mut self, presses: &[Press]) {
+    fn grid_keys(&mut self, keys: FrameKeys, presses: &[Press]) {
         let columns = self.grid_columns.max(1) as isize;
         let page = self.grid_page_rows.max(1) as isize;
         for press in presses {
+            // Shift extends the selection.
             let shift = press.modifiers.shift;
-            match (press.key, press.modifiers.command) {
-                (Key::E | Key::Enter, false) => self.open_loupe(),
-                (Key::C, false) if !press.modifiers.any() => self.open_compare(),
-                (Key::N, false) if !press.modifiers.any() => self.open_survey(),
-                (Key::J, false) if !press.modifiers.any() && !press.repeat => {
-                    self.cell_style = self.cell_style.next()
-                }
+            if press.is(&b::GRID_LOUPE) {
+                self.open_loupe()
+            } else if press.is(&b::GRID_COMPARE) {
+                self.open_compare()
+            } else if press.is(&b::GRID_SURVEY) {
+                self.open_survey()
+            } else if press.is(&b::GRID_CELL_STYLE) {
+                self.cell_style = self.cell_style.next()
+            } else if press.is(&b::GRID_QUICK_TOGGLE)
+                || press.is(&b::GRID_QUICK_SHOW)
+                || press.is(&b::GRID_QUICK_CLEAR)
+            {
                 // The grid applies B to every selected photo, once per press.
-                (Key::B, _) if !press.repeat => {
-                    self.quick_key(press.modifiers, self.selected_ids())
-                }
+                self.quick_key(press.modifiers, self.selected_ids())
+            } else if press.is(&b::GRID_DELETE)
+                || press.is(&b::GRID_REMOVE_FROM_CATALOG)
+                || press.is(&b::GRID_DELETE_REJECTED)
+                || press.is(&b::GRID_TRASH)
+            {
                 // Once per press: a held Delete must not ask again.
-                (Key::Delete | Key::Backspace, _) if !press.repeat => {
-                    let ids = self.selected_ids();
-                    self.delete_press(press.modifiers, ids)
-                }
-                (Key::F2, false) if !press.repeat && !press.modifiers.any() => {
-                    let ids = self.selected_ids();
-                    self.request_rename(ids)
-                }
+                let ids = self.selected_ids();
+                self.delete_press(press.modifiers, ids)
+            } else if press.is(&b::GRID_RENAME) {
+                let ids = self.selected_ids();
+                self.request_rename(ids)
+            } else if press.is(&b::STACK_GROUP) || press.is(&b::STACK_UNSTACK) {
                 // Lightroom's stacks: Cmd+G groups, Cmd+Shift+G unstacks,
                 // S collapses or expands and Shift+S moves to the top.
-                (Key::G, true) if !press.repeat && !press.modifiers.alt => {
-                    let action = if shift {
-                        super::StackAction::Unstack
-                    } else {
-                        super::StackAction::Group
-                    };
-                    self.stack_key(action, self.selected_ids())
-                }
-                (Key::S, false)
-                    if !press.repeat && !press.modifiers.alt && !press.modifiers.ctrl =>
-                {
-                    let action = if shift {
-                        super::StackAction::MoveToTop
-                    } else {
-                        super::StackAction::Toggle
-                    };
-                    self.stack_key(action, self.selected_ids())
-                }
-                (Key::A, true) => self.select_all(),
-                (Key::D, true) => self.select(None),
-                (Key::Slash, false) => self.deselect_active(),
-                (Key::ArrowLeft, false) => self.step(Step::By(-1), shift),
-                (Key::ArrowRight, false) => self.step(Step::By(1), shift),
-                (Key::ArrowUp, false) => self.step(Step::By(-columns), shift),
-                (Key::ArrowDown, false) => self.step(Step::By(columns), shift),
-                (Key::PageUp, false) => self.step(Step::Rows(-page), shift),
-                (Key::PageDown, false) => self.step(Step::Rows(page), shift),
-                (Key::Home, false) => self.step(Step::Home, shift),
-                (Key::End, false) => self.step(Step::End, shift),
-                _ => {}
+                let action = if shift {
+                    super::StackAction::Unstack
+                } else {
+                    super::StackAction::Group
+                };
+                self.stack_key(action, self.selected_ids())
+            } else if press.is(&b::GRID_STACK_TOGGLE) || press.is(&b::GRID_STACK_TO_TOP) {
+                let action = if shift {
+                    super::StackAction::MoveToTop
+                } else {
+                    super::StackAction::Toggle
+                };
+                self.stack_key(action, self.selected_ids())
+            } else if press.is(&b::GRID_SELECT_ALL) {
+                self.select_all()
+            } else if press.is(&b::GRID_SELECT_NONE) {
+                self.select(None)
+            } else if press.is(&b::GRID_DESELECT_ACTIVE) {
+                self.deselect_active()
+            } else if press.is(&b::GRID_PREVIOUS) {
+                self.step(Step::By(-1), shift)
+            } else if press.is(&b::GRID_NEXT) {
+                self.step(Step::By(1), shift)
+            } else if press.is(&b::GRID_ROW_UP) {
+                self.step(Step::By(-columns), shift)
+            } else if press.is(&b::GRID_ROW_DOWN) {
+                self.step(Step::By(columns), shift)
+            } else if press.is(&b::GRID_PAGE_UP) {
+                self.step(Step::Rows(-page), shift)
+            } else if press.is(&b::GRID_PAGE_DOWN) {
+                self.step(Step::Rows(page), shift)
+            } else if press.is(&b::GRID_FIRST) {
+                self.step(Step::Home, shift)
+            } else if press.is(&b::GRID_LAST) {
+                self.step(Step::End, shift)
+            } else {
+                continue;
             }
+            keys.take_press(press);
         }
     }
     /// The Loupe moves one photo at a time; the editor handles its zoom,
     /// as in Develop.
-    fn loupe_keys(&mut self, presses: &[Press]) {
+    fn loupe_keys(&mut self, keys: FrameKeys, presses: &[Press]) {
         for press in presses {
-            match (press.key, press.modifiers.command) {
-                (Key::ArrowLeft | Key::ArrowUp, false) => self.step(Step::By(-1), false),
-                (Key::ArrowRight | Key::ArrowDown, false) => self.step(Step::By(1), false),
-                (Key::Home, false) => self.step(Step::Home, false),
-                (Key::End, false) => self.step(Step::End, false),
-                (Key::Escape, _) => self.close_loupe(),
+            if press.is(&b::LOUPE_PREVIOUS) {
+                self.step(Step::By(-1), false)
+            } else if press.is(&b::LOUPE_NEXT) {
+                self.step(Step::By(1), false)
+            } else if press.is(&b::LOUPE_FIRST) {
+                self.step(Step::Home, false)
+            } else if press.is(&b::LOUPE_LAST) {
+                self.step(Step::End, false)
+            } else if press.is(&b::LOUPE_CLOSE) {
+                self.close_loupe()
+            } else if press.is(&b::LOUPE_DELETE)
+                || press.is(&b::LOUPE_REMOVE_FROM_CATALOG)
+                || press.is(&b::LOUPE_DELETE_REJECTED)
+                || press.is(&b::LOUPE_TRASH)
+            {
                 // The Loupe's photo, once per press.
-                (Key::Delete | Key::Backspace, _) if !press.repeat => {
-                    let ids = self.selection.active.into_iter().collect();
-                    self.delete_press(press.modifiers, ids)
-                }
-                (Key::F2, false) if !press.repeat && !press.modifiers.any() => {
-                    let ids = self.selection.active.into_iter().collect();
-                    self.request_rename(ids)
-                }
-                (Key::C, false) if !press.modifiers.any() => self.open_compare(),
-                (Key::N, false) if !press.modifiers.any() => self.open_survey(),
+                let ids = self.selection.active.into_iter().collect();
+                self.delete_press(press.modifiers, ids)
+            } else if press.is(&b::LOUPE_RENAME) {
+                let ids = self.selection.active.into_iter().collect();
+                self.request_rename(ids)
+            } else if press.is(&b::LOUPE_COMPARE) {
+                self.open_compare()
+            } else if press.is(&b::LOUPE_SURVEY) {
+                self.open_survey()
+            } else if press.is(&b::LOUPE_QUICK_TOGGLE)
+                || press.is(&b::LOUPE_QUICK_SHOW)
+                || press.is(&b::LOUPE_QUICK_CLEAR)
+            {
                 // The Loupe applies B to the photo shown, once per press.
-                (Key::B, _) if !press.repeat => {
-                    let ids = self.selection.active.into_iter().collect();
-                    self.quick_key(press.modifiers, ids)
-                }
+                let ids = self.selection.active.into_iter().collect();
+                self.quick_key(press.modifiers, ids)
+            } else if press.is(&b::LOUPE_INFO) {
                 // Once per press: a held I must not flicker through them.
-                (Key::I, false) if !press.modifiers.any() && !press.repeat => {
-                    self.cycle_loupe_info()
-                }
+                self.cycle_loupe_info()
+            } else if press.is(&b::LOUPE_STACK_TOGGLE) || press.is(&b::LOUPE_STACK_TO_TOP) {
                 // As in the grid: S collapses or expands the photo's stack
                 // and Shift+S moves it to the top.
-                (Key::S, false)
-                    if !press.repeat && !press.modifiers.alt && !press.modifiers.ctrl =>
-                {
-                    let action = if press.modifiers.shift {
-                        super::StackAction::MoveToTop
-                    } else {
-                        super::StackAction::Toggle
-                    };
-                    self.stack_key(action, self.selection.active.into_iter().collect())
-                }
-                _ => {}
+                let action = if press.modifiers.shift {
+                    super::StackAction::MoveToTop
+                } else {
+                    super::StackAction::Toggle
+                };
+                self.stack_key(action, self.selection.active.into_iter().collect())
+            } else {
+                continue;
             }
+            keys.take_press(press);
         }
     }
-}
-
-/// A key pressed this frame, with the modifiers held for it: a quick Cmd+D
-/// can arrive in the same frame as Cmd's release.
-pub(super) struct Press {
-    pub key: Key,
-    pub modifiers: egui::Modifiers,
-    pub repeat: bool,
-}
-fn presses(ctx: &egui::Context) -> Vec<Press> {
-    ctx.input(|i| {
-        i.events
-            .iter()
-            .filter_map(|e| match e {
-                egui::Event::Key {
-                    key,
-                    pressed: true,
-                    modifiers,
-                    repeat,
-                    ..
-                } => Some(Press {
-                    key: *key,
-                    modifiers: *modifiers,
-                    repeat: *repeat,
-                }),
-                _ => None,
-            })
-            .collect()
-    })
 }
 
 #[cfg(test)]

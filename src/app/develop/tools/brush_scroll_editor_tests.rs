@@ -25,7 +25,7 @@ fn red_eye_brackets_resize_the_circle_a_click_uses() {
                 }],
                 ..Default::default()
             },
-            |_| ctx.input(|i| editor.red_eye_keys(i)),
+            |_| editor.red_eye_keys(&ctx),
         );
         output.textures_delta.clear();
         editor.view.red_eye.size

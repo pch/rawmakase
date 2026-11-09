@@ -311,19 +311,17 @@ impl Editor {
     /// The Red Eye tool's keys: Delete removes the selected correction.
     /// Delete removes the selected correction; `[` and `]` resize the circle a click
     /// corrects within, as they size the Remove brush.
-    pub(in crate::app) fn red_eye_keys(&mut self, i: &egui::InputState) {
-        use egui::Key;
+    pub(in crate::app) fn red_eye_keys(&mut self, ctx: &egui::Context) {
+        use crate::app::shell::commands::registry::bindings as b;
+        let keys = crate::app::shell::keymap::FrameKeys::of(ctx);
         // Each key with the modifiers held for it.
-        let pressed = |keys: &[Key]| {
-            crate::app::shell::key_match::press(i, keys, |m| !m.command && !m.alt).is_some()
-        };
-        if pressed(&[Key::Delete, Key::Backspace]) {
+        if keys.take(&b::RED_EYE_DELETE).is_some() {
             self.delete_red_eye();
         }
-        if pressed(&[Key::OpenBracket, Key::OpenCurlyBracket]) {
+        if keys.take(&b::RED_EYE_SMALLER).is_some() {
             self.view.red_eye.resize(SizeStep::Smaller);
         }
-        if pressed(&[Key::CloseBracket, Key::CloseCurlyBracket]) {
+        if keys.take(&b::RED_EYE_LARGER).is_some() {
             self.view.red_eye.resize(SizeStep::Larger);
         }
     }

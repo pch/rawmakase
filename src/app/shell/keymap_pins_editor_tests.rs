@@ -1413,13 +1413,15 @@ fn several_presses_in_one_frame() {
 /// registry makes the first step to take a press its only owner, so these pins
 /// are expected to change with it.
 #[test]
-fn today_one_press_can_act_twice_across_a_module_change_expected_to_change() {
-    // D then J: Develop from the grid, and J both restyles the grid's cells and
-    // turns on Develop's clipping warnings.
+fn one_press_acts_once_across_a_module_change() {
+    // Each press runs one command, in the step that takes it first; a module
+    // changed by another press in the frame doesn't give it a second one.
+    // D then J: Develop from the grid, and J restyles the grid's cells only,
+    // where it once also turned on Develop's clipping warnings.
     let o = taps(Place::Grid, &[(Key::D, NONE), (Key::J, NONE)]);
     assert!(o.is("module", "Develop"), "{o:?}");
     assert!(o.is("cells", "expanded"), "{o:?}");
-    assert!(o.is("clipping", "shadows true highlights true"), "{o:?}");
+    assert!(o.get("clipping").is_none(), "{o:?}");
     // [ then Q in Develop: the [ is a rating key, taken before Remove opens.
     let o = taps(Place::Develop, &[(Key::OpenBracket, NONE), (Key::Q, NONE)]);
     assert!(
@@ -1427,13 +1429,14 @@ fn today_one_press_can_act_twice_across_a_module_change_expected_to_change() {
         "{o:?}"
     );
     assert!(o.get("remove").is_none(), "{o:?}");
-    // D then C from the grid: C opens Compare in the grid and Crop in Develop.
+    // D then C from the grid: C opens Compare in the grid, and no longer also
+    // Crop in Develop.
     let o = taps(Place::Grid, &[(Key::D, NONE), (Key::C, NONE)]);
     assert!(
         o.is("module", "Develop") && o.is("view", "compare"),
         "{o:?}"
     );
-    assert!(o.is("tool", "Crop"), "{o:?}");
+    assert!(o.get("tool").is_none(), "{o:?}");
 }
 
 // ---------------------------------------------------------------------------
