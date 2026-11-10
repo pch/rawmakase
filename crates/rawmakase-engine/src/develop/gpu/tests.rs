@@ -2039,6 +2039,13 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
     let mut bands = base.clone();
     bands.hsl[0] = [0.4, 0.5, 0.];
     bands.hsl[4] = [-0.3, -0.6, 0.];
+    // Band Luminance, by each channel's level, with and without other changes.
+    let mut luminance = base.clone();
+    luminance.hsl[1][2] = 0.4;
+    luminance.hsl[5][2] = -0.4;
+    let mut luminance_mixed = bands.clone();
+    luminance_mixed.hsl[1][2] = -0.35;
+    luminance_mixed.saturation = -0.8;
     let mut mono = base.clone();
     mono.effects.monochrome = true;
     mono.effects.gray_mix = [0.3, -0.7, 0.1, 0.2, -0.2, 0.9, 0., -0.4];
@@ -2067,6 +2074,8 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
             ..base.clone()
         },
         bands,
+        luminance,
+        luminance_mixed,
         mono,
         graded,
         graded_mixed,

@@ -121,9 +121,10 @@ pub(crate) mod slot {
         // value at white and slope beyond it (its samples are `CHANNELS`').
         HDR_CHANNELS: 9,
         // An HDR master's colour mixer (`ColorMixer::hdr_fading`): the fading Vibrance
-        // value factors of its changes' grid and of its gray source, or -1 each; its grids
-        // are `MIXER`'s and `GRAY_SOURCE`'s, and black & white's `GRAY_GRID`.
-        HDR_MIXER: 2,
+        // value factors of its changes' grid and of its gray source (one float a cell),
+        // then band Luminance's whole changes (three floats a cell), or -1 each; its grids are `MIXER`'s and `GRAY_SOURCE`'s, and black
+        // & white's `GRAY_GRID`.
+        HDR_MIXER: 4,
     }
 }
 pub(crate) fn wgsl_prelude() -> String {
@@ -160,7 +161,7 @@ pub(crate) fn wgsl_prelude() -> String {
                  const HDR_TONE: vec3<f32> = vec3({:?}, {:?}, {}.0);\n\
                  const LOOK_SLOPE: f32 = {:?};\nconst LOOK_BEND: f32 = {:?};\nconst LOOK_PEAK: f32 = {:?};\n\
                  const HDR_CONTRAST_SAMPLES: f32 = {}.0;\nconst HDR_CONTRAST_TOP: f32 = {:?};\nconst HDR_CURVE_CEILING: f32 = {:?};\n\
-                 const HDR_MIX_VALUE: f32 = {:?};\nconst HDR_MIX_FADE: f32 = {:?};\n",
+                 const HDR_MIX_VALUE: f32 = {:?};\nconst HDR_MIX_FADE: f32 = {:?};\nconst HDR_LUMINANCE_FADE: f32 = {:?};\nconst HDR_LUMINANCE_VALUE: f32 = {:?};\n",
                 HDR_TONE_FIRST,
                 HDR_TONE_STEP,
                 HDR_TONE_SAMPLES,
@@ -172,6 +173,8 @@ pub(crate) fn wgsl_prelude() -> String {
                 crate::color::hdr_curve::CEILING,
                 crate::develop::color_mixer::HDR_VALUE,
                 crate::develop::color_mixer::HDR_FADE,
+                crate::develop::color_mixer::HDR_LUMINANCE_FADE,
+                crate::develop::color_mixer::HDR_LUMINANCE_VALUE,
             )
         }
 }
@@ -294,11 +297,30 @@ pub(crate) fn pixel_params_hdr(im: Source, r: &Recipe) -> Option<PixelParams> {
         .map(|(table, top, slope)| (table.to_vec(), top, slope));
     let curves = finish.curves;
     let channels = finish.channels;
-    let fading = lut.mixer.as_ref().and_then(|m| m.hdr_fading()).cloned();
+    let fading = lut
+        .mixer
+        .as_ref()
+        .and_then(|m| m.hdr_fading())
+        .map(|[grid, source]| {
+            let flat = |l: &Option<Vec<[f32; 3]>>| l.as_ref().map(|l| l.as_flattened().to_vec());
+            [grid.vibrance.clone(), source.vibrance.clone()]
+                .map(Some)
+                .into_iter()
+                .chain([flat(&grid.luminance), flat(&source.luminance)])
+                .collect::<Vec<_>>()
+        });
     let mut p = fill(r, lut, camera)?;
-    let fading = match fading {
-        Some([grid, source]) => [p.push(grid), p.push(source)],
-        None => [-1., -1.],
+    let fading: [f32; 4] = match fading {
+        Some(grids) => {
+            let mut slots = [-1.; 4];
+            for (slot, grid) in slots.iter_mut().zip(grids) {
+                if let Some(grid) = grid {
+                    *slot = p.push(grid);
+                }
+            }
+            slots
+        }
+        None => [-1.; 4],
     };
     p.set(slot::HDR_MIXER, &fading);
     let contrast = match contrast {
@@ -571,7 +593,7 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     p.set(slot::HDR_CONTRAST, &[-1., 0., 0.]);
     p.set(slot::HDR_CURVES, &[0.; 4]);
     p.set(slot::HDR_CHANNELS, &[0.; 9]);
-    p.set(slot::HDR_MIXER, &[-1., -1.]);
+    p.set(slot::HDR_MIXER, &[-1.; 4]);
     Some(p)
 }
 impl PixelParams {

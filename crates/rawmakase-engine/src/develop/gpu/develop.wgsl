@@ -454,8 +454,11 @@ fn mixer_lookup(base: i32, h: f32, s: f32, v: f32, scalar: bool) -> vec3<f32> {
 // color_mixer::tables_in with `Lookup::Hdr`: the changes looked up at the colour's
 // value up to HDR_MIX_VALUE, and the same above it; with `fading` (a grid of Vibrance's
 // value factors, or -1) those factors at the colour's own value, faded out from
-// HDR_MIX_FADE to white. Linear sRGB primaries in and out.
-fn mixer_hdr(rgb: vec3<f32>, base: i32, fading: i32) -> vec3<f32> {
+// HDR_MIX_FADE to white; with `luminance` (band Luminance's changes, or -1) those
+// changes looked up at the colour's value up to HDR_LUMINANCE_VALUE, their value on each
+// ProPhoto channel, faded out by its scene level (`scene`, as the other changes change
+// it) from HDR_LUMINANCE_FADE to white. Linear sRGB primaries in and out.
+fn mixer_hdr(rgb: vec3<f32>, base: i32, fading: i32, luminance: i32, scene: vec3<f32>) -> vec3<f32> {
     let q = max(RGB_TO_PRO * rgb, vec3(0.0));
     let max_v = max(max(max(q.x, q.y), q.z), 0.0);
     let min_v = min(min(q.x, q.y), q.z);
@@ -472,17 +475,35 @@ fn mixer_hdr(rgb: vec3<f32>, base: i32, fading: i32) -> vec3<f32> {
         delta.z = delta.z - mixer_lookup(fading, h, s, low, true).z
             + fade * mixer_lookup(fading, h, s, max_v, true).z;
     }
+    var lum = 0.0;
+    if luminance >= 0 {
+        // Band Luminance's whole change at its own lookup value; its value factor
+        // applies per channel below.
+        let within = mixer_lookup(luminance, h, s, low, false);
+        let own = mixer_lookup(luminance, h, s, min(max_v, HDR_LUMINANCE_VALUE), false);
+        let keep = 1.0 - clamp((max_v - HDR_LUMINANCE_VALUE) / (1.0 - HDR_LUMINANCE_VALUE), 0.0, 1.0);
+        delta = vec3(delta.x + keep * (own.x - within.x), delta.y + keep * (own.y - within.y), delta.z - within.z);
+        lum = own.z;
+    }
     let h2 = rem_euclid(h + delta.x, 1.0) * 6.0;
     let s2 = clamp(s * exp2(delta.y), 0.0, 1.0);
     let v = max_v * exp2(delta.z);
     let c = v * s2;
-    return PRO_TO_RGB * (hsv_to_rgb(h2, v, s2) + (v - c));
+    var out = hsv_to_rgb(h2, v, s2) + (v - c);
+    if lum != 0.0 {
+        // Band Luminance by each channel's scene level as the other changes change
+        // it, none from white up.
+        let level = select(out, max(scene, vec3(0.0)) * out / max(q, vec3(1e-9)), q > vec3(1e-9));
+        let w = clamp((vec3(1.0) - level) / (1.0 - HDR_LUMINANCE_FADE), vec3(0.0), vec3(1.0));
+        out = out * exp2(lum * w);
+    }
+    return PRO_TO_RGB * out;
 }
 // HdrFinish::finish's colour stage: the colour mixer (with Saturation's fade to the
 // gray source's luminance), colour grading, then the black & white mix's gray,
 // unclipped above white.
 // Linear ProPhoto, not negative, in and out.
-fn hdr_colour_stage(pro: vec3<f32>) -> vec3<f32> {
+fn hdr_colour_stage(pro: vec3<f32>, scene: vec3<f32>) -> vec3<f32> {
     let grid = offset(P_MIXER);
     let gray = offset(P_GRAY_GRID);
     let table = offset(P_RGB) >= 0 && p(P_RGB + 5u) != 0.0;
@@ -492,12 +513,12 @@ fn hdr_colour_stage(pro: vec3<f32>) -> vec3<f32> {
     }
     var rgb = PRO_TO_RGB * pro;
     if grid >= 0 {
-        var mixed = mixer_hdr(rgb, grid, offset(P_HDR_MIXER));
+        var mixed = mixer_hdr(rgb, grid, offset(P_HDR_MIXER), offset(P_HDR_MIXER + 2u), scene);
         let fade = p(P_SATURATION_GRAY);
         if fade != 0.0 {
             var source = rgb;
             if offset(P_GRAY_SOURCE) >= 0 {
-                source = mixer_hdr(rgb, offset(P_GRAY_SOURCE), offset(P_HDR_MIXER + 1u));
+                source = mixer_hdr(rgb, offset(P_GRAY_SOURCE), offset(P_HDR_MIXER + 1u), offset(P_HDR_MIXER + 3u), scene);
             }
             let y = dot(source, vec3(0.2126, 0.7152, 0.0722));
             mixed = mixed + fade * (y - mixed);
@@ -512,7 +533,7 @@ fn hdr_colour_stage(pro: vec3<f32>) -> vec3<f32> {
         rgb = PRO_TO_RGB * grade_hdr(RGB_TO_PRO * rgb);
     }
     if gray >= 0 {
-        let scaled = mixer_hdr(max(rgb, vec3(0.0)), gray, -1);
+        let scaled = mixer_hdr(max(rgb, vec3(0.0)), gray, -1, -1, vec3(0.0));
         rgb = vec3(max(dot(scaled, vec3(0.2126, 0.7152, 0.0722)), 0.0));
     }
     return max(RGB_TO_PRO * rgb, vec3(0.0));
@@ -583,7 +604,7 @@ fn hdr_finish(pro: vec3<f32>) -> vec3<f32> {
     }
     // Contrast and the tone curves follow the profile and its look, and the colour
     // stage follows them.
-    return hdr_colour_stage(max(hdr_tone_controls(max(out, vec3(0.0))), vec3(0.0)));
+    return hdr_colour_stage(max(hdr_tone_controls(max(out, vec3(0.0))), vec3(0.0)), pro);
 }
 // CameraProfile::finish: linear ProPhoto in, linear sRGB primaries out.
 fn profile_finish(pro: vec3<f32>) -> vec3<f32> {

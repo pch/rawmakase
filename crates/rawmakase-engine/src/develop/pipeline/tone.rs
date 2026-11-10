@@ -225,7 +225,11 @@ impl HdrFinish {
             return pro;
         }
         let rgb = mul(crate::camera_profiles::PRO_TO_RGB, pro);
-        let rgb = lut.mixer.as_ref().map_or(rgb, |m| m.apply(rgb));
+        // Band Luminance fades by the scene's level, before the profile's curve.
+        let rgb = lut
+            .mixer
+            .as_ref()
+            .map_or(rgb, |m| m.apply_at(rgb, Some(scene)));
         // Point Color follows the mixer, as in SDR.
         let rgb = lut
             .point_colors
@@ -237,7 +241,7 @@ impl HdrFinish {
         let rgb = lut.grade.as_ref().map_or(rgb, |g| g.apply_hdr(rgb));
         // The gray's luminance, unclipped: SDR renders clip it at white.
         let rgb = lut.gray_grid.as_ref().map_or(rgb, |g| {
-            let lookup = crate::develop::color_mixer::Lookup::Hdr(None);
+            let lookup = crate::develop::color_mixer::Lookup::Hdr(None, None);
             [crate::develop::black_white::gray_in(g, rgb, lookup); 3]
         });
         mul(crate::camera_profiles::RGB_TO_PRO, rgb).map(|v| v.max(0.))

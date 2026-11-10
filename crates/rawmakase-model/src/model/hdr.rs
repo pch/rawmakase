@@ -159,6 +159,10 @@ impl HdrSettings {
 
 /// The highest Whites (−1 to 1) the HDR master renders.
 const POSITIVE_WHITES_MEASURED: f32 = 0.5;
+/// The largest band Luminance (−1 to 1, either sign) the HDR master renders. Camera
+/// Raw's HDR Luminance strengthens with brightness where its SDR one rolls off, which
+/// the SDR-fitted grids can't follow at +100 (docs/records/hdr-stage1-results.md#band-luminance).
+const BAND_LUMINANCE_MEASURED: f32 = 0.4;
 
 /// Refuses the HDR master of an active HDR edit that this release can render only in
 /// SDR: an adjustment, look or profile whose rendering above graphics white has not
@@ -246,12 +250,11 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
             "Presence",
             r.effects.clarity != 0. || r.effects.dehaze != 0.,
         ),
-        // Camera Raw keeps band Luminance's change below white, but not as a gain
-        // above it: it changes channels above about white less, one by one, which
-        // turns a colour at white gray (docs/records/hdr-stage1-results.md#colour-stage).
         (
-            "The Color Mixer's Luminance",
-            r.hsl.iter().any(|band| band[2] != 0.),
+            "The Color Mixer's Luminance beyond ±40",
+            r.hsl
+                .iter()
+                .any(|band| band[2].abs() > BAND_LUMINANCE_MEASURED),
         ),
         // Camera Raw protects highlights from a darkening vignette in HDR only from
         // about four times white up (docs/records/hdr-stage1-results.md#vignette-and-grain).
@@ -541,6 +544,9 @@ mod tests {
         colour.saturation = 0.3;
         colour.vibrance = -0.2;
         colour.hsl[2] = [0.1, -0.4, 0.];
+        // Band Luminance too, per channel by the scene's level, up to ±40.
+        colour.hsl[5][2] = -0.4;
+        colour.hsl[1][2] = 0.4;
         colour.effects.calibration[1] = [0.2, 0.3];
         colour.effects.shadow_tint = 0.1;
         colour.effects.monochrome = true;
@@ -597,10 +603,11 @@ mod tests {
             check_recipe(&masked).is_ok(),
             "a hidden mask renders nothing"
         );
-        let unmeasured: [fn(&mut Recipe); 7] = [
+        let unmeasured: [fn(&mut Recipe); 8] = [
             |r| r.highlights = 0.1,
             |r| r.effects.defringe = [0.3, 0.],
-            |r| r.hsl[5][2] = -0.2,
+            |r| r.hsl[1][2] = 0.41,
+            |r| r.hsl[5][2] = -0.6,
             |r| {
                 r.effects.vignette = -0.3;
                 r.effects.vignette_highlights = 0.4;
@@ -666,8 +673,9 @@ mod tests {
         let color = open::color(&m).unwrap();
         r.profile = Some(Arc::new(color.clone()));
         check_recipe(&r).unwrap();
-        let rendered: [fn(&mut CameraProfile); 6] = [
+        let rendered: [fn(&mut CameraProfile); 7] = [
             |p| p.enhanced.as_mut().unwrap().monochrome = true,
+            |p| p.enhanced.as_mut().unwrap().settings.hsl[1][2] = -0.2,
             |p| p.enhanced.as_mut().unwrap().settings.exposure = 0.3,
             |p| p.enhanced.as_mut().unwrap().contrast = 0.2,
             |p| p.enhanced.as_mut().unwrap().shadows = 0.25,
@@ -682,7 +690,7 @@ mod tests {
             check_recipe(&edit).unwrap();
         }
         type Change = fn(&mut CameraProfile);
-        let refused: [(Change, &str); 4] = [
+        let refused: [(Change, &str); 3] = [
             (
                 |p| p.enhanced.as_mut().unwrap().clarity = 0.1,
                 "Presence, which the look sets",
@@ -690,10 +698,6 @@ mod tests {
             (
                 |p| p.enhanced.as_mut().unwrap().highlights = -0.12,
                 "Highlights, which the look sets",
-            ),
-            (
-                |p| p.enhanced.as_mut().unwrap().settings.hsl[1][2] = -0.2,
-                "Luminance, which the look sets",
             ),
             (
                 |p| {

@@ -114,10 +114,21 @@ pub(crate) struct ColorMixer {
     /// The other sliders' grid, whose result gives the gray its luminance while
     /// colors fade; `None` when they are all at 0 and the color's own is used.
     pub(crate) gray_source: Option<Vec<[f32; 3]>>,
-    /// An HDR master's: the part of `delta`'s and `gray_source`'s log2 value factors
-    /// that Vibrance makes, which Camera Raw applies below white only
-    /// ([`Lookup::Hdr`]). `None` for every other render.
-    hdr: Option<[Vec<f32>; 2]>,
+    /// An HDR master's: the parts of `delta`'s and `gray_source`'s log2 value factors
+    /// that Vibrance and band Luminance make ([`Lookup::Hdr`]). `None` for every other
+    /// render.
+    hdr: Option<[HdrFactors; 2]>,
+}
+
+/// The parts of a grid's log2 value factors (one per cell) that an HDR master applies
+/// apart from its other changes ([`Lookup::Hdr`]).
+pub(crate) struct HdrFactors {
+    /// Vibrance's, which Camera Raw applies below white only.
+    pub(crate) vibrance: Vec<f32>,
+    /// Band Luminance's whole change (hue, saturation and log2 value), which an HDR
+    /// master looks up apart from the others and whose value factor it applies to each
+    /// channel by its own level; `None` when no band's Luminance is set.
+    pub(crate) luminance: Option<Vec<[f32; 3]>>,
 }
 
 /// How a render looks a color up in a grid.
@@ -130,9 +141,13 @@ pub(crate) enum Lookup<'a> {
     /// [`HDR_VALUE`], and the same change above it, so a color keeps them at any
     /// brightness. The value factors Vibrance makes (the slice, one log2 factor per
     /// cell) are looked up at the color's own value and fade out from [`HDR_FADE`] to
-    /// graphics white. Band Luminance is not rendered in HDR
-    /// (`model::hdr::check_recipe`).
-    Hdr(Option<&'a [f32]>),
+    /// graphics white. Band Luminance's value factors are looked up at the color's
+    /// value up to [`HDR_LUMINANCE_VALUE`], then applied to each ProPhoto channel by
+    /// its scene level (`scene`: linear ProPhoto before the profile's curve, changed
+    /// as the mixer's other changes change the channel; the channel's own level when
+    /// `None`): in full up to [`HDR_LUMINANCE_FADE`], fading out linearly to none at
+    /// graphics white.
+    Hdr(Option<&'a HdrFactors>, Option<[f32; 3]>),
 }
 
 /// The value up to which an HDR master looks up the grids at the color's own value.
@@ -145,6 +160,20 @@ pub(crate) const HDR_VALUE: f32 = 0.2;
 /// from white up (Vibrance +100: value ×1.06 at 0.5, ×1.01 at 1 to 8 on colours of
 /// saturation 0.3).
 pub(crate) const HDR_FADE: f32 = 0.5;
+/// The value up to which an HDR master looks band Luminance's changes up at the
+/// color's own value: below it the SDR grids match Camera Raw's HDR renders as they
+/// match its SDR ones, and they carry the SDR roll-off from about there. Its hue and
+/// saturation changes move from that lookup to the other changes' ([`HDR_VALUE`])
+/// between this value and graphics white.
+pub(crate) const HDR_LUMINANCE_VALUE: f32 = 0.5;
+/// The channel level from which an HDR master's band Luminance fades, linearly, to
+/// none at graphics white. Camera Raw 18.7 changes each channel below about white and
+/// not the ones above it: Luminance +100 of every band scales value by 1.67 at 0.5 and
+/// by 1.00 from 1 to 8, and turns a colour at white almost gray. Fitted with
+/// [`HDR_LUMINANCE_VALUE`] on synthetic patches (12 hues, saturations 0.3 to 0.9, 0.2
+/// to 3 times white, ±50 and ±100, a linear and the ACR3 profile curve; fades from 0.5
+/// to 0.7 and lookup values from 0.4 to 0.6 score alike).
+pub(crate) const HDR_LUMINANCE_FADE: f32 = 0.6;
 impl ColorMixer {
     pub(crate) fn new(r: &Recipe) -> Option<Self> {
         debug_assert_eq!(CHART.len(), TABLES * TABLE * 2);
@@ -185,7 +214,8 @@ impl ColorMixer {
         };
         let gray_source = (saturation_gray > 0. && (!others.is_empty() || chart_vibrance))
             .then(|| with_vibrance(grid(&others)));
-        // Vibrance's value factors, which fade above white.
+        // Vibrance's value factors, which fade above white, and band Luminance's, which
+        // fade by each channel's level.
         let fading = |active: &[(usize, f32)]| {
             let vibrance: Vec<_> = active
                 .iter()
@@ -196,7 +226,15 @@ impl ColorMixer {
             if chart_vibrance {
                 add_vibrance(&mut g, r.vibrance);
             }
-            g.into_iter().map(|d| d[2]).collect::<Vec<_>>()
+            let luminance: Vec<_> = active
+                .iter()
+                .copied()
+                .filter(|(t, _)| *t < 48 && (t / 2) % 3 == 2)
+                .collect();
+            HdrFactors {
+                vibrance: g.into_iter().map(|d| d[2]).collect(),
+                luminance: (!luminance.is_empty()).then(|| grid(&luminance)),
+            }
         };
         let hdr = r
             .hdr
@@ -211,14 +249,20 @@ impl ColorMixer {
     }
 
     /// `rgb` is linear display RGB (sRGB primaries); above white in an HDR master.
-    /// An HDR master's fading value factors ([`Lookup::Hdr`]): the changes' grid's,
-    /// then the gray source's; `None` for every other render. For the GPU port.
-    pub(crate) fn hdr_fading(&self) -> Option<&[Vec<f32>; 2]> {
+    /// An HDR master's value factors applied apart ([`Lookup::Hdr`]): the changes'
+    /// grid's, then the gray source's; `None` for every other render. For the GPU port.
+    pub(crate) fn hdr_fading(&self) -> Option<&[HdrFactors; 2]> {
         self.hdr.as_ref()
     }
     pub(crate) fn apply(&self, rgb: [f32; 3]) -> [f32; 3] {
+        self.apply_at(rgb, None)
+    }
+    /// As [`Self::apply`], in an HDR master whose pixel's scene colour (linear
+    /// ProPhoto, before the profile's curve) is `scene`: band Luminance fades by it
+    /// ([`Lookup::Hdr`]).
+    pub(crate) fn apply_at(&self, rgb: [f32; 3], scene: Option<[f32; 3]>) -> [f32; 3] {
         let lookup = |i: usize| match &self.hdr {
-            Some(fading) => Lookup::Hdr(Some(&fading[i])),
+            Some(fading) => Lookup::Hdr(Some(&fading[i]), scene),
             None => Lookup::Sdr,
         };
         let mixed = tables_in(&self.delta, rgb, lookup(0));
@@ -241,18 +285,32 @@ pub(crate) fn tables_in(delta: &[[f32; 3]], rgb: [f32; 3], lookup: Lookup) -> [f
     let Some([h, s, max]) = hsv(p) else {
         return rgb;
     };
+    // An HDR master's band Luminance, applied per channel below.
+    let mut luminance = 0.;
     let [dh, ds, dv] = match lookup {
         Lookup::Sdr => lookup_with(h, s, max, |cell| delta[cell]),
-        Lookup::Hdr(fading) => {
-            let [dh, ds, dv] = lookup_with(h, s, max.min(HDR_VALUE), |cell| delta[cell]);
-            let dv = match fading {
-                Some(f) => {
-                    let one = |at: f32| lookup_with(h, s, at, |cell| [0., 0., f[cell]])[2];
-                    let fade = ((1. - max) / (1. - HDR_FADE)).clamp(0., 1.);
-                    dv - one(max.min(HDR_VALUE)) + fade * one(max)
+        Lookup::Hdr(factors, _) => {
+            let low = max.min(HDR_VALUE);
+            let [mut dh, mut ds, mut dv] = lookup_with(h, s, low, |cell| delta[cell]);
+            if let Some(f) = factors {
+                let one = |f: &[f32], at: f32| lookup_with(h, s, at, |cell| [0., 0., f[cell]])[2];
+                let fade = ((1. - max) / (1. - HDR_FADE)).clamp(0., 1.);
+                dv += fade * one(&f.vibrance, max) - one(&f.vibrance, low);
+                // Band Luminance's change is looked up at its own value: its value
+                // factor leaves `dv`, to apply per channel below, and its hue and
+                // saturation join the others, as SDR's up to HDR_LUMINANCE_VALUE and
+                // moving back to the others' lookup by white.
+                if let Some(l) = f.luminance.as_deref() {
+                    let within = lookup_with(h, s, low, |cell| l[cell]);
+                    let own = lookup_with(h, s, max.min(HDR_LUMINANCE_VALUE), |cell| l[cell]);
+                    let keep = 1.
+                        - ((max - HDR_LUMINANCE_VALUE) / (1. - HDR_LUMINANCE_VALUE)).clamp(0., 1.);
+                    dh += keep * (own[0] - within[0]);
+                    ds += keep * (own[1] - within[1]);
+                    dv -= within[2];
+                    luminance = own[2];
                 }
-                None => dv,
-            };
+            }
             [dh, ds, dv]
         }
     };
@@ -269,10 +327,29 @@ pub(crate) fn tables_in(delta: &[[f32; 3]], rgb: [f32; 3], lookup: Lookup) -> [f
         4 => [x, 0., c],
         _ => [c, 0., x],
     };
-    mul(
-        crate::camera_profiles::PRO_TO_RGB,
-        q.map(|v| v + (max * dv.exp2()) - c),
-    )
+    let q = q.map(|v| v + (max * dv.exp2()) - c);
+    // Band Luminance in an HDR master: each channel by its scene level, as the other
+    // changes have changed it.
+    let q = if luminance == 0. {
+        q
+    } else {
+        let scene = match lookup {
+            Lookup::Hdr(_, scene) => scene,
+            Lookup::Sdr => None,
+        };
+        std::array::from_fn(|i| {
+            let level = scene.map_or(q[i], |scene| {
+                if p[i] > 1e-9 {
+                    scene[i].max(0.) * q[i] / p[i]
+                } else {
+                    q[i]
+                }
+            });
+            let weight = ((1. - level) / (1. - HDR_LUMINANCE_FADE)).clamp(0., 1.);
+            q[i] * (luminance * weight).exp2()
+        })
+    };
+    mul(crate::camera_profiles::PRO_TO_RGB, q)
 }
 
 /// The summed change of the `active` tables (index, strength), one grid.
@@ -480,6 +557,68 @@ mod tests {
                 .zip(&half)
                 .all(|(f, h)| (0..3).all(|c| (h[c] - f[c] * 0.5).abs() < 1e-6))
         );
+    }
+    /// In an HDR master band Luminance changes each channel by its scene level, as
+    /// Camera Raw 18.7 renders it (docs/hdr.md#the-colour-stage): fully up to
+    /// [`HDR_LUMINANCE_FADE`], not at all from white up, so a colour whose channels
+    /// are all above white keeps its value and one at white turns toward gray.
+    #[test]
+    fn hdr_band_luminance_fades_out_by_each_channels_level() {
+        let mut r = Recipe::default();
+        for band in &mut r.hsl {
+            band[2] = 1.;
+        }
+        r.hdr.enabled = true;
+        let mixer = ColorMixer::new(&r).unwrap();
+        let pro = |rgb: [f32; 3]| mul(crate::camera_profiles::RGB_TO_PRO, rgb);
+        let rgb = |pro: [f32; 3]| mul(crate::camera_profiles::PRO_TO_RGB, pro);
+        // An orange in ProPhoto, its channels up to 0.6: brightened in full.
+        let orange = [0.6, 0.36, 0.14];
+        let low = pro(mixer.apply(rgb(orange)));
+        assert!(low[0] > orange[0] * 1.1, "{low:?}");
+        // All channels above white: the value stays, and only the tables' small hue
+        // and saturation changes move the others.
+        let bright = orange.map(|v| v * 10.);
+        let out = pro(mixer.apply(rgb(bright)));
+        assert!((out[0] / bright[0] - 1.).abs() < 1e-4, "{out:?}");
+        for c in 1..3 {
+            assert!((out[c] / bright[c]).log2().abs() < 0.3, "{out:?}");
+        }
+        // At white the top channel stays and the others rise: toward gray.
+        let white = [1., 0.4, 0.2];
+        let out = pro(mixer.apply(rgb(white)));
+        assert!((out[0] - 1.).abs() < 1e-4, "{out:?}");
+        assert!(out[1] > 0.45 && out[2] > 0.22, "{out:?}");
+        // The fade reads the scene's level: a colour that a brightening curve took from
+        // a scene below HDR_LUMINANCE_FADE up to white takes the full change, as the
+        // colour at that scene level would.
+        let full = pro(mixer.apply_at(rgb(white), Some(white.map(|v| v * 0.5))));
+        let gain = |q: [f32; 3]| q[0] / white[0];
+        assert!(
+            gain(full) > 1.1 && gain(full) > gain(out),
+            "{full:?} {out:?}"
+        );
+    }
+    /// Below [`HDR_LUMINANCE_VALUE`] and [`HDR_LUMINANCE_FADE`] band Luminance renders
+    /// an HDR master's colour exactly as SDR does, its hue and saturation changes too:
+    /// Camera Raw's HDR and SDR renders of a Luminance edit agree there (the Nikon Z5 II
+    /// photo's, to 0.006 stop median below 0.5).
+    #[test]
+    fn hdr_band_luminance_matches_sdr_below_its_lookup_value() {
+        let mut r = Recipe::default();
+        r.hsl[3][2] = -0.3;
+        r.hsl[5][2] = -0.4;
+        r.hsl[1][2] = 0.4;
+        let sdr = ColorMixer::new(&r).unwrap();
+        r.hdr.enabled = true;
+        let hdr = ColorMixer::new(&r).unwrap();
+        let rgb = |pro: [f32; 3]| mul(crate::camera_profiles::PRO_TO_RGB, pro);
+        for pro in [[0.2, 0.35, 0.15], [0.12, 0.2, 0.42], [0.45, 0.3, 0.1]] {
+            let (a, b) = (sdr.apply(rgb(pro)), hdr.apply_at(rgb(pro), Some(pro)));
+            for c in 0..3 {
+                assert!((a[c] - b[c]).abs() < 1e-5, "{pro:?}: {a:?} {b:?}");
+            }
+        }
     }
     #[test]
     fn chart_luminance_follows_camera_raws_slider_curve() {

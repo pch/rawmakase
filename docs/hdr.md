@@ -176,7 +176,8 @@ and the tone curves (`HdrCurves`: Levels, the parametric curve and the master po
 curve on `hdr_look`'s encoding, from the SDR port's own samples of the curves, then
 each channel's curve, held at 16), and
 the colour stage (the colour mixer's grids looked up as `color_mixer::Lookup::Hdr`
-looks them up, with Vibrance's fading value factors and Saturation's fade to gray,
+looks them up, with Vibrance's fading value factors, band Luminance per channel by the
+scene's level and Saturation's fade to gray,
 then a look's RGB table on overrange-encoded values (`RgbTable::apply_hdr`), colour
 grading in its HDR domain (`grade_hdr`) and black & white's gray, unclipped). It writes linear ProPhoto unclipped; `present_hdr.wgsl` sharpens it on
 sRGB-curve-encoded values with ProPhoto luminance, applies the limit, and encodes
@@ -194,7 +195,7 @@ An HDR file's light, AI Denoise, the post-crop vignette and grain, Point Color, 
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
 "GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, looks whose
 curves end at white and below it, positive and negative Contrast, Levels, point and
-parametric curves, channel curves, Saturation, Vibrance, the colour mixer, colour grading, black & white, looks' RGB tables of every kind and amount, and Texture (neutral
+parametric curves, channel curves, Saturation, Vibrance, the colour mixer (band Luminance included), colour grading, black & white, looks' RGB tables of every kind and amount, and Texture (neutral
 colours, whose hue is undefined, left out of the colour stage's comparison): the per-pixel stage agrees to 2×10^-4 of the value,
 the presented texture to 1.3×10^-3 (half-float steps), at full size and in a
 region, at headrooms 4 and 40, sharpened and not.
@@ -257,7 +258,7 @@ HDR reference family):
 | Parametric curve | After Levels, RGBTone on the same encoding, its regions and splits laid over black to four stops above white (16); values above 16 are left alone. |
 | Point curve | `color::hdr_curve`, after the parametric curve: the master curve, RGBTone on the look curve's encoding, as in SDR up to white; above it, along the curve's slope at its last point (a natural spline's own derivative there, before clamping). |
 | Channel curves | `color::hdr_curve::channel`, after the master curve: each channel's own curve on that channel of the look curve's encoding of ProPhoto RGB, by the master curve's rule, its output held at 16. An identity curve leaves its channel alone. |
-| Saturation, Vibrance, the colour mixer's Hue and Saturation | The SDR grids of `develop::color_mixer`, after Contrast, the tone curves and Levels, as in SDR, on unclipped linear values ([The colour stage](#the-colour-stage)): looked up at the colour's value up to 0.2 and at 0.2 above it; Vibrance's value change fades out from 0.5 to white. |
+| Saturation, Vibrance, the colour mixer | The SDR grids of `develop::color_mixer`, after Contrast, the tone curves and Levels, as in SDR, on unclipped linear values ([The colour stage](#the-colour-stage)): looked up at the colour's value up to 0.2 and at 0.2 above it; Vibrance's value change fades out from 0.5 to white; band Luminance, up to ±40, is looked up up to 0.5 and its value change applied per channel, fading out by the channel's scene level from 0.6 to white. |
 | Look's RGB table | After the colour mixer, as in SDR (`RgbTable::apply_hdr`): in the table's primaries, each channel is overrange-encoded (0 to 16 times white onto 0 to 1) before the table's own encoding and decoded after it, and what it encodes beyond 1 skips the table and is added back to its output in that encoding. `.cube` looks, Lightroom's creative looks and fitted Camera Looks' tables alike. |
 | Point Color | SDR's swatches (`develop::point_color`), after the colour mixer, on each channel taken into Color Grading's HDR domain (16 times white at 1) and back, clipping at 16 ([Point Color](#point-color)). |
 | Color Grading | The SDR curves (`develop::color_grade_curves`), after the colour mixer and a look's RGB table, on each channel taken into a domain that is the value itself in the deep shadows and 1 at 16 times white, u = x / (1 + 15x/16), and back ([Color grading](#color-grading)). Above 16 the gain at 16. |
@@ -287,9 +288,18 @@ to 0.9, 0.125 to 8 times white, a linear and the ACR3 profile curve) show:
   there above it.
 - Vibrance's value change applies below white and fades out by white (value ×1.06 at
   0.5, ×1.01 from 1 to 8); its saturation change does not.
-- The colour mixer's Luminance changes value below white but not above it as a gain:
-  Luminance +100 of every band gives ×1.67 at 0.5 and ×1.00 at 1, 2, 4 and 8, where a
-  colour at white turns almost gray. It is refused (below).
+- The colour mixer's Luminance changes each channel below about white and not the ones
+  above it: Luminance +100 of every band gives value ×1.67 at 0.5 and ×1.00 at 1, 2, 4
+  and 8, where a colour at white turns almost gray. An HDR master looks its change up at
+  the colour's value up to 0.5 (`color_mixer::HDR_LUMINANCE_VALUE`), so below 0.5 it is
+  the SDR rendition's, and applies its value part to each ProPhoto channel by that
+  channel's scene level (before the profile's curve, as the mixer's other changes change
+  it): in full up to 0.6 (`color_mixer::HDR_LUMINANCE_FADE`), fading out to none at white.
+  Its hue and saturation parts move to the other changes' lookup between 0.5 and white.
+  It renders up to ±40, the range measured on photos; beyond, Camera Raw's HDR effect
+  strengthens with brightness where its SDR one rolls off, which the SDR grids can't give
+  (every band +100 leaves the Nikon Z6 III 0.20 stop off above white), and the master is
+  refused.
 - Black & White's gray is the mix's, unclipped above white.
 - Calibration renders as in SDR: its matrix works on scene colour, and Shadows tint
   fades out below white.
@@ -431,7 +441,7 @@ differ from the global sliders by 0.06–0.29 stop median and stay refused
 something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
 channel's) whose last point is left of white, Presence (Clarity, Dehaze), the
-colour mixer's Luminance, a darkening vignette's Highlights,
+colour mixer's Luminance beyond ±40, a darkening vignette's Highlights,
 a mask's sliders other than Temp, Tint, Exposure, Shadows and Texture, Defringe ([Defringe](#defringe)), Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
 Highlights and Shadows: "Highlights, which the look sets, …") or split toning, DCP
 tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
