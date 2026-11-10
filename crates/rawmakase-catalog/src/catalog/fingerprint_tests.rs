@@ -83,22 +83,63 @@ fn a_conditional_edit_is_written_only_while_the_photo_is_as_it_was_read() -> Res
     };
     // Someone else edits it first: the proposal computed from `read` is refused.
     save(&mut cat, id, &path, 2.0)?;
+    let yes = || true;
     assert_eq!(
-        cat.change_edits_if(id, &read, &EditChange::Save(&edit))?,
-        Conditional::Moved
+        cat.change_edits_if(&[(&read, EditChange::Save(&edit))], &yes)?,
+        Some(vec![Conditional::Moved])
     );
     assert_eq!(cat.load_edit(id, &path)?.unwrap().recipe.exposure, 2.0);
-    // Read again, it goes through.
+    // Read again, but no longer admitted when the write begins: nothing.
     let now = cat.photo_fingerprint(id)?.unwrap();
     assert_eq!(
-        cat.change_edits_if(id, &now, &EditChange::Save(&edit))?,
-        Conditional::Written
+        cat.change_edits_if(&[(&now, EditChange::Save(&edit))], &|| false)?,
+        None
+    );
+    assert_eq!(cat.load_edit(id, &path)?.unwrap().recipe.exposure, 2.0);
+    // Admitted, it goes through.
+    assert_eq!(
+        cat.change_edits_if(&[(&now, EditChange::Save(&edit))], &yes)?,
+        Some(vec![Conditional::Written])
     );
     assert_eq!(cat.load_edit(id, &path)?.unwrap().recipe.exposure, 0.5);
-    // A change for another photo than the one checked is a mistake.
-    assert!(
-        cat.change_edits_if(PhotoId(id.0 + 1), &now, &EditChange::Save(&edit))
-            .is_err()
+    Ok(())
+}
+
+#[test]
+fn a_conditional_edit_of_several_photos_writes_those_still_as_read_in_one_go() -> Result<()> {
+    let (_dir, mut cat, photos) = catalog(2)?;
+    let (a, a_path) = photos[0].clone();
+    let (b, b_path) = photos[1].clone();
+    let read = [
+        cat.photo_fingerprint(a)?.unwrap(),
+        cat.photo_fingerprint(b)?.unwrap(),
+    ];
+    let identities = [Identity::read(&a_path)?, Identity::read(&b_path)?];
+    let (r, export) = (recipe(0.5), ExportOptions::default());
+    let edit = |id, path, source| EditToSave {
+        id,
+        path,
+        source,
+        recipe: &r,
+        export: &export,
+        history: HistoryUpdate::Keep,
+    };
+    let (edit_a, edit_b) = (
+        edit(a, &a_path, &identities[0]),
+        edit(b, &b_path, &identities[1]),
     );
+    save(&mut cat, b, &b_path, 2.0)?;
+    assert_eq!(
+        cat.change_edits_if(
+            &[
+                (&read[0], EditChange::Save(&edit_a)),
+                (&read[1], EditChange::Save(&edit_b)),
+            ],
+            &|| true,
+        )?,
+        Some(vec![Conditional::Written, Conditional::Moved])
+    );
+    assert_eq!(cat.load_edit(a, &a_path)?.unwrap().recipe.exposure, 0.5);
+    assert_eq!(cat.load_edit(b, &b_path)?.unwrap().recipe.exposure, 2.0);
     Ok(())
 }

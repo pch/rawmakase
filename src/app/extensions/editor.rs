@@ -2,7 +2,7 @@
 //! answering the programs' reads and proposals, running commands, telling
 //! programs what changed, and the file dialogs and background work of
 //! Preferences > Extensions.
-use super::{Call, Host, Outcome, RunBy};
+use super::{Answer, Call, Host, Outcome, RunBy};
 use crate::app::Editor;
 use crate::app::worker::Event;
 use crate::catalog::PhotoId;
@@ -47,6 +47,8 @@ pub(crate) enum Done {
     Offered(Result<Box<rawmakase_extensions::github::Offer>, String>),
     /// Check for Updates finished.
     Checked(Result<Box<rawmakase_extensions::github::Checked>, String>),
+    /// A proposal's worker finished, or panicked.
+    Proposed(Box<super::targets::Finished>),
 }
 
 /// What the editor last told programs, to tell them only of changes.
@@ -166,12 +168,27 @@ impl Editor {
         }
     }
 
-    /// Answers a program's read or admitted proposal.
-    fn answer_extension(&mut self, call: Call) -> Result<Value, RemoteError> {
+    /// Answers a program's read or admitted proposal; a proposal for photos
+    /// not open is answered when its worker finishes.
+    fn answer_extension(&mut self, call: Call) -> Answer {
+        if let ProgramRequest::ProposeSettings(proposal) = call.request {
+            return match self.propose(proposal, &call.title, call.ticket, call.deadline) {
+                Ok(super::targets::Proposing::Done(proposed)) => {
+                    Answer::Now(Ok(serde_json::to_value(proposed).expect("a reply is JSON")))
+                }
+                Ok(super::targets::Proposing::Started(cancel)) => Answer::Later(cancel),
+                Err(err) => Answer::Now(Err(err)),
+            };
+        }
+        Answer::Now(self.answer_read(call.request))
+    }
+
+    /// Answers a program's read.
+    fn answer_read(&mut self, request: ProgramRequest) -> Result<Value, RemoteError> {
         fn value<T: serde::Serialize>(v: Result<T, RemoteError>) -> Result<Value, RemoteError> {
             v.map(|v| serde_json::to_value(v).expect("a reply is JSON"))
         }
-        match call.request {
+        match request {
             ProgramRequest::ReadCapabilities(_) => {
                 let command = crate::app::shell::commands::Command::new(
                     crate::app::shell::commands::Operation::Capabilities,
@@ -191,7 +208,6 @@ impl Editor {
                 let ids: Vec<PhotoId> = read.ids.into_iter().map(PhotoId).collect();
                 value(self.read_photos(&ids))
             }
-            ProgramRequest::ProposeSettings(proposal) => value(self.propose(proposal, &call.title)),
             _ => Err(RemoteError::new(
                 ErrorCode::UnknownMethod,
                 "the host answers this request itself",
@@ -335,6 +351,7 @@ impl Editor {
                     Err(why) => self.messages.fail(format!("Not installed: {why}")),
                 }
             }
+            Done::Proposed(finished) => self.proposal_finished(*finished),
             Done::Checked(result) => {
                 self.extension_page.busy = false;
                 match result {

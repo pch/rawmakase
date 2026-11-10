@@ -102,11 +102,15 @@ and is admitted only while that request is in flight, checked immediately
 before it is applied. Its target token names the catalog's location and
 structural generation and, per photo, the file's identity and the catalog's
 fingerprint (`Catalog::photo_fingerprint`); the open photo is checked against
-Develop's live state and changed through its edit path as one History step,
-any other through the batch edit's path (`library::sync::apply_if`) and
-`Catalog::change_edits_if`, which compares the fingerprint inside the write
-transaction. The catalog owns the fingerprint and the conditional write; the
-app owns what a token holds. Every persisted change goes through the host
+Develop's live state and, alone in the proposal, changed through its edit path
+as one History step. Photos not open are changed on a worker, as the running
+batch, through the batch edit's path (`library::sync::apply_proposal`) and one
+`Catalog::change_edits_if`, which compares each fingerprint and asks whether
+the proposal is still admitted inside the write transaction; the program is
+answered when the worker finishes, and a proposal with the open photo among
+others saves it first and sends it to the worker too, so it is one Undo. The
+catalog owns the fingerprint and the conditional write; the app owns what a
+token holds. Every persisted change goes through the host
 crate's `State::update`, so a write failure leaves this session's state as it
 was. Quitting follows [the shutdown contract](shutdown.md).
 

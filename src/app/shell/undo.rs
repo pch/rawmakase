@@ -326,7 +326,8 @@ impl Editor {
                     Ok(()) => {}
                     // Nothing to return to: the command is used up, not retried.
                     Err(e @ crate::app::library::sync::SyncRestoreError::PhotoRemoved) => {
-                        self.messages.fail(format!("{verb} Sync Settings: {e}"));
+                        self.messages
+                            .fail(format!("{verb} {}: {e}", sync.change.name()));
                         return true;
                     }
                     Err(e) => {

@@ -3,6 +3,7 @@
 //! `rawmakase_example::extension()` as a third party's program would. Each
 //! test that needs a program starts one, or one per crash it counts; the
 //! token and state tests start none.
+use super::targets::Proposing;
 use super::{Host, Outcome, RunBy};
 use crate::app::{Editor, Module};
 use crate::catalog::PhotoId;
@@ -146,7 +147,10 @@ fn select(e: &mut Editor, ids: &[PhotoId]) {
 fn pump(e: &mut Editor, what: &str, done: impl Fn(&Editor, &[Outcome]) -> bool) -> Vec<Outcome> {
     let until = Instant::now() + Duration::from_secs(20);
     let mut all = Vec::new();
+    let ctx = e.context.clone();
     loop {
+        // A proposal's worker reports through the editor's events.
+        e.events(&ctx);
         let (outcomes, _) = e.extensions_poll(Instant::now());
         all.extend(outcomes);
         if done(e, &all) {
@@ -205,6 +209,38 @@ fn proposal(token: &str, photo: PhotoId, exposure: f64) -> ProposeSettings {
             photo: photo.0,
             settings,
         }],
+    }
+}
+
+/// A ticket no program's request has, for proposals a test makes itself.
+const TICKET: u64 = u64::MAX;
+
+/// Makes `proposal` as an admitted program's would be, and waits for its
+/// worker, if it starts one; the reply.
+fn propose_now(e: &mut Editor, proposal: ProposeSettings, name: &str) -> Proposed {
+    match e.propose(proposal, name, TICKET, None) {
+        Ok(Proposing::Done(proposed)) => proposed,
+        Ok(Proposing::Started(_)) => {
+            settle(e);
+            let (_, reply) = e
+                .extensions
+                .finished
+                .iter()
+                .rev()
+                .find(|(ticket, _)| *ticket == TICKET)
+                .expect("the worker finished")
+                .clone();
+            serde_json::from_value(reply.unwrap()).unwrap()
+        }
+        Err(err) => panic!("refused whole: {err}"),
+    }
+}
+
+/// Makes `proposal`, which is to be refused whole.
+fn propose_refused(e: &mut Editor, proposal: ProposeSettings) -> RemoteError {
+    match e.propose(proposal, "Test", TICKET, None) {
+        Err(err) => err,
+        Ok(_) => panic!("not refused"),
     }
 }
 
@@ -351,14 +387,12 @@ fn a_token_is_refused_whole_once_its_catalog_is_closed_switched_or_read_again() 
     e.library = Some(Box::new(
         crate::app::library::Library::load(&other, e.context.clone()).unwrap(),
     ));
-    let switched = e.propose(proposal(&token, a, 1.0), "Test").unwrap_err();
+    let switched = propose_refused(e, proposal(&token, a, 1.0));
     assert_eq!(switched.code, ErrorCode::StaleTarget);
     // Closed.
     e.library = None;
     assert_eq!(
-        e.propose(proposal(&token, a, 1.0), "Test")
-            .unwrap_err()
-            .code,
+        propose_refused(e, proposal(&token, a, 1.0)).code,
         ErrorCode::StaleTarget
     );
     // The photos removed and added again, as the same ids may be: the catalog
@@ -372,9 +406,7 @@ fn a_token_is_refused_whole_once_its_catalog_is_closed_switched_or_read_again() 
     catalog.add_folder(f.photos[0].1.parent().unwrap()).unwrap();
     library.session.reload().unwrap();
     assert_eq!(
-        e.propose(proposal(&token, a, 1.0), "Test")
-            .unwrap_err()
-            .code,
+        propose_refused(e, proposal(&token, a, 1.0)).code,
         ErrorCode::StaleTarget
     );
     assert_eq!(exposure(e, &f.photos[0]), None);
@@ -392,9 +424,7 @@ fn a_photo_open_in_develop_is_checked_against_its_live_state() {
     // Opened with nothing unsaved: the first applies through Develop, as one
     // step.
     open(e, &photo);
-    let proposed = e
-        .propose(proposal(&first, photo.0, 0.7), "Brighten")
-        .unwrap();
+    let proposed = propose_now(e, proposal(&first, photo.0, 0.7), "Brighten");
     assert_eq!(proposed.applied, vec![photo.0.0]);
     assert!((e.document.edit.recipe().exposure - 0.7).abs() < 1e-6);
     let steps = e.document.edit.history().steps().0;
@@ -402,9 +432,7 @@ fn a_photo_open_in_develop_is_checked_against_its_live_state() {
     // That change isn't saved yet: the second read no longer describes the
     // photo, and is refused.
     assert!(e.document.edit.save_state().needs_save());
-    let proposed = e
-        .propose(proposal(&second, photo.0, 1.0), "Brighten")
-        .unwrap();
+    let proposed = propose_now(e, proposal(&second, photo.0, 1.0), "Brighten");
     assert_eq!(
         refused(&proposed),
         vec![(photo.0.0, ErrorCode::StaleTarget)]
@@ -414,9 +442,7 @@ fn a_photo_open_in_develop_is_checked_against_its_live_state() {
     crate::app::testing::in_edit_frame(&ctx, e, |e| {
         e.document.edit.recipe_mut().contrast = 0.2;
     });
-    let proposed = e
-        .propose(proposal(&live, photo.0, 1.0), "Brighten")
-        .unwrap();
+    let proposed = propose_now(e, proposal(&live, photo.0, 1.0), "Brighten");
     assert_eq!(
         refused(&proposed),
         vec![(photo.0.0, ErrorCode::StaleTarget)]
@@ -424,9 +450,7 @@ fn a_photo_open_in_develop_is_checked_against_its_live_state() {
     assert!((e.document.edit.recipe().exposure - 0.7).abs() < 1e-6);
     // Read from Develop and still as read: applied.
     let live = e.read_open_photo().unwrap().token;
-    let proposed = e
-        .propose(proposal(&live, photo.0, 0.9), "Brighten")
-        .unwrap();
+    let proposed = propose_now(e, proposal(&live, photo.0, 0.9), "Brighten");
     assert_eq!(proposed.applied, vec![photo.0.0]);
     assert!((e.document.edit.recipe().exposure - 0.9).abs() < 1e-6);
 }
@@ -442,6 +466,301 @@ fn open(e: &mut Editor, photo: &(PhotoId, PathBuf)) {
         e.events(&ctx);
         std::thread::sleep(Duration::from_millis(5));
     }
+}
+
+/// Saves an edit of `exposure` to `photo` in the catalog, as a photo edited
+/// earlier has.
+fn saved_edit(e: &mut Editor, photo: &(PhotoId, PathBuf), exposure: f32) {
+    let recipe = crate::model::recipe::Recipe {
+        exposure,
+        ..Default::default()
+    };
+    e.library
+        .as_mut()
+        .unwrap()
+        .session
+        .catalog_mut_for_tests()
+        .save_edit(
+            photo.0,
+            &photo.1,
+            &crate::storage::Identity::read(&photo.1).unwrap(),
+            &recipe,
+            &Default::default(),
+            crate::catalog::HistoryUpdate::Keep,
+        )
+        .unwrap();
+}
+
+/// A read of the photo open in Develop, then a move to `next`.
+fn read_then_leave(
+    e: &mut Editor,
+    next: &(PhotoId, PathBuf),
+    before: impl FnOnce(&mut Editor),
+) -> String {
+    before(e);
+    let token = e.read_open_photo().unwrap().token;
+    open(e, next);
+    token
+}
+
+#[test]
+fn a_develop_read_of_a_protected_photo_is_refused_once_the_photo_is_left() {
+    let mut f = fixture(&["a.png", "b.png"]);
+    let e = &mut f.editor;
+    let (a, b) = (f.photos[0].clone(), f.photos[1].clone());
+    saved_edit(e, &a, 0.3);
+    open(e, &a);
+    let token = read_then_leave(e, &b, |e| {
+        e.document
+            .edit
+            .save_state_mut()
+            .protect("its masks can't be read".into());
+    });
+    let proposed = propose_now(e, proposal(&token, a.0, 1.0), "Brighten");
+    assert_eq!(refused(&proposed), vec![(a.0.0, ErrorCode::StaleTarget)]);
+    assert_eq!(exposure(e, &a), Some(0.3));
+}
+
+#[test]
+fn a_develop_read_of_settings_not_saved_is_refused_once_the_photo_is_left() {
+    let mut f = fixture(&["a.png", "b.png"]);
+    let e = &mut f.editor;
+    let (a, b) = (f.photos[0].clone(), f.photos[1].clone());
+    saved_edit(e, &a, 0.3);
+    open(e, &a);
+    // Settings changed with no History step and nothing to save, as a gesture
+    // that left none: the read sees settings the catalog doesn't hold.
+    let token = read_then_leave(e, &b, |e| {
+        e.document.edit.setup_mut().contrast = 40.;
+        assert!(!e.document.edit.save_state().needs_save());
+    });
+    let proposed = propose_now(e, proposal(&token, a.0, 1.0), "Brighten");
+    assert_eq!(refused(&proposed), vec![(a.0.0, ErrorCode::StaleTarget)]);
+    assert_eq!(exposure(e, &a), Some(0.3));
+}
+
+#[test]
+fn a_develop_read_that_matched_the_catalog_still_applies_once_the_photo_is_left() {
+    let mut f = fixture(&["a.png", "b.png"]);
+    let e = &mut f.editor;
+    let (a, b) = (f.photos[0].clone(), f.photos[1].clone());
+    saved_edit(e, &a, 0.3);
+    open(e, &a);
+    let token = read_then_leave(e, &b, |_| {});
+    let proposed = propose_now(e, proposal(&token, a.0, 1.0), "Brighten");
+    assert_eq!(proposed.applied, vec![a.0.0], "{proposed:?}");
+    assert_eq!(exposure(e, &a), Some(1.0));
+}
+
+#[test]
+fn a_proposal_for_the_open_photo_and_others_is_one_undo() {
+    let mut f = fixture(&["a.png", "b.png"]);
+    let e = &mut f.editor;
+    let ctx = e.context.clone();
+    let (a, b) = (f.photos[0].clone(), f.photos[1].clone());
+    open(e, &a);
+    select(e, &[a.0, b.0]);
+    let token = e.read_selection().unwrap().token;
+    let mut both = proposal(&token, a.0, 0.6);
+    both.changes.extend(proposal(&token, b.0, 0.6).changes);
+    let undos = e.undo_log.len().0;
+    let proposed = propose_now(e, both, "Brighten");
+    assert_eq!(proposed.applied, vec![a.0.0, b.0.0], "{proposed:?}");
+    settle(e);
+    assert!((e.document.edit.recipe().exposure - 0.6).abs() < 1e-6);
+    assert_eq!(exposure(e, &b), Some(0.6));
+    assert_eq!(e.undo_log.len().0, undos + 1, "one Undo for the proposal");
+    // One Undo takes back both photos.
+    e.undo();
+    settle(e);
+    assert_eq!(e.document.catalog_photo, Some(a.0));
+    assert_eq!(e.document.edit.recipe().exposure, 0.);
+    assert_eq!(exposure(e, &b), None);
+    let _ = ctx;
+}
+
+/// Lets background work the editor waits for finish: a batch, and the photo
+/// open in Develop loading again.
+fn settle(e: &mut Editor) {
+    let ctx = e.context.clone();
+    let until = Instant::now() + Duration::from_secs(30);
+    loop {
+        e.events(&ctx);
+        let loaded = e.document.catalog_photo.is_none()
+            || (!e.document.loading() && e.document.full().is_some());
+        if !e.activity.is_busy() && loaded {
+            return;
+        }
+        assert!(Instant::now() < until, "the editor never settled");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// Holds the next proposal's worker before it starts: the test waits on the
+/// barrier once to know it is there, and once more to let it go.
+fn hold(e: &mut Editor) -> Arc<std::sync::Barrier> {
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    let held = barrier.clone();
+    e.proposal_hook = Some(Arc::new(move || {
+        held.wait();
+        held.wait();
+    }));
+    barrier
+}
+
+/// Runs Brighten on `photos` until its proposal's worker is held.
+fn brighten_held(e: &mut Editor, photos: &[PhotoId]) -> Arc<std::sync::Barrier> {
+    select(e, photos);
+    let barrier = hold(e);
+    e.run_extension_command(&format!("{ID}/brighten"), RunBy::Button)
+        .unwrap();
+    pump(e, "the proposal", |e, _| e.extensions.proposing());
+    barrier.wait();
+    barrier
+}
+
+#[test]
+fn a_proposal_for_photos_not_open_runs_on_a_worker_and_is_answered_when_it_is_done() {
+    let mut f = fixture(&["a.png", "b.png"]);
+    let e = &mut f.editor;
+    let ids: Vec<PhotoId> = f.photos.iter().map(|p| p.0).collect();
+    let barrier = brighten_held(e, &ids);
+    // The UI thread goes on while the worker holds: the proposal is the
+    // running batch, and its command waits for the answer.
+    assert!(e.activity.is_syncing());
+    let (outcomes, _) = e.extensions_poll(Instant::now());
+    assert!(result(&outcomes, "Brighten").is_none());
+    assert!(e.extensions.command_running(ID));
+    assert_eq!(exposure(e, &f.photos[0]), None);
+    barrier.wait();
+    let outcomes = pump(e, "Brighten", |_, o| result(o, "Brighten").is_some());
+    let proposed: Proposed =
+        serde_json::from_value(result(&outcomes, "Brighten").unwrap().clone().unwrap()).unwrap();
+    assert_eq!(proposed.applied, vec![ids[0].0, ids[1].0]);
+    assert!(!e.activity.is_busy());
+    assert_eq!(exposure(e, &f.photos[0]), Some(0.5));
+    assert_eq!(exposure(e, &f.photos[1]), Some(0.5));
+}
+
+#[test]
+fn a_proposal_stopped_while_its_worker_runs_changes_no_photo() {
+    #[derive(Debug)]
+    enum Stop {
+        Cancelled,
+        Disabled,
+        Quitting,
+        BatchCancel,
+        Panic,
+    }
+    for stop in [
+        Stop::Cancelled,
+        Stop::Disabled,
+        Stop::Quitting,
+        Stop::BatchCancel,
+        Stop::Panic,
+    ] {
+        let mut f = fixture(&["a.png", "b.png"]);
+        let e = &mut f.editor;
+        let ids: Vec<PhotoId> = f.photos.iter().map(|p| p.0).collect();
+        if let Stop::Panic = stop {
+            e.proposal_hook = Some(Arc::new(|| panic!("a test's panic")));
+            select(e, &ids);
+            e.run_extension_command(&format!("{ID}/brighten"), RunBy::Button)
+                .unwrap();
+        } else {
+            let barrier = brighten_held(e, &ids);
+            match stop {
+                Stop::Cancelled => drop(e.extensions.cancel_commands(ID)),
+                Stop::Disabled => e.set_extension_enabled(ID, false),
+                Stop::Quitting => e.extensions.cancel_requests(),
+                Stop::BatchCancel => assert!(e.activity.batch().unwrap().cancel()),
+                Stop::Panic => unreachable!(),
+            }
+            barrier.wait();
+        }
+        settle(e);
+        assert!(!e.activity.is_busy(), "{stop:?}");
+        assert_eq!(exposure(e, &f.photos[0]), None, "{stop:?}");
+        assert_eq!(exposure(e, &f.photos[1]), None, "{stop:?}");
+        assert!(!e.extensions.proposing(), "{stop:?}");
+        let expected = match stop {
+            Stop::BatchCancel => Some(ErrorCode::Cancelled),
+            Stop::Panic => Some(ErrorCode::Other("failed".into())),
+            _ => None,
+        };
+        if let Some(code) = expected {
+            let outcomes = pump(e, "Brighten", |_, o| result(o, "Brighten").is_some());
+            assert_eq!(
+                result(&outcomes, "Brighten")
+                    .unwrap()
+                    .as_ref()
+                    .unwrap_err()
+                    .code,
+                code
+            );
+        }
+    }
+}
+
+#[test]
+fn a_proposal_past_its_deadline_when_it_comes_to_write_changes_no_photo() {
+    let mut f = fixture_with(&["a.png"], Duration::from_millis(400));
+    let e = &mut f.editor;
+    let barrier = brighten_held(e, &[f.photos[0].0]);
+    // Nothing polls the host meanwhile: the write itself sees the deadline.
+    std::thread::sleep(Duration::from_millis(500));
+    barrier.wait();
+    let ctx = e.context.clone();
+    let until = Instant::now() + Duration::from_secs(20);
+    while e.activity.is_busy() {
+        assert!(Instant::now() < until, "the proposal never finished");
+        e.events(&ctx);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(exposure(e, &f.photos[0]), None);
+    let (_, reply) = e.extensions.finished.last().unwrap();
+    assert_eq!(reply.as_ref().unwrap_err().code, ErrorCode::NotAdmitted);
+    let outcomes = pump(e, "Brighten", |_, o| result(o, "Brighten").is_some());
+    assert!(result(&outcomes, "Brighten").unwrap().is_err());
+}
+
+#[test]
+fn undoing_a_proposal_whose_photo_is_gone_names_the_command() {
+    use crate::app::library::sync::{
+        BatchChange, EditBefore, ProposedSettings, SyncCommand, Synced,
+    };
+    let mut f = fixture(&["a.png"]);
+    let e = &mut f.editor;
+    let path = f.photos[0].1.clone();
+    let history = crate::catalog::SavedHistory {
+        origin: Default::default(),
+        steps: Vec::new(),
+        applied: 0,
+    };
+    e.undo_log
+        .push(crate::app::shell::undo::Command::Sync(Box::new(
+            SyncCommand {
+                sequence: crate::edit_session::sequence(),
+                change: BatchChange::Proposed(Box::new(ProposedSettings {
+                    name: "Brighten".into(),
+                    settings: Vec::new(),
+                })),
+                edits: vec![Synced {
+                    id: PhotoId(9999),
+                    path: path.clone(),
+                    before: EditBefore::None {
+                        starting: Box::default(),
+                    },
+                    after: Default::default(),
+                    history: history.clone(),
+                    history_before: history,
+                    identity: crate::storage::Identity::read(&path).unwrap(),
+                }],
+            },
+        )));
+    e.undo();
+    let line = e.messages.line().to_string();
+    assert!(line.starts_with("Undo Brighten:"), "{line}");
 }
 
 #[test]

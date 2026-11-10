@@ -279,51 +279,77 @@ impl Catalog {
         fingerprint(&self.db, id)
     }
 
-    /// Writes `change` to photo `id` only while its fingerprint is still
-    /// `expected`, checked inside the write transaction, so nothing that
-    /// changed the photo after it was read is overwritten. With the same
-    /// checks and storage as [`Catalog::change_edits`].
+    /// Writes each of `changes`, a photo's change with the fingerprint it
+    /// was computed from, only while that photo's fingerprint is still the
+    /// one given, all in one write transaction: a photo that changed since it
+    /// was read is left as it is and reported [`Conditional::Moved`], the
+    /// others are written. `admitted` is asked once, inside the transaction
+    /// before anything is written; when it says no, nothing is written and
+    /// the result is `None`. It lets the caller's own state (an extension's
+    /// request still admitted) and the photos' state be checked at the same
+    /// moment. With the same checks and storage as [`Catalog::change_edits`].
     pub fn change_edits_if(
         &mut self,
-        id: PhotoId,
-        expected: &str,
-        change: &EditChange<'_, '_>,
-    ) -> Result<Conditional> {
-        let change_id = match change {
-            EditChange::Save(e) => e.id,
-            EditChange::Clear { id } => *id,
-        };
-        anyhow::ensure!(change_id == id, "The change is for another photo");
-        // As `change_edits` does: the file and the stored edit are read before
-        // the transaction takes its lock.
-        let checked = self.check_edit(change)?;
+        changes: &[(&str, EditChange<'_, '_>)],
+        admitted: &dyn Fn() -> bool,
+    ) -> Result<Option<Vec<Conditional>>> {
+        // As `change_edits` does: the files and the stored edits are read
+        // before the transaction takes its lock.
+        let checked = changes
+            .iter()
+            .map(|(_, change)| self.check_edit(change))
+            .collect::<Result<Vec<_>>>()?;
         let edited_at = rawmakase_model::time::now_text();
         let write = |w: &mut super::db::Write<'_>| {
-            if fingerprint(&*w, id)?.as_deref() != Some(expected) {
-                return Ok(Conditional::Moved);
+            if !admitted() {
+                return Ok(None);
             }
-            super::edit_rows::write_edit(w, &checked, &edited_at)?;
-            Ok(Conditional::Written)
+            let mut written = Vec::with_capacity(changes.len());
+            for ((expected, change), checked) in changes.iter().zip(&checked) {
+                let id = match change {
+                    EditChange::Save(e) => e.id,
+                    EditChange::Clear { id } => *id,
+                };
+                if fingerprint(&*w, id)?.as_deref() != Some(*expected) {
+                    written.push(Conditional::Moved);
+                    continue;
+                }
+                super::edit_rows::write_edit(w, checked, &edited_at)?;
+                written.push(Conditional::Written);
+            }
+            Ok(Some(written))
         };
-        let written = match change {
+        let recipes = changes.iter().flat_map(|(_, change)| match change {
             EditChange::Save(e) => {
                 let history = match e.history {
                     super::HistoryUpdate::Replace(h) => Some(h),
                     super::HistoryUpdate::Keep => None,
                 };
-                let recipes = std::iter::once(e.recipe)
+                std::iter::once(e.recipe)
                     .chain(history.map(|h| &h.origin))
                     .chain(
                         history
                             .into_iter()
                             .flat_map(|h| h.steps.iter().map(|s| &s.recipe)),
-                    );
-                self.write_recipes(super::format_upgrade::Stores::of(recipes), write)?
+                    )
+                    .collect::<Vec<_>>()
             }
-            EditChange::Clear { .. } => self.db.write(write)?,
+            EditChange::Clear { .. } => Vec::new(),
+        });
+        let written = if changes
+            .iter()
+            .any(|(_, c)| matches!(c, EditChange::Save(_)))
+        {
+            self.write_recipes(super::format_upgrade::Stores::of(recipes), write)?
+        } else {
+            self.db.write(write)?
         };
-        if written == Conditional::Written {
-            checked.committed();
+        if let Some(written) = &written {
+            for (checked, result) in checked.iter().zip(written) {
+                if *result == Conditional::Written {
+                    checked.committed();
+                }
+            }
         }
         Ok(written)
     }

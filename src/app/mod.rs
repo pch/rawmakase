@@ -144,6 +144,10 @@ pub(crate) struct Editor {
     extensions_told: crate::app::extensions::Told,
     /// Preferences > Extensions.
     extension_page: crate::app::extensions::Page,
+    /// Runs on a proposal's worker before its work, for a test to hold it
+    /// there or make it panic.
+    #[cfg(test)]
+    proposal_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 impl Editor {
     pub(crate) fn new(
@@ -414,6 +418,8 @@ impl Editor {
             extensions: crate::app::extensions::Host::inert(),
             extensions_told: Default::default(),
             extension_page: Default::default(),
+            #[cfg(test)]
+            proposal_hook: None,
         };
         app.reload_presets(ctx);
         // A catalog passed on the command line opens instead of the last one;

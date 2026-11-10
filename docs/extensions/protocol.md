@@ -171,12 +171,29 @@ What the app checks, photo by photo:
   `stale_target`.
 - The photo open in Develop is checked against Develop's state now, whether or
   not it was open when read. Read from Develop, it must still be the same load
-  with no edit since; read from the catalog, it must have nothing unsaved and
-  the same catalog state. It changes as one step of its History.
+  with no edit since; read from the catalog, Develop must show just what the
+  catalog holds (nothing unsaved, not protected, the saved settings) and the
+  catalog state must be the same. Alone in the proposal, it changes as one
+  step of its History.
+- A photo read from Develop that is no longer open is accepted only if, when
+  it was read, Develop showed just what the catalog holds. Otherwise the read
+  saw settings the catalog never had, or a protected edit, and the photo is
+  refused `stale_target`.
 - Any other photo must still have the file and the catalog state it was read
-  with; that is checked again inside the catalog's write, so nothing changed
-  meanwhile is overwritten. It is changed as a batch edit changes it, with a
-  History step, and one Undo covers every such photo of the proposal.
+  with, checked before its file is opened and again inside the catalog's one
+  write for the proposal, so nothing changed meanwhile is overwritten. It is
+  changed as a batch edit changes it, with a History step, off the UI thread;
+  the reply comes when that work is done. One Undo covers every photo of the
+  proposal: when the open photo is among others, it is saved first and
+  changed with them, then opens again with what was written.
+- A cancellation of the command (answered, cancelled, past its deadline, the
+  extension disabled, its program gone, the app quitting) or the user's
+  Cancel before that write leaves every photo unchanged; the reply is then
+  `not_admitted`, or `cancelled` for the user's Cancel. Once the write has
+  begun it completes or fails as a whole, and what it wrote stands, with its
+  Undo.
+- While another batch edit runs, the photos of a proposal that needs one are
+  refused `busy`.
 - A read returns at most 200 photos and a proposal changes at most 200
   (`too_large`). A setting name the control layer doesn't know, or a value that
   isn't a finite number, refuses that photo `invalid_request`.

@@ -23,6 +23,14 @@
 //! proposal is admitted only while its `op` is there and the session still
 //! admits it, checked immediately before the editor applies it.
 //!
+//! A proposal that changes photos not open in Develop runs on a worker (see
+//! `targets.rs`) and is answered when it finishes. Until then it is a
+//! [`Deferred`] of the session, holding the work's cancel: the moment its
+//! `op` stops being admitted (answered, cancelled, past its deadline, the
+//! extension disabled, the program gone, quitting), the cancel is set, and
+//! the worker writes nothing it hadn't written. The worker's one write takes
+//! the same cancel inside its transaction, so the two race through one state.
+//!
 //! Every persisted change (enable, disable, a setting, an uninstall) goes
 //! through [`rawmakase_extensions::state::State::update`] first; when that
 //! fails the session's state stays as it was and the failure is reported.
@@ -112,6 +120,25 @@ struct Queued {
     pending: Pending,
 }
 
+/// A program's proposal being applied by a worker, until the worker reports
+/// back ([`Host::finish_proposal`]). Dropping it cancels the work, which then
+/// writes nothing: the session ends with its proposals.
+struct Deferred {
+    ticket: u64,
+    /// The program's request, answered when the work finishes.
+    request: u64,
+    /// The `command.run` it belongs to.
+    op: u64,
+    cancel: std::sync::Arc<crate::app::library::sync::BatchProgress>,
+}
+impl Drop for Deferred {
+    fn drop(&mut self) {
+        // Once the work has started writing, or has finished, this changes
+        // nothing.
+        self.cancel.cancel();
+    }
+}
+
 /// A program running, or starting.
 struct Running {
     session: Session,
@@ -123,6 +150,8 @@ struct Running {
     started: Instant,
     /// Stopped by the host (disabled, idle, quitting): its end is no crash.
     stopping: bool,
+    /// Its proposals being applied.
+    deferred: Vec<Deferred>,
 }
 
 /// One host-drawn panel's controls, as its program last returned them.
@@ -225,9 +254,9 @@ impl Extension {
     }
     /// Whether the program is active: starting, or with a request in flight.
     fn busy(&self) -> bool {
-        self.run
-            .as_ref()
-            .is_some_and(|r| !r.ready || !r.requests.is_empty() || !r.queued.is_empty())
+        self.run.as_ref().is_some_and(|r| {
+            !r.ready || !r.requests.is_empty() || !r.queued.is_empty() || !r.deferred.is_empty()
+        })
     }
     fn ready_session(&mut self) -> Option<&mut Running> {
         self.run.as_mut().filter(|r| r.ready && !r.stopping)
@@ -255,6 +284,18 @@ pub(in crate::app) struct Call {
     /// What a proposal's History step and Undo are named: the command it
     /// belongs to.
     pub title: String,
+    /// Names a proposal answered later, in [`Host::finish_proposal`].
+    pub ticket: u64,
+    /// When a proposal's command stops being admitted by its deadline.
+    pub deadline: Option<Instant>,
+}
+
+/// How the editor answers a [`Call`].
+pub(in crate::app) enum Answer {
+    Now(Result<Value, RemoteError>),
+    /// The editor started work that answers it, through
+    /// [`Host::finish_proposal`] with the call's ticket; this is its cancel.
+    Later(std::sync::Arc<crate::app::library::sync::BatchProgress>),
 }
 
 /// An extension found while loading: its manifest, origin, folder, program
@@ -270,6 +311,8 @@ pub(in crate::app) struct Host {
     extensions: Vec<Extension>,
     /// The `session` number the next start sends.
     next_number: u64,
+    /// The ticket the next [`Call`] gets.
+    next_ticket: u64,
     polls: u64,
     /// Quitting: nothing is admitted or read any more.
     closed: bool,
@@ -287,6 +330,10 @@ pub(in crate::app) struct Host {
     /// running the example extension.
     #[cfg(test)]
     program_override: Option<Launch>,
+    /// Every proposal's reply, by ticket, for tests that make proposals
+    /// without a program.
+    #[cfg(test)]
+    pub(in crate::app) finished: Vec<(u64, Result<Value, RemoteError>)>,
 }
 
 impl Default for Host {
@@ -305,6 +352,7 @@ impl Host {
             wake: None,
             extensions: Vec::new(),
             next_number: 1,
+            next_ticket: 1,
             polls: 0,
             closed: false,
             killers: Vec::new(),
@@ -314,6 +362,8 @@ impl Host {
             request_deadline: session::REQUEST_DEADLINE,
             #[cfg(test)]
             program_override: None,
+            #[cfg(test)]
+            finished: Vec::new(),
         }
     }
     /// A host of `data_dir` whose programs all start as `program` (its
@@ -747,6 +797,7 @@ impl Host {
             requests,
             started: now,
             stopping: false,
+            deferred: Vec::new(),
         });
         e.last_active = now;
         Ok(())
@@ -943,6 +994,10 @@ impl Host {
                 });
             }
         }
+        Self::sweep(e);
+        let Some(run) = &mut e.run else {
+            return outcomes;
+        };
         let (commands, rest): (Vec<Queued>, Vec<Queued>) = std::mem::take(&mut run.queued)
             .into_iter()
             .partition(|q| matches!(q.pending, Pending::Command { .. }));
@@ -1085,7 +1140,7 @@ impl Host {
     pub(in crate::app) fn poll(
         &mut self,
         now: Instant,
-        answer: &mut dyn FnMut(Call) -> Result<Value, RemoteError>,
+        answer: &mut dyn FnMut(Call) -> Answer,
         outcomes: &mut Vec<Outcome>,
     ) -> Option<Instant> {
         if self.closed || self.store.is_none() {
@@ -1150,13 +1205,15 @@ impl Host {
         &mut self,
         index: usize,
         now: Instant,
-        answer: &mut dyn FnMut(Call) -> Result<Value, RemoteError>,
+        answer: &mut dyn FnMut(Call) -> Answer,
         outcomes: &mut Vec<Outcome>,
     ) {
         let Some(run) = self.extensions[index].run.as_mut() else {
             return;
         };
         let updates = run.session.poll(now);
+        // The session's poll is where a deadline passes.
+        Self::sweep(&mut self.extensions[index]);
         for update in updates {
             let e = &mut self.extensions[index];
             match update {
@@ -1165,14 +1222,18 @@ impl Host {
                     let Some(pending) = run.requests.remove(&id) else {
                         continue;
                     };
+                    // An answered command admits no more of its proposals.
+                    Self::sweep(e);
                     self.settle(index, pending, result, outcomes);
                 }
                 Update::Request { id, method, params } => {
-                    let result = match ProgramRequest::parse(&method, params) {
-                        Err(err) => Err(err),
-                        Ok(request) => self.program_request(index, request, answer, outcomes),
+                    let answered = match ProgramRequest::parse(&method, params) {
+                        Err(err) => Answer::Now(Err(err)),
+                        Ok(request) => self.program_request(index, id, request, answer, outcomes),
                     };
-                    if let Some(run) = self.extensions[index].run.as_ref() {
+                    if let (Answer::Now(result), Some(run)) =
+                        (answered, self.extensions[index].run.as_ref())
+                    {
                         let _ = run.session.reply(id, result);
                     }
                 }
@@ -1191,6 +1252,7 @@ impl Host {
                 }
                 Update::Progress { .. } | Update::Cancel { .. } => {}
                 Update::Closed => {
+                    // Its proposals' work is cancelled as the session drops.
                     let Some(run) = e.run.take() else { break };
                     if !run.stopping {
                         let how = run
@@ -1298,10 +1360,13 @@ impl Host {
     fn program_request(
         &mut self,
         index: usize,
+        id: u64,
         request: ProgramRequest,
-        answer: &mut dyn FnMut(Call) -> Result<Value, RemoteError>,
+        answer: &mut dyn FnMut(Call) -> Answer,
         outcomes: &mut Vec<Outcome>,
-    ) -> Result<Value, RemoteError> {
+    ) -> Answer {
+        let ticket = self.next_ticket;
+        self.next_ticket += 1;
         let e = &mut self.extensions[index];
         match request {
             ProgramRequest::Notify(notify) => {
@@ -1309,39 +1374,126 @@ impl Host {
                     level: notify.level,
                     text: format!("{}: {}", e.name(), notify.text),
                 });
-                Ok(Value::Null)
+                Answer::Now(Ok(Value::Null))
             }
             ProgramRequest::Status(status) => {
                 e.status = status.text.filter(|t| !t.trim().is_empty());
-                Ok(Value::Null)
+                Answer::Now(Ok(Value::Null))
             }
             ProgramRequest::AdapterDevice(_) | ProgramRequest::AdapterOperate(_) => {
-                Err(RemoteError::new(
+                Answer::Now(Err(RemoteError::new(
                     ErrorCode::Other("adapter_disabled".into()),
                     "this RAWmakase runs no control adapter of this extension",
-                ))
+                )))
             }
             ProgramRequest::ProposeSettings(proposal) => {
                 if !Self::admitted(e, proposal.op) {
-                    return Err(RemoteError::new(
+                    return Answer::Now(Err(RemoteError::new(
                         ErrorCode::NotAdmitted,
                         "the command this proposal belongs to is no longer running",
-                    ));
+                    )));
                 }
-                let title = match e.run.as_ref().and_then(|r| r.requests.get(&proposal.op)) {
+                let op = proposal.op;
+                let run = e.run.as_ref().expect("admitted");
+                let title = match run.requests.get(&op) {
                     Some(Pending::Command { command, .. }) => command_title(&e.manifest, command),
                     _ => e.name().to_string(),
                 };
-                answer(Call {
+                let deadline = run.session.deadline(op);
+                let answered = answer(Call {
                     request: ProgramRequest::ProposeSettings(proposal),
                     title,
-                })
+                    ticket,
+                    deadline,
+                });
+                if let Answer::Later(cancel) = &answered {
+                    let e = &mut self.extensions[index];
+                    match e.run.as_mut() {
+                        Some(run) => run.deferred.push(Deferred {
+                            ticket,
+                            request: id,
+                            op,
+                            cancel: cancel.clone(),
+                        }),
+                        None => {
+                            cancel.cancel();
+                        }
+                    }
+                }
+                answered
             }
             request => answer(Call {
                 request,
                 title: e.name().to_string(),
+                ticket,
+                deadline: None,
             }),
         }
+    }
+
+    /// Cancels the work of `e`'s proposals whose command is no longer
+    /// admitted.
+    fn sweep(e: &mut Extension) {
+        let Some(run) = e.run.as_ref() else { return };
+        let gone: Vec<u64> = run
+            .deferred
+            .iter()
+            .filter(|d| !Self::admitted(e, d.op))
+            .map(|d| d.ticket)
+            .collect();
+        if let Some(run) = e.run.as_mut() {
+            // Dropping one cancels its work.
+            run.deferred.retain(|d| !gone.contains(&d.ticket));
+        }
+    }
+
+    /// The work of proposal `ticket` finished with `result`: the program is
+    /// answered, if the session that asked still runs. Work that stopped
+    /// because its command was no longer admitted answers `not_admitted`.
+    pub(in crate::app) fn finish_proposal(
+        &mut self,
+        ticket: u64,
+        result: Result<Value, RemoteError>,
+    ) {
+        let mut result = Some(result);
+        for e in &mut self.extensions {
+            let Some(run) = e.run.as_mut() else { continue };
+            let Some(at) = run.deferred.iter().position(|d| d.ticket == ticket) else {
+                continue;
+            };
+            let deferred = run.deferred.remove(at);
+            // Past its deadline the command isn't admitted, whether or not
+            // a poll has noticed yet.
+            let admitted = Self::admitted(e, deferred.op)
+                && e.run
+                    .as_ref()
+                    .and_then(|r| r.session.deadline(deferred.op))
+                    .is_some_and(|d| Instant::now() < d);
+            let result = match result.take().expect("answered once") {
+                Err(err) if err.code == ErrorCode::Cancelled && !admitted => Err(RemoteError::new(
+                    ErrorCode::NotAdmitted,
+                    "the command this proposal belongs to stopped running",
+                )),
+                result => result,
+            };
+            #[cfg(test)]
+            self.finished.push((ticket, result.clone()));
+            if let Some(run) = e.run.as_ref() {
+                let _ = run.session.reply(deferred.request, result);
+            }
+            return;
+        }
+        // Its session ended: there is no one to answer.
+        #[cfg(test)]
+        self.finished.push((ticket, result.expect("not answered")));
+    }
+
+    /// Whether a proposal's work is under way, for tests.
+    #[cfg(test)]
+    pub(in crate::app) fn proposing(&self) -> bool {
+        self.extensions
+            .iter()
+            .any(|e| e.run.as_ref().is_some_and(|r| !r.deferred.is_empty()))
     }
 
     /// The status line's entries: each program's own, or the command it runs.
@@ -1377,6 +1529,8 @@ impl Host {
                 }
                 run.requests.clear();
                 run.queued.clear();
+                // Their work is cancelled: nothing more is written.
+                run.deferred.clear();
             }
         }
     }

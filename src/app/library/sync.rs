@@ -434,61 +434,182 @@ pub(in crate::app) fn synchronize(
     result
 }
 
-/// What [`apply_if`] did to a photo.
-pub(in crate::app) enum AppliedIf {
-    /// Written, as one History step.
-    Changed(Box<Synced>),
-    /// The change left the photo as it was; nothing was written.
-    Unchanged,
-    /// The photo's edit, metadata or file changed since `expected` was read:
-    /// nothing was written.
-    Moved,
+/// One photo of an extension's proposal, as the worker applies it: the
+/// photo, the catalog fingerprint and file it was read with, and its change.
+pub(in crate::app) struct ProposedPhoto {
+    pub target: SyncTarget,
+    pub expected: String,
+    pub identity: crate::storage::Identity,
+    pub change: BatchChange,
 }
 
-/// Applies `change` to `target`, a photo not open in Develop, as a batch
-/// applies it (its saved edit or starting settings, its History), and writes
-/// it only while the photo's catalog fingerprint is still `expected`
-/// ([`crate::catalog::Catalog::change_edits_if`]) and its file still
-/// `identity`.
-pub(in crate::app) fn apply_if(
-    session: &mut crate::catalog_session::CatalogSession,
-    change: &BatchChange,
-    target: &SyncTarget,
-    expected: &str,
-    identity: &crate::storage::Identity,
+/// What [`apply_proposal`] did to one photo.
+#[derive(Debug)]
+pub(in crate::app) enum ProposedOutcome {
+    /// Written as one History step, or (`None`) left as it was because the
+    /// change changes nothing on it.
+    Applied(Option<Box<Synced>>),
+    /// Its edit, metadata or file changed since it was read: not written.
+    Moved,
+    /// It couldn't be prepared or written, and why: not written.
+    Failed(String),
+}
+
+/// What [`apply_proposal`] did.
+#[derive(Debug)]
+pub(in crate::app) struct ProposalOutcome {
+    /// False when it was cancelled, or no longer admitted when it came to
+    /// write: then nothing at all was written and `photos` is empty.
+    pub admitted: bool,
+    /// Each photo by its index in the proposal, in that order.
+    pub photos: Vec<(usize, ProposedOutcome)>,
+}
+
+/// Applies an extension's proposal to `photos`, none of them open in Develop
+/// (the caller saved the open one first and passes it as any other), as a
+/// batch applies a change: off the UI thread, photo by photo, then written
+/// in one transaction.
+///
+/// The cheap checks come first: a photo whose catalog fingerprint or file is
+/// no longer the one it was read with is [`ProposedOutcome::Moved`] before
+/// any file is opened. `progress` is the proposal's cancel, taken between
+/// photos and inside their decodes; a cancel leaves every photo unchanged.
+/// The write is [`Catalog::change_edits_if`]: inside its transaction the
+/// proposal must still be admitted (`progress` moves to saving, so a cancel
+/// from then on is too late, and `deadline` hasn't passed) and each photo
+/// must still have its fingerprint. Not admitted, nothing is written.
+pub(in crate::app) fn apply_proposal(
+    catalog: &mut Catalog,
+    photos: &[ProposedPhoto],
     defaults: &DevelopDefaults,
     decoding: &Decoding,
-) -> Result<AppliedIf> {
-    let prepared = prepare(
-        session.catalog(),
-        None,
-        change,
-        target,
-        defaults,
-        decoding,
-        Cancel::NEVER,
-    )?;
-    let Some(edit) = prepared.edit else {
-        return Ok(AppliedIf::Unchanged);
+    progress: &BatchProgress,
+    deadline: Option<std::time::Instant>,
+) -> ProposalOutcome {
+    let refused = || ProposalOutcome {
+        admitted: false,
+        photos: Vec::new(),
     };
-    if !edit.synced.identity.same_photo(identity) {
-        return Ok(AppliedIf::Moved);
+    let mut outcomes = Vec::new();
+    let mut still = Vec::new();
+    for (index, photo) in photos.iter().enumerate() {
+        if progress.cancelled() {
+            return refused();
+        }
+        let same = catalog
+            .photo_fingerprint(photo.target.id)
+            .ok()
+            .flatten()
+            .is_some_and(|now| now == photo.expected)
+            && crate::storage::Identity::read(&photo.target.path)
+                .is_ok_and(|now| now.same_photo(&photo.identity));
+        if same {
+            still.push((index, photo));
+        } else {
+            outcomes.push((index, ProposedOutcome::Moved));
+        }
     }
-    let save = EditToSave {
-        id: edit.synced.id,
-        path: &edit.synced.path,
-        source: &edit.synced.identity,
-        recipe: &edit.synced.after,
-        export: &edit.export,
-        history: HistoryUpdate::Replace(&edit.synced.history),
+    let mut prepared = Vec::new();
+    for (index, photo) in still {
+        if progress.cancelled() {
+            return refused();
+        }
+        progress.preparing(&photo.target.name);
+        match prepare(
+            catalog,
+            None,
+            &photo.change,
+            &photo.target,
+            defaults,
+            decoding,
+            Cancel::new(&progress.stop),
+        ) {
+            Ok(Prepared { edit: None, .. }) => {
+                outcomes.push((index, ProposedOutcome::Applied(None)));
+            }
+            Ok(Prepared {
+                edit: Some(edit), ..
+            }) => {
+                if edit.synced.identity.same_photo(&photo.identity) {
+                    prepared.push((index, photo, edit));
+                } else {
+                    outcomes.push((index, ProposedOutcome::Moved));
+                }
+            }
+            // A decode stopped by the cancel is the cancel, not a failure.
+            Err(_) if progress.cancelled() => return refused(),
+            Err(e) => outcomes.push((index, ProposedOutcome::Failed(format!("{e:#}")))),
+        }
+        progress.prepared();
+    }
+    // A file replaced while its settings were worked out gets nothing, as in
+    // a Sync.
+    let (prepared, replaced): (Vec<_>, Vec<_>) = prepared.into_iter().partition(|(_, _, p)| {
+        crate::storage::Identity::read(&p.synced.path)
+            .is_ok_and(|now| now.same_photo(&p.synced.identity))
+    });
+    outcomes.extend(
+        replaced
+            .into_iter()
+            .map(|(index, _, _)| (index, ProposedOutcome::Moved)),
+    );
+    // Asked inside the write transaction. `begin_saving` is where the
+    // proposal and its cancellation race: whichever comes first wins, and
+    // the write is never retried, so it is asked once.
+    let admitted = || {
+        (progress.begin_saving() || progress.stage() == BatchStage::Saving)
+            && deadline.is_none_or(|d| std::time::Instant::now() < d)
     };
-    match session.change_edits_if(
-        target.id,
-        expected,
-        &crate::catalog::EditChange::Save(&save),
-    )? {
-        crate::catalog::Conditional::Written => Ok(AppliedIf::Changed(Box::new(edit.synced))),
-        crate::catalog::Conditional::Moved => Ok(AppliedIf::Moved),
+    if prepared.is_empty() {
+        if !admitted() {
+            return refused();
+        }
+    } else {
+        let saves: Vec<EditToSave> = prepared
+            .iter()
+            .map(|(_, _, p)| EditToSave {
+                id: p.synced.id,
+                path: &p.synced.path,
+                source: &p.synced.identity,
+                recipe: &p.synced.after,
+                export: &p.export,
+                history: HistoryUpdate::Replace(&p.synced.history),
+            })
+            .collect();
+        let changes: Vec<(&str, EditChange)> = prepared
+            .iter()
+            .zip(&saves)
+            .map(|((_, photo, _), save)| (photo.expected.as_str(), EditChange::Save(save)))
+            .collect();
+        let written = catalog.change_edits_if(&changes, &admitted);
+        drop(changes);
+        drop(saves);
+        match written {
+            Ok(None) => return refused(),
+            Ok(Some(written)) => {
+                for ((index, _, p), written) in prepared.into_iter().zip(written) {
+                    outcomes.push((
+                        index,
+                        match written {
+                            crate::catalog::Conditional::Written => {
+                                ProposedOutcome::Applied(Some(Box::new(p.synced)))
+                            }
+                            crate::catalog::Conditional::Moved => ProposedOutcome::Moved,
+                        },
+                    ));
+                }
+            }
+            Err(e) => outcomes.extend(
+                prepared
+                    .into_iter()
+                    .map(|(index, _, _)| (index, ProposedOutcome::Failed(format!("{e:#}")))),
+            ),
+        }
+    }
+    outcomes.sort_by_key(|(index, _)| *index);
+    ProposalOutcome {
+        admitted: true,
+        photos: outcomes,
     }
 }
 
@@ -519,7 +640,12 @@ impl Opened {
         cancel: Cancel<'_>,
     ) -> Result<&crate::camera_data::CameraImage> {
         if self.image.is_none() {
-            let image = match self.opened.take().context("the photo is not open")? {
+            // Only its metadata may have been read so far.
+            let opened = match self.opened.take() {
+                Some(opened) => opened,
+                None => crate::photo::open_source(&self.path, cancel)?,
+            };
+            let image = match opened {
                 crate::photo::Opened::Raw(raw) => match &decoding.cache {
                     Some(cache) => {
                         let full = crate::decode::FullSize::with_cache(
@@ -557,12 +683,23 @@ fn prepare(
 ) -> Result<Prepared> {
     // Read first, so a file replaced while its settings are worked out is noticed.
     let identity = crate::storage::Identity::read(&target.path)?;
-    let opened = crate::photo::open_source(&target.path, Cancel::NEVER)
-        .with_context(|| format!("{} can't be read", target.name))?;
-    let metadata = opened.metadata().clone();
+    // A proposal sets settings and measures nothing: a RAW's header is all it
+    // reads, unless an Upright or Straighten Auto has to be analysed.
+    let header = (matches!(change, BatchChange::Proposed(_))
+        && crate::storage::is_raw(&target.path))
+    .then(|| crate::photo::header_metadata(&target.path).ok())
+    .flatten();
+    let (metadata, opened) = match header {
+        Some(metadata) => (metadata, None),
+        None => {
+            let opened = crate::photo::open_source(&target.path, Cancel::NEVER)
+                .with_context(|| format!("{} can't be read", target.name))?;
+            (opened.metadata().clone(), Some(opened))
+        }
+    };
     let mut photo = Opened {
         path: target.path.clone(),
-        opened: Some(opened),
+        opened,
         image: None,
     };
     let (profiles, _) = crate::camera_profiles::installed(&metadata);
@@ -1734,6 +1871,105 @@ mod tests {
         assert!(saving.begin_saving());
         assert!(!saving.cancel());
         assert_eq!(saving.stage(), BatchStage::Saving);
+        Ok(())
+    }
+
+    /// The photos of an extension's proposal setting Exposure to `exposure`.
+    fn proposed(c: &Catalog, photos: &[(PhotoId, PathBuf)], exposure: f32) -> Vec<ProposedPhoto> {
+        photos
+            .iter()
+            .map(|(id, path)| ProposedPhoto {
+                target: target(*id, path),
+                expected: c.photo_fingerprint(*id).unwrap().unwrap(),
+                identity: crate::storage::Identity::read(path).unwrap(),
+                change: BatchChange::Proposed(Box::new(ProposedSettings {
+                    name: "Brighten".into(),
+                    settings: vec![("exposure".into(), exposure)],
+                })),
+            })
+            .collect()
+    }
+
+    fn propose(
+        c: &mut Catalog,
+        photos: &[ProposedPhoto],
+        progress: &BatchProgress,
+        deadline: Option<std::time::Instant>,
+    ) -> ProposalOutcome {
+        apply_proposal(
+            c,
+            photos,
+            &DevelopDefaults::default(),
+            &Decoding::default(),
+            progress,
+            deadline,
+        )
+    }
+
+    /// A proposal stopped between photos or before it writes, or no longer
+    /// admitted when it comes to write, changes no photo; otherwise the
+    /// photos still as read are written together and the rest left alone.
+    #[test]
+    fn a_proposal_writes_the_photos_still_as_read_and_nothing_once_stopped() -> Result<()> {
+        let mut f = catalog()?;
+        let raws = f.photos[..3].to_vec();
+        let photos = proposed(&f.catalog, &raws, 0.5);
+        let cancelled = BatchProgress::new("Brighten", 3);
+        assert!(cancelled.cancel());
+        for (progress, deadline) in [
+            (cancelled, None),
+            (BatchProgress::new("Brighten", 3).cancelling_after(1), None),
+            (BatchProgress::new("Brighten", 3).cancelling_after(3), None),
+            (
+                BatchProgress::new("Brighten", 3),
+                Some(std::time::Instant::now()),
+            ),
+        ] {
+            let outcome = propose(&mut f.catalog, &photos, &progress, deadline);
+            assert!(
+                !outcome.admitted && outcome.photos.is_empty(),
+                "{outcome:?}"
+            );
+            for (id, path) in &raws {
+                assert!(f.catalog.load_edit(*id, path)?.is_none());
+            }
+        }
+        // b is edited after it was read.
+        let (b, b_path) = &raws[1];
+        f.catalog.save_edit(
+            *b,
+            b_path,
+            &crate::storage::Identity::read(b_path)?,
+            &Recipe {
+                exposure: 2.,
+                ..Default::default()
+            },
+            &Default::default(),
+            HistoryUpdate::Keep,
+        )?;
+        let outcome = propose(
+            &mut f.catalog,
+            &photos,
+            &BatchProgress::new("Brighten", 3),
+            None,
+        );
+        assert!(outcome.admitted);
+        let kinds: Vec<_> = outcome
+            .photos
+            .iter()
+            .map(|(i, o)| (*i, matches!(o, ProposedOutcome::Applied(Some(_)))))
+            .collect();
+        assert_eq!(kinds, vec![(0, true), (1, false), (2, true)]);
+        assert!(matches!(outcome.photos[1].1, ProposedOutcome::Moved));
+        let exposure = |c: &Catalog, (id, path): &(PhotoId, PathBuf)| {
+            c.load_edit(*id, path).unwrap().map(|e| e.recipe.exposure)
+        };
+        assert_eq!(exposure(&f.catalog, &raws[0]), Some(0.5));
+        assert_eq!(exposure(&f.catalog, &raws[1]), Some(2.));
+        assert_eq!(exposure(&f.catalog, &raws[2]), Some(0.5));
+        let history = f.catalog.load_history(raws[0].0)?.unwrap();
+        assert_eq!(history.steps.len(), 1);
+        assert_eq!(history.steps[0].name, "Brighten");
         Ok(())
     }
 

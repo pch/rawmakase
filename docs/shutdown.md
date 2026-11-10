@@ -81,6 +81,7 @@ that drops it.
 | The Loupe's AI Denoise loader | `app/develop/ai_denoise.rs` (`cached_loader`) | A job; reading one finished result from the AI Denoise cache (150–370 MB), assembling it over the photo's full-size image and recovering its highlights. It never runs the model | `Latest` stopped, between jobs; the photo's load cancel, set when the photo is left or another load replaces it, between the cache read, the assembly and the recovery | Yes |
 | Lensfun profiles | `app/develop/lensfun.rs` (the work is `lensfun_install.rs`) | One job: `versions.json` and the archive over HTTPS (connect 20 s, 30 s per response, 60 s for the body, 2 min each request), unpacking and checking it in memory, writing one version folder and the manifest; or removing the folder; or waiting for another instance's install lock (at most 5 min) | Its cancel flag, between download chunks, archive entries and files written, before the version folder is renamed and before the manifest is written, and while waiting for the lock | Yes, under the deadline; a cancel before the manifest leaves the version in use, and a crash leaves a staging folder the next install removes |
 | Camera-profile download | `app/develop/profile_download.rs` | One HTTPS request (connect 10 s, response 15 s, body 20 s, total 30 s), bounded reads and atomic profile import | Cancel claims the task before publication; checked between reads and before import. An install already publishing finishes atomically | No: a one-shot task stays detached; network waits are bounded, staging files are temporary and the library importer never clobbers an existing file. Dropping its task signals cancellation; a panic reports failure through the normal task wrapper |
+| Extension proposal | `app/extensions/targets.rs` (the work is `library::sync::apply_proposal`) | One proposal of up to 200 photos not open in Develop, possibly on a network share: their catalog fingerprints and file identities (the first 64 KB of each), a RAW's header or a rendered file's decode, a Camera Look fit or a full decode only for a photo that needs one, then one SQLite write transaction | Its batch cancel: the batch window's Cancel, and set by the extension host whenever the command it belongs to stops being admitted (answered, cancelled, past its deadline, the extension disabled, its program gone, quitting's step 2.1). Taken between photos, inside decodes and fits, and inside the write transaction: before the write, every photo is left unchanged; once the write has begun it completes or fails as a whole and stands, with its Undo | No: a one-shot job, detached, as batch edits are. A stalled read can't be interrupted, and once its cancel is set it writes nothing, so quitting has nothing to wait for. The close guard waits for it as for any batch edit, and its command's deadline (30 s) cancels it. It reports back on every path, a panic included, which ends the batch and answers the program |
 | Availability check | `app/library/availability.rs` | File metadata for every photo | None | No, for the same reason |
 | Update checker | `app/shell/updates.rs` | Up to an hour between checks; a check or download of up to 15 min | Its request sender dropped, between requests | No: a download has no cancel |
 | Installation probe | `diagnostics.rs` | `updates::installation()`, which can run the package manager | None; the system probe stops waiting for it after 10 s and reports it unavailable | No |
@@ -103,7 +104,8 @@ crash: when its extension is disabled, uninstalled or replaced (its requests are
 cancelled first and the session dropped, which ends its unit at once), and an
 `on-demand` program idle for 5 minutes (sent `quitting`, ended by its stopper
 1 s later if it hasn't exited). Preferences > Extensions' downloads, installs
-and update checks are one-shot jobs, below.
+and update checks are one-shot jobs, below, and so is an extension's proposal
+for photos not open in Develop.
 
 One-shot jobs stay detached: Auto, Upright, Auto straighten, Profile → Fit Camera
 Look, the Point Color and
@@ -111,7 +113,8 @@ Targeted Adjustment samples, the onboarding scan, catalog open and import, file
 dialogs, bulk import, the preset scan, batch edits (Sync Settings, Auto Settings or a
 preset on the Library's selection; their Cancel is taken between photos and right
 before saving, discards the whole batch, and the batch ends only when its worker
-reports back, a panic included), folder relink and move, the
+reports back, a panic included), an extension's proposal for photos not open
+(its row above), folder relink and move, the
 file operations' plan, run and recovery (Remove from Catalog, moving photos, New
 Folder Inside, and deciding what a crash left when a catalog opens; the close guard
 waits for a run, with Close anyway, and the journal leaves anything cut short to
@@ -134,7 +137,8 @@ macOS run their panel on the main thread, so they are never joined from it.
    1. Cancel: the load, render, reference and prefetch tasks, the running export
       batch, the command output jobs, the library's renders and every request
       in flight to an extension's program (each is sent `cancel` and settled
-      as cancelled at once, so a proposal it sends later is refused).
+      as cancelled at once, so a proposal it sends later is refused, and a
+      proposal's worker still running writes nothing it hadn't written).
    2. Close: drop the update request sender, the control request receiver and the
       library's channels. The extension host admits no request and reads
       nothing from its programs from now on.

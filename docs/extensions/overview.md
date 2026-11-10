@@ -150,7 +150,9 @@ photos by id, with a token naming what it read, and proposes settings with
 that token while its command runs. A photo changed since (another edit, its
 file replaced, unsaved changes in Develop), or a catalog closed or read again,
 is refused, and the reply lists which photos changed and which were refused.
-Each photo changed is one History step, named after the command.
+Each photo changed is one History step, named after the command, and the
+whole proposal is one Undo. Photos not open in Develop are changed in the
+background, as a batch edit is, with its window and Cancel.
 
 ## Decisions
 
