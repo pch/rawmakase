@@ -166,6 +166,7 @@ const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 /// with HDR off, or with nothing but measured adjustments, passes.
 ///
 /// Measured: white balance, Exposure, Contrast, Shadows, Whites up to +50, Blacks, the HDR limit,
+/// Color Grading (the SDR curves in a domain that compresses the HDR range),
 /// the master point curve, the channels' point curves and the parametric curve, and
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
 /// camera's samples, as in SDR),
@@ -209,7 +210,7 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
 fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
     // The SDR rendition's sliders are not here: they never change the master (Camera
     // Raw 18.7's is bit-identical with each at ±50), so it renders with them set.
-    let unmeasured: [(&'static str, bool); 12] = [
+    let unmeasured: [(&'static str, bool); 11] = [
         // Camera Raw's positive Whites follows the photo's level, which twice the 99th
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
@@ -242,10 +243,6 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
             r.hsl.iter().any(|band| band[2] != 0.),
         ),
         ("Point Color", !r.point_colors.is_empty()),
-        (
-            "Color Grading",
-            r.grading != [[0.; 3]; 3] || r.effects.global_grade != [0.; 3],
-        ),
         ("Defringe", r.effects.defringe != [0.; 2]),
         ("Effects", r.effects.grain != 0. || r.effects.vignette != 0.),
         (
@@ -509,6 +506,10 @@ mod tests {
         colour.effects.shadow_tint = 0.1;
         colour.effects.monochrome = true;
         colour.effects.gray_mix = [0.2; 8];
+        // Colour grading renders too (docs/hdr.md#color-grading).
+        colour.grading = [[0.6, 0.3, 0.1], [0.1, 0.2, -0.2], [0.1, 0.5, 0.3]];
+        colour.effects.global_grade = [0.5, 0.2, -0.1];
+        colour.effects.balance = 0.3;
         assert!(check_recipe(&colour).is_ok());
         // The SDR rendition's sliders never change the master, which renders with them.
         let mut sdr = r.clone();

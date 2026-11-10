@@ -799,6 +799,54 @@ mod tests {
         Ok(())
     }
 
+    /// Colour grading renders in the master as Camera Raw 18.7 renders it
+    /// (docs/hdr.md#color-grading): the SDR curves in a domain that compresses the HDR
+    /// range, so Highlights tint and lift most a few stops above white, every region
+    /// fades out by 16 times white, and Highlights darkening keeps darkening up to it.
+    #[test]
+    fn colour_grading_spreads_its_regions_over_the_hdr_range() -> anyhow::Result<()> {
+        // Gray scene values the ACR3 curve's HDR extension renders at about 0.05,
+        // 3 and 16 times white.
+        let levels = [0.03, 0.9, 3.5];
+        let im = grays(&levels);
+        let render = |edit: fn(&mut Recipe)| -> anyhow::Result<Vec<[f32; 3]>> {
+            let mut r = hdr_recipe(&im);
+            edit(&mut r);
+            let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+            Ok((0..levels.len())
+                .map(|k| out.pixels[4 * out.width as usize + k * 8 + 4])
+                .collect())
+        };
+        let base = render(|_| {})?;
+        let y = |p: [f32; 3]| crate::develop::scene_tone::luminance(p);
+        assert!(
+            y(base[0]) < 0.1 && (2. ..5.).contains(&y(base[1])) && y(base[2]) > 12.,
+            "{base:?}"
+        );
+        let gain = |p: &[[f32; 3]], k: usize| y(p[k]) / y(base[k]);
+        // Highlights Luminance +50: Camera Raw's ×1.60 near three times white (SDR's
+        // largest gain is ×1.15, at half of white), ×1.02 in the shadows.
+        let lifted = render(|r| r.grading[2] = [0., 0., 0.5])?;
+        assert!((1.4..1.8).contains(&gain(&lifted, 1)), "{lifted:?}");
+        assert!(gain(&lifted, 0) < 1.05, "{lifted:?}");
+        // Highlights Luminance −50: still darkening near 16 times white.
+        let darker = render(|r| r.grading[2] = [0., 0., -0.5])?;
+        assert!(gain(&darker, 2) < 0.6, "{darker:?}");
+        // A blue Highlights tint is strong above white and nothing turns negative or
+        // infinite.
+        let blue = render(|r| r.grading[2] = [210. / 360., 0.5, 0.])?;
+        let ratio = |p: [f32; 3]| p[2] / p[0];
+        assert!(ratio(blue[1]) > 1.5 * ratio(base[1]), "{blue:?}");
+        assert!(blue.iter().flatten().all(|v| v.is_finite() && *v >= 0.));
+        // Global's lift is a gain from the shadows to above white.
+        let global = render(|r| r.effects.global_grade = [0., 0., 0.5])?;
+        assert!(
+            (gain(&global, 0) / gain(&global, 1) - 1.).abs() < 0.05,
+            "{global:?}"
+        );
+        Ok(())
+    }
+
     /// Texture renders in the master, on the camera image before tone as in SDR;
     /// Clarity and Dehaze still refuse it.
     #[test]
@@ -873,8 +921,10 @@ mod tests {
         let mut r = hdr_recipe(&im);
         assert!(!supported(&r), "the SDR rendition's port has HDR off");
         assert!(supported_hdr(&r, &im.metadata));
-        // Contrast, the tone curves, the colour stage and Texture render on the GPU.
-        let on_the_gpu: [fn(&mut Recipe); 8] = [
+        // Contrast, the tone curves, the colour stage, colour grading and Texture
+        // render on the GPU.
+        let on_the_gpu: [fn(&mut Recipe); 9] = [
+            |r| r.grading[2] = [0.6, 0.4, 0.2],
             |r| r.contrast = 0.2,
             |r| r.white_point = 0.9,
             |r| r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]],

@@ -283,14 +283,50 @@ impl ChannelCurves {
     }
     /// `p` is linear ProPhoto RGB.
     pub(crate) fn apply(&self, p: [f32; 3]) -> [f32; 3] {
+        std::array::from_fn(|c| self.channel(c, p[c]))
+    }
+    /// Channel `c` of linear ProPhoto RGB through its curve.
+    fn channel(&self, c: usize, v: f32) -> f32 {
+        let at = v.clamp(0., 1.).powf(1. / 2.2) * (SAMPLES - 1) as f32;
+        let i = (at as usize).min(SAMPLES - 2);
+        let t = at - i as f32;
+        v * (self.gain[i][c] * (1. - t) + self.gain[i + 1][c] * t)
+    }
+    /// `p` is an HDR master's linear ProPhoto RGB (1 = graphics white, not negative).
+    ///
+    /// Camera Raw 18.7 grades an HDR master with the SDR curves, each channel taken
+    /// into [`to_hdr_domain`] first and back after, whatever the HDR limit
+    /// (docs/hdr.md#color-grading). There the regions spread over the HDR range: the
+    /// shadows grade as in SDR, Highlights peak near three times white, and every
+    /// region fades by 16 times white, where its gain then stays.
+    pub(crate) fn apply_hdr(&self, p: [f32; 3]) -> [f32; 3] {
+        let graded = |c: usize, v: f32| {
+            let u = self.channel(c, to_hdr_domain(v)).clamp(0., 1.);
+            from_hdr_domain(u)
+        };
         std::array::from_fn(|c| {
-            let v = p[c];
-            let at = v.clamp(0., 1.).powf(1. / 2.2) * (SAMPLES - 1) as f32;
-            let i = (at as usize).min(SAMPLES - 2);
-            let t = at - i as f32;
-            v * (self.gain[i][c] * (1. - t) + self.gain[i + 1][c] * t)
+            let v = p[c].max(0.);
+            if v <= HDR_TOP {
+                graded(c, v)
+            } else {
+                v * graded(c, HDR_TOP) / HDR_TOP
+            }
         })
     }
+}
+
+/// The HDR master's value that grades as SDR's graphics white.
+pub(crate) const HDR_TOP: f32 = 16.;
+/// An HDR master's channel in the domain its grading works in: itself in the deep
+/// shadows, compressed above, and 1 at [`HDR_TOP`]. Fitted on Camera Raw 18.7's HDR
+/// renders of a gray ramp from 2^-8 to 16 times white under 24 grading settings: the
+/// SDR curves in this domain render them to a mean 0.012 stop.
+pub(crate) fn to_hdr_domain(v: f32) -> f32 {
+    v / (1. + v * (HDR_TOP - 1.) / HDR_TOP)
+}
+/// The inverse of [`to_hdr_domain`], for `u` from 0 to 1.
+pub(crate) fn from_hdr_domain(u: f32) -> f32 {
+    u / (1. - u * (HDR_TOP - 1.) / HDR_TOP)
 }
 
 #[cfg(test)]

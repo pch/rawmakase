@@ -41,9 +41,10 @@ pub(super) struct CurveSet {
 /// How an HDR render finishes after the scene tone stage: the profile's tables and
 /// curve, and its look's, unclipped ([`crate::camera_profiles::CameraProfile::finish_hdr`]),
 /// then Contrast ([`crate::develop::basic_tone::HdrContrast`]), the tone curves
-/// ([`HdrCurves`]), and the colour mixer, Saturation and Vibrance ([`CurveSet::mixer`])
-/// and the black & white mix ([`CurveSet::gray_grid`]) as SDR renders apply them, above
-/// white too (docs/hdr.md#the-colour-stage). The colour stage's other controls are not
+/// ([`HdrCurves`]), the colour mixer, Saturation and Vibrance ([`CurveSet::mixer`]),
+/// colour grading (`ColorGrade::apply_hdr`) and the black & white mix
+/// ([`CurveSet::gray_grid`]) as SDR renders apply them, above white too
+/// (docs/hdr.md#the-colour-stage). The colour stage's other controls are not
 /// rendered: an HDR edit that uses them does not validate (`model::hdr::check_recipe`).
 pub(super) struct HdrFinish {
     tone: crate::camera_profiles::hdr_tone::HdrTone,
@@ -177,7 +178,11 @@ impl HdrFinish {
         let pro = self.curves.as_ref().map_or(pro, |c| c.apply(pro));
         // The colour mixer and the black & white mix follow Contrast and the tone
         // curves, as in SDR's colour stage.
-        if lut.mixer.is_none() && lut.rgb_table.is_none() && lut.gray_grid.is_none() {
+        if lut.mixer.is_none()
+            && lut.rgb_table.is_none()
+            && lut.grade.is_none()
+            && lut.gray_grid.is_none()
+        {
             // The limit applies once, after sharpening and resizing (`render_hdr`).
             return pro;
         }
@@ -185,6 +190,8 @@ impl HdrFinish {
         let rgb = lut.mixer.as_ref().map_or(rgb, |m| m.apply(rgb));
         // A look's RGB table follows the mixer, as in SDR, on overrange-encoded values.
         let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply_hdr(rgb));
+        // Colour grading follows the colour mixer and a look's RGB table, as in SDR.
+        let rgb = lut.grade.as_ref().map_or(rgb, |g| g.apply_hdr(rgb));
         // The gray's luminance, unclipped: SDR renders clip it at white.
         let rgb = lut.gray_grid.as_ref().map_or(rgb, |g| {
             let lookup = crate::develop::color_mixer::Lookup::Hdr(None);

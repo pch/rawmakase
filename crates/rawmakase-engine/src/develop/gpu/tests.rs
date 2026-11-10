@@ -2042,6 +2042,16 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
     let mut mono = base.clone();
     mono.effects.monochrome = true;
     mono.effects.gray_mix = [0.3, -0.7, 0.1, 0.2, -0.2, 0.9, 0., -0.4];
+    // Colour grading in its HDR domain: tints and Luminance in every region, under
+    // Blending and Balance, after the colour mixer.
+    let mut graded = base.clone();
+    graded.grading = [[0.58, 0.4, 0.2], [0.08, 0.3, -0.3], [0.11, 0.6, 0.5]];
+    graded.effects.global_grade = [0.6, 0.25, -0.2];
+    graded.effects.blending = 0.8;
+    graded.effects.balance = -0.3;
+    let mut graded_mixed = bands.clone();
+    graded_mixed.grading[2] = [0.6, 0.5, -0.6];
+    graded_mixed.saturation = 0.3;
     let variants = variants.into_iter().chain([
         Recipe {
             saturation: 0.4,
@@ -2058,6 +2068,8 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         },
         bands,
         mono,
+        graded,
+        graded_mixed,
         // Texture: its image made on the CPU, as for the SDR rendition, then sampled on
         // the device (it changes this fixture's master by up to 0.8 of a value).
         Recipe {
