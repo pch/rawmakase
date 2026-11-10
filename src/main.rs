@@ -42,6 +42,11 @@ enum Command {
     /// what is installed, installing, updating and removing them.
     #[command(subcommand)]
     Lensfun(LensfunCommand),
+    /// Extensions: what is installed, installing from a package file or a
+    /// GitHub repository, removing, enabling and disabling them, and checking
+    /// for updates.
+    #[command(subcommand)]
+    Extensions(ExtensionsCommand),
     ImportCatalog {
         source: PathBuf,
         output: PathBuf,
@@ -286,6 +291,32 @@ enum LensfunCommand {
     Remove,
 }
 
+/// `rawmakase extensions`.
+#[derive(Subcommand)]
+enum ExtensionsCommand {
+    /// The extensions installed, with their version, source and state.
+    List,
+    /// Install an extension from a package file (.rmext) or from a GitHub
+    /// repository's releases (https://github.com/owner/repository). Asks first,
+    /// unless --yes: an extension runs with your permissions, and nothing
+    /// installed this way has been reviewed.
+    Install {
+        /// A package file or a repository's URL.
+        from: String,
+        /// Install without asking.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Uninstall an extension; its private data folder stays.
+    Remove { id: String },
+    /// Turn an extension on; a running RAWmakase notices on its next start.
+    Enable { id: String },
+    /// Turn an extension off; a running RAWmakase notices on its next start.
+    Disable { id: String },
+    /// Look for newer versions of the extensions installed from GitHub.
+    Check,
+}
+
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 enum LutSpace {
     Srgb,
@@ -392,6 +423,7 @@ fn main() -> Result<()> {
             anyhow::ensure!(!done.imported.is_empty(), "No lens profiles imported");
         }
         Some(Command::Lensfun(command)) => lensfun(command)?,
+        Some(Command::Extensions(command)) => extensions(command)?,
         Some(Command::ImportProfiles { lut_space, files }) => {
             // Files and folders, imported as the app's Import does: a file that
             // can't be imported is reported and leaves the rest importing.
@@ -1306,6 +1338,172 @@ fn lensfun(command: LensfunCommand) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// `rawmakase extensions`.
+fn extensions(command: ExtensionsCommand) -> Result<()> {
+    use rawmakase_extensions::state::{Source, State};
+    use rawmakase_extensions::{github, store::Store};
+    let app = rawmakase_extensions::semver::Version::parse(env!("CARGO_PKG_VERSION"))?;
+    let data_dir = rawmakase_protocol::paths::data_dir();
+    let store = Store::new(&data_dir);
+    let next_start = "a running RAWmakase notices on its next start";
+    match command {
+        ExtensionsCommand::List => {
+            let listed = store.list()?;
+            let developer = State::read(&data_dir).map(|s| s.developer)?;
+            if listed.is_empty() && developer.is_empty() {
+                println!("No extensions installed");
+            }
+            for item in listed {
+                let state = if item.entry.enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                };
+                let source = item.entry.source().map_or("?", |s| s.label());
+                let version = item.entry.active.as_deref().unwrap_or("bundled");
+                let mut line = format!("{}  {version}  {source}  {state}", item.id);
+                match item.manifest {
+                    Some(Ok(m)) => {
+                        line = format!("{} ({line})", m.extension.name);
+                        if let Err(e) = rawmakase_extensions::check_compatible(&m, &app) {
+                            line += &format!("  incompatible: {e}");
+                        }
+                    }
+                    Some(Err(e)) => line += &format!("  damaged: {e}"),
+                    None => {}
+                }
+                println!("{line}");
+            }
+            for (id, entry) in developer {
+                let state = if entry.enabled { "enabled" } else { "disabled" };
+                println!("{id}  developer  {}  {state}", entry.path.display());
+            }
+        }
+        ExtensionsCommand::Install { from, yes } => {
+            if from.starts_with("https://") {
+                let offer = github::inspect(&store, &github::Https, &from, &app)?;
+                describe(&offer.manifest);
+                println!(
+                    "From {} release {} ({})",
+                    offer.repository, offer.release, offer.asset
+                );
+                if !confirm(yes)? {
+                    return Ok(());
+                }
+                let installed = store.install_offer(offer, &app)?;
+                println!(
+                    "Installed {} {}",
+                    installed.manifest.extension.id, installed.manifest.extension.version
+                );
+            } else {
+                let path =
+                    std::fs::canonicalize(&from).map_err(|e| anyhow::anyhow!("{from}: {e}"))?;
+                let inspected = store.inspect(&path, &app)?;
+                describe(&inspected.manifest);
+                if !confirm(yes)? {
+                    return Ok(());
+                }
+                let installed = store.install(&path, &Source::File { path: path.clone() }, &app)?;
+                println!(
+                    "Installed {} {}",
+                    installed.manifest.extension.id, installed.manifest.extension.version
+                );
+            }
+        }
+        ExtensionsCommand::Remove { id } => {
+            store.remove(&id)?;
+            println!(
+                "Removed {id}; its data in {} stays",
+                store.extension_data_dir(&id).display()
+            );
+        }
+        ExtensionsCommand::Enable { id } => {
+            store.set_enabled(&id, true)?;
+            println!("Enabled {id}; {next_start}");
+        }
+        ExtensionsCommand::Disable { id } => {
+            store.set_enabled(&id, false)?;
+            println!("Disabled {id}; {next_start}");
+        }
+        ExtensionsCommand::Check => {
+            let checked = github::check_updates(&store, &github::Https, &app)?;
+            for update in &checked.updates {
+                let m = &update.offer.manifest;
+                let mut line = format!(
+                    "{}: {} → {}",
+                    update.id, update.installed, m.extension.version
+                );
+                if !update.more_access.is_empty() {
+                    line += &format!(" (asks for more access: {})", update.more_access.join(", "));
+                }
+                println!(
+                    "{line}; install it with `rawmakase extensions install {}`",
+                    update.offer.repository
+                );
+            }
+            for (id, error) in &checked.failed {
+                eprintln!("{id}: {error}");
+            }
+            if checked.updates.is_empty() && checked.failed.is_empty() {
+                println!("Every extension installed from GitHub is up to date");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// What an extension is and what it reaches, before it is installed.
+fn describe(manifest: &rawmakase_extensions::Manifest) {
+    let e = &manifest.extension;
+    println!("{} ({}) {}", e.name, e.id, e.version);
+    if let Some(description) = &e.description {
+        println!("  {description}");
+    }
+    if !e.authors.is_empty() {
+        println!("  By {}", e.authors.join(", "));
+    }
+    if let Some(repository) = &e.repository {
+        println!("  Source: {repository}");
+    }
+    let a = &manifest.access;
+    let mut access = vec![match a.files {
+        rawmakase_extensions::protocol::manifest::Files::Photos => {
+            "the photos RAWmakase hands it".to_string()
+        }
+        rawmakase_extensions::protocol::manifest::Files::Any => "any file".to_string(),
+    }];
+    if a.network {
+        access.push("the network".into());
+    }
+    access.extend(a.devices.iter().map(|d| format!("{d} devices")));
+    println!("  Declares access to: {}", access.join(", "));
+    let contributions = manifest.contributions();
+    if !contributions.is_empty() {
+        println!("  Adds: {}", contributions.join(", "));
+    }
+    println!("Not reviewed: an extension runs with your permissions and can do anything you can.");
+}
+
+/// Whether to go on: `--yes`, or the user's answer when there is a terminal.
+fn confirm(yes: bool) -> Result<bool> {
+    use std::io::{BufRead, IsTerminal, Write};
+    if yes {
+        return Ok(true);
+    }
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!("Nothing installed: pass --yes to install without a terminal to ask in");
+    }
+    print!("Install it? [y/N] ");
+    std::io::stdout().flush()?;
+    let mut answer = String::new();
+    std::io::stdin().lock().read_line(&mut answer)?;
+    let yes = matches!(answer.trim(), "y" | "Y" | "yes");
+    if !yes {
+        println!("Nothing installed");
+    }
+    Ok(yes)
 }
 
 #[cfg(test)]
