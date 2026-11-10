@@ -85,15 +85,16 @@ jobs:
           rustup toolchain install "$msrv" --profile minimal
           cargo +"$msrv" check --locked --all-targets
       - run: cargo fmt --check
-      # The model, file formats, the catalog, the protocol crate and the standalone
-      # client build without the RAW decoders, wgpu or GUI, and the renderer
-      # without the RAW decoders or GUI; fmt above covers the whole workspace.
-      - name: Check the model, file formats, catalog, renderer, control protocol, remote worker and client
+      # The model, file formats, the catalog, the protocol crate, the standalone
+      # client and the extension protocol, SDK, host and cargo-rawmakase build
+      # without the RAW decoders, wgpu or GUI, and the renderer without the RAW
+      # decoders or GUI; fmt above covers the whole workspace.
+      - name: Check the model, file formats, catalog, renderer, control protocol, remote worker, client and extension crates
         run: |
-          cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -- -D warnings
+          cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -- -D warnings
           cargo test --locked -p rawmakase-model --all-features
           cargo test --locked -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
-          cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp
+          cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
       # exiftool reads exported metadata back as an independent reader; Arch
