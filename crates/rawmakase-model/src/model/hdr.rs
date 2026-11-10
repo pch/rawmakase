@@ -171,6 +171,7 @@ const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 /// the master point curve, the channels' point curves and the parametric curve, and
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
 /// camera's samples, as in SDR),
+/// Defringe (its Oklab operator at a colour's brightness up to white, at white above),
 /// camera profiles
 /// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks (their
 /// tables and curve, [`crate::camera_profiles::hdr_look`], at any Profile Amount, and
@@ -211,7 +212,7 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
 fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
     // The SDR rendition's sliders are not here: they never change the master (Camera
     // Raw 18.7's is bit-identical with each at ±50), so it renders with them set.
-    let unmeasured: [(&'static str, bool); 11] = [
+    let unmeasured: [(&'static str, bool); 10] = [
         // Camera Raw's positive Whites follows the photo's level, which twice the 99th
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
@@ -244,7 +245,6 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
             r.hsl.iter().any(|band| band[2] != 0.),
         ),
         ("Point Color", !r.point_colors.is_empty()),
-        ("Defringe", r.effects.defringe != [0.; 2]),
         // Camera Raw protects highlights from a darkening vignette in HDR only from
         // about four times white up (docs/records/hdr-stage1-results.md#vignette-and-grain).
         (

@@ -251,6 +251,8 @@ pub(crate) fn supported_hdr(r: &Recipe, metadata: &crate::camera_data::Metadata)
         // The post-crop vignette and grain of a master render on the CPU only.
         && r.effects.grain == 0.
         && r.effects.vignette == 0.
+        // A master's Defringe renders on the CPU only.
+        && r.effects.defringe == [0.; 2]
         && crate::model::hdr::check_for(r, metadata).is_ok()
         && r.profile.as_ref().is_some_and(|p| p.hdr_tone().is_ok())
 }

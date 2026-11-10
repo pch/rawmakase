@@ -109,6 +109,23 @@ impl HdrCurves {
         })
     }
 }
+/// Defringe on an HDR master's linear display RGB (1 = graphics white; a channel out
+/// of sRGB's gamut is negative).
+/// Camera Raw 18.7 removes the same share of a fringe colour's chroma at every
+/// brightness in HDR (docs/hdr.md#defringe), so a colour brighter than white is taken
+/// with its brightest channel at white, as SDR's Oklab operator would see it there, and
+/// scaled back.
+fn defringe_hdr(rgb: [f32; 3], r: &Recipe) -> [f32; 3] {
+    use crate::develop::effects::EffectsRendering;
+    let k = rgb.into_iter().fold(1f32, f32::max);
+    // Out-of-gamut channels stay negative, as SDR's colour stage keeps them.
+    let lab = srgb_to_lab(rgb.map(|v| v / k));
+    let hue = lab[2].atan2(lab[1]).rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
+    let lab = r
+        .effects
+        .defringe_color([lab[0].clamp(0., 1.), lab[1], lab[2]], hue);
+    lab_to_srgb(lab).map(|v| v * k)
+}
 /// DNG RGBTone with `curve`: it maps the largest and smallest channel, and the middle
 /// one keeps its relative position, as the SDR curves apply.
 fn rgb_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {
@@ -178,10 +195,12 @@ impl HdrFinish {
         let pro = self.curves.as_ref().map_or(pro, |c| c.apply(pro));
         // The colour mixer and the black & white mix follow Contrast and the tone
         // curves, as in SDR's colour stage.
+        let defringe = r.effects.defringe != [0.; 2];
         if lut.mixer.is_none()
             && lut.rgb_table.is_none()
             && lut.grade.is_none()
             && lut.gray_grid.is_none()
+            && !defringe
         {
             // The limit applies once, after sharpening and resizing (`render_hdr`).
             return pro;
@@ -192,6 +211,9 @@ impl HdrFinish {
         let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply_hdr(rgb));
         // Colour grading follows the colour mixer and a look's RGB table, as in SDR.
         let rgb = lut.grade.as_ref().map_or(rgb, |g| g.apply_hdr(rgb));
+        // Defringe follows the colour controls and precedes the black & white mix, as
+        // in SDR.
+        let rgb = if defringe { defringe_hdr(rgb, r) } else { rgb };
         // The gray's luminance, unclipped: SDR renders clip it at white.
         let rgb = lut.gray_grid.as_ref().map_or(rgb, |g| {
             let lookup = crate::develop::color_mixer::Lookup::Hdr(None);
