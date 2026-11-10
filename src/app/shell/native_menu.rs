@@ -6,7 +6,7 @@ use crate::app::{
     shell::panels::{PanelChange, WorkspacePanel},
 };
 use crate::platform::menu::{Action, KeyEquivalent};
-use eframe::egui::{self, Key};
+use eframe::egui;
 
 /// The key map's command a menu item runs, whose keys it shows. The Edit
 /// menu's text keys, Close Window and the items that are no key map command
@@ -275,6 +275,7 @@ impl Editor {
 mod tests {
     use super::*;
     use crate::app::testing::editor_with_catalog;
+    use eframe::egui::Key;
 
     fn chord(text: &str) -> Chord {
         Chord::parse(text).expect("a chord")
