@@ -307,34 +307,27 @@ impl Editor {
     /// The Remove tool's keys: `[` `]` size, with Shift feather, `/` next source,
     /// Delete, H pins and A Visualize Spots.
     pub(in crate::app) fn retouch_keys(&mut self, i: &egui::InputState) {
+        use crate::app::shell::key_match::press;
         use egui::Key;
-        let plain = !i.modifiers.command && !i.modifiers.alt;
-        if !plain {
-            return;
+        // Each key with the modifiers held for it.
+        let plain = |m: egui::Modifiers| !m.command && !m.alt;
+        if let Some(m) = press(i, &[Key::OpenBracket, Key::OpenCurlyBracket], plain) {
+            self.step_retouch_size(false, m.shift);
         }
-        let pressed = |keys: &[Key]| keys.iter().any(|k| i.key_pressed(*k));
-        if pressed(&[Key::OpenBracket, Key::OpenCurlyBracket]) {
-            self.step_retouch_size(false, i.modifiers.shift);
+        if let Some(m) = press(i, &[Key::CloseBracket, Key::CloseCurlyBracket], plain) {
+            self.step_retouch_size(true, m.shift);
         }
-        if pressed(&[Key::CloseBracket, Key::CloseCurlyBracket]) {
-            self.step_retouch_size(true, i.modifiers.shift);
-        }
-        if pressed(&[Key::Slash, Key::Questionmark]) {
+        if press(i, &[Key::Slash, Key::Questionmark], plain).is_some() {
             self.next_source();
         }
-        if pressed(&[Key::Delete, Key::Backspace]) {
+        if press(i, &[Key::Delete, Key::Backspace], plain).is_some() {
             self.delete_spot();
         }
-        if pressed(&[Key::H]) && !i.modifiers.shift {
+        if press(i, &[Key::H], |m| plain(m) && !m.shift).is_some() {
             self.view.retouch.hide_pins ^= true;
         }
-        // With the modifiers held for the press: a quick Cmd+A, Select All, can
-        // release Cmd within the frame.
-        let a = i.events.iter().any(|event| {
-            matches!(event, egui::Event::Key { key: Key::A, pressed: true, modifiers, .. }
-                if !modifiers.any())
-        });
-        if a {
+        // Not a quick Cmd+A, Select All, released within the frame.
+        if press(i, &[Key::A], |m| !m.any()).is_some() {
             self.view.retouch.visualize ^= true;
         }
     }

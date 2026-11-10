@@ -101,6 +101,11 @@ fn decode(event: &egui::Event) -> Option<Action> {
     if modifiers.command || modifiers.ctrl || modifiers.mac_cmd {
         return None;
     }
+    // A key that rates, flags or labels the photo is that, not a step: Dvorak
+    // types `]` on the `=` key.
+    if !modifiers.alt && crate::app::library::photo_metadata::is_shortcut_key(*key, *physical_key) {
+        return None;
+    }
     let size = if modifiers.alt {
         KeyStep::Fine
     } else if modifiers.shift {
@@ -259,6 +264,16 @@ mod tests {
                 Some(Action::Select { forward: false }),
             ),
             (key(Key::Period, Some(Key::Period), Modifiers::SHIFT), None),
+            // Dvorak types `]` on the `=` key: a rating key, which takes it.
+            (
+                key(Key::CloseBracket, Some(Key::Equals), Modifiers::NONE),
+                None,
+            ),
+            // With Option it rates nothing, so it steps.
+            (
+                key(Key::CloseBracket, Some(Key::Equals), Modifiers::ALT),
+                step(KeyStep::Fine, true),
+            ),
             (key(Key::Comma, Some(Key::Comma), Modifiers::ALT), None),
             // Cmd+, is Preferences, Cmd+= and Cmd+- zoom; Ctrl is never these keys.
             (key(Key::Comma, Some(Key::Comma), Modifiers::COMMAND), None),

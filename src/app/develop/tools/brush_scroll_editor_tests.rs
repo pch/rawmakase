@@ -153,7 +153,23 @@ fn wheel_events_carry_their_own_modifiers_and_plain_swipes_sideways_do_nothing()
     };
     let up = wheel(Vec2::new(0., 1.), egui::Modifiers::NONE);
     assert!(read(vec![up.clone(), click]).is_empty());
-    assert!(read(vec![up, key]).is_empty());
+    assert!(read(vec![up.clone(), key.clone()]).is_empty());
+    // A key a shortcut already took out of the frame (a rating) still counts. A
+    // context of its own: the click above is still held in this one.
+    let ctx = egui::Context::default();
+    let mut scrolls = Vec::new();
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            events: vec![up, key],
+            ..Default::default()
+        },
+        |ui| {
+            ui.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Key { .. })));
+            scrolls = ui.input(Scroll::read);
+        },
+    );
+    output.textures_delta.clear();
+    assert!(scrolls.is_empty());
 }
 
 #[test]
