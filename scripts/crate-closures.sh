@@ -45,7 +45,7 @@ done
 # The extension protocol, the SDK, the host and cargo-rawmakase build without the
 # app, a GPU, a GUI, native imaging libraries or inference: extension programs
 # and their authors' tools stay as light as the control clients.
-for crate in rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase; do
+for crate in rawmakase-extension-protocol rawmakase-extension rawmakase-extensions rawmakase-example cargo-rawmakase; do
     check "$crate" "$leaf"
 done
 check rawmakase-engine "rawmakase|rawmakase-catalog|rawmakase-export|$gui|$native|$inference"

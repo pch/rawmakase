@@ -59,3 +59,6 @@ rawmakase-extensions never rawmakase-cancel rawmakase-tiff rawmakase-model rawma
 # The extension author's tool writes packages and registers a folder, through the
 # host; it knows nothing of the editor either.
 cargo-rawmakase never rawmakase-cancel rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-ctl rawmakase-extension rawmakase-mcp rawmakase-model-install
+# The example extension is built as a third party builds one: with the SDK and
+# nothing of the app's.
+rawmakase-example never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-ctl rawmakase-extensions cargo-rawmakase rawmakase-mcp rawmakase-model-install
