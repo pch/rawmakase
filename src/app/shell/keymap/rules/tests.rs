@@ -6,7 +6,12 @@ fn chord(text: &str) -> Chord {
 }
 fn refused(id: &str, keys: &str, os: Os) -> Option<Refusal> {
     let command = command_by_id(id).expect("a command");
-    refusal(command, &bindings_of(id), chord(keys), os)
+    refusal(
+        command,
+        &crate::app::shell::keymap::Effective::default().bindings_of(id),
+        chord(keys),
+        os,
+    )
 }
 
 #[test]

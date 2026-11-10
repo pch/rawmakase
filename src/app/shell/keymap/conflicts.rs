@@ -1,6 +1,7 @@
 //! Which bindings share a chord where both can take a press.
 //!
-//! Two bindings clash when their contexts can be active together and some
+//! Every binding takes part, an enabled extension's commands' too
+//! ([`Effective::bindings`]). Two bindings clash when their contexts can be active together and some
 //! press is a chord of both, once their variants and the punctuation rule
 //! ([`Chord::free`]) are counted. On one level of precedence that is a
 //! conflict: a press of it runs neither command. Across levels it is
@@ -8,7 +9,6 @@
 //! Library, a module over everywhere) takes the press, as Crop takes X.
 use super::rules::level;
 use super::{Binding, Chord, Default, Effective, Mods};
-use crate::app::shell::commands::registry::bindings;
 use eframe::egui::Key;
 
 /// Two bindings on one chord.
@@ -25,7 +25,7 @@ pub(in crate::app) struct Clash {
 /// Every pair of bindings of different commands that share a chord in
 /// `map`, on a Mac (`macos`) or elsewhere, each pair once.
 pub(in crate::app) fn clashes(map: &Effective, macos: bool) -> Vec<Clash> {
-    let all = bindings::ALL;
+    let all: Vec<&'static Binding> = map.bindings().collect();
     let chords: Vec<Vec<Default>> = all
         .iter()
         .map(|b| {
@@ -80,7 +80,7 @@ pub(in crate::app) fn shared(
             .find(|k| **k == chord.key)
             .expect("every egui key is in Key::ALL"),
     );
-    bindings::ALL.iter().any(|other| {
+    map.bindings().any(|other| {
         other.command != binding.command
             && other.context.overlaps(binding.context)
             && map

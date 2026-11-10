@@ -671,10 +671,8 @@ impl<'a> FrameKeys<'a> {
                     .find(|d| d.matches(press, binding.variants))
                     .map(Default::label)
                     .unwrap_or_default();
-                let title = |b: &Binding| {
-                    crate::app::shell::commands::registry::command_by_id(b.command)
-                        .map_or(b.command, |c| c.title)
-                };
+                let title =
+                    |b: &Binding| self.map.command(b.command).map_or(b.command, |c| c.title);
                 let report = format!(
                     "{chord} is the key of both \u{201c}{}\u{201d} and \u{201c}{}\u{201d}, so neither ran. \
                      Change one in Preferences > Shortcuts.",
@@ -711,21 +709,20 @@ impl<'a> FrameKeys<'a> {
         let Some(mine) = reading(&self.chords_of(binding), press, binding.variants) else {
             return Verdict::Run;
         };
-        let mut rivals: Vec<(&'static Binding, Reading)> =
-            crate::app::shell::commands::registry::bindings::ALL
-                .iter()
-                .copied()
-                .filter(|other| {
-                    other.command != binding.command
-                        && live.runs(other)
-                        && other.context.overlaps(binding.context)
-                })
-                .filter_map(|other| {
-                    reading(&self.chords_of(other), press, other.variants).map(|r| (other, r))
-                })
-                .collect();
-        let users = self.map.overrides(binding.command)
-            || rivals.iter().any(|(o, _)| self.map.overrides(o.command));
+        let mut rivals: Vec<(&'static Binding, Reading)> = self
+            .map
+            .bindings()
+            .filter(|other| {
+                other.command != binding.command
+                    && live.runs(other)
+                    && other.context.overlaps(binding.context)
+            })
+            .filter_map(|other| {
+                reading(&self.chords_of(other), press, other.variants).map(|r| (other, r))
+            })
+            .collect();
+        let users = self.map.chosen(binding.command)
+            || rivals.iter().any(|(o, _)| self.map.chosen(o.command));
         if !users {
             return Verdict::Run;
         }

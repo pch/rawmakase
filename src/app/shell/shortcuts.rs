@@ -537,8 +537,10 @@ fn yours(map: &Effective) -> Vec<Shortcut> {
                 .any(|p| matches!(p, Keys(b) | EveryKey(b) if b.command == id))
         })
     };
+    let extensions = map.dynamic().iter().map(|d| &d.command);
     crate::app::shell::commands::registry::COMMANDS
         .iter()
+        .chain(extensions)
         .filter(|c| !shown(c.id))
         .filter_map(|c| {
             let chords = map.user_chords(c.id).filter(|k| !k.is_empty())?;

@@ -7,7 +7,7 @@
 //! while typing and the chord would type, or when a fixed key (one read in
 //! place by a widget or a gesture) has it where the command acts.
 use super::{Binding, Chord, Context, Mods};
-use crate::app::shell::commands::registry::{Command, bindings};
+use crate::app::shell::commands::registry::Command;
 use eframe::egui::Key;
 use std::fmt;
 
@@ -208,15 +208,6 @@ pub(in crate::app) fn refusal(
         }
     }
     None
-}
-
-/// The bindings of the command `id`.
-pub(in crate::app) fn bindings_of(id: &str) -> Vec<&'static Binding> {
-    bindings::ALL
-        .iter()
-        .copied()
-        .filter(|b| b.command == id)
-        .collect()
 }
 
 fn is_f_key(key: Key) -> bool {
