@@ -223,6 +223,10 @@ impl crate::app::Editor {
     pub(in crate::app) fn hdr_histogram_due(
         &self,
     ) -> Result<(Key, Arc<CameraImage>), &'static str> {
+        // Preview for SDR display shows the SDR rendition's histogram, as the photo.
+        if self.view.sdr_preview {
+            return Err(crate::app::develop::viewport::SDR_PREVIEW);
+        }
         let image = self.document.full().ok_or("the photo is still opening")?;
         let recipe = self.effective_recipe();
         crate::app::develop::viewport::hdr_master_refused(&recipe, image)?;

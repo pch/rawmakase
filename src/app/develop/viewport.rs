@@ -966,6 +966,8 @@ pub(in crate::app) struct GpuHdr {
 
 /// Why a side shows its SDR rendition when its settings have HDR off.
 pub(in crate::app) const HDR_OFF: &str = "HDR is off";
+/// Why Develop shows SDR renditions while Preview for SDR display is on.
+pub(in crate::app) const SDR_PREVIEW: &str = "Preview for SDR display is on";
 
 /// An HDR preview due on one side of the viewport.
 pub(in crate::app) struct HdrDue {
@@ -1046,12 +1048,14 @@ impl crate::app::Editor {
     /// display, which may come to show HDR without anything waking the window.
     pub(in crate::app) fn hdr_awaits_display(&self) -> bool {
         self.module == Module::Develop
+            && !self.view.sdr_preview
             && self.effective_recipe().hdr.is_active()
             && self.view.hdr_display.unavailable().is_some()
     }
     /// Why no HDR preview shows anywhere in Develop's viewport, if none can.
     pub(in crate::app) fn hdr_refused(&self) -> Result<(), &'static str> {
         let refuse = |no: bool, why| if no { Err(why) } else { Ok(()) };
+        refuse(self.view.sdr_preview, SDR_PREVIEW)?;
         if let Some(why) = self.view.hdr_display.unavailable() {
             return Err(why);
         }

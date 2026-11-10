@@ -535,3 +535,41 @@ fn an_hdr_edits_render_asks_for_the_master_at_the_headroom_due() {
     e.follow_hdr_display();
     assert_eq!(e.preview.last_hdr, None, "an SDR edit asks for no master");
 }
+
+/// Preview for SDR display shows an HDR edit's SDR rendition on an HDR display, as
+/// Lightroom's does: no master is due on either side, the histogram is the SDR
+/// rendition's and the window doesn't wait for the display. It is a view choice: the
+/// edit is the same with it on and off, and turning it off shows the master again.
+#[test]
+fn preview_for_sdr_display_shows_the_sdr_rendition_and_leaves_the_edit() {
+    use crate::app::develop::before_after::{Axis, Compare};
+    use crate::app::develop::hdr_histogram::Source;
+    use crate::app::develop::hdr_preview::Presentation;
+    use crate::app::develop::viewport::SDR_PREVIEW;
+    let ctx = egui::Context::default();
+    let mut e = hdr_editor(&ctx);
+    assert!(e.hdr_preview_due().is_ok());
+    let recipe = e.document.edit.recipe().clone();
+    e.view.sdr_preview = true;
+    assert_eq!(e.hdr_preview_due().unwrap_err(), SDR_PREVIEW);
+    assert_eq!(e.hdr_presentation(), Presentation::Sdr(SDR_PREVIEW));
+    assert!(matches!(e.histogram_source(), Source::Sdr(Some(why)) if why == SDR_PREVIEW));
+    assert!(e.hdr_histogram_master().is_none());
+    e.document.before = Some(recipe.clone());
+    e.view.compare = Compare::SideBySide(Axis::LeftRight);
+    e.schedule_before();
+    assert_eq!(e.hdr_second_side_due().unwrap_err(), SDR_PREVIEW);
+    e.view.compare = Compare::Off;
+    // An SDR display: nothing to wait for while the SDR rendition is asked for.
+    e.view.hdr_display = Default::default();
+    assert!(!e.hdr_awaits_display());
+    assert_eq!(
+        e.document.edit.recipe(),
+        &recipe,
+        "a view choice, not an edit"
+    );
+    e.view.sdr_preview = false;
+    assert!(e.hdr_awaits_display());
+    e.view.hdr_display = hdr_editor(&ctx).view.hdr_display;
+    assert!(e.hdr_preview_due().is_ok());
+}

@@ -126,7 +126,14 @@ pub(in crate::app::develop::panels::inspector) fn show(
             Some(m) if m.is_rendered() && m.hdr_source.is_none() => {
                 second_side_note(ui, false, hdr_second);
             }
-            m => hdr_row(ui, r, m.unwrap_or(&raw), hdr, hdr_second),
+            m => hdr_row(
+                ui,
+                r,
+                &mut view.sdr_preview,
+                m.unwrap_or(&raw),
+                hdr,
+                hdr_second,
+            ),
         }
         let old_profile = r.profile.clone();
         // Without a profile the matrix path renders through the DNG default look.
@@ -447,10 +454,12 @@ pub(in crate::app::develop::panels::inspector) fn show(
 /// master where the viewport can show it (`shown`), else its SDR rendition and why;
 /// an edit whose HDR master can't render yet says why (`model::hdr::check_for`).
 /// Beside the edit, what the other side shows too (`second`), so a comparison of
-/// brightness says when one side is SDR.
+/// brightness says when one side is SDR. With HDR on, Lightroom's Preview for SDR
+/// display (`sdr_preview`, a view choice, not saved) shows the SDR rendition instead.
 fn hdr_row(
     ui: &mut egui::Ui,
     r: &mut Recipe,
+    sdr_preview: &mut bool,
     metadata: &crate::camera_data::Metadata,
     shown: &crate::app::develop::hdr_preview::Presentation,
     second: Option<&(&'static str, crate::app::develop::hdr_preview::Presentation)>,
@@ -463,11 +472,26 @@ fn hdr_row(
             );
     });
     if r.hdr.is_active() {
+        control_row(ui, "", |ui| {
+            ui.checkbox(sdr_preview, "Preview for SDR display")
+                .on_hover_text(
+                    "Show the SDR rendition, as SDR displays, the Library and SDR exports \
+                     show it, on this display too. Not saved with the edit.",
+                );
+        });
         let text = match crate::model::hdr::check_for(r, metadata) {
             Err(e) => format!("Showing the SDR rendition. HDR export unavailable: {e}"),
             Ok(()) => presentation_note(shown),
         };
         hdr_note(ui, text);
+        if r.hdr.sdr != crate::model::hdr::SdrRendition::default() {
+            hdr_note(
+                ui,
+                "This edit's SDR settings, from Lightroom or Camera Raw, are kept; \
+                 its SDR rendition doesn't render them yet."
+                    .to_owned(),
+            );
+        }
     }
     second_side_note(ui, r.hdr.is_active(), second);
 }

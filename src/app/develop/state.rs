@@ -414,6 +414,10 @@ pub(in crate::app) struct ViewState {
     /// Whether this frame's photo is due as its HDR master, drawn or still
     /// rendering, which asks the compositor for EDR.
     pub(in crate::app) hdr_shown: bool,
+    /// Lightroom's Preview for SDR Display: Develop shows an HDR edit as its SDR
+    /// rendition, its histogram and readout too, on an HDR display as well. A view
+    /// choice for every photo while RAWmakase runs, never part of an edit.
+    pub(in crate::app) sdr_preview: bool,
     pub(in crate::app) selected_band: usize,
     /// The Color Grading panel's view: 3-Way or one wheel.
     pub(in crate::app) grading: crate::app::develop::panels::color_grading::GradingView,
@@ -465,6 +469,7 @@ impl Default for ViewState {
             system_display: Default::default(),
             hdr_display: Default::default(),
             hdr_shown: false,
+            sdr_preview: false,
             selected_band: 0,
             grading: Default::default(),
             selected_curve: 0,

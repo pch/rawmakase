@@ -813,6 +813,12 @@ the SDR photo gate were not run: they score these same SDR renders.
   them to the user's (`Recipe::with_profile_adjustments`), so whatever the same slider
   renders, the look's renders, and a refusal names the look ("Highlights, which the
   look sets").
+- **Preview for SDR display is a view choice** (stage 5, 2026-11-10), as the plan
+  has it: Camera Raw 18.7's returned settings carry no key for it in any of the HDR
+  captures (they carry `HDREditMode`, `HDRMaxValue` and the seven `SDR*` sliders), so
+  it is never saved, copied or synced. While it is on, Develop shows the SDR rendition
+  on an HDR display, with its histogram, as Lightroom does; it applies to every photo
+  and every side until turned off.
 
 ## Open
 
@@ -911,4 +917,5 @@ the SDR photo gate were not run: they score these same SDR renders.
   of the light, which a GPU path would rebuild on every change); AI Denoise shows no
   HDR preview yet. The HDR histogram in stops above white, the HDR readout,
   and what lies beyond the display's headroom marked in the histogram and its
-  highlight triangle. Open: the rest of the stage (above).
+  highlight triangle. Preview for SDR display, a view choice showing the SDR rendition
+  on an HDR display. Open: the rest of the stage (above).
