@@ -54,13 +54,16 @@ pub(super) struct HdrFinish {
     curves: Option<HdrCurves>,
 }
 /// The user's tone curves as they render in HDR (`color::hdr_curve`): Levels, the
-/// parametric curve, then the master point curve, as in SDR. A channel's own curve
-/// refuses the master (`model::hdr::check_recipe`).
+/// parametric curve, the master point curve, then each channel's point curve, as in
+/// SDR.
 struct HdrCurves {
     /// Black point, white point and midtone, when they are not the default.
     levels: Option<[f32; 3]>,
     parametric: Option<crate::develop::tone_lut::ToneLut>,
     master: crate::color::hdr_curve::HdrPointCurve,
+    /// Red, green and blue's own curves, each when it is not the identity; when none
+    /// is, `None`.
+    channels: Option<[Option<crate::color::hdr_curve::HdrPointCurve>; 3]>,
 }
 impl HdrCurves {
     fn new(r: &Recipe) -> Option<Self> {
@@ -68,18 +71,25 @@ impl HdrCurves {
         let parametric = parametric_curve(r);
         let levels = [r.black_point, r.white_point, r.midtone];
         let levels = (levels != [0., 1., 1.]).then_some(levels);
-        if levels.is_none() && parametric.is_none() && r.curve.is_identity() {
+        let channels = (!r.effects.channels.iter().all(|c| c.is_identity())).then(|| {
+            r.effects
+                .channels
+                .each_ref()
+                .map(|c| (!c.is_identity()).then(|| HdrPointCurve::new(c)))
+        });
+        if levels.is_none() && parametric.is_none() && r.curve.is_identity() && channels.is_none() {
             return None;
         }
         Some(Self {
             levels,
             parametric,
             master: HdrPointCurve::new(&r.curve),
+            channels,
         })
     }
     /// Linear ProPhoto RGB (1 = graphics white, not negative) through the curves.
     fn apply(&self, pro: [f32; 3]) -> [f32; 3] {
-        use crate::color::hdr_curve::{CEILING, decode, encode, levels, parametric};
+        use crate::color::hdr_curve::{CEILING, channel, decode, encode, levels, parametric};
         let p = pro.map(encode);
         let p = match self.levels {
             Some([black, white, midtone]) => p.map(|e| levels(e, black, white, midtone)),
@@ -89,7 +99,13 @@ impl HdrCurves {
             Some(curve) => rgb_tone(p, |e| parametric(e, |x| curve.eval(x))),
             None => p,
         };
-        rgb_tone(p, |e| self.master.evaluate(e)).map(|e| decode(e).min(CEILING))
+        let p = rgb_tone(p, |e| self.master.evaluate(e));
+        // An identity channel curve leaves its channel as the master curve renders it.
+        let channels = self.channels.as_ref();
+        std::array::from_fn(|c| match channels.and_then(|curves| curves[c].as_ref()) {
+            Some(curve) => channel(curve, p[c]),
+            None => decode(p[c]).min(CEILING),
+        })
     }
 }
 /// DNG RGBTone with `curve`: it maps the largest and smallest channel, and the middle
@@ -106,10 +122,12 @@ fn rgb_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {
 }
 /// What the GPU port's HDR master reads of [`HdrFinish`] past the profile: Contrast's
 /// table, output at its top and slope beyond; and, with tone curves, whether Levels
-/// apply and the master curve's value at white and slope beyond it.
+/// apply and the master curve's value at white and slope beyond it, and each channel
+/// curve's that is not the identity, when any is not.
 pub(crate) struct HdrFinishGpu<'a> {
     pub(crate) contrast: Option<(&'a [f32], f32, f32)>,
     pub(crate) curves: Option<(bool, [f32; 2])>,
+    pub(crate) channels: Option<[Option<[f32; 2]>; 3]>,
 }
 impl HdrFinish {
     pub(super) fn gpu(&self) -> HdrFinishGpu<'_> {
@@ -119,6 +137,11 @@ impl HdrFinish {
                 .curves
                 .as_ref()
                 .map(|c| (c.levels.is_some(), c.master.extension())),
+            channels: self
+                .curves
+                .as_ref()
+                .and_then(|c| c.channels.as_ref())
+                .map(|curves| curves.each_ref().map(|c| c.as_ref().map(|c| c.extension()))),
         }
     }
 }

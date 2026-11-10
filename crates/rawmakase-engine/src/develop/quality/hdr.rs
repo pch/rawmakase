@@ -674,6 +674,54 @@ mod tests {
         Ok(())
     }
 
+    /// A channel's point curve renders in the master after the master curve, on that
+    /// channel of encoded ProPhoto RGB, along its end slope above white and held at
+    /// 16 (`hdr_curve::channel`); the other channels keep the master curve's output.
+    #[test]
+    fn channel_curves_render_on_their_own_channel_after_the_master_curve() -> anyhow::Result<()> {
+        use crate::color::curve::ToneCurve;
+        use crate::color::hdr_curve::{HdrPointCurve, channel, encode};
+        let im = grays(&[0.2, 0.5, 1.2, 4., 16.]);
+        let mut r = hdr_recipe(&im);
+        r.curve.points = vec![[0., 0.], [0.5, 0.55], [1., 1.]];
+        let plain = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let at = |out: &crate::rendered::HdrImage, i: usize| {
+            out.pixels[4 * out.width as usize + i * 8 + 4]
+        };
+        let red = ToneCurve {
+            points: vec![[0., 0.], [0.5, 0.63], [1., 1.]],
+            ..Default::default()
+        };
+        let blue = ToneCurve {
+            points: vec![[0., 0.], [0.5, 0.39], [1., 1.]],
+            ..Default::default()
+        };
+        r.effects.channels[0] = red.clone();
+        r.effects.channels[2] = blue.clone();
+        let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let curves = [HdrPointCurve::new(&red), HdrPointCurve::new(&blue)];
+        for i in 0..5 {
+            let (p, q) = (at(&plain, i), at(&out, i));
+            let want = [
+                channel(&curves[0], encode(p[0])),
+                p[1],
+                channel(&curves[1], encode(p[2])),
+            ];
+            for c in 0..3 {
+                assert!(
+                    (q[c] / want[c] - 1.).abs() < 1e-3,
+                    "{i}, channel {c}: {} against {}",
+                    q[c],
+                    want[c]
+                );
+            }
+        }
+        // The darkening blue curve ends steeper than the identity, and holds at 16.
+        assert!(at(&out, 3)[2] > at(&plain, 3)[2]);
+        assert!((at(&out, 4)[2] - 16.).abs() < 1e-3, "{:?}", at(&out, 4));
+        Ok(())
+    }
+
     /// The colour stage renders above white as Camera Raw 18.7 renders it in HDR
     /// (docs/hdr.md#the-colour-stage): Saturation changes a colour's saturation as much
     /// at 20 times white as at a quarter of it, Vibrance's brightening leaves colours
@@ -826,10 +874,11 @@ mod tests {
         assert!(!supported(&r), "the SDR rendition's port has HDR off");
         assert!(supported_hdr(&r, &im.metadata));
         // Contrast, the tone curves, the colour stage and Texture render on the GPU.
-        let on_the_gpu: [fn(&mut Recipe); 7] = [
+        let on_the_gpu: [fn(&mut Recipe); 8] = [
             |r| r.contrast = 0.2,
             |r| r.white_point = 0.9,
             |r| r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]],
+            |r| r.effects.channels[0].points = vec![[0., 0.], [0.5, 0.6], [1., 1.]],
             |r| r.effects.parametric[0] = 0.3,
             |r| r.saturation = 0.2,
             |r| r.effects.monochrome = true,

@@ -116,6 +116,10 @@ pub(crate) mod slot {
         // Levels do (from `LEVELS`), and the master curve's value at white and slope
         // beyond it (its samples are `MASTER`'s; the parametric curve's `PARAMETRIC_LUT`).
         HDR_CURVES: 4,
+        // An HDR master's channel curves (`tone::HdrCurves`), per channel: 1 when its
+        // curve applies (an identity curve leaves the channel alone), and the curve's
+        // value at white and slope beyond it (its samples are `CHANNELS`').
+        HDR_CHANNELS: 9,
         // An HDR master's colour mixer (`ColorMixer::hdr_fading`): the fading Vibrance
         // value factors of its changes' grid and of its gray source, or -1 each; its grids
         // are `MIXER`'s and `GRAY_SOURCE`'s, and black & white's `GRAY_GRID`.
@@ -282,6 +286,7 @@ pub(crate) fn pixel_params_hdr(im: Source, r: &Recipe) -> Option<PixelParams> {
         .contrast
         .map(|(table, top, slope)| (table.to_vec(), top, slope));
     let curves = finish.curves;
+    let channels = finish.channels;
     let fading = lut.mixer.as_ref().and_then(|m| m.hdr_fading()).cloned();
     let mut p = fill(r, lut, camera)?;
     let fading = match fading {
@@ -299,6 +304,15 @@ pub(crate) fn pixel_params_hdr(im: Source, r: &Recipe) -> Option<PixelParams> {
         None => [0.; 4],
     };
     p.set(slot::HDR_CURVES, &curves);
+    // Per channel: 1 when its curve applies, its value at white and slope beyond.
+    let channels: [f32; 9] = match channels {
+        Some(curves) => std::array::from_fn(|i| match curves[i / 3] {
+            Some([white, slope]) => [1., white, slope][i % 3],
+            None => 0.,
+        }),
+        None => [0.; 9],
+    };
+    p.set(slot::HDR_CHANNELS, &channels);
     let gains = p.push(gains);
     // An HDR profile's curve is applied as it is, on encoded values (`hdr_finish`).
     let curve = match tone {
@@ -549,6 +563,7 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     p.set(slot::HDR_LOOK, &[0., 0., 0.]);
     p.set(slot::HDR_CONTRAST, &[-1., 0., 0.]);
     p.set(slot::HDR_CURVES, &[0.; 4]);
+    p.set(slot::HDR_CHANNELS, &[0.; 9]);
     p.set(slot::HDR_MIXER, &[-1., -1.]);
     Some(p)
 }
