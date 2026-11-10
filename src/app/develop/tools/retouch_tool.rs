@@ -306,28 +306,26 @@ impl Editor {
     }
     /// The Remove tool's keys: `[` `]` size, with Shift feather, `/` next source,
     /// Delete, H pins and A Visualize Spots.
-    pub(in crate::app) fn retouch_keys(&mut self, i: &egui::InputState) {
-        use crate::app::shell::key_match::press;
-        use egui::Key;
-        // Each key with the modifiers held for it.
-        let plain = |m: egui::Modifiers| !m.command && !m.alt;
-        if let Some(m) = press(i, &[Key::OpenBracket, Key::OpenCurlyBracket], plain) {
+    pub(in crate::app) fn retouch_keys(&mut self, ctx: &egui::Context) {
+        use crate::app::shell::commands::registry::bindings as b;
+        let keys = crate::app::shell::keymap::FrameKeys::of(ctx);
+        // Each key with the modifiers held for it; Shift feathers.
+        if let Some(m) = keys.take(&b::REMOVE_SMALLER) {
             self.step_retouch_size(false, m.shift);
         }
-        if let Some(m) = press(i, &[Key::CloseBracket, Key::CloseCurlyBracket], plain) {
+        if let Some(m) = keys.take(&b::REMOVE_LARGER) {
             self.step_retouch_size(true, m.shift);
         }
-        if press(i, &[Key::Slash, Key::Questionmark], plain).is_some() {
+        if keys.take(&b::REMOVE_NEW_SOURCE).is_some() {
             self.next_source();
         }
-        if press(i, &[Key::Delete, Key::Backspace], plain).is_some() {
+        if keys.take(&b::REMOVE_DELETE).is_some() {
             self.delete_spot();
         }
-        if press(i, &[Key::H], |m| plain(m) && !m.shift).is_some() {
+        if keys.take(&b::REMOVE_HIDE_PINS).is_some() {
             self.view.retouch.hide_pins ^= true;
         }
-        // Not a quick Cmd+A, Select All, released within the frame.
-        if press(i, &[Key::A], |m| !m.any()).is_some() {
+        if keys.take(&b::REMOVE_VISUALIZE).is_some() {
             self.view.retouch.visualize ^= true;
         }
     }

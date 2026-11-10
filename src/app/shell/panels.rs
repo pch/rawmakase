@@ -4,7 +4,7 @@
 use crate::app::Editor;
 use crate::app::Module;
 use crate::app::ui::design::{Tone, radius};
-use eframe::egui::{self, Key, Modifiers};
+use eframe::egui;
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// A panel the user can hide.
@@ -325,25 +325,28 @@ impl Editor {
         if ctx.memory(|m| m.focused().is_some()) || egui::Popup::is_any_open(ctx) {
             return;
         }
-        let change = ctx.input_mut(|i| {
-            // Shift+Tab before Tab: the plain pattern also matches with Shift held.
-            if i.consume_key(Modifiers::SHIFT, Key::Tab) {
-                Some(PanelChange::All)
-            } else if i.consume_key(Modifiers::NONE, Key::Tab) {
-                Some(PanelChange::Sides)
-            } else if i.consume_key(Modifiers::SHIFT, Key::F8) {
-                // Before F8, whose plain pattern also matches with Shift held.
-                Some(PanelChange::Toggle(WorkspacePanel::Presets))
-            } else if i.consume_key(Modifiers::NONE, Key::F7) {
-                Some(PanelChange::Toggle(WorkspacePanel::Left))
-            } else if i.consume_key(Modifiers::NONE, Key::F8) {
-                Some(PanelChange::Toggle(WorkspacePanel::Right))
-            } else if i.consume_key(Modifiers::NONE, Key::F6) {
-                Some(PanelChange::Toggle(WorkspacePanel::Filmstrip))
-            } else {
-                None
-            }
-        });
+        // Shift+Tab before Tab and Shift+F8 before F8: the plain patterns also
+        // match with Shift held.
+        use crate::app::shell::commands::registry::bindings as b;
+        let change = crate::app::shell::keymap::FrameKeys::of(ctx)
+            .take_any(&[
+                &b::PANELS_ALL,
+                &b::PANELS_SIDES,
+                &b::PANELS_PRESETS,
+                &b::PANELS_LEFT,
+                &b::PANELS_RIGHT,
+                &b::PANELS_FILMSTRIP,
+            ])
+            .map(|(i, _)| {
+                [
+                    PanelChange::All,
+                    PanelChange::Sides,
+                    PanelChange::Toggle(WorkspacePanel::Presets),
+                    PanelChange::Toggle(WorkspacePanel::Left),
+                    PanelChange::Toggle(WorkspacePanel::Right),
+                    PanelChange::Toggle(WorkspacePanel::Filmstrip),
+                ][i]
+            });
         if let Some(change) = change {
             ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
             self.request_panels(change);

@@ -294,6 +294,26 @@ impl FileOps {
     }
     /// Whether a dialog of a file operation with a field or a list is
     /// open: keys go to it, not to the photos behind.
+    /// The operation's state by name, with its verb where it has one, for the
+    /// keyboard shortcut pins to tell Delete from Remove or Rename.
+    #[cfg(test)]
+    pub(in crate::app) fn state_name(&self) -> String {
+        match &self.state {
+            State::Idle => "Idle".into(),
+            State::Choosing(_) => "Choosing".into(),
+            State::Naming(_) => "Naming".into(),
+            State::Ordering { .. } => "Ordering".into(),
+            State::Renaming(_) => "Renaming".into(),
+            State::RenamingFolder(_) => "RenamingFolder".into(),
+            State::ChoosingParent(_) => "ChoosingParent".into(),
+            State::Planning { verb, .. } => format!("Planning {verb:?}"),
+            State::Confirming { verb, .. } => format!("Confirming {verb:?}"),
+            State::Running { verb, .. } => format!("Running {verb:?}"),
+            State::Recovering { .. } => "Recovering".into(),
+            State::Unfinished { .. } => "Unfinished".into(),
+            State::Resolving { .. } => "Resolving".into(),
+        }
+    }
     pub(in crate::app) fn dialog_open(&self) -> bool {
         matches!(
             self.state,
@@ -1192,18 +1212,15 @@ impl Editor {
             return;
         }
         // Whether it was pressed, and with what (see `Library::delete_press`).
-        let pressed = ctx.input(|i| {
-            i.events.iter().find_map(|e| match e {
-                egui::Event::Key {
-                    key: egui::Key::Delete | egui::Key::Backspace,
-                    pressed: true,
-                    repeat: false,
-                    modifiers,
-                    ..
-                } => Some(*modifiers),
-                _ => None,
-            })
-        });
+        use crate::app::shell::commands::registry::bindings as b;
+        let pressed = crate::app::shell::keymap::FrameKeys::of(ctx)
+            .take_first(&[
+                &b::DEVELOP_DELETE,
+                &b::DEVELOP_REMOVE_FROM_CATALOG,
+                &b::DEVELOP_DELETE_REJECTED,
+                &b::DEVELOP_TRASH,
+            ])
+            .map(|(_, modifiers)| modifiers);
         let (Some(modifiers), Some(open), Some(library)) =
             (pressed, self.document.catalog_photo, self.library.as_mut())
         else {

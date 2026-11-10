@@ -437,7 +437,9 @@ impl Messages {
     /// a tool should not close with it. Free in Lightroom, unlike Cmd+.
     pub(in crate::app) fn dismiss_key(&mut self, ctx: &egui::Context) {
         if !self.entries.is_empty()
-            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, egui::Key::Escape))
+            && crate::app::shell::keymap::FrameKeys::of(ctx)
+                .take(&crate::app::shell::commands::registry::bindings::DISMISS_MESSAGES)
+                .is_some()
         {
             self.dismiss(|_| true);
         }

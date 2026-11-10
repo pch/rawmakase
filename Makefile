@@ -32,16 +32,23 @@ CHECK_VENV ?= target/check-venv
 # - the Arch package build and install, and the portable catalog SQL
 #   prepared on Postgres, which need an Arch container and a Postgres server.
 # cargo deny and desktop-file-validate run when installed (check-tools).
+# The tests read an empty data folder, not this machine's: installed camera
+# profiles change what Develop resolves, and saved export settings would send
+# Export with Previous somewhere real.
+TEST_DATA = $(CURDIR)/target/test-data
+TEST_ENV = RAWMAKASE_DATA_DIR="$(TEST_DATA)" XDG_DATA_HOME="$(TEST_DATA)"
+
 check: check-python check-tools check-msrv
+	rm -rf -- "$(TEST_DATA)" && mkdir -p -- "$(TEST_DATA)"
 	python3 scripts/deps.py check
 	scripts/crate-closures.sh
 	cargo fmt --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
-	cargo test --locked -p rawmakase -p rawmakase-decode -p rawmakase-export
+	$(TEST_ENV) cargo test --locked -p rawmakase -p rawmakase-decode -p rawmakase-export
 	cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -- -D warnings
-	cargo test --locked -p rawmakase-model --all-features
-	cargo test --locked -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
-	cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-inference
+	$(TEST_ENV) cargo test --locked -p rawmakase-model --all-features
+	$(TEST_ENV) cargo test --locked -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
+	$(TEST_ENV) cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-inference
 	RUSTDOCFLAGS="-D warnings -A rustdoc::private_intra_doc_links" cargo doc --workspace --all-features --no-deps --locked --document-private-items
 
 check-msrv:

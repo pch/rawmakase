@@ -187,12 +187,11 @@ fn escape_in_masking_first_drops_the_mask_not_yet_drawn() {
     assert!(e.view.is(Tool::Mask), "and leaves Masking open");
     tap(&mut e, Key::Escape, Modifiers::NONE);
     assert!(e.view.is(Tool::None), "the next Escape closes Masking");
-    // Escape with a modifier closes Masking at once, leaving nothing behind.
+    // Escape with a modifier is not Escape (#963): it closed Masking at once.
+    tap(&mut e, Key::M, Modifiers::NONE);
     for modifiers in [command(Modifiers::NONE), Modifiers::ALT] {
-        tap(&mut e, Key::M, Modifiers::NONE);
         tap(&mut e, Key::Escape, modifiers);
-        assert!(e.view.is(Tool::None));
-        assert!(!e.view.masking.is_placing());
+        assert!(e.view.is(Tool::Mask) && e.view.masking.is_placing());
     }
 }
 

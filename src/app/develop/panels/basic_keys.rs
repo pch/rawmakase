@@ -9,6 +9,7 @@
 //! close): see [`Editor::develop_key_steps`].
 use crate::app::Editor;
 use crate::app::history::Step;
+use crate::app::shell::keymap::{FrameKeys, Press};
 use crate::camera_data::Metadata;
 use crate::model::params::{KeyStep, ParameterId};
 use eframe::egui;
@@ -81,29 +82,26 @@ enum Action {
     Step { size: KeyStep, up: bool },
 }
 
-/// The action of `event`: a press or a repeat, with the modifiers held for it. The
+/// The action of `event`, if it is a press: see [`decode_press`].
+#[cfg(test)]
+fn decode(event: &egui::Event) -> Option<Action> {
+    decode_press(&Press::of(event)?)
+}
+
+/// The action of `press`: a press or a repeat, with the modifiers held for it. The
 /// key's place on the keyboard decides, as Lightroom's shortcuts go by it: Shift
 /// with `=` is still `=`, Option does not change it on macOS; the typed key only
 /// when the place is unknown. The keypad's `+` and `-` step too. Cmd and Ctrl are
 /// never these keys (Cmd+= zooms, Cmd+, opens Preferences), and `.` and `,` only
 /// without any modifier.
-fn decode(event: &egui::Event) -> Option<Action> {
-    let egui::Event::Key {
-        key,
-        physical_key,
-        pressed: true,
-        modifiers,
-        ..
-    } = event
-    else {
-        return None;
-    };
-    if modifiers.command || modifiers.ctrl || modifiers.mac_cmd {
-        return None;
-    }
+fn decode_press(press: &Press) -> Option<Action> {
+    use crate::app::shell::commands::registry::bindings as b;
+    let modifiers = press.modifiers;
     // A key that rates, flags or labels the photo is that, not a step: Dvorak
     // types `]` on the `=` key.
-    if !modifiers.alt && crate::app::library::photo_metadata::is_shortcut_key(*key, *physical_key) {
+    if !modifiers.alt
+        && crate::app::library::photo_metadata::is_shortcut_key(press.key, press.physical)
+    {
         return None;
     }
     let size = if modifiers.alt {
@@ -113,12 +111,16 @@ fn decode(event: &egui::Event) -> Option<Action> {
     } else {
         KeyStep::Normal
     };
-    match physical_key.unwrap_or(*key) {
-        egui::Key::Period if !modifiers.any() => Some(Action::Select { forward: true }),
-        egui::Key::Comma if !modifiers.any() => Some(Action::Select { forward: false }),
-        egui::Key::Equals | egui::Key::Plus => Some(Action::Step { size, up: true }),
-        egui::Key::Minus => Some(Action::Step { size, up: false }),
-        _ => None,
+    if press.is(&b::BASIC_NEXT) {
+        Some(Action::Select { forward: true })
+    } else if press.is(&b::BASIC_PREVIOUS) {
+        Some(Action::Select { forward: false })
+    } else if press.is(&b::BASIC_INCREASE) {
+        Some(Action::Step { size, up: true })
+    } else if press.is(&b::BASIC_DECREASE) {
+        Some(Action::Step { size, up: false })
+    } else {
+        None
     }
 }
 
@@ -133,14 +135,20 @@ impl Editor {
     /// `typing` says whether a text field had the keys as the frame began: a field
     /// that took a `-` and gave up the keys on Return in this frame keeps that `-`.
     pub(in crate::app) fn develop_key_steps(&mut self, ctx: &egui::Context, typing: bool) {
-        let actions: Vec<Action> = ctx.input(|i| i.events.iter().filter_map(decode).collect());
+        let keys = FrameKeys::of(ctx);
+        let actions: Vec<(Press, Action)> = keys
+            .presses()
+            .into_iter()
+            .filter_map(|p| decode_press(&p).map(|action| (p, action)))
+            .collect();
         if actions.is_empty() || typing || !self.basic_keys_ready(ctx) {
             return;
         }
         // A drag, a wheel scroll or a dial turn still under way keeps the settings.
         let held = ctx.input(|i| i.pointer.any_down()) || self.document.edit.history().in_gesture();
         let photo = self.document.metadata.clone();
-        for action in actions {
+        for (press, action) in actions {
+            keys.take_press(&press);
             match action {
                 Action::Select { forward } => {
                     self.view.selected_setting =

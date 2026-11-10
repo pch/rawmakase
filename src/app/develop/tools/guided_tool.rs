@@ -165,9 +165,10 @@ impl Editor {
         }
     }
     /// The Guided tool's keys: Delete and Backspace delete the selected guide.
-    pub(in crate::app) fn guided_keys(&mut self, i: &egui::InputState) {
-        let keys = [egui::Key::Delete, egui::Key::Backspace];
-        if crate::app::shell::key_match::press(i, &keys, |m| !m.command && !m.alt).is_some() {
+    pub(in crate::app) fn guided_keys(&mut self, ctx: &egui::Context) {
+        use crate::app::shell::commands::registry::bindings;
+        let keys = crate::app::shell::keymap::FrameKeys::of(ctx);
+        if keys.take(&bindings::GUIDED_DELETE).is_some() {
             self.delete_guide();
         }
     }

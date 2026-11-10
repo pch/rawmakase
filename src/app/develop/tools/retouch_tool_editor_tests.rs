@@ -55,11 +55,9 @@ fn remove_tool_adds_spots_paints_brushes_and_edits_the_selection() {
             },
             |ui| {
                 let frame = editor.begin_edit_frame();
-                ctx.input(|i| {
-                    if editor.view.is(crate::app::develop::state::Tool::Remove) {
-                        editor.retouch_keys(i)
-                    }
-                });
+                if editor.view.is(crate::app::develop::state::Tool::Remove) {
+                    editor.retouch_keys(ui.ctx())
+                }
                 editor.viewport_ui(ui);
                 editor.finish_edit_frame(frame, &ctx);
             },
@@ -149,7 +147,7 @@ fn a_quick_cmd_a_in_remove_does_not_toggle_visualize_spots() {
             ],
             ..Default::default()
         };
-        let mut output = ctx.run_ui(input, |ui| ui.input(|i| editor.retouch_keys(i)));
+        let mut output = ctx.run_ui(input, |ui| editor.retouch_keys(ui.ctx()));
         output.textures_delta.clear();
         editor.view.retouch.visualize
     };

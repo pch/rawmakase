@@ -56,6 +56,16 @@ impl Library {
     }
     /// C: the active photo as the select, beside the next photo selected
     /// with it, or else the next one shown.
+    /// Compare's select and candidate, and which is active, for the keyboard
+    /// shortcut pins.
+    #[cfg(test)]
+    pub(in crate::app) fn compared(&self) -> (Option<PhotoId>, Option<PhotoId>, &'static str) {
+        (
+            self.compare.select,
+            self.compare.candidate,
+            self.compare.active.name(),
+        )
+    }
     pub(crate) fn open_compare(&mut self) {
         let Some(select) = self
             .selection
@@ -305,30 +315,38 @@ impl Library {
         }
         self.sync_compare_selection();
     }
-    pub(super) fn compare_keys(&mut self, presses: &[super::selection::Press]) {
-        use egui::Key;
+    pub(super) fn compare_keys(
+        &mut self,
+        keys: crate::app::shell::keymap::FrameKeys,
+        presses: &[crate::app::shell::keymap::Press],
+    ) {
+        use crate::app::shell::commands::registry::bindings as b;
         for press in presses {
             // B, Cmd+B and Cmd+Shift+B, for the active photo, once per press.
-            if press.key == Key::B {
-                if !press.repeat {
-                    let ids = self.selection.active.into_iter().collect();
-                    self.quick_key(press.modifiers, ids)
-                }
+            if press.is(&b::COMPARE_QUICK_TOGGLE)
+                || press.is(&b::COMPARE_QUICK_SHOW)
+                || press.is(&b::COMPARE_QUICK_CLEAR)
+            {
+                let ids = self.selection.active.into_iter().collect();
+                self.quick_key(press.modifiers, ids)
+            } else if press.is(&b::COMPARE_PREVIOUS) {
+                self.step_candidate(-1)
+            } else if press.is(&b::COMPARE_NEXT) {
+                self.step_candidate(1)
+            } else if press.is(&b::COMPARE_MAKE_SELECT) {
+                self.make_select()
+            } else if press.is(&b::COMPARE_SWAP) {
+                self.swap_compare()
+            } else if press.is(&b::COMPARE_CLOSE) {
+                self.close_compare()
+            } else if press.is(&b::COMPARE_LOUPE) {
+                self.open_loupe()
+            } else if press.is(&b::COMPARE_SURVEY) {
+                self.open_survey()
+            } else {
                 continue;
             }
-            if press.modifiers.command || press.modifiers.alt {
-                continue;
-            }
-            match press.key {
-                Key::ArrowLeft => self.step_candidate(-1),
-                Key::ArrowRight => self.step_candidate(1),
-                Key::ArrowUp if !press.repeat => self.make_select(),
-                Key::ArrowDown if !press.repeat => self.swap_compare(),
-                Key::Escape => self.close_compare(),
-                Key::E | Key::Enter => self.open_loupe(),
-                Key::N if !press.modifiers.any() => self.open_survey(),
-                _ => {}
-            }
+            keys.take_press(press);
         }
     }
     /// Compare in place of the grid: the two photos, with a toolbar.
