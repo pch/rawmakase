@@ -30,9 +30,13 @@ flowchart TD
     mcp[rawmakase-mcp]
     remote[rawmakase-remote]
     inference[rawmakase-inference]
+    exthost[rawmakase-extensions]
+    extprotocol[rawmakase-extension-protocol]
+    sdk[rawmakase-extension]
+    cargoext[cargo-rawmakase]
 
     app --> export & decode & catalog & engine & interop & model
-    app --> ctl & mcp & remote & inference & fs
+    app --> ctl & mcp & remote & inference & fs & exthost
     export --> decode & engine & interop
     decode --> engine & raw
     catalog --> interop & fs
@@ -43,6 +47,9 @@ flowchart TD
     ctl --> protocol
     mcp --> ctl
     remote --> inference
+    exthost --> extprotocol & fs
+    sdk --> extprotocol
+    cargoext --> exthost & protocol
 ```
 
 (Edges implied by others are left out: every crate above the model also depends
@@ -65,6 +72,16 @@ on it directly.)
 | `rawmakase-protocol` | What the app and its control clients agree on: protocol version, `control.json` endpoint, data folder | Everything |
 | `rawmakase-ctl` (`tools/`) | The control client, used by `rawmakase control`, `rawmakase mcp` and the standalone `rawmakase-ctl` | The app |
 | `rawmakase-mcp` (`extensions/mcp`) | The MCP server, a client of the control protocol: the library behind `rawmakase mcp` and the standalone `rawmakase-mcp` | Every workspace crate but `rawmakase-protocol` and `rawmakase-ctl` |
+| `rawmakase-extension-protocol` | What the app and extensions agree on ([extensions](extensions/overview.md)): the manifest and its schema, the protocol's messages, error codes and bounded line framing, host-drawn controls | Every other workspace crate |
+| `rawmakase-extension` | The SDK extension programs are written with: the channel, the run loop, handler traits, a mock host for tests | Everything but the extension protocol |
+| `rawmakase-extensions` | The extension host: manifests, `.rmext` packages, installation from a file or GitHub, `extensions.json`, bundled discovery, starting programs in a process group or job object, sessions with deadlines and bounded queues | Any photo, edit, catalog, renderer, decoder or GUI crate |
+| `cargo-rawmakase` (`tools/`) | The extension author's tool: `new`, `build`, `package`, `release`, `dev` | The same |
+
+The extension crates know no photo, edit or catalog: what an extension's
+requests mean to the editor (applying a proposal, a device's operation) is the
+app's, so the host can be shared by the app, `rawmakase extensions` and
+`cargo rawmakase`, and an extension builds without anything of the app's.
+`scripts/deps-crates.txt` and `scripts/crate-closures.sh` hold them to that.
 
 No value, catalog or rendering crate can reach `rawmakase-inference`, so saved masks
 render without any inference installed and a photo with AI Denoise renders from a

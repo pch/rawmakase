@@ -1,8 +1,16 @@
 # Extensions: design plan
 
-Status: Proposed (2026-11-09). Nothing here is built yet. This page is the design
-we agreed on before implementation; once a part is built, its reference moves to
-`docs/extensions/` and this page records only what is still open.
+Status: Accepted (2026-11-09); phase 1 built, phase 2 in progress. Built so far
+in phase 2: the manifest and its schema, `.rmext` packages, installation from a
+file and from GitHub, `extensions.json`, bundled discovery, the extension
+protocol, the SDK with its mock host, the host's process supervision primitives
+(process group or job object, channel, deadlines, stop), `cargo rawmakase` and
+`rawmakase extensions` ([reference](extensions/overview.md)). Still to build in
+phase 2: supervision in the app (`app::work`), Preferences > Extensions,
+commands, settings, panels, reads, proposals and target tokens in the app,
+externally launched adapters, and moving MIDI and MCP out. This page is the
+design we agreed on before implementation; once a part is built, its reference
+moves to `docs/extensions/` and this page records only what is still open.
 
 ## Why
 
@@ -857,6 +865,32 @@ built only together with an extension that uses it.
    input (clicks and a dragged box combined, as Select Subject takes them
    today), shared-memory pixels and rasters, `mask-generator`. Move
    Select Subject, Sky and Background out into AI masks, with the remote worker.
+
+### Phase 2 decisions
+
+Defaults taken for phase 2 (#964), where the design left a choice open:
+
+| | Decision |
+| --- | --- |
+| D1 | Bundled extensions' programs ship beside the app's executable (`../lib/rawmakase` on Linux packages), their manifests are compiled into the app, and the release workflow also attaches their `.rmext` packages |
+| D2 | The bundled programs are named `rawmakase-mcp` and `rawmakase-midi` |
+| D3 | The control socket's legacy `cc`/`note` requests stay in the core as a frozen Loupedeck compatibility adapter |
+| D4 | MIDI's settings page moves to Preferences > Extensions; the Automation tab links to it |
+| D5 | MIDI's configuration moves to the extension's data folder; the original `midi.json` is left in place, so a downgrade keeps working |
+| D6 | Every `places` slot name is validated in manifests now; drawing commands into those slots waits for the first extension that declares one. Phase 2 gives extension commands keys, `rawmakase control action` and a Run button |
+| D7 | No shared memory or handle passing in phase 2: no phase-2 extension moves pixels. The framing for handles and the buffer descriptor are specified now ([protocol](extensions/protocol.md#reserved-handles-and-buffers-phase-3)) |
+| D8 | A control request naming an unknown or disabled adapter is refused `adapter_disabled`; enabling or disabling from the command line reaches a running app on its next start |
+| D9 | Target tokens use edit and metadata digests, not new catalog counters, so the catalog format doesn't change |
+| D10 | An on-demand program stops after 5 minutes idle; requests have a 30 s deadline (5 s for `hello`); the quit grace is 1 s |
+| D11 | `cargo rawmakase new` has command and control-adapter templates only; `cargo rawmakase test` waits for filters |
+| D12 | The Failed state (three crashes in a row) lasts for the session |
+
+Also decided while building: the manifest's `api` is an integer (1 now);
+contributions are named `<table>/<id>` in `hello`; a program that exits before
+answering fails its requests with `exited`, and a proposal after its request
+ended with `not_admitted` (codes added to the design's list); a package's
+target comes from its file name, `<id>-<version>-<target>.rmext`, which must
+match its manifest; ids under `rawmakase.` can't be installed from a package.
 
 ### Designed, not scheduled
 
