@@ -25,8 +25,12 @@
 //! curve, as in SDR. Above four stops, Camera Raw's point curves drift toward the
 //! input, as its look curves do.
 //!
-//! A single channel's point curve renders by neither rule above white (a red curve
-//! that brightens takes red down to 0 by scene 12), so it is not rendered in HDR.
+//! - **A channel's point curve** renders by the master curve's rule, after it, on that
+//!   channel of encoded ProPhoto RGB, as in SDR; its output holds at 16 ([`channel`]).
+//!   Measured on the gray ramp through a red curve that brightens and a blue curve that
+//!   darkens: within 0.03 stop from white to scene 8, and blue through (128, 100) holds
+//!   at 16.003 from scene 7.9. Above scene 8 Camera Raw's red drifts toward the input,
+//!   as its master curves do (0.26 stop at scene 15).
 pub use crate::camera_profiles::hdr_look::{decode, encode};
 use crate::color::curve::{CurveLut, ToneCurve};
 
@@ -70,6 +74,13 @@ impl HdrPointCurve {
             self.white + self.slope * (e - 1.)
         }
     }
+}
+
+/// The linear value one channel's curve renders the encoded value `e` as: the curve's
+/// HDR rendering ([`HdrPointCurve::evaluate`]), held at [`PARAMETRIC_TOP`] (16), as
+/// Camera Raw holds a channel's output there, and not below 0.
+pub fn channel(curve: &HdrPointCurve, e: f32) -> f32 {
+    decode(curve.evaluate(e)).min(PARAMETRIC_TOP)
 }
 
 /// Levels (RAWmakase's black point, white point and midtone, which Camera Raw doesn't
@@ -190,6 +201,49 @@ mod tests {
                 // steepest departs by 0.27 stop at 11.8 (31.2 against 25.8);
                 // everywhere else within 0.06.
                 let allowed = if x > 10. { 0.28 } else { 0.06 };
+                assert!(stops < allowed, "{points:?} at {x}: {got} against {want}");
+            }
+        }
+    }
+
+    /// Camera Raw 18.7's gray ramp through one channel's point curve, HDR limit 8, a
+    /// linear profile: the scene value, and that ProPhoto channel as rendered. The
+    /// other channels stay the scene's.
+    #[test]
+    fn channel_curves_render_as_camera_raw_renders_them() {
+        type Case<'a> = (&'a [[f32; 2]], [(f32, f32); 6]);
+        let cases: [Case; 2] = [
+            (
+                &[[0., 0.], [128., 160.], [255., 255.]],
+                [
+                    (0.3041, 0.4558),
+                    (0.9785, 0.9874),
+                    (1.9928, 1.515),
+                    (3.8574, 2.2305),
+                    (7.8561, 3.388),
+                    (11.7959, 4.5863),
+                ],
+            ),
+            (
+                &[[0., 0.], [128., 100.], [255., 255.]],
+                [
+                    (0.3041, 0.196),
+                    (0.9785, 0.9752),
+                    (1.9928, 2.5746),
+                    (3.8574, 6.4009),
+                    (7.8561, 16.0031),
+                    (11.7959, 16.0029),
+                ],
+            ),
+        ];
+        for (points, measured) in cases {
+            let curve = HdrPointCurve::new(&natural(points));
+            for (x, want) in measured {
+                let got = channel(&curve, encode(x));
+                let stops = (got / want).log2().abs();
+                // Far above white Camera Raw drifts toward the input, as for the master
+                // curve: red at 11.8 departs by 0.09 stop.
+                let allowed = if x > 10. { 0.28 } else { 0.03 };
                 assert!(stops < allowed, "{points:?} at {x}: {got} against {want}");
             }
         }

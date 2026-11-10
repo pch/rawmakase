@@ -1,6 +1,6 @@
 # HDR results: references, measurements and progress
 
-Status: in progress, 2026-11-09. The record of the
+Status: in progress, 2026-11-10. The record of the
 [HDR implementation plan](hdr-implementation-plan.md): what was measured, the
 decisions taken from it, validation results and what remains open. Stage 1 (references,
 codec and display feasibility) comes first; stage 3's rendering measurements follow
@@ -272,11 +272,23 @@ the sidecar (`ToneCurvePV2012`, `Parametric*`).
   Camera Raw's to a median 0.015 stop or less (p95 0.040) at saturations 0.3 and 0.6,
   ΔE_ITP 1.0 or less. At 0.9 the patches differ by ΔE_ITP 24 without a curve too
   ([Open](#open)).
-- **Channel curves.** A single channel's curve renders by neither rule above white: a
-  red curve through (128, 160), which brightens red in SDR, takes red from 4.1 to 1.2
-  at scene 3.9 and to 0 by scene 12, while a blue curve through (128, 100) brightens
-  blue and moves red and green too. They stay refused, as do Refine Saturation other
-  than 100% and a point curve whose last point is left of white (not measured).
+- **Channel curves.** A channel's own curve renders by the master curve's rule, after
+  it, on that channel of encoded ProPhoto RGB, as in SDR: up to white as in SDR, then
+  along its end slope. Measured on the gray ramp (linear profile, HDR limit 8) through
+  a red curve through (128, 160) and a blue curve through (128, 100), read in ProPhoto
+  RGB: within 0.03 stop from white to scene 8 (median 0.004–0.025), and the other
+  channels stay the scene's. Camera Raw holds a channel's output at 16: the blue
+  curve renders scene 7.9 and 11.8 as 16.003. Above scene 8 Camera Raw's red drifts
+  toward the input, as its master curves do (0.09 stop at 11.8, 0.26 at 15). An
+  earlier reading of the same captures in Display P3 took red's P3 clipping at 0 for
+  the curve's own output (red at scene 11.8 is 4.59 in ProPhoto). An identity channel
+  curve leaves its channel alone (not measured: in SDR it is a no-op). Refine
+  Saturation other than 100% and a curve whose last point is left of white stay
+  refused (not measured).
+  SDR renders do not change: builds of the change and of the main commit it was made on
+  rendered 46 raw files (40 local copies and 6 dataset photos) with five sidecars (none,
+  channel curves, band Luminance with Saturation and Vibrance, and two HDR edits'
+  SDR renditions) to identical pixels, 229 of 229.
 - **Photos.** A soft S curve with Highlights −20, Lights +15, Darks +10 and Shadows −10,
   and a brightening curve through (128, 160), Adobe Standard DCPs, HDR limit 4, score
   as the default render does on the same photos: median above white 0.004–0.076 stop,
@@ -567,6 +579,23 @@ half of white on every photo; above white SDR's shoulder hides it.
   Highlights' table tail does not fade: median above white 0.26–0.68 stop at −100 and
   −50, 0.09–0.83 at +50. It needs targets above white from more photos than these.
 
+Re-examined on 2026-11-10 with the same captures (six validation photos at −100, −50
+and +50, RAWmakase's renders of the same jobs), by reshaping RAWmakase's gain above a
+level and scoring against Camera Raw (reduced blocks):
+
+- **A level-off does not reach parity.** Holding negative Highlights' pull from 1.5
+  stops above white, the best shared level, takes the Z 8's median above white at −100
+  from 0.68 to 0.08 stop, but leaves the Z6 III at 0.58, the A7R III at 0.99 and the
+  Panasonic at 0.23 (other levels from 0 to 2 stops are worse). The rest is the rule's
+  gain at white itself, which SDR's shoulder hides. Positive Highlights faded from 1.5
+  stops above white over 2 stops gives medians of 0.03–0.27 and p95 up to 0.80.
+- **Not a curve of level either.** Even Camera Raw's own gain per level for each photo,
+  applied above white, leaves p95 at 0.36–0.49 (A7R III, Z6 III) and the Z 8's peak
+  0.94 stop high at −100: part of the HDR operator is spatial.
+
+**Decision, 2026-11-10: Highlights stays refused in HDR.** It needs a rule trained on
+HDR targets of many photos, not a reshaping of the SDR one.
+
 ### Validation
 
 `scripts/corpus/hdr_validate.py` renders each HDR job of the family with
@@ -827,9 +856,10 @@ the SDR photo gate were not run: they score these same SDR renders.
 
 ## Open
 
-- Whites above +50 and Highlights in HDR; the colour mixer's Luminance
+- Whites above +50 and Highlights in HDR (a rule trained on HDR targets:
+  [Highlights and Shadows](#highlights-and-shadows)); the colour mixer's Luminance
   ([Colour stage](#colour-stage)), Point Color, Color Grading, Defringe.
-- A channel's point curve and Refine Saturation in HDR ([Tone curves](#tone-curves)).
+- Refine Saturation in HDR ([Tone curves](#tone-curves)).
 - Clarity and Dehaze in HDR, after their SDR parity ([Presence](#presence)).
 - Positive Shadows lifts small speculars in dark surroundings above Camera Raw's peak
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
@@ -875,13 +905,13 @@ the SDR photo gate were not run: they score these same SDR renders.
   else; the release guard lifted with Develop's HDR switch and SDR-rendition status;
   `rawmakase render --hdr`; looks of a table and a curve, Adobe Color among them
   ([Looks](#looks)); Contrast ([Contrast](#contrast)); the master point curve, the
-  parametric curve and Levels ([Tone curves](#tone-curves)); Texture ([Presence](#presence)); Saturation, Vibrance, the
+  parametric curve, the channels' curves and Levels ([Tone curves](#tone-curves)); Texture ([Presence](#presence)); Saturation, Vibrance, the
   colour mixer's Hue and Saturation, Calibration and Black & White
   ([Colour stage](#colour-stage)); Whites up to +50 ([Whites](#whites)); Shadows
   ([Highlights and Shadows](#highlights-and-shadows)); looks with RGB tables, B&W,
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks)).
   Open: Whites above +50, Highlights, the colour
-  mixer's Luminance, looks that set Clarity or Highlights, channel curves, the SDR rendition sliders in the SDR rendition (the master renders
+  mixer's Luminance, looks that set Clarity or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
   with them), 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display

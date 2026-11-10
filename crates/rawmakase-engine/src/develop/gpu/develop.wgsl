@@ -362,6 +362,22 @@ fn encoded_curve(curve: u32, e: f32) -> f32 {
     }
     return p(P_HDR_CURVES + 2u) + p(P_HDR_CURVES + 3u) * (e - 1.0);
 }
+// HdrCurves::apply's last step on channel `c`'s encoded value: its own curve, when it
+// applies (hdr_curve::channel: the samples up to white, then on along its end slope,
+// held at 16), else the master curve's output decoded.
+fn hdr_channel(c: u32, e: f32) -> f32 {
+    let at = P_HDR_CHANNELS + 3u * c;
+    if p(at) == 0.0 {
+        return min(look_decode(e), HDR_CURVE_CEILING);
+    }
+    var q = 0.0;
+    if e <= 1.0 {
+        q = lut(offset(P_CHANNELS + c), 4096u, e);
+    } else {
+        q = p(at + 1u) + p(at + 2u) * (e - 1.0);
+    }
+    return min(look_decode(q), LOOK_PEAK);
+}
 // hdr_curve::levels on a look-encoded value: the SDR Levels up to white, then on
 // along their slope there.
 fn hdr_levels(e: f32) -> f32 {
@@ -396,7 +412,7 @@ fn hdr_tone_controls(rgb: vec3<f32>) -> vec3<f32> {
             q = encoded_tone(q, 1u);
         }
         q = encoded_tone(q, 2u);
-        out = min(vec3(look_decode(q.x), look_decode(q.y), look_decode(q.z)), vec3(HDR_CURVE_CEILING));
+        out = vec3(hdr_channel(0u, q.x), hdr_channel(1u, q.y), hdr_channel(2u, q.z));
     }
     return out;
 }

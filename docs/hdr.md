@@ -173,7 +173,8 @@ tables on overrange-encoded values and its curve on them, as the DNG SDK applies
 them; and a look's table (on overrange-encoded values) and curve (`hdr_look`, on
 its own encoding), then Contrast (`basic_tone::HdrContrast`'s table, top and slope)
 and the tone curves (`HdrCurves`: Levels, the parametric curve and the master point
-curve on `hdr_look`'s encoding, from the SDR port's own samples of the curves), and
+curve on `hdr_look`'s encoding, from the SDR port's own samples of the curves, then
+each channel's curve, held at 16), and
 the colour stage (the colour mixer's grids looked up as `color_mixer::Lookup::Hdr`
 looks them up, with Vibrance's fading value factors and Saturation's fade to gray,
 then a look's RGB table on overrange-encoded values (`RgbTable::apply_hdr`) and
@@ -186,14 +187,14 @@ are read as the CPU reads them.
 
 It covers what `pixel_params::supported_hdr` accepts: a master that renders
 (Exposure, Whites, Blacks, Shadows, white balance, Contrast, Levels and the tone
-curves, the colour stage, Texture, sharpening and what the SDR port samples), through
+curves, channel curves included, the colour stage, Texture, sharpening and what the SDR port samples), through
 any profile and look whose HDR rendering is measured (`CameraProfile::hdr_tone`).
 An HDR file's light, AI Denoise, and anything the SDR port leaves to the CPU
 (`quality::HdrNotOnGpu`) give no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
 "GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, looks whose
 curves end at white and below it, positive and negative Contrast, Levels, point and
-parametric curves, Saturation, Vibrance, the colour mixer, black & white, looks' RGB tables of every kind and amount, and Texture (neutral
+parametric curves, channel curves, Saturation, Vibrance, the colour mixer, black & white, looks' RGB tables of every kind and amount, and Texture (neutral
 colours, whose hue is undefined, left out of the colour stage's comparison): the per-pixel stage agrees to 2×10^-4 of the value,
 the presented texture to 1.3×10^-3 (half-float steps), at full size and in a
 region, at headrooms 4 and 40, sharpened and not.
@@ -255,6 +256,7 @@ HDR reference family):
 | Levels | RAWmakase's own (Camera Raw has none), after Contrast: as a point curve of its shape renders, as in SDR up to white and along its slope at white above it (none when the white point is below white). |
 | Parametric curve | After Levels, RGBTone on the same encoding, its regions and splits laid over black to four stops above white (16); values above 16 are left alone. |
 | Point curve | `color::hdr_curve`, after the parametric curve: the master curve, RGBTone on the look curve's encoding, as in SDR up to white; above it, along the curve's slope at its last point (a natural spline's own derivative there, before clamping). |
+| Channel curves | `color::hdr_curve::channel`, after the master curve: each channel's own curve on that channel of the look curve's encoding of ProPhoto RGB, by the master curve's rule, its output held at 16. An identity curve leaves its channel alone. |
 | Saturation, Vibrance, the colour mixer's Hue and Saturation | The SDR grids of `develop::color_mixer`, after Contrast, the tone curves and Levels, as in SDR, on unclipped linear values ([The colour stage](#the-colour-stage)): looked up at the colour's value up to 0.2 and at 0.2 above it; Vibrance's value change fades out from 0.5 to white. |
 | Look's RGB table | After the colour mixer, as in SDR (`RgbTable::apply_hdr`): in the table's primaries, each channel is overrange-encoded (0 to 16 times white onto 0 to 1) before the table's own encoding and decoded after it, and what it encodes beyond 1 skips the table and is added back to its output in that encoding. `.cube` looks, Lightroom's creative looks and fitted Camera Looks' tables alike. |
 | Black & White | The SDR mix's gray (`develop::black_white`) looked up as the colour mixer's, unclipped above white. |
@@ -293,8 +295,8 @@ Measurements and validation: [colour stage](records/hdr-stage1-results.md#colour
 
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
 something without a measured HDR rendering: Highlights, Whites above
-+50, a channel's point curve, Refine Saturation other than 100%, a point
-curve whose last point is left of white, Presence (Clarity, Dehaze), the
++50, Refine Saturation other than 100%, a point curve (the master's or a
+channel's) whose last point is left of white, Presence (Clarity, Dehaze), the
 colour mixer's Luminance, Point Color, Color Grading, Defringe, grain and vignette,
 masks, Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
 Highlights and Shadows: "Highlights, which the look sets, …") or split toning, DCP

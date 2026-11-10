@@ -166,8 +166,9 @@ const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 /// with HDR off, or with nothing but measured adjustments, passes.
 ///
 /// Measured: white balance, Exposure, Contrast, Shadows, Whites up to +50, Blacks, the HDR limit,
-/// the master point curve and the parametric curve, and Levels as a point curve of its
-/// shape ([`crate::color::hdr_curve`]), Texture (on the camera's samples, as in SDR),
+/// the master point curve, the channels' point curves and the parametric curve, and
+/// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
+/// camera's samples, as in SDR),
 /// camera profiles
 /// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks (their
 /// tables and curve, [`crate::camera_profiles::hdr_look`], at any Profile Amount, and
@@ -208,7 +209,7 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
 fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
     // The SDR rendition's sliders are not here: they never change the master (Camera
     // Raw 18.7's is bit-identical with each at ±50), so it renders with them set.
-    let unmeasured: [(&'static str, bool); 13] = [
+    let unmeasured: [(&'static str, bool); 12] = [
         // Camera Raw's positive Whites follows the photo's level, which twice the 99th
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
@@ -221,13 +222,9 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
         // white.
         (
             "A point curve that ends left of white",
-            r.curve.points.last().is_some_and(|p| p[0] < 1.),
-        ),
-        // Camera Raw renders a channel's curve above white by neither curve rule:
-        // a red curve that brightens takes red down to 0 by scene 12.
-        (
-            "A channel's point curve",
-            !r.effects.channels.iter().all(|c| c.is_identity()),
+            std::iter::once(&r.curve)
+                .chain(&r.effects.channels)
+                .any(|c| c.points.last().is_some_and(|p| p[0] < 1.)),
         ),
         (
             "Refine Saturation",
@@ -552,9 +549,11 @@ mod tests {
         assert!(check_recipe(&r).is_ok());
         r.curve.points = vec![[0.2, 0.2], [0.8, 0.8]];
         assert!(check_recipe(&r).is_err());
-        // A channel's own curve is refused, whatever its shape.
+        // A channel's own curve renders too.
         r.curve = Default::default();
         r.effects.channels[1].points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
+        assert!(check_recipe(&r).is_ok());
+        r.effects.channels[1].points = vec![[0., 0.], [0.8, 0.8]];
         assert!(check_recipe(&r).is_err());
     }
 

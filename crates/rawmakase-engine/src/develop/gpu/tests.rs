@@ -2025,6 +2025,11 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
     curves.curve.points = vec![[0., 0.04], [0.3, 0.26], [0.7, 0.78], [1., 0.95]];
     let mut levels = base.clone();
     (levels.black_point, levels.white_point, levels.midtone) = (0.04, 1., 1.15);
+    // Channel curves after the master curve: one that brightens red and one that
+    // darkens blue, whose end slope is steeper than the identity.
+    let mut channels = curves.clone();
+    channels.effects.channels[0].points = vec![[0., 0.], [0.5, 0.63], [1., 1.]];
+    channels.effects.channels[2].points = vec![[0., 0.], [0.5, 0.39], [1., 1.]];
     let mut together = curves.clone();
     together.contrast = 0.35;
     together.effects.parametric = parametric.effects.parametric;
@@ -2080,6 +2085,7 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         levels,
         curves,
         parametric,
+        channels,
         together,
     ]);
     // Looks, a table and a curve: one that lifts and ends at white (Lifted), one that
