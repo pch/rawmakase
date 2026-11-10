@@ -5,7 +5,7 @@
 //! and a program's session; this module decides when a program runs and what
 //! its requests mean to the editor:
 //!
-//! - [`Host`] owns every loaded extension: bundled ones (none yet), installed
+//! - [`Host`] owns every loaded extension: bundled ones (MCP), installed
 //!   ones and those loaded from a folder in developer mode, with what this
 //!   session knows of each (running, crashed, Failed). It is started only by
 //!   `Editor::new`; a test editor's is inert and reads nothing.
@@ -94,9 +94,11 @@ pub(in crate::app) const CRASHES: u32 = 3;
 /// The last errors kept per extension, for its page.
 const ERRORS: usize = 5;
 
-/// The bundled extensions' manifests, compiled in. None yet: MCP and MIDI
-/// join as they move out of the core.
-const BUNDLED: &[&str] = &[];
+/// The bundled extensions' manifests, compiled in; their programs are found
+/// beside the app's executable. MIDI joins when it moves out of the core.
+const BUNDLED: &[&str] = &[include_str!(
+    "../../../extensions/mcp/rawmakase-extension.toml"
+)];
 
 /// Where a loaded extension comes from.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -517,6 +519,21 @@ impl Host {
     pub(in crate::app) fn take_errors(&mut self) -> Vec<String> {
         std::mem::take(&mut self.errors)
     }
+    /// Whether `adapter`, as a control request names it
+    /// (`<extension>/<adapter>`), is a control adapter of an extension loaded
+    /// and enabled here. The control socket asks before running each request
+    /// that names one, and again before answering a `wait` it parked, so
+    /// disabling an extension refuses even an externally launched adapter's
+    /// requests already queued (D8).
+    pub(in crate::app) fn adapter_enabled(&self, adapter: &str) -> bool {
+        let Some((id, name)) = adapter.split_once('/') else {
+            return false;
+        };
+        self.get(id).is_some_and(|e| {
+            e.enabled() && e.manifest.control_adapters.iter().any(|a| a.id == name)
+        })
+    }
+
     /// Counts changes to [`Host::commands`].
     pub(in crate::app) fn revision(&self) -> u64 {
         self.revision

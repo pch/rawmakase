@@ -18,6 +18,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// This program's control adapter, as the app's bundled manifest
+/// (`rawmakase-extension.toml`) declares it. Every request names it, so the
+/// app refuses them while the extension is disabled.
+pub const ADAPTER: &str = "rawmakase.mcp/mcp";
+
 #[derive(clap::Args)]
 pub struct Cli {
     /// Data folder of the running app; defaults to RAWMAKASE_DATA_DIR or the platform default.
@@ -262,7 +267,7 @@ impl Server {
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             match Connection::read(&dir) {
-                Ok(connection) => task(connection),
+                Ok(connection) => task(connection.with_adapter(ADAPTER)),
                 Err(e) => error("app_unavailable", e),
             }
         })
@@ -589,6 +594,23 @@ mod tests {
             if let Some(target) = schema["properties"].get("target") {
                 assert_eq!(target["type"], "object", "{}: {target}", tool.name);
             }
+        }
+    }
+
+    /// The bundled manifest names this program, its adapter and its version,
+    /// which the app's version sets.
+    #[test]
+    fn the_manifest_declares_this_program_and_adapter() {
+        let manifest = include_str!("../rawmakase-extension.toml");
+        let (extension, adapter) = ADAPTER.split_once('/').unwrap();
+        for line in [
+            format!("id = \"{extension}\""),
+            format!("id = \"{adapter}\""),
+            format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+            format!("path = \"{}\"", env!("CARGO_PKG_NAME")),
+            "launch = \"external\"".to_string(),
+        ] {
+            assert!(manifest.lines().any(|l| l == line), "{line}");
         }
     }
 

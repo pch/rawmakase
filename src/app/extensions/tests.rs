@@ -1582,3 +1582,34 @@ fn the_run_button_applies_a_proposal_for_the_open_photo() {
     assert!((e.document.edit.recipe().exposure - 0.5).abs() < 1e-6);
     assert!(!e.preferences.open, "Run shows the photo it changes");
 }
+
+/// MCP ships with the app: listed, enabled until `extensions.json` says
+/// otherwise, at the app's version, and never uninstalled. Its program is
+/// started by MCP clients, never by the app. Disabled, its adapter is refused,
+/// in this session and the next.
+#[test]
+fn the_bundled_mcp_extension_is_listed_enabled_and_cannot_be_uninstalled() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = Host::start_for_tests(dir.path(), example(), Duration::from_secs(30));
+    let mcp = host.get("rawmakase.mcp").expect("listed");
+    assert_eq!(mcp.origin, super::Origin::Bundled);
+    assert!(mcp.enabled());
+    assert!(!mcp.manifest.runs_in_app());
+    assert_eq!(mcp.manifest.extension.version, *host.app_version());
+    assert!(host.adapter_enabled("rawmakase.mcp/mcp"));
+    for other in [
+        "rawmakase.mcp/midi",
+        "rawmakase.mcp",
+        "dev.rawmakase.example/mcp",
+        "",
+    ] {
+        assert!(!host.adapter_enabled(other), "{other}");
+    }
+    assert!(host.uninstall("rawmakase.mcp").is_err());
+    assert!(host.get("rawmakase.mcp").is_some());
+    host.set_enabled("rawmakase.mcp", false).unwrap();
+    assert!(!host.adapter_enabled("rawmakase.mcp/mcp"));
+    let next = Host::start_for_tests(dir.path(), example(), Duration::from_secs(30));
+    assert!(!next.get("rawmakase.mcp").unwrap().enabled());
+    assert!(!next.adapter_enabled("rawmakase.mcp/mcp"));
+}

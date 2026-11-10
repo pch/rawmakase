@@ -273,6 +273,7 @@ pub fn default_data_dir() -> PathBuf {
 pub struct Connection {
     port: u16,
     token: String,
+    adapter: Option<String>,
 }
 impl Connection {
     /// The app's endpoint, read from `control.json` in its data folder `dir`; an
@@ -291,12 +292,25 @@ impl Connection {
         Ok(Self {
             port: endpoint.port,
             token: endpoint.token,
+            adapter: None,
         })
+    }
+    /// Names the control adapter sending every request, as
+    /// `<extension>/<adapter>` (`rawmakase.mcp/mcp`). The app then refuses
+    /// them with `adapter_disabled` while that adapter's extension is
+    /// disabled. It identifies the sender cooperatively; the token still
+    /// decides who may control the app.
+    pub fn with_adapter(mut self, adapter: impl Into<String>) -> Self {
+        self.adapter = Some(adapter.into());
+        self
     }
     /// Sends a request and returns the app's state after it.
     pub fn request(&self, mut request: Value) -> Result<Value, String> {
         request["token"] = self.token.clone().into();
         request["protocol"] = PROTOCOL.into();
+        if let Some(adapter) = &self.adapter {
+            request["adapter"] = adapter.clone().into();
+        }
         static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let id = format!(
             "{}-{}",
