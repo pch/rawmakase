@@ -57,7 +57,8 @@ impl Library {
     /// with it, or else the next one shown.
     /// Compare's select and candidate, and which is active, for the keyboard
     /// shortcut pins.
-    #[cfg(test)]
+    // The pins don't run on Windows (`shell::workspace`).
+    #[cfg(all(test, not(target_os = "windows")))]
     pub(in crate::app) fn compared(&self) -> (Option<PhotoId>, Option<PhotoId>, &'static str) {
         (
             self.compare.select,

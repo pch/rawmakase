@@ -296,7 +296,8 @@ impl FileOps {
     /// open: keys go to it, not to the photos behind.
     /// The operation's state by name, with its verb where it has one, for the
     /// keyboard shortcut pins to tell Delete from Remove or Rename.
-    #[cfg(test)]
+    // The pins don't run on Windows (`shell::workspace`).
+    #[cfg(all(test, not(target_os = "windows")))]
     pub(in crate::app) fn state_name(&self) -> String {
         match &self.state {
             State::Idle => "Idle".into(),

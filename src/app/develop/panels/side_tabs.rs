@@ -119,7 +119,8 @@ impl Editor {
     /// the photo as last laid out, or asked for in a narrow window.
     /// Whether Develop's tab panel shows, peeking into a narrow window too, for
     /// the keyboard shortcut pins.
-    #[cfg(test)]
+    // The pins don't run on Windows (`shell::workspace`).
+    #[cfg(all(test, not(target_os = "windows")))]
     pub(in crate::app) fn develop_tabs_shown(&self) -> bool {
         self.develop_tabs_open()
     }
