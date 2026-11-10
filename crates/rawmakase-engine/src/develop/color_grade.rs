@@ -17,6 +17,12 @@ impl ColorGrade {
         let p = mul(crate::camera_profiles::RGB_TO_PRO, rgb);
         mul(crate::camera_profiles::PRO_TO_RGB, self.0.apply(p))
     }
+    /// `rgb` is an HDR master's linear display RGB (sRGB primaries, 1 = graphics
+    /// white, not negative): [`ChannelCurves::apply_hdr`].
+    pub(crate) fn apply_hdr(&self, rgb: [f32; 3]) -> [f32; 3] {
+        let p = mul(crate::camera_profiles::RGB_TO_PRO, rgb).map(|v| v.max(0.));
+        mul(crate::camera_profiles::PRO_TO_RGB, self.0.apply_hdr(p))
+    }
 }
 
 #[cfg(test)]

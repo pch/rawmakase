@@ -479,13 +479,15 @@ fn mixer_hdr(rgb: vec3<f32>, base: i32, fading: i32) -> vec3<f32> {
     return PRO_TO_RGB * (hsv_to_rgb(h2, v, s2) + (v - c));
 }
 // HdrFinish::finish's colour stage: the colour mixer (with Saturation's fade to the
-// gray source's luminance), then the black & white mix's gray, unclipped above white.
+// gray source's luminance), colour grading, then the black & white mix's gray,
+// unclipped above white.
 // Linear ProPhoto, not negative, in and out.
 fn hdr_colour_stage(pro: vec3<f32>) -> vec3<f32> {
     let grid = offset(P_MIXER);
     let gray = offset(P_GRAY_GRID);
     let table = offset(P_RGB) >= 0 && p(P_RGB + 5u) != 0.0;
-    if grid < 0 && gray < 0 && !table {
+    let graded = offset(P_GRADE) >= 0;
+    if grid < 0 && gray < 0 && !table && !graded {
         return pro;
     }
     var rgb = PRO_TO_RGB * pro;
@@ -504,6 +506,10 @@ fn hdr_colour_stage(pro: vec3<f32>) -> vec3<f32> {
     }
     if table {
         rgb = rgb_table_hdr(rgb);
+    }
+    // Colour grading follows the colour mixer and a look's RGB table, as in SDR.
+    if graded {
+        rgb = PRO_TO_RGB * grade_hdr(RGB_TO_PRO * rgb);
     }
     if gray >= 0 {
         let scaled = mixer_hdr(max(rgb, vec3(0.0)), gray, -1);
@@ -1356,6 +1362,34 @@ fn rgb_table_in_space(linear: vec3<f32>) -> vec3<f32> {
         out[k] = sign(out[k]) * rgb_decode(abs(out[k]), gamma);
     }
     return out;
+}
+// color_grade_curves::ChannelCurves::channel: channel `c` of linear ProPhoto RGB
+// through its gain curve.
+fn grade_channel(c: i32, v: f32) -> f32 {
+    let bins = u32(p(P_GRADE + 1u));
+    let base = offset(P_GRADE);
+    let f = powf(clamp(v, 0.0, 1.0), 1.0 / 2.2) * f32(bins - 1u);
+    let i = min(u32(f), bins - 2u);
+    let t = f - f32(i);
+    let g = table(base + i32(i) * 3 + c) * (1.0 - t) + table(base + i32(i + 1u) * 3 + c) * t;
+    return v * g;
+}
+// ChannelCurves::apply_hdr: each channel graded in `to_hdr_domain`, whose 1 is
+// HDR_GRADE_TOP; above it the gain at it. Linear ProPhoto, not negative, in and out.
+const HDR_GRADE_TOP: f32 = 16.0;
+fn grade_hdr_channel(c: i32, v: f32) -> f32 {
+    let k = (HDR_GRADE_TOP - 1.0) / HDR_GRADE_TOP;
+    let x = min(v, HDR_GRADE_TOP);
+    let u = clamp(grade_channel(c, x / (1.0 + x * k)), 0.0, 1.0);
+    let graded = u / (1.0 - u * k);
+    if v <= HDR_GRADE_TOP {
+        return graded;
+    }
+    return v * graded / HDR_GRADE_TOP;
+}
+fn grade_hdr(pro: vec3<f32>) -> vec3<f32> {
+    let q = max(pro, vec3(0.0));
+    return vec3(grade_hdr_channel(0, q.x), grade_hdr_channel(1, q.y), grade_hdr_channel(2, q.z));
 }
 // color_grade_curves::ChannelCurves: a gain curve per channel of linear ProPhoto RGB.
 fn grade(rgb: vec3<f32>) -> vec3<f32> {

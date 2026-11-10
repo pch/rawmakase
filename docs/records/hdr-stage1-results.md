@@ -775,6 +775,52 @@ Calibration and Shadows tint) and a Black & White edit, with HDR off and with HD
 (its SDR rendition), give 48 of 48 bit-identical renders. The render snapshots and
 the SDR photo gate were not run: they score these same SDR renders.
 
+### Color grading
+
+Measured with Camera Raw 18.7 on a synthetic probe through `probe_dng.py` (a linear
+profile, sensor white +4 stops): 49 grays from 2^−8 to 16 times white in quarter stops,
+and 12 hues at HSV saturations 0.3 and 0.6 from 0.125 to 8 times white. Each region's
+tint at hues 30 and 210 (saturation 50), Highlights at hue 40 and saturation 100, every
+region's Luminance at ±50 (Highlights at ±100 too), a blue Highlights tint at Blending
+100 and Balance ±50, a blue Shadows tint at Balance −50 and a split tone, in HDR at
+limit 8 and in SDR; six of them also at limits 2.3 and 4. Gains are each render's
+ProPhoto channels against the same probe's default render.
+
+- **Where the regions sit.** Below about a quarter of white the HDR gains are the SDR
+  ones (the default renders agree there). Above, they are not SDR's gain held at white:
+  Highlights' blue tint at saturation 50 is ×1.97 on blue at 2.8 times white (SDR's
+  largest, at half of white, ×1.21) and ×1.00 at 16; Global's blue tint and Luminance
+  +50 are a constant gain (×1.33, ×1.27) up to about 1.4 times white, fading to ×1.00
+  at 16; Highlights Luminance −50 keeps darkening, ×0.375 at 16.
+- **One domain explains them.** The SDR transfer of each channel, measured on the SDR
+  ramp, applied in u = x / (1 + b x) and mapped back, renders every setting's HDR ramp
+  to a mean 0.012 stop with b = 15/16 (16 times white at u = 1), and 0.010 with a
+  fitted b of 0.945; a fitted power n in x / (1 + (b x)^n)^(1/n) gives 0.009 (n = 0.96).
+  RAWmakase uses 15/16. The same rule applied to a shared scale of the pixel (its
+  largest channel or its luminance) leaves 7–10 times the colour error, so the domain
+  is per channel, as SDR's grading is.
+- **The limit doesn't move it.** At limits 4 and 8 every gain is the same to 0.01; at
+  2.3 they agree up to where the limit rolls off.
+- **Engine.** `ChannelCurves::apply_hdr` renders the probe's effect on luminance to a
+  median 0.000–0.008 stop on the grays (worst sample 0.285, Highlights Luminance −50 at
+  16 times white, where Camera Raw's ×0.375 is RAWmakase's ×0.31), and on the colour
+  patches above white to a median 0.000–0.106 stop (p95 ≤ 0.195). Colour above white:
+  mean ΔE_ITP 0.3–3.7 for Shadows, Midtones, Global and Luminance, 3.4–12.2 for the
+  Highlights tints (blue under Balance +50 or Blending 100 the worst, 12.1–12.2;
+  hue 40 at saturation 100, 8.8); the default render is 0.2. Camera Raw lifts the
+  lowest channel of a saturated colour under a strong tint above white (a cyan at
+  four times white: red 1.60 → 2.10 under a blue Highlights tint, which the
+  per-channel rule takes to 1.22). RAWmakase's SDR grading of the same patches is
+  within mean ΔE_ITP 0.2–1.8 of Camera Raw's SDR.
+
+Decision, 2026-11-10: Color Grading renders in the HDR master by this rule, after the
+colour mixer as in SDR, and on the GPU's HDR preview. The strong-tint colour error
+above white stays open; Camera Raw captures of photos with grading were paused when
+this was decided, so the photo validation is still to come ([Open](#open)).
+
+SDR renders do not change: `ChannelCurves::apply` and the GPU's SDR `grade` are the
+same code as before, and `apply_hdr` is reached only from the HDR master's finish.
+
 ### Decisions
 
 - **The SDR rendition is the edit with HDR off.** Camera Raw's own is a local tone
@@ -858,7 +904,10 @@ the SDR photo gate were not run: they score these same SDR renders.
 
 - Whites above +50 and Highlights in HDR (a rule trained on HDR targets:
   [Highlights and Shadows](#highlights-and-shadows)); the colour mixer's Luminance
-  ([Colour stage](#colour-stage)), Point Color, Color Grading, Defringe.
+  ([Colour stage](#colour-stage)), Point Color, Defringe.
+- Color Grading on photos (a split tone, a Highlights tint with Luminance, Global
+  with Midtones Luminance, on the twelve validation and holdout photos), and strong
+  Highlights tints of saturated colours above white ([Color grading](#color-grading)).
 - Refine Saturation in HDR ([Tone curves](#tone-curves)).
 - Clarity and Dehaze in HDR, after their SDR parity ([Presence](#presence)).
 - Positive Shadows lifts small speculars in dark surroundings above Camera Raw's peak
@@ -909,8 +958,8 @@ the SDR photo gate were not run: they score these same SDR renders.
   colour mixer's Hue and Saturation, Calibration and Black & White
   ([Colour stage](#colour-stage)); Whites up to +50 ([Whites](#whites)); Shadows
   ([Highlights and Shadows](#highlights-and-shadows)); looks with RGB tables, B&W,
-  their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks)).
-  Open: Whites above +50, Highlights, the colour
+  their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
+  Color Grading ([Color grading](#color-grading)). Open: Whites above +50, Highlights, the colour
   mixer's Luminance, looks that set Clarity or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
   with them), 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
