@@ -44,6 +44,11 @@ pub enum ProgramRequest {
     /// `rawmakase control capabilities` prints them.
     #[serde(rename = "read.capabilities")]
     ReadCapabilities(Empty),
+    /// Whether the app runs an action written in the control layer's
+    /// notation (an action name, `cmd+shift+z`, `hold:shift`), so a program
+    /// can check one a user typed. Answered with [`ActionSupport`].
+    #[serde(rename = "read.action")]
+    ReadAction(ReadAction),
     /// The Library's selection. Answered with [`Snapshot`].
     #[serde(rename = "read.selection")]
     ReadSelection(Empty),
@@ -138,6 +143,7 @@ impl ProgramRequest {
     /// Every method name.
     pub const NAMES: &[&str] = &[
         "read.capabilities",
+        "read.action",
         "read.selection",
         "read.open-photo",
         "read.photos",
@@ -320,6 +326,21 @@ pub struct PhotoOpened {
     pub photo: Option<i64>,
 }
 
+/// `read.action`'s parameters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadAction {
+    /// The action, as an [`Operation::Action`] would carry it.
+    pub spec: String,
+}
+
+/// What `read.action` answers.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActionSupport {
+    /// Whether a device's button may be bound to it: an action the app runs,
+    /// a shortcut that stands for one, or a held modifier.
+    pub supported: bool,
+}
+
 /// `read.photos`' parameters.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReadPhotos {
@@ -462,7 +483,7 @@ pub enum Operation {
         detent: u32,
     },
     /// An action in the control layer's notation (for example
-    /// `history.undo`).
+    /// `undo`, `cmd+shift+z`).
     Action {
         /// The action.
         spec: String,
