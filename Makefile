@@ -35,6 +35,8 @@ CHECK_VENV ?= target/check-venv
 # The tests read an empty data folder, not this machine's: installed camera
 # profiles change what Develop resolves, and saved export settings would send
 # Export with Previous somewhere real.
+# rawmakase-mcp is built before the app's tests: they run `rawmakase mcp`,
+# which runs the program found beside it in target/debug.
 TEST_DATA = $(CURDIR)/target/test-data
 TEST_ENV = RAWMAKASE_DATA_DIR="$(TEST_DATA)" XDG_DATA_HOME="$(TEST_DATA)"
 
@@ -44,6 +46,7 @@ check: check-python check-tools check-msrv
 	scripts/crate-closures.sh
 	cargo fmt --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
+	cargo build --locked -p rawmakase-mcp
 	$(TEST_ENV) cargo test --locked -p rawmakase -p rawmakase-decode -p rawmakase-export
 	cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -- -D warnings
 	$(TEST_ENV) cargo test --locked -p rawmakase-model --all-features

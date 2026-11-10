@@ -3727,7 +3727,6 @@ name = "rawmakase"
 version = "0.4.12"
 dependencies = [
  "anyhow",
- "base64 0.23.1",
  "block2 0.6.2",
  "bzip2-rs",
  "clap",
@@ -3761,7 +3760,6 @@ dependencies = [
  "rawmakase-fs",
  "rawmakase-inference",
  "rawmakase-interop",
- "rawmakase-mcp",
  "rawmakase-model",
  "rawmakase-model-install",
  "rawmakase-protocol",
@@ -3993,6 +3991,7 @@ dependencies = [
  "anyhow",
  "base64 0.23.1",
  "clap",
+ "image",
  "rawmakase-ctl",
  "rawmakase-protocol",
  "rmcp",

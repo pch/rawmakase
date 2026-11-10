@@ -96,6 +96,9 @@ jobs:
           cargo test --locked -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
           cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # The app's tests run `rawmakase mcp`, which runs this program from
+      # beside it in target/debug.
+      - run: cargo build --locked -p rawmakase-mcp
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
       # exiftool reads exported metadata back as an independent reader; Arch
       # installs it in vendor_perl, outside PATH.
@@ -127,8 +130,12 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
+      # The app's tests run `rawmakase mcp`, which runs this program from
+      # beside it in target/debug.
       - name: Test
-        run: cargo test --locked --workspace
+        run: |
+          cargo build --locked -p rawmakase-mcp
+          cargo test --locked --workspace
 
   check-windows:
     name: Test on Windows
@@ -168,8 +175,12 @@ jobs:
           "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
           "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
+      # The app's tests run `rawmakase mcp`, which runs rawmakase-mcp from
+      # beside it in target/debug.
       - if: steps.source.outputs.windows == 'true'
-        run: cargo test --locked --workspace
+        run: |
+          cargo build --locked -p rawmakase-mcp
+          cargo test --locked --workspace
 
   # Without this job the macOS-only code is compiled for the first time by
   # release.yml, after the release commit is already on main, so a macOS-only
@@ -193,7 +204,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
-      - run: cargo test --locked --workspace
+      # The app's tests run `rawmakase mcp`, which runs rawmakase-mcp from
+      # beside it in target/debug.
+      - run: |
+          cargo build --locked -p rawmakase-mcp
+          cargo test --locked --workspace
 
   package:
     name: Build, install and run Arch package

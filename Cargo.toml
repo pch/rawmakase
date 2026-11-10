@@ -65,7 +65,8 @@ rawmakase-catalog = { path = "crates/rawmakase-catalog", version = "0.1.0" }
 rawmakase-decode = { path = "crates/rawmakase-decode", version = "0.1.0" }
 rawmakase-engine = { path = "crates/rawmakase-engine", version = "0.1.0" }
 rawmakase-export = { path = "crates/rawmakase-export", version = "0.1.0" }
-# Installed extensions, for `rawmakase extensions`.
+# Installed extensions, for `rawmakase extensions`, and the bundled MCP
+# program `rawmakase mcp` runs.
 rawmakase-extensions = { path = "crates/rawmakase-extensions", version = "0.1.0" }
 rawmakase-fs = { path = "crates/rawmakase-fs", version = "0.1.0" }
 rawmakase-inference = { path = "crates/rawmakase-inference", version = "0.1.0" }
@@ -76,8 +77,6 @@ rawmakase-protocol = { path = "crates/rawmakase-protocol", version = "0.1.0" }
 # The optional remote selection worker's client, and the worker binary itself.
 rawmakase-remote = { path = "crates/rawmakase-remote", version = "0.1.0" }
 rawmakase-ctl = { path = "tools/rawmakase-ctl", version = "0.1.0" }
-# The MCP server behind `rawmakase mcp`.
-rawmakase-mcp = { path = "extensions/mcp", version = "0.4.12" }
 # Verifies a downloaded or imported selection model against its pinned digest.
 sha2.workspace = true
 getrandom.workspace = true
@@ -181,8 +180,6 @@ rawmakase-example = { path = "extensions/example", version = "0.1.0" }
 # Tests set up and inspect catalog files directly; the app itself reaches
 # the catalog's database only through rawmakase-catalog.
 rusqlite = { version = "0.41.0", features = ["bundled"] }
-# The MCP tests read the preview images the server returns.
-base64.workspace = true
 # The sync tests write a compressed catalog edit; the private RAW fixture
 # test reads the ICC profile tag of an exported TIFF.
 flate2.workspace = true
