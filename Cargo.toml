@@ -191,16 +191,16 @@ workspace = true
 # winit forks"), among them file drops on Wayland. Move egui and winit
 # together, to the revisions that guide lists.
 [patch.crates-io]
-ecolor = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
-eframe = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
-egui = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
-egui-wgpu = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
-egui-winit = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
-egui_extras = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
-egui_glow = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
-emath = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
-epaint = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
-epaint_default_fonts = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
+ecolor = { git = "https://github.com/pch/egui", rev = "e1e5285e986fc2db06ee097445c52917634dad41" }
+eframe = { git = "https://github.com/pch/egui", rev = "e1e5285e986fc2db06ee097445c52917634dad41" }
+egui = { git = "https://github.com/pch/egui", rev = "e1e5285e986fc2db06ee097445c52917634dad41" }
+egui-wgpu = { git = "https://github.com/pch/egui", rev = "e1e5285e986fc2db06ee097445c52917634dad41" }
+egui-winit = { git = "https://github.com/pch/egui", rev = "e1e5285e986fc2db06ee097445c52917634dad41" }
+egui_extras = { git = "https://github.com/pch/egui", rev = "e1e5285e986fc2db06ee097445c52917634dad41" }
+egui_glow = { git = "https://github.com/pch/egui", rev = "e1e5285e986fc2db06ee097445c52917634dad41" }
+emath = { git = "https://github.com/pch/egui", rev = "e1e5285e986fc2db06ee097445c52917634dad41" }
+epaint = { git = "https://github.com/pch/egui", rev = "e1e5285e986fc2db06ee097445c52917634dad41" }
+epaint_default_fonts = { git = "https://github.com/pch/egui", rev = "e1e5285e986fc2db06ee097445c52917634dad41" }
 winit = { git = "https://github.com/crmne/winit", rev = "ed7caa9023f10b397f5b6ec8284a840cbd8a6f65" }
 
 [profile.release]
