@@ -27,11 +27,12 @@ flowchart TD
     fs[rawmakase-fs]
     protocol[rawmakase-protocol]
     ctl[rawmakase-ctl]
+    mcp[rawmakase-mcp]
     remote[rawmakase-remote]
     inference[rawmakase-inference]
 
     app --> export & decode & catalog & engine & interop & model
-    app --> ctl & remote & inference & fs
+    app --> ctl & mcp & remote & inference & fs
     export --> decode & engine & interop
     decode --> engine & raw
     catalog --> interop & fs
@@ -40,6 +41,7 @@ flowchart TD
     model --> tiff & protocol
     raw --> tiff & cancel
     ctl --> protocol
+    mcp --> ctl
     remote --> inference
 ```
 
@@ -62,6 +64,7 @@ on it directly.)
 | `rawmakase-remote` | The optional worker binary that runs the same models on another computer, and the app's client for it, over a bounded TCP protocol | Everything but inference |
 | `rawmakase-protocol` | What the app and its control clients agree on: protocol version, `control.json` endpoint, data folder | Everything |
 | `rawmakase-ctl` (`tools/`) | The control client, used by `rawmakase control`, `rawmakase mcp` and the standalone `rawmakase-ctl` | The app |
+| `rawmakase-mcp` (`extensions/mcp`) | The MCP server, a client of the control protocol: the library behind `rawmakase mcp` and the standalone `rawmakase-mcp` | Every workspace crate but `rawmakase-protocol` and `rawmakase-ctl` |
 
 No value, catalog or rendering crate can reach `rawmakase-inference`, so saved masks
 render without any inference installed and a photo with AI Denoise renders from a
@@ -636,11 +639,13 @@ The workspace's `crates/rawmakase-protocol` holds what the app and its clients
 agree on: the protocol version, the `control.json` endpoint and the
 data-directory policy. `tools/rawmakase-ctl` is the client library and the
 standalone binary; the built-in `rawmakase control` subcommand and the MCP
-server depend on it rather than including its source. Neither crate depends on
-the app, so the client builds without GUI, GPU or native libraries. The CLI
+server depend on it rather than including its source. None of these crates
+depends on the app, so the client builds without GUI, GPU or native libraries. The CLI
 performs transport and polling only, without creating an Editor or GUI context.
 
-`rawmakase mcp` is a stdio adapter built with the official Rust MCP SDK. It shares
+`rawmakase mcp` is a stdio adapter built with the official Rust MCP SDK. Its
+server lives in `extensions/mcp` (the `rawmakase-mcp` crate), which also builds a
+standalone `rawmakase-mcp` binary taking the same arguments. It shares
 connection discovery and request/reply validation with the command-line client,
 and sends the same guarded commands through the local socket. It owns tool
 schemas and temporary preview images, but no recipe state or editing logic.

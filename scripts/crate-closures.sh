@@ -78,6 +78,10 @@ check rawmakase-inference "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase
 # and the worker know no catalog, renderer, GUI or native library, and only the
 # app composes the client.
 check rawmakase-remote "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-interop|rawmakase-decode|rawmakase-protocol|wgpu.*|naga|$gui|$native"
+# The MCP server is a client of the control protocol alone: no workspace crate
+# but the protocol and the control client, and no GPU, GUI, native library or
+# inference.
+check rawmakase-mcp "rawmakase|rawmakase-cancel|rawmakase-fs|rawmakase-tiff|rawmakase-model|rawmakase-interop|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-decode|rawmakase-remote|wgpu.*|naga|$gui|$native|$inference"
 # RAWmakase's own RAW decoders sit on the TIFF reader and the cancellation token alone: no workspace crate
 # above them, no GPU, GUI or inference, and nothing built from C (no build
 # script crates).
@@ -108,14 +112,14 @@ if [ -n "$linking" ]; then
 fi
 # The app and export reach the decoders only through rawmakase-decode's raw
 # adapter: no direct dependency and no rawmakase_raw path anywhere else.
-for manifest in Cargo.toml crates/*/Cargo.toml tools/*/Cargo.toml; do
+for manifest in Cargo.toml crates/*/Cargo.toml tools/*/Cargo.toml extensions/*/Cargo.toml; do
     case "$manifest" in crates/rawmakase-decode/*|crates/rawmakase-raw/*) continue ;; esac
     if grep -q '^rawmakase-raw' "$manifest"; then
         echo "$manifest must not depend on rawmakase-raw (only rawmakase-decode's raw adapter uses it)" >&2
         status=1
     fi
 done
-paths=$(grep -rln 'rawmakase_raw::' --include='*.rs' src crates tools examples tests \
+paths=$(grep -rln 'rawmakase_raw::' --include='*.rs' src crates tools extensions examples tests \
     | grep -v -e '^crates/rawmakase-decode/src/raw/' -e '^crates/rawmakase-raw/' || true)
 if [ -n "$paths" ]; then
     echo "rawmakase_raw is used outside rawmakase-decode's raw adapter:" >&2

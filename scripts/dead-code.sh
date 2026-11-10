@@ -17,7 +17,7 @@ root=$(pwd)
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 
-rsync -a --exclude target Cargo.toml Cargo.lock build.rs src data assets crates tools "$scratch"/
+rsync -a --exclude target Cargo.toml Cargo.lock build.rs src data assets crates tools extensions "$scratch"/
 
 # The library's module declarations and crate re-exports, private, followed by
 # the binary with its `rawmakase::` paths rewritten to `crate::`. Imports of a module itself

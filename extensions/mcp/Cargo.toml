@@ -1,0 +1,24 @@
+[package]
+name = "rawmakase-mcp"
+# The MCP server reports this version to its clients, so it follows the app's.
+version = "0.4.12"
+edition.workspace = true
+rust-version.workspace = true
+description = "Editing tools for a running RAWmakase, served over MCP stdio"
+license.workspace = true
+
+[dependencies]
+rawmakase-protocol = { path = "../../crates/rawmakase-protocol", version = "0.1.0" }
+rawmakase-ctl = { path = "../../tools/rawmakase-ctl", version = "0.1.0" }
+# Local MCP adapter; no HTTP server or remote authorization stack.
+rmcp = { version = "3.5", default-features = false, features = ["server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
+anyhow.workspace = true
+base64.workspace = true
+clap.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

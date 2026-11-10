@@ -2,11 +2,10 @@
 // Command output still attaches to the parent console when there is one.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 use anyhow::Result;
-use rawmakase_cancel::Cancel;
-mod mcp;
 use clap::{Parser, Subcommand};
 use rawmakase::model::recipe::Recipe;
 use rawmakase::{camera_data, develop, export_settings::ExportOptions, raw};
+use rawmakase_cancel::Cancel;
 use std::{path::PathBuf, time::Instant};
 #[derive(Parser)]
 #[command(version, about = "A personal RAW photo editor")]
@@ -23,7 +22,7 @@ enum Command {
     #[command(version = env!("CARGO_PKG_VERSION"))]
     Control(rawmakase_ctl::Cli),
     /// Serve editing tools over MCP stdio, connected to the running desktop app.
-    Mcp(mcp::Cli),
+    Mcp(rawmakase_mcp::Cli),
     /// Import Lightroom DCP and look XMP profiles and .cube LUTs (as looks), or the
     /// folders holding them, into RAWmakase's profile library.
     ImportProfiles {
@@ -379,7 +378,7 @@ fn main() -> Result<()> {
         .ok();
     let a = Args::parse_from(&launch.arguments);
     match a.command {
-        Some(Command::Mcp(cli)) => mcp::run(cli)?,
+        Some(Command::Mcp(cli)) => rawmakase_mcp::run(cli)?,
         Some(Command::Control(cli)) => rawmakase_ctl::run(cli).map_err(anyhow::Error::msg)?,
         Some(Command::ImportLensProfiles { files }) => {
             // One unusable file (Adobe ships a few) leaves the rest importing.
