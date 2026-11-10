@@ -468,7 +468,8 @@ fn mixer_hdr(rgb: vec3<f32>, base: i32, fading: i32) -> vec3<f32> {
 fn hdr_colour_stage(pro: vec3<f32>) -> vec3<f32> {
     let grid = offset(P_MIXER);
     let gray = offset(P_GRAY_GRID);
-    if grid < 0 && gray < 0 {
+    let table = offset(P_RGB) >= 0 && p(P_RGB + 5u) != 0.0;
+    if grid < 0 && gray < 0 && !table {
         return pro;
     }
     var rgb = PRO_TO_RGB * pro;
@@ -484,6 +485,9 @@ fn hdr_colour_stage(pro: vec3<f32>) -> vec3<f32> {
             mixed = mixed + fade * (y - mixed);
         }
         rgb = mixed;
+    }
+    if table {
+        rgb = rgb_table_hdr(rgb);
     }
     if gray >= 0 {
         let scaled = mixer_hdr(max(rgb, vec3(0.0)), gray, -1);
@@ -1291,11 +1295,30 @@ fn rgb_lookup_1d(base: i32, n: u32, q: vec3<f32>) -> vec3<f32> {
     return out;
 }
 fn rgb_table(rgb: vec3<f32>) -> vec3<f32> {
+    return matrix(P_RGB_BACK) * rgb_table_in_space(matrix(P_RGB_INTO) * rgb);
+}
+// RgbTable::apply_hdr: each channel overrange-encoded for the table, what encodes
+// above 1 added back to its output in that encoding.
+fn rgb_table_hdr(rgb: vec3<f32>) -> vec3<f32> {
+    let linear = matrix(P_RGB_INTO) * rgb;
+    var e: vec3<f32>;
+    for (var k = 0; k < 3; k++) {
+        e[k] = sign(linear[k]) * overrange_encode(abs(linear[k]));
+    }
+    let over = max(e - vec3(1.0), vec3(0.0));
+    let out = rgb_table_in_space(e - over) + over;
+    var back: vec3<f32>;
+    for (var k = 0; k < 3; k++) {
+        back[k] = sign(out[k]) * overrange_decode(abs(out[k]));
+    }
+    return matrix(P_RGB_BACK) * back;
+}
+// The table on linear values in its own primaries (`RgbTable::apply_in_space`).
+fn rgb_table_in_space(linear: vec3<f32>) -> vec3<f32> {
     let base = offset(P_RGB);
     let n = u32(p(P_RGB + 2u));
     let gamma = u32(p(P_RGB + 3u));
     let amount = p(P_RGB + 5u);
-    let linear = matrix(P_RGB_INTO) * rgb;
     var full: vec3<f32>;
     for (var k = 0; k < 3; k++) {
         full[k] = sign(linear[k]) * rgb_encode(abs(linear[k]), gamma);
@@ -1316,7 +1339,7 @@ fn rgb_table(rgb: vec3<f32>) -> vec3<f32> {
     for (var k = 0; k < 3; k++) {
         out[k] = sign(out[k]) * rgb_decode(abs(out[k]), gamma);
     }
-    return matrix(P_RGB_BACK) * out;
+    return out;
 }
 // color_grade_curves::ChannelCurves: a gain curve per channel of linear ProPhoto RGB.
 fn grade(rgb: vec3<f32>) -> vec3<f32> {

@@ -167,7 +167,8 @@ and the tone curves (`HdrCurves`: Levels, the parametric curve and the master po
 curve on `hdr_look`'s encoding, from the SDR port's own samples of the curves), and
 the colour stage (the colour mixer's grids looked up as `color_mixer::Lookup::Hdr`
 looks them up, with Vibrance's fading value factors and Saturation's fade to gray,
-then black & white's gray, unclipped). It writes linear ProPhoto unclipped; `present_hdr.wgsl` sharpens it on
+then a look's RGB table on overrange-encoded values (`RgbTable::apply_hdr`) and
+black & white's gray, unclipped). It writes linear ProPhoto unclipped; `present_hdr.wgsl` sharpens it on
 sRGB-curve-encoded values with ProPhoto luminance, applies the limit, and encodes
 extended sRGB held to the display's headroom (`color::hdr_output::extended_srgb`,
 which the CPU preview uses too). The HDR tone curve is sampled every 1/32 stop over
@@ -183,7 +184,7 @@ An HDR file's light, AI Denoise, and anything the SDR port leaves to the CPU
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
 "GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, looks whose
 curves end at white and below it, positive and negative Contrast, Levels, point and
-parametric curves, Saturation, Vibrance, the colour mixer, black & white and Texture (neutral
+parametric curves, Saturation, Vibrance, the colour mixer, black & white, looks' RGB tables of every kind and amount, and Texture (neutral
 colours, whose hue is undefined, left out of the colour stage's comparison): the per-pixel stage agrees to 2×10^-4 of the value,
 the presented texture to 1.3×10^-3 (half-float steps), at full size and in a
 region, at headrooms 4 and 40, sharpened and not.
@@ -238,12 +239,15 @@ HDR reference family):
 | Profile look table | An HDR profile's 3D table on overrange-encoded values, as the DNG SDK applies it; an ordinary profile's keeps the values above white it scales. |
 | Profile tone curve | `camera_profiles::hdr_tone`: an HDR profile's curve by the DNG SDK's overrange rule; an ordinary curve by the measured extension (ACR3's measured HDR curve, and a fitted deviation for other curves); a curve that never brightens as the identity. RGBTone. |
 | Look table | A look's HSV table (Adobe Color's and the other Adobe Raw looks', RAWmakase Color's) after the profile's, on overrange-encoded values, as the DNG SDK applies an HDR profile's, unclipped. |
-| Look curve | `camera_profiles::hdr_look`, after the profile's curve: the look's curve in an encoding that is sRGB's up to graphics white and logarithmic above. A curve that ends at white follows itself up to its largest lift, then runs parallel to the identity at that lift, at most 16 (so a curve that never lifts renders as the identity); one that ends below white continues along its slope there. RGBTone. |
+| Look curve | `camera_profiles::hdr_look`, after the profile's curve: the look's curve in an encoding that is sRGB's up to graphics white and logarithmic above. A curve that ends at white follows itself up to its largest lift, then runs parallel to the identity at that lift, at most 16 (so a curve that never lifts renders as the identity); one that ends below white continues along its slope there. A look whose curve is the identity (a `.cube` look's) applies none, so its light above 16 is not held there. RGBTone. |
+| Look settings | A look's own sliders and settings (Lightroom's B&W and creative looks carry Contrast, Blacks, Exposure, Saturation, colour mixer and parametric-curve settings) are added to the user's, as in SDR (`Recipe::with_profile_adjustments`), and render as those sliders do; one whose rendering isn't measured refuses the master, naming the look. A B&W look renders the black & white mix. |
+| Profile Amount | As in SDR, the look's table, RGB table, curve and settings at that amount (`Enhanced::at_amount`), then rendered by the rules here. |
 | Contrast | `develop::basic_tone::HdrContrast`, after the look, from the SDR Contrast curve at the photo's pivot (measured on the SDR rendering), in the look curve's encoding. Positive Contrast follows its curve up to its largest lift, then runs parallel to the identity at that lift; negative Contrast is its curve stretched in stops, its fixed point 1.671 times higher and white at 16. Above 16 positive Contrast adds a constant and negative continues along its slope. RGBTone. |
 | Levels | RAWmakase's own (Camera Raw has none), after Contrast: as a point curve of its shape renders, as in SDR up to white and along its slope at white above it (none when the white point is below white). |
 | Parametric curve | After Levels, RGBTone on the same encoding, its regions and splits laid over black to four stops above white (16); values above 16 are left alone. |
 | Point curve | `color::hdr_curve`, after the parametric curve: the master curve, RGBTone on the look curve's encoding, as in SDR up to white; above it, along the curve's slope at its last point (a natural spline's own derivative there, before clamping). |
 | Saturation, Vibrance, the colour mixer's Hue and Saturation | The SDR grids of `develop::color_mixer`, after Contrast, the tone curves and Levels, as in SDR, on unclipped linear values ([The colour stage](#the-colour-stage)): looked up at the colour's value up to 0.2 and at 0.2 above it; Vibrance's value change fades out from 0.5 to white. |
+| Look's RGB table | After the colour mixer, as in SDR (`RgbTable::apply_hdr`): in the table's primaries, each channel is overrange-encoded (0 to 16 times white onto 0 to 1) before the table's own encoding and decoded after it, and what it encodes beyond 1 skips the table and is added back to its output in that encoding. `.cube` looks, Lightroom's creative looks and fitted Camera Looks' tables alike. |
 | Black & White | The SDR mix's gray (`develop::black_white`) looked up as the colour mixer's, unclipped above white. |
 | Calibration | As in SDR: a matrix on scene colour before Exposure, and Shadows tint, which only reaches values below white. |
 | Shadows | The SDR local tone operator (`develop::local_tone`) on scene values, unclipped: its gain at a pixel's base level as in SDR, before S3. |
@@ -284,11 +288,9 @@ something without a measured HDR rendering: Highlights, Whites above
 curve whose last point is left of white, Presence (Clarity, Dehaze), the
 colour mixer's Luminance, Point Color, Color Grading, Defringe, grain and vignette,
 masks, Red Eye, the SDR rendition's
-sliders, looks other than a table and a curve at 100% (looks with an RGB table, such
-as `.cube` looks and Lightroom's creative looks; looks with their own sliders or
-settings, such as Adobe Vivid and Adobe Landscape; Black & White looks; fitted
-Camera Looks; any Profile Amount but 100%), DCP tables encoded in sRGB, and
-ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
+sliders, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
+Highlights and Shadows: "Highlights, which the look sets, …") or split toning, DCP
+tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
 asked for.
 

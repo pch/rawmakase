@@ -351,10 +351,44 @@ curve, HDR limits 2, 4 and 8) and on colour patches (12 hues, saturations 0.3 to
   below 0.5 by a median of 0.02–0.24 stop, and RAWmakase's departs by the same
   amount, to 0.004 stop.
 
-Refused until measured: looks with an RGB table (`.cube` looks, Lightroom's
-creative looks), looks with their own sliders or settings (Adobe Vivid and Adobe
-Landscape carry Clarity, Highlights and Shadows), Black & White looks, fitted Camera
-Looks (no Camera Raw counterpart) and Profile Amounts other than 100%.
+**RGB tables, Profile Amount, B&W and a look's own settings** (2026-11-10). Gray ramps
+(sensor white +4, a linear and the ACR3 profile curve, HDR limit 8, to 48 times white)
+and colour patches through the synthetic looks of `tests/corpus/looks`: RGB tables in
+Adobe RGB (gamma 2.2, 3D and 1D), linear ProPhoto, sRGB (Clip and Extend), at amounts
+0.5 to 2, and `.cube` looks (identity, creative, a 1D curve); Profile Amount 50%, 150%
+and 200%; a B&W look; and looks that carry Contrast and Blacks, Exposure or a
+parametric curve beside the same values set as sliders.
+
+- **RGB table.** Camera Raw applies it on overrange-encoded values (DNG 1.7's
+  encoding, 16 times white at 1): each channel in the table's primaries is encoded,
+  then put through the table's own encoding, looked up, and decoded back. An identity
+  table renders every value unchanged up to 48 times white. What a channel encodes
+  beyond 1 is added back to the table's output in the overrange encoding: on the 1D
+  table that rule gives 0.0009 stop median above 16 (adding it in the table's own
+  encoding gives 0.036, adding nothing 1.1). Extend tables render as Clip ones there.
+  RAWmakase's renders of all ten RGB looks score 0.0009–0.0023 stop median above
+  white (p95 at most 0.046, the Adobe RGB 3D table on the ACR3 curve; the 1D table's
+  0.22 p95 is in the shadows, where its SDR render misses as much). On the colour
+  patches the Adobe RGB and sRGB tables score as the patches do without a look
+  (median ΔE_ITP 0.3, the same saturation-0.9 outliers).
+- **A look's curve that is the identity** (every `.cube` look's) applies no curve:
+  Camera Raw does not hold such a look at 16, as the curve rule above has it. That was
+  measured with `.cube` looks; an HSV-table look with an identity curve follows the
+  same rule, unmeasured above 16 times white.
+- **Profile Amount** renders as in SDR, the table, curve and settings at that amount
+  then rendered by the HDR rules: 0.004–0.011 stop median above white at 50%, 150% and
+  200% (p95 at most 0.042).
+- **B&W look** (an HSV table, an S curve and Contrast +20, black and white): 0.012
+  stop median above white, p95 0.093.
+- **A look's own settings** render exactly as the same sliders: the look and the
+  sliders score the same against Camera Raw (Contrast +40 with Blacks −20: 0.005 median;
+  Exposure +0.5: 0.002; the parametric curve: 0.011), so they are added to the user's
+  and checked as those sliders are.
+
+Still refused: a look that sets a slider whose HDR rendering isn't measured (Adobe
+Vivid and Adobe Landscape set Clarity, Highlights and Shadows), and a look's split
+toning. These looks were measured on synthetic ramps and patches; their check on
+photos is [Open](#open).
 
 ### HDR files
 
@@ -770,6 +804,16 @@ the SDR photo gate were not run: they score these same SDR renders.
 - **The histogram's drag zones stay fifths of its width** in HDR, as they edit the
   same sliders.
 
+- **Fitted Camera Looks render in HDR by the rules of their parts** (2026-11-10). A
+  fitted look is an HSV table and a curve over RAWmakase Standard or a fitted matrix
+  with the ACR3 curve, the family measured above; it has no Camera Raw counterpart to
+  measure, and the camera's own JPEG it is fitted to has no HDR rendering, so the
+  measured rules for each part are the reference.
+- **A look's settings are checked as the user's sliders.** The master's recipe adds
+  them to the user's (`Recipe::with_profile_adjustments`), so whatever the same slider
+  renders, the look's renders, and a refusal names the look ("Highlights, which the
+  look sets").
+
 ## Open
 
 - Whites above +50 and Highlights in HDR; the colour mixer's Luminance
@@ -780,8 +824,11 @@ the SDR photo gate were not run: they score these same SDR renders.
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
   and its sliders.
-- Looks with an RGB table, their own sliders, B&W, Profile Amount and Camera Looks in
-  HDR (looks of a table and a curve render: [Looks](#looks)).
+- Looks on photos: RGB-table, `.cube`, Profile Amount and B&W looks were measured on
+  synthetic ramps and patches ([Looks](#looks)); their check on the six validation
+  photos, and the remaining colour patches (`.cube`, B&W and Amount looks), wait for
+  Camera Raw captures. Looks that set Clarity or Highlights, and split toning, stay
+  refused.
 - Saturated colours: with no look, the colour patches at saturation 0.9 differ from
   Camera Raw by a median ΔE_ITP of 24 at every intensity, below white too, while
   those at 0.3 and 0.6 differ by 0.2; not HDR's.
@@ -820,9 +867,10 @@ the SDR photo gate were not run: they score these same SDR renders.
   parametric curve and Levels ([Tone curves](#tone-curves)); Texture ([Presence](#presence)); Saturation, Vibrance, the
   colour mixer's Hue and Saturation, Calibration and Black & White
   ([Colour stage](#colour-stage)); Whites up to +50 ([Whites](#whites)); Shadows
-  ([Highlights and Shadows](#highlights-and-shadows)). Open: Whites above
-  +50, Highlights, the colour
-  mixer's Luminance, the other looks, channel curves, the SDR rendition sliders, 52552 grouping (library only,
+  ([Highlights and Shadows](#highlights-and-shadows)); looks with RGB tables, B&W,
+  their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks)).
+  Open: Whites above +50, Highlights, the colour
+  mixer's Luminance, looks that set Clarity or Highlights, channel curves, the SDR rendition sliders, 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
   P3, Rec. 709; CICP-tagged ICC; #908), checked against Camera Raw's PQ TIFF through an

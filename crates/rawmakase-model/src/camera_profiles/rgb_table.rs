@@ -266,7 +266,34 @@ impl RgbTable {
             return rgb;
         }
         let [into, back] = self.matrices;
-        let full = mul(into, rgb).map(|v| v.signum() * self.gamma.encode(v.abs()));
+        mul(back, self.apply_in_space(mul(into, rgb), amount))
+    }
+    /// [`Self::apply`] in an HDR render, as Camera Raw 18.7 applies a look's RGB table
+    /// there: each channel, in the table's primaries, is [`overrange`]-encoded (0 to 16
+    /// times graphics white onto 0 to 1) before the table's own encoding, and decoded
+    /// after it. What a channel encodes above 1 (light above 16 times white) skips the
+    /// table and is added back to its output in the overrange encoding, Clip and Extend
+    /// tables alike. Measured on gray ramps to 48 times white through 1D and 3D tables
+    /// in four spaces: median 0.0009 stop above 16, 0.0004 below
+    /// (docs/records/hdr-stage1-results.md#looks).
+    ///
+    /// [`overrange`]: super::overrange
+    pub fn apply_hdr(&self, rgb: [f32; 3], amount: f32) -> [f32; 3] {
+        use super::overrange::{decode, encode};
+        if amount == 0. {
+            return rgb;
+        }
+        let [into, back] = self.matrices;
+        let encoded = mul(into, rgb).map(|v| v.signum() * encode(v.abs()));
+        let over = encoded.map(|e| (e - 1.).max(0.));
+        let within: [f32; 3] = std::array::from_fn(|c| encoded[c] - over[c]);
+        let out = self.apply_in_space(within, amount);
+        let out: [f32; 3] = std::array::from_fn(|c| out[c] + over[c]);
+        mul(back, out.map(|v| v.signum() * decode(v.abs())))
+    }
+    /// The table on linear values in its own primaries, at `amount`.
+    fn apply_in_space(&self, linear: [f32; 3], amount: f32) -> [f32; 3] {
+        let full = linear.map(|v| v.signum() * self.gamma.encode(v.abs()));
         let encoded = full.map(|v| v.clamp(0., 1.));
         let looked = self.lookup(encoded);
         let out: [f32; 3] = std::array::from_fn(|c| {
@@ -277,7 +304,7 @@ impl RgbTable {
                 Gamut::Extend => v + full[c] - encoded[c],
             }
         });
-        mul(back, out.map(|v| v.signum() * self.gamma.decode(v.abs())))
+        out.map(|v| v.signum() * self.gamma.decode(v.abs()))
     }
     /// `rgb`, in table space and within 0–1, through the table.
     pub(super) fn lookup(&self, rgb: [f32; 3]) -> [f32; 3] {
@@ -863,6 +890,62 @@ pub(super) mod tests {
                 );
             }
         }
+    }
+    /// In HDR a table works on overrange-encoded values, as Camera Raw 18.7 applies it:
+    /// an identity table leaves every value as it is, above white and past 16 too; up
+    /// to 16 times white a table is its SDR self on the encoded values; and what a
+    /// channel encodes beyond 1 is added back to the table's output there, so light
+    /// above 16 keeps rising.
+    #[test]
+    fn hdr_tables_look_up_overrange_encoded_values() {
+        use super::super::overrange::{decode, encode};
+        let identity = RgbTable::decode(&encode_table_test(|p| p)).unwrap();
+        for x in [0.01, 0.5, 1., 3., 16., 48.] {
+            for rgb in [[x; 3], [x, 0.4 * x, 0.1 * x]] {
+                let out = identity.apply_hdr(rgb, 1.);
+                assert!(
+                    out.iter()
+                        .zip(rgb)
+                        .all(|(a, b)| (a - b).abs() <= 2e-3 * b.max(0.01)),
+                    "{rgb:?} {out:?}"
+                );
+            }
+        }
+        for table in variety() {
+            let [into, back] = table.matrices();
+            for rgb in [[0.2, 0.5, 0.9], [2., 1.2, 0.6], [12., 9., 3.]] {
+                let encoded = mul(into, rgb).map(|v| v.signum() * encode(v.abs()));
+                let sdr = table
+                    .apply_in_space(encoded, 1.)
+                    .map(|v| v.signum() * decode(v.abs()));
+                let expected = mul(back, sdr);
+                let out = table.apply_hdr(rgb, 1.);
+                assert!(
+                    out.iter()
+                        .zip(expected)
+                        .all(|(a, b)| (a - b).abs() <= 1e-4 * b.abs().max(1.)),
+                    "{rgb:?} {out:?} {expected:?}"
+                );
+            }
+            // Past 16, the excess rises through the table untouched, in the encoding.
+            let top = table.apply_hdr([16.; 3], 1.);
+            let above = table.apply_hdr([64.; 3], 1.);
+            let gained: Vec<f32> = mul(table.matrices()[0], above)
+                .iter()
+                .zip(mul(table.matrices()[0], top))
+                .map(|(a, b)| encode(*a) - encode(b))
+                .collect();
+            let excess = encode(64.) - encode(16.);
+            assert!(
+                gained.iter().all(|g| (g - excess).abs() < 2e-3),
+                "{gained:?} {excess}"
+            );
+            assert_eq!(table.apply_hdr([5., 2., 1.], 0.), [5., 2., 1.]);
+        }
+    }
+    /// The bytes of a 17-division Adobe RGB table of `f`, for tests.
+    fn encode_table_test(f: impl Fn([f32; 3]) -> [f32; 3]) -> String {
+        encode(&table_bytes(17, f, ADOBE))
     }
     #[test]
     fn one_dimensional_tables_are_a_curve_per_channel() {

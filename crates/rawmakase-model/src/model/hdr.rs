@@ -169,8 +169,9 @@ const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 /// the master point curve and the parametric curve, and Levels as a point curve of its
 /// shape ([`crate::color::hdr_curve`]), Texture (on the camera's samples, as in SDR),
 /// camera profiles
-/// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks of a table
-/// and a curve ([`crate::camera_profiles::hdr_look`]) at 100%, and what works
+/// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks (their
+/// tables and curve, [`crate::camera_profiles::hdr_look`], at any Profile Amount, and
+/// their own settings checked as the user's), and what works
 /// on the camera's samples before tone: lens corrections, geometry, noise reduction,
 /// AI Denoise, Heal and Clone, and output sharpening.
 pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
@@ -182,17 +183,33 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
     // Without one, the camera matrix with the ACR3 curve renders it (`Recipe::resolved`).
     if let Some(profile) = &r.profile {
         profile.hdr_tone()?;
-        // A look's curve and table were measured at 100%.
-        ensure!(
-            !profile.supports_amount() || r.profile_amount == 1.,
-            "Profile Amount other than 100% is not supported in HDR yet"
-        );
     }
-    ensure!(
-        r.hdr.sdr == SdrRendition::default(),
-        "The SDR rendition's adjustments are not supported in HDR yet"
-    );
-    let unmeasured: [(&str, bool); 13] = [
+    if let Some(name) = unmeasured(&r) {
+        anyhow::bail!("{name} is not supported in HDR yet");
+    }
+    // A look's own settings render as the user's sliders do, added to them, and its
+    // table and curve at the Profile Amount (`Recipe::with_profile_adjustments`): each
+    // is checked as that slider is.
+    let folded = r.with_profile_adjustments();
+    if let std::borrow::Cow::Owned(folded) = &folded {
+        if let Some(profile) = &folded.profile {
+            profile.hdr_tone()?;
+        }
+        if let Some(name) = unmeasured(folded) {
+            anyhow::bail!("{name}, which the look sets, is not supported in HDR yet");
+        }
+    }
+    Ok(())
+}
+
+/// The first adjustment of `r` (its panels as rendered) whose HDR rendering is not
+/// measured, by name.
+fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
+    let unmeasured: [(&'static str, bool); 14] = [
+        (
+            "The SDR rendition's adjustments",
+            r.hdr.sdr != SdrRendition::default(),
+        ),
         // Camera Raw's positive Whites follows the photo's level, which twice the 99th
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
@@ -243,10 +260,9 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
         ),
         ("Red Eye", !r.red_eye.is_blank()),
     ];
-    if let Some((name, _)) = unmeasured.iter().find(|(_, used)| *used) {
-        anyhow::bail!("{name} is not supported in HDR yet");
-    }
-    Ok(())
+    unmeasured
+        .into_iter()
+        .find_map(|(name, used)| used.then_some(name))
 }
 
 /// Whether `r` renders an HDR master of the photo `m` describes, and if not, why;
@@ -543,11 +559,13 @@ mod tests {
         assert!(check_recipe(&r).is_err());
     }
 
-    /// A look of an HSV table and a curve, as Adobe Color is, renders its master; a
-    /// look with anything else (an RGB table, its own sliders or settings, B&W, a
-    /// Profile Amount away from 100%) refuses it, and the edit stays valid.
+    /// Looks render their master: an HSV table and a curve, as Adobe Color is, an RGB
+    /// table, B&W, a fitted Camera Look, any Profile Amount, and their own sliders and
+    /// settings where the same sliders render. A look's setting whose HDR rendering is
+    /// not measured refuses the master by name, saying the look sets it, and so does
+    /// split toning; the edit stays valid.
     #[test]
-    fn looks_of_a_table_and_a_curve_render_in_hdr() {
+    fn looks_render_in_hdr_as_their_parts_do() {
         use crate::camera_profiles::{CameraProfile, open};
         use crate::model::recipe::Recipe;
         use std::sync::Arc;
@@ -565,30 +583,64 @@ mod tests {
         let color = open::color(&m).unwrap();
         r.profile = Some(Arc::new(color.clone()));
         check_recipe(&r).unwrap();
-        let refused: [fn(&mut CameraProfile); 6] = [
-            |p| p.enhanced.as_mut().unwrap().clarity = 0.1,
-            |p| p.enhanced.as_mut().unwrap().highlights = -0.12,
+        let rendered: [fn(&mut CameraProfile); 6] = [
             |p| p.enhanced.as_mut().unwrap().monochrome = true,
             |p| p.enhanced.as_mut().unwrap().settings.exposure = 0.3,
+            |p| p.enhanced.as_mut().unwrap().contrast = 0.2,
+            |p| p.enhanced.as_mut().unwrap().shadows = 0.25,
             |p| p.enhanced.as_mut().unwrap().camera_look = Some("Velvia".into()),
             |p| *p = p.clone().with_test_rgb_tables().remove(0),
         ];
-        for change in refused {
+        for change in rendered {
+            let mut edit = r.clone();
+            let mut p = color.clone();
+            change(&mut p);
+            edit.profile = Some(Arc::new(p));
+            check_recipe(&edit).unwrap();
+        }
+        type Change = fn(&mut CameraProfile);
+        let refused: [(Change, &str); 4] = [
+            (
+                |p| p.enhanced.as_mut().unwrap().clarity = 0.1,
+                "Presence, which the look sets",
+            ),
+            (
+                |p| p.enhanced.as_mut().unwrap().highlights = -0.12,
+                "Highlights, which the look sets",
+            ),
+            (
+                |p| p.enhanced.as_mut().unwrap().settings.hsl[1][2] = -0.2,
+                "Luminance, which the look sets",
+            ),
+            (
+                |p| {
+                    p.enhanced.as_mut().unwrap().settings.toning =
+                        Some(crate::camera_profiles::Toning::default())
+                },
+                "split toning",
+            ),
+        ];
+        for (change, reason) in refused {
             let mut edit = r.clone();
             let mut p = color.clone();
             change(&mut p);
             edit.profile = Some(Arc::new(p));
             let error = check_recipe(&edit).unwrap_err().to_string();
-            assert!(error.contains("HDR"), "{error}");
+            assert!(error.contains(reason) && error.contains("HDR"), "{error}");
             edit.hdr.enabled = false;
             assert!(check_recipe(&edit).is_ok());
         }
-        // A look with Profile Amount renders at 100% only.
+        // The user's own Highlights is named as the user's.
+        let mut own = r.clone();
+        own.highlights = 0.1;
+        let error = check_recipe(&own).unwrap_err().to_string();
+        assert_eq!(error, "Highlights is not supported in HDR yet");
+        // A look with Profile Amount renders at every amount.
         r.profile = Some(Arc::new(CameraProfile::creative_for_test(&m)));
-        check_recipe(&r).unwrap();
-        r.profile_amount = 0.5;
-        assert!(check_recipe(&r).is_err());
-        assert!(r.validate().is_ok());
+        for amount in [0., 0.5, 1., 1.5, 2.] {
+            r.profile_amount = amount;
+            check_recipe(&r).unwrap();
+        }
     }
 
     #[test]

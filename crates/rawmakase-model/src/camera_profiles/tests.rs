@@ -544,3 +544,28 @@ fn linear_dng_analog_balance_scales_the_camera_neutral() {
         assert!((a[c] - b[c]).abs() < 1e-4, "{a:?} {b:?}");
     }
 }
+
+/// A look whose curve is the identity applies no curve in HDR, as Camera Raw 18.7
+/// renders a `.cube` look's: light above four stops over white is not held at 16, as
+/// a curve that ends at white holds it.
+#[test]
+fn an_identity_look_curve_leaves_hdr_light_above_sixteen() {
+    let base = CameraProfile::camera_matrix_default(&x100f()).unwrap();
+    let identity = base
+        .clone()
+        .with_test_look(1, |_| 1., &[[0., 0.], [1., 1.]]);
+    assert_eq!(identity.hdr_look(), None);
+    let tone = identity.hdr_tone().unwrap();
+    let plain = base.finish_hdr([40.; 3], &tone, None);
+    let looked = identity.finish_hdr([40.; 3], &tone, identity.hdr_look().as_ref());
+    assert!(
+        looked
+            .iter()
+            .zip(plain)
+            .all(|(a, b)| (a - b).abs() < 1e-3 * b),
+        "{looked:?} {plain:?}"
+    );
+    assert!(looked.iter().all(|v| *v > 20.), "{looked:?}");
+    let lifting = base.with_test_look(1, |_| 1., &[[0., 0.], [0.5, 0.6], [1., 1.]]);
+    assert!(lifting.hdr_look().is_some());
+}

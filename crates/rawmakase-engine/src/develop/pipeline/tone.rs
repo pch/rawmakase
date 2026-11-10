@@ -154,12 +154,14 @@ impl HdrFinish {
         let pro = self.curves.as_ref().map_or(pro, |c| c.apply(pro));
         // The colour mixer and the black & white mix follow Contrast and the tone
         // curves, as in SDR's colour stage.
-        if lut.mixer.is_none() && lut.gray_grid.is_none() {
+        if lut.mixer.is_none() && lut.rgb_table.is_none() && lut.gray_grid.is_none() {
             // The limit applies once, after sharpening and resizing (`render_hdr`).
             return pro;
         }
         let rgb = mul(crate::camera_profiles::PRO_TO_RGB, pro);
         let rgb = lut.mixer.as_ref().map_or(rgb, |m| m.apply(rgb));
+        // A look's RGB table follows the mixer, as in SDR, on overrange-encoded values.
+        let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply_hdr(rgb));
         // The gray's luminance, unclipped: SDR renders clip it at white.
         let rgb = lut.gray_grid.as_ref().map_or(rgb, |g| {
             let lookup = crate::develop::color_mixer::Lookup::Hdr(None);

@@ -282,6 +282,13 @@ impl CurveLut {
     pub fn values(&self) -> &[f32; 4097] {
         &self.0
     }
+    /// Whether every sample is its input, to rounding.
+    pub fn is_identity(&self) -> bool {
+        self.0
+            .iter()
+            .enumerate()
+            .all(|(i, y)| (y - i as f32 / 4096.).abs() < 1e-6)
+    }
     pub fn evaluate(&self, x: f32) -> f32 {
         let p = x.clamp(0., 1.) * 4096.;
         let i = (p as usize).min(4095);

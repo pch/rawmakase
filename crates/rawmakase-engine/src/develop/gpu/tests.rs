@@ -2096,11 +2096,34 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         // An HDR profile with a look: the look's table and curve after its own.
         with(
             profile
+                .clone()
                 .with_test_hdr_tables()
                 .as_hdr_for_test()
                 .with_test_look(8, |v| 0.95 + 0.1 * v, &[[0., 0.], [0.5, 0.55], [1., 0.9]]),
         ),
     ]);
+    // Looks with an RGB table of each kind (1D and 3D, each encoding and gamut mode) at
+    // amounts below, at and above its own, on overrange-encoded values after the colour
+    // mixer; one with an identity curve, and one with Saturation before it.
+    let rgb_looks = profile
+        .clone()
+        .with_test_look(8, |v| 1.05 - 0.1 * v, &[[0., 0.], [0.5, 0.56], [1., 1.]])
+        .with_test_rgb_tables()
+        .into_iter()
+        .chain(
+            profile
+                .with_test_look(1, |_| 1., &[[0., 0.], [1., 1.]])
+                .with_test_rgb_tables()
+                .into_iter()
+                .take(2),
+        )
+        .map(with)
+        .collect::<Vec<_>>();
+    let saturated = Recipe {
+        saturation: 0.3,
+        ..rgb_looks[1].clone()
+    };
+    let variants = variants.chain(rgb_looks).chain([saturated]);
     variants
         .map(|mut r| {
             if r.whites < -0.9 {
