@@ -54,6 +54,10 @@ impl RgbLook {
     pub fn apply(&self, rgb: [f32; 3]) -> [f32; 3] {
         self.table.apply(rgb, self.amount)
     }
+    /// Linear display RGB through the table in an HDR render ([`RgbTable::apply_hdr`]).
+    pub fn apply_hdr(&self, rgb: [f32; 3]) -> [f32; 3] {
+        self.table.apply_hdr(rgb, self.amount)
+    }
     #[cfg(any(test, feature = "test-support"))]
     pub(super) fn for_test(table: RgbTable, amount: f32) -> Self {
         Self {
@@ -229,35 +233,15 @@ impl Enhanced {
             ..self.clone()
         }
     }
-    /// Refuses a look whose HDR rendering is not measured. A look of an HSV table and
-    /// a curve, as Lightroom's Adobe Color is, renders in HDR (`super::hdr_look`);
-    /// RGB tables, the look's own sliders and settings, B&W and fitted Camera Looks
-    /// do not yet.
+    /// Refuses a look whose HDR rendering is not measured: one with split toning. Its
+    /// HSV and RGB tables and its curve render in HDR (`super::hdr_look`,
+    /// [`RgbTable::apply_hdr`]), a fitted Camera Look's too, by the same rules; its
+    /// sliders and settings are added to the user's, and `model::hdr::check_recipe`
+    /// checks them as it checks those.
     pub(super) fn check_hdr(&self) -> Result<()> {
         ensure!(
-            self.camera_look.is_none(),
-            "Camera Look is not supported in HDR yet"
-        );
-        ensure!(
-            self.rgb.is_none(),
-            "Looks with an RGB table, such as .cube looks and Lightroom's creative looks, are not supported in HDR yet"
-        );
-        ensure!(
-            !self.monochrome,
-            "Black & White looks are not supported in HDR yet"
-        );
-        ensure!(
-            [
-                self.highlights,
-                self.shadows,
-                self.clarity,
-                self.contrast,
-                self.blacks
-            ]
-            .iter()
-            .all(|v| *v == 0.)
-                && self.settings.is_default(),
-            "Looks with their own adjustments are not supported in HDR yet"
+            self.settings.toning.is_none(),
+            "Looks with split toning are not supported in HDR yet"
         );
         Ok(())
     }

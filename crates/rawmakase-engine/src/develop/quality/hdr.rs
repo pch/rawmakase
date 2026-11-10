@@ -441,19 +441,56 @@ mod tests {
         r.hdr.sdr.brightness = 0.2;
         assert!(master(&r).is_err());
         r.hdr.sdr.brightness = 0.;
-        // A look renders its master at 100%, and with an RGB table not at all.
+        // A look renders its master at any Profile Amount and with an RGB table; a
+        // setting of its own that the master doesn't render refuses it.
         r.profile = Some(std::sync::Arc::new(CameraProfile::creative_for_test(
             &im.metadata,
         )));
         master(&r)?;
         r.profile_amount = 0.5;
-        assert!(master(&r).is_err());
-        crate::develop::render(&im, &r.checked()?, 0, Cancel::NEVER)?;
+        master(&r)?;
         r.profile_amount = 1.;
         let rgb = CameraProfile::creative_for_test(&im.metadata).with_test_rgb_tables();
         r.profile = Some(std::sync::Arc::new(rgb[0].clone()));
-        assert!(master(&r).is_err());
+        master(&r)?;
+        let mut clarity = rgb[0].clone();
+        clarity.enhanced.as_mut().unwrap().clarity = 0.2;
+        r.profile = Some(std::sync::Arc::new(clarity));
+        let error = master(&r).unwrap_err().to_string();
+        assert!(error.contains("which the look sets"), "{error}");
         crate::develop::render(&im, &r.checked()?, 0, Cancel::NEVER)?;
+        Ok(())
+    }
+
+    /// A `.cube` look's RGB table renders a gray ramp through the ACR3 curve as Camera
+    /// Raw 18.7 renders it at HDR limit 8: on overrange-encoded values, and above 16
+    /// times white with the light beyond added back (the levels' default renders are
+    /// those of `an_hdr_master_extends_above_white_as_camera_raw_does`).
+    #[test]
+    fn an_rgb_table_renders_as_camera_raw_renders_it() -> anyhow::Result<()> {
+        let im = grays(&[0.1887, 0.4789, 1.2006, 4.064]);
+        // scripts/corpus/synthetic-cubes.py's 1D cube: a curve for each channel.
+        let mut cube = String::from("LUT_1D_SIZE 1024\n");
+        for i in 0..1024 {
+            let v = i as f64 / 1023.;
+            let rgb = [
+                0.05 + 0.9 * v.powf(0.85),
+                v + 0.06 * (std::f64::consts::TAU * v).sin(),
+                0.1 + 0.75 * v,
+            ];
+            cube += &format!("{:.6} {:.6} {:.6}\n", rgb[0], rgb[1], rgb[2]);
+        }
+        let mut r = hdr_recipe(&im);
+        let look = r.profile.as_deref().unwrap().with_cube_for_test(&cube)?;
+        r.profile = Some(std::sync::Arc::new(look));
+        let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        for (i, expected) in [0.3832, 0.7807, 2.5065, 17.2935].iter().enumerate() {
+            let got = centre(&out, i);
+            assert!(
+                (got / expected).log2().abs() < 0.05,
+                "{i}: {got} {expected}"
+            );
+        }
         Ok(())
     }
 

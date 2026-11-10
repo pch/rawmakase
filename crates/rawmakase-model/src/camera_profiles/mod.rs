@@ -649,9 +649,13 @@ impl CameraProfile {
         };
         mul(PRO_TO_RGB, p)
     }
-    /// How this profile's look curve renders in HDR; `None` without a look.
+    /// How this profile's look curve renders in HDR; `None` without a look, or when its
+    /// curve is the identity. Camera Raw 18.7 renders a look whose curve is the
+    /// identity (a `.cube` look's) unchanged up to 32 times white, not held at
+    /// [`hdr_look::PEAK`] as a curve that ends at white is.
     pub fn hdr_look(&self) -> Option<hdr_look::LookTone> {
-        Some(hdr_look::LookTone::of(self.enhanced.as_ref()?.curve()))
+        let curve = self.enhanced.as_ref()?.curve();
+        (!curve.is_identity()).then(|| hdr_look::LookTone::of(curve))
     }
 }
 /// DNG RGBTone: `curve` maps the brightest and darkest channel; the middle one keeps
@@ -1001,7 +1005,7 @@ pub use library::{
     compose_look, fingerprint as library_fingerprint, import_files, import_into_dir,
     import_readable, installed, library_dirs, listed, load, read_cube,
 };
-pub use look_settings::LookSettings;
+pub use look_settings::{LookSettings, Toning};
 pub use rgb_table::{Dimensions, Gamma, Gamut, Primaries};
 #[cfg(test)]
 mod tests;
