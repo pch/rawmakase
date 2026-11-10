@@ -23,12 +23,19 @@ if [ "$(printf '%s\n' 0.2.2 "$installed" | sort -V | head -n1)" = 0.2.2 ]; then
   test -f /usr/lib/rawmakase/libonnxruntime.so
   python3 -c "import ctypes; ctypes.CDLL('/usr/lib/rawmakase/libonnxruntime.so')"
 fi
-# The bundled MCP extension's program, from the first release that ships it:
-# beside the app, built for this machine, linking only the system's libraries,
-# and found by `rawmakase mcp`, which completes an MCP initialize with it.
-mcp=0.4.13
-if [ "$(printf '%s\n' "$mcp" "$installed" | sort -V | head -n1)" = "$mcp" ]; then
-  python3 /checks/check_mcp.py /usr/bin/rawmakase /usr/lib/rawmakase/rawmakase-mcp \
+# The bundled extensions' programs, from the first release that ships them:
+# beside the app, built for this machine and linking only the system's
+# libraries; MCP's found by `rawmakase mcp`, which completes an MCP initialize
+# with it, in the folder where the app looks for MIDI's too.
+programs=()
+for ships in rawmakase-mcp:0.4.13 rawmakase-midi:0.4.13; do
+  program=${ships%%:*} since=${ships#*:}
+  if [ "$(printf '%s\n' "$since" "$installed" | sort -V | head -n1)" = "$since" ]; then
+    programs+=("/usr/lib/rawmakase/$program")
+  fi
+done
+if [ ${#programs[@]} -gt 0 ]; then
+  python3 /checks/check_programs.py /usr/bin/rawmakase "${programs[@]}" \
     --arch "$(uname -m)" --version "$installed"
 fi
 # Winit/wgpu load some libraries at runtime, invisible to ordinary ldd checks.
@@ -47,3 +54,4 @@ test "$(cat /root/.local/share/rawmakase/packaging-test)" = preserve
 test ! -e /usr/bin/rawmakase
 test ! -e /usr/lib/rawmakase/rawmakase
 test ! -e /usr/lib/rawmakase/rawmakase-mcp
+test ! -e /usr/lib/rawmakase/rawmakase-midi

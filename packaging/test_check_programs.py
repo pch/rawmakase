@@ -1,7 +1,7 @@
 import struct
 import unittest
 
-import check_mcp
+import check_programs
 
 
 def pe(machine, dlls):
@@ -26,33 +26,32 @@ def pe(machine, dlls):
     return bytes(header + body)
 
 
-class CheckMcpTests(unittest.TestCase):
+class CheckProgramsTests(unittest.TestCase):
     def test_architectures_of_each_format(self):
         elf = bytearray(64)
         elf[0:4], elf[5] = b"\x7fELF", 1
         for machine, name in ((62, "x86_64"), (183, "aarch64")):
             struct.pack_into("<H", elf, 18, machine)
-            self.assertEqual(check_mcp.architectures(bytes(elf)), [name])
+            self.assertEqual(check_programs.architectures(bytes(elf)), [name])
         macho = b"\xcf\xfa\xed\xfe" + struct.pack("<I", 0x0100000C) + bytes(24)
-        self.assertEqual(check_mcp.architectures(macho), ["aarch64"])
+        self.assertEqual(check_programs.architectures(macho), ["aarch64"])
         fat = b"\xca\xfe\xba\xbe" + struct.pack(">I", 2)
         fat += struct.pack(">I16x", 0x01000007) + struct.pack(">I16x", 0x0100000C)
-        self.assertEqual(check_mcp.architectures(fat), ["x86_64", "aarch64"])
-        self.assertEqual(check_mcp.architectures(pe(0xAA64, [])), ["aarch64"])
+        self.assertEqual(check_programs.architectures(fat), ["x86_64", "aarch64"])
+        self.assertEqual(check_programs.architectures(pe(0xAA64, [])), ["aarch64"])
         with self.assertRaises(SystemExit):
-            check_mcp.architectures(b"#!/bin/sh\n")
+            check_programs.architectures(b"#!/bin/sh\n")
 
     def test_a_pe_images_imports_are_read(self):
         image = pe(0x8664, ["KERNEL32.dll", "VCRUNTIME140.dll"])
-        self.assertEqual(check_mcp.pe_imports(image), ["KERNEL32.dll", "VCRUNTIME140.dll"])
+        self.assertEqual(check_programs.pe_imports(image), ["KERNEL32.dll", "VCRUNTIME140.dll"])
 
     def test_only_the_linux_system_libraries_pass(self):
         for name in ("linux-vdso.so.1", "libc.so.6", "libm.so.6", "libgcc_s.so.1",
                      "ld-linux-x86-64.so.2", "ld-linux-aarch64.so.1"):
-            self.assertTrue(check_mcp.LINUX_SYSTEM.match(name), name)
+            self.assertTrue(check_programs.LINUX_SYSTEM.match(name), name)
         for name in ("libssl.so.3", "libonnxruntime.so", "libz.so.1"):
-            self.assertFalse(check_mcp.LINUX_SYSTEM.match(name), name)
-
+            self.assertFalse(check_programs.LINUX_SYSTEM.match(name), name)
 
 if __name__ == "__main__":
     unittest.main()

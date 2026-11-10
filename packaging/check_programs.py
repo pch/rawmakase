@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Checks the bundled MCP extension's program in an installed or staged
-RAWmakase: it is there and executable, built for the expected architecture,
-links nothing but the system's libraries, and `rawmakase mcp` finds it and
-completes an MCP initialize with it.
+"""Checks the bundled extensions' programs in an installed or staged
+RAWmakase: each is there and executable, built for the expected
+architecture, and links nothing but the system's libraries. rawmakase-mcp is
+found by `rawmakase mcp`, which completes an MCP initialize with it: the app
+looks for every bundled program in that folder, rawmakase-midi too.
 
-    python3 packaging/check_mcp.py RAWMAKASE PROGRAM [--arch ARCH] [--version VERSION]
+    python3 packaging/check_programs.py RAWMAKASE PROGRAM... [--arch ARCH] [--version VERSION]
 
-RAWMAKASE is what users run (on Linux the usr/bin launcher), PROGRAM the
-rawmakase-mcp beside the app. No running app is needed: initialize doesn't
-reach it, and an empty data folder is used.
+RAWMAKASE is what users run (on Linux the usr/bin launcher), each PROGRAM a
+program beside the app (rawmakase-mcp, rawmakase-midi). No running app is
+needed: initialize doesn't reach it, and an empty data folder is used.
 """
 import argparse
 import json
@@ -134,29 +135,38 @@ def initialize(rawmakase, version):
     return server
 
 
+def check(rawmakase, program, arch, version):
+    """Checks one program; what it found, in words."""
+    if not program.is_file():
+        raise SystemExit(f"{program} is missing")
+    if os.name != "nt" and not os.access(program, os.X_OK):
+        raise SystemExit(f"{program} is not executable")
+    data = program.read_bytes()
+    found = architectures(data)
+    if arch:
+        expected = ARCHITECTURES.get(arch.lower(), arch)
+        if found != [expected]:
+            raise SystemExit(f"{program} is built for {found}, expected {expected}")
+    foreign = foreign_libraries(program, data)
+    if foreign:
+        raise SystemExit(f"{program} links libraries that aren't the system's: {foreign}")
+    said = f"{program}: {', '.join(found)}, system libraries only"
+    name = program.name.removesuffix(".exe")
+    if name == "rawmakase-mcp":
+        server = initialize(rawmakase, version)
+        said += f"; rawmakase mcp initialized {server['name']} {server['version']}"
+    return said
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("rawmakase", type=Path)
-    parser.add_argument("program", type=Path)
+    parser.add_argument("programs", type=Path, nargs="+")
     parser.add_argument("--arch", help="x86_64, aarch64 (or amd64, arm64)")
     parser.add_argument("--version", help="the version the MCP server must report")
     args = parser.parse_args()
-    if not args.program.is_file():
-        raise SystemExit(f"{args.program} is missing")
-    if os.name != "nt" and not os.access(args.program, os.X_OK):
-        raise SystemExit(f"{args.program} is not executable")
-    data = args.program.read_bytes()
-    found = architectures(data)
-    if args.arch:
-        expected = ARCHITECTURES.get(args.arch.lower(), args.arch)
-        if found != [expected]:
-            raise SystemExit(f"{args.program} is built for {found}, expected {expected}")
-    foreign = foreign_libraries(args.program, data)
-    if foreign:
-        raise SystemExit(f"{args.program} links libraries that aren't the system's: {foreign}")
-    server = initialize(args.rawmakase, args.version)
-    print(f"{args.program}: {', '.join(found)}, system libraries only; "
-          f"rawmakase mcp initialized {server['name']} {server['version']}")
+    for program in args.programs:
+        print(check(args.rawmakase, program, args.arch, args.version))
 
 
 if __name__ == "__main__":

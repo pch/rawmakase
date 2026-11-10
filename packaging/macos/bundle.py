@@ -60,7 +60,7 @@ def main():
     parser.add_argument("--icon-assets", type=Path,
                         help="Assets.car compiled on macOS 26 for the layered app icon")
     parser.add_argument("--program", type=Path, action="append", default=[],
-                        help="a bundled extension's program (rawmakase-mcp), installed in "
+                        help="a bundled extension's program (rawmakase-mcp, rawmakase-midi), installed in "
                              "Contents/MacOS beside the executable, where the app looks for it")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
@@ -194,10 +194,11 @@ def main():
                 raise RuntimeError(f"External dependency remains: {dependency}")
     for program in programs:
         subprocess.run(["codesign", "--verify", "--strict", str(program)], check=True)
-        if program.name == "rawmakase-mcp":
-            subprocess.run([sys.executable, str(root / "packaging/check_mcp.py"), str(executable),
-                            str(program), "--arch", run("lipo", "-archs", str(args.binary)).split()[0],
-                            "--version", args.version], check=True)
+    if programs:
+        subprocess.run([sys.executable, str(root / "packaging/check_programs.py"), str(executable),
+                        *[str(program) for program in programs],
+                        "--arch", run("lipo", "-archs", str(args.binary)).split()[0],
+                        "--version", args.version], check=True)
     print(app)
 
 

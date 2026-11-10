@@ -133,8 +133,8 @@ jobs:
       - name: Build and stage app
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          cargo build --release --locked -p rawmakase -p rawmakase-mcp
-          packaging/windows/stage.ps1 target\release\rawmakase.exe dist\windows -Programs target\release\rawmakase-mcp.exe
+          cargo build --release --locked -p rawmakase -p rawmakase-mcp -p rawmakase-midi
+          packaging/windows/stage.ps1 target\release\rawmakase.exe dist\windows -Programs target\release\rawmakase-mcp.exe, target\release\rawmakase-midi.exe
       - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
         with:
           ruby-version: ${{ matrix.ruby }}
@@ -151,7 +151,7 @@ jobs:
           $env:SOURCE_DATE_EPOCH = git show -s --format=%ct HEAD
           native-packages build --version $version --target ${{ matrix.target }} --defer-recipes --output "$env:RUNNER_TEMP\windows-packages"
       - name: Install, run and uninstall
-        run: packaging/windows/verify.ps1 "$env:RUNNER_TEMP\windows-packages\packages\${{ matrix.target }}\inno\rawmakase-v$env:VERSION-${{ matrix.arch }}-pc-windows-msvc-setup.exe" $env:VERSION -Mcp
+        run: packaging/windows/verify.ps1 "$env:RUNNER_TEMP\windows-packages\packages\${{ matrix.target }}\inno\rawmakase-v$env:VERSION-${{ matrix.arch }}-pc-windows-msvc-setup.exe" $env:VERSION -Mcp -Midi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-installer-${{ matrix.arch }}
