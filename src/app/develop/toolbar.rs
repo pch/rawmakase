@@ -80,7 +80,7 @@ impl Editor {
                                 + space::M * 3.;
                         let settings = photo_menu_button(ui, wide_menu);
                         egui::Popup::menu(&settings).show(|ui| {
-                            ui.set_width(270.);
+                            crate::app::ui::widgets::menu_width(ui, 270.);
                             ui.spacing_mut().item_spacing.y = 0.;
                             let (cmd, shift) = if cfg!(target_os = "macos") {
                                 ("⌘ ", "Shift ")
@@ -315,7 +315,7 @@ impl Editor {
         let alt = if mac { "⌥ " } else { "Alt+" };
         let transfer = if mac { "⌥⇧⌘ " } else { "Ctrl+Alt+Shift+" };
         egui::Popup::menu(&button).show(|ui| {
-            ui.set_width(300.);
+            crate::app::ui::widgets::menu_width(ui, 300.);
             ui.spacing_mut().item_spacing.y = 0.;
             for (view, name) in crate::app::develop::before_after::VIEWS {
                 let keys = match view {

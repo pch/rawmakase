@@ -426,7 +426,7 @@ fn section_header(
         context_menu(&toggle, |ui| {
             // Menu rows fill the width they are given, and an unsized popup gives
             // them all it can.
-            ui.set_width(160.);
+            menu_width(ui, 160.);
             if menu_item(ui, "Solo Mode", "", true, solo(ui, group)) {
                 toggle_solo(ui, group, key);
                 ui.close();
@@ -1732,7 +1732,28 @@ pub(in crate::app) fn segmented<T: PartialEq + Copy>(
     }
     false
 }
+/// Sets a menu's width: `preferred`, or the width its widest
+/// [`menu_item`] asked for, so that a long label never runs into its
+/// shortcut (#979). Call it first in the menu, in place of
+/// [`egui::Ui::set_width`].
+pub(in crate::app) fn menu_width(ui: &mut egui::Ui, preferred: f32) {
+    let needed = ui
+        .ctx()
+        .data(|d| d.get_temp::<f32>(menu_width_id(ui)))
+        .unwrap_or(0.);
+    ui.set_width(preferred.max(needed));
+}
+/// Where [`menu_item`] records the width its menu needs. A menu is a popup
+/// with its own layer, so the layer names it across frames.
+fn menu_width_id(ui: &egui::Ui) -> egui::Id {
+    egui::Id::new("menu-width").with(ui.layer_id())
+}
+/// The space between a menu row's label and its shortcut.
+const MENU_SHORTCUT_GAP: f32 = space::XL;
 /// A full-width menu row: optional check mark, label, right-aligned shortcut.
+/// A row too narrow for both records the width it needs, for
+/// [`menu_width`] to widen the menu, and discards the frame so it is drawn
+/// again at that width before anyone sees the overlap.
 pub(in crate::app) fn menu_item(
     ui: &mut egui::Ui,
     label: &str,
@@ -1741,6 +1762,29 @@ pub(in crate::app) fn menu_item(
     checked: bool,
 ) -> bool {
     let palette = theme::palette(ui.ctx());
+    let label_galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::FontId::proportional(text::BODY),
+        Color32::PLACEHOLDER,
+    );
+    let shortcut_galley = (!shortcut.is_empty()).then(|| {
+        ui.painter().layout_no_wrap(
+            shortcut.to_owned(),
+            egui::FontId::proportional(text::SMALL),
+            palette.tone(if enabled {
+                Tone::MUTED
+            } else {
+                Tone::OUTLINE_STRONG
+            }),
+        )
+    });
+    let needed = (MENU_LABEL_INSET
+        + label_galley.size().x
+        + shortcut_galley
+            .as_ref()
+            .map_or(0., |g| MENU_SHORTCUT_GAP + g.size().x)
+        + MENU_SHORTCUT_INSET)
+        .ceil();
     let (rect, response) = ui.allocate_exact_size(
         Vec2::new(ui.available_width(), 24.),
         if enabled {
@@ -1749,6 +1793,18 @@ pub(in crate::app) fn menu_item(
             Sense::hover()
         },
     );
+    if needed > rect.width().ceil() {
+        // Counting the width in the menu's bounds lets egui place the
+        // popup for it already on the frame it opens, before the redraw.
+        ui.expand_to_include_x(rect.left() + needed);
+        let id = menu_width_id(ui);
+        let recorded = ui.ctx().data(|d| d.get_temp::<f32>(id)).unwrap_or(0.);
+        if needed > recorded {
+            ui.ctx().data_mut(|d| d.insert_temp(id, needed));
+            ui.ctx()
+                .request_discard("a menu row is wider than its menu");
+        }
+    }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
     if enabled && response.hovered() {
         ui.painter()
@@ -1763,28 +1819,25 @@ pub(in crate::app) fn menu_item(
         let c = rect.left_center() + Vec2::new(11., 0.);
         icons::paint_at(ui.painter(), Icon::Check, c, 13., color);
     }
-    ui.painter().text(
-        rect.left_center() + Vec2::new(22., 0.),
-        egui::Align2::LEFT_CENTER,
-        label,
-        egui::FontId::proportional(text::BODY),
+    let y = rect.center().y - label_galley.size().y / 2.;
+    ui.painter().galley_with_override_text_color(
+        Pos2::new(rect.left() + MENU_LABEL_INSET, y),
+        label_galley,
         color,
     );
-    if !shortcut.is_empty() {
-        ui.painter().text(
-            rect.right_center() - Vec2::new(10., 0.),
-            egui::Align2::RIGHT_CENTER,
-            shortcut,
-            egui::FontId::proportional(text::SMALL),
-            palette.tone(if enabled {
-                Tone::MUTED
-            } else {
-                Tone::OUTLINE_STRONG
-            }),
+    if let Some(galley) = shortcut_galley {
+        let at = Pos2::new(
+            rect.right() - MENU_SHORTCUT_INSET - galley.size().x,
+            rect.center().y - galley.size().y / 2.,
         );
+        ui.painter().galley(at, galley, Color32::PLACEHOLDER);
     }
     enabled && response.clicked()
 }
+/// A menu row's label from the row's left edge, past the check mark.
+const MENU_LABEL_INSET: f32 = 22.;
+/// A menu row's shortcut from the row's right edge.
+const MENU_SHORTCUT_INSET: f32 = 10.;
 pub(in crate::app) fn menu_separator(ui: &mut egui::Ui) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 9.), Sense::hover());
     ui.painter().line_segment(
