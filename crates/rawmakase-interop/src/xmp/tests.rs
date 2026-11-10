@@ -2467,14 +2467,13 @@ fn hdr_settings_are_kept_while_off_and_refused_on() {
         .unwrap();
     assert!(reset.hdr.is_default());
 
-    // HDR on: applied strictly and leniently alike, with its values; the SDR
-    // rendition sliders set here refuse only the HDR master.
+    // HDR on: applied strictly and leniently alike, with its values; the HDR master
+    // renders with the SDR rendition sliders set here, which never change it.
     let on = xml(&attrs.replace("HDREditMode=\"0\"", "HDREditMode=\"1\""), "");
     let p = parse(Path::new("on.xmp"), &on).unwrap();
     let strict = p.apply(&Recipe::default(), &m, &[], None).unwrap();
     assert!(strict.hdr.is_active());
     let (lenient, _) = p.apply_lenient(&Recipe::default(), &m, &[], None).unwrap();
     assert_eq!(lenient.hdr, strict.hdr);
-    let error = crate::model::hdr::check_recipe(&strict).unwrap_err();
-    assert!(error.to_string().contains("HDR"), "{error}");
+    crate::model::hdr::check_recipe(&strict).unwrap();
 }

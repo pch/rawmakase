@@ -438,9 +438,14 @@ mod tests {
         assert!(error.contains("not supported in HDR"), "{error}");
         crate::develop::render(&im, &r.checked()?, 0, Cancel::NEVER)?;
         r.effects.clarity = 0.;
+        // The SDR rendition's sliders never change the master, as in Camera Raw 18.7:
+        // it renders with them, bit for bit as without.
+        let without = master(&r)?;
         r.hdr.sdr.brightness = 0.2;
-        assert!(master(&r).is_err());
-        r.hdr.sdr.brightness = 0.;
+        r.hdr.sdr.blend = -0.4;
+        r.hdr.sdr.clarity = 0.6;
+        assert_eq!(master(&r)?.pixels, without.pixels);
+        r.hdr.sdr = Default::default();
         // A look renders its master at any Profile Amount and with an RGB table; a
         // setting of its own that the master doesn't render refuses it.
         r.profile = Some(std::sync::Arc::new(CameraProfile::creative_for_test(

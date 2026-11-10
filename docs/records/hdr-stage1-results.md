@@ -69,7 +69,7 @@ refuses. The peak is the most frequent miss, as for the X100V and Z6 III above.
 | `HDRMaxValue` | Stops above graphics white. Camera Raw keeps 1, 2.37, 4, 5, 6 and 8. It replaces 0, 0.99, −1 and 10 with +2.30, and uses +2.30 when the key is absent. It writes `+4.00`. |
 | HDR limit shape | A roll-off, not a clip. At L=1 the luminance p90 falls from 2.46 to 1.54 (it would be 2.0 if clipped), and the share of pixels above white barely changes (11.37% to 11.31%). |
 | Midtones, HDR against SDR | With the same profile, luminance below 0.5 differs by a median 0.001 stop (p99 0.071). From 0.5 to 1.0, HDR is a median 0.074 stop brighter, and above white it extends to the limit. |
-| SDR rendition | `SDRBrightness` +50 leaves the HDR master bit-identical. The sliders are −100 to +100 (`SDRBlend` too); 150 and −150 read as 0. Values set with HDR off are kept in the returned XMP. |
+| SDR rendition | Each of the seven sliders (`SDRBrightness`, `SDRContrast`, `SDRClarity`, `SDRHighlights`, `SDRShadows`, `SDRWhites`, `SDRBlend`) at +50 or −50 leaves the HDR master bit-identical (on the Z 8 photo for `SDRBrightness`, on a synthetic gray ramp for all seven). The sliders are −100 to +100 (`SDRBlend` too); 150 and −150 read as 0. Values set with HDR off are kept in the returned XMP. |
 | Exposure +1 (HDR) | Luminance p50 0.075 → 0.204, p99 4.43 → 11.64, peak 5.16 → 13.11. |
 | Highlights −100 (HDR) | p99 4.43 → 1.10, peak 16.0 → 8.41 (channel maximum). |
 | Whites −100 (HDR) | p99 4.43 → 2.04, peak 16.0 → 11.65 (channel maximum). |
@@ -632,12 +632,16 @@ compared by luminance in 8× linear blocks:
   median 0.44 stop (+0.68 below 0.05 luminance, −0.08 at white), and that change is a
   curve of luminance to 0.010 stop (p95 0.051). Camera Raw 18.7 also has an Auto SDR
   that searches these sliders per photo.
-- **Decision: the sliders stay refused.** Rendering them on RAWmakase's SDR rendition
+- **Decision: the master renders with them; the SDR rendition doesn't yet.** They
+  never change the master in Camera Raw (bit-identical with each at ±50), so the
+  master, HDR exports and Develop's HDR preview render as without them (2026-11-10;
+  until then they refused the master). Rendering them on RAWmakase's SDR rendition
   (the HDR-off render) would move it further from Camera Raw's, not closer: the base
   they adjust is the unmatched part. Matching Camera Raw's default SDR rendition needs
   its local tone map measured on many photos first. The SDR rendition stays the
-  HDR-off render, a median 0.2 stop from Camera Raw's on this photo; gain-map exports
-  carry it as their base.
+  HDR-off render, a median 0.2 stop from Camera Raw's on this photo, the sliders are
+  kept in the edit and written back to XMP, and gain-map exports carry that rendition
+  as their base.
 
 ### Colour stage
 
@@ -746,7 +750,8 @@ the SDR photo gate were not run: they score these same SDR renders.
 
 - **The SDR rendition is the edit with HDR off.** Camera Raw's own is a local tone
   map of the HDR master ([SDR rendition](#sdr-rendition)); the SDR rendition sliders
-  refuse the master until it is matched.
+  never change the master, which renders with them; the SDR rendition doesn't render
+  them until that tone map is matched.
 - **Unmeasured adjustments refuse the HDR master, not the edit.** An imported or
   edited HDR edit with Clarity, a look or Whites above +50 keeps HDR on and stays
   valid; its SDR rendition renders it, and the master (HDR export) is refused with
@@ -876,7 +881,8 @@ the SDR photo gate were not run: they score these same SDR renders.
   ([Highlights and Shadows](#highlights-and-shadows)); looks with RGB tables, B&W,
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks)).
   Open: Whites above +50, Highlights, the colour
-  mixer's Luminance, looks that set Clarity or Highlights, channel curves, the SDR rendition sliders, 52552 grouping (library only,
+  mixer's Luminance, looks that set Clarity or Highlights, channel curves, the SDR rendition sliders in the SDR rendition (the master renders
+  with them), 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
   P3, Rec. 709; CICP-tagged ICC; #908), checked against Camera Raw's PQ TIFF through an

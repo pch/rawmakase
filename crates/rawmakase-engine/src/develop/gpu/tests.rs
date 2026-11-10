@@ -1993,6 +1993,19 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
             incremental_tint: -10.,
             ..base.clone()
         },
+        // The SDR rendition's sliders, which never change the master.
+        Recipe {
+            hdr: crate::model::hdr::HdrSettings {
+                sdr: crate::model::hdr::SdrRendition {
+                    brightness: 0.5,
+                    contrast: -0.3,
+                    blend: 0.4,
+                    ..Default::default()
+                },
+                ..base.hdr
+            },
+            ..base.clone()
+        },
         // Shadows, the local tone map on scene values, unclipped above white.
         Recipe {
             shadows: 0.7,

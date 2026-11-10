@@ -162,7 +162,8 @@ is named:
 - every tone and colour slider;
 - sharpening, noise reduction and AI Denoise;
 - Heal, Clone and Red Eye;
-- lens corrections, local edits, the SDR rendition sliders, Transform and Upright.
+- lens corrections, local edits, Transform and Upright (and, until 2026-11-10, the SDR
+  rendition sliders, which never change the master).
 
 The Basic panel's note, Develop's HDR preview, export and `render_hdr` all read
 this one check.

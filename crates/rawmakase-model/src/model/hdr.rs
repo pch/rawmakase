@@ -173,7 +173,8 @@ const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 /// tables and curve, [`crate::camera_profiles::hdr_look`], at any Profile Amount, and
 /// their own settings checked as the user's), and what works
 /// on the camera's samples before tone: lens corrections, geometry, noise reduction,
-/// AI Denoise, Heal and Clone, and output sharpening.
+/// AI Denoise, Heal and Clone, and output sharpening. The SDR rendition's sliders never
+/// change the master, so they are not checked.
 pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
     // What renders: a switched-off panel's adjustments do not.
     let r = r.as_rendered();
@@ -205,11 +206,9 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
 /// The first adjustment of `r` (its panels as rendered) whose HDR rendering is not
 /// measured, by name.
 fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
-    let unmeasured: [(&'static str, bool); 14] = [
-        (
-            "The SDR rendition's adjustments",
-            r.hdr.sdr != SdrRendition::default(),
-        ),
+    // The SDR rendition's sliders are not here: they never change the master (Camera
+    // Raw 18.7's is bit-identical with each at ±50), so it renders with them set.
+    let unmeasured: [(&'static str, bool); 13] = [
         // Camera Raw's positive Whites follows the photo's level, which twice the 99th
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
@@ -298,7 +297,7 @@ pub fn check_hdr_file(r: &super::recipe::Recipe, m: &crate::camera_data::Metadat
             && c.points.last() == Some(&[1., 1.])
             && c.points.iter().all(|p| p[0] == p[1])
     };
-    let refused: [(&str, bool); 15] = [
+    let refused: [(&str, bool); 14] = [
         (
             "White balance",
             r.temperature != d.temperature
@@ -365,10 +364,6 @@ pub fn check_hdr_file(r: &super::recipe::Recipe, m: &crate::camera_data::Metadat
             r.masks
                 .iter()
                 .any(crate::model::masks::MaskGroup::is_active),
-        ),
-        (
-            "The SDR rendition's adjustments",
-            r.hdr.sdr != SdrRendition::default(),
         ),
     ];
     if let Some((name, _)) = refused.iter().find(|(_, used)| *used) {
@@ -437,9 +432,11 @@ mod tests {
         fine.rotation = 1;
         fine.flip_x = true;
         fine.hdr.limit = 2.;
+        // The SDR rendition's sliders never change the master.
+        fine.hdr.sdr.brightness = 0.1;
         assert!(check_for(&fine, &file).is_ok());
         type Change = fn(&mut super::super::recipe::Recipe);
-        let refusals: [(&str, Change); 8] = [
+        let refusals: [(&str, Change); 7] = [
             ("White balance", |r| r.incremental_temperature = 10.),
             ("Tone", |r| r.contrast = 10.),
             ("Detail", |r| r.sharpening = 40.),
@@ -447,9 +444,6 @@ mod tests {
             ("Transform", |r| r.transform.vertical = 10.),
             ("Color", |r| r.saturation = 10.),
             ("Presence and Effects", |r| r.effects.clarity = 10.),
-            ("The SDR rendition's adjustments", |r| {
-                r.hdr.sdr.brightness = 10.
-            }),
         ];
         for (name, change) in refusals {
             let mut edit = r.clone();
@@ -519,7 +513,13 @@ mod tests {
         colour.effects.monochrome = true;
         colour.effects.gray_mix = [0.2; 8];
         assert!(check_recipe(&colour).is_ok());
-        let unmeasured: [fn(&mut Recipe); 7] = [
+        // The SDR rendition's sliders never change the master, which renders with them.
+        let mut sdr = r.clone();
+        for v in sdr.hdr.sdr.values_mut() {
+            *v = -0.5;
+        }
+        assert!(check_recipe(&sdr).is_ok());
+        let unmeasured: [fn(&mut Recipe); 6] = [
             |r| r.highlights = 0.1,
             |r| r.hsl[5][2] = -0.2,
             |r| r.effects.grain = 0.1,
@@ -529,7 +529,6 @@ mod tests {
                 r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
                 r.curve_saturation = 0.5;
             },
-            |r| r.hdr.sdr.brightness = 0.1,
         ];
         for change in unmeasured {
             let mut edit = r.clone();
