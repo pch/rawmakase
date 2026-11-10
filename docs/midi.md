@@ -1,26 +1,35 @@
 # MIDI devices
 
-Preferences > Automation separates **MIDI devices** from **Scripts and AI**.
-MIDI input is currently available on macOS and Windows. Scripts and MCP also
-work on Linux and do not need a MIDI device.
+MIDI control surfaces are the **MIDI** extension's, which ships with
+RAWmakase, enabled, and starts with it. Its page is in **Preferences >
+Extensions > MIDI**; **Preferences > Automation** keeps **Scripts and AI** and
+links there. MIDI input is currently available on macOS and Windows; on Linux
+the page says so and lists no inputs. Scripts and MCP also work on Linux and
+do not need a MIDI device. Disabling the extension stops its devices; its
+settings stay.
 
 ## Add a device
 
-1. Connect your controller and open **Preferences > Automation**.
-2. Under **MIDI devices**, choose **Add device** and a profile: **Loupedeck+**
-   for its supplied layout, or **Custom MIDI device** for an empty mapping.
+1. Connect your controller and open **Preferences > Extensions > MIDI**.
+2. Under **Devices**, choose **Add Loupedeck+** for its supplied layout, or
+   **Add Custom MIDI device** for an empty mapping. With several devices,
+   **Edit** chooses the one shown under **Device settings**.
 3. Give the device a name and choose its **MIDI input**. Use **Refresh inputs**
    after connecting another controller. Inputs are bound by their port identity;
    a disconnected controller is not silently replaced by another with the same name.
 4. Expand **Control mappings**. Move a control to discover its CC or note number,
-   or use **Add a control** to enter a number manually. Assign its parameter or action.
+   or enter its number under **Control number** and choose **Add dial / slider**
+   or **Add button**. Assign its parameter or action: a button's list holds
+   common actions, and its **Action** field takes any other, which RAWmakase
+   checks; one it doesn't run stays in the field with the reason under it and
+   isn't saved.
 5. Choose each dial/slider's **Control format**. Absolute controls map 0–127 to
    the parameter range, with 64 exactly zero for bipolar parameters such as
    Exposure and Contrast. Temperature in kelvin remains linear. Relative formats support 1/127, 65/63, or 1/65 encoders.
    The Loupedeck+ profile uses 1/127; custom controls default to absolute.
 
 Each device has its own mappings, enabled state, connection status and held
-modifiers. Add more devices using the same menu, including several of one type.
+modifiers. Add more devices with the same buttons, including several of one type.
 One physical input can belong to only one enabled entry. Disable or remove the
 old entry before assigning that input elsewhere. Ambiguous name matches are
 rejected; choose a specific input to resolve them.
@@ -76,9 +85,26 @@ Not bound: D1 (CC 41), D2 (CC 42), C2, L1–L3, Col, Fn, Tab, Custom Mode, and t
 Texture and Dehaze sliders. [tools/loupedeck/controls.json](../tools/loupedeck/controls.json)
 lists every control the device sends.
 
+## How it reaches the editor
+
+The extension's program (`rawmakase-midi`, beside the app) listens to each
+enabled device on a thread of its own and translates its messages with the
+device's mapping, its held modifiers included. It reports each connection to
+the app (`adapter.device`) and sends what the controls mean as named
+operations (`adapter.operate`): a parameter turned or set, the photo dial's
+ticks, an action. The app applies them with the same rules as before:
+adjustments follow the selected mask, the photo dial's detent is counted in
+the app, and the Library grid ignores it before it counts. A device that
+disconnects, or a program that ends, ends its gesture, and input still on its
+way from before is dropped. If the program ends unexpectedly the app starts
+it again; after three such ends in a row it stays stopped until **Retry** on
+its page. See [the protocol](extensions/protocol.md) for the messages.
+
 ## Saved configuration and migration
 
-`midi.json` in the app's data folder stores version 2 with a `devices` array.
+`midi.json` in the extension's data folder
+(`<data>/extension-data/rawmakase.midi/midi.json`) stores version 2 with a
+`devices` array.
 Each entry has a stable `id`, display `name`, `enabled`, `profile` (`loupedeck` or
 `custom`), `port`, optional `port_id`, `exact`, optional `channel`, and `mapping`.
 Mappings are stored in full, so a custom controller never inherits Loupedeck controls.
@@ -114,15 +140,24 @@ For example, a custom absolute exposure slider on CC 7 and an Undo button on not
 operations are listed by `rawmakase control capabilities`. Buttons also support
 legacy shortcut notation and held modifiers such as `hold:shift`.
 
-An existing unversioned `midi.json` becomes one Loupedeck-profile device,
-retaining port matching, mapping overrides, unassigned controls and photo-dial
-settings. It is written as version 2 when settings are next changed. A fresh
-installation starts with no devices. Invalid or unsupported configuration files
-are left intact and reported in Preferences.
+Earlier releases kept `midi.json` in the data folder itself. On the
+extension's first start RAWmakase copies it into the extension's folder,
+unless a file is there already, and leaves the original, so an older release
+still reads its own. A copy that fails is reported in the top bar and on the
+extension's page, and the original stays.
 
-`automation.json` stores script/MCP access independently. An existing legacy
-`socket` preference is honored only when `automation.json` does not exist.
-Enabling scripts does not add a device, and removing devices does not stop MCP.
+An unversioned `midi.json` becomes one Loupedeck-profile device, retaining
+port matching, mapping overrides, unassigned controls and photo-dial
+settings. It is written as version 2 when settings are next changed. A fresh
+installation starts with no devices. A file the extension can't read, or of a
+newer version, is left intact and reported, in the top bar and on its page,
+which then edits nothing until the file is fixed. A parameter or action the
+app doesn't know is kept as written and refused when its control is used.
+
+`automation.json` stores script/MCP access independently. An unversioned
+`midi.json`'s `socket` preference, in the data folder, is honored only when
+`automation.json` does not exist. Enabling scripts does not add a device, and
+removing devices does not stop MCP.
 
 ## Scripts and AI
 
@@ -147,7 +182,6 @@ python3 -m venv .venv && .venv/bin/pip install -r tools/loupedeck/requirements.t
 They write `capture.jsonl`, `mapping.json` and `probes.jsonl` to the current
 directory.
 
-The built-in profile uses Loupedeck+ names. Preferences also lists configured
-controls and the last received unknown CC/note so other device numbers can be
-mapped. The MIDI backend is available on macOS and Windows; it currently accepts
-the relative encoder encoding documented above, not absolute-position faders.
+The built-in profile uses Loupedeck+ names. The extension's page also lists
+configured controls and the last received unknown CC/note so other device
+numbers can be mapped. The MIDI backend is available on macOS and Windows.

@@ -6,7 +6,8 @@ application operations and the same editor workflows for history, treatment,
 metadata, navigation, saving and rendering.
 
 Enable **Preferences > Automation > Allow local scripts and applications** first.
-External control is **off by default**. MIDI is configured separately and does not
+External control is **off by default**. MIDI devices are the bundled MIDI
+extension's, set up on its page in Preferences > Extensions; they do not
 require external control to be enabled.
 
 ## Command-line client
@@ -226,8 +227,9 @@ use target guards for a sequence that must refer to the same edit.
 | `note` | integer `note` (0…127), `press`: `click`, `down`, `up` | Legacy device mapping |
 
 Raw socket `cc` and `note` requests use the fixed Loupedeck+ default mapping,
-independent of configured MIDI devices and their custom mappings. Their held
-modifiers are separate from physical devices. Use semantic `set`, `turn` and
+a compatibility adapter kept in the app, independent of the MIDI extension's
+devices and their custom mappings, and working with that extension disabled.
+Their held modifiers are separate from physical devices. Use semantic `set`, `turn` and
 `action` commands for device-independent scripting.
 
 The legacy `action` shortcut notation (`cmd+shift+z`, etc.) resolves to supported
@@ -270,10 +272,10 @@ desktop control, not a headless daemon. For unattended rendering without a GUI, 
 ## Configuration and compatibility
 
 `automation.json` in the data directory stores `{"protocol":1,"socket":true}`.
-MIDI device instances and their independent mappings stay in version 2
-`midi.json`. Legacy single-device files migrate to one device entry. An explicit legacy `socket` choice in
-`midi.json` is read when no `automation.json` exists; saving Automation preferences
-moves that setting to `automation.json`. A fresh installation never enables the
+MIDI devices and their mappings are the bundled MIDI extension's, in its data
+folder ([MIDI devices](midi.md)). An explicit legacy `socket` choice in an
+unversioned `<data>/midi.json` is read when no `automation.json` exists;
+saving Automation preferences moves that setting to `automation.json`. A fresh installation never enables the
 socket implicitly. Turning it off removes the connection file and rejects queued
 requests from that listener.
 

@@ -64,7 +64,6 @@ that drops it.
 | Export queue | `export/queue.rs` | A batch: decodes, renders and file writes | `closed`, between batches; the running batch's cancel, between photos and stages | Yes, after cancelling the running batch |
 | Preview builds | `app/library/preview_build.rs` | A queue of photos: decodes, renders and one SQLite write each; while nothing waits, giving back the space discarded previews left, in writes of about 25 ms at most, each followed by a pause as long | `closed`, between photos and between those writes; the running build's cancel, inside the decode and render | Yes, after cancelling |
 | Command output jobs | `app/shell/commands/output.rs` | One export or preview job | Each job's cancel, between stages | Yes, after cancelling; the close guard waits for them |
-| MIDI listener | `app/shell/automation/midi.rs` | A 2 s wait on its stop channel between port scans | The device dropped, which closes the channel | Yes; it stops at once |
 | Control socket listener | `app/shell/automation/socket.rs` | A blocking `accept`; then its connections, which it joins | The stop flag, seen after a wake-up connection | Yes, under the deadline: if the wake-up connection fails, `accept` never returns |
 | Control socket connections | `app/shell/automation/socket.rs` | A 5 s read; **a wait for the UI thread's reply: 3 s, or up to 8 s for a `wait` command**; a 5 s write | The stop flag; the request queue's receiver dropped, which answers the wait at once | Through the listener, after the request queue's receiver is dropped |
 | Library thumbnails | `app/library/previews/thumbnails.rs` | Two to four workers side by side (scoped threads), each with its own preview cache connection: the shared request channel; preview cache and file reads; **a send on a result channel bounded at 24** | Its channels dropped; the thread joined returns once every worker has | Yes, after dropping the result receiver |
@@ -91,6 +90,7 @@ that drops it.
 | Extension reader | `rawmakase-extensions` `session.rs` | A blocking read of the program's channel; **a send on the owner's queue, bounded at 64**, which it never blocks on: an operation that doesn't fit is refused `channel_full`, anything else dropped and counted | The program's end of the channel closing, when it exits or is ended | No: it ends on EOF once its process unit is gone. Nothing joins it in `Drop` |
 | Extension writer | `rawmakase-extensions` `session.rs` | Its queue (64 of the app's lines and 1024 of the reader's answers, sends refused rather than blocking when full); a write to the channel | Its queue's sender dropped (`Session::stop`, or the session dropped) | No: it ends with its queue or on the broken pipe |
 | Extension waiter | `rawmakase-extensions` `process.rs` | `waitid` (Unix, without reaping first, so the group id can't be reused) or `WaitForSingleObject` on the primary process; then ending the whole process group or job | None: it ends with the process | No |
+| MIDI device threads and sender | `extensions/midi/src/lib.rs`, in the MIDI extension's program | A device thread: a 2 s wait on its stop channel between port scans, and its connection's reports to the app (`adapter.device`), which the session's reader answers itself. The sender: its bounded queue, then each `adapter.operate` reply, at most 60 s | `quitting` stops them, as do the channel closing and the program ending; a device's thread also when its configuration changes | Not by the app: they end with the program, which its stopper waits for and then ends |
 | Extension stopper | `rawmakase-extensions` `session.rs` (`Session::stop`) | Waiting for the program to exit by itself, at most `min(1 s, deadline − 200 ms)` of the shared deadline | None: then it ends the process group (`killpg`) or job (`TerminateJobObject`) and returns | Yes, under the deadline; it returns by it. The exit hook then ends every unit not yet confirmed ended (`kill_remaining`, which never blocks) |
 
 The Develop loader, Reference View, Library previews, preview builds, exports and
@@ -145,8 +145,8 @@ macOS run their panel on the main thread, so they are never joined from it.
       nothing from its programs from now on.
    3. Stop: the `Latest` workers, the export queue, the command output jobs, the
       library's previews, selection, AI Denoise (its stop flag and the running
-      run's cancel), the model installs, Lensfun, MIDI, the control socket and
-      the extensions' programs. Each program is sent `quitting`, its channel's
+      run's cancel), the model installs, Lensfun, the control socket and the
+      extensions' programs, MIDI's among them. Each program is sent `quitting`, its channel's
       sending side is closed and its receivers are dropped, and its stopper is
       given the absolute shared deadline: it waits for the program to exit for
       at most `min(1 s, deadline − 200 ms)`, then ends its process group or
