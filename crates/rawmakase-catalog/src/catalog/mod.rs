@@ -30,6 +30,7 @@ mod edit_rows;
 mod edits;
 mod export_catalog;
 pub mod file_ops;
+mod fingerprint;
 pub mod folder_sync;
 mod format_upgrade;
 mod info;
@@ -57,6 +58,7 @@ pub use descriptive::MetadataSnapshot;
 pub use develop_history::{HistoryUpdate, SavedHistory, SavedStep};
 pub use edits::{EditChange, EditToSave};
 pub use export_catalog::{CatalogExport, ExportScope, ExportedFolders};
+pub use fingerprint::Conditional;
 pub use ingest::{Ambiguity, Choice, Conflict, IMPORT_BURST_SECONDS, PendingBurstStacks};
 pub use lightroom::HistoryStep;
 pub use location::CatalogLocation;
@@ -406,6 +408,8 @@ mod descriptive_tests;
 mod edit_rows_tests;
 #[cfg(test)]
 mod export_catalog_tests;
+#[cfg(test)]
+mod fingerprint_tests;
 #[cfg(test)]
 mod format_upgrade_tests;
 #[cfg(test)]
