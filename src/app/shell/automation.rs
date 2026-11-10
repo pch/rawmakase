@@ -1,39 +1,37 @@
-//! Transport-neutral automation owner. MIDI devices and local clients feed the
-//! same bounded application-command queue; device mappings stay in their adapters.
+//! Transport-neutral automation owner. Local clients feed a bounded
+//! application-command queue; control devices reach the editor through their
+//! extension's control adapter (the bundled MIDI extension's), whose
+//! translation of a device's controls is the extension's own.
 //!
-//! A device's adapter translates its controls into named [`DeviceOp`]s, and
+//! A device's adapter sends named [`DeviceOp`]s, and
 //! [`Editor::device_operate`] applies them with the semantics every control
 //! surface shares: adjustments follow the active mask, the photo dial does
 //! nothing in the Library grid, metadata actions follow Auto Advance and
-//! absolute values span the parameter's range.
+//! absolute values span the parameter's range. The control socket's legacy
+//! `cc` and `note` commands are such an adapter too, kept in the core
+//! ([`legacy`]).
 mod config;
-mod device;
 mod legacy;
 mod mapping;
-mod midi;
-mod profiles;
 mod settings;
 mod socket;
 use crate::app::Editor;
 use crate::app::Module;
 use crate::app::shell::commands::{self, Command, Param};
-use config::{Config, DeviceConfig, Encoder, Settings};
-use device::Device;
+use config::Settings;
 use mapping::*;
-use midi::{Last, Status, locked};
-use profiles::Profile;
 
 use eframe::egui::{self, Key, Modifiers};
 use legacy::Legacy;
+use rawmakase_extensions::protocol::method::{AdapterOperate, Operated, Operation};
+use rawmakase_extensions::protocol::{ErrorCode, RemoteError};
 use std::{
-    collections::HashMap,
-    sync::{
-        Arc, Mutex, PoisonError,
-        mpsc::{self, Receiver, SyncSender as Sender},
-    },
+    sync::mpsc::{self, Receiver, SyncSender as Sender},
     time::{Duration, Instant},
 };
 
+/// A photo dial turn that pauses this long starts afresh: its first tick
+/// moves at once.
 const PHOTO_IDLE: Duration = Duration::from_millis(600);
 /// Raw device input is translated here, never in the application command layer.
 enum Msg {
@@ -41,10 +39,8 @@ enum Msg {
     Legacy(Input),
     Command(Command),
     Request(socket::Request),
-    #[cfg(any(test, target_os = "macos", target_os = "windows"))]
-    Midi(Arc<Mutex<Status>>, u64, Input),
 }
-/// A control change or a note, as a MIDI device or a legacy socket command sends it.
+/// A control change or a note, as a legacy socket command sends it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Input {
     Cc(u8, u8),
@@ -63,6 +59,25 @@ enum DeviceOp {
     /// `advance` moves to the next photo after a metadata action.
     Action { spec: String, advance: bool },
 }
+impl DeviceOp {
+    /// An extension adapter's operation, its parameter read by name.
+    fn from_protocol(op: Operation) -> commands::Result<Self> {
+        let param = |name: &str| {
+            Param::parse(name).ok_or_else(|| {
+                commands::Error::new("unknown_parameter", format!("No slider is named {name}"))
+            })
+        };
+        Ok(match op {
+            Operation::Adjust { param: name, ticks } => Self::Adjust(param(&name)?, ticks),
+            Operation::Value { param: name, value } => Self::Value(param(&name)?, value.min(127)),
+            Operation::Photo { ticks, detent } => Self::Photo {
+                ticks,
+                detent: i32::try_from(detent).unwrap_or(i32::MAX),
+            },
+            Operation::Action { spec, advance } => Self::Action { spec, advance },
+        })
+    }
+}
 /// The photo dial's detent state for one device source. A new source (another
 /// device, or a new connection epoch) starts from a whole detent.
 struct PhotoDial {
@@ -75,22 +90,13 @@ struct PhotoDial {
 pub(in crate::app) struct Hub {
     rx: Receiver<Msg>,
     settings: Settings,
-    /// This hub's identity in its devices' gesture sources, so a device of
-    /// another hub never continues one of this hub's gestures.
-    #[cfg(any(test, target_os = "macos", target_os = "windows"))]
-    session: u64,
-    devices: Vec<Device>,
-    // Raw CC/note requests retain the legacy mapping without borrowing any
-    // physical device's modifiers, settings, or connection.
+    // Raw CC/note requests keep the legacy mapping, with modifiers of their
+    // own, whatever devices an extension runs.
     legacy: Legacy,
     photo_dials: Vec<PhotoDial>,
     link: Option<(Sender<Msg>, egui::Context)>,
     socket: Option<socket::Handle>,
-    claims: Arc<Mutex<std::collections::HashSet<String>>>,
-    selected: Option<u64>,
     load_error: Option<String>,
-    ports: Vec<midi::Port>,
-    ports_scanned: bool,
     /// Control requests waiting for a photo to load or an output to finish.
     waits: Vec<Waiting>,
 }
@@ -108,24 +114,14 @@ impl Hub {
         Self::new(Settings::default(), rx)
     }
     fn new(settings: Settings, rx: Receiver<Msg>) -> Self {
-        #[cfg(any(test, target_os = "macos", target_os = "windows"))]
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-        let devices = settings.devices.iter().cloned().map(Device::new).collect();
         Self {
             rx,
-            #[cfg(any(test, target_os = "macos", target_os = "windows"))]
-            session: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            devices,
             settings,
             legacy: Legacy::default(),
             photo_dials: Vec::new(),
             link: None,
             socket: None,
-            claims: Arc::default(),
-            selected: None,
             load_error: None,
-            ports: Vec::new(),
-            ports_scanned: false,
             waits: Vec::new(),
         }
     }
@@ -140,9 +136,6 @@ impl Hub {
         };
         let mut hub = Self::new(settings, rx);
         hub.load_error = error;
-        for device in &mut hub.devices {
-            device.start(tx.clone(), ctx.clone(), hub.claims.clone());
-        }
         hub.link = Some((tx, ctx.clone()));
         hub.set_socket(hub.settings.socket);
         hub
@@ -155,11 +148,13 @@ impl Hub {
         self.waits.clear();
         self.link = None;
     }
-    /// Stops the MIDI listeners and the control socket, to wait for at exit.
+    /// Stops the control socket, to wait for at exit.
     pub(in crate::app) fn stop(&mut self) -> Vec<crate::app::task::Stopping> {
-        let mut stopping: Vec<_> = self.devices.iter_mut().map(Device::stop).collect();
-        stopping.extend(self.socket.as_mut().map(socket::Handle::stop));
-        stopping
+        self.socket
+            .as_mut()
+            .map(socket::Handle::stop)
+            .into_iter()
+            .collect()
     }
     fn set_socket(&mut self, on: bool) {
         self.socket = None;
@@ -169,49 +164,9 @@ impl Hub {
     }
     fn apply(&mut self, settings: Settings) {
         let socket_changed = self.socket.is_some() != settings.socket;
-        let mut previous = std::mem::take(&mut self.devices);
-        for binding in &settings.devices {
-            let device = if let Some(index) = previous.iter().position(|d| &d.binding == binding) {
-                previous.remove(index)
-            } else {
-                // Drop the old listener before replacing its binding. Stale messages
-                // carry its status identity and cannot affect the replacement.
-                if let Some(index) = previous.iter().position(|d| d.binding.id == binding.id) {
-                    previous.remove(index);
-                }
-                let mut device = Device::new(binding.clone());
-                if let Some((tx, ctx)) = &self.link {
-                    device.start(tx.clone(), ctx.clone(), self.claims.clone());
-                }
-                device
-            };
-            self.devices.push(device);
-        }
         self.settings = settings;
         if socket_changed {
             self.set_socket(self.settings.socket);
-        }
-    }
-    /// Whether operations from `source` may run: a device's only while it is
-    /// enabled and `source`'s epoch is its connection's current one. The epoch
-    /// is read from the listener's status, outside the bounded queue, so input
-    /// queued before a disconnect never runs.
-    fn current(&self, source: commands::Source) -> bool {
-        match source {
-            commands::Source::Socket => true,
-            #[cfg(any(test, target_os = "macos", target_os = "windows"))]
-            commands::Source::Device {
-                session,
-                device,
-                epoch,
-            } => {
-                session == self.session
-                    && self.devices.iter().any(|d| {
-                        d.identity == device
-                            && d.binding.enabled
-                            && locked(&d.status).epoch == epoch
-                    })
-            }
         }
     }
     /// The photos `ticks` of the photo dial move by, at most one either way:
@@ -222,10 +177,10 @@ impl Hub {
             return 0;
         }
         let detent = detent.max(1);
-        // Sources no longer current (old epochs, removed devices) are dropped.
-        let mut dials = std::mem::take(&mut self.photo_dials);
-        dials.retain(|d| self.current(d.source));
-        self.photo_dials = dials;
+        // A dial idle this long would start afresh anyway; dropping it keeps
+        // the sources of ended connections from piling up.
+        self.photo_dials
+            .retain(|d| d.source == source || d.last.elapsed() <= PHOTO_IDLE);
         let index = match self.photo_dials.iter().position(|d| d.source == source) {
             Some(index) => index,
             None => {
@@ -252,6 +207,12 @@ impl Hub {
         step.signum()
     }
 }
+/// Whether a device's button may be bound to `spec`: an action the app runs,
+/// a shortcut that stands for one, or a held modifier. Answers an
+/// extension's `read.action`.
+pub(in crate::app) fn action_supported(spec: &str) -> bool {
+    supported_action(spec).is_some()
+}
 /// The command an action in [`parse_action`]'s notation names. A metadata
 /// action moves on afterward when `advance` is set.
 fn action_operation(spec: &str, advance: bool) -> commands::Result<commands::Operation> {
@@ -268,9 +229,6 @@ fn action_operation(spec: &str, advance: bool) -> commands::Result<commands::Ope
 }
 impl Editor {
     pub(in crate::app) fn control_commands(&mut self, ctx: &egui::Context) {
-        for device in &mut self.controls.devices {
-            device.sync_midi_epoch();
-        }
         let messages: Vec<_> = self.controls.rx.try_iter().take(128).collect();
         let full = messages.len() == 128;
         for message in messages {
@@ -386,9 +344,6 @@ impl Editor {
         let mut result = commands::Outcome::Empty;
         for msg in messages {
             self.sync_command_revision();
-            for device in &mut self.controls.devices {
-                device.sync_midi_epoch();
-            }
             let (source, op) = match msg {
                 Msg::Command(command) => {
                     result = self.execute_command_from(command, commands::Source::Socket, ctx)?;
@@ -401,28 +356,6 @@ impl Editor {
                     commands::Source::Socket,
                     self.controls.legacy.translate(input)?,
                 ),
-                #[cfg(any(test, target_os = "macos", target_os = "windows"))]
-                Msg::Midi(status, epoch, input) => {
-                    let ignored = self.photo_dial_ignored();
-                    let Some(device) = self.controls.devices.iter_mut().find(|d| {
-                        d.binding.enabled
-                            && Arc::ptr_eq(&status, &d.status)
-                            && epoch == d.midi_epoch
-                    }) else {
-                        continue;
-                    };
-                    let source = commands::Source::Device {
-                        session: self.controls.session,
-                        device: device.identity,
-                        epoch,
-                    };
-                    // An absolute photo dial is refused only where the dial acts;
-                    // in the Library grid it is ignored, as any photo dial input is.
-                    if ignored && device.photo_dial(input) {
-                        continue;
-                    }
-                    (source, device.translate(input)?)
-                }
             };
             if let Some(op) = op {
                 result = self.device_operate(source, op, ctx)?;
@@ -434,9 +367,50 @@ impl Editor {
     fn photo_dial_ignored(&self) -> bool {
         self.module == Module::Library && !self.library.as_ref().is_some_and(|l| l.loupe_open())
     }
+    /// Runs a device's operations from an extension's control adapter, in
+    /// order, as its gestures: `session` is the program start the host
+    /// issued, so a restarted program's devices never continue an old
+    /// gesture. Each runs only while `devices` says its connection is the
+    /// device's current one, read just before it runs: operations queued
+    /// before a disconnection never run, however many wait. An operation that
+    /// fails is said in the top bar, as `who`'s, and the rest still run.
+    /// Answers with how many ran; refused with `stale_target` when the
+    /// connection had ended before the first.
+    pub(in crate::app) fn device_operations(
+        &mut self,
+        devices: &crate::app::extensions::Devices,
+        session: u64,
+        operate: AdapterOperate,
+        who: &str,
+    ) -> Result<Operated, RemoteError> {
+        let ctx = self.context.clone();
+        let mut applied = 0;
+        for op in operate.ops {
+            let Some(device) = devices.current(&operate.adapter, &operate.device, operate.epoch)
+            else {
+                if applied == 0 {
+                    return Err(RemoteError::new(
+                        ErrorCode::StaleTarget,
+                        format!("{} isn't connected in that epoch", operate.device),
+                    ));
+                }
+                break;
+            };
+            let source = commands::Source::Device {
+                session,
+                device,
+                epoch: operate.epoch,
+            };
+            match DeviceOp::from_protocol(op).and_then(|op| self.device_operate(source, op, &ctx)) {
+                Ok(_) => applied += 1,
+                Err(error) => self.messages.warn(format!("{who}: {}", error.message)),
+            }
+        }
+        Ok(Operated { applied })
+    }
     /// Runs one operation a control device's adapter produced, with device
-    /// semantics, as `source`'s gesture. An operation from a device that is
-    /// disabled, removed or reconnected since is dropped.
+    /// semantics, as `source`'s gesture. Its caller has checked that the
+    /// device's connection is current.
     fn device_operate(
         &mut self,
         source: commands::Source,
@@ -444,9 +418,6 @@ impl Editor {
         ctx: &egui::Context,
     ) -> commands::Result<commands::Outcome> {
         use commands::Operation as O;
-        if !self.controls.current(source) {
-            return Ok(commands::Outcome::Empty);
-        }
         let mut command = Command::new(match op {
             DeviceOp::Adjust(param, ticks) => O::Adjust(param, ticks),
             DeviceOp::Value(param, value) => O::ControlValue(param, value),

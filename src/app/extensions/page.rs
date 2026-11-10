@@ -73,6 +73,13 @@ impl Offered {
     }
 }
 
+impl Page {
+    /// Shows extension `id`'s page the next time the list is drawn.
+    pub(in crate::app) fn select(&mut self, id: &str) {
+        self.selected = Some(id.to_string());
+    }
+}
+
 impl Editor {
     /// The page was opened: `extensions.json` is read again, so what the
     /// command line changed meanwhile shows.

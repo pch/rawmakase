@@ -52,9 +52,10 @@ pub(in crate::app) use preset::PresetTarget;
 pub(in crate::app) enum Source {
     /// The control socket, its legacy `cc` and `note` commands included.
     Socket,
-    /// A control device: `device` of the adapter `session`, in its connection
-    /// `epoch`. A new epoch, after a reconnection, starts new gestures.
-    #[cfg(any(test, target_os = "macos", target_os = "windows"))]
+    /// A control device of an extension's adapter: `device` (the host's
+    /// number for it) of the program start `session`, in its connection
+    /// `epoch`. A new epoch, after a reconnection, or a new start of the
+    /// program starts new gestures.
     Device {
         session: u64,
         device: u64,
@@ -73,6 +74,10 @@ impl Automation {
     }
     pub(in crate::app) fn end_turn(&mut self) {
         self.turn = None;
+    }
+    /// Who sent the gesture in progress, if any.
+    pub(in crate::app) fn turn_source(&self) -> Option<Source> {
+        self.turn.map(|(_, TurnScope(source, ..))| source)
     }
 }
 

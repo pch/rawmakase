@@ -11,34 +11,6 @@ mod mapping_tests {
     use super::*;
     use crate::model::recipe::{Recipe, TEMPERATURE_MAX, TEMPERATURE_MIN, TINT_LIMIT};
     #[test]
-    fn encoder_values_are_relative() {
-        assert_eq!(
-            (
-                Encoder::TwosComplement.ticks(1),
-                Encoder::TwosComplement.ticks(127),
-                Encoder::TwosComplement.ticks(3),
-                Encoder::TwosComplement.ticks(125)
-            ),
-            (Some(1), Some(-1), Some(3), Some(-3))
-        );
-    }
-    #[test]
-    fn parses_device_messages() {
-        assert!(matches!(
-            midi::parse(&[0xB0, 48, 1], None),
-            Some(Input::Cc(48, 1))
-        ));
-        assert!(matches!(
-            midi::parse(&[0x90, 68, 64], None),
-            Some(Input::Note(68, true))
-        ));
-        assert!(matches!(
-            midi::parse(&[0x80, 68, 64], None),
-            Some(Input::Note(68, false))
-        ));
-        assert!(midi::parse(&[0xF8], None).is_none());
-    }
-    #[test]
     fn dials_clamp_and_label_like_sliders() {
         let mut r = Recipe::default();
         assert_eq!(
@@ -196,25 +168,6 @@ mod mapping_tests {
         }
     }
     #[test]
-    fn config_overrides_defaults() {
-        let mut config = Config::defaults();
-        config.apply(&serde_json::json!({
-            "dials": {"41": "contrast", "33": null},
-            "buttons": {"98": "cmd+shift+u", "95": null, "99": "hold:shift"}
-        }));
-        assert_eq!(
-            config.dials.get(&41),
-            Some(&Param::Setting(ParameterId::Contrast))
-        );
-        assert!(!config.dials.contains_key(&33));
-        assert_eq!(
-            config.buttons.get(&98),
-            Some(&Action::Key(Key::U, command() | SHIFT))
-        );
-        assert!(!config.buttons.contains_key(&95));
-        assert_eq!(config.buttons.get(&99), Some(&Action::Hold(SHIFT)));
-    }
-    #[test]
     fn default_keys_parse_the_way_the_names_say() {
         assert_eq!(
             parse_action("Cmd+Shift+Z"),
@@ -269,62 +222,33 @@ mod mapping_tests {
             )))
         );
     }
+    /// What the MIDI extension sends is the app's notation: every binding of
+    /// its Loupedeck+ profile and every choice its page offers is a slider or
+    /// an action the app runs, and spells back to itself.
     #[test]
-    fn saved_mapping_reads_back_without_inheriting_removed_controls() {
-        let defaults = Config::defaults();
-        let saved = defaults.to_json();
-        assert_eq!(saved["dials"]["33"], "exposure");
-        assert_eq!(
-            parse_action(saved["buttons"]["95"].as_str().unwrap()),
-            defaults.buttons.get(&95).copied()
-        );
-        let mut config = Config::defaults();
-        config.dials.insert(41, Param::Hsl(2, 1));
-        config.dials.insert(42, Param::Gray(7));
-        config.dials.remove(&33);
-        config
-            .buttons
-            .insert(50, Action::Key(Key::U, command() | SHIFT));
-        config.buttons.insert(110, Action::Hold(Modifiers::ALT));
-        config.buttons.insert(111, Action::Mixer(2));
-        config.buttons.remove(&95);
-        config.photo_dial = None;
-        let read = Config::from_json(&config.to_json()).unwrap();
-        assert_eq!(read, config);
-    }
-    #[test]
-    fn every_default_spells_back_to_itself() {
-        let config = Config::defaults();
-        for (cc, param) in &config.dials {
-            assert_eq!(Param::parse(&param.spec()), Some(*param), "CC {cc}");
+    fn the_midi_extensions_bindings_are_actions_the_app_runs() {
+        let profile = rawmakase_midi::profiles::Profile::Loupedeck.mapping();
+        for (cc, name) in &profile.dials {
+            let param = Param::parse(name).unwrap_or_else(|| panic!("CC {cc}: {name}"));
+            assert_eq!(param.spec(), *name, "CC {cc}");
         }
-        for (note, action) in &config.buttons {
+        for (note, spec) in &profile.buttons {
+            let action = supported_action(spec).unwrap_or_else(|| panic!("note {note}: {spec}"));
             assert_eq!(
-                parse_action(&action_spec(*action)),
-                Some(*action),
+                parse_action(&action_spec(action)),
+                Some(action),
                 "note {note}"
             );
         }
-        for (label, spec) in settings::PRESETS {
+        for (label, spec) in rawmakase_midi::PRESETS {
             assert!(
-                spec.is_empty() || parse_action(spec).is_some(),
+                spec.is_empty() || supported_action(spec).is_some(),
                 "{label}: {spec}"
             );
+            assert!(spec.is_empty() || action_supported(spec), "{label}: {spec}");
         }
-    }
-    #[test]
-    fn every_device_message_is_listed_for_the_page() {
-        // The page lists what the device sends; the defaults must be among it.
-        let config = Config::defaults();
-        for cc in config.dials.keys().chain(config.photo_dial.iter()) {
-            assert!(profiles::DIALS.iter().any(|(_, n)| n == cc), "CC {cc}");
-        }
-        for note in config.buttons.keys() {
-            assert!(
-                profiles::BUTTONS.iter().any(|(_, n)| n == note),
-                "note {note}"
-            );
-        }
+        assert!(!action_supported("nonsense"));
+        assert!(!action_supported("cmd+q"), "a shortcut with no action");
     }
     #[test]
     fn held_modifiers_join_and_leave() {
@@ -339,74 +263,6 @@ mod mapping_tests {
 
 mod integration_tests {
     use super::*;
-    #[test]
-    fn disconnect_clears_modifiers_even_with_old_input_queued() {
-        let ctx = egui::Context::default();
-        let mut e = Editor::with_context(
-            &ctx,
-            None,
-            crate::app::preferences::session::Session::default(),
-            None,
-        );
-        let (tx, rx) = mpsc::sync_channel(1);
-        e.controls = Hub::new(
-            Settings {
-                devices: vec![DeviceConfig::new(1, Profile::Loupedeck)],
-                socket: false,
-            },
-            rx,
-        );
-        let old = midi::reset_connection(&e.controls.devices[0].status, &ctx);
-        e.control_messages(
-            vec![Msg::Midi(
-                e.controls.devices[0].status.clone(),
-                old,
-                Input::Note(66, true),
-            )],
-            &ctx,
-        )
-        .unwrap();
-        assert!(e.controls.devices[0].held.shift);
-        tx.send(Msg::Midi(
-            e.controls.devices[0].status.clone(),
-            old,
-            Input::Note(68, true),
-        ))
-        .unwrap();
-        // The reset cannot be lost even though the bounded queue is full.
-        let new = midi::reset_connection(&e.controls.devices[0].status, &ctx);
-        e.control_commands(&ctx);
-        assert_eq!(e.controls.devices[0].held, Modifiers::NONE);
-        let undo = operation(e.controls.devices[0].translate(Input::Note(95, true)));
-        assert!(matches!(
-            undo,
-            commands::Operation::Action(commands::Action::Undo)
-        ));
-        e.control_messages(
-            vec![Msg::Midi(
-                e.controls.devices[0].status.clone(),
-                new,
-                Input::Note(66, true),
-            )],
-            &ctx,
-        )
-        .unwrap();
-        assert!(e.controls.devices[0].held.shift);
-        midi::reset_connection(&e.controls.devices[0].status, &ctx);
-        e.control_commands(&ctx);
-        assert_eq!(e.controls.devices[0].held, Modifiers::NONE);
-        // Changing the configured port creates a separate listener identity.
-        let old_source = e.controls.devices[0].status.clone();
-        let old_epoch = locked(&old_source).epoch;
-        e.controls.devices[0] = Device::new(DeviceConfig::new(1, Profile::Loupedeck));
-        e.control_messages(
-            vec![Msg::Midi(old_source, old_epoch, Input::Note(66, true))],
-            &ctx,
-        )
-        .unwrap();
-        assert_eq!(e.controls.devices[0].held, Modifiers::NONE);
-    }
-
     #[test]
     fn photo_dial_ignores_grid_preserves_loupe_and_navigates_develop() -> anyhow::Result<()> {
         let ctx = egui::Context::default();
@@ -486,7 +342,7 @@ mod integration_tests {
 
     #[test]
     fn modifier_bindings_become_actions_without_keyboard_state() {
-        let mut surface = Device::new(DeviceConfig::new(0, Profile::Loupedeck));
+        let mut surface = Legacy::default();
         let command = operation(surface.translate(Input::Note(92, true)));
         assert!(matches!(
             command,
@@ -530,13 +386,7 @@ mod integration_tests {
         );
         e.onboarding.visible = false;
         let (tx, rx) = mpsc::sync_channel(4);
-        e.controls = Hub::new(
-            Settings {
-                devices: vec![DeviceConfig::new(1, Profile::Loupedeck)],
-                socket: false,
-            },
-            rx,
-        );
+        e.controls = Hub::new(Settings::default(), rx);
         let (first, r1) = socket::test_request(vec![Msg::Command(Command::new(
             commands::Operation::Set(Param::Setting(ParameterId::Exposure), 1.),
         ))]);
@@ -722,145 +572,6 @@ mod integration_tests {
 }
 
 #[test]
-fn migration_preserves_legacy_overrides_and_custom_devices_are_empty() {
-    let legacy = serde_json::json!({"port":"My Deck","socket":true,"dials":{"33":null,"41":"texture"},"buttons":{"95":null}});
-    let mut settings = Settings::from_json(&legacy).unwrap();
-    assert!(settings.socket);
-    assert_eq!(settings.devices[0].port, "My Deck");
-    assert!(!settings.devices[0].exact);
-    assert!(!settings.devices[0].mapping.dials.contains_key(&33));
-    assert_eq!(
-        settings.devices[0].mapping.dials.get(&41),
-        Some(&Param::Setting(ParameterId::Texture))
-    );
-    assert!(!settings.devices[0].mapping.buttons.contains_key(&95));
-    let id = settings.add(Profile::Custom);
-    let custom = settings.devices.iter_mut().find(|d| d.id == id).unwrap();
-    assert!(custom.mapping.dials.is_empty() && custom.mapping.buttons.is_empty());
-    assert!(custom.port.is_empty());
-    custom.port = "Other device".into();
-    custom
-        .mapping
-        .dials
-        .insert(11, Param::Setting(ParameterId::Exposure));
-    custom.mapping.encoders.insert(11, Encoder::Offset);
-    let restored = Settings::from_json(&settings.to_json()).unwrap();
-    assert_eq!(restored.devices, settings.devices);
-    assert!(
-        !restored.socket,
-        "MIDI config must not enable script access"
-    );
-    assert!(Settings::default().devices.is_empty());
-    assert!(Settings::from_json(&serde_json::json!({"version":99,"devices":[]})).is_err());
-}
-
-#[test]
-fn port_selection_requires_an_unambiguous_binding() {
-    let ports = vec![
-        midi::Port {
-            id: "a".into(),
-            name: "Controller".into(),
-        },
-        midi::Port {
-            id: "b".into(),
-            name: "Controller".into(),
-        },
-    ];
-    let mut binding = DeviceConfig::new(1, Profile::Custom);
-    assert_eq!(midi::select_port(&binding, &ports).unwrap(), None);
-    binding.port = "Controller".into();
-    assert!(midi::select_port(&binding, &ports).is_err());
-    binding.port_id = Some("b".into());
-    assert_eq!(
-        midi::select_port(&binding, &ports).unwrap(),
-        Some("b".into())
-    );
-    assert_eq!(
-        midi::select_port(&binding, &ports[..1]).unwrap(),
-        None,
-        "Do not switch to another identical controller after disconnect"
-    );
-}
-
-#[test]
-fn control_formats_and_midi_channels_are_explicit() {
-    assert_eq!(Encoder::TwosComplement.ticks(127), Some(-1));
-    assert_eq!(Encoder::Offset.ticks(63), Some(-1));
-    assert_eq!(Encoder::Offset.ticks(64), Some(0));
-    assert_eq!(Encoder::SignMagnitude.ticks(65), Some(-1));
-    assert_eq!(Encoder::Absolute.ticks(127), None);
-    assert!(midi::parse(&[0xb1, 12, 127], Some(1)).is_none());
-    assert!(matches!(
-        midi::parse(&[0xb1, 12, 127], Some(2)),
-        Some(Input::Cc(12, 127))
-    ));
-    let mut binding = DeviceConfig::new(1, Profile::Custom);
-    binding
-        .mapping
-        .dials
-        .insert(12, Param::Setting(ParameterId::Exposure));
-    let mut device = Device::new(binding);
-    assert_eq!(
-        device.translate(Input::Cc(12, 127)).unwrap(),
-        Some(DeviceOp::Value(Param::Setting(ParameterId::Exposure), 127))
-    );
-    device.binding.mapping.encoders.insert(12, Encoder::Offset);
-    assert_eq!(
-        device.translate(Input::Cc(12, 63)).unwrap(),
-        Some(DeviceOp::Adjust(Param::Setting(ParameterId::Exposure), -1))
-    );
-}
-
-#[test]
-fn editing_one_device_preserves_others_and_removed_input_is_ignored() {
-    let ctx = egui::Context::default();
-    let mut e = Editor::with_context(
-        &ctx,
-        None,
-        crate::app::preferences::session::Session::default(),
-        None,
-    );
-    let (_, rx) = mpsc::sync_channel(8);
-    e.controls = Hub::new(
-        Settings {
-            devices: vec![
-                DeviceConfig::new(1, Profile::Loupedeck),
-                DeviceConfig::new(2, Profile::Loupedeck),
-            ],
-            socket: false,
-        },
-        rx,
-    );
-    let source = e.controls.devices[0].status.clone();
-    e.control_messages(
-        vec![Msg::Midi(source.clone(), 0, Input::Note(66, true))],
-        &ctx,
-    )
-    .unwrap();
-    assert!(e.controls.devices[0].held.shift);
-    assert!(!e.controls.devices[1].held.shift);
-    assert!(!e.controls.legacy.held.shift);
-    let unaffected = e.controls.devices[1].identity;
-    let mut updated = e.controls.settings.clone();
-    updated.devices[0]
-        .mapping
-        .dials
-        .insert(41, Param::Setting(ParameterId::Texture));
-    e.controls.apply(updated.clone());
-    assert_eq!(e.controls.devices[1].identity, unaffected);
-    assert!(!e.controls.devices[0].held.shift);
-    e.control_messages(vec![Msg::Midi(source, 0, Input::Note(66, true))], &ctx)
-        .unwrap();
-    assert!(!e.controls.devices[0].held.shift);
-    let removed = e.controls.devices[0].status.clone();
-    updated.devices.remove(0);
-    e.controls.apply(updated);
-    e.control_messages(vec![Msg::Midi(removed, 0, Input::Note(66, true))], &ctx)
-        .unwrap();
-    assert!(!e.controls.devices[0].held.shift);
-}
-
-#[test]
 fn a_button_resolves_the_same_through_its_spec() {
     // Devices hand the core a spec; it must name what the action itself does.
     let modifiers = [
@@ -900,24 +611,13 @@ fn a_button_resolves_the_same_through_its_spec() {
 
 #[test]
 fn each_device_source_keeps_its_own_photo_dial_detent() {
-    let ctx = egui::Context::default();
-    let (_, rx) = mpsc::sync_channel(1);
-    let mut hub = Hub::new(
-        Settings {
-            devices: vec![
-                DeviceConfig::new(1, Profile::Loupedeck),
-                DeviceConfig::new(2, Profile::Loupedeck),
-            ],
-            socket: false,
-        },
-        rx,
-    );
-    let source = |hub: &Hub, index: usize| commands::Source::Device {
-        session: hub.session,
-        device: hub.devices[index].identity,
-        epoch: locked(&hub.devices[index].status).epoch,
+    let mut hub = Hub::inactive();
+    let device = |device, epoch| commands::Source::Device {
+        session: 1,
+        device,
+        epoch,
     };
-    let (a, b) = (source(&hub, 0), source(&hub, 1));
+    let (a, b) = (device(1, 1), device(2, 1));
     assert_eq!(hub.photo_turn(a, 1, 2), 1);
     assert_eq!(hub.photo_turn(a, 1, 2), 0);
     // The other device's turn starts afresh and leaves this one's half detent.
@@ -926,14 +626,29 @@ fn each_device_source_keeps_its_own_photo_dial_detent() {
     // So does the socket's legacy photo dial.
     assert_eq!(hub.photo_turn(commands::Source::Socket, 1, 2), 1);
     assert_eq!(hub.photo_turn(commands::Source::Socket, 1, 2), 0);
-    // A reconnection starts a fresh turn, which moves at once.
-    midi::reset_connection(&hub.devices[0].status, &ctx);
-    assert_eq!(hub.photo_turn(source(&hub, 0), 1, 2), 1);
-    assert!(hub.photo_dials.iter().all(|d| d.source != a));
+    // A reconnection, or another start of the program, starts a fresh turn,
+    // which moves at once.
+    assert_eq!(hub.photo_turn(device(1, 2), 1, 2), 1);
+    let restarted = commands::Source::Device {
+        session: 2,
+        device: 1,
+        epoch: 1,
+    };
+    assert_eq!(hub.photo_turn(restarted, 1, 2), 1);
+    // A dial idle past a turn's pause is dropped: it would start afresh.
+    for dial in &mut hub.photo_dials {
+        dial.last -= PHOTO_IDLE * 2;
+    }
+    assert_eq!(hub.photo_turn(a, 1, 2), 1);
+    assert_eq!(hub.photo_dials.len(), 1);
 }
 
+/// An extension's device operations run in order, each only while its
+/// connection is the device's current one, read just before it runs.
 #[test]
-fn a_device_operation_runs_only_in_its_current_epoch() {
+fn device_operations_run_only_in_their_current_epoch() {
+    use crate::app::extensions::Devices;
+    use rawmakase_extensions::protocol::method::{AdapterDevice, DeviceState};
     let ctx = egui::Context::default();
     let mut e = Editor::with_context(
         &ctx,
@@ -941,41 +656,62 @@ fn a_device_operation_runs_only_in_its_current_epoch() {
         crate::app::preferences::session::Session::default(),
         None,
     );
-    let (_, rx) = mpsc::sync_channel(1);
-    e.controls = Hub::new(
-        Settings {
-            devices: vec![DeviceConfig::new(1, Profile::Loupedeck)],
-            socket: false,
-        },
-        rx,
+    e.onboarding.visible = false;
+    let devices = Devices::default();
+    let report = |state, epoch| AdapterDevice {
+        adapter: "midi".into(),
+        device: "1".into(),
+        state,
+        epoch,
+    };
+    let operate = |epoch, ops: Vec<Operation>| AdapterOperate {
+        adapter: "midi".into(),
+        device: "1".into(),
+        epoch,
+        ops,
+    };
+    let exposure = || Operation::Adjust {
+        param: "exposure".into(),
+        ticks: 5,
+    };
+    // Not connected: refused whole.
+    let refused = e
+        .device_operations(&devices, 1, operate(1, vec![exposure()]), "MIDI")
+        .unwrap_err();
+    assert_eq!(refused.code, ErrorCode::StaleTarget);
+    devices.apply(&report(DeviceState::Connected, 1)).unwrap();
+    // Connected, an operation that runs and fails (no photo is open) is said
+    // and counts for nothing; one dropped in the Library grid ran.
+    e.module = Module::Library;
+    let photo = Operation::Photo {
+        ticks: 1,
+        detent: 2,
+    };
+    let unknown = Operation::Value {
+        param: "sparkle".into(),
+        value: 3,
+    };
+    let ran = e
+        .device_operations(
+            &devices,
+            1,
+            operate(1, vec![exposure(), photo, unknown]),
+            "MIDI",
+        )
+        .unwrap();
+    assert_eq!(ran.applied, 1);
+    assert!(
+        e.messages.line().starts_with("MIDI: "),
+        "{}",
+        e.messages.line()
     );
-    let device = &e.controls.devices[0];
-    let old = commands::Source::Device {
-        session: e.controls.session,
-        device: device.identity,
-        epoch: locked(&device.status).epoch,
-    };
-    // With no photo open, an adjustment that runs fails; one dropped doesn't.
-    let exposure = DeviceOp::Adjust(Param::Setting(ParameterId::Exposure), 5);
-    midi::reset_connection(&e.controls.devices[0].status, &ctx);
-    assert!(e.device_operate(old, exposure.clone(), &ctx).is_ok());
-    // Nor does a device of another hub, or one that is disabled.
-    let current = commands::Source::Device {
-        session: e.controls.session,
-        device: e.controls.devices[0].identity,
-        epoch: locked(&e.controls.devices[0].status).epoch,
-    };
-    let other = commands::Source::Device {
-        session: e.controls.session + 1,
-        device: e.controls.devices[0].identity,
-        epoch: locked(&e.controls.devices[0].status).epoch,
-    };
-    assert!(e.device_operate(other, exposure.clone(), &ctx).is_ok());
-    e.controls.devices[0].binding.enabled = false;
-    assert!(e.device_operate(current, exposure.clone(), &ctx).is_ok());
-    e.controls.devices[0].binding.enabled = true;
-    assert_eq!(
-        e.device_operate(current, exposure, &ctx).unwrap_err().code,
-        "no_document"
-    );
+    // A new connection refuses the old one's.
+    devices
+        .apply(&report(DeviceState::Disconnected, 1))
+        .unwrap();
+    devices.apply(&report(DeviceState::Connected, 2)).unwrap();
+    let stale = e
+        .device_operations(&devices, 1, operate(1, vec![exposure()]), "MIDI")
+        .unwrap_err();
+    assert_eq!(stale.code, ErrorCode::StaleTarget);
 }

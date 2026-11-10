@@ -5,13 +5,18 @@
 //! and a program's session; this module decides when a program runs and what
 //! its requests mean to the editor:
 //!
-//! - [`Host`] owns every loaded extension: bundled ones (MCP), installed
+//! - [`Host`] owns every loaded extension: bundled ones (MCP, MIDI), installed
 //!   ones and those loaded from a folder in developer mode, with what this
 //!   session knows of each (running, crashed, Failed). It is started only by
 //!   `Editor::new`; a test editor's is inert and reads nothing.
-//! - `with-app` programs start after the first frame, `on-demand` ones at
-//!   their first request, and an `on-demand` program idle for
-//!   [`IDLE_STOP`] is stopped.
+//! - `with-app` programs start after the first frame, and again after they
+//!   end, until they are Failed; `on-demand` ones start at their first
+//!   request, and an `on-demand` program idle for [`IDLE_STOP`] is stopped.
+//! - A program's control adapters report their devices (`adapter.device`) to
+//!   the [`Devices`] table of its start, applied by the session's reader
+//!   thread outside the operation queue; their operations
+//!   (`adapter.operate`) run through the editor, each only in its device's
+//!   current epoch, as gestures of a source the host issued for that start.
 //! - [`Host::poll`] runs every frame: it hands over what programs sent,
 //!   enforces deadlines through the session, counts crashes and answers the
 //!   programs' requests through the editor (see `editor.rs`).
@@ -52,19 +57,23 @@
 //! ([`Host::close_channels`]), each program is stopped by the shared deadline
 //! ([`Host::stop`]), and the exit hook ends every unit left
 //! ([`Host::kill_remaining`]).
+mod devices;
 mod editor;
+#[cfg(test)]
+mod midi_tests;
 mod page;
 mod panels;
 mod targets;
 #[cfg(test)]
 mod tests;
 
+pub(in crate::app) use devices::Devices;
 pub(in crate::app) use editor::Told;
 pub(crate) use editor::{Done, PathTarget};
 pub(in crate::app) use page::Page;
 
 use crate::app::shell::commands::registry::{self, Dynamic};
-use rawmakase_extensions::protocol::manifest::Start;
+use rawmakase_extensions::protocol::manifest::{Launch as AdapterLaunch, Start};
 use rawmakase_extensions::protocol::method::{
     AppEvent, AppRequest, CommandRun, Hello, Level, PanelChanged, PanelClicked, PanelOpen,
     ProgramEvent, ProgramRequest, SettingChanged, Snapshot,
@@ -95,10 +104,17 @@ pub(in crate::app) const CRASHES: u32 = 3;
 const ERRORS: usize = 5;
 
 /// The bundled extensions' manifests, compiled in; their programs are found
-/// beside the app's executable. MIDI joins when it moves out of the core.
-const BUNDLED: &[&str] = &[include_str!(
-    "../../../extensions/mcp/rawmakase-extension.toml"
-)];
+/// beside the app's executable.
+const BUNDLED: &[&str] = &[
+    include_str!("../../../extensions/mcp/rawmakase-extension.toml"),
+    include_str!("../../../extensions/midi/rawmakase-extension.toml"),
+];
+
+/// Files the core kept in the data folder before an extension took them
+/// over, by extension: on the extension's first start the file is copied
+/// into its data folder, unless one is there already, and the original
+/// stays, so an older RAWmakase still reads it.
+const TAKEN_OVER: &[(&str, &str)] = &[("rawmakase.midi", "midi.json")];
 
 /// Where a loaded extension comes from.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -205,6 +221,10 @@ struct Running {
     stopping: bool,
     /// Its proposals being applied.
     deferred: Vec<Deferred>,
+    /// The `session` number `hello` sent: its devices' gestures carry it.
+    number: u64,
+    /// Its control adapters' devices.
+    devices: std::sync::Arc<Devices>,
 }
 
 /// One host-drawn panel's controls, as its program last returned them.
@@ -339,12 +359,14 @@ pub(in crate::app) enum Outcome {
 pub(in crate::app) struct Call {
     pub request: ProgramRequest,
     /// What a proposal's History step and Undo are named: the command it
-    /// belongs to.
+    /// belongs to. The extension's name for anything else.
     pub title: String,
     /// Names a proposal answered later, in [`Host::finish_proposal`].
     pub ticket: u64,
     /// When a proposal's command stops being admitted by its deadline.
     pub deadline: Option<Instant>,
+    /// For `adapter.operate`: the program start's number and its devices.
+    pub devices: Option<(u64, std::sync::Arc<Devices>)>,
 }
 
 /// How the editor answers a [`Call`].
@@ -386,14 +408,22 @@ pub(in crate::app) struct Host {
     search_dirs: Vec<PathBuf>,
     /// How long an app request may take before it is cancelled.
     request_deadline: Duration,
-    /// Tests start every program as this instead: their own test binary,
-    /// running the example extension.
+    /// Problems for the top bar, from the next poll.
+    notices: Vec<String>,
+    /// Tests start every program that isn't bundled as this instead: their
+    /// own test binary, running the example extension.
     #[cfg(test)]
     program_override: Option<Launch>,
     /// Every proposal's reply, by ticket, for tests that make proposals
     /// without a program.
     #[cfg(test)]
     pub(in crate::app) finished: Vec<(u64, Result<Value, RemoteError>)>,
+    /// Tests start these bundled extensions, by id, as these programs.
+    #[cfg(test)]
+    bundled_override: Vec<(String, Launch)>,
+    /// The size of each session's queues, smaller in a test.
+    #[cfg(test)]
+    queue: usize,
 }
 
 impl Default for Host {
@@ -420,10 +450,15 @@ impl Host {
             errors: Vec::new(),
             search_dirs: Vec::new(),
             request_deadline: session::REQUEST_DEADLINE,
+            notices: Vec::new(),
             #[cfg(test)]
             program_override: None,
             #[cfg(test)]
             finished: Vec::new(),
+            #[cfg(test)]
+            bundled_override: Vec::new(),
+            #[cfg(test)]
+            queue: session::QUEUE,
         }
     }
     /// A host of `data_dir` whose programs all start as `program` (its
@@ -444,6 +479,52 @@ impl Host {
         };
         host.reload();
         host
+    }
+    /// A host of `data_dir` whose bundled extension `id` starts as
+    /// `program`, with sessions' queues of `queue` messages; the other
+    /// bundled ones aren't found, and nothing else starts.
+    #[cfg(test)]
+    pub(in crate::app) fn with_bundled_for_tests(
+        data_dir: &Path,
+        id: &str,
+        program: Launch,
+        queue: usize,
+    ) -> Self {
+        let mut host = Self {
+            store: Some(Store::new(data_dir)),
+            bundled_override: vec![(id.to_string(), program)],
+            queue,
+            ..Self::inert()
+        };
+        host.reload();
+        host
+    }
+    /// A host of `data_dir` whose bundled programs are found in
+    /// `search_dirs`, as a release finds them beside the app.
+    #[cfg(test)]
+    pub(in crate::app) fn with_search_dirs_for_tests(
+        data_dir: &Path,
+        search_dirs: Vec<PathBuf>,
+    ) -> Self {
+        let mut host = Self {
+            store: Some(Store::new(data_dir)),
+            search_dirs,
+            ..Self::inert()
+        };
+        host.reload();
+        host
+    }
+    /// The test launch of bundled extension `id`, if it has one.
+    #[cfg(test)]
+    fn bundled_launch(&self, id: &str) -> Option<&Launch> {
+        self.bundled_override
+            .iter()
+            .find(|(b, _)| b == id)
+            .map(|(_, launch)| launch)
+    }
+    #[cfg(not(test))]
+    fn bundled_launch(&self, _: &str) -> Option<&Launch> {
+        None
     }
     /// A host in `dir` with the example extension loaded from a folder, whose
     /// program can't start: for drawing its page without running anything.
@@ -534,6 +615,19 @@ impl Host {
         })
     }
 
+    /// Whether device `device`'s connection `epoch`, of the program start
+    /// `session`, is still its current one: false once it disconnected, its
+    /// program ended or crashed, or its extension was disabled. The editor
+    /// ends a gesture of a device that no longer is.
+    pub(in crate::app) fn device_current(&self, session: u64, device: u64, epoch: u64) -> bool {
+        self.extensions.iter().any(|e| {
+            e.entry.enabled
+                && e.run.as_ref().is_some_and(|r| {
+                    r.number == session && !r.stopping && r.devices.is_current(device, epoch)
+                })
+        })
+    }
+
     /// Counts changes to [`Host::commands`].
     pub(in crate::app) fn revision(&self) -> u64 {
         self.revision
@@ -580,7 +674,10 @@ impl Host {
             rawmakase_extensions::bundled::discover(BUNDLED, &self.search_dirs).into_iter()
         {
             match bundled {
-                Ok(b) => {
+                Ok(mut b) => {
+                    if let Some(launch) = self.bundled_launch(&b.manifest.extension.id) {
+                        b.program = Some(launch.program.clone());
+                    }
                     let problem = b.problem();
                     let dir = b
                         .program
@@ -833,16 +930,35 @@ impl Host {
     fn spawn(&mut self, index: usize) -> Result<(), String> {
         let number = self.next_number;
         let (store, wake) = (self.store.clone(), self.wake.clone());
-        let e = &mut self.extensions[index];
-        e.can_run()?;
+        self.extensions[index].can_run()?;
         let store = store.ok_or("Extensions are off in this editor")?;
-        let program = e.program.clone().ok_or("no program")?;
-        let id = e.id().to_string();
+        let id = self.extensions[index].id().to_string();
         let data_dir = store.extension_data_dir(&id);
         let cache_dir = store.data_dir().join("extension-cache").join(&id);
         for dir in [&data_dir, &cache_dir] {
-            std::fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
+            if let Err(err) = std::fs::create_dir_all(dir) {
+                // A start that fails counts as a crash, so a `with-app`
+                // program, started again after each, is Failed in the end.
+                let why = format!("{}: {err}", dir.display());
+                Self::crashed(&mut self.extensions[index], why.clone());
+                return Err(why);
+            }
         }
+        for (_, file) in TAKEN_OVER.iter().filter(|(owner, _)| *owner == id) {
+            if let Err(why) = take_over(store.data_dir(), &data_dir, file) {
+                let e = &mut self.extensions[index];
+                let why = format!("{}: {why}", e.name());
+                e.error(why.clone());
+                self.notices.push(why);
+            }
+        }
+        #[cfg(test)]
+        let test_launch = match self.extensions[index].origin {
+            Origin::Bundled => self.bundled_launch(&id).cloned(),
+            _ => self.program_override.clone(),
+        };
+        let e = &mut self.extensions[index];
+        let program = e.program.clone().ok_or("no program")?;
         #[cfg_attr(not(test), expect(unused_mut, reason = "tests replace the program"))]
         let mut launch = Launch {
             program,
@@ -852,13 +968,51 @@ impl Host {
             log: data_dir.join("log.txt"),
         };
         #[cfg(test)]
-        if let Some(program) = &self.program_override {
-            launch.program.clone_from(&program.program);
-            launch.args.clone_from(&program.args);
-            launch.env.clone_from(&program.env);
+        if let Some(program) = test_launch {
+            launch.program = program.program;
+            launch.args = program.args;
+            launch.env = program.env;
         }
+        let devices = std::sync::Arc::new(Devices::default());
+        let adapters: Vec<String> = e
+            .manifest
+            .control_adapters
+            .iter()
+            .filter(|a| a.launch == AdapterLaunch::App)
+            .map(|a| a.id.clone())
+            .collect();
+        let lifecycle = (!adapters.is_empty()).then(|| -> session::Lifecycle {
+            let devices = devices.clone();
+            std::sync::Arc::new(move |method: &str, params: &Value| {
+                if !ProgramRequest::is_lifecycle(method) {
+                    return None;
+                }
+                Some(match ProgramRequest::parse(method, params.clone()) {
+                    Ok(ProgramRequest::AdapterDevice(report))
+                        if adapters.contains(&report.adapter) =>
+                    {
+                        devices.apply(&report).map(|()| Value::Null)
+                    }
+                    Ok(ProgramRequest::AdapterDevice(report)) => Err(RemoteError::new(
+                        ErrorCode::InvalidRequest,
+                        format!(
+                            "the manifest declares no control adapter {}",
+                            report.adapter
+                        ),
+                    )),
+                    Ok(_) => Err(RemoteError::new(
+                        ErrorCode::InvalidRequest,
+                        format!("{method} is not a lifecycle request"),
+                    )),
+                    Err(err) => Err(err),
+                })
+            })
+        });
         let options = SessionOptions {
             wake,
+            lifecycle,
+            #[cfg(test)]
+            queue: self.queue,
             ..SessionOptions::default()
         };
         let mut session = match Session::spawn(&launch, options) {
@@ -902,6 +1056,8 @@ impl Host {
             started: now,
             stopping: false,
             deferred: Vec::new(),
+            number,
+            devices,
         });
         e.last_active = now;
         Ok(())
@@ -1342,8 +1498,13 @@ impl Host {
             return None;
         }
         self.polls += 1;
+        outcomes.extend(self.notices.drain(..).map(|text| Outcome::Message {
+            level: Level::Warning,
+            text,
+        }));
         // After the first frame: the window shows before any program starts.
-        if self.polls == 2 {
+        // A `with-app` program that ended starts again, until it is Failed.
+        if self.polls >= 2 {
             for index in 0..self.extensions.len() {
                 let e = &self.extensions[index];
                 let with_app = e
@@ -1592,12 +1753,45 @@ impl Host {
                 e.status = status.text.filter(|t| !t.trim().is_empty());
                 Answer::Now(Ok(Value::Null))
             }
-            ProgramRequest::AdapterDevice(_) | ProgramRequest::AdapterOperate(_) => {
-                Answer::Now(Err(RemoteError::new(
-                    ErrorCode::Other("adapter_disabled".into()),
-                    "this RAWmakase runs no control adapter of this extension",
-                )))
+            ProgramRequest::AdapterOperate(operate) => {
+                let declared = e
+                    .manifest
+                    .control_adapters
+                    .iter()
+                    .any(|a| a.id == operate.adapter && a.launch == AdapterLaunch::App);
+                let run = e.run.as_ref().filter(|r| !r.stopping && e.entry.enabled);
+                let Some(run) = run.filter(|_| declared) else {
+                    return Answer::Now(Err(RemoteError::new(
+                        ErrorCode::Other("adapter_disabled".into()),
+                        format!(
+                            "{} is not an enabled control adapter of {}",
+                            operate.adapter,
+                            e.name()
+                        ),
+                    )));
+                };
+                let call = Call {
+                    request: ProgramRequest::AdapterOperate(operate),
+                    title: e.name().to_string(),
+                    ticket,
+                    deadline: None,
+                    devices: Some((run.number, run.devices.clone())),
+                };
+                let result = answer(call);
+                // Useful work: a device's input changed the editor.
+                if let Answer::Now(Ok(v)) = &result
+                    && v["applied"].as_u64().is_some_and(|n| n > 0)
+                {
+                    self.extensions[index].crashes = 0;
+                }
+                result
             }
+            // Applied by the session's reader when the extension declares an
+            // adapter the app launches; anything else declares none.
+            ProgramRequest::AdapterDevice(_) => Answer::Now(Err(RemoteError::new(
+                ErrorCode::Other("adapter_disabled".into()),
+                "this extension declares no control adapter RAWmakase launches",
+            ))),
             ProgramRequest::ProposeSettings(proposal) => {
                 if !Self::admitted(e, proposal.op) {
                     return Answer::Now(Err(RemoteError::new(
@@ -1617,6 +1811,7 @@ impl Host {
                     title,
                     ticket,
                     deadline,
+                    devices: None,
                 });
                 if let Answer::Later(cancel) = &answered {
                     let e = &mut self.extensions[index];
@@ -1640,6 +1835,7 @@ impl Host {
                     title: e.name().to_string(),
                     ticket,
                     deadline: None,
+                    devices: None,
                 });
                 if let Answer::Reading(cancel) = &answered {
                     match self.extensions[index].run.as_mut() {
@@ -1859,6 +2055,33 @@ fn placeholder(id: &str, name: &str) -> Manifest {
         panels: Vec::new(),
         control_adapters: Vec::new(),
     }
+}
+
+/// Copies `file` from the data folder `data` into an extension's data folder
+/// `into`, unless one is there already or there is none to copy. The copy is
+/// written whole before it takes the name, so an interrupted copy leaves no
+/// partial file to be taken for the user's.
+fn take_over(data: &Path, into: &Path, file: &str) -> Result<(), String> {
+    let (from, to) = (data.join(file), into.join(file));
+    if std::fs::symlink_metadata(&to).is_ok() {
+        return Ok(());
+    }
+    if let Err(e) = std::fs::symlink_metadata(&from) {
+        return match e.kind() {
+            std::io::ErrorKind::NotFound => Ok(()),
+            _ => Err(format!("{} wasn't read: {e}", from.display())),
+        };
+    }
+    let temp = into.join(format!(".{file}.copy"));
+    let copied = std::fs::copy(&from, &temp).and_then(|_| std::fs::rename(&temp, &to));
+    copied.map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        format!(
+            "{} wasn't copied into {}: {e}; its devices are left there",
+            from.display(),
+            into.display()
+        )
+    })
 }
 
 /// The manifest's and the program's modification times.

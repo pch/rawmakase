@@ -7,7 +7,9 @@ use crate::app::Editor;
 use crate::app::worker::Event;
 use crate::catalog::PhotoId;
 use rawmakase_extensions::protocol::manifest::AppliesTo;
-use rawmakase_extensions::protocol::method::{AppEvent, Empty, Level, PhotoOpened, ProgramRequest};
+use rawmakase_extensions::protocol::method::{
+    ActionSupport, AppEvent, Empty, Level, PhotoOpened, ProgramRequest,
+};
 use rawmakase_extensions::protocol::{ErrorCode, RemoteError};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -122,7 +124,24 @@ impl Editor {
         let next = host.poll(now, &mut |call| self.answer_extension(call), &mut outcomes);
         self.extensions = host;
         self.sync_extension_commands();
+        self.end_device_gesture();
         (outcomes, next)
+    }
+
+    /// Ends the gesture in progress when the device that sent it is gone:
+    /// disconnected, removed, its program ended or its extension disabled.
+    /// Its next input, from a new connection or start, is a gesture of its
+    /// own anyway; this keeps nothing joining the old one meanwhile.
+    fn end_device_gesture(&mut self) {
+        if let Some(crate::app::shell::commands::Source::Device {
+            session,
+            device,
+            epoch,
+        }) = self.automation.turn_source()
+            && !self.extensions.device_current(session, device, epoch)
+        {
+            self.automation.end_turn();
+        }
     }
 
     /// Says what came of commands, and the programs' notifications.
@@ -182,15 +201,6 @@ impl Editor {
     /// Answers a program's read or admitted proposal; a proposal for photos
     /// not open is answered when its worker finishes.
     fn answer_extension(&mut self, call: Call) -> Answer {
-        if let ProgramRequest::ProposeSettings(proposal) = call.request {
-            return match self.propose(proposal, &call.title, call.ticket, call.deadline) {
-                Ok(super::targets::Proposing::Done(proposed)) => {
-                    Answer::Now(Ok(serde_json::to_value(proposed).expect("a reply is JSON")))
-                }
-                Ok(super::targets::Proposing::Started(cancel)) => Answer::Later(cancel),
-                Err(err) => Answer::Now(Err(err)),
-            };
-        }
         // A read of photos not open opens their files: on a worker, answered
         // when it finishes.
         if let Some(ids) = self.read_ids(&call.request) {
@@ -206,7 +216,34 @@ impl Editor {
                 }
             };
         }
-        Answer::Now(self.answer_read(call.request))
+        let Call {
+            request,
+            title,
+            ticket,
+            deadline,
+            devices,
+        } = call;
+        match request {
+            ProgramRequest::ProposeSettings(proposal) => {
+                match self.propose(proposal, &title, ticket, deadline) {
+                    Ok(super::targets::Proposing::Done(proposed)) => {
+                        Answer::Now(Ok(serde_json::to_value(proposed).expect("a reply is JSON")))
+                    }
+                    Ok(super::targets::Proposing::Started(cancel)) => Answer::Later(cancel),
+                    Err(err) => Answer::Now(Err(err)),
+                }
+            }
+            ProgramRequest::AdapterOperate(operate) => Answer::Now(match devices {
+                None => Err(RemoteError::new(
+                    ErrorCode::InvalidRequest,
+                    "no devices for this request",
+                )),
+                Some((session, devices)) => self
+                    .device_operations(&devices, session, operate, &title)
+                    .map(|v| serde_json::to_value(v).expect("a reply is JSON")),
+            }),
+            request => Answer::Now(self.answer_read(request)),
+        }
     }
 
     /// The photos a read of them asks for, in order; none for any other
@@ -224,7 +261,8 @@ impl Editor {
         }
     }
 
-    /// Answers a program's request for the control layer's capabilities.
+    /// Answers a program's request for the control layer's capabilities, or
+    /// whether it runs an action.
     fn answer_read(&mut self, request: ProgramRequest) -> Result<Value, RemoteError> {
         match request {
             ProgramRequest::ReadCapabilities(_) => {
@@ -240,6 +278,9 @@ impl Editor {
                 .map(|outcome| serde_json::to_value(outcome).expect("capabilities are JSON"))
                 .map_err(|e| RemoteError::new(ErrorCode::Other(e.code.into()), e.message))
             }
+            ProgramRequest::ReadAction(read) => value(Ok(ActionSupport {
+                supported: crate::app::shell::automation::action_supported(&read.spec),
+            })),
             _ => Err(RemoteError::new(
                 ErrorCode::UnknownMethod,
                 "the host answers this request itself",
