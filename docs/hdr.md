@@ -26,8 +26,9 @@ the HDR master as closely as Camera Raw's two renders do. Camera Raw's own is no
 that: the SDR base of its gain-map JPEG is a local tone map of the HDR master, which
 departs from its HDR-off render by a median 0.2 stop on a photo
 ([record](records/hdr-stage1-results.md#sdr-rendition)). Its SDR rendition sliders
-(`SDRBrightness` and the others) adjust that tone map; RAWmakase doesn't render them,
-so a master is refused while any of them is set.
+(`SDRBrightness` and the others) adjust that tone map and never change the master
+(Camera Raw 18.7's is bit-identical with each at ±50). RAWmakase keeps them in the edit
+and renders the master with them, as without; its SDR rendition doesn't render them.
 
 Develop shows the HDR master on a display with headroom ([Display](#display)) and
 the SDR rendition everywhere else, and says which under the Basic panel's HDR switch,
@@ -287,8 +288,7 @@ something without a measured HDR rendering: Highlights, Whites above
 +50, a channel's point curve, Refine Saturation other than 100%, a point
 curve whose last point is left of white, Presence (Clarity, Dehaze), the
 colour mixer's Luminance, Point Color, Color Grading, Defringe, grain and vignette,
-masks, Red Eye, the SDR rendition's
-sliders, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
+masks, Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
 Highlights and Shadows: "Highlights, which the look sets, …") or split toning, DCP
 tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
@@ -347,9 +347,10 @@ one. Exposure is a gain of the
 light, applied before the pseudo-scene. That is how Camera Raw 18.7 renders a PQ
 TIFF it opens as an HDR edit: its light at the file's settings, and Exposure ±1 and
 +2 as gains of it at every level ([HDR files](records/hdr-stage1-results.md#hdr-files)). The master takes crop, straighten, Rotate and Flip, sharpening and
-resizing as a raw's does, and then the limit. Anything else refuses the master by name
-(`model::hdr::check_hdr_file`); the edit keeps it, and its SDR rendition renders
-it.
+resizing as a raw's does, and then the limit, and the SDR rendition's sliders, which
+never change it (measured on raws; for HDR files the same is assumed). Anything else
+refuses the master by name (`model::hdr::check_hdr_file`); the edit keeps it, and its
+SDR rendition renders it.
 
 Still refused, as Develop refused every HDR file before:
 - HEIC gain maps on Windows and Linux, which open as their SDR base, and the HDR
@@ -601,7 +602,8 @@ pixels and metadata, and the gain map turns it into the HDR master on a display 
 headroom. The map is one 8-bit channel the base's size, computed in the base's colour
 space (sRGB primaries, linear) from luminance as log2 of (HDR + 1/64) / (SDR + 1/64),
 between its minimum and maximum over the photo, gamma 1. The base's headroom is 0 and
-the alternate's log2 of 2^limit. The file is laid out as libultrahdr writes it: the base
+the alternate's log2 of 2^limit. The SDR rendition's sliders (`crs:SDR*`), which Camera
+Raw's base follows, are not rendered in it, as in SDR exports. The file is laid out as libultrahdr writes it: the base
 with an ISO 21496-1 version marker and an MPF index, then the map's grayscale JPEG with
 the metadata in APP2. No XMP `hdrgm` metadata (Adobe's earlier gain-map format) is
 written. A gain map's gamut is the base's, Rec. 709.
