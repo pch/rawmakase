@@ -3866,6 +3866,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rawmakase-extension"
+version = "0.1.0"
+dependencies = [
+ "rawmakase-extension-protocol",
+ "serde",
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "rawmakase-extension-protocol"
 version = "0.1.0"
 dependencies = [
