@@ -22,9 +22,10 @@ pub(in crate::app) enum Tab {
     Display,
     Shortcuts,
     Automation,
+    Extensions,
 }
 impl Tab {
-    const ALL: [Tab; 7] = [
+    const ALL: [Tab; 8] = [
         Tab::General,
         Tab::Catalog,
         Tab::Profiles,
@@ -32,6 +33,7 @@ impl Tab {
         Tab::Display,
         Tab::Shortcuts,
         Tab::Automation,
+        Tab::Extensions,
     ];
     fn title(self) -> &'static str {
         match self {
@@ -42,6 +44,7 @@ impl Tab {
             Tab::Display => "Display",
             Tab::Shortcuts => "Shortcuts",
             Tab::Automation => "Automation",
+            Tab::Extensions => "Extensions",
         }
     }
     fn icon(self) -> Icon {
@@ -53,6 +56,7 @@ impl Tab {
             Tab::Display => Icon::Monitor,
             Tab::Shortcuts => Icon::Keyboard,
             Tab::Automation => Icon::Automation,
+            Tab::Extensions => Icon::Extensions,
         }
     }
 }
@@ -174,6 +178,9 @@ impl Editor {
         self.preferences.import = crate::catalog::ImportOptions::load();
         self.measure_usage();
         self.measure_raw_defaults();
+        if tab == Tab::Extensions {
+            self.extensions_page_opened();
+        }
     }
     fn measure_usage(&mut self) {
         let catalog = self.library.as_ref().map(|l| l.session.catalog());
@@ -307,6 +314,11 @@ impl Editor {
                             .auto_shrink(false)
                             .show(&mut content, |ui| cards(ui, |ui| self.automation_page(ui)));
                     }
+                    Tab::Extensions => {
+                        egui::ScrollArea::vertical()
+                            .auto_shrink(false)
+                            .show(&mut content, |ui| cards(ui, |ui| self.extensions_page(ui)));
+                    }
                 }
                 let footer = egui::Rect::from_min_max(
                     egui::pos2(sidebar.right() + 32., rect.bottom() - 56.),
@@ -415,6 +427,9 @@ impl Editor {
                 self.preferences.tab = tab;
                 self.preferences.shortcuts.stop_capturing();
                 self.measure_usage();
+                if tab == Tab::Extensions {
+                    self.extensions_page_opened();
+                }
             }
         }
     }
@@ -1503,6 +1518,9 @@ mod tests {
     /// What a page paints past the right edge it is clipped to: text or
     /// controls cut off by the window.
     fn cut_off(tab: Tab) -> Vec<String> {
+        cut_off_in(tab, |_| {})
+    }
+    fn cut_off_in(tab: Tab, prepare: impl FnOnce(&mut Editor)) -> Vec<String> {
         let ctx = egui::Context::default();
         let mut e = Editor::with_context(
             &ctx,
@@ -1510,6 +1528,7 @@ mod tests {
             crate::app::preferences::session::Session::default(),
             None,
         );
+        prepare(&mut e);
         e.onboarding.visible = false;
         e.preferences.open = true;
         e.preferences.tab = tab;
@@ -1541,6 +1560,13 @@ mod tests {
         for tab in Tab::ALL {
             assert_eq!(cut_off(tab), Vec::<String>::new(), "{}", tab.title());
         }
+        // Extensions with one loaded: its page, settings, commands and panel
+        // (whose program can't start here, which the page says).
+        let dir = tempfile::tempdir().unwrap();
+        let shown = cut_off_in(Tab::Extensions, |e| {
+            e.extensions = crate::app::extensions::Host::with_example_for_tests(dir.path());
+        });
+        assert_eq!(shown, Vec::<String>::new(), "Extensions with one loaded");
     }
 }
 

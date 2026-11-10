@@ -62,6 +62,8 @@ pub(crate) enum AutoKind {
     WhiteBalance,
 }
 pub(crate) enum Event {
+    /// A file dialog or background work of Preferences > Extensions.
+    Extensions(Box<crate::app::extensions::Done>),
     /// A verified camera profile was installed into the library, or why not.
     ProfileDownloaded {
         id: u64,

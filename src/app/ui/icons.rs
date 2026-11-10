@@ -47,6 +47,7 @@ fastframe_icons::icons! {
         Catalog => "library-big",
         Performance => "gauge",
         Automation => "zap",
+        Extensions => "puzzle",
         Monitor => lucide "monitor",
         Close => lucide "x",
         Check => lucide "check",

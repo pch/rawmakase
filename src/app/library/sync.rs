@@ -134,6 +134,18 @@ pub(crate) enum BatchChange {
     AutoSettings,
     /// A Develop preset at 100%, as a click in Develop's Presets panel applies it.
     Preset(Box<BatchPreset>),
+    /// Settings an extension proposed, set as the control socket's `set` sets
+    /// them.
+    Proposed(Box<ProposedSettings>),
+}
+/// An extension's proposal for one photo, as a batch applies it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ProposedSettings {
+    /// The command that proposed them, which names the History step and Undo.
+    pub name: String,
+    /// The control layer's parameter names (`exposure`, `band3.sat`) and the
+    /// values as their sliders show them.
+    pub settings: Vec<(String, f32)>,
 }
 /// A preset as a batch applies it: read once, when the batch starts.
 #[derive(Clone, Debug, PartialEq)]
@@ -150,6 +162,7 @@ impl BatchChange {
             BatchChange::MatchTotalExposures => "Match Total Exposures".into(),
             BatchChange::AutoSettings => "Auto Settings".into(),
             BatchChange::Preset(p) => format!("Apply Preset: {}", p.name),
+            BatchChange::Proposed(p) => p.name.clone(),
         }
     }
     /// Each photo's History step, named as Develop names the same change.
@@ -421,6 +434,64 @@ pub(in crate::app) fn synchronize(
     result
 }
 
+/// What [`apply_if`] did to a photo.
+pub(in crate::app) enum AppliedIf {
+    /// Written, as one History step.
+    Changed(Box<Synced>),
+    /// The change left the photo as it was; nothing was written.
+    Unchanged,
+    /// The photo's edit, metadata or file changed since `expected` was read:
+    /// nothing was written.
+    Moved,
+}
+
+/// Applies `change` to `target`, a photo not open in Develop, as a batch
+/// applies it (its saved edit or starting settings, its History), and writes
+/// it only while the photo's catalog fingerprint is still `expected`
+/// ([`crate::catalog::Catalog::change_edits_if`]) and its file still
+/// `identity`.
+pub(in crate::app) fn apply_if(
+    session: &mut crate::catalog_session::CatalogSession,
+    change: &BatchChange,
+    target: &SyncTarget,
+    expected: &str,
+    identity: &crate::storage::Identity,
+    defaults: &DevelopDefaults,
+    decoding: &Decoding,
+) -> Result<AppliedIf> {
+    let prepared = prepare(
+        session.catalog(),
+        None,
+        change,
+        target,
+        defaults,
+        decoding,
+        Cancel::NEVER,
+    )?;
+    let Some(edit) = prepared.edit else {
+        return Ok(AppliedIf::Unchanged);
+    };
+    if !edit.synced.identity.same_photo(identity) {
+        return Ok(AppliedIf::Moved);
+    }
+    let save = EditToSave {
+        id: edit.synced.id,
+        path: &edit.synced.path,
+        source: &edit.synced.identity,
+        recipe: &edit.synced.after,
+        export: &edit.export,
+        history: HistoryUpdate::Replace(&edit.synced.history),
+    };
+    match session.change_edits_if(
+        target.id,
+        expected,
+        &crate::catalog::EditChange::Save(&save),
+    )? {
+        crate::catalog::Conditional::Written => Ok(AppliedIf::Changed(Box::new(edit.synced))),
+        crate::catalog::Conditional::Moved => Ok(AppliedIf::Moved),
+    }
+}
+
 /// A target's new edit, ready to save.
 struct PreparedEdit {
     synced: Synced,
@@ -575,6 +646,37 @@ fn prepare(
             settings_groups::Transferred {
                 recipe: applied.recipe,
                 notes,
+            }
+        }
+        // As `set` changes the open photo's settings (see `command_parameter`).
+        BatchChange::Proposed(p) => {
+            let mut recipe = start.clone();
+            for (name, value) in &p.settings {
+                use crate::app::shell::commands::Param;
+                let param = match Param::parse(name) {
+                    // A JPEG's Temp and Tint are relative, as the open photo's.
+                    Some(Param::Setting(id)) => Param::Setting(id.for_photo(Some(&metadata))),
+                    Some(param) => param,
+                    None => anyhow::bail!("{name} is not a setting"),
+                };
+                let change = |r: &mut Recipe| param.set(r, *value, 0);
+                match param {
+                    Param::Setting(id) => {
+                        crate::model::edit::change_setting(
+                            &mut recipe,
+                            id,
+                            Some(&metadata),
+                            change,
+                        );
+                    }
+                    _ => {
+                        change(&mut recipe);
+                    }
+                }
+            }
+            settings_groups::Transferred {
+                recipe,
+                notes: Vec::new(),
             }
         }
     };
@@ -1083,7 +1185,7 @@ fn finished(
 }
 
 /// A catalog photo as a Sync names and reads it.
-fn sync_target(p: &crate::catalog::Photo) -> SyncTarget {
+pub(in crate::app) fn sync_target(p: &crate::catalog::Photo) -> SyncTarget {
     SyncTarget {
         id: p.id,
         path: p.path.clone(),

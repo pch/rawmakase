@@ -149,6 +149,16 @@ impl CatalogSession {
     ) -> Result<()> {
         self.catalog.change_edits(changes)
     }
+    /// Saves one photo's change only while its fingerprint is still
+    /// `expected` ([`Catalog::change_edits_if`]). Changes no list.
+    pub(crate) fn change_edits_if(
+        &mut self,
+        id: PhotoId,
+        expected: &str,
+        change: &crate::catalog::EditChange<'_, '_>,
+    ) -> Result<crate::catalog::Conditional> {
+        self.catalog.change_edits_if(id, expected, change)
+    }
     /// Adds a snapshot of `photo` ([`Catalog::add_snapshot`]). Changes no list.
     pub(crate) fn add_snapshot(
         &mut self,

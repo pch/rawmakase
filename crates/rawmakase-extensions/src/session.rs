@@ -604,6 +604,11 @@ impl Stopping {
     pub fn killer(&self) -> Killer {
         Killer(self.unit.clone())
     }
+    /// The stopper thread, for an owner that waits for several stops together
+    /// under one deadline; it ends by the deadline given to [`Session::stop`].
+    pub fn into_thread(self) -> JoinHandle<()> {
+        self.thread
+    }
 }
 
 /// Ends a unit from anywhere, without blocking.

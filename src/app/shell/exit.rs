@@ -44,7 +44,7 @@ impl Editor {
     fn exit_by(&mut self, until: Instant) -> task::Waited {
         self.cancel_jobs();
         self.close_channels();
-        let mut stopping = self.stop_workers();
+        let mut stopping = self.stop_workers(until);
         // Nothing but the terminal is left to say so in: the edit stays as autosave
         // last saved it.
         match self.flush_by(until) {
@@ -56,6 +56,10 @@ impl Editor {
         // Only now: the save went through it.
         stopping.push(self.autosave.close());
         let waited = task::wait_for(stopping, until.saturating_duration_since(Instant::now()));
+        // Whatever an extension's program left running (its stopper detached,
+        // the deadline already past, a helper it started) is ended now; this
+        // never blocks.
+        self.extensions.kill_remaining();
         // Exports cut off at the deadline end with the process, which leaves their
         // temporary files behind.
         let removing = std::thread::Builder::new()
@@ -74,11 +78,13 @@ impl Editor {
         self.reference.cancel_load();
         self.prefetch_cancel.store(true, Ordering::Relaxed);
         self.automation.cancel_outputs();
+        self.extensions.cancel_requests();
     }
     /// Drops the channel ends workers wait on, so none waits for the interface.
     fn close_channels(&mut self) {
         self.updates.close();
         self.controls.close_requests();
+        self.extensions.close_channels();
     }
 }
 

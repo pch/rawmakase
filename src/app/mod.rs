@@ -138,6 +138,12 @@ pub(crate) struct Editor {
     /// The user's keymap.toml and the chords in effect: the defaults in a
     /// test editor, which never reads the data folder.
     keymap: crate::app::shell::keymap::file::KeymapFile,
+    /// The extensions and their programs: inert in a test editor.
+    extensions: crate::app::extensions::Host,
+    /// What the extensions were last told of the editor.
+    extensions_told: crate::app::extensions::Told,
+    /// Preferences > Extensions.
+    extension_page: crate::app::extensions::Page,
 }
 impl Editor {
     pub(crate) fn new(
@@ -179,6 +185,7 @@ impl Editor {
                 editor.messages.fail(report);
             }
         }
+        editor.start_extensions(&cc.egui_ctx);
         // 1:1 previews left unused past the chosen time go, as in Lightroom.
         editor.expire_previews();
         editor.updates.launched(launch, &mut editor.messages);
@@ -404,6 +411,9 @@ impl Editor {
             controls: crate::app::shell::automation::Hub::inactive(),
             automation: crate::app::shell::commands::Automation::default(),
             keymap: crate::app::shell::keymap::file::KeymapFile::defaults(),
+            extensions: crate::app::extensions::Host::inert(),
+            extensions_told: Default::default(),
+            extension_page: Default::default(),
         };
         app.reload_presets(ctx);
         // A catalog passed on the command line opens instead of the last one;
@@ -979,6 +989,7 @@ pub use crate::app::presets::bulk_import::import_profiles;
 pub(crate) mod catalog;
 pub(crate) mod develop;
 mod export;
+mod extensions;
 mod file_ops;
 pub(crate) mod library;
 pub(crate) mod preferences;
