@@ -138,6 +138,14 @@ the edit's whole photo stays, to show again in Fit. While a master is due, the w
 since macOS changes it with the display's brightness without waking the window.
 Display changes are view changes, never edits.
 
+**Preview for SDR display**, under the Basic panel's HDR switch while HDR is on, shows
+the SDR rendition instead, as Lightroom's does: on every side of the viewport, with the
+SDR rendition's histogram and readout, and without asking the display for EDR. It is a
+view choice for every photo while RAWmakase runs (`ViewState::sdr_preview`), not part of
+the edit: Camera Raw 18.7 writes no setting for it, and turning it on or off adds no
+history step. An edit's SDR rendition settings (`crs:SDR*`, from Lightroom or Camera Raw)
+are kept, and the note under the switch says the SDR rendition doesn't render them.
+
 Beside the edit, the Basic panel's note also says what the other side shows, named
 (Before or Reference), so a comparison of brightness says when one side is SDR.
 Everything else shows the SDR rendition, and the Basic panel's note says why: the
