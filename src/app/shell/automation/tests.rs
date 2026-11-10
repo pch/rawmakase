@@ -1,5 +1,12 @@
 use super::*;
 use crate::{app::Module, model::params::ParameterId};
+/// The command a translated action names, before the editor's device semantics.
+fn operation(op: commands::Result<Option<DeviceOp>>) -> commands::Operation {
+    match op.unwrap().unwrap() {
+        DeviceOp::Action { spec, advance } => action_operation(&spec, advance).unwrap(),
+        op => panic!("not an action: {op:?}"),
+    }
+}
 mod mapping_tests {
     use super::*;
     use crate::model::recipe::{Recipe, TEMPERATURE_MAX, TEMPERATURE_MIN, TINT_LIMIT};
@@ -19,15 +26,15 @@ mod mapping_tests {
     fn parses_device_messages() {
         assert!(matches!(
             midi::parse(&[0xB0, 48, 1], None),
-            Some(Msg::Cc(48, 1))
+            Some(Input::Cc(48, 1))
         ));
         assert!(matches!(
             midi::parse(&[0x90, 68, 64], None),
-            Some(Msg::Note(68, true))
+            Some(Input::Note(68, true))
         ));
         assert!(matches!(
             midi::parse(&[0x80, 68, 64], None),
-            Some(Msg::Note(68, false))
+            Some(Input::Note(68, false))
         ));
         assert!(midi::parse(&[0xF8], None).is_none());
     }
@@ -354,7 +361,7 @@ mod integration_tests {
             vec![Msg::Midi(
                 e.controls.devices[0].status.clone(),
                 old,
-                Box::new(Msg::Note(66, true)),
+                Input::Note(66, true),
             )],
             &ctx,
         )
@@ -363,26 +370,23 @@ mod integration_tests {
         tx.send(Msg::Midi(
             e.controls.devices[0].status.clone(),
             old,
-            Box::new(Msg::Note(68, true)),
+            Input::Note(68, true),
         ))
         .unwrap();
         // The reset cannot be lost even though the bounded queue is full.
         let new = midi::reset_connection(&e.controls.devices[0].status, &ctx);
         e.control_commands(&ctx);
         assert_eq!(e.controls.devices[0].held, Modifiers::NONE);
-        let undo = e.controls.devices[0]
-            .translate(Msg::Note(95, true))
-            .unwrap()
-            .unwrap();
+        let undo = operation(e.controls.devices[0].translate(Input::Note(95, true)));
         assert!(matches!(
-            undo.operation,
+            undo,
             commands::Operation::Action(commands::Action::Undo)
         ));
         e.control_messages(
             vec![Msg::Midi(
                 e.controls.devices[0].status.clone(),
                 new,
-                Box::new(Msg::Note(66, true)),
+                Input::Note(66, true),
             )],
             &ctx,
         )
@@ -396,11 +400,7 @@ mod integration_tests {
         let old_epoch = locked(&old_source).epoch;
         e.controls.devices[0] = Device::new(DeviceConfig::new(1, Profile::Loupedeck));
         e.control_messages(
-            vec![Msg::Midi(
-                old_source,
-                old_epoch,
-                Box::new(Msg::Note(66, true)),
-            )],
+            vec![Msg::Midi(old_source, old_epoch, Input::Note(66, true))],
             &ctx,
         )
         .unwrap();
@@ -436,11 +436,13 @@ mod integration_tests {
         library.make_active(first);
         let second = library.navigate(first, 1).unwrap();
         e.module = Module::Library;
-        e.control_messages(vec![Msg::Cc(48, 1)], &ctx).unwrap();
+        e.control_messages(vec![Msg::Legacy(Input::Cc(48, 1))], &ctx)
+            .unwrap();
         assert!(e.module == Module::Library);
         assert_eq!(e.library.as_ref().unwrap().selected(), Some(first));
         e.library.as_mut().unwrap().open_loupe();
-        e.control_messages(vec![Msg::Cc(48, 1)], &ctx).unwrap();
+        e.control_messages(vec![Msg::Legacy(Input::Cc(48, 1))], &ctx)
+            .unwrap();
         assert!(e.module == Module::Library);
         assert!(e.library.as_ref().unwrap().loupe_open());
         assert_eq!(e.library.as_ref().unwrap().selected(), Some(second));
@@ -475,7 +477,8 @@ mod integration_tests {
         assert_eq!(e.library.as_ref().unwrap().selected(), Some(first));
         e.module = Module::Develop;
         e.document.catalog_photo = Some(second);
-        e.control_messages(vec![Msg::Cc(48, 127)], &ctx).unwrap();
+        e.control_messages(vec![Msg::Legacy(Input::Cc(48, 127))], &ctx)
+            .unwrap();
         assert!(e.module == Module::Develop);
         assert_eq!(e.document.catalog_photo, Some(first));
         Ok(())
@@ -484,32 +487,32 @@ mod integration_tests {
     #[test]
     fn modifier_bindings_become_actions_without_keyboard_state() {
         let mut surface = Device::new(DeviceConfig::new(0, Profile::Loupedeck));
-        let command = surface.translate(Msg::Note(92, true)).unwrap().unwrap();
+        let command = operation(surface.translate(Input::Note(92, true)));
         assert!(matches!(
-            command.operation,
+            command,
             commands::Operation::Action(commands::Action::Copy)
         ));
-        let command = surface.translate(Msg::Note(95, true)).unwrap().unwrap();
+        let command = operation(surface.translate(Input::Note(95, true)));
         assert!(matches!(
-            command.operation,
+            command,
             commands::Operation::Action(commands::Action::Undo)
         ));
-        surface.translate(Msg::Note(66, true)).unwrap();
-        let command = surface.translate(Msg::Note(95, true)).unwrap().unwrap();
+        surface.translate(Input::Note(66, true)).unwrap();
+        let command = operation(surface.translate(Input::Note(95, true)));
         assert!(matches!(
-            command.operation,
+            command,
             commands::Operation::Action(commands::Action::Redo)
         ));
-        surface.translate(Msg::Note(66, false)).unwrap();
+        surface.translate(Input::Note(66, false)).unwrap();
         assert_eq!(surface.held, Modifiers::NONE);
-        let command = surface.translate(Msg::Note(51, true)).unwrap().unwrap();
+        let command = operation(surface.translate(Input::Note(51, true)));
         assert!(
-            matches!(command.operation,commands::Operation::Metadata {edit:crate::app::library::photo_metadata::Edit::ToggleLabel(ref label),advance:false} if label=="Red")
+            matches!(command,commands::Operation::Metadata {edit:crate::app::library::photo_metadata::Edit::ToggleLabel(ref label),advance:false} if label=="Red")
         );
-        surface.translate(Msg::Note(66, true)).unwrap();
-        let command = surface.translate(Msg::Note(80, true)).unwrap().unwrap();
+        surface.translate(Input::Note(66, true)).unwrap();
+        let command = operation(surface.translate(Input::Note(80, true)));
         assert!(matches!(
-            command.operation,
+            command,
             commands::Operation::Metadata {
                 edit: crate::app::library::photo_metadata::Edit::Rating(1),
                 advance: true
@@ -723,7 +726,7 @@ fn control_formats_and_midi_channels_are_explicit() {
     assert!(midi::parse(&[0xb1, 12, 127], Some(1)).is_none());
     assert!(matches!(
         midi::parse(&[0xb1, 12, 127], Some(2)),
-        Some(Msg::Cc(12, 127))
+        Some(Input::Cc(12, 127))
     ));
     let mut binding = DeviceConfig::new(1, Profile::Custom);
     binding
@@ -731,23 +734,15 @@ fn control_formats_and_midi_channels_are_explicit() {
         .dials
         .insert(12, Param::Setting(ParameterId::Exposure));
     let mut device = Device::new(binding);
-    assert!(matches!(
-        device
-            .translate(Msg::Cc(12, 127))
-            .unwrap()
-            .unwrap()
-            .operation,
-        commands::Operation::ControlValue(Param::Setting(ParameterId::Exposure), 127)
-    ));
+    assert_eq!(
+        device.translate(Input::Cc(12, 127)).unwrap(),
+        Some(DeviceOp::Value(Param::Setting(ParameterId::Exposure), 127))
+    );
     device.binding.mapping.encoders.insert(12, Encoder::Offset);
-    assert!(matches!(
-        device
-            .translate(Msg::Cc(12, 63))
-            .unwrap()
-            .unwrap()
-            .operation,
-        commands::Operation::Adjust(Param::Setting(ParameterId::Exposure), -1)
-    ));
+    assert_eq!(
+        device.translate(Input::Cc(12, 63)).unwrap(),
+        Some(DeviceOp::Adjust(Param::Setting(ParameterId::Exposure), -1))
+    );
 }
 
 #[test]
@@ -772,7 +767,7 @@ fn editing_one_device_preserves_others_and_removed_input_is_ignored() {
     );
     let source = e.controls.devices[0].status.clone();
     e.control_messages(
-        vec![Msg::Midi(source.clone(), 0, Box::new(Msg::Note(66, true)))],
+        vec![Msg::Midi(source.clone(), 0, Input::Note(66, true))],
         &ctx,
     )
     .unwrap();
@@ -788,19 +783,133 @@ fn editing_one_device_preserves_others_and_removed_input_is_ignored() {
     e.controls.apply(updated.clone());
     assert_eq!(e.controls.devices[1].identity, unaffected);
     assert!(!e.controls.devices[0].held.shift);
-    e.control_messages(
-        vec![Msg::Midi(source, 0, Box::new(Msg::Note(66, true)))],
-        &ctx,
-    )
-    .unwrap();
+    e.control_messages(vec![Msg::Midi(source, 0, Input::Note(66, true))], &ctx)
+        .unwrap();
     assert!(!e.controls.devices[0].held.shift);
     let removed = e.controls.devices[0].status.clone();
     updated.devices.remove(0);
     e.controls.apply(updated);
-    e.control_messages(
-        vec![Msg::Midi(removed, 0, Box::new(Msg::Note(66, true)))],
-        &ctx,
-    )
-    .unwrap();
+    e.control_messages(vec![Msg::Midi(removed, 0, Input::Note(66, true))], &ctx)
+        .unwrap();
     assert!(!e.controls.devices[0].held.shift);
+}
+
+#[test]
+fn a_button_resolves_the_same_through_its_spec() {
+    // Devices hand the core a spec; it must name what the action itself does.
+    let modifiers = [
+        Modifiers::NONE,
+        SHIFT,
+        Modifiers::CTRL,
+        command(),
+        Modifiers::ALT,
+    ];
+    let mut actions: Vec<_> = commands::Action::names()
+        .into_iter()
+        .filter_map(commands::Action::parse)
+        .map(Action::Named)
+        .chain([
+            Action::ToggleMono,
+            Action::Mixer(0),
+            Action::Mixer(1),
+            Action::Mixer(2),
+        ])
+        .collect();
+    for key in Key::ALL {
+        for a in modifiers {
+            for b in modifiers {
+                actions.push(Action::Key(*key, a | b));
+            }
+        }
+    }
+    for action in actions {
+        let spec = action_spec(action);
+        assert_eq!(
+            parse_action(&spec).and_then(resolve),
+            resolve(action),
+            "{spec}"
+        );
+    }
+}
+
+#[test]
+fn each_device_source_keeps_its_own_photo_dial_detent() {
+    let ctx = egui::Context::default();
+    let (_, rx) = mpsc::sync_channel(1);
+    let mut hub = Hub::new(
+        Settings {
+            devices: vec![
+                DeviceConfig::new(1, Profile::Loupedeck),
+                DeviceConfig::new(2, Profile::Loupedeck),
+            ],
+            socket: false,
+        },
+        rx,
+    );
+    let source = |hub: &Hub, index: usize| commands::Source::Device {
+        session: hub.session,
+        device: hub.devices[index].identity,
+        epoch: locked(&hub.devices[index].status).epoch,
+    };
+    let (a, b) = (source(&hub, 0), source(&hub, 1));
+    assert_eq!(hub.photo_turn(a, 1, 2), 1);
+    assert_eq!(hub.photo_turn(a, 1, 2), 0);
+    // The other device's turn starts afresh and leaves this one's half detent.
+    assert_eq!(hub.photo_turn(b, 1, 2), 1);
+    assert_eq!(hub.photo_turn(a, 1, 2), 1);
+    // So does the socket's legacy photo dial.
+    assert_eq!(hub.photo_turn(commands::Source::Socket, 1, 2), 1);
+    assert_eq!(hub.photo_turn(commands::Source::Socket, 1, 2), 0);
+    // A reconnection starts a fresh turn, which moves at once.
+    midi::reset_connection(&hub.devices[0].status, &ctx);
+    assert_eq!(hub.photo_turn(source(&hub, 0), 1, 2), 1);
+    assert!(hub.photo_dials.iter().all(|d| d.source != a));
+}
+
+#[test]
+fn a_device_operation_runs_only_in_its_current_epoch() {
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    let (_, rx) = mpsc::sync_channel(1);
+    e.controls = Hub::new(
+        Settings {
+            devices: vec![DeviceConfig::new(1, Profile::Loupedeck)],
+            socket: false,
+        },
+        rx,
+    );
+    let device = &e.controls.devices[0];
+    let old = commands::Source::Device {
+        session: e.controls.session,
+        device: device.identity,
+        epoch: locked(&device.status).epoch,
+    };
+    // With no photo open, an adjustment that runs fails; one dropped doesn't.
+    let exposure = DeviceOp::Adjust(Param::Setting(ParameterId::Exposure), 5);
+    midi::reset_connection(&e.controls.devices[0].status, &ctx);
+    assert!(e.device_operate(old, exposure.clone(), &ctx).is_ok());
+    // Nor does a device of another hub, or one that is disabled.
+    let current = commands::Source::Device {
+        session: e.controls.session,
+        device: e.controls.devices[0].identity,
+        epoch: locked(&e.controls.devices[0].status).epoch,
+    };
+    let other = commands::Source::Device {
+        session: e.controls.session + 1,
+        device: e.controls.devices[0].identity,
+        epoch: locked(&e.controls.devices[0].status).epoch,
+    };
+    assert!(e.device_operate(other, exposure.clone(), &ctx).is_ok());
+    e.controls.devices[0].binding.enabled = false;
+    assert!(e.device_operate(current, exposure.clone(), &ctx).is_ok());
+    e.controls.devices[0].binding.enabled = true;
+    assert_eq!(
+        e.device_operate(current, exposure, &ctx).unwrap_err().code,
+        "no_document"
+    );
 }

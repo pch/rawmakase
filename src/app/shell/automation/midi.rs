@@ -74,15 +74,15 @@ impl Drop for Lease {
     }
 }
 #[cfg(any(test, target_os = "macos", target_os = "windows"))]
-pub(super) fn parse(bytes: &[u8], channel: Option<u8>) -> Option<Msg> {
+pub(super) fn parse(bytes: &[u8], channel: Option<u8>) -> Option<Input> {
     if channel.is_some_and(|c| bytes.first().is_none_or(|s| (s & 15) + 1 != c)) {
         return None;
     }
     match *bytes {
-        [status, d1, d2] if status & 0xF0 == 0xB0 => Some(Msg::Cc(d1, d2)),
-        [status, d1, d2] if status & 0xF0 == 0x90 && d2 > 0 => Some(Msg::Note(d1, true)),
-        [status, d1, _] if status & 0xF0 == 0x80 => Some(Msg::Note(d1, false)),
-        [status, d1, 0] if status & 0xF0 == 0x90 => Some(Msg::Note(d1, false)),
+        [status, d1, d2] if status & 0xF0 == 0xB0 => Some(Input::Cc(d1, d2)),
+        [status, d1, d2] if status & 0xF0 == 0x90 && d2 > 0 => Some(Input::Note(d1, true)),
+        [status, d1, _] if status & 0xF0 == 0x80 => Some(Input::Note(d1, false)),
+        [status, d1, 0] if status & 0xF0 == 0x90 => Some(Input::Note(d1, false)),
         _ => None,
     }
 }
@@ -191,22 +191,22 @@ pub(super) fn listen(
                                         p,
                                         "RAWmakase input",
                                         move |_, bytes, _| {
-                                            if let Some(msg) = parse(bytes, binding.channel) {
-                                                match msg {
-                                                    Msg::Cc(cc, v) => {
+                                            if let Some(received) = parse(bytes, binding.channel) {
+                                                match received {
+                                                    Input::Cc(cc, v) => {
                                                         locked(&status).last =
                                                             Some(Last::Dial(cc, i32::from(v)));
                                                     }
-                                                    Msg::Note(n, true) => {
+                                                    Input::Note(n, true) => {
                                                         locked(&status).last =
                                                             Some(Last::Button(n));
                                                     }
-                                                    _ => {}
+                                                    Input::Note(_, false) => {}
                                                 }
                                                 let _ = tx.try_send(Msg::Midi(
                                                     status.clone(),
                                                     epoch,
-                                                    Box::new(msg),
+                                                    received,
                                                 ));
                                                 ctx.request_repaint();
                                             }

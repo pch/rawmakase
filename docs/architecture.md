@@ -626,6 +626,19 @@ inside its generation-bound edit transaction, then answers that request.
 `app::shell::automation` owns the input queue and adapter lifecycles. Its MIDI device
 adapter translates controls, while its independent socket adapter authenticates,
 bounds and expires requests, each with a separate reply channel. These adapters never write catalog edits or render pixels themselves.
+A control device's adapter translates its input (held modifiers, encoder formats,
+its mapping) into named device operations without the editor: adjust a parameter
+by ticks, an absolute 0–127 value, photo-dial ticks with their detent, and an action
+spec with `advance`. `Editor::device_operate` is the one entry point that applies
+them, with the semantics every device shares: it drops an operation whose device is
+disabled, removed or in an older connection epoch (read from the listener's status,
+outside the bounded queue), adjustments follow the active mask, the photo dial does
+nothing in the Library grid (checked before the detent state, which the core keeps
+per device source), Auto Advance joins metadata actions, and absolute values span
+the parameter's range. The socket's legacy `cc` and `note` commands go through a
+core compatibility adapter of their own (`automation/legacy.rs`), with a frozen copy
+of the Loupedeck+ table and their own held modifiers and photo dial, independent of
+any MIDI device.
 Headless test editors do not start listeners or touch connection/configuration
 files; only desktop initialization starts them.
 
@@ -658,7 +671,9 @@ jobs retain their captured edit revision. See [MCP](mcp.md) for setup and tools.
 Application commands return typed state snapshots and results; the socket adapter
 encodes them as protocol JSON. A single action-name table supports parsing,
 discovery and device mapping serialization. Gesture ownership belongs to the
-application command layer, with separate MIDI and socket scopes.
+application command layer, with separate device and socket scopes: a device's
+gestures belong to `Source::Device`, its adapter session, device and connection
+epoch, so another device or a reconnection never continues one.
 
 The automation owner manages the bounded queue and local socket independently
 of MIDI. Each MIDI device owns its mapping and connection state, using a shared
