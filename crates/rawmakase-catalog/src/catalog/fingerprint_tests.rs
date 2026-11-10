@@ -3,13 +3,10 @@ use super::*;
 use crate::metadata::TextField;
 use crate::{export_settings::ExportOptions, model::recipe::Recipe, storage::Identity};
 
-fn catalog(
-    n: usize,
-) -> Result<(
-    tempfile::TempDir,
-    Catalog,
-    Vec<(PhotoId, std::path::PathBuf)>,
-)> {
+/// A catalog's photos: their ids and files.
+type Photos = Vec<(PhotoId, std::path::PathBuf)>;
+
+fn catalog(n: usize) -> Result<(tempfile::TempDir, Catalog, Photos)> {
     let dir = tempfile::tempdir()?;
     let folder = dir.path().join("photos");
     std::fs::create_dir(&folder)?;

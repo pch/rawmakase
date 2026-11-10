@@ -43,19 +43,19 @@ impl Canon {
     fn text(&mut self, text: Option<&str>) {
         match text {
             Some(text) => self.bytes(b's', text.as_bytes()),
-            None => self.0.update([b'n']),
+            None => self.0.update(*b"n"),
         }
     }
     fn int(&mut self, value: Option<i64>) {
         match value {
             Some(value) => self.bytes(b'i', &value.to_le_bytes()),
-            None => self.0.update([b'n']),
+            None => self.0.update(*b"n"),
         }
     }
     fn real(&mut self, value: Option<f64>) {
         match value {
             Some(value) => self.bytes(b'r', &value.to_bits().to_le_bytes()),
-            None => self.0.update([b'n']),
+            None => self.0.update(*b"n"),
         }
     }
     /// The number of rows a table has for the photo, so rows can't run into
