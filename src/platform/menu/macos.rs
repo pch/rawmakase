@@ -1,4 +1,4 @@
-use super::Action;
+use super::{Action, KeyEquivalent};
 use objc2::{
     DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, rc::Retained, sel,
 };
@@ -47,6 +47,8 @@ struct Menu {
     target: Retained<MenuTarget>,
     items: Vec<(Action, Retained<NSMenuItem>)>,
     receive: Receiver<Action>,
+    /// The key equivalents last set on the items that follow the key map.
+    keys: Vec<(Action, Option<KeyEquivalent>)>,
 }
 
 impl Menu {
@@ -56,7 +58,9 @@ impl Menu {
         let bar = app.mainMenu()?;
         let application = bar.itemAtIndex(0)?.submenu()?;
         let (send, receive) = mpsc::channel();
-        type Entry = (Action, &'static str, &'static str, bool);
+        // Each item's fixed key is `Action::fixed_key_equivalent`'s; the key
+        // map's items get theirs from `set_key_equivalents`.
+        type Entry = (Action, &'static str);
         // A menu's entries, or a submenu's when it has a title, as Photo's
         // Stacking.
         let definitions: &[(&str, Option<&str>, &[Entry])] = &[
@@ -64,48 +68,48 @@ impl Menu {
                 "File",
                 None,
                 &[
-                    (Action::NewCatalog, "New Catalog…", "", false),
-                    (Action::OpenCatalog, "Open Catalog…", "o", false),
-                    (Action::AddFolder, "Add Folder…", "o", true),
-                    (Action::Export, "Export…", "e", true),
-                    (Action::Close, "Close Window", "w", false),
+                    (Action::NewCatalog, "New Catalog…"),
+                    (Action::OpenCatalog, "Open Catalog…"),
+                    (Action::AddFolder, "Add Folder…"),
+                    (Action::Export, "Export…"),
+                    (Action::Close, "Close Window"),
                 ],
             ),
             (
                 "Edit",
                 None,
                 &[
-                    (Action::Undo, "Undo", "z", false),
-                    (Action::Redo, "Redo", "z", true),
-                    (Action::Cut, "Cut", "x", false),
-                    (Action::Copy, "Copy", "c", false),
-                    (Action::Paste, "Paste", "v", false),
-                    (Action::SelectAll, "Select All", "a", false),
+                    (Action::Undo, "Undo"),
+                    (Action::Redo, "Redo"),
+                    (Action::Cut, "Cut"),
+                    (Action::Copy, "Copy"),
+                    (Action::Paste, "Paste"),
+                    (Action::SelectAll, "Select All"),
                 ],
             ),
             (
                 "Photo",
                 Some("Stacking"),
-                &[(Action::AutoStack, "Auto-Stack by Capture Time…", "", false)],
+                &[(Action::AutoStack, "Auto-Stack by Capture Time…")],
             ),
             (
                 "View",
                 None,
                 &[
-                    (Action::Library, "Library", "", false),
-                    (Action::Develop, "Develop", "", false),
-                    (Action::Sidebar, "Show Sidebar", "", false),
-                    (Action::Inspector, "Show Inspector", "", false),
-                    (Action::Filmstrip, "Show Filmstrip", "", false),
-                    (Action::Fullscreen, "Enter Full Screen", "", false),
+                    (Action::Library, "Library"),
+                    (Action::Develop, "Develop"),
+                    (Action::Sidebar, "Show Sidebar"),
+                    (Action::Inspector, "Show Inspector"),
+                    (Action::Filmstrip, "Show Filmstrip"),
+                    (Action::Fullscreen, "Enter Full Screen"),
                 ],
             ),
             (
                 "Help",
                 None,
                 &[
-                    (Action::Shortcuts, "Keyboard Shortcuts", "/", false),
-                    (Action::ReportIssue, "Report an Issue…", "", false),
+                    (Action::Shortcuts, "Keyboard Shortcuts"),
+                    (Action::ReportIssue, "Report an Issue…"),
                 ],
             ),
         ];
@@ -127,8 +131,9 @@ impl Menu {
             target,
             items: Vec::new(),
             receive,
+            keys: Vec::new(),
         };
-        let preferences = menu.item(Action::Preferences, "Preferences…", ",", false);
+        let preferences = menu.item(Action::Preferences, "Preferences…");
         application.insertItem_atIndex(&preferences, 2);
         application.insertItem_atIndex(&NSMenuItem::separatorItem(mtm), 3);
         // The winit application menu and its guarded Quit action stay in place.
@@ -163,7 +168,7 @@ impl Menu {
                 }
                 None => top.clone(),
             };
-            for (action, label, key, shift) in *entries {
+            for (action, label) in *entries {
                 if matches!(
                     action,
                     Action::Cut
@@ -174,7 +179,7 @@ impl Menu {
                 ) {
                     sub.addItem(&NSMenuItem::separatorItem(mtm));
                 }
-                sub.addItem(&menu.item(*action, label, key, *shift));
+                sub.addItem(&menu.item(*action, label));
             }
             if *title == "Help" {
                 app.setHelpMenu(Some(&top));
@@ -183,29 +188,20 @@ impl Menu {
         Some(menu)
     }
 
-    fn item(
-        &mut self,
-        action: Action,
-        label: &str,
-        key: &str,
-        shift: bool,
-    ) -> Retained<NSMenuItem> {
+    fn item(&mut self, action: Action, label: &str) -> Retained<NSMenuItem> {
         let mtm = self.target.mtm();
+        let key = action.fixed_key_equivalent().unwrap_or_default();
         // SAFETY: target implements choose: with NSMenuItem as sender and is retained by Menu.
         let item = unsafe {
             NSMenuItem::initWithTitle_action_keyEquivalent(
                 mtm.alloc(),
                 &NSString::from_str(label),
                 Some(sel!(choose:)),
-                &NSString::from_str(key),
+                &NSString::from_str(&key.key),
             )
         };
         item.setTag(self.items.len() as isize);
-        let mut modifiers = NSEventModifierFlags::Command;
-        if shift {
-            modifiers |= NSEventModifierFlags::Shift;
-        }
-        item.setKeyEquivalentModifierMask(modifiers);
+        item.setKeyEquivalentModifierMask(modifier_mask(&key));
         // SAFETY: the target lives until Drop clears every item's target and action.
         unsafe {
             item.setTarget(Some(&self.target));
@@ -213,6 +209,25 @@ impl Menu {
         item.setEnabled(false);
         self.items.push((action, item.clone()));
         item
+    }
+
+    /// Sets the key equivalents of the items that follow the key map, where
+    /// they changed. None leaves an item with no key.
+    fn set_keys(&mut self, keys: &[(Action, Option<KeyEquivalent>)]) {
+        if self.keys == keys {
+            return;
+        }
+        for (action, key) in keys {
+            if action.fixed_key() {
+                continue;
+            }
+            for (_, item) in self.items.iter().filter(|(a, _)| a == action) {
+                let key = key.clone().unwrap_or_default();
+                item.setKeyEquivalent(&NSString::from_str(&key.key));
+                item.setKeyEquivalentModifierMask(modifier_mask(&key));
+            }
+        }
+        self.keys = keys.to_vec();
     }
 
     fn take_actions(&self) -> Vec<Action> {
@@ -268,8 +283,31 @@ pub(crate) fn install(wake: impl Fn() + 'static) -> bool {
         menu.is_some()
     })
 }
+/// `key`'s modifiers as AppKit's mask.
+fn modifier_mask(key: &KeyEquivalent) -> NSEventModifierFlags {
+    let mut mask = NSEventModifierFlags::empty();
+    for (on, flag) in [
+        (key.command, NSEventModifierFlags::Command),
+        (key.shift, NSEventModifierFlags::Shift),
+        (key.option, NSEventModifierFlags::Option),
+        (key.control, NSEventModifierFlags::Control),
+    ] {
+        if on {
+            mask |= flag;
+        }
+    }
+    mask
+}
+
 pub(crate) fn take_actions() -> Vec<Action> {
     MENU.with_borrow(|menu| menu.as_ref().map(Menu::take_actions).unwrap_or_default())
+}
+pub(crate) fn set_key_equivalents(keys: &[(Action, Option<KeyEquivalent>)]) {
+    MENU.with_borrow_mut(|menu| {
+        if let Some(menu) = menu {
+            menu.set_keys(keys);
+        }
+    });
 }
 pub(crate) fn update(state: impl Fn(Action) -> (bool, bool)) {
     MENU.with_borrow(|menu| {

@@ -3,178 +3,557 @@
 //! button in the top bar. Each shortcut's keys are drawn as key caps.
 use crate::app::Editor;
 use crate::app::Module;
+use crate::app::shell::keymap::{Binding, Chord, Effective, Mods};
 use crate::app::ui::design::{self, Tone, inset, radius, space, text};
 use crate::app::ui::icons::{self, Icon};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::{modal_frame, search_field};
-use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
+use eframe::egui::{self, Align2, Color32, FontId, Key, Pos2, Rect, Sense, Stroke, Vec2};
 
 /// A shortcut: its keys and what it does. Keys are written "Cmd+Shift+Z";
 /// " / " separates alternatives, and a word in lower case ("click") is an
-/// action rather than a key.
-type Shortcut = (&'static str, &'static str);
+/// action rather than a key. The keys are the registry's chords in effect
+/// ([`row_keys`]), so the user's keys show.
+type Shortcut = (String, &'static str);
 /// A titled group of shortcuts.
 type Group<'a> = (&'a str, &'a [Shortcut]);
 
-const LIBRARY: [Shortcut; 17] = [
-    ("Arrows", "Move the active photo"),
-    (
-        "Page Up / Page Down",
+/// What a card row's keys are made of.
+#[derive(Clone, Copy)]
+enum Part {
+    /// A binding's chords in effect: every one of the user's for its command,
+    /// or its defaults the card shows, each by its first key.
+    Keys(&'static Binding),
+    /// Every key of a binding's default chords, aliases too, or the user's.
+    EveryKey(&'static Binding),
+    /// A gesture, or keys no command has: "drag", "Shift+click".
+    Text(&'static str),
+}
+
+/// How a row writes its chords, as the hand-written card did.
+#[derive(Clone, Copy, Default)]
+struct Spelling {
+    /// Alt as "Option", as Lightroom's card writes its Develop shortcuts.
+    option: bool,
+    /// The arrow keys as arrows.
+    arrows: bool,
+    /// An alternative with the same modifiers as the one before it as its key
+    /// alone: "Cmd+Option+Shift+H / S / L".
+    short: bool,
+}
+
+/// A row of the card: its keys and what it does.
+struct Row {
+    parts: &'static [Part],
+    action: &'static str,
+    spelling: Spelling,
+}
+
+const fn row(parts: &'static [Part], action: &'static str) -> Row {
+    Row {
+        parts,
+        action,
+        spelling: Spelling {
+            option: false,
+            arrows: false,
+            short: false,
+        },
+    }
+}
+/// A row written with Option, as Lightroom's Develop shortcuts are.
+const fn option(parts: &'static [Part], action: &'static str) -> Row {
+    Row {
+        parts,
+        action,
+        spelling: Spelling {
+            option: true,
+            arrows: false,
+            short: false,
+        },
+    }
+}
+/// [`option`], with arrows and the modifiers written once.
+const fn option_arrows(parts: &'static [Part], action: &'static str) -> Row {
+    Row {
+        parts,
+        action,
+        spelling: Spelling {
+            option: true,
+            arrows: true,
+            short: true,
+        },
+    }
+}
+/// [`option`], with the modifiers written once.
+const fn option_short(parts: &'static [Part], action: &'static str) -> Row {
+    Row {
+        parts,
+        action,
+        spelling: Spelling {
+            option: true,
+            arrows: false,
+            short: true,
+        },
+    }
+}
+
+use crate::app::shell::commands::registry::bindings as b;
+use Part::{EveryKey, Keys, Text};
+
+static LIBRARY: [Row; 17] = [
+    row(
+        &[
+            Keys(&b::GRID_PREVIOUS),
+            Keys(&b::GRID_NEXT),
+            Keys(&b::GRID_ROW_UP),
+            Keys(&b::GRID_ROW_DOWN),
+        ],
+        "Move the active photo",
+    ),
+    row(
+        &[Keys(&b::GRID_PAGE_UP), Keys(&b::GRID_PAGE_DOWN)],
         "Move the active photo a page up / down",
     ),
-    ("Home / End", "First / last photo"),
-    ("Shift+Arrows / Shift+click", "Extend the selection"),
-    ("Cmd+click", "Add or remove a photo"),
-    ("Cmd+A", "Select all"),
-    ("Cmd+D", "Select none"),
-    ("/", "Deselect the active photo"),
-    ("Cmd+L", "Turn the filters off / on"),
-    ("J", "Cycle the grid cell style"),
-    ("Delete", "Move to Trash, or remove from the catalog"),
-    ("Alt+Delete", "Remove from the catalog"),
-    ("Cmd+Alt+Shift+Delete", "Move to Trash"),
-    ("Cmd+Delete", "Delete the rejected photos"),
-    (
-        "F2",
+    row(
+        &[Keys(&b::GRID_FIRST), Keys(&b::GRID_LAST)],
+        "First / last photo",
+    ),
+    row(
+        &[Text("Shift+Arrows / Shift+click")],
+        "Extend the selection",
+    ),
+    row(&[Text("Cmd+click")], "Add or remove a photo"),
+    row(&[Keys(&b::GRID_SELECT_ALL)], "Select all"),
+    row(&[Keys(&b::GRID_SELECT_NONE)], "Select none"),
+    row(
+        &[Keys(&b::GRID_DESELECT_ACTIVE)],
+        "Deselect the active photo",
+    ),
+    row(&[Keys(&b::FILTERS)], "Turn the filters off / on"),
+    row(&[Keys(&b::GRID_CELL_STYLE)], "Cycle the grid cell style"),
+    row(
+        &[Keys(&b::GRID_DELETE)],
+        "Move to Trash, or remove from the catalog",
+    ),
+    row(
+        &[Keys(&b::GRID_REMOVE_FROM_CATALOG)],
+        "Remove from the catalog",
+    ),
+    row(&[Keys(&b::GRID_TRASH)], "Move to Trash"),
+    row(
+        &[Keys(&b::GRID_DELETE_REJECTED)],
+        "Delete the rejected photos",
+    ),
+    row(
+        &[Keys(&b::GRID_RENAME)],
         "Rename the photo, or the selected photos in capture order",
     ),
-    (
-        "Cmd+Shift+S",
+    row(
+        &[Keys(&b::LIBRARY_SYNC)],
         "Sync the active photo's settings to the selection",
     ),
-    ("Cmd+Shift+U", "Auto Settings on each selected photo"),
+    row(
+        &[Keys(&b::LIBRARY_AUTO)],
+        "Auto Settings on each selected photo",
+    ),
 ];
-const LOUPE: [Shortcut; 7] = [
-    ("E / Return / double-click", "Open the Loupe"),
-    ("G / Esc / double-click", "Back to the grid"),
-    ("Z / click", "Fit or the last zoom"),
-    ("Cmd+= / Cmd+-", "Zoom in / out"),
-    ("Cmd+0 / Cmd+1", "100% / Fit"),
-    ("drag", "Pan"),
-    ("I", "Cycle photo info"),
+static LOUPE: [Row; 7] = [
+    row(
+        &[Keys(&b::GRID_LOUPE), Text("double-click")],
+        "Open the Loupe",
+    ),
+    row(
+        &[
+            Keys(&b::LIBRARY),
+            Keys(&b::LOUPE_CLOSE),
+            Text("double-click"),
+        ],
+        "Back to the grid",
+    ),
+    row(&[Keys(&b::ZOOM), Text("click")], "Fit or the last zoom"),
+    row(&[Keys(&b::ZOOM_IN), Keys(&b::ZOOM_OUT)], "Zoom in / out"),
+    row(&[Keys(&b::ZOOM_100), Keys(&b::ZOOM_FIT)], "100% / Fit"),
+    row(&[Text("drag")], "Pan"),
+    row(&[Keys(&b::LOUPE_INFO)], "Cycle photo info"),
 ];
-const COMPARE: [Shortcut; 6] = [
-    ("C", "Compare the active photo with the next"),
-    ("Left / Right", "Change the candidate"),
-    ("Up", "Make the candidate the select"),
-    ("Down", "Swap select and candidate"),
-    ("click", "Make a photo active for rating keys"),
-    ("G / Esc", "Back to the grid"),
+static COMPARE: [Row; 6] = [
+    row(
+        &[Keys(&b::GRID_COMPARE)],
+        "Compare the active photo with the next",
+    ),
+    row(
+        &[Keys(&b::COMPARE_PREVIOUS), Keys(&b::COMPARE_NEXT)],
+        "Change the candidate",
+    ),
+    row(
+        &[Keys(&b::COMPARE_MAKE_SELECT)],
+        "Make the candidate the select",
+    ),
+    row(&[Keys(&b::COMPARE_SWAP)], "Swap select and candidate"),
+    row(&[Text("click")], "Make a photo active for rating keys"),
+    row(
+        &[Keys(&b::LIBRARY), Keys(&b::COMPARE_CLOSE)],
+        "Back to the grid",
+    ),
 ];
-const SURVEY: [Shortcut; 5] = [
-    ("N", "Survey the selected photos"),
-    ("Arrows", "Move the active photo"),
-    ("click", "Make a photo active for rating keys"),
-    ("Cmd+click", "Take a photo out"),
-    ("G / Esc", "Back to the grid"),
+static SURVEY: [Row; 5] = [
+    row(&[Keys(&b::GRID_SURVEY)], "Survey the selected photos"),
+    row(
+        &[EveryKey(&b::SURVEY_PREVIOUS), EveryKey(&b::SURVEY_NEXT)],
+        "Move the active photo",
+    ),
+    row(&[Text("click")], "Make a photo active for rating keys"),
+    row(&[Text("Cmd+click")], "Take a photo out"),
+    row(
+        &[Keys(&b::LIBRARY), Keys(&b::SURVEY_CLOSE)],
+        "Back to the grid",
+    ),
 ];
-const RATING: [Shortcut; 8] = [
-    ("0 / 1 / 2 / 3 / 4 / 5", "Star rating"),
-    ("[ / ]", "Lower / raise the rating"),
-    ("6 / 7 / 8 / 9", "Red, yellow, green, blue"),
-    ("P / X / U", "Pick / reject / unflag"),
-    ("`", "Toggle pick"),
-    ("Cmd+Up / Cmd+Down", "Raise / lower the flag"),
-    ("Shift+key", "Apply and go to the next photo"),
-    ("Cmd+Z / Cmd+Shift+Z", "Undo / redo, anywhere"),
+static RATING: [Row; 8] = [
+    row(
+        &[
+            Keys(&b::RATING_0),
+            Keys(&b::RATING_1),
+            Keys(&b::RATING_2),
+            Keys(&b::RATING_3),
+            Keys(&b::RATING_4),
+            Keys(&b::RATING_5),
+        ],
+        "Star rating",
+    ),
+    row(
+        &[Keys(&b::RATING_LOWER), Keys(&b::RATING_RAISE)],
+        "Lower / raise the rating",
+    ),
+    row(
+        &[
+            Keys(&b::LABEL_RED),
+            Keys(&b::LABEL_YELLOW),
+            Keys(&b::LABEL_GREEN),
+            Keys(&b::LABEL_BLUE),
+        ],
+        "Red, yellow, green, blue",
+    ),
+    row(
+        &[Keys(&b::PICK), Keys(&b::REJECT), Keys(&b::UNFLAG)],
+        "Pick / reject / unflag",
+    ),
+    row(&[Keys(&b::TOGGLE_PICK)], "Toggle pick"),
+    row(
+        &[Keys(&b::FLAG_RAISE), Keys(&b::FLAG_LOWER)],
+        "Raise / lower the flag",
+    ),
+    row(&[Text("Shift+key")], "Apply and go to the next photo"),
+    row(
+        &[Keys(&b::LIBRARY_UNDO), Keys(&b::LIBRARY_REDO)],
+        "Undo / redo, anywhere",
+    ),
 ];
-const QUICK: [Shortcut; 3] = [
-    ("B", "Add to or take out of it"),
-    ("Cmd+B", "Show it"),
-    ("Cmd+Shift+B", "Clear it"),
+static QUICK: [Row; 3] = [
+    row(&[Keys(&b::GRID_QUICK_TOGGLE)], "Add to or take out of it"),
+    row(&[Keys(&b::GRID_QUICK_SHOW)], "Show it"),
+    row(&[Keys(&b::GRID_QUICK_CLEAR)], "Clear it"),
 ];
-const STACKS: [Shortcut; 4] = [
-    ("Cmd+G", "Group into stack"),
-    ("Cmd+Shift+G", "Unstack"),
-    ("S", "Collapse / expand the stack"),
-    ("Shift+S", "Move to the top of the stack"),
+static STACKS: [Row; 4] = [
+    row(&[Keys(&b::STACK_GROUP)], "Group into stack"),
+    row(&[Keys(&b::STACK_UNSTACK)], "Unstack"),
+    row(
+        &[Keys(&b::GRID_STACK_TOGGLE)],
+        "Collapse / expand the stack",
+    ),
+    row(
+        &[Keys(&b::GRID_STACK_TO_TOP)],
+        "Move to the top of the stack",
+    ),
 ];
-const GENERAL: [Shortcut; 12] = [
-    ("G", "Library"),
-    ("D", "Develop"),
-    ("Tab", "Hide / show the side panels"),
-    ("Shift+Tab", "Hide / show the side panels and filmstrip"),
-    ("F", "Hide all but the photo; grid first in the Library"),
-    ("Esc", "Leave the whole-window mode"),
-    ("Shift+Esc", "Dismiss the messages in the top bar"),
-    ("F7 / F8 / F6", "Left panel / right panel / filmstrip"),
-    ("Shift+F8", "Fold / open Presets and History"),
-    ("Cmd+'", "Create virtual copy"),
-    ("Cmd+,", "Preferences"),
-    ("Cmd+/", "These shortcuts"),
+static GENERAL: [Row; 12] = [
+    row(&[Keys(&b::LIBRARY)], "Library"),
+    row(&[Keys(&b::DEVELOP)], "Develop"),
+    row(&[Keys(&b::PANELS_SIDES)], "Hide / show the side panels"),
+    row(
+        &[Keys(&b::PANELS_ALL)],
+        "Hide / show the side panels and filmstrip",
+    ),
+    row(
+        &[Keys(&b::CHROME)],
+        "Hide all but the photo; grid first in the Library",
+    ),
+    row(&[Keys(&b::SHOW_CHROME)], "Leave the whole-window mode"),
+    row(
+        &[Keys(&b::DISMISS_MESSAGES)],
+        "Dismiss the messages in the top bar",
+    ),
+    row(
+        &[
+            Keys(&b::PANELS_LEFT),
+            Keys(&b::PANELS_RIGHT),
+            Keys(&b::PANELS_FILMSTRIP),
+        ],
+        "Left panel / right panel / filmstrip",
+    ),
+    row(
+        &[Keys(&b::PANELS_PRESETS)],
+        "Fold / open Presets and History",
+    ),
+    row(&[Keys(&b::VIRTUAL_COPY)], "Create virtual copy"),
+    row(&[Keys(&b::PREFERENCES)], "Preferences"),
+    row(&[Keys(&b::SHORTCUTS)], "These shortcuts"),
 ];
-const DEVELOP: [Shortcut; 55] = [
-    ("R", "Crop & Straighten"),
-    ("Return", "Finish the crop"),
-    ("X", "Swap the crop's orientation"),
-    ("A", "Lock or unlock the crop's aspect"),
-    ("O / Shift+O", "Next crop overlay / turn it"),
-    ("Cmd+drag", "Straighten along a line"),
-    ("Shift+T", "Guided Upright: draw guides"),
-    ("Delete", "Delete the selected spot, guide or red eye"),
-    ("Q", "Spot removal"),
-    ("Shift+W", "Masking"),
-    ("W", "White balance selector"),
-    ("Cmd+Option+Shift+T", "Targeted adjustment: Tone Curve"),
-    (
-        "Cmd+Option+Shift+H / S / L",
+static DEVELOP: [Row; 55] = [
+    row(&[Keys(&b::CROP)], "Crop & Straighten"),
+    row(&[Keys(&b::FINISH_CROP)], "Finish the crop"),
+    row(
+        &[Keys(&b::CROP_SWAP_ORIENTATION)],
+        "Swap the crop's orientation",
+    ),
+    row(
+        &[Keys(&b::CROP_ASPECT_LOCK)],
+        "Lock or unlock the crop's aspect",
+    ),
+    row(
+        &[Keys(&b::CROP_NEXT_OVERLAY), Keys(&b::CROP_TURN_OVERLAY)],
+        "Next crop overlay / turn it",
+    ),
+    row(&[Text("Cmd+drag")], "Straighten along a line"),
+    row(&[Keys(&b::GUIDED_UPRIGHT)], "Guided Upright: draw guides"),
+    row(
+        &[Keys(&b::REMOVE_DELETE)],
+        "Delete the selected spot, guide or red eye",
+    ),
+    row(&[Keys(&b::REMOVE)], "Spot removal"),
+    row(&[Keys(&b::MASK)], "Masking"),
+    row(&[Keys(&b::WHITE_BALANCE)], "White balance selector"),
+    option(
+        &[Keys(&b::TARGETED_TONE_CURVE)],
+        "Targeted adjustment: Tone Curve",
+    ),
+    option_short(
+        &[
+            Keys(&b::TARGETED_HUE),
+            Keys(&b::TARGETED_SATURATION),
+            Keys(&b::TARGETED_LUMINANCE),
+        ],
         "Targeted adjustment: Hue / Saturation / Luminance",
     ),
-    ("Cmd+Option+Shift+G", "Targeted adjustment: B&W mix"),
-    ("Esc", "Put the open tool away"),
-    ("[ / ]", "Brush or red eye size (Shift: feather)"),
-    (
-        "Scroll",
+    option(
+        &[Keys(&b::TARGETED_BLACK_WHITE)],
+        "Targeted adjustment: B&W mix",
+    ),
+    row(&[Keys(&b::CLOSE_TOOL)], "Put the open tool away"),
+    row(
+        &[Keys(&b::REMOVE_SMALLER), Keys(&b::REMOVE_LARGER)],
+        "Brush or red eye size (Shift: feather)",
+    ),
+    row(
+        &[Text("Scroll")],
         "Brush or red eye size over the photo (Shift: feather)",
     ),
-    ("/", "New source for the selected spot"),
-    ("H", "Hide spot pins"),
-    ("A", "Visualize spots"),
-    ("Space", "Pan while a tool is open"),
-    ("\\", "Before alone"),
-    ("Shift+\\", "Camera thumbnail (the embedded JPEG)"),
-    ("Y", "Before and after, left and right"),
-    ("Option+Y", "Before and after, top and bottom"),
-    ("Shift+Y", "Before and after, split"),
-    (
-        "Cmd+Option+Shift+→ / ←",
+    row(
+        &[Keys(&b::REMOVE_NEW_SOURCE)],
+        "New source for the selected spot",
+    ),
+    row(&[Keys(&b::REMOVE_HIDE_PINS)], "Hide spot pins"),
+    row(&[Keys(&b::REMOVE_VISUALIZE)], "Visualize spots"),
+    row(&[Text("Space")], "Pan while a tool is open"),
+    row(&[Keys(&b::BEFORE_ONLY)], "Before alone"),
+    row(
+        &[Keys(&b::CAMERA_THUMBNAIL)],
+        "Camera thumbnail (the embedded JPEG)",
+    ),
+    row(
+        &[Keys(&b::BEFORE_AFTER_LEFT_RIGHT)],
+        "Before and after, left and right",
+    ),
+    option(
+        &[Keys(&b::BEFORE_AFTER_TOP_BOTTOM)],
+        "Before and after, top and bottom",
+    ),
+    row(&[Keys(&b::BEFORE_AFTER_SPLIT)], "Before and after, split"),
+    option_arrows(
+        &[Keys(&b::COPY_TO_AFTER), Keys(&b::COPY_TO_BEFORE)],
         "Copy Before to After / After to Before",
     ),
-    ("Cmd+Option+Shift+↑", "Swap Before and After"),
-    ("Shift+R", "Reference View"),
-    ("I", "Photo info overlay: Info 1, Info 2, off"),
-    ("J", "Show shadow and highlight clipping"),
-    ("Z", "Toggle zoom / fit"),
-    (
-        "Cmd+= / Cmd+- / Cmd+0 / Cmd+1",
+    option_arrows(&[Keys(&b::SWAP_BEFORE_AFTER)], "Swap Before and After"),
+    row(&[Keys(&b::REFERENCE_VIEW)], "Reference View"),
+    row(
+        &[Keys(&b::DEVELOP_INFO)],
+        "Photo info overlay: Info 1, Info 2, off",
+    ),
+    row(&[Keys(&b::CLIPPING)], "Show shadow and highlight clipping"),
+    row(&[Keys(&b::ZOOM)], "Toggle zoom / fit"),
+    row(
+        &[
+            Keys(&b::ZOOM_IN),
+            Keys(&b::ZOOM_OUT),
+            Keys(&b::ZOOM_100),
+            Keys(&b::ZOOM_FIT),
+        ],
         "Zoom in / out / 100% / Fit",
     ),
-    ("Shift+Z", "Magnifier over the photo; wheel: magnification"),
-    ("Left / Right", "Previous / next photo"),
-    ("Cmd+A", "Select all in the filmstrip, for Sync"),
-    ("Cmd+D", "Select none in the filmstrip"),
-    ("Cmd+Shift+C / Cmd+Shift+V", "Copy / paste settings"),
-    ("Cmd+Option+V", "Paste settings from previous photo"),
-    ("Cmd+Shift+S", "Sync settings to the selected photos"),
-    ("Cmd+Option+Shift+M", "Match total exposures"),
-    ("Cmd+Shift+N", "New Develop Preset"),
-    ("Cmd+Shift+R", "Reset all settings"),
-    ("Cmd+Shift+U", "Auto tone"),
-    ("V", "Convert to black & white or back to color"),
-    ("Cmd+Shift+E", "Export…"),
-    ("Cmd+Alt+Shift+E", "Export with previous"),
-    ("double-click", "Reset a slider or grading wheel"),
-    ("Shift+drag", "Grading wheel: hue or saturation only"),
-    ("Cmd+drag", "Grading wheel: fine adjustment"),
-    ("Up / Down", "Nudge the hovered slider (Shift: 10)"),
-    (". / ,", "Select the next / previous Basic slider"),
-    (
-        "= / -",
+    row(
+        &[Keys(&b::MAGNIFIER)],
+        "Magnifier over the photo; wheel: magnification",
+    ),
+    row(
+        &[Keys(&b::PREVIOUS), Keys(&b::NEXT)],
+        "Previous / next photo",
+    ),
+    row(
+        &[Keys(&b::DEVELOP_SELECT_ALL)],
+        "Select all in the filmstrip, for Sync",
+    ),
+    row(
+        &[Keys(&b::DEVELOP_SELECT_NONE)],
+        "Select none in the filmstrip",
+    ),
+    row(
+        &[Keys(&b::COPY_SETTINGS), Keys(&b::PASTE_SETTINGS)],
+        "Copy / paste settings",
+    ),
+    option(
+        &[Keys(&b::PASTE_PREVIOUS)],
+        "Paste settings from previous photo",
+    ),
+    row(
+        &[Keys(&b::DEVELOP_SYNC)],
+        "Sync settings to the selected photos",
+    ),
+    option(&[Keys(&b::MATCH_EXPOSURES)], "Match total exposures"),
+    row(&[Keys(&b::NEW_PRESET)], "New Develop Preset"),
+    row(&[Keys(&b::RESET)], "Reset all settings"),
+    row(&[Keys(&b::DEVELOP_AUTO)], "Auto tone"),
+    row(
+        &[Keys(&b::TOGGLE_BLACK_WHITE)],
+        "Convert to black & white or back to color",
+    ),
+    row(&[Keys(&b::DEVELOP_EXPORT)], "Export…"),
+    row(&[Keys(&b::DEVELOP_EXPORT_PREVIOUS)], "Export with previous"),
+    row(&[Text("double-click")], "Reset a slider or grading wheel"),
+    row(
+        &[Text("Shift+drag")],
+        "Grading wheel: hue or saturation only",
+    ),
+    row(&[Text("Cmd+drag")], "Grading wheel: fine adjustment"),
+    row(&[Text("Up / Down")], "Nudge the hovered slider (Shift: 10)"),
+    row(
+        &[Keys(&b::BASIC_NEXT), Keys(&b::BASIC_PREVIOUS)],
+        "Select the next / previous Basic slider",
+    ),
+    row(
+        &[Keys(&b::BASIC_INCREASE), Keys(&b::BASIC_DECREASE)],
         "Step the selected Basic slider (Shift: more, Option: less)",
     ),
-    ("right-click", "Panel header: Solo Mode"),
-    ("E", "Show the photo in the Loupe"),
+    row(&[Text("right-click")], "Panel header: Solo Mode"),
+    row(
+        &[Keys(&b::LOUPE_FROM_DEVELOP)],
+        "Show the photo in the Loupe",
+    ),
 ];
+
+/// The chords a part of a row stands for in `map`.
+fn part_chords(part: &Part, map: &Effective) -> Vec<Chord> {
+    let macos = cfg!(target_os = "macos");
+    match part {
+        Keys(binding) if !map.overrides(binding.command) => binding
+            .defaults
+            .iter()
+            .filter(|d| d.card && d.exists_on(macos))
+            .filter_map(|d| d.chords().next())
+            .collect(),
+        Keys(binding) | EveryKey(binding) => map
+            .defaults_of(binding)
+            .iter()
+            .filter(|d| d.exists_on(macos))
+            .flat_map(|d| d.chords().collect::<Vec<_>>())
+            .collect(),
+        Text(_) => Vec::new(),
+    }
+}
+
+/// A row's keys in `map`, written as the card writes them: alternatives
+/// apart by " / ", the four arrows as "Arrows".
+fn row_keys(row: &Row, map: &Effective) -> String {
+    let spelling = row.spelling;
+    let mut alternatives: Vec<String> = Vec::new();
+    let mut chords: Vec<Chord> = Vec::new();
+    let mut texts: Vec<&str> = Vec::new();
+    for part in row.parts {
+        match part {
+            Text(text) => texts.push(text),
+            part => chords.extend(part_chords(part, map)),
+        }
+    }
+    let arrows = [
+        Key::ArrowLeft,
+        Key::ArrowRight,
+        Key::ArrowUp,
+        Key::ArrowDown,
+    ];
+    let all_arrows = chords.len() == 4
+        && arrows.iter().all(|a| chords.iter().any(|c| c.key == *a))
+        && chords.iter().all(|c| c.mods == chords[0].mods);
+    if all_arrows {
+        let prefix = Chord::new(Key::A, chords[0].mods).to_string();
+        alternatives.push(format!("{}Arrows", prefix.trim_end_matches('A')));
+    } else {
+        let mut before: Option<Mods> = None;
+        for chord in &chords {
+            let mut text = chord.to_string();
+            if spelling.short && before == Some(chord.mods) && chord.mods != Mods::NONE {
+                text = Chord::new(chord.key, Mods::NONE).to_string();
+            }
+            if spelling.option {
+                text = text.replace("Alt+", "Option+");
+            }
+            if spelling.arrows {
+                for (name, arrow) in [("Left", "←"), ("Right", "→"), ("Up", "↑"), ("Down", "↓")]
+                {
+                    if let Some(mods) = text.strip_suffix(name) {
+                        text = format!("{mods}{arrow}");
+                    }
+                }
+            }
+            before = Some(chord.mods);
+            alternatives.push(text);
+        }
+    }
+    alternatives.extend(texts.iter().map(|t| t.to_string()));
+    alternatives.join(" / ")
+}
+
+/// Every table of the card.
+const TABLES: [&[Row]; 9] = [
+    &LIBRARY, &STACKS, &LOUPE, &COMPARE, &SURVEY, &RATING, &QUICK, &GENERAL, &DEVELOP,
+];
+
+/// The commands the user gave keys that no row of the card shows: a row
+/// each, by its title, so every key of the user's is on the card. None
+/// with the defaults.
+fn yours(map: &Effective) -> Vec<Shortcut> {
+    let shown = |id: &str| {
+        TABLES.iter().flat_map(|t| t.iter()).any(|row| {
+            row.parts
+                .iter()
+                .any(|p| matches!(p, Keys(b) | EveryKey(b) if b.command == id))
+        })
+    };
+    crate::app::shell::commands::registry::COMMANDS
+        .iter()
+        .filter(|c| !shown(c.id))
+        .filter_map(|c| {
+            let chords = map.user_chords(c.id).filter(|k| !k.is_empty())?;
+            let keys: Vec<String> = chords.iter().map(Chord::to_string).collect();
+            Some((keys.join(" / "), c.title))
+        })
+        .collect()
+}
+
+/// The card's rows with their keys in `map`.
+fn shortcuts(rows: &[Row], map: &Effective) -> Vec<Shortcut> {
+    rows.iter()
+        .map(|row| (row_keys(row, map), row.action))
+        .collect()
+}
 
 /// The sheet's widest; it narrows with the window.
 const WIDTH: f32 = 960.;
@@ -201,7 +580,7 @@ impl Editor {
         }
         // Cmd+/ closes it again; other keys stay with the sheet.
         use crate::app::shell::commands::registry::bindings;
-        let keys = crate::app::shell::keymap::FrameKeys::of(ctx);
+        let keys = self.keys(ctx);
         if keys.take(&bindings::SHORTCUTS_CLOSE).is_some() {
             self.view.shortcuts = false;
             return;
@@ -214,22 +593,49 @@ impl Editor {
         if cleared {
             query.clear();
         }
+        let map = self.keymap.effective();
+        let [
+            library,
+            stacks,
+            loupe,
+            compare,
+            survey,
+            rating,
+            quick,
+            general,
+            develop,
+        ] = [
+            &LIBRARY[..],
+            &STACKS,
+            &LOUPE,
+            &COMPARE,
+            &SURVEY,
+            &RATING,
+            &QUICK,
+            &GENERAL,
+            &DEVELOP,
+        ]
+        .map(|rows| shortcuts(rows, &map));
         let views: [Group; 5] = [
-            ("Library grid", &LIBRARY),
+            ("Library grid", &library),
             (
                 "Stacks, in the grid; S and Shift+S in the Loupe too",
-                &STACKS,
+                &stacks,
             ),
-            ("Loupe", &LOUPE),
-            ("Compare", &COMPARE),
-            ("Survey", &SURVEY),
+            ("Loupe", &loupe),
+            ("Compare", &compare),
+            ("Survey", &survey),
         ];
-        let common: [Group; 3] = [
-            ("Rating, flags and labels", &RATING),
-            ("Quick Collection", &QUICK),
-            ("Everywhere", &GENERAL),
+        let yours = yours(&map);
+        let mut common: Vec<Group> = vec![
+            ("Rating, flags and labels", &rating),
+            ("Quick Collection", &quick),
+            ("Everywhere", &general),
         ];
-        let develop: [Group; 1] = [("Develop", &DEVELOP)];
+        if !yours.is_empty() {
+            common.push(("Your keys", &yours));
+        }
+        let develop: [Group; 1] = [("Develop", &develop)];
         // The current module's shortcuts come first, in the left column.
         let (left, right): (Vec<Group>, Vec<Group>) = if self.module == Module::Library {
             (views.to_vec(), [&common[..], &develop].concat())
@@ -361,7 +767,7 @@ fn filtered<'a>(
         let kept: Vec<Shortcut> = shortcuts
             .iter()
             .filter(|shortcut| matches(tokens, title, shortcut))
-            .copied()
+            .cloned()
             .collect();
         (!kept.is_empty()).then_some((title, kept))
     };
@@ -389,8 +795,8 @@ fn filtered<'a>(
 
 /// The search's words, lower case. "+" separates words as a space does, and
 /// the macOS modifier symbols are words of their own, so "cmd+z" and "⌘Z"
-/// both find Cmd+Z.
-fn tokens(query: &str) -> Vec<String> {
+/// both find Cmd+Z. Preferences > Shortcuts searches the same way.
+pub(in crate::app) fn tokens(query: &str) -> Vec<String> {
     let mut spaced = String::new();
     for c in query.chars() {
         if matches!(c, '⌘' | '⌥' | '⇧' | '+') {
@@ -410,10 +816,21 @@ fn tokens(query: &str) -> Vec<String> {
 /// names a key; a longer word may also start a word of what it does or of its
 /// group's title.
 fn matches(tokens: &[String], title: &str, (keys, action): &Shortcut) -> bool {
+    search_matches(tokens, title, keys, action)
+}
+/// Whether a shortcut with `keys` (written "Cmd+Shift+Z", " / " between
+/// alternatives) that does `action`, in the group `title`, has every word of
+/// the search ([`tokens`]).
+pub(in crate::app) fn search_matches(
+    tokens: &[String],
+    title: &str,
+    keys: &str,
+    action: &str,
+) -> bool {
     tokens.iter().all(|token| {
         let key = keys
             .split(" / ")
-            .flat_map(|alternative| alternative.split('+'))
+            .flat_map(split_caps)
             .any(|cap| key_matches(cap, token));
         key || token.chars().count() > 1
             && words(title)
@@ -522,7 +939,7 @@ fn paint_keys(ui: &egui::Ui, keys: &str, right: Pos2, paint: bool) -> f32 {
         alternatives = vec![alternatives[0], alternatives[alternatives.len() - 1]];
     }
     for (i, alternative) in alternatives.iter().enumerate().rev() {
-        for cap in alternative.split('+').collect::<Vec<_>>().into_iter().rev() {
+        for cap in split_caps(alternative).into_iter().rev() {
             x = key_cap(ui, cap, Pos2::new(x, right.y), paint) - 3.;
         }
         if i > 0 {
@@ -627,7 +1044,7 @@ pub(in crate::app) fn icon_button(ui: &mut egui::Ui, icon: Icon, hover: &str) ->
 }
 
 /// A key as the platform names it: ⌘ ⌥ ⇧ on macOS.
-fn cap_label(cap: &str) -> String {
+pub(in crate::app) fn cap_label(cap: &str) -> String {
     let mac = cfg!(target_os = "macos");
     match cap {
         "Cmd" if mac => "⌘".into(),
@@ -647,50 +1064,173 @@ fn cap_label(cap: &str) -> String {
 
 /// Keys as text, e.g. for a hover: "⌘/".
 pub(in crate::app) fn keys_text(keys: &str) -> String {
-    keys.split('+').map(cap_label).collect()
+    split_caps(keys).into_iter().map(cap_label).collect()
 }
+
+/// A chord's text in its caps: the modifiers, then the key, which may be
+/// `+` ("Cmd++").
+pub(in crate::app) fn split_caps(text: &str) -> Vec<&str> {
+    if let Some(mods) = text.strip_suffix("++") {
+        let mut caps: Vec<&str> = mods.split('+').filter(|m| !m.is_empty()).collect();
+        caps.push("+");
+        return caps;
+    }
+    if text == "+" {
+        return vec!["+"];
+    }
+    text.split('+').collect()
+}
+
+#[cfg(test)]
+mod today;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn defaults(rows: &[Row]) -> Vec<Shortcut> {
+        shortcuts(rows, &Effective::default())
+    }
     fn found(query: &str) -> Vec<Shortcut> {
+        let (library, loupe, develop) = (defaults(&LIBRARY), defaults(&LOUPE), defaults(&DEVELOP));
         let groups: [Group; 3] = [
-            ("Library grid", &LIBRARY),
-            ("Loupe", &LOUPE),
-            ("Develop", &DEVELOP),
+            ("Library grid", &library),
+            ("Loupe", &loupe),
+            ("Develop", &develop),
         ];
         let (left, right) = filtered(&tokens(query), &groups, &[]);
         left.into_iter().chain(right).flat_map(|(_, s)| s).collect()
     }
+    fn has(found: &[Shortcut], keys: &str, action: &str) -> bool {
+        found.iter().any(|(k, a)| k == keys && *a == action)
+    }
+
+    #[test]
+    fn with_the_defaults_the_card_reads_as_it_was_written() {
+        use super::today;
+        let today = |rows: &[(&str, &'static str)]| -> Vec<Shortcut> {
+            rows.iter().map(|(k, a)| (k.to_string(), *a)).collect()
+        };
+        for (name, generated, written) in [
+            ("library", defaults(&LIBRARY), today(&today::LIBRARY)),
+            ("loupe", defaults(&LOUPE), today(&today::LOUPE)),
+            ("compare", defaults(&COMPARE), today(&today::COMPARE)),
+            ("survey", defaults(&SURVEY), today(&today::SURVEY)),
+            ("rating", defaults(&RATING), today(&today::RATING)),
+            ("quick", defaults(&QUICK), today(&today::QUICK)),
+            ("stacks", defaults(&STACKS), today(&today::STACKS)),
+            ("general", defaults(&GENERAL), today(&today::GENERAL)),
+            ("develop", defaults(&DEVELOP), today(&today::DEVELOP)),
+        ] {
+            assert_eq!(generated, written, "{name}");
+        }
+    }
+
+    #[test]
+    fn the_users_keys_show_on_the_card() {
+        let chord = |t: &str| Chord::parse(t).expect("a chord");
+        let map = Effective::new(
+            [
+                ("crop", vec![chord("F9")]),
+                ("delete", vec![chord("Cmd+Backspace"), chord("X")]),
+                ("compare", vec![]),
+                ("previous", vec![chord("F10")]),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let develop = shortcuts(&DEVELOP, &map);
+        assert!(has(&develop, "F9", "Crop & Straighten"));
+        assert!(has(&develop, "", "Before alone"), "no key");
+        assert!(has(&develop, "F10 / Right", "Previous / next photo"));
+        let library = shortcuts(&LIBRARY, &map);
+        assert!(has(
+            &library,
+            "Cmd+Backspace / X",
+            "Move to Trash, or remove from the catalog"
+        ));
+        // No longer the four arrows.
+        assert!(has(
+            &library,
+            "F10 / Right / Up / Down",
+            "Move the active photo"
+        ));
+        let survey = shortcuts(&SURVEY, &map);
+        assert!(has(&survey, "F10 / Right / Down", "Move the active photo"));
+    }
+
+    #[test]
+    fn a_users_key_for_a_command_no_row_shows_gets_a_row_of_its_own() {
+        assert!(yours(&Effective::default()).is_empty());
+        let chord = |t: &str| Chord::parse(t).expect("a chord");
+        let map = Effective::new(
+            [
+                ("auto_white_balance", vec![chord("F9"), chord("Cmd+F9")]),
+                ("crop", vec![chord("F10")]),
+                ("curve:linear", vec![]),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        // Crop has its row; a command left with no key needs none.
+        assert_eq!(
+            yours(&map),
+            [("F9 / Cmd+F9".to_string(), "Auto white balance")]
+        );
+    }
+
+    #[test]
+    fn a_plus_key_paints_as_its_cap() {
+        let ctx = egui::Context::default();
+        let mut widths = Vec::new();
+        for _ in 0..2 {
+            widths.clear();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                for keys in ["Cmd++", "Cmd+=", "+"] {
+                    widths.push(paint_keys(ui, keys, Pos2::ZERO, false));
+                }
+            });
+            output.textures_delta.clear();
+        }
+        // Two caps, as wide as Cmd and =; and one.
+        assert!((widths[0] - widths[1]).abs() < 0.5, "{widths:?}");
+        assert!(widths[2] < widths[1], "{widths:?}");
+        assert_eq!(keys_text("Cmd++"), format!("{}+", cap_label("Cmd")));
+    }
 
     #[test]
     fn a_search_finds_actions_by_word_and_shortcuts_by_key() {
-        assert!(found("crop").contains(&("R", "Crop & Straighten")));
-        assert!(found("straigh").contains(&("R", "Crop & Straighten")));
+        assert!(has(&found("crop"), "R", "Crop & Straighten"));
+        assert!(has(&found("straigh"), "R", "Crop & Straighten"));
         // Every spelling of a modifier names the same key.
         for query in ["cmd+shift+e", "⌘⇧E", "command shift e", "ctrl shift e"] {
-            assert!(
-                found(query).contains(&("Cmd+Shift+E", "Export…")),
-                "{query}"
-            );
+            assert!(has(&found(query), "Cmd+Shift+E", "Export…"), "{query}");
         }
-        assert!(found("option y").contains(&("Option+Y", "Before and after, top and bottom")));
-        assert!(found("alt y").contains(&("Option+Y", "Before and after, top and bottom")));
+        assert!(has(
+            &found("option y"),
+            "Option+Y",
+            "Before and after, top and bottom"
+        ));
+        assert!(has(
+            &found("alt y"),
+            "Option+Y",
+            "Before and after, top and bottom"
+        ));
         // A word starts where the search does: "rat" is no saturation.
-        assert!(!found("rat").contains(&(
+        assert!(!has(
+            &found("rat"),
             "Cmd+Option+Shift+H / S / L",
             "Targeted adjustment: Hue / Saturation / Luminance"
-        )));
-        assert!(found("up").contains(&("Arrows", "Move the active photo")));
+        ));
+        assert!(has(&found("up"), "Arrows", "Move the active photo"));
     }
 
     #[test]
     fn one_letter_names_a_key_not_a_word() {
         let z = found("z");
-        assert!(z.contains(&("Z", "Toggle zoom / fit")));
+        assert!(has(&z, "Z", "Toggle zoom / fit"));
         // "Zoom in / out" is Cmd+= / Cmd+-, no Z key.
-        assert!(!z.contains(&("Cmd+= / Cmd+-", "Zoom in / out")));
+        assert!(!has(&z, "Cmd+= / Cmd+-", "Zoom in / out"));
     }
 
     #[test]
@@ -702,7 +1242,8 @@ mod tests {
 
     #[test]
     fn a_search_shares_the_groups_between_both_columns() {
-        let groups: [Group; 2] = [("Library grid", &LIBRARY), ("Loupe", &LOUPE)];
+        let (library, loupe) = (defaults(&LIBRARY), defaults(&LOUPE));
+        let groups: [Group; 2] = [("Library grid", &library), ("Loupe", &loupe)];
         let (left, right) = filtered(&tokens("photo"), &groups, &[]);
         assert_eq!((left.len(), right.len()), (1, 1));
     }
@@ -715,12 +1256,10 @@ mod tests {
         assert!(!digit_run(&["1", "3", "4"]));
         assert!(!digit_run(&["P", "X", "U"]));
         // The keys inside a range are still found.
-        assert!(found_in(&RATING, "3").contains(&("0 / 1 / 2 / 3 / 4 / 5", "Star rating")));
-    }
-
-    fn found_in(shortcuts: &'static [Shortcut], query: &str) -> Vec<Shortcut> {
-        let (left, _) = filtered(&tokens(query), &[("Rating", shortcuts)], &[]);
-        left.into_iter().flat_map(|(_, s)| s).collect()
+        let rating = defaults(&RATING);
+        let (left, _) = filtered(&tokens("3"), &[("Rating", &rating)], &[]);
+        let found: Vec<Shortcut> = left.into_iter().flat_map(|(_, s)| s).collect();
+        assert!(has(&found, "0 / 1 / 2 / 3 / 4 / 5", "Star rating"));
     }
 
     #[test]

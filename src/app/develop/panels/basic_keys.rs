@@ -85,7 +85,10 @@ enum Action {
 /// The action of `event`, if it is a press: see [`decode_press`].
 #[cfg(test)]
 fn decode(event: &egui::Event) -> Option<Action> {
-    decode_press(&Press::of(event)?)
+    decode_press(
+        &FrameKeys::of(&egui::Context::default()),
+        &Press::of(event)?,
+    )
 }
 
 /// The action of `press`: a press or a repeat, with the modifiers held for it. The
@@ -94,14 +97,13 @@ fn decode(event: &egui::Event) -> Option<Action> {
 /// when the place is unknown. The keypad's `+` and `-` step too. Cmd and Ctrl are
 /// never these keys (Cmd+= zooms, Cmd+, opens Preferences), and `.` and `,` only
 /// without any modifier.
-fn decode_press(press: &Press) -> Option<Action> {
+fn decode_press(keys: &FrameKeys, press: &Press) -> Option<Action> {
     use crate::app::shell::commands::registry::bindings as b;
     let modifiers = press.modifiers;
-    // A key that rates, flags or labels the photo is that, not a step: Dvorak
-    // types `]` on the `=` key.
-    if !modifiers.alt
-        && crate::app::library::photo_metadata::is_shortcut_key(press.key, press.physical)
-    {
+    // A press that rates, flags or labels the photo is that, not a step:
+    // Dvorak types `]` on the `=` key. With other modifiers than the rating
+    // key's (Option+`]`), it is a step.
+    if crate::app::library::photo_metadata::is_shortcut(keys, press) {
         return None;
     }
     let size = if modifiers.alt {
@@ -111,13 +113,13 @@ fn decode_press(press: &Press) -> Option<Action> {
     } else {
         KeyStep::Normal
     };
-    if press.is(&b::BASIC_NEXT) {
+    if keys.is(press, &b::BASIC_NEXT) {
         Some(Action::Select { forward: true })
-    } else if press.is(&b::BASIC_PREVIOUS) {
+    } else if keys.is(press, &b::BASIC_PREVIOUS) {
         Some(Action::Select { forward: false })
-    } else if press.is(&b::BASIC_INCREASE) {
+    } else if keys.is(press, &b::BASIC_INCREASE) {
         Some(Action::Step { size, up: true })
-    } else if press.is(&b::BASIC_DECREASE) {
+    } else if keys.is(press, &b::BASIC_DECREASE) {
         Some(Action::Step { size, up: false })
     } else {
         None
@@ -135,11 +137,11 @@ impl Editor {
     /// `typing` says whether a text field had the keys as the frame began: a field
     /// that took a `-` and gave up the keys on Return in this frame keeps that `-`.
     pub(in crate::app) fn develop_key_steps(&mut self, ctx: &egui::Context, typing: bool) {
-        let keys = FrameKeys::of(ctx);
+        let keys = self.keys(ctx);
         let actions: Vec<(Press, Action)> = keys
             .presses()
             .into_iter()
-            .filter_map(|p| decode_press(&p).map(|action| (p, action)))
+            .filter_map(|p| decode_press(&keys, &p).map(|action| (p, action)))
             .collect();
         if actions.is_empty() || typing || !self.basic_keys_ready(ctx) {
             return;

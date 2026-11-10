@@ -36,6 +36,10 @@ impl Mods {
     pub(in crate::app) const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
+    /// The modifiers both hold.
+    pub(in crate::app) const fn and(self, other: Self) -> Self {
+        Self(self.0 & other.0)
+    }
 
     /// The modifiers held for a press, as a chord names them. Ctrl counts only
     /// where it is not the command key: on a Mac, or with ⌘ as well. ⌘ alone
@@ -73,13 +77,6 @@ pub(in crate::app) struct Chord {
 }
 
 /// Why a chord's text doesn't read.
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "the key map file and Preferences read chords (#963)"
-    )
-)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::app) enum ChordError {
     /// Nothing, or a modifier with no key after it ("Cmd+").
@@ -117,13 +114,6 @@ impl Chord {
     /// Reads a chord's text: the modifiers in any order, each once, then the
     /// key. Modifier names don't depend on case; `Command`, `Control` and
     /// `Option` are read as well.
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "the key map file and Preferences read chords (#963)"
-        )
-    )]
     pub(in crate::app) fn parse(text: &str) -> Result<Self, ChordError> {
         let text = text.trim();
         // The `+` key ends a chord as `++`, or is the whole of it.
@@ -175,6 +165,49 @@ impl Chord {
     pub(in crate::app) fn accepts(&self, key: Key, held: Mods, free: Mods) -> bool {
         key == self.key && held.without(free) == self.mods
     }
+
+    /// The chord as an AppKit key equivalent, if it has one.
+    pub(in crate::app) fn key_equivalent(self) -> Option<crate::platform::menu::KeyEquivalent> {
+        // AppKit's function-key characters (NSUpArrowFunctionKey and the rest).
+        let function = |code: u32| char::from_u32(code).map(String::from);
+        let key = match self.key {
+            Key::ArrowUp => function(0xF700)?,
+            Key::ArrowDown => function(0xF701)?,
+            Key::ArrowLeft => function(0xF702)?,
+            Key::ArrowRight => function(0xF703)?,
+            Key::Insert => function(0xF727)?,
+            Key::Delete => function(0xF728)?,
+            Key::Home => function(0xF729)?,
+            Key::End => function(0xF72B)?,
+            Key::PageUp => function(0xF72C)?,
+            Key::PageDown => function(0xF72D)?,
+            Key::Backspace => "\u{8}".into(),
+            Key::Enter => "\r".into(),
+            Key::Tab => "\t".into(),
+            Key::Escape => "\u{1b}".into(),
+            Key::Space => " ".into(),
+            // egui names it with a minus sign.
+            Key::Minus => "-".into(),
+            key => {
+                let name = key.name();
+                match name.strip_prefix('F').and_then(|n| n.parse::<u32>().ok()) {
+                    Some(n) if (1..=35).contains(&n) => function(0xF704 + n - 1)?,
+                    _ => key.symbol_or_name().to_lowercase(),
+                }
+            }
+        };
+        // A Num key's name is its digit; anything longer is no character.
+        if key.chars().count() != 1 {
+            return None;
+        }
+        Some(crate::platform::menu::KeyEquivalent {
+            key,
+            command: self.mods.contains(Mods::CMD),
+            shift: self.mods.contains(Mods::SHIFT),
+            option: self.mods.contains(Mods::ALT),
+            control: self.mods.contains(Mods::CTRL),
+        })
+    }
 }
 
 impl fmt::Display for Chord {
@@ -210,13 +243,6 @@ fn key_text(key: Key) -> &'static str {
     }
 }
 
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "the key map file and Preferences read chords (#963)"
-    )
-)]
 fn key_from_text(text: &str) -> Option<Key> {
     match text {
         "Page Up" => return Some(Key::PageUp),
@@ -235,13 +261,6 @@ fn key_from_text(text: &str) -> Option<Key> {
     })
 }
 
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "the key map file and Preferences read chords (#963)"
-    )
-)]
 fn modifier_from_text(text: &str) -> Option<Mods> {
     Some(match text.to_ascii_lowercase().as_str() {
         "cmd" | "command" => Mods::CMD,

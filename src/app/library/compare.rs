@@ -50,7 +50,6 @@ impl Compare {
 }
 
 impl Library {
-    #[cfg(test)]
     pub(crate) fn compare_open(&self) -> bool {
         self.compare.open
     }
@@ -317,31 +316,30 @@ impl Library {
     }
     pub(super) fn compare_keys(
         &mut self,
-        keys: crate::app::shell::keymap::FrameKeys,
+        keys: &crate::app::shell::keymap::FrameKeys,
         presses: &[crate::app::shell::keymap::Press],
     ) {
         use crate::app::shell::commands::registry::bindings as b;
         for press in presses {
             // B, Cmd+B and Cmd+Shift+B, for the active photo, once per press.
-            if press.is(&b::COMPARE_QUICK_TOGGLE)
-                || press.is(&b::COMPARE_QUICK_SHOW)
-                || press.is(&b::COMPARE_QUICK_CLEAR)
+            if let Some(command) =
+                super::selection::quick_command(keys, press, &super::selection::QUICK_COMPARE)
             {
                 let ids = self.selection.active.into_iter().collect();
-                self.quick_key(press.modifiers, ids)
-            } else if press.is(&b::COMPARE_PREVIOUS) {
+                self.quick_key(command, ids)
+            } else if keys.is(press, &b::COMPARE_PREVIOUS) {
                 self.step_candidate(-1)
-            } else if press.is(&b::COMPARE_NEXT) {
+            } else if keys.is(press, &b::COMPARE_NEXT) {
                 self.step_candidate(1)
-            } else if press.is(&b::COMPARE_MAKE_SELECT) {
+            } else if keys.is(press, &b::COMPARE_MAKE_SELECT) {
                 self.make_select()
-            } else if press.is(&b::COMPARE_SWAP) {
+            } else if keys.is(press, &b::COMPARE_SWAP) {
                 self.swap_compare()
-            } else if press.is(&b::COMPARE_CLOSE) {
+            } else if keys.is(press, &b::COMPARE_CLOSE) {
                 self.close_compare()
-            } else if press.is(&b::COMPARE_LOUPE) {
+            } else if keys.is(press, &b::COMPARE_LOUPE) {
                 self.open_loupe()
-            } else if press.is(&b::COMPARE_SURVEY) {
+            } else if keys.is(press, &b::COMPARE_SURVEY) {
                 self.open_survey()
             } else {
                 continue;

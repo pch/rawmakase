@@ -131,7 +131,7 @@ fn each_pass_starts_with_nothing_taken() {
     let after_begin = frame(&ctx, vec![press(Key::F, Modifiers::NONE)], |ctx| {
         let keys = FrameKeys::of(ctx);
         keys.take(&F);
-        keys.begin();
+        let keys = FrameKeys::begin(ctx, std::sync::Arc::default());
         keys.take(&F)
     });
     assert!(after_begin.is_some(), "begin starts the frame afresh");
@@ -262,9 +262,12 @@ fn take_any_goes_by_binding_order_and_take_first_by_event_order() {
             press(Key::Y, Modifiers::NONE),
         ]
     };
-    let (first, rest) = frame(&ctx, ys(), |ctx| {
+    let (first, rest, rest_is_y) = frame(&ctx, ys(), |ctx| {
         let keys = FrameKeys::of(ctx);
-        (keys.take_first(&[&Y, &SHIFT_Y]), keys.presses())
+        let first = keys.take_first(&[&Y, &SHIFT_Y]);
+        let rest = keys.presses();
+        let rest_is_y = rest.iter().all(|p| keys.is(p, &Y));
+        (first, rest, rest_is_y)
     });
     assert_eq!(
         first,
@@ -272,7 +275,7 @@ fn take_any_goes_by_binding_order_and_take_first_by_event_order() {
         "the first press decides"
     );
     assert_eq!(rest.len(), 1, "the other press is left");
-    assert!(rest[0].is(&Y));
+    assert!(rest_is_y);
 }
 
 #[test]
@@ -465,4 +468,135 @@ fn shift_and_alt_on_punctuation_are_free_unless_named_or_rejected() {
     assert!(NEXT_SLIDER.matches(&typed(Key::Period, Key::Period, Modifiers::NONE)));
     assert!(!NEXT_SLIDER.matches(&typed(Key::Period, Key::Period, shift)));
     assert!(!NEXT_SLIDER.matches(&typed(Key::Period, Key::Period, alt)));
+}
+
+#[test]
+fn the_users_chords_replace_a_commands_defaults() {
+    let user = [("chrome", vec![Chord::new(Key::G, Mods::CMD)])]
+        .into_iter()
+        .collect();
+    let map = std::sync::Arc::new(Effective::new(user));
+    let ctx = egui::Context::default();
+    let (f, g) = frame(
+        &ctx,
+        vec![
+            press(Key::F, Modifiers::NONE),
+            press(Key::G, Modifiers::COMMAND),
+            release(Key::F),
+            release(Key::G),
+        ],
+        |ctx| {
+            let keys = FrameKeys::begin(ctx, map.clone());
+            let g = keys.take(&F);
+            (keys.presses(), g)
+        },
+    );
+    assert_eq!(g, Some(Modifiers::COMMAND), "Cmd+G runs it");
+    assert_eq!(f.len(), 1, "F is no longer its key");
+    assert_eq!(f[0].key, Key::F);
+    // A handler that asks later in the frame reads the same chords.
+    let later = frame(
+        &ctx,
+        vec![press(Key::G, Modifiers::COMMAND), release(Key::G)],
+        |ctx| {
+            FrameKeys::begin(ctx, map.clone());
+            FrameKeys::of(ctx).take(&F)
+        },
+    );
+    assert_eq!(later, Some(Modifiers::COMMAND));
+    // Repeats as the binding's defaults allow: F once per press.
+    assert!(map.defaults_of(&F).iter().all(|d| !d.repeats));
+    assert!(map.defaults_of(&ANY_F).iter().all(|d| d.repeats));
+}
+
+#[test]
+fn a_users_chord_on_a_punctuation_key_reads_as_the_binding_does() {
+    // The rating keys refuse Alt, which types other symbols there.
+    let user = [("rating:raise", vec![Chord::new(Key::Period, Mods::NONE)])]
+        .into_iter()
+        .collect();
+    let map = std::sync::Arc::new(Effective::new(user));
+    let ctx = egui::Context::default();
+    let taken = frame(
+        &ctx,
+        vec![
+            press(Key::Period, Modifiers::ALT),
+            press(Key::Period, Modifiers::SHIFT),
+        ],
+        |ctx| FrameKeys::begin(ctx, map.clone()).take(&RATE_UP),
+    );
+    assert_eq!(
+        taken,
+        Some(Modifiers::SHIFT),
+        "Shift, the variant, is passed on"
+    );
+}
+
+#[test]
+fn a_press_two_commands_share_is_reported_once_and_runs_neither() {
+    use crate::app::shell::commands::registry::bindings as b;
+    let f9 = Chord::new(Key::F9, Mods::NONE);
+    let map = std::sync::Arc::new(Effective::new(
+        [("grid:cell_style", vec![f9]), ("library:compare", vec![f9])]
+            .into_iter()
+            .collect(),
+    ));
+    let ctx = egui::Context::default();
+    let (ran, reports) = frame(&ctx, vec![press(Key::F9, Modifiers::NONE)], |ctx| {
+        let keys = FrameKeys::begin(ctx, map.clone());
+        keys.set_live(Live::new(vec![
+            Context::Everywhere,
+            Context::Library,
+            Context::Grid,
+        ]));
+        // As the grid's key loop asks each of its bindings in turn.
+        let presses = keys.presses();
+        let ran: Vec<&str> = [&b::GRID_COMPARE, &b::GRID_CELL_STYLE, &b::GRID_SURVEY]
+            .iter()
+            .filter(|binding| presses.iter().any(|p| keys.is(p, binding)))
+            .map(|binding| binding.command)
+            .collect();
+        (ran, keys.take_reports())
+    });
+    assert_eq!(ran, Vec::<&str>::new());
+    assert_eq!(reports.len(), 1, "{reports:?}");
+    assert!(
+        reports[0].starts_with("F9 is the key of both"),
+        "{reports:?}"
+    );
+}
+
+#[test]
+fn a_binding_that_acts_once_takes_its_other_presses_by_precedence_too() {
+    use crate::app::shell::commands::registry::bindings as b;
+    let x = Chord::new(Key::X, Mods::NONE);
+    let map = std::sync::Arc::new(Effective::new(
+        [
+            ("chrome", vec![Chord::new(Key::F9, Mods::NONE), x]),
+            ("panels:sides", vec![x]),
+        ]
+        .into_iter()
+        .collect(),
+    ));
+    let ctx = egui::Context::default();
+    let (chrome, sides, reports) = frame(
+        &ctx,
+        vec![
+            press(Key::F9, Modifiers::NONE),
+            press(Key::X, Modifiers::NONE),
+        ],
+        |ctx| {
+            let keys = FrameKeys::begin(ctx, map.clone());
+            keys.set_live(Live::new(vec![Context::Everywhere, Context::Develop]));
+            let chrome = keys.take(&F_ONCE);
+            (chrome, keys.take(&b::PANELS_SIDES), keys.take_reports())
+        },
+    );
+    assert_eq!(chrome, Some(Modifiers::NONE), "F9 runs Chrome");
+    assert_eq!(sides, None, "X, shared, runs neither");
+    assert_eq!(reports.len(), 1, "{reports:?}");
+    assert!(
+        reports[0].starts_with("X is the key of both"),
+        "{reports:?}"
+    );
 }

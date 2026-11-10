@@ -7,17 +7,10 @@
 //! says where a key runs the command and how its press is matched; the handler
 //! that runs it names it (`bindings::CLIPPING`) and takes its press from
 //! [`FrameKeys`](crate::app::shell::keymap::FrameKeys).
-use crate::app::shell::keymap::{Binding, Context, Default, Mods, Tool};
+use crate::app::shell::keymap::{Binding, Context, Default, Guards, Mods, Tool};
 use eframe::egui::Key;
 
 /// A command: its id and what it does.
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "Preferences > Shortcuts and the generated card read the commands (#963)"
-    )
-)]
 pub(in crate::app) struct Command {
     pub id: &'static str,
     /// What it does, for Preferences and for a message naming it.
@@ -27,13 +20,6 @@ pub(in crate::app) struct Command {
     pub rebindable: bool,
 }
 
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "Preferences > Shortcuts and the generated card read the commands (#963)"
-    )
-)]
 const fn command(id: &'static str, title: &'static str) -> Command {
     Command {
         id,
@@ -41,13 +27,6 @@ const fn command(id: &'static str, title: &'static str) -> Command {
         rebindable: true,
     }
 }
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "Preferences > Shortcuts and the generated card read the commands (#963)"
-    )
-)]
 const fn fixed(id: &'static str, title: &'static str) -> Command {
     Command {
         id,
@@ -56,13 +35,6 @@ const fn fixed(id: &'static str, title: &'static str) -> Command {
     }
 }
 
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "Preferences > Shortcuts and the generated card read the commands (#963)"
-    )
-)]
 pub(in crate::app) static COMMANDS: &[Command] = &[
     // The automation and MIDI actions (`Action::NAMED`), in their order.
     fixed("undo", "Undo"),
@@ -235,13 +207,6 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
 ];
 
 /// The command `id` names.
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "Preferences > Shortcuts and the generated card read the commands (#963)"
-    )
-)]
 pub(in crate::app) fn command_by_id(id: &str) -> Option<&'static Command> {
     COMMANDS.iter().find(|c| c.id == id)
 }
@@ -294,6 +259,13 @@ pub(in crate::app) mod bindings {
     const fn rating(command: &'static str, defaults: &'static [Default]) -> Binding {
         b(command, Everywhere, defaults).variant(SHIFT)
     }
+    /// Develop's Delete and the panel keys stop with a menu open as well;
+    /// the panel keys also while a control has the focus, where Tab moves it.
+    const NO_POPUP: Guards = Guards::TYPING
+        .with(Guards::POPUP)
+        .with(Guards::BUSY)
+        .with(Guards::MODAL);
+    const PANEL: Guards = NO_POPUP.with(Guards::FOCUS);
     const DELETE_KEYS: &[Key] = &[Key::Delete, Key::Backspace];
     const OPEN_BRACKETS: &[Key] = &[Key::OpenBracket, Key::OpenCurlyBracket];
     const CLOSE_BRACKETS: &[Key] = &[Key::CloseBracket, Key::CloseCurlyBracket];
@@ -303,8 +275,10 @@ pub(in crate::app) mod bindings {
         // The message line and the window (`Editor::draw`).
         DISMISS_MESSAGES = b("messages:dismiss_all", Everywhere, &[
             d(&[Key::Escape], SHIFT),
-        ]).consuming();
-        SHOW_CHROME = b("chrome:show", Everywhere, &[d(&[Key::Escape], NONE)]).consuming();
+        ]).consuming().guarded(Guards::MODAL);
+        SHOW_CHROME = b("chrome:show", Everywhere, &[d(&[Key::Escape], NONE)])
+            .consuming()
+            .guarded(Guards::MODAL.with(Guards::POPUP));
 
         // Rating, flag and label keys (`photo_metadata::shortcut`), in the
         // order they are matched.
@@ -327,9 +301,19 @@ pub(in crate::app) mod bindings {
         // Shift+[ and Shift+] type `{` and `}` on US layouts.
         RATING_LOWER = rating("rating:lower", &[rate(OPEN_BRACKETS)]);
         RATING_RAISE = rating("rating:raise", &[rate(CLOSE_BRACKETS)]);
+        // No key by default; a key the user gives them runs them as these do.
+        SET_LABEL_RED = rating("label:red", &[]);
+        SET_LABEL_YELLOW = rating("label:yellow", &[]);
+        SET_LABEL_GREEN = rating("label:green", &[]);
+        SET_LABEL_BLUE = rating("label:blue", &[]);
+        SET_LABEL_PURPLE = rating("label:purple", &[]);
+        SET_LABEL_NONE = rating("label:none", &[]);
+        LABEL_PURPLE = rating("toggle_label:purple", &[]);
 
         // The Library's views (`Library::selection_keys`).
-        FILTERS = b("filters", Library, &[d(&[Key::L], CMD).once_per_press()]);
+        // From the search field too, but not with a menu open.
+        FILTERS = b("filters", Library, &[d(&[Key::L], CMD).once_per_press()])
+            .guarded(Guards::POPUP.with(Guards::BUSY).with(Guards::MODAL));
         GRID_LOUPE = b("loupe", Grid, &[d(&[Key::E], NONE), d(&[Key::Enter], NONE)]);
         GRID_COMPARE = b("library:compare", Grid, &[d(&[Key::C], NONE)]);
         GRID_SURVEY = b("library:survey", Grid, &[d(&[Key::N], NONE)]);
@@ -460,8 +444,13 @@ pub(in crate::app) mod bindings {
         DEVELOP = b("develop", Everywhere, &[d(&[Key::D], NONE)]);
 
         // `Editor::preferences_shortcut` and the reference card's window.
-        PREFERENCES = b("preferences", Everywhere, &[d(&[Key::Comma], CMD)]).consuming();
-        SHORTCUTS = b("shortcuts", Everywhere, &[d(&[Key::Slash], CMD)]).consuming();
+        // Both work while typing.
+        PREFERENCES = b("preferences", Everywhere, &[d(&[Key::Comma], CMD)])
+            .consuming()
+            .guarded(Guards::BUSY.with(Guards::MODAL));
+        SHORTCUTS = b("shortcuts", Everywhere, &[d(&[Key::Slash], CMD)])
+            .consuming()
+            .guarded(Guards::MODAL);
         SHORTCUTS_CLOSE = b("shortcuts", ShortcutSheet, &[
             d(&[Key::Slash], CMD).off_card(),
         ]).consuming();
@@ -470,12 +459,24 @@ pub(in crate::app) mod bindings {
         ]).consuming();
 
         // `Editor::panel_keys`, in its order.
-        PANELS_ALL = b("panels:all", Everywhere, &[d(&[Key::Tab], SHIFT)]).consuming();
-        PANELS_SIDES = b("panels:sides", Everywhere, &[d(&[Key::Tab], NONE)]).consuming();
-        PANELS_PRESETS = b("panels:presets", Everywhere, &[d(&[Key::F8], SHIFT)]).consuming();
-        PANELS_LEFT = b("panels:left", Everywhere, &[d(&[Key::F7], NONE)]).consuming();
-        PANELS_RIGHT = b("panels:right", Everywhere, &[d(&[Key::F8], NONE)]).consuming();
-        PANELS_FILMSTRIP = b("panels:filmstrip", Everywhere, &[d(&[Key::F6], NONE)]).consuming();
+        PANELS_ALL = b("panels:all", Everywhere, &[d(&[Key::Tab], SHIFT)])
+            .consuming()
+            .guarded(PANEL);
+        PANELS_SIDES = b("panels:sides", Everywhere, &[d(&[Key::Tab], NONE)])
+            .consuming()
+            .guarded(PANEL);
+        PANELS_PRESETS = b("panels:presets", Everywhere, &[d(&[Key::F8], SHIFT)])
+            .consuming()
+            .guarded(PANEL);
+        PANELS_LEFT = b("panels:left", Everywhere, &[d(&[Key::F7], NONE)])
+            .consuming()
+            .guarded(PANEL);
+        PANELS_RIGHT = b("panels:right", Everywhere, &[d(&[Key::F8], NONE)])
+            .consuming()
+            .guarded(PANEL);
+        PANELS_FILMSTRIP = b("panels:filmstrip", Everywhere, &[d(&[Key::F6], NONE)])
+            .consuming()
+            .guarded(PANEL);
 
         // `Editor::library_workspace`: on the Library's selection.
         LIBRARY_EXPORT = b("export_dialog", Library, &[d(&[Key::E], CMD_SHIFT).once_per_press()]);
@@ -502,16 +503,16 @@ pub(in crate::app) mod bindings {
         // Develop (`Editor::develop_delete_key`, `Editor::develop_shortcuts`).
         DEVELOP_DELETE = b("delete", Develop, &[
             d(DELETE_KEYS, NONE).once_per_press().off_card(),
-        ]);
+        ]).guarded(NO_POPUP);
         DEVELOP_REMOVE_FROM_CATALOG = b("remove_from_catalog", Develop, &[
             d(DELETE_KEYS, ALT).once_per_press().off_card(),
-        ]);
+        ]).guarded(NO_POPUP);
         DEVELOP_DELETE_REJECTED = b("delete_rejected", Develop, &[
             d(DELETE_KEYS, CMD).once_per_press().off_card(),
-        ]);
+        ]).guarded(NO_POPUP);
         DEVELOP_TRASH = b("trash", Develop, &[
             d(DELETE_KEYS, CMD_ALT_SHIFT).once_per_press().off_card(),
-        ]);
+        ]).guarded(NO_POPUP);
         COPY_TO_BEFORE = b("before_after:copy_to_before", Develop, &[
             d(&[Key::ArrowLeft], CMD_ALT_SHIFT),
         ]);
@@ -595,6 +596,17 @@ pub(in crate::app) mod bindings {
         NEW_LINEAR_MASK = b("mask:new_linear", Develop, &[d(&[Key::M], NONE)]);
         NEW_RADIAL_MASK = b("mask:new_radial", Develop, &[d(&[Key::M], SHIFT)]);
         NEW_COLOR_RANGE_MASK = b("mask:new_color_range", Develop, &[d(&[Key::J], SHIFT)]);
+        // Develop's commands with no key by default, which run as automation
+        // runs them once the user gives them one.
+        AUTO_WHITE_BALANCE = b("auto_white_balance", Develop, &[]);
+        CURVE_LINEAR = b("curve:linear", Develop, &[]);
+        CURVE_MEDIUM_CONTRAST = b("curve:medium_contrast", Develop, &[]);
+        CURVE_STRONG_CONTRAST = b("curve:strong_contrast", Develop, &[]);
+        TREATMENT_BLACK_WHITE = b("treatment:bw", Develop, &[]);
+        TREATMENT_COLOR = b("treatment:color", Develop, &[]);
+        MIXER_HUE = b("mixer:hue", Develop, &[]);
+        MIXER_SATURATION = b("mixer:sat", Develop, &[]);
+        MIXER_LUMINANCE = b("mixer:lum", Develop, &[]);
 
         // The tools' keys (`Editor::crop_keys` and the rest).
         CROP_SWAP_ORIENTATION = b("crop:swap_orientation", Context::Tool(Tool::Crop), &[
@@ -672,7 +684,7 @@ pub(in crate::app) mod bindings {
     }
 
     /// The rating, flag and label keys, in the order a press is matched.
-    pub(in crate::app) static METADATA: [&Binding; 18] = [
+    pub(in crate::app) static METADATA: [&Binding; 25] = [
         &FLAG_RAISE,
         &FLAG_LOWER,
         &RATING_0,
@@ -691,7 +703,39 @@ pub(in crate::app) mod bindings {
         &TOGGLE_PICK,
         &RATING_LOWER,
         &RATING_RAISE,
+        &SET_LABEL_RED,
+        &SET_LABEL_YELLOW,
+        &SET_LABEL_GREEN,
+        &SET_LABEL_BLUE,
+        &SET_LABEL_PURPLE,
+        &SET_LABEL_NONE,
+        &LABEL_PURPLE,
     ];
+
+    /// Develop's commands with no key by default, run as automation runs them.
+    pub(in crate::app) static DEVELOP_ACTIONS: [&Binding; 9] = [
+        &AUTO_WHITE_BALANCE,
+        &CURVE_LINEAR,
+        &CURVE_MEDIUM_CONTRAST,
+        &CURVE_STRONG_CONTRAST,
+        &TREATMENT_BLACK_WHITE,
+        &TREATMENT_COLOR,
+        &MIXER_HUE,
+        &MIXER_SATURATION,
+        &MIXER_LUMINANCE,
+    ];
+
+    /// The bindings with no key by default: Masking's at-once close, as
+    /// Escape steps back, and the commands only automation ran before the
+    /// key map.
+    #[cfg(test)]
+    pub(in crate::app) fn keyless(binding: &Binding) -> bool {
+        std::ptr::eq(binding, &CLOSE_MASKING)
+            || METADATA
+                .iter()
+                .any(|b| std::ptr::eq(*b, binding) && b.defaults.is_empty())
+            || DEVELOP_ACTIONS.iter().any(|b| std::ptr::eq(*b, binding))
+    }
 }
 
 #[cfg(test)]

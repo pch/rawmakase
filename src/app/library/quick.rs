@@ -101,17 +101,13 @@ impl Library {
         self.select_collection(quick);
         Ok(())
     }
-    /// B, Cmd+B and Cmd+Shift+B, for `ids`.
-    pub(super) fn quick_key(&mut self, modifiers: eframe::egui::Modifiers, ids: Vec<PhotoId>) {
-        // Option, and Control on a Mac, make other keys.
-        if modifiers.alt || (modifiers.ctrl && (modifiers.mac_cmd || !modifiers.command)) {
-            return;
-        }
-        let done = match (modifiers.command, modifiers.shift) {
-            (false, false) => self.toggle_quick(&ids),
-            (true, false) => self.show_quick(),
-            (true, true) => self.clear_quick(),
-            (false, true) => Ok(()),
+    /// The Quick Collection command a key ran (B, Cmd+B and Cmd+Shift+B by
+    /// default), for `ids`.
+    pub(super) fn quick_key(&mut self, command: QuickKey, ids: Vec<PhotoId>) {
+        let done = match command {
+            QuickKey::Toggle => self.toggle_quick(&ids),
+            QuickKey::Show => self.show_quick(),
+            QuickKey::Clear => self.clear_quick(),
         };
         if let Err(e) = done {
             self.messages
@@ -166,4 +162,13 @@ impl Library {
     pub(in crate::app) fn take_collection_done(&mut self) -> Vec<CollectionCommand> {
         std::mem::take(&mut self.collection_done)
     }
+}
+
+/// What a Quick Collection key does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum QuickKey {
+    /// Adds the photos to it, or takes them out.
+    Toggle,
+    Show,
+    Clear,
 }

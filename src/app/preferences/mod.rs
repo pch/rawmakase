@@ -20,15 +20,17 @@ pub(in crate::app) enum Tab {
     Profiles,
     Performance,
     Display,
+    Shortcuts,
     Automation,
 }
 impl Tab {
-    const ALL: [Tab; 6] = [
+    const ALL: [Tab; 7] = [
         Tab::General,
         Tab::Catalog,
         Tab::Profiles,
         Tab::Performance,
         Tab::Display,
+        Tab::Shortcuts,
         Tab::Automation,
     ];
     fn title(self) -> &'static str {
@@ -38,6 +40,7 @@ impl Tab {
             Tab::Profiles => "Profiles & Presets",
             Tab::Performance => "Performance",
             Tab::Display => "Display",
+            Tab::Shortcuts => "Shortcuts",
             Tab::Automation => "Automation",
         }
     }
@@ -48,6 +51,7 @@ impl Tab {
             Tab::Profiles => Icon::Presets,
             Tab::Performance => Icon::Performance,
             Tab::Display => Icon::Monitor,
+            Tab::Shortcuts => Icon::Keyboard,
             Tab::Automation => Icon::Automation,
         }
     }
@@ -94,6 +98,8 @@ pub(in crate::app) struct Preferences {
     pub(in crate::app) raw_defaults: crate::app::preferences::raw_defaults::Form,
     /// Folder locations, read when the Catalog page first shows.
     pub(in crate::app) locations: Option<crate::app::catalog::folder_locations::LocationsView>,
+    /// The Shortcuts page's search and the key it waits for.
+    shortcuts: shortcuts::Page,
 }
 
 const WIDTH: f32 = 860.;
@@ -158,6 +164,7 @@ fn bytes(n: u64) -> String {
 impl Editor {
     pub(in crate::app) fn open_preferences(&mut self, tab: Tab) {
         self.preferences.open = true;
+        self.preferences.shortcuts.stop_capturing();
         self.preferences.tab = tab;
         self.preferences.status_at_open = self.messages.line().to_string();
         // Edits not saved yet are kept, not replaced by the file's.
@@ -192,7 +199,7 @@ impl Editor {
     /// ⌘, (Ctrl+, elsewhere) opens Preferences, as in Lightroom.
     pub(in crate::app) fn preferences_shortcut(&mut self, ctx: &egui::Context) {
         use crate::app::shell::commands::registry::bindings;
-        let keys = crate::app::shell::keymap::FrameKeys::of(ctx);
+        let keys = self.keys(ctx);
         if !self.preferences.open
             && !self.activity.is_busy()
             && keys.take(&bindings::PREFERENCES).is_some()
@@ -294,6 +301,7 @@ impl Editor {
                             .show(&mut content, |ui| cards(ui, |ui| self.performance_page(ui)));
                     }
                     Tab::Display => cards(&mut content, |ui| self.display_page(ui)),
+                    Tab::Shortcuts => self.shortcuts_page(&mut content),
                     Tab::Automation => {
                         egui::ScrollArea::vertical()
                             .auto_shrink(false)
@@ -405,6 +413,7 @@ impl Editor {
             });
             if response.clicked() && !selected {
                 self.preferences.tab = tab;
+                self.preferences.shortcuts.stop_capturing();
                 self.measure_usage();
             }
         }
@@ -1556,3 +1565,4 @@ mod third_party_tests {
 pub(in crate::app) mod monitor;
 pub(in crate::app) mod raw_defaults;
 pub(crate) mod session;
+mod shortcuts;

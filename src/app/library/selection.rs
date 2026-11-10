@@ -1,8 +1,9 @@
 //! Lightroom's Grid selection: an active photo, the photos selected with it,
 //! and the anchor a Shift range starts from.
-use super::Library;
+use super::quick::QuickKey;
+use super::{DeleteKey, Library, StackAction};
 use crate::app::shell::commands::registry::bindings as b;
-use crate::app::shell::keymap::{FrameKeys, Press};
+use crate::app::shell::keymap::{Binding, FrameKeys, Press};
 use crate::catalog::PhotoId;
 use eframe::egui;
 use std::collections::HashSet;
@@ -258,7 +259,7 @@ impl Library {
         // Cmd+L turns the filter bar off and on, in the grid and the Loupe,
         // and from the Search field too.
         for press in &presses {
-            if press.is(&b::FILTERS) {
+            if keys.is(press, &b::FILTERS) {
                 keys.take_press(press);
                 self.toggle_filters()
             }
@@ -267,83 +268,64 @@ impl Library {
             return;
         }
         if self.survey.open {
-            self.survey_keys(keys, &presses);
+            self.survey_keys(&keys, &presses);
         } else if self.compare.open {
-            self.compare_keys(keys, &presses);
+            self.compare_keys(&keys, &presses);
         } else if self.loupe.open {
-            self.loupe_keys(keys, &presses);
+            self.loupe_keys(&keys, &presses);
         } else {
-            self.grid_keys(keys, &presses);
+            self.grid_keys(&keys, &presses);
         }
     }
-    fn grid_keys(&mut self, keys: FrameKeys, presses: &[Press]) {
+    fn grid_keys(&mut self, keys: &FrameKeys, presses: &[Press]) {
         let columns = self.grid_columns.max(1) as isize;
         let page = self.grid_page_rows.max(1) as isize;
         for press in presses {
             // Shift extends the selection.
             let shift = press.modifiers.shift;
-            if press.is(&b::GRID_LOUPE) {
+            if keys.is(press, &b::GRID_LOUPE) {
                 self.open_loupe()
-            } else if press.is(&b::GRID_COMPARE) {
+            } else if keys.is(press, &b::GRID_COMPARE) {
                 self.open_compare()
-            } else if press.is(&b::GRID_SURVEY) {
+            } else if keys.is(press, &b::GRID_SURVEY) {
                 self.open_survey()
-            } else if press.is(&b::GRID_CELL_STYLE) {
+            } else if keys.is(press, &b::GRID_CELL_STYLE) {
                 self.cell_style = self.cell_style.next()
-            } else if press.is(&b::GRID_QUICK_TOGGLE)
-                || press.is(&b::GRID_QUICK_SHOW)
-                || press.is(&b::GRID_QUICK_CLEAR)
-            {
+            } else if let Some(command) = quick_command(keys, press, &QUICK_GRID) {
                 // The grid applies B to every selected photo, once per press.
-                self.quick_key(press.modifiers, self.selected_ids())
-            } else if press.is(&b::GRID_DELETE)
-                || press.is(&b::GRID_REMOVE_FROM_CATALOG)
-                || press.is(&b::GRID_DELETE_REJECTED)
-                || press.is(&b::GRID_TRASH)
-            {
+                self.quick_key(command, self.selected_ids())
+            } else if let Some(command) = delete_command(keys, press, &DELETE_GRID) {
                 // Once per press: a held Delete must not ask again.
                 let ids = self.selected_ids();
-                self.delete_press(press.modifiers, ids)
-            } else if press.is(&b::GRID_RENAME) {
+                self.delete_command(command, ids)
+            } else if keys.is(press, &b::GRID_RENAME) {
                 let ids = self.selected_ids();
                 self.request_rename(ids)
-            } else if press.is(&b::STACK_GROUP) || press.is(&b::STACK_UNSTACK) {
+            } else if let Some(action) = stack_command(keys, press, &STACK_GRID) {
                 // Lightroom's stacks: Cmd+G groups, Cmd+Shift+G unstacks,
                 // S collapses or expands and Shift+S moves to the top.
-                let action = if shift {
-                    super::StackAction::Unstack
-                } else {
-                    super::StackAction::Group
-                };
                 self.stack_key(action, self.selected_ids())
-            } else if press.is(&b::GRID_STACK_TOGGLE) || press.is(&b::GRID_STACK_TO_TOP) {
-                let action = if shift {
-                    super::StackAction::MoveToTop
-                } else {
-                    super::StackAction::Toggle
-                };
-                self.stack_key(action, self.selected_ids())
-            } else if press.is(&b::GRID_SELECT_ALL) {
+            } else if keys.is(press, &b::GRID_SELECT_ALL) {
                 self.select_all()
-            } else if press.is(&b::GRID_SELECT_NONE) {
+            } else if keys.is(press, &b::GRID_SELECT_NONE) {
                 self.select(None)
-            } else if press.is(&b::GRID_DESELECT_ACTIVE) {
+            } else if keys.is(press, &b::GRID_DESELECT_ACTIVE) {
                 self.deselect_active()
-            } else if press.is(&b::GRID_PREVIOUS) {
+            } else if keys.is(press, &b::GRID_PREVIOUS) {
                 self.step(Step::By(-1), shift)
-            } else if press.is(&b::GRID_NEXT) {
+            } else if keys.is(press, &b::GRID_NEXT) {
                 self.step(Step::By(1), shift)
-            } else if press.is(&b::GRID_ROW_UP) {
+            } else if keys.is(press, &b::GRID_ROW_UP) {
                 self.step(Step::By(-columns), shift)
-            } else if press.is(&b::GRID_ROW_DOWN) {
+            } else if keys.is(press, &b::GRID_ROW_DOWN) {
                 self.step(Step::By(columns), shift)
-            } else if press.is(&b::GRID_PAGE_UP) {
+            } else if keys.is(press, &b::GRID_PAGE_UP) {
                 self.step(Step::Rows(-page), shift)
-            } else if press.is(&b::GRID_PAGE_DOWN) {
+            } else if keys.is(press, &b::GRID_PAGE_DOWN) {
                 self.step(Step::Rows(page), shift)
-            } else if press.is(&b::GRID_FIRST) {
+            } else if keys.is(press, &b::GRID_FIRST) {
                 self.step(Step::Home, shift)
-            } else if press.is(&b::GRID_LAST) {
+            } else if keys.is(press, &b::GRID_LAST) {
                 self.step(Step::End, shift)
             } else {
                 continue;
@@ -353,51 +335,39 @@ impl Library {
     }
     /// The Loupe moves one photo at a time; the editor handles its zoom,
     /// as in Develop.
-    fn loupe_keys(&mut self, keys: FrameKeys, presses: &[Press]) {
+    fn loupe_keys(&mut self, keys: &FrameKeys, presses: &[Press]) {
         for press in presses {
-            if press.is(&b::LOUPE_PREVIOUS) {
+            if keys.is(press, &b::LOUPE_PREVIOUS) {
                 self.step(Step::By(-1), false)
-            } else if press.is(&b::LOUPE_NEXT) {
+            } else if keys.is(press, &b::LOUPE_NEXT) {
                 self.step(Step::By(1), false)
-            } else if press.is(&b::LOUPE_FIRST) {
+            } else if keys.is(press, &b::LOUPE_FIRST) {
                 self.step(Step::Home, false)
-            } else if press.is(&b::LOUPE_LAST) {
+            } else if keys.is(press, &b::LOUPE_LAST) {
                 self.step(Step::End, false)
-            } else if press.is(&b::LOUPE_CLOSE) {
+            } else if keys.is(press, &b::LOUPE_CLOSE) {
                 self.close_loupe()
-            } else if press.is(&b::LOUPE_DELETE)
-                || press.is(&b::LOUPE_REMOVE_FROM_CATALOG)
-                || press.is(&b::LOUPE_DELETE_REJECTED)
-                || press.is(&b::LOUPE_TRASH)
-            {
+            } else if let Some(command) = delete_command(keys, press, &DELETE_LOUPE) {
                 // The Loupe's photo, once per press.
                 let ids = self.selection.active.into_iter().collect();
-                self.delete_press(press.modifiers, ids)
-            } else if press.is(&b::LOUPE_RENAME) {
+                self.delete_command(command, ids)
+            } else if keys.is(press, &b::LOUPE_RENAME) {
                 let ids = self.selection.active.into_iter().collect();
                 self.request_rename(ids)
-            } else if press.is(&b::LOUPE_COMPARE) {
+            } else if keys.is(press, &b::LOUPE_COMPARE) {
                 self.open_compare()
-            } else if press.is(&b::LOUPE_SURVEY) {
+            } else if keys.is(press, &b::LOUPE_SURVEY) {
                 self.open_survey()
-            } else if press.is(&b::LOUPE_QUICK_TOGGLE)
-                || press.is(&b::LOUPE_QUICK_SHOW)
-                || press.is(&b::LOUPE_QUICK_CLEAR)
-            {
+            } else if let Some(command) = quick_command(keys, press, &QUICK_LOUPE) {
                 // The Loupe applies B to the photo shown, once per press.
                 let ids = self.selection.active.into_iter().collect();
-                self.quick_key(press.modifiers, ids)
-            } else if press.is(&b::LOUPE_INFO) {
+                self.quick_key(command, ids)
+            } else if keys.is(press, &b::LOUPE_INFO) {
                 // Once per press: a held I must not flicker through them.
                 self.cycle_loupe_info()
-            } else if press.is(&b::LOUPE_STACK_TOGGLE) || press.is(&b::LOUPE_STACK_TO_TOP) {
+            } else if let Some(action) = stack_command(keys, press, &STACK_LOUPE) {
                 // As in the grid: S collapses or expands the photo's stack
                 // and Shift+S moves it to the top.
-                let action = if press.modifiers.shift {
-                    super::StackAction::MoveToTop
-                } else {
-                    super::StackAction::Toggle
-                };
                 self.stack_key(action, self.selection.active.into_iter().collect())
             } else {
                 continue;
@@ -405,6 +375,84 @@ impl Library {
             keys.take_press(press);
         }
     }
+}
+
+/// Each view's Quick Collection bindings, with what they do.
+pub(super) type QuickBindings = [(&'static Binding, QuickKey); 3];
+pub(super) static QUICK_GRID: QuickBindings = [
+    (&b::GRID_QUICK_TOGGLE, QuickKey::Toggle),
+    (&b::GRID_QUICK_SHOW, QuickKey::Show),
+    (&b::GRID_QUICK_CLEAR, QuickKey::Clear),
+];
+static QUICK_LOUPE: QuickBindings = [
+    (&b::LOUPE_QUICK_TOGGLE, QuickKey::Toggle),
+    (&b::LOUPE_QUICK_SHOW, QuickKey::Show),
+    (&b::LOUPE_QUICK_CLEAR, QuickKey::Clear),
+];
+pub(super) static QUICK_COMPARE: QuickBindings = [
+    (&b::COMPARE_QUICK_TOGGLE, QuickKey::Toggle),
+    (&b::COMPARE_QUICK_SHOW, QuickKey::Show),
+    (&b::COMPARE_QUICK_CLEAR, QuickKey::Clear),
+];
+pub(super) static QUICK_SURVEY: QuickBindings = [
+    (&b::SURVEY_QUICK_TOGGLE, QuickKey::Toggle),
+    (&b::SURVEY_QUICK_SHOW, QuickKey::Show),
+    (&b::SURVEY_QUICK_CLEAR, QuickKey::Clear),
+];
+/// The Quick Collection command of the first of `bindings` `press` runs.
+pub(super) fn quick_command(
+    keys: &FrameKeys,
+    press: &Press,
+    bindings: &QuickBindings,
+) -> Option<QuickKey> {
+    bindings
+        .iter()
+        .find(|(binding, _)| keys.is(press, binding))
+        .map(|(_, command)| *command)
+}
+
+static DELETE_GRID: [(&Binding, DeleteKey); 4] = [
+    (&b::GRID_DELETE, DeleteKey::Delete),
+    (&b::GRID_REMOVE_FROM_CATALOG, DeleteKey::Remove),
+    (&b::GRID_DELETE_REJECTED, DeleteKey::DeleteRejected),
+    (&b::GRID_TRASH, DeleteKey::Trash),
+];
+static DELETE_LOUPE: [(&Binding, DeleteKey); 4] = [
+    (&b::LOUPE_DELETE, DeleteKey::Delete),
+    (&b::LOUPE_REMOVE_FROM_CATALOG, DeleteKey::Remove),
+    (&b::LOUPE_DELETE_REJECTED, DeleteKey::DeleteRejected),
+    (&b::LOUPE_TRASH, DeleteKey::Trash),
+];
+fn delete_command(
+    keys: &FrameKeys,
+    press: &Press,
+    bindings: &[(&'static Binding, DeleteKey); 4],
+) -> Option<DeleteKey> {
+    bindings
+        .iter()
+        .find(|(binding, _)| keys.is(press, binding))
+        .map(|(_, command)| *command)
+}
+
+static STACK_GRID: [(&Binding, StackAction); 4] = [
+    (&b::STACK_GROUP, StackAction::Group),
+    (&b::STACK_UNSTACK, StackAction::Unstack),
+    (&b::GRID_STACK_TOGGLE, StackAction::Toggle),
+    (&b::GRID_STACK_TO_TOP, StackAction::MoveToTop),
+];
+static STACK_LOUPE: [(&Binding, StackAction); 2] = [
+    (&b::LOUPE_STACK_TOGGLE, StackAction::Toggle),
+    (&b::LOUPE_STACK_TO_TOP, StackAction::MoveToTop),
+];
+fn stack_command(
+    keys: &FrameKeys,
+    press: &Press,
+    bindings: &[(&'static Binding, StackAction)],
+) -> Option<StackAction> {
+    bindings
+        .iter()
+        .find(|(binding, _)| keys.is(press, binding))
+        .map(|(_, action)| *action)
 }
 
 #[cfg(test)]

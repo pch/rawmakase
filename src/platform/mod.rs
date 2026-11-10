@@ -2,7 +2,7 @@
 pub(crate) mod display;
 pub(crate) mod locale;
 pub(crate) mod memory;
-#[cfg(any(target_os = "macos", test))]
+/// The macOS menu; its items' fixed keys are reserved on every platform.
 pub(crate) mod menu;
 pub(crate) mod network;
 pub(crate) mod preview_reads;

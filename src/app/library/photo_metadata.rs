@@ -4,7 +4,7 @@ use crate::app::shell::keymap::{Binding, FrameKeys, Press};
 use crate::app::ui::design::{Tone, size, space, text};
 use crate::app::ui::theme;
 use crate::catalog::Photo;
-use eframe::egui::{self, Color32, Key};
+use eframe::egui::{self, Color32};
 
 pub(crate) const LABELS: [&str; 5] = ["Red", "Yellow", "Green", "Blue", "Purple"];
 #[derive(Clone, Debug, PartialEq)]
@@ -70,7 +70,8 @@ fn edit_for_command(id: &str) -> Option<Edit> {
         "toggle_pick" => Edit::TogglePick,
         "rating:lower" => Edit::RatingDelta(-1),
         "rating:raise" => Edit::RatingDelta(1),
-        _ => return None,
+        // Setting a label, or none: automation's actions.
+        id => return crate::app::shell::commands::Action::parse(id)?.metadata(),
     })
 }
 
@@ -79,12 +80,12 @@ fn is_flag_step(binding: &Binding) -> bool {
     matches!(binding.command, "flag:raise" | "flag:lower")
 }
 
-/// Whether a press of `key` at `physical`, with neither Cmd, Ctrl nor Alt held,
-/// is a rating, flag or label key.
-pub(in crate::app) fn is_shortcut_key(key: Key, physical: Option<Key>) -> bool {
+/// Whether `press`, with its modifiers, is a rating, flag or label key's
+/// chord, whether or not it is a repeat those keys leave alone.
+pub(in crate::app) fn is_shortcut(keys: &FrameKeys, press: &Press) -> bool {
     bindings::METADATA
         .iter()
-        .any(|b| !is_flag_step(b) && b.has_key(key, physical))
+        .any(|b| keys.has_chord(press, b, crate::app::shell::keymap::Mods::NONE))
 }
 
 /// The frame's first rating, flag or label key: its edit, whether Shift was held
@@ -95,8 +96,9 @@ pub(in crate::app) fn shortcut(ctx: &egui::Context) -> Option<(Edit, bool, Press
     if ctx.text_edit_focused() {
         return None;
     }
-    FrameKeys::of(ctx).presses().into_iter().find_map(|press| {
-        let binding = bindings::METADATA.iter().find(|b| press.is(b))?;
+    let keys = FrameKeys::of(ctx);
+    keys.presses().into_iter().find_map(|press| {
+        let binding = bindings::METADATA.iter().find(|b| keys.is(&press, b))?;
         let edit = edit_for_command(binding.command)?;
         Some((edit, press.modifiers.shift && !is_flag_step(binding), press))
     })
@@ -279,6 +281,7 @@ pub(in crate::app) fn flag_icon(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui::Key;
     #[test]
     fn shortcuts_respect_modifiers_repeat_and_text_focus() {
         let ctx = egui::Context::default();
