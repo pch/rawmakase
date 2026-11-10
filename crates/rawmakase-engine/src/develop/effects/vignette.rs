@@ -71,6 +71,65 @@ fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0., 1.);
     t * t * (3. - 2. * t)
 }
+/// The scene value, in an HDR master's linear light through a linear profile, that
+/// Highlight Priority lightens an HDR master towards: fitted on Camera Raw 18.7's HDR
+/// renders of gray tiles from 0.03 to 8 times white at Amount +50, where it is 14.4
+/// (13.5–15.2) up to twice white and 14.9–15.2 at 4 and 8 times.
+const HDR_SCENE_WHITE: f32 = 14.4;
+
+/// A photo's HDR response to a neutral and its inverse, in log2 on both axes: what
+/// Highlight Priority exposes through in an HDR master.
+pub(crate) struct HdrResponse {
+    outputs: Vec<f32>,
+}
+const RESPONSE_FIRST: f32 = -20.;
+const RESPONSE_STEP: f32 = 1. / 16.;
+const RESPONSE_SAMPLES: usize = 30 * 16 + 1;
+impl HdrResponse {
+    /// From `render`, the profile's HDR tone on a neutral linear value; made
+    /// non-decreasing so that it inverts.
+    pub(crate) fn new(render: impl Fn(f32) -> f32) -> Self {
+        let mut previous = f32::NEG_INFINITY;
+        let outputs = (0..RESPONSE_SAMPLES)
+            .map(|k| {
+                let x = (RESPONSE_FIRST + k as f32 * RESPONSE_STEP).exp2();
+                previous = previous.max(render(x).max(f32::MIN_POSITIVE).log2());
+                previous
+            })
+            .collect();
+        Self { outputs }
+    }
+    /// The identity, as a linear profile's curve renders in HDR.
+    #[cfg(test)]
+    pub(crate) fn identity() -> Self {
+        Self::new(|x| x)
+    }
+    /// The output for scene value `x`; along the end samples' slope beyond them.
+    pub(crate) fn render(&self, x: f32) -> f32 {
+        if x.is_nan() || x <= 0. {
+            return 0.;
+        }
+        let f = (x.log2() - RESPONSE_FIRST) / RESPONSE_STEP;
+        let last = self.outputs.len() - 1;
+        let i = (f.floor().max(0.) as usize).min(last - 1);
+        let t = f - i as f32;
+        (self.outputs[i] + (self.outputs[i + 1] - self.outputs[i]) * t).exp2()
+    }
+    /// The smallest scene value [`Self::render`] takes to `y`.
+    pub(crate) fn scene(&self, y: f32) -> f32 {
+        if y.is_nan() || y <= 0. {
+            return 0.;
+        }
+        let ly = y.log2();
+        let o = &self.outputs;
+        let last = o.len() - 1;
+        let i = o.partition_point(|&v| v < ly).clamp(1, last);
+        let (a, b) = (o[i - 1], o[i]);
+        let t = if b > a { (ly - a) / (b - a) } else { 0. };
+        (RESPONSE_FIRST + ((i - 1) as f32 + t) * RESPONSE_STEP).exp2()
+    }
+}
+
 /// The share of a full black overlay that an amount (0 to 1) of darkening applies.
 fn darkening(amount: f32) -> f32 {
     1. - srgb_decode(1. - amount)
@@ -180,6 +239,61 @@ impl PostCropVignette {
         };
         linear.map(|v| space.encode(v.clamp(0., 1.)))
     }
+    /// An HDR master's linear pixel (1 = graphics white, not negative, unclipped) with
+    /// the vignette applied at `mask`, as Camera Raw 18.7 renders it
+    /// (docs/hdr.md#vignette-and-grain). The mask and the amounts' gains and opacities
+    /// are SDR's; on linear light, unclipped, the styles apply them as Camera Raw's HDR
+    /// renders were measured, which is not always as SDR does (Color Priority):
+    /// - darkening by Paint Overlay and Color Priority is a gain of the output, and by
+    ///   Highlight Priority the same gain of the scene, through `tone`, the photo's HDR
+    ///   response;
+    /// - lightening by Paint Overlay and Color Priority blends towards graphics white,
+    ///   which darkens light above it, and by Highlight Priority blends the scene
+    ///   towards [`HDR_SCENE_WHITE`].
+    ///
+    /// Highlights' protection is not rendered: an HDR edit that uses it refuses its
+    /// master (`model::hdr::check_recipe`).
+    pub(crate) fn apply_hdr(&self, p: [f32; 3], mask: f32, tone: &HdrResponse) -> [f32; 3] {
+        let x = self.amount.abs();
+        let out = match (self.style, self.amount > 0.) {
+            (VignetteStyle::PaintOverlay, false) => self.paint_darken(p, x, mask),
+            (_, false) => {
+                let shape = 1.7625 + 0.6875 * x * x;
+                let gain = 1. - 0.97 * darkening(x) * (1. - (1. - mask).powf(shape));
+                if self.style == VignetteStyle::HighlightPriority {
+                    // As the gain the response gives the pixel's scene, so that a value
+                    // the response doesn't reach (above a flat shoulder of the curve,
+                    // raised by Contrast) keeps its light as the gain nears 1.
+                    p.map(|v| {
+                        let scene = tone.scene(v);
+                        let at = tone.render(scene);
+                        if at > 0. {
+                            v * tone.render(scene * gain) / at
+                        } else {
+                            v * gain
+                        }
+                    })
+                } else {
+                    p.map(|v| v * gain)
+                }
+            }
+            (VignetteStyle::HighlightPriority, true) => {
+                let opacity = 1.1 * srgb_decode(x) * srgb_decode(mask);
+                // As the light the response adds to the pixel's scene, for the same
+                // reason.
+                p.map(|v| {
+                    let scene = tone.scene(v);
+                    v + tone.render(scene + (HDR_SCENE_WHITE - scene) * opacity)
+                        - tone.render(scene)
+                })
+            }
+            (_, true) => {
+                let opacity = srgb_decode(x) * srgb_decode(mask);
+                p.map(|v| v + (1. - v) * opacity)
+            }
+        };
+        out.map(|v| v.max(0.))
+    }
     fn paint_darken(&self, b: [f32; 3], amount: f32, mask: f32) -> [f32; 3] {
         let gain = 1. - darkening(amount) * (1. - srgb_decode(1. - mask));
         b.map(|v| v * gain)
@@ -217,6 +331,82 @@ mod tests {
     fn edge_gain(v: &PostCropVignette, encoded: f32) -> f32 {
         let out = v.apply([encoded; 3], v.mask(1., 0.), OutputSpace::Srgb);
         srgb_decode(out[1]) / srgb_decode(encoded)
+    }
+    /// An HDR master's vignette as Camera Raw 18.7 renders gray tiles through a linear
+    /// profile (docs/hdr.md#vignette-and-grain): darkening is the same gain at every
+    /// level from a tenth of white to eight times it, in every style; Paint Overlay and
+    /// Color Priority lighten towards graphics white, darkening light above it (Amount
+    /// +50 at a mask where 0.025 becomes 0.139: 8 becomes 7.2); Highlight Priority
+    /// lightens towards 14.4.
+    #[test]
+    fn an_hdr_vignette_renders_light_above_white_as_camera_raw_does() {
+        use VignetteStyle::*;
+        let tone = HdrResponse::identity();
+        for style in [PaintOverlay, HighlightPriority, ColorPriority] {
+            let v = vignette(style, -0.5, |_| ());
+            let gain = |x: f32| v.apply_hdr([x; 3], 0.7, &tone)[1] / x;
+            let g = gain(0.1);
+            assert!(g < 0.8, "{style:?} {g}");
+            for x in [0.5, 1., 2., 8.] {
+                assert!(
+                    (gain(x) / g - 1.).abs() < 1e-3,
+                    "{style:?} {x}: {}",
+                    gain(x)
+                );
+            }
+        }
+        for style in [PaintOverlay, ColorPriority] {
+            let v = vignette(style, 0.5, |_| ());
+            // The mask whose opacity takes 0.025 to 0.139.
+            let mask = (0.1..1.).step_by_mask(|m| v.apply_hdr([0.025; 3], m, &tone)[1], 0.139);
+            let at = |x: f32| v.apply_hdr([x; 3], mask, &tone)[1];
+            assert!((at(1.) - 1.).abs() < 1e-5);
+            assert!((at(8.) - 7.18).abs() < 0.05, "{}", at(8.));
+            assert!(at(0.5) > 0.55);
+        }
+        let v = vignette(HighlightPriority, 0.5, |_| ());
+        let opacity = 1.1 * srgb_decode(0.5) * srgb_decode(0.6);
+        for x in [0.1, 1., 4.] {
+            let out = v.apply_hdr([x; 3], 0.6, &tone)[1];
+            let white = (out - x) / opacity + x;
+            assert!((white - 14.4).abs() < 0.05, "{x}: {white}");
+        }
+        // Through a curve, Highlight Priority exposes the scene: a gain of the scene,
+        // not of the output.
+        let curved = HdrResponse::new(|x| x.sqrt());
+        let v = vignette(HighlightPriority, -0.5, |_| ());
+        let out = v.apply_hdr([1.; 3], 0.7, &curved)[1];
+        let flat = v.apply_hdr([1.; 3], 0.7, &tone)[1];
+        assert!((out - flat.sqrt()).abs() < 1e-3, "{out} {flat}");
+        // A response with a flat shoulder: a value above it, which it doesn't reach,
+        // keeps its light under a vignette that changes nothing there.
+        let shoulder = HdrResponse::new(|x| x.min(16.));
+        for amount in [-0.5, 0.5] {
+            let v = vignette(HighlightPriority, amount, |_| ());
+            let out = v.apply_hdr([22.; 3], 1e-12, &shoulder)[1];
+            assert!((out - 22.).abs() < 1e-3, "{amount}: {out}");
+        }
+        // The response inverts.
+        for x in [1e-4, 0.03, 0.5, 1., 7., 300.] {
+            assert!(
+                (curved.scene(curved.render(x)) / x - 1.).abs() < 1e-3,
+                "{x}"
+            );
+        }
+    }
+    /// The mask in `self` at which `f` reaches `target`, `f` rising with the mask.
+    trait StepByMask {
+        fn step_by_mask(self, f: impl Fn(f32) -> f32, target: f32) -> f32;
+    }
+    impl StepByMask for std::ops::Range<f64> {
+        fn step_by_mask(self, f: impl Fn(f32) -> f32, target: f32) -> f32 {
+            let (mut lo, mut hi) = (self.start as f32, self.end as f32);
+            for _ in 0..40 {
+                let mid = 0.5 * (lo + hi);
+                if f(mid) < target { lo = mid } else { hi = mid }
+            }
+            0.5 * (lo + hi)
+        }
     }
     #[test]
     fn mask_has_camera_raw_shape() {

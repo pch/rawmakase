@@ -8,7 +8,7 @@ mod lens_vignette;
 mod vignette;
 pub(crate) use grain::GrainField;
 pub(crate) use lens_vignette::{ManualVignette, combined_table};
-pub(crate) use vignette::PostCropVignette;
+pub(crate) use vignette::{HdrResponse, PostCropVignette};
 /// How the renderer applies a recipe's Effects, Calibration and Defringe settings, and the
 /// Fringe Color Selector.
 pub trait EffectsRendering {
@@ -114,6 +114,54 @@ fn defringe_weight(h: f32, center: f32, [lo, hi]: [f32; 2]) -> f32 {
 fn defringe_strength(amount: f32, chroma: f32) -> f32 {
     (1. - DEFRINGE_KEEP * (-chroma / DEFRINGE_CHROMA).exp())
         * (1. - (-amount * 20. / DEFRINGE_RATE).exp())
+}
+/// Vignette and grain on an HDR master's linear pixels (1 = graphics white, not
+/// negative, unclipped), as [`spatial_finish_scaled`] places them: the vignette by
+/// [`PostCropVignette::apply_hdr`] through `tone`, the photo's HDR response, then grain
+/// added to each channel's sRGB-curve-encoded value, extended above 1, by the encoded
+/// ProPhoto luminance the pixel had before the vignette, as in SDR
+/// ([`GrainField::noise_hdr`]).
+pub(crate) fn hdr_spatial_finish(
+    im: &mut Rendered,
+    r: &Recipe,
+    origin: [u32; 2],
+    full: [u32; 2],
+    scale: f32,
+    tone: &HdrResponse,
+) {
+    use crate::color::{srgb_decode, srgb_encode};
+    let e = &r.effects;
+    if e.grain == 0. && e.vignette == 0. {
+        return;
+    }
+    let vignette = PostCropVignette::new(e, full);
+    let edge = full[0].max(full[1]) as f32 / scale;
+    let grain = GrainField::new(e, edge);
+    im.pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
+        let x = origin[0] + i as u32 % im.width;
+        let y = origin[1] + i as u32 / im.width;
+        // Grain's strength follows the pixel before the vignette, as in SDR.
+        let l = crate::develop::scene_tone::luminance(p.map(|v| srgb_encode(v.max(0.))));
+        if let Some(v) = &vignette {
+            let nx = ((x as f32 + 0.5) / full[0] as f32 - 0.5) * 2.;
+            let ny = ((y as f32 + 0.5) / full[1] as f32 - 0.5) * 2.;
+            *p = v.apply_hdr(*p, v.mask(nx, ny), tone);
+        }
+        if e.grain == 0. {
+            return;
+        }
+        let (gx, gy) = if scale == 1. {
+            (x as f32, y as f32)
+        } else {
+            (
+                (x as f32 + 0.5) / scale - 0.5,
+                (y as f32 + 0.5) / scale - 0.5,
+            )
+        };
+        let encoded = p.map(|v| srgb_encode(v.max(0.)));
+        let noise = grain.noise_hdr(gx, gy, scale, l);
+        *p = encoded.map(|v| srgb_decode((v + noise).max(0.)));
+    });
 }
 pub fn spatial_finish(im: &mut Rendered, r: &Recipe, origin: [u32; 2], full: [u32; 2]) {
     spatial_finish_scaled(im, r, origin, full, 1., crate::color::OutputSpace::Srgb);

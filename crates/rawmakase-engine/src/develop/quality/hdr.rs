@@ -133,6 +133,25 @@ fn master(
     check_cancel(cancel)?;
     let peak = r.hdr.peak();
     let encode = |p: &mut [f32; 3]| *p = p.map(|v| srgb_encode(v.max(0.)));
+    let decode = |p: &mut [f32; 3]| *p = p.map(|v| srgb_decode(v.max(0.)));
+    // Vignette and grain follow sharpening, before the crop to the region and resizing,
+    // as in SDR renders, on linear values.
+    let effects = r.effects.grain != 0. || r.effects.vignette != 0.;
+    let finish_effects = |out: &mut crate::rendered::Rendered| -> Result<()> {
+        let profile =
+            anyhow::Context::context(r.profile.as_deref(), "An HDR master has a profile")?;
+        let tone = profile.hdr_tone()?;
+        let response = crate::develop::effects::HdrResponse::new(|v| profile.hdr_neutral(&tone, v));
+        crate::develop::effects::hdr_spatial_finish(
+            out,
+            r,
+            [left, top],
+            [g.width, g.height],
+            scale,
+            &response,
+        );
+        Ok(())
+    };
     let resized =
         if r.sharpening > 0. || output_size(g.width, g.height, max_edge) != (g.width, g.height) {
             out.pixels.par_iter_mut().for_each(encode);
@@ -143,6 +162,11 @@ fn master(
                 crate::color::OutputSpace::ProPhoto,
                 cancel,
             )?;
+            if effects {
+                out.pixels.par_iter_mut().for_each(decode);
+                finish_effects(&mut out)?;
+                out.pixels.par_iter_mut().for_each(encode);
+            }
             let out = super::render::crop(out, [x - left, y - top, w, h]);
             let mut out = resize_unbounded(out, max_edge);
             out.pixels
@@ -150,6 +174,9 @@ fn master(
                 .for_each(|p| *p = p.map(|v| srgb_decode(v.max(0.))));
             out
         } else {
+            if effects {
+                finish_effects(&mut out)?;
+            }
             super::render::crop(out, [x - left, y - top, w, h])
         };
     check_cancel(cancel)?;
@@ -847,6 +874,68 @@ mod tests {
         Ok(())
     }
 
+    /// The post-crop vignette and grain render in the master (docs/hdr.md#vignette-and-grain):
+    /// the vignette leaves the frame's middle alone and changes its corners, above
+    /// white too, a 100% region renders them as the whole master does there, and the
+    /// GPU leaves them to the CPU.
+    #[test]
+    fn vignette_and_grain_render_in_the_master() -> Result<()> {
+        use crate::develop::pipeline::pixel_params::supported_hdr;
+        let im = grays(&[2.; 8]);
+        let mut r = hdr_recipe(&im);
+        r.sharpening = 0.4;
+        let base = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let at =
+            |o: &crate::rendered::HdrImage, x: u32, y: u32| o.pixels[(y * o.width + x) as usize][1];
+        assert!(at(&base, 0, 0) > 4., "{}", at(&base, 0, 0));
+        for style in [
+            crate::model::effects::VignetteStyle::PaintOverlay,
+            crate::model::effects::VignetteStyle::HighlightPriority,
+            crate::model::effects::VignetteStyle::ColorPriority,
+        ] {
+            let mut v = r.clone();
+            v.effects.vignette = -0.6;
+            v.effects.vignette_style = style;
+            assert!(
+                !supported_hdr(&v, &im.metadata),
+                "the GPU leaves it to the CPU"
+            );
+            let v = v.checked()?;
+            let out = render_hdr(&im, &v, None, 0, Cancel::NEVER)?;
+            let (w, h) = (out.width, out.height);
+            assert!((at(&out, w / 2, h / 2) / at(&base, w / 2, h / 2) - 1.).abs() < 0.02);
+            assert!(at(&out, 0, 0) < 0.8 * at(&base, 0, 0), "{style:?}");
+            let region = render_hdr_region(&im, &v, [40, 1, 24, 6], Cancel::NEVER)?;
+            for row in 0..6 {
+                for col in 0..24 {
+                    let a = out.pixels[((1 + row) * w + 40 + col) as usize];
+                    let b = region.pixels[(row * 24 + col) as usize];
+                    assert!(
+                        (0..3).all(|c| (a[c] - b[c]).abs() <= 1e-4 * a[c].max(1.)),
+                        "{a:?} {b:?}"
+                    );
+                }
+            }
+        }
+        let mut grain = r;
+        grain.effects.grain = 0.6;
+        let out = render_hdr(&im, &grain.checked()?, None, 0, Cancel::NEVER)?;
+        let spread = out
+            .pixels
+            .iter()
+            .map(|p| (p[1] - at(&base, 0, 0)).abs())
+            .fold(0f32, f32::max);
+        assert!(
+            spread > 0.05
+                && out
+                    .pixels
+                    .iter()
+                    .flatten()
+                    .all(|v| v.is_finite() && *v >= 0.)
+        );
+        Ok(())
+    }
+
     /// Texture renders in the master, on the camera image before tone as in SDR;
     /// Clarity and Dehaze still refuse it.
     #[test]
@@ -984,7 +1073,9 @@ mod tests {
         use crate::model::panels::{Panel, PanelState};
         let im = grays(&[0.5]);
         let mut r = hdr_recipe(&im);
+        // A darkening vignette's Highlights, which the master doesn't render.
         r.effects.vignette = -0.3;
+        r.effects.vignette_highlights = 0.5;
         assert!(render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER).is_err());
         r.panels.set(Panel::Effects, PanelState::Off);
         render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;

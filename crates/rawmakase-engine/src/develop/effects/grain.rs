@@ -33,6 +33,15 @@ const FINE_FADE: f32 = 0.7055;
 const LUMINANCE: [f32; 9] = [0., 0.023, 0.156, 0.41, 0.62, 0.8, 0.91, 0.964, 1.];
 const LUMINANCE_GAIN: [f32; 9] = [0., 0.5, 1.14, 1.08, 1., 0.94, 0.86, 0.61, 0.3];
 
+/// Grain's strength in an HDR master by its sRGB-curve-encoded luminance, extended
+/// above 1, relative to [`LUMINANCE_GAIN`]'s 1 at 0.62: SDR's up to there, then
+/// Camera Raw 18.7's HDR renders of gray tiles at 1, 2, 4 and 8 times white (Amount 50
+/// and 100 alike, within 0.02), reaching 0 at 16 times white (3.3).
+const HDR_LUMINANCE: [f32; 11] = [
+    0., 0.023, 0.156, 0.41, 0.62, 0.73, 1., 1.35, 1.83, 2.46, 3.3,
+];
+const HDR_LUMINANCE_GAIN: [f32; 11] = [0., 0.5, 1.14, 1.08, 1., 0.97, 0.92, 0.87, 0.82, 0.45, 0.];
+
 fn interpolate(x: f32, xs: &[f32], ys: &[f32]) -> f32 {
     let i = xs.partition_point(|v| *v <= x).clamp(1, xs.len() - 1);
     let t = ((x - xs[i - 1]) / (xs[i] - xs[i - 1])).clamp(0., 1.);
@@ -103,6 +112,15 @@ impl GrainField {
     fn strength(&self, l: f32) -> f32 {
         interpolate(l, &LUMINANCE, &LUMINANCE_GAIN)
     }
+    /// [`Self::noise`] for an HDR master, whose sRGB-curve-encoded luminance `l` goes
+    /// on above 1: the grain keeps its strength above white and fades out by 16 times
+    /// white ([`HDR_LUMINANCE_GAIN`]).
+    pub(crate) fn noise_hdr(&self, x: f32, y: f32, scale: f32, l: f32) -> f32 {
+        if self.amount == 0. {
+            return 0.;
+        }
+        self.noise(x, y, scale, 0.62) * interpolate(l, &HDR_LUMINANCE, &HDR_LUMINANCE_GAIN)
+    }
 }
 
 #[cfg(test)]
@@ -127,6 +145,33 @@ mod tests {
 
     /// Camera Raw 18.7's grain on flat mid gray: L* standard deviation over about 98
     /// per unit of encoded value.
+    /// In an HDR master grain keeps most of its strength above white, as Camera Raw
+    /// 18.7 renders gray tiles (its deviation in encoded values at white 0.89 of a
+    /// quarter of white's, at eight times white 0.44), and fades out by 16 times white,
+    /// where SDR's has faded by graphics white.
+    #[test]
+    fn hdr_grain_goes_on_above_white() {
+        let field = GrainField::new(&measured(0.5, 0.25, 0.5), 3000.);
+        let spread = |l: f32| {
+            let values: Vec<f32> = (0..128 * 128)
+                .map(|i| field.noise_hdr((i % 128) as f32, (i / 128) as f32, 1., l))
+                .collect();
+            (values.iter().map(|v| v * v).sum::<f32>() / values.len() as f32).sqrt()
+        };
+        let quarter = spread(0.53);
+        let ratio = |l: f32| spread(l) / quarter;
+        assert!((ratio(1.) - 0.89).abs() < 0.03, "{}", ratio(1.));
+        assert!((ratio(2.46) - 0.44).abs() < 0.03, "{}", ratio(2.46));
+        assert_eq!(spread(3.4), 0.);
+        // SDR's grain at white has nearly gone.
+        let sdr = |l: f32| {
+            let values: Vec<f32> = (0..128 * 128)
+                .map(|i| field.noise((i % 128) as f32, (i / 128) as f32, 1., l))
+                .collect();
+            (values.iter().map(|v| v * v).sum::<f32>() / values.len() as f32).sqrt()
+        };
+        assert!(sdr(1.) < 0.35 * sdr(0.53));
+    }
     #[test]
     fn measured_grain_matches_camera_raw_strength_and_scales_with_the_photo() {
         for (edge, size, roughness, camera_raw) in [

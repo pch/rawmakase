@@ -189,7 +189,7 @@ It covers what `pixel_params::supported_hdr` accepts: a master that renders
 (Exposure, Whites, Blacks, Shadows, white balance, Contrast, Levels and the tone
 curves, channel curves included, the colour stage, Color Grading, Texture, sharpening and what the SDR port samples), through
 any profile and look whose HDR rendering is measured (`CameraProfile::hdr_tone`).
-An HDR file's light, AI Denoise, and anything the SDR port leaves to the CPU
+An HDR file's light, AI Denoise, the post-crop vignette and grain, and anything the SDR port leaves to the CPU
 (`quality::HdrNotOnGpu`) give no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
 "GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, looks whose
@@ -263,6 +263,8 @@ HDR reference family):
 | Black & White | The SDR mix's gray (`develop::black_white`) looked up as the colour mixer's, unclipped above white. |
 | Calibration | As in SDR: a matrix on scene colour before Exposure, and Shadows tint, which only reaches values below white. |
 | Shadows | The SDR local tone operator (`develop::local_tone`) on scene values, unclipped: its gain at a pixel's base level as in SDR, before S3. |
+| Post-crop vignette | After sharpening, on linear values, unclipped ([Vignette and grain](#vignette-and-grain)): darkening a gain (of the scene through the profile's HDR curve for Highlight Priority); lightening a blend towards graphics white (Paint Overlay, Color Priority) or the scene towards 14.4 (Highlight Priority). |
+| Grain | After the vignette: SDR's grain added to sRGB-curve-encoded values extended above 1, its strength going on above white and fading out by 16 times white. |
 | HDR limit | Each channel rolled off to 2^limit from 97% of it (`model::hdr::roll_off`), last. |
 | Sharpening, resizing | On sRGB-curve-encoded values of the master's primaries, unclipped, with ProPhoto luminance; the limit applies after them. |
 
@@ -291,6 +293,35 @@ to 0.9, 0.125 to 8 times white, a linear and the ACR3 profile curve) show:
   fades out below white.
 
 Measurements and validation: [colour stage](records/hdr-stage1-results.md#colour-stage).
+
+### Vignette and grain
+
+Camera Raw 18.7's HDR renders of gray tiles from 0.03 to 8 times white (a linear
+profile, limit 8, each style at Amount −100, −50 and +50, and grain at 50 and 100)
+show the SDR operators on unclipped light:
+
+- **Darkening** is the same gain at every level from a tenth of white up, in every
+  style. RAWmakase applies Paint Overlay's and Color Priority's to the output, and
+  Highlight Priority's to the scene, through the profile's HDR curve
+  (`CameraProfile::hdr_neutral`), as SDR exposes through the default tone curve.
+- **Lightening** by Paint Overlay or Color Priority blends towards graphics white, so
+  it darkens light above white (×0.89 at eight times white at a quarter of the way
+  out); Highlight Priority blends the scene towards 14.4 (fitted: 13.5–15.2 at every
+  level).
+- **Highlights** protects only from about four times white up (−50 with Highlights 50:
+  ×0.32 at four times white and ×0.43 at eight, against ×0.29 without), unlike SDR's
+  protection near white; it refuses the master.
+- **Grain** is SDR's field added to sRGB-curve-encoded values extended above 1. Its
+  spread there keeps going above white (0.89 of a quarter of white's at white, 0.79 at
+  four times, 0.44 at eight), where SDR's fades by graphics white; it fades out by 16
+  times white.
+
+On the tiles RAWmakase renders every style's effect above white to a median 0.010
+stop or less (p95 ≤ 0.07), and grain's spread to within 1% from a tenth of white up.
+Deep shadows under a strong Highlight Priority darkening are further off (the scene
+tone stage's toe isn't inverted; p95 2 stops at Amount −100, in the frame's darkest
+tiles). The GPU's HDR preview leaves both effects to the CPU master. Measurements:
+[vignette and grain](records/hdr-stage1-results.md#vignette-and-grain).
 
 ### Color grading
 
@@ -321,7 +352,7 @@ synthetic patches; RAWmakase's SDR grading of the same patches is within 2). Mea
 something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
 channel's) whose last point is left of white, Presence (Clarity, Dehaze), the
-colour mixer's Luminance, Point Color, Defringe, grain and vignette,
+colour mixer's Luminance, Point Color, Defringe, a darkening vignette's Highlights,
 masks, Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
 Highlights and Shadows: "Highlights, which the look sets, …") or split toning, DCP
 tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:

@@ -631,15 +631,7 @@ impl CameraProfile {
             hdr_tone::HdrTone::Overrange => {
                 // RGBTone on the encoded values, as the SDK does, then decoded.
                 let e = p.map(|v| overrange::encode(v.max(0.)));
-                let curve = |x: f32| {
-                    if x <= 1. {
-                        evaluate_tone(&self.tone, x)
-                    } else {
-                        let top = evaluate_tone(&self.tone, 1.);
-                        top + (x - 1.) * (top - evaluate_tone(&self.tone, 0.999)) / 0.001
-                    }
-                };
-                rgb_tone(e, curve).map(overrange::decode)
+                rgb_tone(e, |x| self.overrange_curve(x)).map(overrange::decode)
             }
             tone => rgb_tone(p.map(|v| v.max(0.)), |x| tone.evaluate(&self.tone, x)),
         };
@@ -648,6 +640,28 @@ impl CameraProfile {
             _ => p,
         };
         mul(PRO_TO_RGB, p)
+    }
+    /// An HDR profile's curve on overrange-encoded values, along its slope above 1.
+    fn overrange_curve(&self, x: f32) -> f32 {
+        if x <= 1. {
+            evaluate_tone(&self.tone, x)
+        } else {
+            let top = evaluate_tone(&self.tone, 1.);
+            top + (x - 1.) * (top - evaluate_tone(&self.tone, 0.999)) / 0.001
+        }
+    }
+    /// What this profile's tone curve renders a neutral of linear value `x` as in an
+    /// HDR master, by `tone` (from [`Self::hdr_tone`]), its tables and look left out:
+    /// the HDR response a post-crop vignette exposes through
+    /// (docs/hdr.md#vignette-and-grain).
+    pub fn hdr_neutral(&self, tone: &hdr_tone::HdrTone, x: f32) -> f32 {
+        let x = x.max(0.);
+        match tone {
+            hdr_tone::HdrTone::Overrange => {
+                overrange::decode(self.overrange_curve(overrange::encode(x)))
+            }
+            tone => tone.evaluate(&self.tone, x),
+        }
     }
     /// How this profile's look curve renders in HDR; `None` without a look, or when its
     /// curve is the identity. Camera Raw 18.7 renders a look whose curve is the
