@@ -189,7 +189,7 @@ It covers what `pixel_params::supported_hdr` accepts: a master that renders
 (Exposure, Whites, Blacks, Shadows, white balance, Contrast, Levels and the tone
 curves, channel curves included, the colour stage, Color Grading, Texture, sharpening and what the SDR port samples), through
 any profile and look whose HDR rendering is measured (`CameraProfile::hdr_tone`).
-An HDR file's light, AI Denoise, the post-crop vignette and grain, Defringe, and anything the SDR port leaves to the CPU
+An HDR file's light, AI Denoise, the post-crop vignette and grain, Defringe, masks, and anything the SDR port leaves to the CPU
 (`quality::HdrNotOnGpu`) give no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
 "GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, looks whose
@@ -266,6 +266,7 @@ HDR reference family):
 | Post-crop vignette | After sharpening, on linear values, unclipped ([Vignette and grain](#vignette-and-grain)): darkening a gain (of the scene through the profile's HDR curve for Highlight Priority); lightening a blend towards graphics white (Paint Overlay, Color Priority) or the scene towards 14.4 (Highlight Priority). |
 | Grain | After the vignette: SDR's grain added to sRGB-curve-encoded values extended above 1, its strength going on above white and fading out by 16 times white. |
 | Defringe | SDR's Oklab operator (`EffectsRendering::defringe_color`) after the colour mixer, on the colour with its brightest channel at white when brighter, scaled back ([Defringe](#defringe)). |
+| Masks | Temp, Tint, Exposure, Shadows and Texture, through the same stages as their global sliders, weighted by the mask ([Masks](#masks)). |
 | HDR limit | Each channel rolled off to 2^limit from 97% of it (`model::hdr::roll_off`), last. |
 | Sharpening, resizing | On sRGB-curve-encoded values of the master's primaries, unclipped, with ProPhoto luminance; the limit applies after them. |
 
@@ -361,6 +362,21 @@ Raw on these patches (Purple: ×0.20, ×0.12 and ×0.66 kept where Camera Raw ke
 ×0.05 and ×0.01). A master with Defringe renders on the CPU. Measurements:
 [record](records/hdr-stage1-results.md#defringe).
 
+### Masks
+
+A mask's Temp and Tint, Exposure, Shadows and Texture are added to the photo's own
+values in the stages that render the global sliders (white balance and Exposure on
+the scene, the local tone map, Texture on the camera's samples), so in HDR they render
+as those do: a mask over the whole frame renders the global slider's master
+(`develop::quality::hdr` tests). Range masks (Color Range, Luminance Range)
+select from the SDR rendition, as the mask overlay shows them, so the master adjusts
+the pixels its SDR rendition adjusts. Any other slider in an active mask refuses the master
+by its name ("A mask's Contrast …"): Contrast, Whites, Blacks, Hue, Saturation, Color,
+Sharpness and Noise work through operators of their own, measured on SDR renders, and
+Highlights, Clarity and Dehaze have no HDR rendering globally. Camera Raw's HDR render
+of a mask has not been compared with its global slider yet
+([record](records/hdr-stage1-results.md#masks)). A masked master renders on the CPU.
+
 ## What is refused
 
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
@@ -368,7 +384,7 @@ something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
 channel's) whose last point is left of white, Presence (Clarity, Dehaze), the
 colour mixer's Luminance, Point Color, a darkening vignette's Highlights,
-masks, Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
+a mask's sliders other than Temp, Tint, Exposure, Shadows and Texture, Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
 Highlights and Shadows: "Highlights, which the look sets, …") or split toning, DCP
 tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
