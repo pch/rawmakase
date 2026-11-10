@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import tempfile
@@ -68,13 +69,23 @@ class VerifyScriptTests(unittest.TestCase):
             "usr/share/licenses/rawmakase/LICENSE": "MIT",
             "usr/share/licenses/rawmakase/AppImage-runtime-LICENSE": "MIT",
             "usr/bin/rawmakase": '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/../lib/rawmakase/rawmakase" "$@"\n',
-            "usr/lib/rawmakase/rawmakase": '#!/bin/sh\necho "rawmakase 1.2.3"\n',
+            # Answers `rawmakase mcp` with an MCP initialize reply, as the app
+            # does once it runs the program beside it.
+            "usr/lib/rawmakase/rawmakase": '#!/bin/sh\nif [ "$1" = mcp ]; then\n'
+            '  read -r request\n'
+            '  echo \'{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"rawmakase","version":"1.2.3"}}}\'\n'
+            '  exit\nfi\necho "rawmakase 1.2.3"\n',
         }
         for name, text in files.items():
             path = self.contents / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
             path.chmod(0o755)
+        # The MCP program: a real executable of this machine linking only the
+        # C library, which is all the check reads of it.
+        mcp = self.contents / "usr/lib/rawmakase/rawmakase-mcp"
+        shutil.copy2(Path(shutil.which("true")).resolve(), mcp)
+        mcp.chmod(0o755)
         (self.contents / "AppRun").symlink_to("usr/bin/rawmakase")
         self.image = self.root / "rawmakase-1.2.3-x86_64.AppImage"
         self.update = "gh-releases-zsync|pch|rawmakase|latest|rawmakase-*-x86_64.AppImage.zsync"
@@ -93,10 +104,21 @@ class VerifyScriptTests(unittest.TestCase):
         return subprocess.run(["bash", str(VERIFY), str(image), *arguments],
                               env=environment, capture_output=True, text=True)
 
+    @unittest.skipUnless(platform.system() == "Linux" and platform.machine() == "x86_64",
+                         "the stand-in MCP program is this machine's true, checked as x86_64 with ldd")
     def test_complete_appimage_passes_and_runs(self):
         result = self.verify("1.2.3", "--run")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Verified rawmakase-1.2.3-x86_64.AppImage", result.stdout)
+
+    def test_the_mcp_program_is_required_from_the_release_that_ships_it(self):
+        (self.contents / "usr/lib/rawmakase/rawmakase-mcp").unlink()
+        result = self.verify("1.2.3")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("rawmakase-mcp", result.stderr)
+        old = self.image.with_name("rawmakase-0.4.12-x86_64.AppImage")
+        self.image.rename(old)
+        self.assertEqual(self.verify("0.4.12", image=old).returncode, 0)
 
     def test_runtime_licence_is_required(self):
         (self.contents / "usr/share/licenses/rawmakase/AppImage-runtime-LICENSE").unlink()

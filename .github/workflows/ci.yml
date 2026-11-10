@@ -239,7 +239,7 @@ jobs:
           # Build the -git recipe from this checkout rather than the published repository.
           sed -i "s|git+https://github.com/pch/rawmakase.git|git+file://$GITHUB_WORKSPACE|" packaging/arch/rawmakase-git/PKGBUILD
           sed -i "s|export CARGO_TARGET_DIR=target|export CARGO_TARGET_DIR=$GITHUB_WORKSPACE/target-arch|" packaging/arch/rawmakase-git/PKGBUILD
-          sed -i "s|make install DESTDIR|make install BIN=$GITHUB_WORKSPACE/target-arch/release/rawmakase DESTDIR|" packaging/arch/rawmakase-git/PKGBUILD
+          sed -i "s|make install DESTDIR|make install BIN=$GITHUB_WORKSPACE/target-arch/release/rawmakase MCP_BIN=$GITHUB_WORKSPACE/target-arch/release/rawmakase-mcp DESTDIR|" packaging/arch/rawmakase-git/PKGBUILD
           # The tests already run in the lint job; --nocheck skips a second full build.
           su builder -c "export CARGO_HOME='$HOME/.cargo' && git config --global --add safe.directory '*' && cd packaging/arch/rawmakase-git && makepkg --noconfirm --nocheck"
           namcap packaging/arch/rawmakase-git/PKGBUILD packaging/arch/rawmakase-git/*.pkg.tar.zst
@@ -252,6 +252,20 @@ jobs:
           # Release rehearsals of tags whose recipe predates the runtime skip it.
           if grep -q '^_ortver=' packaging/arch/rawmakase-git/PKGBUILD; then
             python -c "import ctypes; ctypes.CDLL('/usr/lib/rawmakase/libonnxruntime.so')"
+          fi
+          # The bundled MCP extension's program, in sources that ship it:
+          # installed by the package and by `make install`, found by
+          # `rawmakase mcp`, which completes an MCP initialize, and removed by
+          # `make uninstall`.
+          if [ -f extensions/mcp/rawmakase-extension.toml ]; then
+            version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+            python packaging/check_mcp.py /usr/bin/rawmakase /usr/lib/rawmakase/rawmakase-mcp --arch "$(uname -m)" --version "$version"
+            staged="$RUNNER_TEMP/make-install"
+            make install DESTDIR="$staged" PREFIX=/usr BIN=target-arch/release/rawmakase MCP_BIN=target-arch/release/rawmakase-mcp
+            python packaging/check_mcp.py "$staged/usr/bin/rawmakase" "$staged/usr/lib/rawmakase/rawmakase-mcp" --arch "$(uname -m)" --version "$version"
+            make uninstall DESTDIR="$staged" PREFIX=/usr
+            test ! -e "$staged/usr/bin/rawmakase"
+            test ! -e "$staged/usr/lib/rawmakase"
           fi
 
   docs:
