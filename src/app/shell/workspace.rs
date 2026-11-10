@@ -2356,18 +2356,24 @@ mod editor_tests;
 #[path = "keys_editor_tests.rs"]
 mod keys_editor_tests;
 
-#[cfg(test)]
+// The keyboard pins build a small catalog for nearly every case, and on Windows
+// they took the CI job past its hour. They drive the editor with egui's own key
+// events, so they check the same dispatch on every platform, and run on Linux
+// and macOS. Windows' own key handling keeps tests that run there
+// (`keymap::rules`); the clipboard hook's test, gated here, checks Windows' Cut
+// from the other platforms, as it takes the platform as an argument.
+#[cfg(all(test, not(target_os = "windows")))]
 #[path = "keymap_pins_harness.rs"]
 mod keymap_pins_harness;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "windows")))]
 #[path = "keymap_pins_editor_tests.rs"]
 mod keymap_pins_editor_tests;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "windows")))]
 #[path = "keymap_golden_editor_tests.rs"]
 mod keymap_golden_editor_tests;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "windows")))]
 #[path = "keymap_editor_tests.rs"]
 mod keymap_editor_tests;

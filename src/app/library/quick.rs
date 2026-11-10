@@ -31,7 +31,8 @@ impl Library {
         self.session.ensure_quick_collection()
     }
     /// Whether `id` is in the Quick Collection, for the keyboard shortcut pins.
-    #[cfg(test)]
+    // The pins don't run on Windows (`shell::workspace`).
+    #[cfg(all(test, not(target_os = "windows")))]
     pub(in crate::app) fn in_quick_collection(&self, id: PhotoId) -> bool {
         self.in_quick(id)
     }
