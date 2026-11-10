@@ -51,10 +51,10 @@ gh pr list --state merged --base main --search "merged:>=$(git log -1 --format=%
 
 ## 3. Write the release commit
 
-1. Bump the version in `Cargo.toml` (the package and its `rawmakase-mcp`
-   dependency), `extensions/mcp/Cargo.toml` (the MCP server reports it to its
-   clients), `Cargo.lock` (the `rawmakase` and `rawmakase-mcp` package entries
-   only), `packaging/macos/Info.plist` (`CFBundleShortVersionString`)
+1. Bump the version in `Cargo.toml`, `extensions/mcp/Cargo.toml` (the MCP
+   server reports it to its clients), `extensions/mcp/rawmakase-extension.toml`
+   (the bundled MCP extension's `version`; tests compare all three),
+   `Cargo.lock` (the `rawmakase` and `rawmakase-mcp` package entries only), `packaging/macos/Info.plist` (`CFBundleShortVersionString`)
    and both `packaging/arch/*/PKGBUILD` (`pkgver`). Compare against the
    previous `Release x.y.z` commit: `git show <prev release commit> --stat`.
 2. Write `packaging/release-notes/vx.y.z.md` following "Writing release notes"

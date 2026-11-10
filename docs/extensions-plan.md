@@ -5,10 +5,11 @@ in phase 2: the manifest and its schema, `.rmext` packages, installation from a
 file and from GitHub, `extensions.json`, bundled discovery, the extension
 protocol, the SDK with its mock host, the host's process supervision primitives
 (process group or job object, channel, deadlines, stop), `cargo rawmakase` and
-`rawmakase extensions` ([reference](extensions/overview.md)). Still to build in
-phase 2: supervision in the app (`app::work`), Preferences > Extensions,
-commands, settings, panels, reads, proposals and target tokens in the app,
-externally launched adapters, and moving MIDI and MCP out. This page is the
+`rawmakase extensions` ([reference](extensions/overview.md)); supervision in
+the app (`app::work`), Preferences > Extensions, commands, settings, panels,
+reads, proposals and target tokens in the app; externally launched adapters,
+with MCP moved out as a bundled extension. Still to build in phase 2: moving
+MIDI out. This page is the
 design we agreed on before implementation; once a part is built, its reference
 moves to `docs/extensions/` and this page records only what is still open.
 

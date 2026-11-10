@@ -19,12 +19,16 @@ notarization must pass before anything is published. No AUR pushes occur.
 | Windows x86_64 archive | `rawmakase-vVERSION-x86_64-pc-windows-msvc.zip` | Windows 10+ |
 | Windows ARM64 installer | `rawmakase-vVERSION-aarch64-pc-windows-msvc-setup.exe` | Windows 11 on ARM64; per-user install, no administrator rights |
 | Windows ARM64 archive | `rawmakase-vVERSION-aarch64-pc-windows-msvc.zip` | Windows 11 on ARM64 |
+| MCP extension package | `rawmakase.mcp-VERSION-TARGET.rmext`, one per target (`linux-x86_64`, `macos-aarch64`, `windows-x86_64`, …) | The bundled MCP extension, built with `cargo rawmakase package`; every download above already contains it, and RAWmakase refuses to install an official extension from a file |
 
 The Mac, DEB and RPM packages contain one private library, ONNX Runtime for
 the selection masks; RAW decoding needs none. Mac users do not need Homebrew.
 The Linux tarball contains the same `/usr` layout, including that library; run
-the extracted `usr/bin/rawmakase` or install the whole tree under `/usr`. Do
-not copy just its executable (a symlink to `usr/bin/rawmakase` works). The
+the extracted `usr/bin/rawmakase` or install the whole tree under `/usr`. Every
+package also holds `rawmakase-mcp`, the bundled MCP extension's program, beside
+the app's executable (`usr/lib/rawmakase`, `Contents/MacOS`, beside
+`rawmakase.exe`), where `rawmakase mcp` finds it; `packaging/check_mcp.py`
+checks it in each payload. Do not copy just its executable (a symlink to `usr/bin/rawmakase` works). The
 AppImage packs that same payload, built by native-packages with its pinned
 type2-runtime; its `AppRun` links to `usr/bin/rawmakase`. Linux still needs
 system Vulkan/graphics drivers, window-system libraries and a working
@@ -32,7 +36,7 @@ file-dialog portal.
 
 Each Windows architecture's installer and archive hold the same folder: `rawmakase.exe`, with
 the C runtime linked in statically (so no Visual C++ Redistributable is
-needed), ONNX Runtime and the licenses. Neither is code-signed yet, so SmartScreen warns on first run;
+needed), `rawmakase-mcp.exe`, ONNX Runtime and the licenses. Neither is code-signed yet, so SmartScreen warns on first run;
 signing can be added later as an `after_package` hook on the `windows-amd64`
 and `windows-arm64` targets, before checksums are recorded. Both installers
 share one `AppId`, so installing either replaces the other.

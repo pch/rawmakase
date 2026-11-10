@@ -37,7 +37,7 @@ flowchart TD
     cargoext[cargo-rawmakase]
 
     app --> export & decode & catalog & engine & interop & model
-    app --> ctl & mcp & remote & inference & modelinstall & fs & exthost
+    app --> ctl & remote & inference & modelinstall & fs & exthost
     export --> decode & engine & interop
     decode --> engine & raw
     catalog --> interop & fs
@@ -55,7 +55,9 @@ flowchart TD
 ```
 
 (Edges implied by others are left out: every crate above the model also depends
-on it directly.)
+on it directly. The app doesn't link `rawmakase-mcp`: `rawmakase mcp` runs its
+program, installed beside the app, and `scripts/crate-closures.sh` keeps it
+out of the app's tree.)
 
 | Crate | Owns | Builds without |
 | --- | --- | --- |
@@ -73,11 +75,11 @@ on it directly.)
 | `rawmakase-model-install` | Installing a model pack: a folder and its files, downloaded resumably or copied from a folder, each checked against its size and SHA-256, the receipt that makes a pack installed, the lock across instances, and the models and runtime folders in the local data folder. Which packs exist is its caller's | Everything but inference and the model |
 | `rawmakase-remote` | The optional worker binary that runs the same models on another computer, and the app's client for it, over a bounded TCP protocol | Everything but inference |
 | `rawmakase-protocol` | What the app and its control clients agree on: protocol version, `control.json` endpoint, data folder | Everything |
-| `rawmakase-ctl` (`tools/`) | The control client, used by `rawmakase control`, `rawmakase mcp` and the standalone `rawmakase-ctl` | The app |
-| `rawmakase-mcp` (`extensions/mcp`) | The MCP server, a client of the control protocol: the library behind `rawmakase mcp` and the standalone `rawmakase-mcp` | Every workspace crate but `rawmakase-protocol` and `rawmakase-ctl` |
+| `rawmakase-ctl` (`tools/`) | The control client, used by `rawmakase control`, the MCP program and the standalone `rawmakase-ctl` | The app |
+| `rawmakase-mcp` (`extensions/mcp`) | The bundled MCP extension: its manifest and its program `rawmakase-mcp`, an MCP server that is a client of the control protocol, which `rawmakase mcp` runs | Every workspace crate but `rawmakase-protocol` and `rawmakase-ctl` |
 | `rawmakase-extension-protocol` | What the app and extensions agree on ([extensions](extensions/overview.md)): the manifest and its schema, the protocol's messages, error codes and bounded line framing, host-drawn controls | Every other workspace crate |
 | `rawmakase-extension` | The SDK extension programs are written with: the channel, the run loop, handler traits, a mock host for tests | Everything but the extension protocol |
-| `rawmakase-extensions` | The extension host: manifests, `.rmext` packages, installation from a file or GitHub, `extensions.json`, bundled discovery, starting programs in a process group or job object, sessions with deadlines and bounded queues | Any photo, edit, catalog, renderer, decoder or GUI crate |
+| `rawmakase-extensions` | The extension host: manifests, `.rmext` packages, installation from a file or GitHub, `extensions.json`, bundled discovery, starting programs in a process group or job object, sessions with deadlines and bounded queues, and running an externally launched adapter's program in place of its launcher (`external`) | Any photo, edit, catalog, renderer, decoder or GUI crate |
 | `cargo-rawmakase` (`tools/`) | The extension author's tool: `new`, `build`, `package`, `release`, `dev` | The same |
 
 The extension crates know no photo, edit or catalog: what an extension's
@@ -714,15 +716,25 @@ The workspace's `crates/rawmakase-protocol` holds what the app and its clients
 agree on: the protocol version, the `control.json` endpoint and the
 data-directory policy. `tools/rawmakase-ctl` is the client library and the
 standalone binary; the built-in `rawmakase control` subcommand and the MCP
-server depend on it rather than including its source. None of these crates
+program depend on it rather than including its source. None of these crates
 depends on the app, so the client builds without GUI, GPU or native libraries. The CLI
 performs transport and polling only, without creating an Editor or GUI context.
 
-`rawmakase mcp` is a stdio adapter built with the official Rust MCP SDK. Its
-server lives in `extensions/mcp` (the `rawmakase-mcp` crate), which also builds a
-standalone `rawmakase-mcp` binary taking the same arguments. It shares
-connection discovery and request/reply validation with the command-line client,
-and sends the same guarded commands through the local socket. It owns tool
+MCP is the bundled extension `rawmakase.mcp` ([extensions](extensions/overview.md#bundled-extensions)):
+a stdio adapter built with the official Rust MCP SDK, in `extensions/mcp` (the
+`rawmakase-mcp` crate and program), with one externally launched control
+adapter. `rawmakase mcp`, the command clients are configured with, is a
+launcher: through `rawmakase_extensions::external` it reads `extensions.json`,
+fails when the extension is disabled, and otherwise runs the program found
+beside the app with the same standard streams and arguments (`exec` on Linux
+and macOS; on Windows in a kill-on-close job, propagating its exit code). The
+program shares connection discovery and request/reply validation with the
+command-line client, and sends the same guarded commands through the local
+socket, each naming its adapter (`"adapter":"rawmakase.mcp/mcp"`).
+`Editor::control_commands` refuses a request naming an adapter that isn't an
+enabled adapter of an enabled extension (`Host::adapter_enabled`) with
+`adapter_disabled`, when it runs and again when a parked `wait` is answered, so
+disabling the extension stops a server already running. It owns tool
 schemas and temporary preview images, but no recipe state or editing logic.
 Point-curve validation, history, auto adjustment and target checks remain in the
 application command layer. MCP errors retain application error codes; output

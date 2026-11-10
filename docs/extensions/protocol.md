@@ -212,7 +212,9 @@ refused `stale_target`. Photos not open are read off the UI thread, and the
 reply comes when that is done; a program that cancels its read is answered
 `cancelled`.
 `adapter.device` and `adapter.operate` are refused `adapter_disabled` in this
-version: the app runs no control adapter of an extension yet.
+version: the app runs no control adapter of an extension's program yet. An
+externally launched adapter doesn't use this protocol at all; it sends control
+requests naming itself ([Externally launched adapters](overview.md#externally-launched-adapters)).
 
 ### Device operations
 
