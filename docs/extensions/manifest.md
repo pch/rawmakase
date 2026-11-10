@@ -142,6 +142,10 @@ A panel of host-drawn controls the program fills ([protocol](protocol.md#panels)
 | `title` | The panel's title |
 | `place` | `develop` (Develop's right column), `library` (the Library's right column), `window` (a window of its own) or `preferences` (the extension's page) |
 
+This release draws every panel on the extension's page in Preferences >
+Extensions, whatever its `place`; the other places are checked and will be
+drawn once an extension that uses them is built.
+
 ## `[[control-adapter]]`
 
 An adapter translating a device or a protocol into commands.

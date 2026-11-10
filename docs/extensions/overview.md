@@ -1,10 +1,11 @@
 # Extensions
 
-Status: Partly built. The manifest, packages, installation, `extensions.json`,
-the extension protocol, the SDK and `cargo rawmakase` exist
-([design](../extensions-plan.md), phase 2); the app doesn't run extensions yet.
-Supervising programs, Preferences > Extensions, commands, settings and panels
-in the app, and moving MIDI and MCP out come next.
+Status: Partly built ([design](../extensions-plan.md), phase 2). The manifest,
+packages, installation, `extensions.json`, the extension protocol, the SDK and
+`cargo rawmakase` exist, and the app runs extensions: it supervises their
+programs, and has Preferences > Extensions, their commands, settings and
+panels, and reads and proposals with target tokens. Externally launched control
+adapters, and moving MCP and MIDI out of the core, come next.
 
 An **extension** adds to RAWmakase without changing it: commands, settings,
 panels of controls the app draws, and control adapters (a MIDI device, an MCP
@@ -83,11 +84,11 @@ newer RAWmakase (a higher `version`) is never written over.
   when one asks for more access. Installing it again from the repository
   updates it; the previous version stays installed until nothing uses it.
 - `rawmakase extensions list|remove|enable|disable` do what they say; a running
-  RAWmakase notices a change made from the command line on its next start.
-  `enable` and `disable` refuse an id that is neither installed, a developer
-  folder nor bundled with the app. A removed extension's folder that can't be
-  deleted yet (on Windows, while its program runs) is deleted at a later
-  start.
+  RAWmakase notices a change made from the command line when Preferences >
+  Extensions opens, or on its next start. `enable` and `disable` refuse an id
+  that is neither installed, a developer folder nor bundled with the app. A
+  removed extension's folder that can't be deleted yet (on Windows, while its
+  program runs) is deleted at a later start.
 
 An install unpacks into a staging folder, checks every file against the
 package's `SHA256SUMS`, and only then renames the folder into place and makes
@@ -99,7 +100,57 @@ or is interrupted leaves the previous version installed and active.
 `cargo rawmakase dev` builds the extension, lays it out as its package would
 unpack under `target/rawmakase-dev/`, and records that folder in
 `extensions.json`'s `developer` table. The app runs developer extensions
-without installing them (once the app supervises extensions).
+without installing them. In Preferences > Extensions, **Developer mode** adds
+**Load from Folder…**, and while the page is open it looks every second for a
+changed manifest or program of a developer extension and loads it again,
+stopping its program, which starts again as the new build at its next request.
+
+## In the app
+
+**Preferences > Extensions** lists every extension with its source (Bundled,
+File, GitHub, Developer folder), its state (Enabled, Disabled, Running, Failed,
+Can't run) and an **Update** badge after Check for Updates found one. An
+extension's page shows its description, author, repository, declared access,
+its commands (each with **Run**), settings, panels, control adapters, its last
+errors and its log file; and **Enable**, **Disable**, **Stop** (while a command
+runs), **Retry** (when Failed), **Uninstall** (not for a bundled one) and
+**Update**. **Install from GitHub…** downloads the newest compatible package and
+shows its manifest, its access and the **Not reviewed** warning before
+installing it; **Install from File…** installs a `.rmext`. Every change is
+written to `extensions.json` first; when that fails, the page says so and
+nothing changes.
+
+A program starts at its first request (`on-demand`), or after the app's first
+frame (`with-app`), and an `on-demand` program with nothing to do for 5 minutes
+is stopped. A request it doesn't answer in 30 seconds (5 for `hello`) is
+cancelled, then failed 2 seconds later. A program that exits on its own counts
+as a crash: whatever it was asked fails, and its status-line entry and panels
+clear. Three crashes in a row make the extension **Failed** for the rest of the
+session, until **Retry**; only useful work (a command or a panel answered
+successfully, or 5 minutes running) starts the count again. Disabling an
+extension cancels its requests, stops its program and takes its commands and
+panels away. Quitting sends `quitting` and ends any program still running
+within the quit deadline, with the helpers it started.
+
+**Commands** join the app's commands as `<extension>/<command>`: Preferences >
+Shortcuts lists them under Extensions, they take keys there like any other
+command (an extension's default key included, conflicts shown), and
+`rawmakase control action <extension>/<command>` runs one. A command that
+applies to the open photo or the selection gets it, read as it starts. The
+manifest's `places` are checked, but menus and toolbars don't show extension
+commands yet: keys, `control action` and the Run button run them.
+
+**Settings** are drawn from the manifest's `[[setting]]`s, stored in
+`extensions.json`, sent in `hello` and, when changed, as `setting-changed`.
+**Panels** are drawn on the extension's page from the controls its program
+returns.
+
+**Reads and proposals**: a program reads the selection, the open photo or
+photos by id, with a token naming what it read, and proposes settings with
+that token while its command runs. A photo changed since (another edit, its
+file replaced, unsaved changes in Develop), or a catalog closed or read again,
+is refused, and the reply lists which photos changed and which were refused.
+Each photo changed is one History step, named after the command.
 
 ## Decisions
 

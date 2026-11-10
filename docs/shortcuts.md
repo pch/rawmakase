@@ -58,6 +58,17 @@ command that can run at that moment counts: with a text field holding the keys,
 Crop doesn't, so Preferences keeps Cmd+, even if Crop has it too. When two commands
 share a key there and something else has it below them, none of them runs.
 
+## Extensions' commands
+
+An enabled extension's commands are listed under **Extensions** in Preferences
+> Shortcuts, as `<extension>/<command>` (`dev.jane.analog/film-look`), and take
+keys like any other command. A default key from the extension's manifest isn't
+checked against the built-in keys when it is written, so it may conflict with
+one; Preferences then marks both rows and a press of it runs neither, as above.
+Your keys for an extension's command are kept in `keymap.toml` while the
+extension is disabled or uninstalled (listed as not known to this release), and
+take effect again when it comes back.
+
 ## The key map file
 
 Your shortcuts are kept in `keymap.toml` in RAWmakase's data folder (shown at the

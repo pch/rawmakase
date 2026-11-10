@@ -164,6 +164,28 @@ applying the rest, each as one History step. `op` is the id of the app's
 cancelled or past its deadline, the proposal is refused `not_admitted` and
 nothing changes.
 
+What the app checks, photo by photo:
+
+- A token of a catalog that has since closed, been switched for another or
+  read again (which a removal that may reuse ids does) is refused whole,
+  `stale_target`.
+- The photo open in Develop is checked against Develop's state now, whether or
+  not it was open when read. Read from Develop, it must still be the same load
+  with no edit since; read from the catalog, it must have nothing unsaved and
+  the same catalog state. It changes as one step of its History.
+- Any other photo must still have the file and the catalog state it was read
+  with; that is checked again inside the catalog's write, so nothing changed
+  meanwhile is overwritten. It is changed as a batch edit changes it, with a
+  History step, and one Undo covers every such photo of the proposal.
+- A read returns at most 200 photos and a proposal changes at most 200
+  (`too_large`). A setting name the control layer doesn't know, or a value that
+  isn't a finite number, refuses that photo `invalid_request`.
+
+A photo's settings in a read are Develop's for the open photo and its saved
+RAWmakase edit for any other (none for a photo never edited in RAWmakase).
+`adapter.device` and `adapter.operate` are refused `adapter_disabled` in this
+version: the app runs no control adapter of an extension yet.
+
 ### Device operations
 
 `ops` are applied in order with the app's device semantics, and refused unless
