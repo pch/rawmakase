@@ -422,6 +422,16 @@ pub(crate) mod tests {
             "C:/evil",
             "a\\b",
             "./a",
+            "readme.",
+            "bin/tool ",
+            ".. /evil",
+            "...",
+            "NUL",
+            "nul.txt",
+            "a/COM1.blah",
+            "LPT9",
+            "COM¹",
+            "con .txt",
         ] {
             let error = refused(&[(name, b"x")]);
             assert!(error.contains("plain relative path"), "{name}: {error}");

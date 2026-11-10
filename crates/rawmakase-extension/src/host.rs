@@ -66,6 +66,34 @@ impl Shared {
         result
     }
 
+    /// Ends a request whose wait ran out. Taking it back from `pending` decides
+    /// who won: if it is still there, the timeout did, and the app is told to
+    /// cancel; if [`Shared::answer`] took it first, the app's reply won, its
+    /// result is in `rx` or about to be, and it is the outcome, with nothing
+    /// cancelled.
+    fn timed_out(
+        &self,
+        id: u64,
+        rx: &mpsc::Receiver<Result<Value, RemoteError>>,
+        method: &str,
+        timeout: Duration,
+    ) -> Result<Value, RemoteError> {
+        let gave_up = self
+            .pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id)
+            .is_some();
+        if !gave_up {
+            return rx.recv().unwrap_or_else(|_| Err(closed()));
+        }
+        let _ = self.send(&Message::Cancel { id });
+        Err(RemoteError::new(
+            ErrorCode::Deadline,
+            format!("{method} had no reply in {timeout:?}"),
+        ))
+    }
+
     /// Routes the app's reply to the request waiting for it. A reply to no
     /// request waiting (one that timed out) is dropped.
     pub(crate) fn answer(&self, id: u64, result: Result<Value, RemoteError>) {
@@ -146,18 +174,7 @@ impl Host {
         match rx.recv_timeout(timeout) {
             Ok(result) => result,
             Err(mpsc::RecvTimeoutError::Disconnected) => Err(closed()),
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                shared
-                    .pending
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .remove(&id);
-                let _ = shared.send(&Message::Cancel { id });
-                Err(RemoteError::new(
-                    ErrorCode::Deadline,
-                    format!("{method} had no reply in {timeout:?}"),
-                ))
-            }
+            Err(mpsc::RecvTimeoutError::Timeout) => shared.timed_out(id, &rx, method, timeout),
         }
     }
 
@@ -263,5 +280,55 @@ impl Host {
     /// it.
     pub fn session(&self) -> u64 {
         self.0.session.load(Ordering::SeqCst)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A writer whose bytes the test reads back.
+    #[derive(Clone, Default)]
+    struct Sent(Arc<Mutex<Vec<u8>>>);
+    impl Write for Sent {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn waiting(shared: &Shared, id: u64) -> mpsc::Receiver<Result<Value, RemoteError>> {
+        let (tx, rx) = mpsc::channel();
+        shared.pending.lock().unwrap().insert(id, tx);
+        rx
+    }
+
+    #[test]
+    fn a_reply_routed_as_the_wait_runs_out_is_the_outcome() {
+        let sent = Sent::default();
+        let shared = Shared::new(Box::new(sent.clone()));
+        let rx = waiting(&shared, 7);
+        // The reply takes the request before the timed-out wait does.
+        shared.answer(7, Ok(Value::from(1)));
+        let result = shared.timed_out(7, &rx, "read.selection", Duration::ZERO);
+        assert_eq!(result.unwrap(), Value::from(1));
+        assert!(sent.0.lock().unwrap().is_empty(), "nothing is cancelled");
+    }
+
+    #[test]
+    fn a_wait_that_runs_out_first_cancels_and_drops_a_late_reply() {
+        let sent = Sent::default();
+        let shared = Shared::new(Box::new(sent.clone()));
+        let rx = waiting(&shared, 7);
+        let error = shared
+            .timed_out(7, &rx, "read.selection", Duration::ZERO)
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::Deadline);
+        assert!(String::from_utf8_lossy(&sent.0.lock().unwrap()).contains("cancel"));
+        shared.answer(7, Ok(Value::from(1)));
+        assert!(rx.try_recv().is_err(), "the late reply is dropped");
     }
 }

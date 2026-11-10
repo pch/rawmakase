@@ -557,6 +557,12 @@ fn check_path(key: &str, path: &str) -> Result<(), Invalid> {
 /// Whether `path` names a file inside a package: relative, `/` between names,
 /// none empty, `.` or `..`, and no backslash, colon or control character, so it
 /// means the same on every platform.
+///
+/// Names Windows would read as something else are refused on every platform,
+/// since a package built on Linux installs on Windows too: Win32 strips trailing
+/// dots and spaces from a name (`readme.` is `readme`, `.. ` is `..`), and opens
+/// a DOS device for a name whose stem is one (`NUL.txt`, `COM1`), whatever the
+/// folder.
 pub fn is_package_path(path: &str) -> bool {
     !path.is_empty()
         && path.len() <= 512
@@ -564,10 +570,33 @@ pub fn is_package_path(path: &str) -> bool {
             !part.is_empty()
                 && part != "."
                 && part != ".."
+                && !part.ends_with(['.', ' '])
+                && !is_dos_device(part)
                 && !part
                     .chars()
                     .any(|c| c == '\\' || c == ':' || c.is_control())
         })
+}
+
+/// Whether Windows opens a device for this name: its stem, before the first dot
+/// and with trailing spaces removed, is a reserved device name in any case. The
+/// digits of `COM` and `LPT` include the superscripts ¹ ² ³, which Windows
+/// counts as digits there.
+fn is_dos_device(part: &str) -> bool {
+    let stem = part.split('.').next().unwrap_or(part).trim_end_matches(' ');
+    let upper = stem.to_uppercase();
+    match upper.as_str() {
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$" => true,
+        _ => ["COM", "LPT"].iter().any(|prefix| {
+            upper.strip_prefix(prefix).is_some_and(|rest| {
+                let mut chars = rest.chars();
+                matches!(
+                    (chars.next(), chars.next()),
+                    (Some('1'..='9' | '¹' | '²' | '³'), None)
+                )
+            })
+        }),
+    }
 }
 
 /// The manifest's JSON Schema, as committed in

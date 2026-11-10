@@ -88,7 +88,7 @@ Needed by every extension with commands, panels or control adapters.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `path` | — | The executable in the package: relative, `/` between plain names, no `..`, `\` or `:`. On Windows `.exe` is added when the name has no extension |
+| `path` | — | The executable in the package: relative, `/` between plain names, no `..`, `\` or `:`, and no name Windows reads differently (see [Publishing](publishing.md)). On Windows `.exe` is added when the name has no extension |
 | `start` | `"on-demand"` | `on-demand`: at its first request, stopped after a while with nothing to do. `with-app`: with the app, until it quits |
 
 ## `[[setting]]`

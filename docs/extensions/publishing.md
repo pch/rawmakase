@@ -55,7 +55,11 @@ will before it says it is done.
 RAWmakase refuses a package that is named otherwise, is for another target,
 doesn't support its version, holds a file missing from `SHA256SUMS` or listed
 there but missing, holds a digest that doesn't match, an absolute path, `..`,
-a link, two names differing only in case, or more than 512 MiB unpacked.
+a link, two names differing only in case, or more than 512 MiB unpacked. It
+also refuses, on every platform, names Windows would read as something else: a
+name ending in a dot or a space (Windows drops them, so `readme.` is `readme`),
+and a name whose part before the first dot is a device name such as `CON`,
+`NUL`, `COM1` or `LPT1`, in any case.
 
 ## Release on GitHub
 
