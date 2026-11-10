@@ -775,6 +775,49 @@ Calibration and Shadows tint) and a Black & White edit, with HDR off and with HD
 (its SDR rendition), give 48 of 48 bit-identical renders. The render snapshots and
 the SDR photo gate were not run: they score these same SDR renders.
 
+### Vignette and grain
+
+Measured with Camera Raw 18.7 on a synthetic DNG through `probe_dng.py` (a linear
+profile, sensor white +4 stops): a checker of 32-pixel gray tiles at 0.03, 0.1, 0.25,
+0.5, 1, 2, 4 and 8 times white over a 1536×1024 frame, so every level sits at every
+distance from the centre. Highlight Priority, Color Priority and Paint Overlay at
+Amount −100, −50 and +50 (Midpoint 50, Feather 50, Roundness 0), Highlight Priority
+−50 with Highlights 50, and grain at Amount 50 and 100 (Size 25, Roughness 50), in HDR
+at limit 8 and in SDR. Tile means and deviations are of each tile's inner 20 pixels.
+
+- **Darkening** is a gain independent of level in HDR: at a quarter of the way out to
+  the corners, −50 gives ×0.29 (Highlight and Color Priority) and ×0.25 (Paint
+  Overlay) at every level from 0.1 to 8 times white; through the probe's linear
+  profile the scene and the output are the same above the toe. In SDR, Highlight
+  Priority's gain rises toward white (×0.41 at 0.69, ×0.91 at 0.99) as the default
+  curve's shoulder holds it; Color Priority's and Paint Overlay's don't.
+- **Lightening** by Paint Overlay and Color Priority, identical to each other in both
+  renders, is SDR's paint rule v + (1 − v)·opacity on unclipped light: median 0.002
+  stop, p95 0.037. Above white it darkens (+50: ×0.89 at eight times white). Highlight
+  Priority's +50 blends the scene towards a white W with SDR's opacity: W is 14.4
+  (p10–p90 13.5–15.2) at every level up to twice white and 14.9–15.2 at four and eight
+  times.
+- **Highlights 50** under −50 Highlight Priority changes nothing up to twice white and
+  lifts four and eight times white to ×0.32 and ×0.43 (from ×0.29); SDR's smoothstep
+  near white doesn't fit, and two levels don't settle another rule.
+- **Grain**: its deviation in sRGB-curve-encoded values, relative to a quarter of
+  white's, is 1.27, 1.10, 1.00, 0.94, 0.89, 0.84, 0.79 and 0.44 at 0.03 to 8 times
+  white for Amount 50, within 0.02 for Amount 100, and 0.98 of SDR's at a quarter of
+  white. SDR's fades by white (0.27 at 0.98).
+- **Engine.** Rendered by the build with the rule (`PostCropVignette::apply_hdr`,
+  `GrainField::noise_hdr`), each style's effect above white is within a median 0.000–
+  0.010 stop of Camera Raw's (p95 0.003–0.069); over all tiles 0.001–0.022 (p95 up to
+  0.29, and 2.0 for Highlight Priority −100, whose darkest corner tiles are in the
+  scene tone stage's toe). Grain's spread is 0.98–1.01 of Camera Raw's from 0.1 to 8
+  times white and 0.89–0.90 at 0.03.
+
+Decision, 2026-11-10: the post-crop vignette and grain render in the HDR master on the
+CPU (the GPU's HDR preview leaves them to it); a darkening vignette's Highlights
+refuses the master. Highlight Priority exposes through the photo's own HDR tone curve,
+as SDR's operator exposes through a measured default curve; the probe's linear profile
+can't check that part, so photos through Adobe Standard are still to be measured
+([Open](#open)).
+
 ### Color grading
 
 Measured with Camera Raw 18.7 on a synthetic probe through `probe_dng.py` (a linear
@@ -908,6 +951,9 @@ same code as before, and `apply_hdr` is reached only from the HDR master's finis
 - Color Grading on photos (a split tone, a Highlights tint with Luminance, Global
   with Midtones Luminance, on the twelve validation and holdout photos), and strong
   Highlights tints of saturated colours above white ([Color grading](#color-grading)).
+- The vignette's Highlights in HDR, the vignette and grain on photos through Adobe
+  Standard, and the vignette's darkest shadows under strong Highlight Priority
+  ([Vignette and grain](#vignette-and-grain)).
 - Refine Saturation in HDR ([Tone curves](#tone-curves)).
 - Clarity and Dehaze in HDR, after their SDR parity ([Presence](#presence)).
 - Positive Shadows lifts small speculars in dark surroundings above Camera Raw's peak
@@ -959,7 +1005,8 @@ same code as before, and `apply_hdr` is reached only from the HDR master's finis
   ([Colour stage](#colour-stage)); Whites up to +50 ([Whites](#whites)); Shadows
   ([Highlights and Shadows](#highlights-and-shadows)); looks with RGB tables, B&W,
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
-  Color Grading ([Color grading](#color-grading)). Open: Whites above +50, Highlights, the colour
+  Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
+  ([Vignette and grain](#vignette-and-grain)). Open: Whites above +50, Highlights, the colour
   mixer's Luminance, looks that set Clarity or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
   with them), 52552 grouping (library only,
   needed when toggling HDR pairs profiles).

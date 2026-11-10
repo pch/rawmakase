@@ -176,7 +176,7 @@ standalone `rawmakase-ctl`). The last two build without the app.
 | [rendered.rs](../crates/rawmakase-model/src/rendered.rs) | Float RGB output buffers, integer pixel conversion, histogram generation with per-channel clipping counts, the clipping thresholds and the clipping overlay. |
 | [color/curve.rs](../crates/rawmakase-model/src/color/curve.rs) | Tone-curve points, validation, interpolation and lookup tables. |
 | [color/hdr_curve.rs](../crates/rawmakase-model/src/color/hdr_curve.rs) | The point, channel and parametric curves in HDR: the point curve and each channel's continued along their end slope above white (a channel's held at 16), the parametric curve over an axis to four stops above it, Levels as a point curve of its shape ([HDR](hdr.md)). |
-| [effects.rs](../crates/rawmakase-engine/src/develop/effects.rs) | Additional recipe controls used by XMP and spatial finishing such as grain and vignette. |
+| [effects.rs](../crates/rawmakase-engine/src/develop/effects.rs) | Additional recipe controls used by XMP and spatial finishing such as grain and vignette, in SDR renders and in the HDR master (`hdr_spatial_finish`). |
 | [color.rs](../crates/rawmakase-engine/src/develop/color.rs) | The colour wheels' hues (`hue_rgb`), shared by mask tints and the Color Grading panel. |
 | [calibration.rs](../crates/rawmakase-engine/src/develop/calibration.rs) | Camera-primary calibration and shadow tint. |
 | [black_white.rs](../crates/rawmakase-engine/src/develop/black_white.rs) | Treatment (Color or Black & White, kept with black & white profiles), the mix's gray (unclipped in an HDR master) and the Auto black & white mix, fitted to Camera Raw's Auto. See [color mixer](color-mixer.md#black--white). |

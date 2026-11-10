@@ -167,6 +167,7 @@ const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 ///
 /// Measured: white balance, Exposure, Contrast, Shadows, Whites up to +50, Blacks, the HDR limit,
 /// Color Grading (the SDR curves in a domain that compresses the HDR range),
+/// the post-crop vignette (without a darkening vignette's Highlights) and grain,
 /// the master point curve, the channels' point curves and the parametric curve, and
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
 /// camera's samples, as in SDR),
@@ -244,7 +245,14 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
         ),
         ("Point Color", !r.point_colors.is_empty()),
         ("Defringe", r.effects.defringe != [0.; 2]),
-        ("Effects", r.effects.grain != 0. || r.effects.vignette != 0.),
+        // Camera Raw protects highlights from a darkening vignette in HDR only from
+        // about four times white up (docs/records/hdr-stage1-results.md#vignette-and-grain).
+        (
+            "The vignette's Highlights",
+            r.effects.vignette < 0.
+                && r.effects.vignette_highlights > 0.
+                && r.effects.vignette_style != super::effects::VignetteStyle::PaintOverlay,
+        ),
         (
             "Masks",
             r.masks
@@ -517,10 +525,25 @@ mod tests {
             *v = -0.5;
         }
         assert!(check_recipe(&sdr).is_ok());
+        // Vignette and grain render (docs/hdr.md#vignette-and-grain), and so does
+        // Highlights where it does nothing: Paint Overlay, or a lightening vignette.
+        let mut effects = r.clone();
+        effects.effects.grain = 0.4;
+        effects.effects.vignette = -0.5;
+        assert!(check_recipe(&effects).is_ok());
+        effects.effects.vignette_highlights = 0.6;
+        effects.effects.vignette_style = crate::model::effects::VignetteStyle::PaintOverlay;
+        assert!(check_recipe(&effects).is_ok());
+        effects.effects.vignette_style = crate::model::effects::VignetteStyle::HighlightPriority;
+        effects.effects.vignette = 0.5;
+        assert!(check_recipe(&effects).is_ok());
         let unmeasured: [fn(&mut Recipe); 6] = [
             |r| r.highlights = 0.1,
             |r| r.hsl[5][2] = -0.2,
-            |r| r.effects.grain = 0.1,
+            |r| {
+                r.effects.vignette = -0.3;
+                r.effects.vignette_highlights = 0.4;
+            },
             |r| r.effects.clarity = 0.1,
             |r| r.effects.dehaze = 0.1,
             |r| {
