@@ -25,7 +25,7 @@ impl Editor {
                 go_to = Some(n);
             }
             crate::app::ui::widgets::context_menu(&response, |ui| {
-                ui.set_width(270.);
+                crate::app::ui::widgets::menu_width(ui, 270.);
                 if crate::app::ui::widgets::menu_item(
                     ui,
                     "Copy History Step Settings to Before",
@@ -76,7 +76,7 @@ impl Editor {
                     lightroom = Some((i, LightroomStep::Apply));
                 }
                 crate::app::ui::widgets::context_menu(&response, |ui| {
-                    ui.set_width(270.);
+                    crate::app::ui::widgets::menu_width(ui, 270.);
                     if crate::app::ui::widgets::menu_item(
                         ui,
                         "Copy History Step Settings to Before",

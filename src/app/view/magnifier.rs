@@ -356,7 +356,7 @@ impl Editor {
             if usable {
                 let menu = menu.on_hover_text("Magnifier level");
                 egui::Popup::menu(&menu).show(|ui| {
-                    ui.set_width(120.);
+                    crate::app::ui::widgets::menu_width(ui, 120.);
                     ui.spacing_mut().item_spacing.y = 0.;
                     for (i, (_, name)) in LEVELS.iter().enumerate() {
                         if menu_item(ui, name, "", true, i == level) {

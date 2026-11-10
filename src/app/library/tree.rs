@@ -388,7 +388,7 @@ pub(super) fn folder_tree_row(
     }
     crate::app::ui::widgets::context_menu(&response, |ui| {
         use crate::app::ui::widgets::{menu_item, menu_separator};
-        ui.set_width(210.);
+        crate::app::ui::widgets::menu_width(ui, 210.);
         ui.spacing_mut().item_spacing.y = 0.;
         if menu_item(
             ui,

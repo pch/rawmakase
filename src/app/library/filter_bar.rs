@@ -118,7 +118,7 @@ impl Library {
         // A bar button, so it lines up with the bar's other controls.
         let menu = bar_button(ui, shown, false).on_hover_text("How the rating compares");
         egui::Popup::menu(&menu).show(|ui| {
-            ui.set_width(250.);
+            crate::app::ui::widgets::menu_width(ui, 250.);
             ui.spacing_mut().item_spacing.y = 0.;
             for op in RatingOp::ALL {
                 let on = !unrated && filters.rating_op == op;

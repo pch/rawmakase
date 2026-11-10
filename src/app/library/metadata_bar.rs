@@ -220,7 +220,7 @@ impl Library {
             .on_hover_text("Choose what this column lists")
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         egui::Popup::menu(&response).show(|ui| {
-            ui.set_width(170.);
+            crate::app::ui::widgets::menu_width(ui, 170.);
             ui.spacing_mut().item_spacing.y = 0.;
             for attribute in Attribute::ALL {
                 if menu_item(ui, attribute.name(), "", true, attribute == shown) {

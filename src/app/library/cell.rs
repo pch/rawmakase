@@ -551,7 +551,7 @@ pub(in crate::app) fn photo_menu(
             .data_mut(|d| d.remove::<Option<super::Refusal>>(key));
     }
     crate::app::ui::widgets::context_menu(response, |ui| {
-        ui.set_width(210.);
+        crate::app::ui::widgets::menu_width(ui, 210.);
         ui.spacing_mut().item_spacing.y = 0.;
         let refusal = ui.ctx().data_mut(|d| {
             d.get_temp_mut_or_insert_with(key, || super::develop_refusal(photo, available))
@@ -619,7 +619,7 @@ pub(in crate::app) fn photo_menu(
         submenu_style(ui);
         ui.add_enabled_ui(stacks, |ui| {
             ui.menu_button("Stacking", |ui| {
-                ui.set_width(250.);
+                crate::app::ui::widgets::menu_width(ui, 250.);
                 ui.spacing_mut().item_spacing.y = 0.;
                 if let Some(choice) = stacking_menu(ui, photo, module) {
                     action = Some(PhotoAction::Stack(choice));
@@ -655,7 +655,7 @@ pub(in crate::app) fn photo_menu(
         menu_separator(ui);
         submenu_style(ui);
         ui.menu_button("Previews", |ui| {
-            ui.set_width(250.);
+            crate::app::ui::widgets::menu_width(ui, 250.);
             ui.spacing_mut().item_spacing.y = 0.;
             use crate::catalog::preview_cache::PreviewKind;
             if menu_item(ui, "Build Standard-Sized Previews", "", true, false) {
@@ -679,7 +679,7 @@ pub(in crate::app) fn photo_menu(
         menu_separator(ui);
         submenu_style(ui);
         ui.menu_button("Set Flag", |ui| {
-            ui.set_width(170.);
+            crate::app::ui::widgets::menu_width(ui, 170.);
             ui.spacing_mut().item_spacing.y = 0.;
             for (flag, title) in [(1, "Flagged"), (0, "Unflagged"), (-1, "Rejected")] {
                 if menu_item(
@@ -695,7 +695,7 @@ pub(in crate::app) fn photo_menu(
             }
         });
         ui.menu_button("Set Rating", |ui| {
-            ui.set_width(170.);
+            crate::app::ui::widgets::menu_width(ui, 170.);
             ui.spacing_mut().item_spacing.y = 0.;
             for rating in 0..=5 {
                 let title = if rating == 0 {
@@ -717,7 +717,7 @@ pub(in crate::app) fn photo_menu(
         });
         ui.menu_button("Set Color Label", |ui| {
             let palette = theme::palette(ui.ctx());
-            ui.set_width(170.);
+            crate::app::ui::widgets::menu_width(ui, 170.);
             ui.spacing_mut().item_spacing.y = 0.;
             for (label, key) in LABELS
                 .into_iter()
@@ -744,3 +744,7 @@ pub(in crate::app) fn photo_menu(
     });
     action
 }
+
+#[cfg(test)]
+#[path = "cell_menu_tests.rs"]
+mod menu_tests;
