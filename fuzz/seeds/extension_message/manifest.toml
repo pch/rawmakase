@@ -1,0 +1,36 @@
+[extension]
+id = "dev.jane.analog"
+name = "Analog Toolkit"
+version = "1.2.0"
+rawmakase = ">=0.6, <0.7"
+api = 1
+authors = ["Jane Doe"]
+
+[access]
+network = false
+files = "photos"
+devices = ["midi"]
+
+[program]
+path = "bin/analog"
+start = "with-app"
+
+[[setting]]
+id = "stock"
+control = { choice = ["Tri-X", "HP5"] }
+default = "Tri-X"
+
+[[command]]
+id = "auto"
+title = "Auto Film Look"
+places = ["library.auto", "develop.auto"]
+applies-to = "selection"
+
+[[panel]]
+id = "looks"
+title = "Looks"
+place = "preferences"
+
+[[control-adapter]]
+id = "mcp"
+launch = "external"

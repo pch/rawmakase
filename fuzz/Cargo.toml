@@ -1,6 +1,8 @@
 # Fuzz targets for RAWmakase's own RAW decoders (rawmakase-raw): every file
 # the Library meets goes through `open`, `preview` and `decode`, so none of
-# them may panic, hang or allocate without bound on a hostile file. Run with
+# them may panic, hang or allocate without bound on a hostile file. And
+# `extension_message`, for what an extension's program or package hands the
+# app: the protocol's line reader and messages, and the manifest. Run with
 # cargo-fuzz on nightly Rust (.github/workflows/fuzz.yml):
 #
 #     cargo +nightly fuzz run open fuzz/corpus/open
@@ -21,6 +23,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 rawmakase-cancel = { path = "../crates/rawmakase-cancel" }
 rawmakase-raw = { path = "../crates/rawmakase-raw" }
+rawmakase-extension-protocol = { path = "../crates/rawmakase-extension-protocol" }
 
 [workspace]
 members = ["."]
@@ -42,6 +45,13 @@ bench = false
 [[bin]]
 name = "decode"
 path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "extension_message"
+path = "fuzz_targets/extension_message.rs"
 test = false
 doc = false
 bench = false
