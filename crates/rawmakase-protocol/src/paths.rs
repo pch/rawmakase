@@ -50,6 +50,43 @@ fn data_dir_in(
             }
         })
 }
+/// This computer's own data folder, never synced: the platform default even
+/// when RAWMAKASE_DATA_DIR points elsewhere (a shared or synced folder), and
+/// Windows's local rather than roaming AppData. Downloaded models, the ONNX
+/// Runtime, `remote-inference.json` and the crash log live here, so anything
+/// outside the app that needs them (an extension) must use this, not
+/// [`data_dir`].
+pub fn local_data_dir() -> PathBuf {
+    local_data_dir_in(
+        std::env::var_os("LOCALAPPDATA"),
+        std::env::var_os("XDG_DATA_HOME"),
+        &home(),
+        cfg!(windows),
+        cfg!(target_os = "macos"),
+    )
+}
+/// The layout behind [`local_data_dir`], with the environment and the
+/// platform read out, so every platform's folder is testable on any host.
+fn local_data_dir_in(
+    local_appdata: Option<OsString>,
+    xdg_data_home: Option<OsString>,
+    home: &Path,
+    windows: bool,
+    macos: bool,
+) -> PathBuf {
+    if macos {
+        home.join("Library/Application Support/RAWmakase")
+    } else if windows {
+        local_appdata
+            .map(|p| PathBuf::from(p).join("RAWmakase"))
+            .unwrap_or_else(|| home.join(".local/share/rawmakase"))
+    } else {
+        xdg_data_home
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".local/share"))
+            .join("rawmakase")
+    }
+}
 /// The user's home folder (`$HOME`), or an empty path when it is unset.
 pub fn home() -> PathBuf {
     PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
@@ -120,6 +157,78 @@ mod tests {
             false,
         );
         assert_eq!(dir, PathBuf::from(r"C:\Users\me/.local/share/rawmakase"));
+    }
+
+    #[test]
+    fn the_local_folder_ignores_the_override_and_roaming_appdata() {
+        // RAWMAKASE_DATA_DIR is not a parameter: the local folder never moves
+        // with it, so it can't be shared or synced between computers.
+        let dir = local_data_dir_in(
+            Some(r"C:\Users\me\AppData\Local".into()),
+            Some("/xdg".into()),
+            Path::new(r"C:\Users\me"),
+            true,
+            false,
+        );
+        assert_eq!(
+            dir,
+            PathBuf::from(r"C:\Users\me\AppData\Local").join("RAWmakase")
+        );
+        let roaming = data_dir_in(
+            None,
+            Some(r"C:\Users\me\AppData\Roaming".into()),
+            Some("/xdg".into()),
+            Path::new(r"C:\Users\me"),
+            true,
+            false,
+        );
+        assert_ne!(dir, roaming);
+        let dir = local_data_dir_in(
+            None,
+            Some("/xdg".into()),
+            Path::new(r"C:\Users\me"),
+            true,
+            false,
+        );
+        assert_eq!(dir, PathBuf::from(r"C:\Users\me/.local/share/rawmakase"));
+    }
+
+    #[test]
+    fn the_local_folder_is_the_default_data_folder_on_macos_and_linux() {
+        let mac = local_data_dir_in(
+            Some(r"C:\Users\me\AppData\Local".into()),
+            Some("/xdg".into()),
+            Path::new("/Users/me"),
+            false,
+            true,
+        );
+        assert_eq!(
+            mac,
+            PathBuf::from("/Users/me/Library/Application Support/RAWmakase")
+        );
+        let linux = local_data_dir_in(
+            None,
+            Some("/data".into()),
+            Path::new("/home/me"),
+            false,
+            false,
+        );
+        assert_eq!(linux, PathBuf::from("/data/rawmakase"));
+        let linux = local_data_dir_in(None, None, Path::new("/home/me"), false, false);
+        assert_eq!(linux, PathBuf::from("/home/me/.local/share/rawmakase"));
+        for (windows, macos, home) in [(false, false, "/home/me"), (false, true, "/Users/me")] {
+            assert_eq!(
+                local_data_dir_in(None, Some("/data".into()), Path::new(home), windows, macos),
+                data_dir_in(
+                    None,
+                    None,
+                    Some("/data".into()),
+                    Path::new(home),
+                    windows,
+                    macos
+                ),
+            );
+        }
     }
 
     #[test]

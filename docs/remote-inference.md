@@ -85,9 +85,10 @@ lost, the photo is left as it was, and the next selection starts again.
 
 ## The app
 
-Create `remote-inference.json` in RAWmakase's data folder
+Create `remote-inference.json` in RAWmakase's local data folder
 (`~/.local/share/rawmakase/` on Linux, `~/Library/Application Support/RAWmakase/`
-on macOS, `%APPDATA%\RAWmakase\` on Windows; `RAWMAKASE_DATA_DIR` moves it):
+on macOS, `%LOCALAPPDATA%\RAWmakase\` on Windows). It is this computer's own
+setting, so `RAWMAKASE_DATA_DIR` does not move it:
 
 ```json
 { "endpoint": "127.0.0.1:8765" }
