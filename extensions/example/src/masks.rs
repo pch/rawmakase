@@ -7,6 +7,11 @@
 //!   subject when it is all black); with a prompt, the box, then a disc of a
 //!   fifth of the photo around each click, added or taken away;
 //! - `flat`: the whole photo; `nothing`: all-zero coverage, unannounced;
+//!
+//! Selected pixels have the value of the first pixel's red (at least 1), so
+//! photos of different levels give different coverage, and so different
+//! rasters in the app's shared store;
+//!
 //!   `absent`: `no_subject`; `unnamed`: a model with an empty name;
 //! - `setup`: `needs_setup` until `mask.setup` has run, which reports half
 //!   way and waits for `finish-setup` in its working folder (or a cancel);
@@ -42,7 +47,8 @@ impl MaskGenerator for Generator {
         };
         match self.0 {
             "flat" => {
-                ask.coverage.fill(255);
+                let value = ink(&ask);
+                ask.coverage.fill(value);
                 Ok(model(None))
             }
             "nothing" => Ok(model(None)),
@@ -101,8 +107,14 @@ fn wait_for(file: &str, cx: Option<&Context>) -> bool {
     false
 }
 
+/// The value of selected pixels: the first pixel's red, at least 1.
+fn ink(ask: &MaskAsk<'_>) -> u8 {
+    ask.image.first().copied().unwrap_or(255).max(1)
+}
+
 /// Writes `blob`'s coverage; says there is no subject in an all-black photo.
 fn blob(ask: &mut MaskAsk<'_>) -> Option<EmptyMask> {
+    let ink = ink(ask);
     let (image, coverage) = (&ask.request.image, &ask.request.coverage);
     let (w, h) = (image.width as usize, image.height as usize);
     let (stride, out) = (image.stride as usize, coverage.stride as usize);
@@ -115,7 +127,7 @@ fn blob(ask: &mut MaskAsk<'_>) -> Option<EmptyMask> {
             }
             for y in 0..h {
                 for x in 0..w / 2 + w % 2 {
-                    values[y * w + x] = if pixel(x, y) == [0, 0, 0] { 0 } else { 255 };
+                    values[y * w + x] = if pixel(x, y) == [0, 0, 0] { 0 } else { ink };
                 }
             }
         }
@@ -126,7 +138,7 @@ fn blob(ask: &mut MaskAsk<'_>) -> Option<EmptyMask> {
                     for x in 0..w {
                         let (u, v) = (centre(x, w), centre(y, h));
                         if (b.x0..=b.x1).contains(&u) && (b.y0..=b.y1).contains(&v) {
-                            values[y * w + x] = 255;
+                            values[y * w + x] = ink;
                         }
                     }
                 }
@@ -136,7 +148,7 @@ fn blob(ask: &mut MaskAsk<'_>) -> Option<EmptyMask> {
                     for x in 0..w {
                         let (du, dv) = (centre(x, w) - c.x, centre(y, h) - c.y);
                         if du * du + dv * dv <= 0.2 * 0.2 {
-                            values[y * w + x] = if c.positive { 255 } else { 0 };
+                            values[y * w + x] = if c.positive { ink } else { 0 };
                         }
                     }
                 }

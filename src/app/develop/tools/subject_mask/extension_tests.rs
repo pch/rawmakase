@@ -54,9 +54,14 @@ struct Fixture {
     folder: PathBuf,
 }
 
-/// An editor with a decoded photo in a catalog, as Develop has one, and the
-/// masks extension loaded from a developer folder.
-fn fixture() -> Fixture {
+/// An editor with a decoded photo of grey `level` in a catalog, as Develop has
+/// one, and the masks extension loaded from a developer folder.
+///
+/// The raster store is the process's, shared by the tests running at once,
+/// and a raster's id is its content: each test uses a level of its own, so
+/// the generators' coverage, and their rasters, are its own too, and one
+/// test's discarding a result can't take another's raster away.
+fn fixture(level: f32) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let photos = dir.path().join("photos");
     std::fs::create_dir(&photos).unwrap();
@@ -78,7 +83,7 @@ fn fixture() -> Fixture {
     editor.library = Some(Box::new(library));
     editor.document.catalog_photo = Some(id);
     editor.document.opened_at(photo);
-    editor.document.set_image(image());
+    editor.document.set_image(image(level));
     let folder = dir.path().join("masks");
     std::fs::create_dir(&folder).unwrap();
     std::fs::write(
@@ -101,7 +106,7 @@ fn fixture() -> Fixture {
 }
 
 /// The photo: 8 by 6 pixels of an even grey.
-fn image() -> Arc<CameraImage> {
+fn image(level: f32) -> Arc<CameraImage> {
     let metadata = Metadata {
         width: 8,
         height: 6,
@@ -114,7 +119,7 @@ fn image() -> Arc<CameraImage> {
         recovered: Default::default(),
         width: 8,
         height: 6,
-        pixels: vec![[0.2; 3]; 48],
+        pixels: vec![[level; 3]; 48],
         metadata,
         fast: false,
         scale_factor: 1.,
@@ -195,7 +200,7 @@ fn raster(e: &Editor, mask: usize, component: usize) -> BitmapMask {
 
 #[test]
 fn an_extensions_tiles_make_masks_as_select_subject_does() {
-    let mut f = fixture();
+    let mut f = fixture(0.12);
     let e = &mut f.editor;
     let names: Vec<String> = e
         .extensions
@@ -233,8 +238,10 @@ fn an_extensions_tiles_make_masks_as_select_subject_does() {
     );
     let pixels = mask_assets::resolve(&b.id).unwrap();
     let w = b.width as usize;
+    let ink = pixels.data[0];
+    assert!(ink > 0);
     for (i, v) in pixels.data.iter().enumerate() {
-        assert_eq!(*v, if i % w < w.div_ceil(2) { 255 } else { 0 }, "pixel {i}");
+        assert_eq!(*v, if i % w < w.div_ceil(2) { ink } else { 0 }, "pixel {i}");
     }
     assert_eq!(e.document.edit.history().steps().1, 1);
     assert_eq!(e.document.edit.history().steps().0[0].name, "Select Blob");
@@ -298,7 +305,7 @@ fn an_extensions_tiles_make_masks_as_select_subject_does() {
 
 #[test]
 fn an_extensions_failures_and_stale_answers_record_nothing() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let folder = f.folder.clone();
     let e = &mut f.editor;
     for (name, failure) in [
@@ -399,7 +406,7 @@ fn an_extensions_failures_and_stale_answers_record_nothing() {
 
 #[test]
 fn a_generator_set_up_then_disabled_keeps_its_saved_masks() {
-    let mut f = fixture();
+    let mut f = fixture(0.28);
     let folder = f.folder.clone();
     let e = &mut f.editor;
     // `needs_setup` shows the card with what it needs.
