@@ -539,6 +539,17 @@ fn dies(pid: u32) -> bool {
 
 #[cfg(unix)]
 fn alive(pid: u32) -> bool {
+    // A killed helper whose program is gone is reparented, and stays a
+    // zombie until its new parent reaps it, which a container's first
+    // process may never do. A zombie runs nothing, so it counts as ended.
+    #[cfg(target_os = "linux")]
+    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        // The state follows the parenthesised command name.
+        let state = stat
+            .rsplit_once(')')
+            .and_then(|(_, rest)| rest.trim_start().chars().next());
+        return !matches!(state, Some('Z' | 'X'));
+    }
     // SAFETY: signal 0 only checks that the process exists.
     unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
 }
