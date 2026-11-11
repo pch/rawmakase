@@ -1,0 +1,9 @@
+{"t":"req","id":1,"m":"hello","p":{"protocol":1,"app_version":"0.4.12","extension":"dev.test.x","settings":{},"contributions":["command/go"],"data_dir":"/d","cache_dir":"/c","session":1}}
+{"t":"ok","id":1,"v":{"protocol":1,"implements":["command/go"]}}
+{"t":"req","id":2,"m":"command.run","p":{"command":"go","target":{"token":"t","photos":[{"id":1,"path":"/a.dng","settings":{"exposure":0.5}}]},"input":null}}
+{"t":"req","id":1,"m":"propose.settings","p":{"op":2,"token":"t","changes":[{"photo":1,"settings":{"exposure":1}}]}}
+{"t":"req","id":2,"m":"adapter.operate","p":{"adapter":"midi","device":"d","epoch":1,"ops":[{"op":"adjust","param":"exposure","ticks":2},{"op":"value","param":"contrast","value":64},{"op":"photo","ticks":1,"detent":2},{"op":"action","spec":"history.undo"}]}}
+{"t":"event","e":"panel-update","p":{"panel":"p","controls":[{"type":"section","title":"S","controls":[{"type":"slider","id":"s","value":1,"min":0,"max":2}]}]}}
+{"t":"progress","id":2,"done":0.5,"text":"working"}
+{"t":"cancel","id":2}
+{"t":"err","id":2,"code":"cancelled","message":"stopped"}

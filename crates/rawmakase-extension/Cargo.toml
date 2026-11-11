@@ -1,0 +1,22 @@
+[package]
+name = "rawmakase-extension"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Write RAWmakase extensions: the run loop, the handler traits and a mock host for tests"
+license.workspace = true
+repository = "https://github.com/pch/rawmakase"
+
+[dependencies]
+rawmakase-extension-protocol = { path = "../rawmakase-extension-protocol", version = "0.1.0" }
+serde = "1"
+serde_json.workspace = true
+
+# The channel's named pipe, opened for overlapped I/O so the reader and the
+# writer don't wait on each other (synchronous I/O on one pipe handle is
+# serialized).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading"] }
+
+[lints]
+workspace = true

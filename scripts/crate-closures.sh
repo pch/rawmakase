@@ -42,6 +42,12 @@ check() {
 for crate in rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-interop rawmakase-catalog rawmakase-protocol; do
     check "$crate" "$leaf"
 done
+# The extension protocol, the SDK, the host and cargo-rawmakase build without the
+# app, a GPU, a GUI, native imaging libraries or inference: extension programs
+# and their authors' tools stay as light as the control clients.
+for crate in rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase; do
+    check "$crate" "$leaf"
+done
 check rawmakase-engine "rawmakase|rawmakase-catalog|rawmakase-export|$gui|$native|$inference"
 # The decoding boundary is Rust alone: nothing in it is built from C. rav1d (the
 # AV1 decoder for AVIF) lists cc and nasm-rs as build dependencies but uses them

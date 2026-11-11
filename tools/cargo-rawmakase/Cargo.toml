@@ -1,0 +1,24 @@
+[package]
+name = "cargo-rawmakase"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Make RAWmakase extensions: cargo rawmakase new, build, package, release and dev"
+license.workspace = true
+repository = "https://github.com/pch/rawmakase"
+
+[dependencies]
+rawmakase-extension-protocol = { path = "../../crates/rawmakase-extension-protocol", version = "0.1.0" }
+# Packages are written in the format the host reads, and `dev` registers a
+# folder in extensions.json through the host's one writer of it.
+rawmakase-extensions = { path = "../../crates/rawmakase-extensions", version = "0.1.0" }
+# The data folder `dev` registers in, as the app finds it.
+rawmakase-protocol = { path = "../../crates/rawmakase-protocol", version = "0.1.0" }
+clap.workspace = true
+
+[dev-dependencies]
+semver = "1"
+tempfile.workspace = true
+
+[lints]
+workspace = true

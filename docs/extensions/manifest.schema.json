@@ -1,0 +1,606 @@
+{
+  "$defs": {
+    "Access": {
+      "additionalProperties": false,
+      "description": "The `[access]` table: what the extension declares it reaches. Shown before\ninstalling and when an update asks for more; not enforced, since an\nextension runs with the user's permissions.",
+      "properties": {
+        "devices": {
+          "default": [],
+          "description": "Kinds of devices it talks to, for example `midi`, `usb`, `camera`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "files": {
+          "$ref": "#/$defs/Files",
+          "default": "photos",
+          "description": "Which files it reads and writes."
+        },
+        "network": {
+          "default": false,
+          "description": "Whether it uses the network.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "AppliesTo": {
+      "description": "What a command acts on.",
+      "oneOf": [
+        {
+          "const": "none",
+          "description": "Nothing in particular.",
+          "type": "string"
+        },
+        {
+          "const": "photo",
+          "description": "The photo open in Develop.",
+          "type": "string"
+        },
+        {
+          "const": "selection",
+          "description": "The Library's selection.",
+          "type": "string"
+        }
+      ]
+    },
+    "Command": {
+      "additionalProperties": false,
+      "description": "A `[[command]]`.",
+      "properties": {
+        "applies-to": {
+          "$ref": "#/$defs/AppliesTo",
+          "default": "none",
+          "description": "What it acts on; the app refuses it when that isn't there."
+        },
+        "id": {
+          "description": "Unique among the extension's commands; registered as\n`<extension>/<id>`.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/Input",
+          "default": "none",
+          "description": "Viewer input it collects before running."
+        },
+        "key": {
+          "description": "Its default key, in the key map's notation (`Ctrl+Alt+F`); the user's\nkey map overrides it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "places": {
+          "description": "The fixed slots it is shown in.",
+          "items": {
+            "$ref": "#/$defs/Place"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "The title in menus, the command palette and Preferences > Shortcuts.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "type": "object"
+    },
+    "ControlAdapter": {
+      "additionalProperties": false,
+      "description": "A `[[control-adapter]]`.",
+      "properties": {
+        "id": {
+          "description": "Unique among the extension's adapters; control requests name it as\n`<extension>/<id>`.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "launch": {
+          "$ref": "#/$defs/Launch",
+          "default": "app",
+          "description": "Who starts its program."
+        },
+        "name": {
+          "description": "The name shown in Preferences; the id without one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "Extension": {
+      "additionalProperties": false,
+      "description": "The `[extension]` table.",
+      "properties": {
+        "api": {
+          "description": "The manifest format it was written for; this version reads [`API`].",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "authors": {
+          "description": "Who wrote it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "description": {
+          "description": "One or two sentences for its page in Preferences.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "icon": {
+          "description": "A PNG in the package, relative to its root.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Reverse-DNS (`dev.jane.analog`), permanent: edits and settings store it.\nOfficial extensions use `rawmakase.*`.",
+          "pattern": "^[a-z0-9][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$",
+          "type": "string"
+        },
+        "license": {
+          "description": "Its license, an SPDX expression.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "The name shown in Preferences.",
+          "type": "string"
+        },
+        "rawmakase": {
+          "description": "The RAWmakase versions it supports, as a semver range (`>=0.6, <0.7`);\nrefused outside them.",
+          "type": "string"
+        },
+        "repository": {
+          "description": "Its source repository, `https://github.com/<owner>/<repo>` for updates.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "description": "The extension's version, semver.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version",
+        "rawmakase",
+        "api"
+      ],
+      "type": "object"
+    },
+    "Files": {
+      "description": "Which files an extension declares it reaches.",
+      "oneOf": [
+        {
+          "const": "photos",
+          "description": "The photos the app hands it.",
+          "type": "string"
+        },
+        {
+          "const": "any",
+          "description": "Any file the user can read.",
+          "type": "string"
+        }
+      ]
+    },
+    "Input": {
+      "description": "Viewer input a command collects.",
+      "oneOf": [
+        {
+          "const": "none",
+          "description": "None.",
+          "type": "string"
+        },
+        {
+          "const": "point",
+          "description": "One click.",
+          "type": "string"
+        },
+        {
+          "const": "points",
+          "description": "Positive and negative clicks.",
+          "type": "string"
+        },
+        {
+          "const": "box",
+          "description": "One dragged box.",
+          "type": "string"
+        },
+        {
+          "const": "prompt",
+          "description": "Clicks and an optional box, refined together.",
+          "type": "string"
+        },
+        {
+          "const": "brush",
+          "description": "A brushed coverage raster.",
+          "type": "string"
+        }
+      ]
+    },
+    "Launch": {
+      "description": "Who starts a control adapter's program.",
+      "oneOf": [
+        {
+          "const": "app",
+          "description": "The app, as the extension's program (MIDI).",
+          "type": "string"
+        },
+        {
+          "const": "external",
+          "description": "Something else, such as an AI agent starting an MCP server: the\nprogram isn't supervised by the app and reaches it through the control\nsocket.",
+          "type": "string"
+        }
+      ]
+    },
+    "Panel": {
+      "additionalProperties": false,
+      "description": "A `[[panel]]`.",
+      "properties": {
+        "id": {
+          "description": "Unique among the extension's panels.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "place": {
+          "$ref": "#/$defs/PanelPlace",
+          "description": "Where it is shown."
+        },
+        "title": {
+          "description": "The panel's title.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "place"
+      ],
+      "type": "object"
+    },
+    "PanelPlace": {
+      "description": "Where a panel is shown.",
+      "oneOf": [
+        {
+          "const": "develop",
+          "description": "Develop's right column.",
+          "type": "string"
+        },
+        {
+          "const": "library",
+          "description": "The Library's right column.",
+          "type": "string"
+        },
+        {
+          "const": "window",
+          "description": "A window of the extension's own.",
+          "type": "string"
+        },
+        {
+          "const": "preferences",
+          "description": "The extension's page in Preferences > Extensions.",
+          "type": "string"
+        }
+      ]
+    },
+    "Place": {
+      "description": "A fixed slot of the app's interface a command may be placed in.",
+      "oneOf": [
+        {
+          "const": "library.photo-menu",
+          "description": "The Library's photo menu.",
+          "type": "string"
+        },
+        {
+          "const": "library.toolbar",
+          "description": "The Library's toolbar.",
+          "type": "string"
+        },
+        {
+          "const": "library.auto",
+          "description": "The Library's Auto menu.",
+          "type": "string"
+        },
+        {
+          "const": "develop.auto",
+          "description": "Develop's Auto menu.",
+          "type": "string"
+        },
+        {
+          "const": "develop.tool-strip",
+          "description": "Develop's tool strip.",
+          "type": "string"
+        },
+        {
+          "const": "file.import",
+          "description": "File > Import.",
+          "type": "string"
+        },
+        {
+          "const": "file.export",
+          "description": "File > Export.",
+          "type": "string"
+        },
+        {
+          "const": "extensions.menu",
+          "description": "The extension's own menu under Extensions.",
+          "type": "string"
+        }
+      ]
+    },
+    "Program": {
+      "additionalProperties": false,
+      "description": "The `[program]` table.",
+      "properties": {
+        "path": {
+          "description": "The executable, relative to the package's root, with `/` between\nfolders. On Windows `.exe` is added when the path has no extension.",
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/Start",
+          "default": "on-demand",
+          "description": "When it starts."
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "Setting": {
+      "additionalProperties": false,
+      "description": "A `[[setting]]`.",
+      "properties": {
+        "control": {
+          "$ref": "#/$defs/SettingControl",
+          "description": "How it is edited."
+        },
+        "default": {
+          "description": "Its value until the user changes it, of the control's type."
+        },
+        "help": {
+          "description": "A line of help under it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Unique among the extension's settings.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "The label shown beside it; the id without one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "step": {
+          "description": "A slider's step.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unit": {
+          "description": "A slider's or a number's unit, for example `%`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "control",
+        "default"
+      ],
+      "type": "object"
+    },
+    "SettingControl": {
+      "description": "How a setting is edited: a host-drawn control\n([`crate::controls::ControlKind`]) without its value, which is the\nsetting's. Written `control = \"toggle\"` or `control = { slider = [0, 100] }`.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "A number in `[min, max]`.",
+          "properties": {
+            "slider": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            }
+          },
+          "required": [
+            "slider"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A number typed in, in `[min, max]`.",
+          "properties": {
+            "number": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            }
+          },
+          "required": [
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "const": "angle",
+          "description": "An angle in degrees.",
+          "type": "string"
+        },
+        {
+          "const": "toggle",
+          "description": "On or off.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "One of a list, as a drop-down.",
+          "properties": {
+            "choice": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "choice"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "One of a short list, as buttons.",
+          "properties": {
+            "segmented": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "segmented"
+          ],
+          "type": "object"
+        },
+        {
+          "const": "text",
+          "description": "Text.",
+          "type": "string"
+        },
+        {
+          "const": "color",
+          "description": "An sRGB colour, `[r, g, b]`, 0 to 1.",
+          "type": "string"
+        },
+        {
+          "const": "file",
+          "description": "A file chosen in the system's dialog.",
+          "type": "string"
+        },
+        {
+          "const": "folder",
+          "description": "A folder chosen in the system's dialog.",
+          "type": "string"
+        }
+      ]
+    },
+    "Start": {
+      "description": "When a program starts.",
+      "oneOf": [
+        {
+          "const": "on-demand",
+          "description": "At its first request, and stopped after a while with nothing to do.",
+          "type": "string"
+        },
+        {
+          "const": "with-app",
+          "description": "With the app, running until it quits.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A parsed manifest.",
+  "properties": {
+    "access": {
+      "$ref": "#/$defs/Access",
+      "default": {
+        "devices": [],
+        "files": "photos",
+        "network": false
+      },
+      "description": "What it reaches beyond the app, shown before installing."
+    },
+    "command": {
+      "description": "Commands, saved as `<extension>/<command>` in the command registry.",
+      "items": {
+        "$ref": "#/$defs/Command"
+      },
+      "type": "array"
+    },
+    "control-adapter": {
+      "description": "Adapters translating a device or a protocol into commands.",
+      "items": {
+        "$ref": "#/$defs/ControlAdapter"
+      },
+      "type": "array"
+    },
+    "extension": {
+      "$ref": "#/$defs/Extension",
+      "description": "What the extension is."
+    },
+    "panel": {
+      "description": "Panels of host-drawn controls the program fills.",
+      "items": {
+        "$ref": "#/$defs/Panel"
+      },
+      "type": "array"
+    },
+    "program": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Program"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The program behind its commands, panels and control adapters."
+    },
+    "setting": {
+      "description": "Settings, shown on the extension's page in Preferences.",
+      "items": {
+        "$ref": "#/$defs/Setting"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "extension"
+  ],
+  "title": "rawmakase-extension.toml",
+  "type": "object"
+}

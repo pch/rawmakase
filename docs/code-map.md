@@ -13,7 +13,15 @@ endpoint, data folder) and [`tools/rawmakase-ctl`](../tools/rawmakase-ctl/src/li
 (the control client, used by `rawmakase control`, `rawmakase mcp` and the
 standalone `rawmakase-ctl`), and [`extensions/mcp`](../extensions/mcp/src/lib.rs)
 (the MCP server, used by `rawmakase mcp` and the standalone `rawmakase-mcp`). The
-last three build without the app.
+last three build without the app. Extensions
+have four crates of their own, none of which knows the editor:
+[`crates/rawmakase-extension-protocol`](../crates/rawmakase-extension-protocol/src/lib.rs)
+(the manifest, the messages and their framing, host-drawn controls),
+[`crates/rawmakase-extension`](../crates/rawmakase-extension/src/lib.rs) (the SDK
+and its mock host), [`crates/rawmakase-extensions`](../crates/rawmakase-extensions/src/lib.rs)
+(the host: packages, installation, `extensions.json`, programs and sessions) and
+[`tools/cargo-rawmakase`](../tools/cargo-rawmakase/src/main.rs) (the author's
+tool); see [extensions](extensions/overview.md).
 
 ## Where to start a change
 
@@ -222,6 +230,7 @@ last three build without the app.
 | [lens/lensfun/installed.rs](../crates/rawmakase-model/src/lens/lensfun/installed.rs) | The database installed in the data folder (`lensfun/installed.json` and a folder per version), read and cached for editing; rendering never reads it. |
 | [src/ai_denoise/](../src/ai_denoise/mod.rs) | AI Denoise's service, shared by the app and the command line (`mod.rs`): one queue and worker thread for Develop, export and the CLI; the job key; viewport-first tiles with one partial publication; the GPU-to-CPU rerun; stale results rejected; `stop`, which hands back the thread. `CommandLine` for `render` and `render-batch`, one service per command (`command_line.rs`), and the `rawmakase denoise` development command (`bench.rs`). Tests and the stand-in model the app's tests share in `tests.rs`. |
 | [src/model_install/](../src/model_install/mod.rs) | Installing the model packs (Subject's, Sky's, AI Denoise's): their folders, receipts of the checked files, downloads resumed where they stopped, imports from a folder, the lock across instances, and the runtime folder. |
+| [crates/rawmakase-extensions](../crates/rawmakase-extensions/src/lib.rs) | Extensions below the interface: `package` (reading and verifying `.rmext`), `store` (installing, removing, enabling, housekeeping), `state` (`extensions.json`), `github` (inspect then install, updates), `bundled` (compiled-in manifests, programs beside the app), `session` and `process` (a program in a process group or job object, its channel, deadlines, stop); `rawmakase extensions` in [src/main.rs](../src/main.rs). |
 | [src/lensfun_install.rs](../src/lensfun_install.rs) | Installing, updating and removing Lensfun's database: download from Lensfun's update channel, the archive's limits and checks, staged and atomic publication, the lock across instances; `rawmakase lensfun`. |
 
 ## XMP and presets
@@ -493,6 +502,7 @@ What each long-lived worker blocks on, how it stops and whether exit may wait fo
 | Native preset / exported photo | User-selected JSON / JPEG / TIFF / PNG destination. |
 | Session preferences | `session.json` in the data directory ([session.rs](../src/app/preferences/session.rs)); the last catalog and place, panels, layouts and preferences. Each field reads leniently (a malformed one resets alone), fields a later release wrote are written back as read, and the output stays readable by older releases (`copy_groups` never names AI Denoise, which v0.4.10 cannot read). UI tests inject a temporary destination or disable writes. |
 | Keyboard shortcuts | `keymap.toml` in the data directory ([keymap/file.rs](../src/app/shell/keymap/file.rs), [shortcuts](shortcuts.md)): the commands the user gave other keys, each with its list of chords. Edited in place, so comments and entries a newer release or an extension wrote stay; one that doesn't read is never written but by Reset All, which keeps it as `keymap.toml.broken`. Older releases don't read it. Test editors never touch it. |
+| Extensions | `extensions/<id>/<version>/` (installed versions, unpacked and verified, never changed in place), `extensions.json` (installed, active and enabled versions, sources, settings, developer folders; changed only through `State::update` under `extensions.lock`, unknown fields kept, a newer version never written) and `extension-data/<id>/` (each extension's private data and program log) in the data directory ([crates/rawmakase-extensions](../crates/rawmakase-extensions/src/lib.rs), [extensions](extensions/overview.md)). |
 | Preset favorites | `preset-favorites.json` in the data directory. |
 | Imported preset backups | `preset-backups/` in the data directory: an imported preset as it was before its first Update with Current Settings, at its path under `xmp-presets/Imported/`. |
 | Saved point curves | `curves/` in the data directory: one XMP file per curve, named by the curve. |

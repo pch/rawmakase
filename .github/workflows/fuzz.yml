@@ -1,11 +1,14 @@
-name: Fuzz RAW decoders
+name: Fuzz RAW decoders and the extension protocol
 
-# libFuzzer against rawmakase-raw's `open`, `preview` and `decode`
-# (fuzz/fuzz_targets): nightly for ten minutes each, and for a minute each on a
-# pull request that changes the targets or this workflow. Seeded only from the
-# repository's own synthetic DNGs (tests/corpus/charts, tests/corpus/scene-probes),
-# never from photos. A crash, timeout or runaway allocation fails the run and
-# uploads the input that caused it.
+# libFuzzer against rawmakase-raw's `open`, `preview` and `decode`, and against
+# the extension protocol's line reader, messages and manifest
+# (`extension_message`) (fuzz/fuzz_targets): nightly for ten minutes each, and
+# for a minute each on a pull request that changes the targets, the protocol
+# crate or this workflow. The decoders are seeded only from the repository's
+# own synthetic DNGs (tests/corpus/charts, tests/corpus/scene-probes), never
+# from photos; `extension_message` from fuzz/seeds/extension_message. A crash,
+# timeout or runaway allocation fails the run and uploads the input that
+# caused it.
 on:
   schedule:
     - cron: '41 2 * * *'
@@ -13,6 +16,7 @@ on:
   pull_request:
     paths:
       - 'fuzz/**'
+      - 'crates/rawmakase-extension-protocol/**'
       - '.github/workflows/fuzz.yml'
 
 permissions:
@@ -30,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [open, preview, decode]
+        target: [open, preview, decode, extension_message]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # libFuzzer's instrumentation needs nightly's -Zsanitizer.
@@ -41,7 +45,11 @@ jobs:
       - name: Seed corpus
         run: |
           mkdir -p "fuzz/corpus/${{ matrix.target }}"
-          cp tests/corpus/charts/*.dng tests/corpus/scene-probes/*.dng "fuzz/corpus/${{ matrix.target }}/"
+          if [ "${{ matrix.target }}" = extension_message ]; then
+            cp fuzz/seeds/extension_message/* "fuzz/corpus/${{ matrix.target }}/"
+          else
+            cp tests/corpus/charts/*.dng tests/corpus/scene-probes/*.dng "fuzz/corpus/${{ matrix.target }}/"
+          fi
       # -max_len covers the seeds (0.2 to 0.3 MB); -rss_limit_mb and -timeout
       # turn an allocation sized by a hostile header, or a hang, into a failure.
       - name: Fuzz

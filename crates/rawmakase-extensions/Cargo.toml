@@ -1,0 +1,44 @@
+[package]
+name = "rawmakase-extensions"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "RAWmakase's extension host: manifests, packages, installation, extensions.json, and starting and ending extension programs"
+license.workspace = true
+publish = false
+
+[dependencies]
+rawmakase-extension-protocol = { path = "../rawmakase-extension-protocol", version = "0.1.0" }
+# Syncing a folder after a rename into it, so an install survives a crash.
+rawmakase-fs = { path = "../rawmakase-fs", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
+semver = "1"
+# SHA256SUMS in packages.
+sha2.workspace = true
+# .rmext packages are zips; stored and deflated entries only, read in pure Rust.
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+# zip's deflate leaves the backend to choose: flate2's default, miniz_oxide in
+# pure Rust, as the rest of the workspace builds it.
+flate2.workspace = true
+# GitHub releases; rustls with bundled roots needs no system TLS library.
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+
+# The process group a program runs in: setpgid, killpg and waitid, which
+# std doesn't offer.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+# CreateProcessW with the process suspended until it is in its job object, the
+# job object itself, and the channel's named pipe.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_Threading"] }
+
+[dev-dependencies]
+# The scripted fake program the session tests start is this crate's test
+# binary run again, speaking through the SDK.
+rawmakase-extension = { path = "../rawmakase-extension", version = "0.1.0" }
+tempfile.workspace = true
+
+[lints]
+workspace = true
