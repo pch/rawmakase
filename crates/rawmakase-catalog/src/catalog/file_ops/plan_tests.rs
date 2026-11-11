@@ -675,24 +675,38 @@ fn two_folders_over_one_directory_make_its_files_shared() -> Result<()> {
         root: fx.root_of(to),
         to: fx.logical(to),
     });
-    assert_eq!(plan.skipped()[0].reason, Skip::Refused(Refusal::Shared));
+    // The refusal names the other photo, so it can be found (#1027).
+    assert_eq!(
+        plan.skipped()[0].reason,
+        Skip::Refused(Refusal::Shared(alias.join("a.NEF")))
+    );
     // Or a duplicate row of the same file in its own folder.
     let mut fx = fixture(&["b.NEF", "sub/"]);
     let b = fx.photo("b.NEF");
     let root = fx.root.clone();
     fx.add_row(&root, "", "B.nef");
     let plan = fx.plan(FileOp::TrashPhotos { photos: vec![b] });
-    assert_eq!(plan.skipped()[0].reason, Skip::Refused(Refusal::Shared));
+    assert_eq!(
+        plan.skipped()[0].reason,
+        Skip::Refused(Refusal::Shared(root.join("B.nef")))
+    );
     Ok(())
 }
 
+/// A file with a second name outside the catalog is refused as a hard
+/// link, not as another catalog photo's file (#1027).
 #[test]
-fn a_hard_linked_file_is_shared() -> Result<()> {
+fn a_hard_linked_file_is_refused_as_a_hard_link() -> Result<()> {
     let fx = fixture(&["a.NEF"]);
     let a = fx.photo("a.NEF");
     std::fs::hard_link(fx.root.join("a.NEF"), fx.dir.path().join("elsewhere.NEF"))?;
     let plan = fx.plan(FileOp::TrashPhotos { photos: vec![a] });
-    assert_eq!(plan.skipped()[0].reason, Skip::Refused(Refusal::Shared));
+    assert_eq!(plan.skipped()[0].reason, Skip::Refused(Refusal::HardLinked));
+    assert!(
+        !plan.skipped()[0].reason.to_string().contains("catalog"),
+        "{}",
+        plan.skipped()[0].reason
+    );
     Ok(())
 }
 
@@ -915,7 +929,10 @@ fn a_second_row_naming_the_same_file_by_an_alias_makes_it_shared() -> Result<()>
         root: fx.root_id(),
         to: "sub".into(),
     });
-    assert_eq!(plan.skipped()[0].reason, Skip::Refused(Refusal::Shared));
+    assert_eq!(
+        plan.skipped()[0].reason,
+        Skip::Refused(Refusal::Shared(root.join("SS.NEF")))
+    );
     Ok(())
 }
 
