@@ -299,6 +299,10 @@ impl Catalog {
             .iter()
             .map(|(_, change)| self.check_edit(change))
             .collect::<Result<Vec<_>>>()?;
+        let id_of = |change: &EditChange<'_, '_>| match change {
+            EditChange::Save(e) => e.id,
+            EditChange::Clear { id } => *id,
+        };
         let edited_at = rawmakase_model::time::now_text();
         let write = |w: &mut super::db::Write<'_>| {
             if !admitted() {
@@ -306,11 +310,7 @@ impl Catalog {
             }
             let mut written = Vec::with_capacity(changes.len());
             for ((expected, change), checked) in changes.iter().zip(&checked) {
-                let id = match change {
-                    EditChange::Save(e) => e.id,
-                    EditChange::Clear { id } => *id,
-                };
-                if fingerprint(&*w, id)?.as_deref() != Some(*expected) {
+                if fingerprint(&*w, id_of(change))?.as_deref() != Some(*expected) {
                     written.push(Conditional::Moved);
                     continue;
                 }
@@ -319,7 +319,18 @@ impl Catalog {
             }
             Ok(Some(written))
         };
-        let recipes = changes.iter().flat_map(|(_, change)| match change {
+        // The format is raised for what will be written: a photo that has
+        // already moved on is written nothing, so its recipe raises nothing.
+        // One that moves on between here and the transaction, or a proposal
+        // no longer admitted there, may still leave the format raised, with
+        // its backup, as the next write of such a recipe would.
+        let mut still = Vec::with_capacity(changes.len());
+        for (expected, change) in changes {
+            if fingerprint(&self.db, id_of(change))?.as_deref() == Some(*expected) {
+                still.push(change);
+            }
+        }
+        let recipes = still.into_iter().flat_map(|change| match change {
             EditChange::Save(e) => {
                 let history = match e.history {
                     super::HistoryUpdate::Replace(h) => Some(h),
