@@ -277,7 +277,7 @@ HDR reference family):
 | Shadows | The SDR local tone operator (`develop::local_tone`) on scene values, unclipped: its gain at a pixel's base level as in SDR, before S3. |
 | Post-crop vignette | After sharpening, on linear values, unclipped ([Vignette and grain](#vignette-and-grain)): darkening a gain (of the scene through the profile's HDR curve for Highlight Priority); lightening a blend towards graphics white (Paint Overlay, Color Priority) or the scene towards 14.4 (Highlight Priority). |
 | Grain | After the vignette: SDR's grain added to sRGB-curve-encoded values extended above 1, its strength going on above white and fading out by 16 times white. |
-| Masks | Temp, Tint, Exposure, Shadows and Texture, through the same stages as their global sliders, weighted by the mask ([Masks](#masks)). |
+| Masks | Temp, Tint, Exposure, Shadows and Texture, through the same stages as their global sliders, weighted by the mask; Contrast below white only, Color fading out by white, and Sharpness and Noise on the encoded master ([Masks](#masks)). |
 | HDR limit | Each channel rolled off to 2^limit from 97% of it (`model::hdr::roll_off`), last. |
 | Sharpening, resizing | On sRGB-curve-encoded values of the master's primaries, unclipped, with ProPhoto luminance; the limit applies after them. |
 
@@ -432,18 +432,33 @@ the scene, the local tone map, Texture on the camera's samples), so in HDR they 
 as those do: a mask over the whole frame renders the global slider's master
 (`develop::quality::hdr` tests). Range masks (Color Range, Luminance Range)
 select from the SDR rendition, as the mask overlay shows them, so the master adjusts
-the pixels its SDR rendition adjusts. Any other slider in an active mask refuses the master
-by its name ("A mask's Contrast …"): Contrast, Whites, Blacks, Hue, Saturation, Color,
-Sharpness and Noise work through operators of their own, measured on SDR renders, and
-Highlights, Clarity and Dehaze have no HDR rendering globally. In Camera Raw 18.7's
-HDR renders of a whole-frame mask on synthetic patches, a mask's Exposure, Shadows and
-Texture render as their global sliders do (median 0.000–0.039 stop), and Temp is a
-gain of the scene at every level. RAWmakase's mask Exposure matches Camera Raw's to
-0.001 stop and Texture to the global slider's own error (0.027); mask Shadows is 0.061
-stop off, twice the global slider's 0.030, and Temp's strength is SDR's, as far from
-Camera Raw's in SDR. A mask's Contrast, Whites, Blacks, Saturation and Highlights
-differ from the global sliders by 0.06–0.29 stop median and stay refused
-([record](records/hdr-stage1-results.md#masks)). A masked master renders on the CPU.
+the pixels its SDR rendition adjusts. In Camera Raw 18.7's HDR renders of a
+whole-frame mask on synthetic patches, a mask's Exposure, Shadows and Texture render as
+their global sliders do (median 0.000–0.039 stop), and Temp is a gain of the scene at
+every level. RAWmakase's mask Exposure matches Camera Raw's to 0.001 stop and Texture
+to the global slider's own error (0.027); mask Shadows is 0.061 stop off, twice the
+global slider's 0.030, and Temp's strength is SDR's, as far from Camera Raw's in SDR.
+
+A mask's own operators render in the master where Camera Raw's HDR render of them
+was measured and RAWmakase's comes as close to it as its SDR render comes to Camera
+Raw's SDR one ([record](records/hdr-stage1-results.md#masks)):
+
+- **Contrast**: SDR's mask curve on sRGB-encoded values up to white, and nothing above
+  it (`masks::local::tone_hdr`), as Camera Raw renders it.
+- **Color**: SDR's tint of the scene, in full up to a quarter of white and fading out
+  by white on the pixel's brightest channel (`masks::local::color_hdr_strength`), as
+  Camera Raw's stops tinting there.
+- **Sharpness and Noise**: SDR's operators on the master's encoded values, as global
+  sharpening is; they change detail, not tone.
+
+Whites, Blacks, Hue and Saturation in an active mask refuse the master by name ("A
+mask's Whites …"). Camera Raw's HDR mask Whites is a flatter gain than its SDR one,
+still rising at 16 times white, and its mask Blacks −50 brightens light above white
+(+0.39 stop at 16 times); SDR's curves fall steeply above white instead. SDR's mask
+Saturation brightens saturated colours (×1.11 in value at +50, Camera Raw's ×1.004),
+which white's clip hides in SDR: in the master it is 0.098 stop off at every level.
+Hue is the same Oklab operator, not measured. Highlights, Clarity and Dehaze have no
+HDR rendering globally. A masked master renders on the CPU.
 
 ## What is refused
 
@@ -452,7 +467,7 @@ something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
 channel's) whose last point is left of white, Presence (Clarity, Dehaze), the
 colour mixer's Luminance beyond ±40, a darkening vignette's Highlights,
-a mask's sliders other than Temp, Tint, Exposure, Shadows and Texture, Defringe ([Defringe](#defringe)), Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
+a mask's Whites, Blacks, Hue, Saturation, Highlights, Clarity or Dehaze, Defringe ([Defringe](#defringe)), Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
 Highlights and Shadows: "Highlights, which the look sets, …") or split toning, DCP
 tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is

@@ -113,8 +113,17 @@ fn master(
     // its photo scale, as SDR renders do.
     let scale = im.photo_scale();
     let sigma = Sharpener::new(r).sigma * scale;
-    let halo = if r.sharpening > 0. {
-        (3. * sigma).ceil() as u32
+    // An active mask's Sharpness reads as far as sharpening does, and its Noise two
+    // pixels further (`local_noise`'s 5×5 average, after sharpening), so a region
+    // reads the neighbours the whole master does.
+    let masks = || r.masks.iter().filter(|m| m.is_active());
+    let sharpens = r.sharpening > 0. || masks().any(|m| m.adjust.sharpness != 0.);
+    let halo = if sharpens {
+        ((3. * sigma).ceil() as u32).max(1)
+    } else {
+        0
+    } + if masks().any(|m| m.adjust.noise > 0.) {
+        2
     } else {
         0
     };
@@ -128,8 +137,13 @@ fn master(
     ];
     let (toned, tonal_recipe) = local_stage(&source.image, &source, r, scale, cancel, None)?;
     let srgb = crate::color::OutputSpace::Srgb;
-    let (mut out, _) =
+    let (mut out, weights) =
         develop::render_base(&toned, &tonal_recipe, &g, base, 0., cancel, None, srgb)?;
+    // A mask's Sharpness and Noise finish the master as they finish SDR renders, on
+    // its encoded values: they change detail, not tone.
+    let local_finish = weights
+        .as_ref()
+        .is_some_and(|w| w.uses(&[slot::SHARPNESS, slot::NOISE]));
     check_cancel(cancel)?;
     let peak = r.hdr.peak();
     let encode = |p: &mut [f32; 3]| *p = p.map(|v| srgb_encode(v.max(0.)));
@@ -151,33 +165,31 @@ fn master(
         );
         Ok(())
     };
-    let resized =
-        if r.sharpening > 0. || output_size(g.width, g.height, max_edge) != (g.width, g.height) {
+    let resized = if r.sharpening > 0.
+        || local_finish
+        || output_size(g.width, g.height, max_edge) != (g.width, g.height)
+    {
+        out.pixels.par_iter_mut().for_each(encode);
+        let prophoto = crate::color::OutputSpace::ProPhoto;
+        sharpen_unbounded(&mut out, r, sigma, weights.as_deref(), prophoto, cancel)?;
+        local_noise(&mut out, weights.as_deref(), prophoto);
+        if effects {
+            out.pixels.par_iter_mut().for_each(decode);
+            finish_effects(&mut out)?;
             out.pixels.par_iter_mut().for_each(encode);
-            sharpen_unbounded(
-                &mut out,
-                r,
-                sigma,
-                crate::color::OutputSpace::ProPhoto,
-                cancel,
-            )?;
-            if effects {
-                out.pixels.par_iter_mut().for_each(decode);
-                finish_effects(&mut out)?;
-                out.pixels.par_iter_mut().for_each(encode);
-            }
-            let out = super::render::crop(out, [x - left, y - top, w, h]);
-            let mut out = resize_unbounded(out, max_edge);
-            out.pixels
-                .par_iter_mut()
-                .for_each(|p| *p = p.map(|v| srgb_decode(v.max(0.))));
-            out
-        } else {
-            if effects {
-                finish_effects(&mut out)?;
-            }
-            super::render::crop(out, [x - left, y - top, w, h])
-        };
+        }
+        let out = super::render::crop(out, [x - left, y - top, w, h]);
+        let mut out = resize_unbounded(out, max_edge);
+        out.pixels
+            .par_iter_mut()
+            .for_each(|p| *p = p.map(|v| srgb_decode(v.max(0.))));
+        out
+    } else {
+        if effects {
+            finish_effects(&mut out)?;
+        }
+        super::render::crop(out, [x - left, y - top, w, h])
+    };
     check_cancel(cancel)?;
     Ok(crate::rendered::HdrImage {
         width: resized.width,
@@ -981,11 +993,12 @@ mod tests {
         Ok(())
     }
 
-    /// A mask renders in the master with the sliders that work as their global
-    /// counterparts do (docs/hdr.md#masks): over the whole frame, its Exposure, Shadows
-    /// and Texture render the master the global slider renders, above white too, and
-    /// half a frame's mask changes only its half. Its other sliders refuse the master
-    /// by name, and the GPU leaves a masked master to the CPU.
+    /// A mask renders in the master (docs/hdr.md#masks): over the whole frame, its
+    /// Exposure, Shadows and Texture render the master the global slider renders, above
+    /// white too, and half a frame's mask changes only its half; its Contrast and Color
+    /// leave light above white alone, and Sharpness and Noise leave tone alone. Whites,
+    /// Blacks, Hue, Saturation and Highlights refuse the master by name, and the GPU
+    /// leaves a masked master to the CPU.
     #[test]
     fn a_mask_renders_in_the_master_with_the_global_sliders_it_shares() -> Result<()> {
         use crate::develop::pipeline::pixel_params::supported_hdr;
@@ -1093,14 +1106,59 @@ mod tests {
             bottom[1] > 1.5 * bottom0[1] && (top[1] / top0[1] - 1.).abs() < 1e-3,
             "{top:?} {bottom:?}"
         );
+        // A mask's Contrast is SDR's below white and changes nothing above it; its
+        // Color tints below white and fades out by white (Camera Raw 18.7's HDR
+        // renders, docs/records/hdr-stage1-results.md#masks).
+        let gray = |out: &crate::rendered::HdrImage, column: usize| centre(out, column);
+        let contrast = render(&everywhere(LocalAdjust {
+            contrast: 0.5,
+            ..Default::default()
+        }))?;
+        assert!(gray(&contrast, 0) < 0.9 * gray(&plain, 0), "darker shadows");
+        assert!(
+            (gray(&contrast, 4) / gray(&plain, 4) - 1.).abs() < 1e-4,
+            "{} {}",
+            gray(&contrast, 4),
+            gray(&plain, 4)
+        );
+        let tinted = render(&everywhere(LocalAdjust {
+            color: [0.6, 0.8],
+            ..Default::default()
+        }))?;
+        let at = |out: &crate::rendered::HdrImage, column: usize| {
+            out.pixels[4 * out.width as usize + column * 8 + 4]
+        };
+        let (t, q) = (at(&tinted, 1), at(&plain, 1));
+        assert!(t[2] / t[0] > 1.1 * q[2] / q[0], "{t:?} {q:?}");
+        let (t, q) = (at(&tinted, 4), at(&plain, 4));
+        assert!(
+            t.iter().zip(&q).all(|(a, b)| (a / b - 1.).abs() < 1e-4),
+            "{t:?} {q:?}"
+        );
+        // Sharpness and Noise change detail, not tone: flat patches keep their light,
+        // above white too.
+        for adjust in [
+            LocalAdjust {
+                sharpness: 0.8,
+                ..Default::default()
+            },
+            LocalAdjust {
+                noise: 0.8,
+                ..Default::default()
+            },
+        ] {
+            let out = render(&everywhere(adjust))?;
+            for column in 0..6 {
+                let (p, q) = (at(&out, column), at(&plain, column));
+                assert!(
+                    p.iter()
+                        .zip(&q)
+                        .all(|(a, b)| (a - b).abs() <= 1e-3 * b.max(0.05)),
+                    "{adjust:?} {column}: {p:?} {q:?}"
+                );
+            }
+        }
         for (name, adjust) in [
-            (
-                "Contrast",
-                LocalAdjust {
-                    contrast: 0.3,
-                    ..Default::default()
-                },
-            ),
             (
                 "Whites",
                 LocalAdjust {
@@ -1119,6 +1177,20 @@ mod tests {
                 "Highlights",
                 LocalAdjust {
                     highlights: -0.3,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Blacks",
+                LocalAdjust {
+                    blacks: -0.3,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Hue",
+                LocalAdjust {
+                    hue: 20.,
                     ..Default::default()
                 },
             ),
@@ -1528,6 +1600,46 @@ mod tests {
         }
         assert!(render_hdr_region(&im, &r, [40, 0, 9, 8], Cancel::NEVER).is_err());
         assert!(render_hdr_region(&im, &r, [0, 0, 0, 8], Cancel::NEVER).is_err());
+        // A mask's Sharpness and Noise read the same neighbours in a region as in the
+        // whole, without global sharpening too.
+        use crate::model::masks::{LocalAdjust, MaskComponent, MaskGroup, MaskShape};
+        for adjust in [
+            LocalAdjust {
+                sharpness: -1.,
+                ..Default::default()
+            },
+            LocalAdjust {
+                noise: 1.,
+                ..Default::default()
+            },
+            LocalAdjust {
+                sharpness: 1.,
+                noise: 1.,
+                ..Default::default()
+            },
+        ] {
+            let mut masked = hdr_recipe(&im);
+            masked.masks = vec![MaskGroup {
+                components: vec![MaskComponent {
+                    invert: true,
+                    ..MaskComponent::new(MaskShape::Linear {
+                        from: [0., -3.],
+                        to: [0., -2.9],
+                    })
+                }],
+                adjust,
+                ..Default::default()
+            }];
+            let masked = masked.checked()?;
+            let whole = render_hdr(&im, &masked, None, 0, Cancel::NEVER)?;
+            for region in [[8, 1, 9, 5], [31, 2, 17, 6]] {
+                same(
+                    &whole,
+                    &render_hdr_region(&im, &masked, region, Cancel::NEVER)?,
+                    region,
+                );
+            }
+        }
 
         let file = hdr_file(6, 4, |x, y| [0.5 * x as f32, 0.1 * y as f32, 3.]);
         let r = Recipe::for_new_rendered(&file.metadata);

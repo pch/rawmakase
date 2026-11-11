@@ -197,7 +197,8 @@ const BAND_LUMINANCE_MEASURED: f32 = 0.4;
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
 /// camera's samples, as in SDR),
 /// Point Color (its swatches in colour grading's HDR domain),
-/// masks whose sliders are Temp, Tint, Exposure, Shadows and Texture,
+/// masks whose sliders are Temp, Tint, Exposure, Contrast, Shadows, Texture, Color,
+/// Sharpness and Noise,
 /// camera profiles
 /// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks (their
 /// tables and curve, [`crate::camera_profiles::hdr_look`], at any Profile Amount, and
@@ -298,14 +299,15 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
 }
 
 /// The first slider of a mask's adjustment that the HDR master doesn't render, by its
-/// Lightroom name. A mask renders in the master with the sliders that work as their
-/// global counterparts do, which render in HDR: Temp and Tint, Exposure, Shadows and
-/// Texture (docs/hdr.md#masks). The others are their own operators (Contrast, Whites
-/// and Blacks, Hue and Saturation, Color, Sharpness and Noise) or have no HDR
-/// rendering globally (Highlights, Clarity, Dehaze).
+/// Lightroom name (docs/hdr.md#masks). A mask renders in the master with Temp and Tint,
+/// Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise. Camera Raw 18.7's
+/// HDR Whites and Blacks in a mask follow neither the SDR mask's curves nor the global
+/// sliders' (docs/records/hdr-stage1-results.md#masks); SDR's Saturation, which Hue
+/// shares, brightens colours Camera Raw's leaves alone, by more in the master than in
+/// SDR, where white clips it; Highlights, Clarity and Dehaze have no HDR rendering
+/// globally.
 fn unrendered_mask_slider(a: &crate::model::masks::LocalAdjust) -> Option<&'static str> {
     [
-        ("Contrast", a.contrast),
         ("Highlights", a.highlights),
         ("Whites", a.whites),
         ("Blacks", a.blacks),
@@ -313,9 +315,6 @@ fn unrendered_mask_slider(a: &crate::model::masks::LocalAdjust) -> Option<&'stat
         ("Dehaze", a.dehaze),
         ("Hue", a.hue),
         ("Saturation", a.saturation),
-        ("Sharpness", a.sharpness),
-        ("Noise", a.noise),
-        ("Color", a.color[1]),
     ]
     .into_iter()
     .find_map(|(name, v)| (v != 0.).then_some(name))
@@ -595,8 +594,9 @@ mod tests {
         effects.effects.vignette_style = crate::model::effects::VignetteStyle::HighlightPriority;
         effects.effects.vignette = 0.5;
         assert!(check_recipe(&effects).is_ok());
-        // A mask renders with Temp, Tint, Exposure, Shadows and Texture; any other
-        // slider refuses the master by its name (docs/hdr.md#masks).
+        // A mask renders with Temp, Tint, Exposure, Contrast, Shadows, Texture, Color,
+        // Sharpness and Noise; any other slider refuses the master by its name
+        // (docs/hdr.md#masks).
         let mut masked = r.clone();
         masked.masks = vec![crate::model::masks::MaskGroup {
             components: vec![crate::model::masks::MaskComponent::new(
@@ -611,14 +611,32 @@ mod tests {
                 exposure: 0.7,
                 shadows: 0.4,
                 texture: -0.3,
+                contrast: 0.3,
+                color: [0.6, 0.4],
+                sharpness: 0.5,
+                noise: 0.4,
                 ..Default::default()
             },
             ..Default::default()
         }];
         assert!(check_recipe(&masked).is_ok());
+        type Slider = fn(&mut crate::model::masks::LocalAdjust);
+        let refused: [(&str, Slider); 7] = [
+            ("Highlights", |a| a.highlights = -0.2),
+            ("Whites", |a| a.whites = 0.2),
+            ("Blacks", |a| a.blacks = -0.2),
+            ("Clarity", |a| a.clarity = 0.2),
+            ("Dehaze", |a| a.dehaze = 0.2),
+            ("Hue", |a| a.hue = 10.),
+            ("Saturation", |a| a.saturation = 0.2),
+        ];
+        for (name, set) in refused {
+            let mut edit = masked.clone();
+            set(&mut edit.masks[0].adjust);
+            let error = check_recipe(&edit).unwrap_err().to_string();
+            assert!(error.contains(&format!("A mask's {name}")), "{error}");
+        }
         masked.masks[0].adjust.clarity = 0.2;
-        let error = check_recipe(&masked).unwrap_err().to_string();
-        assert!(error.contains("A mask's Clarity"), "{error}");
         masked.masks[0].hidden = true;
         assert!(
             check_recipe(&masked).is_ok(),
