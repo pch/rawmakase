@@ -172,7 +172,6 @@ const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
 /// camera's samples, as in SDR),
 /// Point Color (its swatches in colour grading's HDR domain),
-/// Defringe (its Oklab operator at a colour's brightness up to white, at white above),
 /// masks whose sliders are Temp, Tint, Exposure, Shadows and Texture,
 /// camera profiles
 /// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks (their
@@ -222,7 +221,7 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
 fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
     // The SDR rendition's sliders are not here: they never change the master (Camera
     // Raw 18.7's is bit-identical with each at ±50), so it renders with them set.
-    let unmeasured: [(&'static str, bool); 8] = [
+    let unmeasured: [(&'static str, bool); 9] = [
         // Camera Raw's positive Whites follows the photo's level, which twice the 99th
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
@@ -262,6 +261,11 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
                 && r.effects.vignette_highlights > 0.
                 && r.effects.vignette_style != super::effects::VignetteStyle::PaintOverlay,
         ),
+        // Camera Raw's HDR Defringe removes less of a fringe colour below white than its
+        // SDR one and takes some bright blues above white, so SDR's operator moves the
+        // master further from Camera Raw's than leaving it out would
+        // (docs/records/hdr-stage1-results.md#defringe).
+        ("Defringe", r.effects.defringe != [0.; 2]),
         ("Red Eye", !r.red_eye.is_blank()),
     ];
     unmeasured
@@ -593,8 +597,9 @@ mod tests {
             check_recipe(&masked).is_ok(),
             "a hidden mask renders nothing"
         );
-        let unmeasured: [fn(&mut Recipe); 6] = [
+        let unmeasured: [fn(&mut Recipe); 7] = [
             |r| r.highlights = 0.1,
+            |r| r.effects.defringe = [0.3, 0.],
             |r| r.hsl[5][2] = -0.2,
             |r| {
                 r.effects.vignette = -0.3;
