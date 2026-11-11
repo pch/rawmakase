@@ -345,6 +345,39 @@ fn the_page_edits_saved_devices_after_a_restart() {
     host.finish().unwrap();
 }
 
+/// Controls added and not bound yet, and text typed that isn't an action, go
+/// with their device: a device added later, which may reuse its id, starts
+/// without them, and so does the same device after Reset.
+#[test]
+fn a_removed_devices_unsaved_controls_dont_reach_the_next_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = start(&Inputs::default(), dir.path());
+    host.open_panel(PANEL).unwrap();
+    let unsaved = |host: &MockHost| {
+        host.change(PANEL, "number", json!(7)).unwrap();
+        host.click(PANEL, "add-dial").unwrap();
+        host.change(PANEL, "number", json!(40)).unwrap();
+        host.click(PANEL, "add-button").unwrap();
+        let controls = host.change(PANEL, "keys:40", json!("nonsense")).unwrap();
+        assert!(find(&controls, "dial:7").is_some());
+        assert_eq!(
+            find(&controls, "keys:40").unwrap().help.as_deref(),
+            Some(page::NO_ACTION)
+        );
+    };
+    host.click(PANEL, "add-custom").unwrap();
+    unsaved(&host);
+    host.click(PANEL, "remove").unwrap();
+    let controls = host.click(PANEL, "add-custom").unwrap();
+    assert!(find(&controls, "dial:7").is_none());
+    assert!(find(&controls, "keys:40").is_none());
+    unsaved(&host);
+    let controls = host.click(PANEL, "reset").unwrap();
+    assert!(find(&controls, "dial:7").is_none());
+    assert!(find(&controls, "keys:40").is_none());
+    host.finish().unwrap();
+}
+
 /// A file this program can't read, or of a newer version, is reported and
 /// left as it is: the page edits nothing.
 #[test]

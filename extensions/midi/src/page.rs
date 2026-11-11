@@ -123,6 +123,15 @@ impl PageState {
             .filter(|id| settings.devices.iter().any(|d| d.id == *id))
             .or_else(|| settings.devices.first().map(|d| d.id))
     }
+
+    /// Drops what the page kept for device `id` beyond its saved mapping:
+    /// controls added and not bound yet, and text typed that isn't an
+    /// action. Ids are reused, so a device added later must not show them.
+    fn forget(&mut self, id: u64) {
+        self.dials.remove(&id);
+        self.buttons.remove(&id);
+        self.typed.retain(|(device, _), _| *device != id);
+    }
 }
 
 /// The panel's side of the run loop.
@@ -300,10 +309,12 @@ impl Panel for Page {
                             if let Some(d) = settings.devices.iter_mut().find(|d| d.id == id) {
                                 d.mapping = d.profile.mapping();
                             }
+                            page.forget(id);
                         }
                         "remove" => {
                             settings.devices.retain(|d| d.id != id);
                             page.selected = None;
+                            page.forget(id);
                         }
                         "add-dial" => {
                             page.dials.entry(id).or_default().insert(page.number);
