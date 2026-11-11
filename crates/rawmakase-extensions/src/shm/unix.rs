@@ -96,6 +96,10 @@ impl View {
         if ptr == libc::MAP_FAILED {
             return Err(io::Error::last_os_error());
         }
+        #[cfg(target_os = "linux")]
+        if write {
+            dont_fork(ptr, len);
+        }
         Ok(Self {
             ptr: ptr.cast(),
             len,
@@ -180,11 +184,33 @@ fn open() -> io::Result<OwnedFd> {
 
 #[cfg(target_os = "linux")]
 fn seal(fd: &OwnedFd, seals: libc::c_int) -> io::Result<()> {
-    // SAFETY: a plain fcntl on a descriptor this process owns.
-    if unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_ADD_SEALS, seals) } != 0 {
-        return Err(io::Error::last_os_error());
+    // `F_SEAL_WRITE` fails with EBUSY while any writable mapping exists. The
+    // app's own view is gone and was never inherited (`MADV_DONTFORK`), but a
+    // process forked on another thread between `mmap` and `madvise` holds a
+    // copy until it execs, a moment later.
+    let mut tries = 0;
+    loop {
+        // SAFETY: a plain fcntl on a descriptor this process owns.
+        if unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_ADD_SEALS, seals) } == 0 {
+            return Ok(());
+        }
+        let error = io::Error::last_os_error();
+        tries += 1;
+        if error.raw_os_error() != Some(libc::EBUSY) || tries == 200 {
+            return Err(error);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
-    Ok(())
+}
+
+/// Keeps a writable view out of processes forked while it exists, so none of
+/// them holds a writable mapping that would stop the input from being sealed.
+#[cfg(target_os = "linux")]
+fn dont_fork(ptr: *mut libc::c_void, len: usize) {
+    // SAFETY: advice on a mapping this process just made; it changes nothing
+    // in this process. A failure only loses the protection the seal's retry
+    // covers.
+    unsafe { libc::madvise(ptr, len, libc::MADV_DONTFORK) };
 }
 
 /// The descriptors one line carries: copies, which the writer closes once the

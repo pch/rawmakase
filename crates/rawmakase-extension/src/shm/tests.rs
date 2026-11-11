@@ -282,10 +282,19 @@ fn closed(values: &[u64]) -> bool {
     })
 }
 
-/// The descriptor count once nothing an earlier case started holds one.
+/// The descriptor count once it holds still: an earlier case's reader thread
+/// lets go of its end a moment after that case returns.
 #[cfg(unix)]
 fn baseline() -> usize {
-    open_handles()
+    let mut count = open_handles();
+    loop {
+        std::thread::sleep(Duration::from_millis(20));
+        let now = open_handles();
+        if now == count {
+            return count;
+        }
+        count = now;
+    }
 }
 
 /// Waits for the handle count to come back to `baseline`: the program's reader

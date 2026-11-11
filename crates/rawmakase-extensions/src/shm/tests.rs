@@ -133,6 +133,38 @@ mod linux {
         }
     }
 
+    /// Inputs filled while another thread keeps starting processes still
+    /// seal: no forked child holds a writable copy of the app's view, which
+    /// would make sealing fail with EBUSY.
+    #[test]
+    fn inputs_seal_while_processes_start() {
+        use std::os::unix::process::CommandExt;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let stop = Arc::new(AtomicBool::new(false));
+        let starters: Vec<_> = (0..4)
+            .map(|_| {
+                let stop = stop.clone();
+                std::thread::spawn(move || {
+                    while !stop.load(Ordering::SeqCst) {
+                        let mut command = std::process::Command::new("true");
+                        // A `pre_exec` hook makes std fork, as the session's
+                        // spawn does, instead of `posix_spawn`, which copies
+                        // no mapping.
+                        // SAFETY: the hook does nothing.
+                        unsafe { command.pre_exec(|| Ok(())) };
+                        let _ = command.status();
+                    }
+                })
+            })
+            .collect();
+        let result = (0..3000).try_for_each(|_| Memory::input(64 << 10, |b| b.fill(1)).map(drop));
+        stop.store(true, Ordering::SeqCst);
+        for starter in starters {
+            starter.join().unwrap();
+        }
+        result.unwrap();
+    }
+
     /// A program can't shrink an output under the app's view, which would
     /// make reading it fault, nor grow it.
     #[test]
