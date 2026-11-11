@@ -1503,3 +1503,77 @@ fn quitting_after_the_deadline_has_passed_still_ends_the_program() {
         std::thread::sleep(Duration::from_millis(5));
     }
 }
+
+/// A frame of the whole window given `events`; its accessibility tree.
+fn window_frame(e: &mut Editor, events: Vec<egui::Event>) -> egui::accesskit::TreeUpdate {
+    let ctx = e.context.clone();
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1600., 2400.),
+            )),
+            events,
+            ..Default::default()
+        },
+        |ui| e.draw(ui),
+    );
+    output.textures_delta.clear();
+    output
+        .platform_output
+        .accesskit_update
+        .expect("accessibility is on")
+}
+
+/// Preferences open on Extensions, showing the example's page: the only
+/// extension, so the one selected.
+fn extensions_page(e: &mut Editor) -> egui::accesskit::TreeUpdate {
+    e.context.enable_accesskit();
+    e.context.all_styles_mut(|s| s.animation_time = 0.);
+    e.open_preferences(crate::app::preferences::Tab::Extensions);
+    window_frame(e, Vec::new());
+    window_frame(e, Vec::new())
+}
+
+/// Clicks the first `label` from the top in `tree`, as a screen reader
+/// would, so it needn't be scrolled into view.
+fn click_first(e: &mut Editor, tree: &egui::accesskit::TreeUpdate, label: &str) {
+    let (id, _) = tree
+        .nodes
+        .iter()
+        .filter(|(_, n)| n.label() == Some(label))
+        .min_by(|(_, a), (_, b)| {
+            let y = |n: &egui::accesskit::Node| n.bounds().map_or(f64::MAX, |b| b.y0);
+            y(a).total_cmp(&y(b))
+        })
+        .unwrap_or_else(|| panic!("{label} is shown"));
+    window_frame(
+        e,
+        vec![egui::Event::AccessKitActionRequest(
+            egui::accesskit::ActionRequest {
+                action: egui::accesskit::Action::Click,
+                target_tree: egui::accesskit::TreeId::ROOT,
+                target_node: *id,
+                data: None,
+            },
+        )],
+    );
+}
+
+#[test]
+fn the_run_button_applies_a_proposal_for_the_open_photo() {
+    let mut f = fixture(&["a.png"]);
+    let e = &mut f.editor;
+    let a = f.photos[0].clone();
+    open(e, &a);
+    select(e, &[a.0]);
+    let tree = extensions_page(e);
+    // Brighten is the example's first command, so its Run the topmost.
+    click_first(e, &tree, "Run");
+    let outcomes = pump(e, "Brighten", |_, o| result(o, "Brighten").is_some());
+    let proposed: Proposed =
+        serde_json::from_value(result(&outcomes, "Brighten").unwrap().clone().unwrap()).unwrap();
+    assert_eq!(proposed.applied, vec![a.0.0], "{proposed:?}");
+    assert!((e.document.edit.recipe().exposure - 0.5).abs() < 1e-6);
+    assert!(!e.preferences.open, "Run shows the photo it changes");
+}

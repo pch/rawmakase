@@ -418,9 +418,15 @@ impl Editor {
                     if ui
                         .add_enabled(enabled && !failed, egui::Button::new("Run"))
                         .clicked()
-                        && let Err(e) = self.run_extension_command(&full, super::RunBy::Button)
                     {
-                        self.messages.fail(format!("{}: {}", c.title, e.message));
+                        // Preferences closes first, as its other buttons that
+                        // act on the window do: the command's change to the
+                        // open photo is then made, not refused as behind a
+                        // dialog, and seen, as is what the status line says.
+                        self.preferences.open = false;
+                        if let Err(e) = self.run_extension_command(&full, super::RunBy::Button) {
+                            self.messages.fail(format!("{}: {}", c.title, e.message));
+                        }
                     }
                     hint(ui, &full);
                 });

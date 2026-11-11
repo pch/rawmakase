@@ -146,7 +146,9 @@ applies to the open photo or the selection gets it, read as it starts (photos
 not open in Develop are read off the UI thread, and the command is sent once
 they are; Stop or disabling the extension meanwhile cancels it). The
 manifest's `places` are checked, but menus and toolbars don't show extension
-commands yet: keys, `control action` and the Run button run them.
+commands yet: keys, `control action` and the Run button on the extension's
+page run them. Run closes Preferences first, so the command's change to the
+open photo is made and seen rather than refused behind a dialog.
 
 **Settings** are drawn from the manifest's `[[setting]]`s, stored in
 `extensions.json`, sent in `hello` and, when changed, as `setting-changed`.
