@@ -722,8 +722,11 @@ dialog's quality or, with Lossless checked, lossless (`ExportSettings::jxl_lossy
 `render --jxl-quality`). The header names the primaries (JPEG XL's enumeration: P3 is
 11 there, 12 in CICP) and the transfer, with the tone mapping's intensity target
 (10,000 cd/m² for PQ, 1,000 for HLG), and the file is a container with `Exif` and
-`xml ` boxes. Settings saved before JPEG XL could be lossy read as lossless; new ones
-start lossy.
+`xml ` boxes. A file beyond codestream Level 5's limits declares Level 10 in a `jxll`
+box, as cjxl's do: a lossless HDR export (its 16-bit samples need wider modular
+buffers than Level 5 allows), and any export with a side longer than 262,144 pixels
+or more than 2^28 pixels. Settings saved before JPEG XL could be lossy read as
+lossless; new ones start lossy.
 
 - **Lossy:** `jixel` encodes a VarDCT frame in XYB at libjxl's distance for the quality
   (`cjxl`'s mapping: 90 is distance 1, the default 92 is 0.82), at its fast effort.

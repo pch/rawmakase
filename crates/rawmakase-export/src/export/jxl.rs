@@ -17,7 +17,8 @@
 //! is replaced with one that says HLG.
 //!
 //! The codestream goes in a container (ISO/IEC 18181-2) with `Exif` and `xml ` boxes
-//! when the export carries metadata.
+//! when the export carries metadata, and a `jxll` box when it needs codestream Level 10
+//! ([`Codestream::level`]).
 use anyhow::{Result, bail, ensure};
 
 /// The colour a JPEG XL export's header names.
@@ -32,6 +33,39 @@ pub(super) enum Colour {
         transfer: u8,
         intensity_target: f32,
     },
+}
+
+/// A JPEG XL codestream and the codestream level it needs ([`level`]).
+pub(super) struct Codestream {
+    pub bytes: Vec<u8>,
+    pub level: u8,
+}
+
+/// The codestream level (ISO/IEC 18181-1's profiles and levels) of a `width`×`height`
+/// frame: 5, or 10 when it exceeds one of Level 5's limits RAWmakase's exports can
+/// reach, as libjxl's encoder checks them: modular buffers that can't be 16-bit (a
+/// lossless frame of more than 14 bits: "Too high modular bit depth", and cjxl writes
+/// a `jxll` box for it), a side longer than 2^18 or more than 2^28 pixels. The
+/// exports write no ICC profile or extra channels, Level 5's other limits.
+fn level(width: u32, height: u32, modular_16_bit_buffers: bool) -> u8 {
+    let side = 1 << 18;
+    let area = 1u64 << 28;
+    if !modular_16_bit_buffers
+        || width > side
+        || height > side
+        || u64::from(width) * u64::from(height) > area
+    {
+        10
+    } else {
+        5
+    }
+}
+
+/// Whether 16-bit modular buffers hold a frame of `bits`-bit samples: up to 14 bits, or
+/// any XYB frame, whose modular data are quantised coefficients. The header's
+/// `modular_16_bit_buffer_sufficient`, and with it the codestream's level.
+fn modular_16_bit_buffers(bits: u32, xyb: bool) -> bool {
+    bits <= 14 || xyb
 }
 
 /// The VarDCT distance of a lossy export at JPEG `quality` (1–100), as libjxl's
@@ -67,7 +101,7 @@ pub(super) fn lossy_hdr_codestream(
     pq: &[u16],
     colour: Colour,
     distance: f32,
-) -> Result<Vec<u8>> {
+) -> Result<Codestream> {
     let Colour::Hdr {
         primaries,
         transfer,
@@ -104,11 +138,15 @@ pub(super) fn lossy_hdr_codestream(
         transfer: 16,
         intensity_target,
     };
-    replace_header(
+    let bytes = replace_header(
         &encoded,
         &header(width, height, 16, as_pq, Writer::Jixel),
         header(width, height, 16, colour, Writer::Jixel),
-    )
+    )?;
+    Ok(Codestream {
+        bytes,
+        level: level(width, height, modular_16_bit_buffers(16, true)),
+    })
 }
 
 /// `encoded` with its header `theirs` replaced by `ours`, refused when it doesn't
@@ -131,14 +169,18 @@ pub(super) fn codestream(
     samples: Samples<'_>,
     colour: Colour,
     distance: Option<f32>,
-) -> Result<Vec<u8>> {
+) -> Result<Codestream> {
     if let Some(distance) = distance {
         let (Samples::Eight(rgb), Colour::Srgb) = (samples, colour) else {
             bail!("Lossy JPEG XL of these samples goes through lossy_hdr_codestream");
         };
         let config = lossy_config(distance, jixel::ColorEncoding::srgb());
-        return jixel::encode_image(rgb, width as usize, height as usize, &config)
-            .map_err(|e| anyhow::anyhow!("JPEG XL encoding failed: {e:?}"));
+        let bytes = jixel::encode_image(rgb, width as usize, height as usize, &config)
+            .map_err(|e| anyhow::anyhow!("JPEG XL encoding failed: {e:?}"))?;
+        return Ok(Codestream {
+            bytes,
+            level: level(width, height, modular_16_bit_buffers(8, true)),
+        });
     }
     use zune_core::{bit_depth::BitDepth, colorspace::ColorSpace, options::EncoderOptions};
     let (bytes, depth, bits) = match samples {
@@ -165,7 +207,10 @@ pub(super) fn codestream(
     );
     let mut out = header(width, height, bits as u32, colour, Writer::Ours);
     out.extend_from_slice(&encoded[theirs.len()..]);
-    Ok(out)
+    Ok(Codestream {
+        bytes: out,
+        level: level(width, height, modular_16_bit_buffers(bits as u32, false)),
+    })
 }
 
 /// An 8-bit grayscale codestream of `samples` (its header names gray with the sRGB
@@ -268,7 +313,7 @@ fn header(width: u32, height: u32, bits: u32, colour: Colour, writer: Writer) ->
         w.put(2, 0b11);
         w.put(6, u64::from(bits - 1));
     }
-    w.put(1, u64::from(bits <= 14 || xyb)); // modular 16-bit buffer sufficient
+    w.put(1, u64::from(modular_16_bit_buffers(bits, xyb)));
     w.put(2, 0); // no extra channels
     w.put(1, u64::from(xyb));
     match (ours, colour) {
@@ -356,10 +401,13 @@ impl Bits {
     }
 }
 
-/// `codestream` in a JPEG XL container with the export's EXIF (a TIFF stream), XMP and
-/// gain-map bundle ([`gain_map_bundle`]).
+/// `codestream` in a JPEG XL container with its level when that isn't 5, the export's
+/// EXIF (a TIFF stream), XMP and gain-map bundle ([`gain_map_bundle`]). The `jxll` box
+/// comes right after `ftyp`, before the codestream, as ISO/IEC 18181-2 places it. It
+/// declares the image's codestream; a gain map's, the base's size and 8-bit, needs no
+/// higher level than the base's, and the bundle has no field for one.
 pub(super) fn container(
-    codestream: &[u8],
+    codestream: &Codestream,
     exif: Option<&[u8]>,
     xmp: Option<&str>,
     gain_map: Option<&[u8]>,
@@ -380,6 +428,9 @@ pub(super) fn container(
         Ok(())
     };
     push(b"ftyp", &[b"jxl ", &[0, 0, 0, 0], b"jxl "])?;
+    if codestream.level != 5 {
+        push(b"jxll", &[&[codestream.level]])?;
+    }
     if let Some(exif) = exif {
         // The offset of the TIFF header within the payload.
         push(b"Exif", &[&[0, 0, 0, 0], exif])?;
@@ -390,7 +441,7 @@ pub(super) fn container(
     if let Some(bundle) = gain_map {
         push(b"jhgm", &[bundle])?;
     }
-    push(b"jxlc", &[codestream])?;
+    push(b"jxlc", &[&codestream.bytes])?;
     Ok(out)
 }
 
@@ -479,6 +530,30 @@ mod tests {
         Ok(())
     }
 
+    /// Level 5's limits that exports can reach raise the level to 10: 16-bit lossless
+    /// samples, a side longer than 2^18 and more than 2^28 pixels. A codestream that
+    /// long, as zune encodes it, declares Level 10 in its container.
+    #[test]
+    fn a_codestream_beyond_level_5_declares_level_10() -> Result<()> {
+        assert_eq!(level(8256, 5504, true), 5);
+        assert_eq!(level(8256, 5504, false), 10);
+        assert_eq!(level(1 << 18, 1, true), 5);
+        assert_eq!(level((1 << 18) + 1, 1, true), 10);
+        assert_eq!(level(1, (1 << 18) + 1, true), 10);
+        assert_eq!(level(1 << 14, 1 << 14, true), 5);
+        assert_eq!(level((1 << 14) + 1, 1 << 14, true), 10);
+        let w = (1 << 18) + 1;
+        let samples = vec![128u8; w as usize * 2 * 3];
+        let long = codestream(w, 2, Samples::Eight(&samples), Colour::Srgb, None)?;
+        assert_eq!(long.level, 10);
+        let bytes = container(&long, None, None, None)?;
+        // The signature (12 bytes) and `ftyp` (20), then `jxll` holding 10.
+        assert_eq!(&bytes[32..41], &[0, 0, 0, 9, b'j', b'x', b'l', b'l', 10]);
+        let short = codestream(64, 2, Samples::Eight(&samples[..384]), Colour::Srgb, None)?;
+        assert_eq!(short.level, 5);
+        Ok(())
+    }
+
     #[test]
     fn quality_maps_to_libjxls_distance() {
         assert!((distance(90) - 1.).abs() < 1e-6);
@@ -547,7 +622,7 @@ mod tests {
             transfer: 16,
             intensity_target: 10_000.,
         };
-        let bytes = lossy_hdr_codestream(w, h, &pq, colour, distance(92))?;
+        let bytes = lossy_hdr_codestream(w, h, &pq, colour, distance(92))?.bytes;
         let (image, samples) = decode(&bytes)?;
         let header = image.image_header();
         assert!(header.metadata.xyb_encoded);
@@ -601,7 +676,7 @@ mod tests {
             transfer: 18,
             intensity_target: 1000.,
         };
-        let bytes = lossy_hdr_codestream(w, h, &pq, colour, distance(92))?;
+        let bytes = lossy_hdr_codestream(w, h, &pq, colour, distance(92))?.bytes;
         let (image, samples) = decode(&bytes)?;
         let header = image.image_header();
         assert!((header.metadata.tone_mapping.intensity_target - 1000.).abs() < 1.);
@@ -682,13 +757,9 @@ mod tests {
     fn lossy_sdr_and_gray_codestreams_decode_near_their_samples() -> Result<()> {
         let (w, h) = (64u32, 40u32);
         let rgb: Vec<u8> = (0..w * h * 3).map(|i| ((i / 3 % w) * 4) as u8).collect();
-        let (image, samples) = decode(&codestream(
-            w,
-            h,
-            Samples::Eight(&rgb),
-            Colour::Srgb,
-            Some(distance(92)),
-        )?)?;
+        let (image, samples) = decode(
+            &codestream(w, h, Samples::Eight(&rgb), Colour::Srgb, Some(distance(92)))?.bytes,
+        )?;
         let encoding = format!("{:?}", image.image_header().metadata.colour_encoding);
         assert!(encoding.contains("Srgb"), "{encoding}");
         let worst = rgb
@@ -714,7 +785,7 @@ mod tests {
     #[test]
     fn an_srgb_codestream_keeps_zunes_header() -> Result<()> {
         let samples: Vec<u8> = (0..4 * 3 * 3).map(|i| i as u8).collect();
-        let bytes = codestream(4, 3, Samples::Eight(&samples), Colour::Srgb, None)?;
+        let bytes = codestream(4, 3, Samples::Eight(&samples), Colour::Srgb, None)?.bytes;
         let image = jxl_oxide::JxlImage::builder()
             .read(std::io::Cursor::new(&bytes))
             .map_err(|e| anyhow::anyhow!("{e}"))?;
