@@ -97,6 +97,8 @@ pub(in crate::app) struct Hub {
 /// A `wait` request, answered once its condition holds or its time is up.
 struct Waiting {
     until: commands::Until,
+    /// The control adapter that sent it, checked again when it is answered.
+    adapter: Option<String>,
     reply: mpsc::SyncSender<commands::Result<commands::Reply>>,
     deadline: Instant,
 }
@@ -277,6 +279,10 @@ impl Editor {
                     if !request.begin() {
                         continue;
                     }
+                    if let Some(refused) = self.adapter_refused(request.adapter.as_deref()) {
+                        let _ = request.reply.send(Err(refused));
+                        continue;
+                    }
                     if let [
                         Msg::Command(Command {
                             operation: commands::Operation::Wait(until, time),
@@ -286,6 +292,7 @@ impl Editor {
                     {
                         self.controls.waits.push(Waiting {
                             until,
+                            adapter: request.adapter,
                             reply: request.reply,
                             deadline: Instant::now() + time,
                         });
@@ -319,6 +326,11 @@ impl Editor {
         let now = Instant::now();
         let mut waiting = Vec::new();
         for wait in std::mem::take(&mut self.controls.waits) {
+            // Its adapter disabled while it waited: refused now, not when it holds.
+            if let Some(refused) = self.adapter_refused(wait.adapter.as_deref()) {
+                let _ = wait.reply.send(Err(refused));
+                continue;
+            }
             let holds = self.holds(wait.until);
             if holds || now >= wait.deadline {
                 let state = self.command_state();
@@ -335,6 +347,20 @@ impl Editor {
             ctx.request_repaint_after(next.saturating_duration_since(now));
         }
         self.controls.waits = waiting;
+    }
+    /// Why a control request from `adapter` may not run: the adapter it names
+    /// isn't an enabled control adapter of an enabled extension (D8). A
+    /// request naming no adapter always may.
+    fn adapter_refused(&self, adapter: Option<&str>) -> Option<commands::Error> {
+        let adapter = adapter?;
+        (!self.extensions.adapter_enabled(adapter)).then(|| {
+            commands::Error::new(
+                "adapter_disabled",
+                format!(
+                    "{adapter} is not an enabled control adapter; enable its extension in Preferences > Extensions"
+                ),
+            )
+        })
     }
     fn holds(&self, until: commands::Until) -> bool {
         match until {
@@ -460,5 +486,7 @@ impl Editor {
     }
 }
 
+#[cfg(test)]
+mod mcp_tests;
 #[cfg(test)]
 mod tests;

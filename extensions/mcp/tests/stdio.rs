@@ -1,4 +1,6 @@
-//! Exercise the shipped binary over real stdio, with a synthetic desktop socket.
+//! Exercise the shipped program over real stdio, with a synthetic desktop
+//! socket. The app's own tests run it through `rawmakase mcp` against a real
+//! editor (`app::shell::automation::mcp_tests`).
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::{
@@ -28,8 +30,8 @@ impl Drop for Client {
 }
 impl Client {
     fn start(dir: &Path) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_rawmakase"))
-            .args(["mcp", "--data-dir"])
+        let mut child = Command::new(env!("CARGO_BIN_EXE_rawmakase-mcp"))
+            .arg("--data-dir")
             .arg(dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -56,6 +58,10 @@ impl Client {
         };
         let reply = client.request("initialize", json!({"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}));
         assert_eq!(reply["result"]["serverInfo"]["name"], "rawmakase");
+        assert_eq!(
+            reply["result"]["serverInfo"]["version"],
+            env!("CARGO_PKG_VERSION")
+        );
         writeln!(
             client.stdin,
             "{}",
@@ -176,6 +182,9 @@ impl Desktop {
                     .unwrap();
                 let request: Value = serde_json::from_str(&line).unwrap();
                 assert_eq!(request["token"], "synthetic-test-token");
+                // Every request names the adapter, so the app can refuse it
+                // while the extension is disabled.
+                assert_eq!(request["adapter"], rawmakase_mcp::ADAPTER);
                 seen.lock().unwrap().push(request.clone());
                 let stale = request.get("target").is_some_and(|t| t["revision"] != 7);
                 let mut state = json!({"mode":"develop","photo_id":17,"generation":3,"revision":7,"loaded":true,"values":{"exposure":0.5}});

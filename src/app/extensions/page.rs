@@ -466,8 +466,16 @@ impl Editor {
             gap(ui);
             group(ui, "Control adapters");
             for a in &m.control_adapters {
+                // An externally launched adapter's program is started by its
+                // client (an MCP client runs `rawmakase mcp`), never here.
+                let started = match a.launch {
+                    rawmakase_extensions::protocol::manifest::Launch::External => {
+                        " · started by its client"
+                    }
+                    rawmakase_extensions::protocol::manifest::Launch::App => "",
+                };
                 form_row(ui, a.name.as_deref().unwrap_or(&a.id), |ui| {
-                    hint(ui, &format!("{id}/{}", a.id));
+                    hint(ui, &format!("{id}/{}{started}", a.id));
                 });
             }
         }

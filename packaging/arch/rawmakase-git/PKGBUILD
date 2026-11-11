@@ -43,13 +43,17 @@ build() {
   cd "rawmakase"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
-  cargo build --frozen --release
+  # The app and the bundled MCP extension's program, which `make install`
+  # puts in /usr/lib/rawmakase, where the app looks for it.
+  cargo build --frozen --release -p rawmakase -p rawmakase-mcp
 }
 
 check() {
   cd "rawmakase"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
+  # The app's tests run `rawmakase mcp`, which runs this program beside it.
+  cargo build --frozen -p rawmakase-mcp
   cargo test --frozen
 }
 

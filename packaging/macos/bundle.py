@@ -59,6 +59,9 @@ def main():
     parser.add_argument("--minimum-macos", default="15.0")
     parser.add_argument("--icon-assets", type=Path,
                         help="Assets.car compiled on macOS 26 for the layered app icon")
+    parser.add_argument("--program", type=Path, action="append", default=[],
+                        help="a bundled extension's program (rawmakase-mcp), installed in "
+                             "Contents/MacOS beside the executable, where the app looks for it")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     app = args.output.resolve()
@@ -70,6 +73,16 @@ def main():
         directory.mkdir(parents=True)
     executable = macos / "rawmakase"
     shutil.copy2(args.binary, executable)
+    # Programs link only the system: nothing of theirs goes in Frameworks.
+    programs = []
+    for program in args.program:
+        destination = macos / program.name
+        shutil.copy2(program, destination)
+        destination.chmod(0o755)
+        for dependency in dependencies(destination):
+            if not system(dependency):
+                raise RuntimeError(f"{program.name} links {dependency}, which isn't the system's")
+        programs.append(destination)
     notices = resources / "licenses"
     notices.mkdir()
     shutil.copy2(root / "LICENSE", notices / "RAWmakase.txt")
@@ -167,8 +180,10 @@ def main():
             plistlib.dump(metadata, handle)
     # Ad-hoc signatures allow local verification; release signing replaces them.
     # Signing the main executable can validate its enclosing bundle, so sign
-    # every nested library first (Intel libraries may arrive unsigned).
+    # every nested library and program first (Intel libraries may arrive
+    # unsigned).
     signing_order = [path for path in copies.values() if path != executable]
+    signing_order.extend(programs)
     signing_order.append(executable)
     for destination in signing_order:
         subprocess.run(["codesign", "--force", "--sign", "-", str(destination)], check=True)
@@ -177,6 +192,12 @@ def main():
         for dependency in dependencies(destination):
             if not system(dependency) and not dependency.startswith(("@loader_path/", "@executable_path/", "@rpath/")):
                 raise RuntimeError(f"External dependency remains: {dependency}")
+    for program in programs:
+        subprocess.run(["codesign", "--verify", "--strict", str(program)], check=True)
+        if program.name == "rawmakase-mcp":
+            subprocess.run([sys.executable, str(root / "packaging/check_mcp.py"), str(executable),
+                            str(program), "--arch", run("lipo", "-archs", str(args.binary)).split()[0],
+                            "--version", args.version], check=True)
     print(app)
 
 

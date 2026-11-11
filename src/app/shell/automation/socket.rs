@@ -25,6 +25,10 @@ const MAX_CLIENTS: usize = 16;
 
 pub(super) struct Request {
     pub messages: Vec<Msg>,
+    /// The control adapter that sent it (`<extension>/<adapter>`), from the
+    /// request's optional `adapter` field. It identifies, cooperatively; the
+    /// token authorizes. Dispatch refuses it while that adapter isn't enabled.
+    pub adapter: Option<String>,
     pub reply: mpsc::SyncSender<commands::Result<commands::Reply>>,
     phase: Arc<AtomicU8>, // pending, executing, cancelled
     deadline: Instant,
@@ -47,7 +51,28 @@ fn invalid(message: impl Into<String>) -> Error {
     Error::new("invalid_request", message)
 }
 
-fn command(request: &Value) -> commands::Result<Vec<Msg>> {
+/// A request's envelope, read: what it asks, and the adapter that sent it.
+struct Parsed {
+    messages: Vec<Msg>,
+    adapter: Option<String>,
+}
+
+fn command(request: &Value) -> commands::Result<Parsed> {
+    let adapter = match request.get("adapter") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(name)) => Some(name.clone()),
+        Some(_) => {
+            return Err(invalid(
+                "adapter must name a control adapter as <extension>/<adapter>",
+            ));
+        }
+    };
+    let messages = messages(request)?;
+    Ok(Parsed { messages, adapter })
+}
+
+/// The messages a request's command asks for.
+fn messages(request: &Value) -> commands::Result<Vec<Msg>> {
     use crate::color::OutputSpace;
     use rawmakase_protocol::request::{self as wire, Press, Request, Until as WireUntil};
     if request
@@ -181,7 +206,7 @@ fn handle(
     if stop.load(Ordering::SeqCst) {
         return Err(Error::new("disabled", "External control is disabled"));
     }
-    let messages = command(&request)?;
+    let Parsed { messages, adapter } = command(&request)?;
     // A wait is answered by its own time, not the usual answer's.
     let timeout = match messages[..] {
         [
@@ -196,6 +221,7 @@ fn handle(
     let phase = Arc::new(AtomicU8::new(0));
     let queued = Request {
         messages,
+        adapter,
         reply,
         phase: phase.clone(),
         deadline: Instant::now() + timeout,
@@ -386,7 +412,7 @@ pub(super) fn start(tx: Sender<Msg>, ctx: egui::Context) -> Option<Handle> {
     .map_err(|e| eprintln!("Control socket: {e}"))
     .ok()
 }
-fn start_at(
+pub(super) fn start_at(
     tx: Sender<Msg>,
     ctx: egui::Context,
     path: std::path::PathBuf,
@@ -412,10 +438,19 @@ fn start_at(
 pub(super) fn test_request(
     messages: Vec<Msg>,
 ) -> (Request, mpsc::Receiver<commands::Result<commands::Reply>>) {
+    test_request_from(messages, None)
+}
+/// A request naming the control adapter `adapter` as its sender.
+#[cfg(test)]
+pub(super) fn test_request_from(
+    messages: Vec<Msg>,
+    adapter: Option<&str>,
+) -> (Request, mpsc::Receiver<commands::Result<commands::Reply>>) {
     let (reply, rx) = mpsc::sync_channel(1);
     (
         Request {
             messages,
+            adapter: adapter.map(Into::into),
             reply,
             phase: Arc::default(),
             deadline: Instant::now() + Duration::from_secs(30),
@@ -443,7 +478,7 @@ mod tests {
     }
     #[test]
     fn typed_requests_keep_their_defaults_and_codes() {
-        let operation = |value: Value| match command(&value).unwrap().remove(0) {
+        let operation = |value: Value| match command(&value).unwrap().messages.remove(0) {
             Msg::Command(Command { operation, .. }) => operation,
             _ => panic!("{value}"),
         };
@@ -495,6 +530,26 @@ mod tests {
                 Some("invalid_request"),
                 "{value}"
             );
+        }
+    }
+    /// `adapter` is optional, beside any command; when present it is a name.
+    #[test]
+    fn the_adapter_field_is_read_beside_any_command() {
+        let adapter = |value: Value| command(&value).map(|p| p.adapter);
+        assert_eq!(adapter(json!({"cmd":"state"})).unwrap(), None);
+        assert_eq!(
+            adapter(json!({"cmd":"state","adapter":"rawmakase.mcp/mcp"})).unwrap(),
+            Some("rawmakase.mcp/mcp".into())
+        );
+        assert_eq!(
+            adapter(json!({"cmd":"cc","cc":1,"value":1,"adapter":"x/y"})).unwrap(),
+            Some("x/y".into())
+        );
+        for value in [
+            json!({"cmd":"state","adapter":1}),
+            json!({"cmd":"state","adapter":{}}),
+        ] {
+            assert_eq!(adapter(value).unwrap_err().code, "invalid_request");
         }
     }
     #[test]

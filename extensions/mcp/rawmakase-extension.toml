@@ -1,0 +1,22 @@
+# Bundled with RAWmakase: the app compiles this manifest in and finds the
+# program beside its executable. MCP clients start the program through
+# `rawmakase mcp`; the app never starts it. The version follows the app's,
+# as the program's own does (a test compares them).
+[extension]
+id = "rawmakase.mcp"
+name = "MCP"
+version = "0.4.12"
+rawmakase = "*"
+api = 1
+authors = ["RAWmakase"]
+license = "MIT"
+repository = "https://github.com/pch/rawmakase"
+description = "Lets AI agents edit in RAWmakase over the Model Context Protocol. Clients start it with rawmakase mcp; disabled, it refuses their requests."
+
+[program]
+path = "rawmakase-mcp"
+
+[[control-adapter]]
+id = "mcp"
+name = "MCP server"
+launch = "external"

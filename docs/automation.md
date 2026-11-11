@@ -186,6 +186,19 @@ A successful reply includes `protocol`, the echoed `request_id`, `ok: true`,
 For `export`/`preview`, `result.status` tracks the output job separately.
 A failure uses `ok: false`, a stable `code` and a human-readable `error`.
 Every request has its own reply; concurrent clients do not share a result slot.
+
+A request sent by an extension's control adapter may name it in an optional
+`adapter` field, `<extension>/<adapter>` as the extension's manifest declares
+it; the bundled MCP server sends `"adapter":"rawmakase.mcp/mcp"` on every
+request (`rawmakase-ctl`'s `Connection::with_adapter`). The app runs such a
+request only while that adapter belongs to an extension loaded and enabled in
+**Preferences > Extensions**, checked when the request runs and again when a
+parked `wait` is answered: otherwise it fails with `adapter_disabled`, even
+when it was already queued or waiting as the extension was disabled. Requests
+without the field (`rawmakase control`, `rawmakase-ctl`, scripts) are
+unaffected. The field identifies the sender cooperatively; the token still
+decides who may control the app. It needs no new protocol version: an older
+app ignores it.
 Commands execute in queue order. The UI may still change between requests:
 use target guards for a sequence that must refer to the same edit.
 
@@ -232,7 +245,7 @@ different command ends that group. Auto tone and white-balance commands return
 `busy` if an automatic adjustment is already running.
 
 Common error codes include `invalid_request`, `unsupported_protocol`,
-`unauthorized`, `busy`, `stale_target`, `target_required`, `no_document`,
+`unauthorized`, `adapter_disabled`, `busy`, `stale_target`, `target_required`, `no_document`,
 `not_ready`, `unsupported_parameter`, `not_editable`, `protected`, `save_failed`,
 `already_exists` and `unknown_job`. `open` returns `not_editable` for a photo whose
 file is offline, or a JPEG, PNG or TIFF Develop can't edit (a CMYK JPEG, say);
@@ -269,6 +282,6 @@ app's data-directory policy (`RAWMAKASE_DATA_DIR` or the platform default).
 `--data-dir` can point the client to an app using an isolated data directory.
 
 An agent can invoke the CLI directly or implement an adapter over this protocol.
-The bundled `rawmakase mcp` adapter exposes editing tools and preview images over
-stdio without knowing MIDI numbers or keyboard shortcuts. See [MCP setup and
-editing workflow](mcp.md).
+The bundled MCP extension, which MCP clients start with `rawmakase mcp`, exposes
+editing tools and preview images over stdio without knowing MIDI numbers or
+keyboard shortcuts. See [MCP setup and editing workflow](mcp.md).

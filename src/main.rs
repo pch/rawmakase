@@ -21,8 +21,13 @@ enum Command {
     // The client crate has its own version; this command is part of the app.
     #[command(version = env!("CARGO_PKG_VERSION"))]
     Control(rawmakase_ctl::Cli),
-    /// Serve editing tools over MCP stdio, connected to the running desktop app.
-    Mcp(rawmakase_mcp::Cli),
+    /// Serve editing tools over MCP stdio, connected to the running desktop app
+    /// (the bundled MCP extension, unless it is disabled in Preferences > Extensions).
+    Mcp {
+        /// Data folder of the running app; defaults to RAWMAKASE_DATA_DIR or the platform default.
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+    },
     /// Import Lightroom DCP and look XMP profiles and .cube LUTs (as looks), or the
     /// folders holding them, into RAWmakase's profile library.
     ImportProfiles {
@@ -409,7 +414,7 @@ fn main() -> Result<()> {
         .ok();
     let a = Args::parse_from(&launch.arguments);
     match a.command {
-        Some(Command::Mcp(cli)) => rawmakase_mcp::run(cli)?,
+        Some(Command::Mcp { data_dir }) => mcp(data_dir)?,
         Some(Command::Control(cli)) => rawmakase_ctl::run(cli).map_err(anyhow::Error::msg)?,
         Some(Command::ImportLensProfiles { files }) => {
             // One unusable file (Adobe ships a few) leaves the rest importing.
@@ -1341,9 +1346,33 @@ fn lensfun(command: LensfunCommand) -> Result<()> {
 }
 
 /// The ids of the extensions that ship with the app, which `enable` and
-/// `disable` accept without an install. None yet: each joins as it moves out
-/// of the core.
-const BUNDLED_EXTENSIONS: &[&str] = &[];
+/// `disable` accept without an install.
+const BUNDLED_EXTENSIONS: &[&str] = &["rawmakase.mcp"];
+
+/// `rawmakase mcp`, the command MCP clients are configured with: runs the
+/// bundled MCP extension's program beside this executable, with this
+/// process's standard streams and the same arguments, or fails when the
+/// extension is disabled. The program serves MCP itself; this binary carries
+/// no MCP server.
+fn mcp(data_dir: Option<PathBuf>) -> Result<()> {
+    let dirs = rawmakase_extensions::bundled::program_search_dirs();
+    let state_dir = data_dir
+        .clone()
+        .unwrap_or_else(rawmakase_protocol::paths::data_dir);
+    let program = rawmakase_extensions::external::program(
+        include_str!("../extensions/mcp/rawmakase-extension.toml"),
+        &state_dir,
+        &dirs,
+    )?;
+    let mut args = Vec::new();
+    if let Some(dir) = data_dir {
+        args.push("--data-dir".into());
+        args.push(dir.into_os_string());
+    }
+    let code = rawmakase_extensions::external::run(&program, &args)
+        .map_err(|e| anyhow::anyhow!("{}: {e}", program.display()))?;
+    std::process::exit(code)
+}
 
 /// `rawmakase extensions`.
 fn extensions(command: ExtensionsCommand) -> Result<()> {

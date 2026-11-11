@@ -1,8 +1,22 @@
 # Editing with MCP
 
-`rawmakase mcp` exposes RAWmakase's live editor to a local MCP client. It ships
-in the existing executable, uses stdio, and needs no Python/Node installation,
-account, login, or API key. The desktop app must be running and responsive.
+`rawmakase mcp` exposes RAWmakase's live editor to a local MCP client. It uses
+stdio and needs no Python/Node installation, account, login, or API key. The
+desktop app must be running and responsive.
+
+The MCP server is a bundled extension, **MCP** in **Preferences > Extensions**:
+it comes with RAWmakase and is enabled until you disable it there. Its program,
+`rawmakase-mcp`, is installed beside the app (in `Contents/MacOS` on macOS, in
+`/usr/lib/rawmakase` or the portable bundle on Linux, beside `rawmakase.exe` on
+Windows). The command your client runs is still `rawmakase mcp`: it starts that
+program with the same arguments, so the setup below is unchanged.
+
+Disabling the extension stops RAWmakase's MCP: a server already running gets
+`adapter_disabled` for its next tool call, and for one waiting or queued at that
+moment, and `rawmakase mcp` then exits at once with "The MCP extension is
+disabled in Preferences > Extensions". Enable it again to use MCP; restart the
+client's server if it gave up meanwhile. Scripts using `rawmakase control` are
+not affected.
 
 ## Connect
 
@@ -73,7 +87,8 @@ tool_timeout_sec = 150
 ```
 
 For a custom install directory or portable ZIP, use the absolute path to that
-`rawmakase.exe` instead, keeping the accompanying DLLs in the extracted bundle.
+`rawmakase.exe` instead, keeping the accompanying DLLs and `rawmakase-mcp.exe`
+in the extracted bundle.
 
 ### Other clients and options
 
@@ -98,7 +113,8 @@ backslashes to be doubled (for example, `C:\\Users\\YOUR_NAME\\...`):
 
 For an app with a separate data directory, append `--data-dir` and its absolute
 path to the arguments. The default follows `RAWMAKASE_DATA_DIR` and the app's
-platform conventions. The adapter reads the local socket token automatically;
+platform conventions; whether the extension is enabled is read from that same
+data folder. The adapter reads the local socket token automatically;
 there is no separate MCP authentication flow. MCP opens no network listener.
 
 ## Tools
@@ -174,7 +190,8 @@ may also report `treatment_pending`. Read fresh guards after background work.
 ## Completion and limits
 
 Application errors are MCP tool errors with structured codes, including
-`stale_target`, `busy`, `not_ready` and `protected`. A connection error or
+`stale_target`, `busy`, `not_ready`, `protected` and `adapter_disabled` (the
+MCP extension is disabled). A connection error or
 `outcome_unknown` does not imply a mutation failed: inspect state before retrying.
 The adapter never retries mutations automatically. It reconnects from the app's
 connection file for each tool call, so restarting the app does not require

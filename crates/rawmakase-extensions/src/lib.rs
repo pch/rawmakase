@@ -9,6 +9,8 @@
 //! - [`github`]: installing and updating from a GitHub repository's releases,
 //!   in two steps so the user sees what they are about to trust.
 //! - [`bundled`]: the extensions that ship with the app.
+//! - [`external`]: running a bundled program its clients start themselves
+//!   (`rawmakase mcp`), unless its extension is disabled.
 //! - [`session`]: starting a program in a process group or job object, the
 //!   message channel to it, request deadlines and ending it.
 //!
@@ -16,6 +18,7 @@
 //! extension's requests mean to the editor is the app's (`app::extensions`).
 //! Installing never runs an extension's code.
 pub mod bundled;
+pub mod external;
 pub mod github;
 pub mod package;
 mod process;

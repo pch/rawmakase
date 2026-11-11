@@ -5,7 +5,8 @@ packages, installation, `extensions.json`, the extension protocol, the SDK and
 `cargo rawmakase` exist, and the app runs extensions: it supervises their
 programs, and has Preferences > Extensions, their commands, settings and
 panels, and reads and proposals with target tokens. Externally launched control
-adapters, and moving MCP and MIDI out of the core, come next.
+adapters exist, and MCP is a bundled extension; moving MIDI out of the core
+comes next.
 
 An **extension** adds to RAWmakase without changing it: commands, settings,
 panels of controls the app draws, and control adapters (a MIDI device, an MCP
@@ -28,6 +29,37 @@ be disabled, not uninstalled; no other package may use their ids.
 
 Installing never runs an extension's code: its program first starts when one
 of its contributions is used.
+
+## Bundled extensions
+
+The official extensions are compiled into the app (their manifests) and
+installed beside it (their programs): in the executable's folder, which is
+`Contents/MacOS` in the macOS app and the folder holding `rawmakase.exe` on
+Windows, or on Linux in `../lib/rawmakase` beside the executable's folder, where
+the packages and `make install` put it. A bundled extension is enabled unless
+`extensions.json` says it is disabled, updates with the app and can't be
+uninstalled. When its program is missing (an incomplete install), its page says
+so. This release bundles one:
+
+- **MCP** (`rawmakase.mcp`, program `rawmakase-mcp`): the MCP server
+  ([MCP setup](../mcp.md)), an externally launched control adapter, `mcp`.
+
+## Externally launched adapters
+
+A `[[control-adapter]]` with `launch = "external"` isn't started by the app.
+Something else starts its program (an MCP client runs `rawmakase mcp`), and the
+program reaches the app through the [control socket](../automation.md#json-protocol-version-1),
+naming its adapter (`<extension>/<adapter>`) in every request's `adapter`
+field. The app runs those requests only while the adapter's extension is
+enabled: disabled, even requests already queued and `wait`s already parked are
+refused with `adapter_disabled`, so disabling an extension stops a server that
+is still running. The command its clients run checks `extensions.json` before
+starting the program and fails at once when the extension is disabled. Such a
+program isn't supervised: no crash count, deadlines or log file, and quitting
+the app doesn't stop it; its requests in flight end as every control request
+does. A change the command line makes (`rawmakase extensions disable
+rawmakase.mcp`) reaches a running app on its next start (D8); the launcher
+reads it at once.
 
 ## Where things live
 

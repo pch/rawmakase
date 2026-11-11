@@ -605,6 +605,72 @@ mod integration_tests {
         e.control_commands(&ctx);
         assert_eq!(answer.try_recv().unwrap().unwrap().status, "timed_out");
     }
+    /// A request naming a control adapter runs only while that adapter's
+    /// extension is enabled: checked when it is dispatched and again when a
+    /// parked wait is answered. One naming none runs as ever.
+    #[test]
+    fn a_disabled_adapters_requests_are_refused_even_once_parked() {
+        use std::time::Duration;
+        let ctx = egui::Context::default();
+        let mut e = Editor::with_context(
+            &ctx,
+            None,
+            crate::app::preferences::session::Session::default(),
+            None,
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let never = rawmakase_extensions::session::Launch {
+            program: dir.path().join("no-such-program"),
+            args: Vec::new(),
+            dir: std::path::PathBuf::new(),
+            env: Vec::new(),
+            log: std::path::PathBuf::new(),
+        };
+        e.extensions = crate::app::extensions::Host::start_for_tests(
+            dir.path(),
+            never,
+            Duration::from_secs(30),
+        );
+        let (tx, rx) = mpsc::sync_channel(8);
+        e.controls = Hub::new(Settings::default(), rx);
+        let send = |adapter: Option<&str>, operation| {
+            let (request, reply) =
+                socket::test_request_from(vec![Msg::Command(Command::new(operation))], adapter);
+            tx.send(Msg::Request(request)).unwrap();
+            reply
+        };
+        let code = |reply: mpsc::Receiver<commands::Result<commands::Reply>>| {
+            reply.try_recv().expect("answered").err().map(|e| e.code)
+        };
+        let mcp = Some("rawmakase.mcp/mcp");
+        let (from_mcp, unknown, plain) = (
+            send(mcp, commands::Operation::State),
+            send(Some("dev.nobody/x"), commands::Operation::State),
+            send(None, commands::Operation::State),
+        );
+        // No photo loads here: the wait stays parked.
+        let parked = send(
+            mcp,
+            commands::Operation::Wait(
+                commands::Until::Loaded(crate::catalog::PhotoId(1)),
+                Duration::from_secs(30),
+            ),
+        );
+        e.control_commands(&ctx);
+        assert_eq!(code(from_mcp), None);
+        assert_eq!(code(unknown), Some("adapter_disabled"));
+        assert_eq!(code(plain), None);
+        assert!(parked.try_recv().is_err(), "answered before it held");
+        e.set_extension_enabled("rawmakase.mcp", false);
+        let (queued, plain) = (
+            send(mcp, commands::Operation::State),
+            send(None, commands::Operation::State),
+        );
+        e.control_commands(&ctx);
+        assert_eq!(code(parked), Some("adapter_disabled"));
+        assert_eq!(code(queued), Some("adapter_disabled"));
+        assert_eq!(code(plain), None);
+    }
     /// A photo that could not be opened ends a wait for it: it will not load,
     /// and the state says it isn't loaded.
     #[test]

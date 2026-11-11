@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run inside a clean Ubuntu, Debian or Fedora container, with /packages mounted.
+# Run inside a clean Ubuntu, Debian or Fedora container, with /packages and
+# the packaging folder (as /checks) mounted.
 set -euo pipefail
 if command -v apt-get >/dev/null; then
   apt-get update -qq
@@ -22,6 +23,14 @@ if [ "$(printf '%s\n' 0.2.2 "$installed" | sort -V | head -n1)" = 0.2.2 ]; then
   test -f /usr/lib/rawmakase/libonnxruntime.so
   python3 -c "import ctypes; ctypes.CDLL('/usr/lib/rawmakase/libonnxruntime.so')"
 fi
+# The bundled MCP extension's program, from the first release that ships it:
+# beside the app, built for this machine, linking only the system's libraries,
+# and found by `rawmakase mcp`, which completes an MCP initialize with it.
+mcp=0.4.13
+if [ "$(printf '%s\n' "$mcp" "$installed" | sort -V | head -n1)" = "$mcp" ]; then
+  python3 /checks/check_mcp.py /usr/bin/rawmakase /usr/lib/rawmakase/rawmakase-mcp \
+    --arch "$(uname -m)" --version "$installed"
+fi
 # Winit/wgpu load some libraries at runtime, invisible to ordinary ldd checks.
 python3 - <<'PY'
 import ctypes
@@ -37,3 +46,4 @@ echo preserve > /root/.local/share/rawmakase/packaging-test
 test "$(cat /root/.local/share/rawmakase/packaging-test)" = preserve
 test ! -e /usr/bin/rawmakase
 test ! -e /usr/lib/rawmakase/rawmakase
+test ! -e /usr/lib/rawmakase/rawmakase-mcp

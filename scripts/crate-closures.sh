@@ -88,6 +88,10 @@ check rawmakase-remote "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase-en
 # but the protocol and the control client, and no GPU, GUI, native library or
 # inference.
 check rawmakase-mcp "rawmakase|rawmakase-cancel|rawmakase-fs|rawmakase-tiff|rawmakase-model|rawmakase-interop|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-decode|rawmakase-remote|wgpu.*|naga|$gui|$native|$inference"
+# The app runs the bundled MCP program (`rawmakase mcp`) and never links it:
+# no MCP server or its runtime in the app binary. (tokio still appears in the
+# app's tree for wasm targets only, through wasm-bindgen-futures.)
+check rawmakase "rawmakase-mcp|rmcp.*"
 # RAWmakase's own RAW decoders sit on the TIFF reader and the cancellation token alone: no workspace crate
 # above them, no GPU, GUI or inference, and nothing built from C (no build
 # script crates).

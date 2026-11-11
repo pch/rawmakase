@@ -121,6 +121,8 @@ fn open_log(path: &std::path::Path) -> io::Result<std::fs::File> {
         .open(path)
 }
 
+#[cfg(windows)]
+pub(crate) use platform::kill_on_close_job;
 pub(crate) use platform::spawn;
 
 #[cfg(unix)]
@@ -536,20 +538,7 @@ mod platform {
         // to make one then leaves nothing running.
         let (read_event, write_event) = (event()?, event()?);
 
-        // SAFETY: an unnamed job with default security; checked.
-        let job = owned(unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) })?;
-        // SAFETY: an all-zero limit structure is valid; one flag is set.
-        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        // SAFETY: the structure and its size match the information class.
-        check(unsafe {
-            SetInformationJobObject(
-                job.as_raw_handle(),
-                JobObjectExtendedLimitInformation,
-                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-        })?;
+        let job = kill_on_close_job()?;
 
         drop(open_log(&launch.log)?);
         let log = inheritable(launch.log.as_os_str(), FILE_APPEND_DATA, OPEN_ALWAYS)?;
@@ -672,6 +661,25 @@ mod platform {
             },
             pid,
         })
+    }
+
+    /// A job object that kills its processes when its last handle closes.
+    pub(crate) fn kill_on_close_job() -> io::Result<OwnedHandle> {
+        // SAFETY: an unnamed job with default security; checked.
+        let job = owned(unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) })?;
+        // SAFETY: an all-zero limit structure is valid; one flag is set.
+        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // SAFETY: the structure and its size match the information class.
+        check(unsafe {
+            SetInformationJobObject(
+                job.as_raw_handle(),
+                JobObjectExtendedLimitInformation,
+                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        })?;
+        Ok(job)
     }
 
     fn wait(process: &OwnedHandle, unit: &Unit) {

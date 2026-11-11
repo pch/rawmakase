@@ -154,4 +154,4 @@ An adapter translating a device or a protocol into commands.
 | --- | --- | --- |
 | `id` | — | Unique among the adapters; control requests name it as `<extension>/<id>` |
 | `name` | the id | Shown in Preferences |
-| `launch` | `"app"` | `app`: the extension's program, started by the app (MIDI). `external`: started by something else, such as an AI agent starting an MCP server; it reaches the app through the control socket and is not supervised by it |
+| `launch` | `"app"` | `app`: the extension's program, started by the app (MIDI). `external`: started by something else, such as an AI agent starting an MCP server; it reaches the app through the control socket, naming the adapter in each request's `adapter` field, and is not supervised by it ([Externally launched adapters](overview.md#externally-launched-adapters)) |

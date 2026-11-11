@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Stage the portable payload: the executable, its notices and any private
-library it needs, without replacing system libraries."""
+"""Stage the portable payload: the executable, the bundled extensions'
+programs, their notices and any private library the executable needs,
+without replacing system libraries."""
 import argparse
 import json
 import platform
@@ -36,6 +37,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("binary", type=Path)
     parser.add_argument("output", type=Path)
+    # A bundled extension's program (rawmakase-mcp), installed beside the
+    # executable, where the app looks for it. It may link only the system's
+    # libraries.
+    parser.add_argument("--program", type=Path, action="append", default=[])
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     stage = args.output.resolve()
@@ -45,6 +50,10 @@ def main():
     executable = private / "rawmakase"
     shutil.copy2(args.binary, executable)
     executable.chmod(0o755)
+    for program in args.program:
+        destination = private / program.name
+        shutil.copy2(program, destination)
+        destination.chmod(0o755)
     licenses = stage / "usr/share/licenses/rawmakase"
     licenses.mkdir(parents=True)
     for source, target in [(root / "LICENSE", licenses / "LICENSE"),
@@ -108,6 +117,13 @@ def main():
     env = dict(os.environ)
     env.pop("LD_LIBRARY_PATH", None)
     subprocess.run([str(launcher), "--version"], env=env, check=True)
+    # The MCP program: the right architecture, system libraries only, and
+    # found by `rawmakase mcp` through the launcher.
+    for program in args.program:
+        if program.name == "rawmakase-mcp":
+            subprocess.run([sys.executable, str(root / "packaging/check_mcp.py"), str(launcher),
+                            str(private / program.name), "--arch", platform.machine()],
+                           env=env, check=True)
     print(stage)
 
 
