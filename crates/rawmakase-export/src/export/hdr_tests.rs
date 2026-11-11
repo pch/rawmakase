@@ -382,6 +382,82 @@ fn a_lossy_hdr_jpeg_xl_carries_the_tiffs_light() -> Result<()> {
     Ok(())
 }
 
+/// The boxes of a JPEG XL container (ISO/IEC 18181-2), by type, with their payloads.
+fn jxl_boxes(bytes: &[u8]) -> Vec<([u8; 4], &[u8])> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while at + 8 <= bytes.len() {
+        let size = u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+        let kind: [u8; 4] = bytes[at + 4..at + 8].try_into().unwrap();
+        out.push((kind, &bytes[at + 8..at + size]));
+        at += size;
+    }
+    out
+}
+
+/// A lossless HDR JPEG XL holds 16-bit modular samples, which need wider buffers than
+/// codestream Level 5 allows (ISO/IEC 18181-1; libjxl's encoder says "Too high modular
+/// bit depth"). Its container declares Level 10 in a `jxll` box before the codestream,
+/// as cjxl's lossless 16-bit files do, and still opens in RAWmakase as an HDR file. A
+/// lossy one (XYB), an SDR one and a gain map's (8-bit) are Level 5, which needs no box.
+#[test]
+fn a_lossless_hdr_jpeg_xl_declares_level_10() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let image = synthetic(32, 24);
+    let recipe = hdr_recipe(&image);
+    let photo = photo(image, &dir.path().join("in.dng"), dir.path(), recipe);
+    let pq = HdrOutput {
+        gamut: HdrGamut::Rec2020,
+        transfer: HdrTransfer::Pq,
+        gain_map: false,
+    };
+    let gain_map = HdrOutput {
+        gamut: HdrGamut::Rec709,
+        gain_map: true,
+        ..Default::default()
+    };
+    for (name, output, lossy, level) in [
+        ("lossless", Some(pq), false, Some(10)),
+        ("lossy", Some(pq), true, None),
+        ("sdr", None, false, None),
+        ("gain-map", Some(gain_map), false, None),
+    ] {
+        let mut s = settings(output);
+        s.choose_format(Format::Jxl);
+        s.jxl_lossy = lossy;
+        let target = dir.path().join(format!("{name}.jxl"));
+        job::run(
+            photo.clone(),
+            &s,
+            &target,
+            Replace::NoClobber,
+            Cancel::NEVER,
+            |_| {},
+        )?;
+        let bytes = std::fs::read(&target)?;
+        let boxes = jxl_boxes(&bytes);
+        let kinds: Vec<&[u8; 4]> = boxes.iter().map(|(k, _)| k).collect();
+        let declared = boxes
+            .iter()
+            .find(|(k, _)| k == b"jxll")
+            .map(|(_, payload)| payload.to_vec());
+        assert_eq!(declared, level.map(|l| vec![l]), "{name}: {kinds:?}");
+        if level.is_some() {
+            let at = |kind: &[u8; 4]| kinds.iter().position(|k| *k == kind);
+            assert_eq!(at(b"jxll"), Some(2), "{name}: right after ftyp: {kinds:?}");
+            assert!(at(b"jxll") < at(b"jxlc"), "{name}: {kinds:?}");
+            // RAWmakase's own reader still opens it as an HDR file.
+            let crate::photo::Opened::Rendered(reopened) =
+                crate::photo::open_source(&target, Cancel::NEVER)?
+            else {
+                anyhow::bail!("{name}: a JPEG XL opens as rendered");
+            };
+            assert!(reopened.metadata.hdr_source.is_some(), "{name}");
+        }
+    }
+    Ok(())
+}
+
 /// An HDR export never uses the SDR colour space: one left from a TIFF export
 /// (Adobe RGB) doesn't stop an HDR JPEG XL. The target's format is checked against
 /// the transfer before anything renders: linear light into a .jxl is refused.
