@@ -976,6 +976,213 @@ mod tests {
         Ok(())
     }
 
+    /// A mask renders in the master with the sliders that work as their global
+    /// counterparts do (docs/hdr.md#masks): over the whole frame, its Exposure, Shadows
+    /// and Texture render the master the global slider renders, above white too, and
+    /// half a frame's mask changes only its half. Its other sliders refuse the master
+    /// by name, and the GPU leaves a masked master to the CPU.
+    #[test]
+    fn a_mask_renders_in_the_master_with_the_global_sliders_it_shares() -> Result<()> {
+        use crate::develop::pipeline::pixel_params::supported_hdr;
+        use crate::model::masks::{LocalAdjust, MaskComponent, MaskGroup, MaskShape};
+        let im = patches(&[
+            [0.02, 0.02, 0.02],
+            [0.1, 0.08, 0.07],
+            [0.4, 0.4, 0.4],
+            [1.5, 1.2, 1.],
+            [3., 3., 3.],
+            [0.3, 0.5, 0.8],
+        ]);
+        let base = hdr_recipe(&im);
+        let masked = |adjust: LocalAdjust, from: [f32; 2], to: [f32; 2], invert: bool| {
+            let mut r = base.clone();
+            r.masks = vec![MaskGroup {
+                components: vec![MaskComponent {
+                    invert,
+                    ..MaskComponent::new(MaskShape::Linear { from, to })
+                }],
+                adjust,
+                ..Default::default()
+            }];
+            r
+        };
+        // A linear gradient with no effect from above the frame, inverted, covers all
+        // of it.
+        let everywhere = |adjust| masked(adjust, [0., -3.], [0., -2.9], true);
+        let render = |r: &Recipe| render_hdr(&im, &r.checked().unwrap(), None, 0, Cancel::NEVER);
+        let close = |a: &crate::rendered::HdrImage, b: &crate::rendered::HdrImage, what: &str| {
+            for (p, q) in a.pixels.iter().zip(&b.pixels) {
+                for c in 0..3 {
+                    assert!(
+                        (p[c] - q[c]).abs() <= 2e-3 * q[c].max(0.05),
+                        "{what}: {p:?} {q:?}"
+                    );
+                }
+            }
+        };
+        for (adjust, global) in [
+            (
+                LocalAdjust {
+                    exposure: 1.,
+                    ..Default::default()
+                },
+                Recipe {
+                    exposure: 1.,
+                    ..base.clone()
+                },
+            ),
+            (
+                LocalAdjust {
+                    shadows: 0.5,
+                    ..Default::default()
+                },
+                Recipe {
+                    shadows: 0.5,
+                    ..base.clone()
+                },
+            ),
+            (
+                LocalAdjust {
+                    texture: 0.4,
+                    ..Default::default()
+                },
+                Recipe {
+                    effects: crate::model::effects::Effects {
+                        texture: 0.4,
+                        ..base.effects.clone()
+                    },
+                    ..base.clone()
+                },
+            ),
+        ] {
+            let mask = everywhere(adjust);
+            assert!(
+                !supported_hdr(&mask, &im.metadata),
+                "the GPU leaves it to the CPU"
+            );
+            close(&render(&mask)?, &render(&global)?, &format!("{adjust:?}"));
+        }
+        let warm = render(&everywhere(LocalAdjust {
+            temperature: 0.4,
+            ..Default::default()
+        }))?;
+        let plain = render(&base)?;
+        let p = warm.pixels[4 * warm.width as usize + 3 * 8 + 4];
+        let q = plain.pixels[4 * plain.width as usize + 3 * 8 + 4];
+        assert!(p[0] / p[2] > 1.05 * (q[0] / q[2]), "{p:?} {q:?}");
+        // The bottom of the frame: full effect below 0.6 of its height, none above 0.4.
+        let half = render(&masked(
+            LocalAdjust {
+                exposure: 1.,
+                ..Default::default()
+            },
+            [0., 0.6],
+            [0., 0.4],
+            false,
+        ))?;
+        let w = half.width as usize;
+        let last = (half.height as usize - 1) * w;
+        let (top, bottom) = (half.pixels[2 * 8 + 4], half.pixels[last + 2 * 8 + 4]);
+        let (top0, bottom0) = (plain.pixels[2 * 8 + 4], plain.pixels[last + 2 * 8 + 4]);
+        assert!(
+            bottom[1] > 1.5 * bottom0[1] && (top[1] / top0[1] - 1.).abs() < 1e-3,
+            "{top:?} {bottom:?}"
+        );
+        for (name, adjust) in [
+            (
+                "Contrast",
+                LocalAdjust {
+                    contrast: 0.3,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Whites",
+                LocalAdjust {
+                    whites: 0.3,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Saturation",
+                LocalAdjust {
+                    saturation: -0.3,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Highlights",
+                LocalAdjust {
+                    highlights: -0.3,
+                    ..Default::default()
+                },
+            ),
+        ] {
+            let error = render(&everywhere(adjust)).unwrap_err().to_string();
+            assert!(error.contains(&format!("A mask's {name}")), "{error}");
+        }
+        Ok(())
+    }
+
+    /// A range mask selects from the SDR rendition, as the mask overlay shows it, so
+    /// the master adjusts the pixels its SDR rendition adjusts: Luminance Range by the
+    /// display luminance of the SDR rendition, not of the master's light.
+    #[test]
+    fn a_range_mask_selects_in_the_master_what_it_selects_in_the_sdr_rendition() -> Result<()> {
+        use crate::model::masks::{LocalAdjust, MaskComponent, MaskGroup, MaskShape};
+        let levels = [0.01, 0.04, 0.1, 0.2, 0.4, 0.8, 2., 6.];
+        let im = grays(&levels);
+        let mut r = hdr_recipe(&im);
+        r.masks = vec![MaskGroup {
+            components: vec![MaskComponent::new(MaskShape::LuminanceRange {
+                low: 0.45,
+                high: 0.75,
+                falloff: [0., 0.],
+            })],
+            adjust: LocalAdjust {
+                exposure: 1.,
+                ..Default::default()
+            },
+            ..Default::default()
+        }];
+        let mut plain = r.clone();
+        plain.masks.clear();
+        let gains = |sdr: bool| -> Result<Vec<f32>> {
+            let render = |r: &Recipe| -> Result<Vec<f32>> {
+                let mut r = r.clone();
+                r.hdr.enabled = !sdr;
+                Ok(if sdr {
+                    let out = crate::develop::quality::render(
+                        &im,
+                        &r.checked()?,
+                        0,
+                        None,
+                        Cancel::NEVER,
+                    )?;
+                    (0..levels.len())
+                        .map(|k| {
+                            let p = out.pixels[4 * out.width as usize + k * 8 + 4];
+                            crate::color::srgb_decode(p[1])
+                        })
+                        .collect()
+                } else {
+                    let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+                    (0..levels.len()).map(|k| centre(&out, k)).collect()
+                })
+            };
+            let (a, b) = (render(&r)?, render(&plain)?);
+            Ok(a.iter().zip(&b).map(|(a, b)| a / b.max(1e-6)).collect())
+        };
+        let (sdr, hdr) = (gains(true)?, gains(false)?);
+        let selected = |g: &[f32]| g.iter().map(|g| *g > 1.2).collect::<Vec<_>>();
+        assert!(
+            selected(&sdr).iter().any(|s| *s) && selected(&sdr).iter().any(|s| !*s),
+            "{sdr:?}"
+        );
+        assert_eq!(selected(&sdr), selected(&hdr), "SDR {sdr:?} HDR {hdr:?}");
+        Ok(())
+    }
+
     /// Texture renders in the master, on the camera image before tone as in SDR;
     /// Clarity and Dehaze still refuse it.
     #[test]

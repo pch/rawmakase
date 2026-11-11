@@ -890,6 +890,27 @@ is the patch centre's HSV saturation in linear ProPhoto against the default rend
 Decision, 2026-11-10: Defringe renders in the HDR master by this rule, on the CPU (the
 GPU's HDR preview leaves it to it). Its hue selection is SDR's, with SDR's error.
 
+### Masks
+
+A mask's adjustment is added to the photo's own in RAWmakase's stages: its Temp and
+Tint scale the white balance, its Exposure the scene, its Shadows the local tone map's
+gain and its Texture the texture image, each weighted by the mask, and the HDR master
+renders those stages as it renders the global sliders. Rendered by RAWmakase, a mask
+over the whole frame gives the global slider's master to 0.2% (Exposure +1, Shadows
++50, Texture +40, on gray and coloured patches from 0.02 to 3 times white). Range masks
+select from the SDR rendition (the edit developed with HDR off), so a Luminance Range
+mask brightens the same patches of a gray ramp in the master as in the SDR rendition.
+
+Decision, 2026-11-10: masks render in the HDR master with Temp, Tint, Exposure,
+Shadows and Texture; any other slider in an active mask refuses it by name. Contrast,
+Whites, Blacks, Hue, Saturation and Color are operators of their own, fitted on SDR
+renders, and Sharpness and Noise work on the SDR rendition's detail; Highlights,
+Clarity and Dehaze have no HDR rendering globally. Camera Raw's HDR render of each
+mask slider against its global slider (a synthetic probe with a mask over the whole
+frame) was prepared but not captured: Camera Raw captures were paused when this was
+decided ([Open](#open)). A masked master renders on the CPU; the GPU's HDR preview
+doesn't port masks yet.
+
 ### Decisions
 
 - **The SDR rendition is the edit with HDR off.** Camera Raw's own is a local tone
@@ -983,6 +1004,8 @@ GPU's HDR preview leaves it to it). Its hue selection is SDR's, with SDR's error
   Standard, and the vignette's darkest shadows under strong Highlight Priority
   ([Vignette and grain](#vignette-and-grain)).
 - Refine Saturation in HDR ([Tone curves](#tone-curves)).
+- Masks: Camera Raw's HDR render of a mask against its global slider, the mask sliders
+  still refused, and masks on the GPU's HDR preview ([Masks](#masks)).
 - Clarity and Dehaze in HDR, after their SDR parity ([Presence](#presence)).
 - Positive Shadows lifts small speculars in dark surroundings above Camera Raw's peak
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
@@ -1034,7 +1057,8 @@ GPU's HDR preview leaves it to it). Its hue selection is SDR's, with SDR's error
   ([Highlights and Shadows](#highlights-and-shadows)); looks with RGB tables, B&W,
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
-  ([Vignette and grain](#vignette-and-grain)); Defringe ([Defringe](#defringe)). Open: Whites above +50, Highlights, the colour
+  ([Vignette and grain](#vignette-and-grain)); Defringe ([Defringe](#defringe)); masks with Temp,
+  Tint, Exposure, Shadows and Texture ([Masks](#masks)). Open: Whites above +50, Highlights, the colour
   mixer's Luminance, looks that set Clarity or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
   with them), 52552 grouping (library only,
   needed when toggling HDR pairs profiles).

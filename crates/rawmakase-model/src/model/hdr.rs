@@ -172,6 +172,7 @@ const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
 /// camera's samples, as in SDR),
 /// Defringe (its Oklab operator at a colour's brightness up to white, at white above),
+/// masks whose sliders are Temp, Tint, Exposure, Shadows and Texture,
 /// camera profiles
 /// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks (their
 /// tables and curve, [`crate::camera_profiles::hdr_look`], at any Profile Amount, and
@@ -191,6 +192,14 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
     }
     if let Some(name) = unmeasured(&r) {
         anyhow::bail!("{name} is not supported in HDR yet");
+    }
+    if let Some(name) = r
+        .masks
+        .iter()
+        .filter(|g| g.is_active())
+        .find_map(|g| unrendered_mask_slider(&g.adjust))
+    {
+        anyhow::bail!("A mask's {name} is not supported in HDR yet");
     }
     // A look's own settings render as the user's sliders do, added to them, and its
     // table and curve at the Profile Amount (`Recipe::with_profile_adjustments`): each
@@ -212,7 +221,7 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
 fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
     // The SDR rendition's sliders are not here: they never change the master (Camera
     // Raw 18.7's is bit-identical with each at ±50), so it renders with them set.
-    let unmeasured: [(&'static str, bool); 10] = [
+    let unmeasured: [(&'static str, bool); 9] = [
         // Camera Raw's positive Whites follows the photo's level, which twice the 99th
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
@@ -253,17 +262,35 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
                 && r.effects.vignette_highlights > 0.
                 && r.effects.vignette_style != super::effects::VignetteStyle::PaintOverlay,
         ),
-        (
-            "Masks",
-            r.masks
-                .iter()
-                .any(crate::model::masks::MaskGroup::is_active),
-        ),
         ("Red Eye", !r.red_eye.is_blank()),
     ];
     unmeasured
         .into_iter()
         .find_map(|(name, used)| used.then_some(name))
+}
+
+/// The first slider of a mask's adjustment that the HDR master doesn't render, by its
+/// Lightroom name. A mask renders in the master with the sliders that work as their
+/// global counterparts do, which render in HDR: Temp and Tint, Exposure, Shadows and
+/// Texture (docs/hdr.md#masks). The others are their own operators (Contrast, Whites
+/// and Blacks, Hue and Saturation, Color, Sharpness and Noise) or have no HDR
+/// rendering globally (Highlights, Clarity, Dehaze).
+fn unrendered_mask_slider(a: &crate::model::masks::LocalAdjust) -> Option<&'static str> {
+    [
+        ("Contrast", a.contrast),
+        ("Highlights", a.highlights),
+        ("Whites", a.whites),
+        ("Blacks", a.blacks),
+        ("Clarity", a.clarity),
+        ("Dehaze", a.dehaze),
+        ("Hue", a.hue),
+        ("Saturation", a.saturation),
+        ("Sharpness", a.sharpness),
+        ("Noise", a.noise),
+        ("Color", a.color[1]),
+    ]
+    .into_iter()
+    .find_map(|(name, v)| (v != 0.).then_some(name))
 }
 
 /// Whether `r` renders an HDR master of the photo `m` describes, and if not, why;
@@ -537,6 +564,35 @@ mod tests {
         effects.effects.vignette_style = crate::model::effects::VignetteStyle::HighlightPriority;
         effects.effects.vignette = 0.5;
         assert!(check_recipe(&effects).is_ok());
+        // A mask renders with Temp, Tint, Exposure, Shadows and Texture; any other
+        // slider refuses the master by its name (docs/hdr.md#masks).
+        let mut masked = r.clone();
+        masked.masks = vec![crate::model::masks::MaskGroup {
+            components: vec![crate::model::masks::MaskComponent::new(
+                crate::model::masks::MaskShape::Linear {
+                    from: [0., 0.],
+                    to: [0., 1.],
+                },
+            )],
+            adjust: crate::model::masks::LocalAdjust {
+                temperature: 0.2,
+                tint: -0.1,
+                exposure: 0.7,
+                shadows: 0.4,
+                texture: -0.3,
+                ..Default::default()
+            },
+            ..Default::default()
+        }];
+        assert!(check_recipe(&masked).is_ok());
+        masked.masks[0].adjust.clarity = 0.2;
+        let error = check_recipe(&masked).unwrap_err().to_string();
+        assert!(error.contains("A mask's Clarity"), "{error}");
+        masked.masks[0].hidden = true;
+        assert!(
+            check_recipe(&masked).is_ok(),
+            "a hidden mask renders nothing"
+        );
         let unmeasured: [fn(&mut Recipe); 6] = [
             |r| r.highlights = 0.1,
             |r| r.hsl[5][2] = -0.2,

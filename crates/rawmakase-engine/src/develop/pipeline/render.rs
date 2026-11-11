@@ -262,6 +262,9 @@ pub(crate) fn mask_weights(
         // grays it, and always in sRGB, whatever space an export is in: a mask
         // selects the same pixels in every space.
         crate::model::point_color::without_visualization(&mut plain.point_colors);
+        // An HDR master's range masks select from its SDR rendition, as the mask
+        // overlay shows them: the selection is the edit's, whichever rendering shows it.
+        plain.hdr.enabled = false;
         let im = toned.source();
         let gpu = stages.as_deref_mut().and_then(|s| {
             let params = pixel_params::pixel_params(im, &plain)?;
