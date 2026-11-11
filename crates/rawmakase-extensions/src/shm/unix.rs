@@ -187,7 +187,10 @@ fn seal(fd: &OwnedFd, seals: libc::c_int) -> io::Result<()> {
     // `F_SEAL_WRITE` fails with EBUSY while any writable mapping exists. The
     // app's own view is gone and was never inherited (`MADV_DONTFORK`), but a
     // process forked on another thread between `mmap` and `madvise` holds a
-    // copy until it execs, a moment later.
+    // copy until it execs, a moment later. So EBUSY is retried: 200 attempts,
+    // 1 ms of sleep apart, about 200 ms or a little more in all. Allocation
+    // runs off the UI thread (the app's selection worker), so the wait blocks
+    // no frame.
     let mut tries = 0;
     loop {
         // SAFETY: a plain fcntl on a descriptor this process owns.

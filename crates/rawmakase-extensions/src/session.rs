@@ -808,7 +808,9 @@ impl Session {
             } else {
                 drop(buffers);
             }
-            updates.push(if pending.expired {
+            // A fault keeps its own error, as `take` keeps it for a drained
+            // reply: which of the two settles it first doesn't change it.
+            updates.push(if pending.expired && !outcome.is_fault() {
                 deadline_failure(id, pending.method)
             } else {
                 let result = match outcome {
@@ -1382,6 +1384,44 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         assert!(replies(&more, 7).is_empty(), "{more:?}");
+    }
+
+    /// The same, for a request past its deadline and in its grace: the
+    /// recorded fault keeps its own error, as a drained reply would, rather
+    /// than `deadline`; once, then the hang-up, the lease kept until the unit
+    /// has ended.
+    #[test]
+    fn a_recorded_fault_in_deadline_grace_keeps_its_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut session = idle(dir.path());
+        leased_request(&mut session, 9);
+        {
+            let pending = session.pending.get_mut(&9).unwrap();
+            pending.expired = true;
+            pending.deadline = Instant::now() + Duration::from_secs(60);
+        }
+        let refused = RemoteError::new(ErrorCode::InvalidRequest, "refused");
+        session.leased_set().insert(
+            9,
+            Some(Recorded {
+                outcome: Outcome::Err(refused.clone()),
+                dropped: false,
+            }),
+        );
+        let mut seen = session.poll(Instant::now());
+        assert_eq!(replies(&seen, 9), [Err(refused.clone())]);
+        assert!(seen.iter().any(|u| matches!(u, Update::Hung { .. })));
+        assert!(session.ledger().in_use() > 0 || session.has_ended());
+        let mut hang = None;
+        session.take(Message::reply(9, Err(refused)), &mut seen, &mut hang);
+        let start = Instant::now();
+        while session.ledger().in_use() > 0 {
+            assert!(start.elapsed() < Duration::from_secs(20));
+            seen.extend(session.poll(Instant::now()));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(session.has_ended(), "released only once the unit ended");
+        assert_eq!(replies(&seen, 9).len(), 1, "{seen:?}");
     }
 
     /// A leased reply the full queue drops is marked dropped before it is

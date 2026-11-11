@@ -341,6 +341,13 @@ fn a_mode_the_sdk_does_not_serve_is_refused_before_reading() {
     assert_eq!(ServeOptions::default().api, 1);
 }
 
+/// The tests that map buffers take this lock: the SDK's count of mapped
+/// buffers is the process's, and one of them checks it.
+fn mapping() -> std::sync::MutexGuard<'static, ()> {
+    static MAPPING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    MAPPING.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// A generator that records what it was asked, needs setup once, finds
 /// nothing without input, and writes each pixel's red as its coverage.
 struct Subject {
@@ -438,6 +445,7 @@ fn mask_request(input: Option<ViewerInput>) -> MaskGenerate {
 
 #[test]
 fn a_mask_generator_sets_up_then_generates_from_checked_requests() {
+    let _mapping = mapping();
     let (asked, requests) = mpsc::channel();
     let extension = Extension::new().mask_generator(
         "subject",
@@ -519,6 +527,7 @@ fn a_mask_generator_sets_up_then_generates_from_checked_requests() {
 
 #[test]
 fn the_mock_refuses_a_mask_result_the_app_would_refuse() {
+    let _mapping = mapping();
     let extension = Extension::new().mask_generator("subject", LongModel);
     let host =
         MockHost::start_with_options(extension, ServeOptions { api: 2 }, |_, _| Ok(Value::Null));
@@ -616,6 +625,7 @@ fn off_contract() -> Vec<(&'static str, MaskGenerate)> {
 
 #[test]
 fn a_request_off_the_mask_contract_never_reaches_the_handler() {
+    let _mapping = mapping();
     let (asked, requests) = mpsc::channel();
     let extension = Extension::new().mask_generator(
         "subject",
