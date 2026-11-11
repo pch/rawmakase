@@ -50,7 +50,9 @@ with their contributions.
 `linux-aarch64`, `macos-aarch64`, `macos-x86_64`, `windows-x86_64`,
 `windows-aarch64`), this computer's unless `--target` says otherwise, or `any`
 for an extension without a program. The tool checks the package as RAWmakase
-will before it says it is done.
+on its target will before it says it is done, a package for another platform
+included: a Windows package must hold the program with `.exe`, any other
+without.
 
 RAWmakase refuses a package that is named otherwise, is for another target,
 doesn't support its version, holds a file missing from `SHA256SUMS` or listed

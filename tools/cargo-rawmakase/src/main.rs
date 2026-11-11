@@ -179,15 +179,6 @@ fn program_name(program: &manifest::Program, target: &str) -> String {
     }
 }
 
-/// The program's path in a package for `target`.
-fn program_path(program: &manifest::Program, target: &str) -> String {
-    let name = program_name(program, target);
-    match program.path.rsplit_once('/') {
-        Some((dir, _)) => format!("{dir}/{name}"),
-        None => name,
-    }
-}
-
 fn package(
     dir: &Path,
     target: Option<&str>,
@@ -216,7 +207,7 @@ fn package(
                 built.display()
             )
         })?;
-        let path = program_path(declared, &target);
+        let path = package::program_path(declared, &target);
         program_in_package = Some(path.clone());
         files.push((path, bytes));
     }
@@ -245,7 +236,9 @@ fn package(
     std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
     let path = out.join(package::file_name(&manifest, &target));
     package::write(&path, &files, program_in_package.as_deref()).map_err(|e| e.to_string())?;
-    // What the host will check, checked now.
+    // What the host will check, checked now. Unpacking checks the program by
+    // the name the package's target gives it, so a package for another
+    // platform is checked in full too.
     let inspected = package::inspect(&path).map_err(|e| e.to_string())?;
     let check = out.join(format!(".check-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&check);
@@ -255,9 +248,6 @@ fn package(
     match unpacked {
         Ok(_) if inspected.target == target => Ok(path),
         Ok(_) => Err("the package's name doesn't state its target".into()),
-        // Unpacking a Windows package elsewhere looks for the program with
-        // this platform's name; the package itself is complete.
-        Err(_) if target != rawmakase_extensions::current_target() => Ok(path),
         Err(e) => Err(e.to_string()),
     }
 }

@@ -100,7 +100,7 @@ fn unpack_within(path: &Path, into: &Path, cap: u64) -> Result<Manifest> {
             .map_err(zip_error)?
             .trim_end_matches('/')
             .to_string();
-        let target = into.join(name.split('/').collect::<std::path::PathBuf>());
+        let target = into.join(local_path(&name));
         if entry.is_dir() {
             std::fs::create_dir_all(&target)?;
             continue;
@@ -148,7 +148,8 @@ fn unpack_within(path: &Path, into: &Path, cap: u64) -> Result<Manifest> {
             "{missing} is listed in {SUMS} but not in the package"
         )));
     }
-    for (key, path) in package_paths(&manifest) {
+    let stated = stated_target(path, &manifest);
+    for (key, path) in package_paths(&manifest, &stated) {
         if !seen.contains(&path) {
             return Err(Error::new(format!("{key} {path} is not in the package")));
         }
@@ -156,22 +157,45 @@ fn unpack_within(path: &Path, into: &Path, cap: u64) -> Result<Manifest> {
     #[cfg(unix)]
     if let Some(program) = &manifest.program {
         use std::os::unix::fs::PermissionsExt;
-        let file = crate::program_file(into, program);
+        let file = into.join(local_path(&program_path(program, &stated)));
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755))?;
     }
     Ok(manifest)
 }
 
-/// The files the manifest names, which the package must hold.
-fn package_paths(manifest: &Manifest) -> Vec<(&'static str, String)> {
+/// A package path as a relative path on this computer.
+fn local_path(name: &str) -> std::path::PathBuf {
+    name.split('/').collect()
+}
+
+/// The target the package's file name states, which decides its program's
+/// name: this computer's for a package named otherwise or for `any`. The
+/// host installs only packages for its own target, so there the two agree;
+/// `cargo rawmakase package` checks packages for other targets with it.
+fn stated_target(path: &Path, manifest: &Manifest) -> String {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| target_of(n, manifest))
+        .filter(|t| t != crate::ANY_TARGET)
+        .unwrap_or_else(crate::current_target)
+}
+
+/// The program's path in a package for `target`: its manifest path, with
+/// `.exe` added for a Windows target when the file name has no extension.
+pub fn program_path(program: &manifest::Program, target: &str) -> String {
+    let mut path = program.path.clone();
+    let name = path.rsplit('/').next().unwrap_or_default();
+    if target.starts_with("windows-") && !name.contains('.') {
+        path.push_str(".exe");
+    }
+    path
+}
+
+/// The files the manifest names, which a package for `target` must hold.
+fn package_paths(manifest: &Manifest, target: &str) -> Vec<(&'static str, String)> {
     let mut paths = vec![("The manifest", manifest::FILE.to_string())];
     if let Some(program) = &manifest.program {
-        let mut path = program.path.clone();
-        // Windows programs carry `.exe`, which the manifest may leave out.
-        if cfg!(windows) && !path.rsplit('/').next().unwrap_or_default().contains('.') {
-            path.push_str(".exe");
-        }
-        paths.push(("program.path", path));
+        paths.push(("program.path", program_path(program, target)));
     }
     if let Some(icon) = &manifest.extension.icon {
         paths.push(("extension.icon", icon.clone()));
@@ -366,6 +390,32 @@ pub(crate) mod tests {
             use std::os::unix::fs::PermissionsExt;
             let mode = std::fs::metadata(&program).unwrap().permissions().mode();
             assert_eq!(mode & 0o111, 0o111);
+        }
+    }
+
+    #[test]
+    fn a_package_is_checked_by_the_program_name_of_its_own_target() {
+        // The other platform family's naming: `.exe` or none.
+        let (target, theirs, ours) = if cfg!(windows) {
+            ("linux-x86_64", "bin/tool", "bin/tool.exe")
+        } else {
+            ("windows-x86_64", "bin/tool.exe", "bin/tool")
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir
+            .path()
+            .join(format!("dev.test.tool-1.0.0-{target}.rmext"));
+        let manifest = files("1.0.0").swap_remove(0);
+        for (program, accepted) in [(theirs, true), (ours, false)] {
+            let files = [manifest.clone(), (program.into(), b"program".to_vec())];
+            write(&path, &files, Some(program)).unwrap();
+            let into = dir.path().join(format!("out-{accepted}"));
+            std::fs::create_dir(&into).unwrap();
+            let unpacked = unpack(&path, &into);
+            assert_eq!(unpacked.is_ok(), accepted, "{program}: {unpacked:?}");
+            if !accepted {
+                assert!(unpacked.unwrap_err().0.contains("program.path"));
+            }
         }
     }
 
