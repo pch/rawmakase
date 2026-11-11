@@ -978,6 +978,38 @@ is the patch centre's HSV saturation in linear ProPhoto against the default rend
 Decision, 2026-11-10: Defringe renders in the HDR master by this rule, on the CPU (the
 GPU's HDR preview leaves it to it). Its hue selection is SDR's, with SDR's error.
 
+**Photos (2026-11-11).** Camera Raw 18.7 rendered the twelve photos of
+[Validation](#validation) with Purple Amount 8 (hues 30–70) and Green Amount 4 (hues
+40–60), in HDR (limit 4) and in SDR; each edit's effect is its chroma (ICtCp Ct, Cp) in
+8× blocks against the photo's default render, RAWmakase's against Camera Raw's, on the
+blocks either changes most (the top 1% of each).
+
+| | Camera Raw HDR | Camera Raw SDR | RAWmakase SDR | RAWmakase HDR |
+| --- | --- | --- | --- | --- |
+| Chroma kept below white, on the blocks Camera Raw's HDR changes (four photos) | ×0.67–0.74 | ×0.45–0.63 | ×0.41–1.00 | ×0.39–1.00 |
+| Z 8 sky, 3–99 times white (8,643 blocks) | ×0.47 | ×1.00 | ×1.00 | ×1.00 |
+| Z 8 sky, 1–3 times white (2,875 blocks) | ×0.73 | ×1.00 | ×1.00 | ×1.00 |
+
+- **Below white** Camera Raw's HDR Defringe removes less than its SDR one on the same
+  blocks; RAWmakase's master removes what its SDR render removes.
+- **Above white** Camera Raw takes a bright, saturated part of the Z 8's blue sky
+  (Oklab hue 0.653–0.677, chroma 0.08–0.10, at 2.7–3.7 times white), a smooth patch,
+  not edges, that neither SDR render touches; the paler, brighter rest of the sky
+  (×5 white, chroma 0.06) it keeps. Over all twelve photos, bright blues (hue 0.60–0.70)
+  keep a median ×0.81–1.00 at every level, so the selection depends on more than hue
+  and brightness.
+- **Relative error** (mean |RAWmakase's change − Camera Raw's| over Camera Raw's mean
+  change, on those blocks): median 0.94 in SDR and 1.49 in HDR (means 0.99 and 1.58);
+  HDR is worse than SDR by more than 0.2 on 8 photos, from 0.94 to 1.29 on the Z 8 and
+  from 1.17 to 3.29 on a Sony ARW (DSC03793). Above 1, leaving Defringe out would be
+  closer to Camera Raw's master.
+- **Color Grading's HDR domain** (each channel through x/(1 + 15x/16), the operator, and
+  back) leaves RAWmakase's change on the photos within 4% of what it was and worsens the patches: Purple
+  mean ΔE_ITP 5.8 (8.6 above white), Green 6.3 (12.1), against 6.0 (7.6) and 3.0 (5.3).
+
+Decision, 2026-11-11: Defringe refuses the master again ("Defringe is not supported in
+HDR yet"); the edit and its SDR rendition keep it.
+
 ### Masks
 
 A mask's adjustment is added to the photo's own in RAWmakase's stages: its Temp and
@@ -1112,8 +1144,9 @@ patches (and ΔE_ITP means):
   [Highlights and Shadows](#highlights-and-shadows)); the colour mixer's Luminance
   ([Colour stage](#colour-stage)); Point Color on photos and on the GPU's HDR preview
   ([Point Color](#point-color)).
-- Defringe's hue selection against Camera Raw's (SDR and HDR alike), and Defringe on the
-  GPU's HDR preview ([Defringe](#defringe)).
+- Defringe in HDR: Camera Raw's HDR Defringe removes less than its SDR one below
+  white and takes some bright blues above it; RAWmakase's hue selection misses Camera
+  Raw's in SDR too ([Defringe](#defringe)).
 - Strong Highlights tints of saturated colours above white, and the Z50 II's peak with
   a Global tint ([Color grading](#color-grading)).
 - The vignette's Highlights in HDR, and Highlight Priority −100 in a frame's darkest
@@ -1170,10 +1203,10 @@ patches (and ΔE_ITP means):
   ([Highlights and Shadows](#highlights-and-shadows)); looks with RGB tables, B&W,
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
-  ([Vignette and grain](#vignette-and-grain)); Defringe ([Defringe](#defringe)); masks with Temp,
+  ([Vignette and grain](#vignette-and-grain)); masks with Temp,
   Tint, Exposure, Shadows and Texture ([Masks](#masks)); Point Color ([Point Color](#point-color)).
   Open: Whites above +50, Highlights, the colour
-  mixer's Luminance, looks that set Clarity or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
+  mixer's Luminance, Defringe ([Defringe](#defringe), refused again 2026-11-11), looks that set Clarity or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
   with them), 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display

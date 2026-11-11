@@ -935,46 +935,6 @@ mod tests {
         Ok(())
     }
 
-    /// Defringe renders in the master as Camera Raw 18.7 renders it
-    /// (docs/hdr.md#defringe): a fringe colour loses the same share of its chroma at a
-    /// quarter of white as at many times white, where SDR's operator, by Oklab chroma,
-    /// would remove more; another hue keeps its colour. The GPU leaves it to the CPU.
-    #[test]
-    fn defringe_removes_the_same_share_of_chroma_at_every_brightness() -> Result<()> {
-        use crate::develop::pipeline::pixel_params::supported_hdr;
-        let im = patches(&[[0.12, 0.03, 0.16], [0.16, 0.1, 0.03]]);
-        let saturation = |p: [f32; 3]| {
-            let max = p.into_iter().fold(0f32, f32::max);
-            (max - p.into_iter().fold(f32::INFINITY, f32::min)) / max
-        };
-        let at = |exposure: f32, amount: f32| -> Result<[[f32; 3]; 2]> {
-            let mut r = hdr_recipe(&im);
-            r.exposure = exposure;
-            r.effects.defringe = [amount, 0.];
-            assert_eq!(supported_hdr(&r, &im.metadata), amount == 0.);
-            let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
-            Ok([0, 1].map(|k| out.pixels[4 * out.width as usize + k * 8 + 4]))
-        };
-        let kept = |exposure: f32| -> Result<[f32; 2]> {
-            let (base, fixed) = (at(exposure, 0.)?, at(exposure, 0.3)?);
-            Ok([0, 1].map(|k| saturation(fixed[k]) / saturation(base[k])))
-        };
-        let [purple_low, orange_low] = kept(0.)?;
-        let [purple_high, orange_high] = kept(5.)?;
-        let bright = at(5., 0.)?[0];
-        assert!(bright.into_iter().fold(0f32, f32::max) > 8., "{bright:?}");
-        assert!(purple_low < 0.8, "{purple_low}");
-        assert!(
-            (purple_high - purple_low).abs() < 0.05,
-            "{purple_low} {purple_high}"
-        );
-        assert!(
-            (orange_low - 1.).abs() < 1e-3 && (orange_high - 1.).abs() < 1e-3,
-            "{orange_low} {orange_high} {purple_low} {purple_high}"
-        );
-        Ok(())
-    }
-
     /// A mask renders in the master with the sliders that work as their global
     /// counterparts do (docs/hdr.md#masks): over the whole frame, its Exposure, Shadows
     /// and Texture render the master the global slider renders, above white too, and

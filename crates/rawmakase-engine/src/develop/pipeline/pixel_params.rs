@@ -253,8 +253,6 @@ pub(crate) fn supported_hdr(r: &Recipe, metadata: &crate::camera_data::Metadata)
         && r.effects.vignette == 0.
         // A master with masks renders on the CPU only.
         && !r.masks.iter().any(crate::model::masks::MaskGroup::is_active)
-        // A master's Defringe renders on the CPU only.
-        && r.effects.defringe == [0.; 2]
         // So does its Point Color.
         && r.point_colors.is_empty()
         && crate::model::hdr::check_for(r, metadata).is_ok()
