@@ -7,18 +7,24 @@
 //! - macOS: `shm_open` with a random name, unlinked at once. Its size is fixed
 //!   once set; it can't be sealed.
 use super::{Receive, truncated};
-use rawmakase_extension_protocol::MAX_HANDLES;
 use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
+
+/// How many descriptors a `recvmsg` has room for: more than any kernel
+/// delivers with one message (Linux 253, `SCM_MAX_FD`; 64-bit XNU 254), so
+/// cut-off control data can't hide a descriptor the kernel installed. A line
+/// may still declare at most [`MAX_HANDLES`](rawmakase_extension_protocol::MAX_HANDLES),
+/// which the reader checks as a protocol fault.
+pub(crate) const RECEIVE_ROOM: usize = 512;
 
 /// A handle the app passed: a descriptor this process owns.
 pub(crate) type Handle = OwnedFd;
 
 impl Receive for UnixStream {
     fn receive(&mut self, buf: &mut [u8], handles: &mut VecDeque<Handle>) -> io::Result<usize> {
-        let (read, cut) = receive(self.as_fd(), buf, MAX_HANDLES, handles)?;
+        let (read, cut) = receive(self.as_fd(), buf, RECEIVE_ROOM, handles)?;
         if cut {
             return Err(truncated());
         }
@@ -78,17 +84,24 @@ pub(crate) fn receive(
         }
     };
     let first = fds.len();
+    // The end of the control bytes the kernel wrote.
+    let end = control.as_ptr() as usize + (msg.msg_controllen as usize).min(space);
     // SAFETY: walks the control messages the kernel wrote, within the length
-    // it reported in `msg`; each SCM_RIGHTS payload is an array of
-    // descriptors now installed in this process and owned by no one else.
+    // it reported in `msg` (CMSG_FIRSTHDR and CMSG_NXTHDR stop there, and each
+    // payload is read no further than `end`); each SCM_RIGHTS payload is an
+    // array of descriptors now installed in this process and owned by no one
+    // else.
     unsafe {
         let mut cmsg = libc::CMSG_FIRSTHDR(&msg);
         while !cmsg.is_null() {
             if (*cmsg).cmsg_level == libc::SOL_SOCKET && (*cmsg).cmsg_type == libc::SCM_RIGHTS {
                 let data = libc::CMSG_DATA(cmsg);
                 let header = data as usize - cmsg as usize;
-                let count =
-                    ((*cmsg).cmsg_len as usize).saturating_sub(header) / size_of::<libc::c_int>();
+                // XNU keeps a cut-off message's full `cmsg_len`: read no
+                // further than the control bytes actually returned.
+                let returned = end.saturating_sub(cmsg as usize);
+                let len = ((*cmsg).cmsg_len as usize).min(returned);
+                let count = len.saturating_sub(header) / size_of::<libc::c_int>();
                 for i in 0..count {
                     let fd = data.cast::<libc::c_int>().add(i).read_unaligned();
                     fds.push_back(OwnedFd::from_raw_fd(fd));

@@ -329,17 +329,24 @@ fn receive(socket: &UnixStream, buf: &mut [u8], room: usize) -> io::Result<(usiz
         }
     };
     let mut received = Vec::new();
+    // The end of the control bytes the kernel wrote.
+    let end = control.as_ptr() as usize + (msg.msg_controllen as usize).min(space);
     // SAFETY: walks the control messages the kernel wrote, within the length
-    // it reported in `msg`; each SCM_RIGHTS payload is an array of
-    // descriptors now installed in this process and owned by no one else.
+    // it reported in `msg` (CMSG_FIRSTHDR and CMSG_NXTHDR stop there, and each
+    // payload is read no further than `end`); each SCM_RIGHTS payload is an
+    // array of descriptors now installed in this process and owned by no one
+    // else.
     unsafe {
         let mut cmsg = libc::CMSG_FIRSTHDR(&msg);
         while !cmsg.is_null() {
             if (*cmsg).cmsg_level == libc::SOL_SOCKET && (*cmsg).cmsg_type == libc::SCM_RIGHTS {
                 let data = libc::CMSG_DATA(cmsg);
                 let header = data as usize - cmsg as usize;
-                let count =
-                    ((*cmsg).cmsg_len as usize).saturating_sub(header) / size_of::<libc::c_int>();
+                // XNU keeps a cut-off message's full `cmsg_len`: read no
+                // further than the control bytes actually returned.
+                let returned = end.saturating_sub(cmsg as usize);
+                let len = ((*cmsg).cmsg_len as usize).min(returned);
+                let count = len.saturating_sub(header) / size_of::<libc::c_int>();
                 for i in 0..count {
                     let fd = data.cast::<libc::c_int>().add(i).read_unaligned();
                     received.push(OwnedFd::from_raw_fd(fd));

@@ -592,10 +592,11 @@ mod unix {
         }
     }
 
-    /// Sixteen descriptors against the reader's room for eight: the control
-    /// data is cut off, serving ends, and every descriptor is closed.
+    /// Sixteen descriptors with a line declaring them, past `MAX_HANDLES`:
+    /// the reader's room (512) takes them all, so nothing is cut off, and the
+    /// count is the fault. Serving ends and every descriptor is closed.
     #[test]
-    fn handles_beyond_the_control_buffer_end_serving() {
+    fn a_line_declaring_more_than_max_handles_ends_serving() {
         let _lock = lock();
         let baseline = baseline();
         {
@@ -614,9 +615,26 @@ mod unix {
             );
             send(&wire.app, &bytes, &fds).unwrap();
             assert_eq!(wire.next(), None);
-            assert!(fault(wire.finish()).contains("MSG_CTRUNC"));
+            assert!(fault(wire.finish()).contains("more than the 8"));
         }
         settles(baseline);
+    }
+
+    /// A request refused without running (here, before `hello`) closes its
+    /// handles before it is answered, as a request cancelled between its
+    /// claim and its start does: the reply may end the app's lease at once.
+    #[test]
+    fn a_request_refused_without_running_closes_its_handles_first() {
+        let _lock = lock();
+        let mut wire = Wire::new();
+        wire.serve(2);
+        let [image, coverage] = buffers(4);
+        let before = open_handles();
+        wire.send_message(&mask_message(2), &[&image, &coverage]);
+        let error = wire.reply(2).unwrap().unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidRequest);
+        assert_eq!(open_handles(), before, "closed before the reply");
+        wire.finish().unwrap();
     }
 
     #[cfg(target_os = "linux")]
@@ -652,6 +670,34 @@ mod unix {
     }
 
     const MAX_HANDLES_FOR_TEST: usize = 8;
+
+    /// Sixteen descriptors against room for eight: the control data is cut
+    /// off (`MSG_CTRUNC`), and only what the kernel returned is read, each
+    /// a descriptor this process now owns. On macOS the kernel keeps the cut
+    /// message's full `cmsg_len`; reading by it would run past the buffer.
+    #[test]
+    fn cut_off_control_data_is_read_no_further_than_returned() {
+        let _lock = lock();
+        let baseline = baseline();
+        {
+            let (a, b) = std::os::unix::net::UnixStream::pair().unwrap();
+            let memory: Vec<Memory> = (0..16).map(|_| Memory::output(16).unwrap()).collect();
+            let fds: Vec<_> = memory.iter().map(Memory::handle).collect();
+            send(&a, b"x", &fds).unwrap();
+            let mut received = VecDeque::new();
+            let (read, cut) = receive(b.as_fd(), &mut [0; 4], 8, &mut received).unwrap();
+            assert_eq!(read, 1);
+            assert!(cut, "the control data was cut off");
+            assert!(received.len() <= 8, "{} taken", received.len());
+            #[cfg(target_os = "linux")]
+            assert_eq!(received.len(), 8, "Linux installs what fits");
+            for fd in &received {
+                // SAFETY: reads the flags of a descriptor this test owns.
+                assert!(unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } >= 0);
+            }
+        }
+        settles(baseline);
+    }
 }
 
 #[cfg(windows)]

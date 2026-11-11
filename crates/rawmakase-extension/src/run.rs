@@ -326,15 +326,12 @@ impl Extension {
                     // Claims the request: from here a cancel sets its flag. A
                     // request missing was cancelled while queued, and its
                     // cancellation answered it.
-                    let (cancelled, handles) = {
+                    let (cancelled, mut handles) = {
                         let mut requests = requests.lock().unwrap_or_else(|e| e.into_inner());
                         let Some(entry) = requests.get_mut(&id) else {
                             continue;
                         };
-                        (
-                            entry.cancelled.clone(),
-                            entry.queued.take().unwrap_or_default(),
-                        )
+                        (entry.cancelled.clone(), entry.queued.take())
                     };
                     let result = if cancelled.load(Ordering::SeqCst) {
                         Err(RemoteError::new(
@@ -345,6 +342,7 @@ impl Extension {
                         match AppRequest::parse(&method, params) {
                             Err(e) => Err(e),
                             Ok(AppRequest::Hello(hello)) => {
+                                drop(handles.take());
                                 if hello.protocol != PROTOCOL {
                                     let _ = host.0.send(&Message::reply(
                                         id,
@@ -368,7 +366,6 @@ impl Extension {
                                 );
                                 dirs = (hello.data_dir, hello.cache_dir);
                                 host.0.session.store(hello.session, Ordering::SeqCst);
-                                drop(handles);
                                 self.reply(host, requests, id, Ok(self.hello_reply()));
                                 self.start_adapters(host);
                                 continue;
@@ -387,10 +384,15 @@ impl Extension {
                                 };
                                 // The handles go when the handler is done,
                                 // before its reply.
+                                let handles = handles.take().unwrap_or_default();
                                 self.dispatch(&cx, request, handles)
                             }
                         }
                     };
+                    // Every other path, a cancel that won the race with the
+                    // claim among them, closes the handles here: the app may
+                    // end their lease as soon as it reads the reply.
+                    drop(handles);
                     self.reply(host, requests, id, result);
                 }
             }
@@ -728,6 +730,12 @@ impl Reading {
 /// next `n` queued, on Windows the values its `hv` lists.
 fn take(incoming: &mut Incoming, declared: &Handles) -> Result<Vec<Handle>, String> {
     let wanted = declared.handles as usize;
+    if wanted > rawmakase_extension_protocol::MAX_HANDLES {
+        return Err(format!(
+            "a message declares {wanted} handles, more than the {} one may carry",
+            rawmakase_extension_protocol::MAX_HANDLES
+        ));
+    }
     #[cfg(windows)]
     {
         let values = declared.hv.as_deref().unwrap_or_default();
