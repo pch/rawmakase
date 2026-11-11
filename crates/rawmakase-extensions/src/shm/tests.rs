@@ -38,6 +38,26 @@ fn budgets_refuse_before_anything_is_allocated() {
     assert_eq!(many.output(1).unwrap_err().code, ErrorCode::TooLarge);
 }
 
+/// A fill that panics leaves nothing counted: the reservation is given back
+/// as the panic unwinds, and the budget is whole for the next request.
+#[test]
+fn a_panicking_fill_gives_its_reservation_back() {
+    let ledger = Ledger::new();
+    let mut buffers = Buffers::new(&ledger);
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        buffers.input(MAX_REQUEST_BYTES, |_| panic!("the render failed"))
+    }));
+    assert!(panicked.is_err());
+    assert_eq!(buffers.count(), 0);
+    drop(buffers);
+    assert_eq!(ledger.in_use(), 0);
+    let mut first = Buffers::new(&ledger);
+    first.output(MAX_REQUEST_BYTES).unwrap();
+    let mut second = Buffers::new(&ledger);
+    second.output(MAX_REQUEST_BYTES).unwrap();
+    assert_eq!(ledger.in_use(), MAX_EXTENSION_BYTES);
+}
+
 #[test]
 fn an_output_reads_back_and_an_input_has_no_view() {
     let ledger = Ledger::new();

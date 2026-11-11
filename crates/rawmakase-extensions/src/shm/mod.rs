@@ -75,6 +75,29 @@ impl Ledger {
     }
 }
 
+/// Bytes taken from a ledger for a buffer being allocated: given back when
+/// dropped, on an error or an unwinding panic, unless committed to the
+/// [`Buffers`] that then count them.
+struct Reservation<'a> {
+    ledger: &'a Ledger,
+    bytes: u64,
+}
+impl<'a> Reservation<'a> {
+    fn take(ledger: &'a Ledger, bytes: u64) -> Result<Self, RemoteError> {
+        ledger.take(bytes)?;
+        Ok(Self { ledger, bytes })
+    }
+    /// The bytes now belong to the buffers' lease.
+    fn commit(mut self) {
+        self.bytes = 0;
+    }
+}
+impl Drop for Reservation<'_> {
+    fn drop(&mut self) {
+        self.ledger.give(self.bytes);
+    }
+}
+
 /// One request's buffers in shared memory, and their lease: their bytes count
 /// in the ledger until this is dropped. The index each buffer is added at is
 /// its handle's index in the message, which its descriptor names.
@@ -162,28 +185,22 @@ impl Buffers {
                 ),
             ));
         }
-        self.ledger.take(len)?;
+        // Counted from here; given back on any error, and on a panic in the
+        // caller's fill, unless the buffer is added.
+        let reserved = Reservation::take(&self.ledger, len)?;
         let size = usize::try_from(len).map_err(|_| {
             RemoteError::new(ErrorCode::TooLarge, "a buffer too large for this system")
-        });
-        match size.and_then(|size| {
-            allocate(size).map_err(|e| {
-                RemoteError::new(
-                    ErrorCode::Unavailable,
-                    format!("shared memory couldn't be allocated: {e}"),
-                )
-            })
-        }) {
-            Ok(memory) => {
-                self.items.push(memory);
-                self.bytes = total;
-                Ok(self.items.len() as u32 - 1)
-            }
-            Err(e) => {
-                self.ledger.give(len);
-                Err(e)
-            }
-        }
+        })?;
+        let memory = allocate(size).map_err(|e| {
+            RemoteError::new(
+                ErrorCode::Unavailable,
+                format!("shared memory couldn't be allocated: {e}"),
+            )
+        })?;
+        self.items.push(memory);
+        self.bytes = total;
+        reserved.commit();
+        Ok(self.items.len() as u32 - 1)
     }
 
     /// The handles to send with the request's line, in index order: copies
