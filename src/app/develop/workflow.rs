@@ -486,6 +486,12 @@ impl Editor {
             if let Some(list) = visualize {
                 recipe.point_colors = list;
             }
+            // A mask's overlay is read from the rendered pixels, and range masks select
+            // from the rendition without the SDR rendition's sliders: while it shows,
+            // the view renders without them, so it shows what the mask selects.
+            if matches!(self.overlay(), crate::app::worker::Overlay::Mask { .. }) {
+                recipe.hdr.sdr = Default::default();
+            }
             let view = crate::app::develop::state::RenderView {
                 image: Arc::downgrade(&image),
                 path: self.document.path.clone(),

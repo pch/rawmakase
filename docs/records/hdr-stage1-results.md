@@ -689,16 +689,54 @@ compared by luminance in 8× linear blocks:
   median 0.44 stop (+0.68 below 0.05 luminance, −0.08 at white), and that change is a
   curve of luminance to 0.010 stop (p95 0.051). Camera Raw 18.7 also has an Auto SDR
   that searches these sliders per photo.
-- **Decision: the master renders with them; the SDR rendition doesn't yet.** They
-  never change the master in Camera Raw (bit-identical with each at ±50), so the
-  master, HDR exports and Develop's HDR preview render as without them (2026-11-10;
-  until then they refused the master). Rendering them on RAWmakase's SDR rendition
-  (the HDR-off render) would move it further from Camera Raw's, not closer: the base
-  they adjust is the unmatched part. Matching Camera Raw's default SDR rendition needs
-  its local tone map measured on many photos first. The SDR rendition stays the
-  HDR-off render, a median 0.2 stop from Camera Raw's on this photo, the sliders are
-  kept in the edit and written back to XMP, and gain-map exports carry that rendition
-  as their base.
+- **The master renders with them.** They never change the master in Camera Raw
+  (bit-identical with each at ±50), so the master, HDR exports and Develop's HDR
+  preview render as without them (2026-11-10; until then they refused the master).
+
+**Each slider on three photos** (2026-11-11). Camera Raw's SDR rendition of the CC0
+Nikon Z 8, Nikon Z f and Sony A7R III photos (Adobe Standard, HDR limit 4), saved
+through Save Image as gain-map JPEGs: the default and each slider at −100, −50, +50 and
++100 (87 renders), compared by luminance in 16-pixel linear blocks. RAWmakase's default
+SDR rendition (the HDR-off render) is a median 0.22–0.38 stop from Camera Raw's on these
+photos. Per slider, how the rendition changes against the default, how much of that
+change one curve of luminance leaves (p95), and how far the three photos' curves are
+apart (median / p90):
+
+| Slider | Change, median (stop) | Left by one curve, p95 | Curves apart |
+| --- | --- | --- | --- |
+| Brightness ±50, ±100 | −1.02 to +0.95 | 0.01–0.11 | 0.011–0.021 / 0.045–0.110 |
+| Contrast −100 to +50 | −0.14 to +0.13 | 0.01–0.09 | 0.014–0.032 / 0.044–0.090 |
+| Contrast +100 | −0.11 to −0.43 | 0.08–0.37 | 0.154 / 0.363 |
+| Highlights ±50, ±100 | −1.25 to +0.18 | 0.01–0.11 | 0.148–0.849 / 0.175–1.046 |
+| Shadows −50, −100 | −0.12 to −0.34 | 0.06–0.17 | 0.114–0.228 / 0.170–0.295 |
+| Shadows +50, +100 | +0.23 to +1.18 | 0.13–0.33 | 0.235–0.889 / 0.456–1.283 |
+| Whites ±50, ±100 | −0.01 to +0.42 | 0.00–0.14 | 0.001–0.027 / 0.004–0.142 |
+| Clarity ±50, ±100 | −0.22 to +0.95 | 0.09–1.14 | 0.232–2.546 / 0.291–4.178 |
+| Blend ±50, ±100 | 0.00 | 0.00–0.01 | — |
+
+Blend is Camera Raw's "Highlight Saturation": it changes no luminance, and saturation
+only above about half of white (±0.1 at ±100 on the A7R III). Clarity is local.
+
+The test of rendering them is how well the change, applied to RAWmakase's own SDR
+rendition, gives Camera Raw's change, with the curve fitted on two photos and checked
+on the third, against the HDR tone tolerances (median 0.15, p95 0.35 stop on every
+photo). These pass:
+
+| Slider | Renders | Worst held-out photo, median / p95 (stop) | Fails beyond (worst) |
+| --- | --- | --- | --- |
+| Brightness | −50 to +100 | 0.124 / 0.254 | −100: 0.038 / 0.387 |
+| Contrast | −100 to +50 | 0.084 / 0.191 | +100: 0.274 / 0.807 |
+| Highlights | 0 to +100 | 0.098 / 0.204 | −50: 0.226 / 0.261; −100: 0.820 / 0.913 |
+| Shadows | −100 to 0 | 0.061 / 0.267 | +50: 0.085 / 0.393; +100: 0.353 / 1.062 |
+| Whites | −100 to +50 | 0.025 / 0.164 | +100: 0.142 / 0.465 |
+
+- **Decision: the SDR rendition renders them within those ranges** (2026-11-11), the
+  three photos' average curve per measured value, interpolated linearly in the value
+  (none at 0), each slider in the panel's order on the luminance the others leave. With
+  any slider beyond them, or Clarity or Blend set, none renders: an edit is never half
+  rendered, and the Basic panel's note names the slider. Several at once were not
+  measured together. The rendition stays the HDR-off render otherwise, its default a
+  local tone map short of Camera Raw's; gain-map exports carry it as their base.
 
 ### Colour stage
 

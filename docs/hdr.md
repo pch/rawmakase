@@ -28,7 +28,17 @@ departs from its HDR-off render by a median 0.2 stop on a photo
 ([record](records/hdr-stage1-results.md#sdr-rendition)). Its SDR rendition sliders
 (`SDRBrightness` and the others) adjust that tone map and never change the master
 (Camera Raw 18.7's is bit-identical with each at ±50). RAWmakase keeps them in the edit
-and renders the master with them, as without; its SDR rendition doesn't render them.
+and renders the master with them, as without. Its SDR rendition renders the change they
+make to Camera Raw's, measured as one curve of luminance (`develop::sdr_rendition`),
+within the ranges where that change is the same on every photo measured: Brightness
+−50 to +100, Contrast −100 to +50, Highlights 0 to +100, Shadows −100 to 0 and Whites
+−100 to +50. With any slider beyond them, or Clarity (a local operator) or Highlight
+Saturation (`SDRBlend`) set, none renders, and the Basic panel's note says which
+([record](records/hdr-stage1-results.md#sdr-rendition)). Values set while HDR is off
+render nothing, as in Camera Raw. Range masks and Auto see the edit without them, so they
+change neither what a mask selects nor the master; while a mask's overlay shows, and
+for the range pickers, Develop renders the rendition without them, so the overlay
+shows that selection. These edits' SDR previews render on the CPU.
 
 Develop shows the HDR master on a display with headroom ([Display](#display)) and
 the SDR rendition everywhere else, and says which under the Basic panel's HDR switch,
@@ -747,7 +757,7 @@ headroom. The map is one 8-bit channel the base's size, computed in the base's c
 space (sRGB primaries, linear) from luminance as log2 of (HDR + 1/64) / (SDR + 1/64),
 between its minimum and maximum over the photo, gamma 1. The base's headroom is 0 and
 the alternate's log2 of 2^limit. The SDR rendition's sliders (`crs:SDR*`), which Camera
-Raw's base follows, are not rendered in it, as in SDR exports. The file is laid out as libultrahdr writes it: the base
+Raw's base follows, render in the base as in SDR exports, where they render. The file is laid out as libultrahdr writes it: the base
 with an ISO 21496-1 version marker and an MPF index, then the map's grayscale JPEG with
 the metadata in APP2. No XMP `hdrgm` metadata (Adobe's earlier gain-map format) is
 written. A gain map's gamut is the base's, Rec. 709.

@@ -50,6 +50,8 @@ pub mod red_eye;
 pub mod rendered;
 pub mod retouch;
 mod scene_tone;
+pub(crate) mod sdr_rendition;
+mod sdr_rendition_data;
 mod stage_cache;
 
 pub use crate::color::{mul, srgb_encode};

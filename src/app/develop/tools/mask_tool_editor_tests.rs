@@ -635,3 +635,52 @@ fn masking_tool_draws_gradients_paints_brushes_and_edits_handles() {
     }
     assert_eq!(*editor.document.edit.recipe(), saved);
 }
+
+/// While a mask's overlay shows, the view renders without the SDR rendition's
+/// sliders: the overlay is read from the rendered pixels, and a range mask selects
+/// from the rendition without them, so the overlay shows what the mask selects. With
+/// no overlay, the SDR rendition renders them.
+#[test]
+fn a_mask_overlay_renders_the_rendition_its_ranges_select_from() {
+    let ctx = egui::Context::default();
+    let (mut editor, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    editor.document.edit.setup_mut().hdr.enabled = true;
+    editor.document.edit.setup_mut().hdr.sdr.brightness = 0.5;
+    in_edit_frame(&ctx, &mut editor, |editor| {
+        editor.create_mask(crate::app::develop::tools::mask_tool::Kind::Brush, None)
+    });
+    assert!(matches!(
+        editor.overlay(),
+        crate::app::worker::Overlay::Mask { .. }
+    ));
+    editor.schedule_edit();
+    let pending = editor.preview.pending.recipe.as_ref().unwrap();
+    assert_eq!(pending.hdr.sdr, Default::default());
+    assert!(pending.hdr.enabled, "only the sliders are left out");
+    editor.view.masking.overlay = false;
+    editor.schedule_edit();
+    let pending = editor.preview.pending.recipe.as_ref().unwrap();
+    assert_eq!(pending.hdr.sdr.brightness, 0.5);
+}
+
+/// The range pickers sample the rendition a range mask selects from, without the SDR
+/// rendition's sliders: the colour they read is the same with them as without.
+#[test]
+fn the_range_pickers_sample_without_the_sdr_rendition_sliders() {
+    let ctx = egui::Context::default();
+    let (mut editor, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    editor.document.edit.setup_mut().hdr.enabled = true;
+    let rect = Rect::from_min_size(Pos2::ZERO, egui::Vec2::splat(100.));
+    let at = Pos2::new(50., 50.);
+    let plain = editor.developed_lab(at, rect).unwrap();
+    editor.document.edit.setup_mut().hdr.sdr.brightness = 0.8;
+    assert_eq!(editor.developed_lab(at, rect).unwrap(), plain);
+}

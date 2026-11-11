@@ -236,7 +236,10 @@ impl PixelParams {
 /// [`pixel_params_hdr`]. An HDR profile's 3D tables, which look up overrange-encoded
 /// values (`CameraProfile::camera_color`), render on the CPU.
 pub(crate) fn supported(r: &Recipe) -> bool {
-    r.profile.as_ref().is_some_and(|p| !p.is_hdr()) && !r.hdr.is_active()
+    r.profile.as_ref().is_some_and(|p| !p.is_hdr())
+        && !r.hdr.is_active()
+        // The SDR rendition's sliders render on the CPU.
+        && crate::develop::sdr_rendition::SdrRenditionTone::new(&r.hdr.sdr).is_none()
 }
 /// Whether the GPU port renders the HDR master of this recipe (resolved with HDR on,
 /// `Recipe::resolved_hdr`) of a photo with `metadata`: one whose master renders

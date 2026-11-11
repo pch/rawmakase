@@ -485,12 +485,7 @@ fn hdr_row(
         };
         hdr_note(ui, text);
         if r.hdr.sdr != crate::model::hdr::SdrRendition::default() {
-            hdr_note(
-                ui,
-                "This edit's SDR settings, from Lightroom or Camera Raw, are kept; \
-                 its SDR rendition doesn't render them yet."
-                    .to_owned(),
-            );
+            hdr_note(ui, sdr_settings_note(&r.hdr.sdr));
         }
     }
     second_side_note(ui, r.hdr.is_active(), second);
@@ -508,6 +503,20 @@ fn second_side_note(
         && (edit_hdr || *shown != Presentation::Sdr(crate::app::develop::viewport::HDR_OFF))
     {
         hdr_note(ui, format!("{side}: {}", presentation_note(shown)));
+    }
+}
+
+/// What the SDR rendition makes of an HDR edit's SDR settings (`crs:SDR*`, from
+/// Lightroom or Camera Raw), which Develop doesn't edit.
+fn sdr_settings_note(sdr: &crate::model::hdr::SdrRendition) -> String {
+    match sdr.unrendered() {
+        None => "The SDR rendition renders this edit's SDR settings, from Lightroom or \
+                 Camera Raw."
+            .to_owned(),
+        Some(why) => format!(
+            "This edit's SDR settings, from Lightroom or Camera Raw, are kept; the SDR \
+             rendition renders none of them while one is beyond what renders: {why}."
+        ),
     }
 }
 
@@ -534,6 +543,23 @@ fn presentation_note(shown: &crate::app::develop::hdr_preview::Presentation) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The note says whether the SDR rendition renders the edit's SDR settings, and
+    /// names the one that keeps it from rendering any.
+    #[test]
+    fn the_sdr_settings_note_says_what_renders() {
+        let mut sdr = crate::model::hdr::SdrRendition {
+            brightness: 0.3,
+            ..Default::default()
+        };
+        assert!(sdr_settings_note(&sdr).starts_with("The SDR rendition renders"));
+        sdr.clarity = 0.2;
+        assert!(
+            sdr_settings_note(&sdr).ends_with("Clarity."),
+            "{}",
+            sdr_settings_note(&sdr)
+        );
+    }
     use crate::app::develop::hdr_preview::Presentation;
 
     /// The texts `second_side_note` draws for an edit in HDR or not (`edit_hdr`)

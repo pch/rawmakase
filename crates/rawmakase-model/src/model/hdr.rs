@@ -95,6 +95,27 @@ impl Default for HdrSettings {
 }
 
 impl SdrRendition {
+    /// Why the SDR rendition doesn't render these sliders, if it doesn't: one is set
+    /// beyond what was measured to render as Camera Raw 18.7 changes its own SDR
+    /// rendition, as one change of luminance (docs/records/hdr-stage1-results.md#sdr-rendition).
+    /// Within those ranges each slider's change of the rendition is the same curve of
+    /// luminance on every photo measured; Clarity is a local operator and Blend
+    /// ("Highlight Saturation") changes saturation, neither measured to render. All the
+    /// sliders render or none does, so an edit's SDR rendition is never half of them.
+    pub fn unrendered(&self) -> Option<&'static str> {
+        let ranges: [(&'static str, f32, std::ops::RangeInclusive<f32>); 7] = [
+            ("Brightness below −50", self.brightness, -0.5..=1.),
+            ("Contrast above +50", self.contrast, -1. ..=0.5),
+            ("Whites above +50", self.whites, -1. ..=0.5),
+            ("Positive Shadows", self.shadows, -1. ..=0.),
+            ("Negative Highlights", self.highlights, 0. ..=1.),
+            ("Clarity", self.clarity, 0. ..=0.),
+            ("Highlight Saturation", self.blend, 0. ..=0.),
+        ];
+        ranges
+            .into_iter()
+            .find_map(|(name, v, range)| (!range.contains(&v)).then_some(name))
+    }
     /// The sliders in the order of Camera Raw's keys,
     /// [`crate::model::camera_raw::SDR_RENDITION`].
     pub fn values_mut(&mut self) -> [&mut f32; 7] {
@@ -724,6 +745,84 @@ mod tests {
             r.profile_amount = amount;
             check_recipe(&r).unwrap();
         }
+    }
+
+    /// The SDR rendition renders its sliders within the measured ranges, all or none;
+    /// an HDR edit's SDR rendition keeps them, an edit with HDR off has none to render.
+    #[test]
+    fn the_sdr_rendition_keeps_its_sliders_only_with_hdr_on() {
+        let within = SdrRendition {
+            brightness: 1.,
+            contrast: -1.,
+            whites: 0.5,
+            shadows: -0.6,
+            highlights: 0.8,
+            ..Default::default()
+        };
+        assert_eq!(within.unrendered(), None);
+        for (beyond, name) in [
+            (
+                SdrRendition {
+                    brightness: -0.51,
+                    ..within
+                },
+                "Brightness below −50",
+            ),
+            (
+                SdrRendition {
+                    contrast: 0.6,
+                    ..within
+                },
+                "Contrast above +50",
+            ),
+            (
+                SdrRendition {
+                    whites: 0.6,
+                    ..within
+                },
+                "Whites above +50",
+            ),
+            (
+                SdrRendition {
+                    shadows: 0.1,
+                    ..within
+                },
+                "Positive Shadows",
+            ),
+            (
+                SdrRendition {
+                    highlights: -0.1,
+                    ..within
+                },
+                "Negative Highlights",
+            ),
+            (
+                SdrRendition {
+                    clarity: 0.1,
+                    ..within
+                },
+                "Clarity",
+            ),
+            (
+                SdrRendition {
+                    blend: -0.1,
+                    ..within
+                },
+                "Highlight Saturation",
+            ),
+        ] {
+            assert_eq!(beyond.unrendered(), Some(name));
+        }
+        let m = crate::camera_data::Metadata::default();
+        let mut r = crate::model::recipe::Recipe::default();
+        r.hdr.sdr = within;
+        r.hdr.enabled = true;
+        let sdr = r.resolved(&m);
+        assert!(!sdr.hdr.enabled);
+        assert_eq!(sdr.hdr.sdr, within);
+        r.hdr.enabled = false;
+        assert_eq!(r.resolved(&m).hdr.sdr, SdrRendition::default());
+        assert_eq!(r.hdr.sdr, within, "the edit keeps them");
     }
 
     #[test]

@@ -265,6 +265,9 @@ pub(crate) fn mask_weights(
         // An HDR master's range masks select from its SDR rendition, as the mask
         // overlay shows them: the selection is the edit's, whichever rendering shows it.
         plain.hdr.enabled = false;
+        // Nor by the SDR rendition's sliders, which never change the master: the
+        // master and its SDR rendition select the same pixels.
+        plain.hdr.sdr = Default::default();
         let im = toned.source();
         let gpu = stages.as_deref_mut().and_then(|s| {
             let params = pixel_params::pixel_params(im, &plain)?;

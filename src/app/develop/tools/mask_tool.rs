@@ -690,6 +690,8 @@ impl Editor {
         let mut r = self.effective_recipe();
         r.masks.clear();
         r.sharpening = 0.;
+        // Ranges select from the rendition without the SDR rendition's sliders.
+        r.hdr.sdr = Default::default();
         let g = crate::develop::Geometry::new(im, &r, 0);
         let (w, h) = (3.min(g.width), 3.min(g.height));
         let u = ((pos.x - rect.left()) / rect.width()).clamp(0., 1.);
