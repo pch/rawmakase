@@ -1173,7 +1173,7 @@ fn the_command_line_and_the_app_change_extensions_json_without_losing_each_other
     let mut f = fixture(&["a.png"]);
     let e = &mut f.editor;
     // The command line turns it off while the app changes a setting.
-    Store::new(&f.data).set_enabled(ID, false).unwrap();
+    Store::new(&f.data).set_enabled(ID, false, &[]).unwrap();
     e.extensions.set_setting(ID, "step", json!(1.5)).unwrap();
     let state = State::read(&f.data).unwrap();
     assert!(!state.developer[ID].enabled);

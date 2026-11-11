@@ -1037,8 +1037,14 @@ impl Host {
             .clone()
             .ok_or("Extensions are off in this editor")?;
         let index = self.index(id).ok_or_else(|| format!("No extension {id}"))?;
+        // A bundled extension has no install for the store to find.
+        let bundled: &[&str] = if self.extensions[index].origin == Origin::Bundled {
+            &[id]
+        } else {
+            &[]
+        };
         store
-            .set_enabled(id, enabled)
+            .set_enabled(id, enabled, bundled)
             .map_err(|e| format!("{} not changed: {e}", self.extensions[index].name()))?;
         let e = &mut self.extensions[index];
         e.entry.enabled = enabled;
