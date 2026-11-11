@@ -579,6 +579,51 @@ fn a_proposal_for_the_open_photo_and_others_is_one_undo() {
     let _ = ctx;
 }
 
+/// Steps Develop's Exposure up with its key (`=`), in a whole-window frame
+/// as a person's key press is.
+fn step_exposure(e: &mut Editor) {
+    e.view.selected_setting = Some(crate::model::params::ParameterId::Exposure);
+    crate::app::testing::press(e, egui::Key::Equals, egui::Modifiers::NONE);
+}
+
+#[test]
+fn develop_takes_no_edit_while_a_proposal_with_the_open_photo_runs() {
+    let mut f = fixture(&["a.png", "b.png"]);
+    let e = &mut f.editor;
+    let (a, b) = (f.photos[0].clone(), f.photos[1].clone());
+    open(e, &a);
+    // The key edits Develop when nothing runs: the test reaches Exposure.
+    step_exposure(e);
+    let stepped = e.document.edit.recipe().exposure;
+    assert!(stepped > 0., "the key reached Exposure");
+    assert!(e.flush());
+    // Brighten on both, the open photo among them: its worker holds, before
+    // the batch window shows.
+    let barrier = brighten_held(e, &[a.0, b.0]);
+    assert!(e.activity.is_syncing());
+    // Neither a key nor a control request edits the photo the worker is
+    // about to write.
+    step_exposure(e);
+    assert_eq!(e.document.edit.recipe().exposure, stepped);
+    let ctx = e.context.clone();
+    let set =
+        crate::app::shell::commands::Command::new(crate::app::shell::commands::Operation::Set(
+            crate::app::shell::commands::Param::parse("exposure").unwrap(),
+            3.0,
+        ));
+    assert_eq!(e.execute_command(set, &ctx).unwrap_err().code, "busy");
+    assert_eq!(e.document.edit.recipe().exposure, stepped);
+    assert!(!e.document.edit.save_state().needs_save());
+    barrier.wait();
+    let outcomes = pump(e, "Brighten", |_, o| result(o, "Brighten").is_some());
+    assert!(result(&outcomes, "Brighten").unwrap().is_ok());
+    settle(e);
+    // What Develop shows is what was written.
+    let written = stepped + 0.5;
+    assert!((e.document.edit.recipe().exposure - written).abs() < 1e-4);
+    assert!((exposure(e, &a).unwrap() - written).abs() < 1e-4);
+}
+
 /// Lets background work the editor waits for finish: a batch, and the photo
 /// open in Develop loading again.
 fn settle(e: &mut Editor) {
