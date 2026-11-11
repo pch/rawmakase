@@ -793,7 +793,7 @@ mod tests {
     /// (docs/hdr.md#the-colour-stage): Saturation changes a colour's saturation as much
     /// at 20 times white as at a quarter of it, Vibrance's brightening leaves colours
     /// above white alone, a black & white master is gray and unclipped, and
-    /// Calibration renders. Band Luminance refuses the master.
+    /// Calibration and band Luminance render.
     #[test]
     fn the_colour_stage_renders_above_white_as_camera_raw_does() -> anyhow::Result<()> {
         // An orange that the ACR3 curve renders at about a quarter of white, and with
@@ -849,10 +849,15 @@ mod tests {
         let [(low, _, _), (high, _, _)] = both(|r| r.vibrance = 1.)?;
         let [low, high] = [value(low) / value(base_low), value(high) / value(base_high)];
         assert!(low > 1.02 && (high - 1.).abs() < 0.01, "{low} {high}");
+        // Band Luminance brightens the orange at a quarter of white and leaves its
+        // value alone at 20 times white; beyond ±40 it refuses the master.
+        let [(low, _, _), (high, _, _)] = both(|r| r.hsl[1][2] = 0.4)?;
+        assert!(value(low) > value(base_low) * 1.002, "{low:?} {base_low:?}");
         assert!(
-            at(0., |r| r.hsl[1][2] = 0.5).is_err(),
-            "band Luminance is not rendered in HDR"
+            (value(high) / value(base_high) - 1.).abs() < 1e-3,
+            "{high:?} {base_high:?}"
         );
+        assert!(at(0., |r| r.hsl[1][2] = 0.5).is_err());
 
         let [_, (p, _, y)] = both(|r| r.effects.monochrome = true)?;
         assert!(p.iter().all(|v| (v - p[0]).abs() < 1e-3 * p[0]), "{p:?}");
