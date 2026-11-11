@@ -148,6 +148,8 @@ fn unpack_within(path: &Path, into: &Path, cap: u64) -> Result<Manifest> {
             "{missing} is listed in {SUMS} but not in the package"
         )));
     }
+    // Only Unix marks the program executable, which needs its target's name.
+    #[cfg_attr(not(unix), allow(unused_variables))]
     let stated = check_inventory(path, &manifest, |name| seen.contains(name))?;
     #[cfg(unix)]
     if let Some(program) = &manifest.program {
