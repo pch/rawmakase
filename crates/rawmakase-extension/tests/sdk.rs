@@ -518,3 +518,87 @@ impl MaskGenerator for LongModel {
         })
     }
 }
+
+/// Requests a [`Buffer`] can describe but the mask contract doesn't take: each
+/// buffer is valid on its own, so only the mask shape refuses them.
+fn off_contract() -> Vec<(&'static str, MaskGenerate)> {
+    let base = || mask_request(None);
+    let with = |name, change: &dyn Fn(&mut MaskGenerate)| {
+        let mut request = base();
+        change(&mut request);
+        request.image.validate().unwrap();
+        request.coverage.validate().unwrap();
+        (name, request)
+    };
+    let color = |primaries, white, transfer, alpha| Meaning::Color {
+        primaries,
+        white,
+        transfer,
+        alpha,
+    };
+    vec![
+        with("u16 image", &|r| {
+            r.image.sample = Sample::U16;
+            r.image.stride = 64 * 3 * 2;
+            r.image.bytes = 64 * 3 * 2 * 48;
+        }),
+        with("rgba image", &|r| {
+            r.image.channels = 4;
+            r.image.meaning = color(Primaries::Srgb, White::D65, Transfer::Srgb, Alpha::Straight);
+            r.image.stride = 64 * 4;
+            r.image.bytes = 64 * 4 * 48;
+        }),
+        with("linear image", &|r| {
+            r.image.meaning = color(Primaries::Srgb, White::D65, Transfer::Linear, Alpha::None);
+        }),
+        with("camera primaries", &|r| {
+            r.image.meaning = color(
+                Primaries::Camera,
+                White::Camera,
+                Transfer::Linear,
+                Alpha::None,
+            );
+        }),
+        with("f32 coverage", &|r| {
+            r.coverage.sample = Sample::F32;
+            r.coverage.stride = 64 * 4;
+            r.coverage.bytes = 64 * 4 * 48;
+        }),
+        with("output space", &|r| {
+            r.image.region.space = Space::Output;
+            r.coverage.region.space = Space::Output;
+        }),
+        with("partial rect", &|r| {
+            r.image.region.rect = [0.0, 0.0, 0.5, 1.0];
+            r.coverage.region.rect = [0.0, 0.0, 0.5, 1.0];
+        }),
+        with("overlap", &|r| {
+            r.image.region.overlap = 1;
+            r.coverage.region.overlap = 1;
+        }),
+    ]
+}
+
+#[test]
+fn a_request_off_the_mask_contract_never_reaches_the_handler() {
+    let (asked, requests) = mpsc::channel();
+    let extension = Extension::new().mask_generator(
+        "subject",
+        Subject {
+            installed: true,
+            asked,
+        },
+    );
+    let host =
+        MockHost::start_with_options(extension, ServeOptions { api: 2 }, |_, _| Ok(Value::Null));
+    host.hello().unwrap();
+    for (name, request) in off_contract() {
+        let error = host.generate_mask(request).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidRequest, "{name}");
+    }
+    assert!(requests.try_recv().is_err());
+    // The contract's own shape still gets through.
+    host.generate_mask(mask_request(None)).unwrap();
+    requests.recv_timeout(Duration::from_secs(10)).unwrap();
+    host.finish().unwrap();
+}

@@ -9,7 +9,10 @@
 //! which tells a method this version doesn't know
 //! ([`ErrorCode::UnknownMethod`]) from parameters that don't fit it
 //! ([`ErrorCode::InvalidRequest`]). Parameters ignore fields they don't know.
-use crate::buffer::{Access, Buffer, MAX_REQUEST_BYTES, Meaning};
+use crate::buffer::{
+    Access, Alpha, Buffer, MAX_REQUEST_BYTES, Meaning, Primaries, Region, Sample, Space, Transfer,
+    White,
+};
 use crate::controls::Control;
 use crate::message::{ErrorCode, RemoteError};
 use crate::viewer::ViewerInput;
@@ -291,20 +294,35 @@ pub struct MaskGenerate {
     /// The viewer input, or none for an automatic mask.
     #[serde(default)]
     pub input: Option<ViewerInput>,
-    /// The photo as the model sees it: three-channel colour, read.
+    /// The photo as the model sees it: the whole image frame in 8-bit sRGB,
+    /// three channels, read ([`MaskGenerate::IMAGE`]).
     pub image: Buffer,
-    /// Where the program writes the coverage: one channel, the image's size,
-    /// written.
+    /// Where the program writes the coverage: 8-bit, one channel, the image's
+    /// size and region, written.
     pub coverage: Buffer,
     /// The app's digest of the image's size, pixels and how it was rendered,
     /// so the program can keep its analysis of a photo without hashing.
     pub image_key: String,
 }
 impl MaskGenerate {
+    /// What a mask request's image is: 8-bit sRGB, as the selection models
+    /// take it.
+    pub const IMAGE: Meaning = Meaning::Color {
+        primaries: Primaries::Srgb,
+        white: White::D65,
+        transfer: Transfer::Srgb,
+        alpha: Alpha::None,
+    };
+
     /// Checks the input and both buffers ([`ViewerInput::validate`],
-    /// [`Buffer::validate`]), and that they fit together: the image is colour
-    /// for reading, the coverage one channel of the same size and region for
-    /// writing, in two handles, together within [`MAX_REQUEST_BYTES`].
+    /// [`Buffer::validate`]), and that they have the mask contract's shape,
+    /// which is narrower than what a [`Buffer`] can describe:
+    ///
+    /// - the image is 3-channel `u8` [`MaskGenerate::IMAGE`] for reading, over
+    ///   the whole image frame (`[0, 0, 1, 1]`, no overlap);
+    /// - the coverage is 1-channel `u8` [`Meaning::Coverage`] for writing,
+    ///   with the image's width, height and region;
+    /// - they are in two handles, together within [`MAX_REQUEST_BYTES`].
     pub fn validate(&self) -> Result<(), RemoteError> {
         let fail = |why: &str| Err(RemoteError::new(ErrorCode::InvalidRequest, why));
         if let Some(input) = &self.input {
@@ -313,11 +331,27 @@ impl MaskGenerate {
         self.image.validate()?;
         self.coverage.validate()?;
         let (image, coverage) = (&self.image, &self.coverage);
-        if !matches!(image.meaning, Meaning::Color { .. }) || image.access != Access::Read {
-            return fail("the image must be colour, for reading");
+        let whole = |region: &Region| {
+            region.space == Space::ImageFrame
+                && region.rect == [0.0, 0.0, 1.0, 1.0]
+                && region.overlap == 0
+        };
+        if image.channels != 3
+            || image.sample != Sample::U8
+            || image.meaning != Self::IMAGE
+            || image.access != Access::Read
+        {
+            return fail("the image must be 3-channel 8-bit sRGB, for reading");
         }
-        if coverage.meaning != Meaning::Coverage || coverage.access != Access::Write {
-            return fail("the coverage must be coverage, for writing");
+        if !whole(&image.region) {
+            return fail("the image must cover the whole image frame, without overlap");
+        }
+        if coverage.channels != 1
+            || coverage.sample != Sample::U8
+            || coverage.meaning != Meaning::Coverage
+            || coverage.access != Access::Write
+        {
+            return fail("the coverage must be 1-channel 8-bit coverage, for writing");
         }
         if (image.width, image.height) != (coverage.width, coverage.height)
             || image.region != coverage.region
@@ -806,6 +840,10 @@ mod tests {
             },
             MaskGenerated {
                 model: String::new(),
+                ..long.clone()
+            },
+            MaskGenerated {
+                model_key: String::new(),
                 ..long
             },
         ] {

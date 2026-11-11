@@ -7,11 +7,18 @@
 //!
 //! **Layout.** Samples are little-endian and channels interleaved. Rows run top
 //! to bottom, row `r` starting at byte `r * stride`; the bytes after a row's
-//! last pixel, up to `stride`, are padding. Pixel centres map onto
-//! [`Region::rect`] as the app's image frame maps them: pixel column `i` sits
-//! at `u` where `i = u * width - 0.5`, and likewise for rows. [`Region::overlap`]
-//! pixels on each side lie outside the rect, for tiles; beyond the photo's edge
-//! they repeat the edge pixel.
+//! last pixel, up to `stride`, are padding.
+//!
+//! **Where pixels lie.** [`Region::overlap`] pixels on each side lie outside
+//! [`Region::rect`], for tiles; the `width - 2 * overlap` columns between them
+//! span the rect exactly, edge to edge. Column `i`'s centre is at
+//!
+//! `u(i) = x0 + (i - overlap + 0.5) * (x1 - x0) / (width - 2 * overlap)`
+//!
+//! and row `j`'s likewise with `y0`, `y1` and `height`
+//! ([`Region::column_centre`], [`Region::row_centre`]). With no overlap over
+//! the whole space this is `u = (i + 0.5) / width`. An overlap pixel whose
+//! centre falls beyond the photo's edge holds the edge pixel's value.
 use crate::message::{ErrorCode, RemoteError};
 use serde::{Deserialize, Serialize};
 
@@ -263,6 +270,20 @@ impl Buffer {
 }
 
 impl Region {
+    /// Where column `i`'s centre lies in the space, normalised, for a buffer
+    /// `width` pixels across: inside [`Region::rect`] for the interior
+    /// columns, outside it for the overlap. The value may fall outside [0, 1]
+    /// for an overlap column past the photo's edge.
+    pub fn column_centre(&self, i: u32, width: u32) -> f64 {
+        centre(i, width, self.overlap, self.rect[0], self.rect[2])
+    }
+
+    /// Where row `j`'s centre lies, as [`Region::column_centre`] does for
+    /// columns, for a buffer `height` pixels down.
+    pub fn row_centre(&self, j: u32, height: u32) -> f64 {
+        centre(j, height, self.overlap, self.rect[1], self.rect[3])
+    }
+
     fn validate(&self, width: u32, height: u32) -> Result<(), RemoteError> {
         let [x0, y0, x1, y1] = self.rect;
         let inside = |v: f32| v.is_finite() && (0.0..=1.0).contains(&v);
@@ -287,6 +308,15 @@ impl Region {
         }
         Ok(())
     }
+}
+
+/// `lo + (i - overlap + 0.5) * (hi - lo) / (n - 2 * overlap)`, in f64 so the
+/// arithmetic neither overflows nor loses a pixel's position on large buffers.
+/// [`Buffer::validate`] guarantees `n > 2 * overlap`.
+fn centre(i: u32, n: u32, overlap: u32, lo: f32, hi: f32) -> f64 {
+    let interior = f64::from(n) - 2.0 * f64::from(overlap);
+    let at = f64::from(i) - f64::from(overlap) + 0.5;
+    f64::from(lo) + at * (f64::from(hi) - f64::from(lo)) / interior
 }
 
 fn invalid(message: String) -> RemoteError {
@@ -408,6 +438,34 @@ mod tests {
             let read: Buffer = serde_json::from_str(&line).unwrap();
             read.validate().unwrap();
             assert_eq!(read, buffer);
+        }
+    }
+
+    #[test]
+    fn pixel_centres_span_the_rect_and_overlap_lies_outside() {
+        let tile = Region {
+            space: Space::Developed,
+            rect: [0.25, 0.0, 0.75, 1.0],
+            scale: 1.0,
+            overlap: 1,
+        };
+        // Four columns, one of overlap each side: two interior columns split
+        // [0.25, 0.75] in half and sit at its quarter points.
+        let columns: Vec<f64> = (0..4).map(|i| tile.column_centre(i, 4)).collect();
+        assert_eq!(columns, [0.125, 0.375, 0.625, 0.875]);
+        assert!(columns[0] < 0.25 && columns[3] > 0.75);
+        assert!(columns[1..3].iter().all(|u| (0.25..=0.75).contains(u)));
+        // Rows of the same tile, over [0, 1] with one row of overlap: the
+        // outer rows fall past the photo's edge, where they hold its edge.
+        let rows: Vec<f64> = (0..4).map(|j| tile.row_centre(j, 4)).collect();
+        assert_eq!(rows, [-0.25, 0.25, 0.75, 1.25]);
+        let whole = Region {
+            rect: [0.0, 0.0, 1.0, 1.0],
+            overlap: 0,
+            ..tile
+        };
+        for i in 0..5 {
+            assert_eq!(whole.column_centre(i, 5), (f64::from(i) + 0.5) / 5.0);
         }
     }
 

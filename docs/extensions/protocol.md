@@ -86,12 +86,23 @@ only describes; `handle` will index the message's handles.
 | `access` | `read` (the app filled it) or `write` (the program fills it) |
 
 **Layout.** Samples are little-endian and channels interleaved. Rows run top to
-bottom, row `r` starting at byte `r * stride`. Pixel centres map onto `rect` as
-the image frame maps them: pixel column `i` sits at `u` where
-`i = u * width - 0.5`, and likewise for rows. `overlap` pixels lie outside the
-rect on each side and count in `width` and `height`; beyond the photo's edge
-they repeat the edge pixel. `camera` primaries and white carry camera RGB
-before white balance, for raw patches.
+bottom, row `r` starting at byte `r * stride`. `camera` primaries and white
+carry camera RGB before white balance, for raw patches.
+
+**Where pixels lie.** `overlap` pixels on each side lie outside `rect`, for
+tiles, and count in `width` and `height`; the `width - 2 * overlap` columns
+between them span `rect` exactly, edge to edge. Column `i`'s centre is at
+
+```
+u(i) = x0 + (i - overlap + 0.5) * (x1 - x0) / (width - 2 * overlap)
+```
+
+and row `j`'s likewise with `y0`, `y1` and `height` (`Region::column_centre`
+and `row_centre` in the protocol crate). With no overlap over `[0, 0, 1, 1]`
+this is `u = (i + 0.5) / width`. For example, a 4-column buffer with
+`overlap` 1 over `x0 = 0.25`, `x1 = 0.75` has its centres at 0.125, 0.375,
+0.625 and 0.875: the first and last lie outside the rect. An overlap pixel
+whose centre falls beyond the photo's edge holds the edge pixel's value.
 
 **Checks.** A receiver refuses a descriptor, with `invalid_request`, unless:
 
