@@ -189,7 +189,7 @@ It covers what `pixel_params::supported_hdr` accepts: a master that renders
 (Exposure, Whites, Blacks, Shadows, white balance, Contrast, Levels and the tone
 curves, channel curves included, the colour stage, Color Grading, Texture, sharpening and what the SDR port samples), through
 any profile and look whose HDR rendering is measured (`CameraProfile::hdr_tone`).
-An HDR file's light, AI Denoise, the post-crop vignette and grain, Defringe, masks, and anything the SDR port leaves to the CPU
+An HDR file's light, AI Denoise, the post-crop vignette and grain, Defringe, Point Color, masks, and anything the SDR port leaves to the CPU
 (`quality::HdrNotOnGpu`) give no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
 "GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, looks whose
@@ -259,6 +259,7 @@ HDR reference family):
 | Channel curves | `color::hdr_curve::channel`, after the master curve: each channel's own curve on that channel of the look curve's encoding of ProPhoto RGB, by the master curve's rule, its output held at 16. An identity curve leaves its channel alone. |
 | Saturation, Vibrance, the colour mixer's Hue and Saturation | The SDR grids of `develop::color_mixer`, after Contrast, the tone curves and Levels, as in SDR, on unclipped linear values ([The colour stage](#the-colour-stage)): looked up at the colour's value up to 0.2 and at 0.2 above it; Vibrance's value change fades out from 0.5 to white. |
 | Look's RGB table | After the colour mixer, as in SDR (`RgbTable::apply_hdr`): in the table's primaries, each channel is overrange-encoded (0 to 16 times white onto 0 to 1) before the table's own encoding and decoded after it, and what it encodes beyond 1 skips the table and is added back to its output in that encoding. `.cube` looks, Lightroom's creative looks and fitted Camera Looks' tables alike. |
+| Point Color | SDR's swatches (`develop::point_color`), after the colour mixer, on each channel taken into Color Grading's HDR domain (16 times white at 1) and back, clipping at 16 ([Point Color](#point-color)). |
 | Color Grading | The SDR curves (`develop::color_grade_curves`), after the colour mixer and a look's RGB table, on each channel taken into a domain that is the value itself in the deep shadows and 1 at 16 times white, u = x / (1 + 15x/16), and back ([Color grading](#color-grading)). Above 16 the gain at 16. |
 | Black & White | The SDR mix's gray (`develop::black_white`) looked up as the colour mixer's, unclipped above white. |
 | Calibration | As in SDR: a matrix on scene colour before Exposure, and Shadows tint, which only reaches values below white. |
@@ -325,6 +326,27 @@ tone stage's toe isn't inverted; p95 2 stops at Amount −100, in the frame's da
 tiles). The GPU's HDR preview leaves both effects to the CPU master. Measurements:
 [vignette and grain](records/hdr-stage1-results.md#vignette-and-grain).
 
+### Point Color
+
+Camera Raw 18.7 applies Point Color's swatches to an HDR master in the domain it
+grades in ([Color grading](#color-grading)): each channel taken into u = x / (1 + 15x/16)
+and back, where a swatch's shifts and ranges work as in SDR and channels clip at 1,
+16 times white. On synthetic colour patches from 0.125 to 8 times white:
+
+- A Luminance shift is SDR's in u, so it lifts light above white far more than SDR,
+  which clips there: Luminance +50 brightens an orange ×1.68 at a quarter of white,
+  ×3.5 at white and ×6.1 at twice white, and ×3.8 and ×2.1 at four and eight times as
+  the clip at 16 holds it.
+- A colour very bright in linear light has little saturation in u, so the swatch's
+  saturation range stops selecting it: Hue +50 turns an orange 19° at white, 8° at
+  four times white and 2–4° at eight.
+
+`point_colors_hdr` renders that rule. On the patches its effect on luminance is
+within a median 0.001 stop of Camera Raw's (p95 ≤ 0.10), and mean ΔE_ITP 0.4–1.3
+(2.4 above white, for Luminance +50; RAWmakase's SDR Point Color on the same patches,
+0.3–0.5). A master with Point Color renders on the CPU. Measurements:
+[record](records/hdr-stage1-results.md#point-color).
+
 ### Color grading
 
 Camera Raw 18.7 grades an HDR master with its SDR curves, but spreads the regions over
@@ -383,7 +405,7 @@ of a mask has not been compared with its global slider yet
 something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
 channel's) whose last point is left of white, Presence (Clarity, Dehaze), the
-colour mixer's Luminance, Point Color, a darkening vignette's Highlights,
+colour mixer's Luminance, a darkening vignette's Highlights,
 a mask's sliders other than Temp, Tint, Exposure, Shadows and Texture, Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
 Highlights and Shadows: "Highlights, which the look sets, …") or split toning, DCP
 tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:

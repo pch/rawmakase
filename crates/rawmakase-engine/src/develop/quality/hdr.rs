@@ -1183,6 +1183,61 @@ mod tests {
         Ok(())
     }
 
+    /// Point Color renders in the master as Camera Raw 18.7 renders it
+    /// (docs/hdr.md#point-color): its swatches in colour grading's HDR domain, so a
+    /// Luminance shift lifts a colour at white several times (Camera Raw's ×3.5 at
+    /// Luminance +50) where SDR clips it, another hue keeps its colour, and the GPU
+    /// leaves the master to the CPU.
+    #[test]
+    fn point_color_works_in_the_hdr_domain() -> Result<()> {
+        use crate::develop::pipeline::pixel_params::supported_hdr;
+        use crate::model::point_color::PointColor;
+        let im = patches(&[[0.12, 0.07, 0.03], [0.03, 0.05, 0.12]]);
+        let pixel = |out: &crate::rendered::HdrImage, k: usize| {
+            out.pixels[4 * out.width as usize + k * 8 + 4]
+        };
+        let mut r = hdr_recipe(&im);
+        // The orange patch at about white.
+        let mut base = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let scale = 1. / pixel(&base, 0).into_iter().fold(0f32, f32::max);
+        r.exposure = scale.log2();
+        base = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let orange = pixel(&base, 0);
+        let max = orange.into_iter().fold(0f32, f32::max);
+        let min = orange.into_iter().fold(f32::INFINITY, f32::min);
+        let hue = {
+            let [r, g, b] = orange;
+            let d = max - min;
+            if max == r {
+                ((g - b) / d).rem_euclid(6.)
+            } else if max == g {
+                (b - r) / d + 2.
+            } else {
+                (r - g) / d + 4.
+            }
+        };
+        let mut swatch = PointColor::sampled([hue, (max - min) / max, 0.5]);
+        swatch.luminance_range = [0., 0., 1., 1.];
+        swatch.shift = [0., 0., 0.5];
+        r.point_colors = vec![swatch];
+        assert!(
+            !supported_hdr(&r, &im.metadata),
+            "the GPU leaves it to the CPU"
+        );
+        let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let y = |p: [f32; 3]| crate::develop::scene_tone::luminance(p);
+        let lifted = y(pixel(&out, 0)) / y(orange);
+        assert!((2.5..4.5).contains(&lifted), "{lifted}");
+        assert!((y(pixel(&out, 1)) / y(pixel(&base, 1)) - 1.).abs() < 1e-3);
+        assert!(
+            out.pixels
+                .iter()
+                .flatten()
+                .all(|v| v.is_finite() && *v >= 0.)
+        );
+        Ok(())
+    }
+
     /// Texture renders in the master, on the camera image before tone as in SDR;
     /// Clarity and Dehaze still refuse it.
     #[test]
