@@ -76,8 +76,9 @@ Users install it with **Install from GitHub…** or
 reads the releases newest first, skipping drafts and prereleases, and installs
 the first package for their target (or `any`) whose `rawmakase` range includes
 their version. Keep older releases up for users of older RAWmakase versions.
-Check for Updates reads the same releases, and says when a newer version's
-`[access]` asks for more.
+Check for Updates reads the same releases, downloading only the packages whose
+name states a newer version than the one installed, and says when a newer
+version's `[access]` asks for more.
 
 Extensions installed this way are marked **Not reviewed**. An official
 catalogue of reviewed extensions comes later.

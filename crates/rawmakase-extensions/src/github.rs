@@ -5,8 +5,9 @@
 //! range includes this version. It returns an [`Offer`] holding the
 //! downloaded, inspected package, so the app can show the manifest and the
 //! "Not reviewed" trust warning before [`Store::install_offer`] installs it.
-//! [`check_updates`] does the same for every extension installed from GitHub
-//! and says when an update asks for more access.
+//! [`check_updates`] does the same for every extension installed from GitHub,
+//! downloading only packages whose asset name states a newer version than
+//! the installed one, and says when an update asks for more access.
 use crate::package::{self, EXTENSION};
 use crate::state::{Source, State};
 use crate::store::{Installed, Store};
@@ -146,6 +147,40 @@ pub fn inspect(
     url: &str,
     app: &semver::Version,
 ) -> Result<Offer> {
+    let found = search(store, fetch, url, app, None)?;
+    found.offer.ok_or_else(|| {
+        let mut message = format!(
+            "No release of {} has a package for {} that supports RAWmakase {app}",
+            found.repository,
+            crate::current_target()
+        );
+        if !found.refusals.is_empty() {
+            message += &format!(" ({})", found.refusals.join("; "));
+        }
+        Error::new(message)
+    })
+}
+
+/// What [`search`] found.
+struct Found {
+    repository: String,
+    offer: Option<Offer>,
+    /// Why each package downloaded was refused, by release.
+    refusals: Vec<String>,
+}
+
+/// [`inspect`], skipping without a download each package of `id` whose
+/// asset name states a version no newer than `newer_than`. An install
+/// requires the name to state the manifest's version, so such a package is
+/// never an update; one whose name states no version of `id` is still
+/// inspected, so a repository that now publishes another id says so.
+fn search(
+    store: &Store,
+    fetch: &dyn Fetch,
+    url: &str,
+    app: &semver::Version,
+    newer_than: Option<(&str, &semver::Version)>,
+) -> Result<Found> {
     let (owner, repo) = repository(url)?;
     let repository = format!("https://github.com/{owner}/{repo}");
     let listing = fetch.get(
@@ -167,31 +202,48 @@ pub fn inspect(
                     .find(|a| a.name.ends_with(&format!("-{suffix}.{EXTENSION}")))
             };
             ours(&target)
-                .or_else(|| ours(crate::ANY_TARGET))
+                .map(|a| (a, target.as_str()))
+                .or_else(|| ours(crate::ANY_TARGET).map(|a| (a, crate::ANY_TARGET)))
                 .map(|a| (r, a))
         })
+        .filter(|(_, (asset, suffix))| {
+            newer_than.is_none_or(|(id, installed)| {
+                asset_version(&asset.name, id, suffix).is_none_or(|v| v > *installed)
+            })
+        })
         .take(MAX_CANDIDATES);
-    for (release, asset) in candidates {
+    for (release, (asset, _)) in candidates {
         match download(store, fetch, asset).and_then(|file| offer(store, file, app)) {
             Ok((manifest, file)) => {
-                return Ok(Offer {
+                let offer = Offer {
                     manifest,
-                    repository,
+                    repository: repository.clone(),
                     release: release.tag_name.clone(),
                     asset: asset.name.clone(),
                     file,
+                };
+                return Ok(Found {
+                    repository,
+                    offer: Some(offer),
+                    refusals,
                 });
             }
             Err(e) => refusals.push(format!("{}: {e}", release.tag_name)),
         }
     }
-    let mut message = format!(
-        "No release of {repository} has a package for {target} that supports RAWmakase {app}"
-    );
-    if !refusals.is_empty() {
-        message += &format!(" ({})", refusals.join("; "));
-    }
-    Err(Error::new(message))
+    Ok(Found {
+        repository,
+        offer: None,
+        refusals,
+    })
+}
+
+/// The version an asset named `<id>-<version>-<suffix>.rmext` states.
+fn asset_version(name: &str, id: &str, suffix: &str) -> Option<semver::Version> {
+    let version = name
+        .strip_suffix(&format!("-{suffix}.{EXTENSION}"))?
+        .strip_prefix(&format!("{id}-"))?;
+    semver::Version::parse(version).ok()
 }
 
 fn download(store: &Store, fetch: &dyn Fetch, asset: &Asset) -> Result<PathBuf> {
@@ -289,7 +341,13 @@ pub fn check_updates(store: &Store, fetch: &dyn Fetch, app: &semver::Version) ->
         };
         let checked = (|| -> Result<Option<Update>> {
             let current = crate::read_manifest(&store.version_dir(id, active))?;
-            let offer = inspect(store, fetch, &repository, app)?;
+            // Only packages that may be newer are downloaded; none of them
+            // running here means there is no update for this RAWmakase.
+            let newer_than = Some((id.as_str(), &current.extension.version));
+            let found = search(store, fetch, &repository, app, newer_than)?;
+            let Some(offer) = found.offer else {
+                return Ok(None);
+            };
             if offer.manifest.extension.id != *id {
                 return Err(Error::new(format!(
                     "{repository} now publishes {}, not {id}",
@@ -482,11 +540,33 @@ mod tests {
         assert_eq!(update.more_access, ["the network"]);
         let update = updates.into_iter().next().unwrap();
         store.install_offer(update.offer, &app).unwrap();
-        assert!(
-            check_updates(&store, &fetch, &app)
-                .unwrap()
-                .updates
-                .is_empty()
+        fetch.1.borrow_mut().clear();
+        let checked = check_updates(&store, &fetch, &app).unwrap();
+        assert!(checked.updates.is_empty() && checked.failed.is_empty());
+        // Only 2.0.0 may be newer than 1.1.0 by its name, so only it is
+        // downloaded (and refused: it needs RAWmakase 9).
+        let asked = fetch.1.borrow().clone();
+        assert_eq!(asked.len(), 2, "{asked:?}");
+        assert!(asked[1].contains("/v2.0.0/"), "{asked:?}");
+    }
+
+    #[test]
+    fn an_asset_name_states_its_version() {
+        let v = |name: &str| asset_version(name, "dev.test.tool", "linux-x86_64");
+        assert_eq!(
+            v("dev.test.tool-1.2.0-linux-x86_64.rmext"),
+            Some(semver::Version::new(1, 2, 0))
         );
+        assert_eq!(
+            v("dev.test.tool-1.2.0-rc.1-linux-x86_64.rmext").map(|v| v.to_string()),
+            Some("1.2.0-rc.1".into())
+        );
+        for name in [
+            "dev.other.tool-1.2.0-linux-x86_64.rmext",
+            "dev.test.tool-latest-linux-x86_64.rmext",
+            "dev.test.tool-1.2.0-any.rmext",
+        ] {
+            assert_eq!(v(name), None, "{name}");
+        }
     }
 }
