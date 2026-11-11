@@ -1,13 +1,19 @@
 //! The run loop against the mock host: the handshake, requests both ways,
-//! cancellation, panels and adapters.
+//! cancellation, panels, adapters and mask generators.
 use rawmakase_extension::mock::{MockHost, Recorded};
-use rawmakase_extension::protocol::controls::{Control, ControlKind};
-use rawmakase_extension::protocol::method::{
-    AppEvent, AppRequest, CommandRun, DeviceState, Empty, Hello, Operation, SettingChanged,
-    SettingsChange,
+use rawmakase_extension::protocol::buffer::{
+    Access, Alpha, Buffer, Meaning, Primaries, Region, Sample, Space, Transfer, White,
 };
+use rawmakase_extension::protocol::controls::{Control, ControlKind};
+use rawmakase_extension::protocol::message::NeedsSetup;
+use rawmakase_extension::protocol::method::{
+    AppEvent, AppRequest, CommandRun, DeviceState, Empty, EmptyMask, Hello, MaskGenerate,
+    MaskGenerated, Operation, SettingChanged, SettingsChange,
+};
+use rawmakase_extension::protocol::viewer::{Bounds, Click, ViewerInput};
 use rawmakase_extension::{
-    Context, ControlAdapter, ErrorCode, Extension, Host, Panel, RemoteError,
+    Context, ControlAdapter, ErrorCode, Extension, Host, MaskGenerator, Panel, RemoteError,
+    ServeOptions,
 };
 use serde_json::{Value, json};
 use std::sync::mpsc;
@@ -313,4 +319,202 @@ fn a_request_to_a_host_that_went_away_fails_instead_of_waiting() {
         }
     });
     assert!(closed);
+}
+
+/// `serve(reader, writer)` keeps phase 2's signature, so custom transports and
+/// test harnesses written against it still compile.
+#[test]
+fn serve_keeps_its_signature() {
+    let _: fn(Extension, std::io::Empty, std::io::Sink) -> std::io::Result<()> = Extension::serve;
+    let _: fn(Extension, std::io::Empty, std::io::Sink, ServeOptions) -> std::io::Result<()> =
+        Extension::serve_with_options;
+}
+
+#[test]
+fn a_mode_the_sdk_does_not_serve_is_refused_before_reading() {
+    for api in [0, rawmakase_extension::protocol::manifest::API + 1] {
+        let error = Extension::new()
+            .serve_with_options(std::io::empty(), std::io::sink(), ServeOptions { api })
+            .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput, "{api}");
+    }
+    assert_eq!(ServeOptions::default().api, 1);
+}
+
+/// A generator that records what it was asked, needs setup once, and finds
+/// nothing without input.
+struct Subject {
+    installed: bool,
+    asked: mpsc::Sender<MaskGenerate>,
+}
+impl MaskGenerator for Subject {
+    fn generate(
+        &mut self,
+        _cx: &Context,
+        request: MaskGenerate,
+    ) -> Result<MaskGenerated, RemoteError> {
+        if !self.installed {
+            return Err(NeedsSetup {
+                what: "the Subject model".into(),
+                bytes: 184_000_000,
+            }
+            .error());
+        }
+        let empty = request.input.is_none().then_some(EmptyMask::NoSubject);
+        let _ = self.asked.send(request);
+        Ok(MaskGenerated {
+            model: "sam2.1-hiera-small@0123456789abcdef".into(),
+            model_key: "sam2.1/v3".into(),
+            empty,
+        })
+    }
+    fn setup(&mut self, cx: &Context, generator: &str) -> Result<(), RemoteError> {
+        assert_eq!(generator, "subject");
+        cx.progress(Some(1.0), Some("Downloaded"));
+        self.installed = true;
+        Ok(())
+    }
+}
+
+/// A mask request for a 64x48 image, as the app will send it.
+fn mask_request(input: Option<ViewerInput>) -> MaskGenerate {
+    let region = Region {
+        space: Space::ImageFrame,
+        rect: [0.0, 0.0, 1.0, 1.0],
+        scale: 0.05,
+        overlap: 0,
+    };
+    let image = Buffer {
+        handle: 0,
+        bytes: 64 * 48 * 3,
+        width: 64,
+        height: 48,
+        stride: 64 * 3,
+        channels: 3,
+        sample: Sample::U8,
+        meaning: Meaning::Color {
+            primaries: Primaries::Srgb,
+            white: White::D65,
+            transfer: Transfer::Srgb,
+            alpha: Alpha::None,
+        },
+        region,
+        access: Access::Read,
+    };
+    let coverage = Buffer {
+        handle: 1,
+        bytes: 64 * 48,
+        stride: 64,
+        channels: 1,
+        meaning: Meaning::Coverage,
+        access: Access::Write,
+        ..image
+    };
+    MaskGenerate {
+        generator: "subject".into(),
+        input,
+        image,
+        coverage,
+        image_key: "0123456789abcdef".into(),
+    }
+}
+
+#[test]
+fn a_mask_generator_sets_up_then_generates_from_checked_requests() {
+    let (asked, requests) = mpsc::channel();
+    let extension = Extension::new().mask_generator(
+        "subject",
+        Subject {
+            installed: false,
+            asked,
+        },
+    );
+    let host =
+        MockHost::start_with_options(extension, ServeOptions { api: 2 }, |_, _| Ok(Value::Null));
+    let hello = host.hello().unwrap();
+    assert_eq!(hello.implements, ["mask-generator/subject"]);
+    let prompt = ViewerInput::Prompt {
+        clicks: vec![Click {
+            x: 0.25,
+            y: 0.5,
+            positive: true,
+        }],
+        bounds: Some(Bounds {
+            x0: 0.1,
+            y0: 0.1,
+            x1: 0.9,
+            y1: 0.9,
+        }),
+    };
+    // Not installed: the setup it needs travels as the error's message.
+    let needs = host
+        .generate_mask(mask_request(Some(prompt.clone())))
+        .unwrap_err();
+    assert_eq!(needs.code, ErrorCode::NeedsSetup);
+    let setup = NeedsSetup::read(&needs.message).unwrap();
+    assert_eq!(setup.bytes, 184_000_000);
+    host.setup_mask("subject").unwrap();
+    assert!(
+        host.recorded()
+            .iter()
+            .any(|r| matches!(r, Recorded::Progress { done: Some(d), .. } if *d == 1.0))
+    );
+    // Installed: the request reaches the handler whole, descriptors as sent.
+    let result = host
+        .generate_mask(mask_request(Some(prompt.clone())))
+        .unwrap();
+    assert_eq!(result.empty, None);
+    assert_eq!(result.model_key, "sam2.1/v3");
+    assert_eq!(
+        requests.recv_timeout(Duration::from_secs(10)).unwrap(),
+        mask_request(Some(prompt))
+    );
+    let automatic = host.generate_mask(mask_request(None)).unwrap();
+    assert_eq!(automatic.empty, Some(EmptyMask::NoSubject));
+    requests.recv_timeout(Duration::from_secs(10)).unwrap();
+    // A request that doesn't validate never reaches the handler.
+    let outside = mask_request(Some(ViewerInput::Point { x: 1.5, y: 0.5 }));
+    let mut short = mask_request(None);
+    short.coverage.bytes = 10;
+    for request in [outside, short] {
+        assert_eq!(
+            host.generate_mask(request).unwrap_err().code,
+            ErrorCode::InvalidRequest
+        );
+    }
+    assert!(requests.try_recv().is_err());
+    // Generators it doesn't implement.
+    let mut sky = mask_request(None);
+    sky.generator = "sky".into();
+    assert_eq!(
+        host.generate_mask(sky).unwrap_err().code,
+        ErrorCode::InvalidRequest
+    );
+    assert_eq!(
+        host.setup_mask("sky").unwrap_err().code,
+        ErrorCode::InvalidRequest
+    );
+    host.finish().unwrap();
+}
+
+#[test]
+fn the_mock_refuses_a_mask_result_the_app_would_refuse() {
+    let extension = Extension::new().mask_generator("subject", LongModel);
+    let host = MockHost::start(extension);
+    host.hello().unwrap();
+    let error = host.generate_mask(mask_request(None)).unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    assert!(error.message.contains("model"), "{error}");
+    host.finish().unwrap();
+}
+
+struct LongModel;
+impl MaskGenerator for LongModel {
+    fn generate(&mut self, _cx: &Context, _: MaskGenerate) -> Result<MaskGenerated, RemoteError> {
+        Ok(MaskGenerated {
+            model: "m".repeat(129),
+            model_key: "k".into(),
+            empty: None,
+        })
+    }
 }

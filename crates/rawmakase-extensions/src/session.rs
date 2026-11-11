@@ -70,6 +70,18 @@ pub struct Launch {
     /// The log its stdout and stderr go to.
     pub log: PathBuf,
 }
+impl Launch {
+    /// Tells the program its manifest's `api` in
+    /// [`ENV_API`](rawmakase_extension_protocol::ENV_API), replacing any value
+    /// `env` held, so the SDK knows the protocol's rules before it reads the
+    /// first line. Every extension program's launch sets it; a program
+    /// started without it serves API 1.
+    pub fn set_api(&mut self, api: u32) {
+        use rawmakase_extension_protocol::ENV_API;
+        self.env.retain(|(name, _)| name != ENV_API);
+        self.env.push((ENV_API.into(), api.to_string().into()));
+    }
+}
 
 /// A lifecycle request the reader thread applies itself: given the method and
 /// parameters, it returns the reply, or `None` for requests that go to the

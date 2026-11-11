@@ -64,7 +64,7 @@ launch = "external"
 | `name` | yes | Shown in Preferences |
 | `version` | yes | The extension's version, [semver](https://semver.org) (`1.2.0`) |
 | `rawmakase` | yes | The RAWmakase versions it supports, a semver range (`>=0.5, <0.6`). Outside it the package is refused, and an installed one is listed as incompatible. Before 1.0 no compatibility is promised, so state the minor versions tested |
-| `api` | yes | The manifest format it was written for. This version reads `1`; a higher one is refused as written for a newer RAWmakase |
+| `api` | yes | The manifest format it was written for. This version reads `1` and `2`; a higher one is refused as written for a newer RAWmakase. `2` adds [`[[mask-generator]]`](#mask-generator). The app tells the program its manifest's `api` when it starts it ([protocol](protocol.md#api-mode)) |
 | `authors` | no | Names |
 | `license` | no | An SPDX expression |
 | `repository` | no | `https://github.com/<owner>/<repo>` |
@@ -84,7 +84,8 @@ update asks for more. Not enforced: an extension runs with your permissions.
 
 ## `[program]`
 
-Needed by every extension with commands, panels or control adapters.
+Needed by every extension with commands, panels, control adapters or mask
+generators.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -155,3 +156,38 @@ An adapter translating a device or a protocol into commands.
 | `id` | — | Unique among the adapters; control requests name it as `<extension>/<id>` |
 | `name` | the id | Shown in Preferences |
 | `launch` | `"app"` | `app`: the extension's program, started by the app (MIDI). `external`: started by something else, such as an AI agent starting an MCP server; it reaches the app through the control socket, naming the adapter in each request's `adapter` field, and is not supervised by it ([Externally launched adapters](overview.md#externally-launched-adapters)) |
+
+## `[[mask-generator]]`
+
+From `api = 2`; a manifest with `api = 1` that declares one is refused. A mask
+generator turns the photo, and what the user points at, into a raster mask's
+coverage ([`mask.generate`](protocol.md#maskgenerate-request)). The app renders
+the photo for it, stores the mask and makes one History step of it; the
+extension never sees an edit.
+
+```toml
+[[mask-generator]]
+id = "subject"
+input = ["none", "prompt"]
+prompt-hint = "Click the subject on the photo, or drag a box around it"
+[[mask-generator.tile]]
+name = "Subject"
+[[mask-generator.tile]]
+name = "Background"
+invert = true
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `id` | — | Lowercase letters, digits and hyphens, unique among the mask generators |
+| `input` | — | The viewer input it takes, each at most once: `none` (an automatic mask) and `prompt` (clicks and a box, refined together). Other kinds are refused for now |
+| `provenance` | `"<extension>/<id>"` | What saved masks record as their source, so a mask finds its generator again to be refined or regenerated. Leave it out: any other value is refused, except that the bundled `rawmakase.ai-masks` claims `subject` and `sky`, the values Select Subject and Select Sky saved before extensions. No two generators of a manifest share one |
+| `prompt-hint` | none | The line shown while the user aims with `prompt` |
+| `tile` | `[]` | Shortcuts in the mask drawer, each asking this generator for a new mask component (below) |
+
+Each `[[mask-generator.tile]]`:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `name` | — | The tile's name |
+| `invert` | `false` | Whether the new component is inverted: Background is an inverted Subject |

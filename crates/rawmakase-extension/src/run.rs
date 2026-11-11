@@ -1,12 +1,13 @@
 //! The run loop: the handshake, the app's requests one at a time, cancellation
 //! and events.
 use crate::host::{Host, Shared};
-use crate::{Command, ControlAdapter, Panel};
+use crate::{Command, ControlAdapter, MaskGenerator, Panel};
 use rawmakase_extension_protocol::framing::{LineError, LineReader};
+use rawmakase_extension_protocol::manifest::API;
 use rawmakase_extension_protocol::method::{
     AppEvent, AppRequest, CommandRun, Controls, HelloReply,
 };
-use rawmakase_extension_protocol::{ErrorCode, Message, PROTOCOL, RemoteError};
+use rawmakase_extension_protocol::{ENV_API, ErrorCode, Message, PROTOCOL, RemoteError};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::io::{self, Read, Write};
@@ -22,7 +23,61 @@ pub struct Extension {
     commands: BTreeMap<String, Box<dyn Command>>,
     panels: BTreeMap<String, Box<dyn Panel>>,
     adapters: BTreeMap<String, Box<dyn ControlAdapter>>,
+    mask_generators: BTreeMap<String, Box<dyn MaskGenerator>>,
     on_event: Option<EventHandler>,
+}
+
+/// How [`Extension::serve_with_options`] serves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ServeOptions {
+    /// The manifest's `api`, which the app passes in
+    /// [`ENV_API`]: 1 (the default)
+    /// up to [`API`].
+    ///
+    /// Both modes behave the same in this version: a malformed request is
+    /// answered `invalid_request`, an oversized line is skipped, and reading
+    /// goes on. API 2's handle passing, which makes a framing fault end the
+    /// program, arrives in the next protocol change.
+    pub api: u32,
+}
+impl Default for ServeOptions {
+    fn default() -> Self {
+        Self { api: 1 }
+    }
+}
+impl ServeOptions {
+    /// The options the app started this program with: the `api` in
+    /// [`ENV_API`], 1 when it isn't set.
+    pub fn from_env() -> io::Result<Self> {
+        Self::from_var(std::env::var_os(ENV_API))
+    }
+
+    fn from_var(value: Option<std::ffi::OsString>) -> io::Result<Self> {
+        let Some(value) = value else {
+            return Ok(Self::default());
+        };
+        let api = value.to_str().and_then(|v| v.parse().ok()).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{ENV_API} is {value:?}, not a number"),
+            )
+        })?;
+        Ok(Self { api })
+    }
+
+    fn check(self) -> io::Result<Self> {
+        if (1..=API).contains(&self.api) {
+            Ok(self)
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "the manifest's api is {}, and this SDK serves 1 to {API}",
+                    self.api
+                ),
+            ))
+        }
+    }
 }
 
 /// What a handler knows of the request it runs for.
@@ -107,6 +162,11 @@ impl Extension {
         self.adapters.insert(id.into(), Box::new(adapter));
         self
     }
+    /// Implements the `[[mask-generator]]` with this id.
+    pub fn mask_generator(mut self, id: &str, generator: impl MaskGenerator + 'static) -> Self {
+        self.mask_generators.insert(id.into(), Box::new(generator));
+        self
+    }
     /// Called with every event from the app, after the extension's own state
     /// (its settings) has taken it in.
     pub fn on_event(mut self, handler: impl FnMut(&AppEvent, &Host) + Send + 'static) -> Self {
@@ -115,21 +175,36 @@ impl Extension {
     }
 
     /// Attaches the channel the app started this program with and serves it
-    /// until the app quits or the channel closes.
+    /// until the app quits or the channel closes, in the API mode the app
+    /// passed ([`ServeOptions::from_env`]).
     pub fn run(self) -> io::Result<()> {
+        // Read before attaching, so the mode is known before the first byte.
+        let options = ServeOptions::from_env()?.check()?;
         let channel = crate::channel::attach()?;
-        self.serve(channel.reader, channel.writer)
+        self.serve_with_options(channel.reader, channel.writer, options)
     }
 
     /// Serves the app on this reader and writer: [`Extension::run`] without
-    /// attaching, for a test or another transport. Returns when the app sends
-    /// `quitting` or closes its side, or with an error when it speaks another
-    /// protocol.
+    /// attaching, for a test or another transport, in API 1 mode. Returns
+    /// when the app sends `quitting` or closes its side, or with an error
+    /// when it speaks another protocol.
     pub fn serve(
-        mut self,
+        self,
         reader: impl Read + Send + 'static,
         writer: impl Write + Send + 'static,
     ) -> io::Result<()> {
+        self.serve_with_options(reader, writer, ServeOptions::default())
+    }
+
+    /// [`Extension::serve`] in the mode `options` sets. Fails at once when
+    /// its `api` isn't one this SDK serves.
+    pub fn serve_with_options(
+        mut self,
+        reader: impl Read + Send + 'static,
+        writer: impl Write + Send + 'static,
+        options: ServeOptions,
+    ) -> io::Result<()> {
+        options.check()?;
         let shared = Shared::new(Box::new(writer));
         let host = Host(shared.clone());
         let cancels: Cancels = Arc::default();
@@ -255,9 +330,17 @@ impl Extension {
             .adapters
             .keys()
             .map(|id| format!("control-adapter/{id}"));
+        let generators = self
+            .mask_generators
+            .keys()
+            .map(|id| format!("mask-generator/{id}"));
         let reply = HelloReply {
             protocol: PROTOCOL,
-            implements: commands.chain(panels).chain(adapters).collect(),
+            implements: commands
+                .chain(panels)
+                .chain(adapters)
+                .chain(generators)
+                .collect(),
         };
         serde_json::to_value(reply).expect("a reply is JSON")
     }
@@ -305,6 +388,19 @@ impl Extension {
             AppRequest::PanelClicked(click) => match self.panels.get_mut(&click.panel) {
                 Some(panel) => controls(panel.clicked(cx, &click.control)),
                 None => Err(unknown("panel", &click.panel)),
+            },
+            AppRequest::MaskGenerate(request) => {
+                request.validate()?;
+                match self.mask_generators.get_mut(&request.generator) {
+                    Some(generator) => generator
+                        .generate(cx, request)
+                        .map(|done| serde_json::to_value(done).expect("a result is JSON")),
+                    None => Err(unknown("mask generator", &request.generator)),
+                }
+            }
+            AppRequest::MaskSetup(setup) => match self.mask_generators.get_mut(&setup.generator) {
+                Some(generator) => generator.setup(cx, &setup.generator).map(|()| Value::Null),
+                None => Err(unknown("mask generator", &setup.generator)),
             },
         }
     }
@@ -360,4 +456,20 @@ fn read(reader: impl Read, shared: &Shared, cancels: &Cancels, inbound: &mpsc::S
         }
     }
     shared.close();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_api_mode_comes_from_the_environment_and_defaults_to_1() {
+        assert_eq!(ServeOptions::from_var(None).unwrap().api, 1);
+        assert_eq!(ServeOptions::from_var(Some("2".into())).unwrap().api, 2);
+        assert!(ServeOptions::from_var(Some("two".into())).is_err());
+        assert!(ServeOptions::from_var(Some("".into())).is_err());
+        assert!(ServeOptions { api: 0 }.check().is_err());
+        assert!(ServeOptions { api: API + 1 }.check().is_err());
+        assert!(ServeOptions { api: API }.check().is_ok());
+    }
 }
