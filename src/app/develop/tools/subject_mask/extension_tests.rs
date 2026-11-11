@@ -10,6 +10,7 @@ use crate::camera_data::{CameraImage, Metadata};
 use crate::storage::mask_assets;
 use eframe::egui;
 use rawmakase_cancel::Cancel;
+use rawmakase_extensions::protocol::viewer::{Bounds, Click, MAX_CLICKS};
 use rawmakase_extensions::session::Launch;
 use rawmakase_extensions::store::Store;
 use std::path::{Path, PathBuf};
@@ -169,6 +170,16 @@ fn settled(e: &Editor) -> bool {
     e.selection.running().is_none()
 }
 
+/// What the `n`th request sent asked, with its input, once it is sent: after
+/// the worker has rendered its input.
+fn sent(e: &mut Editor, n: usize) -> Option<ViewerInput> {
+    pump(e, "the request to be sent", |e| sent_count(e) > n);
+    e.extensions.masks_sent()[n].input.clone()
+}
+fn sent_count(e: &Editor) -> usize {
+    e.extensions.masks_sent().len()
+}
+
 /// The bytes the extension's requests hold in shared memory.
 fn leased(e: &Editor) -> u64 {
     e.extensions.mask_ledger(ID).unwrap().in_use()
@@ -199,6 +210,16 @@ fn raster(e: &Editor, mask: usize, component: usize) -> BitmapMask {
         MaskShape::Bitmap(b) => b.clone(),
         other => panic!("not a raster: {other:?}"),
     }
+}
+
+fn prompt(clicks: &[Click], bounds: Option<[f32; 4]>) -> Option<ViewerInput> {
+    Some(ViewerInput::Prompt {
+        clicks: clicks.to_vec(),
+        bounds: bounds.map(|[x0, y0, x1, y1]| Bounds { x0, y0, x1, y1 }),
+    })
+}
+const fn at(x: f32, y: f32, positive: bool) -> Click {
+    Click { x, y, positive }
 }
 
 #[test]
@@ -279,7 +300,7 @@ fn an_extensions_tiles_make_masks_as_select_subject_does() {
     pump(e, "Flat", settled);
     let c = &e.document.edit.recipe().masks[0].components;
     assert_eq!((c.len(), c[1].op), (2, MaskOp::Subtract));
-    // Extensions' generators aren't aimed with yet: nothing to refine with.
+    // Flat takes no clicks: nothing to refine it with.
     e.begin_refining(0, 1);
     assert!(e.selection.prompting.is_none());
 
@@ -303,6 +324,101 @@ fn an_extensions_tiles_make_masks_as_select_subject_does() {
     let (steps, count) = e.document.edit.history().steps();
     assert_eq!(steps[count - 1].name, "Refine Not Blob");
     assert_eq!(e.document.edit.recipe().masks.len(), 2);
+    pump(e, "the buffers", |e| leased(e) == 0);
+}
+
+#[test]
+fn aiming_an_extensions_generator_sends_what_the_gestures_made() {
+    let mut f = fixture(0.6);
+    let e = &mut f.editor;
+    e.begin_aiming(tile(e, "Blob"));
+    assert!(e.selection.prompting.is_some());
+    assert_eq!(e.messages.line(), "Click the blob, or drag a box around it");
+    // A box, then clicks: one prompt carrying the box and every click.
+    e.prompt_box([0.8, 0.9], [0.2, 0.1]);
+    // Clicks and boxes while it runs are ignored, not queued.
+    e.prompt_click([0.5, 0.5], true);
+    e.prompt_box([0.1, 0.1], [0.9, 0.9]);
+    let bounds = Some([0.2, 0.1, 0.8, 0.9]);
+    assert_eq!(sent(e, 0), prompt(&[], bounds));
+    pump(e, "the box", settled);
+    assert_eq!(sent_count(e), 1);
+    assert_eq!(e.document.edit.recipe().masks.len(), 1);
+    e.prompt_click([0.5, 0.5], true);
+    assert_eq!(sent(e, 1), prompt(&[at(0.5, 0.5, true)], bounds));
+    // Every result after the first refines the mask the first one made.
+    let refine = Target::Regenerate {
+        mask: 0,
+        component: 0,
+    };
+    assert_eq!(e.selection.running().unwrap().target, refine);
+    pump(e, "the click", settled);
+    e.prompt_click([0.3, 0.4], false);
+    assert_eq!(
+        sent(e, 2),
+        prompt(&[at(0.5, 0.5, true), at(0.3, 0.4, false)], bounds)
+    );
+    pump(e, "the second click", settled);
+    let (steps, count) = e.document.edit.history().steps();
+    assert_eq!(count, 3);
+    assert_eq!(steps[2].name, "Refine Blob");
+    assert_eq!(e.document.edit.recipe().masks.len(), 1);
+    // The cap: asked again without the extra click.
+    e.selection.prompting.as_mut().unwrap().input.clicks = vec![at(0.5, 0.5, true); MAX_CLICKS];
+    e.prompt_click([0.1, 0.1], true);
+    let Some(ViewerInput::Prompt { clicks, .. }) = sent(e, 3) else {
+        panic!("a prompt")
+    };
+    assert_eq!(clicks.len(), MAX_CLICKS);
+    assert!(!clicks.contains(&at(0.1, 0.1, true)));
+    pump(e, "the capped click", settled);
+    // A drag under a hundredth of the photo is not a box; a box starts over.
+    e.prompt_box([0.5, 0.2], [0.509, 0.8]);
+    assert_eq!(sent_count(e), 4);
+    e.prompt_box([0.1, 0.1], [0.4, 0.4]);
+    assert_eq!(sent(e, 4), prompt(&[], Some([0.1, 0.1, 0.4, 0.4])));
+    pump(e, "the new box", settled);
+    e.selection.end_prompting();
+
+    // Leaving out first, on a thin raster, sends its extent as the box.
+    let mut data = vec![0; 200];
+    data[0] = 200;
+    let thin = mask_assets::register(crate::storage::bitmaps::Bitmap {
+        width: 200,
+        height: 1,
+        channels: 1,
+        depth: 1,
+        data,
+    })
+    .unwrap();
+    let mut b = raster(e, 0, 0);
+    (b.id, b.width, b.height) = (thin, 200, 1);
+    e.change_edit(None, |r| {
+        r.masks[0].components[0].shape = MaskShape::Bitmap(b);
+    });
+    e.begin_refining(0, 0);
+    let Some(p) = &e.selection.prompting else {
+        panic!("refining")
+    };
+    assert_eq!(p.request.generator, tile(e, "Blob").generator);
+    e.prompt_click([0.002, 0.5], false);
+    assert_eq!(
+        sent(e, 5),
+        prompt(&[at(0.002, 0.5, false)], Some([0.0, 0.0, 0.005, 1.0]))
+    );
+    pump(e, "the thin extent", settled);
+    e.selection.end_prompting();
+
+    // Aiming with a Background-style tile keeps the component inverted.
+    e.begin_aiming(tile(e, "Not Blob"));
+    e.prompt_click([0.5, 0.5], true);
+    pump(e, "Not Blob", settled);
+    let masks = &e.document.edit.recipe().masks;
+    assert_eq!((masks.len(), masks[1].name.as_str()), (2, "Not Blob"));
+    assert!(masks[1].components[0].invert);
+    // Done ends aiming.
+    e.selection.end_prompting();
+    assert!(e.selection.prompting.is_none());
     pump(e, "the buffers", |e| leased(e) == 0);
 }
 
@@ -429,6 +545,7 @@ fn a_generator_set_up_then_disabled_keeps_its_saved_masks() {
                 bytes: 12_500_000,
             },
             guard,
+            aim: false,
         })
     );
     assert!(e.document.edit.recipe().masks.is_empty());
@@ -460,24 +577,28 @@ fn a_generator_set_up_then_disabled_keeps_its_saved_masks() {
     assert_eq!(e.selection.prompt, None);
     let b = raster(e, 0, 0);
 
-    // Disabling it while it runs: busy clears, nothing is recorded and its
-    // tiles go.
+    // Disabling it while it runs and is aimed with: busy clears, nothing is
+    // recorded, aiming ends and its tiles go.
+    e.begin_aiming(tile(e, "Blob"));
     hold(&folder);
     e.request_selection(tile(e, "Gate"));
     started(e, &folder);
     e.set_extension_enabled(ID, false);
     assert!(settled(e) && !busy_row(e));
+    assert!(e.selection.prompting.is_none());
     assert!(e.extensions.mask_tiles().is_empty());
     release(&folder);
     assert_eq!(e.document.edit.recipe().masks.len(), 1);
     draw_masking_panel(e);
-    // Its saved mask keeps its label and still renders; what would regenerate
-    // it says why it can't.
+    // Its saved mask keeps its label and still renders; what would refine it
+    // says why it can't.
     assert_eq!(e.raster_source_text(&b), "Made by Example Masks (setup)");
     assert_eq!(
         e.raster_generator(&b, false),
         Err("Example Masks is disabled".into())
     );
+    e.begin_refining(0, 0);
+    assert!(e.selection.prompting.is_none());
     let mut recipe = e.document.edit.recipe().clone();
     recipe.masks[0].adjust.exposure = 2.;
     let image = e.document.full().cloned().unwrap();

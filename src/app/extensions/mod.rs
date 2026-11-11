@@ -74,6 +74,7 @@ mod panels;
 mod targets;
 #[cfg(test)]
 mod tests;
+pub(in crate::app) mod viewer_input;
 
 pub(in crate::app) use devices::Devices;
 pub(in crate::app) use editor::Told;

@@ -70,6 +70,10 @@ pub(in crate::app) struct Offer {
     pub(in crate::app) provenance: String,
     /// It takes `none`: an automatic mask.
     pub(in crate::app) auto: bool,
+    /// It takes `prompt`: aiming and refining with clicks and a box.
+    pub(in crate::app) prompt: bool,
+    /// The manifest's `prompt-hint`.
+    pub(in crate::app) hint: Option<String>,
 }
 
 /// A mask generator's setup, while it runs or after it failed.
@@ -99,6 +103,8 @@ impl Extension {
             invert,
             provenance: generator.provenance(self.id()),
             auto: generator.input.contains(&Input::None),
+            prompt: generator.input.contains(&Input::Prompt),
+            hint: generator.prompt_hint.clone(),
         }
     }
 }
@@ -106,14 +112,12 @@ impl Extension {
 impl Host {
     /// The tiles of the enabled extensions' mask generators, for the Masking
     /// drawer, each with why it can't run now (a Failed extension, a program
-    /// missing). Disabled extensions offer none, and neither do generators
-    /// that only aim, until the app collects viewer input for them.
+    /// missing). Disabled extensions offer none.
     pub(in crate::app) fn mask_tiles(&self) -> Vec<(Offer, Option<String>)> {
         let mut tiles = Vec::new();
         for e in self.extensions.iter().filter(|e| e.enabled()) {
             let why = e.can_run().err();
-            let automatic = e.manifest.mask_generators.iter();
-            for g in automatic.filter(|g| g.input.contains(&Input::None)) {
+            for g in &e.manifest.mask_generators {
                 for tile in &g.tiles {
                     tiles.push((e.offer(g, &tile.name, tile.invert), why.clone()));
                 }

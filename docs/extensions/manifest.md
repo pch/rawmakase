@@ -187,9 +187,8 @@ invert = true
 
 Tiles show in the Masking drawer while the extension is enabled. A mask a
 generator made records its `provenance`, and Refine and Regenerate find the
-generator again through it; Regenerate is offered when the generator takes
-`none`. `prompt` is accepted, but the app doesn't collect it for extensions
-yet.
+generator again through it; Refine is offered when the generator takes
+`prompt`, Regenerate when it takes `none`.
 
 Each `[[mask-generator.tile]]`:
 

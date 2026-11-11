@@ -6,6 +6,7 @@ use super::{Failure, Feature, Generator, Pack, Prompt, Request, Target};
 use crate::app::Editor;
 use crate::app::develop::tools::retouch_tool::{control_label, hint, indented};
 use crate::app::extensions::mask_generator::{Offer, Setup};
+use crate::app::extensions::viewer_input::Gesture;
 use crate::app::ui::design::{self, Tone, radius, space, text};
 use eframe::egui;
 use rawmakase_extensions::protocol::message::NeedsSetup;
@@ -132,12 +133,25 @@ impl Editor {
         let Some(p) = &self.selection.prompting else {
             return;
         };
-        let (name, points, boxed, applied) = (
+        let (name, used, applied) = (
             p.request.generator.name().to_string(),
-            p.points.len(),
-            p.bounds.is_some(),
+            p.input.summary(),
             p.applied.is_some(),
         );
+        let first = match &p.request.generator {
+            Generator::Feature(_) => {
+                "Click the subject, or drag a box around it. Each click can be \
+                                      refined with more: click to add, Alt-click to leave out."
+                    .to_string()
+            }
+            Generator::Extension(offer) => format!(
+                "{} Each click can be refined with more: click to add, Alt-click to leave out.",
+                offer
+                    .hint
+                    .as_deref()
+                    .unwrap_or("Click it on the photo, or drag a box around it.")
+            ),
+        };
         let accent = egui::Color32::from_rgb(96, 150, 230);
         let failure = self.selection.failure.as_ref().map(|f| f.1.message());
         egui::Frame::new()
@@ -160,20 +174,14 @@ impl Editor {
                 };
                 ui.add(
                     egui::Label::new(small(if applied {
-                        "Click more of the subject to add to it, Alt-click something to leave \
-                         it out, or drag a box to start over from the box."
+                        "Click more of it to add to it, Alt-click something to leave it out, \
+                         or drag a box to start over from the box."
                     } else {
-                        "Click the subject, or drag a box around it. Each click can be refined \
-                         with more: click to add, Alt-click to leave out."
+                        &first
                     }))
                     .wrap(),
                 );
-                let used = format!(
-                    "{points} point{}{}",
-                    if points == 1 { "" } else { "s" },
-                    if boxed { " and a box" } else { "" }
-                );
-                ui.add(egui::Label::new(small(&used)));
+                ui.add(egui::Label::new(used));
                 if let Some(why) = failure {
                     ui.colored_label(egui::Color32::from_rgb(230, 170, 90), why);
                 }
@@ -205,78 +213,16 @@ impl Editor {
         to_image: &dyn Fn(egui::Pos2) -> [f32; 2],
     ) -> bool {
         let busy = self.selection.running().is_some();
-        if !busy {
-            if response.drag_started()
-                && let Some(origin) = ui.input(|i| i.pointer.press_origin())
-            {
-                self.selection.drag_from = Some(to_image(origin));
-            }
-            if response.drag_stopped()
-                && let (Some(from), Some(pos)) = (
-                    self.selection.drag_from.take(),
-                    response.interact_pointer_pos(),
-                )
-            {
-                self.prompt_box(from, to_image(pos));
-            }
-            if response.clicked()
-                && let Some(pos) = response.interact_pointer_pos()
-            {
-                let alt = ui.input(|i| i.modifiers.alt);
-                self.prompt_click(to_image(pos), !alt);
-            }
-        }
-        let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
-        let Some(p) = &self.selection.prompting else {
+        let Some(p) = &mut self.selection.prompting else {
             return true;
         };
-        if let Some(b) = p.bounds {
-            let r = egui::Rect::from_two_pos(to_screen([b[0], b[1]]), to_screen([b[2], b[3]]));
-            painter.rect_stroke(
-                r,
-                0.,
-                egui::Stroke::new(1.5, egui::Color32::from_rgb(110, 200, 130)),
-                egui::StrokeKind::Middle,
-            );
-        }
-        if let (Some(from), Some(pos)) = (self.selection.drag_from, response.interact_pointer_pos())
-            && response.dragged()
+        match p
+            .input
+            .overlay(ui, response, rect, busy, to_screen, to_image)
         {
-            let r = egui::Rect::from_two_pos(to_screen(from), pos);
-            painter.rect_stroke(
-                r,
-                0.,
-                egui::Stroke::new(1.5, egui::Color32::WHITE),
-                egui::StrokeKind::Middle,
-            );
-        }
-        for point in &p.points {
-            let at = to_screen([point.x, point.y]);
-            let color = if point.positive {
-                egui::Color32::from_rgb(110, 200, 130)
-            } else {
-                egui::Color32::from_rgb(230, 90, 80)
-            };
-            painter.circle(at, 6., color, egui::Stroke::new(1.5, egui::Color32::WHITE));
-            if !point.positive {
-                let d = egui::vec2(3., 3.);
-                painter.line_segment(
-                    [at - d, at + d],
-                    egui::Stroke::new(1.5, egui::Color32::WHITE),
-                );
-                let e = egui::vec2(3., -3.);
-                painter.line_segment(
-                    [at - e, at + e],
-                    egui::Stroke::new(1.5, egui::Color32::WHITE),
-                );
-            }
-        }
-        if response.hovered() {
-            ui.ctx().set_cursor_icon(if busy {
-                egui::CursorIcon::Progress
-            } else {
-                egui::CursorIcon::Crosshair
-            });
+            Some(Gesture::Click { at, positive }) => self.prompt_click(at, positive),
+            Some(Gesture::Drag { from, to }) => self.prompt_box(from, to),
+            None => {}
         }
         true
     }
@@ -638,10 +584,15 @@ impl Editor {
         let aim = matches!(failure, Failure::NoSubject | Failure::NothingFound)
             && request.generator.takes_prompt();
         indented(ui, |ui| {
+            let label = if builtin {
+                "Click the subject…"
+            } else {
+                "Click it on the photo…"
+            };
             if aim
                 && ui
                     .add(
-                        egui::Button::new(egui::RichText::new("Click the subject…").strong())
+                        egui::Button::new(egui::RichText::new(label).strong())
                             .fill(egui::Color32::from_rgb(52, 98, 170)),
                     )
                     .clicked()

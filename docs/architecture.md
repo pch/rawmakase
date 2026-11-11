@@ -138,9 +138,9 @@ extension's program: disabled, uninstalled, loaded again, crashed, hung), and
 is void in any phase once it has moved: busy clears at once, the worker's job
 is cancelled, and nothing it produces applies. A mask result is not a proposal and has no
 target token; edits made while it runs that change neither the masks'
-structure nor the content (sliders, names) survive it. Extensions' generators
-are not aimed with clicks yet; their tiles are those of generators that take
-`none`.
+structure nor the content (sliders, names) survive it. Aiming collects
+clicks and a box with `app::extensions::viewer_input`, for Select Subject and
+extensions alike.
 
 No value, catalog or rendering crate can reach `rawmakase-inference` or
 `rawmakase-selection`, so saved masks render without any inference installed and a photo with AI Denoise renders from a
