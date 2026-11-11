@@ -5,7 +5,8 @@
 //! change, and may push one with `panel-update`. A value the user is still
 //! editing (a slider being dragged, text being typed) is kept as a draft and
 //! sent once committed: a slider when it is let go, text on Enter or when the
-//! field loses focus, a choice or toggle at once. A new tree from the program
+//! field loses focus, a choice or toggle at once. What a frame commits is sent
+//! before the clicks of that frame. A new tree from the program
 //! replaces every draft. A validation error comes back as the control's
 //! `help`, drawn under it.
 use super::PanelView;
@@ -89,6 +90,10 @@ pub(in crate::app) fn draw(ui: &mut egui::Ui, salt: &str, view: &mut PanelView) 
     values(&view.controls, &mut all);
     let controls = view.controls.clone();
     draw_list(ui, salt, &controls, &all, &mut view.drafts, &mut actions);
+    // A field loses focus to the click that ends its editing, so what it
+    // commits goes first, whichever is drawn first: the click then acts on
+    // the value the user left, and a Reset isn't undone by text sent after it.
+    actions.sort_by_key(|action| !matches!(action, Action::Changed { .. }));
     actions
 }
 
@@ -339,4 +344,103 @@ fn path_value(ui: &mut egui::Ui, path: Option<&str>) {
         )
         .truncate(),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::accesskit::{Node, TreeUpdate};
+    use serde_json::json;
+
+    /// A frame of `view` given `events`: what it committed, and where its
+    /// controls are.
+    fn frame(
+        ctx: &egui::Context,
+        view: &mut PanelView,
+        events: Vec<egui::Event>,
+    ) -> (Vec<Action>, TreeUpdate) {
+        let mut actions = Vec::new();
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800., 600.),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ui| actions = draw(ui, "test", view),
+        );
+        output.textures_delta.clear();
+        let tree = output
+            .platform_output
+            .accesskit_update
+            .expect("accessibility is on");
+        (actions, tree)
+    }
+
+    fn centre(tree: &TreeUpdate, what: &str, is: impl Fn(&Node) -> bool) -> egui::Pos2 {
+        let bounds = tree
+            .nodes
+            .iter()
+            .map(|(_, n)| n)
+            .find(|n| is(n))
+            .and_then(|n| n.bounds())
+            .unwrap_or_else(|| panic!("{what} is drawn"));
+        egui::pos2(
+            ((bounds.x0 + bounds.x1) / 2.) as f32,
+            ((bounds.y0 + bounds.y1) / 2.) as f32,
+        )
+    }
+
+    fn click(at: egui::Pos2) -> Vec<egui::Event> {
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        vec![egui::Event::PointerMoved(at), button(true), button(false)]
+    }
+
+    /// Text typed and not yet committed is sent before a click that takes
+    /// the focus from it, whichever is drawn first: the click acts on the
+    /// value the user left, so a Reset clicked after typing isn't undone by
+    /// the text arriving after it.
+    #[test]
+    fn a_draft_is_committed_before_the_click_that_ends_it() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        ctx.all_styles_mut(|s| s.animation_time = 0.);
+        let controls: Vec<Control> = serde_json::from_value(json!([
+            {"id": "reset", "type": "button", "title": "Reset"},
+            {"id": "keys", "type": "text", "label": "Action", "value": ""},
+        ]))
+        .unwrap();
+        let mut view = PanelView {
+            controls,
+            ..Default::default()
+        };
+        let (_, tree) = frame(&ctx, &mut view, Vec::new());
+        let field = centre(&tree, "the text field", |n| {
+            n.role() == egui::accesskit::Role::TextInput
+        });
+        let reset = centre(&tree, "Reset", |n| n.label() == Some("Reset"));
+        frame(&ctx, &mut view, click(field));
+        let (typed, _) = frame(&ctx, &mut view, vec![egui::Event::Text("undo".into())]);
+        assert!(typed.is_empty(), "{typed:?}");
+        let (actions, _) = frame(&ctx, &mut view, click(reset));
+        assert_eq!(
+            actions,
+            [
+                Action::Changed {
+                    control: "keys".into(),
+                    value: json!("undo"),
+                },
+                Action::Clicked {
+                    control: "reset".into(),
+                },
+            ]
+        );
+    }
 }
