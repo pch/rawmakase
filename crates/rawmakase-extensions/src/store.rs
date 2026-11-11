@@ -198,14 +198,24 @@ impl Store {
         Ok(())
     }
 
-    /// Turns an extension on or off. A bundled extension gains an entry for it.
-    pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<()> {
+    /// Turns an extension on or off: an installed one, a developer folder, or
+    /// one of `bundled` (the ids of the extensions that ship with the app),
+    /// which gains an entry for it. Any other id is refused and nothing is
+    /// written.
+    pub fn set_enabled(&self, id: &str, enabled: bool, bundled: &[&str]) -> Result<()> {
         State::update(&self.data_dir, |state| {
             if let Some(developer) = state.developer.get_mut(id) {
                 developer.enabled = enabled;
-            } else {
-                state.entry(id).enabled = enabled;
+                return Ok(());
             }
+            let installed = state
+                .extensions
+                .get(id)
+                .is_some_and(|entry| !entry.installed.is_empty());
+            if !installed && !bundled.contains(&id) {
+                return Err(Error::new(format!("{id} is not installed")));
+            }
+            state.entry(id).enabled = enabled;
             Ok(())
         })
     }
@@ -378,7 +388,7 @@ mod tests {
                 .join(crate::protocol::manifest::FILE)
                 .is_file()
         );
-        store.set_enabled("dev.test.tool", false).unwrap();
+        store.set_enabled("dev.test.tool", false, &[]).unwrap();
         let second = package(data.path(), "1.1.0");
         let installed = store.install(&second, &source(&second), &app()).unwrap();
         assert_eq!(installed.replaced.as_deref(), Some("1.0.0"));
@@ -531,11 +541,23 @@ mod tests {
     fn enabling_a_bundled_extension_records_only_that() {
         let data = tempfile::tempdir().unwrap();
         let store = Store::new(data.path());
-        store.set_enabled("rawmakase.mcp", false).unwrap();
+        // Neither installed nor bundled: refused, and nothing is written.
+        for (id, bundled) in [
+            ("dev.test.typo", &["rawmakase.mcp"][..]),
+            ("rawmakase.mcp", &[]),
+        ] {
+            let error = store.set_enabled(id, false, bundled).unwrap_err();
+            assert!(error.0.contains("not installed"), "{error}");
+        }
+        assert!(!data.path().join(crate::state::FILE).exists());
+        store
+            .set_enabled("rawmakase.mcp", false, &["rawmakase.mcp"])
+            .unwrap();
         let state = State::read(data.path()).unwrap();
         let entry = &state.extensions["rawmakase.mcp"];
         assert!(!entry.enabled);
         assert!(entry.installed.is_empty() && entry.active.is_none());
+        assert_eq!(state.extensions.len(), 1);
         // A bundled extension can't be removed.
         assert!(store.remove("rawmakase.mcp").is_err());
     }
@@ -554,7 +576,7 @@ mod tests {
         .unwrap();
         let manifest = store.add_developer(&folder).unwrap();
         assert_eq!(manifest.extension.id, "dev.test.tool");
-        store.set_enabled("dev.test.tool", false).unwrap();
+        store.set_enabled("dev.test.tool", false, &[]).unwrap();
         let state = State::read(data.path()).unwrap();
         assert!(!state.developer["dev.test.tool"].enabled);
         assert!(state.extensions.is_empty());

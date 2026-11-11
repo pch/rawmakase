@@ -1340,6 +1340,11 @@ fn lensfun(command: LensfunCommand) -> Result<()> {
     Ok(())
 }
 
+/// The ids of the extensions that ship with the app, which `enable` and
+/// `disable` accept without an install. None yet: each joins as it moves out
+/// of the core.
+const BUNDLED_EXTENSIONS: &[&str] = &[];
+
 /// `rawmakase extensions`.
 fn extensions(command: ExtensionsCommand) -> Result<()> {
     use rawmakase_extensions::state::{Source, State};
@@ -1420,11 +1425,11 @@ fn extensions(command: ExtensionsCommand) -> Result<()> {
             );
         }
         ExtensionsCommand::Enable { id } => {
-            store.set_enabled(&id, true)?;
+            store.set_enabled(&id, true, BUNDLED_EXTENSIONS)?;
             println!("Enabled {id}; {next_start}");
         }
         ExtensionsCommand::Disable { id } => {
-            store.set_enabled(&id, false)?;
+            store.set_enabled(&id, false, BUNDLED_EXTENSIONS)?;
             println!("Disabled {id}; {next_start}");
         }
         ExtensionsCommand::Check => {

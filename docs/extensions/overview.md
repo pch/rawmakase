@@ -84,6 +84,8 @@ newer RAWmakase (a higher `version`) is never written over.
   updates it; the previous version stays installed until nothing uses it.
 - `rawmakase extensions list|remove|enable|disable` do what they say; a running
   RAWmakase notices a change made from the command line on its next start.
+  `enable` and `disable` refuse an id that is neither installed, a developer
+  folder nor bundled with the app.
 
 An install unpacks into a staging folder, checks every file against the
 package's `SHA256SUMS`, and only then renames the folder into place and makes
