@@ -572,6 +572,26 @@ Decision, 2026-11-09: the HDR master renders Whites up to +50 and refuses higher
 values (`model::hdr::check_recipe`) with the reason. Raising the limit needs a better
 predictor of Camera Raw's level than twice the 99th percentile.
 
+Above +50, re-examined on 2026-11-11 with Camera Raw 18.7 captures of twelve more CC0
+photos (the gate set's training split, Adobe Standard, limit 4, spread over p99 from
+−7.4 to +0.1 EV) at Whites +75 and +100. For each, RAWmakase's master was rendered at
+forced levels to find the one whose median error above white is zero:
+
+- **Twice the 99th percentile is as good a level as any found.** Camera Raw's best
+  level is within a standard deviation of 0.23 stop of it at +75 and 0.20 at +100 (mean
+  −0.04 and −0.06; worst 0.49), as on the validation photos, with one exception: the
+  Leica V-Lux 5, a dark photo whose 99th percentile is about 7 stops under white,
+  renders at a level 6.4 stops above twice it.
+- **The level is not enough.** At Camera Raw's own best level per photo, four of the
+  twelve are still outside the median tolerance above white at both +75 and +100
+  (Panasonic DC-S9 0.22 / 0.38 stop, Fujifilm X-T5 0.52 / 0.47, Canon PowerShot SX70
+  HS 0.17 / 0.26, Sony ILCE-1 0.21 / 0.21). At twice the 99th percentile, seven are
+  (worst 2.7 stops, the V-Lux 5).
+
+**Decision, 2026-11-11: Whites above +50 stays refused.** Part of Camera Raw's positive
+Whites above +50 is not a gain of one photo level; a better level predictor alone
+cannot reach the tolerances.
+
 SDR renders do not change: positive Whites' table and level are read only in the HDR
 branch of the scene tone stage (`SceneTone::new`, `GlobalTone::hdr`), which SDR
 renders, the SDR rendition among them, never take. As a targeted regression check,
@@ -1265,7 +1285,8 @@ patches (and ΔE_ITP means):
 
 ## Open
 
-- Whites above +50 and Highlights in HDR (a rule trained on HDR targets:
+- Whites above +50 (not a gain of one photo level: [Whites](#whites)) and Highlights
+  in HDR (a rule trained on HDR targets:
   [Highlights and Shadows](#highlights-and-shadows)); the colour mixer's Luminance beyond
   ±40, where Camera Raw's HDR effect strengthens with brightness and the SDR grids don't
   ([Band Luminance](#band-luminance)); Point Color on photos and on the GPU's HDR preview
