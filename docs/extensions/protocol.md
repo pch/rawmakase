@@ -200,8 +200,15 @@ What the app checks, photo by photo:
   (`too_large`). A setting name the control layer doesn't know, or a value that
   isn't a finite number, refuses that photo `invalid_request`.
 
-A photo's settings in a read are Develop's for the open photo and its saved
-RAWmakase edit for any other (none for a photo never edited in RAWmakase).
+A photo's settings in a read are Develop's for the open photo and, for any
+other, the settings Develop would open it with: its saved RAWmakase edit, else
+its Lightroom edit, else the raw defaults, so a read means the same whether or
+not the photo is open. A photo whose settings can't be read (an edit that
+can't be read, or protected because its file changed; a file that can't be
+opened) has no settings and an `error` saying why, and a proposal for it is
+refused `stale_target`. Photos not open are read off the UI thread, and the
+reply comes when that is done; a program that cancels its read is answered
+`cancelled`.
 `adapter.device` and `adapter.operate` are refused `adapter_disabled` in this
 version: the app runs no control adapter of an extension yet.
 

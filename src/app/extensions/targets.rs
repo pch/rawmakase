@@ -9,6 +9,14 @@
 //! sends back unchanged; a forged one gains nothing, as every part is checked
 //! against the editor as it is when the proposal arrives.
 //!
+//! A read is begun on the UI thread ([`Editor::begin_read`]), which reads the
+//! photo open in Develop as Develop has it and fixes the catalog's key. The
+//! photos not open are read by [`Reading::finish`] on a worker, since it opens
+//! their files: each with the settings Develop would open it with
+//! ([`crate::app::library::sync::starting_recipe`], as a proposal starts
+//! from), or the error that kept them from being read. A read whose catalog
+//! was closed or read again by the time it finishes is refused.
+//!
 //! A proposal applies photo by photo:
 //!
 //! - a token of a catalog that isn't the open one, or of an earlier
@@ -42,7 +50,7 @@
 use crate::app::Editor;
 use crate::app::library::sync::{
     BatchChange, BatchProgress, Decoding, ProposalOutcome, ProposedOutcome, ProposedPhoto,
-    ProposedSettings, Synced, sync_target,
+    ProposedSettings, SyncTarget, Synced, sync_target,
 };
 use crate::app::shell::commands::Param;
 use crate::catalog::{CatalogLocation, PhotoId};
@@ -52,6 +60,7 @@ use rawmakase_extensions::protocol::{ErrorCode, RemoteError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 /// The most photos one read returns, and one proposal changes, so a reply
@@ -110,6 +119,118 @@ fn stale(message: impl Into<String>) -> RemoteError {
     RemoteError::new(ErrorCode::StaleTarget, message)
 }
 
+fn catalog_error(e: anyhow::Error) -> RemoteError {
+    RemoteError::new(ErrorCode::Other("catalog".into()), format!("{e:#}"))
+}
+
+/// A read begun on the UI thread ([`Editor::begin_read`]): the catalog as it
+/// was then, and each photo, read from Develop there or left for
+/// [`Reading::finish`].
+pub(super) struct Reading {
+    catalog: CatalogLocation,
+    /// The catalog's location and structural generation when it began.
+    key: (String, u64),
+    photos: Vec<Entry>,
+    defaults: Arc<crate::raw_defaults::DevelopDefaults>,
+}
+
+enum Entry {
+    /// Read from Develop.
+    Open(Photo, TokenPhoto),
+    /// Not open: read from the catalog and its file.
+    Closed(SyncTarget),
+}
+
+/// What a read's worker reports, as [`super::Done::Read`].
+pub(crate) struct ReadDone {
+    ticket: u64,
+    key: (String, u64),
+    result: Result<Snapshot, RemoteError>,
+}
+
+impl Reading {
+    /// Whether it reads a photo not open, which opens its file: then it is
+    /// finished on a worker.
+    pub(super) fn needs_worker(&self) -> bool {
+        self.photos.iter().any(|p| matches!(p, Entry::Closed(_)))
+    }
+
+    /// The snapshot, each photo not open read from `catalog` (none needed
+    /// when every photo was read from Develop). A photo's fingerprint and
+    /// file identity are read before its settings: a change in between
+    /// leaves the token older than the settings, so a proposal from them is
+    /// refused, never applied to settings the read didn't see. A photo
+    /// whose settings can't be read (its edit protected or unreadable, its
+    /// file unopenable) carries the error and no settings, and its token
+    /// refuses any proposal for it. Stops, `cancelled`, once `cancel` is set.
+    pub(super) fn finish(
+        self,
+        catalog: Option<&crate::catalog::Catalog>,
+        cancel: &AtomicBool,
+    ) -> Result<Snapshot, RemoteError> {
+        let cancelled = || RemoteError::new(ErrorCode::Cancelled, "the read was cancelled");
+        let mut photos = Vec::with_capacity(self.photos.len());
+        let mut token = Token {
+            catalog: self.key.0,
+            generation: self.key.1,
+            photos: Vec::with_capacity(self.photos.len()),
+        };
+        for entry in self.photos {
+            let (photo, read) = match entry {
+                Entry::Open(photo, read) => (photo, read),
+                Entry::Closed(target) => {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Err(cancelled());
+                    }
+                    let catalog = catalog.expect("a catalog for photos not open");
+                    let Some(fingerprint) = catalog
+                        .photo_fingerprint(target.id)
+                        .map_err(catalog_error)?
+                    else {
+                        // Gone since the read began.
+                        continue;
+                    };
+                    let file = Identity::read(&target.path).ok();
+                    let settings = crate::app::library::sync::starting_recipe(
+                        catalog,
+                        &target,
+                        &self.defaults,
+                        rawmakase_cancel::Cancel::new(cancel),
+                    );
+                    if cancel.load(Ordering::Relaxed) {
+                        return Err(cancelled());
+                    }
+                    let (settings, error, fingerprint) = match settings {
+                        Ok(recipe) => (settings_of(&recipe), None, Some(fingerprint)),
+                        Err(e) => (Map::new(), Some(format!("{e:#}")), None),
+                    };
+                    (
+                        Photo {
+                            id: target.id.0,
+                            path: target.path,
+                            settings,
+                            error,
+                        },
+                        TokenPhoto {
+                            id: target.id.0,
+                            file,
+                            fingerprint,
+                            open: None,
+                            clean: false,
+                        },
+                    )
+                }
+            };
+            photos.push(photo);
+            token.photos.push(read);
+        }
+        Ok(Snapshot {
+            token: serde_json::to_string(&token).expect("a token is JSON"),
+            photos,
+        })
+    }
+}
+
 /// A recipe's settings in the control layer's names and units.
 fn settings_of(recipe: &crate::model::recipe::Recipe) -> Map<String, Value> {
     let mut recipe = recipe.clone();
@@ -154,9 +275,11 @@ impl Editor {
         }
     }
 
-    /// A snapshot of `ids`, in order; ids the catalog doesn't hold are left
-    /// out. The photo open in Develop is read as Develop has it.
-    pub(super) fn read_photos(&self, ids: &[PhotoId]) -> Result<Snapshot, RemoteError> {
+    /// Begins a read of `ids`, in order; ids the catalog doesn't hold are
+    /// left out. The photo open in Develop is read here, as Develop has it;
+    /// the others are left to [`Reading::finish`], which opens their files
+    /// and so runs on a worker ([`Editor::start_read`]).
+    pub(super) fn begin_read(&self, ids: &[PhotoId]) -> Result<Reading, RemoteError> {
         let (catalog, generation) = self.catalog_key().ok_or_else(|| {
             RemoteError::new(ErrorCode::Other("no_catalog".into()), "No catalog is open")
         })?;
@@ -168,74 +291,133 @@ impl Editor {
         }
         let library = self.library.as_ref().expect("checked above");
         let mut photos = Vec::new();
-        let mut token = Token {
-            catalog,
-            generation,
-            photos: Vec::new(),
-        };
         for &id in ids {
             let Some(photo) = library.photo(id) else {
                 continue;
             };
+            if self.document.catalog_photo != Some(id) || self.document.loading() {
+                photos.push(Entry::Closed(sync_target(photo)));
+                continue;
+            }
             let fingerprint = library
                 .session
                 .catalog()
                 .photo_fingerprint(id)
-                .map_err(|e| {
-                    RemoteError::new(ErrorCode::Other("catalog".into()), format!("{e:#}"))
-                })?;
-            let develop = self.document.catalog_photo == Some(id) && !self.document.loading();
-            let (settings, file, open, clean) = if develop {
-                (
-                    settings_of(self.document.edit.recipe()),
-                    self.document.file.clone(),
-                    Some((self.document.load_id(), self.automation.revision)),
-                    self.develop_as_saved(),
-                )
-            } else {
-                let saved = library
-                    .session
-                    .catalog()
-                    .load_edit(id, &photo.path)
-                    .ok()
-                    .flatten()
-                    .map(|e| settings_of(&e.recipe))
-                    .unwrap_or_default();
-                (saved, Identity::read(&photo.path).ok(), None, false)
-            };
-            photos.push(Photo {
-                id: id.0,
-                path: photo.path.clone(),
-                settings,
-            });
-            token.photos.push(TokenPhoto {
-                id: id.0,
-                file,
-                fingerprint,
-                open,
-                clean,
-            });
+                .map_err(catalog_error)?;
+            photos.push(Entry::Open(
+                Photo {
+                    id: id.0,
+                    path: photo.path.clone(),
+                    settings: settings_of(self.document.edit.recipe()),
+                    error: None,
+                },
+                TokenPhoto {
+                    id: id.0,
+                    file: self.document.file.clone(),
+                    fingerprint,
+                    open: Some((self.document.load_id(), self.automation.revision)),
+                    clean: self.develop_as_saved(),
+                },
+            ));
         }
-        Ok(Snapshot {
-            token: serde_json::to_string(&token).expect("a token is JSON"),
+        Ok(Reading {
+            catalog: library.session.catalog().location().clone(),
+            key: (catalog, generation),
             photos,
+            defaults: self.raw_defaults.clone(),
         })
     }
 
-    /// The Library's selection.
-    pub(super) fn read_selection(&self) -> Result<Snapshot, RemoteError> {
-        let ids = self
-            .library
+    /// The Library's selection, for [`Editor::begin_read`].
+    pub(super) fn selection_ids(&self) -> Vec<PhotoId> {
+        self.library
             .as_ref()
             .map(|l| l.selected_photos())
-            .unwrap_or_default();
-        self.read_photos(&ids)
+            .unwrap_or_default()
     }
 
-    /// The photo open in Develop, or none.
+    /// A snapshot of `ids` read at once on this thread, the photos not open
+    /// included: for tests, which then need no worker.
+    #[cfg(test)]
+    pub(super) fn read_photos(&self, ids: &[PhotoId]) -> Result<Snapshot, RemoteError> {
+        let reading = self.begin_read(ids)?;
+        let catalog = self.library.as_ref().map(|l| l.session.catalog());
+        reading.finish(catalog, &std::sync::atomic::AtomicBool::new(false))
+    }
+
+    /// The Library's selection, read at once (see [`Editor::read_photos`]).
+    #[cfg(test)]
+    pub(super) fn read_selection(&self) -> Result<Snapshot, RemoteError> {
+        self.read_photos(&self.selection_ids())
+    }
+
+    /// The photo open in Develop, or none, read at once.
+    #[cfg(test)]
     pub(super) fn read_open_photo(&self) -> Result<Snapshot, RemoteError> {
         let ids: Vec<PhotoId> = self.document.catalog_photo.into_iter().collect();
         self.read_photos(&ids)
+    }
+
+    /// Finishes `reading` on a worker, which opens the catalog by its
+    /// location and reports [`ReadDone`] with `ticket`; `cancel` stops it
+    /// between photos and inside their decodes. A one-shot job, detached, as
+    /// a proposal's is: it writes nothing, and a stalled file read can't be
+    /// interrupted.
+    pub(super) fn start_read(&self, ticket: u64, reading: Reading, cancel: Arc<AtomicBool>) {
+        let key = reading.key.clone();
+        let failed = key.clone();
+        #[cfg(test)]
+        let hook = self.read_hook.clone();
+        crate::app::task::spawn(
+            self.tx.clone(),
+            self.context.clone(),
+            move |tx| {
+                #[cfg(test)]
+                if let Some(hook) = hook {
+                    hook();
+                }
+                let result = crate::catalog::Catalog::open(&reading.catalog)
+                    .map_err(catalog_error)
+                    .and_then(|catalog| reading.finish(Some(&catalog), &cancel));
+                let _ = tx.send(crate::app::worker::Event::Extensions(Box::new(
+                    super::Done::Read(Box::new(ReadDone {
+                        ticket,
+                        key,
+                        result,
+                    })),
+                )));
+            },
+            move |tx, why| {
+                let _ = tx.send(crate::app::worker::Event::Extensions(Box::new(
+                    super::Done::Read(Box::new(ReadDone {
+                        ticket,
+                        key: failed,
+                        result: Err(RemoteError::new(ErrorCode::Other("failed".into()), why)),
+                    })),
+                )));
+            },
+        );
+    }
+
+    /// A read's worker reported back: the snapshot goes to whoever asked
+    /// for it, refused when the catalog it read was closed or read again
+    /// meanwhile.
+    pub(super) fn read_finished(&mut self, done: ReadDone) {
+        let ReadDone {
+            ticket,
+            key,
+            result,
+        } = done;
+        let result = if self.catalog_key() == Some(key) {
+            result
+        } else {
+            Err(stale(
+                "The catalog the photos were read from is closed or was read again",
+            ))
+        };
+        let outcomes = self.extensions.finish_read(ticket, result);
+        self.extension_outcomes(outcomes);
+        self.sync_extension_commands();
     }
 
     /// Applies an admitted proposal; `name` names the History step and Undo.

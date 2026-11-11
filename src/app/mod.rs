@@ -148,6 +148,9 @@ pub(crate) struct Editor {
     /// there or make it panic.
     #[cfg(test)]
     proposal_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    /// Runs on a read's worker before its work, as `proposal_hook` does.
+    #[cfg(test)]
+    read_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 impl Editor {
     pub(crate) fn new(
@@ -420,6 +423,8 @@ impl Editor {
             extension_page: Default::default(),
             #[cfg(test)]
             proposal_hook: None,
+            #[cfg(test)]
+            read_hook: None,
         };
         app.reload_presets(ctx);
         // A catalog passed on the command line opens instead of the last one;

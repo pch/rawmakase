@@ -182,6 +182,18 @@ fn run(e: &mut Editor, command: &str, title: &str) -> Result<Value, RemoteError>
     result(&outcomes, title).unwrap().clone()
 }
 
+/// Waits for a command's target, read on a worker, without polling the host:
+/// the command is sent, and nothing it sends back is handled yet.
+fn read_target(e: &mut Editor) {
+    let ctx = e.context.clone();
+    let until = Instant::now() + Duration::from_secs(20);
+    while e.extensions.reading() {
+        assert!(Instant::now() < until, "the target was never read");
+        e.events(&ctx);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
 /// Whether the program's command runs and says so in the status line: past
 /// the point where a cancellation would stop it before it ran.
 fn waiting(e: &Editor, _: &[Outcome]) -> bool {
@@ -333,6 +345,7 @@ fn a_proposal_applies_to_the_photos_still_as_read_and_refuses_the_rest() {
     // and b's file is replaced, before the program proposes.
     e.run_extension_command(&format!("{ID}/brighten"), RunBy::Key)
         .unwrap();
+    read_target(e);
     let library = e.library.as_mut().unwrap();
     library
         .edit_metadata(
@@ -369,6 +382,162 @@ fn a_proposal_applies_to_the_photos_still_as_read_and_refuses_the_rest() {
         .unwrap();
     assert_eq!(history.steps.len(), 1);
     assert_eq!(history.steps[0].name, "Brighten");
+}
+
+/// Holds the next read's worker before it starts, as [`hold`] does a
+/// proposal's.
+fn hold_read(e: &mut Editor) -> Arc<std::sync::Barrier> {
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    let held = barrier.clone();
+    e.read_hook = Some(Arc::new(move || {
+        held.wait();
+        held.wait();
+    }));
+    barrier
+}
+
+#[test]
+fn a_photo_not_open_reads_as_develop_would_open_it() {
+    let mut f = fixture(&["a.png", "b.png", "c.png"]);
+    let e = &mut f.editor;
+    let (a, b, c) = (
+        f.photos[0].clone(),
+        f.photos[1].clone(),
+        f.photos[2].clone(),
+    );
+    let catalog = e.library.as_mut().unwrap().session.catalog_mut_for_tests();
+    // b has only its Lightroom edit; c one that can't be read.
+    for (photo, text) in [
+        (&b, "s = { Exposure2012 = 0.25 }"),
+        (&c, "s = { Exposure2012 = "),
+    ] {
+        catalog
+            .db_for_tests()
+            .execute(
+                "UPDATE photos SET lightroom_develop=?1 WHERE id=?2",
+                rusqlite::params![text, photo.0.0],
+            )
+            .unwrap();
+    }
+    let read = e.read_photos(&[a.0, b.0, c.0]).unwrap();
+    let [unedited, lightroom, broken] = &read.photos[..] else {
+        panic!("{read:?}")
+    };
+    // The unedited photo reads with the defaults it opens with, not as
+    // nothing.
+    assert_eq!(unedited.settings["exposure"], json!(0.0));
+    assert!(unedited.error.is_none());
+    assert_eq!(lightroom.settings["exposure"], json!(0.25));
+    assert!(broken.error.is_some() && broken.settings.is_empty());
+    // A proposal for the photo whose settings couldn't be read is refused.
+    let proposed = propose_now(e, proposal(&read.token, c.0, 1.0), "Brighten");
+    assert_eq!(refused(&proposed), vec![(c.0.0, ErrorCode::StaleTarget)]);
+    // Open, the Lightroom photo reads the same.
+    open(e, &b);
+    let develop = e.read_open_photo().unwrap();
+    assert_eq!(develop.photos[0].settings, lightroom.settings);
+}
+
+#[test]
+fn a_programs_read_of_photos_not_open_runs_on_a_worker() {
+    let mut f = fixture(&["a.png", "b.png"]);
+    let e = &mut f.editor;
+    let ids: Vec<PhotoId> = f.photos.iter().map(|p| p.0).collect();
+    select(e, &ids);
+    let barrier = hold_read(e);
+    e.run_extension_command(&format!("{ID}/read"), RunBy::Button)
+        .unwrap();
+    // The program's read.selection waits for its worker; the UI goes on.
+    pump(e, "the read", |e, _| e.extensions.proposing());
+    barrier.wait();
+    let (outcomes, _) = e.extensions_poll(Instant::now());
+    assert!(result(&outcomes, "Read the Editor").is_none());
+    barrier.wait();
+    // The next read (the open photo, none) needs no worker.
+    e.read_hook = None;
+    let outcomes = pump(e, "the command", |_, o| {
+        result(o, "Read the Editor").is_some()
+    });
+    let read = result(&outcomes, "Read the Editor")
+        .unwrap()
+        .clone()
+        .unwrap();
+    assert_eq!(read["selection"], json!([ids[0].0, ids[1].0]));
+}
+
+#[test]
+fn a_command_whose_target_is_being_read_can_be_stopped() {
+    #[derive(Debug)]
+    enum Stop {
+        Stopped,
+        Disabled,
+        Quitting,
+    }
+    for stop in [Stop::Stopped, Stop::Disabled, Stop::Quitting] {
+        let mut f = fixture(&["a.png", "b.png"]);
+        let e = &mut f.editor;
+        let ids: Vec<PhotoId> = f.photos.iter().map(|p| p.0).collect();
+        select(e, &ids);
+        let barrier = hold_read(e);
+        e.run_extension_command(&format!("{ID}/brighten"), RunBy::Button)
+            .unwrap();
+        barrier.wait();
+        // Running while its target is read, and said so.
+        assert!(e.extensions.command_running(ID), "{stop:?}");
+        assert_eq!(e.extensions.status(), vec!["Example: Brighten…"]);
+        let stopped = match stop {
+            Stop::Stopped => e.extensions.cancel_commands(ID),
+            Stop::Disabled => e.extensions.set_enabled(ID, false).unwrap(),
+            Stop::Quitting => {
+                e.extensions.cancel_requests();
+                Vec::new()
+            }
+        };
+        if !matches!(stop, Stop::Quitting) {
+            assert!(
+                matches!(&stopped[..], [Outcome::Command { result: Err(_), .. }]),
+                "{stop:?}: {stopped:?}"
+            );
+        }
+        assert!(!e.extensions.command_running(ID), "{stop:?}");
+        assert!(e.extensions.status().is_empty(), "{stop:?}");
+        barrier.wait();
+        // The read's report comes, and the command is never sent.
+        let ctx = e.context.clone();
+        let until = Instant::now() + Duration::from_millis(300);
+        while Instant::now() < until {
+            e.events(&ctx);
+            let (outcomes, _) = e.extensions_poll(Instant::now());
+            assert!(result(&outcomes, "Brighten").is_none(), "{stop:?}");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(!e.extensions.get(ID).unwrap().running(), "{stop:?}");
+        assert_eq!(exposure(e, &f.photos[0]), None, "{stop:?}");
+    }
+}
+
+#[test]
+fn a_programs_read_on_a_worker_ends_with_its_session() {
+    let mut f = fixture(&["a.png"]);
+    let e = &mut f.editor;
+    select(e, &[f.photos[0].0]);
+    let barrier = hold_read(e);
+    e.run_extension_command(&format!("{ID}/read"), RunBy::Button)
+        .unwrap();
+    pump(e, "the read", |e, _| e.extensions.proposing());
+    barrier.wait();
+    e.set_extension_enabled(ID, false);
+    assert!(!e.extensions.proposing());
+    barrier.wait();
+    // Its report finds no one to answer.
+    let ctx = e.context.clone();
+    let until = Instant::now() + Duration::from_millis(300);
+    while Instant::now() < until {
+        e.events(&ctx);
+        e.extensions_poll(Instant::now());
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!e.extensions.get(ID).unwrap().running());
 }
 
 #[test]

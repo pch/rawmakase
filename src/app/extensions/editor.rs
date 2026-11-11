@@ -11,7 +11,14 @@ use rawmakase_extensions::protocol::method::{AppEvent, Empty, Level, PhotoOpened
 use rawmakase_extensions::protocol::{ErrorCode, RemoteError};
 use serde_json::Value;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Instant;
+
+/// A reply's value.
+fn value<T: serde::Serialize>(v: Result<T, RemoteError>) -> Result<Value, RemoteError> {
+    v.map(|v| serde_json::to_value(v).expect("a reply is JSON"))
+}
 
 /// What a file dialog of Preferences > Extensions chooses for.
 #[derive(Clone, Debug, PartialEq)]
@@ -51,6 +58,8 @@ pub(crate) enum Done {
     Checked(Result<Box<rawmakase_extensions::github::Checked>, String>),
     /// A proposal's worker finished, or panicked.
     Proposed(Box<super::targets::Finished>),
+    /// A read's worker finished, or panicked.
+    Read(Box<super::targets::ReadDone>),
 }
 
 /// What the editor last told programs, to tell them only of changes.
@@ -182,14 +191,41 @@ impl Editor {
                 Err(err) => Answer::Now(Err(err)),
             };
         }
+        // A read of photos not open opens their files: on a worker, answered
+        // when it finishes.
+        if let Some(ids) = self.read_ids(&call.request) {
+            return match self.begin_read(&ids) {
+                Err(err) => Answer::Now(Err(err)),
+                Ok(reading) if !reading.needs_worker() => {
+                    Answer::Now(value(reading.finish(None, &AtomicBool::new(false))))
+                }
+                Ok(reading) => {
+                    let cancel = Arc::new(AtomicBool::new(false));
+                    self.start_read(call.ticket, reading, cancel.clone());
+                    Answer::Reading(cancel)
+                }
+            };
+        }
         Answer::Now(self.answer_read(call.request))
     }
 
-    /// Answers a program's read.
-    fn answer_read(&mut self, request: ProgramRequest) -> Result<Value, RemoteError> {
-        fn value<T: serde::Serialize>(v: Result<T, RemoteError>) -> Result<Value, RemoteError> {
-            v.map(|v| serde_json::to_value(v).expect("a reply is JSON"))
+    /// The photos a read of them asks for, in order; none for any other
+    /// request.
+    fn read_ids(&self, request: &ProgramRequest) -> Option<Vec<PhotoId>> {
+        match request {
+            ProgramRequest::ReadSelection(_) => Some(self.selection_ids()),
+            ProgramRequest::ReadOpenPhoto(_) => {
+                Some(self.document.catalog_photo.into_iter().collect())
+            }
+            ProgramRequest::ReadPhotos(read) => {
+                Some(read.ids.iter().copied().map(PhotoId).collect())
+            }
+            _ => None,
         }
+    }
+
+    /// Answers a program's request for the control layer's capabilities.
+    fn answer_read(&mut self, request: ProgramRequest) -> Result<Value, RemoteError> {
         match request {
             ProgramRequest::ReadCapabilities(_) => {
                 let command = crate::app::shell::commands::Command::new(
@@ -204,12 +240,6 @@ impl Editor {
                 .map(|outcome| serde_json::to_value(outcome).expect("capabilities are JSON"))
                 .map_err(|e| RemoteError::new(ErrorCode::Other(e.code.into()), e.message))
             }
-            ProgramRequest::ReadSelection(_) => value(self.read_selection()),
-            ProgramRequest::ReadOpenPhoto(_) => value(self.read_open_photo()),
-            ProgramRequest::ReadPhotos(read) => {
-                let ids: Vec<PhotoId> = read.ids.into_iter().map(PhotoId).collect();
-                value(self.read_photos(&ids))
-            }
             _ => Err(RemoteError::new(
                 ErrorCode::UnknownMethod,
                 "the host answers this request itself",
@@ -218,7 +248,10 @@ impl Editor {
     }
 
     /// Runs `id`, an enabled extension's command (`<extension>/<command>`),
-    /// on what its manifest says it applies to, read now.
+    /// on what its manifest says it applies to, read now: photos not open
+    /// are read on a worker, and the command is sent once they are
+    /// ([`Host::finish_read`]); until then it is running, and Stop or
+    /// disabling the extension cancels it.
     pub(in crate::app) fn run_extension_command(
         &mut self,
         id: &str,
@@ -237,20 +270,39 @@ impl Editor {
             .map(|c| c.applies_to)
             .ok_or_else(unknown)?;
         let fail = |e: RemoteError| Error::new("not_ready", e.message);
-        let target = match applies {
+        let ids = match applies {
             AppliesTo::None => None,
             AppliesTo::Photo => {
                 if self.document.catalog_photo.is_none() {
                     return Err(Error::new("no_document", "Open a photo in Develop first"));
                 }
-                Some(self.read_open_photo().map_err(fail)?)
+                Some(self.document.catalog_photo.into_iter().collect())
             }
             AppliesTo::Selection => {
-                let snapshot = self.read_selection().map_err(fail)?;
-                if snapshot.photos.is_empty() {
+                let ids = self.selection_ids();
+                if ids.is_empty() {
                     return Err(Error::new("no_selection", "Select photos first"));
                 }
-                Some(snapshot)
+                Some(ids)
+            }
+        };
+        let target = match ids {
+            None => None,
+            Some(ids) => {
+                let reading = self.begin_read(&ids).map_err(fail)?;
+                if reading.needs_worker() {
+                    let cancel = self
+                        .extensions
+                        .read_for_command(extension, command, by)
+                        .map_err(|why| Error::new("extension", why))?;
+                    self.start_read(cancel.0, reading, cancel.1);
+                    return Ok(());
+                }
+                Some(
+                    reading
+                        .finish(None, &AtomicBool::new(false))
+                        .map_err(fail)?,
+                )
             }
         };
         self.extensions
@@ -366,6 +418,7 @@ impl Editor {
                 }
             }
             Done::Proposed(finished) => self.proposal_finished(*finished),
+            Done::Read(done) => self.read_finished(*done),
             Done::Checked(result) => {
                 self.extension_page.busy = false;
                 match result {

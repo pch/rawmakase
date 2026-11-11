@@ -142,7 +142,9 @@ within the quit deadline, with the helpers it started.
 Shortcuts lists them under Extensions, they take keys there like any other
 command (an extension's default key included, conflicts shown), and
 `rawmakase control action <extension>/<command>` runs one. A command that
-applies to the open photo or the selection gets it, read as it starts. The
+applies to the open photo or the selection gets it, read as it starts (photos
+not open in Develop are read off the UI thread, and the command is sent once
+they are; Stop or disabling the extension meanwhile cancels it). The
 manifest's `places` are checked, but menus and toolbars don't show extension
 commands yet: keys, `control action` and the Run button run them.
 

@@ -348,6 +348,11 @@ pub struct Photo {
     /// The photo's develop settings, in the control layer's names and units.
     #[serde(default)]
     pub settings: Map<String, Value>,
+    /// Why its settings couldn't be read (an edit that can't be read, a file
+    /// that can't be opened): `settings` is then empty, and a proposal for
+    /// the photo is refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// `propose.settings`' parameters.

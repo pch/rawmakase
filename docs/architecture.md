@@ -97,7 +97,12 @@ Retry, for this session), its commands, settings and panels, and what its
 requests mean to the editor. It is the only caller of the host's sessions in
 the app: `Editor::new` starts it and a test editor's stays inert. A program's
 reads and proposals are answered through the editor on the UI thread, one
-poll per frame: a proposal belongs to one of the app's `command.run` requests
+poll per frame; what opens photos' files (a read or a proposal of photos not
+open in Develop, a command's target among them) runs on a worker and is
+answered when it finishes. A read of a photo not open gives the settings
+Develop would open it with (`library::sync::starting_recipe`: its saved edit,
+else its Lightroom edit or the raw defaults). A proposal belongs to one of the
+app's `command.run` requests
 and is admitted only while that request is in flight, checked immediately
 before it is applied. Its target token names the catalog's location and
 structural generation and, per photo, the file's identity and the catalog's

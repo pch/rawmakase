@@ -34,6 +34,15 @@
 //! (or `cancelled` when it cancelled the proposal itself), unless the write
 //! had begun: then it is answered with what was written.
 //!
+//! A read of photos not open in Develop opens their files, so it runs on a
+//! worker too: a program's read is a [`Deferred`] with no `op`, answered by
+//! [`Host::finish_read`] and cancelled with its session or by the program;
+//! a command's target is a [`TargetRead`] of its extension, and the command
+//! is sent only once it is read. Until then the command is running (the
+//! status line and Stop show it), and Stop, disabling, uninstalling or
+//! quitting cancels the read and fails the command; its read's report then
+//! finds nothing and is dropped.
+//!
 //! Every persisted change (enable, disable, a setting, an uninstall) goes
 //! through [`rawmakase_extensions::state::State::update`] first; when that
 //! fails the session's state stays as it was and the failure is reported.
@@ -70,6 +79,8 @@ use rawmakase_extensions::{Manifest, semver};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// An `on-demand` program with nothing to do for this long is stopped (D10).
@@ -128,19 +139,54 @@ struct Queued {
 /// admitted or the program cancels it ([`Host::withdraw`], which answers it
 /// then). Dropping it cancels the work, which then writes nothing: the
 /// session ends with its proposals.
+/// A program's read of photos not open is one too, until its worker reports
+/// back ([`Host::finish_read`]); it belongs to no command.
 struct Deferred {
     ticket: u64,
     /// The program's request, answered when the work finishes.
     request: u64,
-    /// The `command.run` it belongs to.
-    op: u64,
-    cancel: std::sync::Arc<crate::app::library::sync::BatchProgress>,
+    /// The `command.run` a proposal belongs to; none for a read.
+    op: Option<u64>,
+    cancel: Work,
 }
 impl Drop for Deferred {
     fn drop(&mut self) {
-        // Once the work has started writing, or has finished, this changes
-        // nothing.
+        // Once a proposal has started writing, or the work has finished,
+        // this changes nothing.
         self.cancel.cancel();
+    }
+}
+
+/// The cancel of a program's request answered later.
+enum Work {
+    Proposal(Arc<crate::app::library::sync::BatchProgress>),
+    Read(Arc<AtomicBool>),
+}
+impl Work {
+    /// Stops the work; false once a proposal has begun its write, which it
+    /// then finishes.
+    fn cancel(&self) -> bool {
+        match self {
+            Self::Proposal(progress) => progress.cancel(),
+            Self::Read(cancel) => {
+                cancel.store(true, Ordering::Relaxed);
+                true
+            }
+        }
+    }
+}
+
+/// A command's target being read on a worker; the command is sent once it
+/// is ([`Host::finish_read`]). Dropping it cancels the read.
+struct TargetRead {
+    ticket: u64,
+    command: String,
+    by: RunBy,
+    cancel: Arc<AtomicBool>,
+}
+impl Drop for TargetRead {
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
     }
 }
 
@@ -195,6 +241,8 @@ pub(in crate::app) struct Extension {
     /// The program's `status` entry.
     pub status: Option<String>,
     pub panels: BTreeMap<String, PanelView>,
+    /// Commands whose target is being read, before they are sent.
+    reading: Vec<TargetRead>,
     last_active: Instant,
     /// The manifest's and program's modification times, for developer mode.
     mtimes: (Option<std::time::SystemTime>, Option<std::time::SystemTime>),
@@ -257,11 +305,13 @@ impl Extension {
         }
         Ok(())
     }
-    /// Whether the program is active: starting, or with a request in flight.
+    /// Whether the program is active: starting, or with a request in flight,
+    /// or a command's target is being read for it.
     fn busy(&self) -> bool {
-        self.run.as_ref().is_some_and(|r| {
-            !r.ready || !r.requests.is_empty() || !r.queued.is_empty() || !r.deferred.is_empty()
-        })
+        !self.reading.is_empty()
+            || self.run.as_ref().is_some_and(|r| {
+                !r.ready || !r.requests.is_empty() || !r.queued.is_empty() || !r.deferred.is_empty()
+            })
     }
     fn ready_session(&mut self) -> Option<&mut Running> {
         self.run.as_mut().filter(|r| r.ready && !r.stopping)
@@ -301,6 +351,9 @@ pub(in crate::app) enum Answer {
     /// The editor started work that answers it, through
     /// [`Host::finish_proposal`] with the call's ticket; this is its cancel.
     Later(std::sync::Arc<crate::app::library::sync::BatchProgress>),
+    /// The editor started a read that answers it, through
+    /// [`Host::finish_read`] with the call's ticket; this is its cancel.
+    Reading(Arc<AtomicBool>),
 }
 
 /// An extension found while loading: its manifest, origin, folder, program
@@ -646,6 +699,7 @@ impl Host {
                         errors: VecDeque::new(),
                         status: None,
                         panels: BTreeMap::new(),
+                        reading: Vec::new(),
                         last_active: Instant::now(),
                         mtimes,
                     }
@@ -699,7 +753,7 @@ impl Host {
     /// requests fail with `code` and are cancelled at the program, and its
     /// status and panels clear. Dropping the session ends its unit at once.
     fn end(e: &mut Extension, code: ErrorCode) -> Vec<Outcome> {
-        let mut outcomes = Vec::new();
+        let mut outcomes = Self::stop_reading(e, &code);
         if let Some(mut run) = e.run.take() {
             let mut ids: Vec<u64> = run.requests.keys().copied().collect();
             ids.sort_unstable();
@@ -730,6 +784,20 @@ impl Host {
         e.status = None;
         e.panels.clear();
         outcomes
+    }
+
+    /// Cancels the reads of `e`'s commands' targets: those commands are never
+    /// sent, and fail with `code`.
+    fn stop_reading(e: &mut Extension, code: &ErrorCode) -> Vec<Outcome> {
+        std::mem::take(&mut e.reading)
+            .into_iter()
+            .map(|read| Outcome::Command {
+                extension: e.manifest.extension.id.clone(),
+                title: command_title(&e.manifest, &read.command),
+                by: read.by,
+                result: Err(RemoteError::new(code.clone(), "the command was stopped")),
+            })
+            .collect()
     }
 
     fn setting_event(e: &mut Extension, id: &str, value: &Value) {
@@ -987,11 +1055,11 @@ impl Host {
     /// program and settled as cancelled now, so a proposal it sends later is
     /// refused.
     pub(in crate::app) fn cancel_commands(&mut self, id: &str) -> Vec<Outcome> {
-        let mut outcomes = Vec::new();
         let Some(index) = self.index(id) else {
-            return outcomes;
+            return Vec::new();
         };
         let e = &mut self.extensions[index];
+        let mut outcomes = Self::stop_reading(e, &ErrorCode::Cancelled);
         let Some(run) = &mut e.run else {
             return outcomes;
         };
@@ -1035,12 +1103,97 @@ impl Host {
     }
     /// Whether extension `id` has a command in flight.
     pub(in crate::app) fn command_running(&self, id: &str) -> bool {
-        self.get(id).and_then(|e| e.run.as_ref()).is_some_and(|r| {
-            r.requests
-                .values()
-                .chain(r.queued.iter().map(|q| &q.pending))
-                .any(|p| matches!(p, Pending::Command { .. }))
-        })
+        let Some(e) = self.get(id) else { return false };
+        !e.reading.is_empty()
+            || e.run.as_ref().is_some_and(|r| {
+                r.requests
+                    .values()
+                    .chain(r.queued.iter().map(|q| &q.pending))
+                    .any(|p| matches!(p, Pending::Command { .. }))
+            })
+    }
+
+    /// Notes that command `command` of extension `id` waits for its target,
+    /// read on a worker; the ticket that read reports with
+    /// ([`Host::finish_read`]), and its cancel.
+    pub(in crate::app) fn read_for_command(
+        &mut self,
+        id: &str,
+        command: &str,
+        by: RunBy,
+    ) -> Result<(u64, Arc<AtomicBool>), String> {
+        if self.closed {
+            return Err("RAWmakase is quitting".into());
+        }
+        let index = self.index(id).ok_or_else(|| format!("No extension {id}"))?;
+        let e = &self.extensions[index];
+        if !e.manifest.commands.iter().any(|c| c.id == command) {
+            return Err(format!("{} has no command {command}", e.name()));
+        }
+        e.can_run()?;
+        let ticket = self.next_ticket;
+        self.next_ticket += 1;
+        let cancel = Arc::new(AtomicBool::new(false));
+        let e = &mut self.extensions[index];
+        e.reading.push(TargetRead {
+            ticket,
+            command: command.to_string(),
+            by,
+            cancel: cancel.clone(),
+        });
+        e.last_active = Instant::now();
+        Ok((ticket, cancel))
+    }
+
+    /// The read `ticket` finished with `result`: a program's read is
+    /// answered, if the session that asked still runs; a command's target
+    /// is sent with its command, if that command wasn't stopped meanwhile.
+    /// What came of a command that can't be sent.
+    pub(in crate::app) fn finish_read(
+        &mut self,
+        ticket: u64,
+        result: Result<Snapshot, RemoteError>,
+    ) -> Vec<Outcome> {
+        for index in 0..self.extensions.len() {
+            let e = &mut self.extensions[index];
+            if let Some(run) = e.run.as_mut()
+                && let Some(at) = run.deferred.iter().position(|d| d.ticket == ticket)
+            {
+                let deferred = run.deferred.remove(at);
+                let reply = result.map(|s| serde_json::to_value(s).expect("a snapshot is JSON"));
+                let _ = run.session.reply(deferred.request, reply);
+                return Vec::new();
+            }
+            let Some(at) = e.reading.iter().position(|r| r.ticket == ticket) else {
+                continue;
+            };
+            let read = e.reading.remove(at);
+            let id = e.manifest.extension.id.clone();
+            let title = command_title(&e.manifest, &read.command);
+            let failed = |err: RemoteError| {
+                vec![Outcome::Command {
+                    extension: id.clone(),
+                    title: title.clone(),
+                    by: read.by,
+                    result: Err(err),
+                }]
+            };
+            return match result {
+                Err(err) => failed(err),
+                Ok(target) => match self.run_command(&id, &read.command, Some(target), read.by) {
+                    Ok(()) => Vec::new(),
+                    Err(why) => failed(RemoteError::new(ErrorCode::Exited, why)),
+                },
+            };
+        }
+        // Its session ended, or its command was stopped: no one is waiting.
+        Vec::new()
+    }
+
+    /// Whether a command's target is being read, for tests.
+    #[cfg(test)]
+    pub(in crate::app) fn reading(&self) -> bool {
+        self.extensions.iter().any(|e| !e.reading.is_empty())
     }
 
     /// Clears a Failed extension's crashes, so it may start again.
@@ -1448,8 +1601,8 @@ impl Host {
                         Some(run) => run.deferred.push(Deferred {
                             ticket,
                             request: id,
-                            op,
-                            cancel: cancel.clone(),
+                            op: Some(op),
+                            cancel: Work::Proposal(cancel.clone()),
                         }),
                         None => {
                             cancel.cancel();
@@ -1458,12 +1611,26 @@ impl Host {
                 }
                 answered
             }
-            request => answer(Call {
-                request,
-                title: e.name().to_string(),
-                ticket,
-                deadline: None,
-            }),
+            request => {
+                let answered = answer(Call {
+                    request,
+                    title: e.name().to_string(),
+                    ticket,
+                    deadline: None,
+                });
+                if let Answer::Reading(cancel) = &answered {
+                    match self.extensions[index].run.as_mut() {
+                        Some(run) => run.deferred.push(Deferred {
+                            ticket,
+                            request: id,
+                            op: None,
+                            cancel: Work::Read(cancel.clone()),
+                        }),
+                        None => cancel.store(true, Ordering::Relaxed),
+                    }
+                }
+                answered
+            }
         }
     }
 
@@ -1475,7 +1642,7 @@ impl Host {
         let gone: Vec<u64> = run
             .deferred
             .iter()
-            .filter(|d| !Self::admitted(e, d.op))
+            .filter(|d| d.op.is_some_and(|op| !Self::admitted(e, op)))
             .map(|d| d.ticket)
             .collect();
         if let Some(run) = e.run.as_mut() {
@@ -1523,10 +1690,11 @@ impl Host {
             let deferred = run.deferred.remove(at);
             // Past its deadline the command isn't admitted, whether or not
             // a poll has noticed yet.
-            let admitted = Self::admitted(e, deferred.op)
+            let op = deferred.op.unwrap_or_default();
+            let admitted = Self::admitted(e, op)
                 && e.run
                     .as_ref()
-                    .and_then(|r| r.session.deadline(deferred.op))
+                    .and_then(|r| r.session.deadline(op))
                     .is_some_and(|d| Instant::now() < d);
             let result = match result.take().expect("answered once") {
                 Err(err) if err.code == ErrorCode::Cancelled && !admitted => Err(RemoteError::new(
@@ -1549,7 +1717,7 @@ impl Host {
         self.finished.push((ticket, result.expect("not answered")));
     }
 
-    /// Whether a proposal's work is under way, for tests.
+    /// Whether a program's proposal or read is being worked on, for tests.
     #[cfg(test)]
     pub(in crate::app) fn proposing(&self) -> bool {
         self.extensions
@@ -1561,15 +1729,18 @@ impl Host {
     pub(in crate::app) fn status(&self) -> Vec<String> {
         let mut out = Vec::new();
         for e in &self.extensions {
-            let Some(run) = &e.run else { continue };
-            if let Some(text) = &e.status {
+            let running = e.run.as_ref().and_then(|run| {
+                run.requests
+                    .values()
+                    .chain(run.queued.iter().map(|q| &q.pending))
+                    .find_map(|p| match p {
+                        Pending::Command { command, .. } => Some(command),
+                        _ => None,
+                    })
+            });
+            if let Some(text) = e.status.as_ref().filter(|_| e.run.is_some()) {
                 out.push(format!("{}: {text}", e.name()));
-            } else if let Some(Pending::Command { command, .. }) = run
-                .requests
-                .values()
-                .chain(run.queued.iter().map(|q| &q.pending))
-                .find(|p| matches!(p, Pending::Command { .. }))
-            {
+            } else if let Some(command) = running.or(e.reading.first().map(|r| &r.command)) {
                 out.push(format!(
                     "{}: {}…",
                     e.name(),
@@ -1593,6 +1764,8 @@ impl Host {
                 // Their work is cancelled: nothing more is written.
                 run.deferred.clear();
             }
+            // Their commands are never sent.
+            e.reading.clear();
         }
     }
     /// Step 2.2: nothing more is admitted or read; [`Host::stop`] then sends

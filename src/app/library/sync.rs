@@ -900,6 +900,38 @@ fn photo_settings(
     ))
 }
 
+/// The settings `target`, a photo not open, starts from as a proposal sees it
+/// ([`prepare`], and Develop opening it: `edits::resolve`): its saved edit as
+/// it is, else its Lightroom edit or the raw defaults worked out for its file,
+/// of which a RAW's header is all that is read. What an extension reads of a
+/// photo not open. An edit that is protected or can't be read is an error,
+/// never the defaults.
+pub(in crate::app) fn starting_recipe(
+    catalog: &Catalog,
+    target: &SyncTarget,
+    defaults: &Arc<DevelopDefaults>,
+    cancel: Cancel<'_>,
+) -> Result<Recipe> {
+    let record = catalog.edit_record(target.id)?;
+    let start = edits::Start::capture(&record, &target.path, defaults.clone())?;
+    if let edits::Start::Saved(saved) = start {
+        return Ok(saved.recipe);
+    }
+    let header = crate::storage::is_raw(&target.path)
+        .then(|| crate::photo::header_metadata(&target.path).ok())
+        .flatten();
+    let metadata = match header {
+        Some(metadata) => metadata,
+        None => crate::photo::open_source(&target.path, cancel)
+            .with_context(|| format!("{} can't be read", target.name))?
+            .metadata()
+            .clone(),
+    };
+    let (profiles, _) = crate::camera_profiles::installed(&metadata);
+    let profiles = crate::camera_look::with_default(&target.path, &metadata, profiles, cancel);
+    Ok(start.resolve(&metadata, &profiles)?.recipe)
+}
+
 /// What a photo's starting edit could not bring along, said as when it is opened; a
 /// saved edit has none.
 fn starting_warnings(origin: Origin, warnings: Vec<String>) -> Vec<String> {
