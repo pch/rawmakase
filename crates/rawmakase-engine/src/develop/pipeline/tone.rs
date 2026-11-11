@@ -109,6 +109,26 @@ impl HdrCurves {
         })
     }
 }
+/// Point Color on an HDR master's linear display RGB (1 = graphics white). Camera Raw
+/// 18.7 applies its swatches to each channel taken into colour grading's HDR domain
+/// (`color_grade_curves::to_hdr_domain`, 16 times white at 1) and back, where they
+/// clip at 1 as SDR's clip at white (docs/hdr.md#point-color). A pixel brighter than 16
+/// is taken with its brightest channel at 16 and scaled back.
+fn point_colors_hdr(p: &crate::develop::point_color::PointColors, rgb: [f32; 3]) -> [f32; 3] {
+    use crate::develop::color_grade_curves::{HDR_TOP, from_hdr_domain, to_hdr_domain};
+    let pro = mul(crate::camera_profiles::RGB_TO_PRO, rgb);
+    let k = pro.into_iter().fold(HDR_TOP, f32::max) / HDR_TOP;
+    let u = pro.map(|v| if v > 0. { to_hdr_domain(v / k) } else { v / k });
+    let out = p.render_prophoto(u).color;
+    let pro = out.map(|u| {
+        if u > 0. {
+            from_hdr_domain(u.min(1.)) * k
+        } else {
+            u * k
+        }
+    });
+    mul(crate::camera_profiles::PRO_TO_RGB, pro)
+}
 /// Defringe on an HDR master's linear display RGB (1 = graphics white; a channel out
 /// of sRGB's gamut is negative).
 /// Camera Raw 18.7 removes the same share of a fringe colour's chroma at every
@@ -197,6 +217,7 @@ impl HdrFinish {
         // curves, as in SDR's colour stage.
         let defringe = r.effects.defringe != [0.; 2];
         if lut.mixer.is_none()
+            && lut.point_colors.is_none()
             && lut.rgb_table.is_none()
             && lut.grade.is_none()
             && lut.gray_grid.is_none()
@@ -207,6 +228,11 @@ impl HdrFinish {
         }
         let rgb = mul(crate::camera_profiles::PRO_TO_RGB, pro);
         let rgb = lut.mixer.as_ref().map_or(rgb, |m| m.apply(rgb));
+        // Point Color follows the mixer, as in SDR.
+        let rgb = lut
+            .point_colors
+            .as_ref()
+            .map_or(rgb, |p| point_colors_hdr(p, rgb));
         // A look's RGB table follows the mixer, as in SDR, on overrange-encoded values.
         let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply_hdr(rgb));
         // Colour grading follows the colour mixer and a look's RGB table, as in SDR.

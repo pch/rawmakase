@@ -1,6 +1,6 @@
 # HDR results: references, measurements and progress
 
-Status: in progress, 2026-11-10. The record of the
+Status: in progress, 2026-11-11. The record of the
 [HDR implementation plan](hdr-implementation-plan.md): what was measured, the
 decisions taken from it, validation results and what remains open. Stage 1 (references,
 codec and display feasibility) comes first; stage 3's rendering measurements follow
@@ -818,6 +818,34 @@ as SDR's operator exposes through a measured default curve; the probe's linear p
 can't check that part, so photos through Adobe Standard are still to be measured
 ([Open](#open)).
 
+### Point Color
+
+Measured with Camera Raw 18.7 on the Color Grading probe's colour patches (12 hues at
+HSV saturations 0.3 and 0.6, 0.125 to 8 times white, a linear profile), HDR limit 8 and
+SDR, with one swatch sampled at an orange (hue 30°, saturation 0.6, value 0.5):
+Hue, Saturation and Luminance +50 and Luminance −50 at Lightroom's default ranges,
+Hue and Luminance +50 with the whole luminance range, a blue swatch's Luminance −50,
+and a swatch sampled at value 2 (which Camera Raw drops, as RAWmakase does).
+
+- **The HDR domain is Color Grading's.** Luminance +50 brightens the orange ×1.32,
+  ×1.68, ×2.18, ×3.51, ×6.06, ×3.54 and ×1.42 at 0.125 to 8 times white (SDR: ×1.32,
+  ×1.54, ×1.58, then clipped). SDR's value gain of ×1.55 applied in u = x / (1 + 15x/16),
+  clipped at u = 1, gives ×1.6, ×1.72, ×2.24, ×3.2, ×8 (held to ×6 by the selection),
+  ×4.0 and ×2.0.
+- **Selection.** Hue +50 turns the orange by 9.8°–19.9° up to white, 16.4° at twice
+  white, 8.2° at four times and 1.8° at eight; with the whole luminance range 17.9°–
+  19.9°, 16.4°, 8.6° and 3.8°. In u these colours lose saturation (an orange at eight
+  times white has 0.12), so the swatch's saturation range selects less of them.
+- **Engine.** `point_colors_hdr` (SDR's swatches on each channel in u, clipped at 1
+  and mapped back; a pixel brighter than 16 is scaled to 16 and back) renders the
+  effect on luminance within a median 0.001 stop of Camera Raw's for every swatch (p95
+  0.005–0.096), and mean ΔE_ITP 0.39–1.31 over the colour patches, 0.42–2.42 above
+  white (Luminance +50 the worst; the default render 0.28). RAWmakase's SDR Point
+  Color on the same patches is within 0.27–0.51.
+
+Decision, 2026-11-11: Point Color renders in the HDR master by this rule, on the CPU
+(the GPU's HDR preview leaves it to it).
+
 ### Color grading
 
 Measured with Camera Raw 18.7 on a synthetic probe through `probe_dng.py` (a linear
@@ -994,7 +1022,8 @@ doesn't port masks yet.
 
 - Whites above +50 and Highlights in HDR (a rule trained on HDR targets:
   [Highlights and Shadows](#highlights-and-shadows)); the colour mixer's Luminance
-  ([Colour stage](#colour-stage)), Point Color.
+  ([Colour stage](#colour-stage)); Point Color on photos and on the GPU's HDR preview
+  ([Point Color](#point-color)).
 - Defringe's hue selection against Camera Raw's (SDR and HDR alike), and Defringe on the
   GPU's HDR preview ([Defringe](#defringe)).
 - Color Grading on photos (a split tone, a Highlights tint with Luminance, Global
@@ -1058,7 +1087,8 @@ doesn't port masks yet.
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
   ([Vignette and grain](#vignette-and-grain)); Defringe ([Defringe](#defringe)); masks with Temp,
-  Tint, Exposure, Shadows and Texture ([Masks](#masks)). Open: Whites above +50, Highlights, the colour
+  Tint, Exposure, Shadows and Texture ([Masks](#masks)); Point Color ([Point Color](#point-color)).
+  Open: Whites above +50, Highlights, the colour
   mixer's Luminance, looks that set Clarity or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
   with them), 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
