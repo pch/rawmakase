@@ -4,7 +4,6 @@
 //! captures, when its result may still be applied, and what the drawer says
 //! meanwhile. The model and its runtime are `rawmakase-inference`'s; installing the
 //! model is `models`; the thread that runs it is `worker`.
-mod models;
 mod ui;
 mod worker;
 
@@ -20,8 +19,22 @@ use crate::model::recipe::Recipe;
 use rawmakase_inference::{Point, Prompt as ModelPrompt};
 use std::hash::{Hash, Hasher};
 
+use crate::app::develop::model_installer::Installer;
 use crate::model_install::Pack;
-pub(in crate::app) use models::Models;
+
+/// The installs of Select Subject's and Sky's model packs.
+pub(crate) struct Models {
+    pub(in crate::app) subject: Installer,
+    pub(in crate::app) sky: Installer,
+}
+impl Default for Models {
+    fn default() -> Self {
+        Self {
+            subject: Installer::new(Pack::Subject),
+            sky: Installer::new(Pack::Sky),
+        }
+    }
+}
 
 /// Which of the two selections a request makes. Background is the same coverage with
 /// the component inverted, so adding a brush to it still adds coverage.
@@ -340,7 +353,6 @@ impl Selection {
         ];
         stopping.extend(self.models.subject.stop());
         stopping.extend(self.models.sky.stop());
-        stopping.extend(self.models.denoise.stop());
         stopping
     }
 }
@@ -396,7 +408,7 @@ impl Editor {
         }
         // Over the remote worker, the models do not have to be here at all.
         let remote = self.selection.remote.endpoint().is_some();
-        if !remote && !self.selection.models.of(request.feature.pack()).installed() {
+        if !remote && !self.installer(request.feature.pack()).installed() {
             self.selection.prompt = Some(Prompt::Model(request));
             return;
         }
@@ -571,7 +583,7 @@ impl Editor {
                 Action::Auto(feature) => feature.pack(),
                 Action::Click(_) => Pack::Subject,
             };
-            match self.selection.models.of(pack).path() {
+            match self.installer(pack).path() {
                 Some(model) => Some(model),
                 None => {
                     self.selection.end_prompting();
@@ -789,20 +801,15 @@ impl Editor {
     /// Asks the installer to download the models (the setup card's Download).
     pub(in crate::app) fn install_model(&mut self, pack: Pack) {
         self.context.request_repaint();
-        self.selection
-            .models
-            .of_mut(pack)
-            .install(None, self.tx.clone(), self.context.clone());
+        let (tx, ctx) = (self.tx.clone(), self.context.clone());
+        self.installer_mut(pack).install(None, tx, ctx);
     }
     /// Installs the models from a folder holding their files, each checked as a
     /// download is: for tests, which have no network.
     #[cfg(test)]
     pub(in crate::app) fn install_model_from(&mut self, pack: Pack, folder: std::path::PathBuf) {
-        self.selection.models.of_mut(pack).install(
-            Some(folder),
-            self.tx.clone(),
-            self.context.clone(),
-        );
+        let (tx, ctx) = (self.tx.clone(), self.context.clone());
+        self.installer_mut(pack).install(Some(folder), tx, ctx);
     }
     /// Upgrades the open catalog on a thread of its own, after the edit is saved.
     pub(in crate::app) fn upgrade_catalog(&mut self, request: Request) {

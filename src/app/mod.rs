@@ -46,6 +46,8 @@ pub(crate) struct Editor {
     decode_cache: crate::decode_cache::DecodeCache,
     /// AI Denoise's queue, worker and cache, shared with exports.
     ai_denoise: crate::ai_denoise::Service,
+    /// AI Denoise's model pack: installed, being installed or removed.
+    ai_denoise_model: crate::app::develop::model_installer::Installer,
     /// Loads the finished AI Denoise results the Library's Loupe shows.
     ai_loupe: worker::Latest<crate::app::develop::ai_denoise::CachedLoad>,
     renderer: worker::Renderer,
@@ -332,6 +334,9 @@ impl Editor {
             loader,
             decode_cache,
             ai_denoise,
+            ai_denoise_model: crate::app::develop::model_installer::Installer::new(
+                crate::model_install::Pack::Denoise,
+            ),
             ai_loupe,
             renderer,
             reference: Default::default(),

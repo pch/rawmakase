@@ -1,7 +1,7 @@
 //! Installing the models the app runs (Select Subject's and Sky's, AI Denoise's):
 //! downloaded from where the release pins them (or, in tests, copied from a folder).
 //! Nothing is published until its size and SHA-256 match the manifest. The app's
-//! `Installer` (`app/subject_mask/models.rs`) runs an install on its own thread,
+//! `Installer` (`app/develop/model_installer.rs`) runs an install on its own thread,
 //! only on the user's choice; the AI Denoise service and the selection worker find
 //! the installed models and the runtime here.
 use rawmakase_inference::ModelFile;
