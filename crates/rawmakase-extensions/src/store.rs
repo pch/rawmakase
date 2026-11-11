@@ -10,6 +10,10 @@
 //! into place complete and never changed afterwards; installing its version
 //! again replaces it, the same way, when it no longer holds exactly its
 //! package's files ([`package::is_unpacked_in`]).
+//!
+//! A removal, under the same lock, removes the entry and renames `<id>/`
+//! aside to a staging name in one change, and deletes it after the lock is
+//! released; an install meanwhile publishes into a new `<id>/`.
 use crate::package;
 use crate::state::{Source, State};
 use crate::{Error, Manifest, Result};
@@ -182,20 +186,52 @@ impl Store {
         }
     }
 
-    /// Removes an installed extension: its entry, then its folders. Its
-    /// private data folder stays. A folder that can't be removed now (a
-    /// running program on Windows) is left for [`Store::clean`].
+    /// Removes an installed extension: its entry and its folder, then the
+    /// folder's files. Its private data folder stays. A removal that can't
+    /// move the folder (on Windows, while its program runs) is refused and
+    /// changes nothing; files that can't be deleted after are left for
+    /// [`Store::clean`].
     pub fn remove(&self, id: &str) -> Result<()> {
-        State::update(&self.data_dir, |state| {
-            match state.extensions.get(id) {
-                Some(entry) if !entry.installed.is_empty() => {}
-                _ => return Err(Error::new(format!("{id} is not installed"))),
-            }
-            state.extensions.remove(id);
-            Ok(())
-        })?;
-        let _ = std::fs::remove_dir_all(self.root().join(id));
+        if let Some(aside) = self.forget(id)? {
+            let _ = std::fs::remove_dir_all(aside);
+        }
         Ok(())
+    }
+
+    /// The locked step of [`Store::remove`]: removes the entry and moves
+    /// `<id>/` aside, under a staging name [`Store::clean`] collects, in one
+    /// change, so an install that runs before the files are deleted publishes
+    /// into a new `<id>/` that nothing deletes. Returns where the folder went.
+    fn forget(&self, id: &str) -> Result<Option<PathBuf>> {
+        let dir = self.root().join(id);
+        State::update_or_undo(
+            &self.data_dir,
+            |state| {
+                match state.extensions.get(id) {
+                    Some(entry) if !entry.installed.is_empty() => {}
+                    _ => return Err(Error::new(format!("{id} is not installed"))),
+                }
+                let aside = self
+                    .root()
+                    .join(format!("{STAGING}{}", crate::random_suffix()));
+                let moved = match std::fs::rename(&dir, &aside) {
+                    Ok(()) => Some(aside),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                    Err(e) => {
+                        return Err(Error::from(e).context(format!(
+                            "Could not remove {id}; stop what is using it and try again"
+                        )));
+                    }
+                };
+                state.extensions.remove(id);
+                Ok(moved)
+            },
+            |moved| {
+                if let Some(aside) = moved {
+                    let _ = std::fs::rename(aside, &dir);
+                }
+            },
+        )
     }
 
     /// Turns an extension on or off: an installed one, a developer folder, or
@@ -500,6 +536,65 @@ mod tests {
             .map(|e| e.file_name())
             .collect();
         assert_eq!(left, ["dev.test.tool"]);
+    }
+
+    #[test]
+    fn an_install_while_removing_keeps_its_folder() {
+        let data = tempfile::tempdir().unwrap();
+        let store = Store::new(data.path());
+        let first = package(data.path(), "1.0.0");
+        store.install(&first, &source(&first), &app()).unwrap();
+        // A removal past its locked step, then an install of 1.1.0, then
+        // the removal deleting what it took.
+        let taken = store.forget("dev.test.tool").unwrap();
+        let second = package(data.path(), "1.1.0");
+        let installed = store.install(&second, &source(&second), &app()).unwrap();
+        if let Some(taken) = taken {
+            std::fs::remove_dir_all(taken).unwrap();
+        }
+        let entry = &store.list().unwrap()[0].entry;
+        assert_eq!(entry.active.as_deref(), Some("1.1.0"));
+        assert_eq!(entry.installed, ["1.1.0"]);
+        assert!(
+            installed
+                .dir
+                .join(crate::protocol::manifest::FILE)
+                .is_file()
+        );
+        assert!(!store.version_dir("dev.test.tool", "1.0.0").exists());
+        // Nothing moved aside is left.
+        store.remove("dev.test.tool").unwrap();
+        assert_eq!(std::fs::read_dir(store.root()).unwrap().count(), 0);
+    }
+
+    /// A removal that can't move the folder, or can't record that, leaves
+    /// the extension installed with its folder.
+    #[cfg(unix)]
+    #[test]
+    fn a_removal_that_fails_changes_nothing() {
+        use std::os::unix::fs::PermissionsExt;
+        let data = tempfile::tempdir().unwrap();
+        let store = Store::new(data.path());
+        let first = package(data.path(), "1.0.0");
+        let installed = store.install(&first, &source(&first), &app()).unwrap();
+        let mode = |path: &Path, mode| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap()
+        };
+        for locked in [store.root(), data.path().to_path_buf()] {
+            mode(&locked, 0o555);
+            // Permissions don't bind a privileged user.
+            let binding = std::fs::create_dir(locked.join("probe")).is_err();
+            let removed = store.remove("dev.test.tool");
+            mode(&locked, 0o755);
+            if !binding {
+                return;
+            }
+            assert!(removed.is_err(), "{}", locked.display());
+            let entry = &store.list().unwrap()[0].entry;
+            assert_eq!(entry.active.as_deref(), Some("1.0.0"));
+            assert!(package::is_unpacked_in(&first, &installed.dir));
+            assert_eq!(std::fs::read_dir(store.root()).unwrap().count(), 1);
+        }
     }
 
     #[test]

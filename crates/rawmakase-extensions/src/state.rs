@@ -211,6 +211,17 @@ impl State {
     /// Nothing is written when `change` fails, or when the file is newer or
     /// unreadable.
     pub fn update<T>(data_dir: &Path, change: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
+        Self::update_or_undo(data_dir, change, |_| {})
+    }
+
+    /// [`State::update`] for a change that also changes files: when `change`
+    /// succeeds but its state can't be written, `undo` is given its result,
+    /// still under the lock, to put those files back.
+    pub(crate) fn update_or_undo<T>(
+        data_dir: &Path,
+        change: impl FnOnce(&mut State) -> Result<T>,
+        undo: impl FnOnce(T),
+    ) -> Result<T> {
         std::fs::create_dir_all(data_dir)
             .map_err(|e| Error::from(e).context(data_dir.display()))?;
         let _lock = lock(data_dir)?;
@@ -219,7 +230,10 @@ impl State {
         let result = change(&mut state)?;
         if state != before {
             state.version = VERSION;
-            write(data_dir, &state)?;
+            if let Err(e) = write(data_dir, &state) {
+                undo(result);
+                return Err(e);
+            }
         }
         Ok(result)
     }

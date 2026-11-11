@@ -36,7 +36,7 @@ Under the data folder (`RAWMAKASE_DATA_DIR`, else the platform's, as for
 | Path | What |
 | --- | --- |
 | `extensions/<id>/<version>/` | An installed version, unpacked and verified. Never changed once in place; installing the version again reuses the folder only if it still holds exactly the package's files and the package passes the checks an install unpacking it applies, and otherwise replaces it whole |
-| `extensions/.staging-*`, `extensions/.download-*` | An install or a download in progress. One a crash left is removed by the host's housekeeping (`Store::clean`, which the app runs at start) once it is an hour old |
+| `extensions/.staging-*`, `extensions/.download-*` | An install or a download in progress, or a removed extension's folder being deleted. One a crash left is removed by the host's housekeeping (`Store::clean`, which the app runs at start) once it is an hour old |
 | `extensions.json` | What is installed, which version is active, enabled or not, where it came from, its settings, developer folders ([below](#extensionsjson)) |
 | `extensions.lock` | Held while `extensions.json` changes |
 | `extension-data/<id>/` | The extension's private data, kept across versions and uninstalls; its program's `log.txt` (rotated at 1 MiB) |
@@ -85,7 +85,8 @@ newer RAWmakase (a higher `version`) is never written over.
 - `rawmakase extensions list|remove|enable|disable` do what they say; a running
   RAWmakase notices a change made from the command line on its next start.
   `enable` and `disable` refuse an id that is neither installed, a developer
-  folder nor bundled with the app.
+  folder nor bundled with the app. On Windows, `remove` refuses, changing
+  nothing, while the extension's program runs.
 
 An install unpacks into a staging folder, checks every file against the
 package's `SHA256SUMS`, and only then renames the folder into place and makes
