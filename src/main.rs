@@ -1347,7 +1347,7 @@ fn lensfun(command: LensfunCommand) -> Result<()> {
 
 /// The ids of the extensions that ship with the app, which `enable` and
 /// `disable` accept without an install.
-const BUNDLED_EXTENSIONS: &[&str] = &["rawmakase.mcp"];
+const BUNDLED_EXTENSIONS: &[&str] = &["rawmakase.mcp", "rawmakase.midi"];
 
 /// `rawmakase mcp`, the command MCP clients are configured with: runs the
 /// bundled MCP extension's program beside this executable, with this
