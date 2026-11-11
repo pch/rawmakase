@@ -114,6 +114,17 @@ pub(crate) struct PageState {
     error: Option<String>,
 }
 
+impl PageState {
+    /// The device the page shows and edits: the one chosen, while it is
+    /// there, else the first. Drawing and every change use it, so a device
+    /// saved before a restart is edited without being chosen first.
+    fn shown(&self, settings: &Settings) -> Option<u64> {
+        self.selected
+            .filter(|id| settings.devices.iter().any(|d| d.id == *id))
+            .or_else(|| settings.devices.first().map(|d| d.id))
+    }
+}
+
 /// The panel's side of the run loop.
 pub(crate) struct Page(pub(crate) Arc<Midi>);
 
@@ -163,7 +174,7 @@ impl Panel for Page {
                 page.number = number.ok_or_else(invalid)?.clamp(0, 127) as u8;
                 return Ok(());
             }
-            let id = page.selected.ok_or_else(invalid)?;
+            let id = page.shown(settings).ok_or_else(invalid)?;
             let Some(device) = settings.devices.iter_mut().find(|d| d.id == id) else {
                 return Err(invalid());
             };
@@ -283,7 +294,7 @@ impl Panel for Page {
                 "add-loupedeck" => page.selected = Some(settings.add(Profile::Loupedeck)),
                 "add-custom" => page.selected = Some(settings.add(Profile::Custom)),
                 _ => {
-                    let id = page.selected.ok_or_else(|| unknown(control))?;
+                    let id = page.shown(settings).ok_or_else(|| unknown(control))?;
                     match control {
                         "reset" => {
                             if let Some(d) = settings.devices.iter_mut().find(|d| d.id == id) {
@@ -476,10 +487,7 @@ fn controls(midi: &Midi) -> Vec<Control> {
             "No MIDI devices configured. Add a Loupedeck+ or a custom controller; each device keeps its own mappings.",
         ));
     }
-    let selected = page
-        .selected
-        .filter(|id| settings.devices.iter().any(|d| d.id == *id))
-        .or_else(|| settings.devices.first().map(|d| d.id));
+    let selected = page.shown(settings);
     for device in &settings.devices {
         let connected = statuses
             .get(&device.id)

@@ -319,6 +319,32 @@ fn the_page_edits_and_saves_devices() {
     host.finish().unwrap();
 }
 
+/// Devices saved before a restart are edited without choosing one first: the
+/// page edits the device it shows, the first until another is chosen, and the
+/// one left when the shown one is removed.
+#[test]
+fn the_page_edits_saved_devices_after_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    two_decks(dir.path());
+    let host = start(&Inputs::default(), dir.path());
+    host.open_panel(PANEL).unwrap();
+    host.change(PANEL, "name", json!("Left deck")).unwrap();
+    let names = |dir: &Path| -> Vec<String> {
+        let saved = Settings::load(dir).unwrap();
+        saved.devices.into_iter().map(|d| d.name).collect()
+    };
+    assert_eq!(names(dir.path())[0], "Left deck");
+    host.click(PANEL, "remove").unwrap();
+    assert_eq!(names(dir.path()).len(), 1);
+    host.change(PANEL, "name", json!("Only deck")).unwrap();
+    assert_eq!(names(dir.path()), ["Only deck"]);
+    host.change(PANEL, "enabled", json!(false)).unwrap();
+    assert!(!Settings::load(dir.path()).unwrap().devices[0].enabled);
+    host.click(PANEL, "remove").unwrap();
+    assert!(Settings::load(dir.path()).unwrap().devices.is_empty());
+    host.finish().unwrap();
+}
+
 /// A file this program can't read, or of a newer version, is reported and
 /// left as it is: the page edits nothing.
 #[test]
