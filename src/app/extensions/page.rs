@@ -47,6 +47,9 @@ pub(in crate::app) struct Page {
     watched: Option<Instant>,
     /// Text settings being typed, by extension and setting.
     drafts: HashMap<(String, String), String>,
+    /// Number and Angle settings being dragged, by extension and setting
+    /// ([`number_control`]).
+    numbers: HashMap<(String, String), f64>,
 }
 
 /// A package inspected for the user to review before it is installed: its
@@ -503,28 +506,33 @@ impl Editor {
         value: &Value,
     ) -> Option<Value> {
         match &s.control {
-            SettingControl::Slider([min, max]) => {
-                let mut v = value.as_f64().unwrap_or(*min);
-                let mut slider = egui::Slider::new(&mut v, *min..=*max);
-                if let Some(step) = s.step {
-                    slider = slider.step_by(step);
-                }
-                if let Some(unit) = &s.unit {
-                    slider = slider.suffix(format!(" {unit}"));
-                }
-                let r = ui.add(slider);
-                (r.drag_stopped() || (r.changed() && !r.dragged())).then(|| Value::from(v))
-            }
-            SettingControl::Number([min, max]) => {
-                let mut v = value.as_f64().unwrap_or(*min);
-                let r = ui.add(egui::DragValue::new(&mut v).range(*min..=*max));
-                (r.drag_stopped() || (r.changed() && !r.dragged())).then(|| Value::from(v))
-            }
-            SettingControl::Angle => {
-                let mut v = value.as_f64().unwrap_or(0.);
-                let r = ui.add(egui::DragValue::new(&mut v).suffix("°"));
-                (r.drag_stopped() || (r.changed() && !r.dragged())).then(|| Value::from(v))
-            }
+            SettingControl::Slider([min, max]) => number_control(
+                &mut self.extension_page.numbers,
+                (id.to_string(), s.id.clone()),
+                value.as_f64().unwrap_or(*min),
+                |v| {
+                    let mut slider = egui::Slider::new(v, *min..=*max);
+                    if let Some(step) = s.step {
+                        slider = slider.step_by(step);
+                    }
+                    if let Some(unit) = &s.unit {
+                        slider = slider.suffix(format!(" {unit}"));
+                    }
+                    ui.add(slider)
+                },
+            ),
+            SettingControl::Number([min, max]) => number_control(
+                &mut self.extension_page.numbers,
+                (id.to_string(), s.id.clone()),
+                value.as_f64().unwrap_or(*min),
+                |v| ui.add(egui::DragValue::new(v).range(*min..=*max)),
+            ),
+            SettingControl::Angle => number_control(
+                &mut self.extension_page.numbers,
+                (id.to_string(), s.id.clone()),
+                value.as_f64().unwrap_or(0.),
+                |v| ui.add(egui::DragValue::new(v).suffix("°")),
+            ),
             SettingControl::Toggle => {
                 let mut v = value.as_bool().unwrap_or(false);
                 ui.checkbox(&mut v, "").changed().then(|| Value::from(v))
@@ -683,6 +691,28 @@ impl Editor {
     }
 }
 
+/// A number setting's control, which `add` draws from the value being
+/// dragged, else from `saved`; the value to commit, once the drag ends or a
+/// value typed in lands. Nothing is committed while it is dragged, and the
+/// value dragged to is kept in `numbers` until then: the setting holds its
+/// old value meanwhile, and egui reports a drag's end in a frame that moves
+/// nothing, so the value drawn then must be the one dragged to.
+fn number_control(
+    numbers: &mut HashMap<(String, String), f64>,
+    key: (String, String),
+    saved: f64,
+    add: impl FnOnce(&mut f64) -> egui::Response,
+) -> Option<Value> {
+    let mut v = numbers.get(&key).copied().unwrap_or(saved);
+    let r = add(&mut v);
+    if r.dragged() {
+        numbers.insert(key, v);
+        return None;
+    }
+    let dragged = numbers.remove(&key).is_some();
+    ((dragged && r.drag_stopped()) || r.changed()).then(|| Value::from(v))
+}
+
 /// What a manifest declares it reaches, in words.
 fn access(m: &rawmakase_extensions::Manifest) -> String {
     let a = &m.access;
@@ -711,5 +741,74 @@ fn state(e: &Extension) -> String {
         "Running".into()
     } else {
         "Enabled".into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A frame drawing a Number setting saved at 0.5 as the page draws it,
+    /// given `events`; where the control is.
+    fn number_frame(
+        ctx: &egui::Context,
+        numbers: &mut HashMap<(String, String), f64>,
+        events: Vec<egui::Event>,
+        committed: &mut Vec<Value>,
+    ) -> egui::Pos2 {
+        let mut rect = egui::Rect::NOTHING;
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(400., 200.),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    let key = ("ext".to_string(), "amount".to_string());
+                    committed.extend(number_control(numbers, key, 0.5, |v| {
+                        let r = ui.add(egui::DragValue::new(v).range(0. ..=100.));
+                        rect = r.rect;
+                        r
+                    }));
+                });
+            },
+        );
+        output.textures_delta.clear();
+        rect.center()
+    }
+
+    #[test]
+    fn a_number_dragged_commits_where_it_was_let_go() {
+        let ctx = egui::Context::default();
+        let mut numbers = HashMap::new();
+        let mut committed = Vec::new();
+        let start = number_frame(&ctx, &mut numbers, Vec::new(), &mut committed);
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let press = vec![egui::Event::PointerMoved(start), button(start, true)];
+        number_frame(&ctx, &mut numbers, press, &mut committed);
+        let mut at = start;
+        for _ in 0..4 {
+            at.x += 10.;
+            let moved = vec![egui::Event::PointerMoved(at)];
+            number_frame(&ctx, &mut numbers, moved, &mut committed);
+            assert!(committed.is_empty(), "nothing is committed mid-drag");
+        }
+        number_frame(&ctx, &mut numbers, vec![button(at, false)], &mut committed);
+        number_frame(&ctx, &mut numbers, Vec::new(), &mut committed);
+        let [value] = &committed[..] else {
+            panic!("one commit, on release: {committed:?}")
+        };
+        let value = value.as_f64().unwrap();
+        assert!(value > 20., "committed {value}, not the value dragged to");
+        assert!(numbers.is_empty());
     }
 }

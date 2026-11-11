@@ -151,7 +151,9 @@ page run them. Run closes Preferences first, so the command's change to the
 open photo is made and seen rather than refused behind a dialog.
 
 **Settings** are drawn from the manifest's `[[setting]]`s, stored in
-`extensions.json`, sent in `hello` and, when changed, as `setting-changed`.
+`extensions.json`, sent in `hello` and, when changed, as `setting-changed`. A
+change is committed once: a slider or number when it is let go or a value
+typed into it lands, a text field on Enter or when it loses focus.
 **Panels** are drawn on the extension's page from the controls its program
 returns.
 
