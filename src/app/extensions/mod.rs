@@ -959,7 +959,6 @@ impl Host {
         };
         let e = &mut self.extensions[index];
         let program = e.program.clone().ok_or("no program")?;
-        #[cfg_attr(not(test), expect(unused_mut, reason = "tests replace the program"))]
         let mut launch = Launch {
             program,
             args: Vec::new(),
@@ -973,6 +972,9 @@ impl Host {
             launch.args = program.args;
             launch.env = program.env;
         }
+        // After the tests' replacement above, which would drop it: the program
+        // serves the protocol of the API its manifest declares.
+        launch.set_api(e.manifest.extension.api);
         let devices = std::sync::Arc::new(Devices::default());
         let adapters: Vec<String> = e
             .manifest
@@ -2054,6 +2056,7 @@ fn placeholder(id: &str, name: &str) -> Manifest {
         commands: Vec::new(),
         panels: Vec::new(),
         control_adapters: Vec::new(),
+        mask_generators: Vec::new(),
     }
 }
 
