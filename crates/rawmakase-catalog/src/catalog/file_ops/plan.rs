@@ -646,9 +646,9 @@ pub(super) fn shared(
             |p: &Photo| p.master && (p.name == name || file.is_some_and(|f| p.file == Some(f)));
         let found = match folders.any_photo(db, folder, dir, file.is_some(), family, same)? {
             Some(found) => found,
-            None => {
-                Masters::read(db, folders, folder, dir, file.is_some())?.share(&name, file, family)
-            }
+            None => Masters::read(db, folders, folder, dir, file.is_some())?
+                .share(&name, file, family)
+                .is_some(),
         };
         if found {
             return Ok(true);
@@ -699,15 +699,15 @@ impl Masters {
         Ok(out)
     }
 
-    /// Whether a master outside `family` is named `name` (by
-    /// `sidecar::caseless`) or is file object `file`.
-    fn share(&self, name: &str, file: Option<FileId>, family: &[PhotoId]) -> bool {
+    /// A master outside `family` named `name` (by `sidecar::caseless`) or
+    /// that is file object `file`, if there is one.
+    fn share(&self, name: &str, file: Option<FileId>, family: &[PhotoId]) -> Option<PhotoId> {
         let named = self.by_name.get(name).into_iter().flatten();
         let same = file
             .and_then(|f| self.by_file.get(&f))
             .into_iter()
             .flatten();
-        named.chain(same).any(|p| !family.contains(p))
+        named.chain(same).find(|p| !family.contains(p)).copied()
     }
 }
 
@@ -851,14 +851,15 @@ impl<'a> Files<'a> {
             .or_insert_with(|| Names(fsops::probe(dir, listing.names())))
     }
 
-    /// [`shared`], with each folder's masters read once.
+    /// [`shared`], with each folder's masters read once: the other photo,
+    /// if there is one.
     fn shared(
         &mut self,
         dir: &Path,
         filename: &OsStr,
         file: FileId,
         family: &[PhotoId],
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<Option<PhotoId>> {
         let name = caseless(filename);
         for folder in self.folders.over(dir) {
             let masters = match self.masters.entry((folder, dir.to_path_buf())) {
@@ -871,11 +872,11 @@ impl<'a> Files<'a> {
                     true,
                 )?),
             };
-            if masters.share(&name, Some(file), family) {
-                return Ok(true);
+            if let Some(other) = masters.share(&name, Some(file), family) {
+                return Ok(Some(other));
             }
         }
-        Ok(false)
+        Ok(None)
     }
 
     /// The facts of `volume`, which `path` is on; `None` when they can't be
@@ -1107,7 +1108,7 @@ impl<'a> Files<'a> {
         }
         // Another name of the same file object.
         if found.links != 1 {
-            return Err(refuse(Refusal::Shared));
+            return Err(refuse(Refusal::HardLinked));
         }
         // The folder and the name as the disk spells them, which the
         // catalog may not (a volume that ignores case finds either): what
@@ -1162,8 +1163,15 @@ impl<'a> Files<'a> {
         let shared = self
             .shared(&dir, &filename, found.id, rows)
             .map_err(|e| refuse(Refusal::Unreadable(format!("{e:#}"))))?;
-        if shared {
-            return Err(refuse(Refusal::Shared));
+        if let Some(other) = shared {
+            // Where the catalog places the other photo, so it can be found.
+            let place = by_id.get(&other).and_then(|p| {
+                let folder = self.located.get(&p.folder)?.path.as_ref()?;
+                Some(folder.join(&p.filename))
+            });
+            return Err(refuse(Refusal::Shared(
+                place.unwrap_or_else(|| dir.join(&filename)),
+            )));
         }
         if protected(&file) {
             return Err(refuse(Refusal::Protected));

@@ -186,9 +186,13 @@ pub enum Refusal {
     /// A link, a junction or a mount point is between its root folder and
     /// it, or it is one itself.
     NotPlain(PathBuf),
-    /// Another photo of the catalog is the same file: a second root or
-    /// folder over the same directory, a duplicate row or a hard link.
-    Shared,
+    /// Another photo of the catalog, whose file is at this path, is the same
+    /// file: a second root or folder over the same directory, or a
+    /// duplicate row.
+    Shared(PathBuf),
+    /// Its file has another name (a hard link), which may be outside the
+    /// catalog.
+    HardLinked,
     /// It was chosen twice, as the same file through another photo.
     Twice,
     /// Its volume is read-only.
@@ -243,7 +247,14 @@ impl fmt::Display for Refusal {
                 "{} is a link or another volume inside its folder.",
                 p.display()
             ),
-            Self::Shared => f.write_str("Another photo in the catalog is the same file."),
+            Self::Shared(p) => write!(
+                f,
+                "Another photo in the catalog, {}, is the same file.",
+                p.display()
+            ),
+            Self::HardLinked => f.write_str(
+                "Its file has a second name on its drive (a hard link), so RAWmakase leaves it alone.",
+            ),
             Self::Twice => f.write_str("The same file was chosen twice."),
             Self::ReadOnly => f.write_str("Its volume is read-only."),
             Self::Protected => f.write_str("It is in the Trash or in RAWmakase's own folders."),
