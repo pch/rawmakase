@@ -2,10 +2,14 @@
 //! `RAWMAKASE_FAKE_PROGRAM` naming a script, speaking through the SDK (or
 //! misbehaving on purpose). Each test starts one program, or two where a
 //! helper process is the point, to keep the run short.
+//!
+//! The tests that count the app's open handles take [`exclusive`], every
+//! other test [`shared`], so no handle comes or goes beside a count.
+use rawmakase_extension::protocol::buffer::{Access, Buffer, Meaning, Region, Sample, Space};
 use rawmakase_extension::protocol::framing::{LineReader, write_line};
-use rawmakase_extension::protocol::method::{CommandRun, Hello};
+use rawmakase_extension::protocol::method::{CommandRun, Hello, MaskGenerate, MaskGenerated};
 use rawmakase_extension::protocol::{ENV_API, ErrorCode, MAX_LINE, Message, PROTOCOL, RemoteError};
-use rawmakase_extension::{Context, Extension};
+use rawmakase_extension::{Context, Extension, MaskAsk, MaskGenerator};
 use rawmakase_extensions::session::{Launch, Session, SessionOptions, Update, check_hello};
 use serde_json::{Value, json};
 use std::io::Write;
@@ -15,6 +19,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 const SCRIPT: &str = "RAWMAKASE_FAKE_PROGRAM";
+
+static COUNTING: std::sync::RwLock<()> = std::sync::RwLock::new(());
+
+/// For a test that opens handles: no count runs beside it.
+fn shared() -> std::sync::RwLockReadGuard<'static, ()> {
+    COUNTING.read().unwrap_or_else(|e| e.into_inner())
+}
+
+/// For a test that counts the app's handles: nothing else runs beside it.
+fn exclusive() -> std::sync::RwLockWriteGuard<'static, ()> {
+    COUNTING.write().unwrap_or_else(|e| e.into_inner())
+}
 const PID_FILE: &str = "RAWMAKASE_FAKE_PID_FILE";
 
 /// The fake program's entry point: a test that does nothing in the ordinary
@@ -43,6 +59,9 @@ fn fake_program() {
         }
         "flood" => flood(),
         "api" => api(),
+        "masks" => masks(),
+        #[cfg(unix)]
+        "fds" => send_fds(),
         other => panic!("no script {other}"),
     };
     std::process::exit(code);
@@ -245,6 +264,7 @@ fn run(session: &mut Session, command: &str, input: Value, deadline: Instant) ->
 
 #[test]
 fn a_program_answers_cancels_reports_devices_and_times_out() {
+    let _guard = shared();
     let dir = tempfile::tempdir().unwrap();
     let seen = Arc::new(AtomicBool::new(false));
     let lifecycle = {
@@ -330,6 +350,7 @@ fn wait_ended(killer: &rawmakase_extensions::session::Killer) -> bool {
 
 #[test]
 fn a_panicking_lifecycle_callback_closes_the_session() {
+    let _guard = shared();
     let dir = tempfile::tempdir().unwrap();
     let lifecycle = Arc::new(|method: &str, _: &Value| {
         (method == "adapter.device").then(|| panic!("the app's lifecycle handler failed"))
@@ -353,6 +374,7 @@ fn a_panicking_lifecycle_callback_closes_the_session() {
 
 #[test]
 fn a_crash_mid_request_fails_what_it_held_and_closes_the_session() {
+    let _guard = shared();
     let dir = tempfile::tempdir().unwrap();
     let mut session =
         Session::spawn(&launch(dir.path(), "sdk"), SessionOptions::default()).unwrap();
@@ -378,6 +400,7 @@ fn a_crash_mid_request_fails_what_it_held_and_closes_the_session() {
 
 #[test]
 fn malformed_and_oversized_lines_are_reported_and_the_session_goes_on() {
+    let _guard = shared();
     let dir = tempfile::tempdir().unwrap();
     let mut session =
         Session::spawn(&launch(dir.path(), "malformed"), SessionOptions::default()).unwrap();
@@ -401,6 +424,7 @@ fn malformed_and_oversized_lines_are_reported_and_the_session_goes_on() {
 
 #[test]
 fn a_program_of_another_protocol_is_refused() {
+    let _guard = shared();
     let dir = tempfile::tempdir().unwrap();
     let mut session =
         Session::spawn(&launch(dir.path(), "version"), SessionOptions::default()).unwrap();
@@ -413,6 +437,7 @@ fn a_program_of_another_protocol_is_refused() {
 
 #[test]
 fn a_program_that_stops_reading_fills_its_queue_without_blocking() {
+    let _guard = shared();
     let dir = tempfile::tempdir().unwrap();
     let options = SessionOptions {
         queue: 4,
@@ -450,6 +475,7 @@ fn a_program_that_stops_reading_fills_its_queue_without_blocking() {
 
 #[test]
 fn a_burst_of_operations_never_holds_up_a_lifecycle_request() {
+    let _guard = shared();
     let dir = tempfile::tempdir().unwrap();
     let seen = Arc::new(AtomicBool::new(false));
     let lifecycle = {
@@ -513,6 +539,7 @@ fn helper_pid(dir: &Path) -> u32 {
 
 #[test]
 fn a_helper_dies_with_its_program_when_the_program_is_stopped() {
+    let _guard = shared();
     let dir = tempfile::tempdir().unwrap();
     let session = Session::spawn(&launch(dir.path(), "helper"), SessionOptions::default()).unwrap();
     let helper = helper_pid(dir.path());
@@ -528,6 +555,7 @@ fn a_helper_dies_with_its_program_when_the_program_is_stopped() {
 
 #[test]
 fn a_helper_left_by_a_program_that_exits_at_once_is_ended() {
+    let _guard = shared();
     let dir = tempfile::tempdir().unwrap();
     let mut session =
         Session::spawn(&launch(dir.path(), "orphan"), SessionOptions::default()).unwrap();
@@ -586,6 +614,7 @@ fn alive(pid: u32) -> bool {
 
 #[test]
 fn the_program_is_told_its_manifest_api() {
+    let _guard = shared();
     let dir = tempfile::tempdir().unwrap();
     let mut launch = launch(dir.path(), "api");
     launch.env.push((ENV_API.into(), "7".into()));
@@ -614,4 +643,609 @@ fn the_program_is_told_its_manifest_api() {
         std::thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(session.exit().and_then(|e| e.code), Some(1));
+}
+
+// Buffers in shared memory: leases, lingering and the Hung transition.
+
+const WIDTH: u32 = 64;
+const HEIGHT: u32 = 48;
+
+/// Waits until it is cancelled, at most 20 s.
+fn until_cancelled(cx: &Context) {
+    let start = Instant::now();
+    while !cx.is_cancelled() && start.elapsed() < Duration::from_secs(20) {
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+fn generated() -> MaskGenerated {
+    MaskGenerated {
+        model: "fake".into(),
+        model_key: "fake/1".into(),
+        empty: None,
+    }
+}
+
+/// The mask generators, by what they do:
+///
+/// - `fill` writes each pixel's red as its coverage;
+/// - `slow` reports it started, waits to be cancelled, then holds its
+///   buffers 300 ms more;
+/// - `stubborn` reports it started and ignores the cancel;
+/// - `flood` reports it started, waits to be cancelled, then sends 20 events
+///   before its reply, so a host not draining drops the reply;
+/// - `refuse` sends 20 events, then refuses the request as invalid;
+/// - `crash` exits mid-request.
+struct Fake;
+impl MaskGenerator for Fake {
+    fn generate(&mut self, cx: &Context, ask: MaskAsk<'_>) -> Result<MaskGenerated, RemoteError> {
+        let cancelled = || Err(RemoteError::new(ErrorCode::Cancelled, "stopped"));
+        let flood = || {
+            for _ in 0..20 {
+                let _ = cx.host().panel_update("p", vec![]);
+            }
+        };
+        match ask.request.generator.as_str() {
+            "fill" => {
+                let (image, coverage) = (&ask.request.image, &ask.request.coverage);
+                for y in 0..image.height as usize {
+                    for x in 0..image.width as usize {
+                        ask.coverage[y * coverage.stride as usize + x] =
+                            ask.image[y * image.stride as usize + x * 3];
+                    }
+                }
+                Ok(generated())
+            }
+            "slow" => {
+                cx.progress(Some(0.0), Some("started"));
+                until_cancelled(cx);
+                std::thread::sleep(Duration::from_millis(300));
+                cancelled()
+            }
+            "stubborn" => {
+                cx.progress(Some(0.0), Some("started"));
+                std::thread::sleep(Duration::from_secs(120));
+                Ok(generated())
+            }
+            "flood" => {
+                cx.progress(Some(0.0), Some("started"));
+                until_cancelled(cx);
+                flood();
+                cancelled()
+            }
+            "refuse" => {
+                flood();
+                Err(RemoteError::new(ErrorCode::InvalidRequest, "refused"))
+            }
+            "crash" => std::process::exit(3),
+            other => Err(RemoteError::new(ErrorCode::InvalidRequest, other)),
+        }
+    }
+}
+
+fn masks() -> i32 {
+    let result = Extension::new()
+        .mask_generator("fill", Fake)
+        .mask_generator("slow", Fake)
+        .mask_generator("stubborn", Fake)
+        .mask_generator("flood", Fake)
+        .mask_generator("refuse", Fake)
+        .mask_generator("crash", Fake)
+        .command("echo", |_cx: &Context, run: CommandRun| Ok(run.input))
+        .command("long", |cx: &Context, _run: CommandRun| {
+            cx.progress(Some(0.0), Some("started"));
+            until_cancelled(cx);
+            Err(RemoteError::new(ErrorCode::Cancelled, "stopped"))
+        })
+        .command("stubborn", |cx: &Context, _run: CommandRun| {
+            cx.progress(Some(0.0), Some("started"));
+            std::thread::sleep(Duration::from_secs(120));
+            Ok(Value::Null)
+        })
+        .command("mapped", |_cx: &Context, _run: CommandRun| {
+            Ok(json!(rawmakase_extension::mapped_buffers()))
+        })
+        .run();
+    i32::from(result.is_err())
+}
+
+/// Sends the app as many descriptors as one message carries, beside an
+/// event, then waits to be ended.
+#[cfg(unix)]
+fn send_fds() -> i32 {
+    // SCM_MAX_FD on Linux; 64-bit XNU's control data holds 254.
+    #[cfg(target_os = "linux")]
+    const COUNT: usize = 253;
+    #[cfg(not(target_os = "linux"))]
+    const COUNT: usize = 254;
+    raise_fd_limit();
+    let fd: i32 = std::env::var(rawmakase_extension::protocol::ENV_FD)
+        .unwrap()
+        .parse()
+        .unwrap();
+    // SAFETY: duplicates of stdin; the test's own descriptors.
+    let fds: Vec<i32> = (0..COUNT).map(|_| unsafe { libc::dup(0) }).collect();
+    assert!(fds.iter().all(|&fd| fd >= 0), "out of descriptors");
+    let line = b"{\"t\":\"event\",\"e\":\"hello\"}\n";
+    let payload = std::mem::size_of_val(fds.as_slice());
+    // SAFETY: a msghdr with one iovec and an SCM_RIGHTS control message
+    // sized for `fds`, all on this frame.
+    let sent = unsafe {
+        let space = libc::CMSG_SPACE(payload as u32) as usize;
+        let mut control = vec![0u64; space.div_ceil(8)];
+        let mut iov = libc::iovec {
+            iov_base: line.as_ptr().cast_mut().cast(),
+            iov_len: line.len(),
+        };
+        let mut msg: libc::msghdr = std::mem::zeroed();
+        msg.msg_iov = &mut iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = control.as_mut_ptr().cast();
+        msg.msg_controllen = space as _;
+        let cmsg = libc::CMSG_FIRSTHDR(&msg);
+        (*cmsg).cmsg_level = libc::SOL_SOCKET;
+        (*cmsg).cmsg_type = libc::SCM_RIGHTS;
+        (*cmsg).cmsg_len = libc::CMSG_LEN(payload as u32) as _;
+        std::ptr::copy_nonoverlapping(fds.as_ptr(), libc::CMSG_DATA(cmsg).cast::<i32>(), fds.len());
+        libc::sendmsg(fd, &msg, 0)
+    };
+    if sent < 0 {
+        eprintln!("sendmsg: {}", std::io::Error::last_os_error());
+        return 1;
+    }
+    std::thread::sleep(Duration::from_secs(120));
+    0
+}
+
+/// Raises this process's descriptor limit to what the system allows, at most
+/// 4096: room for a message's worth of descriptors besides those open.
+#[cfg(unix)]
+fn raise_fd_limit() {
+    // SAFETY: reads and sets this process's own limit.
+    unsafe {
+        let mut limit: libc::rlimit = std::mem::zeroed();
+        libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit);
+        limit.rlim_cur = limit.rlim_max.min(4096);
+        libc::setrlimit(libc::RLIMIT_NOFILE, &limit);
+    }
+}
+
+/// How many handles the app has open.
+#[cfg(unix)]
+fn open_handles() -> usize {
+    #[cfg(target_os = "linux")]
+    let dir = "/proc/self/fd";
+    #[cfg(not(target_os = "linux"))]
+    let dir = "/dev/fd";
+    std::fs::read_dir(dir).map_or(0, Iterator::count)
+}
+
+#[cfg(windows)]
+fn open_handles() -> usize {
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
+    let mut count = 0u32;
+    // SAFETY: the current process's pseudo-handle and a valid out-parameter.
+    unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut count) };
+    count as usize
+}
+
+/// The app's handle count once it holds still: the threads of a session an
+/// earlier test dropped let go of their ends a moment after. The first
+/// program started opens handles the system keeps for later ones (Windows), so
+/// one program runs to its end before the first count.
+fn baseline() -> usize {
+    static WARM: std::sync::Once = std::sync::Once::new();
+    WARM.call_once(|| {
+        let dir = tempfile::tempdir().unwrap();
+        let mut session = masks_session(dir.path(), SessionOptions::default());
+        let fill = send_mask(&mut session, "fill").unwrap();
+        wait_reply(&mut session, fill).unwrap();
+        session.stop(later(2_000)).unwrap().join();
+    });
+    let mut count = open_handles();
+    loop {
+        std::thread::sleep(Duration::from_millis(50));
+        let now = open_handles();
+        if now == count {
+            return count;
+        }
+        count = now;
+    }
+}
+
+/// Waits until the app's handle count is back to `baseline`: the session's
+/// threads let go of their ends once the program is gone.
+fn settles(baseline: usize) {
+    let start = Instant::now();
+    while open_handles() > baseline {
+        assert!(
+            start.elapsed() < PATIENCE,
+            "{} handles open, {baseline} before",
+            open_handles()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// A mask request's parameters: an image in handle `image`, a coverage in
+/// handle `coverage`.
+fn mask_params(generator: &str, image: u32, coverage: u32) -> Value {
+    let region = Region {
+        space: Space::ImageFrame,
+        rect: [0.0, 0.0, 1.0, 1.0],
+        scale: 0.05,
+        overlap: 0,
+    };
+    let image = Buffer {
+        handle: image,
+        bytes: u64::from(WIDTH * HEIGHT * 3),
+        width: WIDTH,
+        height: HEIGHT,
+        stride: WIDTH * 3,
+        channels: 3,
+        sample: Sample::U8,
+        meaning: MaskGenerate::IMAGE,
+        region,
+        access: Access::Read,
+    };
+    let coverage = Buffer {
+        handle: coverage,
+        bytes: u64::from(WIDTH * HEIGHT),
+        stride: WIDTH,
+        channels: 1,
+        meaning: Meaning::Coverage,
+        access: Access::Write,
+        ..image
+    };
+    serde_json::to_value(MaskGenerate {
+        generator: generator.into(),
+        input: None,
+        image,
+        coverage,
+        image_key: "key".into(),
+    })
+    .unwrap()
+}
+
+/// The red of the image [`send_mask`] sends: `(x + 2y) % 256`.
+fn red(x: u32, y: u32) -> u8 {
+    ((x + 2 * y) % 256) as u8
+}
+
+/// Sends a mask request with its buffers, as the app will: the image
+/// rendered into an input, the coverage an output.
+fn send_mask(session: &mut Session, generator: &str) -> Result<u64, RemoteError> {
+    let mut buffers = session.buffers();
+    let image = buffers.input(u64::from(WIDTH * HEIGHT * 3), |bytes| {
+        for (i, pixel) in bytes.chunks_mut(3).enumerate() {
+            let (x, y) = (i as u32 % WIDTH, i as u32 / WIDTH);
+            pixel.copy_from_slice(&[red(x, y), 1, 2]);
+        }
+    })?;
+    let coverage = buffers.output(u64::from(WIDTH * HEIGHT))?;
+    session.request_with(
+        "mask.generate",
+        mask_params(generator, image, coverage),
+        buffers,
+        later(60_000),
+    )
+}
+
+fn started(session: &mut Session, id: u64) {
+    poll_until(
+        session,
+        |u| matches!(u, Update::Progress { id: i, .. } if *i == id),
+    );
+}
+
+fn masks_session(dir: &Path, options: SessionOptions) -> Session {
+    let mut launch = launch(dir, "masks");
+    launch.set_api(2);
+    let mut session = Session::spawn(&launch, options).unwrap();
+    let id = session.request("hello", hello(dir), later(10_000)).unwrap();
+    wait_reply(&mut session, id).unwrap();
+    session
+}
+
+/// Polls until the ledger is empty, returning everything polled.
+fn released(session: &mut Session) -> Vec<Update> {
+    let start = Instant::now();
+    let mut seen = Vec::new();
+    while session.ledger().in_use() > 0 {
+        assert!(start.elapsed() < PATIENCE, "never released; saw {seen:?}");
+        seen.extend(session.poll(Instant::now()));
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    seen
+}
+
+/// One program through every lease that ends without a fault: on a reply, on
+/// a cancel while the handler holds the buffers, on a cancel while queued
+/// behind a long command, on a reply the full queue dropped, and against the
+/// budget. Then the stop, and the app's handles back where they were.
+#[test]
+fn leases_end_with_the_program_s_reply() {
+    let _guard = exclusive();
+    let dir = tempfile::tempdir().unwrap();
+    let baseline = baseline();
+    let options = SessionOptions {
+        queue: 4,
+        lease_grace: Duration::from_secs(60),
+        ..SessionOptions::default()
+    };
+    let mut session = masks_session(dir.path(), options);
+
+    // A reply hands the buffers over, with what the program wrote; the lease
+    // ends when the app drops them.
+    let fill = send_mask(&mut session, "fill").unwrap();
+    assert!(session.ledger().in_use() > 0);
+    let updates = poll_until(
+        &mut session,
+        |u| matches!(u, Update::Reply { id, .. } if *id == fill),
+    );
+    let Some(Update::Reply {
+        result, buffers, ..
+    }) = updates
+        .iter()
+        .find(|u| matches!(u, Update::Reply { id, .. } if *id == fill))
+    else {
+        unreachable!()
+    };
+    let generated: MaskGenerated = serde_json::from_value(result.clone().unwrap()).unwrap();
+    assert_eq!(generated.model, "fake");
+    let buffers = buffers.clone().expect("the buffers come back");
+    let coverage = buffers.read(1).unwrap();
+    assert_eq!(coverage.len() as u32, WIDTH * HEIGHT);
+    assert!(
+        (0..HEIGHT).all(|y| (0..WIDTH).all(|x| coverage[(y * WIDTH + x) as usize] == red(x, y)))
+    );
+    assert_eq!(buffers.read(0), None, "an input isn't read back");
+    drop((updates, buffers));
+    assert_eq!(session.ledger().in_use(), 0);
+
+    // Cancelled while the handler holds its buffers: settled at once, the
+    // lease kept until the program's cancelled reply.
+    let slow = send_mask(&mut session, "slow").unwrap();
+    started(&mut session, slow);
+    let cancelled = Instant::now();
+    assert!(session.cancel(slow));
+    assert!(!session.is_admitted(slow));
+    assert_eq!(session.in_flight(), 0, "busy clears at once");
+    assert!(session.ledger().in_use() > 0, "the program still holds it");
+    assert!(
+        session.next_deadline().is_some(),
+        "the lease's grace is a deadline"
+    );
+    let seen = released(&mut session);
+    assert!(cancelled.elapsed() >= Duration::from_millis(250));
+    assert!(
+        reply_of(&seen, slow).is_none(),
+        "settled once, at the cancel"
+    );
+    let mapped = run(&mut session, "mapped", Value::Null, later(10_000));
+    assert_eq!(wait_reply(&mut session, mapped).unwrap(), json!(0));
+
+    // Queued behind a long command: answered at once, and nothing is killed.
+    let long = run(&mut session, "long", Value::Null, later(60_000));
+    started(&mut session, long);
+    let queued = send_mask(&mut session, "fill").unwrap();
+    assert!(session.cancel(queued));
+    released(&mut session);
+    assert!(session.is_admitted(long), "the long command runs on");
+    assert!(!session.is_hung());
+    assert!(session.cancel(long));
+
+    // A cancelled request answered while the queue is full: the reply is
+    // dropped, the lease released all the same, and nothing hangs.
+    let flood = send_mask(&mut session, "flood").unwrap();
+    started(&mut session, flood);
+    assert!(session.cancel(flood));
+    let start = Instant::now();
+    let dropped = session.dropped();
+    // 20 events past a queue of 4, and the reply.
+    while session.dropped() < dropped + 17 {
+        assert!(start.elapsed() < PATIENCE, "the queue never filled");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let updates = session.poll(Instant::now());
+    assert_eq!(session.ledger().in_use(), 0, "{updates:?}");
+    assert!(!updates.iter().any(|u| matches!(u, Update::Hung { .. })));
+
+    // Cancel and retry while the handler can't stop: the budget refuses
+    // before allocating.
+    let big = 200 << 20;
+    let with = |session: &mut Session, command: &str| {
+        let mut buffers = session.buffers();
+        buffers.output(big)?;
+        let run = json!({"command": command});
+        session.request_with("command.run", run, buffers, later(60_000))
+    };
+    let stuck = with(&mut session, "stubborn").unwrap();
+    started(&mut session, stuck);
+    assert!(session.cancel(stuck));
+    let retry = with(&mut session, "echo").unwrap();
+    assert!(session.cancel(retry));
+    poll_until_ledger(&mut session, big);
+    let again = with(&mut session, "echo").unwrap();
+    assert_eq!(session.ledger().in_use(), 2 * big);
+    let refused = with(&mut session, "echo").unwrap_err();
+    assert_eq!(refused.code, ErrorCode::Busy);
+    assert_eq!(session.ledger().in_use(), 2 * big);
+    assert!(session.is_admitted(again));
+
+    // The stop ends the program at its deadline and every lease with it.
+    let ledger = session.ledger().clone();
+    let stopping = session.stop(later(600)).unwrap();
+    let killer = stopping.killer();
+    stopping.join();
+    assert!(wait_ended(&killer));
+    assert_eq!(ledger.in_use(), 0);
+    // The killer holds the job object on Windows.
+    drop(killer);
+    settles(baseline);
+}
+
+fn poll_until_ledger(session: &mut Session, bytes: u64) {
+    let start = Instant::now();
+    while session.ledger().in_use() != bytes {
+        assert!(start.elapsed() < PATIENCE);
+        session.poll(Instant::now());
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// Polls until `Closed` and the unit has ended, returning everything polled.
+fn until_gone(session: &mut Session) -> Vec<Update> {
+    let mut seen = poll_until(session, |u| *u == Update::Closed);
+    let start = Instant::now();
+    while !session.has_ended() || session.ledger().in_use() > 0 {
+        assert!(start.elapsed() < PATIENCE);
+        seen.extend(session.poll(Instant::now()));
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    seen
+}
+
+#[test]
+fn a_crash_releases_every_lease_once_the_program_is_gone() {
+    let _guard = exclusive();
+    let dir = tempfile::tempdir().unwrap();
+    let baseline = baseline();
+    {
+        let mut session = masks_session(dir.path(), SessionOptions::default());
+        let crash = send_mask(&mut session, "crash").unwrap();
+        let seen = until_gone(&mut session);
+        assert_eq!(
+            reply_of(&seen, crash).unwrap().unwrap_err().code,
+            ErrorCode::Exited
+        );
+        assert_eq!(session.ledger().in_use(), 0);
+    }
+    settles(baseline);
+}
+
+/// A cancelled request whose handler ignores the cancel past the lease's
+/// grace, while another waits behind it: the program is killed, the waiting
+/// request fails once with `exited`, the cancelled one stays cancelled, and
+/// the lease ends with the program.
+#[test]
+fn a_lease_past_its_grace_hangs_the_program_up() {
+    let _guard = exclusive();
+    let dir = tempfile::tempdir().unwrap();
+    let baseline = baseline();
+    {
+        let options = SessionOptions {
+            lease_grace: Duration::from_millis(300),
+            ..SessionOptions::default()
+        };
+        let mut session = masks_session(dir.path(), options);
+        let stuck = send_mask(&mut session, "stubborn").unwrap();
+        started(&mut session, stuck);
+        let cancelled = Instant::now();
+        assert!(session.cancel(stuck));
+        let waiting = run(&mut session, "echo", json!(1), later(60_000));
+        let mut seen = poll_until(&mut session, |u| matches!(u, Update::Hung { .. }));
+        assert!(cancelled.elapsed() >= Duration::from_millis(300));
+        assert!(session.is_hung());
+        assert_eq!(
+            session
+                .request("command.run", json!({"command": "echo"}), later(1_000))
+                .unwrap_err()
+                .code,
+            ErrorCode::Exited
+        );
+        seen.extend(until_gone(&mut session));
+        let replies = |id| {
+            seen.iter()
+                .filter(|u| matches!(u, Update::Reply { id: i, .. } if *i == id))
+                .count()
+        };
+        assert_eq!(replies(waiting), 1);
+        assert_eq!(
+            reply_of(&seen, waiting).unwrap().unwrap_err().code,
+            ErrorCode::Exited
+        );
+        assert_eq!(replies(stuck), 0, "cancelled it stays");
+        assert_eq!(
+            seen.iter()
+                .filter(|u| matches!(u, Update::Hung { .. }))
+                .count(),
+            1
+        );
+    }
+    settles(baseline);
+}
+
+/// A request that carried handles refused as invalid, with the reply dropped
+/// by a full queue: the outcome the reader recorded hangs the program up all
+/// the same, and the lease ends only when the program is gone.
+#[test]
+fn a_refused_handle_request_hangs_the_program_up_even_unread() {
+    let _guard = exclusive();
+    let dir = tempfile::tempdir().unwrap();
+    let baseline = baseline();
+    {
+        let options = SessionOptions {
+            queue: 4,
+            ..SessionOptions::default()
+        };
+        let mut session = masks_session(dir.path(), options);
+        let refused = send_mask(&mut session, "refuse").unwrap();
+        let start = Instant::now();
+        while session.dropped() < 17 {
+            assert!(start.elapsed() < PATIENCE, "the queue never filled");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let updates = session.poll(Instant::now());
+        assert!(
+            updates.iter().any(|u| matches!(u, Update::Hung { .. })),
+            "{updates:?}"
+        );
+        assert!(session.ledger().in_use() > 0 || session.has_ended());
+        assert_eq!(
+            reply_of(&updates, refused).unwrap().unwrap_err().code,
+            ErrorCode::Exited
+        );
+        until_gone(&mut session);
+    }
+    settles(baseline);
+}
+
+/// A program sends the app a message's worth of descriptors: each is closed
+/// as it arrives, and the program is hung up.
+#[cfg(unix)]
+#[test]
+fn descriptors_a_program_sends_are_closed_and_hang_it_up() {
+    let _guard = exclusive();
+    raise_fd_limit();
+    let dir = tempfile::tempdir().unwrap();
+    let baseline = baseline();
+    {
+        let mut session =
+            Session::spawn(&launch(dir.path(), "fds"), SessionOptions::default()).unwrap();
+        let seen = poll_until(&mut session, |u| matches!(u, Update::Hung { .. }));
+        let reason = seen.iter().find_map(|u| match u {
+            Update::Hung { reason } => Some(reason.clone()),
+            _ => None,
+        });
+        assert!(reason.unwrap().contains("handle"));
+        until_gone(&mut session);
+    }
+    settles(baseline);
+}
+
+#[test]
+fn an_api_1_program_is_passed_no_handles() {
+    let _guard = shared();
+    let dir = tempfile::tempdir().unwrap();
+    let mut session =
+        Session::spawn(&launch(dir.path(), "sdk"), SessionOptions::default()).unwrap();
+    let mut buffers = session.buffers();
+    buffers.output(16).unwrap();
+    let error = session
+        .request_with("mask.generate", json!({}), buffers, later(10_000))
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    assert_eq!(session.ledger().in_use(), 0);
+    assert_eq!(session.in_flight(), 0);
 }

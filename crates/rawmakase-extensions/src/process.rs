@@ -19,7 +19,9 @@
 //! waits without reaping first: until the process is reaped its id, the
 //! group's, can't be reused, so the group killed is never another's.
 use crate::session::{Exit, Launch};
-use std::io::{self, Read, Write};
+use crate::shm;
+use std::io::{self, Read};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -29,10 +31,13 @@ pub(crate) const LOG_ROTATE: u64 = 1 << 20;
 /// The channel's two directions, and how to close the host's sending side.
 pub(crate) struct Transport {
     pub(crate) reader: Box<dyn Read + Send>,
-    pub(crate) writer: Box<dyn Write + Send>,
+    pub(crate) writer: shm::Writer,
     /// Tells the program nothing more will come. On Windows a pipe can't be
     /// half-closed, so the program learns it from `quitting` alone.
     pub(crate) close_write: Box<dyn FnOnce() + Send>,
+    /// Set by the reader when the program sent handles, which it never may
+    /// (Linux and macOS; a pipe carries none).
+    pub(crate) fault: Arc<AtomicBool>,
 }
 
 /// A started program.
@@ -40,6 +45,8 @@ pub(crate) struct Spawned {
     pub(crate) unit: Arc<Unit>,
     pub(crate) transport: Transport,
     pub(crate) pid: u32,
+    /// The program as handles are passed to it.
+    pub(crate) child: shm::Child,
 }
 
 /// A program and everything it started, as one thing to end.
@@ -186,18 +193,24 @@ mod platform {
             unit.kill();
             return Err(e);
         }
-        let reader = parent.try_clone()?;
-        let writer = parent.try_clone()?;
+        let fault = Arc::new(AtomicBool::new(false));
+        let reader = shm::Reader {
+            stream: parent.try_clone()?,
+            fault: fault.clone(),
+        };
+        let writer = shm::Writer(parent.try_clone()?);
         Ok(Spawned {
             unit,
             transport: Transport {
                 reader: Box::new(reader),
-                writer: Box::new(writer),
+                writer,
                 close_write: Box::new(move || {
                     let _ = parent.shutdown(std::net::Shutdown::Write);
                 }),
+                fault,
             },
             pid,
+            child: shm::Child,
         })
     }
 
@@ -231,6 +244,7 @@ mod platform {
     use super::*;
     use rawmakase_extension_protocol::{ENV_FD, ENV_PIPE};
     use std::ffi::{OsStr, OsString, c_void};
+    use std::io::Write;
     use std::os::windows::ffi::OsStrExt;
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
     use std::sync::OnceLock;
@@ -639,6 +653,7 @@ mod platform {
             unit.kill();
             return Err(e);
         }
+        let child = shm::Child(process.clone());
         let server = Arc::new(Server {
             pipe,
             process,
@@ -653,13 +668,15 @@ mod platform {
                     server: server.clone(),
                     event: read_event,
                 }),
-                writer: Box::new(End {
+                writer: shm::Writer(Box::new(End {
                     server,
                     event: write_event,
-                }),
+                })),
                 close_write: Box::new(|| {}),
+                fault: Arc::new(AtomicBool::new(false)),
             },
             pid,
+            child,
         })
     }
 

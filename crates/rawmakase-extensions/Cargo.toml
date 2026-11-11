@@ -25,14 +25,16 @@ flate2.workspace = true
 ureq = { version = "3.4", default-features = false, features = ["rustls"] }
 
 # The process group a program runs in: setpgid, killpg and waitid, which
-# std doesn't offer.
+# std doesn't offer; and request buffers in shared memory (memfd_create,
+# shm_open, mmap) with their descriptors passed by sendmsg and recvmsg.
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
 # CreateProcessW with the process suspended until it is in its job object, the
-# job object itself, and the channel's named pipe.
+# job object itself, the channel's named pipe, and request buffers in file
+# mappings duplicated into the program.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Threading"] }
 
 [dev-dependencies]
 # The scripted fake program the session tests start is this crate's test
