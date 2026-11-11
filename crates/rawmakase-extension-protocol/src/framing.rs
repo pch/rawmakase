@@ -103,6 +103,20 @@ impl<R: Read> LineReader<R> {
         }
     }
 
+    /// Whether every byte read so far belongs to lines already returned: no
+    /// unread byte is buffered and no oversized line is being skipped. A
+    /// reader of handles checks here that none is left over, since a
+    /// conforming sender's handles always arrive with their line.
+    pub fn at_boundary(&self) -> bool {
+        self.start == self.end && !self.skipping
+    }
+
+    /// The stream being read, for a reader that also takes what arrives
+    /// beside the bytes (handles).
+    pub fn get_mut(&mut self) -> &mut R {
+        &mut self.inner
+    }
+
     /// The next message: a line read and decoded. `Ok(None)` at the end of the
     /// stream; an `Err` of [`FrameError`] concerns one line only.
     pub fn next_message(&mut self) -> io::Result<Option<Result<Message, LineError>>> {
@@ -220,6 +234,27 @@ mod tests {
             Some(Err(LineError::Decode(_)))
         ));
         assert_eq!(reader.next_message().unwrap(), None);
+    }
+
+    #[test]
+    fn the_boundary_is_where_no_byte_is_left_unread() {
+        let mut reader = LineReader::new(Trickle(b"one\ntwo\nthr".to_vec(), 1 << 10));
+        assert!(reader.at_boundary());
+        assert_eq!(reader.next_line().unwrap(), Some(Ok(b"one".to_vec())));
+        assert!(
+            !reader.at_boundary(),
+            "two lines and a part came in one read"
+        );
+        assert_eq!(reader.next_line().unwrap(), Some(Ok(b"two".to_vec())));
+        assert!(!reader.at_boundary(), "a partial line waits");
+        assert_eq!(
+            reader.next_line().unwrap(),
+            Some(Err(FrameError::Truncated))
+        );
+        assert!(reader.at_boundary());
+        let mut whole = LineReader::new(Trickle(b"one\n".to_vec(), 1 << 10));
+        whole.next_line().unwrap();
+        assert!(whole.at_boundary());
     }
 
     #[test]

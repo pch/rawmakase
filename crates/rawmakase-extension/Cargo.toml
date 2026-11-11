@@ -12,11 +12,17 @@ rawmakase-extension-protocol = { path = "../rawmakase-extension-protocol", versi
 serde = "1"
 serde_json.workspace = true
 
+# Receiving the descriptors the app passes (recvmsg, SCM_RIGHTS), mapping
+# them, and for the mock host making them (memfd_create, shm_open) and sending
+# them.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
 # The channel's named pipe, opened for overlapped I/O so the reader and the
 # writer don't wait on each other (synchronous I/O on one pipe handle is
-# serialized).
+# serialized), and the file mappings the app passes.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Memory", "Win32_System_Threading"] }
 
 [lints]
 workspace = true

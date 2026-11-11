@@ -34,6 +34,11 @@ pub const PROTOCOL: u32 = 1;
 /// newline. Bulk data never travels in JSON.
 pub const MAX_LINE: usize = 1 << 20;
 
+/// The most handles one message carries (`"handles": n`): a request's
+/// buffers, each in its own handle. A sender refuses a message with more
+/// before sending any of it.
+pub const MAX_HANDLES: usize = 8;
+
 /// The environment variable naming the channel's file descriptor in the program
 /// on Linux and macOS: the host passes its end of a socket pair as this
 /// descriptor (always 3).

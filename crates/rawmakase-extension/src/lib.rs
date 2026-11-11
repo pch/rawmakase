@@ -31,11 +31,13 @@ pub mod channel;
 mod host;
 pub mod mock;
 mod run;
+mod shm;
 
 pub use host::Host;
 pub use rawmakase_extension_protocol as protocol;
 pub use rawmakase_extension_protocol::{ErrorCode, RemoteError};
 pub use run::{Context, Extension, ServeOptions};
+pub use shm::mapped_buffers;
 
 use rawmakase_extension_protocol::controls::Control;
 use rawmakase_extension_protocol::method::{CommandRun, MaskGenerate, MaskGenerated};
@@ -82,15 +84,27 @@ pub trait Panel: Send {
     }
 }
 
+/// What a mask generator is asked: the request, with its buffers mapped for
+/// the call. The SDK unmaps them, and closes their handles, once
+/// [`MaskGenerator::generate`] has returned, and only then replies.
+pub struct MaskAsk<'a> {
+    /// The request as the app sent it: the generator, the viewer input, the
+    /// buffers' descriptors and the image's key.
+    pub request: MaskGenerate,
+    /// The image's pixels, laid out as [`MaskGenerate::image`] describes:
+    /// 8-bit sRGB, three channels, rows `stride` bytes apart.
+    pub image: &'a [u8],
+    /// Where to write the coverage, laid out as [`MaskGenerate::coverage`]
+    /// describes: 8-bit, one channel, rows `stride` bytes apart.
+    pub coverage: &'a mut [u8],
+}
+
 /// A `[[mask-generator]]`'s implementation.
 ///
-/// The SDK checks each request ([`MaskGenerate::validate`]) before calling
-/// [`MaskGenerator::generate`], and refuses one that doesn't validate with
-/// [`ErrorCode::InvalidRequest`].
-///
-/// The buffers are not mapped yet: this version passes their descriptors as
-/// the app sent them, and the pixels arrive with handle passing, in the next
-/// protocol change. Then the handler will borrow the mappings for its call.
+/// The SDK checks each request ([`MaskGenerate::validate`]) and maps its
+/// buffers before calling [`MaskGenerator::generate`], and refuses one that
+/// doesn't validate or map with [`ErrorCode::InvalidRequest`]. Mask requests
+/// carry handles, so a generator's manifest declares `api = 2`.
 pub trait MaskGenerator: Send {
     /// Writes the coverage of the mask the request asks for and names the
     /// model that made it. A generator whose model isn't installed answers
@@ -98,11 +112,7 @@ pub trait MaskGenerator: Send {
     /// [`NeedsSetup`](protocol::message::NeedsSetup) message; one whose
     /// runtime or worker is missing answers [`ErrorCode::Unavailable`]. One
     /// that sees [`Context::is_cancelled`] returns [`ErrorCode::Cancelled`].
-    fn generate(
-        &mut self,
-        cx: &Context,
-        request: MaskGenerate,
-    ) -> Result<MaskGenerated, RemoteError>;
+    fn generate(&mut self, cx: &Context, ask: MaskAsk<'_>) -> Result<MaskGenerated, RemoteError>;
     /// Installs what the generator needs, reporting through
     /// [`Context::progress`], after it answered `needs_setup` and the user
     /// agreed. Generators that need nothing keep the default.

@@ -1,9 +1,9 @@
 //! Pixel buffers in shared memory: the descriptor a request carries for each.
 //!
 //! The pixels never travel in JSON. The app allocates every buffer, in both
-//! directions, and passes its handle with the message; the descriptor says how
-//! to read the mapping. Handle passing arrives with the next protocol change,
-//! so in this version a [`Buffer`] only describes.
+//! directions, and passes its handle with the message
+//! ([`Handles`](crate::message::Handles)); the descriptor says how to read the
+//! mapping, and [`Buffer::handle`] which of the message's handles it is.
 //!
 //! **Layout.** Samples are little-endian and channels interleaved. Rows run top
 //! to bottom, row `r` starting at byte `r * stride`; the bytes after a row's

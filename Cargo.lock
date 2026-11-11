@@ -3914,6 +3914,7 @@ dependencies = [
 name = "rawmakase-extension"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "rawmakase-extension-protocol",
  "serde",
  "serde_json",
