@@ -1028,11 +1028,25 @@ fn quitting_while_space_is_given_back_ends_in_time() {
     // Timed on its own: the rest of quitting (the catalog's save, the other
     // workers) is no faster for it, and slow on a busy Windows runner.
     let started = Instant::now();
-    { use std::io::Write; let _ = writeln!(std::io::stderr(), "DBG {:?} closing", crate::app::task::since_start()); }
+    {
+        use std::io::Write;
+        let _ = writeln!(
+            std::io::stderr(),
+            "DBG {:?} closing",
+            crate::app::task::since_start()
+        );
+    }
     let worker = crate::app::task::Stopping::new(e.preview_builds.close());
     let stopped = crate::app::task::wait_for(vec![worker], Duration::from_secs(3));
     let worker = started.elapsed();
-    { use std::io::Write; let _ = writeln!(std::io::stderr(), "DBG {:?} stopped after {worker:?}", crate::app::task::since_start()); }
+    {
+        use std::io::Write;
+        let _ = writeln!(
+            std::io::stderr(),
+            "DBG {:?} stopped after {worker:?}",
+            crate::app::task::since_start()
+        );
+    }
     let waited = e.exit_within(Duration::from_secs(3));
     assert_eq!((stopped.detached, waited.detached), (0, 0));
     assert!(

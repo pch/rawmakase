@@ -58,6 +58,11 @@ pub(in crate::app) struct Waited {
 /// Waits until every worker has finished, or `deadline` passes. A worker blocked
 /// on a stalled network share must not hold up quitting, so none is joined
 /// without one.
+pub(crate) fn since_start() -> std::time::Duration {
+    static T: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    T.get_or_init(std::time::Instant::now).elapsed()
+}
+
 pub(in crate::app) fn wait_for(workers: Vec<Stopping>, deadline: std::time::Duration) -> Waited {
     let until = std::time::Instant::now() + deadline;
     while !workers.iter().all(Stopping::finished) && std::time::Instant::now() < until {
@@ -217,9 +222,4 @@ mod tests {
         task.invalidate();
         assert!(!task.counts(third));
     }
-}
-
-pub(crate) fn since_start() -> std::time::Duration {
-    static T: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    T.get_or_init(std::time::Instant::now).elapsed()
 }
