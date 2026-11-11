@@ -83,13 +83,14 @@ fn value_of(kind: &ControlKind) -> Option<Value> {
     })
 }
 
-/// Draws `view`'s controls and returns what the user committed.
-pub(in crate::app) fn draw(ui: &mut egui::Ui, salt: &str, view: &mut PanelView) -> Vec<Action> {
+/// Draws `view`'s controls and returns what the user committed. `scope`
+/// keeps their widget ids apart from other panels' (egui's id salt).
+pub(in crate::app) fn draw(ui: &mut egui::Ui, scope: &str, view: &mut PanelView) -> Vec<Action> {
     let mut actions = Vec::new();
     let mut all = HashMap::new();
     values(&view.controls, &mut all);
     let controls = view.controls.clone();
-    draw_list(ui, salt, &controls, &all, &mut view.drafts, &mut actions);
+    draw_list(ui, scope, &controls, &all, &mut view.drafts, &mut actions);
     // A field loses focus to the click that ends its editing, so what it
     // commits goes first, whichever is drawn first: the click then acts on
     // the value the user left, and a Reset isn't undone by text sent after it.
@@ -99,7 +100,7 @@ pub(in crate::app) fn draw(ui: &mut egui::Ui, salt: &str, view: &mut PanelView) 
 
 fn draw_list(
     ui: &mut egui::Ui,
-    salt: &str,
+    scope: &str,
     controls: &[Control],
     all: &HashMap<String, Value>,
     drafts: &mut HashMap<String, Value>,
@@ -112,7 +113,7 @@ fn draw_list(
             continue;
         }
         ui.add_enabled_ui(!control.disabled, |ui| {
-            draw_one(ui, salt, control, all, drafts, actions);
+            draw_one(ui, scope, control, all, drafts, actions);
         });
         if let Some(help) = &control.help {
             form_row(ui, "", |ui| hint(ui, help));
@@ -122,7 +123,7 @@ fn draw_list(
 
 fn draw_one(
     ui: &mut egui::Ui,
-    salt: &str,
+    scope: &str,
     control: &Control,
     all: &HashMap<String, Value>,
     drafts: &mut HashMap<String, Value>,
@@ -143,9 +144,11 @@ fn draw_one(
             collapsed,
         } => {
             egui::CollapsingHeader::new(title)
-                .id_salt((salt, title, id.as_str()))
+                .id_salt((scope, title, id.as_str()))
                 .default_open(!collapsed)
-                .show(ui, |ui| draw_list(ui, salt, controls, all, drafts, actions));
+                .show(ui, |ui| {
+                    draw_list(ui, scope, controls, all, drafts, actions)
+                });
         }
         ControlKind::Slider {
             value,
@@ -206,7 +209,7 @@ fn draw_one(
                 .iter()
                 .find(|o| &o.id == value)
                 .map_or(value.as_str(), |o| o.title.as_str());
-            egui::ComboBox::from_id_salt((salt, id.as_str()))
+            egui::ComboBox::from_id_salt((scope, id.as_str()))
                 .selected_text(shown)
                 .show_ui(ui, |ui| {
                     for option in options {
