@@ -397,6 +397,10 @@ impl Builder {
                 }
                 changed();
             }
+            // Quitting waits for this thread: see [`PreviewCache::close_at_exit`].
+            if let Some(cache) = cache {
+                cache.close_at_exit();
+            }
         });
         Self {
             shared,

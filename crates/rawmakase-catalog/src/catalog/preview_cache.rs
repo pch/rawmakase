@@ -618,12 +618,35 @@ impl PreviewCache {
     /// short write. Returns how long to pause before the next step, so other
     /// connections get their writes in, or `None` once nothing more can be
     /// given back.
+    ///
+    /// A step only records the shorter file in the WAL; the file itself is
+    /// shortened when the WAL is folded back into it. So once nothing more can
+    /// be given back, the step folds it in, unless another connection is
+    /// reading or writing, rather than leaving that to whichever connection
+    /// closes last (and [`Self::close_at_exit`] never does it).
     pub fn release_step(&mut self) -> Result<Option<Duration>> {
         let started = std::time::Instant::now();
         if self.vacuum_step(RELEASE_STEP_TIME)? == 0 {
+            // PASSIVE: it neither waits for other connections nor makes them
+            // wait; what it leaves is folded in by a later checkpoint.
+            self.db
+                .query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |_| Ok(()))?;
             return Ok(None);
         }
         Ok(Some(RELEASE_PAUSE.max(started.elapsed())))
+    }
+    /// Closes the connection without folding the WAL back into the file,
+    /// which the last connection to close otherwise does: a write as long as
+    /// the WAL, flushed to the disk, that took up to 1.65 s on a busy Windows
+    /// runner (measured). For a worker stopping at exit, which must wait for
+    /// no more than the short write it is in. Nothing is lost: the next
+    /// connection reads the WAL, and a later checkpoint folds it in.
+    pub fn close_at_exit(self) {
+        // Best effort: if it can't be set, closing folds the WAL in as before.
+        let _ = self.db.set_db_config(
+            rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE,
+            true,
+        );
     }
     /// After a prune, gives back one step of the space left in the file. At
     /// the budget most of what a prune frees is filled again by the next rows,
@@ -891,12 +914,33 @@ mod tests {
         let full = std::fs::metadata(&path)?.len();
         cache.prune(0)?;
         cache.release_free_space()?;
-        cache.db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
         let free: i64 = cache
             .db
             .query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
         assert_eq!(free, 0);
         assert!(std::fs::metadata(&path)?.len() < full / 10);
+        Ok(())
+    }
+    /// Closing at exit leaves the WAL for the next connection instead of
+    /// folding it into the file, and loses nothing.
+    #[test]
+    fn closing_at_exit_leaves_the_wal_for_later() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let path = d.path().join("previews.sqlite3");
+        let wal = d.path().join("previews.sqlite3-wal");
+        let cache = PreviewCache::open(&path)?;
+        cache.db.execute(
+            "INSERT INTO previews VALUES('a.ARW',0,'0','',0,1,1,zeroblob(20000),0)",
+            [],
+        )?;
+        cache.close_at_exit();
+        assert!(std::fs::metadata(&wal)?.len() > 0);
+        let other = Connection::open(&path)?;
+        let rows: i64 = other.query_row("SELECT count(*) FROM previews", [], |r| r.get(0))?;
+        assert_eq!(rows, 1);
+        // An ordinary close, as the last connection, folds the WAL in.
+        drop(other);
+        assert!(!wal.exists());
         Ok(())
     }
     /// One step of giving space back frees up to [`RELEASE_STEP`] pages,
