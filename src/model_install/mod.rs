@@ -5,7 +5,8 @@
 //! the user's choice, and the AI Denoise service and the selection worker find the
 //! installed models and the runtime here.
 use rawmakase_inference::ModelFile;
-use rawmakase_inference::manifest::{all_files, denoise_files, sky_files};
+use rawmakase_inference::manifest::denoise_files;
+use rawmakase_selection::manifest::{all_files, sky_files};
 use std::path::{Path, PathBuf};
 
 pub(crate) use rawmakase_model_install::{InstallError, Progress, runtime_dir};
@@ -37,12 +38,12 @@ impl Pack {
     pub(crate) fn dir(self) -> PathBuf {
         let (id, version) = match self {
             Self::Subject => (
-                rawmakase_inference::SUBJECT.id,
-                rawmakase_inference::SUBJECT.version,
+                rawmakase_selection::SUBJECT.id,
+                rawmakase_selection::SUBJECT.version,
             ),
             Self::Sky => (
-                rawmakase_inference::SKY.id,
-                rawmakase_inference::SKY.version,
+                rawmakase_selection::SKY.id,
+                rawmakase_selection::SKY.version,
             ),
             Self::Denoise => (
                 rawmakase_inference::RAWNIND.id,

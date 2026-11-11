@@ -3,10 +3,10 @@
 //! succeeds, fails, is cancelled, arrives stale, or the worker is fed nonsense.
 use rawmakase_cancel::Cancel;
 
-use rawmakase_inference::{Coverage, Prompt, RgbImage, SKY, SUBJECT};
 use rawmakase_remote::client::{ClientError, RemoteOptions, RemoteSession};
 use rawmakase_remote::protocol::{Op, Request, WirePrompt, write_frame};
 use rawmakase_remote::server::{Engine, EngineError, Outcome, Server};
+use rawmakase_selection::{Coverage, Prompt, RgbImage, SKY, SUBJECT};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::Arc;
@@ -158,7 +158,7 @@ fn photo(width: usize, height: usize) -> RgbImage {
 
 fn click(x: f32, y: f32) -> Prompt {
     Prompt {
-        points: vec![rawmakase_inference::Point {
+        points: vec![rawmakase_selection::Point {
             x,
             y,
             positive: true,

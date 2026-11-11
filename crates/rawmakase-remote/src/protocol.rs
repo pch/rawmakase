@@ -229,7 +229,7 @@ pub struct WirePoint {
 
 impl WirePrompt {
     /// The app's prompt, for sending.
-    pub fn of(prompt: &rawmakase_inference::Prompt) -> Self {
+    pub fn of(prompt: &rawmakase_selection::Prompt) -> Self {
         Self {
             points: prompt
                 .points
@@ -245,12 +245,12 @@ impl WirePrompt {
     }
     /// The model's prompt, with everything it refuses rejected here, so a bad
     /// one is an error about the request, not a model run.
-    pub fn to_prompt(&self) -> Result<rawmakase_inference::Prompt, String> {
-        let prompt = rawmakase_inference::Prompt {
+    pub fn to_prompt(&self) -> Result<rawmakase_selection::Prompt, String> {
+        let prompt = rawmakase_selection::Prompt {
             points: self
                 .points
                 .iter()
-                .map(|p| rawmakase_inference::Point {
+                .map(|p| rawmakase_selection::Point {
                     x: p.x,
                     y: p.y,
                     positive: p.positive,
@@ -279,8 +279,8 @@ impl WireCoverage {
     /// The app's coverage, after checking it is the size it claims and its
     /// sides are ones a coverage can have: a malformed one is an error, never
     /// a partially filled raster or a zero-sided one a consumer divides by.
-    pub fn to_coverage(&self) -> Result<rawmakase_inference::Coverage, String> {
-        let capped = rawmakase_inference::process::MAX_COVERAGE_SIDE;
+    pub fn to_coverage(&self) -> Result<rawmakase_selection::Coverage, String> {
+        let capped = rawmakase_selection::process::MAX_COVERAGE_SIDE;
         let plausible = self.width > 0
             && self.height > 0
             && self.width <= capped
@@ -294,14 +294,14 @@ impl WireCoverage {
                 self.data.len()
             ));
         }
-        Ok(rawmakase_inference::Coverage {
+        Ok(rawmakase_selection::Coverage {
             width: self.width,
             height: self.height,
             data: self.data.clone(),
         })
     }
     /// What was computed, for sending.
-    pub fn of(coverage: &rawmakase_inference::Coverage) -> Self {
+    pub fn of(coverage: &rawmakase_selection::Coverage) -> Self {
         Self {
             width: coverage.width,
             height: coverage.height,
@@ -370,8 +370,8 @@ pub mod base64_bytes {
 /// Identifies what the worker was given, from the same pixels and model
 /// contract that produce the result: the same photo analysed twice keeps one
 /// entry, and a `segment` for another photo's `key` finds nothing.
-pub fn analysis_key(image: &rawmakase_inference::RgbImage) -> String {
-    let spec = rawmakase_inference::SUBJECT;
+pub fn analysis_key(image: &rawmakase_selection::RgbImage) -> String {
+    let spec = rawmakase_selection::SUBJECT;
     let header = [
         (image.width as u64).to_le_bytes().as_slice(),
         (image.height as u64).to_le_bytes().as_slice(),
@@ -539,13 +539,13 @@ mod tests {
         }
         let tall = WireCoverage {
             width: 1,
-            height: rawmakase_inference::process::MAX_COVERAGE_SIDE + 1,
-            data: vec![0; rawmakase_inference::process::MAX_COVERAGE_SIDE + 1],
+            height: rawmakase_selection::process::MAX_COVERAGE_SIDE + 1,
+            data: vec![0; rawmakase_selection::process::MAX_COVERAGE_SIDE + 1],
         };
         assert!(tall.to_coverage().is_err());
         let oversized = WireCoverage {
-            width: rawmakase_inference::process::MAX_COVERAGE_SIDE + 1,
-            height: rawmakase_inference::process::MAX_COVERAGE_SIDE,
+            width: rawmakase_selection::process::MAX_COVERAGE_SIDE + 1,
+            height: rawmakase_selection::process::MAX_COVERAGE_SIDE,
             data: vec![],
         };
         assert!(oversized.to_coverage().is_err());
@@ -564,7 +564,7 @@ mod tests {
         };
         assert!(far.to_prompt().is_err());
         let many = WirePrompt {
-            points: (0..rawmakase_inference::process::MAX_POINTS + 1)
+            points: (0..rawmakase_selection::process::MAX_POINTS + 1)
                 .map(|i| WirePoint {
                     x: 0.5,
                     y: 0.5,
@@ -589,7 +589,7 @@ mod tests {
 
     #[test]
     fn the_key_depends_on_the_pixels_and_the_model() {
-        let image = rawmakase_inference::RgbImage {
+        let image = rawmakase_selection::RgbImage {
             width: 2,
             height: 2,
             data: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],

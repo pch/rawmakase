@@ -10,7 +10,7 @@ repository = "https://github.com/pch/rawmakase"
 # The control protocol and its command-line client build on their own, without
 # the app's GUI, GPU or native libraries.
 [workspace]
-members = ["crates/rawmakase-cancel", "crates/rawmakase-catalog", "crates/rawmakase-decode", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-extension", "crates/rawmakase-extension-protocol", "crates/rawmakase-extensions", "crates/rawmakase-fs", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-model-install", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-tiff", "extensions/example", "extensions/mcp", "extensions/midi", "tools/cargo-rawmakase", "tools/rawmakase-ctl"]
+members = ["crates/rawmakase-cancel", "crates/rawmakase-catalog", "crates/rawmakase-decode", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-extension", "crates/rawmakase-extension-protocol", "crates/rawmakase-extensions", "crates/rawmakase-fs", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-model-install", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-selection", "crates/rawmakase-tiff", "extensions/example", "extensions/mcp", "extensions/midi", "tools/cargo-rawmakase", "tools/rawmakase-ctl"]
 
 # What every crate of the workspace shares. CI and `make check` read the minimum
 # Rust version from the `rust-version` line here.
@@ -76,6 +76,8 @@ rawmakase-model-install = { path = "crates/rawmakase-model-install", version = "
 rawmakase-protocol = { path = "crates/rawmakase-protocol", version = "0.1.0" }
 # The optional remote selection worker's client, and the worker binary itself.
 rawmakase-remote = { path = "crates/rawmakase-remote", version = "0.1.0" }
+# Subject, Background and Sky selection.
+rawmakase-selection = { path = "crates/rawmakase-selection", version = "0.1.0" }
 rawmakase-ctl = { path = "tools/rawmakase-ctl", version = "0.1.0" }
 # Verifies a downloaded or imported selection model against its pinned digest.
 sha2.workspace = true

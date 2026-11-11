@@ -1,6 +1,6 @@
 //! Optional remote inference for RAWmakase's selection models.
 //!
-//! The app normally runs the models itself (see `rawmakase-inference`, which is
+//! The app normally runs the models itself (see `rawmakase-selection`, which is
 //! still the default and still owns the model contract). This crate is the
 //! small, explicit alternative: a worker binary,
 //! `rawmakase-remote-worker`, that loads the same models where a capable GPU

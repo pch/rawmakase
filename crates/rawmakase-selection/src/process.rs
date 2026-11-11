@@ -2,8 +2,8 @@
 //! prompt to the decoder's, and the decoder's low-resolution mask logits back to
 //! 8-bit coverage in the photo's frame. No runtime is involved, so these are tested
 //! without a model.
-use crate::error::InferenceError;
 use crate::manifest::ModelSpec;
+use rawmakase_inference::InferenceError;
 
 /// Largest coverage returned, per side.
 pub const MAX_COVERAGE_SIDE: usize = 4096;

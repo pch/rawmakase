@@ -7,7 +7,7 @@
 //! working.
 
 use rawmakase_cancel::Cancel;
-use rawmakase_inference::{Coverage, Prompt, RgbImage, SKY, SUBJECT};
+use rawmakase_selection::{Coverage, Prompt, RgbImage, SKY, SUBJECT};
 use std::io::{self, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Arc;

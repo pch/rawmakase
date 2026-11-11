@@ -3,9 +3,9 @@
 //! sure of compete for every pixel, as the model's authors decode it, and the winners'
 //! masks make the instances. Pure: no runtime is involved.
 use crate::auto::SIDE;
-use crate::error::InferenceError;
 use crate::manifest::PanopticSpec;
 use crate::process::{Rect, resample};
+use rawmakase_inference::InferenceError;
 
 /// One person or animal the model found: its mask on the [`SIDE`] grid (the pixels
 /// where it won the competition, 0..=1).

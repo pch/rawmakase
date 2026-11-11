@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
 rawmakase-inference = { path = "../rawmakase-inference", version = "0.1.0" }
+rawmakase-selection = { path = "../rawmakase-selection", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true
 # Pixels and coverage ride inside the JSON frames as base64.

@@ -20,7 +20,7 @@ use crate::storage::bitmaps::Bitmap;
 use crate::storage::mask_assets;
 use eframe::egui;
 use rawmakase_cancel::Cancel;
-use rawmakase_inference::RgbImage;
+use rawmakase_selection::RgbImage;
 use std::path::PathBuf;
 use std::sync::{
     Arc,
