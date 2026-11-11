@@ -55,6 +55,9 @@ pub(crate) struct Unit {
     state: Mutex<(bool, Option<Exit>)>,
     changed: Condvar,
     group: platform::Group,
+    /// What lives until the unit has ended: leases of buffers its processes
+    /// may still map.
+    kept: Mutex<Vec<Box<dyn Send>>>,
 }
 impl Unit {
     fn new(group: platform::Group) -> Self {
@@ -62,7 +65,25 @@ impl Unit {
             state: Mutex::new((false, None)),
             changed: Condvar::new(),
             group,
+            kept: Mutex::default(),
         }
+    }
+    /// Keeps `item` until the unit has ended, then drops it on the waiter's
+    /// thread; drops it now when it has ended already. Never blocks on the
+    /// program: a unit that outlives every deadline keeps it until it ends.
+    pub(crate) fn keep_until_ended(&self, item: Box<dyn Send>) {
+        // Under the state lock, so `end` can't run between the check and the
+        // push and leave the item behind.
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.0 {
+            drop(state);
+            drop(item);
+            return;
+        }
+        self.kept
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(item);
     }
     /// Ends every process of the unit unless it has ended already. Never
     /// blocks on the program.
@@ -107,6 +128,10 @@ impl Unit {
         self.group.kill();
         state.0 = true;
         self.changed.notify_all();
+        let kept = std::mem::take(&mut *self.kept.lock().unwrap_or_else(|e| e.into_inner()));
+        drop(state);
+        // Dropped outside the lock: a lease's drop reaches the ledger's.
+        drop(kept);
     }
     fn set_exit(&self, exit: Option<Exit>) {
         self.state.lock().unwrap_or_else(|e| e.into_inner()).1 = exit;

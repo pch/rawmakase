@@ -170,7 +170,10 @@ A request's buffers hold at most 256 MiB together (`MAX_REQUEST_BYTES`), and
 one extension's requests in flight at most 512 MiB (`MAX_EXTENSION_BYTES`),
 counting requests cancelled but not yet answered. The app refuses a request
 over either budget before it allocates anything (`too_large` past the
-request's, `busy` past the extension's).
+request's, `busy` past the extension's). The extension's budget holds across
+restarts because the app keeps one ledger per extension and gives it to every
+session of that extension's program, so a restarted program can't allocate
+while its predecessor still holds buffers.
 
 ### Leases
 
@@ -189,7 +192,9 @@ program can no longer touch them.
   sees `is_cancelled` and returns.
 - **Lossless.** The app's reader records each reply to a leased request
   before it queues the reply for the app, where a full queue may drop it, so
-  a dropped reply still releases its lease.
+  a dropped reply still releases its lease. A request whose reply was dropped
+  still gets one outcome: the error the program sent, or, for an `ok` whose
+  value is lost, `channel_full`.
 - **Hung.** The app treats the program as hung when a lingering lease passes
   10 s (`LEASE_GRACE`) without a reply, when the program answers a request
   that carried handles with `invalid_request` (it may hold handles it never
@@ -200,8 +205,11 @@ program can no longer touch them.
   stay counted until the unit has ended: then nothing of the program's can
   hold them.
 - **Exit and quit.** A program that exits or crashes fails what it held with
-  `exited`, and its leases end once its unit has. Quitting ends the unit at
-  the quit deadline as before; a lease's grace never extends it.
+  `exited`, and its leases end once its unit has. Quitting, and dropping a
+  session, end the unit at the quit deadline or at once as before; a lease's
+  grace never extends either, and the leases stay counted until the unit
+  has really ended, released by its termination tracking without blocking
+  anything.
 
 ### Viewer input
 

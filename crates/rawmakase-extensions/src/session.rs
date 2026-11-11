@@ -38,7 +38,9 @@
 //! for it says the program let go of the buffers. Leased ids live in a set the
 //! reader shares: it records each reply's outcome there before handing the
 //! reply to the bounded queue, which may drop it, so a reply is never lost to
-//! the lease. The owner reconciles under that set's lock.
+//! the lease. The owner reconciles under that set's lock: a pending request
+//! whose reply was dropped is settled from the record, an error as sent and
+//! an `ok`, whose value is lost, as `channel_full`.
 //!
 //! **Hung.** The program is treated as hung, and the session enters
 //! [`Update::Hung`] by itself, when a lingering lease passes its grace
@@ -131,8 +133,12 @@ pub struct SessionOptions {
     pub lease_grace: Duration,
     /// How long the program has to open its channel (Windows).
     pub connect: Duration,
-    /// What the extension's buffers count against. Share one between the
-    /// sessions of one extension's successive programs.
+    /// What the extension's buffers count against. The budget is per
+    /// extension only when the app keeps one `Ledger` per extension and
+    /// passes it to every session of it: a restarted program's session gets
+    /// the same ledger, so leases its predecessor still holds (until that
+    /// unit has ended) count against the new program's requests. The default,
+    /// a new ledger, counts one session alone.
     pub ledger: Ledger,
 }
 impl Default for SessionOptions {
@@ -259,19 +265,28 @@ struct Lingering {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Outcome {
     Ok,
-    Err(ErrorCode),
+    Err(RemoteError),
 }
 impl Outcome {
     /// Whether the answer is a protocol fault: a request that carried handles
     /// refused as invalid, so the program may hold handles it never adopted.
     fn is_fault(&self) -> bool {
-        *self == Self::Err(ErrorCode::InvalidRequest)
+        matches!(self, Self::Err(e) if e.code == ErrorCode::InvalidRequest)
     }
 }
 
-/// The ids of leased requests not yet reconciled, with the outcome the reader
+/// A leased request's reply as the reader recorded it.
+#[derive(Clone, Debug)]
+struct Recorded {
+    outcome: Outcome,
+    /// The full queue dropped the reply itself: only this record reaches the
+    /// owner.
+    dropped: bool,
+}
+
+/// The ids of leased requests not yet reconciled, with the reply the reader
 /// recorded for each, shared by the owner and the reader.
-type Leased = Arc<Mutex<HashMap<u64, Option<Outcome>>>>;
+type Leased = Arc<Mutex<HashMap<u64, Option<Recorded>>>>;
 
 /// Room in the sending queue beyond the owner's share, for the reader's own
 /// answers to the program.
@@ -579,7 +594,7 @@ impl Session {
         Ok(id)
     }
 
-    fn leased_set(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Option<Outcome>>> {
+    fn leased_set(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Option<Recorded>>> {
         self.leased.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -677,7 +692,7 @@ impl Session {
                     Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
                 }
             }
-            self.reconcile(&mut hang);
+            self.reconcile(&mut updates, &mut hang);
             self.enforce_deadlines(now, &mut updates);
             if finished {
                 let mut left: Vec<_> = self.pending.drain().collect();
@@ -752,28 +767,61 @@ impl Session {
 
     /// Settles the leases of the replies the reader recorded: a lingering one
     /// is released, and a protocol fault hangs the program up, even when the
-    /// reply itself was dropped by a full queue. A pending request's recorded
-    /// reply stays until it is handed over or the request lingers.
-    fn reconcile(&mut self, hang: &mut Option<String>) {
+    /// reply itself was dropped by a full queue. A pending request whose
+    /// reply the queue dropped is settled here, once: an error as it was
+    /// sent, an `ok`, whose value is lost, as `channel_full`. Any other
+    /// pending request's record waits for its reply to be drained.
+    fn reconcile(&mut self, updates: &mut Vec<Update>, hang: &mut Option<String>) {
         let mut leased = self.leased.lock().unwrap_or_else(|e| e.into_inner());
-        let (lingering, held) = (&mut self.lingering, &mut self.held);
-        leased.retain(|id, outcome| {
-            let Some(outcome) = outcome else {
+        let mut settled = Vec::new();
+        leased.retain(|id, recorded| {
+            let Some(recorded) = recorded else {
                 return true;
             };
-            if outcome.is_fault() {
+            if recorded.outcome.is_fault() {
                 hang.get_or_insert_with(fault_reason);
             }
-            match lingering.remove(id) {
-                Some(lease) => {
-                    if outcome.is_fault() {
-                        held.push(lease.buffers);
-                    }
-                    false
+            if let Some(lease) = self.lingering.remove(id) {
+                if recorded.outcome.is_fault() {
+                    self.held.push(lease.buffers);
                 }
-                None => true,
+                return false;
             }
+            if recorded.dropped && self.pending.contains_key(id) {
+                settled.push((*id, recorded.outcome.clone()));
+                return false;
+            }
+            true
         });
+        drop(leased);
+        settled.sort_unstable_by_key(|(id, _)| *id);
+        for (id, outcome) in settled {
+            let mut pending = self.pending.remove(&id).expect("pending, checked above");
+            let buffers = pending.buffers.take();
+            if outcome.is_fault() {
+                self.held.extend(buffers);
+            } else {
+                drop(buffers);
+            }
+            updates.push(if pending.expired {
+                deadline_failure(id, pending.method)
+            } else {
+                let result = match outcome {
+                    Outcome::Ok => Err(RemoteError::new(
+                        ErrorCode::ChannelFull,
+                        "the extension answered, but its reply was dropped: RAWmakase's queue \
+                         for it was full",
+                    )),
+                    Outcome::Err(e) => Err(e),
+                };
+                Update::Reply {
+                    id,
+                    method: pending.method,
+                    result,
+                    buffers: None,
+                }
+            });
+        }
     }
 
     /// Enters Hung: kills the unit, fails every pending request once with
@@ -797,7 +845,7 @@ impl Session {
         let mut settle = |id: u64, result: Result<Value, RemoteError>| {
             let outcome = match &result {
                 Ok(_) => Outcome::Ok,
-                Err(e) => Outcome::Err(e.code.clone()),
+                Err(e) => Outcome::Err(e.clone()),
             };
             let leased = self.leased_set().remove(&id).is_some();
             let fault = leased && outcome.is_fault();
@@ -881,8 +929,10 @@ impl Session {
     /// `min(1 s, deadline − now − 200 ms)`, then ends the unit; with the
     /// deadline already past, it ends it at once.
     ///
-    /// Leases still held go with the stopper and end when it does: the grace
-    /// a lease has never extends the stop.
+    /// Leases still held end when the unit has ended, released by its
+    /// termination tracking, not by the stopper: the stop never waits for
+    /// them, and a unit that outlives the deadline keeps them counted until
+    /// it really ends.
     pub fn stop(mut self, deadline: Instant) -> std::io::Result<Stopping> {
         self.stopping = true;
         let _ = self.event("quitting", Value::Null);
@@ -890,16 +940,13 @@ impl Session {
         let now = Instant::now();
         let until = (now + QUIT_GRACE).min(deadline.checked_sub(QUIT_MARGIN).unwrap_or(now));
         let unit = self.unit.clone();
-        let mut leases = std::mem::take(&mut self.held);
-        leases.extend(self.lingering.drain().map(|(_, lease)| lease.buffers));
-        leases.extend(self.pending.values_mut().filter_map(|p| p.buffers.take()));
+        self.keep_leases();
         let thread = std::thread::Builder::new()
             .name("extension stopper".into())
             .spawn(move || {
                 if !unit.wait_ended(until) {
                     unit.kill();
                 }
-                drop(leases);
             });
         match thread {
             Ok(thread) => Ok(Stopping {
@@ -916,12 +963,26 @@ impl Session {
 
 impl Drop for Session {
     /// A session dropped without [`Session::stop`] (its extension disabled,
-    /// its owner gone) ends its unit at once, and its leases end with it.
-    /// Nothing is joined.
+    /// its owner gone) ends its unit at once; its leases end once the unit
+    /// has. Nothing is joined.
     fn drop(&mut self) {
         self.outgoing.close();
         if !self.stopping {
             self.unit.kill();
+        }
+        self.keep_leases();
+    }
+}
+
+impl Session {
+    /// Hands every lease still held to the unit, which drops them once it
+    /// has ended: until then the program may still map the buffers.
+    fn keep_leases(&mut self) {
+        let mut leases = std::mem::take(&mut self.held);
+        leases.extend(self.lingering.drain().map(|(_, lease)| lease.buffers));
+        leases.extend(self.pending.values_mut().filter_map(|p| p.buffers.take()));
+        if !leases.is_empty() {
+            self.unit.keep_until_ended(Box::new(leases));
         }
     }
 }
@@ -1117,9 +1178,12 @@ impl Reading {
                     }
                 }
                 Ok((message, _)) => {
-                    self.record(&message);
+                    let id = self.record(&message);
                     if self.to_owner.try_send(Incoming::Message(message)).is_err() {
                         self.dropped.fetch_add(1, Ordering::Relaxed);
+                        if let Some(id) = id {
+                            self.dropped_reply(id);
+                        }
                     }
                 }
                 Err(d) => {
@@ -1144,18 +1208,34 @@ impl Reading {
     }
 
     /// Records a leased request's outcome before the reply goes to the
-    /// queue, which may drop it.
-    fn record(&self, message: &Message) {
+    /// queue, which may drop it. Returns the id when it recorded one.
+    fn record(&self, message: &Message) -> Option<u64> {
         let (id, outcome) = match message {
             Message::Ok { id, .. } => (*id, Outcome::Ok),
-            Message::Err { id, code, .. } => (*id, Outcome::Err(code.clone())),
-            _ => return,
+            Message::Err { id, code, message } => (
+                *id,
+                Outcome::Err(RemoteError::new(code.clone(), message.clone())),
+            ),
+            _ => return None,
         };
         let mut leased = self.leased.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(slot) = leased.get_mut(&id)
-            && slot.is_none()
-        {
-            *slot = Some(outcome);
+        let slot = leased.get_mut(&id)?;
+        if slot.is_some() {
+            return None;
+        }
+        *slot = Some(Recorded {
+            outcome,
+            dropped: false,
+        });
+        Some(id)
+    }
+
+    /// The queue dropped a leased request's reply: the owner settles it from
+    /// the record.
+    fn dropped_reply(&self, id: u64) {
+        let mut leased = self.leased.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(Some(recorded)) = leased.get_mut(&id) {
+            recorded.dropped = true;
         }
     }
 

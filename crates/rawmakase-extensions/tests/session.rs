@@ -11,6 +11,7 @@ use rawmakase_extension::protocol::method::{CommandRun, Hello, MaskGenerate, Mas
 use rawmakase_extension::protocol::{ENV_API, ErrorCode, MAX_LINE, Message, PROTOCOL, RemoteError};
 use rawmakase_extension::{Context, Extension, MaskAsk, MaskGenerator};
 use rawmakase_extensions::session::{Launch, Session, SessionOptions, Update, check_hello};
+use rawmakase_extensions::shm::Ledger;
 use serde_json::{Value, json};
 use std::io::Write;
 use std::path::Path;
@@ -675,6 +676,8 @@ fn generated() -> MaskGenerated {
 /// - `flood` reports it started, waits to be cancelled, then sends 20 events
 ///   before its reply, so a host not draining drops the reply;
 /// - `refuse` sends 20 events, then refuses the request as invalid;
+/// - `flood-ok` and `flood-err` send 20 events, then answer `ok`, or
+///   `unavailable`;
 /// - `crash` exits mid-request.
 struct Fake;
 impl MaskGenerator for Fake {
@@ -717,6 +720,14 @@ impl MaskGenerator for Fake {
                 flood();
                 Err(RemoteError::new(ErrorCode::InvalidRequest, "refused"))
             }
+            "flood-ok" => {
+                flood();
+                Ok(generated())
+            }
+            "flood-err" => {
+                flood();
+                Err(RemoteError::new(ErrorCode::Unavailable, "no runtime"))
+            }
             "crash" => std::process::exit(3),
             other => Err(RemoteError::new(ErrorCode::InvalidRequest, other)),
         }
@@ -731,6 +742,8 @@ fn masks() -> i32 {
         .mask_generator("flood", Fake)
         .mask_generator("refuse", Fake)
         .mask_generator("crash", Fake)
+        .mask_generator("flood-ok", Fake)
+        .mask_generator("flood-err", Fake)
         .command("echo", |_cx: &Context, run: CommandRun| Ok(run.input))
         .command("long", |cx: &Context, _run: CommandRun| {
             cx.progress(Some(0.0), Some("started"));
@@ -1039,17 +1052,38 @@ fn leases_end_with_the_program_s_reply() {
     // dropped, the lease released all the same, and nothing hangs.
     let flood = send_mask(&mut session, "flood").unwrap();
     started(&mut session, flood);
-    assert!(session.cancel(flood));
-    let start = Instant::now();
+    // Counted before the cancel lets the program flood the queue.
     let dropped = session.dropped();
+    assert!(session.cancel(flood));
     // 20 events past a queue of 4, and the reply.
-    while session.dropped() < dropped + 17 {
-        assert!(start.elapsed() < PATIENCE, "the queue never filled");
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    wait_dropped(&session, dropped + 17);
     let updates = session.poll(Instant::now());
     assert_eq!(session.ledger().in_use(), 0, "{updates:?}");
     assert!(!updates.iter().any(|u| matches!(u, Update::Hung { .. })));
+
+    // A pending request whose reply the full queue dropped is settled once
+    // from what the reader recorded: an `ok`, whose value is lost, as
+    // `channel_full`, an error as it was sent; its lease ends either way.
+    for (generator, code) in [
+        ("flood-ok", ErrorCode::ChannelFull),
+        ("flood-err", ErrorCode::Unavailable),
+    ] {
+        let dropped = session.dropped();
+        let id = send_mask(&mut session, generator).unwrap();
+        wait_dropped(&session, dropped + 17);
+        let mut seen = session.poll(Instant::now());
+        let replies = |seen: &[Update]| {
+            seen.iter()
+                .filter(|u| matches!(u, Update::Reply { id: i, .. } if *i == id))
+                .count()
+        };
+        assert_eq!(replies(&seen), 1, "{generator}: {seen:?}");
+        assert_eq!(reply_of(&seen, id).unwrap().unwrap_err().code, code);
+        assert!(!session.is_admitted(id));
+        assert_eq!(session.ledger().in_use(), 0, "{generator}");
+        seen.extend(session.poll(Instant::now()));
+        assert_eq!(replies(&seen), 1, "{generator}: one outcome");
+    }
 
     // Cancel and retry while the handler can't stop: the budget refuses
     // before allocating.
@@ -1083,6 +1117,16 @@ fn leases_end_with_the_program_s_reply() {
     // The killer holds the job object on Windows.
     drop(killer);
     settles(baseline);
+}
+
+/// Waits, without polling, until the reader has dropped `count` messages in
+/// all.
+fn wait_dropped(session: &Session, count: u64) {
+    let start = Instant::now();
+    while session.dropped() < count {
+        assert!(start.elapsed() < PATIENCE, "the queue never filled");
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
 
 fn poll_until_ledger(session: &mut Session, bytes: u64) {
@@ -1190,23 +1234,28 @@ fn a_refused_handle_request_hangs_the_program_up_even_unread() {
             ..SessionOptions::default()
         };
         let mut session = masks_session(dir.path(), options);
+        let dropped = session.dropped();
         let refused = send_mask(&mut session, "refuse").unwrap();
-        let start = Instant::now();
-        while session.dropped() < 17 {
-            assert!(start.elapsed() < PATIENCE, "the queue never filled");
-            std::thread::sleep(Duration::from_millis(5));
-        }
+        wait_dropped(&session, dropped + 17);
         let updates = session.poll(Instant::now());
         assert!(
             updates.iter().any(|u| matches!(u, Update::Hung { .. })),
             "{updates:?}"
         );
         assert!(session.ledger().in_use() > 0 || session.has_ended());
+        // Its one outcome is the error it was answered with, from the
+        // reader's record; the hang-up fails nothing twice.
         assert_eq!(
             reply_of(&updates, refused).unwrap().unwrap_err().code,
-            ErrorCode::Exited
+            ErrorCode::InvalidRequest
         );
-        until_gone(&mut session);
+        let rest = until_gone(&mut session);
+        let replies = updates
+            .iter()
+            .chain(&rest)
+            .filter(|u| matches!(u, Update::Reply { id, .. } if *id == refused))
+            .count();
+        assert_eq!(replies, 1);
     }
     settles(baseline);
 }
@@ -1248,4 +1297,61 @@ fn an_api_1_program_is_passed_no_handles() {
     assert_eq!(error.code, ErrorCode::InvalidRequest);
     assert_eq!(session.ledger().in_use(), 0);
     assert_eq!(session.in_flight(), 0);
+}
+
+/// Waits for the unit to end, checking all the while that the leases are
+/// counted until it has: the ledger is read first, so an empty ledger seen
+/// before the unit has ended is a lease released too soon.
+fn leases_outlive_the_program(ledger: &Ledger, killer: &rawmakase_extensions::session::Killer) {
+    let start = Instant::now();
+    loop {
+        let in_use = ledger.in_use();
+        let ended = killer.has_ended();
+        assert!(in_use > 0 || ended, "released before the program ended");
+        if ended && in_use == 0 {
+            return;
+        }
+        assert!(start.elapsed() < PATIENCE, "never released");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+/// A program stuck in a handler that holds its buffers: stopping it, and
+/// dropping its session, end the unit, and the leases end only once the unit
+/// has, on the ledger a restart would share. The stop keeps its deadline.
+#[test]
+fn leases_end_when_a_stopped_or_dropped_program_does() {
+    let _guard = shared();
+    let dir = tempfile::tempdir().unwrap();
+    let ledger = Ledger::new();
+    let options = || SessionOptions {
+        ledger: ledger.clone(),
+        lease_grace: Duration::from_secs(60),
+        ..SessionOptions::default()
+    };
+
+    let mut session = masks_session(dir.path(), options());
+    let stuck = send_mask(&mut session, "stubborn").unwrap();
+    started(&mut session, stuck);
+    let killer = session.killer();
+    let start = Instant::now();
+    let stopping = session.stop(later(600)).unwrap();
+    assert!(ledger.in_use() > 0 || killer.has_ended());
+    stopping.join();
+    assert!(
+        start.elapsed() < Duration::from_secs(2),
+        "the stop kept its deadline"
+    );
+    leases_outlive_the_program(&ledger, &killer);
+
+    let mut session = masks_session(dir.path(), options());
+    let stuck = send_mask(&mut session, "stubborn").unwrap();
+    started(&mut session, stuck);
+    // Cancelled first, so the lease is lingering as well as held.
+    assert!(session.cancel(stuck));
+    let held = send_mask(&mut session, "fill").unwrap();
+    assert!(session.is_admitted(held));
+    let killer = session.killer();
+    drop(session);
+    leases_outlive_the_program(&ledger, &killer);
 }
