@@ -387,9 +387,16 @@ impl ParameterId {
     /// The setting this control moves on photo `m`: a JPEG, PNG or TIFF keeps its
     /// white balance as relative Temp and Tint, so Temperature and Tint move those.
     pub fn for_photo(self, m: Option<&crate::camera_data::Metadata>) -> Self {
+        m.map_or(self, |m| self.for_source(m.source))
+    }
+    /// The setting this control moves on a photo of `source`, as
+    /// [`ParameterId::for_photo`]: for a photo not open, whose kind is known
+    /// before its file is read.
+    pub fn for_source(self, source: crate::camera_data::Source) -> Self {
+        let rendered = source == crate::camera_data::Source::Rendered;
         match self {
-            Self::Temperature if m.is_some_and(|m| m.is_rendered()) => Self::IncrementalTemperature,
-            Self::Tint if m.is_some_and(|m| m.is_rendered()) => Self::IncrementalTint,
+            Self::Temperature if rendered => Self::IncrementalTemperature,
+            Self::Tint if rendered => Self::IncrementalTint,
             other => other,
         }
     }

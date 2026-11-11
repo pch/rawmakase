@@ -155,7 +155,9 @@ controls unasked.
 ### Snapshots and proposals
 
 A read returns `{"token":t,"photos":[{"id":n,"path":"…","settings":{…}}]}`.
-Settings use the control layer's names and units. The token is opaque: it names
+Settings use the control layer's names and units; on a JPEG, PNG or TIFF,
+`temperature` and `tint` are its relative Temp and Tint (−100 to 100) in a
+read as in a proposal. The token is opaque: it names
 the catalog, its session and structure, and each photo's file and edit as
 read. A proposal sends it back; the app checks each photo just before applying
 and refuses one whose file, edit or metadata moved on as `stale_target`,

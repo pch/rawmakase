@@ -721,6 +721,87 @@ fn a_develop_read_that_matched_the_catalog_still_applies_once_the_photo_is_left(
     assert_eq!(exposure(e, &a), Some(1.0));
 }
 
+/// A proposal of `settings` for `photo`.
+fn proposal_of(token: &str, photo: PhotoId, settings: Value) -> ProposeSettings {
+    ProposeSettings {
+        op: 1,
+        token: token.to_string(),
+        changes: vec![SettingsChange {
+            photo: photo.0,
+            settings: settings.as_object().unwrap().clone(),
+        }],
+    }
+}
+
+#[test]
+fn a_rendered_photos_temp_and_tint_read_and_apply_as_its_sliders_show_them() {
+    let mut f = fixture(&["a.png", "b.png"]);
+    let e = &mut f.editor;
+    let (a, b) = (f.photos[0].clone(), f.photos[1].clone());
+    // A PNG keeps its white balance as relative Temp and Tint.
+    let recipe = crate::model::recipe::Recipe {
+        incremental_temperature: 25.,
+        incremental_tint: -15.,
+        ..Default::default()
+    };
+    for photo in [&a, &b] {
+        let identity = crate::storage::Identity::read(&photo.1).unwrap();
+        e.library
+            .as_mut()
+            .unwrap()
+            .session
+            .catalog_mut_for_tests()
+            .save_edit(
+                photo.0,
+                &photo.1,
+                &identity,
+                &recipe,
+                &Default::default(),
+                crate::catalog::HistoryUpdate::Keep,
+            )
+            .unwrap();
+    }
+    let wb = |read: &rawmakase_extensions::protocol::method::Snapshot| {
+        let s = &read.photos[0].settings;
+        (s["temperature"].clone(), s["tint"].clone())
+    };
+    // Not open: read as the worker reads it.
+    let read = e.read_photos(&[a.0]).unwrap();
+    assert_eq!(wb(&read), (json!(25.0), json!(-15.0)));
+    // Proposed back, it is what the photo's Temp slider moves.
+    let proposed = propose_now(
+        e,
+        proposal_of(&read.token, a.0, json!({"temperature": 30.0})),
+        "Warm",
+    );
+    assert_eq!(proposed.applied, vec![a.0.0], "{proposed:?}");
+    let saved = |e: &Editor, photo: &(PhotoId, PathBuf)| {
+        let library = e.library.as_ref().unwrap();
+        let catalog = library.session.catalog();
+        let r = catalog
+            .load_edit(photo.0, &photo.1)
+            .unwrap()
+            .unwrap()
+            .recipe;
+        (r.incremental_temperature, r.incremental_tint)
+    };
+    assert_eq!(saved(e, &a), (30., -15.));
+    // Open in Develop: the same.
+    open(e, &b);
+    let read = e.read_open_photo().unwrap();
+    assert_eq!(wb(&read), (json!(25.0), json!(-15.0)));
+    let proposed = propose_now(
+        e,
+        proposal_of(&read.token, b.0, json!({"tint": -5.0})),
+        "Tint",
+    );
+    assert_eq!(proposed.applied, vec![b.0.0], "{proposed:?}");
+    let r = e.document.edit.recipe();
+    assert_eq!((r.incremental_temperature, r.incremental_tint), (25., -5.));
+    let read = e.read_open_photo().unwrap();
+    assert_eq!(wb(&read), (json!(25.0), json!(-5.0)));
+}
+
 #[test]
 fn a_proposal_for_the_open_photo_and_others_is_one_undo() {
     let mut f = fixture(&["a.png", "b.png"]);

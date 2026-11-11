@@ -9,7 +9,7 @@ use crate::raster;
 use crate::raw::Raw;
 use anyhow::Result;
 use rawmakase_cancel::Cancel;
-use rawmakase_model::camera_data::{CameraImage, Metadata};
+use rawmakase_model::camera_data::{CameraImage, Metadata, Source};
 use std::path::Path;
 
 /// The imported lens profiles, shared by everything that opens photos (Develop's
@@ -36,11 +36,20 @@ impl Opened {
 /// JPEG, PNG or TIFF. A rendered file opens as the scene its default rendering is of
 /// (`develop::rendered`), which Develop renders as a raw scene.
 pub fn open_source(path: &Path, cancel: Cancel<'_>) -> Result<Opened> {
+    match source(path) {
+        Source::Raw => open(path).map(Opened::Raw),
+        Source::Rendered => raster::open(path, cancel)
+            .map(|image| Opened::Rendered(rawmakase_engine::develop::rendered::to_scene(image))),
+    }
+}
+
+/// What [`open_source`] opens `path` as, told from its name alone: a RAW, or
+/// a rendered JPEG, PNG or TIFF.
+pub fn source(path: &Path) -> Source {
     if rawmakase_model::storage::is_raw(path) {
-        open(path).map(Opened::Raw)
+        Source::Raw
     } else {
-        raster::open(path, cancel)
-            .map(|image| Opened::Rendered(rawmakase_engine::develop::rendered::to_scene(image)))
+        Source::Rendered
     }
 }
 

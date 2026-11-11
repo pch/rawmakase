@@ -201,7 +201,11 @@ impl Reading {
                         return Err(cancelled());
                     }
                     let (settings, error, fingerprint) = match settings {
-                        Ok(recipe) => (settings_of(&recipe), None, Some(fingerprint)),
+                        Ok(recipe) => (
+                            settings_of(&recipe, crate::photo::source(&target.path)),
+                            None,
+                            Some(fingerprint),
+                        ),
                         Err(e) => (Map::new(), Some(format!("{e:#}")), None),
                     };
                     (
@@ -231,12 +235,24 @@ impl Reading {
     }
 }
 
-/// A recipe's settings in the control layer's names and units.
-fn settings_of(recipe: &crate::model::recipe::Recipe) -> Map<String, Value> {
+/// A recipe's settings in the control layer's names and units, each read
+/// from the setting a proposal of it moves on a photo of `source`
+/// ([`crate::model::params::ParameterId::for_source`]): a JPEG, PNG or
+/// TIFF's `temperature` and `tint` are its relative Temp and Tint.
+fn settings_of(
+    recipe: &crate::model::recipe::Recipe,
+    source: crate::camera_data::Source,
+) -> Map<String, Value> {
     let mut recipe = recipe.clone();
     Param::all()
         .into_iter()
-        .map(|(name, param)| (name, Value::from(param.shown(&mut recipe, 0))))
+        .map(|(name, param)| {
+            let param = match param {
+                Param::Setting(id) => Param::Setting(id.for_source(source)),
+                other => other,
+            };
+            (name, Value::from(param.shown(&mut recipe, 0)))
+        })
         .collect()
 }
 
@@ -308,7 +324,13 @@ impl Editor {
                 Photo {
                     id: id.0,
                     path: photo.path.clone(),
-                    settings: settings_of(self.document.edit.recipe()),
+                    settings: settings_of(
+                        self.document.edit.recipe(),
+                        self.document
+                            .metadata
+                            .as_ref()
+                            .map_or_else(|| crate::photo::source(&photo.path), |m| m.source),
+                    ),
                     error: None,
                 },
                 TokenPhoto {
