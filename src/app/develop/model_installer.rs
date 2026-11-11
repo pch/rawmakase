@@ -1,6 +1,8 @@
 //! Installing and removing the model packs (Select Subject's and Sky's, AI Denoise's)
 //! on their own threads, only on the user's choice. What an install does is in
-//! [`crate::model_install`].
+//! [`crate::model_install`]. Each feature keeps its own [`Installer`]: Select
+//! Subject's and Sky's in [`Selection`](super::tools::subject_mask::Selection),
+//! AI Denoise's on the editor beside its service.
 use crate::app::task::Stopping;
 use crate::app::worker::Event;
 use crate::model_install::{InstallError, Pack, Progress};
@@ -9,46 +11,25 @@ use std::path::PathBuf;
 use std::sync::{Arc, mpsc::Sender};
 use std::time::Duration;
 
-/// The installs of each pack.
-pub(crate) struct Models {
-    pub(in crate::app) subject: Installer,
-    pub(in crate::app) sky: Installer,
-    pub(in crate::app) denoise: Installer,
-}
-impl Default for Models {
-    fn default() -> Self {
-        Self {
-            subject: Installer::default(),
-            sky: Installer {
-                pack: Pack::Sky,
-                ..Installer::default()
-            },
-            denoise: Installer {
-                pack: Pack::Denoise,
-                ..Installer::default()
-            },
+impl crate::app::Editor {
+    /// The installer of `pack`, wherever the feature using it keeps it.
+    pub(in crate::app) fn installer(&self, pack: Pack) -> &Installer {
+        match pack {
+            Pack::Subject => &self.selection.models.subject,
+            Pack::Sky => &self.selection.models.sky,
+            Pack::Denoise => &self.ai_denoise_model,
         }
     }
-}
-impl Models {
-    pub(in crate::app) fn of(&self, pack: Pack) -> &Installer {
+    pub(in crate::app) fn installer_mut(&mut self, pack: Pack) -> &mut Installer {
         match pack {
-            Pack::Subject => &self.subject,
-            Pack::Sky => &self.sky,
-            Pack::Denoise => &self.denoise,
-        }
-    }
-    pub(in crate::app) fn of_mut(&mut self, pack: Pack) -> &mut Installer {
-        match pack {
-            Pack::Subject => &mut self.subject,
-            Pack::Sky => &mut self.sky,
-            Pack::Denoise => &mut self.denoise,
+            Pack::Subject => &mut self.selection.models.subject,
+            Pack::Sky => &mut self.selection.models.sky,
+            Pack::Denoise => &mut self.ai_denoise_model,
         }
     }
 }
 
 /// One pack on disk and the install in progress, if any.
-#[derive(Default)]
 pub(crate) struct Installer {
     pack: Pack,
     /// What the folder held when last looked at, and when: the files on disk decide
@@ -63,6 +44,16 @@ pub(crate) struct Installer {
 }
 
 impl Installer {
+    pub(in crate::app) fn new(pack: Pack) -> Self {
+        Self {
+            pack,
+            seen: Default::default(),
+            progress: None,
+            thread: None,
+            removing: false,
+            failed: None,
+        }
+    }
     pub(in crate::app) fn installed(&self) -> bool {
         if self.removing {
             return false;
@@ -193,7 +184,7 @@ mod tests {
 
     #[test]
     fn a_failed_install_says_why_until_the_next_one() {
-        let mut installer = Installer::default();
+        let mut installer = Installer::new(Pack::Subject);
         installer.finished(&Err(InstallError::Failed(
             "could not download the model: timed out".into(),
         )));

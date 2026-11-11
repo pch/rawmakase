@@ -159,7 +159,7 @@ impl crate::app::Editor {
             self.load_finished_ai(image, &file);
             return;
         }
-        let model = self.selection.models.denoise.path();
+        let model = self.ai_denoise_model.path();
         if model.is_none() {
             self.document.ai.status = Some(State::Failed(
                 "Install the AI Denoise model to use it.".into(),
@@ -252,22 +252,18 @@ impl crate::app::Editor {
     /// and the photo shown asks again (and is told to install it) when next rendered.
     pub(in crate::app) fn remove_ai_denoise_model(&mut self) {
         let service = self.ai_denoise.clone();
-        self.selection
-            .models
-            .of_mut(crate::model_install::Pack::Denoise)
-            .remove(
-                move || service.unload(),
-                self.tx.clone(),
-                self.context.clone(),
-            );
+        self.ai_denoise_model.remove(
+            move || service.unload(),
+            self.tx.clone(),
+            self.context.clone(),
+        );
         self.document.ai = Default::default();
         self.schedule();
     }
     /// The service as exports reach it, with the installed model (or none, when every
     /// photo with AI Denoise on fails with the reason).
     pub(in crate::app) fn ai_service(&self) -> rawmakase_decode::ai::denoise::AiService {
-        self.ai_denoise
-            .set_model(self.selection.models.denoise.path());
+        self.ai_denoise.set_model(self.ai_denoise_model.path());
         rawmakase_decode::ai::denoise::AiService(Arc::new(self.ai_denoise.clone()))
     }
     /// The results' disk cache, which follows the decode cache's folder.

@@ -726,3 +726,33 @@ fn a_region_overtaken_by_a_pan_still_shows_where_it_was_rendered() {
     e.events(&ctx);
     assert_eq!(e.preview.status, "last");
 }
+
+/// AI Denoise's model events reach AI Denoise's installer, not Select Subject's,
+/// and its removal is named for what was removed.
+#[test]
+fn ai_denoise_model_events_reach_its_own_installer() {
+    use crate::model_install::{InstallError, Pack};
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    e.tx.send(Event::ModelInstalled(
+        Pack::Denoise,
+        Err(InstallError::Failed("timed out".into())),
+    ))
+    .unwrap();
+    e.events(&ctx);
+    assert_eq!(e.ai_denoise_model.failure(), Some("timed out"));
+    assert_eq!(e.selection.models.subject.failure(), None);
+    assert_eq!(e.selection.models.sky.failure(), None);
+    e.tx.send(Event::ModelRemoved(Pack::Denoise, Ok(())))
+        .unwrap();
+    e.events(&ctx);
+    assert_eq!(e.messages.line(), "AI Denoise model removed");
+    e.tx.send(Event::ModelRemoved(Pack::Sky, Ok(()))).unwrap();
+    e.events(&ctx);
+    assert_eq!(e.messages.line(), "Selection model removed");
+}

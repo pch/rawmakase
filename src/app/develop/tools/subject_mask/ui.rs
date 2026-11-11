@@ -279,9 +279,9 @@ impl Editor {
             .and_then(|l| l.session.catalog().supports_raster_masks().ok())
             .unwrap_or(false);
         let pack = request.feature.pack();
-        let model = self.selection.models.of(pack).installed();
+        let model = self.installer(pack).installed();
         let upgrading = self.selection.upgrading.is_some();
-        let installing = self.selection.models.of(pack).busy();
+        let installing = self.installer(pack).busy();
         let accent = egui::Color32::from_rgb(96, 150, 230);
         egui::Frame::new()
             .fill(egui::Color32::from_rgb(34, 44, 62))
@@ -391,14 +391,14 @@ impl Editor {
         });
     }
     fn model_step(&mut self, ui: &mut egui::Ui, pack: Pack, installing: bool) {
-        if let Some((done, total)) = self.selection.models.of(pack).progress() {
+        if let Some((done, total)) = self.installer(pack).progress() {
             ui.add(
                 egui::ProgressBar::new(done as f32 / total.max(1) as f32)
                     .desired_width(ui.available_width())
                     .text(format!("{} of {} MB", done / 1_000_000, total / 1_000_000)),
             );
             if ui.button("Cancel download").clicked() {
-                self.selection.models.of_mut(pack).cancel();
+                self.installer_mut(pack).cancel();
             }
             return;
         }
@@ -409,7 +409,7 @@ impl Editor {
             });
             return;
         }
-        if let Some(why) = self.selection.models.of(pack).failure() {
+        if let Some(why) = self.installer(pack).failure() {
             ui.add(
                 egui::Label::new(
                     egui::RichText::new(format!(
@@ -455,7 +455,7 @@ impl Editor {
             (Pack::Subject, "Remove selection model"),
             (Pack::Sky, "Remove sky model"),
         ] {
-            if !self.selection.models.of(pack).installed() {
+            if !self.installer(pack).installed() {
                 continue;
             }
             indented(ui, |ui| {
@@ -468,11 +468,8 @@ impl Editor {
                     .clicked();
                 if remove {
                     let unload = self.selection.worker.unloader();
-                    self.selection.models.of_mut(pack).remove(
-                        unload,
-                        self.tx.clone(),
-                        self.context.clone(),
-                    );
+                    let (tx, ctx) = (self.tx.clone(), self.context.clone());
+                    self.installer_mut(pack).remove(unload, tx, ctx);
                 }
             });
         }

@@ -10,6 +10,7 @@ pub(in crate::app) mod editing;
 pub(in crate::app) mod hdr_histogram;
 pub(in crate::app) mod hdr_preview;
 pub(in crate::app) mod lensfun;
+pub(in crate::app) mod model_installer;
 #[cfg(test)]
 pub(in crate::app) mod one_shot_worker_tests;
 pub(in crate::app) mod panels;

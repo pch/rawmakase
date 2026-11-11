@@ -203,8 +203,8 @@ const WORK: &[Row] = &[
         pauses_checksums: false,
         stop: Some(|e| Vec::from(e.stand_ins.stop())),
     },
-    // Its tile (Subject, Sky); the model installers and the upgrade thread are
-    // stopped with it.
+    // Its tile (Subject, Sky); Subject's and Sky's model installers and the
+    // upgrade thread are stopped with it.
     Row {
         kind: Kind::Selection,
         running: None,
@@ -214,7 +214,7 @@ const WORK: &[Row] = &[
         pauses_checksums: false,
         stop: Some(|e| e.selection.stop()),
     },
-    // Detail's AI Denoise status line.
+    // Detail's AI Denoise status line; its model installer is stopped with it.
     Row {
         kind: Kind::AiDenoise,
         running: Some(|e| e.ai_denoise.busy()),
@@ -222,7 +222,11 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: true,
         pauses_checksums: false,
-        stop: Some(|e| vec![task::Stopping::new(e.ai_denoise.stop())]),
+        stop: Some(|e| {
+            let mut stopping = vec![task::Stopping::new(e.ai_denoise.stop())];
+            stopping.extend(e.ai_denoise_model.stop());
+            stopping
+        }),
     },
     // The Loupe's load of a finished AI Denoise result. Nothing shows while it
     // runs: the photo stays plain until the result arrives.

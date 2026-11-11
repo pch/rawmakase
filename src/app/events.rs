@@ -168,7 +168,7 @@ impl Editor {
                 Event::AiDenoise(update) => self.ai_denoise_update(*update),
                 Event::AiDenoiseStored(path) => self.ai_result_stored(&path),
                 Event::ModelInstalled(pack, result) => {
-                    self.selection.models.of_mut(pack).finished(&result);
+                    self.installer_mut(pack).finished(&result);
                     if matches!(result, Err(crate::model_install::InstallError::Cancelled)) {
                         self.messages.note("Model download cancelled");
                     } else {
@@ -185,8 +185,11 @@ impl Editor {
                     }
                 }
                 Event::ModelRemoved(pack, result) => {
-                    self.selection.models.of_mut(pack).removed();
+                    self.installer_mut(pack).removed();
                     match result {
+                        Ok(()) if pack == crate::model_install::Pack::Denoise => {
+                            self.messages.done("AI Denoise model removed")
+                        }
                         Ok(()) => self.messages.done("Selection model removed"),
                         Err(e) => self.messages.fail(format!("Model not removed: {e}")),
                     }

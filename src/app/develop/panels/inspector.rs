@@ -570,9 +570,9 @@ impl Editor {
             suggest: self.lensfun.suggest,
         };
         let ai_view = ai_denoise::View {
-            installed: self.selection.models.denoise.installed(),
-            progress: self.selection.models.denoise.progress(),
-            install_failure: self.selection.models.denoise.failure().map(str::to_string),
+            installed: self.ai_denoise_model.installed(),
+            progress: self.ai_denoise_model.progress(),
+            install_failure: self.ai_denoise_model.failure().map(str::to_string),
             megabytes: crate::model_install::Pack::Denoise.megabytes(),
             status: self.document.ai.status().cloned(),
         };
@@ -767,10 +767,7 @@ impl Editor {
             }
             Some(ai_denoise::Action::Remove) => self.remove_ai_denoise_model(),
             Some(ai_denoise::Action::Cancel) => {
-                self.selection
-                    .models
-                    .of_mut(crate::model_install::Pack::Denoise)
-                    .cancel();
+                self.ai_denoise_model.cancel();
             }
             None => {}
         }
