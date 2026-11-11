@@ -148,12 +148,7 @@ fn unpack_within(path: &Path, into: &Path, cap: u64) -> Result<Manifest> {
             "{missing} is listed in {SUMS} but not in the package"
         )));
     }
-    let stated = stated_target(path, &manifest);
-    for (key, path) in package_paths(&manifest, &stated) {
-        if !seen.contains(&path) {
-            return Err(Error::new(format!("{key} {path} is not in the package")));
-        }
-    }
+    let stated = check_inventory(path, &manifest, |name| seen.contains(name))?;
     #[cfg(unix)]
     if let Some(program) = &manifest.program {
         use std::os::unix::fs::PermissionsExt;
@@ -166,9 +161,15 @@ fn unpack_within(path: &Path, into: &Path, cap: u64) -> Result<Manifest> {
 /// Whether `dir` holds exactly the files of the package at `path`, as
 /// [`unpack`] leaves them: every file `SHA256SUMS` lists, with its digest,
 /// and no other file or link. Folders aren't compared. Anything that can't
-/// be read counts as a difference.
+/// be read counts as a difference, and so does a package [`unpack`] would
+/// refuse for lacking a file its manifest names ([`check_inventory`]).
 pub fn is_unpacked_in(path: &Path, dir: &Path) -> bool {
-    let Ok(sums) = open(path).and_then(|mut archive| read_sums(&mut archive)) else {
+    let Ok(sums) = open(path).and_then(|mut archive| {
+        let sums = read_sums(&mut archive)?;
+        let manifest = read_manifest(&mut archive)?;
+        check_inventory(path, &manifest, |name| sums.contains_key(name))?;
+        Ok(sums)
+    }) else {
         return false;
     };
     let mut found = BTreeSet::new();
@@ -245,6 +246,24 @@ pub fn program_path(program: &manifest::Program, target: &str) -> String {
         path.push_str(".exe");
     }
     path
+}
+
+/// Checks that a package's files, those `holds` says it has, include every
+/// file its manifest names for the target its file name states, and returns
+/// that target. [`unpack`] and [`is_unpacked_in`] both apply it, so a folder
+/// is reused only for a package that could be unpacked.
+fn check_inventory(
+    path: &Path,
+    manifest: &Manifest,
+    holds: impl Fn(&str) -> bool,
+) -> Result<String> {
+    let stated = stated_target(path, manifest);
+    for (key, path) in package_paths(manifest, &stated) {
+        if !holds(&path) {
+            return Err(Error::new(format!("{key} {path} is not in the package")));
+        }
+    }
+    Ok(stated)
 }
 
 /// The files the manifest names, which a package for `target` must hold.

@@ -503,6 +503,38 @@ mod tests {
     }
 
     #[test]
+    fn a_folder_missing_a_file_its_manifest_names_is_never_reused() {
+        let data = tempfile::tempdir().unwrap();
+        let store = Store::new(data.path());
+        let first = package(data.path(), "1.0.0");
+        let installed = store.install(&first, &source(&first), &app()).unwrap();
+        let program =
+            crate::program_file(&installed.dir, installed.manifest.program.as_ref().unwrap());
+        std::fs::remove_file(&program).unwrap();
+        // The same version with only its manifest, which its SHA256SUMS lists
+        // alone: the damaged folder holds exactly those files.
+        let manifest_only = files("1.0.0").remove(0);
+        let sums = package::write_sums([(manifest_only.0.as_str(), manifest_only.1.as_slice())]);
+        let path = data.path().join("manifest-only");
+        std::fs::create_dir(&path).unwrap();
+        let path = path.join(first.file_name().unwrap());
+        raw_zip(
+            &path,
+            &[
+                (&manifest_only.0, &manifest_only.1),
+                (package::SUMS, sums.as_bytes()),
+            ],
+        );
+        assert!(!package::is_unpacked_in(&path, &installed.dir));
+        let error = store.install(&path, &source(&path), &app()).unwrap_err();
+        assert!(error.0.contains("program.path"), "{error}");
+        assert!(!program.exists());
+        // The intact package still repairs it.
+        store.install(&first, &source(&first), &app()).unwrap();
+        assert_eq!(std::fs::read(&program).unwrap(), b"program 1.0.0");
+    }
+
+    #[test]
     fn an_incompatible_or_official_package_is_refused_before_unpacking() {
         let data = tempfile::tempdir().unwrap();
         let store = Store::new(data.path());
