@@ -399,8 +399,36 @@ parametric curve beside the same values set as sliders.
 
 Still refused: a look that sets a slider whose HDR rendering isn't measured (Adobe
 Vivid and Adobe Landscape set Clarity, Highlights and Shadows), and a look's split
-toning. These looks were measured on synthetic ramps and patches; their check on
-photos is [Open](#open).
+toning.
+
+**On photos** (2026-11-11). The six validation photos of [Validation](#validation)
+(Adobe Standard, HDR limit 4) through a `.cube` look (creative), an HSV-table look at
+50%, an Adobe RGB RGB-table look at 150% and the B&W look, against Camera Raw 18.7's
+renders of the same: every photo but the Panasonic S1M2 meets the HDR tolerances, as
+it does without a look.
+
+| Photo | Median / p95 above white (stop), worst look | Peak, worst look | ΔE_ITP mean, worst look |
+| --- | --- | --- | --- |
+| Nikon Z 8 | 0.056 / 0.087 (B&W) | +0.082 | 3.5 (`.cube`) |
+| Nikon Z f | 0.023 / 0.032 (B&W) | +0.133 (`.cube`) | 2.4 (B&W) |
+| Nikon Z6 III | 0.020 / 0.149 (table at 50%) | +0.125 (B&W) | 2.3 (B&W) |
+| Sony A7R III | 0.040 / 0.075 (B&W) | −0.012 | 1.5 (`.cube`) |
+| Canon 850D | 0.037 / 0.057 (B&W) | +0.034 | 2.1 (B&W) |
+| Panasonic S1M2 | 0.095 / 0.762 (`.cube`) | −0.056 | 39.9 (`.cube`) |
+
+The S1M2 fails as its neutral render does (an SDR gap of that body). The Z6 III's peak
+misses as its neutral render's does (+0.108). The Z f's `.cube` peak is one saturated
+channel: its luminance peak is within 0.012 stop (2.565 against 2.543), the channel
+3.92 against 3.58.
+
+The remaining colour patches: the `.cube` creative and hue-rotation looks, the tables at
+50% and 200% and the 1D table score as the patches do without a look (median ΔE_ITP
+0.2–0.7). Two looks miss on saturation-0.9 patches only, which the tolerances report
+apart: the B&W look (median 0.038 stop, p95 0.49; worst at 0.25 to 0.5 times white,
+below white, where the saturation-0.9 patches miss in SDR too) and a B&W `.cube`, whose
+saturation-0.9 red and magenta patches, far outside its sRGB table's gamut, Camera Raw
+renders almost black at and above white (up to 16 stops darker; 3 of 216 patches at 8
+times white), where RAWmakase renders their gray.
 
 ### HDR files
 
@@ -1040,11 +1068,9 @@ doesn't port masks yet.
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
   and its sliders.
-- Looks on photos: RGB-table, `.cube`, Profile Amount and B&W looks were measured on
-  synthetic ramps and patches ([Looks](#looks)); their check on the six validation
-  photos, and the remaining colour patches (`.cube`, B&W and Amount looks), wait for
-  Camera Raw captures. Looks that set Clarity or Highlights, and split toning, stay
-  refused.
+- Looks that set Clarity or Highlights, and split toning, stay refused. A B&W `.cube`
+  renders saturation-0.9 red and magenta out of its gamut almost black above white in
+  Camera Raw ([Looks](#looks)); RAWmakase renders their gray.
 - Saturated colours: with no look, the colour patches at saturation 0.9 differ from
   Camera Raw by a median ΔE_ITP of 24 at every intensity, below white too, while
   those at 0.3 and 0.6 differ by 0.2; not HDR's.
