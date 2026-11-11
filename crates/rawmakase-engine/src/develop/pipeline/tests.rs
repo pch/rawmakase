@@ -2471,19 +2471,29 @@ fn a_render_fits_in_an_eighth_of_a_worker_stack() -> anyhow::Result<()> {
         points: vec![[0., 0.], [0.25, 0.3], [0.75, 0.7], [1., 1.]],
         ..Default::default()
     };
-    // HDR with every point curve holds the most curve tables.
-    let mut r = scene_stage_recipe();
+    // An HDR edit with every point curve holds the most curve tables: its master
+    // and its SDR rendition (which `render` gives) are both checked.
+    let mut im = fixture();
+    im.metadata.cam_xyz = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
+    let mut r = Recipe {
+        profile: crate::camera_profiles::CameraProfile::camera_matrix_default(&im.metadata)
+            .map(std::sync::Arc::new),
+        exposure: 0.4,
+        contrast: 0.3,
+        ..Default::default()
+    };
     r.hdr.enabled = true;
-    r.saturation = 0.;
     r.curve = curve.clone();
     r.effects.channels = [curve.clone(), curve.clone(), curve];
     let r = r.checked()?;
-    let im = fixture();
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(1)
         .stack_size(256 * 1024)
         .thread_name(|_| "a_render_fits_in_an_eighth_of_a_worker_stack".into())
         .build()?;
-    pool.install(|| crate::develop::render(&im, &r, 0, Cancel::NEVER))?;
+    pool.install(|| {
+        crate::develop::render(&im, &r, 0, Cancel::NEVER)?;
+        crate::develop::render_hdr(&im, &r, None, 0, Cancel::NEVER)
+    })?;
     Ok(())
 }
