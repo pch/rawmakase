@@ -112,12 +112,16 @@ mod tests {
         std::fs::write(&installed, b"").unwrap();
         assert_eq!(program(MANIFEST, &data, &dirs).unwrap(), installed);
         let store = Store::new(&data);
-        store.set_enabled("rawmakase.mcp", false).unwrap();
+        store
+            .set_enabled("rawmakase.mcp", false, &["rawmakase.mcp"])
+            .unwrap();
         assert_eq!(
             program(MANIFEST, &data, &dirs).unwrap_err().0,
             "The MCP extension is disabled in Preferences > Extensions"
         );
-        store.set_enabled("rawmakase.mcp", true).unwrap();
+        store
+            .set_enabled("rawmakase.mcp", true, &["rawmakase.mcp"])
+            .unwrap();
         assert_eq!(program(MANIFEST, &data, &dirs).unwrap(), installed);
     }
 
