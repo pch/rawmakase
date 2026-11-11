@@ -163,6 +163,62 @@ fn unpack_within(path: &Path, into: &Path, cap: u64) -> Result<Manifest> {
     Ok(manifest)
 }
 
+/// Whether `dir` holds exactly the files of the package at `path`, as
+/// [`unpack`] leaves them: every file `SHA256SUMS` lists, with its digest,
+/// and no other file or link. Folders aren't compared. Anything that can't
+/// be read counts as a difference.
+pub fn is_unpacked_in(path: &Path, dir: &Path) -> bool {
+    let Ok(sums) = open(path).and_then(|mut archive| read_sums(&mut archive)) else {
+        return false;
+    };
+    let mut found = BTreeSet::new();
+    if !list_files(dir, "", &mut found) || found.len() != sums.len() {
+        return false;
+    }
+    sums.iter().all(|(name, expected)| {
+        found.contains(name)
+            && std::fs::File::open(dir.join(local_path(name)))
+                .and_then(|mut file| {
+                    let mut hash = Sha256::new();
+                    let mut buffer = vec![0u8; 64 << 10];
+                    loop {
+                        match file.read(&mut buffer)? {
+                            0 => break,
+                            n => hash.update(&buffer[..n]),
+                        }
+                    }
+                    Ok(hex(&hash.finalize()) == *expected)
+                })
+                .unwrap_or(false)
+    })
+}
+
+/// Adds the files under `dir` to `found` as package paths, after `prefix`.
+/// False when it holds a link or a name that isn't UTF-8, or can't be read.
+fn list_files(dir: &Path, prefix: &str, found: &mut BTreeSet<String>) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in entries {
+        let Ok(entry) = entry else { return false };
+        let name = entry.file_name();
+        let (Ok(kind), Some(name)) = (entry.file_type(), name.to_str()) else {
+            return false;
+        };
+        let name = format!("{prefix}{name}");
+        if kind.is_dir() {
+            if !list_files(&entry.path(), &format!("{name}/"), found) {
+                return false;
+            }
+        } else if kind.is_file() {
+            found.insert(name);
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
 /// A package path as a relative path on this computer.
 fn local_path(name: &str) -> std::path::PathBuf {
     name.split('/').collect()

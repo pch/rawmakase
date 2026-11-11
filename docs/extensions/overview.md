@@ -35,7 +35,7 @@ Under the data folder (`RAWMAKASE_DATA_DIR`, else the platform's, as for
 
 | Path | What |
 | --- | --- |
-| `extensions/<id>/<version>/` | An installed version, unpacked and verified. Never changed once in place |
+| `extensions/<id>/<version>/` | An installed version, unpacked and verified. Never changed once in place; installing the version again reuses the folder only if it still holds exactly the package's files, and otherwise replaces it whole |
 | `extensions/.staging-*`, `extensions/.download-*` | An install or a download in progress. One a crash left is removed by the host's housekeeping (`Store::clean`, which the app runs at start) once it is an hour old |
 | `extensions.json` | What is installed, which version is active, enabled or not, where it came from, its settings, developer folders ([below](#extensionsjson)) |
 | `extensions.lock` | Held while `extensions.json` changes |

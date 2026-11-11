@@ -7,7 +7,9 @@
 //! An install that fails or is interrupted at any point therefore leaves the
 //! previous version installed and active; a staging folder it left behind is
 //! removed by a later [`Store::clean`]. A version folder is only ever renamed
-//! into place complete and never changed afterwards.
+//! into place complete and never changed afterwards; installing its version
+//! again replaces it, the same way, when it no longer holds exactly its
+//! package's files ([`package::is_unpacked_in`]).
 use crate::package;
 use crate::state::{Source, State};
 use crate::{Error, Manifest, Result};
@@ -110,7 +112,9 @@ impl Store {
 
     /// Installs a package and makes its version the active one, keeping the
     /// extension's enabled state and settings. Installing a version already
-    /// installed makes it active again without unpacking.
+    /// installed makes it active again without unpacking when its folder
+    /// holds exactly this package's files; a folder that doesn't (one an
+    /// interrupted removal left part of) is replaced.
     pub fn install(
         &self,
         package_file: &Path,
@@ -121,7 +125,7 @@ impl Store {
         let id = inspected.manifest.extension.id.clone();
         let version = inspected.manifest.extension.version.to_string();
         let dir = self.version_dir(&id, &version);
-        let staging = if dir.is_dir() {
+        let staging = if package::is_unpacked_in(package_file, &dir) {
             None
         } else {
             std::fs::create_dir_all(self.root())?;
@@ -142,8 +146,15 @@ impl Store {
             }
         };
         let published = State::update(&self.data_dir, |state| {
-            if let Some(staging) = &staging {
-                publish(staging, &dir)?;
+            match &staging {
+                Some(staging) => self.publish(staging, &dir)?,
+                // `clean` took the folder since it was checked.
+                None if !dir.is_dir() => {
+                    return Err(Error::new(format!(
+                        "{id} {version} was removed while it was installed; install it again"
+                    )));
+                }
+                None => {}
             }
             let entry = state.entry(&id);
             let replaced = entry
@@ -300,22 +311,44 @@ impl Store {
             }
         }
     }
-}
 
-/// Renames a verified staging folder to its version's folder.
-fn publish(staging: &Path, dir: &Path) -> Result<()> {
-    let parent = dir.parent().expect("a version folder has a parent");
-    if dir.is_dir() {
-        // Another install of the same version published it first.
-        let _ = std::fs::remove_dir_all(staging);
-        return Ok(());
+    /// Renames a verified staging folder to its version's folder, under the
+    /// state's lock. A folder already there (left part-removed, or published
+    /// by another install of the same version meanwhile) is moved aside
+    /// first and deleted after; if the staging folder can't take its place,
+    /// it is moved back.
+    fn publish(&self, staging: &Path, dir: &Path) -> Result<()> {
+        let parent = dir.parent().expect("a version folder has a parent");
+        let failed = |e: std::io::Error| {
+            Error::from(e).context(format!("Could not install {}", dir.display()))
+        };
+        std::fs::create_dir_all(parent)?;
+        let _ = rawmakase_fs::sync_dir(staging);
+        // Named as a staging folder, so `clean` removes it if deleting it
+        // fails below (a file a running program holds on Windows).
+        let aside = self
+            .root()
+            .join(format!("{STAGING}{}", crate::random_suffix()));
+        let moved = match std::fs::symlink_metadata(dir) {
+            Ok(_) => {
+                std::fs::rename(dir, &aside).map_err(failed)?;
+                true
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(e) => return Err(failed(e)),
+        };
+        if let Err(e) = std::fs::rename(staging, dir) {
+            if moved {
+                let _ = std::fs::rename(&aside, dir);
+            }
+            return Err(failed(e));
+        }
+        let _ = rawmakase_fs::sync_dir(parent);
+        if moved {
+            let _ = std::fs::remove_dir_all(&aside);
+        }
+        Ok(())
     }
-    std::fs::create_dir_all(parent)?;
-    let _ = rawmakase_fs::sync_dir(staging);
-    std::fs::rename(staging, dir)
-        .map_err(|e| Error::from(e).context(format!("Could not install {}", dir.display())))?;
-    let _ = rawmakase_fs::sync_dir(parent);
-    Ok(())
 }
 
 #[cfg(test)]
@@ -415,6 +448,48 @@ mod tests {
             store.root().join(".staging-crashed").is_dir(),
             "not stale yet"
         );
+    }
+
+    #[test]
+    fn reinstalling_replaces_a_folder_left_part_removed() {
+        let data = tempfile::tempdir().unwrap();
+        let store = Store::new(data.path());
+        let first = package(data.path(), "1.0.0");
+        let installed = store.install(&first, &source(&first), &app()).unwrap();
+        let program =
+            crate::program_file(&installed.dir, installed.manifest.program.as_ref().unwrap());
+        // A folder that still matches is reused as it is.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let inode = || std::fs::metadata(&installed.dir).unwrap().ino();
+            let before = inode();
+            store.install(&first, &source(&first), &app()).unwrap();
+            assert_eq!(inode(), before);
+        }
+        // A removal that stopped after the program (a locked file, a crash),
+        // and one that left a stray file: each is unpacked again, whole.
+        let damage: [&dyn Fn(); 2] = [&|| std::fs::remove_file(&program).unwrap(), &|| {
+            std::fs::write(installed.dir.join("stray"), b"x").unwrap()
+        }];
+        for damage in damage {
+            damage();
+            assert!(!package::is_unpacked_in(&first, &installed.dir));
+            store.install(&first, &source(&first), &app()).unwrap();
+            assert!(package::is_unpacked_in(&first, &installed.dir));
+            assert_eq!(std::fs::read(&program).unwrap(), b"program 1.0.0");
+        }
+        assert_eq!(
+            store.list().unwrap()[0].entry.active.as_deref(),
+            Some("1.0.0")
+        );
+        // Nothing staged or moved aside is left.
+        let left: Vec<_> = std::fs::read_dir(store.root())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert_eq!(left, ["dev.test.tool"]);
     }
 
     #[test]
