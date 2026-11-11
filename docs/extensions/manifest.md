@@ -185,6 +185,12 @@ invert = true
 | `prompt-hint` | none | The line shown while the user aims with `prompt` |
 | `tile` | `[]` | Shortcuts in the mask drawer, each asking this generator for a new mask component (below) |
 
+Tiles show in the Masking drawer while the extension is enabled. A mask a
+generator made records its `provenance`, and Refine and Regenerate find the
+generator again through it; Regenerate is offered when the generator takes
+`none`. `prompt` is accepted, but the app doesn't collect it for extensions
+yet.
+
 Each `[[mask-generator.tile]]`:
 
 | Key | Default | Meaning |

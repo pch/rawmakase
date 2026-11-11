@@ -88,8 +88,12 @@ fn generated(seed: u8) -> Generated {
 /// Starts a selection the way the worker would be asked to, without a worker.
 fn begin(editor: &mut Editor, request: Request) -> u64 {
     let (generation, _) = editor.selection.task.start();
-    let guard = Guard::of(editor.document.edit.recipe(), request);
-    editor.selection.pending = Some(Pending { request, guard });
+    let guard = Guard::of(editor.document.edit.recipe(), request.target);
+    editor.selection.pending = Some(Pending {
+        request,
+        guard,
+        call: None,
+    });
     generation
 }
 fn finish(editor: &mut Editor, generation: u64, result: Result<Generated, Failure>) {
@@ -100,10 +104,14 @@ fn finish(editor: &mut Editor, generation: u64, result: Result<Generated, Failur
         result,
     });
 }
-const SUBJECT: Request = Request {
-    feature: Feature::Subject,
-    target: Target::NewMask,
-};
+/// The app's own selection a request asks for.
+fn feature(request: &Request) -> Feature {
+    match request.generator {
+        Generator::Feature(feature) => feature,
+        Generator::Extension(_) => panic!("an extension's generator"),
+    }
+}
+const SUBJECT: Request = Request::feature(Feature::Subject, Target::NewMask);
 
 #[test]
 fn a_selection_becomes_one_named_mask_and_one_history_step() {
@@ -151,10 +159,7 @@ fn a_selection_becomes_one_named_mask_and_one_history_step() {
 fn background_is_an_inverted_component_not_an_inverted_mask() {
     let mut f = fixture();
     let e = &mut f.editor;
-    let request = Request {
-        feature: Feature::Background,
-        target: Target::NewMask,
-    };
+    let request = Request::feature(Feature::Background, Target::NewMask);
     let g = begin(e, request);
     finish(e, g, Ok(generated(20)));
     let mask = &e.document.edit.recipe().masks[0];
@@ -172,13 +177,13 @@ fn a_selection_can_join_a_mask_as_a_component() {
     let e = &mut f.editor;
     let g = begin(e, SUBJECT);
     finish(e, g, Ok(generated(30)));
-    let request = Request {
-        feature: Feature::Background,
-        target: Target::Component {
+    let request = Request::feature(
+        Feature::Background,
+        Target::Component {
             mask: 0,
             op: MaskOp::Subtract,
         },
-    };
+    );
     let g = begin(e, request);
     finish(e, g, Ok(generated(31)));
     let mask = &e.document.edit.recipe().masks[0];
@@ -357,14 +362,14 @@ fn regeneration_replaces_only_the_raster() {
     let old = e.document.edit.recipe().masks[0].components[0]
         .shape
         .clone();
-    let regenerate = Request {
-        feature: Feature::Subject,
-        target: Target::Regenerate {
+    let regenerate = Request::feature(
+        Feature::Subject,
+        Target::Regenerate {
             mask: 0,
             component: 0,
         },
-    };
-    let g = begin(e, regenerate);
+    );
+    let g = begin(e, regenerate.clone());
     finish(e, g, Ok(generated(71)));
     let m = &e.document.edit.recipe().masks[0];
     assert_ne!(m.components[0].shape, old);
@@ -384,7 +389,7 @@ fn regeneration_replaces_only_the_raster() {
 
     // A failed regeneration leaves the old result in place.
     let before = e.document.edit.recipe().clone();
-    let g = begin(e, regenerate);
+    let g = begin(e, regenerate.clone());
     finish(e, g, Err(Failure::Failed("boom".into())));
     assert_eq!(*e.document.edit.recipe(), before);
 
@@ -644,13 +649,13 @@ fn a_selection_runs_through_the_remote_worker_into_one_mask() {
         vec![10; 12]
     );
     // A sky selection on the same photo comes from the same analysis.
-    e.request_selection(Request {
-        feature: Feature::Sky,
-        target: Target::Component {
+    e.request_selection(Request::feature(
+        Feature::Sky,
+        Target::Component {
             mask: 0,
             op: crate::model::masks::MaskOp::Add,
         },
-    });
+    ));
     let done = next_selection(e);
     assert!(done.result.is_ok(), "{:?}", done.result);
     e.selection_done(*done);
@@ -745,7 +750,8 @@ fn the_real_model_selects_through_the_worker_and_the_mask_changes_the_render() {
     let (generation, cancel) = e.selection.task.start();
     e.selection.pending = Some(Pending {
         request: SUBJECT,
-        guard: Guard::of(e.document.edit.recipe(), SUBJECT),
+        guard: Guard::of(e.document.edit.recipe(), SUBJECT.target),
+        call: None,
     });
     e.selection.worker.submit(
         worker::Job {
@@ -848,13 +854,13 @@ fn aiming_starts_with_nothing_and_each_click_refines_the_same_mask() {
         e.selection.prompting.as_ref().unwrap().applied,
         Some((0, 0))
     );
-    let request = Request {
-        feature: Feature::Subject,
-        target: Target::Regenerate {
+    let request = Request::feature(
+        Feature::Subject,
+        Target::Regenerate {
             mask: 0,
             component: 0,
         },
-    };
+    );
     let g = begin(e, request);
     finish(e, g, Ok(generated(111)));
     assert_eq!(e.document.edit.recipe().masks.len(), 1);
@@ -882,11 +888,8 @@ fn aiming_starts_with_nothing_and_each_click_refines_the_same_mask() {
 fn sky_is_a_plain_mask_of_its_own_and_background_is_the_inverted_subject() {
     let mut f = fixture();
     let e = &mut f.editor;
-    let sky = Request {
-        feature: Feature::Sky,
-        target: Target::NewMask,
-    };
-    let g = begin(e, sky);
+    let sky = Request::feature(Feature::Sky, Target::NewMask);
+    let g = begin(e, sky.clone());
     let mut made = generated(120);
     made.source.feature = FEATURE_SKY.into();
     finish(e, g, Ok(made));
@@ -925,13 +928,13 @@ fn refining_aims_at_the_selected_component_only_with_the_models_in_place() {
     // Aimed by hand, the first click's result replaces that component's raster.
     e.selection.prompt = None;
     e.selection.prompting = Some(Prompting {
-        request: Request {
-            feature: Feature::Subject,
-            target: Target::Regenerate {
+        request: Request::feature(
+            Feature::Subject,
+            Target::Regenerate {
                 mask: 0,
                 component: 0,
             },
-        },
+        ),
         points: Vec::new(),
         bounds: None,
         applied: Some((0, 0)),
@@ -939,13 +942,13 @@ fn refining_aims_at_the_selected_component_only_with_the_models_in_place() {
     let before = e.document.edit.recipe().masks[0].components[0]
         .shape
         .clone();
-    let regenerate = Request {
-        feature: Feature::Subject,
-        target: Target::Regenerate {
+    let regenerate = Request::feature(
+        Feature::Subject,
+        Target::Regenerate {
             mask: 0,
             component: 0,
         },
-    };
+    );
     let g = begin(e, regenerate);
     finish(e, g, Ok(generated(131)));
     assert_ne!(
@@ -985,12 +988,9 @@ fn each_selection_asks_for_its_own_models_once_and_then_runs() {
     );
     e.selection.cancel();
     // Sky has its own model: it asks, and its waiting request goes on the same way.
-    let sky = Request {
-        feature: Feature::Sky,
-        target: Target::NewMask,
-    };
-    e.request_selection(sky);
-    assert_eq!(e.selection.prompt, Some(Prompt::Model(sky)));
+    let sky = Request::feature(Feature::Sky, Target::NewMask);
+    e.request_selection(sky.clone());
+    assert_eq!(e.selection.prompt, Some(Prompt::Model(sky.clone())));
     assert!(e.selection.running().is_none());
     e.install_model_from(Pack::Sky, sky_folder);
     let (pack, result) = loop {
@@ -1047,13 +1047,13 @@ fn a_different_mask_of_the_same_kind_in_the_same_place_is_not_the_one_asked_for(
         ..Default::default()
     };
     e.change_edit(None, |r| r.masks.push(line(1.)));
-    let request = Request {
-        feature: Feature::Subject,
-        target: Target::Component {
+    let request = Request::feature(
+        Feature::Subject,
+        Target::Component {
             mask: 0,
             op: MaskOp::Add,
         },
-    };
+    );
     let g = begin(e, request);
     // Undo, a snapshot: another linear gradient now sits where the first one was.
     e.change_edit(None, |r| r.masks[0] = line(0.5));
@@ -1165,14 +1165,11 @@ fn sky_asks_for_its_own_model_and_having_subjects_does_not_install_it() {
         // The computer running the tests has it: nothing here can be observed.
         return;
     }
-    let sky = Request {
-        feature: Feature::Sky,
-        target: Target::NewMask,
-    };
-    assert_eq!(sky.feature.pack(), Pack::Sky);
-    assert_eq!(SUBJECT.feature.pack(), Pack::Subject);
-    e.request_selection(sky);
-    assert_eq!(e.selection.prompt, Some(Prompt::Model(sky)));
+    let sky = Request::feature(Feature::Sky, Target::NewMask);
+    assert_eq!(feature(&sky).pack(), Pack::Sky);
+    assert_eq!(feature(&SUBJECT).pack(), Pack::Subject);
+    e.request_selection(sky.clone());
+    assert_eq!(e.selection.prompt, Some(Prompt::Model(sky.clone())));
     // Subject's install finishing does not start the sky's waiting request, nor drop it.
     e.model_installed(Pack::Subject, Ok(()));
     assert_eq!(e.selection.prompt, Some(Prompt::Model(sky)));
@@ -1210,10 +1207,7 @@ fn aim(e: &mut Editor, request: Request) {
 const fn at(x: f32, y: f32, positive: bool) -> Point {
     Point { x, y, positive }
 }
-const BACKGROUND: Request = Request {
-    feature: Feature::Background,
-    target: Target::NewMask,
-};
+const BACKGROUND: Request = Request::feature(Feature::Background, Target::NewMask);
 const REFINE: Target = Target::Regenerate {
     mask: 0,
     component: 0,
@@ -1351,14 +1345,11 @@ fn each_tile_asks_the_model_for_its_own_feature() {
     let mut f = fixture();
     let e = &mut f.editor;
     capturing(e);
-    let sky = Request {
-        feature: Feature::Sky,
-        target: Target::NewMask,
-    };
-    for (n, request) in [SUBJECT, sky, BACKGROUND].into_iter().enumerate() {
-        e.request_selection(request);
+    let sky = Request::feature(Feature::Sky, Target::NewMask);
+    for (n, request) in [SUBJECT, sky.clone(), BACKGROUND].into_iter().enumerate() {
+        e.request_selection(request.clone());
         assert!(
-            matches!(asked(e)[n], Action::Auto(f) if f == request.feature),
+            matches!(asked(e)[n], Action::Auto(f) if f == feature(&request)),
             "{:?}",
             asked(e)[n]
         );
@@ -1366,7 +1357,7 @@ fn each_tile_asks_the_model_for_its_own_feature() {
     }
     // Sky's own model answers Sky; Subject's answers Subject and Background.
     assert_eq!(
-        [SUBJECT, sky, BACKGROUND].map(|r| r.feature.pack()),
+        [SUBJECT, sky, BACKGROUND].map(|r| feature(&r).pack()),
         [Pack::Subject, Pack::Sky, Pack::Subject]
     );
 }
@@ -1395,8 +1386,8 @@ fn background_aimed_or_refined_by_hand_asks_for_the_subject_and_stays_inverted()
     e.begin_refining(0, 0);
     e.prompt_click([0.4, 0.4], true);
     assert_eq!(click(e, 2).points, [at(0.4, 0.4, true)]);
-    let pending = e.selection.pending.as_ref().unwrap().request;
-    assert_eq!(pending.feature, Feature::Background);
+    let pending = e.selection.pending.as_ref().unwrap().request.clone();
+    assert_eq!(feature(&pending), Feature::Background);
     assert_eq!(pending.target, REFINE);
     answer(e, Ok(generated(176)));
     let m = &e.document.edit.recipe().masks;

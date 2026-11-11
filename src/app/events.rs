@@ -165,6 +165,7 @@ impl Editor {
                     self.auto_straighten_ready(generation, &analysed, result)
                 }
                 Event::Selection(done) => self.selection_done(*done),
+                Event::MaskPrepared(prepared) => self.mask_prepared(*prepared),
                 Event::AiDenoise(update) => self.ai_denoise_update(*update),
                 Event::AiDenoiseStored(path) => self.ai_result_stored(&path),
                 Event::ModelInstalled(pack, result) => {

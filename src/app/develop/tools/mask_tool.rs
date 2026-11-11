@@ -1089,13 +1089,13 @@ impl Editor {
                 invert,
                 ..
             } => Some((
-                crate::app::develop::tools::subject_mask::source_text(b),
-                crate::app::develop::tools::subject_mask::feature_of(b, *invert),
+                self.raster_source_text(b),
+                self.raster_generator(b, *invert),
             )),
             _ => None,
         };
-        if let Some((source, feature)) = generated {
-            self.regenerate_ui(ui, m, c, feature, &source);
+        if let Some((source, generator)) = generated {
+            self.regenerate_ui(ui, m, c, generator, &source);
         }
         let percent = Some((100., 0));
         let component = &mut self.document.edit.recipe_mut().masks[m].components[c];

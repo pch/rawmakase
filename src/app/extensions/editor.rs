@@ -117,6 +117,9 @@ impl Editor {
         now: Instant,
     ) -> (Vec<Outcome>, Option<Instant>) {
         self.tell_extensions();
+        for (extension, ticket) in self.selection.take_withdrawn() {
+            self.extensions.cancel_mask(&extension, ticket);
+        }
         // The host answers through the editor, which then can't reach it: it
         // is taken out for the poll, and an inert one stands in.
         let mut host = std::mem::take(&mut self.extensions);
@@ -160,8 +163,20 @@ impl Editor {
                     }
                     Err(e) => self.messages.fail(format!("{title}: {e}")),
                 },
+                Outcome::Mask {
+                    extension,
+                    ticket,
+                    result,
+                    buffers,
+                } => self.mask_answered(&extension, ticket, result, buffers),
+                Outcome::MaskSetup {
+                    extension,
+                    generator,
+                    result,
+                } => self.mask_setup_done(&extension, &generator, result),
             }
         }
+        self.check_mask_requests();
     }
 
     /// Tells programs what changed since the last frame: the selection, the

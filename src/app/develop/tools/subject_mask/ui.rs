@@ -1,19 +1,22 @@
-//! The Masking drawer's side of Subject and Background: the two actions, what
-//! they are waiting for, and what went wrong. Everything stays in the drawer; a
-//! selection that fails or is cancelled leaves the photo as it was.
-use super::{Failure, Feature, Pack, Prompt, Request, Target};
+//! The Masking drawer's side of Subject, Sky and Background, and of the
+//! extensions' mask generators: their tiles, what they are waiting for, and
+//! what went wrong. Everything stays in the drawer; a selection that fails or
+//! is cancelled leaves the photo as it was.
+use super::{Failure, Feature, Generator, Pack, Prompt, Request, Target};
 use crate::app::Editor;
 use crate::app::develop::tools::retouch_tool::{control_label, hint, indented};
+use crate::app::extensions::mask_generator::{Offer, Setup};
 use crate::app::ui::design::{self, Tone, radius, space, text};
 use eframe::egui;
+use rawmakase_extensions::protocol::message::NeedsSetup;
 
 impl Editor {
     /// The Select Subject and Select Background actions, with whatever the running or
     /// failed selection has to say. While the first use is being set up, the actions
     /// give way to a card that says what is needed, in order, and does it.
     pub(in crate::app) fn selection_actions(&mut self, ui: &mut egui::Ui) {
-        if let Some(request) = self.selection.running() {
-            self.selection_progress(ui, request);
+        if let Some(request) = self.selection.running().cloned() {
+            self.selection_progress(ui, &request);
             return;
         }
         if self.selection.prompting.is_some() {
@@ -36,14 +39,29 @@ impl Editor {
                     "Mask everything but the photo's main subject",
                 ),
             ] {
-                if self.feature_tile(ui, feature, w, tip, reason) {
-                    self.request_selection(Request {
-                        feature,
-                        target: Target::NewMask,
-                    });
+                if self.feature_tile(ui, feature.name(), Some(feature), w, tip, reason) {
+                    self.request_selection(Request::feature(feature, Target::NewMask));
                 }
             }
         });
+        // The enabled extensions' generators, three to a row.
+        let tiles = self.extensions.mask_tiles();
+        for row in tiles.chunks(3) {
+            control_label(ui, "", |ui| {
+                let gap = 4.;
+                let w = (ui.available_width() - 2. * gap) / 3.;
+                for (offer, why) in row {
+                    let tip = format!("Mask with {}", offer.name);
+                    let disabled = reason.or(why.as_deref());
+                    if self.feature_tile(ui, &offer.name, None, w, &tip, disabled) {
+                        self.request_selection(Request {
+                            generator: Generator::Extension(offer.clone()),
+                            target: Target::NewMask,
+                        });
+                    }
+                }
+            });
+        }
         if let Some(why) = reason {
             hint(ui, why);
         }
@@ -52,13 +70,14 @@ impl Editor {
         }
         self.model_footer(ui);
     }
-    /// One of the Select tiles: an icon over its name, as Lightroom's Add New Mask.
-    /// Returns whether it was clicked; when `disabled` says why, it is dimmed and says so
-    /// on hover.
+    /// One of the Select tiles: an icon over its name, as Lightroom's Add New Mask;
+    /// an extension's generator (`feature` none) has a plain frame. Returns whether
+    /// it was clicked; when `disabled` says why, it is dimmed and says so on hover.
     fn feature_tile(
         &self,
         ui: &mut egui::Ui,
-        feature: Feature,
+        name: &str,
+        feature: Option<Feature>,
         width: f32,
         tip: &str,
         disabled: Option<&str>,
@@ -74,7 +93,7 @@ impl Editor {
             egui::WidgetInfo::labeled(
                 egui::WidgetType::Button,
                 disabled.is_none(),
-                format!("Select {}", feature.name()),
+                format!("Select {name}"),
             )
         });
         let hot = response.hovered() && disabled.is_none();
@@ -88,16 +107,15 @@ impl Editor {
             (false, true) => Tone::BRIGHT,
             (false, false) => Tone::SOFT,
         });
-        paint_feature_icon(
-            ui.painter(),
-            rect.center_top() + egui::vec2(0., 20.),
-            feature,
-            ink,
-        );
+        let icon = rect.center_top() + egui::vec2(0., 20.);
+        match feature {
+            Some(feature) => paint_feature_icon(ui.painter(), icon, feature, ink),
+            None => paint_generator_icon(ui.painter(), icon, ink),
+        }
         ui.painter().text(
             rect.center_bottom() - egui::vec2(0., 9.),
             egui::Align2::CENTER_CENTER,
-            feature.name(),
+            name,
             egui::FontId::proportional(text::SMALL),
             ink,
         );
@@ -114,8 +132,8 @@ impl Editor {
         let Some(p) = &self.selection.prompting else {
             return;
         };
-        let (feature, points, boxed, applied) = (
-            p.request.feature,
+        let (name, points, boxed, applied) = (
+            p.request.generator.name().to_string(),
             p.points.len(),
             p.bounds.is_some(),
             p.applied.is_some(),
@@ -130,12 +148,9 @@ impl Editor {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.label(
-                    egui::RichText::new(format!(
-                        "Select {}: click it on the photo",
-                        feature.name()
-                    ))
-                    .strong()
-                    .size(text::LABEL),
+                    egui::RichText::new(format!("Select {name}: click it on the photo"))
+                        .strong()
+                        .size(text::LABEL),
                 );
                 ui.add_space(space::XS);
                 let small = |text: &str| {
@@ -268,17 +283,27 @@ impl Editor {
     /// What the first use needs, as a highlighted card in the place the actions were:
     /// the steps with the finished ones ticked, and the button for the next.
     fn setup_card(&mut self, ui: &mut egui::Ui) {
-        let request = match self.selection.prompt {
-            Some(Prompt::Model(r) | Prompt::Upgrade(r)) => Some(r),
-            None => self.selection.upgrading.map(|(_, r)| r),
+        let request = match &self.selection.prompt {
+            Some(prompt) => Some(prompt.request().clone()),
+            None => self.selection.upgrading.as_ref().map(|(_, r)| r.clone()),
         };
         let Some(request) = request else { return };
+        let feature = match &request.generator {
+            Generator::Feature(feature) => *feature,
+            Generator::Extension(offer) => {
+                let setup = match &self.selection.prompt {
+                    Some(Prompt::Setup { setup, .. }) => Some(setup.clone()),
+                    _ => None,
+                };
+                return self.generator_setup_card(ui, &request, &offer.clone(), setup);
+            }
+        };
         let upgraded = self
             .library
             .as_ref()
             .and_then(|l| l.session.catalog().supports_raster_masks().ok())
             .unwrap_or(false);
-        let pack = request.feature.pack();
+        let pack = feature.pack();
         let model = self.installer(pack).installed();
         let upgrading = self.selection.upgrading.is_some();
         let installing = self.installer(pack).busy();
@@ -291,12 +316,9 @@ impl Editor {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.label(
-                    egui::RichText::new(format!(
-                        "Before “Select {}” can run",
-                        request.feature.name()
-                    ))
-                    .strong()
-                    .size(text::LABEL),
+                    egui::RichText::new(format!("Before “Select {}” can run", feature.name()))
+                        .strong()
+                        .size(text::LABEL),
                 );
                 ui.add_space(space::XS);
                 let step = |ui: &mut egui::Ui, done: bool, current: bool, text: &str| {
@@ -333,7 +355,7 @@ impl Editor {
                 );
                 ui.add_space(space::S);
                 if !upgraded {
-                    self.upgrade_step(ui, request, upgrading);
+                    self.upgrade_step(ui, &request, upgrading);
                 } else if let Some(endpoint) = self.selection.remote.endpoint() {
                     ui.colored_label(
                         egui::Color32::from_rgb(110, 200, 130),
@@ -357,7 +379,101 @@ impl Editor {
                 }
             });
     }
-    fn upgrade_step(&mut self, ui: &mut egui::Ui, request: Request, upgrading: bool) {
+    /// The setup card of an extension's generator: the catalog's upgrade when
+    /// it is needed, then what the generator said it needs, with Download,
+    /// its progress and Cancel.
+    fn generator_setup_card(
+        &mut self,
+        ui: &mut egui::Ui,
+        request: &Request,
+        offer: &Offer,
+        setup: Option<NeedsSetup>,
+    ) {
+        let upgraded = self
+            .library
+            .as_ref()
+            .and_then(|l| l.session.catalog().supports_raster_masks().ok())
+            .unwrap_or(false);
+        let upgrading = self.selection.upgrading.is_some();
+        let state = self
+            .extensions
+            .mask_setup(&offer.extension, &offer.generator)
+            .cloned();
+        let accent = egui::Color32::from_rgb(96, 150, 230);
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgb(34, 44, 62))
+            .stroke(egui::Stroke::new(1.5, accent))
+            .corner_radius(radius::CONTROL)
+            .inner_margin(design::margin_same(space::M))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    egui::RichText::new(format!("Before “Select {}” can run", offer.name))
+                        .strong()
+                        .size(text::LABEL),
+                );
+                ui.add_space(space::XS);
+                if !upgraded {
+                    self.upgrade_step(ui, request, upgrading);
+                    return;
+                }
+                let Some(setup) = setup else { return };
+                ui.label(format!(
+                    "Download {} ({} MB)",
+                    setup.what,
+                    setup.bytes.div_ceil(1_000_000)
+                ));
+                ui.add_space(space::S);
+                match state {
+                    Some(Setup::Running { done, text }) => {
+                        let label = text.unwrap_or_else(|| "Downloading…".into());
+                        match done {
+                            Some(done) => {
+                                ui.add(
+                                    egui::ProgressBar::new(done as f32)
+                                        .desired_width(ui.available_width())
+                                        .text(label),
+                                );
+                            }
+                            None => {
+                                ui.horizontal(|ui| {
+                                    crate::app::ui::widgets::spinner(ui, 14.);
+                                    ui.label(label);
+                                });
+                            }
+                        }
+                        if ui.button("Cancel download").clicked() {
+                            self.extensions
+                                .cancel_mask_setup(&offer.extension, &offer.generator);
+                        }
+                        return;
+                    }
+                    Some(Setup::Failed(why)) => {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!("The download stopped: {why}"))
+                                    .size(text::SMALL)
+                                    .color(egui::Color32::from_rgb(230, 170, 90)),
+                            )
+                            .wrap(),
+                        );
+                        ui.add_space(space::XS);
+                    }
+                    None => {}
+                }
+                ui.horizontal(|ui| {
+                    let go = egui::Button::new(egui::RichText::new("Download").strong())
+                        .fill(egui::Color32::from_rgb(52, 98, 170));
+                    if ui.add(go).clicked() {
+                        self.setup_generator(offer);
+                    }
+                    if ui.button("Not now").clicked() {
+                        self.selection.prompt = None;
+                    }
+                });
+            });
+    }
+    fn upgrade_step(&mut self, ui: &mut egui::Ui, request: &Request, upgrading: bool) {
         let small = |text: &str| {
             egui::RichText::new(text)
                 .size(text::SMALL)
@@ -385,7 +501,7 @@ impl Editor {
             let go = egui::Button::new(egui::RichText::new("Upgrade catalog…").strong())
                 .fill(egui::Color32::from_rgb(52, 98, 170));
             if ui.add(go).clicked() {
-                self.upgrade_catalog(request);
+                self.upgrade_catalog(request.clone());
             }
             if ui.button("Not now").clicked() {
                 self.selection.prompt = None;
@@ -476,19 +592,22 @@ impl Editor {
             });
         }
     }
-    fn selection_progress(&mut self, ui: &mut egui::Ui, request: Request) {
+    fn selection_progress(&mut self, ui: &mut egui::Ui, request: &Request) {
         control_label(ui, "Select", |ui| {
             crate::app::ui::widgets::spinner(ui, 14.);
             // No percentage: the runtime reports none for a run.
-            let where_at = self
-                .selection
-                .remote
-                .endpoint()
-                .map(|endpoint| format!(" (on {endpoint})"))
-                .unwrap_or_default();
+            let where_at = match &request.generator {
+                Generator::Feature(_) => self
+                    .selection
+                    .remote
+                    .endpoint()
+                    .map(|endpoint| format!(" (on {endpoint})"))
+                    .unwrap_or_default(),
+                Generator::Extension(_) => String::new(),
+            };
             ui.label(format!(
                 "Finding the {}…{where_at}",
-                request.feature.name().to_lowercase()
+                request.generator.name().to_lowercase()
             ))
             .on_hover_text(
                 "The first selection on a photo takes a few seconds; the next ones are quick",
@@ -509,14 +628,17 @@ impl Editor {
             return;
         }
         hint(ui, &failure.message());
-        if *failure == Failure::NoSubject {
+        let builtin = matches!(request.generator, Generator::Feature(_));
+        if *failure == Failure::NoSubject && builtin {
             hint(
                 ui,
                 "Automatic selection knows people and animals. For anything else, click it yourself.",
             );
         }
+        let aim = matches!(failure, Failure::NoSubject | Failure::NothingFound)
+            && request.generator.takes_prompt();
         indented(ui, |ui| {
-            if *failure == Failure::NoSubject
+            if aim
                 && ui
                     .add(
                         egui::Button::new(egui::RichText::new("Click the subject…").strong())
@@ -524,7 +646,7 @@ impl Editor {
                     )
                     .clicked()
             {
-                self.begin_aiming(request);
+                self.begin_aiming(request.clone());
             }
             if ui.button("Try again").clicked() {
                 self.selection.failure = None;
@@ -532,7 +654,7 @@ impl Editor {
                 if self.selection.prompting.is_some() {
                     self.run_prompt();
                 } else {
-                    self.request_selection(request);
+                    self.request_selection(request.clone());
                 }
             }
             if ui.button("Dismiss").clicked() {
@@ -549,71 +671,94 @@ impl Editor {
     ) {
         ui.separator();
         let reason = self.selection_unavailable();
-        for (feature, label) in [
-            (Feature::Subject, "Subject"),
-            (Feature::Sky, "Sky"),
-            (Feature::Background, "Background"),
-        ] {
+        let builtin = [Feature::Subject, Feature::Sky, Feature::Background]
+            .map(|feature| (Generator::Feature(feature), None));
+        let extensions = self
+            .extensions
+            .mask_tiles()
+            .into_iter()
+            .filter(|(offer, _)| offer.auto)
+            .map(|(offer, why)| (Generator::Extension(offer), why));
+        for (generator, why) in builtin.into_iter().chain(extensions) {
+            let why = reason.map(str::to_string).or(why);
             let response = ui.add_enabled(
-                reason.is_none() && self.selection.running().is_none(),
-                egui::Button::new(label),
+                why.is_none() && self.selection.running().is_none(),
+                egui::Button::new(generator.name()),
             );
-            let response = match reason {
+            let response = match &why {
                 Some(why) => response.on_disabled_hover_text(why),
                 None => response,
             };
             if response.clicked() {
                 self.request_selection(Request {
-                    feature,
+                    generator,
                     target: Target::Component { mask, op },
                 });
                 ui.close();
             }
         }
     }
-    /// The selected generated component's source, Regenerate and, for subjects, aiming
-    /// with clicks.
+    /// The selected generated component's source, Regenerate and, for generators
+    /// that take clicks, aiming with them. When the generator that made it can't run
+    /// (its extension disabled or missing), both show disabled with why.
     pub(in crate::app) fn regenerate_ui(
         &mut self,
         ui: &mut egui::Ui,
         mask: usize,
         component: usize,
-        feature: Feature,
+        generator: Result<Generator, String>,
         source: &str,
     ) {
         hint(ui, source);
-        let reason = self.selection_unavailable();
+        let reason = self
+            .selection_unavailable()
+            .map(str::to_string)
+            .or_else(|| generator.as_ref().err().cloned());
         let busy = self.selection.running().is_some();
         let free = reason.is_none() && !busy && self.selection.prompting.is_none();
+        let (auto, prompt) = match &generator {
+            Ok(g) => (g.takes_none(), g.takes_prompt()),
+            // Shown, disabled, so the user learns why.
+            Err(_) => (true, true),
+        };
         indented(ui, |ui| {
-            let regenerate = ui.add_enabled(free, egui::Button::new("Regenerate"));
-            let regenerate = match reason {
-                Some(why) => regenerate.on_disabled_hover_text(why),
-                None => regenerate.on_hover_text(
-                    "Find it again and replace only this part of the mask; its other parts and \
-                     the adjustments stay",
-                ),
-            };
-            if regenerate.clicked() {
-                self.request_selection(Request {
-                    feature,
-                    target: Target::Regenerate { mask, component },
-                });
+            if auto {
+                let regenerate = ui.add_enabled(free, egui::Button::new("Regenerate"));
+                let regenerate = match &reason {
+                    Some(why) => regenerate.on_disabled_hover_text(why),
+                    None => regenerate.on_hover_text(
+                        "Find it again and replace only this part of the mask; its other parts \
+                         and the adjustments stay",
+                    ),
+                };
+                if regenerate.clicked()
+                    && let Ok(generator) = &generator
+                {
+                    self.request_selection(Request {
+                        generator: generator.clone(),
+                        target: Target::Regenerate { mask, component },
+                    });
+                }
             }
-            if feature != Feature::Sky {
-                let refine = ui
-                    .add_enabled(free, egui::Button::new("Refine with clicks…"))
-                    .on_hover_text(
+            if prompt {
+                let refine = ui.add_enabled(free, egui::Button::new("Refine with clicks…"));
+                let refine = match &reason {
+                    Some(why) => refine.on_disabled_hover_text(why),
+                    None => refine.on_hover_text(
                         "Click on the photo to add to this selection, Alt-click to leave \
                          something out",
-                    );
+                    ),
+                };
                 if refine.clicked() {
                     self.begin_refining(mask, component);
                 }
             }
         });
-        if let Some(request) = self.selection.running() {
-            self.selection_progress(ui, request);
+        if let Some(why) = generator.as_ref().err() {
+            hint(ui, why);
+        }
+        if let Some(request) = self.selection.running().cloned() {
+            self.selection_progress(ui, &request);
         }
         if let Some((request, failure)) = self.selection.failure.clone() {
             self.selection_failure(ui, request, &failure);
@@ -621,6 +766,26 @@ impl Editor {
         if self.selection.prompt.is_some() || self.selection.upgrading.is_some() {
             self.setup_card(ui);
         }
+    }
+}
+
+/// An extension's generator's icon: the dashed frame, with a spark in it.
+fn paint_generator_icon(painter: &egui::Painter, c: egui::Pos2, ink: egui::Color32) {
+    let stroke = egui::Stroke::new(1.2, ink);
+    let (w, h) = (11., 9.5);
+    let corners = [
+        c + egui::vec2(-w, -h),
+        c + egui::vec2(w, -h),
+        c + egui::vec2(w, h),
+        c + egui::vec2(-w, h),
+        c + egui::vec2(-w, -h),
+    ];
+    painter.add(egui::Shape::dashed_line(&corners, stroke, 2.2, 1.8));
+    painter.circle_filled(c, 2.4, ink);
+    for i in 0..4 {
+        let t = std::f32::consts::FRAC_PI_2 * i as f32;
+        let d = egui::vec2(t.cos(), t.sin());
+        painter.line_segment([c + d * 4., c + d * 6.5], stroke);
     }
 }
 

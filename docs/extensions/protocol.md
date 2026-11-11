@@ -357,6 +357,16 @@ one whose runtime or worker is missing answers `unavailable`.
 `needs_setup` error asked for. The program installs what the generator needs,
 reporting `progress`, and answers `null`.
 
+The app gives `mask.generate` 200 seconds and `mask.setup` an hour, which
+progress doesn't extend: a download that takes longer is cancelled and goes
+on at the next Download. One mask request runs at a time. A request the user
+gave up on (Cancel, another photo, disabling the extension) is cancelled at
+once and its answer dropped, while its buffers stay leased until the program
+answers. The app copies the coverage out, refuses it when its size doesn't
+match the request, takes an all-zero coverage as nothing found, and saves the
+mask with `model` and an input identity computed from `image_key`,
+`model_key`, the generator and the viewer input.
+
 ### Events
 
 | Event | Parameters |

@@ -20,6 +20,10 @@
 //! A file `crash-on-event` in its working folder makes the program exit at
 //! the first event it gets, after its handshake: a start that does nothing
 //! useful.
+//!
+//! [`masks`] is a second test-only extension, of mask generators, built from
+//! this crate too.
+pub mod masks;
 use rawmakase_extension::protocol::controls::{Control, ControlKind};
 use rawmakase_extension::protocol::method::{
     AppEvent, CommandRun, Level, ProgramRequest, ProposeSettings, SettingsChange,

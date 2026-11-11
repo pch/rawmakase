@@ -1,0 +1,90 @@
+# A test-only extension of mask generators: the app's tests run it, through
+# shared memory, as a third party's program. Its program is the example
+# crate's library (`rawmakase_example::masks`), never bundled with RAWmakase.
+[extension]
+id = "dev.rawmakase.masks"
+name = "Example Masks"
+version = "0.1.0"
+rawmakase = ">=0.1"
+api = 2
+authors = ["RAWmakase"]
+license = "MIT"
+description = "Mask generators that answer from the photo's pixels and the clicks, for tests."
+
+[program]
+path = "rawmakase-example-masks"
+start = "on-demand"
+
+# The left half of the photo, or what the clicks and box outline.
+[[mask-generator]]
+id = "blob"
+input = ["none", "prompt"]
+prompt-hint = "Click the blob, or drag a box around it"
+[[mask-generator.tile]]
+name = "Blob"
+[[mask-generator.tile]]
+name = "Not Blob"
+invert = true
+
+# The whole photo, with no clicks.
+[[mask-generator]]
+id = "flat"
+input = ["none"]
+[[mask-generator.tile]]
+name = "Flat"
+
+# All-zero coverage, without saying so.
+[[mask-generator]]
+id = "nothing"
+input = ["none"]
+[[mask-generator.tile]]
+name = "Nothing"
+
+# Says no subject stands out.
+[[mask-generator]]
+id = "absent"
+input = ["none"]
+[[mask-generator.tile]]
+name = "Absent"
+
+# Needs a download first.
+[[mask-generator]]
+id = "setup"
+input = ["none", "prompt"]
+[[mask-generator.tile]]
+name = "Setup"
+
+# Has no runtime here.
+[[mask-generator]]
+id = "unavailable"
+input = ["none"]
+[[mask-generator.tile]]
+name = "Unavailable"
+
+# Answers once `release` appears in its working folder, or when cancelled.
+[[mask-generator]]
+id = "gate"
+input = ["none"]
+[[mask-generator.tile]]
+name = "Gate"
+
+# Answers once `release` appears, even after it is cancelled.
+[[mask-generator]]
+id = "late"
+input = ["none"]
+[[mask-generator.tile]]
+name = "Late"
+
+# Names its model with nothing.
+[[mask-generator]]
+id = "unnamed"
+input = ["none"]
+[[mask-generator.tile]]
+name = "Unnamed"
+
+# Exits.
+[[mask-generator]]
+id = "crash"
+input = ["none"]
+[[mask-generator.tile]]
+name = "Crash"

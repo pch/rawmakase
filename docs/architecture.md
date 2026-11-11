@@ -124,6 +124,20 @@ token holds. Every persisted change goes through the host
 crate's `State::update`, so a write failure leaves this session's state as it
 was. Quitting follows [the shutdown contract](shutdown.md).
 
+An extension's mask generator (`app::extensions::mask_generator`) runs
+through the same request state machine as Select Subject
+(`develop::tools::subject_mask`), which owns the busy state, the guards (load,
+task generation, the masks' structure and content) and the one History step;
+the extension side owns the tiles, the provenance lookup and the requests.
+Neither direction does pixel work on the UI thread: the selection worker
+renders the input into the request's shared memory before it is sent, and
+copies the coverage out and registers the raster after the reply, and only
+then does the UI thread apply it. A mask result is not a proposal and has no
+target token; edits made while it runs that change neither the masks'
+structure nor the content (sliders, names) survive it. Extensions' generators
+are not aimed with clicks yet; their tiles are those of generators that take
+`none`.
+
 No value, catalog or rendering crate can reach `rawmakase-inference` or
 `rawmakase-selection`, so saved masks render without any inference installed and a photo with AI Denoise renders from a
 result handed to it. The app crate re-exports these crates' modules at its root
