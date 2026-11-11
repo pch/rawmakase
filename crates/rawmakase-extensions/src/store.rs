@@ -187,10 +187,10 @@ impl Store {
     }
 
     /// Removes an installed extension: its entry and its folder, then the
-    /// folder's files. Its private data folder stays. A removal that can't
-    /// move the folder (on Windows, while its program runs) is refused and
-    /// changes nothing; files that can't be deleted after are left for
-    /// [`Store::clean`].
+    /// folder's files. Its private data folder stays. A folder that can't be
+    /// moved (on Windows, while its program runs) stays where it is, and
+    /// [`Store::clean`] deletes it once nothing uses it, as it does files
+    /// that can't be deleted after the move.
     pub fn remove(&self, id: &str) -> Result<()> {
         if let Some(aside) = self.forget(id)? {
             let _ = std::fs::remove_dir_all(aside);
@@ -201,7 +201,8 @@ impl Store {
     /// The locked step of [`Store::remove`]: removes the entry and moves
     /// `<id>/` aside, under a staging name [`Store::clean`] collects, in one
     /// change, so an install that runs before the files are deleted publishes
-    /// into a new `<id>/` that nothing deletes. Returns where the folder went.
+    /// into a new `<id>/` that nothing deletes. Returns where the folder went,
+    /// if it moved.
     fn forget(&self, id: &str) -> Result<Option<PathBuf>> {
         let dir = self.root().join(id);
         State::update_or_undo(
@@ -214,15 +215,10 @@ impl Store {
                 let aside = self
                     .root()
                     .join(format!("{STAGING}{}", crate::random_suffix()));
-                let moved = match std::fs::rename(&dir, &aside) {
-                    Ok(()) => Some(aside),
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-                    Err(e) => {
-                        return Err(Error::from(e).context(format!(
-                            "Could not remove {id}; stop what is using it and try again"
-                        )));
-                    }
-                };
+                // A folder that stays is deleted by `clean`, under this lock,
+                // only while no entry names its id, so it never takes an
+                // install made after this one's files with it.
+                let moved = std::fs::rename(&dir, &aside).ok().map(|()| aside);
                 state.extensions.remove(id);
                 Ok(moved)
             },
@@ -567,11 +563,11 @@ mod tests {
         assert_eq!(std::fs::read_dir(store.root()).unwrap().count(), 0);
     }
 
-    /// A removal that can't move the folder, or can't record that, leaves
-    /// the extension installed with its folder.
+    /// A removal that can't record itself leaves the extension installed
+    /// with its folder.
     #[cfg(unix)]
     #[test]
-    fn a_removal_that_fails_changes_nothing() {
+    fn a_removal_that_cant_write_its_entry_changes_nothing() {
         use std::os::unix::fs::PermissionsExt;
         let data = tempfile::tempdir().unwrap();
         let store = Store::new(data.path());
@@ -580,21 +576,47 @@ mod tests {
         let mode = |path: &Path, mode| {
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap()
         };
-        for locked in [store.root(), data.path().to_path_buf()] {
-            mode(&locked, 0o555);
-            // Permissions don't bind a privileged user.
-            let binding = std::fs::create_dir(locked.join("probe")).is_err();
-            let removed = store.remove("dev.test.tool");
-            mode(&locked, 0o755);
-            if !binding {
-                return;
-            }
-            assert!(removed.is_err(), "{}", locked.display());
-            let entry = &store.list().unwrap()[0].entry;
-            assert_eq!(entry.active.as_deref(), Some("1.0.0"));
-            assert!(package::is_unpacked_in(&first, &installed.dir));
-            assert_eq!(std::fs::read_dir(store.root()).unwrap().count(), 1);
+        mode(data.path(), 0o555);
+        // Permissions don't bind a privileged user.
+        let binding = std::fs::create_dir(data.path().join("probe")).is_err();
+        let removed = store.remove("dev.test.tool");
+        mode(data.path(), 0o755);
+        if !binding {
+            return;
         }
+        assert!(removed.is_err());
+        let entry = &store.list().unwrap()[0].entry;
+        assert_eq!(entry.active.as_deref(), Some("1.0.0"));
+        assert!(package::is_unpacked_in(&first, &installed.dir));
+        assert_eq!(std::fs::read_dir(store.root()).unwrap().count(), 1);
+    }
+
+    /// A folder that can't be moved (on Windows, while its program runs)
+    /// stays, the extension is removed all the same, and housekeeping
+    /// deletes the folder once nothing uses it.
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_that_cant_move_is_left_for_housekeeping() {
+        use std::os::unix::fs::PermissionsExt;
+        let data = tempfile::tempdir().unwrap();
+        let store = Store::new(data.path());
+        let first = package(data.path(), "1.0.0");
+        let installed = store.install(&first, &source(&first), &app()).unwrap();
+        let mode = |path: &Path, mode| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap()
+        };
+        mode(&store.root(), 0o555);
+        let binding = std::fs::create_dir(store.root().join("probe")).is_err();
+        let removed = store.remove("dev.test.tool");
+        mode(&store.root(), 0o755);
+        if !binding {
+            return;
+        }
+        removed.unwrap();
+        assert!(store.list().unwrap().is_empty());
+        assert!(installed.dir.is_dir());
+        store.clean(&[]);
+        assert!(!store.root().join("dev.test.tool").exists());
     }
 
     #[test]

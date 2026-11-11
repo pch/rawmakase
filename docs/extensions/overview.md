@@ -85,8 +85,9 @@ newer RAWmakase (a higher `version`) is never written over.
 - `rawmakase extensions list|remove|enable|disable` do what they say; a running
   RAWmakase notices a change made from the command line on its next start.
   `enable` and `disable` refuse an id that is neither installed, a developer
-  folder nor bundled with the app. On Windows, `remove` refuses, changing
-  nothing, while the extension's program runs.
+  folder nor bundled with the app. A removed extension's folder that can't be
+  deleted yet (on Windows, while its program runs) is deleted at a later
+  start.
 
 An install unpacks into a staging folder, checks every file against the
 package's `SHA256SUMS`, and only then renames the folder into place and makes
