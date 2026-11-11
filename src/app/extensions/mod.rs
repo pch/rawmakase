@@ -30,6 +30,9 @@
 //! extension disabled, the program gone, quitting), the cancel is set, and
 //! the worker writes nothing it hadn't written. The worker's one write takes
 //! the same cancel inside its transaction, so the two race through one state.
+//! A program still there is answered `not_admitted` as the cancel is set
+//! (or `cancelled` when it cancelled the proposal itself), unless the write
+//! had begun: then it is answered with what was written.
 //!
 //! Every persisted change (enable, disable, a setting, an uninstall) goes
 //! through [`rawmakase_extensions::state::State::update`] first; when that
@@ -121,8 +124,10 @@ struct Queued {
 }
 
 /// A program's proposal being applied by a worker, until the worker reports
-/// back ([`Host::finish_proposal`]). Dropping it cancels the work, which then
-/// writes nothing: the session ends with its proposals.
+/// back ([`Host::finish_proposal`]), or until its command stops being
+/// admitted or the program cancels it ([`Host::withdraw`], which answers it
+/// then). Dropping it cancels the work, which then writes nothing: the
+/// session ends with its proposals.
 struct Deferred {
     ticket: u64,
     /// The program's request, answered when the work finishes.
@@ -1250,7 +1255,24 @@ impl Host {
                     let name = e.manifest.extension.name.clone();
                     e.error(format!("{name} sent a line that isn't a message: {reason}"));
                 }
-                Update::Progress { .. } | Update::Cancel { .. } => {}
+                // The program gave up on a request answered later: its work
+                // stops, unless it is writing.
+                Update::Cancel { id } => {
+                    let Some(run) = e.run.as_mut() else { break };
+                    if let Some(ticket) = run
+                        .deferred
+                        .iter()
+                        .find(|d| d.request == id)
+                        .map(|d| d.ticket)
+                    {
+                        Self::withdraw(
+                            run,
+                            ticket,
+                            RemoteError::new(ErrorCode::Cancelled, "cancelled by the extension"),
+                        );
+                    }
+                }
+                Update::Progress { .. } => {}
                 Update::Closed => {
                     // Its proposals' work is cancelled as the session drops.
                     let Some(run) = e.run.take() else { break };
@@ -1432,7 +1454,8 @@ impl Host {
     }
 
     /// Cancels the work of `e`'s proposals whose command is no longer
-    /// admitted.
+    /// admitted, and answers each `not_admitted` now: the program isn't left
+    /// waiting for work that will write nothing.
     fn sweep(e: &mut Extension) {
         let Some(run) = e.run.as_ref() else { return };
         let gone: Vec<u64> = run
@@ -1442,8 +1465,30 @@ impl Host {
             .map(|d| d.ticket)
             .collect();
         if let Some(run) = e.run.as_mut() {
-            // Dropping one cancels its work.
-            run.deferred.retain(|d| !gone.contains(&d.ticket));
+            for ticket in gone {
+                Self::withdraw(
+                    run,
+                    ticket,
+                    RemoteError::new(
+                        ErrorCode::NotAdmitted,
+                        "the command this proposal belongs to stopped running",
+                    ),
+                );
+            }
+        }
+    }
+
+    /// Cancels the work of the proposal `ticket` and answers the program
+    /// with `refusal`, unless the work has begun its write: then it is
+    /// answered when the work finishes, with what it wrote. The work's own
+    /// report later finds nothing to answer.
+    fn withdraw(run: &mut Running, ticket: u64, refusal: RemoteError) {
+        let Some(at) = run.deferred.iter().position(|d| d.ticket == ticket) else {
+            return;
+        };
+        if run.deferred[at].cancel.cancel() {
+            let deferred = run.deferred.remove(at);
+            let _ = run.session.reply(deferred.request, Err(refusal));
         }
     }
 
@@ -1483,7 +1528,9 @@ impl Host {
             }
             return;
         }
-        // Its session ended: there is no one to answer.
+        // Its session ended, or it was answered when its command stopped
+        // being admitted or the program cancelled it: there is no one to
+        // answer.
         #[cfg(test)]
         self.finished.push((ticket, result.expect("not answered")));
     }

@@ -189,9 +189,11 @@ What the app checks, photo by photo:
 - A cancellation of the command (answered, cancelled, past its deadline, the
   extension disabled, its program gone, the app quitting) or the user's
   Cancel before that write leaves every photo unchanged; the reply is then
-  `not_admitted`, or `cancelled` for the user's Cancel. Once the write has
-  begun it completes or fails as a whole, and what it wrote stands, with its
-  Undo.
+  `not_admitted`, sent as soon as the command stops being admitted, without
+  waiting for the work to stop, or `cancelled` for the user's Cancel. A
+  program that cancels its proposal is answered `cancelled` and its work stops
+  the same way. Once the write has begun it completes or fails as a whole, and
+  what it wrote stands, with its Undo; the reply then says what it wrote.
 - While another batch edit runs, the photos of a proposal that needs one are
   refused `busy`.
 - A read returns at most 200 photos and a proposal changes at most 200

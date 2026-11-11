@@ -4,7 +4,9 @@
 //!
 //! - `brighten`: reads its target (the selection) and proposes a higher
 //!   Exposure for each photo, by the `step` setting, during its own
-//!   `command.run` request;
+//!   `command.run` request, and notifies the code of a refusal;
+//!   `brighten-briefly` waits only 200 ms for the answer, cancels it, and
+//!   runs on until cancelled;
 //! - `settings`: answers with its settings, as `hello` and `setting-changed`
 //!   left them;
 //! - `read`: answers with what it reads of the editor;
@@ -19,7 +21,9 @@
 //! the first event it gets, after its handshake: a start that does nothing
 //! useful.
 use rawmakase_extension::protocol::controls::{Control, ControlKind};
-use rawmakase_extension::protocol::method::{AppEvent, CommandRun, Level, SettingsChange};
+use rawmakase_extension::protocol::method::{
+    AppEvent, CommandRun, Level, ProgramRequest, ProposeSettings, SettingsChange,
+};
 use rawmakase_extension::{Context, ErrorCode, Extension, Panel, RemoteError};
 use serde_json::{Map, Value, json};
 use std::time::Duration;
@@ -92,6 +96,16 @@ impl Panel for Note {
 
 /// Exposure raised by `step` on every photo of the command's target.
 fn brighten(cx: &Context, run: CommandRun) -> Result<Value, RemoteError> {
+    brighten_within(cx, run, None)
+}
+
+/// [`brighten`], waiting at most `patience` for the app's answer: past it
+/// the SDK cancels the proposal.
+fn brighten_within(
+    cx: &Context,
+    run: CommandRun,
+    patience: Option<Duration>,
+) -> Result<Value, RemoteError> {
     let target = run
         .target
         .ok_or_else(|| RemoteError::new(ErrorCode::InvalidRequest, "no target"))?;
@@ -117,8 +131,28 @@ fn brighten(cx: &Context, run: CommandRun) -> Result<Value, RemoteError> {
             }
         })
         .collect();
-    let proposed = cx.host().propose_settings(cx.op(), target.token, changes)?;
-    Ok(serde_json::to_value(proposed).expect("a reply is JSON"))
+    // A refusal is said too, so a test sees that the reply arrived even when
+    // the command's own result no longer counts.
+    let proposed = match patience {
+        None => cx
+            .host()
+            .propose_settings(cx.op(), target.token, changes)
+            .map(|p| serde_json::to_value(p).expect("a reply is JSON")),
+        Some(patience) => {
+            let (method, params) = ProgramRequest::ProposeSettings(ProposeSettings {
+                op: cx.op(),
+                token: target.token,
+                changes,
+            })
+            .into_parts();
+            cx.host().request_timeout(&method, params, patience)
+        }
+    };
+    proposed.inspect_err(|e| {
+        let _ = cx
+            .host()
+            .notify(Level::Info, &format!("brighten: {}", e.code));
+    })
 }
 
 /// What it reads of the editor: the selection, the open photo and how many
@@ -150,6 +184,12 @@ fn wait_until_cancelled(cx: &Context) {
 pub fn extension() -> Extension {
     Extension::new()
         .command("brighten", brighten)
+        .command("brighten-briefly", |cx: &Context, run: CommandRun| {
+            let answer = brighten_within(cx, run, Some(Duration::from_millis(200)));
+            // The command goes on, so only the cancel stops the proposal.
+            wait_until_cancelled(cx);
+            answer
+        })
         .command("settings", |cx: &Context, _run: CommandRun| {
             Ok(Value::Object(cx.settings().clone()))
         })

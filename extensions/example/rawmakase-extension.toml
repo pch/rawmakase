@@ -31,6 +31,11 @@ applies-to = "selection"
 places = ["library.photo-menu"]
 
 [[command]]
+id = "brighten-briefly"
+title = "Brighten Briefly"
+applies-to = "selection"
+
+[[command]]
 id = "settings"
 title = "Show Settings"
 

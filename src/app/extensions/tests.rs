@@ -702,6 +702,76 @@ fn a_proposal_stopped_while_its_worker_runs_changes_no_photo() {
     }
 }
 
+/// What the program said of its proposal's refusal, if it said it.
+fn brighten_refused(outcomes: &[Outcome]) -> Option<String> {
+    outcomes.iter().find_map(|o| match o {
+        Outcome::Message { text, .. } if text.contains("brighten: ") => Some(text.clone()),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_proposal_whose_command_stops_while_its_worker_runs_is_answered_at_once() {
+    for stopped in ["by the user", "by its deadline"] {
+        let deadline = match stopped {
+            "by the user" => Duration::from_secs(30),
+            _ => Duration::from_millis(400),
+        };
+        let mut f = fixture_with(&["a.png", "b.png"], deadline);
+        let e = &mut f.editor;
+        let ids: Vec<PhotoId> = f.photos.iter().map(|p| p.0).collect();
+        let barrier = brighten_held(e, &ids);
+        if stopped == "by the user" {
+            drop(e.extensions.cancel_commands(ID));
+        }
+        // The worker still holds: the program is answered without waiting
+        // for it, and goes on.
+        let outcomes = pump(e, "the program's answer", |_, o| {
+            brighten_refused(o).is_some()
+        });
+        assert!(
+            brighten_refused(&outcomes)
+                .unwrap()
+                .ends_with("not_admitted"),
+            "{stopped}: {outcomes:?}"
+        );
+        assert!(e.activity.is_syncing(), "{stopped}");
+        barrier.wait();
+        settle(e);
+        assert_eq!(exposure(e, &f.photos[0]), None, "{stopped}");
+        assert!(!e.extensions.proposing(), "{stopped}");
+    }
+}
+
+#[test]
+fn a_proposal_the_program_cancels_while_its_worker_runs_changes_no_photo() {
+    let mut f = fixture(&["a.png", "b.png"]);
+    let e = &mut f.editor;
+    let ids: Vec<PhotoId> = f.photos.iter().map(|p| p.0).collect();
+    select(e, &ids);
+    let barrier = hold(e);
+    e.run_extension_command(&format!("{ID}/brighten-briefly"), RunBy::Button)
+        .unwrap();
+    pump(e, "the proposal", |e, _| e.extensions.proposing());
+    barrier.wait();
+    // The program stops waiting after 200 ms and cancels its proposal, while
+    // its command runs on: the work is cancelled before it writes.
+    let outcomes = pump(e, "the program to give up", |_, o| {
+        brighten_refused(o).is_some()
+    });
+    assert!(brighten_refused(&outcomes).unwrap().ends_with("deadline"));
+    pump(e, "the cancel", |e, _| !e.extensions.proposing());
+    assert!(e.extensions.command_running(ID));
+    assert!(
+        e.activity.batch().unwrap().stage() == crate::app::library::sync::BatchStage::Cancelling
+    );
+    barrier.wait();
+    settle(e);
+    assert_eq!(exposure(e, &f.photos[0]), None);
+    assert_eq!(exposure(e, &f.photos[1]), None);
+    drop(e.extensions.cancel_commands(ID));
+}
+
 #[test]
 fn a_proposal_past_its_deadline_when_it_comes_to_write_changes_no_photo() {
     let mut f = fixture_with(&["a.png"], Duration::from_millis(400));
