@@ -138,10 +138,9 @@ fn master(
     // as in SDR renders, on linear values.
     let effects = r.effects.grain != 0. || r.effects.vignette != 0.;
     let finish_effects = |out: &mut crate::rendered::Rendered| -> Result<()> {
-        let profile =
-            anyhow::Context::context(r.profile.as_deref(), "An HDR master has a profile")?;
-        let tone = profile.hdr_tone()?;
-        let response = crate::develop::effects::HdrResponse::new(|v| profile.hdr_neutral(&tone, v));
+        let neutral = develop::pipeline::hdr_neutral_response(toned.source(), &tonal_recipe);
+        let neutral = anyhow::Context::context(neutral, "This edit renders no HDR master")?;
+        let response = crate::develop::effects::HdrResponse::new(neutral);
         crate::develop::effects::hdr_spatial_finish(
             out,
             r,
@@ -1235,6 +1234,63 @@ mod tests {
                 .flatten()
                 .all(|v| v.is_finite() && *v >= 0.)
         );
+        Ok(())
+    }
+
+    /// Highlight Priority's vignette exposes through what the master renders a neutral
+    /// as (`pipeline::hdr_neutral_response`): the scene tone stage's toe, Whites and
+    /// Blacks and the finish at the edit's settings, so neutral patches render as the
+    /// response gives them, and positive Shadows' black shift is in it as in the render.
+    #[test]
+    fn the_vignettes_response_is_the_masters_neutral() -> Result<()> {
+        use crate::develop::quality::{Stage, render_stage};
+        let levels = [0.004, 0.02, 0.1, 0.4, 1.5, 5.];
+        let im = grays(&levels);
+        // The response of `r` at scene values `xs`.
+        let response = |r: &Recipe, xs: &[f32]| -> Vec<f32> {
+            let r = r.resolved_hdr(&im.metadata).into_owned();
+            let f = crate::develop::pipeline::hdr_neutral_response(
+                crate::develop::pipeline::Source::new(&im),
+                &r,
+            )
+            .expect("an HDR master");
+            xs.iter().map(|x| f(*x)).collect()
+        };
+        let edits: [fn(&mut Recipe); 3] = [
+            |_| {},
+            |r| {
+                r.contrast = 0.4;
+                r.blacks = -0.3;
+            },
+            |r| r.whites = 0.3,
+        ];
+        for edit in edits {
+            let mut r = hdr_recipe(&im);
+            edit(&mut r);
+            let scene = render_stage(&im, &r, Stage::SceneInput, Cancel::NEVER)?;
+            let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+            let xs: Vec<f32> = (0..levels.len())
+                .map(|k| {
+                    crate::develop::scene_tone::luminance(
+                        scene.pixels[4 * scene.width as usize + k * 8 + 4],
+                    )
+                })
+                .collect();
+            for (k, got) in response(&r, &xs).into_iter().enumerate() {
+                let want = centre(&out, k);
+                assert!(
+                    (got - want).abs() <= 0.01 * want + 1e-5,
+                    "{k}: {got} {want}"
+                );
+            }
+        }
+        // Positive Shadows moves the scene tone stage's black for every pixel; the
+        // response follows it.
+        let plain = response(&hdr_recipe(&im), &[0.002])[0];
+        let mut lifted = hdr_recipe(&im);
+        lifted.shadows = 0.7;
+        let lifted = response(&lifted, &[0.002])[0];
+        assert!((lifted / plain - 1.).abs() > 0.01, "{lifted} {plain}");
         Ok(())
     }
 

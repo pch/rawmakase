@@ -86,8 +86,8 @@ const RESPONSE_FIRST: f32 = -20.;
 const RESPONSE_STEP: f32 = 1. / 16.;
 const RESPONSE_SAMPLES: usize = 30 * 16 + 1;
 impl HdrResponse {
-    /// From `render`, the profile's HDR tone on a neutral linear value; made
-    /// non-decreasing so that it inverts.
+    /// From `render`, what the master renders a neutral of scene value `x` as
+    /// (`pipeline::hdr_neutral_response`); made non-decreasing so that it inverts.
     pub(crate) fn new(render: impl Fn(f32) -> f32) -> Self {
         let mut previous = f32::NEG_INFINITY;
         let outputs = (0..RESPONSE_SAMPLES)

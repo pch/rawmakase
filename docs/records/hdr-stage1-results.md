@@ -841,10 +841,31 @@ at limit 8 and in SDR. Tile means and deviations are of each tile's inner 20 pix
 
 Decision, 2026-11-10: the post-crop vignette and grain render in the HDR master on the
 CPU (the GPU's HDR preview leaves them to it); a darkening vignette's Highlights
-refuses the master. Highlight Priority exposes through the photo's own HDR tone curve,
-as SDR's operator exposes through a measured default curve; the probe's linear profile
-can't check that part, so photos through Adobe Standard are still to be measured
-([Open](#open)).
+refuses the master.
+
+**Photos (2026-11-11).** Highlight Priority −30 and Paint Overlay +30 with grain 40
+(Size 25, Roughness 50), Midpoint and Feather 50, Adobe Standard DCPs, HDR limit 4, on
+the twelve photos of [Validation](#validation); each edit's effect is its render
+against the photo's default render, ours against Camera Raw's frozen one, in 8× blocks
+by squared distance from the centre (quarters to the corners).
+
+- **Highlight Priority through the profile's curve alone** (the first rule) darkened
+  too little away from the centre: in the outer quarter +0.07 to +0.24 stop (Camera
+  Raw's corners −1.23 to −1.77 stops; the 850D's −1.63 rendered −1.08), most in dark
+  areas (+0.04 to +0.19), not above white (±0.01).
+- **Through the master's own neutral response** (`pipeline::hdr_neutral_response`:
+  the scene tone stage, toe included, and the finish at the edit's settings) the
+  effect is within ±0.06 stop in every quarter on every photo, ±0.015 in dark areas,
+  and the corners render −1.20 to −1.75 stops. On the synthetic tiles this also
+  brings Highlight Priority −50's p95 over all tiles from 0.22 to 0.03 stop and −100's
+  from 2.0 to 1.5.
+- **Paint Overlay +30 with grain** is within ±0.02 stop in every quarter (the
+  Panasonic S1M2ES −0.08 in the outer one). Grain's pattern is not Camera Raw's, so
+  its blocks differ by noise: mean ΔE_ITP 2.7–6.1 against the default render's
+  0.9–5.6 on the photos that pass by default.
+
+Decision, 2026-11-11: Highlight Priority exposes through the master's neutral
+response.
 
 ### Point Color
 
@@ -915,7 +936,18 @@ ProPhoto channels against the same probe's default render.
 Decision, 2026-11-10: Color Grading renders in the HDR master by this rule, after the
 colour mixer as in SDR, and on the GPU's HDR preview. The strong-tint colour error
 above white stays open; Camera Raw captures of photos with grading were paused when
-this was decided, so the photo validation is still to come ([Open](#open)).
+this was decided, so the photo validation followed.
+
+**Photos (2026-11-11).** A split tone (Shadows hue 210 saturation 25, Highlights 40/30),
+a Highlights tint 40/40 with Highlights Luminance +30, and a Global tint 210/20 with
+Midtones Luminance −20, Blending 50, Adobe Standard DCPs, HDR limit 4, on the twelve
+photos of [Validation](#validation): median above white 0.002–0.086 stop, p95
+0.004–0.16 but on the two Panasonics (0.40–1.64, as at their defaults), mean ΔE_ITP
+within 0.5 of each photo's default render (the Z 8 3.2–3.3 against 2.9), peaks within
+the default's but on the Z50 II with the Global tint (+0.169 against +0.082, past the
+0.1-stop tolerance its default meets; its median above white is 0.021). The other
+photos that fail a tolerance fail it at their default render for the reasons under
+[Validation](#validation).
 
 SDR renders do not change: `ChannelCurves::apply` and the GPU's SDR `grade` are the
 same code as before, and `apply_hdr` is reached only from the HDR master's finish.
@@ -961,11 +993,39 @@ Decision, 2026-11-10: masks render in the HDR master with Temp, Tint, Exposure,
 Shadows and Texture; any other slider in an active mask refuses it by name. Contrast,
 Whites, Blacks, Hue, Saturation and Color are operators of their own, fitted on SDR
 renders, and Sharpness and Noise work on the SDR rendition's detail; Highlights,
-Clarity and Dehaze have no HDR rendering globally. Camera Raw's HDR render of each
-mask slider against its global slider (a synthetic probe with a mask over the whole
-frame) was prepared but not captured: Camera Raw captures were paused when this was
-decided ([Open](#open)). A masked master renders on the CPU; the GPU's HDR preview
-doesn't port masks yet.
+Clarity and Dehaze have no HDR rendering globally. A masked master renders on the CPU;
+the GPU's HDR preview doesn't port masks yet.
+
+**Camera Raw (2026-11-11).** Camera Raw 18.7 rendered the Color Grading probe's patches
+(grays from 2^−8 to 16 times white and colour patches, a linear profile, HDR limit 8
+and SDR) with a radial mask covering the whole frame, each slider alone, and with the
+global slider of the same value. Effects are luminance in stops, medians over the
+patches (and ΔE_ITP means):
+
+| Slider | Camera Raw's mask against its global slider | RAWmakase's mask against Camera Raw's | RAWmakase's global slider against Camera Raw's |
+| --- | --- | --- | --- |
+| Exposure +1 | 0.000 (0.39) | 0.001 (0.24) | — |
+| Exposure +1 at Amount 50 | 0.001 (0.36) | 0.002 (0.23) | — |
+| Shadows +50 | 0.039 (3.8) | 0.061 (3.6) | 0.030 (2.8) |
+| Texture +50 | 0.000 (0.0) | 0.027 (8.1) | 0.027 (8.1) |
+| Temp +30 | — | 0.106 (11.6) | — |
+| Contrast +50 | 0.165 (9.6) | refused | |
+| Whites +40 / −50 | 0.140 / 0.159 (6.3 / 7.0) | refused | |
+| Blacks −50 | 0.287 (27.9) | refused | |
+| Saturation +50 | 0.059 (10.6) | refused | |
+| Highlights −50 | 0.115 (8.1) | refused | |
+
+- A mask's Exposure, Shadows and Texture are their global sliders in Camera Raw's
+  HDR render too. RAWmakase's mask renders Exposure to 0.001 stop and Texture to the
+  global operator's own error (Texture's flat patches carry the global Texture's
+  error); its Shadows is 0.061 stop off, twice the global slider's 0.030 (Camera Raw's
+  own mask and global Shadows differ by 0.039).
+- A mask's Temp is a gain of the scene in Camera Raw's HDR render, the same from 0.01
+  to 8 times white (red ×1.12, blue ×0.84 at +30), as RAWmakase renders it; RAWmakase's
+  local Temp is weaker (red ×1.015, blue ×0.92), as in SDR, where its mask is 0.064
+  stop and ΔE_ITP 6.5 from Camera Raw's.
+- Contrast, Whites, Blacks, Saturation and Highlights in a mask are not their global
+  sliders in Camera Raw either (0.06–0.29 stop); they stay refused.
 
 ### Decisions
 
@@ -1054,15 +1114,13 @@ doesn't port masks yet.
   ([Point Color](#point-color)).
 - Defringe's hue selection against Camera Raw's (SDR and HDR alike), and Defringe on the
   GPU's HDR preview ([Defringe](#defringe)).
-- Color Grading on photos (a split tone, a Highlights tint with Luminance, Global
-  with Midtones Luminance, on the twelve validation and holdout photos), and strong
-  Highlights tints of saturated colours above white ([Color grading](#color-grading)).
-- The vignette's Highlights in HDR, the vignette and grain on photos through Adobe
-  Standard, and the vignette's darkest shadows under strong Highlight Priority
-  ([Vignette and grain](#vignette-and-grain)).
+- Strong Highlights tints of saturated colours above white, and the Z50 II's peak with
+  a Global tint ([Color grading](#color-grading)).
+- The vignette's Highlights in HDR, and Highlight Priority −100 in a frame's darkest
+  tiles (p95 1.5 stops on the synthetic tiles) ([Vignette and grain](#vignette-and-grain)).
 - Refine Saturation in HDR ([Tone curves](#tone-curves)).
-- Masks: Camera Raw's HDR render of a mask against its global slider, the mask sliders
-  still refused, and masks on the GPU's HDR preview ([Masks](#masks)).
+- Masks: the mask sliders still refused, a mask's Temp strength (SDR's), and masks on
+  the GPU's HDR preview ([Masks](#masks)).
 - Clarity and Dehaze in HDR, after their SDR parity ([Presence](#presence)).
 - Positive Shadows lifts small speculars in dark surroundings above Camera Raw's peak
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).

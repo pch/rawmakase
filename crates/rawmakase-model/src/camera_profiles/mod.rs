@@ -650,19 +650,6 @@ impl CameraProfile {
             top + (x - 1.) * (top - evaluate_tone(&self.tone, 0.999)) / 0.001
         }
     }
-    /// What this profile's tone curve renders a neutral of linear value `x` as in an
-    /// HDR master, by `tone` (from [`Self::hdr_tone`]), its tables and look left out:
-    /// the HDR response a post-crop vignette exposes through
-    /// (docs/hdr.md#vignette-and-grain).
-    pub fn hdr_neutral(&self, tone: &hdr_tone::HdrTone, x: f32) -> f32 {
-        let x = x.max(0.);
-        match tone {
-            hdr_tone::HdrTone::Overrange => {
-                overrange::decode(self.overrange_curve(overrange::encode(x)))
-            }
-            tone => tone.evaluate(&self.tone, x),
-        }
-    }
     /// How this profile's look curve renders in HDR; `None` without a look, or when its
     /// curve is the identity. Camera Raw 18.7 renders a look whose curve is the
     /// identity (a `.cube` look's) unchanged up to 32 times white, not held at

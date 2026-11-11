@@ -146,6 +146,23 @@ fn defringe_hdr(rgb: [f32; 3], r: &Recipe) -> [f32; 3] {
         .defringe_color([lab[0].clamp(0., 1.), lab[1], lab[2]], hue);
     lab_to_srgb(lab).map(|v| v * k)
 }
+/// What the HDR master of `r` renders a neutral of scene value `x` as (linear
+/// ProPhoto entering the scene tone stage, after Exposure), as its luminance: the scene
+/// tone stage's global curves, its toe and its Whites and Blacks, then the profile, its
+/// look, Contrast, the tone curves and the colour stage, without local adjustments (the
+/// curves are the render's own, [`CurveSet::for_image`], so Shadows' black shift is
+/// in them). That is the HDR response Highlight Priority's vignette exposes through
+/// (docs/hdr.md#vignette-and-grain). `None` when `r` renders no master.
+pub(crate) fn hdr_neutral_response(im: Source, r: &Recipe) -> Option<impl Fn(f32) -> f32> {
+    let camera = camera_stage(&im.image.metadata, r);
+    let lut = CurveSet::for_image(im, r, camera, false);
+    lut.hdr.as_ref()?;
+    Some(move |x: f32| {
+        let scene = lut.scene.apply([x.max(0.); 3], [0.5, 0.5], 1., None);
+        let hdr = lut.hdr.as_ref().expect("checked above");
+        crate::develop::scene_tone::luminance(hdr.finish(scene, r, &lut))
+    })
+}
 /// DNG RGBTone with `curve`: it maps the largest and smallest channel, and the middle
 /// one keeps its relative position, as the SDR curves apply.
 fn rgb_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {

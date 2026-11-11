@@ -305,8 +305,10 @@ show the SDR operators on unclipped light:
 
 - **Darkening** is the same gain at every level from a tenth of white up, in every
   style. RAWmakase applies Paint Overlay's and Color Priority's to the output, and
-  Highlight Priority's to the scene, through the profile's HDR curve
-  (`CameraProfile::hdr_neutral`), as SDR exposes through the default tone curve.
+  Highlight Priority's to the scene, through what the master renders a neutral as at
+  the edit's settings (`pipeline::hdr_neutral_response`: the scene tone stage, its toe
+  included, then the profile and the rest of the finish), as SDR exposes through
+  Camera Raw's measured default response.
 - **Lightening** by Paint Overlay or Color Priority blends towards graphics white, so
   it darkens light above white (×0.89 at eight times white at a quarter of the way
   out); Highlight Priority blends the scene towards 14.4 (fitted: 13.5–15.2 at every
@@ -320,10 +322,13 @@ show the SDR operators on unclipped light:
   times white.
 
 On the tiles RAWmakase renders every style's effect above white to a median 0.010
-stop or less (p95 ≤ 0.07), and grain's spread to within 1% from a tenth of white up.
-Deep shadows under a strong Highlight Priority darkening are further off (the scene
-tone stage's toe isn't inverted; p95 2 stops at Amount −100, in the frame's darkest
-tiles). The GPU's HDR preview leaves both effects to the CPU master. Measurements:
+stop or less (p95 ≤ 0.07), and grain's spread to within 1% from a tenth of white up;
+Highlight Priority −100 is further off in the frame's darkest tiles (p95 1.5 stops).
+On the twelve validation and holdout photos (Adobe Standard), Highlight Priority −30's
+effect is within ±0.06 stop of Camera Raw's in every ring from the centre to the
+corners (its corner darkening −1.20 to −1.75 stops); Paint Overlay +30 with grain 40,
+within ±0.02 (±0.08 on one Panasonic). The GPU's HDR preview leaves both effects to
+the CPU master. Measurements:
 [vignette and grain](records/hdr-stage1-results.md#vignette-and-grain).
 
 ### Point Color
@@ -367,7 +372,11 @@ white:
 to a median 0.000–0.008 stop under 24 settings. Above 16 a channel keeps its gain at 16.
 Strong blue tints of saturated colours above white differ: Camera Raw lifts the lowest
 channel there, which no per-channel rule does (up to 12 mean ΔE_ITP above white on the
-synthetic patches; RAWmakase's SDR grading of the same patches is within 2). Measurements:
+synthetic patches; RAWmakase's SDR grading of the same patches is within 2). On the
+twelve validation and holdout photos a split tone, a Highlights tint with Highlights
+Luminance +30, and a Global tint with Midtones Luminance −20 score as the photos'
+default renders do (median above white within 0.02 stop of the default's, mean
+ΔE_ITP within 0.5). Measurements:
 [color grading](records/hdr-stage1-results.md#color-grading).
 
 ### Defringe
@@ -395,8 +404,14 @@ select from the SDR rendition, as the mask overlay shows them, so the master adj
 the pixels its SDR rendition adjusts. Any other slider in an active mask refuses the master
 by its name ("A mask's Contrast …"): Contrast, Whites, Blacks, Hue, Saturation, Color,
 Sharpness and Noise work through operators of their own, measured on SDR renders, and
-Highlights, Clarity and Dehaze have no HDR rendering globally. Camera Raw's HDR render
-of a mask has not been compared with its global slider yet
+Highlights, Clarity and Dehaze have no HDR rendering globally. In Camera Raw 18.7's
+HDR renders of a whole-frame mask on synthetic patches, a mask's Exposure, Shadows and
+Texture render as their global sliders do (median 0.000–0.039 stop), and Temp is a
+gain of the scene at every level. RAWmakase's mask Exposure matches Camera Raw's to
+0.001 stop and Texture to the global slider's own error (0.027); mask Shadows is 0.061
+stop off, twice the global slider's 0.030, and Temp's strength is SDR's, as far from
+Camera Raw's in SDR. A mask's Contrast, Whites, Blacks, Saturation and Highlights
+differ from the global sliders by 0.06–0.29 stop median and stay refused
 ([record](records/hdr-stage1-results.md#masks)). A masked master renders on the CPU.
 
 ## What is refused
