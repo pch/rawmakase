@@ -1178,3 +1178,268 @@ fn sky_asks_for_its_own_model_and_having_subjects_does_not_install_it() {
     assert_eq!(e.selection.prompt, Some(Prompt::Model(sky)));
     assert!(e.selection.running().is_none());
 }
+
+/// Pins of what each gesture asks the model, for the move of AI masks into an
+/// extension (#965): the same gestures must ask the same things afterwards.
+/// The worker keeps the jobs instead of running them, and a remote endpoint
+/// stands in for the models, so these run with no model or worker present.
+fn capturing(e: &mut Editor) {
+    with_remote(e, "127.0.0.1:1");
+    e.selection.worker.captured = Some(Vec::new());
+}
+/// What the model was asked so far, oldest first.
+fn asked(e: &Editor) -> Vec<Action> {
+    let jobs = e.selection.worker.captured.as_ref().unwrap();
+    jobs.iter().map(|j| j.action.clone()).collect()
+}
+fn click(e: &Editor, n: usize) -> ModelPrompt {
+    match &asked(e)[n] {
+        Action::Click(prompt) => prompt.clone(),
+        other => panic!("asked {other:?}, not clicks"),
+    }
+}
+/// Answers the selection that is running, as the worker would.
+fn answer(e: &mut Editor, result: Result<Generated, Failure>) {
+    let generation = e.selection.task.id();
+    finish(e, generation, result);
+}
+fn aim(e: &mut Editor, request: Request) {
+    e.begin_aiming(request);
+    assert!(e.selection.prompting.is_some(), "{}", e.messages.line());
+}
+const fn at(x: f32, y: f32, positive: bool) -> Point {
+    Point { x, y, positive }
+}
+const BACKGROUND: Request = Request {
+    feature: Feature::Background,
+    target: Target::NewMask,
+};
+const REFINE: Target = Target::Regenerate {
+    mask: 0,
+    component: 0,
+};
+
+#[test]
+fn a_box_and_then_clicks_ask_for_the_box_with_every_click() {
+    let mut f = fixture();
+    let e = &mut f.editor;
+    capturing(e);
+    aim(e, SUBJECT);
+    e.prompt_box([0.8, 0.9], [0.2, 0.1]);
+    let bounds = Some([0.2, 0.1, 0.8, 0.9]);
+    assert_eq!(
+        click(e, 0),
+        ModelPrompt {
+            points: vec![],
+            bounds
+        }
+    );
+    assert_eq!(e.selection.pending.as_ref().unwrap().request, SUBJECT);
+    answer(e, Ok(generated(170)));
+    e.prompt_click([0.5, 0.5], true);
+    assert_eq!(
+        click(e, 1),
+        ModelPrompt {
+            points: vec![at(0.5, 0.5, true)],
+            bounds,
+        }
+    );
+    // Every result after the first refines the mask the first one made.
+    assert_eq!(e.selection.pending.as_ref().unwrap().request.target, REFINE);
+    answer(e, Ok(generated(171)));
+    e.prompt_click([0.3, 0.4], false);
+    assert_eq!(
+        click(e, 2),
+        ModelPrompt {
+            points: vec![at(0.5, 0.5, true), at(0.3, 0.4, false)],
+            bounds,
+        }
+    );
+    answer(e, Ok(generated(172)));
+    assert_eq!(e.document.edit.recipe().masks.len(), 1);
+    // A new box starts over: it is sent without the clicks before it.
+    e.prompt_box([0.1, 0.1], [0.4, 0.4]);
+    assert_eq!(
+        click(e, 3),
+        ModelPrompt {
+            points: vec![],
+            bounds: Some([0.1, 0.1, 0.4, 0.4]),
+        }
+    );
+}
+
+#[test]
+fn clicks_and_boxes_while_a_selection_runs_are_ignored_not_queued() {
+    let mut f = fixture();
+    let e = &mut f.editor;
+    capturing(e);
+    aim(e, SUBJECT);
+    e.prompt_click([0.5, 0.5], true);
+    e.prompt_click([0.6, 0.6], true);
+    e.prompt_box([0.1, 0.1], [0.9, 0.9]);
+    assert_eq!(asked(e).len(), 1);
+    let p = e.selection.prompting.as_ref().unwrap();
+    assert_eq!((p.points.len(), p.bounds), (1, None));
+    // Once it has answered, the next click is taken, and the lost ones are not.
+    answer(e, Ok(generated(173)));
+    e.prompt_click([0.7, 0.7], true);
+    assert_eq!(click(e, 1).points, [at(0.5, 0.5, true), at(0.7, 0.7, true)]);
+}
+
+#[test]
+fn clicks_past_the_limit_ask_again_without_the_extra_point() {
+    let mut f = fixture();
+    let e = &mut f.editor;
+    capturing(e);
+    aim(e, SUBJECT);
+    let max = rawmakase_inference::process::MAX_POINTS;
+    e.selection.prompting.as_mut().unwrap().points = vec![at(0.5, 0.5, true); max];
+    e.prompt_click([0.1, 0.1], true);
+    let sent = click(e, 0);
+    assert_eq!(sent.points.len(), max);
+    assert!(!sent.points.contains(&at(0.1, 0.1, true)));
+}
+
+#[test]
+fn a_drag_under_a_hundredth_of_the_photo_is_not_a_box() {
+    let mut f = fixture();
+    let e = &mut f.editor;
+    capturing(e);
+    aim(e, SUBJECT);
+    e.prompt_box([0.5, 0.2], [0.509, 0.8]);
+    e.prompt_box([0.2, 0.5], [0.8, 0.509]);
+    assert!(asked(e).is_empty());
+    e.prompt_box([0.5, 0.2], [0.52, 0.8]);
+    assert_eq!(asked(e).len(), 1);
+}
+
+#[test]
+fn leaving_out_first_on_a_thin_mask_sends_its_extent_as_the_box() {
+    let mut f = fixture();
+    let e = &mut f.editor;
+    capturing(e);
+    e.request_selection(SUBJECT);
+    // One column of 200 selected: an extent far under the drag minimum.
+    let mut data = vec![0; 200];
+    data[0] = 255;
+    let id = mask_assets::register(Bitmap {
+        width: 200,
+        height: 1,
+        channels: 1,
+        depth: 1,
+        data,
+    })
+    .unwrap();
+    let mut made = generated(174);
+    made.id = id;
+    (made.width, made.height) = (200, 1);
+    answer(e, Ok(made));
+    e.begin_refining(0, 0);
+    e.prompt_click([0.002, 0.5], false);
+    assert_eq!(
+        click(e, 1),
+        ModelPrompt {
+            points: vec![at(0.002, 0.5, false)],
+            bounds: Some([0.0, 0.0, 0.005, 1.0]),
+        }
+    );
+    assert_eq!(e.selection.pending.as_ref().unwrap().request.target, REFINE);
+}
+
+#[test]
+fn each_tile_asks_the_model_for_its_own_feature() {
+    let mut f = fixture();
+    let e = &mut f.editor;
+    capturing(e);
+    let sky = Request {
+        feature: Feature::Sky,
+        target: Target::NewMask,
+    };
+    for (n, request) in [SUBJECT, sky, BACKGROUND].into_iter().enumerate() {
+        e.request_selection(request);
+        assert!(
+            matches!(asked(e)[n], Action::Auto(f) if f == request.feature),
+            "{:?}",
+            asked(e)[n]
+        );
+        e.selection.cancel();
+    }
+    // Sky's own model answers Sky; Subject's answers Subject and Background.
+    assert_eq!(
+        [SUBJECT, sky, BACKGROUND].map(|r| r.feature.pack()),
+        [Pack::Subject, Pack::Sky, Pack::Subject]
+    );
+}
+
+#[test]
+fn background_aimed_or_refined_by_hand_asks_for_the_subject_and_stays_inverted() {
+    let mut f = fixture();
+    let e = &mut f.editor;
+    capturing(e);
+    // Nothing found: the drawer offers aiming at the subject for Background.
+    e.request_selection(BACKGROUND);
+    answer(e, Err(Failure::NoSubject));
+    aim(e, BACKGROUND);
+    e.prompt_click([0.5, 0.5], true);
+    assert_eq!(click(e, 1).points, [at(0.5, 0.5, true)]);
+    assert_eq!(e.selection.pending.as_ref().unwrap().request, BACKGROUND);
+    answer(e, Ok(generated(175)));
+    let c = &e.document.edit.recipe().masks[0].components[0];
+    assert!(c.invert);
+    let MaskShape::Bitmap(b) = &c.shape else {
+        panic!()
+    };
+    assert_eq!(feature_of(b, c.invert), Feature::Background);
+    e.selection.end_prompting();
+    // Refining it aims at the subject again, and the result keeps the inversion.
+    e.begin_refining(0, 0);
+    e.prompt_click([0.4, 0.4], true);
+    assert_eq!(click(e, 2).points, [at(0.4, 0.4, true)]);
+    let pending = e.selection.pending.as_ref().unwrap().request;
+    assert_eq!(pending.feature, Feature::Background);
+    assert_eq!(pending.target, REFINE);
+    answer(e, Ok(generated(176)));
+    let m = &e.document.edit.recipe().masks;
+    assert_eq!(m.len(), 1);
+    assert!(m[0].components[0].invert);
+}
+
+#[test]
+fn a_saved_mask_is_labelled_from_its_provenance_alone() {
+    let source = |feature: &str| BitmapMask {
+        source: Some(BitmapSource {
+            feature: feature.into(),
+            model: "m@0".into(),
+            input: "i".into(),
+        }),
+        id: "x".into(),
+        width: 4,
+        height: 3,
+        sampling: BITMAP_SAMPLING,
+    };
+    let subject = source(FEATURE_SUBJECT);
+    let sky = source(FEATURE_SKY);
+    let other = source("someone-else/thing");
+    assert_eq!(
+        [
+            feature_of(&subject, false),
+            feature_of(&subject, true),
+            feature_of(&sky, true),
+            feature_of(&other, false),
+        ],
+        [
+            Feature::Subject,
+            Feature::Background,
+            Feature::Sky,
+            Feature::Subject
+        ]
+    );
+    assert_eq!(
+        [&subject, &sky, &other].map(source_text),
+        [
+            "Found by the subject models",
+            "Found by the sky detector",
+            "A raster mask",
+        ]
+    );
+}

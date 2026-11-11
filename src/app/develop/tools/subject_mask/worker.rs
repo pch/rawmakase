@@ -55,11 +55,20 @@ enum Message {
 pub(super) struct Worker {
     messages: Option<Sender<Message>>,
     thread: Option<std::thread::JoinHandle<()>>,
+    /// In tests that ask for it, the jobs submitted, kept instead of run: what
+    /// the model was asked, with no model or worker present.
+    #[cfg(test)]
+    pub(super) captured: Option<Vec<Job>>,
 }
 impl Worker {
     /// Queues `job`; its outcome arrives as an [`Event::Selection`], whatever
     /// happens, so the drawer never waits on a thread that is gone.
     pub(super) fn submit(&mut self, job: Job, tx: Sender<Event>, ctx: egui::Context) {
+        #[cfg(test)]
+        if let Some(captured) = &mut self.captured {
+            captured.push(job);
+            return;
+        }
         let (load, generation) = (job.load, job.generation);
         let failed = |why: &str| {
             let _ = tx.send(Event::Selection(Box::new(Done {
@@ -513,11 +522,13 @@ impl RemoteConfig {
             }
         }
     }
-    /// Pretends the file said this, for the tests; the next real read wins.
+    /// Pretends the file said this, for the tests. It is dated an hour ahead,
+    /// so a test that stalls past the one-second reread on a loaded runner
+    /// still sees it rather than the developer's own file.
     #[cfg(test)]
     pub(super) fn force(&self, endpoint: Option<&str>) {
         self.seen.set(Some((
-            std::time::Instant::now(),
+            std::time::Instant::now() + Duration::from_secs(3600),
             endpoint.map(str::to_string),
         )));
     }
