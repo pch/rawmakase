@@ -672,7 +672,7 @@ impl Session {
     /// How many of the program's messages were dropped because the owner's
     /// queue was full (replies and events; refused operations are answered).
     pub fn dropped(&self) -> u64 {
-        self.dropped.load(Ordering::Relaxed)
+        self.dropped.load(Ordering::Acquire)
     }
 
     /// Hands over what arrived and enforces deadlines as of `now`.
@@ -769,8 +769,10 @@ impl Session {
     /// is released, and a protocol fault hangs the program up, even when the
     /// reply itself was dropped by a full queue. A pending request whose
     /// reply the queue dropped is settled here, once: an error as it was
-    /// sent, an `ok`, whose value is lost, as `channel_full`. Any other
-    /// pending request's record waits for its reply to be drained.
+    /// sent, an `ok`, whose value is lost, as `channel_full`. So is one
+    /// recorded as a fault, whether or not its reply was dropped, so the
+    /// hang-up keeps its error. Any other pending request's record waits for
+    /// its reply to be drained.
     fn reconcile(&mut self, updates: &mut Vec<Update>, hang: &mut Option<String>) {
         let mut leased = self.leased.lock().unwrap_or_else(|e| e.into_inner());
         let mut settled = Vec::new();
@@ -787,7 +789,10 @@ impl Session {
                 }
                 return false;
             }
-            if recorded.dropped && self.pending.contains_key(id) {
+            // A fault is settled with its own error now, dropped or not: the
+            // hang-up that follows would otherwise fail it as `exited`. If
+            // its reply is drained later, the request is no longer pending.
+            if (recorded.dropped || recorded.outcome.is_fault()) && self.pending.contains_key(id) {
                 settled.push((*id, recorded.outcome.clone()));
                 return false;
             }
@@ -1180,10 +1185,13 @@ impl Reading {
                 Ok((message, _)) => {
                     let id = self.record(&message);
                     if self.to_owner.try_send(Incoming::Message(message)).is_err() {
-                        self.dropped.fetch_add(1, Ordering::Relaxed);
+                        // Marked before it is counted: whoever sees the count
+                        // (Acquire in `Session::dropped`) and then reconciles
+                        // sees the mark.
                         if let Some(id) = id {
                             self.dropped_reply(id);
                         }
+                        self.dropped.fetch_add(1, Ordering::Release);
                     }
                 }
                 Err(d) => {
@@ -1275,5 +1283,133 @@ impl Reading {
         if let Some(wake) = &self.wake {
             wake();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Interleavings of the reader and the owner that a real program can't
+    //! force: the reader's record is written here directly, as the reader
+    //! writes it, against a program that only idles.
+    use super::*;
+
+    const IDLE: &str = "RAWMAKASE_SESSION_TEST_IDLE";
+
+    /// The idle program: this test binary run again, which waits to be ended.
+    #[test]
+    fn idle_program() {
+        if std::env::var_os(IDLE).is_some() {
+            std::thread::sleep(Duration::from_secs(60));
+        }
+    }
+
+    fn idle(dir: &std::path::Path) -> Session {
+        let launch = Launch {
+            program: std::env::current_exe().unwrap(),
+            args: ["--exact", "session::tests::idle_program", "--nocapture"]
+                .iter()
+                .map(Into::into)
+                .collect(),
+            dir: dir.to_path_buf(),
+            env: vec![(IDLE.into(), "1".into())],
+            log: dir.join("log.txt"),
+        };
+        // The idle program never opens a Windows channel; the reader must not
+        // give up on it during the test.
+        let options = SessionOptions {
+            connect: Duration::from_secs(60),
+            ..SessionOptions::default()
+        };
+        Session::spawn(&launch, options).unwrap()
+    }
+
+    /// A pending leased request, as `request_with` leaves it.
+    fn leased_request(session: &mut Session, id: u64) {
+        let mut buffers = session.buffers();
+        buffers.output(16).unwrap();
+        session.pending.insert(
+            id,
+            Pending {
+                method: "mask.generate".into(),
+                deadline: Instant::now() + Duration::from_secs(60),
+                expired: false,
+                buffers: Some(buffers),
+            },
+        );
+        session.leased_set().insert(id, None);
+    }
+
+    fn replies(updates: &[Update], id: u64) -> Vec<Result<Value, RemoteError>> {
+        updates
+            .iter()
+            .filter_map(|u| match u {
+                Update::Reply { id: i, result, .. } if *i == id => Some(result.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The reader recorded `invalid_request` for a request that carried
+    /// handles but hasn't marked the reply dropped yet when the owner
+    /// reconciles: the request is settled with its own error before the
+    /// hang-up, once, and the reply drained later settles nothing more.
+    #[test]
+    fn a_recorded_fault_keeps_its_error_through_the_hang_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut session = idle(dir.path());
+        leased_request(&mut session, 7);
+        let refused = RemoteError::new(ErrorCode::InvalidRequest, "refused");
+        session.leased_set().insert(
+            7,
+            Some(Recorded {
+                outcome: Outcome::Err(refused.clone()),
+                dropped: false,
+            }),
+        );
+        let updates = session.poll(Instant::now());
+        assert_eq!(replies(&updates, 7), [Err(refused.clone())]);
+        assert!(updates.iter().any(|u| matches!(u, Update::Hung { .. })));
+        assert!(session.ledger().in_use() > 0 || session.has_ended());
+        // The reply itself, drained after all.
+        let mut more = Vec::new();
+        let mut hang = None;
+        session.take(Message::reply(7, Err(refused)), &mut more, &mut hang);
+        assert!(replies(&more, 7).is_empty());
+        let start = Instant::now();
+        while session.ledger().in_use() > 0 {
+            assert!(start.elapsed() < Duration::from_secs(20));
+            more.extend(session.poll(Instant::now()));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(replies(&more, 7).is_empty(), "{more:?}");
+    }
+
+    /// A leased reply the full queue drops is marked dropped before it is
+    /// counted: once the count shows it, reconciling settles it.
+    #[test]
+    fn a_dropped_reply_is_marked_before_it_is_counted() {
+        let leased: Leased = Arc::default();
+        leased.lock().unwrap().insert(3, None);
+        // Room for nothing: every message is dropped.
+        let (to_owner, _incoming) = sync_channel(0);
+        let (send, _to_writer) = sync_channel(1);
+        let reading = Reading {
+            to_owner,
+            outgoing: Arc::new(Outgoing {
+                sender: Mutex::new(Some(send)),
+                owner_queued: AtomicUsize::new(0),
+                limit: 1,
+            }),
+            lifecycle: None,
+            wake: None,
+            done: Arc::default(),
+            dropped: Arc::default(),
+            leased: leased.clone(),
+        };
+        reading.read(Box::new(&b"{\"t\":\"ok\",\"id\":3,\"v\":1}\n"[..]));
+        assert_eq!(reading.dropped.load(Ordering::Acquire), 1);
+        let recorded = leased.lock().unwrap()[&3].clone().unwrap();
+        assert!(recorded.dropped);
+        assert_eq!(recorded.outcome, Outcome::Ok);
     }
 }
