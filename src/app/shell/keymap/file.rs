@@ -32,7 +32,7 @@
 //! the new file is in place (syncing the folder).
 use super::rules::{self, Os};
 use super::{Chord, Effective};
-use crate::app::shell::commands::registry::command_by_id;
+use crate::app::shell::commands::registry::Dynamic;
 use std::{
     collections::BTreeMap,
     io,
@@ -129,8 +129,12 @@ pub(in crate::app) struct KeymapFile {
     effective: Arc<Effective>,
     /// Entries for commands this release knows, skipped.
     skipped: Vec<Skipped>,
-    /// Entries for commands this release doesn't know, kept as they are.
+    /// Entries for commands this release doesn't know, kept as they are:
+    /// an extension's command while its extension is off or not installed
+    /// among them, so its keys come back with it.
     unknown: Vec<String>,
+    /// The enabled extensions' commands, which the file's entries may name.
+    dynamic: Vec<&'static Dynamic>,
 }
 
 /// What a file's text holds.
@@ -152,6 +156,7 @@ impl KeymapFile {
             effective: Arc::default(),
             skipped: Vec::new(),
             unknown: Vec::new(),
+            dynamic: Vec::new(),
         }
     }
     /// The key map in `path`.
@@ -175,6 +180,27 @@ impl KeymapFile {
 
     pub(in crate::app) fn effective(&self) -> Arc<Effective> {
         self.effective.clone()
+    }
+    /// Makes `dynamic`, the enabled extensions' commands, the extension
+    /// commands in effect, and reads the key map's entries for them again
+    /// from the file as last read: an entry for a command whose extension
+    /// was just turned on takes effect, and one whose extension was turned
+    /// off stays in the file, unknown, until it comes back.
+    pub(in crate::app) fn set_dynamic(&mut self, dynamic: Vec<&'static Dynamic>) {
+        if dynamic == self.dynamic {
+            return;
+        }
+        self.dynamic = dynamic;
+        match &self.state {
+            State::Unreadable(why) => self.unreadable(why.clone()),
+            state => {
+                let state = state.clone();
+                match parse(&self.doc.to_string(), &self.dynamic) {
+                    Ok(parsed) => self.adopt(state, parsed),
+                    Err(why) => self.unreadable(why),
+                }
+            }
+        }
     }
     pub(in crate::app) fn state(&self) -> &State {
         &self.state
@@ -222,12 +248,15 @@ impl KeymapFile {
     /// the file. A refused chord, a file that doesn't read or a write that
     /// fails changes nothing and says why.
     pub(in crate::app) fn set(&mut self, id: &str, chords: &[Chord]) -> Result<Saved, String> {
-        let command = command_by_id(id).ok_or_else(|| format!("no command {id}"))?;
+        let command = self
+            .effective
+            .command(id)
+            .ok_or_else(|| format!("no command {id}"))?;
         // Before the chords: an empty list would take a fixed command's keys.
         if !command.rebindable {
             return Err(format!("{}: {}", command.title, rules::Refusal::Fixed));
         }
-        let bindings = rules::bindings_of(id);
+        let bindings = self.effective.bindings_of(id);
         for chord in chords {
             if let Some(why) = rules::refusal(command, &bindings, *chord, Os::CURRENT) {
                 return Err(format!("{chord} can't be used: {why}"));
@@ -332,7 +361,8 @@ impl KeymapFile {
         };
         edit(&mut doc);
         let text = doc.to_string();
-        let parsed = parse(&text).map_err(|e| format!("The key map would not read back: {e}"))?;
+        let parsed = parse(&text, &self.dynamic)
+            .map_err(|e| format!("The key map would not read back: {e}"))?;
         let Some(path) = self.path.clone() else {
             self.adopt(State::Read, parsed);
             return Ok(Saved::Durably);
@@ -360,7 +390,7 @@ impl KeymapFile {
     fn reread(&mut self) -> Option<String> {
         let path = self.path.as_ref()?;
         match self.disk.read(path) {
-            Ok(text) => match parse(&text) {
+            Ok(text) => match parse(&text, &self.dynamic) {
                 Ok(parsed) => {
                     self.adopt(State::Read, parsed);
                     Some(text)
@@ -391,14 +421,14 @@ impl KeymapFile {
     fn adopt(&mut self, state: State, parsed: Parsed) {
         self.state = state;
         self.doc = parsed.doc;
-        self.effective = Arc::new(Effective::new(parsed.user));
+        self.effective = Arc::new(Effective::new(parsed.user).with_dynamic(self.dynamic.clone()));
         self.skipped = parsed.skipped;
         self.unknown = parsed.unknown;
     }
     fn unreadable(&mut self, why: Unreadable) {
         self.state = State::Unreadable(why);
         self.doc = fresh();
-        self.effective = Arc::default();
+        self.effective = Arc::new(Effective::default().with_dynamic(self.dynamic.clone()));
         self.skipped.clear();
         self.unknown.clear();
     }
@@ -429,7 +459,8 @@ fn bindings_table(doc: &mut DocumentMut) -> &mut dyn toml_edit::TableLike {
 }
 
 /// What `text` holds, or why it isn't a key map this release reads.
-fn parse(text: &str) -> Result<Parsed, Unreadable> {
+fn parse(text: &str, dynamic: &[&'static Dynamic]) -> Result<Parsed, Unreadable> {
+    let known = Effective::default().with_dynamic(dynamic.to_vec());
     let doc: DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| {
         Unreadable::Malformed(format!("it isn't TOML: {}", e.message()))
     })?;
@@ -459,11 +490,11 @@ fn parse(text: &str) -> Result<Parsed, Unreadable> {
         .as_table_like()
         .ok_or_else(|| Unreadable::Malformed("its bindings aren't a table".into()))?;
     for (id, item) in bindings.iter() {
-        let Some(command) = command_by_id(id) else {
+        let Some(command) = known.command(id) else {
             parsed.unknown.push(id.to_string());
             continue;
         };
-        match chords(command, item) {
+        match chords(command, item, &known) {
             Ok(chords) => {
                 parsed.user.insert(command.id, chords);
             }
@@ -480,6 +511,7 @@ fn parse(text: &str) -> Result<Parsed, Unreadable> {
 fn chords(
     command: &'static crate::app::shell::commands::registry::Command,
     item: &Item,
+    known: &Effective,
 ) -> Result<Vec<Chord>, String> {
     // Before the list: an empty one would take a fixed command's keys too.
     if !command.rebindable {
@@ -488,7 +520,7 @@ fn chords(
     let array = item
         .as_array()
         .ok_or_else(|| "not a list of keys".to_string())?;
-    let bindings = rules::bindings_of(command.id);
+    let bindings = known.bindings_of(command.id);
     let mut out: Vec<Chord> = Vec::new();
     for value in array.iter() {
         let text = value

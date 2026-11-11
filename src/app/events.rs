@@ -455,6 +455,7 @@ impl Editor {
                 Event::DialogClosed => {
                     self.activity.finish_dialog();
                 }
+                Event::Extensions(done) => self.extension_done(*done),
                 Event::BatchExported { ticket, outcomes } => self.batch_exported(ticket, outcomes),
                 _ => {}
             }

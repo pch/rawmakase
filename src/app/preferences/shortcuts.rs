@@ -50,8 +50,10 @@ impl Page {
     }
 }
 
-/// The groups, in the reference card's order.
-const GROUPS: [&str; 10] = [
+/// The group of the enabled extensions' commands, after the card's.
+const EXTENSIONS: &str = "Extensions";
+/// The groups, in the reference card's order, then the extensions'.
+const GROUPS: [&str; 11] = [
     "Everywhere",
     "Rating, flags and labels",
     "Quick Collection",
@@ -62,11 +64,15 @@ const GROUPS: [&str; 10] = [
     "Survey",
     "Develop",
     "Develop tools",
+    EXTENSIONS,
 ];
 
 /// The group a command's row is in: the card's, by what it does and where.
 fn group_of(command: &Command, bindings: &[&Binding]) -> &'static str {
     let id = command.id;
+    if id.contains('/') {
+        return EXTENSIONS;
+    }
     if bindings::METADATA.iter().any(|b| b.command == id) {
         return "Rating, flags and labels";
     }
@@ -107,11 +113,8 @@ fn place(context: Context) -> &'static str {
     }
 }
 
-fn title(id: &str) -> &'static str {
-    COMMANDS
-        .iter()
-        .find(|c| c.id == id)
-        .map_or("a command", |c| c.title)
+fn title(map: &Effective, id: &str) -> &'static str {
+    map.command(id).map_or("a command", |c| c.title)
 }
 
 /// One row of the page.
@@ -127,6 +130,8 @@ struct Row {
     /// The commands whose keys this one shares where both run, neither of
     /// which does: each with the chord and where.
     conflicts: Vec<(&'static str, Chord, Context)>,
+    /// The titles of the commands in `conflicts`, in their order.
+    conflict_titles: Vec<&'static str>,
     /// What runs instead where a binding of higher precedence has its key.
     shadows: Vec<String>,
 }
@@ -138,7 +143,7 @@ pub(in crate::app) fn keys_of(map: &Effective, id: &str) -> Vec<Chord> {
         return user.to_vec();
     }
     let mut out = Vec::new();
-    for b in rules::bindings_of(id) {
+    for b in map.bindings_of(id) {
         for d in map
             .defaults_of(b)
             .iter()
@@ -156,8 +161,9 @@ pub(in crate::app) fn keys_of(map: &Effective, id: &str) -> Vec<Chord> {
 
 fn rows(map: &Effective, clashes: &[Clash]) -> Vec<Row> {
     let mut out = Vec::new();
-    for command in COMMANDS {
-        let bindings = rules::bindings_of(command.id);
+    let extensions = map.dynamic().iter().map(|d| &d.command);
+    for command in COMMANDS.iter().chain(extensions) {
+        let bindings = map.bindings_of(command.id);
         let mine = |c: &&Clash| c.a.command == command.id || c.b.command == command.id;
         let mut conflicts: Vec<(&'static str, Chord, Context)> = Vec::new();
         let mut shadows = Vec::new();
@@ -180,14 +186,14 @@ fn rows(map: &Effective, clashes: &[Clash]) -> Vec<Row> {
                     };
                     conflicts.push((other.command, clash.chord, at));
                 }
-            } else if (map.overrides(me.command) || map.overrides(other.command))
+            } else if (map.chosen(me.command) || map.chosen(other.command))
                 && rules::level(other.context) > rules::level(me.context)
             {
                 shadows.push(format!(
                     "In {}, {} runs \u{201c}{}\u{201d} instead",
                     place(other.context),
                     clash.chord,
-                    title(other.command)
+                    title(map, other.command)
                 ));
             }
         }
@@ -198,6 +204,7 @@ fn rows(map: &Effective, clashes: &[Clash]) -> Vec<Row> {
             chords: keys_of(map, command.id),
             overridden: map.overrides(command.id),
             locked: !command.rebindable,
+            conflict_titles: conflicts.iter().map(|(id, _, _)| title(map, id)).collect(),
             conflicts,
             shadows,
         });
@@ -219,6 +226,7 @@ fn rows(map: &Effective, clashes: &[Clash]) -> Vec<Row> {
             overridden: false,
             locked: true,
             conflicts: Vec::new(),
+            conflict_titles: Vec::new(),
             shadows: Vec::new(),
         });
     }
@@ -451,7 +459,10 @@ impl Editor {
             }
         } else {
             // As the command reads keys: the Basic panel's by their place.
-            let template = rules::bindings_of(capture.command)
+            let template = self
+                .keymap
+                .effective()
+                .bindings_of(capture.command)
                 .first()
                 .and_then(|b| b.defaults.first());
             let chord = chord_of(press, template);
@@ -608,12 +619,12 @@ fn row_ui(
             palette.tone(Tone::MUTED),
         );
     }
-    for (other, chord, at) in &row.conflicts {
+    for ((_, chord, at), other) in row.conflicts.iter().zip(&row.conflict_titles) {
         note(
             ui,
             format!(
                 "Conflicts with \u{201c}{}\u{201d} on {chord} in {}: neither runs",
-                title(other),
+                other,
                 place(*at)
             ),
             palette.warning(),

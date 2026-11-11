@@ -249,6 +249,7 @@ impl Editor {
     /// so running it twice in a pass changes nothing.
     pub(in crate::app) fn background(&mut self, ctx: &egui::Context) {
         self.control_commands(ctx);
+        self.extensions_frame(ctx);
         self.events(ctx);
         self.finish_paused_turn(ctx);
         self.save_when_due(ctx);
@@ -322,6 +323,9 @@ impl Editor {
             }
             self.metadata_shortcuts(&ctx);
             self.workspace_shortcuts(&ctx);
+            if !self.activity.is_busy() {
+                self.extension_keys(&ctx);
+            }
             self.preferences_shortcut(&ctx);
             if !self.onboarding.visible && !self.activity.is_busy() {
                 self.panel_keys(&ctx);

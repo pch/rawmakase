@@ -138,6 +138,19 @@ pub(crate) struct Editor {
     /// The user's keymap.toml and the chords in effect: the defaults in a
     /// test editor, which never reads the data folder.
     keymap: crate::app::shell::keymap::file::KeymapFile,
+    /// The extensions and their programs: inert in a test editor.
+    extensions: crate::app::extensions::Host,
+    /// What the extensions were last told of the editor.
+    extensions_told: crate::app::extensions::Told,
+    /// Preferences > Extensions.
+    extension_page: crate::app::extensions::Page,
+    /// Runs on a proposal's worker before its work, for a test to hold it
+    /// there or make it panic.
+    #[cfg(test)]
+    proposal_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    /// Runs on a read's worker before its work, as `proposal_hook` does.
+    #[cfg(test)]
+    read_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 impl Editor {
     pub(crate) fn new(
@@ -179,6 +192,7 @@ impl Editor {
                 editor.messages.fail(report);
             }
         }
+        editor.start_extensions(&cc.egui_ctx);
         // 1:1 previews left unused past the chosen time go, as in Lightroom.
         editor.expire_previews();
         editor.updates.launched(launch, &mut editor.messages);
@@ -404,6 +418,13 @@ impl Editor {
             controls: crate::app::shell::automation::Hub::inactive(),
             automation: crate::app::shell::commands::Automation::default(),
             keymap: crate::app::shell::keymap::file::KeymapFile::defaults(),
+            extensions: crate::app::extensions::Host::inert(),
+            extensions_told: Default::default(),
+            extension_page: Default::default(),
+            #[cfg(test)]
+            proposal_hook: None,
+            #[cfg(test)]
+            read_hook: None,
         };
         app.reload_presets(ctx);
         // A catalog passed on the command line opens instead of the last one;
@@ -979,6 +1000,7 @@ pub use crate::app::presets::bulk_import::import_profiles;
 pub(crate) mod catalog;
 pub(crate) mod develop;
 mod export;
+mod extensions;
 mod file_ops;
 pub(crate) mod library;
 pub(crate) mod preferences;

@@ -206,9 +206,79 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     ),
 ];
 
-/// The command `id` names.
+/// The built-in command `id` names. An extension's command is looked up in the
+/// key map's table of them ([`Effective::command`](crate::app::shell::keymap::Effective::command)).
 pub(in crate::app) fn command_by_id(id: &str) -> Option<&'static Command> {
     COMMANDS.iter().find(|c| c.id == id)
+}
+
+/// An extension's `[[command]]`, as the registry knows it: `<extension>/<id>`,
+/// its title and its one binding, which runs everywhere the usual guards
+/// allow. The key map consults these beside [`COMMANDS`] and [`bindings::ALL`]
+/// while their extension is enabled.
+pub(in crate::app) struct Dynamic {
+    pub command: Command,
+    pub binding: Binding,
+}
+impl std::fmt::Debug for Dynamic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.command.id)
+    }
+}
+impl PartialEq for Dynamic {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
+}
+impl Eq for Dynamic {}
+
+/// The extension command `id` (`<extension>/<command>`) with `title` and its
+/// manifest's default `key`. Bindings are compared by address and hold
+/// `'static` names, so each is made once per process and kept: an id is
+/// interned once, and a command once per title and key it is declared with
+/// (a few per extension version a session loads).
+pub(in crate::app) fn extension_command(
+    id: &str,
+    title: &str,
+    key: Option<crate::app::shell::keymap::Chord>,
+) -> &'static Dynamic {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, PoisonError};
+    type Made = HashMap<(String, String, Option<String>), &'static Dynamic>;
+    static IDS: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+    static MADE: Mutex<Option<Made>> = Mutex::new(None);
+    let mut made = MADE.lock().unwrap_or_else(PoisonError::into_inner);
+    let made = made.get_or_insert_with(HashMap::new);
+    let identity = (
+        id.to_string(),
+        title.to_string(),
+        key.map(|k| k.to_string()),
+    );
+    if let Some(dynamic) = made.get(&identity) {
+        return dynamic;
+    }
+    let id: &'static str = {
+        let mut ids = IDS.lock().unwrap_or_else(PoisonError::into_inner);
+        match ids.iter().find(|i| **i == id) {
+            Some(i) => i,
+            None => {
+                let interned: &'static str = Box::leak(id.to_string().into_boxed_str());
+                ids.push(interned);
+                interned
+            }
+        }
+    };
+    let title: &'static str = Box::leak(title.to_string().into_boxed_str());
+    let defaults: &'static [Default] = match key {
+        Some(chord) => Box::leak(Box::new([Default::user(chord, None)])),
+        None => &[],
+    };
+    let dynamic: &'static Dynamic = Box::leak(Box::new(Dynamic {
+        command: command(id, title),
+        binding: Binding::new(id, Context::Everywhere, defaults),
+    }));
+    made.insert(identity, dynamic);
+    dynamic
 }
 
 /// Declares each binding as a static, and [`bindings::ALL`] as all of them.

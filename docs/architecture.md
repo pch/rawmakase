@@ -85,6 +85,39 @@ requests mean to the editor (applying a proposal, a device's operation) is the
 app's, so the host can be shared by the app, `rawmakase extensions` and
 `cargo rawmakase`, and an extension builds without anything of the app's.
 `scripts/deps-crates.txt` and `scripts/crate-closures.sh` hold them to that.
+`extensions/example` (`rawmakase-example`) is a test-only extension built with
+the SDK alone, as a third party would build one; the app's tests run it and it
+is never bundled.
+
+Inside the app, `app::extensions` owns extensions at run time: which are
+loaded (bundled, installed, developer folders), when each program runs (a
+`with-app` one after the first frame, an `on-demand` one at its first request,
+stopped after 5 minutes idle), its crashes (three in a row make it Failed until
+Retry, for this session), its commands, settings and panels, and what its
+requests mean to the editor. It is the only caller of the host's sessions in
+the app: `Editor::new` starts it and a test editor's stays inert. A program's
+reads and proposals are answered through the editor on the UI thread, one
+poll per frame; what opens photos' files (a read or a proposal of photos not
+open in Develop, a command's target among them) runs on a worker and is
+answered when it finishes. A read of a photo not open gives the settings
+Develop would open it with (`library::sync::starting_recipe`: its saved edit,
+else its Lightroom edit or the raw defaults). A proposal belongs to one of the
+app's `command.run` requests
+and is admitted only while that request is in flight, checked immediately
+before it is applied. Its target token names the catalog's location and
+structural generation and, per photo, the file's identity and the catalog's
+fingerprint (`Catalog::photo_fingerprint`); the open photo is checked against
+Develop's live state and, alone in the proposal, changed through its edit path
+as one History step. Photos not open are changed on a worker, as the running
+batch, through the batch edit's path (`library::sync::apply_proposal`) and one
+`Catalog::change_edits_if`, which compares each fingerprint and asks whether
+the proposal is still admitted inside the write transaction; the program is
+answered when the worker finishes, and a proposal with the open photo among
+others saves it first and sends it to the worker too, so it is one Undo. The
+catalog owns the fingerprint and the conditional write; the app owns what a
+token holds. Every persisted change goes through the host
+crate's `State::update`, so a write failure leaves this session's state as it
+was. Quitting follows [the shutdown contract](shutdown.md).
 
 No value, catalog or rendering crate can reach `rawmakase-inference`, so saved masks
 render without any inference installed and a photo with AI Denoise renders from a
@@ -587,6 +620,15 @@ or feather; Shift and Alt for a Basic step) and Shift and Alt on a punctuation k
 which layouts need to type it. Held modifiers, gestures, text fields, dialogs'
 Enter and Escape and other widget-local keys are read where they are used; the
 fixed ones a user's chord could collide with are listed in `keymap::rules`.
+
+An enabled extension's `[[command]]`s join as `<extension>/<command>`
+(`registry::extension_command`, interned once per process with one binding
+that runs everywhere the usual guards allow). The key map's `Effective` holds
+them beside the registry's, and everything that looks a command or a binding
+up asks it: the keys, the conflicts, Preferences > Shortcuts, the reference
+card and `keymap.toml`. A key map entry for one whose extension is off is kept
+as unknown and takes effect again when it is turned on. An extension's default
+key is not a built-in default, so its clashes are found as a user's are.
 
 The user's key map is `<data dir>/keymap.toml`, owned by `keymap::file::KeymapFile`,
 the only reader and writer of the file. It holds only the commands the user

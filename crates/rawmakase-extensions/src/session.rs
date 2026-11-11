@@ -401,6 +401,16 @@ impl Session {
         self.pending.get(&id).is_some_and(|p| !p.expired)
     }
 
+    /// When an admitted app request stops being admitted, for work done on
+    /// its behalf elsewhere to check at the moment it commits; `None` once
+    /// it isn't admitted.
+    pub fn deadline(&self, id: u64) -> Option<Instant> {
+        self.pending
+            .get(&id)
+            .filter(|p| !p.expired)
+            .map(|p| p.deadline)
+    }
+
     /// The app requests in flight.
     pub fn in_flight(&self) -> usize {
         self.pending.len()
@@ -603,6 +613,11 @@ impl Stopping {
     /// A handle that ends the unit without waiting.
     pub fn killer(&self) -> Killer {
         Killer(self.unit.clone())
+    }
+    /// The stopper thread, for an owner that waits for several stops together
+    /// under one deadline; it ends by the deadline given to [`Session::stop`].
+    pub fn into_thread(self) -> JoinHandle<()> {
+        self.thread
     }
 }
 

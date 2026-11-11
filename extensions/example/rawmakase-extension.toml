@@ -1,0 +1,70 @@
+# A test-only extension: the app's tests run it, and it shows an extension
+# author each contribution an extension can make in this release. It is never
+# bundled with RAWmakase.
+[extension]
+id = "dev.rawmakase.example"
+name = "Example"
+version = "0.1.0"
+rawmakase = ">=0.1"
+api = 1
+authors = ["RAWmakase"]
+license = "MIT"
+description = "Brightens the selected photos by its step, and shows a panel."
+
+[program]
+path = "rawmakase-example"
+start = "on-demand"
+
+[[setting]]
+id = "step"
+name = "Step"
+help = "How much Brighten adds to Exposure."
+control = { slider = [0, 2] }
+default = 0.5
+step = 0.05
+unit = "EV"
+
+[[command]]
+id = "brighten"
+title = "Brighten"
+applies-to = "selection"
+places = ["library.photo-menu"]
+
+[[command]]
+id = "brighten-briefly"
+title = "Brighten Briefly"
+applies-to = "selection"
+
+[[command]]
+id = "settings"
+title = "Show Settings"
+
+[[command]]
+id = "read"
+title = "Read the Editor"
+
+[[command]]
+id = "wait"
+title = "Wait Until Cancelled"
+
+[[command]]
+id = "propose-late"
+title = "Propose After Cancellation"
+applies-to = "selection"
+
+[[command]]
+id = "refuse"
+title = "Refuse"
+
+[[command]]
+id = "hang"
+title = "Hang"
+
+[[command]]
+id = "crash"
+title = "Crash"
+
+[[panel]]
+id = "note"
+title = "Note"
+place = "preferences"

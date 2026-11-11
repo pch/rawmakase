@@ -81,10 +81,17 @@ that drops it.
 | The Loupe's AI Denoise loader | `app/develop/ai_denoise.rs` (`cached_loader`) | A job; reading one finished result from the AI Denoise cache (150–370 MB), assembling it over the photo's full-size image and recovering its highlights. It never runs the model | `Latest` stopped, between jobs; the photo's load cancel, set when the photo is left or another load replaces it, between the cache read, the assembly and the recovery | Yes |
 | Lensfun profiles | `app/develop/lensfun.rs` (the work is `lensfun_install.rs`) | One job: `versions.json` and the archive over HTTPS (connect 20 s, 30 s per response, 60 s for the body, 2 min each request), unpacking and checking it in memory, writing one version folder and the manifest; or removing the folder; or waiting for another instance's install lock (at most 5 min) | Its cancel flag, between download chunks, archive entries and files written, before the version folder is renamed and before the manifest is written, and while waiting for the lock | Yes, under the deadline; a cancel before the manifest leaves the version in use, and a crash leaves a staging folder the next install removes |
 | Camera-profile download | `app/develop/profile_download.rs` | One HTTPS request (connect 10 s, response 15 s, body 20 s, total 30 s), bounded reads and atomic profile import | Cancel claims the task before publication; checked between reads and before import. An install already publishing finishes atomically | No: a one-shot task stays detached; network waits are bounded, staging files are temporary and the library importer never clobbers an existing file. Dropping its task signals cancellation; a panic reports failure through the normal task wrapper |
+| Extension proposal | `app/extensions/targets.rs` (the work is `library::sync::apply_proposal`) | One proposal of up to 200 photos not open in Develop, possibly on a network share: their catalog fingerprints and file identities (the first 64 KB of each), a RAW's header or a rendered file's decode, a Camera Look fit or a full decode only for a photo that needs one, then one SQLite write transaction | Its batch cancel: the batch window's Cancel, and set by the extension host whenever the command it belongs to stops being admitted (answered, cancelled, past its deadline, the extension disabled, its program gone, quitting's step 2.1). Taken between photos, inside decodes and fits, and inside the write transaction: before the write, every photo is left unchanged; once the write has begun it completes or fails as a whole and stands, with its Undo | No: a one-shot job, detached, as batch edits are. A stalled read can't be interrupted, and once its cancel is set it writes nothing, so quitting has nothing to wait for. The close guard waits for it as for any batch edit, and its command's deadline (30 s) cancels it. It reports back on every path, a panic included, which ends the batch and answers the program |
+| Extension read | `app/extensions/targets.rs` (`Reading::finish`; the settings are `library::sync::starting_recipe`) | A read of up to 200 photos not open in Develop, for a program's `read.*` or a command's target, possibly on a network share: per photo its catalog fingerprint and file identity (the first 64 KB), its edit record and, unless it has a saved edit, a RAW's header or a rendered file's decode and a Camera Look fit | Its cancel flag, set when the program's session ends (disabled, uninstalled, crashed, quitting's step 2.1), when the program cancels its read, or when the command whose target it reads is stopped. Taken between photos and inside decodes and fits | No: a one-shot job, detached. It writes nothing, and a stalled read can't be interrupted. It reports back on every path, a panic included; a report whose asker is gone, or whose catalog was closed or read again, is dropped or refused |
 | Availability check | `app/library/availability.rs` | File metadata for every photo | None | No, for the same reason |
 | Update checker | `app/shell/updates.rs` | Up to an hour between checks; a check or download of up to 15 min | Its request sender dropped, between requests | No: a download has no cancel |
 | Installation probe | `diagnostics.rs` | `updates::installation()`, which can run the package manager | None; the system probe stops waiting for it after 10 s and reports it unavailable | No |
 | GVFS bridge reaper (Linux) | `platform/network.rs` | The bridge process, which outlives the app | None | Never |
+| Extension program | `app/extensions/mod.rs` (the process is `crates/rawmakase-extensions/src/process.rs`) | A program of the user's: anything, for as long as it likes. The app never waits for it except through the stopper below; its requests have deadlines (30 s, 5 s for `hello`), checked on the UI thread each frame, after which they are cancelled and failed 2 s later | `quitting`, then its channel's sending side closed | Through its stopper |
+| Extension reader | `rawmakase-extensions` `session.rs` | A blocking read of the program's channel; **a send on the owner's queue, bounded at 64**, which it never blocks on: an operation that doesn't fit is refused `channel_full`, anything else dropped and counted | The program's end of the channel closing, when it exits or is ended | No: it ends on EOF once its process unit is gone. Nothing joins it in `Drop` |
+| Extension writer | `rawmakase-extensions` `session.rs` | Its queue (64 of the app's lines and 1024 of the reader's answers, sends refused rather than blocking when full); a write to the channel | Its queue's sender dropped (`Session::stop`, or the session dropped) | No: it ends with its queue or on the broken pipe |
+| Extension waiter | `rawmakase-extensions` `process.rs` | `waitid` (Unix, without reaping first, so the group id can't be reused) or `WaitForSingleObject` on the primary process; then ending the whole process group or job | None: it ends with the process | No |
+| Extension stopper | `rawmakase-extensions` `session.rs` (`Session::stop`) | Waiting for the program to exit by itself, at most `min(1 s, deadline − 200 ms)` of the shared deadline | None: then it ends the process group (`killpg`) or job (`TerminateJobObject`) and returns | Yes, under the deadline; it returns by it. The exit hook then ends every unit not yet confirmed ended (`kill_remaining`, which never blocks) |
 
 The Develop loader, Reference View, Library previews, preview builds, exports and
 Sync also fit the default Camera Look of a photo without colour data, once per file
@@ -93,19 +100,30 @@ The fit takes the job's cancel flag inside its renders and between its stages, s
 stops as a decode does; a fit stopped that way is neither used nor cached. A job
 waiting for another's fit of the same file sees its own cancel within 50 ms.
 
+An extension's program is stopped outside quitting too, without counting as a
+crash: when its extension is disabled, uninstalled or replaced (its requests are
+cancelled first and the session dropped, which ends its unit at once), and an
+`on-demand` program idle for 5 minutes (sent `quitting`, ended by its stopper
+1 s later if it hasn't exited). Preferences > Extensions' downloads, installs
+and update checks are one-shot jobs, below, and so are an extension's reads and
+proposals of photos not open in Develop.
+
 One-shot jobs stay detached: Auto, Upright, Auto straighten, Profile → Fit Camera
 Look, the Point Color and
 Targeted Adjustment samples, the onboarding scan, catalog open and import, file
 dialogs, bulk import, the preset scan, batch edits (Sync Settings, Auto Settings or a
 preset on the Library's selection; their Cancel is taken between photos and right
 before saving, discards the whole batch, and the batch ends only when its worker
-reports back, a panic included), folder relink and move, the
+reports back, a panic included), an extension's read and proposal of photos not
+open (their rows above), folder relink and move, the
 file operations' plan, run and recovery (Remove from Catalog, moving photos, New
 Folder Inside, and deciding what a crash left when a catalog opens; the close guard
 waits for a run, with Close anyway, and the journal leaves anything cut short to
 recovery), the
 folder availability probe (which can hang on a stalled mount like the volume
-probe), the update receipt acknowledgement, the Report an Issue system probe and the watermark fonts. They report through the event channel or a generation check,
+probe), Preferences > Extensions' installs, GitHub downloads and update checks
+(HTTPS with connect, response and body timeouts; a panic reports as a failure,
+so the page never stays busy), the update receipt acknowledgement, the Report an Issue system probe and the watermark fonts. They report through the event channel or a generation check,
 so a result that arrives after its document is gone is dropped. File dialogs on
 macOS run their panel on the main thread, so they are never joined from it.
 
@@ -118,18 +136,31 @@ macOS run their panel on the main thread, so they are never joined from it.
    A close refused only to let work finish is asked for again once it has.
 2. `on_exit`, on every path, with one deadline for all of it:
    1. Cancel: the load, render, reference and prefetch tasks, the running export
-      batch, the command output jobs and the library's renders.
+      batch, the command output jobs, the library's renders and every request
+      in flight to an extension's program (each is sent `cancel` and settled
+      as cancelled at once, so a proposal it sends later is refused, and a
+      proposal's worker still running writes nothing it hadn't written).
    2. Close: drop the update request sender, the control request receiver and the
-      library's channels.
+      library's channels. The extension host admits no request and reads
+      nothing from its programs from now on.
    3. Stop: the `Latest` workers, the export queue, the command output jobs, the
       library's previews, selection, AI Denoise (its stop flag and the running
-      run's cancel), the model installs, Lensfun, MIDI and the control socket.
+      run's cancel), the model installs, Lensfun, MIDI, the control socket and
+      the extensions' programs. Each program is sent `quitting`, its channel's
+      sending side is closed and its receivers are dropped, and its stopper is
+      given the absolute shared deadline: it waits for the program to exit for
+      at most `min(1 s, deadline − 200 ms)`, then ends its process group or
+      job.
    4. Save the edit, if the close guard did not, as it does, while those wind down;
       a failure, or a save still running at the deadline, is written to stderr.
       Then drop the autosave job sender.
    5. Join the joinable workers above until the deadline. The renderer is among
       them, so it is done before eframe drops the device; any worker still
-      running at the deadline is left detached.
+      running at the deadline is left detached. Then every extension program's
+      process group or job not confirmed ended is ended at once
+      (`Host::kill_remaining`: `killpg` or `TerminateJobObject`, which return
+      at once), so helpers a program left die even when the deadline had
+      already passed or a stopper was left detached.
    6. Delete the temporary files of exports still being written, on a thread of
       its own waited for 0.5 s: they are on the folder an export may have stalled on.
 3. eframe drops the editor, then the painter. The detached workers end with the

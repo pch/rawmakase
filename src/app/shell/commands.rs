@@ -161,6 +161,9 @@ pub(in crate::app) enum Operation {
     /// Answers once `Until` holds, or after the time given, so a client waiting
     /// for a photo or an output is woken rather than polling.
     Wait(Until, std::time::Duration),
+    /// Runs an enabled extension's command, `<extension>/<command>`; answered
+    /// once it is sent, not when it finishes.
+    Extension(String),
 }
 
 /// What a `wait` command waits for.
@@ -540,10 +543,24 @@ impl Editor {
             // A wait sent by a device answers at once; the control socket keeps it.
             Operation::State | Operation::Wait(..) => return Ok(Outcome::Empty),
             Operation::Job(id) => return self.automation.outputs.state(id).map(Outcome::Output),
+            Operation::Extension(id) => {
+                return self
+                    .run_extension_command(&id, crate::app::extensions::RunBy::Control)
+                    .map(|()| Outcome::Empty);
+            }
             Operation::Capabilities => {
                 return Ok(Outcome::Capabilities(Capabilities {
                     protocol: PROTOCOL,
-                    actions: Action::names(),
+                    actions: Action::names()
+                        .into_iter()
+                        .chain(
+                            self.keymap
+                                .effective()
+                                .dynamic()
+                                .iter()
+                                .map(|d| d.command.id),
+                        )
+                        .collect(),
                     parameters: Param::capabilities(),
                     commands: &[
                         "state",
@@ -846,6 +863,7 @@ impl Editor {
             | Operation::Photos { .. }
             | Operation::Presets { .. }
             | Operation::Job(_)
+            | Operation::Extension(_)
             | Operation::BuildPreviews(_)
             | Operation::Wait(..) => unreachable!(),
         }
@@ -905,6 +923,53 @@ impl Editor {
         if before_recipe != *self.document.edit.recipe() {
             self.step_name.name(label, shown);
         }
+        Ok(())
+    }
+    /// Sets several of the open photo's settings in one edit and one History
+    /// step named `name`, as `set` sets each: an extension's proposal. The
+    /// caller has checked the photo is the one the proposal was computed for;
+    /// this makes the checks every command makes of the editor.
+    pub(in crate::app) fn apply_open_settings(
+        &mut self,
+        settings: &[(Param, f32)],
+        name: &str,
+    ) -> Result<()> {
+        if self.document.metadata.is_none() {
+            return Err(Error::new("no_document", "No photo is open"));
+        }
+        if self.activity.is_busy() || self.command_modal() {
+            return Err(Error::new(
+                "busy",
+                "Close the dialog or wait for the current operation",
+            ));
+        }
+        self.automation.end_turn();
+        self.finish_gesture();
+        let frame = self.begin_edit_frame();
+        let before = self.document.edit.recipe().clone();
+        let photo = self.document.metadata.clone();
+        let recipe = self.document.edit.recipe_mut();
+        for (param, value) in settings {
+            let param = match *param {
+                Param::Setting(id) => Param::Setting(id.for_photo(photo.as_ref())),
+                other => other,
+            };
+            let change = |r: &mut crate::model::recipe::Recipe| param.set(r, *value, 0);
+            match param {
+                Param::Setting(id) => {
+                    crate::model::edit::change_setting(recipe, id, photo.as_ref(), change);
+                }
+                _ => {
+                    change(recipe);
+                }
+            }
+        }
+        if before != *self.document.edit.recipe() {
+            self.step_name.name(name.to_string(), String::new());
+        }
+        let ctx = self.context.clone();
+        self.finish_edit_frame(frame, &ctx);
+        self.sync_undo();
         Ok(())
     }
     pub(in crate::app) fn execute_action(

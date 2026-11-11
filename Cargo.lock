@@ -3755,6 +3755,7 @@ dependencies = [
  "rawmakase-ctl",
  "rawmakase-decode",
  "rawmakase-engine",
+ "rawmakase-example",
  "rawmakase-export",
  "rawmakase-extensions",
  "rawmakase-fs",
@@ -3869,6 +3870,14 @@ dependencies = [
  "rayon",
  "serde_json",
  "wgpu",
+]
+
+[[package]]
+name = "rawmakase-example"
+version = "0.1.0"
+dependencies = [
+ "rawmakase-extension",
+ "serde_json",
 ]
 
 [[package]]

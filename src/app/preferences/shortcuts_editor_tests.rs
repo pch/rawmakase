@@ -152,7 +152,8 @@ fn shortcuts_sit_between_display_and_automation() {
             "Performance",
             "Display",
             "Shortcuts",
-            "Automation"
+            "Automation",
+            "Extensions"
         ]
     );
 }

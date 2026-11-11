@@ -398,7 +398,7 @@ fn the_shortcuts_guide_matches_the_key_map() {
         .nth(1)
         .and_then(|rest| rest.split("```").next())
         .expect("an example");
-    let parsed = match parse(example) {
+    let parsed = match parse(example, &[]) {
         Ok(parsed) => parsed,
         Err(why) => panic!("the example doesn't read: {why}"),
     };

@@ -13,6 +13,7 @@
 use crate::app::shell::messages::Work;
 use crate::app::{Editor, task};
 use std::borrow::Cow;
+use std::time::Instant;
 
 /// A kind of work, for the table's order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,6 +43,7 @@ pub(in crate::app) enum Kind {
     ProfileDownload,
     Outputs,
     Controls,
+    Extensions,
     FolderSync,
     LibraryPreviews,
 }
@@ -78,8 +80,9 @@ struct Row {
     slows_previews: bool,
     /// The checksum reader pauses while it runs.
     pauses_checksums: bool,
-    /// Its step of the exit sequence: asked to stop, to be waited for.
-    stop: Option<fn(&mut Editor) -> Vec<task::Stopping>>,
+    /// Its step of the exit sequence: asked to stop by the absolute deadline
+    /// the whole exit shares, to be waited for.
+    stop: Option<fn(&mut Editor, Instant) -> Vec<task::Stopping>>,
 }
 
 fn work(key: &'static str, text: &str) -> Work {
@@ -101,7 +104,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: true,
         pauses_checksums: true,
-        stop: Some(|e| Vec::from(e.loader.stop())),
+        stop: Some(|e, _| Vec::from(e.loader.stop())),
     },
     // The Develop toolbar's spinner, shared with the loader.
     Row {
@@ -111,7 +114,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: false,
         pauses_checksums: false,
-        stop: Some(|e| vec![e.renderer.stop()]),
+        stop: Some(|e, _| vec![e.renderer.stop()]),
     },
     // Reference View's own pane.
     Row {
@@ -121,7 +124,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: false,
         pauses_checksums: false,
-        stop: Some(|e| vec![e.reference_loader.stop()]),
+        stop: Some(|e, _| vec![e.reference_loader.stop()]),
     },
     // Develop's HDR preview, on a worker of its own.
     Row {
@@ -131,7 +134,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: false,
         pauses_checksums: false,
-        stop: Some(|e| vec![e.hdr_preview.stop()]),
+        stop: Some(|e, _| vec![e.hdr_preview.stop()]),
     },
     // Develop's HDR histogram, on a worker of its own.
     Row {
@@ -141,7 +144,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: false,
         pauses_checksums: false,
-        stop: Some(|e| vec![e.hdr_histogram.stop()]),
+        stop: Some(|e, _| vec![e.hdr_histogram.stop()]),
     },
     // Its progress in the bar. Queued exports count, not only the one running.
     Row {
@@ -151,7 +154,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: true,
         pauses_checksums: true,
-        stop: Some(|e| vec![task::Stopping::new(e.exports.close())]),
+        stop: Some(|e, _| vec![task::Stopping::new(e.exports.close())]),
     },
     // Its window, with its progress and Cancel.
     Row {
@@ -191,7 +194,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: true,
         pauses_checksums: true,
-        stop: Some(|e| vec![task::Stopping::new(e.preview_builds.close())]),
+        stop: Some(|e, _| vec![task::Stopping::new(e.preview_builds.close())]),
     },
     // Stand-ins replace a preview where it shows.
     Row {
@@ -201,7 +204,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: false,
         pauses_checksums: false,
-        stop: Some(|e| Vec::from(e.stand_ins.stop())),
+        stop: Some(|e, _| Vec::from(e.stand_ins.stop())),
     },
     // Its tile (Subject, Sky); Subject's and Sky's model installers and the
     // upgrade thread are stopped with it.
@@ -212,7 +215,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: false,
         pauses_checksums: false,
-        stop: Some(|e| e.selection.stop()),
+        stop: Some(|e, _| e.selection.stop()),
     },
     // Detail's AI Denoise status line; its model installer is stopped with it.
     Row {
@@ -222,7 +225,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: true,
         pauses_checksums: false,
-        stop: Some(|e| {
+        stop: Some(|e, _| {
             let mut stopping = vec![task::Stopping::new(e.ai_denoise.stop())];
             stopping.extend(e.ai_denoise_model.stop());
             stopping
@@ -237,7 +240,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: false,
         pauses_checksums: false,
-        stop: Some(|e| vec![e.ai_loupe.stop()]),
+        stop: Some(|e, _| vec![e.ai_loupe.stop()]),
     },
     Row {
         kind: Kind::Auto,
@@ -308,7 +311,7 @@ const WORK: &[Row] = &[
         }),
         slows_previews: false,
         pauses_checksums: false,
-        stop: Some(|e| e.lensfun.stop()),
+        stop: Some(|e, _| e.lensfun.stop()),
     },
     Row {
         kind: Kind::MetadataReread,
@@ -369,7 +372,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: true,
         pauses_checksums: false,
-        stop: Some(|e| e.automation.stop_outputs()),
+        stop: Some(|e, _| e.automation.stop_outputs()),
     },
     // The MIDI listeners and the control socket (their requests close earlier,
     // with the other channels).
@@ -380,7 +383,23 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: false,
         pauses_checksums: false,
-        stop: Some(|e| e.controls.stop()),
+        stop: Some(|e, _| e.controls.stop()),
+    },
+    // Extensions' programs: a program's own `status`, or the command it runs.
+    // Their requests were cancelled and their channels closed earlier; each
+    // program gets until shortly before the deadline to exit, and the exit
+    // hook ends whatever is left of its process group or job afterwards.
+    Row {
+        kind: Kind::Extensions,
+        running: None,
+        closing: None,
+        status: Some(|e| {
+            let entries = e.extensions.status();
+            (!entries.is_empty()).then(|| work("extensions", &entries.join(" · ")))
+        }),
+        slows_previews: false,
+        pauses_checksums: false,
+        stop: Some(|e, deadline| e.extensions.stop(deadline)),
     },
     // Its own progress in the folder's row.
     Row {
@@ -390,7 +409,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: false,
         pauses_checksums: false,
-        stop: Some(|e| e.stop_folder_sync().into_iter().collect()),
+        stop: Some(|e, _| e.stop_folder_sync().into_iter().collect()),
     },
     // Their own spinner and "Preparing previews…"/"Rendering …", beside Auto
     // Advance in the Library and in Develop's status row.
@@ -401,7 +420,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: false,
         pauses_checksums: false,
-        stop: Some(|e| {
+        stop: Some(|e, _| {
             e.library
                 .as_mut()
                 .map(|library| library.close_previews())
@@ -446,11 +465,11 @@ impl Editor {
     /// The workers the exit sequence waits for, asked to stop in the table's
     /// order, whether or not they are running (stopping cancelled some already);
     /// none is waited for here.
-    pub(in crate::app) fn stop_workers(&mut self) -> Vec<task::Stopping> {
+    pub(in crate::app) fn stop_workers(&mut self, deadline: Instant) -> Vec<task::Stopping> {
         let mut stopping = Vec::new();
         for row in WORK {
             if let Some(stop) = row.stop {
-                stopping.extend(stop(self));
+                stopping.extend(stop(self, deadline));
             }
         }
         stopping

@@ -155,7 +155,9 @@ controls unasked.
 ### Snapshots and proposals
 
 A read returns `{"token":t,"photos":[{"id":n,"path":"…","settings":{…}}]}`.
-Settings use the control layer's names and units. The token is opaque: it names
+Settings use the control layer's names and units; on a JPEG, PNG or TIFF,
+`temperature` and `tint` are its relative Temp and Tint (−100 to 100) in a
+read as in a proposal. The token is opaque: it names
 the catalog, its session and structure, and each photo's file and edit as
 read. A proposal sends it back; the app checks each photo just before applying
 and refuses one whose file, edit or metadata moved on as `stale_target`,
@@ -163,6 +165,54 @@ applying the rest, each as one History step. `op` is the id of the app's
 `command.run` request the proposal belongs to; once that request is answered,
 cancelled or past its deadline, the proposal is refused `not_admitted` and
 nothing changes.
+
+What the app checks, photo by photo:
+
+- A token of a catalog that has since closed, been switched for another or
+  read again (which a removal that may reuse ids does) is refused whole,
+  `stale_target`.
+- The photo open in Develop is checked against Develop's state now, whether or
+  not it was open when read. Read from Develop, it must still be the same load
+  with no edit since; read from the catalog, Develop must show just what the
+  catalog holds (nothing unsaved, not protected, the saved settings) and the
+  catalog state must be the same. Alone in the proposal, it changes as one
+  step of its History.
+- A photo read from Develop that is no longer open is accepted only if, when
+  it was read, Develop showed just what the catalog holds. Otherwise the read
+  saw settings the catalog never had, or a protected edit, and the photo is
+  refused `stale_target`.
+- Any other photo must still have the file and the catalog state it was read
+  with, checked before its file is opened and again inside the catalog's one
+  write for the proposal, so nothing changed meanwhile is overwritten. It is
+  changed as a batch edit changes it, with a History step, off the UI thread;
+  the reply comes when that work is done. One Undo covers every photo of the
+  proposal: when the open photo is among others, it is saved first and
+  changed with them, then opens again with what was written.
+- A cancellation of the command (answered, cancelled, past its deadline, the
+  extension disabled, its program gone, the app quitting) or the user's
+  Cancel before that write leaves every photo unchanged; the reply is then
+  `not_admitted`, sent as soon as the command stops being admitted, without
+  waiting for the work to stop, or `cancelled` for the user's Cancel. A
+  program that cancels its proposal is answered `cancelled` and its work stops
+  the same way. Once the write has begun it completes or fails as a whole, and
+  what it wrote stands, with its Undo; the reply then says what it wrote.
+- While another batch edit runs, the photos of a proposal that needs one are
+  refused `busy`.
+- A read returns at most 200 photos and a proposal changes at most 200
+  (`too_large`). A setting name the control layer doesn't know, or a value that
+  isn't a finite number, refuses that photo `invalid_request`.
+
+A photo's settings in a read are Develop's for the open photo and, for any
+other, the settings Develop would open it with: its saved RAWmakase edit, else
+its Lightroom edit, else the raw defaults, so a read means the same whether or
+not the photo is open. A photo whose settings can't be read (an edit that
+can't be read, or protected because its file changed; a file that can't be
+opened) has no settings and an `error` saying why, and a proposal for it is
+refused `stale_target`. Photos not open are read off the UI thread, and the
+reply comes when that is done; a program that cancels its read is answered
+`cancelled`.
+`adapter.device` and `adapter.operate` are refused `adapter_disabled` in this
+version: the app runs no control adapter of an extension yet.
 
 ### Device operations
 

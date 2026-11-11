@@ -1,0 +1,22 @@
+[package]
+name = "rawmakase-example"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "A test-only RAWmakase extension: commands, a setting, a panel, reads and proposals, never bundled"
+license.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rawmakase-example"
+path = "src/main.rs"
+
+[dependencies]
+rawmakase-extension = { path = "../../crates/rawmakase-extension", version = "0.1.0" }
+serde_json.workspace = true
+
+[lints]
+workspace = true

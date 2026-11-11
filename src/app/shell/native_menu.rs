@@ -1,5 +1,5 @@
 //! Routes native menu choices through the same editor operations as the UI.
-use crate::app::shell::keymap::{Chord, Effective, Mods, conflicts, rules};
+use crate::app::shell::keymap::{Chord, Effective, Mods, conflicts};
 use crate::app::{
     Editor, Module,
     shell::dialogs::{CatalogDialog, FolderAction},
@@ -48,7 +48,7 @@ pub(in crate::app) const KEYED: [Action; 8] = [
 /// Cmd+Shift+E is the Library's and Develop's.
 pub(in crate::app) fn menu_chord(map: &Effective, action: Action, macos: bool) -> Option<Chord> {
     let id = command_of(action)?;
-    let bindings = rules::bindings_of(id);
+    let bindings = map.bindings_of(id);
     let chords: Vec<Vec<(crate::app::shell::keymap::Default, Chord)>> = bindings
         .iter()
         .map(|b| {
@@ -154,7 +154,11 @@ impl Editor {
         let enabled = enabled
             && keyed.is_none_or(|id| {
                 let live = self.live_keys(ctx);
-                rules::bindings_of(id).iter().any(|b| live.runs(b))
+                self.keymap
+                    .effective()
+                    .bindings_of(id)
+                    .iter()
+                    .any(|b| live.runs(b))
             });
         let checked = match action {
             Action::Library => self.module == Module::Library && !self.onboarding.visible,
@@ -647,7 +651,7 @@ mod tests {
     fn a_menu_items_fixed_key_is_no_commands() -> anyhow::Result<()> {
         use crate::app::shell::keymap::rules::{Os, Refusal, refusal};
         let library = crate::app::shell::commands::registry::command_by_id("library").unwrap();
-        let bindings = rules::bindings_of("library");
+        let bindings = Effective::default().bindings_of("library");
         for keys in ["Cmd+O", "Cmd+Shift+O", "Cmd+W"] {
             assert_eq!(
                 refusal(library, &bindings, chord(keys), Os::Macos),

@@ -96,6 +96,9 @@ fn command(request: &Value) -> commands::Result<Vec<Msg>> {
         Request::Curve { channel, points } => Operation::Curve(channel, points),
         Request::Set { param: name, value } => Operation::Set(param(&name)?, value as f32),
         Request::Turn { param: name, ticks } => Operation::Adjust(param(&name)?, ticks),
+        // An extension's command: `<extension>/<command>`, which no built-in
+        // action's name contains.
+        Request::Action { action: name } if name.contains('/') => Operation::Extension(name),
         Request::Action { action: name } => {
             let action = commands::Action::parse(&name)
                 .or_else(|| resolve(parse_action(&name)?))
