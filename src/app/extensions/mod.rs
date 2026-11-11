@@ -1588,11 +1588,18 @@ impl Host {
         let Some(run) = self.extensions[index].run.as_mut() else {
             return;
         };
+        let number = run.number;
         let updates = run.session.poll(now);
         // The session's poll is where a deadline passes.
         Self::sweep(&mut self.extensions[index]);
         for update in updates {
             let e = &mut self.extensions[index];
+            // The rest belongs to a run that ended on an earlier update (a
+            // failed handshake, `Closed`, `Hung`): it was settled and counted
+            // then, once, and nothing more of it applies.
+            if e.run.as_ref().map(|r| r.number) != Some(number) {
+                break;
+            }
             match update {
                 Update::Reply { id, result, .. } => {
                     let Some(run) = e.run.as_mut() else { break };
@@ -1645,19 +1652,26 @@ impl Host {
                     }
                 }
                 Update::Progress { .. } => {}
+                // The same terminal cleanup as `Hung`, whichever comes first:
+                // what waits on the program fails with `exited` (commands
+                // queued before the handshake, targets being read) and the
+                // run goes, its proposals' work cancelled as the session
+                // drops. Before, `Closed` left target reads to finish and
+                // send their command to a program started again.
                 Update::Closed => {
-                    // Its proposals' work is cancelled as the session drops.
-                    let Some(run) = e.run.take() else { break };
-                    if !run.stopping {
+                    let Some(run) = e.run.as_ref() else { break };
+                    let crash = (!run.stopping).then(|| {
                         let how = run
                             .session
                             .exit()
                             .map_or_else(|| "its channel closed".to_string(), |x| x.to_string());
-                        let why = format!("{} ended unexpectedly ({how})", e.name());
+                        format!("{} ended unexpectedly ({how})", e.name())
+                    });
+                    let mut stopped = Self::end(e, ErrorCode::Exited);
+                    outcomes.append(&mut stopped);
+                    if let Some(why) = crash {
                         Self::crashed(e, why);
                     }
-                    e.status = None;
-                    e.panels.clear();
                     break;
                 }
                 // The session killed the program and failed what it had

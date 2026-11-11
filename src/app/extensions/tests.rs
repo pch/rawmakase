@@ -30,36 +30,48 @@ fn example_program() {
         return;
     }
     #[cfg(unix)]
-    if std::env::var_os(SENDS_A_HANDLE).is_some() {
+    if let Ok(mode) = std::env::var(SENDS_A_HANDLE) {
         let channel: i32 = std::env::var(rawmakase_extensions::protocol::ENV_FD)
             .unwrap()
             .parse()
             .unwrap();
+        if mode == "before-hello" {
+            send_a_handle(channel);
+            // Never answers `hello`, and keeps the channel open.
+            std::thread::sleep(Duration::from_secs(120));
+            std::process::exit(0);
+        }
         // A copy of the channel taken before the SDK attaches it, which
         // closes the inherited descriptor.
         // SAFETY: duplicates a descriptor this program was started with.
         let channel = unsafe { libc::dup(channel) };
         assert!(channel >= 0);
-        std::thread::spawn(move || send_a_handle_when_asked(channel));
+        std::thread::spawn(move || {
+            while !Path::new("send-handle").exists() {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            send_a_handle(channel);
+            if mode == "then-exit" {
+                std::process::exit(0);
+            }
+        });
     }
     let code = i32::from(rawmakase_example::extension().run().is_err());
     std::process::exit(code);
 }
 
 /// Set, with [`PROGRAM`], for an example program that sends the app a
-/// descriptor once `send-handle` appears in its working folder.
+/// descriptor, as no program may: `on-request` once `send-handle` appears in
+/// its working folder; `then-exit` the same, then exits at once;
+/// `before-hello` at once, then never answers `hello`.
 #[cfg(unix)]
 const SENDS_A_HANDLE: &str = "RAWMAKASE_EXAMPLE_SENDS_A_HANDLE";
 
-/// Waits for `send-handle` in the working folder, then sends the app an event
-/// with a descriptor beside it, as no program may: the session hangs the
+/// Sends the app an event with a descriptor beside it: the session hangs the
 /// program up. One `sendmsg` of a short line, which the SDK's writes don't
 /// split.
 #[cfg(unix)]
-fn send_a_handle_when_asked(channel: i32) {
-    while !Path::new("send-handle").exists() {
-        std::thread::sleep(Duration::from_millis(10));
-    }
+fn send_a_handle(channel: i32) {
     let line = b"{\"t\":\"event\",\"e\":\"noop\"}\n";
     // SAFETY: one sendmsg on the channel's descriptor, with an SCM_RIGHTS
     // control message holding a duplicate of stdin, all on this frame.
@@ -1694,7 +1706,9 @@ fn the_bundled_mcp_extension_is_listed_enabled_and_cannot_be_uninstalled() {
 fn a_hung_program_counts_as_a_crash_and_clears_its_busy_state() {
     let mut f = fixture(&["a.png"]);
     let mut launch = example();
-    launch.env.push((SENDS_A_HANDLE.into(), "1".into()));
+    launch
+        .env
+        .push((SENDS_A_HANDLE.into(), "on-request".into()));
     f.editor.extensions = Host::start_for_tests(&f.data, launch, Duration::from_secs(30));
     f.editor.sync_extension_commands();
     let e = &mut f.editor;
@@ -1781,4 +1795,110 @@ fn a_restarted_extension_keeps_its_ledger() {
     assert_eq!(counted(e), 16, "the replaced entry keeps the ledger");
     drop(held);
     assert_eq!(counted(e), 0);
+}
+
+/// An editor whose example program sends the app a descriptor in `mode`.
+#[cfg(unix)]
+fn fixture_sending_a_handle(names: &[&str], mode: &str) -> Fixture {
+    let mut f = fixture(names);
+    let mut launch = example();
+    launch.env.push((SENDS_A_HANDLE.into(), mode.into()));
+    f.editor.extensions = Host::start_for_tests(&f.data, launch, Duration::from_secs(30));
+    f.editor.sync_extension_commands();
+    f
+}
+
+/// A program hung up before it answers `hello` fails its handshake and is
+/// hung up in the same poll: that is one failed start, one crash, not two.
+#[cfg(unix)]
+#[test]
+fn a_hang_before_the_handshake_counts_one_crash() {
+    let mut f = fixture_sending_a_handle(&["a.png"], "before-hello");
+    let e = &mut f.editor;
+    assert_eq!(
+        run(e, "settings", "Show Settings").unwrap_err().code,
+        ErrorCode::Exited
+    );
+    pump(e, "the hang-up", |e, _| {
+        !e.extensions.get(ID).unwrap().running()
+    });
+    let x = e.extensions.get(ID).unwrap();
+    assert_eq!(x.crashes, 1, "{:?}", x.errors);
+    assert!(!x.failed);
+    assert!(!x.busy());
+}
+
+/// The program sends a descriptor and exits while a command's target is
+/// being read: the session reports `Closed`, then `Hung`. The first ends the
+/// run whole: the command fails once with `exited`, the read is dropped so it
+/// never sends the command to a program started again, busy clears at once,
+/// and one crash is counted.
+#[cfg(unix)]
+#[test]
+fn a_program_gone_while_a_target_is_read_fails_the_command_once() {
+    let mut f = fixture_sending_a_handle(&["a.png", "b.png"], "then-exit");
+    let ids: Vec<PhotoId> = f.photos.iter().map(|p| p.0).collect();
+    let e = &mut f.editor;
+    assert_eq!(
+        run(e, "settings", "Show Settings"),
+        Ok(json!({"step": 0.5}))
+    );
+    std::fs::write(f.folder.join("send-handle"), b"").unwrap();
+    // Gone, without the host hearing of it yet.
+    let until = Instant::now() + Duration::from_secs(20);
+    while !e
+        .extensions
+        .get(ID)
+        .unwrap()
+        .run
+        .as_ref()
+        .unwrap()
+        .session
+        .has_ended()
+    {
+        assert!(Instant::now() < until, "the program never exited");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    select(e, &ids);
+    e.run_extension_command(&format!("{ID}/brighten"), RunBy::Key)
+        .unwrap();
+    assert!(e.extensions.reading(), "the target is being read");
+    // The host alone, so the read stays unfinished.
+    let (outcomes, _) = e.extensions_poll(Instant::now());
+    let brightened = |outcomes: &[Outcome]| {
+        outcomes
+            .iter()
+            .filter_map(|o| match o {
+                Outcome::Command { title, result, .. } if title == "Brighten" => {
+                    Some(result.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let first = brightened(&outcomes);
+    assert_eq!(first.len(), 1, "{outcomes:?}");
+    assert_eq!(first[0].as_ref().unwrap_err().code, ErrorCode::Exited);
+    let x = e.extensions.get(ID).unwrap();
+    assert!(!x.running());
+    assert!(!x.busy(), "busy clears at once");
+    assert!(!e.extensions.reading());
+    assert_eq!(x.crashes, 1, "{:?}", x.errors);
+    assert!(
+        x.errors.iter().any(|m| m.contains("ended unexpectedly")),
+        "Closed came first: {:?}",
+        x.errors
+    );
+    // The read finishing later sends nothing, and starts nothing.
+    let ctx = e.context.clone();
+    let mut later = Vec::new();
+    let until = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < until {
+        e.events(&ctx);
+        later.extend(e.extensions_poll(Instant::now()).0);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(brightened(&later).is_empty(), "{later:?}");
+    assert!(!e.extensions.get(ID).unwrap().running());
 }
