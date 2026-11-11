@@ -2414,10 +2414,10 @@ fn unreadable_filter_settings_are_refused() -> Result<()> {
 
 /// Camera Raw 18.7's HDR settings: kept while HDR is off and written back as Camera
 /// Raw writes them; a limit or SDR slider outside its range reads as Camera Raw
-/// renders it (the default limit, 0); HDR on is refused, strictly and leniently, while
-/// RAWmakase can't render it.
+/// renders it (the default limit, 0); HDR on applies strictly and leniently alike, and
+/// a preset of the High Dynamic Range group writes it and reads it back on.
 #[test]
-fn hdr_settings_are_kept_while_off_and_refused_on() {
+fn hdr_settings_are_kept_while_off_and_applied_on() {
     use crate::model::settings_groups::{GroupInclusion, GroupSelection, SettingGroup};
     let m = Metadata::default();
     let attrs = "c:Exposure2012=\"0.5\" c:HDREditMode=\"0\" c:HDRMaxValue=\"+5.00\" c:SDRBrightness=\"+30\" c:SDRBlend=\"-50\" c:SDRClarity=\"150\"";
@@ -2476,4 +2476,11 @@ fn hdr_settings_are_kept_while_off_and_refused_on() {
     let (lenient, _) = p.apply_lenient(&Recipe::default(), &m, &[], None).unwrap();
     assert_eq!(lenient.hdr, strict.hdr);
     crate::model::hdr::check_recipe(&strict).unwrap();
+    let text = crate::xmp::preset_write::preset(&strict, &m, &info, &groups);
+    assert!(text.contains("crs:HDREditMode=\"1\""), "{text}");
+    let back = parse(Path::new("on-preset.xmp"), &text)
+        .unwrap()
+        .apply(&Recipe::default(), &m, &[], None)
+        .unwrap();
+    assert_eq!(back.hdr, strict.hdr);
 }

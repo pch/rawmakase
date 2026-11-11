@@ -800,3 +800,94 @@ fn kept_hdr_values_save_and_an_active_hdr_edit_raises_the_format() -> Result<()>
     cat.add_snapshot(id, "HDR", &on)?;
     Ok(())
 }
+
+/// An HDR edit with masks and the SDR rendition's sliders survives closing and
+/// reopening the catalog wherever it is stored: as the photo's edit, in a History
+/// state only, in a snapshot, and in a virtual copy. Each raises the catalog to the
+/// HDR version and reads back exactly as it was saved.
+#[test]
+fn an_hdr_edit_survives_reopening_wherever_it_is_stored() -> Result<()> {
+    use rawmakase_model::model::masks::{LocalAdjust, MaskComponent, MaskGroup, MaskShape};
+    let mut hdr = Recipe::default();
+    hdr.hdr.enabled = true;
+    hdr.hdr.limit = 3.;
+    hdr.hdr.sdr.highlights = -0.3;
+    hdr.hdr.sdr.brightness = 0.2;
+    hdr.exposure = 0.7;
+    hdr.contrast = 0.2;
+    hdr.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
+    hdr.masks = vec![MaskGroup {
+        components: vec![MaskComponent::new(MaskShape::Linear {
+            from: [0., 0.2],
+            to: [0., 0.8],
+        })],
+        adjust: LocalAdjust {
+            exposure: 0.5,
+            contrast: 0.3,
+            ..Default::default()
+        },
+        ..Default::default()
+    }];
+    let save = |cat: &mut Catalog, file: &std::path::Path, id, r: &Recipe, h: HistoryUpdate| {
+        cat.save_edit(
+            id,
+            file,
+            &crate::storage::Identity::read(file)?,
+            r,
+            &ExportOptions::default(),
+            h,
+        )
+    };
+
+    // The photo's edit, and a virtual copy of it.
+    let (_dir, path, file, id) = current_catalog()?;
+    let mut cat = Catalog::open(&path)?;
+    save(&mut cat, &file, id, &hdr, HistoryUpdate::Keep)?;
+    let copy = cat.create_virtual_copy(id)?;
+    drop(cat);
+    let cat = Catalog::open(&path)?;
+    assert!(cat.format_version()? >= super::db::HDR);
+    assert_eq!(cat.load_edit(id, &file)?.unwrap().recipe, hdr);
+    assert_eq!(cat.load_edit(copy, &file)?.unwrap().recipe, hdr);
+    drop(cat);
+
+    // A History state only.
+    let (_dir, path, file, id) = current_catalog()?;
+    let mut cat = Catalog::open(&path)?;
+    let history = SavedHistory {
+        origin: Recipe::default(),
+        steps: vec![SavedStep {
+            name: "High Dynamic Range".into(),
+            value: "On".into(),
+            recipe: hdr.clone(),
+        }],
+        applied: 0,
+    };
+    save(
+        &mut cat,
+        &file,
+        id,
+        &Recipe::default(),
+        HistoryUpdate::Replace(&history),
+    )?;
+    drop(cat);
+    let cat = Catalog::open(&path)?;
+    assert!(cat.format_version()? >= super::db::HDR);
+    assert_eq!(cat.load_history(id)?.unwrap().steps[0].recipe, hdr);
+    drop(cat);
+
+    // A snapshot only.
+    let (_dir, path, _file, id) = current_catalog()?;
+    let mut cat = Catalog::open(&path)?;
+    cat.add_snapshot(id, "HDR", &hdr)?;
+    drop(cat);
+    let cat = Catalog::open(&path)?;
+    assert!(cat.format_version()? >= super::db::HDR);
+    let snapshots = cat.snapshots(id)?;
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(
+        snapshots[0].settings,
+        super::snapshots::SnapshotSettings::Recipe(Box::new(hdr))
+    );
+    Ok(())
+}
