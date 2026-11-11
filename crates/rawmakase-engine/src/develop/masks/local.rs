@@ -154,6 +154,47 @@ pub(crate) fn tone(
         [a; 3]
     }
 }
+/// Local Contrast in an HDR master, on linear ProPhoto RGB (1 = graphics white, not
+/// negative): [`tone`]'s curve on sRGB-encoded values up to white, and the identity
+/// above it, applied as DNG RGBTone does. Camera Raw 18.7's HDR render of a mask's
+/// Contrast is its SDR render's below white and changes nothing above it
+/// (docs/records/hdr-stage1-results.md#masks).
+pub(crate) fn tone_hdr(
+    d: &LocalDelta,
+    p: [f32; 3],
+    photo: &crate::develop::basic_tone::PhotoTone,
+) -> [f32; 3] {
+    use crate::color::{srgb_decode, srgb_encode};
+    let curve = |x: f32| {
+        if x < 1. {
+            crate::develop::basic_tone::contrast_at(d[slot::CONTRAST], photo.contrast_pivot, x)
+        } else {
+            x
+        }
+    };
+    let p = p.map(|v| srgb_encode(v.max(0.)));
+    let lo = p.into_iter().fold(f32::INFINITY, f32::min);
+    let hi = p.into_iter().fold(0f32, f32::max);
+    let (a, b) = (curve(lo), curve(hi));
+    let p = if hi - lo > 1e-8 {
+        p.map(|v| a + (b - a) * (v - lo) / (hi - lo))
+    } else {
+        [b; 3]
+    };
+    p.map(|v| srgb_decode(v.max(0.)))
+}
+/// How much of a mask's Color tints a pixel of an HDR master whose exposed scene colour
+/// is `rgb` (linear, 1 = graphics white): all of it up to a quarter of white, fading out
+/// by white on its brightest channel. Camera Raw 18.7's HDR render of a mask's Color
+/// tints less from about half of white and not at all above white, where its SDR
+/// render's tint fades only as it clips (docs/records/hdr-stage1-results.md#masks).
+pub(crate) fn color_hdr_strength(rgb: [f32; 3]) -> f32 {
+    let v = rgb.into_iter().fold(0f32, f32::max);
+    let t = ((v - COLOR_FADE[0]) / (COLOR_FADE[1] - COLOR_FADE[0])).clamp(0., 1.);
+    1. - t * t * (3. - 2. * t)
+}
+/// Where a mask's Color starts and ends fading out in an HDR master.
+const COLOR_FADE: [f32; 2] = [0.25, 1.];
 /// Local Hue (degrees) and Saturation on Oklab.
 pub(crate) fn hue_saturation(d: &LocalDelta, mut lab: [f32; 3]) -> [f32; 3] {
     let (hue, saturation) = (d[slot::HUE], d[slot::SATURATION]);

@@ -1167,7 +1167,8 @@ select from the SDR rendition (the edit developed with HDR off), so a Luminance 
 mask brightens the same patches of a gray ramp in the master as in the SDR rendition.
 
 Decision, 2026-11-10: masks render in the HDR master with Temp, Tint, Exposure,
-Shadows and Texture; any other slider in an active mask refuses it by name. Contrast,
+Shadows and Texture; any other slider in an active mask refuses it by name.
+Decision, 2026-11-11: Contrast, Color, Sharpness and Noise render too (below). Contrast,
 Whites, Blacks, Hue, Saturation and Color are operators of their own, fitted on SDR
 renders, and Sharpness and Noise work on the SDR rendition's detail; Highlights,
 Clarity and Dehaze have no HDR rendering globally. A masked master renders on the CPU;
@@ -1202,10 +1203,74 @@ patches (and ΔE_ITP means):
   local Temp is weaker (red ×1.015, blue ×0.92), as in SDR, where its mask is 0.064
   stop and ΔE_ITP 6.5 from Camera Raw's.
 - Contrast, Whites, Blacks, Saturation and Highlights in a mask are not their global
-  sliders in Camera Raw either (0.06–0.29 stop); they stay refused.
+  sliders in Camera Raw either (0.06–0.29 stop).
+
+**A mask's own operators (2026-11-11).** Scored by the
+[acceptance criterion](#decisions) on the same captures: each slider's effect (the
+masked render's luminance over the base render's, in stops) against Camera Raw's, its
+median and p95 over the patches, and the mean ΔE_ITP of the masked renders; HDR and SDR
+on the 155 patches below 0.9 in Camera Raw's SDR base render, and HDR alone on the 87
+above white.
+
+| Mask slider | HDR below 0.9 | SDR below 0.9 | HDR above white | Result |
+| --- | --- | --- | --- | --- |
+| Contrast +50 (below white only) | 0.047 / 0.228, 4.6 | 0.058 / 0.229, 4.8 | 0.000 / 0.012, 0.4 | renders |
+| Color, hue 40 (fading out by white) | 0.037 / 0.089, 9.4 | 0.056 / 0.101, 14.2 | 0.000 / 0.004, 0.4 | renders |
+| Color, hue 40, not fading | 0.047 / 0.097, 22.7 | 0.056 / 0.101, 14.2 | 0.020 / 0.065, 34.1 | |
+| Saturation +50 | 0.081 / 0.304, 10.4 | 0.027 / 0.197, 8.9 | 0.078 / 0.269, 10.5 | refused |
+| Whites +40, SDR's curve | 0.069 / 1.26, 22.9 | 0.003 / 0.034, 1.1 | 2.05 / 3.32, 122 | refused |
+| Whites −50, SDR's curve | 0.080 / 1.02, 16.7 | 0.001 / 0.002, 0.2 | 1.80 / 3.06, 108 | refused |
+| Blacks −50, SDR's curve | 0.097 / 1.36, 23.8 | 0.003 / 0.057, 1.4 | 1.97 / 3.34, 119 | refused |
+| Shadows +50 (rendered since #1003) | 0.071 / 0.178, 4.1 | 0.033 / 0.173, 3.1 | 0.045 / 0.077, 2.5 | |
+| Temp +30 (rendered since #1003) | 0.107 / 0.117, 11.5 | 0.086 / 0.115, 8.2 | 0.106 / 0.113, 12.2 | |
+| Texture +50 (rendered since #1003) | 0.018 / 0.078, 9.0 | 0.025 / 0.070, 6.6 | 0.029 / 0.036, 7.6 | |
+
+- **Contrast.** Camera Raw's HDR mask Contrast is its SDR mask's below white, as a
+  function of the linear value (+0.112 stop at 0.71 times white, SDR's +0.11 there),
+  and changes nothing from 1.19 times white up. RAWmakase renders SDR's mask curve
+  (the global Contrast curve at the mask's value, which is stronger than Camera
+  Raw's in the shadows, −1.48 stop at 0.001 against −0.50, in SDR too) up to white
+  and the identity above.
+- **Color.** Camera Raw's HDR mask Color tints as its SDR one up to a quarter of
+  white (saturation ×1.08), less at half of white (×1.06 against SDR's ×1.08) and not
+  at all from white up, where SDR's tint fades only by clipping. RAWmakase applies
+  its SDR tint of the scene in full up to a quarter of white and fades it out by
+  white on the pixel's brightest channel (smoothstep).
+- **Saturation.** Camera Raw's HDR mask Saturation +50 multiplies HSV saturation by
+  1.20–1.21 at every level from an eighth of white to eight times white, value
+  ×1.004. RAWmakase's SDR mask Saturation (Oklab chroma ×1.5) gives ×1.35 and value
+  ×1.11 in the master at every level, 0.098 stop off; in SDR, white's clip takes
+  most of that back above half of white, so SDR scores better. Hue is the same Oklab
+  operator and is not measured; both stay refused.
+- **Whites and Blacks.** Camera Raw's HDR mask Whites +40 and −50 have one shape:
+  +0.17 / −0.21 stop at 0.001 times white rising to +0.33 / −0.40 at 16 times, 0.87
+  of the SDR mask's largest effect (+0.375 / −0.461); below white they are not its SDR
+  mask's (+0.230 at 0.015 against SDR's +0.282). Its HDR mask Blacks −50 crushes
+  further than SDR's (−4.15 stops at 0.049, SDR −2.28) and brightens above white
+  (+0.05 at 1.19, +0.39 at 16). RAWmakase's SDR mask curves are within 0.003 stop of
+  Camera Raw's SDR renders and fall steeply above white. With one setting each, a fit
+  to these shapes could not be checked on another; they stay refused.
+- **Sharpness and Noise** render as SDR's operators on the master's encoded values,
+  as global sharpening does: they change detail, not tone (a flat patch keeps its
+  light, above white too). Not measured against Camera Raw.
+- **Already rendered.** Mask Shadows and Temp, rendered since the decision of
+  2026-11-10, score worse in HDR than in SDR on these patches (0.071 against 0.033
+  stop, and 0.107 against 0.086). They stay rendered: the criterion is applied to
+  controls the master refuses, and refusing them now would take the master from
+  edits that have it.
 
 ### Decisions
 
+- **When a refused control renders** (2026-11-11). A control the master refuses
+  renders in it when RAWmakase's HDR error against Camera Raw is no worse than its
+  SDR error against Camera Raw, for the same control on the same photos or probes: a
+  refusal costs the whole edit its HDR master, so the master need only be as faithful
+  as the SDR rendition is. The error is the control's effect (the edit's render over
+  the same photo's base render, luminance in stops) against Camera Raw's, its median
+  and p95, with the mean ΔE_ITP of the edited renders; HDR and SDR are compared over
+  the pixels or patches both render below white, and the HDR error above white must
+  be no worse than SDR's below it. Controls rendered before this decision are not
+  re-scored by it.
 - **The SDR rendition is the edit with HDR off.** Camera Raw's own is a local tone
   map of the HDR master ([SDR rendition](#sdr-rendition)); the SDR rendition sliders
   never change the master, which renders with them; the SDR rendition doesn't render
@@ -1301,8 +1366,9 @@ patches (and ΔE_ITP means):
 - The vignette's Highlights in HDR, and Highlight Priority −100 in a frame's darkest
   tiles (p95 1.5 stops on the synthetic tiles) ([Vignette and grain](#vignette-and-grain)).
 - Refine Saturation in HDR ([Tone curves](#tone-curves)).
-- Masks: the mask sliders still refused, a mask's Temp strength (SDR's), and masks on
-  the GPU's HDR preview ([Masks](#masks)).
+- Masks: a mask's Whites, Blacks, Hue and Saturation (one Camera Raw setting each,
+  unlike SDR's operators above white), Temp's strength (SDR's), Shadows' HDR error
+  (twice SDR's on the patches), and masks on the GPU's HDR preview ([Masks](#masks)).
 - Clarity and Dehaze in HDR, after their SDR parity ([Presence](#presence)).
 - Positive Shadows lifts small speculars in dark surroundings above Camera Raw's peak
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
@@ -1354,7 +1420,7 @@ patches (and ΔE_ITP means):
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
   ([Vignette and grain](#vignette-and-grain)); masks with Temp,
-  Tint, Exposure, Shadows and Texture ([Masks](#masks)); Point Color ([Point Color](#point-color)).
+  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)).
   Open: Whites above +50, Highlights, the colour
   mixer's Luminance beyond ±40, Defringe ([Defringe](#defringe), refused again 2026-11-11), looks that set Clarity or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
   with them), 52552 grouping (library only,

@@ -58,10 +58,11 @@ pub(super) fn sharpen_unbounded(
     im: &mut Rendered,
     r: &Recipe,
     sigma: f32,
+    local: Option<&MaskWeights>,
     space: crate::color::OutputSpace,
     cancel: Cancel<'_>,
 ) -> Result<()> {
-    sharpen_in(im, r, sigma, None, space, |v| v.max(0.), cancel)
+    sharpen_in(im, r, sigma, local, space, |v| v.max(0.), cancel)
 }
 fn sharpen_in(
     im: &mut Rendered,

@@ -29,7 +29,7 @@ pub(super) fn process_pixel(
         return scene;
     }
     if let Some(hdr) = &lut.hdr {
-        return hdr.finish(scene, r, lut);
+        return hdr.finish(scene, r, lut, local.map(|l| l.delta));
     }
     let rgb = profile_stage(scene, r);
     color_stage(rgb, r, lut, local.map(|l| l.delta))
@@ -120,8 +120,12 @@ pub(super) fn exposure_stage(color: [f32; 3], lut: &CurveSet, local: Option<Loca
     let exposure = local.map_or(0., |l| l.delta[slot::EXPOSURE]);
     let mut rgb = mul(TO_2020, color).map(|v| v * lut.exposure_gain * exposure.exp2());
     if let Some(l) = local {
+        let strength = match lut.hdr {
+            Some(_) => local::color_hdr_strength(rgb),
+            None => 1.,
+        };
         for (c, v) in rgb.iter_mut().enumerate() {
-            *v *= l.delta[slot::COLOR + c].exp2();
+            *v *= (l.delta[slot::COLOR + c] * strength).exp2();
         }
     }
     mul(crate::camera_profiles::RGB_TO_PRO, mul(FROM_2020, rgb))

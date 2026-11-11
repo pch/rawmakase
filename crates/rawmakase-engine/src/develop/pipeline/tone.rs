@@ -145,7 +145,7 @@ pub(crate) fn hdr_neutral_response(im: Source, r: &Recipe) -> Option<impl Fn(f32
     Some(move |x: f32| {
         let scene = lut.scene.apply([x.max(0.); 3], [0.5, 0.5], 1., None);
         let hdr = lut.hdr.as_ref().expect("checked above");
-        crate::develop::scene_tone::luminance(hdr.finish(scene, r, &lut))
+        crate::develop::scene_tone::luminance(hdr.finish(scene, r, &lut, None))
     })
 }
 /// DNG RGBTone with `curve`: it maps the largest and smallest channel, and the middle
@@ -201,7 +201,14 @@ impl HdrFinish {
     }
     /// Linear ProPhoto RGB from the scene tone stage to the HDR master before its
     /// limit: linear ProPhoto RGB, 1 = graphics white, not negative.
-    pub(super) fn finish(&self, scene: [f32; 3], r: &Recipe, lut: &CurveSet) -> [f32; 3] {
+    /// A mask's Contrast, Hue and Saturation (`local`) apply where SDR's do.
+    pub(super) fn finish(
+        &self,
+        scene: [f32; 3],
+        r: &Recipe,
+        lut: &CurveSet,
+        local: Option<&LocalDelta>,
+    ) -> [f32; 3] {
         let rgb = match &r.profile {
             Some(profile) => profile.finish_hdr(scene, &self.tone, self.look.as_ref()),
             None => mul(crate::camera_profiles::PRO_TO_RGB, scene),
@@ -214,7 +221,14 @@ impl HdrFinish {
             None => pro,
         }
         .map(|v| v.max(0.));
+        // A mask's Contrast follows the global one, before the curves, as SDR's
+        // `curve_input` applies it.
+        let pro = match local {
+            Some(d) if local::uses(d, &local::TONE_SLOTS) => local::tone_hdr(d, pro, &lut.photo),
+            _ => pro,
+        };
         let pro = self.curves.as_ref().map_or(pro, |c| c.apply(pro));
+        let local_color = local.filter(|d| local::uses(d, &[slot::HUE, slot::SATURATION]));
         // The colour mixer and the black & white mix follow Contrast and the tone
         // curves, as in SDR's colour stage.
         if lut.mixer.is_none()
@@ -222,6 +236,7 @@ impl HdrFinish {
             && lut.rgb_table.is_none()
             && lut.grade.is_none()
             && lut.gray_grid.is_none()
+            && local_color.is_none()
         {
             // The limit applies once, after sharpening and resizing (`render_hdr`).
             return pro;
@@ -241,6 +256,15 @@ impl HdrFinish {
         let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply_hdr(rgb));
         // Colour grading follows the colour mixer and a look's RGB table, as in SDR.
         let rgb = lut.grade.as_ref().map_or(rgb, |g| g.apply_hdr(rgb));
+        // A mask's Hue and Saturation follow grading, as in SDR, on Oklab of the
+        // unclipped light: Camera Raw 18.7's HDR render of a mask's Saturation changes
+        // saturation alike at every brightness (docs/records/hdr-stage1-results.md#masks).
+        let rgb = local_color.map_or(rgb, |d| {
+            lab_to_srgb(local::hue_saturation(
+                d,
+                srgb_to_lab(rgb.map(|v| v.max(0.))),
+            ))
+        });
         // The gray's luminance, unclipped: SDR renders clip it at white.
         let rgb = lut.gray_grid.as_ref().map_or(rgb, |g| {
             let lookup = crate::develop::color_mixer::Lookup::Hdr(None, None);
