@@ -317,6 +317,29 @@ fn wait_ended(killer: &rawmakase_extensions::session::Killer) -> bool {
 }
 
 #[test]
+fn a_panicking_lifecycle_callback_closes_the_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let lifecycle = Arc::new(|method: &str, _: &Value| {
+        (method == "adapter.device").then(|| panic!("the app's lifecycle handler failed"))
+    });
+    let options = SessionOptions {
+        lifecycle: Some(lifecycle),
+        ..SessionOptions::default()
+    };
+    let mut session = Session::spawn(&launch(dir.path(), "sdk"), options).unwrap();
+    let id = session
+        .request("hello", hello(dir.path()), later(10_000))
+        .unwrap();
+    wait_reply(&mut session, id).unwrap();
+    // The program waits on its device report, which the reader died on: the
+    // request it is in fails and the session closes, without its deadline.
+    let device = run(&mut session, "device", Value::Null, later(60_000));
+    let updates = poll_until(&mut session, |u| *u == Update::Closed);
+    let error = reply_of(&updates, device).unwrap().unwrap_err();
+    assert_eq!(error.code, ErrorCode::Exited);
+}
+
+#[test]
 fn a_crash_mid_request_fails_what_it_held_and_closes_the_session() {
     let dir = tempfile::tempdir().unwrap();
     let mut session =

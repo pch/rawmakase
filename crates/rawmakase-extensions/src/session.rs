@@ -667,7 +667,20 @@ struct Reading {
     dropped: Arc<AtomicU64>,
 }
 impl Reading {
+    /// Reads until the channel closes, then marks the reader done, so the
+    /// next [`Session::poll`] fails what is pending and reports
+    /// [`Update::Closed`]. A panic in the app's callbacks (`lifecycle`,
+    /// `wake`) stops the reading but is caught here, not in a drop guard: a
+    /// guard calling `wake` again while that panic unwinds would abort the
+    /// app.
     fn run(self, reader: Box<dyn std::io::Read + Send>) {
+        let read = std::panic::AssertUnwindSafe(|| self.read(reader));
+        let _ = std::panic::catch_unwind(read);
+        self.done.store(true, Ordering::SeqCst);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.wake()));
+    }
+
+    fn read(&self, reader: Box<dyn std::io::Read + Send>) {
         let mut lines = LineReader::new(reader);
         while let Ok(Some(line)) = lines.next_message() {
             match line {
@@ -694,8 +707,6 @@ impl Reading {
             }
             self.wake();
         }
-        self.done.store(true, Ordering::SeqCst);
-        self.wake();
     }
 
     fn request(&self, id: u64, method: String, params: Value) {
