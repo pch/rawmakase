@@ -29,8 +29,62 @@ fn example_program() {
     if std::env::var_os(PROGRAM).is_none() {
         return;
     }
+    #[cfg(unix)]
+    if std::env::var_os(SENDS_A_HANDLE).is_some() {
+        let channel: i32 = std::env::var(rawmakase_extensions::protocol::ENV_FD)
+            .unwrap()
+            .parse()
+            .unwrap();
+        // A copy of the channel taken before the SDK attaches it, which
+        // closes the inherited descriptor.
+        // SAFETY: duplicates a descriptor this program was started with.
+        let channel = unsafe { libc::dup(channel) };
+        assert!(channel >= 0);
+        std::thread::spawn(move || send_a_handle_when_asked(channel));
+    }
     let code = i32::from(rawmakase_example::extension().run().is_err());
     std::process::exit(code);
+}
+
+/// Set, with [`PROGRAM`], for an example program that sends the app a
+/// descriptor once `send-handle` appears in its working folder.
+#[cfg(unix)]
+const SENDS_A_HANDLE: &str = "RAWMAKASE_EXAMPLE_SENDS_A_HANDLE";
+
+/// Waits for `send-handle` in the working folder, then sends the app an event
+/// with a descriptor beside it, as no program may: the session hangs the
+/// program up. One `sendmsg` of a short line, which the SDK's writes don't
+/// split.
+#[cfg(unix)]
+fn send_a_handle_when_asked(channel: i32) {
+    while !Path::new("send-handle").exists() {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let line = b"{\"t\":\"event\",\"e\":\"noop\"}\n";
+    // SAFETY: one sendmsg on the channel's descriptor, with an SCM_RIGHTS
+    // control message holding a duplicate of stdin, all on this frame.
+    unsafe {
+        let fd = libc::dup(0);
+        let payload = size_of::<i32>() as u32;
+        let space = libc::CMSG_SPACE(payload) as usize;
+        let mut control = vec![0u64; space.div_ceil(8)];
+        let mut iov = libc::iovec {
+            iov_base: line.as_ptr().cast_mut().cast(),
+            iov_len: line.len(),
+        };
+        let mut msg: libc::msghdr = std::mem::zeroed();
+        msg.msg_iov = &mut iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = control.as_mut_ptr().cast();
+        msg.msg_controllen = space as _;
+        let cmsg = libc::CMSG_FIRSTHDR(&msg);
+        (*cmsg).cmsg_level = libc::SOL_SOCKET;
+        (*cmsg).cmsg_type = libc::SCM_RIGHTS;
+        (*cmsg).cmsg_len = libc::CMSG_LEN(payload) as _;
+        libc::CMSG_DATA(cmsg).cast::<i32>().write_unaligned(fd);
+        libc::sendmsg(channel, &msg, 0);
+        libc::close(fd);
+    }
 }
 
 fn example() -> Launch {
@@ -1629,4 +1683,102 @@ fn the_bundled_mcp_extension_is_listed_enabled_and_cannot_be_uninstalled() {
     let next = Host::start_for_tests(dir.path(), example(), Duration::from_secs(30));
     assert!(!next.get("rawmakase.mcp").unwrap().enabled());
     assert!(!next.adapter_enabled("rawmakase.mcp/mcp"));
+}
+
+/// A program the session hangs up (here, one that sent the app a
+/// descriptor) goes through the same supervision as one that exits: what it
+/// had pending fails once with `exited`, its busy state clears, it counts as
+/// a crash, and three in a row make it Failed.
+#[cfg(unix)]
+#[test]
+fn a_hung_program_counts_as_a_crash_and_clears_its_busy_state() {
+    let mut f = fixture(&["a.png"]);
+    let mut launch = example();
+    launch.env.push((SENDS_A_HANDLE.into(), "1".into()));
+    f.editor.extensions = Host::start_for_tests(&f.data, launch, Duration::from_secs(30));
+    f.editor.sync_extension_commands();
+    let e = &mut f.editor;
+    e.run_extension_command(&format!("{ID}/hang"), RunBy::Button)
+        .unwrap();
+    pump(e, "the program to hang", |e, _| {
+        e.extensions.get(ID).unwrap().status.as_deref() == Some("Hanging")
+    });
+    assert!(e.extensions.get(ID).unwrap().busy());
+    std::fs::write(f.folder.join("send-handle"), b"").unwrap();
+    let outcomes = pump(e, "the hang-up", |e, _| {
+        !e.extensions.get(ID).unwrap().running()
+    });
+    let hangs: Vec<_> = outcomes
+        .iter()
+        .filter_map(|o| match o {
+            Outcome::Command { title, result, .. } if title == "Hang" => Some(result.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(hangs.len(), 1, "{outcomes:?}");
+    assert_eq!(hangs[0].as_ref().unwrap_err().code, ErrorCode::Exited);
+    let x = e.extensions.get(ID).unwrap();
+    assert!(!x.busy());
+    assert_eq!(x.crashes, 1);
+    assert!(
+        x.errors.iter().any(|m| m.contains("stopped responding")),
+        "{:?}",
+        x.errors
+    );
+    // Started again, it hangs up again at once: the third makes it Failed.
+    for _ in 0..2 {
+        assert_eq!(run(e, "hang", "Hang").unwrap_err().code, ErrorCode::Exited);
+        pump(e, "the hang-up", |e, _| {
+            !e.extensions.get(ID).unwrap().running()
+        });
+    }
+    let x = e.extensions.get(ID).unwrap();
+    assert!(x.failed);
+    assert!(!x.busy());
+}
+
+/// Every session of an extension's program counts its buffers against the
+/// extension's one ledger: after a crash and a restart, and after a reload
+/// that replaces the extension's entry with a changed manifest.
+#[test]
+fn a_restarted_extension_keeps_its_ledger() {
+    use rawmakase_extensions::shm::Buffers;
+    let mut f = fixture(&["a.png"]);
+    let ledger = f.editor.extensions.get(ID).unwrap().ledger.clone();
+    // A lease the test holds, standing for an earlier program's.
+    let mut held = Buffers::new(&ledger);
+    held.output(16).unwrap();
+    let counted = |e: &Editor| {
+        let run = e.extensions.get(ID).unwrap().run.as_ref().unwrap();
+        run.session.ledger().in_use()
+    };
+    let e = &mut f.editor;
+    assert_eq!(
+        run(e, "settings", "Show Settings"),
+        Ok(json!({"step": 0.5}))
+    );
+    assert_eq!(counted(e), 16);
+    run(e, "crash", "Crash").unwrap_err();
+    pump(e, "the crash", |e, _| {
+        !e.extensions.get(ID).unwrap().running()
+    });
+    run(e, "settings", "Show Settings").unwrap();
+    assert_eq!(counted(e), 16, "the restart shares the ledger");
+
+    let manifest = include_str!("../../../extensions/example/rawmakase-extension.toml");
+    let changed = manifest.replacen("name = \"Example\"", "name = \"Example, renamed\"", 1);
+    assert_ne!(changed, manifest);
+    rewrite_manifest(&f, &changed, 2);
+    let e = &mut f.editor;
+    e.extensions.reload_changed_folders();
+    e.sync_extension_commands();
+    assert_eq!(e.extensions.get(ID).unwrap().name(), "Example, renamed");
+    assert!(
+        !e.extensions.get(ID).unwrap().running(),
+        "the entry was replaced"
+    );
+    run(e, "settings", "Show Settings").unwrap();
+    assert_eq!(counted(e), 16, "the replaced entry keeps the ledger");
+    drop(held);
+    assert_eq!(counted(e), 0);
 }

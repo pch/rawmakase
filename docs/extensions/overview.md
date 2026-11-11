@@ -184,7 +184,9 @@ frame (`with-app`), and an `on-demand` program with nothing to do for 5 minutes
 is stopped. A request it doesn't answer in 30 seconds (5 for `hello`) is
 cancelled, then failed 2 seconds later. A program that exits on its own counts
 as a crash: whatever it was asked fails, and its status-line entry and panels
-clear. Three crashes in a row make the extension **Failed** for the rest of the
+clear. So does one the app hangs up for breaking the protocol, or for holding
+a cancelled request's buffers past their grace ([leases](protocol.md#leases)):
+the app ends it first. Three crashes in a row make the extension **Failed** for the rest of the
 session, until **Retry**; only useful work (a command or a panel answered
 successfully, a device operation that ran, or 5 minutes running) starts the
 count again; a handshake or a device's report doesn't. A `with-app` program

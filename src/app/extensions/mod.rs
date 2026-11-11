@@ -19,7 +19,14 @@
 //!   current epoch, as gestures of a source the host issued for that start.
 //! - [`Host::poll`] runs every frame: it hands over what programs sent,
 //!   enforces deadlines through the session, counts crashes and answers the
-//!   programs' requests through the editor (see `editor.rs`).
+//!   programs' requests through the editor (see `editor.rs`). A program the
+//!   session hangs up ([`Update::Hung`]: it broke the protocol, or held a
+//!   cancelled request's buffers too long) counts as a crash, as an
+//!   unexpected exit does.
+//! - Each extension keeps one [`Ledger`] for its whole time in the host, given
+//!   to every session of its program: the shared-memory budget is the
+//!   extension's, so a restarted program can't allocate while its
+//!   predecessor still holds buffers.
 //!
 //! A program's request that changes photos (`propose.settings`) belongs to one
 //! of the app's `command.run` requests still in flight. [`Running::requests`]
@@ -82,6 +89,7 @@ use rawmakase_extensions::protocol::{ErrorCode, PROTOCOL, RemoteError, controls:
 use rawmakase_extensions::session::{
     self, Killer, Launch, Session, SessionOptions, Update, check_hello,
 };
+use rawmakase_extensions::shm::Ledger;
 use rawmakase_extensions::state::{Entry, Source, State};
 use rawmakase_extensions::store::Store;
 use rawmakase_extensions::{Manifest, semver};
@@ -256,6 +264,10 @@ pub(in crate::app) struct Extension {
     /// What `extensions.json` says of it.
     pub entry: Entry,
     run: Option<Running>,
+    /// What its requests' buffers count against, in every session of its
+    /// program: kept across restarts and reloads, so leases a program that
+    /// ended still holds until its unit has ended count against the next.
+    ledger: Ledger,
     crashes: u32,
     /// Crashed [`CRASHES`] times in a row: nothing starts it until Retry.
     pub failed: bool,
@@ -795,6 +807,11 @@ impl Host {
                     e
                 }
                 existing => {
+                    // A new version or manifest of the same extension keeps its
+                    // ledger: the old program's leases may still be counted.
+                    let ledger = existing
+                        .as_ref()
+                        .map_or_else(Ledger::new, |old| old.ledger.clone());
                     if let Some(mut old) = existing {
                         Self::end(&mut old, ErrorCode::Cancelled);
                     }
@@ -808,6 +825,7 @@ impl Host {
                         problem,
                         entry,
                         run: None,
+                        ledger,
                         crashes: 0,
                         failed: false,
                         errors: VecDeque::new(),
@@ -1013,6 +1031,7 @@ impl Host {
         let options = SessionOptions {
             wake,
             lifecycle,
+            ledger: e.ledger.clone(),
             #[cfg(test)]
             queue: self.queue,
             ..SessionOptions::default()
@@ -1639,6 +1658,18 @@ impl Host {
                     }
                     e.status = None;
                     e.panels.clear();
+                    break;
+                }
+                // The session killed the program and failed what it had
+                // pending with `exited` (those replies came first). Whatever
+                // else waits on it fails too, and it counts as a crash, as an
+                // unexpected exit does; the session goes, and with it the busy
+                // state. Its leases stay counted until the unit has ended.
+                Update::Hung { reason } => {
+                    let why = format!("{} stopped responding and was ended: {reason}", e.name());
+                    let mut stopped = Self::end(e, ErrorCode::Exited);
+                    outcomes.append(&mut stopped);
+                    Self::crashed(e, why);
                     break;
                 }
             }
