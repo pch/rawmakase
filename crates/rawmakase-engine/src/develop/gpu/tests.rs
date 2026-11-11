@@ -1987,6 +1987,11 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
             whites: 0.4,
             ..base.clone()
         },
+        // Negative Highlights, held above its level.
+        Recipe {
+            highlights: -0.8,
+            ..base.clone()
+        },
         Recipe {
             blacks: -0.8,
             incremental_temperature: 20.,

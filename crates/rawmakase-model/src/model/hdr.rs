@@ -251,9 +251,11 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
         ("Whites above +50", r.whites > POSITIVE_WHITES_MEASURED),
-        // Camera Raw's HDR Highlights levels off (negative) or fades (positive) above
-        // white, unlike the SDR-trained rule; Shadows renders as in SDR.
-        ("Highlights", r.highlights != 0.),
+        // Negative Highlights renders, its pull held above a level (`local_tone`);
+        // Camera Raw's positive HDR Highlights lifts more near white and fades above it,
+        // differently on each photo, and no rule of level found reaches it
+        // (docs/records/hdr-stage1-results.md#highlights-and-shadows).
+        ("Positive Highlights", r.highlights > 0.),
         // Point curves were measured ending at white; one whose last point is left
         // of it holds its value beyond, which Camera Raw was not seen to do above
         // white.
@@ -694,12 +696,13 @@ mod tests {
         let color = open::color(&m).unwrap();
         r.profile = Some(Arc::new(color.clone()));
         check_recipe(&r).unwrap();
-        let rendered: [fn(&mut CameraProfile); 7] = [
+        let rendered: [fn(&mut CameraProfile); 8] = [
             |p| p.enhanced.as_mut().unwrap().monochrome = true,
             |p| p.enhanced.as_mut().unwrap().settings.hsl[1][2] = -0.2,
             |p| p.enhanced.as_mut().unwrap().settings.exposure = 0.3,
             |p| p.enhanced.as_mut().unwrap().contrast = 0.2,
             |p| p.enhanced.as_mut().unwrap().shadows = 0.25,
+            |p| p.enhanced.as_mut().unwrap().highlights = -0.12,
             |p| p.enhanced.as_mut().unwrap().camera_look = Some("Velvia".into()),
             |p| *p = p.clone().with_test_rgb_tables().remove(0),
         ];
@@ -717,8 +720,8 @@ mod tests {
                 "Presence, which the look sets",
             ),
             (
-                |p| p.enhanced.as_mut().unwrap().highlights = -0.12,
-                "Highlights, which the look sets",
+                |p| p.enhanced.as_mut().unwrap().highlights = 0.12,
+                "Positive Highlights, which the look sets",
             ),
             (
                 |p| {
@@ -738,11 +741,13 @@ mod tests {
             edit.hdr.enabled = false;
             assert!(check_recipe(&edit).is_ok());
         }
-        // The user's own Highlights is named as the user's.
+        // The user's own Highlights is named as the user's; negative Highlights renders.
         let mut own = r.clone();
         own.highlights = 0.1;
         let error = check_recipe(&own).unwrap_err().to_string();
-        assert_eq!(error, "Highlights is not supported in HDR yet");
+        assert_eq!(error, "Positive Highlights is not supported in HDR yet");
+        own.highlights = -1.;
+        check_recipe(&own).unwrap();
         // A look with Profile Amount renders at every amount.
         r.profile = Some(Arc::new(CameraProfile::creative_for_test(&m)));
         for amount in [0., 0.5, 1., 1.5, 2.] {

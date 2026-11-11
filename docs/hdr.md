@@ -275,6 +275,7 @@ HDR reference family):
 | Black & White | The SDR mix's gray (`develop::black_white`) looked up as the colour mixer's, unclipped above white. |
 | Calibration | As in SDR: a matrix on scene colour before Exposure, and Shadows tint, which only reaches values below white. |
 | Shadows | The SDR local tone operator (`develop::local_tone`) on scene values, unclipped: its gain at a pixel's base level as in SDR, before S3. |
+| Highlights | Negative: the SDR operator's photo rule (`develop::local_tone`), unclipped, its pull held above base level −0.25 (a quarter stop under scene white, `HDR_HIGHLIGHTS_HOLD`) at its value there, as Camera Raw's HDR pull levels off above white. Positive is refused ([Highlights](#highlights)). |
 | Post-crop vignette | After sharpening, on linear values, unclipped ([Vignette and grain](#vignette-and-grain)): darkening a gain (of the scene through the profile's HDR curve for Highlight Priority); lightening a blend towards graphics white (Paint Overlay, Color Priority) or the scene towards 14.4 (Highlight Priority). |
 | Grain | After the vignette: SDR's grain added to sRGB-curve-encoded values extended above 1, its strength going on above white and fading out by 16 times white. |
 | Masks | Temp, Tint, Exposure, Shadows and Texture, through the same stages as their global sliders, weighted by the mask ([Masks](#masks)). |
@@ -424,6 +425,24 @@ leaving it out. Taking Defringe into Color Grading's HDR domain instead
 leaves the photos as they were and worsens the patches (Green above white: mean
 ΔE_ITP 12.1 against 5.3). Measurements: [record](records/hdr-stage1-results.md#defringe).
 
+### Highlights
+
+Camera Raw 18.7's HDR Highlights is the SDR one below about half of white and changes
+shape above white: negative Highlights stops pulling harder a stop or two above white
+in its output, and positive Highlights lifts more than SDR's rule near white and fades
+above it, differently on each photo. RAWmakase renders negative Highlights with the
+SDR rule's pull held from a quarter stop under scene white up (where the profile's HDR
+curve puts that output). On six validation photos at −100 and −50 its HDR effect is
+as close to Camera Raw's as its SDR effect is to Camera Raw's SDR one (the
+[acceptance criterion](records/hdr-stage1-results.md#acceptance-by-sdr-parity)):
+median over the photos 0.086 / 0.280 stop (median / p95) in HDR against 0.086 / 0.314
+in SDR at −100, 0.043 / 0.151 against 0.042 / 0.112 at −50. A lower hold would fit
+above white better but reach pixels below half of white through the base, where the
+HDR and SDR renders must agree. Positive Highlights stays refused: unheld its HDR p95
+is twice its SDR one (0.233 against 0.111 at +50), and neither a fade above white nor
+a gain per level fitted to Camera Raw's HDR renders holds up when a photo is left out
+of the fit. Measurements: [record](records/hdr-stage1-results.md#highlights-and-shadows).
+
 ### Masks
 
 A mask's Temp and Tint, Exposure, Shadows and Texture are added to the photo's own
@@ -435,7 +454,7 @@ select from the SDR rendition, as the mask overlay shows them, so the master adj
 the pixels its SDR rendition adjusts. Any other slider in an active mask refuses the master
 by its name ("A mask's Contrast …"): Contrast, Whites, Blacks, Hue, Saturation, Color,
 Sharpness and Noise work through operators of their own, measured on SDR renders, and
-Highlights, Clarity and Dehaze have no HDR rendering globally. In Camera Raw 18.7's
+Highlights (negative Highlights' hold is global), Clarity and Dehaze aren't measured in masks. In Camera Raw 18.7's
 HDR renders of a whole-frame mask on synthetic patches, a mask's Exposure, Shadows and
 Texture render as their global sliders do (median 0.000–0.039 stop), and Temp is a
 gain of the scene at every level. RAWmakase's mask Exposure matches Camera Raw's to
@@ -448,12 +467,12 @@ differ from the global sliders by 0.06–0.29 stop median and stay refused
 ## What is refused
 
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
-something without a measured HDR rendering: Highlights, Whites above
+something without a measured HDR rendering: positive Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
 channel's) whose last point is left of white, Presence (Clarity, Dehaze), the
 colour mixer's Luminance beyond ±40, a darkening vignette's Highlights,
-a mask's sliders other than Temp, Tint, Exposure, Shadows and Texture, Defringe ([Defringe](#defringe)), Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
-Highlights and Shadows: "Highlights, which the look sets, …") or split toning, DCP
+a mask's sliders other than Temp, Tint, Exposure, Shadows and Texture, Defringe ([Defringe](#defringe)), Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity +10, Adobe Landscape
+also Highlights −12 and Shadows +12: "Presence, which the look sets, …") or split toning, DCP
 tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
 asked for.

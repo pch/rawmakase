@@ -1347,10 +1347,11 @@ mod tests {
     }
 
     /// Shadows renders the master as in SDR: positive Shadows lifts the dark end and
-    /// leaves light above white nearly alone, as Camera Raw's does. Highlights, whose
-    /// HDR rendering above white is not the SDR rule's, still refuses it.
+    /// leaves light above white nearly alone, as Camera Raw's does. Negative Highlights
+    /// pulls light above white, its pull held above a level; positive Highlights still
+    /// refuses the master.
     #[test]
-    fn shadows_render_the_hdr_master_and_highlights_do_not() -> anyhow::Result<()> {
+    fn shadows_and_negative_highlights_render_the_hdr_master() -> anyhow::Result<()> {
         let im = grays(&[0.01, 0.05, 4., 8.]);
         let mut r = hdr_recipe(&im);
         let plain = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
@@ -1364,11 +1365,27 @@ mod tests {
             );
         }
         r.shadows = 0.;
+        // A ramp from 2^-8 to 2^3: the rule pulls its light above white, and no harder
+        // at the top (`local_tone::HDR_HIGHLIGHTS_HOLD`; its exact hold is tested there).
+        let levels: Vec<f32> = (0..45).map(|i| (-8. + i as f32 / 4.).exp2()).collect();
+        let ramp = grays(&levels);
+        let mut r = hdr_recipe(&ramp);
+        let plain = render_hdr(&ramp, &r.checked()?, None, 0, Cancel::NEVER)?;
         r.highlights = -0.5;
+        let pulled = render_hdr(&ramp, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let pull = |i| (centre(&pulled, i) / centre(&plain, i)).log2();
+        assert!(pull(40) < -0.2, "{}", pull(40));
+        assert!(
+            pull(44) > pull(40) && pull(44) < 0.,
+            "{} {}",
+            pull(40),
+            pull(44)
+        );
+        r.highlights = 0.5;
         let error = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)
             .unwrap_err()
             .to_string();
-        assert!(error.contains("Highlights"), "{error}");
+        assert!(error.contains("Positive Highlights"), "{error}");
         Ok(())
     }
 
@@ -1400,10 +1417,11 @@ mod tests {
         let mut r = hdr_recipe(&im);
         assert!(!supported(&r), "the SDR rendition's port has HDR off");
         assert!(supported_hdr(&r, &im.metadata));
-        // Contrast, the tone curves, the colour stage, colour grading and Texture
-        // render on the GPU.
-        let on_the_gpu: [fn(&mut Recipe); 9] = [
+        // Contrast, the tone curves, the colour stage, colour grading, Texture and
+        // negative Highlights render on the GPU.
+        let on_the_gpu: [fn(&mut Recipe); 10] = [
             |r| r.grading[2] = [0.6, 0.4, 0.2],
+            |r| r.highlights = -0.4,
             |r| r.contrast = 0.2,
             |r| r.white_point = 0.9,
             |r| r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]],
@@ -1418,7 +1436,7 @@ mod tests {
             set(&mut edited);
             assert!(supported_hdr(&edited, &im.metadata), "GPU case {i}");
         }
-        r.highlights = -0.4;
+        r.highlights = 0.4;
         assert!(
             !supported_hdr(&r, &im.metadata),
             "a master that doesn't render"

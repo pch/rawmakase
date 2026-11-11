@@ -26,6 +26,13 @@ pub(crate) const FLOOR: f32 = 6.103_515_6e-5;
 /// spatial σ of this fraction of the long edge and a range σ of `REGION_RANGE` stops.
 const REGION_SCALE: f32 = 0.25;
 const REGION_RANGE: f32 = 4.;
+/// The base level (log2 scene luminance; 0 is white) above which an HDR master's
+/// negative Highlights pulls no further. Camera Raw 18.7's HDR pull levels off a stop or
+/// two above white in its output, where the SDR-trained rule keeps pulling; the profile's
+/// HDR curve puts that output a quarter stop under scene white. A lower level would
+/// reach, through the base, pixels below half of white, where Camera Raw's HDR and SDR
+/// gains agree (docs/records/hdr-stage1-results.md#highlights-and-shadows).
+pub(crate) const HDR_HIGHLIGHTS_HOLD: f32 = -0.25;
 
 impl Family {
     /// Row `row` continues past `hi` with the slope of its last 7 columns, per stop.
@@ -171,6 +178,20 @@ impl Curve {
     fn eval(&self, base: f32) -> f32 {
         self.eval_t(base, base)
     }
+    /// This curve with its gain above base level `level` held at its gain there. The
+    /// table's columns past `level` take that gain and the tail goes, so the GPU, which
+    /// reads the table, renders the same.
+    fn held_from(mut self, level: f32) -> Self {
+        let held = self.eval(level);
+        let step = (self.hi - self.lo) / 48.;
+        for (i, v) in self.table.iter_mut().enumerate() {
+            if self.key + self.lo + (i as f32 + 0.5) * step > level {
+                *v = held;
+            }
+        }
+        self.tail = 0.;
+        self
+    }
     fn eval_t(&self, base: f32, tb: f32) -> f32 {
         let f = ((base - self.key - self.lo) / (self.hi - self.lo) * 48. - 0.5).clamp(0., 47.);
         let i = (f as usize).min(46);
@@ -179,14 +200,15 @@ impl Curve {
             + self.tail * past_hi(self.lo, self.hi, self.key, tb)
     }
 }
-/// The slider values a map is built for: Shadows, Highlights and Clarity, and whether
-/// masks change Clarity.
+/// The slider values a map is built for: Shadows, Highlights and Clarity, whether
+/// masks change Clarity, and whether it is for an HDR master.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct Sliders {
     pub(crate) shadows: f32,
     pub(crate) highlights: f32,
     pub(crate) clarity: f32,
     pub(crate) mask_clarity: bool,
+    pub(crate) hdr: bool,
 }
 impl Sliders {
     pub(crate) fn of(r: &crate::model::recipe::Recipe) -> Self {
@@ -198,6 +220,7 @@ impl Sliders {
                 .masks
                 .iter()
                 .any(|m| m.is_active() && m.adjust.clarity != 0.),
+            hdr: r.hdr.is_active(),
         }
     }
 }
@@ -437,9 +460,17 @@ impl LocalToneMap {
             .map(|d| d.field(sliders.clarity));
         // Positive Shadows and negative Highlights follow the photo's global rule
         // (`local_tone_rule`); the two-scale lift and the regional level are not read.
+        // An HDR master's negative Highlights is held above its level, in the unit curve
+        // both the global slider and masks (`gain_with`) read.
         let rule = if sliders.shadows > 0. || sliders.highlights < 0. || local {
             let stats = base.rule();
-            [Some(stats.curve(true)), Some(stats.curve(false))]
+            let pull = stats.curve(false);
+            let pull = if sliders.hdr {
+                pull.held_from(HDR_HIGHLIGHTS_HOLD)
+            } else {
+                pull
+            };
+            [Some(stats.curve(true)), Some(pull)]
         } else {
             [None, None]
         };
@@ -905,6 +936,63 @@ mod tests {
             (striped - flat).abs() < 2.,
             "flat {flat}, striped {striped}"
         );
+    }
+
+    #[test]
+    fn an_hdr_master_holds_negative_highlights_above_its_level() {
+        // A ramp from 10 stops under white to 3 over: the HDR map's pull is the SDR
+        // map's up to `HDR_HIGHLIGHTS_HOLD`, and no stronger above it.
+        let w = 256;
+        let lum: Vec<f32> = (0..w * w)
+            .map(|i| (-10. + 13. * (i % w) as f32 / (w - 1) as f32).exp2())
+            .collect();
+        let map = |hdr: bool| {
+            LocalToneMap::from_luminance(
+                lum.clone(),
+                [w as u32; 2],
+                [w as u32; 2],
+                Sliders {
+                    highlights: -1.,
+                    hdr,
+                    ..Default::default()
+                },
+                false,
+            )
+        };
+        let (sdr, hdr) = (map(false), map(true));
+        // A mask's sliders read the rule through `gain_with`: held the same.
+        let masked = LocalToneMap::from_luminance(
+            lum.clone(),
+            [w as u32; 2],
+            [w as u32; 2],
+            Sliders {
+                highlights: -1.,
+                hdr: true,
+                ..Default::default()
+            },
+            true,
+        );
+        let at = |m: &LocalToneMap, x: usize| {
+            let y = lum[128 * w + x];
+            m.gain(x as f32, 128., y, y).log2()
+        };
+        let level = |x: usize| level(lum[128 * w + x]);
+        let mut held = Vec::new();
+        for x in 0..w {
+            if level(x) <= HDR_HIGHLIGHTS_HOLD - 0.5 {
+                assert_eq!(at(&hdr, x), at(&sdr, x), "x {x}");
+            } else if level(x) >= HDR_HIGHLIGHTS_HOLD + 0.5 {
+                assert!(at(&hdr, x) > at(&sdr, x) + 0.1, "x {x}");
+                held.push(at(&hdr, x));
+            }
+            let y = lum[128 * w + x];
+            let through_mask = masked.gain_with(x as f32, 128., y, y, [0., -1., 0.]).log2();
+            assert!((through_mask - at(&hdr, x)).abs() < 1e-5, "x {x}");
+        }
+        let beyond = held.len();
+        let spread = held.iter().fold(0_f32, |m, g| m.max((g - held[0]).abs()));
+        assert!(spread < 1e-4, "{spread}");
+        assert!(beyond > 20, "{beyond}");
     }
 
     #[test]

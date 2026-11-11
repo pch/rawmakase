@@ -649,6 +649,64 @@ level and scoring against Camera Raw (reduced blocks):
 **Decision, 2026-11-10: Highlights stays refused in HDR.** It needs a rule trained on
 HDR targets of many photos, not a reshaping of the SDR one.
 
+Re-examined on 2026-11-11 under the [acceptance criterion](#acceptance-by-sdr-parity),
+with RAWmakase's HDR and SDR renders of the same six photos and Camera Raw's HDR and SDR
+captures, each control's effect error in stops (median / p95 over the frame's blocks,
+then the median over the photos):
+
+| Highlights | SDR rule unclipped, HDR | Held from −0.25, HDR | SDR | Leaving it out, HDR |
+| --- | --- | --- | --- | --- |
+| −100 | 0.087 / 0.350 | 0.086 / 0.280 | 0.086 / 0.314 | 0.240 / 0.966 |
+| −50 | 0.043 / 0.173 | 0.043 / 0.151 | 0.042 / 0.112 | 0.119 / 0.495 |
+| +50 | 0.062 / 0.233 | — | 0.048 / 0.111 | 0.118 / 0.760 |
+
+- **Negative Highlights held above a level passes.** Holding the rule's pull at its
+  value from base level −0.25 (log2 scene luminance; the profile's HDR curve lifts
+  scene levels, so this is above white in the output) brings both settings within the
+  criterion. Holds from 0.25 up change nothing on these photos (their bases top out
+  under 0.75); holds of −0.5 and −0.75 fit above white better (p95 0.281 and 0.254 at
+  −100, 0.143 and 0.130 at −50) but reach pixels below half of white through the base:
+  on the Canon 850D at −100 the HDR and SDR renders' p99 below 0.5 grows from 0.019
+  (unheld) and 0.069 (−0.25) to 0.139 (−0.5) and 0.141 (−0.75), past the 0.1 stop
+  RAWmakase's renders must agree to there.
+- **Positive Highlights stays refused.** Camera Raw's HDR effect is stronger than
+  RAWmakase's near white (Canon 850D: +1.49 stops against +0.69 just above white) and
+  fades from about 1.5 stops above it, by different amounts on each photo. The best
+  fade of RAWmakase's gain above a level leaves p95 0.059 stop past SDR's, and a gain
+  multiplier per level fitted to Camera Raw's HDR renders, scored with each photo left
+  out of its fit, leaves p95 at 0.212 against SDR's 0.111 (and, fitted to negative
+  Highlights, scores worse than no fit).
+
+**Decision, 2026-11-11: negative Highlights renders in the HDR master** with its pull
+held from base level −0.25 (`local_tone::HDR_HIGHLIGHTS_HOLD`); positive Highlights
+stays refused. SDR renders don't change: the hold applies only to a map built for an
+HDR master (`local_tone::Sliders::hdr`), and the SDR rendition's recipe has HDR off.
+The GPU's HDR preview reads the held table and matches the CPU master
+(`gpu_develop_matches_cpu_hdr_master`). Masks' Highlights stays refused.
+
+### Acceptance by SDR parity
+
+**Decided 2026-11-11 for the controls still refused (Highlights, Whites above +50,
+Clarity, Dehaze, Defringe, the colour mixer's Luminance beyond ±40, and the others the
+refusal audit takes on), in place of the strict HDR tolerances for them:** a control
+renders in the HDR master when, on the photos Camera Raw's HDR and SDR renders of it
+were captured for, RAWmakase's HDR error against Camera Raw's HDR render is no worse
+than its SDR error against Camera Raw's SDR render, for the same control and photos.
+A refusal costs the whole edit its HDR master, so a rendering as good as the SDR
+rendition's is the better outcome. A control may be rendered over part of its range
+when the rest fails.
+
+The measure, the same in both modes: per factor-8 block of linear Display P3, the
+effect is log2 of the luminance with the control over the photo's default render's,
+and the error is RAWmakase's effect less Camera Raw's, in stops. For each photo the
+median and p95 over the whole frame; then the median of each over the photos. The HDR
+values may exceed SDR's by at most 0.02 stop (median) and 0.05 stop (p95): HDR scores
+the light above white that SDR clips, where both renders' effects are zero in SDR. Each
+record also lists the error of leaving the control out, and the photos where HDR is
+worse than that margin. A control that changes colour rather than tone is scored by the
+error relative to Camera Raw's change, as [Defringe](#defringe) is. Scripts and
+renders stay in local scratch; the captures are those of the sections cited.
+
 ### Validation
 
 `scripts/corpus/hdr_validate.py` renders each HDR job of the family with
@@ -1285,8 +1343,8 @@ patches (and ΔE_ITP means):
 
 ## Open
 
-- Whites above +50 (not a gain of one photo level: [Whites](#whites)) and Highlights
-  in HDR (a rule trained on HDR targets:
+- Whites above +50 (not a gain of one photo level: [Whites](#whites)) and positive
+  Highlights in HDR (stronger near white and fading above it, differently per photo:
   [Highlights and Shadows](#highlights-and-shadows)); the colour mixer's Luminance beyond
   ±40, where Camera Raw's HDR effect strengthens with brightness and the SDR grids don't
   ([Band Luminance](#band-luminance)); Point Color on photos and on the GPU's HDR preview
@@ -1308,7 +1366,7 @@ patches (and ΔE_ITP means):
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
   and its sliders.
-- Looks that set Clarity or Highlights, and split toning, stay refused. A B&W `.cube`
+- Looks that set Clarity or positive Highlights, and split toning, stay refused. A B&W `.cube`
   renders saturation-0.9 red and magenta out of its gamut almost black above white in
   Camera Raw ([Looks](#looks)); RAWmakase renders their gray.
 - Saturated colours: with no look, the colour patches at saturation 0.9 differ from
@@ -1355,8 +1413,9 @@ patches (and ΔE_ITP means):
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
   ([Vignette and grain](#vignette-and-grain)); masks with Temp,
   Tint, Exposure, Shadows and Texture ([Masks](#masks)); Point Color ([Point Color](#point-color)).
-  Open: Whites above +50, Highlights, the colour
-  mixer's Luminance beyond ±40, Defringe ([Defringe](#defringe), refused again 2026-11-11), looks that set Clarity or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
+  Negative Highlights, its pull held above a level (2026-11-11).
+  Open: Whites above +50, positive Highlights, the colour
+  mixer's Luminance beyond ±40, Defringe ([Defringe](#defringe), refused again 2026-11-11), looks that set Clarity or positive Highlights, the SDR rendition sliders in the SDR rendition (the master renders
   with them), 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
