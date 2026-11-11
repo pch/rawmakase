@@ -431,7 +431,9 @@ impl Builder {
                 changed();
             }
             let t1 = std::time::Instant::now();
-            drop(cache);
+            if let Some(cache) = cache {
+                cache.close_at_exit();
+            }
             {
                 use std::io::Write;
                 let _ = writeln!(

@@ -1013,7 +1013,9 @@ fn clearing_previews_gives_their_space_back_to_the_disk() {
 }
 
 /// Giving space back takes a short write at a time, so quitting waits for one
-/// at most; what is left is given back later.
+/// at most; what is left is given back later. Closing the worker's connection
+/// leaves the WAL for later too: folding it into the file took up to 1.65 s on
+/// a busy Windows runner.
 #[test]
 fn quitting_while_space_is_given_back_ends_in_time() {
     let (_dir, mut e, _, cache) = editor(&["a.ARW"]);
