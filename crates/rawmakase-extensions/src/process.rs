@@ -532,6 +532,9 @@ mod platform {
                 std::ptr::null(),
             )
         })?;
+        // The channel ends' events, made before the program starts: failing
+        // to make one then leaves nothing running.
+        let (read_event, write_event) = (event()?, event()?);
 
         // SAFETY: an unnamed job with default security; checked.
         let job = owned(unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) })?;
@@ -659,11 +662,11 @@ mod platform {
             transport: Transport {
                 reader: Box::new(End {
                     server: server.clone(),
-                    event: event()?,
+                    event: read_event,
                 }),
                 writer: Box::new(End {
                     server,
-                    event: event()?,
+                    event: write_event,
                 }),
                 close_write: Box::new(|| {}),
             },
