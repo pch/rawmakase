@@ -680,29 +680,78 @@ mod unix {
 
     const MAX_HANDLES_FOR_TEST: usize = 8;
 
+    /// The descriptors this process has open, by number. The listing's own
+    /// descriptor is closed by the time the list is checked, so it's left out.
+    fn open_fds() -> std::collections::BTreeSet<i32> {
+        #[cfg(target_os = "linux")]
+        let dir = "/proc/self/fd";
+        #[cfg(not(target_os = "linux"))]
+        let dir = "/dev/fd";
+        let listed: Vec<i32> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+            .collect();
+        listed
+            .into_iter()
+            // SAFETY: only asks whether a descriptor number is open.
+            .filter(|&fd| unsafe { libc::fcntl(fd, libc::F_GETFD) } >= 0)
+            .collect()
+    }
+
     /// Sixteen descriptors against room for eight: the control data is cut
     /// off (`MSG_CTRUNC`), and only what the kernel returned is read, each
     /// a descriptor this process now owns. On macOS the kernel keeps the cut
     /// message's full `cmsg_len`; reading by it would run past the buffer.
+    ///
+    /// The kernels differ on the descriptors that didn't fit. Linux closes
+    /// them. XNU installs every one of them in the receiver anyway, and only
+    /// the control bytes that fit say which: the rest are open with numbers
+    /// the receiver can't learn. That is why a cut-off control buffer is
+    /// fatal in the SDK rather than recovered from: only the program's exit
+    /// closes what it can't name. (Its buffer has room for 512, more than
+    /// either kernel sends with one message, so it never gets here; this test
+    /// receives with room for 8 on purpose.) Here the test finds the hidden
+    /// ones by the open descriptors before and after, and closes them itself.
     #[test]
     fn cut_off_control_data_is_read_no_further_than_returned() {
+        const SENT: usize = 16;
         let _lock = lock();
         let baseline = baseline();
         {
             let (a, b) = std::os::unix::net::UnixStream::pair().unwrap();
-            let memory: Vec<Memory> = (0..16).map(|_| Memory::output(16).unwrap()).collect();
+            let memory: Vec<Memory> = (0..SENT).map(|_| Memory::output(16).unwrap()).collect();
             let fds: Vec<_> = memory.iter().map(Memory::handle).collect();
             send(&a, b"x", &fds).unwrap();
+            let before = open_fds();
             let mut received = VecDeque::new();
             let (read, cut) = receive(b.as_fd(), &mut [0; 4], 8, &mut received).unwrap();
+            let after = open_fds();
             assert_eq!(read, 1);
             assert!(cut, "the control data was cut off");
             assert!(received.len() <= 8, "{} taken", received.len());
             #[cfg(target_os = "linux")]
             assert_eq!(received.len(), 8, "Linux installs what fits");
-            for fd in &received {
+            let guarded: std::collections::BTreeSet<i32> =
+                received.iter().map(|fd| fd.as_raw_fd()).collect();
+            for &fd in &guarded {
                 // SAFETY: reads the flags of a descriptor this test owns.
-                assert!(unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } >= 0);
+                assert!(unsafe { libc::fcntl(fd, libc::F_GETFD) } >= 0);
+                assert!(after.contains(&fd) && !before.contains(&fd));
+            }
+            let hidden: Vec<i32> = after
+                .difference(&before)
+                .filter(|fd| !guarded.contains(fd))
+                .copied()
+                .collect();
+            #[cfg(target_os = "linux")]
+            let expected = 0;
+            #[cfg(not(target_os = "linux"))]
+            let expected = SENT - received.len();
+            assert_eq!(hidden.len(), expected, "hidden descriptors {hidden:?}");
+            for fd in hidden {
+                // SAFETY: a descriptor the kernel installed in this process
+                // for the cut-off message, which nothing else here owns.
+                unsafe { libc::close(fd) };
             }
         }
         settles(baseline);
