@@ -71,13 +71,18 @@ mod platform {
 
     pub(super) fn run(program: &Path, args: &[OsString]) -> std::io::Result<i32> {
         // This process joins the job first, so the program is in it from its
-        // creation, as every process it starts is. The job's handle closes when
-        // this process ends, killed or not, and ends them all.
+        // creation, as every process it starts is.
         let job = crate::process::kill_on_close_job()?;
         // SAFETY: a valid job handle, and the current process's pseudo-handle.
         if unsafe { AssignProcessToJobObject(job.as_raw_handle(), GetCurrentProcess()) } == 0 {
             return Err(std::io::Error::last_os_error());
         }
+        // Closing the job's last handle kills every process in it, this one
+        // included, so the handle must outlive this function: otherwise this
+        // process would end with the job's status, not the program's exit
+        // code, and before it could report an error. It closes when this
+        // process ends, killed or not, and ends the program's helpers.
+        std::mem::forget(job);
         let status = std::process::Command::new(program).args(args).status()?;
         Ok(status.code().unwrap_or(1))
     }
