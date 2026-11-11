@@ -628,7 +628,10 @@ impl PreviewCache {
         let started = std::time::Instant::now();
         if self.vacuum_step(RELEASE_STEP_TIME)? == 0 {
             // PASSIVE: it neither waits for other connections nor makes them
-            // wait; what it leaves is folded in by a later checkpoint.
+            // wait; what it leaves is folded in by a later checkpoint. It is a
+            // write as long as the WAL, as is the checkpoint SQLite runs in any
+            // step's commit once the WAL reaches 1000 pages, so it costs no
+            // more than a step can.
             self.db
                 .query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |_| Ok(()))?;
             return Ok(None);
