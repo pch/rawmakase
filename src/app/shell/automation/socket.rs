@@ -1,6 +1,6 @@
 //! Versioned, bounded local control transport. Every request carries its own
 //! reply channel; a timed-out request still in the queue is cancelled atomically.
-use super::{Action, Msg, Sender, parse_action, shortcut_action};
+use super::{Input, Msg, Sender, parse_action, resolve};
 use crate::app::shell::commands::{
     self, Command, Error, Operation, Param, PhotoTarget, PresetTarget, Target, Until,
 };
@@ -98,13 +98,7 @@ fn command(request: &Value) -> commands::Result<Vec<Msg>> {
         Request::Turn { param: name, ticks } => Operation::Adjust(param(&name)?, ticks),
         Request::Action { action: name } => {
             let action = commands::Action::parse(&name)
-                .or_else(|| match parse_action(&name)? {
-                    Action::Key(k, m) => shortcut_action(k, m),
-                    Action::Mixer(c) => Some(commands::Action::Mixer(c)),
-                    Action::ToggleMono => Some(commands::Action::ToggleMono),
-                    Action::Named(a) => Some(a),
-                    Action::Hold(_) => None,
-                })
+                .or_else(|| resolve(parse_action(&name)?))
                 .ok_or_else(|| {
                     invalid("Unknown action; use capabilities to list supported actions")
                 })?;
@@ -156,12 +150,13 @@ fn command(request: &Value) -> commands::Result<Vec<Msg>> {
         Request::Cc { .. } | Request::Note { .. } if request.get("target").is_some() => {
             return Err(invalid("Use set/turn/action for explicit targets"));
         }
-        Request::Cc { cc, value } => return Ok(vec![Msg::Cc(cc, value)]),
+        Request::Cc { cc, value } => return Ok(vec![Msg::Legacy(Input::Cc(cc, value))]),
         Request::Note { note, press } => {
+            let note = |down| Msg::Legacy(Input::Note(note, down));
             return Ok(match press {
-                Press::Click => vec![Msg::Note(note, true), Msg::Note(note, false)],
-                Press::Down => vec![Msg::Note(note, true)],
-                Press::Up => vec![Msg::Note(note, false)],
+                Press::Click => vec![note(true), note(false)],
+                Press::Down => vec![note(true)],
+                Press::Up => vec![note(false)],
             });
         }
     };

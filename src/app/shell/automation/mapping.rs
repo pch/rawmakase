@@ -113,6 +113,40 @@ pub(super) fn action_spec(action: Action) -> String {
         }
     }
 }
+/// The application action a button's action stands for; none for a held
+/// modifier or a shortcut without one.
+pub(super) fn resolve(action: Action) -> Option<commands::Action> {
+    match action {
+        Action::Key(k, m) => shortcut_action(k, m),
+        Action::Mixer(c) => Some(commands::Action::Mixer(c)),
+        Action::ToggleMono => Some(commands::Action::ToggleMono),
+        Action::Named(a) => Some(a),
+        Action::Hold(_) => None,
+    }
+}
+/// What pressing (`down`) or releasing a button bound to `action` does, with
+/// the modifiers `held` on the same device. A held modifier changes `held`
+/// and does nothing else; anything else acts on the press, its spec carrying
+/// the held modifiers. Shift, held or in the binding, moves on after a
+/// metadata action.
+pub(super) fn press(held: &mut Modifiers, action: Action, down: bool) -> Option<DeviceOp> {
+    if let Action::Hold(m) = action {
+        *held = if down { *held | m } else { without(*held, m) };
+        return None;
+    }
+    if !down {
+        return None;
+    }
+    let advance = held.shift || matches!(action, Action::Key(_, m) if m.shift);
+    let action = match action {
+        Action::Key(k, m) => Action::Key(k, m | *held),
+        action => action,
+    };
+    Some(DeviceOp::Action {
+        spec: action_spec(action),
+        advance,
+    })
+}
 pub(super) fn shortcut_action(key: Key, m: Modifiers) -> Option<commands::Action> {
     use crate::app::shell::panels::{PanelChange, WorkspacePanel};
     use commands::Action as A;

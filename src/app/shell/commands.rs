@@ -46,11 +46,20 @@ impl Automation {
 pub(in crate::app) use parameter::Param;
 pub(in crate::app) use preset::PresetTarget;
 
+/// Who sent a command, so a gesture ([`TurnScope`]) never joins commands of two
+/// senders.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::app) enum Source {
+    /// The control socket, its legacy `cc` and `note` commands included.
     Socket,
+    /// A control device: `device` of the adapter `session`, in its connection
+    /// `epoch`. A new epoch, after a reconnection, starts new gestures.
     #[cfg(any(test, target_os = "macos", target_os = "windows"))]
-    Midi(u64, u64),
+    Device {
+        session: u64,
+        device: u64,
+        epoch: u64,
+    },
 }
 #[derive(Clone, Copy, PartialEq)]
 struct TurnScope(Source, Param, Option<usize>, u64, usize);

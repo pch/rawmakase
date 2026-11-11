@@ -726,7 +726,11 @@ fn idle_frames_keep_turns_grouped_but_transport_changes_split_them() {
     for _ in 0..2 {
         e.execute_command_from(
             Command::new(Operation::Adjust(Param::Setting(ParameterId::Exposure), 1)),
-            Source::Midi(1, 0),
+            Source::Device {
+                session: 1,
+                device: 1,
+                epoch: 0,
+            },
             &ctx,
         )
         .unwrap();
@@ -796,7 +800,11 @@ fn absolute_controls_use_parameter_ranges_and_devices_have_separate_undo() {
             Param::Setting(ParameterId::Exposure),
             127,
         )),
-        Source::Midi(1, 0),
+        Source::Device {
+            session: 1,
+            device: 1,
+            epoch: 0,
+        },
         &ctx,
     )
     .unwrap();
@@ -806,7 +814,11 @@ fn absolute_controls_use_parameter_ranges_and_devices_have_separate_undo() {
             Param::Setting(ParameterId::Exposure),
             0,
         )),
-        Source::Midi(2, 0),
+        Source::Device {
+            session: 1,
+            device: 2,
+            epoch: 0,
+        },
         &ctx,
     )
     .unwrap();
@@ -829,8 +841,16 @@ fn absolute_controls_use_parameter_ranges_and_devices_have_separate_undo() {
         revision: Some(state.revision),
         ..Default::default()
     };
-    e.execute_command_from(command, Source::Midi(1, 1), &ctx)
-        .unwrap();
+    e.execute_command_from(
+        command,
+        Source::Device {
+            session: 1,
+            device: 1,
+            epoch: 1,
+        },
+        &ctx,
+    )
+    .unwrap();
     assert_eq!(e.document.edit.recipe().masks[0].adjust.exposure, 4.);
     assert_eq!(e.document.edit.recipe().exposure, 0.);
 }
