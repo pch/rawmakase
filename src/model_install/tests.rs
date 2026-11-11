@@ -9,13 +9,13 @@ fn is_installed(dir: &Path, pack: Pack) -> bool {
 fn each_pack_has_a_folder_named_for_its_model_and_version() {
     assert!(Pack::Subject.dir().ends_with(format!(
         "models/{}-v{}",
-        rawmakase_inference::SUBJECT.id,
-        rawmakase_inference::SUBJECT.version
+        rawmakase_selection::SUBJECT.id,
+        rawmakase_selection::SUBJECT.version
     )));
     assert!(Pack::Sky.dir().ends_with(format!(
         "models/{}-v{}",
-        rawmakase_inference::SKY.id,
-        rawmakase_inference::SKY.version
+        rawmakase_selection::SKY.id,
+        rawmakase_selection::SKY.version
     )));
     assert!(Pack::Subject.megabytes() > 250 && Pack::Sky.megabytes() > 200);
 }

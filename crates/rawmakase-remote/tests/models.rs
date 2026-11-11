@@ -13,9 +13,10 @@
 //! ```
 use rawmakase_cancel::Cancel;
 
-use rawmakase_inference::{Coverage, LoadOptions, Point, Prompt, Provider, RgbImage, Sky, Subject};
+use rawmakase_inference::{LoadOptions, Provider};
 use rawmakase_remote::client::RemoteSession;
 use rawmakase_remote::server::{Model, Server};
+use rawmakase_selection::{Coverage, Point, Prompt, RgbImage, Sky, Subject};
 use std::net::TcpListener;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;

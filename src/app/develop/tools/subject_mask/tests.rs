@@ -555,13 +555,13 @@ impl Remote {
         let holder = std::thread::spawn(move || {
             use rawmakase_remote::server::{Engine, EngineError, Outcome, Server};
             struct Fake {
-                subject: rawmakase_inference::Coverage,
-                sky: rawmakase_inference::Coverage,
+                subject: rawmakase_selection::Coverage,
+                sky: rawmakase_selection::Coverage,
             }
             impl Engine for Fake {
                 fn analyze(
                     &mut self,
-                    _photo: &rawmakase_inference::RgbImage,
+                    _photo: &rawmakase_selection::RgbImage,
                     _cancel: rawmakase_cancel::Cancel<'_>,
                 ) -> Result<Outcome, EngineError> {
                     Ok(Outcome {
@@ -571,17 +571,17 @@ impl Remote {
                 }
                 fn sky(
                     &mut self,
-                    _photo: &rawmakase_inference::RgbImage,
+                    _photo: &rawmakase_selection::RgbImage,
                     _cancel: rawmakase_cancel::Cancel<'_>,
-                ) -> Result<rawmakase_inference::Coverage, EngineError> {
+                ) -> Result<rawmakase_selection::Coverage, EngineError> {
                     Ok(self.sky.clone())
                 }
                 fn segment(
                     &mut self,
                     key: &str,
-                    _prompt: &rawmakase_inference::Prompt,
+                    _prompt: &rawmakase_selection::Prompt,
                     _cancel: rawmakase_cancel::Cancel<'_>,
-                ) -> Result<rawmakase_inference::Coverage, EngineError> {
+                ) -> Result<rawmakase_selection::Coverage, EngineError> {
                     if key == "k" {
                         Ok(self.subject.clone())
                     } else {
@@ -598,12 +598,12 @@ impl Remote {
                 }
             }
             let engine = Fake {
-                subject: rawmakase_inference::Coverage {
+                subject: rawmakase_selection::Coverage {
                     width: 4,
                     height: 3,
                     data: subject.to_vec(),
                 },
-                sky: rawmakase_inference::Coverage {
+                sky: rawmakase_selection::Coverage {
                     width: 4,
                     height: 3,
                     data: vec![sky; 12],
@@ -765,8 +765,8 @@ fn the_real_model_selects_through_the_worker_and_the_mask_changes_the_render() {
                 .filter(|endpoint| !endpoint.is_empty())
                 .is_none()
                 .then_some(model),
-            action: Action::Click(rawmakase_inference::Prompt {
-                points: vec![rawmakase_inference::Point {
+            action: Action::Click(rawmakase_selection::Prompt {
+                points: vec![rawmakase_selection::Point {
                     x: 0.5,
                     y: 0.62,
                     positive: true,
@@ -1292,7 +1292,7 @@ fn clicks_past_the_limit_ask_again_without_the_extra_point() {
     let e = &mut f.editor;
     capturing(e);
     aim(e, SUBJECT);
-    let max = rawmakase_inference::process::MAX_POINTS;
+    let max = rawmakase_selection::process::MAX_POINTS;
     e.selection.prompting.as_mut().unwrap().points = vec![at(0.5, 0.5, true); max];
     e.prompt_click([0.1, 0.1], true);
     let sent = click(e, 0);

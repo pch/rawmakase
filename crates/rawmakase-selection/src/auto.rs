@@ -6,10 +6,10 @@
 //! fills any gap with the label itself. Sky is what the sky model says, pixel by pixel.
 //! Both end with their edges moved onto the photo's. Everything here is pure: what the
 //! models said comes in, coverage in the photo's frame goes out.
-use crate::error::InferenceError;
 use crate::panoptic::Instance;
 use crate::process::{Coverage, Point, Prompt, Rect, RgbImage, output_size, resample};
 use crate::refine::{guided, smooth};
+use rawmakase_inference::InferenceError;
 
 /// Side of the square grid the proposals and the labels live on: the photo
 /// stretched to a square, as the models see it.

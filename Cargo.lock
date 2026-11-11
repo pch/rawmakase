@@ -3765,6 +3765,7 @@ dependencies = [
  "rawmakase-model-install",
  "rawmakase-protocol",
  "rawmakase-remote",
+ "rawmakase-selection",
  "rayon",
  "rfd",
  "rusqlite",
@@ -4073,8 +4074,18 @@ dependencies = [
  "image",
  "rawmakase-cancel",
  "rawmakase-inference",
+ "rawmakase-selection",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rawmakase-selection"
+version = "0.1.0"
+dependencies = [
+ "ort",
+ "rawmakase-cancel",
+ "rawmakase-inference",
 ]
 
 [[package]]

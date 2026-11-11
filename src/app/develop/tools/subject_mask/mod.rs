@@ -2,9 +2,10 @@
 //! model finds the photo's salient foreground, and the result becomes a mask that
 //! edits like any other. Everything here is the app's side of that: what a request
 //! captures, when its result may still be applied, and what the drawer says
-//! meanwhile. The models and their runtime are `rawmakase-inference`'s; installing
-//! them is [`model_installer`](crate::app::develop::model_installer)'s. The thread
-//! that runs a selection is `worker`, and the half of it that asks the models is
+//! meanwhile. The models are `rawmakase-selection`'s and their runtime
+//! `rawmakase-inference`'s; installing them is
+//! [`model_installer`](crate::app::develop::model_installer)'s. The thread that
+//! runs a selection is `worker`, and the half of it that asks the models is
 //! `inference`.
 mod inference;
 mod ui;
@@ -19,7 +20,7 @@ use crate::model::masks::{
     MAX_GROUPS, MaskComponent, MaskGroup, MaskOp, MaskShape,
 };
 use crate::model::recipe::Recipe;
-use rawmakase_inference::{Point, Prompt as ModelPrompt};
+use rawmakase_selection::{Point, Prompt as ModelPrompt};
 use std::hash::{Hash, Hasher};
 
 use crate::app::develop::model_installer::Installer;
@@ -517,7 +518,7 @@ impl Editor {
         let Some(p) = &mut self.selection.prompting else {
             return;
         };
-        if p.points.len() < rawmakase_inference::process::MAX_POINTS {
+        if p.points.len() < rawmakase_selection::process::MAX_POINTS {
             p.points.push(Point {
                 x: at[0],
                 y: at[1],

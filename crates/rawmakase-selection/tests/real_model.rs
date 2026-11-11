@@ -1,7 +1,8 @@
 //! Runs the real model. Ignored by default: set `RAWMAKASE_TEST_MODEL` to the folder
 //! holding the model's files and `RAWMAKASE_ORT_LIB` to an ONNX Runtime library.
 use rawmakase_cancel::Cancel;
-use rawmakase_inference::{InferenceError, Point, Prompt, RgbImage, Subject};
+use rawmakase_inference::InferenceError;
+use rawmakase_selection::{Point, Prompt, RgbImage, Subject};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -49,7 +50,7 @@ fn a_click_selects_the_object_under_it_and_a_click_elsewhere_does_not() {
         .segment(&embedding, &click(200. / 320., 0.5), Cancel::new(&cancel))
         .unwrap();
     assert_eq!((on.width, on.height), (320, 240));
-    let at = |c: &rawmakase_inference::Coverage, x: usize, y: usize| c.data[y * c.width + x];
+    let at = |c: &rawmakase_selection::Coverage, x: usize, y: usize| c.data[y * c.width + x];
     assert!(at(&on, 200, 120) > 200, "{}", at(&on, 200, 120));
     assert!(at(&on, 20, 20) < 40, "{}", at(&on, 20, 20));
     // A box does the same.
@@ -87,7 +88,7 @@ fn automatic_selection_runs_and_a_disc_is_neither_a_person_nor_sky() {
     assert_eq!((subject.width, subject.height), (320, 240));
     assert!(subject.data.iter().all(|v| *v < 40));
     // Clicks work on the same analysis.
-    let at = |c: &rawmakase_inference::Coverage, x: usize, y: usize| c.data[y * c.width + x];
+    let at = |c: &rawmakase_selection::Coverage, x: usize, y: usize| c.data[y * c.width + x];
     let click = Prompt {
         points: vec![Point {
             x: 200. / 320.,
@@ -147,7 +148,8 @@ fn landscape(w: usize, h: usize) -> RgbImage {
 #[test]
 #[ignore = "needs the sky model and an ONNX Runtime"]
 fn the_sky_model_answers_at_any_shape_and_a_raised_flag_stops_it() {
-    use rawmakase_inference::{LoadOptions, Sky};
+    use rawmakase_inference::LoadOptions;
+    use rawmakase_selection::Sky;
     let cancel = AtomicBool::new(false);
     let mut session = Sky::load_with(&sky_model(), &LoadOptions::default()).unwrap();
     for (w, h) in [

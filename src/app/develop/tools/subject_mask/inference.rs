@@ -7,11 +7,11 @@
 use super::{Action, Failure, Feature};
 use crate::storage::{FNV_OFFSET, fnv1a};
 use rawmakase_cancel::Cancel;
-use rawmakase_inference::{
-    Analysis, Coverage, InferenceError, LoadOptions, Prompt, RgbImage, SKY, SUBJECT, Session, Sky,
-    SkySession, Subject,
-};
+use rawmakase_inference::{InferenceError, LoadOptions};
 use rawmakase_remote::{ClientError, RemoteAnalysis, RemoteSession};
+use rawmakase_selection::{
+    Analysis, Coverage, Prompt, RgbImage, SKY, SUBJECT, Session, Sky, SkySession, Subject,
+};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 

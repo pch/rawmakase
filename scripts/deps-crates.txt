@@ -7,61 +7,65 @@
 
 # The cancellation token is shared by every crate that does long work, the RAW
 # decoders and inference among them, so it depends on none of them.
-rawmakase-cancel never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-ctl rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
+rawmakase-cancel never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-ctl rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
 # The file system steps moving a user's file needs are policy-free: they know no
 # photo, edit or catalog. Only the catalog's file operations and the app's Trash
 # use them, so nothing below the catalog builds the platform file system code.
-rawmakase-fs never rawmakase-cancel rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-ctl rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
+rawmakase-fs never rawmakase-cancel rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-ctl rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
 # The TIFF container reader is the bottom layer: the model and the RAW decoders read
 # through it.
-rawmakase-tiff never rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
+rawmakase-tiff never rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
 # RAW decoders turn file bytes into sensor data; they know no edit, file format,
 # catalog or renderer.
-rawmakase-raw never rawmakase-model rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
+rawmakase-raw never rawmakase-model rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
 # The control protocol's types stand alone, so the command-line client builds without
 # the app's crates.
-rawmakase-protocol never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
-rawmakase-ctl never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
+rawmakase-protocol never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
+rawmakase-ctl never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
 # The values an edit is made of come before file formats, the catalog, rendering and
 # decoding.
-rawmakase-model never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-fs rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install
+rawmakase-model never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install
 # File formats and presets read and write the model, and use nothing above it.
-rawmakase-interop never rawmakase-raw rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-fs rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install
+rawmakase-interop never rawmakase-raw rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install
 # The catalog stores edits; it renders and decodes nothing.
-rawmakase-catalog never rawmakase-raw rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install
+rawmakase-catalog never rawmakase-raw rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install
 # The renderer takes decoded pixels and an edit; it reads no files, file formats or
 # catalog. Applying settings that ask for Auto reaches it through the model's
 # `PhotoMeasures`.
-rawmakase-engine never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-fs rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install
+rawmakase-engine never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-decode rawmakase-export rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install
 # Decoding feeds rendering and export, never the other way, and keeps out of the catalog.
-rawmakase-decode never rawmakase-catalog rawmakase-export rawmakase-inference rawmakase-remote rawmakase-fs rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install
+rawmakase-decode never rawmakase-catalog rawmakase-export rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install
 # Export takes each photo's stored edit from its caller and resolves it with
 # `interop::edits`; it opens no catalog. Saved masks render without any inference
 # installed.
-rawmakase-export never rawmakase-catalog rawmakase-inference rawmakase-remote rawmakase-fs rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install
-# Inference takes pixels and returns coverage; the remote worker sits on it alone.
-rawmakase-inference never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
+rawmakase-export never rawmakase-catalog rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install
+# Inference runs the ONNX Runtime and AI Denoise's model; the selection models and
+# the remote worker sit on it, never the other way.
+rawmakase-inference never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
+# The selection models take pixels and return coverage; they know no edit, catalog,
+# renderer, decoder or extension host. The remote worker sits on them.
+rawmakase-selection never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
 rawmakase-remote never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi
 # Installing a model pack downloads and checks files into a folder: it knows
 # no edit, catalog, renderer or decoder, and runs no model.
-rawmakase-model-install never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-ctl rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-midi
+rawmakase-model-install never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-ctl rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-midi
 # The MCP server is a client of the control protocol, like any third party's: it
 # reaches the app only through rawmakase-protocol and rawmakase-ctl.
-rawmakase-mcp never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-extensions cargo-rawmakase rawmakase-model-install
+rawmakase-mcp never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-extensions cargo-rawmakase rawmakase-model-install
 # The extension protocol is the contract third-party extensions build on: it
 # stands alone, as the control protocol does.
-rawmakase-extension-protocol never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-ctl rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-mcp rawmakase-model-install rawmakase-midi
+rawmakase-extension-protocol never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-ctl rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-mcp rawmakase-model-install rawmakase-midi
 # The SDK uses nothing a third party can't: the protocol crate alone.
-rawmakase-extension never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-ctl rawmakase-extensions cargo-rawmakase rawmakase-mcp rawmakase-model-install rawmakase-midi
+rawmakase-extension never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-ctl rawmakase-extensions cargo-rawmakase rawmakase-mcp rawmakase-model-install rawmakase-midi
 # The extension host knows no photo, edit, catalog, renderer or decoder: what an
 # extension's requests mean to the editor is the app's.
-rawmakase-extensions never rawmakase-cancel rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-ctl rawmakase-extension cargo-rawmakase rawmakase-mcp rawmakase-model-install rawmakase-midi
+rawmakase-extensions never rawmakase-cancel rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-ctl rawmakase-extension cargo-rawmakase rawmakase-mcp rawmakase-model-install rawmakase-midi
 # The extension author's tool writes packages and registers a folder, through the
 # host; it knows nothing of the editor either.
-cargo-rawmakase never rawmakase-cancel rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-ctl rawmakase-extension rawmakase-mcp rawmakase-model-install rawmakase-midi
+cargo-rawmakase never rawmakase-cancel rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-ctl rawmakase-extension rawmakase-mcp rawmakase-model-install rawmakase-midi
 # The example extension is built as a third party builds one: with the SDK and
 # nothing of the app's.
-rawmakase-example never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-ctl rawmakase-extensions cargo-rawmakase rawmakase-mcp rawmakase-model-install rawmakase-midi
+rawmakase-example never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-ctl rawmakase-extensions cargo-rawmakase rawmakase-mcp rawmakase-model-install rawmakase-midi
 # The MIDI extension is built as a third party builds one: with the SDK alone,
 # and midir where there is MIDI input.
-rawmakase-midi never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-ctl rawmakase-extensions cargo-rawmakase rawmakase-mcp rawmakase-example rawmakase-model-install
+rawmakase-midi never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-ctl rawmakase-extensions cargo-rawmakase rawmakase-mcp rawmakase-example rawmakase-model-install

@@ -20,9 +20,9 @@ gui='egui.*|eframe|epaint|winit|fastframe-fonts'
 c_imaging='lcms2.*|.*lcms.*|libraw.*|.*-libraw.*|rsraw.*'
 native="rawmakase-decode|rawmakase-raw|$c_imaging"
 # The ONNX Runtime binding opens a library at run time. Only the app composes it: no
-# value, file-format, catalog or rendering crate may reach it, so saved masks render
-# without any inference installed.
-inference='rawmakase-inference|ort.*'
+# value, file-format, catalog or rendering crate may reach it or the selection models
+# built on it, so saved masks render without any inference installed.
+inference='rawmakase-inference|rawmakase-selection|ort.*'
 leaf="rawmakase|wgpu.*|naga|$gui|$native|$inference"
 status=0
 check() {
@@ -77,10 +77,15 @@ if [ -n "$asm" ]; then
     status=1
 fi
 check rawmakase-export "rawmakase|eframe|winit|egui-wgpu|egui-winit|egui_extras|$c_imaging|$inference"
-# Inference itself is a leaf: it takes pixels and returns coverage, and knows no
-# workspace crate but the cancellation token, and no window, GPU or imaging library.
-check rawmakase-inference "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-interop|rawmakase-decode|rawmakase-protocol|wgpu.*|naga|$gui|$native"
-# The remote worker and its client sit on top of inference (and the cancellation token) alone: the protocol
+# Inference itself is a leaf: it runs the ONNX Runtime and AI Denoise's model, and
+# knows no workspace crate but the cancellation token (not the selection models or
+# the remote worker built on it), and no window, GPU or imaging library.
+check rawmakase-inference "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-interop|rawmakase-decode|rawmakase-protocol|rawmakase-selection|rawmakase-remote|wgpu.*|naga|$gui|$native"
+# The selection models take pixels and return coverage: no workspace crate but
+# inference and the cancellation token, and no edit, catalog, renderer, decoder,
+# extension host, window, GPU or imaging library.
+check rawmakase-selection "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-interop|rawmakase-decode|rawmakase-protocol|rawmakase-remote|rawmakase-extension.*|wgpu.*|naga|$gui|$native"
+# The remote worker and its client sit on top of the selection models and inference (and the cancellation token) alone: the protocol
 # and the worker know no catalog, renderer, GUI or native library, and only the
 # app composes the client.
 check rawmakase-remote "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-interop|rawmakase-decode|rawmakase-protocol|wgpu.*|naga|$gui|$native"

@@ -30,6 +30,7 @@ flowchart TD
     mcp[rawmakase-mcp]
     remote[rawmakase-remote]
     inference[rawmakase-inference]
+    selection[rawmakase-selection]
     modelinstall[rawmakase-model-install]
     exthost[rawmakase-extensions]
     extprotocol[rawmakase-extension-protocol]
@@ -37,7 +38,7 @@ flowchart TD
     cargoext[cargo-rawmakase]
 
     app --> export & decode & catalog & engine & interop & model
-    app --> ctl & remote & inference & modelinstall & fs & exthost
+    app --> ctl & remote & selection & inference & modelinstall & fs & exthost
     export --> decode & engine & interop
     decode --> engine & raw
     catalog --> interop & fs
@@ -47,7 +48,8 @@ flowchart TD
     raw --> tiff & cancel
     ctl --> protocol
     mcp --> ctl
-    remote --> inference
+    remote --> selection
+    selection --> inference
     modelinstall --> inference & model
     exthost --> extprotocol & fs
     sdk --> extprotocol
@@ -71,9 +73,10 @@ out of the app's tree.)
 | `rawmakase-cancel` | `Cancel`, the borrowed request to stop long-running work, which its owner's flag sets: every crate that does such work takes one, and owners keep their flags | Everything |
 | `rawmakase-decode` | Opening and decoding photos: the only crate that reaches `rawmakase-raw`; colour management, demosaicing, rendered files (JPEG … HEIF), the full-size decode and its cache, AI Denoise's packing and assembly, Camera Look fitting | C imaging libraries, the catalog, export, the GUI |
 | `rawmakase-export` | Developing and writing exports, with their watermarks | The app, a window or GPU backend |
-| `rawmakase-inference` | Running the selection models and AI Denoise's model through a lazily loaded ONNX Runtime: pixels in, coverage or denoised camera RGB out | Every other workspace crate |
+| `rawmakase-inference` | The lazily loaded ONNX Runtime, the provider choice and the session helpers every model shares, `InferenceError`, the `ModelFile` record, and AI Denoise's model: its contract, tiler and gain fit, packed mosaic in, denoised camera RGB out | Every other workspace crate |
+| `rawmakase-selection` | The selection models (Subject, Background and Sky): their pinned contracts, the image and coverage mappings, automatic selection, edge refinement and their sessions, run through inference's runtime: pixels in, coverage out | Everything but inference |
 | `rawmakase-model-install` | Installing a model pack: a folder and its files, downloaded resumably or copied from a folder, each checked against its size and SHA-256, the receipt that makes a pack installed, the lock across instances, and the models and runtime folders in the local data folder. Which packs exist is its caller's | Everything but inference and the model |
-| `rawmakase-remote` | The optional worker binary that runs the same models on another computer, and the app's client for it, over a bounded TCP protocol | Everything but inference |
+| `rawmakase-remote` | The optional worker binary that runs the same selection models on another computer, and the app's client for it, over a bounded TCP protocol | Everything but the selection models and inference |
 | `rawmakase-protocol` | What the app and its control clients agree on: protocol version, `control.json` endpoint, data folder | Everything |
 | `rawmakase-ctl` (`tools/`) | The control client, used by `rawmakase control`, the MCP program and the standalone `rawmakase-ctl` | The app |
 | `rawmakase-mcp` (`extensions/mcp`) | The bundled MCP extension: its manifest and its program `rawmakase-mcp`, an MCP server that is a client of the control protocol, which `rawmakase mcp` runs | Every workspace crate but `rawmakase-protocol` and `rawmakase-ctl` |
@@ -121,8 +124,8 @@ token holds. Every persisted change goes through the host
 crate's `State::update`, so a write failure leaves this session's state as it
 was. Quitting follows [the shutdown contract](shutdown.md).
 
-No value, catalog or rendering crate can reach `rawmakase-inference`, so saved masks
-render without any inference installed and a photo with AI Denoise renders from a
+No value, catalog or rendering crate can reach `rawmakase-inference` or
+`rawmakase-selection`, so saved masks render without any inference installed and a photo with AI Denoise renders from a
 result handed to it. The app crate re-exports these crates' modules at its root
 (`crate::model`, `crate::xmp`, `crate::catalog`, `crate::develop`…), so paths read
 the same on either side; parsing, persistence and rendering never import the
@@ -421,7 +424,7 @@ Some features span several owners; each module's docs describe its part:
 - `scripts/deps-crates.txt` lists the workspace crates each crate must never
   depend on, directly or through others: the model never on file formats, the
   catalog, rendering or decoding; the RAW decoders on no edit; the protocol and
-  inference on no other crate. `scripts/deps.py check` reads the rules against
+  inference on no other crate, and the selection models on none but inference. `scripts/deps.py check` reads the rules against
   `cargo metadata --no-deps`, so an edge that points up the layering fails
   without a build.
 - The model, file formats, catalog and control protocol are crates, so Cargo

@@ -7,9 +7,9 @@
 //! unbounded allocation.
 
 use rawmakase_cancel::Cancel;
-use rawmakase_inference::{
-    Analysis, Coverage, InferenceError, LoadOptions, Prompt, RgbImage, SKY, SUBJECT, Session, Sky,
-    SkySession, Subject,
+use rawmakase_inference::{InferenceError, LoadOptions};
+use rawmakase_selection::{
+    Analysis, Coverage, Prompt, RgbImage, SKY, SUBJECT, Session, Sky, SkySession, Subject,
 };
 use std::collections::{HashMap, VecDeque};
 use std::net::{TcpListener, TcpStream};
@@ -184,7 +184,7 @@ impl Engine for Model {
         let spec = self.session.spec();
         Info {
             model: format!("{}@{}", spec.id, &spec.files[1].sha256[..16]),
-            panoptic: rawmakase_inference::PANOPTIC.id.to_string(),
+            panoptic: rawmakase_selection::PANOPTIC.id.to_string(),
             sky: self
                 .sky
                 .as_ref()
@@ -580,12 +580,12 @@ fn photo(width: u32, height: u32, pixels: Vec<u8>) -> Result<RgbImage, String> {
             pixels.len()
         ));
     }
-    if width as usize > rawmakase_inference::process::MAX_INPUT_SIDE
-        || height as usize > rawmakase_inference::process::MAX_INPUT_SIDE
+    if width as usize > rawmakase_selection::process::MAX_INPUT_SIDE
+        || height as usize > rawmakase_selection::process::MAX_INPUT_SIDE
     {
         return Err(format!(
             "the photo's sides must be at most {}",
-            rawmakase_inference::process::MAX_INPUT_SIDE
+            rawmakase_selection::process::MAX_INPUT_SIDE
         ));
     }
     Ok(RgbImage {

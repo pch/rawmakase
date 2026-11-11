@@ -21,14 +21,9 @@ use ort::session::builder::GraphOptimizationLevel;
 use ort::session::{RunOptions, Session as OrtSession};
 use ort::value::TensorRef;
 
-use crate::auto::{self, SIDE};
 use crate::denoise::TileModel;
 use crate::error::InferenceError;
-use crate::manifest::{
-    ModelFile, ModelSpec, PANOPTIC, RAWNIND, SKY, SUBJECT, all_files, denoise_files, sky_files,
-};
-use crate::panoptic::{self, Labels};
-use crate::process::{self, Coverage, Prompt, RgbImage};
+use crate::manifest::{ModelFile, RAWNIND, denoise_files};
 
 /// Environment variable naming the ONNX Runtime library file to load.
 pub const RUNTIME_ENV: &str = "RAWMAKASE_ORT_LIB";
@@ -80,8 +75,8 @@ pub fn runtime_search_dirs() -> Vec<PathBuf> {
 /// Which hardware the sessions are asked to run on. `Cpu` is the default and the
 /// only thing every platform ships; the others are a request, granted only when
 /// the loaded ONNX Runtime actually registers the provider: a missing CUDA
-/// runtime or CoreML device is an error from [`Subject::load_with`], never a
-/// silent slide back to the CPU.
+/// runtime or CoreML device is an error from
+/// `rawmakase_selection::Subject::load_with`, never a silent slide back to the CPU.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum Provider {
     #[default]
@@ -113,7 +108,7 @@ impl Provider {
     }
 }
 
-/// Options for [`Subject::load_with`].
+/// Options for `rawmakase_selection::Subject::load_with`.
 #[derive(Debug, Clone, Default)]
 pub struct LoadOptions {
     /// Explicit runtime library file. Takes precedence over
@@ -133,144 +128,6 @@ pub fn default_threads() -> usize {
         .clamp(1, MAX_THREADS)
 }
 
-/// Namespace for loading the selection model.
-pub struct Subject;
-
-impl Subject {
-    /// Opens the runtime (searching [`RUNTIME_ENV`] and the package locations)
-    /// and the model in folder `dir`.
-    pub fn load(dir: &Path) -> Result<Session, InferenceError> {
-        Self::load_with(dir, &LoadOptions::default())
-    }
-
-    pub fn load_with(dir: &Path, options: &LoadOptions) -> Result<Session, InferenceError> {
-        let environment = load_runtime(options.runtime_library.as_deref())?;
-        let spec = SUBJECT;
-        check_files(dir, &all_files())?;
-        let threads = options.threads.unwrap_or_else(default_threads).max(1);
-        let provider = options.provider.unwrap_or_default();
-        // The runtime API panics on internal misuse; a panic must never reach
-        // the app from a background job.
-        let (encoder, decoder, panoptic) = catch_unwind(AssertUnwindSafe(|| {
-            Ok::<_, InferenceError>((
-                build_session(
-                    &environment,
-                    &dir.join(spec.encoder_file),
-                    threads,
-                    GraphOptimizationLevel::All,
-                    provider,
-                )?,
-                build_session(
-                    &environment,
-                    &dir.join(spec.decoder_file),
-                    threads,
-                    GraphOptimizationLevel::All,
-                    provider,
-                )?,
-                // The half-precision graph breaks the full fusion pass.
-                build_session(
-                    &environment,
-                    &dir.join(PANOPTIC.file.name),
-                    threads,
-                    GraphOptimizationLevel::Level1,
-                    provider,
-                )?,
-            ))
-        }))
-        .map_err(|_| {
-            InferenceError::Failed("ONNX Runtime panicked while loading the model".into())
-        })??;
-        Ok(Session {
-            encoder,
-            decoder,
-            panoptic,
-            spec,
-            provider,
-        })
-    }
-}
-
-/// Namespace for loading the sky model.
-pub struct Sky;
-
-impl Sky {
-    /// Opens the runtime as [`Subject::load_with`] does and the sky model in folder `dir`.
-    pub fn load_with(dir: &Path, options: &LoadOptions) -> Result<SkySession, InferenceError> {
-        let environment = load_runtime(options.runtime_library.as_deref())?;
-        check_files(dir, &sky_files())?;
-        let threads = options.threads.unwrap_or_else(default_threads).max(1);
-        let provider = options.provider.unwrap_or_default();
-        let network = catch_unwind(AssertUnwindSafe(|| {
-            build_session(
-                &environment,
-                &dir.join(SKY.file.name),
-                threads,
-                GraphOptimizationLevel::All,
-                provider,
-            )
-        }))
-        .map_err(|_| {
-            InferenceError::Failed("ONNX Runtime panicked while loading the model".into())
-        })??;
-        Ok(SkySession { network, provider })
-    }
-}
-
-/// The loaded sky model. One run at a time; dropping it releases the model's memory.
-pub struct SkySession {
-    network: OrtSession,
-    provider: Provider,
-}
-
-impl SkySession {
-    /// The provider the runtime accepted, as [`Session::provider`].
-    pub fn provider(&self) -> Provider {
-        self.provider
-    }
-
-    /// The photo's sky as coverage in its frame, all zero when there is none. A few
-    /// seconds; cancellable.
-    pub fn select(
-        &mut self,
-        image: &RgbImage,
-        cancel: Cancel<'_>,
-    ) -> Result<Coverage, InferenceError> {
-        cancelled(cancel)?;
-        process::check_image(image)?;
-        let (width, height) = sky_input_size(image.width, image.height);
-        let tensor = process::preprocess_sized(image, width, height, SKY.mean, SKY.std)?;
-        cancelled(cancel)?;
-        let network = &mut self.network;
-        let probability = guarded(cancel, |options| {
-            let input = TensorRef::from_array_view(([1usize, 3, height, width], &tensor[..]))
-                .map_err(failed)?;
-            let outputs = network
-                .run_with_options(ort::inputs!["pixel_values" => input], options)
-                .map_err(failed)?;
-            let output = outputs.get("sky").ok_or_else(|| {
-                InferenceError::ModelInvalid("the sky model has no output `sky`".into())
-            })?;
-            let (shape, data) = output.try_extract_tensor::<f32>().map_err(failed)?;
-            let expected = [1, height as i64, width as i64];
-            if **shape != expected {
-                return Err(InferenceError::OutputInvalid(format!(
-                    "the sky model answered with shape {shape:?}, expected {expected:?}"
-                )));
-            }
-            Ok(data.to_vec())
-        })?;
-        auto::sky(image, &probability, width, height)
-    }
-}
-
-/// What the sky model is fed for a photo of `width` x `height`: scaled to the long edge,
-/// its proportions kept, unless that would leave a side too short for the network.
-fn sky_input_size(width: usize, height: usize) -> (usize, usize) {
-    let scale = SKY.long_edge as f64 / width.max(height) as f64;
-    let side = |v: usize| ((v as f64 * scale).round() as usize).max(SKY.min_side);
-    (side(width), side(height))
-}
-
 /// The loaded AI Denoise model ([`RAWNIND`]). One tile at a time; dropping it releases the
 /// model's memory.
 pub struct Denoiser {
@@ -279,10 +136,11 @@ pub struct Denoiser {
 }
 
 impl Denoiser {
-    /// Opens the runtime as [`Subject::load_with`] does and the denoiser in folder `dir`
-    /// (with its `LICENSE` and `NOTICE`). A provider the manifest does not allow is an
-    /// error. On CoreML the graph runs as an ML Program on the CPU and GPU, in single
-    /// precision: the network's activations overflow half precision.
+    /// Opens the runtime as `rawmakase_selection::Subject::load_with` does and the
+    /// denoiser in folder `dir` (with its `LICENSE` and `NOTICE`). A provider the
+    /// manifest does not allow is an error. On CoreML the graph runs as an ML Program
+    /// on the CPU and GPU, in single precision: the network's activations overflow
+    /// half precision.
     pub fn load_with(dir: &Path, options: &LoadOptions) -> Result<Self, InferenceError> {
         let provider = options.provider.unwrap_or_default();
         if !RAWNIND.providers.contains(&provider) {
@@ -369,381 +227,15 @@ fn denoise_providers(provider: Provider) -> Vec<ExecutionProviderDispatch> {
     }
 }
 
-/// What the image encoder made of one photo: reused for every click on it. The
-/// photo itself is kept for the edge refinement of each result.
-pub struct Embedding {
-    features: [([usize; 4], Vec<f32>); 3],
-    image: RgbImage,
-}
-impl Embedding {
-    /// Bytes held.
-    pub fn bytes(&self) -> usize {
-        self.features
-            .iter()
-            .map(|(_, v)| v.len() * 4)
-            .sum::<usize>()
-            + self.image.data.len()
-    }
-}
-
-/// A loaded model. Not `Sync`: one run at a time per session, which is also what
-/// ONNX Runtime's `Run` expects here. Dropping it releases the model's memory.
-pub struct Session {
-    encoder: OrtSession,
-    decoder: OrtSession,
-    panoptic: OrtSession,
-    spec: ModelSpec,
-    provider: Provider,
-}
-
-/// What the models made of one photo: reused for every selection on it. Subject is chosen
-/// from it without running a model again; clicks need the embedding.
-pub struct Analysis {
-    embedding: Embedding,
-    /// What SAM 2 drew for each person and animal DETR found, together (0..=1, on the
-    /// [`SIDE`] grid).
-    subject_mask: Vec<f32>,
-}
-impl Analysis {
-    /// The photo's people and animals as coverage in its frame, all zero when there are
-    /// none.
-    pub fn subject(&self) -> Result<Coverage, InferenceError> {
-        auto::subject(&self.embedding.image, &self.subject_mask)
-    }
-    /// The embedding, for [`Session::segment`].
-    pub fn embedding(&self) -> &Embedding {
-        &self.embedding
-    }
-    /// Bytes held.
-    pub fn bytes(&self) -> usize {
-        self.embedding.bytes() + self.subject_mask.len() * 4
-    }
-}
-
-/// The decoder's answer to one prompt.
-struct Decoded {
-    /// Three candidate masks' logits, one after the other.
-    logits: Vec<f32>,
-    scores: Vec<f32>,
-    object: f32,
-}
-
-impl Session {
-    pub fn spec(&self) -> &ModelSpec {
-        &self.spec
-    }
-
-    /// The provider the runtime accepted for these sessions. Loading failed
-    /// outright when a requested accelerator could not be registered, so this
-    /// never names hardware the sessions were not built with.
-    pub fn provider(&self) -> Provider {
-        self.provider
-    }
-
-    /// Runs the image encoder on `image`. This is the expensive step (about a second);
-    /// what it returns serves any number of [`Session::segment`] calls on the photo.
-    ///
-    /// `cancel` is checked before and polled while the network runs (which terminates
-    /// the run), so a raised flag never yields an embedding.
-    pub fn embed(
-        &mut self,
-        image: &RgbImage,
-        cancel: Cancel<'_>,
-    ) -> Result<Embedding, InferenceError> {
-        embed_with(&mut self.encoder, &self.spec, image, cancel)
-    }
-
-    /// The mask for `prompt` on an embedded photo, as 8-bit coverage at the photo's
-    /// own size (capped at [`process::MAX_COVERAGE_SIDE`]), its edge moved onto the
-    /// photo's. All zero when the model finds no object at the prompt.
-    pub fn segment(
-        &mut self,
-        embedding: &Embedding,
-        prompt: &Prompt,
-        cancel: Cancel<'_>,
-    ) -> Result<Coverage, InferenceError> {
-        let decoded = self.decode(embedding, prompt, cancel)?;
-        let (width, height) = process::output_size(&embedding.image);
-        if decoded.object < 0.0 {
-            return Ok(Coverage {
-                width,
-                height,
-                data: vec![0; width * height],
-            });
-        }
-        let side = self.spec.mask_size;
-        let best = decoded.best();
-        let mut coverage = process::postprocess(
-            &decoded.logits[best * side * side..(best + 1) * side * side],
-            &self.spec,
-            width,
-            height,
-        )?;
-        crate::refine::refine(&mut coverage, &embedding.image);
-        Ok(coverage)
-    }
-
-    /// Everything Subject needs of a photo: the embedding, where DETR finds its people and
-    /// animals, and SAM 2's outline of each. About two seconds; cancellable.
-    pub fn analyze(
-        &mut self,
-        image: &RgbImage,
-        cancel: Cancel<'_>,
-    ) -> Result<Analysis, InferenceError> {
-        // The two networks do not depend on each other: run them together.
-        let (embedding, labels) = {
-            let (encoder, panoptic, spec) = (&mut self.encoder, &mut self.panoptic, &self.spec);
-            std::thread::scope(|scope| {
-                let embedding = scope.spawn(move || embed_with(encoder, spec, image, cancel));
-                let labels = panoptic_with(panoptic, image, cancel);
-                let embedding = embedding.join().unwrap_or_else(|_| {
-                    Err(InferenceError::Failed(
-                        "the image encoder stopped unexpectedly".into(),
-                    ))
-                });
-                (embedding, labels)
-            })
-        };
-        let (embedding, labels) = (embedding?, labels?);
-        let side = self.spec.mask_size;
-        debug_assert_eq!(side, SIDE);
-        let candidates = |decoded: &Decoded| -> Vec<Vec<bool>> {
-            (0..3)
-                .map(|k| {
-                    decoded.logits[k * side * side..(k + 1) * side * side]
-                        .iter()
-                        .map(|l| *l > 0.0)
-                        .collect()
-                })
-                .collect()
-        };
-        // Each person and animal: SAM 2 is asked for it with its box and points inside,
-        // and the candidate that agrees best with what DETR found is kept (DETR's own
-        // mask where none does).
-        let mut subject_mask = vec![0f32; SIDE * SIDE];
-        for (k, instance) in labels.instances.iter().enumerate() {
-            let others: Vec<&panoptic::Instance> = labels
-                .instances
-                .iter()
-                .enumerate()
-                .filter(|(j, _)| *j != k)
-                .map(|(_, o)| o)
-                .collect();
-            let decoded = self.decode(&embedding, &auto::aim(instance, &others), cancel)?;
-            let detr: Vec<bool> = instance.mask.iter().map(|v| *v > 0.5).collect();
-            let best = candidates(&decoded)
-                .into_iter()
-                .enumerate()
-                .map(|(c, mask)| (auto::iou(&mask, &detr), c))
-                .max_by(|a, b| a.0.total_cmp(&b.0));
-            let drawn = match best {
-                Some((agreement, c)) if agreement >= 0.5 && decoded.object >= 0.0 => decoded.logits
-                    [c * side * side..(c + 1) * side * side]
-                    .iter()
-                    .map(|l| 1.0 / (1.0 + (-l).exp()))
-                    .collect::<Vec<f32>>(),
-                _ => instance.mask.clone(),
-            };
-            for (m, d) in subject_mask.iter_mut().zip(&drawn) {
-                *m = m.max(*d);
-            }
-        }
-        Ok(Analysis {
-            embedding,
-            subject_mask,
-        })
-    }
-
-    fn decode(
-        &mut self,
-        embedding: &Embedding,
-        prompt: &Prompt,
-        cancel: Cancel<'_>,
-    ) -> Result<Decoded, InferenceError> {
-        cancelled(cancel)?;
-        prompt.validate()?;
-        let (points, labels, bounds) = prompt.tensors(&self.spec);
-        let n = labels.len();
-        let boxes = bounds.len() / 4;
-        let decoder = &mut self.decoder;
-        let (logits, scores, object) = guarded(cancel, |options| {
-            let [f0, f1, f2] = &embedding.features;
-            let outputs = decoder
-                .run_with_options(
-                    ort::inputs![
-                        "input_points" => TensorRef::from_array_view(([1usize, 1, n, 2], &points[..])).map_err(failed)?,
-                        "input_labels" => TensorRef::from_array_view(([1usize, 1, n], &labels[..])).map_err(failed)?,
-                        "input_boxes" => TensorRef::from_array_view(([1usize, boxes, 4], &bounds[..])).map_err(failed)?,
-                        "image_embeddings.0" => view(f0)?,
-                        "image_embeddings.1" => view(f1)?,
-                        "image_embeddings.2" => view(f2)?,
-                    ],
-                    options,
-                )
-                .map_err(failed)?;
-            let get = |name: &str| -> Result<Vec<f32>, InferenceError> {
-                let output = outputs.get(name).ok_or_else(|| {
-                    InferenceError::ModelInvalid(format!("the decoder has no output `{name}`"))
-                })?;
-                let (_, data) = output.try_extract_tensor::<f32>().map_err(failed)?;
-                Ok(data.to_vec())
-            };
-            Ok((
-                get("pred_masks")?,
-                get("iou_scores")?,
-                get("object_score_logits")?,
-            ))
-        })?;
-        let side = self.spec.mask_size;
-        if scores.len() != 3
-            || logits.len() != 3 * side * side
-            || object.len() != 1
-            || scores.iter().any(|s| !s.is_finite())
-            || logits.iter().any(|l| !l.is_finite())
-            || !object[0].is_finite()
-        {
-            return Err(InferenceError::OutputInvalid(format!(
-                "the decoder returned {} masks of {} values",
-                scores.len(),
-                logits.len()
-            )));
-        }
-        Ok(Decoded {
-            logits,
-            scores,
-            object: object[0],
-        })
-    }
-}
-
-impl Decoded {
-    /// The candidate the model rates highest.
-    fn best(&self) -> usize {
-        (0..3)
-            .max_by(|a, b| self.scores[*a].total_cmp(&self.scores[*b]))
-            .unwrap_or(0)
-    }
-}
-
-fn embed_with(
-    encoder: &mut OrtSession,
-    spec: &ModelSpec,
-    image: &RgbImage,
-    cancel: Cancel<'_>,
-) -> Result<Embedding, InferenceError> {
-    cancelled(cancel)?;
-    let tensor = process::preprocess(image, spec.input_size, spec.mean, spec.std)?;
-    cancelled(cancel)?;
-    let size = spec.input_size;
-    let features = guarded(cancel, |options| {
-        let input =
-            TensorRef::from_array_view(([1usize, 3, size, size], &tensor[..])).map_err(failed)?;
-        let outputs = encoder
-            .run_with_options(ort::inputs!["pixel_values" => input], options)
-            .map_err(failed)?;
-        let mut features = Vec::with_capacity(3);
-        for index in 0..3 {
-            let name = format!("image_embeddings.{index}");
-            let output = outputs.get(name.as_str()).ok_or_else(|| {
-                InferenceError::ModelInvalid(format!("the encoder has no output `{name}`"))
-            })?;
-            let (shape, data) = output.try_extract_tensor::<f32>().map_err(failed)?;
-            features.push((shape.iter().copied().collect::<Vec<i64>>(), data.to_vec()));
-        }
-        Ok(features)
-    })?;
-    cancelled(cancel)?;
-    let mut checked = Vec::with_capacity(3);
-    for (shape, data) in features {
-        let dims: Option<[usize; 4]> = (shape.len() == 4 && shape[0] == 1)
-            .then(|| {
-                let mut dims = [0usize; 4];
-                for (out, d) in dims.iter_mut().zip(&shape) {
-                    *out = usize::try_from(*d).ok()?;
-                }
-                Some(dims)
-            })
-            .flatten();
-        let count = dims.and_then(|d| d.iter().try_fold(1usize, |n, d| n.checked_mul(*d)));
-        match dims {
-            Some(dims) if count == Some(data.len()) => checked.push((dims, data)),
-            _ => {
-                return Err(InferenceError::OutputInvalid(format!(
-                    "an encoder output has shape {shape:?}"
-                )));
-            }
-        }
-    }
-    let features: [([usize; 4], Vec<f32>); 3] = checked
-        .try_into()
-        .map_err(|_| InferenceError::ModelInvalid("the encoder outputs changed".into()))?;
-    Ok(Embedding {
-        features,
-        image: image.clone(),
-    })
-}
-
-/// Where the photo's people and animals are, on the [`SIDE`] grid.
-fn panoptic_with(
-    network: &mut OrtSession,
-    image: &RgbImage,
-    cancel: Cancel<'_>,
-) -> Result<Labels, InferenceError> {
-    cancelled(cancel)?;
-    process::check_image(image)?;
-    let scale = PANOPTIC.long_edge as f64 / image.width.max(image.height) as f64;
-    let width = ((image.width as f64 * scale).round() as usize).max(1);
-    let height = ((image.height as f64 * scale).round() as usize).max(1);
-    let tensor = process::preprocess_sized(image, width, height, PANOPTIC.mean, PANOPTIC.std)?;
-    cancelled(cancel)?;
-    let (logits, masks, queries, classes, mask_w, mask_h) = guarded(cancel, |options| {
-        let input = TensorRef::from_array_view(([1usize, 3, height, width], &tensor[..]))
-            .map_err(failed)?;
-        // Every pixel is real: the model takes this mask at a fixed size.
-        let valid = vec![1i64; 64 * 64];
-        let mask = TensorRef::from_array_view(([1usize, 64, 64], &valid[..])).map_err(failed)?;
-        let outputs = network
-            .run_with_options(
-                ort::inputs!["pixel_values" => input, "pixel_mask" => mask],
-                options,
-            )
-            .map_err(failed)?;
-        let get = |name: &str| -> Result<(Vec<i64>, Vec<f32>), InferenceError> {
-            let output = outputs.get(name).ok_or_else(|| {
-                InferenceError::ModelInvalid(format!("the panoptic model has no output `{name}`"))
-            })?;
-            let (shape, data) = output.try_extract_tensor::<f32>().map_err(failed)?;
-            Ok((shape.iter().copied().collect(), data.to_vec()))
-        };
-        let (logit_shape, logits) = get("logits")?;
-        let (mask_shape, masks) = get("pred_masks")?;
-        if logit_shape.len() != 3
-            || mask_shape.len() != 4
-            || logit_shape[0] != 1
-            || mask_shape[0] != 1
-        {
-            return Err(InferenceError::OutputInvalid(format!(
-                "the panoptic output shapes are {logit_shape:?} and {mask_shape:?}"
-            )));
-        }
-        let dim = |v: i64| usize::try_from(v).unwrap_or(0);
-        Ok((
-            logits,
-            masks,
-            dim(logit_shape[1]),
-            dim(logit_shape[2]),
-            dim(mask_shape[3]),
-            dim(mask_shape[2]),
-        ))
-    })?;
-    panoptic::decode(&PANOPTIC, &logits, &masks, queries, classes, mask_w, mask_h)
-}
-
-fn view(f: &([usize; 4], Vec<f32>)) -> Result<TensorRef<'_, f32>, InferenceError> {
+/// A borrowed tensor view of a `[1, c, h, w]` feature map, for feeding a session.
+/// Public for `rawmakase-selection`, which feeds its decoder the encoder's outputs.
+pub fn view(f: &([usize; 4], Vec<f32>)) -> Result<TensorRef<'_, f32>, InferenceError> {
     TensorRef::from_array_view((f.0, &f.1[..])).map_err(failed)
 }
 
-fn cancelled(cancel: Cancel<'_>) -> Result<(), InferenceError> {
+/// [`InferenceError::Cancelled`] when `cancel` is raised. Public for
+/// `rawmakase-selection`, which checks it between its own steps.
+pub fn cancelled(cancel: Cancel<'_>) -> Result<(), InferenceError> {
     if cancel.is_cancelled() {
         Err(InferenceError::Cancelled)
     } else {
@@ -752,8 +244,9 @@ fn cancelled(cancel: Cancel<'_>) -> Result<(), InferenceError> {
 }
 
 /// Runs `work` with a watcher that terminates the run when `cancel` is raised, and a
-/// panic in the runtime turned into an error.
-fn guarded<T>(
+/// panic in the runtime turned into an error. Public for `rawmakase-selection`, which
+/// runs its own models through it.
+pub fn guarded<T>(
     cancel: Cancel<'_>,
     work: impl FnOnce(&RunOptions) -> Result<T, InferenceError>,
 ) -> Result<T, InferenceError> {
@@ -784,11 +277,16 @@ fn guarded<T>(
     }
 }
 
-fn failed(error: impl std::fmt::Display) -> InferenceError {
+/// A runtime error as [`InferenceError::Failed`]. Public for `rawmakase-selection`, which
+/// maps its own runtime calls' errors through it.
+pub fn failed(error: impl std::fmt::Display) -> InferenceError {
     InferenceError::Failed(error.to_string())
 }
 
-fn check_files(dir: &Path, files: &[ModelFile]) -> Result<(), InferenceError> {
+/// [`InferenceError::ModelInvalid`] unless every one of `files` is in `dir` at its
+/// manifest size: checked before the runtime is touched. Public for
+/// `rawmakase-selection`, which checks its own models' files.
+pub fn check_files(dir: &Path, files: &[ModelFile]) -> Result<(), InferenceError> {
     for file in files {
         let path = dir.join(file.name);
         let meta = std::fs::metadata(&path).map_err(|e| {
@@ -805,7 +303,10 @@ fn check_files(dir: &Path, files: &[ModelFile]) -> Result<(), InferenceError> {
     Ok(())
 }
 
-fn build_session(
+/// A session for the model at `model_path` on `provider`, with the CPU as the fallback
+/// for nodes the provider does not take. Public for `rawmakase-selection`, which builds
+/// its own models' sessions with it.
+pub fn build_session(
     environment: &Environment,
     model_path: &Path,
     threads: usize,
@@ -951,50 +452,6 @@ mod tests {
             matches!(err, InferenceError::RuntimeUnavailable(_)),
             "{err:?}"
         );
-    }
-
-    #[test]
-    fn a_missing_or_wrong_sized_model_file_is_invalid_before_the_runtime_is_touched() {
-        let dir =
-            std::env::temp_dir().join(format!("rawmakase-inference-size-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        assert!(matches!(
-            check_files(&dir, &all_files()),
-            Err(InferenceError::ModelInvalid(_))
-        ));
-        for file in all_files() {
-            std::fs::write(dir.join(file.name), b"short").unwrap();
-        }
-        let err = check_files(&dir, &all_files()).unwrap_err();
-        std::fs::remove_dir_all(&dir).ok();
-        assert!(matches!(err, InferenceError::ModelInvalid(_)));
-    }
-
-    #[test]
-    fn the_sky_model_is_fed_the_long_edge_and_never_too_narrow_a_side() {
-        assert_eq!(sky_input_size(1280, 853), (1024, 682));
-        assert_eq!(sky_input_size(853, 1280), (682, 1024));
-        assert_eq!(sky_input_size(300, 200), (1024, 683));
-        assert_eq!(sky_input_size(1280, 20), (1024, 64));
-    }
-
-    #[test]
-    fn subject_needs_nothing_of_the_sky_model_and_sky_nothing_of_subjects() {
-        let dir =
-            std::env::temp_dir().join(format!("rawmakase-inference-sky-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        assert!(check_files(&dir, &sky_files()).is_err());
-        for file in sky_files() {
-            std::fs::File::create(dir.join(file.name))
-                .unwrap()
-                .set_len(file.size_bytes)
-                .unwrap();
-        }
-        let sky = check_files(&dir, &sky_files());
-        let subject = check_files(&dir, &all_files());
-        std::fs::remove_dir_all(&dir).ok();
-        assert!(sky.is_ok());
-        assert!(subject.is_err());
     }
 
     #[test]
