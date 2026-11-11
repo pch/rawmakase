@@ -267,12 +267,16 @@ impl Editor {
     /// edit isn't protected, nothing is unsaved or held, and the settings are
     /// the saved edit's; with no saved edit, nothing was done in Develop and
     /// the photo shows the settings it opened with, as the catalog row
-    /// resolves them.
+    /// resolves them. The saved edit is checked against the file as Develop
+    /// read it when the photo opened ([`EditRecord::saved_for`]), so nothing
+    /// of the file is read here, on the UI thread.
+    ///
+    /// [`EditRecord::saved_for`]: crate::edits::EditRecord::saved_for
     fn develop_as_saved(&self) -> bool {
         let edit = &self.document.edit;
-        let (Some(id), Some(path), Some(library)) = (
+        let (Some(id), Some(file), Some(library)) = (
             self.document.catalog_photo,
-            self.document.path.as_ref(),
+            self.document.file.as_ref(),
             self.library.as_ref(),
         ) else {
             return false;
@@ -284,7 +288,12 @@ impl Editor {
         {
             return false;
         }
-        match library.session.catalog().load_edit(id, path) {
+        let saved = library
+            .session
+            .catalog()
+            .edit_record(id)
+            .and_then(|record| record.saved_for(file));
+        match saved {
             Ok(Some(saved)) => saved.recipe == *edit.recipe(),
             Ok(None) => edit.history().steps().0.is_empty(),
             Err(_) => false,

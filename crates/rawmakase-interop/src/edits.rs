@@ -80,13 +80,22 @@ impl EditRecord {
     /// ([`Identity::same_photo`]): the edit is then protected, never replaced by
     /// another.
     pub fn saved(&self, path: &Path) -> Result<Option<SavedEdit>> {
+        if self.recipe.is_none() {
+            return Ok(None);
+        }
+        self.saved_for(&Identity::read(path)?)
+    }
+    /// [`EditRecord::saved`], checked against `file`, the photo's file as
+    /// read earlier, instead of reading it again: for a photo open in Develop,
+    /// whose file was read when it opened.
+    pub fn saved_for(&self, file: &Identity) -> Result<Option<SavedEdit>> {
         let Some(recipe) = &self.recipe else {
             return Ok(None);
         };
         let saved: Identity =
             serde_json::from_str(self.identity.as_deref().context("Missing photo identity")?)?;
         ensure!(
-            saved.same_photo(&Identity::read(path)?),
+            saved.same_photo(file),
             "Photo changed since this catalog edit was saved; catalog edit protected"
         );
         let recipe: Recipe = serde_json::from_str(recipe)?;

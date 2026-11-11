@@ -721,6 +721,36 @@ fn a_develop_read_that_matched_the_catalog_still_applies_once_the_photo_is_left(
     assert_eq!(exposure(e, &a), Some(1.0));
 }
 
+/// Whether `token`'s first photo says Develop showed just what the catalog
+/// holds when it was read.
+fn read_clean(token: &str) -> bool {
+    let token: Value = serde_json::from_str(token).unwrap();
+    token["photos"][0]["clean"] == json!(true)
+}
+
+#[cfg(unix)]
+#[test]
+fn reading_the_open_photo_reads_nothing_of_its_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut f = fixture(&["a.png"]);
+    let e = &mut f.editor;
+    let a = f.photos[0].clone();
+    saved_edit(e, &a, 0.3);
+    open(e, &a);
+    assert!(read_clean(&e.read_open_photo().unwrap().token));
+    // With its file unreadable, the open photo still reads, and as clean:
+    // it is checked against what Develop read of the file when it opened.
+    let mode = std::fs::metadata(&a.1).unwrap().permissions();
+    std::fs::set_permissions(&a.1, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let unreadable = std::fs::File::open(&a.1).is_err();
+    let token = e.read_open_photo().unwrap().token;
+    std::fs::set_permissions(&a.1, mode).unwrap();
+    assert!(unreadable, "the test runs as a user permissions apply to");
+    assert!(read_clean(&token));
+    let proposed = propose_now(e, proposal(&token, a.0, 0.8), "Brighten");
+    assert_eq!(proposed.applied, vec![a.0.0], "{proposed:?}");
+}
+
 /// A proposal of `settings` for `photo`.
 fn proposal_of(token: &str, photo: PhotoId, settings: Value) -> ProposeSettings {
     ProposeSettings {
