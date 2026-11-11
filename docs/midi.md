@@ -36,7 +36,8 @@ rejected; choose a specific input to resolve them.
 
 **Advanced connection** provides offline port-name matching, a MIDI-channel
 filter (1–16 or all), relative turn speed and photo-dial detents. A photo dial
-requires a relative format. **Reset mappings to profile** affects only the
+requires a relative format: one set to absolute does nothing, and the
+extension's page says so on that dial. **Reset mappings to profile** affects only the
 selected device; a custom profile resets to an empty mapping.
 
 MIDI controls follow the selected mask in Masking where that parameter supports
