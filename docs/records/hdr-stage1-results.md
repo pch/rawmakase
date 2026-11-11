@@ -649,6 +649,34 @@ level and scoring against Camera Raw (reduced blocks):
 **Decision, 2026-11-10: Highlights stays refused in HDR.** It needs a rule trained on
 HDR targets of many photos, not a reshaping of the SDR one.
 
+Re-examined on 2026-11-11 under the [acceptance rule](#decisions), with RAWmakase's HDR
+and SDR renders of the same six photos (CC0 copies from raw.pixls.us, checked against
+the family's hashes). The effect error in stops, median / p95 over the blocks, then the
+median over the photos; below white is where both of Camera Raw's renders are below
+white, above white where its HDR base is:
+
+| Highlights | HDR below white | SDR below white | HDR above white | HDR above white, pull held from −0.25 |
+| --- | --- | --- | --- | --- |
+| −100 | 0.077 / 0.197 | 0.077 / 0.183 | 0.369 / 0.737 | 0.217 / 0.442 |
+| −50 | 0.038 / 0.099 | 0.038 / 0.086 | 0.186 / 0.415 | 0.117 / 0.267 |
+| +50 | 0.059 / 0.143 | 0.052 / 0.112 | 0.218 / 0.526 | — |
+
+- **Holding negative Highlights' pull** at its value from a base level (log2 scene
+  luminance) brings the error above white down, from −0.25 most at no cost below half
+  of white; lower levels fit above white a little better but reach pixels below half of
+  white through the base (Canon 850D at −100: the HDR and SDR renders' p99 below 0.5 is
+  0.019 unheld, 0.069 held from −0.25, 0.139 from −0.5, past the 0.1 stop they must
+  agree to). Held, it is still two to three times SDR's error below white.
+- **Positive Highlights** is stronger in Camera Raw's HDR render near white than the SDR
+  rule (Canon 850D: +1.49 stops against +0.69 just above white) and fades from about 1.5
+  stops above it, by different amounts on each photo. A gain per level fitted to Camera
+  Raw's HDR renders, scored with each photo left out of its fit, does not generalise
+  (and fitted to negative Highlights scores worse than no fit).
+
+Highlights stays refused in HDR. Scored over the whole frame instead (a measure first
+tried here), the held negative Highlights would pass, as the light above white is a
+few percent of the frame; that measure was dropped for this reason.
+
 ### Validation
 
 `scripts/corpus/hdr_validate.py` renders each HDR job of the family with
@@ -947,6 +975,22 @@ frozen family reads it).
 **Decision, 2026-11-11: band Luminance renders in the HDR master up to ±40**, the range
 the photos measured, and refuses it beyond (`model::hdr::check_recipe`), as Whites is
 limited to +50.
+
+Beyond ±40, re-examined on 2026-11-11 under the [acceptance rule](#decisions) with the
+same rule at every amount (effect error, median / p95, median over the photos or patch
+frames; below white as for Highlights above):
+
+| Edit | Captures | HDR below white | SDR below white | HDR above white |
+| --- | --- | --- | --- | --- |
+| Every band +100 | 6 photos | 0.031 / 0.120 | 0.035 / 0.120 | 0.055 / 0.200 |
+| The mixed edit (±40, renders) | 12 photos | 0.042 / 0.183 | 0.039 / 0.124 | 0.058 / 0.141 |
+
+At +100 the error above white is past SDR's below it (median 0.055 against 0.035, p95
+0.200 against 0.120); beyond ±40 stays refused. On the synthetic colour patches of
+[Colour stage](#colour-stage), over the whole frame, every band at −100 and −50 scores
+better in HDR than in SDR (median 0.061 / 1.140 against 0.111 / 1.783 at −100); no photo
+is captured there. The ±40 edit that renders is past the rule too; it was rendered
+before the rule and isn't re-scored by it.
 
 ### Vignette and grain
 
