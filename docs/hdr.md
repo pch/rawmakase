@@ -189,7 +189,7 @@ It covers what `pixel_params::supported_hdr` accepts: a master that renders
 (Exposure, Whites, Blacks, Shadows, white balance, Contrast, Levels and the tone
 curves, channel curves included, the colour stage, Color Grading, Texture, sharpening and what the SDR port samples), through
 any profile and look whose HDR rendering is measured (`CameraProfile::hdr_tone`).
-An HDR file's light, AI Denoise, the post-crop vignette and grain, and anything the SDR port leaves to the CPU
+An HDR file's light, AI Denoise, the post-crop vignette and grain, Defringe, and anything the SDR port leaves to the CPU
 (`quality::HdrNotOnGpu`) give no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
 "GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, looks whose
@@ -265,6 +265,7 @@ HDR reference family):
 | Shadows | The SDR local tone operator (`develop::local_tone`) on scene values, unclipped: its gain at a pixel's base level as in SDR, before S3. |
 | Post-crop vignette | After sharpening, on linear values, unclipped ([Vignette and grain](#vignette-and-grain)): darkening a gain (of the scene through the profile's HDR curve for Highlight Priority); lightening a blend towards graphics white (Paint Overlay, Color Priority) or the scene towards 14.4 (Highlight Priority). |
 | Grain | After the vignette: SDR's grain added to sRGB-curve-encoded values extended above 1, its strength going on above white and fading out by 16 times white. |
+| Defringe | SDR's Oklab operator (`EffectsRendering::defringe_color`) after the colour mixer, on the colour with its brightest channel at white when brighter, scaled back ([Defringe](#defringe)). |
 | HDR limit | Each channel rolled off to 2^limit from 97% of it (`model::hdr::roll_off`), last. |
 | Sharpening, resizing | On sRGB-curve-encoded values of the master's primaries, unclipped, with ProPhoto luminance; the limit applies after them. |
 
@@ -346,13 +347,27 @@ channel there, which no per-channel rule does (up to 12 mean ΔE_ITP above white
 synthetic patches; RAWmakase's SDR grading of the same patches is within 2). Measurements:
 [color grading](records/hdr-stage1-results.md#color-grading).
 
+### Defringe
+
+Camera Raw 18.7's HDR Defringe removes the same share of a fringe hue's chroma at every
+brightness: on synthetic patches at saturation 0.6, Purple Amount 20 keeps ×0.83, ×0.04,
+×0.05 and ×0.01 of the selected hues' saturation from 0.125 to four times white, where
+its SDR render keeps more as colours near white (×0.70 and ×0.62 at the top of the SDR
+range). RAWmakase's SDR operator works on Oklab chroma, which grows with brightness, so
+the master takes a colour brighter than white with its brightest channel at white,
+defringes it there and scales it back: the share removed is the same at every level
+above white. The selection of hues is the SDR operator's, with its error against Camera
+Raw on these patches (Purple: ×0.20, ×0.12 and ×0.66 kept where Camera Raw keeps ×0.04,
+×0.05 and ×0.01). A master with Defringe renders on the CPU. Measurements:
+[record](records/hdr-stage1-results.md#defringe).
+
 ## What is refused
 
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
 something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
 channel's) whose last point is left of white, Presence (Clarity, Dehaze), the
-colour mixer's Luminance, Point Color, Defringe, a darkening vignette's Highlights,
+colour mixer's Luminance, Point Color, a darkening vignette's Highlights,
 masks, Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
 Highlights and Shadows: "Highlights, which the look sets, …") or split toning, DCP
 tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:

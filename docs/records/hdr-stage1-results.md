@@ -864,6 +864,32 @@ this was decided, so the photo validation is still to come ([Open](#open)).
 SDR renders do not change: `ChannelCurves::apply` and the GPU's SDR `grade` are the
 same code as before, and `apply_hdr` is reached only from the HDR master's finish.
 
+### Defringe
+
+Measured with Camera Raw 18.7 on the Color Grading probe's colour patches (12 hues at
+HSV saturations 0.3 and 0.6, 0.125 to 8 times white, a linear profile), Purple Amount
+20 (hues 30–70) and Green Amount 20 (hues 40–60), HDR limit 8 and SDR; saturation kept
+is the patch centre's HSV saturation in linear ProPhoto against the default render's.
+
+- **HDR removes the same share at every brightness.** Purple: the 270°–330° patches at
+  saturation 0.6 keep ×0.83, ×0.04, ×0.05, ×0.01 at 0.125 to four times white, the same
+  to 0.01–0.04 at every level. Green: the 120°–150° patches keep ×0.10–0.17 and
+  ×0.03–0.09. SDR keeps more towards its top (Purple ×0.70 and ×0.62, Green ×0.65 and
+  ×0.81 at its brightest patches), where the rendition rolls colours off to white. At
+  eight times white Camera Raw's renders of these patches change hue (the probe's
+  highlight handling) and the selected patches are others; that level is left out.
+- **Engine.** `defringe_hdr` takes a colour with its brightest channel at white when
+  brighter, applies SDR's operator there and scales it back. Rendered by the build, the
+  share kept is the same at every level from white up (Purple ×0.11, ×0.07, ×0.65;
+  Green ×0.09, ×0.07, ×0.92) and the hues selected are SDR's. The error against Camera
+  Raw is SDR's selection, which RAWmakase's SDR render of the same patches shows too
+  (Purple ×0.20, ×0.12, ×0.66 kept at a quarter of white where Camera Raw keeps ×0.04,
+  ×0.05, ×0.01; mean ΔE_ITP 2.3 in SDR). Mean ΔE_ITP against Camera Raw's HDR render,
+  default 0.26: Purple 5.7 (6.8 above white), Green 3.2 (5.5).
+
+Decision, 2026-11-10: Defringe renders in the HDR master by this rule, on the CPU (the
+GPU's HDR preview leaves it to it). Its hue selection is SDR's, with SDR's error.
+
 ### Decisions
 
 - **The SDR rendition is the edit with HDR off.** Camera Raw's own is a local tone
@@ -947,7 +973,9 @@ same code as before, and `apply_hdr` is reached only from the HDR master's finis
 
 - Whites above +50 and Highlights in HDR (a rule trained on HDR targets:
   [Highlights and Shadows](#highlights-and-shadows)); the colour mixer's Luminance
-  ([Colour stage](#colour-stage)), Point Color, Defringe.
+  ([Colour stage](#colour-stage)), Point Color.
+- Defringe's hue selection against Camera Raw's (SDR and HDR alike), and Defringe on the
+  GPU's HDR preview ([Defringe](#defringe)).
 - Color Grading on photos (a split tone, a Highlights tint with Luminance, Global
   with Midtones Luminance, on the twelve validation and holdout photos), and strong
   Highlights tints of saturated colours above white ([Color grading](#color-grading)).
@@ -1006,7 +1034,7 @@ same code as before, and `apply_hdr` is reached only from the HDR master's finis
   ([Highlights and Shadows](#highlights-and-shadows)); looks with RGB tables, B&W,
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
-  ([Vignette and grain](#vignette-and-grain)). Open: Whites above +50, Highlights, the colour
+  ([Vignette and grain](#vignette-and-grain)); Defringe ([Defringe](#defringe)). Open: Whites above +50, Highlights, the colour
   mixer's Luminance, looks that set Clarity or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
   with them), 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
