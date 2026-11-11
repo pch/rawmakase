@@ -565,12 +565,26 @@ impl Host {
                         problem,
                     ));
                 }
-                Ok(manifest) => self.errors.push(format!(
-                    "{} now holds {}, not {id}",
-                    developer.path.display(),
-                    manifest.extension.id
-                )),
-                Err(e) => self.errors.push(e.to_string()),
+                // Kept, with what is wrong as its problem: its page says so,
+                // the folder is still watched, and it loads again once fixed.
+                broken => {
+                    let why = match broken {
+                        Ok(manifest) => format!(
+                            "{} now holds {}, not {id}",
+                            developer.path.display(),
+                            manifest.extension.id
+                        ),
+                        Err(e) => e.to_string(),
+                    };
+                    let name = self.get(id).map_or(id.as_str(), Extension::name);
+                    found.push((
+                        placeholder(id, name),
+                        Origin::Developer,
+                        developer.path.clone(),
+                        None,
+                        Some(why),
+                    ));
+                }
             }
         }
         // Later sources replace earlier ones of the same id: a developer
@@ -1624,6 +1638,31 @@ fn command_title(manifest: &Manifest, command: &str) -> String {
         .iter()
         .find(|c| c.id == command)
         .map_or_else(|| command.to_string(), |c| c.title.clone())
+}
+
+/// What stands for the manifest of a developer folder that holds no valid
+/// one: its id and name, and nothing it contributes.
+fn placeholder(id: &str, name: &str) -> Manifest {
+    Manifest {
+        extension: rawmakase_extensions::protocol::manifest::Extension {
+            id: id.to_string(),
+            name: name.to_string(),
+            version: semver::Version::new(0, 0, 0),
+            rawmakase: semver::VersionReq::STAR,
+            api: rawmakase_extensions::protocol::manifest::API,
+            authors: Vec::new(),
+            license: None,
+            repository: None,
+            description: None,
+            icon: None,
+        },
+        access: Default::default(),
+        program: None,
+        settings: Vec::new(),
+        commands: Vec::new(),
+        panels: Vec::new(),
+        control_adapters: Vec::new(),
+    }
 }
 
 /// The manifest's and the program's modification times.

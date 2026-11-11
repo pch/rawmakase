@@ -104,6 +104,9 @@ without installing them. In Preferences > Extensions, **Developer mode** adds
 **Load from Folder…**, and while the page is open it looks every second for a
 changed manifest or program of a developer extension and loads it again,
 stopping its program, which starts again as the new build at its next request.
+A folder whose manifest no longer reads (or names another extension) stays
+listed with what is wrong, without its commands, and is loaded again once its
+manifest is fixed.
 
 ## In the app
 

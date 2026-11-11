@@ -979,6 +979,47 @@ fn the_command_line_and_the_app_change_extensions_json_without_losing_each_other
     );
 }
 
+/// Writes `text` as the developer folder's manifest, `seconds` from now as
+/// its modification time, so a reload sees it changed.
+fn rewrite_manifest(f: &Fixture, text: &str, seconds: u64) {
+    let path = f
+        .folder
+        .join(rawmakase_extensions::protocol::manifest::FILE);
+    std::fs::write(&path, text).unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + Duration::from_secs(seconds))
+        .unwrap();
+}
+
+#[test]
+fn a_developer_folder_whose_manifest_breaks_stays_watched_and_says_why() {
+    let mut f = fixture(&["a.png"]);
+    let good = include_str!("../../../extensions/example/rawmakase-extension.toml");
+    rewrite_manifest(&f, "[extension]\nid = \"broken", 2);
+    let e = &mut f.editor;
+    e.extensions.reload_changed_folders();
+    e.sync_extension_commands();
+    let broken = e.extensions.get(ID).expect("still listed");
+    assert!(broken.problem.is_some(), "the page says why");
+    assert!(
+        e.run_extension_command(&format!("{ID}/settings"), RunBy::Button)
+            .is_err()
+    );
+    // Fixed, it loads again with its commands.
+    rewrite_manifest(&f, good, 4);
+    let e = &mut f.editor;
+    e.extensions.reload_changed_folders();
+    e.sync_extension_commands();
+    assert_eq!(e.extensions.get(ID).unwrap().problem, None);
+    assert_eq!(
+        run(e, "settings", "Show Settings"),
+        Ok(json!({"step": 0.5}))
+    );
+}
+
 #[test]
 fn three_crashes_in_a_row_make_an_extension_failed_until_retry() {
     let mut f = fixture(&["a.png"]);
