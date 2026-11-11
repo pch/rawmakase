@@ -1,0 +1,21 @@
+[package]
+name = "rawmakase-model-install"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Installs a model pack: resumable, verified downloads into a folder, one install at a time across instances"
+license.workspace = true
+publish = false
+
+[dependencies]
+rawmakase-inference = { path = "../rawmakase-inference", version = "0.1.0" }
+rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
+sha2.workspace = true
+# Same features as the app's, so the workspace builds one ureq.
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
