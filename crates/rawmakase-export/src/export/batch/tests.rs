@@ -822,3 +822,107 @@ fn a_photo_without_its_ai_result_fails_and_the_batch_carries_on() -> Result<()> 
     assert_eq!(listing(&f.out()), ["b.tif"]);
     Ok(())
 }
+
+/// HDR JPEG XL exports (PQ, and a gain map over the SDR rendition) go through the
+/// queue as SDR ones do: a cancel before the commit leaves neither the export nor a
+/// temporary file, one after it counts as exported; a photo whose edit has HDR off
+/// fails with the reason and the next one is still exported; a destination that can't
+/// be made fails every photo and writes nothing; what is published is whole (it decodes
+/// at the export's size with its HDR encoding).
+#[test]
+fn hdr_jpeg_xl_exports_cancel_fail_and_publish_as_sdr_ones_do() -> Result<()> {
+    use crate::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
+    let mut f = fixture(&["a.dng", "b.dng"])?;
+    let m = crate::photo::open(&f.photos[0].1)?.metadata;
+    let (profiles, _) = crate::camera_profiles::installed(&m);
+    let mut hdr = Recipe::with_profiles(&m, &profiles);
+    hdr.hdr.enabled = true;
+    hdr.hdr.limit = 4.;
+    for (id, path) in f.photos.clone() {
+        f.catalog.save_edit(
+            id,
+            &path,
+            &crate::storage::Identity::read(&path)?,
+            &hdr,
+            &Default::default(),
+            HistoryUpdate::Keep,
+        )?;
+    }
+    let photos = f.batch_photos()?;
+    let jxl = |out: &Path, output: HdrOutput| {
+        let mut s = settings(out);
+        s.format = Format::Jxl;
+        s.jxl_lossy = true;
+        s.hdr = Some(output);
+        s
+    };
+    let pq = HdrOutput {
+        gamut: HdrGamut::Rec2020,
+        transfer: HdrTransfer::Pq,
+        gain_map: false,
+    };
+    let gain_map = HdrOutput {
+        gamut: HdrGamut::Rec709,
+        gain_map: true,
+        ..Default::default()
+    };
+    for (name, output, transfer) in [("pq", pq, "Pq"), ("gain-map", gain_map, "Srgb")] {
+        let cancelled_at = |at: f32| -> Result<(Vec<Outcome>, Vec<String>)> {
+            let out = f.out().join(format!("{name}-{at}"));
+            let batch = f.batch(photos.clone(), jxl(&out, output));
+            let cancel = AtomicBool::new(false);
+            let outcomes = run(&batch, Cancel::new(&cancel), |p| {
+                if p.done == 0 && p.fraction >= at {
+                    cancel.store(true, Ordering::Relaxed);
+                }
+            });
+            Ok((outcomes, listing(&out)))
+        };
+        let (outcomes, files) = cancelled_at(0.95)?;
+        assert_eq!(
+            outcomes,
+            [Outcome::Cancelled, Outcome::NotStarted],
+            "{name}"
+        );
+        assert!(files.is_empty(), "{name}: {files:?}");
+        let (outcomes, files) = cancelled_at(1.)?;
+        let path = exported(&outcomes[0]).to_path_buf();
+        assert_eq!(outcomes[1], Outcome::NotStarted, "{name}");
+        assert_eq!(files, ["a.jxl"], "{name}");
+        let decoded = jxl_oxide::JxlImage::builder()
+            .read(std::io::Cursor::new(std::fs::read(&path)?))
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let header = decoded.image_header();
+        assert_eq!(header.size.width.max(header.size.height), 96, "{name}");
+        let encoding = format!("{:?}", header.metadata.colour_encoding);
+        assert!(encoding.contains(transfer), "{name}: {encoding}");
+        decoded
+            .render_frame(0)
+            .map_err(|e| anyhow::anyhow!("{name}: {e}"))?;
+    }
+    // HDR off for the first photo: refused, and the second still exported.
+    let mut off = photos.clone();
+    let Edit::Catalog(record) = &mut off[0].edit else {
+        panic!("a catalog edit");
+    };
+    record.recipe = None;
+    let out = f.out().join("hdr-off");
+    let outcomes = run_all(&f.batch(off, jxl(&out, pq)));
+    match &outcomes[0] {
+        Outcome::Failed(reason) => assert!(reason.contains("HDR off"), "{reason}"),
+        other => panic!("{other:?}"),
+    }
+    exported(&outcomes[1]);
+    assert_eq!(listing(&out), ["b.jxl"]);
+    // A destination folder that is a file.
+    let blocked = f.out().join("blocked");
+    std::fs::create_dir_all(f.out())?;
+    std::fs::write(&blocked, b"a file")?;
+    let outcomes = run_all(&f.batch(photos, jxl(&blocked.join("in"), pq)));
+    assert!(
+        outcomes.iter().all(|o| matches!(o, Outcome::Failed(_))),
+        "{outcomes:?}"
+    );
+    assert_eq!(std::fs::read(&blocked)?, b"a file");
+    Ok(())
+}

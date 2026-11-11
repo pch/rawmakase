@@ -342,6 +342,18 @@ Display transitions are view changes, not history edits.
 
 ### 6. Ship HDR export, including all three #894 workflows
 
+Status, 2026-11-12:
+- [x] JPEG XL PQ
+- [x] JPEG XL HLG
+- [x] JPEG XL gain map
+- [x] JPEG gain map
+- [x] HDR TIFF
+- [x] Destination failure, cancellation and atomic publication through the export queue
+
+Each passes independent decoders ([JPEG XL interoperability](hdr-jxl-interop.md),
+[Codecs](hdr-stage1-results.md#codecs)). AVIF and PNG HDR export are not done; they
+were never required for the JXL milestone.
+
 Capture recipe, source identity, profile, rendition settings and output specification
 once per job. Encoding must not inspect the active monitor or mutable editor.
 Export work may ship before stage 5's native HDR display after stages 1–3 and the
@@ -405,7 +417,8 @@ codec/display paths before shipping.
 
 #253 is complete only when HDR edits persist, render on supported HDR displays,
 have a useful SDR fallback and survive reopening. #894 remains open until JPEG XL
-PQ, HLG **and gain-map** outputs pass independent interoperability checks. A
+PQ, HLG **and gain-map** outputs pass independent interoperability checks (met
+2026-11-12: [JPEG XL interoperability](hdr-jxl-interop.md)). A
 macOS-first display release must state Windows/Linux display coverage explicitly.
 
 ## Remaining uncertainties and effort
