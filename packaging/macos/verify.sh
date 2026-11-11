@@ -23,19 +23,21 @@ done
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$app/Contents/Info.plist")" = RAWmakase
 codesign --verify --strict --deep "$app"
 spctl --assess --type execute --verbose=2 "$app"
-# The bundled MCP extension's program, from the first release that ships it:
-# signed on its own (release signing signs it before the app) and checked
-# with the app's executables below.
+# The bundled extensions' programs, from the first release that ships them:
+# each signed on its own (release signing signs them before the app) and
+# checked with the app's executables below.
 version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")
-mcp="$app/Contents/MacOS/rawmakase-mcp"
 binaries=("$app/Contents/MacOS/rawmakase")
-ships_mcp=false
-if [ "$(printf '%s\n' 0.4.13 "$version" | sort -V | head -n1)" = 0.4.13 ]; then
-  ships_mcp=true
-  test -x "$mcp"
-  codesign --verify --strict "$mcp"
-  binaries+=("$mcp")
-fi
+programs=()
+for ships in rawmakase-mcp:0.4.13 rawmakase-midi:0.4.13; do
+  program="$app/Contents/MacOS/${ships%%:*}" since=${ships#*:}
+  if [ "$(printf '%s\n' "$since" "$version" | sort -V | head -n1)" = "$since" ]; then
+    test -x "$program"
+    codesign --verify --strict "$program"
+    binaries+=("$program")
+    programs+=("$program")
+  fi
+done
 for binary in "${binaries[@]}" "$app/Contents/Frameworks/"*.dylib; do
   lipo "$binary" -verify_arch "$arch"
   # Only system paths and bundle-relative paths may survive packaging.
@@ -45,7 +47,8 @@ for binary in "${binaries[@]}" "$app/Contents/Frameworks/"*.dylib; do
   fi
 done
 env -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH "$app/Contents/MacOS/rawmakase" --version
-# `rawmakase mcp` finds the program beside it and completes an MCP initialize.
-if [ "$ships_mcp" = true ]; then
-  python3 "$(dirname -- "$0")/../check_mcp.py" "$app/Contents/MacOS/rawmakase" "$mcp" --arch "$arch" --version "$version"
+# `rawmakase mcp` finds its program beside it, where the app looks for
+# MIDI's too, and completes an MCP initialize.
+if [ ${#programs[@]} -gt 0 ]; then
+  python3 "$(dirname -- "$0")/../check_programs.py" "$app/Contents/MacOS/rawmakase" "${programs[@]}" --arch "$arch" --version "$version"
 fi

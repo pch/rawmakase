@@ -89,7 +89,8 @@ readable id, it is answered `invalid_request`.
 6. **End.** On quit the app sends `quitting`, closes its side (Linux and
    macOS), and ends the unit if the program hasn't exited within 1 s or by the
    quit deadline. A program that exits fails every request it held with
-   `exited`; it is started again at its next request.
+   `exited`; it is started again at its next request, or at once when it
+   starts with the app (`with-app`), until it is Failed.
 
 ## App to program
 
@@ -140,6 +141,7 @@ controls, the offending one carrying the error as its `help`.
 | Request | Parameters | Reply |
 | --- | --- | --- |
 | `read.capabilities` | none | The control layer's parameters and actions, as `rawmakase control capabilities` prints them |
+| `read.action` | `{"spec":"…"}` | `{"supported":bool}`: whether a device's button may run it, an action name, a shortcut that stands for an action, or a held modifier (`hold:shift`), for a program to check one a user typed |
 | `read.selection` | none | A snapshot of the Library's selection |
 | `read.open-photo` | none | A snapshot of the photo open in Develop (no photos when none is) |
 | `read.photos` | `{"ids":[…]}` | A snapshot of these photos |
@@ -211,23 +213,46 @@ opened) has no settings and an `error` saying why, and a proposal for it is
 refused `stale_target`. Photos not open are read off the UI thread, and the
 reply comes when that is done; a program that cancels its read is answered
 `cancelled`.
-`adapter.device` and `adapter.operate` are refused `adapter_disabled` in this
-version: the app runs no control adapter of an extension's program yet. An
-externally launched adapter doesn't use this protocol at all; it sends control
-requests naming itself ([Externally launched adapters](overview.md#externally-launched-adapters)).
+
+### Control adapters
+
+`adapter.device` and `adapter.operate` name a `[[control-adapter]]` the
+extension declares and the app launches (`launch = "app"`); any other is
+refused, `adapter_disabled` for `adapter.operate`, `invalid_request` for
+`adapter.device`. An externally launched adapter doesn't use this protocol at
+all; it sends control requests naming itself
+([Externally launched adapters](overview.md#externally-launched-adapters)).
+
+`adapter.device` reports a device: `device` is the program's id for it,
+`epoch` counts up each time it connects. The app applies it on its reader
+thread as it reads it, ahead of any operation still queued. A `connected`
+epoch must be higher than any before for that device (`invalid_request`
+otherwise); a `disconnected` or `removed` of an earlier epoch than the latest
+changes nothing, so a stopped thread's late report never ends its successor's
+connection. Each program start has devices of its own: the app numbers the
+start (`hello`'s `session`) and keeps a gesture to one start, device and epoch,
+so a restarted program reusing device ids and epochs never continues one.
+
+`adapter.operate` is answered with how many operations ran; when the device
+isn't connected in `epoch` before the first runs, it is refused
+`stale_target`. A disconnection, the program's end and disabling the
+extension end the device's gesture. Only an `adapter.operate` that ran an
+operation counts as useful work for the crash count; `adapter.device` doesn't.
 
 ### Device operations
 
-`ops` are applied in order with the app's device semantics, and refused unless
-`epoch` is the device's current one, so input queued before a disconnection
-never runs:
+`ops` are applied in order with the app's device semantics, each only while
+`epoch` is the device's current one, read just before it runs, so input
+queued before a disconnection never runs. An operation that fails (no photo
+open, a parameter the app doesn't know) is said in the app's top bar, and the
+rest still run:
 
 | Operation | Fields | Meaning |
 | --- | --- | --- |
 | `adjust` | `param`, `ticks` (signed) | A relative turn of a parameter's dial |
 | `value` | `param`, `value` (0–127) | A fader's absolute position, mapped onto the parameter's range |
-| `photo` | `ticks`, `detent` | The photo dial: `detent` ticks per photo; ignored where it does nothing (the Library grid) |
-| `action` | `spec`, `advance` | An action in the control layer's notation (`history.undo`); `advance` moves to the next photo after |
+| `photo` | `ticks`, `detent` | The photo dial's raw ticks: the app counts `detent` ticks per photo, per device and epoch, the first tick of a turn moving at once; where the dial does nothing (the Library grid) ticks are dropped before they count |
+| `action` | `spec`, `advance` | An action in the control layer's notation (`undo`, `cmd+shift+z`, `mixer:hue`), the device's held modifiers already merged into a shortcut; `advance` moves to the next photo after a metadata action |
 
 ## Panels
 

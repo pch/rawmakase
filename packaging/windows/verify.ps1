@@ -1,14 +1,15 @@
 # Installs the finished setup program silently the way the updater runs it,
 # checks the installed app reports the release version, then uninstalls it.
 #
-#   pwsh packaging/windows/verify.ps1 dist\rawmakase-v0.1.9-x86_64-pc-windows-msvc-setup.exe 0.1.9 [-Mcp]
+#   pwsh packaging/windows/verify.ps1 dist\rawmakase-v0.1.9-x86_64-pc-windows-msvc-setup.exe 0.1.9 [-Mcp] [-Midi]
 #
-# -Mcp checks the bundled MCP extension's program too, for a source that
-# ships it.
+# -Mcp and -Midi check the bundled MCP and MIDI extensions' programs too, for
+# a source that ships them.
 param(
     [Parameter(Mandatory)][string]$Setup,
     [Parameter(Mandatory)][string]$Version,
-    [switch]$Mcp
+    [switch]$Mcp,
+    [switch]$Midi
 )
 $ErrorActionPreference = 'Stop'
 $directory = Join-Path ([System.IO.Path]::GetTempPath()) "rawmakase-verify-$PID"
@@ -28,14 +29,19 @@ if ((Get-Content (Join-Path $directory 'rawmakase-installer.txt')).Trim() -ne 'r
 # A windows-subsystem program still writes to redirected output.
 $reported = (& $exe --version | Out-String).Trim()
 if ($reported -ne "rawmakase $Version") { throw "Installed app reports '$reported', expected 'rawmakase $Version'" }
-# The bundled MCP extension's program: installed beside the app, built for
-# this Windows, importing only Windows' DLLs, and found by `rawmakase mcp`,
-# which completes an MCP initialize.
+# The bundled extensions' programs: installed beside the app, built for this
+# Windows and importing only Windows' DLLs; MCP's found by `rawmakase mcp`,
+# which completes an MCP initialize, in the folder where the app looks for
+# MIDI's too.
 $mcpProgram = Join-Path $directory 'rawmakase-mcp.exe'
-if ($Mcp) {
+$midiProgram = Join-Path $directory 'rawmakase-midi.exe'
+$programs = @()
+if ($Mcp) { $programs += $mcpProgram }
+if ($Midi) { $programs += $midiProgram }
+if ($programs.Count -gt 0) {
     $arm64 = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64'
-    python (Join-Path $PSScriptRoot '..\check_mcp.py') $exe $mcpProgram --arch $(if ($arm64) { 'aarch64' } else { 'x86_64' }) --version $Version
-    if ($LASTEXITCODE -ne 0) { throw 'The installed MCP program failed its check' }
+    python (Join-Path $PSScriptRoot '..\check_programs.py') $exe @programs --arch $(if ($arm64) { 'aarch64' } else { 'x86_64' }) --version $Version
+    if ($LASTEXITCODE -ne 0) { throw 'An installed program failed its check' }
 }
 
 $uninstaller = Join-Path $directory 'unins000.exe'
@@ -45,4 +51,5 @@ if ($uninstall.ExitCode -ne 0) { throw "Uninstall exited with $($uninstall.ExitC
 for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
 if (Test-Path $exe) { throw 'Uninstall left the app behind' }
 if (Test-Path $mcpProgram) { throw 'Uninstall left the MCP program behind' }
+if (Test-Path $midiProgram) { throw 'Uninstall left the MIDI program behind' }
 "Installed, reported '$reported' and uninstalled cleanly"

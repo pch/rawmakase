@@ -3743,7 +3743,6 @@ dependencies = [
  "getrandom 0.4.3",
  "image",
  "log",
- "midir",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-core-graphics",
@@ -3756,10 +3755,12 @@ dependencies = [
  "rawmakase-engine",
  "rawmakase-example",
  "rawmakase-export",
+ "rawmakase-extension",
  "rawmakase-extensions",
  "rawmakase-fs",
  "rawmakase-inference",
  "rawmakase-interop",
+ "rawmakase-midi",
  "rawmakase-model",
  "rawmakase-model-install",
  "rawmakase-protocol",
@@ -3999,6 +4000,17 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "rawmakase-midi"
+version = "0.4.12"
+dependencies = [
+ "midir",
+ "rawmakase-extension",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

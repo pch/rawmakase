@@ -1,0 +1,33 @@
+[package]
+name = "rawmakase-midi"
+# The bundled extension's manifest carries the app's version, and so does this
+# program (a test compares them).
+version = "0.4.12"
+edition.workspace = true
+rust-version.workspace = true
+description = "MIDI control surfaces for RAWmakase, as a bundled extension: devices, mappings and their page"
+license.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rawmakase-midi"
+path = "src/main.rs"
+
+[dependencies]
+rawmakase-extension = { path = "../../crates/rawmakase-extension", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
+
+# MIDI input (src/backend.rs). Linux would need ALSA headers: there the
+# program lists no inputs.
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+midir = "0.11"
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

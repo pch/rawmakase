@@ -81,11 +81,12 @@ class VerifyScriptTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
             path.chmod(0o755)
-        # The MCP program: a real executable of this machine linking only the
-        # C library, which is all the check reads of it.
-        mcp = self.contents / "usr/lib/rawmakase/rawmakase-mcp"
-        shutil.copy2(Path(shutil.which("true")).resolve(), mcp)
-        mcp.chmod(0o755)
+        # The programs: real executables of this machine linking only the C
+        # library, which is all the check reads of them.
+        for name in ("rawmakase-mcp", "rawmakase-midi"):
+            program = self.contents / "usr/lib/rawmakase" / name
+            shutil.copy2(Path(shutil.which("true")).resolve(), program)
+            program.chmod(0o755)
         (self.contents / "AppRun").symlink_to("usr/bin/rawmakase")
         self.image = self.root / "rawmakase-1.2.3-x86_64.AppImage"
         self.update = "gh-releases-zsync|pch|rawmakase|latest|rawmakase-*-x86_64.AppImage.zsync"
@@ -105,17 +106,24 @@ class VerifyScriptTests(unittest.TestCase):
                               env=environment, capture_output=True, text=True)
 
     @unittest.skipUnless(platform.system() == "Linux" and platform.machine() == "x86_64",
-                         "the stand-in MCP program is this machine's true, checked as x86_64 with ldd")
+                         "the stand-in programs are this machine's true, checked as x86_64 with ldd")
     def test_complete_appimage_passes_and_runs(self):
         result = self.verify("1.2.3", "--run")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Verified rawmakase-1.2.3-x86_64.AppImage", result.stdout)
 
-    def test_the_mcp_program_is_required_from_the_release_that_ships_it(self):
-        (self.contents / "usr/lib/rawmakase/rawmakase-mcp").unlink()
-        result = self.verify("1.2.3")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("rawmakase-mcp", result.stderr)
+    def test_the_programs_are_required_from_the_release_that_ships_them(self):
+        for name in ("rawmakase-mcp", "rawmakase-midi"):
+            program = self.contents / "usr/lib/rawmakase" / name
+            kept = program.read_bytes()
+            program.unlink()
+            result = self.verify("1.2.3")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(name, result.stderr)
+            program.write_bytes(kept)
+            program.chmod(0o755)
+        for name in ("rawmakase-mcp", "rawmakase-midi"):
+            (self.contents / "usr/lib/rawmakase" / name).unlink()
         old = self.image.with_name("rawmakase-0.4.12-x86_64.AppImage")
         self.image.rename(old)
         self.assertEqual(self.verify("0.4.12", image=old).returncode, 0)

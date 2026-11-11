@@ -91,14 +91,14 @@ jobs:
       # decoders or GUI; fmt above covers the whole workspace.
       - name: Check the model, file formats, catalog, renderer, control protocol, remote worker, client and extension crates
         run: |
-          cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -- -D warnings
+          cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi -- -D warnings
           cargo test --locked -p rawmakase-model --all-features
           cargo test --locked -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
-          cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example
+          cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # The app's tests run `rawmakase mcp`, which runs this program from
-      # beside it in target/debug.
-      - run: cargo build --locked -p rawmakase-mcp
+      # beside it in target/debug, and the MIDI program found there.
+      - run: cargo build --locked -p rawmakase-mcp -p rawmakase-midi
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
       # exiftool reads exported metadata back as an independent reader; Arch
       # installs it in vendor_perl, outside PATH.
@@ -131,10 +131,10 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
       # The app's tests run `rawmakase mcp`, which runs this program from
-      # beside it in target/debug.
+      # beside it in target/debug, and the MIDI program found there.
       - name: Test
         run: |
-          cargo build --locked -p rawmakase-mcp
+          cargo build --locked -p rawmakase-mcp -p rawmakase-midi
           cargo test --locked --workspace
 
   check-windows:
@@ -176,10 +176,10 @@ jobs:
           "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
       # The app's tests run `rawmakase mcp`, which runs rawmakase-mcp from
-      # beside it in target/debug.
+      # beside it in target/debug, and the MIDI program found there.
       - if: steps.source.outputs.windows == 'true'
         run: |
-          cargo build --locked -p rawmakase-mcp
+          cargo build --locked -p rawmakase-mcp -p rawmakase-midi
           cargo test --locked --workspace
 
   # Without this job the macOS-only code is compiled for the first time by
@@ -205,9 +205,9 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
       # The app's tests run `rawmakase mcp`, which runs rawmakase-mcp from
-      # beside it in target/debug.
+      # beside it in target/debug, and the MIDI program found there.
       - run: |
-          cargo build --locked -p rawmakase-mcp
+          cargo build --locked -p rawmakase-mcp -p rawmakase-midi
           cargo test --locked --workspace
 
   package:
@@ -239,7 +239,7 @@ jobs:
           # Build the -git recipe from this checkout rather than the published repository.
           sed -i "s|git+https://github.com/pch/rawmakase.git|git+file://$GITHUB_WORKSPACE|" packaging/arch/rawmakase-git/PKGBUILD
           sed -i "s|export CARGO_TARGET_DIR=target|export CARGO_TARGET_DIR=$GITHUB_WORKSPACE/target-arch|" packaging/arch/rawmakase-git/PKGBUILD
-          sed -i "s|make install DESTDIR|make install BIN=$GITHUB_WORKSPACE/target-arch/release/rawmakase MCP_BIN=$GITHUB_WORKSPACE/target-arch/release/rawmakase-mcp DESTDIR|" packaging/arch/rawmakase-git/PKGBUILD
+          sed -i "s|make install DESTDIR|make install BIN=$GITHUB_WORKSPACE/target-arch/release/rawmakase MCP_BIN=$GITHUB_WORKSPACE/target-arch/release/rawmakase-mcp MIDI_BIN=$GITHUB_WORKSPACE/target-arch/release/rawmakase-midi DESTDIR|" packaging/arch/rawmakase-git/PKGBUILD
           # The tests already run in the lint job; --nocheck skips a second full build.
           su builder -c "export CARGO_HOME='$HOME/.cargo' && git config --global --add safe.directory '*' && cd packaging/arch/rawmakase-git && makepkg --noconfirm --nocheck"
           namcap packaging/arch/rawmakase-git/PKGBUILD packaging/arch/rawmakase-git/*.pkg.tar.zst
@@ -253,16 +253,22 @@ jobs:
           if grep -q '^_ortver=' packaging/arch/rawmakase-git/PKGBUILD; then
             python -c "import ctypes; ctypes.CDLL('/usr/lib/rawmakase/libonnxruntime.so')"
           fi
-          # The bundled MCP extension's program, in sources that ship it:
-          # installed by the package and by `make install`, found by
-          # `rawmakase mcp`, which completes an MCP initialize, and removed by
-          # `make uninstall`.
+          # The bundled extensions' programs, in sources that ship them:
+          # installed by the package and by `make install`, MCP's found by
+          # `rawmakase mcp`, which completes an MCP initialize, in the folder
+          # where the app looks for MIDI's too, and removed by `make uninstall`.
           if [ -f extensions/mcp/rawmakase-extension.toml ]; then
             version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
-            python packaging/check_mcp.py /usr/bin/rawmakase /usr/lib/rawmakase/rawmakase-mcp --arch "$(uname -m)" --version "$version"
+            programs=(rawmakase-mcp)
+            make_programs=(MCP_BIN=target-arch/release/rawmakase-mcp)
+            if [ -f extensions/midi/rawmakase-extension.toml ]; then
+              programs+=(rawmakase-midi)
+              make_programs+=(MIDI_BIN=target-arch/release/rawmakase-midi)
+            fi
+            python packaging/check_programs.py /usr/bin/rawmakase "${programs[@]/#//usr/lib/rawmakase/}" --arch "$(uname -m)" --version "$version"
             staged="$RUNNER_TEMP/make-install"
-            make install DESTDIR="$staged" PREFIX=/usr BIN=target-arch/release/rawmakase MCP_BIN=target-arch/release/rawmakase-mcp
-            python packaging/check_mcp.py "$staged/usr/bin/rawmakase" "$staged/usr/lib/rawmakase/rawmakase-mcp" --arch "$(uname -m)" --version "$version"
+            make install DESTDIR="$staged" PREFIX=/usr BIN=target-arch/release/rawmakase "${make_programs[@]}"
+            python packaging/check_programs.py "$staged/usr/bin/rawmakase" "${programs[@]/#/$staged/usr/lib/rawmakase/}" --arch "$(uname -m)" --version "$version"
             make uninstall DESTDIR="$staged" PREFIX=/usr
             test ! -e "$staged/usr/bin/rawmakase"
             test ! -e "$staged/usr/lib/rawmakase"

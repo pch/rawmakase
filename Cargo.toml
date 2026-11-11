@@ -10,7 +10,7 @@ repository = "https://github.com/pch/rawmakase"
 # The control protocol and its command-line client build on their own, without
 # the app's GUI, GPU or native libraries.
 [workspace]
-members = ["crates/rawmakase-cancel", "crates/rawmakase-catalog", "crates/rawmakase-decode", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-extension", "crates/rawmakase-extension-protocol", "crates/rawmakase-extensions", "crates/rawmakase-fs", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-model-install", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-tiff", "extensions/example", "extensions/mcp", "tools/cargo-rawmakase", "tools/rawmakase-ctl"]
+members = ["crates/rawmakase-cancel", "crates/rawmakase-catalog", "crates/rawmakase-decode", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-extension", "crates/rawmakase-extension-protocol", "crates/rawmakase-extensions", "crates/rawmakase-fs", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-model-install", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-tiff", "extensions/example", "extensions/mcp", "extensions/midi", "tools/cargo-rawmakase", "tools/rawmakase-ctl"]
 
 # What every crate of the workspace shares. CI and `make check` read the minimum
 # Rust version from the `rust-version` line here.
@@ -118,10 +118,6 @@ egui_extras = { version = "0.36", default-features = false, features = ["svg"] }
 fastframe-titlebar = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0" }
 fastframe-theme = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0" }
 
-# MIDI input adapters (src/app/shell/automation/midi.rs). Linux would need ALSA headers.
-[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
-midir = "0.11"
-
 # Native quit handling and display color management (src/platform/).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true
@@ -177,6 +173,11 @@ rawmakase-model = { path = "crates/rawmakase-model", version = "0.1.0", features
 # The extension tests run the example extension's program: their own test
 # binary, started again as it.
 rawmakase-example = { path = "extensions/example", version = "0.1.0" }
+# The MIDI tests run the bundled MIDI extension's program the same way, its
+# input fed by the test; a scripted adapter speaks the protocol through the
+# SDK's channel.
+rawmakase-midi = { path = "extensions/midi", version = "0.4.12" }
+rawmakase-extension = { path = "crates/rawmakase-extension", version = "0.1.0" }
 # Tests set up and inspect catalog files directly; the app itself reaches
 # the catalog's database only through rawmakase-catalog.
 rusqlite = { version = "0.41.0", features = ["bundled"] }

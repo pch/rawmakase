@@ -2,9 +2,9 @@
 use rawmakase_extension_protocol::controls::Control;
 use rawmakase_extension_protocol::framing::write_line;
 use rawmakase_extension_protocol::method::{
-    AdapterDevice, AdapterOperate, DeviceState, Empty, Level, Notify, Operated, PanelUpdate,
-    ProgramEvent, ProgramRequest, ProposeSettings, Proposed, ReadPhotos, SettingsChange, Snapshot,
-    Status,
+    ActionSupport, AdapterDevice, AdapterOperate, DeviceState, Empty, Level, Notify, Operated,
+    PanelUpdate, ProgramEvent, ProgramRequest, ProposeSettings, Proposed, ReadAction, ReadPhotos,
+    SettingsChange, Snapshot, Status,
 };
 use rawmakase_extension_protocol::{ErrorCode, Message, RemoteError};
 use serde_json::Value;
@@ -24,6 +24,9 @@ pub(crate) struct Shared {
     closed: AtomicBool,
     /// The program start's number from `hello`.
     pub(crate) session: AtomicU64,
+    /// The extension's private data folder from `hello`, for adapters, which
+    /// start with a [`Host`] alone.
+    pub(crate) data_dir: Mutex<std::path::PathBuf>,
 }
 
 impl Shared {
@@ -34,6 +37,7 @@ impl Shared {
             next_id: AtomicU64::new(1),
             closed: AtomicBool::new(false),
             session: AtomicU64::new(0),
+            data_dir: Mutex::default(),
         })
     }
 
@@ -206,6 +210,12 @@ impl Host {
     pub fn read_capabilities(&self) -> Result<Value, RemoteError> {
         self.call(ProgramRequest::ReadCapabilities(Empty {}))
     }
+    /// Whether the app runs `spec`, an action in the control layer's notation
+    /// (see [`ActionSupport`]).
+    pub fn read_action(&self, spec: &str) -> Result<bool, RemoteError> {
+        self.call::<ActionSupport>(ProgramRequest::ReadAction(ReadAction { spec: spec.into() }))
+            .map(|a| a.supported)
+    }
     /// Proposes settings changes for photos of the snapshot `token` names,
     /// during the app's `command.run` request `op` ([`crate::Context::op`]).
     pub fn propose_settings(
@@ -275,6 +285,15 @@ impl Host {
         })
         .into_parts();
         self.0.send(&Message::event(&name, params))
+    }
+    /// The extension's private data folder, kept across versions, as `hello`
+    /// named it; empty before it.
+    pub fn data_dir(&self) -> std::path::PathBuf {
+        self.0
+            .data_dir
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
     /// This program start's number, which the app issued in `hello`; 0 before
     /// it.

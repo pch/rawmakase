@@ -2,10 +2,12 @@ PREFIX ?= $(HOME)/.local
 # Package name for the license directory (Arch packages pass their pkgname).
 PKGNAME ?= rawmakase
 BIN := target/release/rawmakase
-# The bundled MCP extension's program, which `rawmakase mcp` runs. The app
-# looks for its bundled programs beside its executable and, on Linux, in
-# ../lib/rawmakase (crates/rawmakase-extensions/src/bundled.rs).
+# The bundled extensions' programs: MCP's, which `rawmakase mcp` runs, and
+# MIDI's, which the app starts. The app looks for its bundled programs beside
+# its executable and, on Linux, in ../lib/rawmakase
+# (crates/rawmakase-extensions/src/bundled.rs).
 MCP_BIN := target/release/rawmakase-mcp
+MIDI_BIN := target/release/rawmakase-midi
 ifeq ($(shell uname -s),Darwin)
 PROGRAM_DIR = $(PREFIX)/bin
 else
@@ -16,7 +18,7 @@ endif
 all: build
 
 build:
-	cargo build --release --locked -p rawmakase -p rawmakase-mcp
+	cargo build --release --locked -p rawmakase -p rawmakase-mcp -p rawmakase-midi
 
 # The minimum Rust version Cargo.toml declares, compiled as CI's lint job does.
 MSRV := $(shell sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
@@ -44,8 +46,9 @@ CHECK_VENV ?= target/check-venv
 # The tests read an empty data folder, not this machine's: installed camera
 # profiles change what Develop resolves, and saved export settings would send
 # Export with Previous somewhere real.
-# rawmakase-mcp is built before the app's tests: they run `rawmakase mcp`,
-# which runs the program found beside it in target/debug.
+# rawmakase-mcp and rawmakase-midi are built before the app's tests: they run
+# `rawmakase mcp`, which runs the program found beside it in target/debug, and
+# the MIDI program found there.
 TEST_DATA = $(CURDIR)/target/test-data
 TEST_ENV = RAWMAKASE_DATA_DIR="$(TEST_DATA)" XDG_DATA_HOME="$(TEST_DATA)"
 
@@ -55,12 +58,12 @@ check: check-python check-tools check-msrv
 	scripts/crate-closures.sh
 	cargo fmt --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
-	cargo build --locked -p rawmakase-mcp
+	cargo build --locked -p rawmakase-mcp -p rawmakase-midi
 	$(TEST_ENV) cargo test --locked -p rawmakase -p rawmakase-decode -p rawmakase-export
-	cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -- -D warnings
+	cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi -- -D warnings
 	$(TEST_ENV) cargo test --locked -p rawmakase-model --all-features
 	$(TEST_ENV) cargo test --locked -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
-	$(TEST_ENV) cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-inference -p rawmakase-model-install -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example
+	$(TEST_ENV) cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-inference -p rawmakase-model-install -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
 	RUSTDOCFLAGS="-D warnings -A rustdoc::private_intra_doc_links" cargo doc --workspace --all-features --no-deps --locked --document-private-items
 
 check-msrv:
@@ -92,8 +95,10 @@ check-tools:
 install:
 	@test -x $(BIN) || { echo "Run 'make' first to build $(BIN)"; exit 1; }
 	@test -x $(MCP_BIN) || { echo "Run 'make' first to build $(MCP_BIN)"; exit 1; }
+	@test -x $(MIDI_BIN) || { echo "Run 'make' first to build $(MIDI_BIN)"; exit 1; }
 	install -Dm755 $(BIN) $(DESTDIR)$(PREFIX)/bin/rawmakase
 	install -Dm755 $(MCP_BIN) $(DESTDIR)$(PROGRAM_DIR)/rawmakase-mcp
+	install -Dm755 $(MIDI_BIN) $(DESTDIR)$(PROGRAM_DIR)/rawmakase-midi
 	install -Dm644 LICENSE $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/LICENSE
 	install -Dm644 licenses/Adobe-DNG-SDK.txt $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/Adobe-DNG-SDK.txt
 	install -Dm644 licenses/Compact-ICC-Profiles-CC0.txt $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/Compact-ICC-Profiles-CC0.txt
@@ -112,6 +117,7 @@ endif
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/rawmakase
 	rm -f $(DESTDIR)$(PROGRAM_DIR)/rawmakase-mcp
+	rm -f $(DESTDIR)$(PROGRAM_DIR)/rawmakase-midi
 	-rmdir $(DESTDIR)$(PREFIX)/lib/rawmakase 2>/dev/null
 	rm -f $(DESTDIR)$(PREFIX)/share/applications/rawmakase.desktop
 	rm -f $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/rawmakase.svg

@@ -45,7 +45,7 @@ done
 # The extension protocol, the SDK, the host and cargo-rawmakase build without the
 # app, a GPU, a GUI, native imaging libraries or inference: extension programs
 # and their authors' tools stay as light as the control clients.
-for crate in rawmakase-extension-protocol rawmakase-extension rawmakase-extensions rawmakase-example cargo-rawmakase; do
+for crate in rawmakase-extension-protocol rawmakase-extension rawmakase-extensions rawmakase-example rawmakase-midi cargo-rawmakase; do
     check "$crate" "$leaf"
 done
 check rawmakase-engine "rawmakase|rawmakase-catalog|rawmakase-export|$gui|$native|$inference"
@@ -92,6 +92,9 @@ check rawmakase-mcp "rawmakase|rawmakase-cancel|rawmakase-fs|rawmakase-tiff|rawm
 # no MCP server or its runtime in the app binary. (tokio still appears in the
 # app's tree for wasm targets only, through wasm-bindgen-futures.)
 check rawmakase "rawmakase-mcp|rmcp.*"
+# Nor does it link the bundled MIDI program, or a MIDI library: MIDI input is
+# that program's (extensions/midi), which the app starts beside it.
+check rawmakase "rawmakase-midi|midir|coremidi|alsa.*"
 # RAWmakase's own RAW decoders sit on the TIFF reader and the cancellation token alone: no workspace crate
 # above them, no GPU, GUI or inference, and nothing built from C (no build
 # script crates).

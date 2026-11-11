@@ -1,15 +1,15 @@
 # Extensions: design plan
 
-Status: Accepted (2026-11-09); phase 1 built, phase 2 in progress. Built so far
-in phase 2: the manifest and its schema, `.rmext` packages, installation from a
-file and from GitHub, `extensions.json`, bundled discovery, the extension
-protocol, the SDK with its mock host, the host's process supervision primitives
-(process group or job object, channel, deadlines, stop), `cargo rawmakase` and
+Status: Accepted (2026-11-09); phases 1 and 2 built. Phase 2 built the
+manifest and its schema, `.rmext` packages, installation from a file and from
+GitHub, `extensions.json`, bundled discovery, the extension protocol, the SDK
+with its mock host, the host's process supervision primitives (process group or
+job object, channel, deadlines, stop), `cargo rawmakase` and
 `rawmakase extensions` ([reference](extensions/overview.md)); supervision in
 the app (`app::work`), Preferences > Extensions, commands, settings, panels,
-reads, proposals and target tokens in the app; externally launched adapters,
-with MCP moved out as a bundled extension. Still to build in phase 2: moving
-MIDI out. This page is the
+reads, proposals and target tokens in the app; control adapters, the app's own
+and externally launched ones; and moved MCP and MIDI out as bundled
+extensions. This page is the
 design we agreed on before implementation; once a part is built, its reference
 moves to `docs/extensions/` and this page records only what is still open.
 
@@ -781,7 +781,7 @@ other features don't depend on the extension.
 
 | Extension | Moves out | Stays core | Proves |
 | --- | --- | --- | --- |
-| **MIDI** (`rawmakase.midi`) | Device discovery and connection, device profiles, mapping (`app::shell::automation::midi`) | Commands, gesture grouping, History | `control-adapter`, `with-app` programs, settings |
+| **MIDI** (`rawmakase.midi`, built) | Device discovery and connection, device profiles, mapping (`extensions/midi`) | Commands, gesture grouping, History | `control-adapter`, `with-app` programs, settings |
 | **MCP** (`rawmakase.mcp`) | The MCP server (`src/mcp.rs`), already a client of the control protocol | The command layer, and `rawmakase mcp` as the entry point clients already launch | An externally launched adapter (below) |
 | **AI masks** (`rawmakase.ai-masks`) | Select Subject, Sky and Background: the models, their install (`model_install` for those packs), local and remote inference (`rawmakase-remote` as the extension's own worker) | Masks, rasters and their storage; rendering saved masks | `mask-generator`, viewer input, shared memory, heavy native dependencies |
 

@@ -1583,6 +1583,23 @@ fn the_run_button_applies_a_proposal_for_the_open_photo() {
     assert!(!e.preferences.open, "Run shows the photo it changes");
 }
 
+/// Every bundled extension is released with the app, at its version: a
+/// release that bumped the app but not a bundled manifest would list that
+/// extension at the old version.
+#[test]
+fn every_bundled_extension_is_at_the_app_version() {
+    assert!(!super::BUNDLED.is_empty());
+    for text in super::BUNDLED {
+        let manifest = rawmakase_extensions::Manifest::parse(text).expect("valid");
+        assert_eq!(
+            manifest.extension.version,
+            super::app_version(),
+            "{}",
+            manifest.extension.id
+        );
+    }
+}
+
 /// MCP ships with the app: listed, enabled until `extensions.json` says
 /// otherwise, at the app's version, and never uninstalled. Its program is
 /// started by MCP clients, never by the app. Disabled, its adapter is refused,

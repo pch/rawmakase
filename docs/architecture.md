@@ -687,27 +687,40 @@ default key that the user gives one runs as automation runs it.
 `app::shell::commands` defines transport-independent application operations, target
 checks, parameter units and explicit results. `Editor` executes each mutation
 inside its generation-bound edit transaction, then answers that request.
-`app::shell::automation` owns the input queue and adapter lifecycles. Its MIDI device
-adapter translates controls, while its independent socket adapter authenticates,
-bounds and expires requests, each with a separate reply channel. These adapters never write catalog edits or render pixels themselves.
-A control device's adapter translates its input (held modifiers, encoder formats,
-its mapping) into named device operations without the editor: adjust a parameter
-by ticks, an absolute 0–127 value, photo-dial ticks with their detent, and an action
-spec with `advance`. `Editor::device_operate` is the one entry point that applies
-them, with the semantics every device shares: it drops an operation whose device is
-disabled, removed or in an older connection epoch (read from the listener's status,
-outside the bounded queue), adjustments follow the active mask, the photo dial does
-nothing in the Library grid (checked before the detent state, which the core keeps
-per device source), Auto Advance joins metadata actions, and absolute values span
-the parameter's range. The socket's legacy `cc` and `note` commands go through a
-core compatibility adapter of their own (`automation/legacy.rs`), with a frozen copy
-of the Loupedeck+ table and their own held modifiers and photo dial, independent of
-any MIDI device.
+`app::shell::automation` owns the input queue and the control socket, whose
+adapter authenticates, bounds and expires requests, each with a separate reply
+channel. Control devices are an extension's: MIDI is the bundled extension
+`rawmakase.midi` (`extensions/midi`, the `rawmakase-midi` crate and program,
+built with the SDK alone and midir on macOS and Windows). Its program finds
+and connects each device, and translates its input (held modifiers, encoder
+formats, its mapping) into named device operations without the editor:
+adjust a parameter by ticks, an absolute 0–127 value, photo-dial ticks with
+their detent, and an action spec with `advance`. Adapters never write catalog
+edits or render pixels themselves.
+
+A program's devices report their connections with `adapter.device`, which the
+session's reader thread applies to the program start's device table
+(`app::extensions::Devices`) through the host crate's `Lifecycle` hook,
+outside the bounded operation queue; a full queue refuses an operation with
+`channel_full` without holding up the reader. `adapter.operate` reaches
+`Editor::device_operations`, which runs each operation only while the table
+says its connection epoch is the device's current one, read just before it
+runs, as a gesture of `Source::Device` with the program start's number the
+host issued. `Editor::device_operate` applies each with the semantics every
+device shares: adjustments follow the active mask, the photo dial does nothing
+in the Library grid (checked before the detent state, which the core keeps per
+device source), Auto Advance joins metadata actions, and absolute values span
+the parameter's range. A disconnection, the program's end or crash and
+disabling the extension end that device's gesture (checked after each poll of
+the host). The socket's legacy `cc` and `note` commands go through a core
+compatibility adapter of their own (`automation/legacy.rs`), with a frozen copy
+of the Loupedeck+ table and their own held modifiers and photo dial,
+independent of the MIDI extension (default D3).
 Headless test editors do not start listeners or touch connection/configuration
 files; only desktop initialization starts them.
 
-External parameter commands default to global scope. MIDI may resolve the active
-mask; explicit mask commands require generation and revision guards because
+External parameter commands default to global scope. A device may resolve the
+active mask; explicit mask commands require generation and revision guards because
 recipe masks have no persistent IDs. Output jobs capture the photo and recipe
 revision and call `export::job`; successful queueing is distinct from published
 output. The protocol and CLI are documented in [External control](automation.md).
@@ -746,12 +759,13 @@ Application commands return typed state snapshots and results; the socket adapte
 encodes them as protocol JSON. A single action-name table supports parsing,
 discovery and device mapping serialization. Gesture ownership belongs to the
 application command layer, with separate device and socket scopes: a device's
-gestures belong to `Source::Device`, its adapter session, device and connection
-epoch, so another device or a reconnection never continues one.
+gestures belong to `Source::Device`, its program start, device and connection
+epoch, so another device, a reconnection or a restarted program never
+continues one.
 
 The automation owner manages the bounded queue and local socket independently
-of MIDI. Each MIDI device owns its mapping and connection state, using a shared
-profile registry. Keys run commands through the registry ([Commands and
+of MIDI. Each MIDI device owns its mapping and connection state in the MIDI
+extension's program, using its profiles. Keys run commands through the registry ([Commands and
 keys](#commands-and-keys)); further work can share parameter descriptors with all
 editing panels.
 The protocol crate can also hold the request types, so MCP schemas reuse

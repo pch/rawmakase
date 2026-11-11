@@ -2,14 +2,14 @@
 # programs and the licenses. The C runtime is linked in, so no Visual C++
 # Redistributable is needed.
 #
-#   pwsh packaging/windows/stage.ps1 target\release\rawmakase.exe dist\windows -Programs target\release\rawmakase-mcp.exe
+#   pwsh packaging/windows/stage.ps1 target\release\rawmakase.exe dist\windows -Programs target\release\rawmakase-mcp.exe, target\release\rawmakase-midi.exe
 #
 # Fails the build if the executable or a program imports any DLL that is not
 # part of Windows. Stages natively for this Windows' architecture: x64 or ARM64.
 param(
     [Parameter(Mandatory)][string]$Executable,
     [Parameter(Mandatory)][string]$Output,
-    # Bundled extensions' programs (rawmakase-mcp.exe), installed beside the
+    # Bundled extensions' programs (rawmakase-mcp.exe, rawmakase-midi.exe), installed beside the
     # executable, where the app looks for them.
     [string[]]$Programs = @()
 )
@@ -61,10 +61,13 @@ foreach ($name in $binaries) {
         }
     }
 }
-# `rawmakase mcp` finds the MCP program beside the app and completes an MCP
-# initialize; the program has this architecture.
-if ($binaries -contains 'rawmakase-mcp.exe') {
-    python (Join-Path $root 'packaging\check_mcp.py') (Join-Path $Output 'rawmakase.exe') (Join-Path $Output 'rawmakase-mcp.exe') `
+# The programs have this architecture; `rawmakase mcp` finds the MCP program
+# beside the app, where the app looks for MIDI's too, and completes an MCP
+# initialize.
+if ($Programs.Count -gt 0) {
+    $staged = $Programs | ForEach-Object { Join-Path $Output (Split-Path $_ -Leaf) }
+    python (Join-Path $root 'packaging\check_programs.py') (Join-Path $Output 'rawmakase.exe') @staged `
         --arch $(if ($arm64) { 'aarch64' } else { 'x86_64' })
+    if ($LASTEXITCODE -ne 0) { throw 'A staged program failed its check' }
 }
 Get-ChildItem $Output -Recurse -File | ForEach-Object { $_.FullName.Substring((Resolve-Path $Output).Path.Length + 1) }

@@ -18,17 +18,19 @@ if [ -x "$rustup_bin" ]; then
 fi
 profile=${1:-release}
 case "$profile" in
-    release) cargo build --release --locked -p rawmakase -p rawmakase-mcp ;;
-    debug) cargo build --locked -p rawmakase -p rawmakase-mcp ;;
+    release) cargo build --release --locked -p rawmakase -p rawmakase-mcp -p rawmakase-midi ;;
+    debug) cargo build --locked -p rawmakase -p rawmakase-mcp -p rawmakase-midi ;;
     *) echo 'Usage: packaging/macos/app.sh [release|debug]' >&2; exit 2 ;;
 esac
 bundle="target/$profile/RAWmakase.app"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources/licenses"
 # Replace, never overwrite: macOS kills a signed binary rewritten in place.
-rm -f "$bundle/Contents/MacOS/rawmakase" "$bundle/Contents/MacOS/rawmakase-mcp"
+rm -f "$bundle/Contents/MacOS/rawmakase" "$bundle/Contents/MacOS/rawmakase-mcp" "$bundle/Contents/MacOS/rawmakase-midi"
 cp "target/$profile/rawmakase" "$bundle/Contents/MacOS/rawmakase"
-# The bundled MCP extension's program, which `rawmakase mcp` runs.
+# The bundled extensions' programs: MCP's, which `rawmakase mcp` runs, and
+# MIDI's, which the app starts.
 cp "target/$profile/rawmakase-mcp" "$bundle/Contents/MacOS/rawmakase-mcp"
+cp "target/$profile/rawmakase-midi" "$bundle/Contents/MacOS/rawmakase-midi"
 cp packaging/macos/Info.plist "$bundle/Contents/Info.plist"
 cp LICENSE "$bundle/Contents/Resources/licenses/RAWmakase.txt"
 cp licenses/Adobe-DNG-SDK.txt "$bundle/Contents/Resources/licenses/Adobe-DNG-SDK.txt"

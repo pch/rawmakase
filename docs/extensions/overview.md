@@ -1,12 +1,11 @@
 # Extensions
 
-Status: Partly built ([design](../extensions-plan.md), phase 2). The manifest,
+Status: Phase 2 built ([design](../extensions-plan.md)). The manifest,
 packages, installation, `extensions.json`, the extension protocol, the SDK and
 `cargo rawmakase` exist, and the app runs extensions: it supervises their
 programs, and has Preferences > Extensions, their commands, settings and
-panels, and reads and proposals with target tokens. Externally launched control
-adapters exist, and MCP is a bundled extension; moving MIDI out of the core
-comes next.
+panels, reads and proposals with target tokens, and control adapters, the app's
+own and externally launched ones. MIDI and MCP are bundled extensions.
 
 An **extension** adds to RAWmakase without changing it: commands, settings,
 panels of controls the app draws, and control adapters (a MIDI device, an MCP
@@ -39,10 +38,32 @@ Windows, or on Linux in `../lib/rawmakase` beside the executable's folder, where
 the packages and `make install` put it. A bundled extension is enabled unless
 `extensions.json` says it is disabled, updates with the app and can't be
 uninstalled. When its program is missing (an incomplete install), its page says
-so. This release bundles one:
+so. This release bundles two:
 
 - **MCP** (`rawmakase.mcp`, program `rawmakase-mcp`): the MCP server
   ([MCP setup](../mcp.md)), an externally launched control adapter, `mcp`.
+- **MIDI** (`rawmakase.midi`, program `rawmakase-midi`): MIDI control surfaces
+  ([MIDI devices](../midi.md)), a control adapter the app starts with itself,
+  `midi`, and its page, a panel the program drives. Its settings are in its
+  data folder; on its first start the app copies the `midi.json` the core kept
+  there, and leaves the original.
+
+## Control adapters
+
+A `[[control-adapter]]` the app launches (the default) is served by the
+extension's program, started with the app (`with-app`). Its devices report
+their connections with `adapter.device` (connected, disconnected, removed,
+each with an epoch that counts up with every connection), and their input as
+named operations with `adapter.operate` ([protocol](protocol.md#control-adapters)).
+The app takes a device's report in on the channel's reader thread, ahead of
+any operation still waiting, and runs each operation only while its device is
+connected in the operation's epoch: input from before a disconnection never
+runs, however much of it waits. Each program start's devices are its own: a
+restarted program's devices never continue a gesture of the previous run.
+When the operations come faster than the app takes them, the ones that don't
+fit are refused with `channel_full` at once. A disconnection, the program's
+end and disabling the extension end its devices' gestures; disabled, its
+operations are refused.
 
 ## Externally launched adapters
 
@@ -165,7 +186,9 @@ cancelled, then failed 2 seconds later. A program that exits on its own counts
 as a crash: whatever it was asked fails, and its status-line entry and panels
 clear. Three crashes in a row make the extension **Failed** for the rest of the
 session, until **Retry**; only useful work (a command or a panel answered
-successfully, or 5 minutes running) starts the count again. Disabling an
+successfully, a device operation that ran, or 5 minutes running) starts the
+count again; a handshake or a device's report doesn't. A `with-app` program
+that ends is started again, until it is Failed. Disabling an
 extension cancels its requests, stops its program and takes its commands and
 panels away. Quitting sends `quitting` and ends any program still running
 within the quit deadline, with the helpers it started.

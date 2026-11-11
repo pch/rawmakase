@@ -1,0 +1,29 @@
+# Bundled with RAWmakase: the app compiles this manifest in, finds the program
+# beside its executable and starts it with the app. The version follows the
+# app's, as the program's own does (a test compares them).
+[extension]
+id = "rawmakase.midi"
+name = "MIDI"
+version = "0.4.12"
+rawmakase = "*"
+api = 1
+authors = ["RAWmakase"]
+license = "MIT"
+repository = "https://github.com/pch/rawmakase"
+description = "Edit with MIDI control surfaces such as the Loupedeck+: dials turn sliders, buttons run actions, each device with its own mappings."
+
+[access]
+devices = ["midi"]
+
+[program]
+path = "rawmakase-midi"
+start = "with-app"
+
+[[control-adapter]]
+id = "midi"
+name = "MIDI devices"
+
+[[panel]]
+id = "devices"
+title = "MIDI devices"
+place = "preferences"

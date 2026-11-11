@@ -116,8 +116,9 @@ jobs:
           rustup default 1.98.1
           toolchain_bin=$(dirname "$(rustup which --toolchain 1.98.1 rustc)")
           echo "$toolchain_bin" >> "$GITHUB_PATH"
-      # Sources from 0.4.13 bundle the MCP extension: its program ships
-      # beside the app, and its .rmext package is attached to the release.
+      # Sources from 0.4.13 bundle the MCP and MIDI extensions: their programs
+      # ship beside the app, and their .rmext packages are attached to the
+      # release.
       - name: Build and stage portable payload
         run: |
           packages=(-p rawmakase)
@@ -128,6 +129,12 @@ jobs:
             programs+=(--program target/release/rawmakase-mcp)
             mcp=true
           fi
+          midi=false
+          if [ -f release-source/extensions/midi/rawmakase-extension.toml ]; then
+            packages+=(-p rawmakase-midi -p cargo-rawmakase)
+            programs+=(--program target/release/rawmakase-midi)
+            midi=true
+          fi
           cargo build --release --locked --manifest-path release-source/Cargo.toml --target-dir "$GITHUB_WORKSPACE/target" "${packages[@]}"
           python3 packaging/linux/bundle.py target/release/rawmakase dist/linux-root "${programs[@]}"
           mkdir -p dist/upload
@@ -135,6 +142,10 @@ jobs:
           if [ "$mcp" = true ]; then
             (cd release-source/extensions/mcp && "$GITHUB_WORKSPACE/target/release/cargo-rawmakase" rawmakase package --program "$GITHUB_WORKSPACE/target/release/rawmakase-mcp")
             cp release-source/extensions/mcp/target/rmext/*.rmext dist/upload/
+          fi
+          if [ "$midi" = true ]; then
+            (cd release-source/extensions/midi && "$GITHUB_WORKSPACE/target/release/cargo-rawmakase" rawmakase package --program "$GITHUB_WORKSPACE/target/release/rawmakase-midi")
+            cp release-source/extensions/midi/target/rmext/*.rmext dist/upload/
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -177,15 +188,19 @@ jobs:
           rawmakase --version
           # The selection runtime is opened lazily, so only loading it shows it works.
           python -c "import ctypes; ctypes.CDLL('/usr/lib/rawmakase/libonnxruntime.so')"
-          # The bundled MCP extension's program, in recipes that build it.
-          mcp=false
-          if grep -q rawmakase-mcp dist/arch/PKGBUILD; then
-            mcp=true
-            python packaging/check_mcp.py /usr/bin/rawmakase /usr/lib/rawmakase/rawmakase-mcp --arch "$(uname -m)" --version "$VERSION"
+          # The bundled extensions' programs, in recipes that build them.
+          programs=()
+          for program in rawmakase-mcp rawmakase-midi; do
+            if grep -q "$program" dist/arch/PKGBUILD; then
+              programs+=("/usr/lib/rawmakase/$program")
+            fi
+          done
+          if [ ${#programs[@]} -gt 0 ]; then
+            python packaging/check_programs.py /usr/bin/rawmakase "${programs[@]}" --arch "$(uname -m)" --version "$VERSION"
           fi
           pacman -R --noconfirm rawmakase
           test ! -e /usr/lib/rawmakase/libonnxruntime.so
-          if [ "$mcp" = true ]; then test ! -e /usr/lib/rawmakase/rawmakase-mcp; fi
+          for program in "${programs[@]}"; do test ! -e "$program"; done
           cp dist/arch/*.pkg.tar.zst dist/upload/
           cp "dist/arch/rawmakase-$VERSION.tar.gz" "dist/upload/rawmakase-$VERSION-source.tar.gz"
           tar -C dist/arch -czf "dist/upload/rawmakase-$VERSION-arch-recipe.tar.gz" PKGBUILD .SRCINFO
@@ -266,8 +281,9 @@ jobs:
           rustup default 1.98.1
           toolchain_bin=$(dirname "$(rustup which --toolchain 1.98.1 rustc)")
           export PATH="$toolchain_bin:$PATH"
-          # Sources from 0.4.13 bundle the MCP extension: its program goes in
-          # Contents/MacOS, and its .rmext package is attached to the release.
+          # Sources from 0.4.13 bundle the MCP and MIDI extensions: their
+          # programs go in Contents/MacOS, and their .rmext packages are
+          # attached to the release.
           packages=(-p rawmakase)
           programs=()
           mcp=false
@@ -275,6 +291,12 @@ jobs:
             packages+=(-p rawmakase-mcp -p cargo-rawmakase)
             programs+=(--program target/release/rawmakase-mcp)
             mcp=true
+          fi
+          midi=false
+          if [ -f release-source/extensions/midi/rawmakase-extension.toml ]; then
+            packages+=(-p rawmakase-midi -p cargo-rawmakase)
+            programs+=(--program target/release/rawmakase-midi)
+            midi=true
           fi
           cargo build --release --locked --manifest-path release-source/Cargo.toml --target-dir "$GITHUB_WORKSPACE/target" "${packages[@]}"
           python3 packaging/macos/bundle.py target/release/rawmakase dist/RAWmakase.app "$VERSION" --minimum-macos "$MACOSX_DEPLOYMENT_TARGET" --icon-assets compiled-icon/Assets.car "${programs[@]}"
@@ -284,6 +306,10 @@ jobs:
           if [ "$mcp" = true ]; then
             (cd release-source/extensions/mcp && "$GITHUB_WORKSPACE/target/release/cargo-rawmakase" rawmakase package --program "$GITHUB_WORKSPACE/target/release/rawmakase-mcp")
             cp release-source/extensions/mcp/target/rmext/*.rmext dist/rmext/
+          fi
+          if [ "$midi" = true ]; then
+            (cd release-source/extensions/midi && "$GITHUB_WORKSPACE/target/release/cargo-rawmakase" rawmakase package --program "$GITHUB_WORKSPACE/target/release/rawmakase-midi")
+            cp release-source/extensions/midi/target/rmext/*.rmext dist/rmext/
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -414,14 +440,18 @@ jobs:
           rustup toolchain install 1.98.1 --profile minimal
           rustup default 1.98.1
           packaging/windows/toolchain.ps1
-          # Sources from 0.4.13 bundle the MCP extension: its program is
-          # staged beside the app, and its .rmext package is attached to the
-          # release.
+          # Sources from 0.4.13 bundle the MCP and MIDI extensions: their
+          # programs are staged beside the app, and their .rmext packages are
+          # attached to the release.
           $mcp = Test-Path release-source\extensions\mcp\rawmakase-extension.toml
+          $midi = Test-Path release-source\extensions\midi\rawmakase-extension.toml
           "MCP=$mcp" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-          $packages = if ($mcp) { '-p', 'rawmakase', '-p', 'rawmakase-mcp', '-p', 'cargo-rawmakase' } else { '-p', 'rawmakase' }
+          "MIDI=$midi" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          $packages = @('-p', 'rawmakase')
+          $programs = @()
+          if ($mcp) { $packages += '-p', 'rawmakase-mcp', '-p', 'cargo-rawmakase'; $programs += 'target\release\rawmakase-mcp.exe' }
+          if ($midi) { $packages += '-p', 'rawmakase-midi', '-p', 'cargo-rawmakase'; $programs += 'target\release\rawmakase-midi.exe' }
           cargo build --release --locked --manifest-path release-source/Cargo.toml --target-dir "$env:GITHUB_WORKSPACE\target" @packages
-          $programs = if ($mcp) { @('target\release\rawmakase-mcp.exe') } else { @() }
           packaging/windows/stage.ps1 target\release\rawmakase.exe dist\windows -Programs $programs
       - if: steps.source.outputs.windows == 'true'
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
@@ -450,9 +480,15 @@ jobs:
             Pop-Location
             Copy-Item release-source\extensions\mcp\target\rmext\*.rmext dist\upload\
           }
+          if ($env:MIDI -eq 'True') {
+            Push-Location release-source\extensions\midi
+            & "$env:GITHUB_WORKSPACE\target\release\cargo-rawmakase.exe" rawmakase package --program "$env:GITHUB_WORKSPACE\target\release\rawmakase-midi.exe"
+            Pop-Location
+            Copy-Item release-source\extensions\midi\target\rmext\*.rmext dist\upload\
+          }
       - if: steps.source.outputs.windows == 'true'
         name: Verify the finished download
-        run: packaging/windows/verify.ps1 "dist\upload\rawmakase-v$env:VERSION-${{ matrix.arch }}-pc-windows-msvc-setup.exe" $env:VERSION -Mcp:($env:MCP -eq 'True')
+        run: packaging/windows/verify.ps1 "dist\upload\rawmakase-v$env:VERSION-${{ matrix.arch }}-pc-windows-msvc-setup.exe" $env:VERSION -Mcp:($env:MCP -eq 'True') -Midi:($env:MIDI -eq 'True')
       - if: steps.source.outputs.windows == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

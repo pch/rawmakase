@@ -37,9 +37,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("binary", type=Path)
     parser.add_argument("output", type=Path)
-    # A bundled extension's program (rawmakase-mcp), installed beside the
-    # executable, where the app looks for it. It may link only the system's
-    # libraries.
+    # A bundled extension's program (rawmakase-mcp, rawmakase-midi), installed
+    # beside the executable, where the app looks for it. It may link only the
+    # system's libraries.
     parser.add_argument("--program", type=Path, action="append", default=[])
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
@@ -117,13 +117,13 @@ def main():
     env = dict(os.environ)
     env.pop("LD_LIBRARY_PATH", None)
     subprocess.run([str(launcher), "--version"], env=env, check=True)
-    # The MCP program: the right architecture, system libraries only, and
+    # The programs: the right architecture, system libraries only, MCP's
     # found by `rawmakase mcp` through the launcher.
-    for program in args.program:
-        if program.name == "rawmakase-mcp":
-            subprocess.run([sys.executable, str(root / "packaging/check_mcp.py"), str(launcher),
-                            str(private / program.name), "--arch", platform.machine()],
-                           env=env, check=True)
+    if args.program:
+        subprocess.run([sys.executable, str(root / "packaging/check_programs.py"), str(launcher),
+                        *[str(private / program.name) for program in args.program],
+                        "--arch", platform.machine()],
+                       env=env, check=True)
     print(stage)
 
 

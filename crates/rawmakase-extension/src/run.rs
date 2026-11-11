@@ -208,6 +208,9 @@ impl Extension {
                                 }
                                 greeted = true;
                                 settings = hello.settings;
+                                hello.data_dir.clone_into(
+                                    &mut host.0.data_dir.lock().unwrap_or_else(|e| e.into_inner()),
+                                );
                                 dirs = (hello.data_dir, hello.cache_dir);
                                 host.0.session.store(hello.session, Ordering::SeqCst);
                                 self.reply(host, cancels, id, Ok(self.hello_reply()));

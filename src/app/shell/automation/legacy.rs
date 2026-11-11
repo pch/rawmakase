@@ -114,18 +114,24 @@ fn button(note: u8) -> Option<Action> {
 mod tests {
     use super::*;
     /// The frozen table is the Loupedeck+ profile's as this adapter was split
-    /// from it; the profile may change later, this table may not.
+    /// from it: the MIDI extension's profile, read the way the app reads what
+    /// that extension sends. The profile may change later, this table may not.
     #[test]
     fn the_frozen_table_is_the_loupedeck_profile() {
-        let profile = Config::loupedeck();
+        let profile = rawmakase_midi::profiles::Profile::Loupedeck.mapping();
         assert_eq!(profile.photo_dial, Some(PHOTO_DIAL));
         assert_eq!(profile.photo_detent, PHOTO_DETENT);
-        assert_eq!(profile.default_encoder, Encoder::TwosComplement);
+        assert_eq!(
+            profile.default_encoder,
+            rawmakase_midi::config::Encoder::TwosComplement
+        );
         assert!(profile.encoders.is_empty());
         assert_eq!(profile.sensitivity, 1);
         for n in 0..=127 {
-            assert_eq!(dial(n), profile.dials.get(&n).copied(), "CC {n}");
-            assert_eq!(button(n), profile.buttons.get(&n).copied(), "note {n}");
+            let profile_dial = profile.dials.get(&n).map(|p| Param::parse(p).unwrap());
+            assert_eq!(dial(n), profile_dial, "CC {n}");
+            let profile_button = profile.buttons.get(&n).map(|s| parse_action(s).unwrap());
+            assert_eq!(button(n), profile_button, "note {n}");
         }
     }
 }

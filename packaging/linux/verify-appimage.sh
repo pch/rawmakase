@@ -25,13 +25,15 @@ for file in rawmakase.desktop rawmakase.svg usr/bin/rawmakase usr/lib/rawmakase/
 done
 test "$(sha256sum < "$root/rawmakase.desktop")" = "$(sha256sum < "$root/usr/share/applications/rawmakase.desktop")"
 test -x "$root/usr/lib/rawmakase/rawmakase"
-# The bundled MCP extension's program, from the first release that ships it.
-mcp=0.4.13
-ships_mcp=false
-if [ "$(printf '%s\n' "$mcp" "$version" | sort -V | head -n1)" = "$mcp" ]; then
-  ships_mcp=true
-  test -x "$root/usr/lib/rawmakase/rawmakase-mcp" || { echo "AppImage lacks an executable rawmakase-mcp" >&2; exit 1; }
-fi
+# The bundled extensions' programs, from the first release that ships them.
+programs=()
+for ships in rawmakase-mcp:0.4.13 rawmakase-midi:0.4.13; do
+  program=${ships%%:*} since=${ships#*:}
+  if [ "$(printf '%s\n' "$since" "$version" | sort -V | head -n1)" = "$since" ]; then
+    test -x "$root/usr/lib/rawmakase/$program" || { echo "AppImage lacks an executable $program" >&2; exit 1; }
+    programs+=("$root/usr/lib/rawmakase/$program")
+  fi
+done
 # Where AppImageUpdate looks for the next release; native-packages has
 # already checked that the .zsync file describes this AppImage.
 test "$("$image" --appimage-updateinformation)" = "gh-releases-zsync|pch|rawmakase|latest|rawmakase-*-$arch.AppImage.zsync"
@@ -41,12 +43,12 @@ if [[ "$run" = --run ]]; then
   # Without FUSE: once extracted by the runtime, and once as extracted here.
   test "$(cd / && APPIMAGE_EXTRACT_AND_RUN=1 "$image" --version)" = "$expected"
   test "$(cd / && "$root/AppRun" --version)" = "$expected"
-  # `rawmakase mcp` from the AppImage finds the program beside the app and
-  # completes an MCP initialize; the program has this architecture and
-  # links only the system's libraries.
-  if [[ "$ships_mcp" = true ]]; then
-    APPIMAGE_EXTRACT_AND_RUN=1 python3 "$(dirname -- "$0")/../check_mcp.py" "$image" \
-      "$root/usr/lib/rawmakase/rawmakase-mcp" --arch "$arch" --version "$version"
+  # The programs have this architecture and link only the system's
+  # libraries; `rawmakase mcp` from the AppImage finds MCP's beside the app,
+  # where the app looks for MIDI's too, and completes an MCP initialize.
+  if [[ ${#programs[@]} -gt 0 ]]; then
+    APPIMAGE_EXTRACT_AND_RUN=1 python3 "$(dirname -- "$0")/../check_programs.py" "$image" \
+      "${programs[@]}" --arch "$arch" --version "$version"
   fi
 fi
 echo "Verified $name"
