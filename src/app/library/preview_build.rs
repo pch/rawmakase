@@ -340,7 +340,12 @@ impl Builder {
             // Discarded previews leave space in the file, given back while
             // nothing else is waiting, a short write at a time.
             let mut release = false;
-            while let Some(next) = worker.next(release) {
+            loop {
+                let t = std::time::Instant::now();
+                let Some(next) = worker.next(release) else {
+                    eprintln!("DBG {:?} next None after {:?}", crate::app::task::since_start(), t.elapsed());
+                    break;
+                };
                 let (item, cancel) = match next {
                     Next::Op(Op::Refresh(items), generation) => {
                         if let Some(cache) = &cache {
@@ -359,6 +364,7 @@ impl Builder {
                         continue;
                     }
                     Next::Release => {
+                        let t0 = std::time::Instant::now();
                         let step = cache.as_mut().and_then(|cache| {
                             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                                 cache.release_step()
@@ -369,8 +375,15 @@ impl Builder {
                         // A failed step leaves the rest for the next Discard,
                         // Clear or expiry (run at launch), and a step after
                         // each prune.
+                        let t1 = std::time::Instant::now();
                         match step {
-                            Some(pause) => std::thread::sleep(pause),
+                            Some(pause) => {
+                                std::thread::sleep(pause);
+                                let slept = t1.elapsed();
+                                if t1.duration_since(t0) > std::time::Duration::from_millis(50) || slept > pause + std::time::Duration::from_millis(50) {
+                                    eprintln!("DBG {:?} step {:?} pause {:?} slept {:?}", crate::app::task::since_start(), t1.duration_since(t0), pause, slept);
+                                }
+                            }
                             None => release = false,
                         }
                         continue;
@@ -397,6 +410,9 @@ impl Builder {
                 }
                 changed();
             }
+            let t1 = std::time::Instant::now();
+            drop(cache);
+            eprintln!("DBG {:?} drop cache {:?}", crate::app::task::since_start(), t1.elapsed());
         });
         Self {
             shared,

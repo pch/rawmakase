@@ -218,3 +218,8 @@ mod tests {
         assert!(!task.counts(third));
     }
 }
+
+pub(crate) fn since_start() -> std::time::Duration {
+    static T: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    T.get_or_init(std::time::Instant::now).elapsed()
+}
