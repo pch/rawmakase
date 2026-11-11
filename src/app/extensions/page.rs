@@ -16,10 +16,15 @@ use rawmakase_extensions::github;
 use rawmakase_extensions::protocol::manifest::{Files, SettingControl};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 /// How often developer mode looks for a changed manifest or program.
 const WATCH: Duration = Duration::from_secs(1);
+
+/// What an installed extension's page and an offer say of its trust.
+const NOT_REVIEWED: &str = "RAWmakase hasn't reviewed this extension. It runs with your \
+     permissions.";
 
 /// What the page keeps between frames.
 #[derive(Default)]
@@ -28,8 +33,9 @@ pub(in crate::app) struct Page {
     selected: Option<String>,
     /// Background work runs; its buttons wait.
     pub busy: bool,
-    /// A package downloaded from GitHub, waiting for the user to install it.
-    pub offer: Option<Box<github::Offer>>,
+    /// A package downloaded from GitHub or chosen as a file, inspected and
+    /// waiting for the user to install it.
+    pub offer: Option<Offered>,
     /// The updates Check for Updates found.
     pub updates: Vec<github::Update>,
     /// The repository typed for Install from GitHub….
@@ -41,6 +47,27 @@ pub(in crate::app) struct Page {
     watched: Option<Instant>,
     /// Text settings being typed, by extension and setting.
     drafts: HashMap<(String, String), String>,
+}
+
+/// A package inspected for the user to review before it is installed: its
+/// manifest, its access and the Not reviewed warning are shown first.
+pub(in crate::app) enum Offered {
+    /// Downloaded from a repository's releases.
+    Github(Box<github::Offer>),
+    /// A `.rmext` file chosen with Install from File….
+    File {
+        path: PathBuf,
+        manifest: Box<rawmakase_extensions::Manifest>,
+    },
+}
+
+impl Offered {
+    fn manifest(&self) -> &rawmakase_extensions::Manifest {
+        match self {
+            Self::Github(offer) => &offer.manifest,
+            Self::File { manifest, .. } => manifest,
+        }
+    }
 }
 
 impl Editor {
@@ -86,10 +113,15 @@ impl Editor {
                 if ui.selectable_label(selected, e.name()).clicked() {
                     chosen = Some(e.id().to_string());
                 }
+                let reviewed = if e.origin == Origin::Installed {
+                    " · Not reviewed"
+                } else {
+                    ""
+                };
                 hint(
                     ui,
                     &format!(
-                        "{} · {} · {}",
+                        "{} · {}{reviewed} · {}",
                         e.manifest.extension.version,
                         source_label(e),
                         state(e)
@@ -217,10 +249,10 @@ impl Editor {
         );
     }
 
-    /// A downloaded package with its manifest and the trust warning, to
-    /// install or drop.
-    fn extension_offer(&mut self, ui: &mut egui::Ui, offer: Box<github::Offer>) {
-        let m = &offer.manifest;
+    /// A downloaded or chosen package with its manifest and the trust
+    /// warning, to install or drop.
+    fn extension_offer(&mut self, ui: &mut egui::Ui, offer: Offered) {
+        let m = offer.manifest();
         group(
             ui,
             &format!("Install {} {}?", m.extension.name, m.extension.version),
@@ -228,17 +260,18 @@ impl Editor {
         if let Some(description) = &m.extension.description {
             form_row(ui, "", |ui| hint(ui, description));
         }
+        let from = match &offer {
+            Offered::Github(offer) => format!("{} · {}", offer.repository, offer.release),
+            Offered::File { path, .. } => crate::app::ui::widgets::pretty_path(path),
+        };
         form_row(ui, "From", |ui| {
-            ui.add(
-                egui::Label::new(format!("{} · {}", offer.repository, offer.release)).truncate(),
-            );
+            ui.add(egui::Label::new(from).truncate());
         });
         form_row(ui, "Access", |ui| hint(ui, &access(m)));
         form_row(ui, "Not reviewed", |ui| {
             hint(
                 ui,
-                "RAWmakase hasn't reviewed this extension. It runs with your permissions: \
-                 install it only if you trust its author.",
+                &format!("{NOT_REVIEWED} Install it only if you trust its author."),
             );
         });
         let (mut install, mut cancel) = (false, false);
@@ -248,12 +281,52 @@ impl Editor {
         });
         gap(ui);
         if install {
-            self.install_offer(*offer);
+            self.install_offered(offer);
             return;
         }
         let keep = !cancel;
         if keep {
             self.extension_page.offer = Some(offer);
+        }
+    }
+
+    /// Installs the package the user reviewed, off the UI thread.
+    pub(in crate::app) fn install_offered(&mut self, offer: Offered) {
+        match offer {
+            Offered::Github(offer) => self.install_offer(*offer),
+            Offered::File { path, manifest } => {
+                let Some(store) = self.extensions.store().cloned() else {
+                    return;
+                };
+                let app = self.extensions.app_version().clone();
+                self.extension_work(
+                    move || {
+                        // The file is read again: what is installed must be
+                        // what was shown.
+                        let installed = store
+                            .inspect(&path, &app)
+                            .map_err(|e| e.to_string())
+                            .and_then(|now| {
+                                if now.manifest == *manifest {
+                                    Ok(())
+                                } else {
+                                    Err(format!("{} changed since it was read", path.display()))
+                                }
+                            })
+                            .and_then(|()| {
+                                let source = rawmakase_extensions::state::Source::File {
+                                    path: path.clone(),
+                                };
+                                store
+                                    .install(&path, &source, &app)
+                                    .map(|i| i.manifest.extension.name)
+                                    .map_err(|e| e.to_string())
+                            });
+                        super::Done::Installed(installed)
+                    },
+                    |why| super::Done::Installed(Err(why)),
+                );
+            }
         }
     }
 
@@ -291,6 +364,9 @@ impl Editor {
             });
         }
         form_row(ui, "Access", |ui| hint(ui, &access(&m)));
+        if origin == Origin::Installed {
+            form_row(ui, "Not reviewed", |ui| hint(ui, NOT_REVIEWED));
+        }
         form_row(ui, "State", |ui| hint(ui, &state(e)));
         if let Some(problem) = &problem {
             form_row(ui, "", |ui| hint(ui, problem));

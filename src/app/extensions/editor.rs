@@ -45,6 +45,8 @@ pub(crate) enum Done {
     Installed(Result<String, String>),
     /// A repository's newest package was downloaded for the user to review.
     Offered(Result<Box<rawmakase_extensions::github::Offer>, String>),
+    /// A package file was read for the user to review.
+    Inspected(PathBuf, Result<Box<rawmakase_extensions::Manifest>, String>),
     /// Check for Updates finished.
     Checked(Result<Box<rawmakase_extensions::github::Checked>, String>),
     /// A proposal's worker finished, or panicked.
@@ -347,7 +349,19 @@ impl Editor {
             Done::Offered(result) => {
                 self.extension_page.busy = false;
                 match result {
-                    Ok(offer) => self.extension_page.offer = Some(offer),
+                    Ok(offer) => {
+                        self.extension_page.offer = Some(super::page::Offered::Github(offer))
+                    }
+                    Err(why) => self.messages.fail(format!("Not installed: {why}")),
+                }
+            }
+            Done::Inspected(path, result) => {
+                self.extension_page.busy = false;
+                match result {
+                    Ok(manifest) => {
+                        self.extension_page.offer =
+                            Some(super::page::Offered::File { path, manifest });
+                    }
                     Err(why) => self.messages.fail(format!("Not installed: {why}")),
                 }
             }
@@ -373,23 +387,23 @@ impl Editor {
 
     fn extension_path_chosen(&mut self, target: PathTarget, path: PathBuf) {
         match target {
+            // Read first and shown for review, as a package from GitHub is;
+            // installed once the user confirms.
             PathTarget::Package => {
                 let Some(store) = self.extensions.store().cloned() else {
                     return;
                 };
                 let app = self.extensions.app_version().clone();
+                let failed = path.clone();
                 self.extension_work(
                     move || {
-                        let source =
-                            rawmakase_extensions::state::Source::File { path: path.clone() };
-                        Done::Installed(
-                            store
-                                .install(&path, &source, &app)
-                                .map(|i| i.manifest.extension.name)
-                                .map_err(|e| e.to_string()),
-                        )
+                        let manifest = store
+                            .inspect(&path, &app)
+                            .map(|i| Box::new(i.manifest))
+                            .map_err(|e| e.to_string());
+                        Done::Inspected(path, manifest)
                     },
-                    |why| Done::Installed(Err(why)),
+                    move |why| Done::Inspected(failed, Err(why)),
                 );
             }
             PathTarget::Folder => match self.extensions.load_folder(&path) {

@@ -117,9 +117,12 @@ extension's page shows its description, author, repository, declared access,
 its commands (each with **Run**), settings, panels, control adapters, its last
 errors and its log file; and **Enable**, **Disable**, **Stop** (while a command
 runs), **Retry** (when Failed), **Uninstall** (not for a bundled one) and
-**Update**. **Install from GitHub…** downloads the newest compatible package and
-shows its manifest, its access and the **Not reviewed** warning before
-installing it; **Install from File…** installs a `.rmext`. Every change is
+**Update**. **Install from GitHub…** downloads the newest compatible package,
+and **Install from File…** reads a `.rmext`; either shows the package's
+manifest, its access and the **Not reviewed** warning, and installs it only
+when the user confirms (a file is read again then, and refused if it changed).
+An installed extension's page and its line in the list say **Not reviewed**
+too. Every change is
 written to `extensions.json` first; when that fails, the page says so and
 nothing changes.
 

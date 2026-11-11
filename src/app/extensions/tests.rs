@@ -979,6 +979,60 @@ fn the_command_line_and_the_app_change_extensions_json_without_losing_each_other
     );
 }
 
+#[test]
+fn a_package_file_is_shown_for_review_before_it_is_installed() {
+    let mut f = fixture(&["a.png"]);
+    let manifest = "[extension]\nid = \"dev.test.filed\"\nname = \"Filed\"\n\
+                    version = \"1.0.0\"\nrawmakase = \">=0.1\"\napi = 1\n\
+                    [access]\nnetwork = true\n";
+    let parsed = rawmakase_extensions::Manifest::parse(manifest).unwrap();
+    let package = f
+        .dir
+        .path()
+        .join(rawmakase_extensions::package::file_name(&parsed, "any"));
+    rawmakase_extensions::package::write(
+        &package,
+        &[(
+            rawmakase_extensions::protocol::manifest::FILE.to_string(),
+            manifest.as_bytes().to_vec(),
+        )],
+        None,
+    )
+    .unwrap();
+    let e = &mut f.editor;
+    let ctx = e.context.clone();
+    let wait = |e: &mut Editor, what: &str| {
+        let until = Instant::now() + Duration::from_secs(20);
+        while e.extension_page.busy {
+            assert!(Instant::now() < until, "timed out waiting for {what}");
+            e.events(&ctx);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    };
+    e.extension_done(super::Done::Chosen(
+        super::PathTarget::Package,
+        Some(package),
+    ));
+    wait(e, "the package to be read");
+    // Read and offered, with its access: nothing is installed yet.
+    let offer = e.extension_page.offer.take().expect("offered for review");
+    assert!(
+        matches!(&offer, super::page::Offered::File { manifest, .. } if manifest.access.network)
+    );
+    assert!(e.extensions.get("dev.test.filed").is_none());
+    assert!(
+        !State::read(&f.data)
+            .unwrap()
+            .extensions
+            .contains_key("dev.test.filed")
+    );
+    // Confirmed, it is installed.
+    e.install_offered(offer);
+    wait(e, "the install");
+    let installed = e.extensions.get("dev.test.filed").expect("installed");
+    assert_eq!(installed.origin, super::Origin::Installed);
+}
+
 /// Writes `text` as the developer folder's manifest, `seconds` from now as
 /// its modification time, so a reload sees it changed.
 fn rewrite_manifest(f: &Fixture, text: &str, seconds: u64) {
