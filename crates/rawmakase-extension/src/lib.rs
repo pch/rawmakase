@@ -17,7 +17,8 @@
 //! ```
 //!
 //! [`Extension::run`] attaches the channel the app started the program with
-//! ([`channel`]), answers the handshake, and calls the handlers one request at
+//! ([`channel`]), reads the manifest's `api` the app passed
+//! ([`protocol::ENV_API`]), answers the handshake, and calls the handlers one request at
 //! a time on the calling thread while another thread keeps reading, so
 //! cancellation and the app's replies arrive while a handler runs. It returns
 //! when the app sends `quitting` or closes the channel. [`mock::MockHost`]
@@ -34,10 +35,10 @@ mod run;
 pub use host::Host;
 pub use rawmakase_extension_protocol as protocol;
 pub use rawmakase_extension_protocol::{ErrorCode, RemoteError};
-pub use run::{Context, Extension};
+pub use run::{Context, Extension, ServeOptions};
 
 use rawmakase_extension_protocol::controls::Control;
-use rawmakase_extension_protocol::method::CommandRun;
+use rawmakase_extension_protocol::method::{CommandRun, MaskGenerate, MaskGenerated};
 use serde_json::Value;
 
 /// A `[[command]]`'s implementation.
@@ -78,6 +79,36 @@ pub trait Panel: Send {
             ErrorCode::InvalidRequest,
             format!("{control} is not a button"),
         ))
+    }
+}
+
+/// A `[[mask-generator]]`'s implementation.
+///
+/// The SDK checks each request ([`MaskGenerate::validate`]) before calling
+/// [`MaskGenerator::generate`], and refuses one that doesn't validate with
+/// [`ErrorCode::InvalidRequest`].
+///
+/// The buffers are not mapped yet: this version passes their descriptors as
+/// the app sent them, and the pixels arrive with handle passing, in the next
+/// protocol change. Then the handler will borrow the mappings for its call.
+pub trait MaskGenerator: Send {
+    /// Writes the coverage of the mask the request asks for and names the
+    /// model that made it. A generator whose model isn't installed answers
+    /// [`ErrorCode::NeedsSetup`] with a
+    /// [`NeedsSetup`](protocol::message::NeedsSetup) message; one whose
+    /// runtime or worker is missing answers [`ErrorCode::Unavailable`]. One
+    /// that sees [`Context::is_cancelled`] returns [`ErrorCode::Cancelled`].
+    fn generate(
+        &mut self,
+        cx: &Context,
+        request: MaskGenerate,
+    ) -> Result<MaskGenerated, RemoteError>;
+    /// Installs what the generator needs, reporting through
+    /// [`Context::progress`], after it answered `needs_setup` and the user
+    /// agreed. Generators that need nothing keep the default.
+    fn setup(&mut self, cx: &Context, generator: &str) -> Result<(), RemoteError> {
+        let _ = (cx, generator);
+        Ok(())
     }
 }
 

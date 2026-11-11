@@ -253,6 +253,50 @@
         }
       ]
     },
+    "MaskGenerator": {
+      "additionalProperties": false,
+      "description": "A `[[mask-generator]]`: the program turns the photo, and the user's viewer\ninput, into a raster mask's coverage.",
+      "properties": {
+        "id": {
+          "description": "Unique among the extension's mask generators.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "input": {
+          "description": "The viewer input it takes, each kind once: `none` (automatic) and\n`prompt` (aiming and refining with clicks and a box). Other kinds are\nrefused until a version that collects them for mask generators.",
+          "items": {
+            "$ref": "#/$defs/Input"
+          },
+          "type": "array"
+        },
+        "prompt-hint": {
+          "description": "The line shown while the user aims with `prompt`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provenance": {
+          "description": "What saved masks record as their source, so a mask finds its generator\nagain to be refined or regenerated: `<extension>/<id>` unless stated.\nOnly `rawmakase.ai-masks` may state anything else, and only `subject`\nor `sky`, the values saved before extensions existed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tile": {
+          "description": "What the mask drawer offers to make a new mask with this generator.",
+          "items": {
+            "$ref": "#/$defs/Tile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "input"
+      ],
+      "type": "object"
+    },
     "Panel": {
       "additionalProperties": false,
       "description": "A `[[panel]]`.",
@@ -539,6 +583,24 @@
           "type": "string"
         }
       ]
+    },
+    "Tile": {
+      "additionalProperties": false,
+      "description": "A `[[mask-generator.tile]]`: a shortcut in the mask drawer that asks its\ngenerator for a new mask component.",
+      "properties": {
+        "invert": {
+          "description": "Whether the new component is inverted: Background is an inverted\nSubject.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "The tile's name, for example `Background`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -571,6 +633,13 @@
     "extension": {
       "$ref": "#/$defs/Extension",
       "description": "What the extension is."
+    },
+    "mask-generator": {
+      "description": "Generators of raster masks, from `api = 2`.",
+      "items": {
+        "$ref": "#/$defs/MaskGenerator"
+      },
+      "type": "array"
     },
     "panel": {
       "description": "Panels of host-drawn controls the program fills.",

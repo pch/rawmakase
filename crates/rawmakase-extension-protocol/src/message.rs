@@ -179,12 +179,19 @@ pub enum ErrorCode {
     /// A proposal arrived for an app request no longer in flight (answered,
     /// cancelled or past its deadline); nothing was applied.
     NotAdmitted,
+    /// The contribution needs something installed first, such as a model to
+    /// download. The message is a [`NeedsSetup`] as JSON, which
+    /// [`NeedsSetup::read`] reads.
+    NeedsSetup,
+    /// What the contribution runs on isn't available here, such as a runtime
+    /// library or a remote worker; the message says why.
+    Unavailable,
     /// A code this crate doesn't define, kept as sent.
     Other(String),
 }
 impl ErrorCode {
     /// Every code [`ErrorCode::Other`] doesn't stand for, as sent.
-    pub const KNOWN: [(&'static str, ErrorCode); 12] = [
+    pub const KNOWN: [(&'static str, ErrorCode); 14] = [
         ("cancelled", ErrorCode::Cancelled),
         ("deadline", ErrorCode::Deadline),
         ("invalid_request", ErrorCode::InvalidRequest),
@@ -197,6 +204,8 @@ impl ErrorCode {
         ("unsupported_protocol", ErrorCode::UnsupportedProtocol),
         ("exited", ErrorCode::Exited),
         ("not_admitted", ErrorCode::NotAdmitted),
+        ("needs_setup", ErrorCode::NeedsSetup),
+        ("unavailable", ErrorCode::Unavailable),
     ];
     /// The code as sent.
     pub fn as_str(&self) -> &str {
@@ -261,6 +270,28 @@ impl std::fmt::Display for RemoteError {
 }
 impl std::error::Error for RemoteError {}
 
+/// What a [`ErrorCode::NeedsSetup`] error asks for, sent as its message in
+/// JSON (`{"what":"…","bytes":n}`), since the envelope has no data field.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NeedsSetup {
+    /// What setting up installs, for a person: "the Subject model".
+    pub what: String,
+    /// How much it downloads, in bytes.
+    pub bytes: u64,
+}
+impl NeedsSetup {
+    /// The error to answer with.
+    pub fn error(&self) -> RemoteError {
+        let message = serde_json::to_string(self).expect("a setup is JSON");
+        RemoteError::new(ErrorCode::NeedsSetup, message)
+    }
+    /// Reads a `needs_setup` error's message. `None` when it isn't one this
+    /// version reads: show the message as plain text then.
+    pub fn read(message: &str) -> Option<Self> {
+        serde_json::from_str(message).ok()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,6 +343,29 @@ mod tests {
             assert_eq!(ErrorCode::parse(name), code);
             assert_eq!(code.as_str(), name);
         }
+    }
+
+    #[test]
+    fn a_setup_travels_as_the_message_and_falls_back_to_text() {
+        let setup = NeedsSetup {
+            what: "the Subject model".into(),
+            bytes: 184_000_000,
+        };
+        let error = setup.error();
+        assert_eq!(error.code, ErrorCode::NeedsSetup);
+        assert_eq!(
+            error.message,
+            r#"{"what":"the Subject model","bytes":184000000}"#
+        );
+        let line = Message::reply(4, Err(error)).encode().unwrap();
+        let Message::Err { code, message, .. } = Message::decode(&line).unwrap() else {
+            panic!("an error");
+        };
+        assert_eq!(code, ErrorCode::NeedsSetup);
+        assert_eq!(NeedsSetup::read(&message), Some(setup));
+        assert_eq!(NeedsSetup::read("Download the Subject model first"), None);
+        assert_eq!(NeedsSetup::read(r#"{"what":"x"}"#), None);
+        assert_eq!(ErrorCode::parse("unavailable"), ErrorCode::Unavailable);
     }
 
     #[test]

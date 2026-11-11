@@ -4,7 +4,7 @@
 //! helper process is the point, to keep the run short.
 use rawmakase_extension::protocol::framing::{LineReader, write_line};
 use rawmakase_extension::protocol::method::{CommandRun, Hello};
-use rawmakase_extension::protocol::{ErrorCode, MAX_LINE, Message, PROTOCOL, RemoteError};
+use rawmakase_extension::protocol::{ENV_API, ErrorCode, MAX_LINE, Message, PROTOCOL, RemoteError};
 use rawmakase_extension::{Context, Extension};
 use rawmakase_extensions::session::{Launch, Session, SessionOptions, Update, check_hello};
 use serde_json::{Value, json};
@@ -42,6 +42,7 @@ fn fake_program() {
             0
         }
         "flood" => flood(),
+        "api" => api(),
         other => panic!("no script {other}"),
     };
     std::process::exit(code);
@@ -68,6 +69,17 @@ fn sdk() -> i32 {
             cx.host()
                 .device("dial", "knob", DeviceState::Connected, 1)?;
             Ok(json!("reported"))
+        })
+        .run();
+    i32::from(result.is_err())
+}
+
+/// Serves a command answering the API mode the app passed; `run` reads it
+/// and refuses to serve a mode it doesn't know.
+fn api() -> i32 {
+    let result = Extension::new()
+        .command("api", |_cx: &Context, _run: CommandRun| {
+            Ok(json!(std::env::var(ENV_API).ok()))
         })
         .run();
     i32::from(result.is_err())
@@ -570,4 +582,36 @@ fn alive(pid: u32) -> bool {
         CloseHandle(handle);
         running
     }
+}
+
+#[test]
+fn the_program_is_told_its_manifest_api() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut launch = launch(dir.path(), "api");
+    launch.env.push((ENV_API.into(), "7".into()));
+    launch.set_api(2);
+    let mut session = Session::spawn(&launch, SessionOptions::default()).unwrap();
+    let id = session
+        .request("hello", hello(dir.path()), later(10_000))
+        .unwrap();
+    wait_reply(&mut session, id).unwrap();
+    let api = run(&mut session, "api", Value::Null, later(10_000));
+    assert_eq!(wait_reply(&mut session, api).unwrap(), json!("2"));
+    session.stop(later(2_000)).unwrap().join();
+
+    // An api the SDK doesn't serve ends the program before it reads.
+    launch.set_api(rawmakase_extension::protocol::manifest::API + 1);
+    let mut session = Session::spawn(&launch, SessionOptions::default()).unwrap();
+    let id = session
+        .request("hello", hello(dir.path()), later(10_000))
+        .unwrap();
+    assert_eq!(
+        wait_reply(&mut session, id).unwrap_err().code,
+        ErrorCode::Exited
+    );
+    let start = Instant::now();
+    while session.exit().is_none() && start.elapsed() < PATIENCE {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(session.exit().and_then(|e| e.code), Some(1));
 }

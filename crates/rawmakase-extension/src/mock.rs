@@ -13,12 +13,12 @@
 //! assert_eq!(host.run_command("echo", None, json!(5)).unwrap(), json!(5));
 //! host.finish().unwrap();
 //! ```
-use crate::Extension;
+use crate::{Extension, ServeOptions};
 use rawmakase_extension_protocol::controls::Control;
 use rawmakase_extension_protocol::framing::{LineReader, write_line};
 use rawmakase_extension_protocol::method::{
-    AppEvent, AppRequest, CommandRun, Controls, Empty, Hello, HelloReply, PanelChanged,
-    PanelClicked, PanelOpen, Snapshot,
+    AppEvent, AppRequest, CommandRun, Controls, Empty, Hello, HelloReply, MaskGenerate,
+    MaskGenerated, MaskSetup, PanelChanged, PanelClicked, PanelOpen, Snapshot,
 };
 use rawmakase_extension_protocol::{ErrorCode, Message, PROTOCOL, RemoteError};
 use serde_json::{Map, Value};
@@ -92,9 +92,22 @@ impl MockHost {
         extension: Extension,
         responder: impl FnMut(&str, &Value) -> Result<Value, RemoteError> + Send + 'static,
     ) -> Self {
+        Self::start_with_options(extension, ServeOptions::default(), responder)
+    }
+
+    /// [`MockHost::start_with`], serving in the mode `options` sets (an
+    /// `api` of 2 for a manifest written for it). Each mock has its own mode,
+    /// so mocks of both run side by side in one test.
+    pub fn start_with_options(
+        extension: Extension,
+        options: ServeOptions,
+        responder: impl FnMut(&str, &Value) -> Result<Value, RemoteError> + Send + 'static,
+    ) -> Self {
         let (app_reader, program_writer) = pipe();
         let (program_reader, app_writer) = pipe();
-        let program = std::thread::spawn(move || extension.serve(program_reader, program_writer));
+        let program = std::thread::spawn(move || {
+            extension.serve_with_options(program_reader, program_writer, options)
+        });
         let state: Arc<(Mutex<State>, Condvar)> = Arc::default();
         let to_program = Arc::new(Mutex::new(app_writer));
         {
@@ -238,6 +251,24 @@ impl MockHost {
             control: control.into(),
         }))?;
         decode::<Controls>(reply).map(|c| c.controls)
+    }
+
+    /// Asks a mask generator for a mask and returns its result, refusing one
+    /// that doesn't validate ([`MaskGenerated::validate`]) as the app does.
+    /// The request's buffers are descriptors only: nothing is mapped yet.
+    pub fn generate_mask(&self, request: MaskGenerate) -> Result<MaskGenerated, RemoteError> {
+        let reply = self.request(AppRequest::MaskGenerate(request))?;
+        let result: MaskGenerated = decode(reply)?;
+        result.validate()?;
+        Ok(result)
+    }
+
+    /// Asks a mask generator to install what it needs.
+    pub fn setup_mask(&self, generator: &str) -> Result<(), RemoteError> {
+        self.request(AppRequest::MaskSetup(MaskSetup {
+            generator: generator.into(),
+        }))
+        .map(drop)
     }
 
     /// Everything the extension sent other than replies, so far.

@@ -879,7 +879,7 @@ Defaults taken for phase 2 (#964), where the design left a choice open:
 | D4 | MIDI's settings page moves to Preferences > Extensions; the Automation tab links to it |
 | D5 | MIDI's configuration moves to the extension's data folder; the original `midi.json` is left in place, so a downgrade keeps working |
 | D6 | Every `places` slot name is validated in manifests now; drawing commands into those slots waits for the first extension that declares one. Phase 2 gives extension commands keys, `rawmakase control action` and a Run button |
-| D7 | No shared memory or handle passing in phase 2: no phase-2 extension moves pixels. The framing for handles and the buffer descriptor are specified now ([protocol](extensions/protocol.md#reserved-handles-and-buffers-phase-3)) |
+| D7 | No shared memory or handle passing in phase 2: no phase-2 extension moves pixels. The framing for handles and the buffer descriptor are specified now ([protocol](extensions/protocol.md#reserved-handles), with the descriptor now in [Buffers](extensions/protocol.md#buffers)) |
 | D8 | A control request naming an unknown or disabled adapter is refused `adapter_disabled`; enabling or disabling from the command line reaches a running app on its next start |
 | D9 | Target tokens use edit and metadata digests, not new catalog counters, so the catalog format doesn't change |
 | D10 | An on-demand program stops after 5 minutes idle; requests have a 30 s deadline (5 s for `hello`); the quit grace is 1 s |

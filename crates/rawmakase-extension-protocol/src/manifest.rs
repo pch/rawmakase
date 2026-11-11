@@ -16,7 +16,18 @@ pub const FILE: &str = "rawmakase-extension.toml";
 /// The manifest format this version reads, the `api` key. A manifest with a
 /// later one was written for a later RAWmakase, which knows tables this one
 /// doesn't.
-pub const API: u32 = 1;
+pub const API: u32 = 2;
+
+/// The first `api` that reads `[[mask-generator]]`.
+pub const MASK_GENERATOR_API: u32 = 2;
+
+/// The bundled extension that may claim the provenance Select Subject and
+/// Select Sky saved before extensions existed.
+pub const AI_MASKS: &str = "rawmakase.ai-masks";
+
+/// The provenance values saved masks already carry, which only [`AI_MASKS`]
+/// may claim.
+pub const LEGACY_PROVENANCE: [&str; 2] = ["subject", "sky"];
 
 /// A parsed manifest.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -47,6 +58,13 @@ pub struct Manifest {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub control_adapters: Vec<ControlAdapter>,
+    /// Generators of raster masks, from `api = 2`.
+    #[serde(
+        default,
+        rename = "mask-generator",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub mask_generators: Vec<MaskGenerator>,
 }
 
 /// The `[extension]` table.
@@ -384,6 +402,54 @@ pub enum Launch {
     External,
 }
 
+/// A `[[mask-generator]]`: the program turns the photo, and the user's viewer
+/// input, into a raster mask's coverage.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct MaskGenerator {
+    /// Unique among the extension's mask generators.
+    #[schemars(regex(pattern = r"^[a-z0-9][a-z0-9-]*$"))]
+    pub id: String,
+    /// The viewer input it takes, each kind once: `none` (automatic) and
+    /// `prompt` (aiming and refining with clicks and a box). Other kinds are
+    /// refused until a version that collects them for mask generators.
+    pub input: Vec<Input>,
+    /// What saved masks record as their source, so a mask finds its generator
+    /// again to be refined or regenerated: `<extension>/<id>` unless stated.
+    /// Only `rawmakase.ai-masks` may state anything else, and only `subject`
+    /// or `sky`, the values saved before extensions existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<String>,
+    /// The line shown while the user aims with `prompt`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_hint: Option<String>,
+    /// What the mask drawer offers to make a new mask with this generator.
+    #[serde(default, rename = "tile", skip_serializing_if = "Vec::is_empty")]
+    pub tiles: Vec<Tile>,
+}
+impl MaskGenerator {
+    /// The provenance saved masks record: the stated one, or
+    /// `<extension>/<id>`.
+    pub fn provenance(&self, extension: &str) -> String {
+        self.provenance
+            .clone()
+            .unwrap_or_else(|| format!("{extension}/{}", self.id))
+    }
+}
+
+/// A `[[mask-generator.tile]]`: a shortcut in the mask drawer that asks its
+/// generator for a new mask component.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Tile {
+    /// The tile's name, for example `Background`.
+    pub name: String,
+    /// Whether the new component is inverted: Background is an inverted
+    /// Subject.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub invert: bool,
+}
+
 /// Why a manifest was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Invalid(pub String);
@@ -410,7 +476,15 @@ impl Manifest {
             .control_adapters
             .iter()
             .map(|a| format!("control-adapter/{}", a.id));
-        commands.chain(panels).chain(adapters).collect()
+        let generators = self
+            .mask_generators
+            .iter()
+            .map(|g| format!("mask-generator/{}", g.id));
+        commands
+            .chain(panels)
+            .chain(adapters)
+            .chain(generators)
+            .collect()
     }
 
     /// Whether the app's program supervision starts it: a program serving
@@ -419,6 +493,7 @@ impl Manifest {
         self.program.is_some()
             && (!self.commands.is_empty()
                 || !self.panels.is_empty()
+                || !self.mask_generators.is_empty()
                 || self
                     .control_adapters
                     .iter()
@@ -467,6 +542,10 @@ impl Manifest {
                 "control-adapter",
                 self.control_adapters.iter().map(|a| &a.id).collect(),
             ),
+            (
+                "mask-generator",
+                self.mask_generators.iter().map(|g| &g.id).collect(),
+            ),
         ];
         for (table, ids) in tables {
             let mut seen = std::collections::BTreeSet::new();
@@ -514,13 +593,78 @@ impl Manifest {
                 return fail(format!("command {}: its key is empty", command.id));
             }
         }
+        self.validate_mask_generators()?;
         let needs_program = !self.commands.is_empty()
             || !self.panels.is_empty()
-            || !self.control_adapters.is_empty();
+            || !self.control_adapters.is_empty()
+            || !self.mask_generators.is_empty();
         if needs_program && self.program.is_none() {
             return fail(
-                "commands, panels and control adapters need a [program] to run them".into(),
+                "commands, panels, control adapters and mask generators need a [program] to run them"
+                    .into(),
             );
+        }
+        Ok(())
+    }
+
+    /// The `[[mask-generator]]` rules: the `api` that reads them, the input
+    /// kinds built so far, and one generator per provenance, so a saved mask
+    /// finds exactly one generator.
+    fn validate_mask_generators(&self) -> Result<(), Invalid> {
+        let e = &self.extension;
+        let fail = |why: String| Err(Invalid(why));
+        if self.mask_generators.is_empty() {
+            return Ok(());
+        }
+        if e.api < MASK_GENERATOR_API {
+            return fail(format!(
+                "[[mask-generator]] needs extension.api = {MASK_GENERATOR_API} or later (this one says {})",
+                e.api
+            ));
+        }
+        let mut provenances = std::collections::BTreeSet::new();
+        for generator in &self.mask_generators {
+            let id = &generator.id;
+            if generator.input.is_empty() {
+                return fail(format!("mask-generator {id}: its input is empty"));
+            }
+            for (i, input) in generator.input.iter().enumerate() {
+                if !matches!(input, Input::None | Input::Prompt) {
+                    return fail(format!(
+                        "mask-generator {id}: input {input:?} isn't supported yet; use none or prompt"
+                    ));
+                }
+                if generator.input[..i].contains(input) {
+                    return fail(format!(
+                        "mask-generator {id}: input {input:?} is listed twice"
+                    ));
+                }
+            }
+            let own = format!("{}/{id}", e.id);
+            let provenance = generator.provenance(&e.id);
+            let legacy = LEGACY_PROVENANCE.contains(&provenance.as_str()) && e.id == AI_MASKS;
+            if provenance != own && !legacy {
+                return fail(format!(
+                    "mask-generator {id}: its provenance {provenance:?} must be {own:?}"
+                ));
+            }
+            if !provenances.insert(provenance.clone()) {
+                return fail(format!(
+                    "mask-generator {id}: provenance {provenance:?} is used twice"
+                ));
+            }
+            if generator
+                .prompt_hint
+                .as_ref()
+                .is_some_and(|h| h.trim().is_empty())
+            {
+                return fail(format!("mask-generator {id}: its prompt-hint is empty"));
+            }
+            for tile in &generator.tiles {
+                if tile.name.trim().is_empty() {
+                    return fail(format!("mask-generator {id}: a tile's name is empty"));
+                }
+            }
         }
         Ok(())
     }
@@ -716,7 +860,7 @@ launch = "external"
             ("id = \"dev.jane.analog\"", "id = \"Dev.Jane.Analog\""),
             ("version = \"1.2.0\"", "version = \"1.2\""),
             ("rawmakase = \">=0.6, <0.7\"", "rawmakase = \"sometime\""),
-            ("api = 1", "api = 2"),
+            ("api = 1", "api = 3"),
             ("api = 1", "api = 0"),
             ("path = \"bin/analog\"", "path = \"../analog\""),
             ("path = \"bin/analog\"", "path = \"/usr/bin/analog\""),
@@ -746,6 +890,146 @@ launch = "external"
             "",
         );
         assert!(Manifest::parse(&without_program).is_err());
+    }
+
+    const GENERATORS: &str = r#"
+[extension]
+id = "rawmakase.ai-masks"
+name = "AI Masks"
+version = "1.0.0"
+rawmakase = ">=0.6"
+api = 2
+
+[program]
+path = "bin/ai-masks"
+
+[[mask-generator]]
+id = "subject"
+input = ["none", "prompt"]
+provenance = "subject"
+prompt-hint = "Click the subject on the photo, or drag a box around it"
+[[mask-generator.tile]]
+name = "Subject"
+[[mask-generator.tile]]
+name = "Background"
+invert = true
+
+[[mask-generator]]
+id = "sky"
+input = ["none"]
+provenance = "sky"
+[[mask-generator.tile]]
+name = "Sky"
+
+[[mask-generator]]
+id = "people"
+input = ["prompt"]
+"#;
+
+    fn generators(replace: &str, by: &str) -> Result<Manifest, Invalid> {
+        assert!(GENERATORS.contains(replace), "{replace}");
+        Manifest::parse(&GENERATORS.replacen(replace, by, 1))
+    }
+
+    #[test]
+    fn mask_generators_read_with_their_tiles_and_provenance() {
+        let manifest = Manifest::parse(GENERATORS).unwrap();
+        let [subject, sky, people] = &manifest.mask_generators[..] else {
+            panic!("three generators");
+        };
+        assert_eq!(subject.input, [Input::None, Input::Prompt]);
+        assert_eq!(
+            subject.tiles,
+            [
+                Tile {
+                    name: "Subject".into(),
+                    invert: false
+                },
+                Tile {
+                    name: "Background".into(),
+                    invert: true
+                }
+            ]
+        );
+        assert_eq!(subject.provenance(AI_MASKS), "subject");
+        assert_eq!(sky.provenance(AI_MASKS), "sky");
+        assert_eq!(people.provenance(AI_MASKS), "rawmakase.ai-masks/people");
+        assert_eq!(
+            manifest.contributions(),
+            [
+                "mask-generator/subject",
+                "mask-generator/sky",
+                "mask-generator/people"
+            ]
+        );
+        assert!(manifest.runs_in_app());
+        let written = toml::to_string(&manifest).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+    }
+
+    #[test]
+    fn mask_generators_need_api_2_and_a_program() {
+        let error = generators("api = 2", "api = 1").unwrap_err();
+        assert!(error.0.contains("api = 2"), "{error}");
+        let without_program = GENERATORS.replace("[program]\npath = \"bin/ai-masks\"", "");
+        assert!(Manifest::parse(&without_program).is_err());
+    }
+
+    #[test]
+    fn a_mask_generator_claims_only_its_own_provenance() {
+        // A third party gets <extension>/<id>, stated or not.
+        let third = |provenance: &str| {
+            let text = GENERATORS
+                .replace("id = \"rawmakase.ai-masks\"", "id = \"dev.jane.masks\"")
+                .replacen("provenance = \"subject\"\n", "", 1)
+                .replacen("provenance = \"sky\"\n", provenance, 1);
+            Manifest::parse(&text)
+        };
+        third("").unwrap();
+        third("provenance = \"dev.jane.masks/sky\"\n").unwrap();
+        assert!(third("provenance = \"sky\"\n").is_err());
+        assert!(third("provenance = \"subject\"\n").is_err());
+        assert!(third("provenance = \"dev.jane.masks/other\"\n").is_err());
+        // The bundled extension may claim the saved values, and only those.
+        assert!(generators("provenance = \"sky\"", "provenance = \"clouds\"").is_err());
+        // One generator per provenance.
+        let twice = generators("provenance = \"sky\"", "provenance = \"subject\"").unwrap_err();
+        assert!(twice.0.contains("used twice"), "{twice}");
+        let stated = generators(
+            "input = [\"prompt\"]",
+            "input = [\"prompt\"]\nprovenance = \"rawmakase.ai-masks/people\"",
+        );
+        stated.unwrap();
+    }
+
+    #[test]
+    fn mask_generator_fields_are_checked() {
+        let refused = [
+            ("input = [\"none\"]", "input = []"),
+            ("input = [\"none\"]", "input = [\"box\"]"),
+            ("input = [\"none\"]", "input = [\"brush\"]"),
+            ("input = [\"none\"]", "input = [\"point\"]"),
+            ("input = [\"none\"]", "input = [\"points\"]"),
+            ("input = [\"none\"]", "input = [\"none\", \"none\"]"),
+            ("input = [\"none\"]", "input = [\"lasso\"]"),
+            ("id = \"people\"", "id = \"sky\""),
+            ("id = \"people\"", "id = \"People\""),
+            ("name = \"Sky\"", "name = \" \""),
+            ("name = \"Sky\"", "name = \"Sky\"\ncolour = \"blue\""),
+            ("invert = true", "invert = \"yes\""),
+            (
+                "prompt-hint = \"Click the subject on the photo, or drag a box around it\"",
+                "prompt-hint = \" \"",
+            ),
+            (
+                "input = [\"prompt\"]",
+                "input = [\"prompt\"]\nmodel = \"sam\"",
+            ),
+        ];
+        for (replace, by) in refused {
+            assert!(generators(replace, by).is_err(), "{by}");
+        }
+        assert!(generators("input = [\"prompt\"]", "").is_err());
     }
 
     #[test]
@@ -807,6 +1091,7 @@ launch = "external"
         let schema = schema();
         assert_eq!(schema["additionalProperties"], Value::Bool(false));
         assert!(schema["properties"]["control-adapter"].is_object());
+        assert!(schema["properties"]["mask-generator"].is_object());
         assert!(schema["properties"].get("filter").is_none());
     }
 }

@@ -5,7 +5,8 @@ and an extension's program say to each other. The SDK
 (`crates/rawmakase-extension`) speaks it for you; this page is for reading logs,
 writing an SDK in another language, and reviewing changes. The types are in
 `message.rs`, `method.rs` and `controls.rs` of the protocol crate; where this
-page and they differ, they are right.
+page and they differ, they are right. Viewer input is in `viewer.rs` and buffer
+descriptors in `buffer.rs`.
 
 ## Transport
 
@@ -29,22 +30,112 @@ page and they differ, they are right.
   1 MiB (`MAX_LINE`) without the newline. A longer line is skipped to its
   newline and reported; the session goes on. Bulk data never travels in JSON.
 
-### Reserved: handles and buffers (phase 3)
+### API mode
 
-Not built in phase 2 (decision D7); specified now so they fit without a
-protocol change:
+The app starts the program with `RAWMAKASE_EXTENSION_API` set to its
+manifest's `api` (`ENV_API`), and the SDK reads it before it reads the first
+line, so both sides know the rules from the start. Without it, a program
+serves API 1. The SDK refuses to serve an `api` it doesn't know, and the
+program exits.
+
+Both modes follow the recovery rules above for now: a malformed request is
+answered `invalid_request`, an oversized line is skipped, and the session goes
+on. API 2 adds handle passing in the next protocol change; from then on, a
+framing fault in an API 2 session (a line short of its handles, a malformed or
+oversized line) ends the program, since the app is the only sender of handles
+and a fault there means corruption, not input to tolerate.
+
+### Reserved: handles
+
+Not built yet; specified so that buffers fit without a protocol change. Handle
+passing arrives in the next protocol change, with API 2:
 
 - A message carrying handles names their count, `"handles": n`. On Linux and
   macOS the handles travel as `SCM_RIGHTS` ancillary data on the `sendmsg`
   that holds the line's first byte, and the reader (`recvmsg`) attaches them to
   that line. On Windows the app duplicates each handle into the program
   (`DuplicateHandle`, holding the program's process handle) and the message
-  carries their values. Phase-2 readers ignore the field; nothing sends it.
-- A pixel buffer's descriptor: `width`, `height`, `stride` (bytes per row),
-  `channels`, `sample` (`f32` or `u16`), `space` (the colour space), `transfer`
-  (linear or the encoding), and `region` (`x`, `y`, `width`, `height` of the
-  photo it covers, in the photo's image frame). The app allocates every
-  buffer, in both directions.
+  carries their values. Readers ignore the field today; nothing sends it.
+- Only the app sends handles, and it allocates every buffer, in both
+  directions.
+
+### Buffers
+
+A pixel buffer in shared memory is described in the request that carries it.
+The pixels never travel in JSON. Until handle passing arrives, a descriptor
+only describes; `handle` will index the message's handles.
+
+```json
+{"handle":0,"bytes":3686400,"width":1280,"height":960,"stride":3840,
+ "channels":3,"sample":"u8",
+ "meaning":{"color":{"primaries":"srgb","white":"d65","transfer":"srgb","alpha":"none"}},
+ "region":{"space":"image_frame","rect":[0,0,1,1],"scale":0.25,"overlap":0},
+ "access":"read"}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `handle` | The index of the buffer's handle among the message's handles |
+| `bytes` | The mapping's length |
+| `width`, `height` | Pixels |
+| `stride` | Bytes from one row's start to the next's |
+| `channels` | 1 to 4, interleaved: 1 for `coverage`, 3 for colour, 4 for colour with alpha |
+| `sample` | `u8`, `u16` or `f32`; `f32` may hold values below 0 and above 1 |
+| `meaning` | `"coverage"` (how much of each pixel a mask covers, 0 to the sample's maximum), or `{"color":{…}}` with `primaries` (`srgb`, `rec2020`, `pro_photo`, `adobe_rgb`, `camera`), `white` (`d65`, `d50`, `camera`), `transfer` (`linear`, `srgb`, `{"gamma":g}`) and `alpha` (`none`, `straight`, `premultiplied`) |
+| `region` | Where the pixels lie: `space` (`image_frame`, `developed`, `output`, `camera`), `rect` (`[x0, y0, x1, y1]`, normalised to that space), `scale` (buffer pixels per full-resolution pixel), `overlap` (pixels beyond `rect` on each side, for tiles) |
+| `access` | `read` (the app filled it) or `write` (the program fills it) |
+
+**Layout.** Samples are little-endian and channels interleaved. Rows run top to
+bottom, row `r` starting at byte `r * stride`. `camera` primaries and white
+carry camera RGB before white balance, for raw patches.
+
+**Where pixels lie.** `overlap` pixels on each side lie outside `rect`, for
+tiles, and count in `width` and `height`; the `width - 2 * overlap` columns
+between them span `rect` exactly, edge to edge. Column `i`'s centre is at
+
+```
+u(i) = x0 + (i - overlap + 0.5) * (x1 - x0) / (width - 2 * overlap)
+```
+
+and row `j`'s likewise with `y0`, `y1` and `height` (`Region::column_centre`
+and `row_centre` in the protocol crate). With no overlap over `[0, 0, 1, 1]`
+this is `u = (i + 0.5) / width`. For example, a 4-column buffer with
+`overlap` 1 over `x0 = 0.25`, `x1 = 0.75` has its centres at 0.125, 0.375,
+0.625 and 0.875: the first and last lie outside the rect. An overlap pixel
+whose centre falls beyond the photo's edge holds the edge pixel's value.
+
+**Checks.** A receiver refuses a descriptor, with `invalid_request`, unless:
+
+- it has at least one pixel, and as many channels as its meaning;
+- `stride >= width * channels * sample size`;
+- `stride * height <= bytes <= 256 MiB`, computed without overflow;
+- `rect` is finite, ordered and non-empty within [0, 1], `scale` finite and
+  positive, and `overlap` leaves at least one pixel of the rect;
+- a gamma is finite and positive;
+- every value is one it knows. Unlike parameters, a descriptor refuses fields
+  it doesn't know, since a later field may change how the bytes are laid out.
+
+A request's buffers hold at most 256 MiB together (`MAX_REQUEST_BYTES`), and
+one extension's requests in flight at most 512 MiB (`MAX_EXTENSION_BYTES`),
+counting requests cancelled but not yet answered.
+
+### Viewer input
+
+What the user points at on the photo, in its image frame (the camera-oriented
+default crop, before lens correction, Transform and crop), normalised to
+[0, 1] from the top left:
+
+| `kind` | Fields |
+| --- | --- |
+| `point` | `x`, `y` |
+| `points` | `clicks`: `[{"x":…,"y":…,"positive":true}]` |
+| `box` | `x0`, `y0`, `x1`, `y1` |
+| `prompt` | `clicks`, and optionally `bounds`: `{"x0":…,"y0":…,"x1":…,"y1":…}` |
+
+Every coordinate is finite and in [0, 1], a box is ordered and not empty, and
+there are at most 32 clicks (`MAX_CLICKS`). There is no minimum box size: the
+app ignores a drag under 1% of the photo as a gesture, but a box it derives,
+such as a mask's extent, may be thinner.
 
 ## Envelope
 
@@ -99,7 +190,7 @@ readable id, it is answered `invalid_request`.
 ```json
 {"protocol":1,"app_version":"0.5.0","extension":"dev.jane.analog",
  "settings":{"default-stock":"Tri-X"},
- "contributions":["command/auto-film-look","panel/looks"],
+ "contributions":["command/auto-film-look","panel/looks","mask-generator/subject"],
  "data_dir":"…/extension-data/dev.jane.analog","cache_dir":"…","session":3}
 ```
 
@@ -125,6 +216,46 @@ restarted program's devices are never taken for the previous run's. Reply:
 Each is answered with the panel's controls, whole: `{"controls":[…]}`
 ([controls](#panels)). A value that doesn't validate is answered with the
 controls, the offending one carrying the error as its `help`.
+
+### `mask.generate` (request)
+
+Asks a [mask generator](manifest.md#mask-generator) for a mask's coverage:
+
+```json
+{"generator":"subject","input":{"kind":"prompt","clicks":[…],"bounds":{…}},
+ "image":buffer,"coverage":buffer,"image_key":"…"}
+```
+
+- `input` is [viewer input](#viewer-input), or absent or `null` for an
+  automatic mask.
+- `image` is the photo as the model sees it, [buffer](#buffers) for reading:
+  3-channel `u8` sRGB, region `image_frame` `[0, 0, 1, 1]`.
+- `coverage` is where the program writes the mask, a buffer for writing:
+  1-channel `u8` `coverage`, the image's size and region. Both are allocated by
+  the app, in their own handles, 256 MiB at most together.
+- `image_key` is the app's digest of the image's size, pixels and rendering, so
+  the program can keep its analysis of a photo without hashing.
+
+The SDK refuses a request whose input or buffers don't pass their checks, or
+don't fit together, with `invalid_request`, before the handler runs. Reply:
+
+```json
+{"model":"sam2.1-hiera-small@0123456789abcdef","model_key":"…","empty":"no_subject"}
+```
+
+`model` names the model, saved with the mask as its provenance. `model_key`
+stands for everything besides the pixels that the result depends on (the
+model's identity and weights, and the versions of its contract and
+processing), saved in the mask's input identity. Each is 1 to 128 bytes.
+`empty` is set when nothing was found: `no_subject`, `no_sky` or
+`nothing_there`. A generator whose model isn't installed answers `needs_setup`;
+one whose runtime or worker is missing answers `unavailable`.
+
+### `mask.setup` (request)
+
+`{"generator":"subject"}`, sent when the user agrees to the setup a
+`needs_setup` error asked for. The program installs what the generator needs,
+reporting `progress`, and answers `null`.
 
 ### Events
 
@@ -297,6 +428,8 @@ controls, reuses an id, or has a value outside its range.
 | `unsupported_protocol` | The other side speaks another protocol |
 | `exited` | The program exited, or the channel closed, before the reply |
 | `not_admitted` | A proposal for an app request no longer in flight |
+| `needs_setup` | The contribution needs something installed first. The message is JSON, `{"what":"the Subject model","bytes":184000000}`, for the app's setup card; a message that doesn't read as that is shown as text |
+| `unavailable` | What the contribution runs on, such as a runtime library or a remote worker, isn't available; the message says why |
 
 The control layer's own codes (`no_document`, `not_editable`, …, [automation](../automation.md))
 pass through unchanged.

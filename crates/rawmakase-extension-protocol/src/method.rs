@@ -1,13 +1,21 @@
 //! The requests and events of protocol version 1, with their parameters.
 //!
+//! `mask.generate` and `mask.setup` serve `[[mask-generator]]`, which manifests
+//! declare from `api = 2`.
+//!
 //! [`AppRequest`] and [`AppEvent`] go from the app to the program,
 //! [`ProgramRequest`] and [`ProgramEvent`] the other way. Each reads from a
 //! [`Message::Req`](crate::Message::Req)'s method and parameters with `parse`,
 //! which tells a method this version doesn't know
 //! ([`ErrorCode::UnknownMethod`]) from parameters that don't fit it
 //! ([`ErrorCode::InvalidRequest`]). Parameters ignore fields they don't know.
+use crate::buffer::{
+    Access, Alpha, Buffer, MAX_REQUEST_BYTES, Meaning, Primaries, Region, Sample, Space, Transfer,
+    White,
+};
 use crate::controls::Control;
 use crate::message::{ErrorCode, RemoteError};
+use crate::viewer::ViewerInput;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -34,6 +42,13 @@ pub enum AppRequest {
     /// The user clicked a button. Answered with [`Controls`].
     #[serde(rename = "panel.clicked")]
     PanelClicked(PanelClicked),
+    /// Generates a mask's coverage. Answered with [`MaskGenerated`].
+    #[serde(rename = "mask.generate")]
+    MaskGenerate(MaskGenerate),
+    /// Installs what a mask generator needs, such as its model, after it
+    /// answered `needs_setup` and the user agreed. Answered with `null`.
+    #[serde(rename = "mask.setup")]
+    MaskSetup(MaskSetup),
 }
 
 /// Requests a program sends the app.
@@ -137,6 +152,8 @@ impl AppRequest {
         "panel.open",
         "panel.changed",
         "panel.clicked",
+        "mask.generate",
+        "mask.setup",
     ];
 }
 impl ProgramRequest {
@@ -263,6 +280,144 @@ pub struct CommandRun {
     /// Viewer input (its manifest's `input`); `null` for none.
     #[serde(default)]
     pub input: Value,
+}
+
+/// The longest [`MaskGenerated::model`] and [`MaskGenerated::model_key`], in
+/// bytes.
+pub const MAX_MODEL_LEN: usize = 128;
+
+/// `mask.generate`'s parameters.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MaskGenerate {
+    /// The mask generator's id within its extension.
+    pub generator: String,
+    /// The viewer input, or none for an automatic mask.
+    #[serde(default)]
+    pub input: Option<ViewerInput>,
+    /// The photo as the model sees it: the whole image frame in 8-bit sRGB,
+    /// three channels, read ([`MaskGenerate::IMAGE`]).
+    pub image: Buffer,
+    /// Where the program writes the coverage: 8-bit, one channel, the image's
+    /// size and region, written.
+    pub coverage: Buffer,
+    /// The app's digest of the image's size, pixels and how it was rendered,
+    /// so the program can keep its analysis of a photo without hashing.
+    pub image_key: String,
+}
+impl MaskGenerate {
+    /// What a mask request's image is: 8-bit sRGB, as the selection models
+    /// take it.
+    pub const IMAGE: Meaning = Meaning::Color {
+        primaries: Primaries::Srgb,
+        white: White::D65,
+        transfer: Transfer::Srgb,
+        alpha: Alpha::None,
+    };
+
+    /// Checks the input and both buffers ([`ViewerInput::validate`],
+    /// [`Buffer::validate`]), and that they have the mask contract's shape,
+    /// which is narrower than what a [`Buffer`] can describe:
+    ///
+    /// - the image is 3-channel `u8` [`MaskGenerate::IMAGE`] for reading, over
+    ///   the whole image frame (`[0, 0, 1, 1]`, no overlap);
+    /// - the coverage is 1-channel `u8` [`Meaning::Coverage`] for writing,
+    ///   with the image's width, height and region;
+    /// - they are in two handles, together within [`MAX_REQUEST_BYTES`].
+    pub fn validate(&self) -> Result<(), RemoteError> {
+        let fail = |why: &str| Err(RemoteError::new(ErrorCode::InvalidRequest, why));
+        if let Some(input) = &self.input {
+            input.validate()?;
+        }
+        self.image.validate()?;
+        self.coverage.validate()?;
+        let (image, coverage) = (&self.image, &self.coverage);
+        let whole = |region: &Region| {
+            region.space == Space::ImageFrame
+                && region.rect == [0.0, 0.0, 1.0, 1.0]
+                && region.overlap == 0
+        };
+        if image.channels != 3
+            || image.sample != Sample::U8
+            || image.meaning != Self::IMAGE
+            || image.access != Access::Read
+        {
+            return fail("the image must be 3-channel 8-bit sRGB, for reading");
+        }
+        if !whole(&image.region) {
+            return fail("the image must cover the whole image frame, without overlap");
+        }
+        if coverage.channels != 1
+            || coverage.sample != Sample::U8
+            || coverage.meaning != Meaning::Coverage
+            || coverage.access != Access::Write
+        {
+            return fail("the coverage must be 1-channel 8-bit coverage, for writing");
+        }
+        if (image.width, image.height) != (coverage.width, coverage.height)
+            || image.region != coverage.region
+        {
+            return fail("the coverage must match the image's size and region");
+        }
+        if image.handle == coverage.handle {
+            return fail("the image and the coverage share a handle");
+        }
+        if image.bytes.saturating_add(coverage.bytes) > MAX_REQUEST_BYTES {
+            return fail("the buffers are over the request's budget");
+        }
+        Ok(())
+    }
+}
+
+/// What a program answers `mask.generate` with, once it has written the
+/// coverage.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaskGenerated {
+    /// The model that made the mask, saved with it as its provenance, for
+    /// example `sam2.1-hiera-small@<16 hex digits>`. At most
+    /// [`MAX_MODEL_LEN`] bytes.
+    pub model: String,
+    /// Everything besides the pixels that the coverage depends on: the
+    /// model's identity and weights, and the versions of its contract and
+    /// processing. Saved in the mask's input identity, so a change here names
+    /// a change in results. At most [`MAX_MODEL_LEN`] bytes.
+    pub model_key: String,
+    /// Set when nothing was found; the coverage is then not used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub empty: Option<EmptyMask>,
+}
+impl MaskGenerated {
+    /// Checks that `model` and `model_key` are not empty and at most
+    /// [`MAX_MODEL_LEN`] bytes.
+    pub fn validate(&self) -> Result<(), RemoteError> {
+        for (name, value) in [("model", &self.model), ("model_key", &self.model_key)] {
+            if value.is_empty() || value.len() > MAX_MODEL_LEN {
+                return Err(RemoteError::new(
+                    ErrorCode::InvalidRequest,
+                    format!("{name} is {} bytes, not 1 to {MAX_MODEL_LEN}", value.len()),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Why a mask generator found nothing, for the message the app shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EmptyMask {
+    /// No subject stands out.
+    NoSubject,
+    /// No sky is in the photo.
+    NoSky,
+    /// Nothing is where the user pointed.
+    NothingThere,
+}
+
+/// `mask.setup`'s parameters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaskSetup {
+    /// The mask generator's id within its extension.
+    pub generator: String,
 }
 
 /// `panel.open`'s parameters.
@@ -579,6 +734,128 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(range.code, ErrorCode::InvalidRequest);
+    }
+
+    fn mask_request() -> Value {
+        let buffer = |handle: u32, channels: u32, meaning: Value, access: &str| {
+            json!({
+                "handle": handle, "bytes": 64 * 48 * channels, "width": 64, "height": 48,
+                "stride": 64 * channels, "channels": channels, "sample": "u8",
+                "meaning": meaning,
+                "region": {"space": "image_frame", "rect": [0, 0, 1, 1], "scale": 0.05,
+                           "overlap": 0},
+                "access": access
+            })
+        };
+        let color = json!({"color": {"primaries": "srgb", "white": "d65",
+                                     "transfer": "srgb", "alpha": "none"}});
+        json!({
+            "generator": "subject",
+            "input": {"kind": "prompt", "clicks": [{"x": 0.5, "y": 0.5, "positive": true}]},
+            "image": buffer(0, 3, color, "read"),
+            "coverage": buffer(1, 1, json!("coverage"), "write"),
+            "image_key": "0123456789abcdef"
+        })
+    }
+
+    #[test]
+    fn a_mask_request_reads_and_is_checked_whole() {
+        let AppRequest::MaskGenerate(request) =
+            AppRequest::parse("mask.generate", mask_request()).unwrap()
+        else {
+            panic!("a mask request");
+        };
+        request.validate().unwrap();
+        let automatic = {
+            let mut params = mask_request();
+            params.as_object_mut().unwrap().remove("input");
+            let AppRequest::MaskGenerate(request) =
+                AppRequest::parse("mask.generate", params).unwrap()
+            else {
+                panic!("a mask request");
+            };
+            request
+        };
+        assert_eq!(automatic.input, None);
+        automatic.validate().unwrap();
+        let broken = |change: &dyn Fn(&mut MaskGenerate)| {
+            let mut request = request.clone();
+            change(&mut request);
+            let error = request.validate().unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidRequest);
+        };
+        broken(&|r| r.input = Some(ViewerInput::Point { x: 2.0, y: 0.5 }));
+        broken(&|r| r.image.stride = 1);
+        broken(&|r| r.coverage.handle = 0);
+        broken(&|r| r.coverage.width = 32);
+        broken(&|r| r.coverage.region.rect = [0.0, 0.0, 0.5, 1.0]);
+        broken(&|r| r.coverage.access = Access::Read);
+        broken(&|r| r.image.access = Access::Write);
+        broken(&|r| std::mem::swap(&mut r.image.meaning, &mut r.coverage.meaning));
+        broken(&|r| {
+            r.image.bytes = MAX_REQUEST_BYTES;
+            r.coverage.bytes = MAX_REQUEST_BYTES;
+        });
+        let setup = AppRequest::parse("mask.setup", json!({"generator": "subject"})).unwrap();
+        assert_eq!(
+            setup,
+            AppRequest::MaskSetup(MaskSetup {
+                generator: "subject".into()
+            })
+        );
+    }
+
+    #[test]
+    fn a_mask_result_names_its_model_in_bounded_strings() {
+        let result: MaskGenerated = serde_json::from_value(
+            json!({"model": "sam2.1-hiera-small@0123456789abcdef", "model_key": "k",
+                   "empty": "no_subject"}),
+        )
+        .unwrap();
+        assert_eq!(result.empty, Some(EmptyMask::NoSubject));
+        result.validate().unwrap();
+        let found: MaskGenerated =
+            serde_json::from_value(json!({"model": "m", "model_key": "k"})).unwrap();
+        assert_eq!(found.empty, None);
+        assert_eq!(
+            serde_json::to_value(&found).unwrap(),
+            json!({"model": "m", "model_key": "k"})
+        );
+        let at_most = "x".repeat(MAX_MODEL_LEN);
+        let long = MaskGenerated {
+            model: at_most.clone(),
+            model_key: at_most.clone(),
+            empty: Some(EmptyMask::NothingThere),
+        };
+        long.validate().unwrap();
+        let over = format!("{at_most}x");
+        for result in [
+            MaskGenerated {
+                model: over.clone(),
+                ..long.clone()
+            },
+            MaskGenerated {
+                model_key: over,
+                ..long.clone()
+            },
+            MaskGenerated {
+                model: String::new(),
+                ..long.clone()
+            },
+            MaskGenerated {
+                model_key: String::new(),
+                ..long
+            },
+        ] {
+            assert_eq!(
+                result.validate().unwrap_err().code,
+                ErrorCode::InvalidRequest
+            );
+        }
+        let unknown = serde_json::from_value::<MaskGenerated>(
+            json!({"model": "m", "model_key": "k", "empty": "no_cat"}),
+        );
+        assert!(unknown.is_err());
     }
 
     #[test]
