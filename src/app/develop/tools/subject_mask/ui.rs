@@ -345,7 +345,9 @@ impl Editor {
                 } else if !model {
                     self.model_step(ui, pack, installing);
                 }
-                if self.selection.remote.endpoint().is_none() && !super::worker::runtime_present() {
+                if self.selection.remote.endpoint().is_none()
+                    && !super::inference::runtime_present()
+                {
                     ui.add_space(space::XS);
                     ui.colored_label(
                         egui::Color32::from_rgb(230, 170, 90),
