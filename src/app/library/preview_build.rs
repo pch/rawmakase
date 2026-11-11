@@ -343,11 +343,15 @@ impl Builder {
             loop {
                 let t = std::time::Instant::now();
                 let Some(next) = worker.next(release) else {
-                    eprintln!(
-                        "DBG {:?} next None after {:?}",
-                        crate::app::task::since_start(),
-                        t.elapsed()
-                    );
+                    {
+                        use std::io::Write;
+                        let _ = writeln!(
+                            std::io::stderr(),
+                            "DBG {:?} next None after {:?}",
+                            crate::app::task::since_start(),
+                            t.elapsed()
+                        );
+                    }
                     break;
                 };
                 let (item, cancel) = match next {
@@ -387,13 +391,17 @@ impl Builder {
                                 if t1.duration_since(t0) > std::time::Duration::from_millis(50)
                                     || slept > pause + std::time::Duration::from_millis(50)
                                 {
-                                    eprintln!(
-                                        "DBG {:?} step {:?} pause {:?} slept {:?}",
-                                        crate::app::task::since_start(),
-                                        t1.duration_since(t0),
-                                        pause,
-                                        slept
-                                    );
+                                    {
+                                        use std::io::Write;
+                                        let _ = writeln!(
+                                            std::io::stderr(),
+                                            "DBG {:?} step {:?} pause {:?} slept {:?}",
+                                            crate::app::task::since_start(),
+                                            t1.duration_since(t0),
+                                            pause,
+                                            slept
+                                        );
+                                    }
                                 }
                             }
                             None => release = false,
@@ -424,11 +432,15 @@ impl Builder {
             }
             let t1 = std::time::Instant::now();
             drop(cache);
-            eprintln!(
-                "DBG {:?} drop cache {:?}",
-                crate::app::task::since_start(),
-                t1.elapsed()
-            );
+            {
+                use std::io::Write;
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "DBG {:?} drop cache {:?}",
+                    crate::app::task::since_start(),
+                    t1.elapsed()
+                );
+            }
         });
         Self {
             shared,

@@ -181,6 +181,18 @@ jobs:
         run: |
           cargo build --locked -p rawmakase-mcp -p rawmakase-midi
           cargo test --locked --workspace
+      - if: steps.source.outputs.windows == 'true'
+        name: DIAG repeat alone
+        run: |
+          for ($i=0; $i -lt 20; $i++) { cargo test --locked --lib quitting_while_space -- --nocapture 2>&1 | Select-String "DBG|took|test result" }
+      - if: steps.source.outputs.windows == 'true'
+        name: DIAG repeat under load
+        run: |
+          $exe = (cargo test --locked --lib --no-run --message-format=json | ConvertFrom-Json | ? { $_.executable } | select -Last 1).executable
+          "exe $exe"
+          $load = Start-Process -FilePath $exe -ArgumentList "--skip","quitting_while_space" -NoNewWindow -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/load.txt"
+          for ($i=0; $i -lt 40; $i++) { & $exe quitting_while_space --nocapture 2>&1 | Select-String "DBG|took|test result" }
+          $load | Stop-Process -ErrorAction SilentlyContinue
 
   # Without this job the macOS-only code is compiled for the first time by
   # release.yml, after the release commit is already on main, so a macOS-only

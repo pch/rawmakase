@@ -656,6 +656,17 @@ impl PreviewCache {
                 break;
             }
         }
+        let stepped = started.elapsed();
+        drop(rows);
+        drop(step);
+        let all = started.elapsed();
+        if all > Duration::from_millis(50) {
+            use std::io::Write;
+            let _ = writeln!(
+                std::io::stderr(),
+                "DBG vacuum step {freed} pages stepping {stepped:?} total {all:?}"
+            );
+        }
         Ok(freed)
     }
     /// Drops the least recently used thumbnails until those left fit
