@@ -432,6 +432,47 @@ mod tests {
         Ok(())
     }
 
+    /// The SDR rendition's sliders render on an HDR edit's SDR rendition, as Camera Raw
+    /// 18.7 changes its own (Brightness +50 about half a stop brighter, −50 darker), and
+    /// never on its master; an edit with HDR off keeps them unrendered, as Camera Raw
+    /// keeps values set while HDR was off.
+    #[test]
+    fn the_sdr_rendition_renders_its_own_sliders() -> anyhow::Result<()> {
+        let im = grays(&[0.05, 0.18, 0.4]);
+        let r = hdr_recipe(&im);
+        let sdr = |r: &Recipe| crate::develop::render(&im, &r.checked().unwrap(), 0, Cancel::NEVER);
+        // The darkest patch's luminance, where Brightness ±50 moves about half a stop.
+        let mean = |out: &crate::rendered::Rendered| {
+            crate::color::luminance(
+                out.pixels[4 * out.width as usize + 4].map(crate::color::srgb_decode),
+            )
+        };
+        let plain = sdr(&r)?;
+        let master = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let mut brighter = r.clone();
+        brighter.hdr.sdr.brightness = 0.5;
+        let lifted = sdr(&brighter)?;
+        let stops = (mean(&lifted) / mean(&plain)).log2();
+        assert!((0.4..0.6).contains(&stops), "{stops}");
+        assert_eq!(
+            render_hdr(&im, &brighter.checked()?, None, 0, Cancel::NEVER)?.pixels,
+            master.pixels
+        );
+        brighter.hdr.sdr.brightness = -0.5;
+        let stops = (mean(&sdr(&brighter)?) / mean(&plain)).log2();
+        assert!((-0.6..-0.4).contains(&stops), "{stops}");
+        // Beyond the measured range none renders.
+        brighter.hdr.sdr.brightness = -0.8;
+        assert_eq!(sdr(&brighter)?.pixels, plain.pixels);
+        // HDR off: the values are kept, not rendered.
+        let mut off = r;
+        off.hdr.enabled = false;
+        let unedited = sdr(&off)?;
+        off.hdr.sdr.brightness = 0.5;
+        assert_eq!(sdr(&off)?.pixels, unedited.pixels);
+        Ok(())
+    }
+
     /// The limit bounds every channel, Exposure scales the master, and an SDR rendition
     /// control never changes it.
     #[test]
@@ -1139,6 +1180,32 @@ mod tests {
             "{sdr:?}"
         );
         assert_eq!(selected(&sdr), selected(&hdr), "SDR {sdr:?} HDR {hdr:?}");
+        Ok(())
+    }
+
+    /// The SDR rendition's sliders change neither what a range mask selects nor, so,
+    /// the master: its selection is the edit's, without them.
+    #[test]
+    fn the_sdr_rendition_sliders_leave_a_masked_master_as_it_is() -> Result<()> {
+        use crate::model::masks::{LocalAdjust, MaskComponent, MaskGroup, MaskShape};
+        let im = grays(&[0.01, 0.04, 0.1, 0.2, 0.4, 0.8, 2., 6.]);
+        let mut r = hdr_recipe(&im);
+        r.masks = vec![MaskGroup {
+            components: vec![MaskComponent::new(MaskShape::LuminanceRange {
+                low: 0.3,
+                high: 0.6,
+                falloff: [0.1, 0.1],
+            })],
+            adjust: LocalAdjust {
+                exposure: 1.,
+                ..Default::default()
+            },
+            ..Default::default()
+        }];
+        let master = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        r.hdr.sdr.brightness = 1.;
+        let brighter = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        assert_eq!(brighter.pixels, master.pixels);
         Ok(())
     }
 

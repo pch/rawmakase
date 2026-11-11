@@ -829,10 +829,16 @@ impl Recipe {
     /// (docs/records/hdr-stage1-results.md#sdr-rendition). Only
     /// [`Self::resolved_hdr`] renders its HDR master, so no SDR caller can receive
     /// HDR pixels.
+    ///
+    /// The SDR rendition's sliders stay with an HDR edit's, which its SDR rendition
+    /// renders (`develop::sdr_rendition`); an edit with HDR off has none, as Camera Raw
+    /// keeps values set while HDR was off without applying them.
     pub fn resolved(&self, m: &Metadata) -> std::borrow::Cow<'_, Self> {
         let mut r = self.resolved_hdr(m);
         if r.hdr.is_active() {
             r.to_mut().hdr.enabled = false;
+        } else if r.hdr.sdr != crate::model::hdr::SdrRendition::default() {
+            r.to_mut().hdr.sdr = Default::default();
         }
         r
     }

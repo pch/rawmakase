@@ -263,6 +263,8 @@ pub(super) fn color_stage(
     // Raw 18.7 applies it (also after the user's tone curves and Saturation).
     let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply(rgb));
     let rgb = lut.grade.as_ref().map_or(rgb, |g| g.apply(rgb));
+    // The SDR rendition's sliders change the finished rendition's luminance.
+    let rgb = lut.sdr_rendition.as_ref().map_or(rgb, |t| t.apply(rgb));
     let mut lab = srgb_to_lab(rgb);
     if let Some(d) = local {
         lab = local::hue_saturation(d, lab);

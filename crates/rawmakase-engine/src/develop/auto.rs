@@ -102,6 +102,11 @@ pub fn auto_tone_basis(r: &Recipe) -> Recipe {
         preset_settings: d.preset_settings,
         auto_white_balance: None,
         unknown: d.unknown,
+        // Auto measures the edit, not its SDR rendition's own adjustments.
+        hdr: crate::model::hdr::HdrSettings {
+            sdr: Default::default(),
+            ..r.hdr
+        },
         effects: crate::model::effects::Effects {
             calibration: e.calibration,
             shadow_tint: e.shadow_tint,
@@ -457,6 +462,18 @@ mod tests {
         r.set_sharpening_defaults();
         r.sharpening_detail = 0.9;
         assert_eq!(auto_tone_basis(&r), auto_tone_basis(&Recipe::default()));
+    }
+    /// Auto measures an HDR edit without its SDR rendition's sliders, which change
+    /// only that rendition: the same Auto with them as without.
+    #[test]
+    fn auto_measures_without_the_sdr_rendition_sliders() {
+        let mut hdr = Recipe::default();
+        hdr.hdr.enabled = true;
+        let mut sliders = hdr.clone();
+        sliders.hdr.sdr.brightness = 0.5;
+        sliders.hdr.sdr.shadows = -0.3;
+        assert_eq!(auto_tone_basis(&sliders), auto_tone_basis(&hdr));
+        assert!(auto_tone_basis(&sliders).hdr.enabled);
     }
     #[test]
     fn white_balance_neutralises_a_colour_cast() {

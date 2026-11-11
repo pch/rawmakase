@@ -37,6 +37,8 @@ pub(super) struct CurveSet {
     pub(super) scene: crate::develop::scene_tone::SceneTone,
     /// An HDR render's profile stage and limit; `None` renders SDR.
     pub(super) hdr: Option<HdrFinish>,
+    /// The SDR rendition's sliders, on an HDR edit's SDR rendition.
+    pub(super) sdr_rendition: Option<crate::develop::sdr_rendition::SdrRenditionTone>,
 }
 /// How an HDR render finishes after the scene tone stage: the profile's tables and
 /// curve, and its look's, unclipped ([`crate::camera_profiles::CameraProfile::finish_hdr`]),
@@ -416,6 +418,10 @@ impl CurveSet {
             measures: Default::default(),
             scene: crate::develop::scene_tone::SceneTone::new(r, &Default::default(), None),
             hdr: HdrFinish::new(r),
+            // Only an HDR edit's SDR rendition keeps them (`Recipe::resolved`).
+            sdr_rendition: (!r.hdr.enabled)
+                .then(|| crate::develop::sdr_rendition::SdrRenditionTone::new(&r.hdr.sdr))
+                .flatten(),
         }
     }
 }
