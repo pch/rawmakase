@@ -294,7 +294,7 @@ HDR reference family):
 | HDR limit | Each channel rolled off to 2^limit from 97% of it (`model::hdr::roll_off`), last. |
 | Sharpening, resizing | On sRGB-curve-encoded values of the master's primaries, unclipped, with ProPhoto luminance; the limit applies after them. |
 
-Lens corrections, geometry, noise reduction, AI Denoise, Heal and Clone, and Texture
+Lens corrections, geometry, noise reduction, AI Denoise, Red Eye, Heal and Clone, and Texture
 work on camera samples before tone and render as in SDR.
 
 ### The colour stage
@@ -480,7 +480,7 @@ something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
 channel's) whose last point is left of white, Clarity below 0 or above +50, Dehaze beyond ±30, the
 colour mixer's Luminance beyond ±40, a darkening vignette's Highlights,
-a mask's Whites, Blacks, Hue, Saturation, Highlights, Clarity or Dehaze, Defringe ([Defringe](#defringe)), Red Eye, a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
+a mask's Whites, Blacks, Hue, Saturation, Highlights, Clarity or Dehaze, Defringe ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
 which the look sets, …"; Adobe Vivid's Clarity +10 renders) or split toning, an
 HDR profile's DCP tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
