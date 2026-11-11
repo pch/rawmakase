@@ -11,7 +11,9 @@ decode and export, under `crates/`), the workspace has
 (what the app and its control clients agree on: protocol version, `control.json`
 endpoint, data folder) and [`tools/rawmakase-ctl`](../tools/rawmakase-ctl/src/lib.rs)
 (the control client, used by `rawmakase control`, `rawmakase mcp` and the
-standalone `rawmakase-ctl`). The last two build without the app.
+standalone `rawmakase-ctl`), and [`extensions/mcp`](../extensions/mcp/src/lib.rs)
+(the MCP server, used by `rawmakase mcp` and the standalone `rawmakase-mcp`). The
+last three build without the app.
 
 ## Where to start a change
 

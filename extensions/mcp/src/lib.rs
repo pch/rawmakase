@@ -19,7 +19,7 @@ use std::{
 };
 
 #[derive(clap::Args)]
-pub(crate) struct Cli {
+pub struct Cli {
     /// Data folder of the running app; defaults to RAWMAKASE_DATA_DIR or the platform default.
     #[arg(long)]
     data_dir: Option<PathBuf>,
@@ -155,6 +155,9 @@ impl From<CurveChannel> for rawmakase_protocol::CurveChannel {
 #[serde(deny_unknown_fields)]
 struct ToneCurve {
     channel: CurveChannel,
+    // The doc comment is the schema's description, which MCP clients read as
+    // written: its JSON example stays unescaped.
+    #[allow(rustdoc::broken_intra_doc_links)]
     /// 2–32 [input, output] points in 0–1, with strictly increasing inputs at least 0.00049 apart. Example gentle S: [[0,0],[0.25,0.2],[0.75,0.8],[1,1]].
     points: Vec<[f32; 2]>,
     target: McpTarget,
@@ -551,7 +554,7 @@ impl ServerHandler for Server {
     }
 }
 
-pub(crate) fn run(cli: Cli) -> anyhow::Result<()> {
+pub fn run(cli: Cli) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()

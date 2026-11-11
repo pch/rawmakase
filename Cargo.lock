@@ -3724,12 +3724,12 @@ dependencies = [
  "rawmakase-fs",
  "rawmakase-inference",
  "rawmakase-interop",
+ "rawmakase-mcp",
  "rawmakase-model",
  "rawmakase-protocol",
  "rawmakase-remote",
  "rayon",
  "rfd",
- "rmcp",
  "rusqlite",
  "rustix 1.1.6",
  "serde",
@@ -3738,7 +3738,6 @@ dependencies = [
  "tar",
  "tempfile",
  "tiff",
- "tokio",
  "toml_edit",
  "ureq",
  "wayland-backend",
@@ -3899,6 +3898,22 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "rawmakase-mcp"
+version = "0.4.12"
+dependencies = [
+ "anyhow",
+ "base64 0.23.1",
+ "clap",
+ "rawmakase-ctl",
+ "rawmakase-protocol",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
