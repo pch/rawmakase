@@ -19,7 +19,9 @@
 //! waits without reaping first: until the process is reaped its id, the
 //! group's, can't be reused, so the group killed is never another's.
 use crate::session::{Exit, Launch};
-use std::io::{self, Read, Write};
+use crate::shm;
+use std::io::{self, Read};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -29,10 +31,13 @@ pub(crate) const LOG_ROTATE: u64 = 1 << 20;
 /// The channel's two directions, and how to close the host's sending side.
 pub(crate) struct Transport {
     pub(crate) reader: Box<dyn Read + Send>,
-    pub(crate) writer: Box<dyn Write + Send>,
+    pub(crate) writer: shm::Writer,
     /// Tells the program nothing more will come. On Windows a pipe can't be
     /// half-closed, so the program learns it from `quitting` alone.
     pub(crate) close_write: Box<dyn FnOnce() + Send>,
+    /// Set by the reader when the program sent handles, which it never may
+    /// (Linux and macOS; a pipe carries none).
+    pub(crate) fault: Arc<AtomicBool>,
 }
 
 /// A started program.
@@ -40,6 +45,8 @@ pub(crate) struct Spawned {
     pub(crate) unit: Arc<Unit>,
     pub(crate) transport: Transport,
     pub(crate) pid: u32,
+    /// The program as handles are passed to it.
+    pub(crate) child: shm::Child,
 }
 
 /// A program and everything it started, as one thing to end.
@@ -48,6 +55,9 @@ pub(crate) struct Unit {
     state: Mutex<(bool, Option<Exit>)>,
     changed: Condvar,
     group: platform::Group,
+    /// What lives until the unit has ended: leases of buffers its processes
+    /// may still map.
+    kept: Mutex<Vec<Box<dyn Send>>>,
 }
 impl Unit {
     fn new(group: platform::Group) -> Self {
@@ -55,7 +65,25 @@ impl Unit {
             state: Mutex::new((false, None)),
             changed: Condvar::new(),
             group,
+            kept: Mutex::default(),
         }
+    }
+    /// Keeps `item` until the unit has ended, then drops it on the waiter's
+    /// thread; drops it now when it has ended already. Never blocks on the
+    /// program: a unit that outlives every deadline keeps it until it ends.
+    pub(crate) fn keep_until_ended(&self, item: Box<dyn Send>) {
+        // Under the state lock, so `end` can't run between the check and the
+        // push and leave the item behind.
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.0 {
+            drop(state);
+            drop(item);
+            return;
+        }
+        self.kept
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(item);
     }
     /// Ends every process of the unit unless it has ended already. Never
     /// blocks on the program.
@@ -100,6 +128,10 @@ impl Unit {
         self.group.kill();
         state.0 = true;
         self.changed.notify_all();
+        let kept = std::mem::take(&mut *self.kept.lock().unwrap_or_else(|e| e.into_inner()));
+        drop(state);
+        // Dropped outside the lock: a lease's drop reaches the ledger's.
+        drop(kept);
     }
     fn set_exit(&self, exit: Option<Exit>) {
         self.state.lock().unwrap_or_else(|e| e.into_inner()).1 = exit;
@@ -186,18 +218,24 @@ mod platform {
             unit.kill();
             return Err(e);
         }
-        let reader = parent.try_clone()?;
-        let writer = parent.try_clone()?;
+        let fault = Arc::new(AtomicBool::new(false));
+        let reader = shm::Reader {
+            stream: parent.try_clone()?,
+            fault: fault.clone(),
+        };
+        let writer = shm::Writer(parent.try_clone()?);
         Ok(Spawned {
             unit,
             transport: Transport {
                 reader: Box::new(reader),
-                writer: Box::new(writer),
+                writer,
                 close_write: Box::new(move || {
                     let _ = parent.shutdown(std::net::Shutdown::Write);
                 }),
+                fault,
             },
             pid,
+            child: shm::Child,
         })
     }
 
@@ -231,6 +269,7 @@ mod platform {
     use super::*;
     use rawmakase_extension_protocol::{ENV_FD, ENV_PIPE};
     use std::ffi::{OsStr, OsString, c_void};
+    use std::io::Write;
     use std::os::windows::ffi::OsStrExt;
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
     use std::sync::OnceLock;
@@ -639,6 +678,7 @@ mod platform {
             unit.kill();
             return Err(e);
         }
+        let child = shm::Child(process.clone());
         let server = Arc::new(Server {
             pipe,
             process,
@@ -653,13 +693,15 @@ mod platform {
                     server: server.clone(),
                     event: read_event,
                 }),
-                writer: Box::new(End {
+                writer: shm::Writer(Box::new(End {
                     server,
                     event: write_event,
-                }),
+                })),
                 close_write: Box::new(|| {}),
+                fault: Arc::new(AtomicBool::new(false)),
             },
             pid,
+            child,
         })
     }
 

@@ -19,7 +19,14 @@
 //!   current epoch, as gestures of a source the host issued for that start.
 //! - [`Host::poll`] runs every frame: it hands over what programs sent,
 //!   enforces deadlines through the session, counts crashes and answers the
-//!   programs' requests through the editor (see `editor.rs`).
+//!   programs' requests through the editor (see `editor.rs`). A program the
+//!   session hangs up ([`Update::Hung`]: it broke the protocol, or held a
+//!   cancelled request's buffers too long) counts as a crash, as an
+//!   unexpected exit does.
+//! - Each extension keeps one [`Ledger`] for its whole time in the host, given
+//!   to every session of its program: the shared-memory budget is the
+//!   extension's, so a restarted program can't allocate while its
+//!   predecessor still holds buffers.
 //!
 //! A program's request that changes photos (`propose.settings`) belongs to one
 //! of the app's `command.run` requests still in flight. [`Running::requests`]
@@ -82,6 +89,7 @@ use rawmakase_extensions::protocol::{ErrorCode, PROTOCOL, RemoteError, controls:
 use rawmakase_extensions::session::{
     self, Killer, Launch, Session, SessionOptions, Update, check_hello,
 };
+use rawmakase_extensions::shm::Ledger;
 use rawmakase_extensions::state::{Entry, Source, State};
 use rawmakase_extensions::store::Store;
 use rawmakase_extensions::{Manifest, semver};
@@ -256,6 +264,11 @@ pub(in crate::app) struct Extension {
     /// What `extensions.json` says of it.
     pub entry: Entry,
     run: Option<Running>,
+    /// What its requests' buffers count against, in every session of its
+    /// program: the host's ledger for its id ([`Host`]'s `ledgers`), so
+    /// leases a program that ended still holds until its unit has ended
+    /// count against the next, whatever entry it has.
+    ledger: Ledger,
     crashes: u32,
     /// Crashed [`CRASHES`] times in a row: nothing starts it until Retry.
     pub failed: bool,
@@ -400,6 +413,11 @@ pub(in crate::app) struct Host {
     closed: bool,
     /// Every unit started, for [`Host::kill_remaining`].
     killers: Vec<Killer>,
+    /// Each extension's ledger, by id, for as long as the host runs: whatever
+    /// entry an id has (restarted, reloaded, uninstalled and installed again,
+    /// or falling back to the bundled one) counts against the same budget as
+    /// its predecessors, whose leases may still be held.
+    ledgers: HashMap<String, Ledger>,
     /// Counts changes to the enabled extensions' commands.
     revision: u64,
     /// For the next Preferences page to report.
@@ -446,6 +464,7 @@ impl Host {
             polls: 0,
             closed: false,
             killers: Vec::new(),
+            ledgers: HashMap::new(),
             revision: 0,
             errors: Vec::new(),
             search_dirs: Vec::new(),
@@ -795,6 +814,7 @@ impl Host {
                     e
                 }
                 existing => {
+                    let ledger = self.ledgers.entry(id.clone()).or_default().clone();
                     if let Some(mut old) = existing {
                         Self::end(&mut old, ErrorCode::Cancelled);
                     }
@@ -808,6 +828,7 @@ impl Host {
                         problem,
                         entry,
                         run: None,
+                        ledger,
                         crashes: 0,
                         failed: false,
                         errors: VecDeque::new(),
@@ -1013,6 +1034,7 @@ impl Host {
         let options = SessionOptions {
             wake,
             lifecycle,
+            ledger: e.ledger.clone(),
             #[cfg(test)]
             queue: self.queue,
             ..SessionOptions::default()
@@ -1569,11 +1591,18 @@ impl Host {
         let Some(run) = self.extensions[index].run.as_mut() else {
             return;
         };
+        let number = run.number;
         let updates = run.session.poll(now);
         // The session's poll is where a deadline passes.
         Self::sweep(&mut self.extensions[index]);
         for update in updates {
             let e = &mut self.extensions[index];
+            // The rest belongs to a run that ended on an earlier update (a
+            // failed handshake, `Closed`, `Hung`): it was settled and counted
+            // then, once, and nothing more of it applies.
+            if e.run.as_ref().map(|r| r.number) != Some(number) {
+                break;
+            }
             match update {
                 Update::Reply { id, result, .. } => {
                     let Some(run) = e.run.as_mut() else { break };
@@ -1626,19 +1655,38 @@ impl Host {
                     }
                 }
                 Update::Progress { .. } => {}
+                // The same terminal cleanup as `Hung`, whichever comes first:
+                // what waits on the program fails with `exited` (commands
+                // queued before the handshake, targets being read) and the
+                // run goes, its proposals' work cancelled as the session
+                // drops. Before, `Closed` left target reads to finish and
+                // send their command to a program started again.
                 Update::Closed => {
-                    // Its proposals' work is cancelled as the session drops.
-                    let Some(run) = e.run.take() else { break };
-                    if !run.stopping {
+                    let Some(run) = e.run.as_ref() else { break };
+                    let crash = (!run.stopping).then(|| {
                         let how = run
                             .session
                             .exit()
                             .map_or_else(|| "its channel closed".to_string(), |x| x.to_string());
-                        let why = format!("{} ended unexpectedly ({how})", e.name());
+                        format!("{} ended unexpectedly ({how})", e.name())
+                    });
+                    let mut stopped = Self::end(e, ErrorCode::Exited);
+                    outcomes.append(&mut stopped);
+                    if let Some(why) = crash {
                         Self::crashed(e, why);
                     }
-                    e.status = None;
-                    e.panels.clear();
+                    break;
+                }
+                // The session killed the program and failed what it had
+                // pending with `exited` (those replies came first). Whatever
+                // else waits on it fails too, and it counts as a crash, as an
+                // unexpected exit does; the session goes, and with it the busy
+                // state. Its leases stay counted until the unit has ended.
+                Update::Hung { reason } => {
+                    let why = format!("{} stopped responding and was ended: {reason}", e.name());
+                    let mut stopped = Self::end(e, ErrorCode::Exited);
+                    outcomes.append(&mut stopped);
+                    Self::crashed(e, why);
                     break;
                 }
             }

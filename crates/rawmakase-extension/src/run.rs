@@ -1,11 +1,27 @@
 //! The run loop: the handshake, the app's requests one at a time, cancellation
 //! and events.
+//!
+//! The reader thread reads the app's lines and gives each request the handles
+//! it declares ([`crate::shm`]). A request is *queued* until the handler loop
+//! takes it, then *executing*; both claim that state under one lock. A
+//! `cancel` for a queued request is answered `cancelled` at once and its
+//! handles closed, and the handler loop skips it; for an executing one it sets
+//! the flag [`Context::is_cancelled`] reads.
+//!
+//! In API 2 the app is the only sender of handles and serialises every line
+//! itself, so a framing fault is corruption, not input to tolerate: a line
+//! short of its handles, handles left over at a clean frame boundary, cut-off
+//! control data, an oversized, malformed or undecodable line, or the stream
+//! ending inside a line ends the program ([`OnFault`]). API 1 keeps phase 2's
+//! recovery and takes no handles.
 use crate::host::{Host, Shared};
-use crate::{Command, ControlAdapter, MaskGenerator, Panel};
-use rawmakase_extension_protocol::framing::{LineError, LineReader};
+use crate::shm::{Handle, Incoming, Mapping, Plain, Receive};
+use crate::{Command, ControlAdapter, MaskAsk, MaskGenerator, Panel};
+use rawmakase_extension_protocol::framing::{FrameError, LineReader};
 use rawmakase_extension_protocol::manifest::API;
+use rawmakase_extension_protocol::message::Handles;
 use rawmakase_extension_protocol::method::{
-    AppEvent, AppRequest, CommandRun, Controls, HelloReply,
+    AppEvent, AppRequest, CommandRun, Controls, HelloReply, MaskGenerate,
 };
 use rawmakase_extension_protocol::{ENV_API, ErrorCode, Message, PROTOCOL, RemoteError};
 use serde_json::{Map, Value};
@@ -34,10 +50,12 @@ pub struct ServeOptions {
     /// [`ENV_API`]: 1 (the default)
     /// up to [`API`].
     ///
-    /// Both modes behave the same in this version: a malformed request is
-    /// answered `invalid_request`, an oversized line is skipped, and reading
-    /// goes on. API 2's handle passing, which makes a framing fault end the
-    /// program, arrives in the next protocol change.
+    /// API 1 takes no handles: a message declaring some is answered
+    /// `invalid_request`, a malformed request too, an oversized line is
+    /// skipped, and reading goes on. API 2 takes the handles the app passes
+    /// with its requests, and a framing fault ends serving: the program exits
+    /// under [`Extension::run`], and [`Extension::serve_with_options`] returns
+    /// an error.
     pub api: u32,
 }
 impl Default for ServeOptions {
@@ -138,9 +156,33 @@ enum Inbound {
     },
 }
 
-/// The cancellation flags of the app's requests not yet answered, set by the
-/// reader thread when a `cancel` arrives, before or while the handler runs.
-type Cancels = Arc<Mutex<HashMap<u64, Arc<AtomicBool>>>>;
+/// One of the app's requests not yet answered.
+struct Entry {
+    /// Set by the reader when a `cancel` arrives while the handler runs.
+    cancelled: Arc<AtomicBool>,
+    /// While the request is queued: the handles it carries. The handler loop
+    /// takes them when it starts the request, so `None` means executing.
+    queued: Option<Vec<Handle>>,
+}
+
+/// The app's requests not yet answered, by id. The reader adds them, and the
+/// reader's cancel and the handler loop's start claim a request's state under
+/// this lock; neither writes to the channel while holding it.
+type Requests = Arc<Mutex<HashMap<u64, Entry>>>;
+
+/// What a framing fault in API 2 does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OnFault {
+    /// Ends the program, which closes every handle it holds:
+    /// [`Extension::run`].
+    Exit,
+    /// Closes the channel and makes serving return the fault: a test, or a
+    /// transport of the caller's.
+    Close,
+}
+
+/// The status a program ends with on a framing fault.
+const FAULT_EXIT: i32 = 70;
 
 impl Extension {
     /// An extension with no handlers yet.
@@ -180,8 +222,8 @@ impl Extension {
     pub fn run(self) -> io::Result<()> {
         // Read before attaching, so the mode is known before the first byte.
         let options = ServeOptions::from_env()?.check()?;
-        let channel = crate::channel::attach()?;
-        self.serve_with_options(channel.reader, channel.writer, options)
+        let (reader, writer) = crate::channel::attach_receiving()?;
+        self.serve_on(reader, Box::new(writer), options, OnFault::Exit)
     }
 
     /// Serves the app on this reader and writer: [`Extension::run`] without
@@ -198,28 +240,59 @@ impl Extension {
 
     /// [`Extension::serve`] in the mode `options` sets. Fails at once when
     /// its `api` isn't one this SDK serves.
+    ///
+    /// A plain reader carries bytes alone, so on Linux and macOS no handle
+    /// reaches it: an API 2 request declaring handles is then short of them,
+    /// a framing fault that ends serving with an error.
     pub fn serve_with_options(
-        mut self,
+        self,
         reader: impl Read + Send + 'static,
         writer: impl Write + Send + 'static,
         options: ServeOptions,
     ) -> io::Result<()> {
+        self.serve_on(
+            Box::new(Plain(reader)),
+            Box::new(writer),
+            options,
+            OnFault::Close,
+        )
+    }
+
+    /// Serves on a receiving end that may carry handles.
+    pub(crate) fn serve_on(
+        mut self,
+        reader: Box<dyn Receive>,
+        writer: Box<dyn Write + Send>,
+        options: ServeOptions,
+        on_fault: OnFault,
+    ) -> io::Result<()> {
         options.check()?;
-        let shared = Shared::new(Box::new(writer));
+        let shared = Shared::new(writer);
         let host = Host(shared.clone());
-        let cancels: Cancels = Arc::default();
-        let (inbound, requests) = mpsc::channel();
+        let requests: Requests = Arc::default();
+        let fault = Arc::new(Mutex::new(None));
+        let (inbound, queue) = mpsc::channel();
         {
-            let cancels = cancels.clone();
+            let reading = Reading {
+                shared,
+                requests: requests.clone(),
+                inbound,
+                api: options.api,
+                on_fault,
+                fault: fault.clone(),
+            };
             // Detached: it ends with the channel, which outlives this call only
             // in a program that keeps running after serving.
             std::thread::Builder::new()
                 .name("extension reader".into())
-                .spawn(move || read(reader, &shared, &cancels, &inbound))?;
+                .spawn(move || reading.run(reader))?;
         }
-        let result = self.handle(&host, &cancels, &requests);
+        let result = self.handle(&host, &requests, &queue);
         for adapter in self.adapters.values_mut() {
             adapter.stop();
+        }
+        if let Some(why) = fault.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, why));
         }
         result
     }
@@ -227,13 +300,13 @@ impl Extension {
     fn handle(
         &mut self,
         host: &Host,
-        cancels: &Cancels,
-        requests: &mpsc::Receiver<Inbound>,
+        requests: &Requests,
+        queue: &mpsc::Receiver<Inbound>,
     ) -> io::Result<()> {
         let mut settings = Map::new();
         let mut dirs = (PathBuf::new(), PathBuf::new());
         let mut greeted = false;
-        for inbound in requests {
+        for inbound in queue {
             match inbound {
                 Inbound::Event { name, params } => {
                     let Ok(event) = AppEvent::parse(&name, params) else {
@@ -250,12 +323,16 @@ impl Extension {
                     }
                 }
                 Inbound::Request { id, method, params } => {
-                    let cancelled = cancels
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .get(&id)
-                        .cloned()
-                        .unwrap_or_default();
+                    // Claims the request: from here a cancel sets its flag. A
+                    // request missing was cancelled while queued, and its
+                    // cancellation answered it.
+                    let (cancelled, mut handles) = {
+                        let mut requests = requests.lock().unwrap_or_else(|e| e.into_inner());
+                        let Some(entry) = requests.get_mut(&id) else {
+                            continue;
+                        };
+                        (entry.cancelled.clone(), entry.queued.take())
+                    };
                     let result = if cancelled.load(Ordering::SeqCst) {
                         Err(RemoteError::new(
                             ErrorCode::Cancelled,
@@ -265,6 +342,7 @@ impl Extension {
                         match AppRequest::parse(&method, params) {
                             Err(e) => Err(e),
                             Ok(AppRequest::Hello(hello)) => {
+                                drop(handles.take());
                                 if hello.protocol != PROTOCOL {
                                     let _ = host.0.send(&Message::reply(
                                         id,
@@ -288,7 +366,7 @@ impl Extension {
                                 );
                                 dirs = (hello.data_dir, hello.cache_dir);
                                 host.0.session.store(hello.session, Ordering::SeqCst);
-                                self.reply(host, cancels, id, Ok(self.hello_reply()));
+                                self.reply(host, requests, id, Ok(self.hello_reply()));
                                 self.start_adapters(host);
                                 continue;
                             }
@@ -304,19 +382,26 @@ impl Extension {
                                     settings: &settings,
                                     dirs: &dirs,
                                 };
-                                self.dispatch(&cx, request)
+                                // The handles go when the handler is done,
+                                // before its reply.
+                                let handles = handles.take().unwrap_or_default();
+                                self.dispatch(&cx, request, handles)
                             }
                         }
                     };
-                    self.reply(host, cancels, id, result);
+                    // Every other path, a cancel that won the race with the
+                    // claim among them, closes the handles here: the app may
+                    // end their lease as soon as it reads the reply.
+                    drop(handles);
+                    self.reply(host, requests, id, result);
                 }
             }
         }
         Ok(())
     }
 
-    fn reply(&self, host: &Host, cancels: &Cancels, id: u64, result: Result<Value, RemoteError>) {
-        cancels
+    fn reply(&self, host: &Host, requests: &Requests, id: u64, result: Result<Value, RemoteError>) {
+        requests
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(&id);
@@ -356,7 +441,12 @@ impl Extension {
         }
     }
 
-    fn dispatch(&mut self, cx: &Context, request: AppRequest) -> Result<Value, RemoteError> {
+    fn dispatch(
+        &mut self,
+        cx: &Context,
+        request: AppRequest,
+        handles: Vec<Handle>,
+    ) -> Result<Value, RemoteError> {
         let unknown = |kind: &str, id: &str| {
             RemoteError::new(
                 ErrorCode::InvalidRequest,
@@ -391,12 +481,21 @@ impl Extension {
             },
             AppRequest::MaskGenerate(request) => {
                 request.validate()?;
-                match self.mask_generators.get_mut(&request.generator) {
-                    Some(generator) => generator
-                        .generate(cx, request)
-                        .map(|done| serde_json::to_value(done).expect("a result is JSON")),
-                    None => Err(unknown("mask generator", &request.generator)),
-                }
+                let Some(generator) = self.mask_generators.get_mut(&request.generator) else {
+                    return Err(unknown("mask generator", &request.generator));
+                };
+                let (image, mut coverage) = map_mask(&request, &handles)?;
+                let ask = MaskAsk {
+                    image: image.bytes(),
+                    coverage: coverage
+                        .bytes_mut()
+                        .expect("the coverage is mapped writable"),
+                    request,
+                };
+                let result = generator.generate(cx, ask);
+                // Unmapped, and then closed, before the reply.
+                drop((image, coverage, handles));
+                result.map(|done| serde_json::to_value(done).expect("a result is JSON"))
             }
             AppRequest::MaskSetup(setup) => match self.mask_generators.get_mut(&setup.generator) {
                 Some(generator) => generator.setup(cx, &setup.generator).map(|()| Value::Null),
@@ -406,56 +505,262 @@ impl Extension {
     }
 }
 
-/// The reader thread: hands requests and events to the handlers, sets
-/// cancellation flags and routes the app's replies, until the channel closes.
-fn read(reader: impl Read, shared: &Shared, cancels: &Cancels, inbound: &mpsc::Sender<Inbound>) {
-    let mut lines = LineReader::new(reader);
-    while let Ok(Some(line)) = lines.next_message() {
-        match line {
-            Ok(Message::Req { id, m, p }) => {
-                cancels
+/// Maps a mask request's image to read and its coverage to write.
+fn map_mask(request: &MaskGenerate, handles: &[Handle]) -> Result<(Mapping, Mapping), RemoteError> {
+    let map = |buffer: &rawmakase_extension_protocol::buffer::Buffer, name: &str| {
+        let handle = handles.get(buffer.handle as usize).ok_or_else(|| {
+            RemoteError::new(
+                ErrorCode::InvalidRequest,
+                format!(
+                    "the {name} is in handle {}, and the request carries {}",
+                    buffer.handle,
+                    handles.len()
+                ),
+            )
+        })?;
+        Mapping::map(handle, buffer).map_err(|e| {
+            RemoteError::new(
+                ErrorCode::InvalidRequest,
+                format!("the {name} doesn't map: {e}"),
+            )
+        })
+    };
+    Ok((
+        map(&request.image, "image")?,
+        map(&request.coverage, "coverage")?,
+    ))
+}
+
+/// What the reader thread holds.
+struct Reading {
+    shared: Arc<Shared>,
+    requests: Requests,
+    inbound: mpsc::Sender<Inbound>,
+    api: u32,
+    on_fault: OnFault,
+    /// Why serving ended on a framing fault, for [`Extension::serve_on`].
+    fault: Arc<Mutex<Option<String>>>,
+}
+
+impl Reading {
+    /// Hands requests and events to the handlers, gives requests their
+    /// handles, answers cancels and routes the app's replies, until the
+    /// channel closes or breaks its framing.
+    fn run(self, reader: Box<dyn Receive>) {
+        let mut lines = LineReader::new(Incoming::new(reader));
+        if let Err(why) = self.read(&mut lines) {
+            self.fault(&why, lines.get_mut());
+        }
+        // Handles of requests never started, and any left unassigned, close.
+        drop(lines);
+        self.requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values_mut()
+            .for_each(|entry| drop(entry.queued.take()));
+        self.shared.close();
+    }
+
+    /// Reads until the end of the stream; a framing fault in API 2 is an
+    /// error naming it.
+    fn read(&self, lines: &mut LineReader<Incoming>) -> Result<(), String> {
+        let strict = self.api >= 2;
+        loop {
+            let line = match lines.next_line() {
+                Ok(Some(line)) => line,
+                // The end at a frame boundary; handles still queued close
+                // with the reader.
+                Ok(None) => return Ok(()),
+                Err(e) if strict && lines.get_mut().truncated => return Err(e.to_string()),
+                Err(_) => return Ok(()),
+            };
+            if !strict {
+                // API 1 takes no handles: any that came close now.
+                lines.get_mut().handles.clear();
+            }
+            let line = match line {
+                Ok(line) => line,
+                Err(e) if strict => return Err(e.to_string()),
+                // API 1: an oversized line is skipped, and the stream ending
+                // inside one ends it.
+                Err(FrameError::TooLong | FrameError::Malformed { .. }) => continue,
+                Err(FrameError::Truncated) => return Ok(()),
+            };
+            let message = Message::decode(&line);
+            let declared = Handles::read(&line);
+            if !strict {
+                self.lenient(message, declared);
+                continue;
+            }
+            let message = message.map_err(|e| e.to_string())?;
+            let declared = declared.map_err(|e| e.to_string())?;
+            let handles = take(lines.get_mut(), &declared)?;
+            // A conforming app's handles all belong to lines it has sent
+            // whole: any left once every byte read is a line's is a fault.
+            if lines.at_boundary() && !lines.get_mut().handles.is_empty() {
+                return Err(format!(
+                    "{} handles arrived that no message declared",
+                    lines.get_mut().handles.len()
+                ));
+            }
+            if !self.message(message, handles) {
+                return Ok(());
+            }
+        }
+    }
+
+    /// API 1: phase 2's recovery. A malformed request with a readable id, and
+    /// any request declaring handles, is answered `invalid_request`; other
+    /// broken lines are skipped.
+    fn lenient(
+        &self,
+        message: Result<Message, rawmakase_extension_protocol::message::DecodeError>,
+        declared: Result<Handles, rawmakase_extension_protocol::message::DecodeError>,
+    ) {
+        let declares = declared.map_or(true, |d| d.handles > 0 || d.hv.is_some());
+        match message {
+            Ok(Message::Req { id, .. }) if declares => {
+                self.invalid(id, "an API 1 program takes no handles".into());
+            }
+            Ok(message) => {
+                self.message(message, Vec::new());
+            }
+            Err(e) => {
+                if let Some(id) = e.request {
+                    self.invalid(id, e.reason);
+                }
+            }
+        }
+    }
+
+    fn invalid(&self, id: u64, reason: String) {
+        let _ = self.shared.send(&Message::reply(
+            id,
+            Err(RemoteError::new(ErrorCode::InvalidRequest, reason)),
+        ));
+    }
+
+    /// Handles one message with the handles it carries. False when the
+    /// handler loop is gone.
+    fn message(&self, message: Message, handles: Vec<Handle>) -> bool {
+        match message {
+            Message::Req { id, m, p } => {
+                self.requests
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .insert(id, Arc::default());
-                if inbound
-                    .send(Inbound::Request {
+                    .insert(
                         id,
-                        method: m,
-                        params: p,
-                    })
+                        Entry {
+                            cancelled: Arc::default(),
+                            queued: Some(handles),
+                        },
+                    );
+                let request = Inbound::Request {
+                    id,
+                    method: m,
+                    params: p,
+                };
+                if self.inbound.send(request).is_err() {
+                    return false;
+                }
+            }
+            Message::Cancel { id } => self.cancel(id),
+            Message::Ok { id, v } => self.shared.answer(id, Ok(v)),
+            Message::Err { id, code, message } => {
+                self.shared.answer(id, Err(RemoteError { code, message }));
+            }
+            Message::Event { e, p } => {
+                if self
+                    .inbound
+                    .send(Inbound::Event { name: e, params: p })
                     .is_err()
                 {
-                    break;
-                }
-            }
-            Ok(Message::Cancel { id }) => {
-                if let Some(flag) = cancels.lock().unwrap_or_else(|e| e.into_inner()).get(&id) {
-                    flag.store(true, Ordering::SeqCst);
-                }
-            }
-            Ok(Message::Ok { id, v }) => shared.answer(id, Ok(v)),
-            Ok(Message::Err { id, code, message }) => {
-                shared.answer(id, Err(RemoteError { code, message }))
-            }
-            Ok(Message::Event { e, p }) => {
-                if inbound.send(Inbound::Event { name: e, params: p }).is_err() {
-                    break;
+                    return false;
                 }
             }
             // The app reports no progress to a program.
-            Ok(Message::Progress { .. }) => {}
-            Err(LineError::Decode(e)) => {
-                if let Some(id) = e.request {
-                    let _ = shared.send(&Message::reply(
-                        id,
-                        Err(RemoteError::new(ErrorCode::InvalidRequest, e.reason)),
-                    ));
+            Message::Progress { .. } => {}
+        }
+        true
+    }
+
+    /// A queued request is answered `cancelled` now and its handles closed;
+    /// an executing one has its flag set.
+    fn cancel(&self, id: u64) {
+        let handles = {
+            let mut requests = self.requests.lock().unwrap_or_else(|e| e.into_inner());
+            match requests.get(&id) {
+                Some(entry) if entry.queued.is_some() => {
+                    requests.remove(&id).and_then(|entry| entry.queued)
                 }
+                Some(entry) => {
+                    entry.cancelled.store(true, Ordering::SeqCst);
+                    None
+                }
+                None => None,
             }
-            Err(LineError::Frame(_)) => {}
+        };
+        if let Some(handles) = handles {
+            drop(handles);
+            let _ = self.shared.send(&Message::reply(
+                id,
+                Err(RemoteError::new(
+                    ErrorCode::Cancelled,
+                    "cancelled before it ran",
+                )),
+            ));
         }
     }
-    shared.close();
+
+    /// Ends serving on a framing fault, saying why in the program's log.
+    fn fault(&self, why: &str, incoming: &Incoming) {
+        eprintln!("rawmakase-extension: the channel from RAWmakase broke its framing: {why}");
+        match self.on_fault {
+            OnFault::Exit => std::process::exit(FAULT_EXIT),
+            OnFault::Close => {
+                *self.fault.lock().unwrap_or_else(|e| e.into_inner()) =
+                    Some(format!("a framing fault: {why}"));
+                incoming.shutdown();
+            }
+        }
+    }
+}
+
+/// The handles a line declares, from those received: on Linux and macOS the
+/// next `n` queued, on Windows the values its `hv` lists.
+fn take(incoming: &mut Incoming, declared: &Handles) -> Result<Vec<Handle>, String> {
+    let wanted = declared.handles as usize;
+    if wanted > rawmakase_extension_protocol::MAX_HANDLES {
+        return Err(format!(
+            "a message declares {wanted} handles, more than the {} one may carry",
+            rawmakase_extension_protocol::MAX_HANDLES
+        ));
+    }
+    #[cfg(windows)]
+    {
+        let values = declared.hv.as_deref().unwrap_or_default();
+        let mut distinct = values.to_vec();
+        distinct.sort_unstable();
+        distinct.dedup();
+        if values.len() != wanted || distinct.len() != wanted {
+            return Err(format!(
+                "a message declares {wanted} handles and lists {} distinct values",
+                distinct.len()
+            ));
+        }
+        let _ = incoming;
+        Ok(crate::shm::adopt(values))
+    }
+    #[cfg(not(windows))]
+    {
+        if incoming.handles.len() < wanted {
+            return Err(format!(
+                "a message declares {wanted} handles and {} arrived",
+                incoming.handles.len()
+            ));
+        }
+        Ok(incoming.handles.drain(..wanted).collect())
+    }
 }
 
 #[cfg(test)]

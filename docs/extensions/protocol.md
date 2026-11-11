@@ -28,7 +28,9 @@ descriptors in `buffer.rs`.
   program exits, the rest of its unit is ended at once.
 - **Framing**: one JSON object per line, UTF-8, `\n`-terminated, at most
   1 MiB (`MAX_LINE`) without the newline. A longer line is skipped to its
-  newline and reported; the session goes on. Bulk data never travels in JSON.
+  newline and reported; the session goes on (in API 2 the program's side is
+  stricter, [below](#api-mode)). Bulk data never travels in JSON: it is in
+  shared memory whose [handles](#handles) go with the line.
 
 ### API mode
 
@@ -38,32 +40,81 @@ line, so both sides know the rules from the start. Without it, a program
 serves API 1. The SDK refuses to serve an `api` it doesn't know, and the
 program exits.
 
-Both modes follow the recovery rules above for now: a malformed request is
-answered `invalid_request`, an oversized line is skipped, and the session goes
-on. API 2 adds handle passing in the next protocol change; from then on, a
-framing fault in an API 2 session (a line short of its handles, a malformed or
-oversized line) ends the program, since the app is the only sender of handles
-and a fault there means corruption, not input to tolerate.
+- **API 1** takes no handles. A message declaring some is answered
+  `invalid_request` (the app never sends one: it fails such a request itself),
+  a malformed request is answered `invalid_request`, an oversized line is
+  skipped, and the session goes on.
+- **API 2** takes the [handles](#handles) the app passes with its requests,
+  and the program's reader gives up the recovery above: a framing fault ends
+  the program, which logs why. The app is the only sender of handles and
+  serialises every line itself, so a fault means corruption, not input to
+  tolerate, and a reader that went on could give a request the wrong handles.
+  The faults are:
+  - a line declaring more handles than have arrived;
+  - handles still queued at a clean frame boundary, with every byte read
+    belonging to a whole line (a partial line may wait for its bytes with its
+    handles queued);
+  - control data cut off (`MSG_CTRUNC`);
+  - an oversized, malformed or undecodable line;
+  - the stream ending inside a line;
+  - on Windows, an `hv` that doesn't list `handles` distinct values.
 
-### Reserved: handles
+  Exiting closes every handle the program holds, and the app fails the
+  requests it was waiting on with `exited`.
 
-Not built yet; specified so that buffers fit without a protocol change. Handle
-passing arrives in the next protocol change, with API 2:
+The app's side keeps the recovery rules in both modes: a program's malformed
+line never ends a session.
 
-- A message carrying handles names their count, `"handles": n`. On Linux and
-  macOS the handles travel as `SCM_RIGHTS` ancillary data on the `sendmsg`
-  that holds the line's first byte, and the reader (`recvmsg`) attaches them to
-  that line. On Windows the app duplicates each handle into the program
-  (`DuplicateHandle`, holding the program's process handle) and the message
-  carries their values. Readers ignore the field today; nothing sends it.
-- Only the app sends handles, and it allocates every buffer, in both
-  directions.
+### Handles
+
+Only the app sends handles, and it allocates every buffer, in both
+directions; the program only maps them.
+
+- A message carrying handles declares their count beside its fields,
+  `"handles": n`, at most 8 (`MAX_HANDLES`). The sender checks the whole
+  message (`MAX_LINE`, `MAX_HANDLES`, and that `n` is the number it passes)
+  before sending any of it. A buffer descriptor's `handle` is its index among
+  them.
+- **Linux, macOS:** the handles travel as `SCM_RIGHTS` on the `sendmsg` that
+  carries the line's first byte; if that call takes only part of the line, the
+  rest follows as plain writes and the handles are never sent again. The
+  program receives with `recvmsg`, with room for 8 descriptors, takes every
+  descriptor delivered into an owning guard before it looks at any flag, and
+  queues them in arrival order. A line declaring `handles: n` takes the next
+  `n` once it is whole; a line declaring none takes none. This is right
+  whatever the kernel's read boundaries: a message's handles arrive with its
+  first byte, so no later than its newline and after every earlier message's.
+- **Windows:** the app duplicates each handle into the program
+  (`DuplicateHandle`, not inheritable) before sending, and the line lists the
+  values, `"hv": [...]`, in index order. The program owns them once the line
+  is read, and its exit closes them. When the send fails before the line's
+  first byte goes, the app closes them in the program again
+  (`DUPLICATE_CLOSE_SOURCE`).
+- **Close-on-exec:** on Linux the channel is `SOCK_CLOEXEC` and descriptors
+  arrive with `MSG_CMSG_CLOEXEC`, atomically. macOS has neither flag: the SDK
+  sets `FD_CLOEXEC` with `fcntl` straight after `recvmsg`, so a program that
+  starts a process on another thread in that moment may hand it a copy of a
+  read-only input or an output. Rust's `std::process::Command` passes no such
+  descriptor. On Windows the duplicates aren't inheritable.
+- **The program never sends handles.** The app receives with `recvmsg` too,
+  with room for 512 descriptors, more than any kernel delivers with one
+  message (Linux 253, 64-bit macOS 254), closes every one that arrives at
+  once and never uses it. Receiving one, or cut-off control data, is a
+  protocol fault: the app [hangs the program up](#leases). A program's
+  request declaring handles is answered `invalid_request`.
+- **The app refuses** to send a request with handles to an API 1 program; the
+  request fails at once with `invalid_request`.
+
+| | Allocates | An input | An output |
+| --- | --- | --- | --- |
+| Linux | `memfd_create(MFD_CLOEXEC \| MFD_ALLOW_SEALING)`, `ftruncate` | Written, the app's view unmapped, then sealed against writing, shrinking, growing and further seals. The SDK refuses an input not sealed against writing (`F_GET_SEALS`) | Sealed against shrinking and growing, so a program can't make the app's view fault |
+| macOS | `shm_open` with a random name and `O_CREAT \| O_EXCL`, unlinked at once, `ftruncate` | Not sealable; the app never reads an input back | Its size is fixed |
+| Windows | `CreateFileMappingW` with no name | Duplicated with `FILE_MAP_READ` alone | Duplicated with read and write access |
 
 ### Buffers
 
-A pixel buffer in shared memory is described in the request that carries it.
-The pixels never travel in JSON. Until handle passing arrives, a descriptor
-only describes; `handle` will index the message's handles.
+A pixel buffer in shared memory is described in the request that carries it,
+and its handle goes with the line. The pixels never travel in JSON.
 
 ```json
 {"handle":0,"bytes":3686400,"width":1280,"height":960,"stride":3840,
@@ -117,7 +168,48 @@ whose centre falls beyond the photo's edge holds the edge pixel's value.
 
 A request's buffers hold at most 256 MiB together (`MAX_REQUEST_BYTES`), and
 one extension's requests in flight at most 512 MiB (`MAX_EXTENSION_BYTES`),
-counting requests cancelled but not yet answered.
+counting requests cancelled but not yet answered. The app refuses a request
+over either budget before it allocates anything (`too_large` past the
+request's, `busy` past the extension's). The extension's budget holds across
+restarts because the app keeps one ledger per extension and gives it to every
+session of that extension's program, so a restarted program can't allocate
+while its predecessor still holds buffers.
+
+### Leases
+
+A request's buffers are its lease, counted against the budgets until the
+program can no longer touch them.
+
+- **Reply.** The SDK unmaps a handler's buffers and closes their handles once
+  the handler has returned, and only then replies, so a reply means the
+  program let go. On `ok` the app reads what the program wrote, then drops the
+  buffers; on an error it drops them at once.
+- **Cancel or deadline.** The request settles for the app as before (it is no
+  longer busy, and a late reply is dropped), but its lease *lingers*, still
+  counted, until the program's one reply for that id arrives, whatever it
+  says. The SDK answers a cancel for a request still queued behind another at
+  once, closing its handles, and the handler loop skips it; a running handler
+  sees `is_cancelled` and returns.
+- **Lossless.** The app's reader records each reply to a leased request
+  before it queues the reply for the app, where a full queue may drop it, so
+  a dropped reply still releases its lease. A request whose reply was dropped
+  still gets one outcome: the error the program sent, or, for an `ok` whose
+  value is lost, `channel_full`.
+- **Hung.** The app treats the program as hung when a lingering lease passes
+  10 s (`LEASE_GRACE`) without a reply, when the program answers a request
+  that carried handles with `invalid_request` (it may hold handles it never
+  adopted, even if that reply was dropped), or when it sends the app a
+  handle. The session then kills the program's unit by itself, fails every
+  request still pending once with `exited`, keeps the outcomes already
+  delivered, refuses new requests with `exited`, and reports `Hung`. Leases
+  stay counted until the unit has ended: then nothing of the program's can
+  hold them.
+- **Exit and quit.** A program that exits or crashes fails what it held with
+  `exited`, and its leases end once its unit has. Quitting, and dropping a
+  session, end the unit at the quit deadline or at once as before; a lease's
+  grace never extends either, and the leases stay counted until the unit
+  has really ended, released by its termination tracking without blocking
+  anything.
 
 ### Viewer input
 
@@ -169,7 +261,9 @@ readable id, it is answered `invalid_request`.
 4. **Cancellation.** `cancel` asks the other side to stop; the reply is then
    `cancelled`. A request the app cancels is settled at once: a reply arriving
    afterwards is dropped, so a request has one outcome, whichever was recorded
-   first.
+   first. The SDK answers a cancel for a request still queued at once; one
+   whose handler runs sees it through `is_cancelled`. A request with buffers
+   keeps its [lease](#leases) until the program's reply.
 5. **Flow.** The app never blocks on a program: what it sends goes through a
    bounded queue (64 messages), and when the program stops reading and the
    queue is full, the send fails with `channel_full`. The program's operations
@@ -181,7 +275,8 @@ readable id, it is answered `invalid_request`.
    macOS), and ends the unit if the program hasn't exited within 1 s or by the
    quit deadline. A program that exits fails every request it held with
    `exited`; it is started again at its next request, or at once when it
-   starts with the app (`with-app`), until it is Failed.
+   starts with the app (`with-app`), until it is Failed. A program the app
+   [hangs up](#leases) is killed the same way and counts as one that exited.
 
 ## App to program
 
@@ -232,12 +327,17 @@ Asks a [mask generator](manifest.md#mask-generator) for a mask's coverage:
   3-channel `u8` sRGB, region `image_frame` `[0, 0, 1, 1]`.
 - `coverage` is where the program writes the mask, a buffer for writing:
   1-channel `u8` `coverage`, the image's size and region. Both are allocated by
-  the app, in their own handles, 256 MiB at most together.
+  the app, in their own handles, 256 MiB at most together. The request is API
+  2: a mask generator's manifest declares `api = 2`.
 - `image_key` is the app's digest of the image's size, pixels and rendering, so
   the program can keep its analysis of a photo without hashing.
 
-The SDK refuses a request whose input or buffers don't pass their checks, or
-don't fit together, with `invalid_request`, before the handler runs. Reply:
+The SDK refuses a request whose input or buffers don't pass their checks,
+don't fit together, or don't map (a handle missing, smaller than its
+descriptor, or on Linux an input not sealed), with `invalid_request`, before
+the handler runs. The handler borrows the image read-only and the coverage
+writable for its call (`MaskAsk`); the SDK unmaps both after it returns and
+before the reply. Reply:
 
 ```json
 {"model":"sam2.1-hiera-small@0123456789abcdef","model_key":"…","empty":"no_subject"}

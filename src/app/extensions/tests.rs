@@ -29,8 +29,74 @@ fn example_program() {
     if std::env::var_os(PROGRAM).is_none() {
         return;
     }
+    #[cfg(unix)]
+    if let Ok(mode) = std::env::var(SENDS_A_HANDLE) {
+        let channel: i32 = std::env::var(rawmakase_extensions::protocol::ENV_FD)
+            .unwrap()
+            .parse()
+            .unwrap();
+        if mode == "before-hello" {
+            send_a_handle(channel);
+            // Never answers `hello`, and keeps the channel open.
+            std::thread::sleep(Duration::from_secs(120));
+            std::process::exit(0);
+        }
+        // A copy of the channel taken before the SDK attaches it, which
+        // closes the inherited descriptor.
+        // SAFETY: duplicates a descriptor this program was started with.
+        let channel = unsafe { libc::dup(channel) };
+        assert!(channel >= 0);
+        std::thread::spawn(move || {
+            while !Path::new("send-handle").exists() {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            send_a_handle(channel);
+            if mode == "then-exit" {
+                std::process::exit(0);
+            }
+        });
+    }
     let code = i32::from(rawmakase_example::extension().run().is_err());
     std::process::exit(code);
+}
+
+/// Set, with [`PROGRAM`], for an example program that sends the app a
+/// descriptor, as no program may: `on-request` once `send-handle` appears in
+/// its working folder; `then-exit` the same, then exits at once;
+/// `before-hello` at once, then never answers `hello`.
+#[cfg(unix)]
+const SENDS_A_HANDLE: &str = "RAWMAKASE_EXAMPLE_SENDS_A_HANDLE";
+
+/// Sends the app an event with a descriptor beside it: the session hangs the
+/// program up. One `sendmsg` of a short line, which the SDK's writes don't
+/// split.
+#[cfg(unix)]
+fn send_a_handle(channel: i32) {
+    let line = b"{\"t\":\"event\",\"e\":\"noop\"}\n";
+    // SAFETY: one sendmsg on the channel's descriptor, with an SCM_RIGHTS
+    // control message holding a duplicate of stdin, all on this frame.
+    unsafe {
+        let fd = libc::dup(0);
+        let payload = size_of::<i32>() as u32;
+        let space = libc::CMSG_SPACE(payload) as usize;
+        let mut control = vec![0u64; space.div_ceil(8)];
+        let mut iov = libc::iovec {
+            iov_base: line.as_ptr().cast_mut().cast(),
+            iov_len: line.len(),
+        };
+        let mut msg: libc::msghdr = std::mem::zeroed();
+        msg.msg_iov = &mut iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = control.as_mut_ptr().cast();
+        msg.msg_controllen = space as _;
+        let cmsg = libc::CMSG_FIRSTHDR(&msg);
+        (*cmsg).cmsg_level = libc::SOL_SOCKET;
+        (*cmsg).cmsg_type = libc::SCM_RIGHTS;
+        (*cmsg).cmsg_len = libc::CMSG_LEN(payload) as _;
+        libc::CMSG_DATA(cmsg).cast::<i32>().write_unaligned(fd);
+        libc::sendmsg(channel, &msg, 0);
+        libc::close(fd);
+    }
 }
 
 fn example() -> Launch {
@@ -1629,4 +1695,222 @@ fn the_bundled_mcp_extension_is_listed_enabled_and_cannot_be_uninstalled() {
     let next = Host::start_for_tests(dir.path(), example(), Duration::from_secs(30));
     assert!(!next.get("rawmakase.mcp").unwrap().enabled());
     assert!(!next.adapter_enabled("rawmakase.mcp/mcp"));
+}
+
+/// A program the session hangs up (here, one that sent the app a
+/// descriptor) goes through the same supervision as one that exits: what it
+/// had pending fails once with `exited`, its busy state clears, it counts as
+/// a crash, and three in a row make it Failed.
+#[cfg(unix)]
+#[test]
+fn a_hung_program_counts_as_a_crash_and_clears_its_busy_state() {
+    let mut f = fixture(&["a.png"]);
+    let mut launch = example();
+    launch
+        .env
+        .push((SENDS_A_HANDLE.into(), "on-request".into()));
+    f.editor.extensions = Host::start_for_tests(&f.data, launch, Duration::from_secs(30));
+    f.editor.sync_extension_commands();
+    let e = &mut f.editor;
+    e.run_extension_command(&format!("{ID}/hang"), RunBy::Button)
+        .unwrap();
+    pump(e, "the program to hang", |e, _| {
+        e.extensions.get(ID).unwrap().status.as_deref() == Some("Hanging")
+    });
+    assert!(e.extensions.get(ID).unwrap().busy());
+    std::fs::write(f.folder.join("send-handle"), b"").unwrap();
+    let outcomes = pump(e, "the hang-up", |e, _| {
+        !e.extensions.get(ID).unwrap().running()
+    });
+    let hangs: Vec<_> = outcomes
+        .iter()
+        .filter_map(|o| match o {
+            Outcome::Command { title, result, .. } if title == "Hang" => Some(result.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(hangs.len(), 1, "{outcomes:?}");
+    assert_eq!(hangs[0].as_ref().unwrap_err().code, ErrorCode::Exited);
+    let x = e.extensions.get(ID).unwrap();
+    assert!(!x.busy());
+    assert_eq!(x.crashes, 1);
+    assert!(
+        x.errors.iter().any(|m| m.contains("stopped responding")),
+        "{:?}",
+        x.errors
+    );
+    // Started again, it hangs up again at once: the third makes it Failed.
+    for _ in 0..2 {
+        assert_eq!(run(e, "hang", "Hang").unwrap_err().code, ErrorCode::Exited);
+        pump(e, "the hang-up", |e, _| {
+            !e.extensions.get(ID).unwrap().running()
+        });
+    }
+    let x = e.extensions.get(ID).unwrap();
+    assert!(x.failed);
+    assert!(!x.busy());
+}
+
+/// Every session of an extension's program counts its buffers against the
+/// extension's one ledger: after a crash and a restart, after a reload that
+/// replaces the extension's entry with a changed manifest, and after it is
+/// uninstalled and installed again.
+#[test]
+fn a_restarted_extension_keeps_its_ledger() {
+    use rawmakase_extensions::shm::Buffers;
+    let mut f = fixture(&["a.png"]);
+    let ledger = f.editor.extensions.get(ID).unwrap().ledger.clone();
+    // A lease the test holds, standing for an earlier program's.
+    let mut held = Buffers::new(&ledger);
+    held.output(16).unwrap();
+    let counted = |e: &Editor| {
+        let run = e.extensions.get(ID).unwrap().run.as_ref().unwrap();
+        run.session.ledger().in_use()
+    };
+    let e = &mut f.editor;
+    assert_eq!(
+        run(e, "settings", "Show Settings"),
+        Ok(json!({"step": 0.5}))
+    );
+    assert_eq!(counted(e), 16);
+    run(e, "crash", "Crash").unwrap_err();
+    pump(e, "the crash", |e, _| {
+        !e.extensions.get(ID).unwrap().running()
+    });
+    run(e, "settings", "Show Settings").unwrap();
+    assert_eq!(counted(e), 16, "the restart shares the ledger");
+
+    let manifest = include_str!("../../../extensions/example/rawmakase-extension.toml");
+    let changed = manifest.replacen("name = \"Example\"", "name = \"Example, renamed\"", 1);
+    assert_ne!(changed, manifest);
+    rewrite_manifest(&f, &changed, 2);
+    let e = &mut f.editor;
+    e.extensions.reload_changed_folders();
+    e.sync_extension_commands();
+    assert_eq!(e.extensions.get(ID).unwrap().name(), "Example, renamed");
+    assert!(
+        !e.extensions.get(ID).unwrap().running(),
+        "the entry was replaced"
+    );
+    run(e, "settings", "Show Settings").unwrap();
+    assert_eq!(counted(e), 16, "the replaced entry keeps the ledger");
+
+    // Uninstalled, its entry goes; installed again, the new entry's sessions
+    // count against the same ledger.
+    e.extensions.uninstall(ID).unwrap();
+    assert!(e.extensions.get(ID).is_none());
+    Store::new(&f.data).add_developer(&f.folder).unwrap();
+    let e = &mut f.editor;
+    e.extensions.reload();
+    e.sync_extension_commands();
+    run(e, "settings", "Show Settings").unwrap();
+    assert_eq!(counted(e), 16, "the reinstalled extension keeps the ledger");
+    drop(held);
+    assert_eq!(counted(e), 0);
+}
+
+/// An editor whose example program sends the app a descriptor in `mode`.
+#[cfg(unix)]
+fn fixture_sending_a_handle(names: &[&str], mode: &str) -> Fixture {
+    let mut f = fixture(names);
+    let mut launch = example();
+    launch.env.push((SENDS_A_HANDLE.into(), mode.into()));
+    f.editor.extensions = Host::start_for_tests(&f.data, launch, Duration::from_secs(30));
+    f.editor.sync_extension_commands();
+    f
+}
+
+/// A program hung up before it answers `hello` fails its handshake and is
+/// hung up in the same poll: that is one failed start, one crash, not two.
+#[cfg(unix)]
+#[test]
+fn a_hang_before_the_handshake_counts_one_crash() {
+    let mut f = fixture_sending_a_handle(&["a.png"], "before-hello");
+    let e = &mut f.editor;
+    assert_eq!(
+        run(e, "settings", "Show Settings").unwrap_err().code,
+        ErrorCode::Exited
+    );
+    pump(e, "the hang-up", |e, _| {
+        !e.extensions.get(ID).unwrap().running()
+    });
+    let x = e.extensions.get(ID).unwrap();
+    assert_eq!(x.crashes, 1, "{:?}", x.errors);
+    assert!(!x.failed);
+    assert!(!x.busy());
+}
+
+/// The program sends a descriptor and exits while a command's target is
+/// being read: the session reports `Closed`, then `Hung`. The first ends the
+/// run whole: the command fails once with `exited`, the read is dropped so it
+/// never sends the command to a program started again, busy clears at once,
+/// and one crash is counted.
+#[cfg(unix)]
+#[test]
+fn a_program_gone_while_a_target_is_read_fails_the_command_once() {
+    let mut f = fixture_sending_a_handle(&["a.png", "b.png"], "then-exit");
+    let ids: Vec<PhotoId> = f.photos.iter().map(|p| p.0).collect();
+    let e = &mut f.editor;
+    assert_eq!(
+        run(e, "settings", "Show Settings"),
+        Ok(json!({"step": 0.5}))
+    );
+    std::fs::write(f.folder.join("send-handle"), b"").unwrap();
+    // Gone, without the host hearing of it yet.
+    let until = Instant::now() + Duration::from_secs(20);
+    while !e
+        .extensions
+        .get(ID)
+        .unwrap()
+        .run
+        .as_ref()
+        .unwrap()
+        .session
+        .has_ended()
+    {
+        assert!(Instant::now() < until, "the program never exited");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    select(e, &ids);
+    e.run_extension_command(&format!("{ID}/brighten"), RunBy::Key)
+        .unwrap();
+    assert!(e.extensions.reading(), "the target is being read");
+    // The host alone, so the read stays unfinished.
+    let (outcomes, _) = e.extensions_poll(Instant::now());
+    let brightened = |outcomes: &[Outcome]| {
+        outcomes
+            .iter()
+            .filter_map(|o| match o {
+                Outcome::Command { title, result, .. } if title == "Brighten" => {
+                    Some(result.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let first = brightened(&outcomes);
+    assert_eq!(first.len(), 1, "{outcomes:?}");
+    assert_eq!(first[0].as_ref().unwrap_err().code, ErrorCode::Exited);
+    let x = e.extensions.get(ID).unwrap();
+    assert!(!x.running());
+    assert!(!x.busy(), "busy clears at once");
+    assert!(!e.extensions.reading());
+    assert_eq!(x.crashes, 1, "{:?}", x.errors);
+    assert!(
+        x.errors.iter().any(|m| m.contains("ended unexpectedly")),
+        "Closed came first: {:?}",
+        x.errors
+    );
+    // The read finishing later sends nothing, and starts nothing.
+    let ctx = e.context.clone();
+    let mut later = Vec::new();
+    let until = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < until {
+        e.events(&ctx);
+        later.extend(e.extensions_poll(Instant::now()).0);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(brightened(&later).is_empty(), "{later:?}");
+    assert!(!e.extensions.get(ID).unwrap().running());
 }

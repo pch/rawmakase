@@ -5,6 +5,7 @@
 //! descriptor 3 and names it in `RAWMAKASE_EXTENSION_FD`. On Windows it names a
 //! named pipe in `RAWMAKASE_EXTENSION_PIPE`, which the program opens once; the
 //! app accepts only its own child there.
+use crate::shm::Receive;
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -23,12 +24,30 @@ static ATTACHED: AtomicBool = AtomicBool::new(false);
 /// The channel the app started this program with. Fails when the program
 /// wasn't started by the app (the variable is missing) or was attached already.
 pub fn attach() -> io::Result<Channel> {
+    let (reader, writer) = attach_receiving()?;
+    Ok(Channel {
+        reader: Box::new(Received(reader)),
+        writer,
+    })
+}
+
+/// [`attach`], keeping the receiving end able to take the handles the app
+/// passes with a message.
+pub(crate) fn attach_receiving() -> io::Result<(Box<dyn Receive>, Box<dyn Write + Send>)> {
     if ATTACHED.swap(true, Ordering::SeqCst) {
         return Err(io::Error::other(
             "the extension channel is attached already",
         ));
     }
     platform::attach()
+}
+
+/// The receiving end as a plain reader, which drops any handle that arrives.
+struct Received(Box<dyn Receive>);
+impl Read for Received {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.receive(buf, &mut std::collections::VecDeque::new())
+    }
 }
 
 fn missing(variable: &str) -> io::Error {
@@ -45,7 +64,7 @@ mod platform {
     use std::os::fd::FromRawFd;
     use std::os::unix::net::UnixStream;
 
-    pub(super) fn attach() -> io::Result<Channel> {
+    pub(super) fn attach() -> io::Result<(Box<dyn Receive>, Box<dyn Write + Send>)> {
         let fd: i32 = std::env::var(ENV_FD)
             .map_err(|_| missing(ENV_FD))?
             .parse()
@@ -71,10 +90,7 @@ mod platform {
         let reader = socket.try_clone()?;
         let writer = socket.try_clone()?;
         drop(socket);
-        Ok(Channel {
-            reader: Box::new(reader),
-            writer: Box::new(writer),
-        })
+        Ok((Box::new(reader), Box::new(writer)))
     }
 }
 
@@ -96,7 +112,7 @@ mod platform {
     use windows_sys::Win32::System::IO::{GetOverlappedResult, OVERLAPPED};
     use windows_sys::Win32::System::Threading::CreateEventW;
 
-    pub(super) fn attach() -> io::Result<Channel> {
+    pub(super) fn attach() -> io::Result<(Box<dyn Receive>, Box<dyn Write + Send>)> {
         let name = std::env::var_os(ENV_PIPE).ok_or_else(|| missing(ENV_PIPE))?;
         if !name.to_string_lossy().starts_with(r"\\.\pipe\") {
             return Err(io::Error::new(
@@ -124,10 +140,11 @@ mod platform {
         }
         // SAFETY: a valid handle this function just opened and owns alone.
         let pipe = Arc::new(unsafe { OwnedHandle::from_raw_handle(handle) });
-        Ok(Channel {
-            reader: Box::new(Overlapped::new(pipe.clone())?),
-            writer: Box::new(Overlapped::new(pipe)?),
-        })
+        // Handles reach Windows in the line ("hv"), not beside it.
+        Ok((
+            Box::new(crate::shm::Plain(Overlapped::new(pipe.clone())?)),
+            Box::new(Overlapped::new(pipe)?),
+        ))
     }
 
     /// One direction of a pipe opened for overlapped I/O: each direction has
@@ -202,7 +219,7 @@ mod platform {
 #[cfg(not(any(unix, windows)))]
 mod platform {
     use super::*;
-    pub(super) fn attach() -> io::Result<Channel> {
+    pub(super) fn attach() -> io::Result<(Box<dyn Receive>, Box<dyn Write + Send>)> {
         let _ = missing;
         Err(io::Error::from(io::ErrorKind::Unsupported))
     }

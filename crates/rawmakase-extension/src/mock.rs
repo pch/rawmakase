@@ -2,6 +2,11 @@
 //! and events, answer its requests with a function of your own, and look at
 //! what it sent.
 //!
+//! The mock talks to the extension over the transport the app uses, a Unix
+//! socket pair on Linux and macOS and a pipe on Windows, and passes buffers in
+//! shared memory as the app does ([`MockHost::generate_mask`]), so a test goes
+//! through the same receiving code as a program the app started.
+//!
 //! ```
 //! use rawmakase_extension::{Context, Extension, mock::MockHost};
 //! use rawmakase_extension::protocol::method::CommandRun;
@@ -13,16 +18,19 @@
 //! assert_eq!(host.run_command("echo", None, json!(5)).unwrap(), json!(5));
 //! host.finish().unwrap();
 //! ```
+use crate::run::OnFault;
+use crate::shm::{Memory, Receive};
 use crate::{Extension, ServeOptions};
 use rawmakase_extension_protocol::controls::Control;
-use rawmakase_extension_protocol::framing::{LineReader, write_line};
+use rawmakase_extension_protocol::framing::LineReader;
+use rawmakase_extension_protocol::message::Handles;
 use rawmakase_extension_protocol::method::{
     AppEvent, AppRequest, CommandRun, Controls, Empty, Hello, HelloReply, MaskGenerate,
     MaskGenerated, MaskSetup, PanelChanged, PanelClicked, PanelOpen, Snapshot,
 };
 use rawmakase_extension_protocol::{ErrorCode, Message, PROTOCOL, RemoteError};
 use serde_json::{Map, Value};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
@@ -66,11 +74,53 @@ const WAIT: Duration = Duration::from_secs(10);
 
 /// An extension served on a thread, with the app's side in the test's hands.
 pub struct MockHost {
-    /// Shared with the listener, which answers the extension's requests.
-    to_program: Arc<Mutex<PipeWriter>>,
+    /// Shared with the listener, which answers the extension's requests;
+    /// `None` once [`MockHost::finish`] closed it.
+    to_program: Arc<Mutex<Option<Sender>>>,
     state: Arc<(Mutex<State>, Condvar)>,
     next_id: Mutex<u64>,
+    api: u32,
+    /// The coverage buffers of mask requests not yet read back, by id.
+    outputs: Mutex<HashMap<u64, (Memory, usize)>>,
     program: JoinHandle<io::Result<()>>,
+}
+
+/// The app's sending end.
+#[cfg(unix)]
+type Sender = std::os::unix::net::UnixStream;
+#[cfg(windows)]
+type Sender = io::PipeWriter;
+
+/// The channel: the program's receiving and sending ends, the app's sending
+/// and receiving ends.
+type Ends = (
+    Box<dyn Receive>,
+    Box<dyn Write + Send>,
+    Sender,
+    Box<dyn Read + Send>,
+);
+
+#[cfg(unix)]
+fn channel() -> io::Result<Ends> {
+    let (app, program) = std::os::unix::net::UnixStream::pair()?;
+    Ok((
+        Box::new(program.try_clone()?),
+        Box::new(program),
+        app.try_clone()?,
+        Box::new(app),
+    ))
+}
+
+#[cfg(windows)]
+fn channel() -> io::Result<Ends> {
+    let (app_reader, program_writer) = io::pipe()?;
+    let (program_reader, app_writer) = io::pipe()?;
+    Ok((
+        Box::new(crate::shm::Plain(program_reader)),
+        Box::new(program_writer),
+        app_writer,
+        Box::new(app_reader),
+    ))
 }
 
 #[derive(Default)]
@@ -103,13 +153,13 @@ impl MockHost {
         options: ServeOptions,
         responder: impl FnMut(&str, &Value) -> Result<Value, RemoteError> + Send + 'static,
     ) -> Self {
-        let (app_reader, program_writer) = pipe();
-        let (program_reader, app_writer) = pipe();
+        let (program_reader, program_writer, app_writer, app_reader) =
+            channel().expect("the mock's channel");
         let program = std::thread::spawn(move || {
-            extension.serve_with_options(program_reader, program_writer, options)
+            extension.serve_on(program_reader, program_writer, options, OnFault::Close)
         });
         let state: Arc<(Mutex<State>, Condvar)> = Arc::default();
-        let to_program = Arc::new(Mutex::new(app_writer));
+        let to_program = Arc::new(Mutex::new(Some(app_writer)));
         {
             let state = state.clone();
             let to_program = to_program.clone();
@@ -120,25 +170,28 @@ impl MockHost {
             to_program,
             state,
             next_id: Mutex::new(1),
+            api: options.api,
+            outputs: Mutex::default(),
             program,
         }
     }
 
     fn send(&self, message: &Message) {
-        let mut writer = self.to_program.lock().unwrap_or_else(|e| e.into_inner());
-        let _ = write_line(&mut *writer, message);
+        let _ = send(&self.to_program, message, &[]);
     }
 
     /// Sends a request without waiting; [`MockHost::wait`] reads its reply.
     pub fn send_request(&self, request: AppRequest) -> u64 {
-        let id = {
-            let mut next = self.next_id.lock().unwrap_or_else(|e| e.into_inner());
-            *next += 1;
-            *next - 1
-        };
+        let id = self.next_id();
         let (method, params) = request.into_parts();
         self.send(&Message::request(id, &method, params));
         id
+    }
+
+    fn next_id(&self) -> u64 {
+        let mut next = self.next_id.lock().unwrap_or_else(|e| e.into_inner());
+        *next += 1;
+        *next - 1
     }
 
     /// The reply to request `id`, waiting at most ten seconds.
@@ -253,14 +306,79 @@ impl MockHost {
         decode::<Controls>(reply).map(|c| c.controls)
     }
 
-    /// Asks a mask generator for a mask and returns its result, refusing one
-    /// that doesn't validate ([`MaskGenerated::validate`]) as the app does.
-    /// The request's buffers are descriptors only: nothing is mapped yet.
-    pub fn generate_mask(&self, request: MaskGenerate) -> Result<MaskGenerated, RemoteError> {
-        let reply = self.request(AppRequest::MaskGenerate(request))?;
-        let result: MaskGenerated = decode(reply)?;
+    /// Asks a mask generator for a mask and returns its result with the
+    /// coverage it wrote, refusing a result that doesn't validate
+    /// ([`MaskGenerated::validate`]) as the app does.
+    ///
+    /// As the app does, the mock puts `image` in a shared input of
+    /// `request.image.bytes` (zero after `image`'s end) and allocates the
+    /// coverage, `request.coverage.bytes`, and passes both with the request.
+    /// A mock serving API 1 refuses at once with
+    /// [`ErrorCode::InvalidRequest`], as the app refuses to pass handles to an
+    /// API 1 program.
+    pub fn generate_mask(
+        &self,
+        request: MaskGenerate,
+        image: &[u8],
+    ) -> Result<(MaskGenerated, Vec<u8>), RemoteError> {
+        let id = self.send_mask(request, image)?;
+        self.wait_mask(id)
+    }
+
+    /// [`MockHost::generate_mask`] without waiting: returns the request's id
+    /// for [`MockHost::cancel`] and [`MockHost::wait_mask`].
+    pub fn send_mask(&self, request: MaskGenerate, image: &[u8]) -> Result<u64, RemoteError> {
+        if self.api < 2 {
+            return Err(RemoteError::new(
+                ErrorCode::InvalidRequest,
+                "an API 1 program takes no handles",
+            ));
+        }
+        let failed =
+            |e: io::Error| RemoteError::new(ErrorCode::Unavailable, format!("shared memory: {e}"));
+        let size = |bytes: u64| usize::try_from(bytes).unwrap_or(usize::MAX);
+        let mut pixels = image.to_vec();
+        pixels.resize(size(request.image.bytes).max(image.len()), 0);
+        let input = Memory::input(&pixels).map_err(failed)?;
+        let coverage_len = size(request.coverage.bytes);
+        let output = Memory::output(coverage_len).map_err(failed)?;
+        // In the order the descriptors index them.
+        let buffers = if request.image.handle == 0 {
+            [&input, &output]
+        } else {
+            [&output, &input]
+        };
+        let id = self.next_id();
+        let (method, params) = AppRequest::MaskGenerate(request).into_parts();
+        send(
+            &self.to_program,
+            &Message::request(id, &method, params),
+            &buffers,
+        )
+        .map_err(|e| RemoteError::new(ErrorCode::Exited, e.to_string()))?;
+        drop(input);
+        self.outputs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, (output, coverage_len));
+        Ok(id)
+    }
+
+    /// The reply to a mask request [`MockHost::send_mask`] sent, with the
+    /// coverage the program wrote.
+    pub fn wait_mask(&self, id: u64) -> Result<(MaskGenerated, Vec<u8>), RemoteError> {
+        let reply = self.wait(id);
+        let output = self
+            .outputs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id);
+        let result: MaskGenerated = decode(reply?)?;
         result.validate()?;
-        Ok(result)
+        let coverage = output.map_or_else(Vec::new, |(memory, len)| {
+            memory.contents()[..len.min(memory.contents().len())].to_vec()
+        });
+        Ok((result, coverage))
     }
 
     /// Asks a mask generator to install what it needs.
@@ -302,10 +420,11 @@ impl MockHost {
     /// Sends `quitting`, closes the channel and returns what serving returned.
     pub fn finish(self) -> io::Result<()> {
         self.event(AppEvent::Quitting(Empty {}));
-        self.to_program
+        close(&self.to_program);
+        self.outputs
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .close();
+            .clear();
         self.program
             .join()
             .unwrap_or_else(|_| Err(io::Error::other("the extension panicked")))
@@ -317,12 +436,75 @@ fn decode<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, RemoteError
         .map_err(|e| RemoteError::new(ErrorCode::InvalidRequest, e.to_string()))
 }
 
+/// Writes one line with the buffers' handles, as the app does: on Linux and
+/// macOS as `SCM_RIGHTS` with its first byte, on Windows duplicated first and
+/// listed in `hv`, closed again if the line isn't sent.
+fn send(
+    to_program: &Mutex<Option<Sender>>,
+    message: &Message,
+    buffers: &[&Memory],
+) -> io::Result<()> {
+    let mut sender = to_program.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(sender) = sender.as_mut() else {
+        return Err(io::Error::from(io::ErrorKind::BrokenPipe));
+    };
+    let invalid = |e| io::Error::new(io::ErrorKind::InvalidInput, e);
+    #[cfg(unix)]
+    {
+        let handles = Handles {
+            handles: buffers.len() as u32,
+            hv: None,
+        };
+        let mut line = message.encode_with(&handles).map_err(invalid)?;
+        line.push(b'\n');
+        let fds: Vec<_> = buffers.iter().map(|b| b.handle()).collect();
+        crate::shm::send(sender, &line, &fds)
+    }
+    #[cfg(windows)]
+    {
+        let mut values = Vec::new();
+        for buffer in buffers {
+            match buffer.duplicate() {
+                Ok(value) => values.push(value),
+                Err(e) => {
+                    crate::shm::close(&values);
+                    return Err(e);
+                }
+            }
+        }
+        let handles = Handles {
+            handles: values.len() as u32,
+            hv: (!values.is_empty()).then(|| values.clone()),
+        };
+        let line = message.encode_with(&handles).map_err(invalid);
+        let written = line.and_then(|mut line| {
+            line.push(b'\n');
+            sender.write_all(&line).and_then(|()| sender.flush())
+        });
+        if written.is_err() {
+            crate::shm::close(&values);
+        }
+        written
+    }
+}
+
+/// Ends the stream to the program: it reads what is left, then the end.
+fn close(to_program: &Mutex<Option<Sender>>) {
+    let sender = to_program.lock().unwrap_or_else(|e| e.into_inner()).take();
+    #[cfg(unix)]
+    if let Some(sender) = sender {
+        let _ = sender.shutdown(std::net::Shutdown::Write);
+    }
+    #[cfg(windows)]
+    drop(sender);
+}
+
 /// The mock's reader: records what the extension sends and answers its
 /// requests.
 fn listen(
-    reader: PipeReader,
+    reader: Box<dyn Read + Send>,
     state: &(Mutex<State>, Condvar),
-    to_program: &Mutex<PipeWriter>,
+    to_program: &Mutex<Option<Sender>>,
     mut responder: Responder,
 ) {
     let (lock, changed) = state;
@@ -344,9 +526,7 @@ fn listen(
         };
         if let Message::Req { id, m, p } = message {
             let reply = responder(&m, &p);
-            let mut writer = to_program.lock().unwrap_or_else(|e| e.into_inner());
-            let _ = write_line(&mut *writer, &Message::reply(id, reply.clone()));
-            drop(writer);
+            let _ = send(to_program, &Message::reply(id, reply.clone()), &[]);
             let mut state = lock.lock().unwrap_or_else(|e| e.into_inner());
             state.recorded.push(Recorded::Request {
                 method: m,
@@ -360,73 +540,4 @@ fn listen(
     }
     lock.lock().unwrap_or_else(|e| e.into_inner()).closed = true;
     changed.notify_all();
-}
-
-/// One direction of an in-memory byte pipe.
-#[derive(Default)]
-struct Pipe {
-    bytes: VecDeque<u8>,
-    /// The writer is gone: reads end once the bytes are read.
-    writer_gone: bool,
-    /// The reader is gone: writes fail.
-    reader_gone: bool,
-}
-type PipeEnd = Arc<(Mutex<Pipe>, Condvar)>;
-struct PipeReader(PipeEnd);
-struct PipeWriter(PipeEnd);
-
-fn pipe() -> (PipeReader, PipeWriter) {
-    let end: PipeEnd = Arc::default();
-    (PipeReader(end.clone()), PipeWriter(end))
-}
-
-impl Read for PipeReader {
-    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
-        let (lock, changed) = &*self.0;
-        let mut pipe = lock.lock().unwrap_or_else(|e| e.into_inner());
-        while pipe.bytes.is_empty() && !pipe.writer_gone {
-            pipe = changed.wait(pipe).unwrap_or_else(|e| e.into_inner());
-        }
-        let n = out.len().min(pipe.bytes.len());
-        for (slot, byte) in out.iter_mut().zip(pipe.bytes.drain(..n)) {
-            *slot = byte;
-        }
-        Ok(n)
-    }
-}
-impl Drop for PipeReader {
-    fn drop(&mut self) {
-        let (lock, changed) = &*self.0;
-        lock.lock().unwrap_or_else(|e| e.into_inner()).reader_gone = true;
-        changed.notify_all();
-    }
-}
-
-impl PipeWriter {
-    /// Ends the stream: the reader reads what is left, then the end.
-    fn close(&self) {
-        let (lock, changed) = &*self.0;
-        lock.lock().unwrap_or_else(|e| e.into_inner()).writer_gone = true;
-        changed.notify_all();
-    }
-}
-impl Write for PipeWriter {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        let (lock, changed) = &*self.0;
-        let mut pipe = lock.lock().unwrap_or_else(|e| e.into_inner());
-        if pipe.reader_gone || pipe.writer_gone {
-            return Err(io::Error::from(io::ErrorKind::BrokenPipe));
-        }
-        pipe.bytes.extend(bytes);
-        changed.notify_all();
-        Ok(bytes.len())
-    }
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-impl Drop for PipeWriter {
-    fn drop(&mut self) {
-        self.close();
-    }
 }

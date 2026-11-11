@@ -14,6 +14,10 @@
 //! exactly one reply, `ok` or `err`; `progress` may come before it. Fields a
 //! message doesn't know are ignored, so a later protocol version can add some
 //! without breaking this one's readers.
+//!
+//! In API 2 an app request may carry handles to shared memory, declared beside
+//! the envelope's fields ([`Handles`]): `"handles": n`, and on Windows
+//! `"hv": [...]`, the values the app duplicated into the program.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -130,6 +134,63 @@ impl Message {
                 reason: e.to_string(),
             }
         })
+    }
+}
+
+/// The handles a line declares beside its message: `"handles": n`, and on
+/// Windows `"hv"`, their values in the program's process. Only the app sends
+/// handles, at most [`crate::MAX_HANDLES`] per message.
+///
+/// On Linux and macOS the handles travel as `SCM_RIGHTS` with the line's first
+/// byte, and the reader takes the next `n` it received, in order. On Windows
+/// the app duplicates them into the program first, and `hv` lists them in the
+/// order buffer descriptors index them.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Handles {
+    /// How many handles the message carries.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub handles: u32,
+    /// Windows: the handles' values in the program, `handles` of them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hv: Option<Vec<u64>>,
+}
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+impl Handles {
+    /// Reads the handles a line declares; none when it declares none. A line
+    /// whose `handles` or `hv` isn't of its type doesn't decode.
+    pub fn read(line: &[u8]) -> Result<Self, DecodeError> {
+        // Most lines name neither field; they skip the second parse.
+        let named = |field: &[u8]| line.windows(field.len()).any(|w| w == field);
+        if !named(b"\"handles\"") && !named(b"\"hv\"") {
+            return Ok(Self::default());
+        }
+        serde_json::from_slice(line).map_err(|e| DecodeError {
+            request: None,
+            reason: e.to_string(),
+        })
+    }
+}
+
+impl Message {
+    /// The line this message is sent as with its handles declared, without
+    /// its newline. Refused, like [`Message::encode`], when it is longer than
+    /// a line.
+    pub fn encode_with(&self, handles: &Handles) -> Result<Vec<u8>, crate::framing::FrameError> {
+        let malformed = |e: serde_json::Error| crate::framing::FrameError::Malformed {
+            reason: e.to_string(),
+        };
+        let mut value = serde_json::to_value(self).map_err(malformed)?;
+        let fields = serde_json::to_value(handles).map_err(malformed)?;
+        if let (Some(object), Value::Object(fields)) = (value.as_object_mut(), fields) {
+            object.extend(fields);
+        }
+        let line = serde_json::to_vec(&value).map_err(malformed)?;
+        if line.len() > crate::MAX_LINE {
+            return Err(crate::framing::FrameError::TooLong);
+        }
+        Ok(line)
     }
 }
 
@@ -377,6 +438,44 @@ mod tests {
                 id: 1,
                 v: Value::Null
             }
+        );
+    }
+
+    #[test]
+    fn handles_are_declared_beside_the_message() {
+        let message = Message::request(3, "mask.generate", json!({"generator": "subject"}));
+        let unix = Handles {
+            handles: 2,
+            hv: None,
+        };
+        let line = message.encode_with(&unix).unwrap();
+        assert_eq!(
+            String::from_utf8(line.clone()).unwrap(),
+            r#"{"handles":2,"id":3,"m":"mask.generate","p":{"generator":"subject"},"t":"req"}"#
+        );
+        assert_eq!(Message::decode(&line).unwrap(), message);
+        assert_eq!(Handles::read(&line).unwrap(), unix);
+        let windows = Handles {
+            handles: 2,
+            hv: Some(vec![0x1f4, 0x1f8]),
+        };
+        let line = message.encode_with(&windows).unwrap();
+        assert_eq!(Handles::read(&line).unwrap(), windows);
+        // None declared: the line is the plain one.
+        assert_eq!(
+            message.encode_with(&Handles::default()).unwrap(),
+            serde_json::to_vec(&serde_json::to_value(&message).unwrap()).unwrap()
+        );
+        assert_eq!(
+            Handles::read(&message.encode().unwrap()).unwrap(),
+            Handles::default()
+        );
+        assert!(Handles::read(br#"{"t":"req","id":1,"m":"x","handles":"two"}"#).is_err());
+        assert!(Handles::read(br#"{"t":"req","id":1,"m":"x","handles":-1}"#).is_err());
+        let big = Message::reply(1, Ok(json!("x".repeat(crate::MAX_LINE - 20))));
+        assert_eq!(
+            big.encode_with(&unix).unwrap_err(),
+            crate::framing::FrameError::TooLong
         );
     }
 

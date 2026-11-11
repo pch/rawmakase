@@ -13,6 +13,8 @@
 //!   (`rawmakase mcp`), unless its extension is disabled.
 //! - [`session`]: starting a program in a process group or job object, the
 //!   message channel to it, request deadlines and ending it.
+//! - [`shm`]: the shared memory of the app's request buffers, leased against
+//!   the budgets, and passing its handles to the program.
 //!
 //! The host knows no photo, edit, catalog, renderer or GUI: what an
 //! extension's requests mean to the editor is the app's (`app::extensions`).
@@ -23,6 +25,7 @@ pub mod github;
 pub mod package;
 mod process;
 pub mod session;
+pub mod shm;
 pub mod state;
 pub mod store;
 
