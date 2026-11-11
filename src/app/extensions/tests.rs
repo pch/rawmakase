@@ -1752,8 +1752,9 @@ fn a_hung_program_counts_as_a_crash_and_clears_its_busy_state() {
 }
 
 /// Every session of an extension's program counts its buffers against the
-/// extension's one ledger: after a crash and a restart, and after a reload
-/// that replaces the extension's entry with a changed manifest.
+/// extension's one ledger: after a crash and a restart, after a reload that
+/// replaces the extension's entry with a changed manifest, and after it is
+/// uninstalled and installed again.
 #[test]
 fn a_restarted_extension_keeps_its_ledger() {
     use rawmakase_extensions::shm::Buffers;
@@ -1793,6 +1794,17 @@ fn a_restarted_extension_keeps_its_ledger() {
     );
     run(e, "settings", "Show Settings").unwrap();
     assert_eq!(counted(e), 16, "the replaced entry keeps the ledger");
+
+    // Uninstalled, its entry goes; installed again, the new entry's sessions
+    // count against the same ledger.
+    e.extensions.uninstall(ID).unwrap();
+    assert!(e.extensions.get(ID).is_none());
+    Store::new(&f.data).add_developer(&f.folder).unwrap();
+    let e = &mut f.editor;
+    e.extensions.reload();
+    e.sync_extension_commands();
+    run(e, "settings", "Show Settings").unwrap();
+    assert_eq!(counted(e), 16, "the reinstalled extension keeps the ledger");
     drop(held);
     assert_eq!(counted(e), 0);
 }

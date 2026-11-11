@@ -265,8 +265,9 @@ pub(in crate::app) struct Extension {
     pub entry: Entry,
     run: Option<Running>,
     /// What its requests' buffers count against, in every session of its
-    /// program: kept across restarts and reloads, so leases a program that
-    /// ended still holds until its unit has ended count against the next.
+    /// program: the host's ledger for its id ([`Host`]'s `ledgers`), so
+    /// leases a program that ended still holds until its unit has ended
+    /// count against the next, whatever entry it has.
     ledger: Ledger,
     crashes: u32,
     /// Crashed [`CRASHES`] times in a row: nothing starts it until Retry.
@@ -412,6 +413,11 @@ pub(in crate::app) struct Host {
     closed: bool,
     /// Every unit started, for [`Host::kill_remaining`].
     killers: Vec<Killer>,
+    /// Each extension's ledger, by id, for as long as the host runs: whatever
+    /// entry an id has (restarted, reloaded, uninstalled and installed again,
+    /// or falling back to the bundled one) counts against the same budget as
+    /// its predecessors, whose leases may still be held.
+    ledgers: HashMap<String, Ledger>,
     /// Counts changes to the enabled extensions' commands.
     revision: u64,
     /// For the next Preferences page to report.
@@ -458,6 +464,7 @@ impl Host {
             polls: 0,
             closed: false,
             killers: Vec::new(),
+            ledgers: HashMap::new(),
             revision: 0,
             errors: Vec::new(),
             search_dirs: Vec::new(),
@@ -807,11 +814,7 @@ impl Host {
                     e
                 }
                 existing => {
-                    // A new version or manifest of the same extension keeps its
-                    // ledger: the old program's leases may still be counted.
-                    let ledger = existing
-                        .as_ref()
-                        .map_or_else(Ledger::new, |old| old.ledger.clone());
+                    let ledger = self.ledgers.entry(id.clone()).or_default().clone();
                     if let Some(mut old) = existing {
                         Self::end(&mut old, ErrorCode::Cancelled);
                     }
