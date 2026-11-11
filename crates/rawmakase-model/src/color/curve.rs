@@ -264,19 +264,25 @@ impl NaturalSpline {
 /// A curve sampled at 4097 points over 0..=1, read with linear interpolation: how
 /// the pipeline, the GPU port, the curve editor and camera profile looks all
 /// evaluate a tone curve. It serializes as its 4097 samples.
+///
+/// The samples (16 KiB) live on the heap. A render's curve set holds eight of these
+/// tables, and Rayon can nest whole renders on one worker thread while it waits for
+/// a join, so tables held inline put several copies of that set on a 2 MiB stack at
+/// once and overflowed it.
 #[derive(Clone, Debug, PartialEq)]
-pub struct CurveLut([f32; 4097]);
+pub struct CurveLut(Box<[f32; 4097]>);
 impl CurveLut {
     /// The table whose sample `i` is `f(i)`.
     pub fn from_fn(f: impl FnMut(usize) -> f32) -> Self {
-        Self(std::array::from_fn(f))
+        let samples: Box<[f32]> = (0..4097).map(f).collect();
+        Self(samples.try_into().expect("4097 samples"))
     }
     pub fn new(curve: &ToneCurve) -> Self {
         if curve.natural && curve.smooth {
             let spline = NaturalSpline::new(&curve.points);
-            Self(std::array::from_fn(|i| spline.evaluate(i as f32 / 4096.)))
+            Self::from_fn(|i| spline.evaluate(i as f32 / 4096.))
         } else {
-            Self(std::array::from_fn(|i| curve.evaluate(i as f32 / 4096.)))
+            Self::from_fn(|i| curve.evaluate(i as f32 / 4096.))
         }
     }
     pub fn values(&self) -> &[f32; 4097] {
@@ -314,9 +320,10 @@ impl Serialize for CurveLut {
 impl<'de> Deserialize<'de> for CurveLut {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let samples = Vec::<f32>::deserialize(deserializer)?;
-        <[f32; 4097]>::try_from(samples.as_slice())
+        let len = samples.len();
+        Box::<[f32; 4097]>::try_from(samples.into_boxed_slice())
             .map(Self)
-            .map_err(|_| serde::de::Error::invalid_length(samples.len(), &"4097 curve samples"))
+            .map_err(|_| serde::de::Error::invalid_length(len, &"4097 curve samples"))
     }
 }
 

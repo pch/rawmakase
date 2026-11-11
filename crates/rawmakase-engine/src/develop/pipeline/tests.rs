@@ -2460,3 +2460,30 @@ fn a_lensfun_choice_reaches_the_warp_and_the_gpu() {
     r.lens_profile = false;
     assert!(LensWarp::new(&im, &r).is_none_or(|w| !w.map.lens.source.starts_with("Lensfun")));
 }
+/// A render uses a small part of a worker's stack. Rayon can run another render's
+/// task on a thread that waits inside a render, so renders nest on one stack: with
+/// each render's curve tables on its stack (over 768 KiB for this one), two or three
+/// of them overflowed Rayon's 2 MiB threads in the colour tests. An overflow aborts
+/// the test binary and names this test's thread.
+#[test]
+fn a_render_fits_in_an_eighth_of_a_worker_stack() -> anyhow::Result<()> {
+    let curve = ToneCurve {
+        points: vec![[0., 0.], [0.25, 0.3], [0.75, 0.7], [1., 1.]],
+        ..Default::default()
+    };
+    // HDR with every point curve holds the most curve tables.
+    let mut r = scene_stage_recipe();
+    r.hdr.enabled = true;
+    r.saturation = 0.;
+    r.curve = curve.clone();
+    r.effects.channels = [curve.clone(), curve.clone(), curve];
+    let r = r.checked()?;
+    let im = fixture();
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .stack_size(256 * 1024)
+        .thread_name(|_| "a_render_fits_in_an_eighth_of_a_worker_stack".into())
+        .build()?;
+    pool.install(|| crate::develop::render(&im, &r, 0, Cancel::NEVER))?;
+    Ok(())
+}
