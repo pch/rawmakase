@@ -723,6 +723,7 @@ fn a_develop_read_that_matched_the_catalog_still_applies_once_the_photo_is_left(
 
 /// Whether `token`'s first photo says Develop showed just what the catalog
 /// holds when it was read.
+#[cfg(unix)]
 fn read_clean(token: &str) -> bool {
     let token: Value = serde_json::from_str(token).unwrap();
     token["photos"][0]["clean"] == json!(true)
