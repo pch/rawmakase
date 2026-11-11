@@ -3762,6 +3762,7 @@ dependencies = [
  "rawmakase-interop",
  "rawmakase-mcp",
  "rawmakase-model",
+ "rawmakase-model-install",
  "rawmakase-protocol",
  "rawmakase-remote",
  "rayon",
@@ -4010,6 +4011,17 @@ dependencies = [
  "tempfile",
  "toml",
  "unicode-normalization",
+]
+
+[[package]]
+name = "rawmakase-model-install"
+version = "0.1.0"
+dependencies = [
+ "rawmakase-inference",
+ "rawmakase-model",
+ "sha2",
+ "tempfile",
+ "ureq",
 ]
 
 [[package]]

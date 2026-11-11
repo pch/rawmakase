@@ -30,13 +30,14 @@ flowchart TD
     mcp[rawmakase-mcp]
     remote[rawmakase-remote]
     inference[rawmakase-inference]
+    modelinstall[rawmakase-model-install]
     exthost[rawmakase-extensions]
     extprotocol[rawmakase-extension-protocol]
     sdk[rawmakase-extension]
     cargoext[cargo-rawmakase]
 
     app --> export & decode & catalog & engine & interop & model
-    app --> ctl & mcp & remote & inference & fs & exthost
+    app --> ctl & mcp & remote & inference & modelinstall & fs & exthost
     export --> decode & engine & interop
     decode --> engine & raw
     catalog --> interop & fs
@@ -47,6 +48,7 @@ flowchart TD
     ctl --> protocol
     mcp --> ctl
     remote --> inference
+    modelinstall --> inference & model
     exthost --> extprotocol & fs
     sdk --> extprotocol
     cargoext --> exthost & protocol
@@ -68,6 +70,7 @@ on it directly.)
 | `rawmakase-decode` | Opening and decoding photos: the only crate that reaches `rawmakase-raw`; colour management, demosaicing, rendered files (JPEG … HEIF), the full-size decode and its cache, AI Denoise's packing and assembly, Camera Look fitting | C imaging libraries, the catalog, export, the GUI |
 | `rawmakase-export` | Developing and writing exports, with their watermarks | The app, a window or GPU backend |
 | `rawmakase-inference` | Running the selection models and AI Denoise's model through a lazily loaded ONNX Runtime: pixels in, coverage or denoised camera RGB out | Every other workspace crate |
+| `rawmakase-model-install` | Installing a model pack: a folder and its files, downloaded resumably or copied from a folder, each checked against its size and SHA-256, the receipt that makes a pack installed, the lock across instances, and the models and runtime folders in the local data folder. Which packs exist is its caller's | Everything but inference and the model |
 | `rawmakase-remote` | The optional worker binary that runs the same models on another computer, and the app's client for it, over a bounded TCP protocol | Everything but inference |
 | `rawmakase-protocol` | What the app and its control clients agree on: protocol version, `control.json` endpoint, data folder | Everything |
 | `rawmakase-ctl` (`tools/`) | The control client, used by `rawmakase control`, `rawmakase mcp` and the standalone `rawmakase-ctl` | The app |
@@ -134,7 +137,7 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `diagnostics` | The system report a bug report asks for (Report an Issue…, `rawmakase system-info`): this build, the system probed once per process and what the window knew, as plain snapshots, with no path, user, file, catalog or profile name | `diagnostics.rs` |
 | `updates` | Release checks and self-update through fastframe-update; the notice itself is in `app` | `updates.rs` |
 | `ai_denoise` | AI Denoise's service, shared by the desktop app and the command line: the queue, the worker and its ONNX session, job keys, the finished-result lookup, `AiBase` for export; `CommandLine` for `render` and `render-batch`, and the `rawmakase denoise` development command. No egui and no `app`: the open photo's result and the Loupe's loader are `app::develop::ai_denoise`'s, and the app passes the user's cache in | `mod.rs`, `command_line.rs`, `bench.rs` |
-| `model_install` | Installing the model packs (Select Subject's, Sky's, AI Denoise's): their folders, the receipt of checked files, downloads that resume, the lock across instances, and the runtime folder; the threads and the drawer are `app`'s | `mod.rs` |
+| `model_install` | The app's model packs (Select Subject's, Sky's, AI Denoise's): which files each holds and its folder; installing them is `rawmakase-model-install`'s, and the threads and the drawer are `app`'s | `mod.rs` |
 | `lensfun_install` | Downloading, checking, publishing and removing Lensfun's lens database on request (never bundled, never fetched unasked); reading it is `lens::lensfun::installed`'s, the panels and the job thread are `app`'s | `lensfun_install.rs` |
 | `comparison` | Reproducible reference-image comparisons using the same develop APIs | `comparison.rs` |
 
