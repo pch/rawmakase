@@ -518,6 +518,27 @@ below white, and the GPU's HDR preview already applies them so. An HDR profile's
 stay refused: how Camera Raw combines its overrange encoding with an sRGB-encoded
 table is not measured, and no capture of one exists.
 
+### Red Eye
+
+Camera Raw 18.7 rendered a synthetic eye probe (red pupils and glowing pet pupils on
+skin and iris, at a quarter of, once and four times their base level, a linear
+profile) with Red Eye and Pet Eye at Darken 0, 50 and 100, in HDR at limit 8 and in
+SDR. Its HDR correction is its SDR one: each corrected pupil's luminance matches to
+about 1% (the brightest red pupil, 0.89 of white in HDR and clipped to 0.28 in SDR,
+corrects to 0.320 and 0.319), so the fix works on the scene before tone, as
+RAWmakase's does on the camera's samples.
+
+Scored on the pupils' cores (the correction's luminance effect against Camera Raw's,
+and mean ΔE_ITP of the corrected pupils), RAWmakase's master is 0.205 stop off at the
+median (p95 0.87) against its SDR rendition's 0.221 (p95 1.35); on the red pupils the
+mean ΔE_ITP is 32.7 in both. Pet Eye's pupils are black in RAWmakase and 0.0001–0.0005
+of white in Camera Raw (0.00052 in HDR, 0.00045 in SDR at the brightest), which is all
+of the HDR score's 0.56 higher mean ΔE_ITP over every pupil (33.4 against 32.8). The
+SDR operator's own error (its Darken and colour fit) dominates both.
+
+Decision, 2026-11-12: Red Eye and Pet Eye render in the HDR master, as in SDR. HDR
+files still refuse them, as every retouch.
+
 ### HDR files
 
 Measured with Camera Raw 18.7 (Process Version 15.4) on a synthetic 16-bit PQ TIFF in

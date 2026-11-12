@@ -550,6 +550,40 @@ mod tests {
         Ok(())
     }
 
+    /// Red Eye renders in the master as in its SDR rendition: it corrects the camera's
+    /// samples before tone, so a red pupil turns to the same dark neutral in both, and
+    /// light above white elsewhere stays.
+    #[test]
+    fn red_eye_renders_in_the_master() -> anyhow::Result<()> {
+        use crate::model::image_frame::ImageFrame;
+        use crate::model::red_eye::{EyeKind, RedEyeOp};
+        let im = patches(&[[3., 3., 3.], [0.6, 0.05, 0.04], [0.2, 0.2, 0.2]]);
+        let mut r = hdr_recipe(&im);
+        let plain = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let frame = ImageFrame::new(&im);
+        let side = 3. / frame.long_edge();
+        r.red_eye = vec![RedEyeOp {
+            kind: EyeKind::Red,
+            center: frame.to_image(12., 4.),
+            radius: [side, side],
+            correlation: 0.,
+            pupil_size: 0.5,
+            darken: 0.5,
+        }]
+        .into();
+        let fixed = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let at = |out: &crate::rendered::HdrImage, column: usize| {
+            out.pixels[4 * out.width as usize + column * 8 + 4]
+        };
+        let (p, q) = (at(&fixed, 1), at(&plain, 1));
+        assert!(p[0] < 0.5 * q[0] && p[0] < 1.3 * p[1], "{p:?} {q:?}");
+        assert_eq!(at(&fixed, 0), at(&plain, 0), "light above white stays");
+        let sdr = crate::develop::render(&im, &r.checked()?, 0, Cancel::NEVER)?;
+        let s = sdr.pixels[4 * sdr.width as usize + 8 + 4];
+        assert!(s[0] < 1.3 * s[1], "{s:?}");
+        Ok(())
+    }
+
     /// A `.cube` look's RGB table renders a gray ramp through the ACR3 curve as Camera
     /// Raw 18.7 renders it at HDR limit 8: on overrange-encoded values, and above 16
     /// times white with the light beyond added back (the levels' default renders are

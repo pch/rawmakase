@@ -212,7 +212,7 @@ const DEHAZE_MEASURED: f32 = 0.3;
 /// tables and curve, [`crate::camera_profiles::hdr_look`], at any Profile Amount, and
 /// their own settings checked as the user's), and what works
 /// on the camera's samples before tone: lens corrections, geometry, noise reduction,
-/// AI Denoise, Heal and Clone, and output sharpening. The SDR rendition's sliders never
+/// AI Denoise, Red Eye, Heal and Clone, and output sharpening. The SDR rendition's sliders never
 /// change the master, so they are not checked.
 pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
     check(r, true)
@@ -270,7 +270,7 @@ fn check(r: &super::recipe::Recipe, fold: bool) -> Result<()> {
 fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
     // The SDR rendition's sliders are not here: they never change the master (Camera
     // Raw 18.7's is bit-identical with each at ±50), so it renders with them set.
-    let unmeasured: [(&'static str, bool); 10] = [
+    let unmeasured: [(&'static str, bool); 9] = [
         // Camera Raw's positive Whites follows the photo's level, which twice the 99th
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
@@ -318,7 +318,6 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
         // master further from Camera Raw's than leaving it out would
         // (docs/records/hdr-stage1-results.md#defringe).
         ("Defringe", r.effects.defringe != [0.; 2]),
-        ("Red Eye", !r.red_eye.is_blank()),
     ];
     unmeasured
         .into_iter()
