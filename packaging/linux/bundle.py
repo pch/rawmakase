@@ -37,9 +37,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("binary", type=Path)
     parser.add_argument("output", type=Path)
-    # A bundled extension's program (rawmakase-mcp, rawmakase-midi), installed
-    # beside the executable, where the app looks for it. It may link only the
-    # system's libraries.
+    # A bundled extension's program (rawmakase-mcp, rawmakase-midi,
+    # rawmakase-ai-masks), installed beside the executable, where the app looks
+    # for it. It may link only the system's libraries.
     parser.add_argument("--program", type=Path, action="append", default=[])
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]

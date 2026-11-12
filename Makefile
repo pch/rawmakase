@@ -3,11 +3,12 @@ PREFIX ?= $(HOME)/.local
 PKGNAME ?= rawmakase
 BIN := target/release/rawmakase
 # The bundled extensions' programs: MCP's, which `rawmakase mcp` runs, and
-# MIDI's, which the app starts. The app looks for its bundled programs beside
-# its executable and, on Linux, in ../lib/rawmakase
+# MIDI's and AI masks', which the app starts. The app looks for its bundled
+# programs beside its executable and, on Linux, in ../lib/rawmakase
 # (crates/rawmakase-extensions/src/bundled.rs).
 MCP_BIN := target/release/rawmakase-mcp
 MIDI_BIN := target/release/rawmakase-midi
+AI_MASKS_BIN := target/release/rawmakase-ai-masks
 ifeq ($(shell uname -s),Darwin)
 PROGRAM_DIR = $(PREFIX)/bin
 else
@@ -18,7 +19,7 @@ endif
 all: build
 
 build:
-	cargo build --release --locked -p rawmakase -p rawmakase-mcp -p rawmakase-midi
+	cargo build --release --locked -p rawmakase -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
 
 # The minimum Rust version Cargo.toml declares, compiled as CI's lint job does.
 MSRV := $(shell sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
@@ -96,9 +97,11 @@ install:
 	@test -x $(BIN) || { echo "Run 'make' first to build $(BIN)"; exit 1; }
 	@test -x $(MCP_BIN) || { echo "Run 'make' first to build $(MCP_BIN)"; exit 1; }
 	@test -x $(MIDI_BIN) || { echo "Run 'make' first to build $(MIDI_BIN)"; exit 1; }
+	@test -x $(AI_MASKS_BIN) || { echo "Run 'make' first to build $(AI_MASKS_BIN)"; exit 1; }
 	install -Dm755 $(BIN) $(DESTDIR)$(PREFIX)/bin/rawmakase
 	install -Dm755 $(MCP_BIN) $(DESTDIR)$(PROGRAM_DIR)/rawmakase-mcp
 	install -Dm755 $(MIDI_BIN) $(DESTDIR)$(PROGRAM_DIR)/rawmakase-midi
+	install -Dm755 $(AI_MASKS_BIN) $(DESTDIR)$(PROGRAM_DIR)/rawmakase-ai-masks
 	install -Dm644 LICENSE $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/LICENSE
 	install -Dm644 licenses/Adobe-DNG-SDK.txt $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/Adobe-DNG-SDK.txt
 	install -Dm644 licenses/Compact-ICC-Profiles-CC0.txt $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/Compact-ICC-Profiles-CC0.txt
@@ -118,6 +121,7 @@ uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/rawmakase
 	rm -f $(DESTDIR)$(PROGRAM_DIR)/rawmakase-mcp
 	rm -f $(DESTDIR)$(PROGRAM_DIR)/rawmakase-midi
+	rm -f $(DESTDIR)$(PROGRAM_DIR)/rawmakase-ai-masks
 	-rmdir $(DESTDIR)$(PREFIX)/lib/rawmakase 2>/dev/null
 	rm -f $(DESTDIR)$(PREFIX)/share/applications/rawmakase.desktop
 	rm -f $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/rawmakase.svg

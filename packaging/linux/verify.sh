@@ -26,9 +26,9 @@ fi
 # The bundled extensions' programs, from the first release that ships them:
 # beside the app, built for this machine and linking only the system's
 # libraries; MCP's found by `rawmakase mcp`, which completes an MCP initialize
-# with it, in the folder where the app looks for MIDI's too.
+# with it, in the folder where the app looks for MIDI's and AI masks' too.
 programs=()
-for ships in rawmakase-mcp:0.4.13 rawmakase-midi:0.4.13; do
+for ships in rawmakase-mcp:0.4.13 rawmakase-midi:0.4.13 rawmakase-ai-masks:0.4.13; do
   program=${ships%%:*} since=${ships#*:}
   if [ "$(printf '%s\n' "$since" "$installed" | sort -V | head -n1)" = "$since" ]; then
     programs+=("/usr/lib/rawmakase/$program")
@@ -55,3 +55,4 @@ test ! -e /usr/bin/rawmakase
 test ! -e /usr/lib/rawmakase/rawmakase
 test ! -e /usr/lib/rawmakase/rawmakase-mcp
 test ! -e /usr/lib/rawmakase/rawmakase-midi
+test ! -e /usr/lib/rawmakase/rawmakase-ai-masks

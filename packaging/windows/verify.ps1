@@ -1,15 +1,16 @@
 # Installs the finished setup program silently the way the updater runs it,
 # checks the installed app reports the release version, then uninstalls it.
 #
-#   pwsh packaging/windows/verify.ps1 dist\rawmakase-v0.1.9-x86_64-pc-windows-msvc-setup.exe 0.1.9 [-Mcp] [-Midi]
+#   pwsh packaging/windows/verify.ps1 dist\rawmakase-v0.1.9-x86_64-pc-windows-msvc-setup.exe 0.1.9 [-Mcp] [-Midi] [-AiMasks]
 #
-# -Mcp and -Midi check the bundled MCP and MIDI extensions' programs too, for
-# a source that ships them.
+# -Mcp, -Midi and -AiMasks check the bundled MCP, MIDI and AI masks
+# extensions' programs too, for a source that ships them.
 param(
     [Parameter(Mandatory)][string]$Setup,
     [Parameter(Mandatory)][string]$Version,
     [switch]$Mcp,
-    [switch]$Midi
+    [switch]$Midi,
+    [switch]$AiMasks
 )
 $ErrorActionPreference = 'Stop'
 $directory = Join-Path ([System.IO.Path]::GetTempPath()) "rawmakase-verify-$PID"
@@ -32,12 +33,14 @@ if ($reported -ne "rawmakase $Version") { throw "Installed app reports '$reporte
 # The bundled extensions' programs: installed beside the app, built for this
 # Windows and importing only Windows' DLLs; MCP's found by `rawmakase mcp`,
 # which completes an MCP initialize, in the folder where the app looks for
-# MIDI's too.
+# MIDI's and AI masks' too.
 $mcpProgram = Join-Path $directory 'rawmakase-mcp.exe'
 $midiProgram = Join-Path $directory 'rawmakase-midi.exe'
+$aiMasksProgram = Join-Path $directory 'rawmakase-ai-masks.exe'
 $programs = @()
 if ($Mcp) { $programs += $mcpProgram }
 if ($Midi) { $programs += $midiProgram }
+if ($AiMasks) { $programs += $aiMasksProgram }
 if ($programs.Count -gt 0) {
     $arm64 = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64'
     python (Join-Path $PSScriptRoot '..\check_programs.py') $exe @programs --arch $(if ($arm64) { 'aarch64' } else { 'x86_64' }) --version $Version
@@ -52,4 +55,5 @@ for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
 if (Test-Path $exe) { throw 'Uninstall left the app behind' }
 if (Test-Path $mcpProgram) { throw 'Uninstall left the MCP program behind' }
 if (Test-Path $midiProgram) { throw 'Uninstall left the MIDI program behind' }
+if (Test-Path $aiMasksProgram) { throw 'Uninstall left the AI masks program behind' }
 "Installed, reported '$reported' and uninstalled cleanly"

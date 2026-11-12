@@ -83,7 +83,7 @@ class VerifyScriptTests(unittest.TestCase):
             path.chmod(0o755)
         # The programs: real executables of this machine linking only the C
         # library, which is all the check reads of them.
-        for name in ("rawmakase-mcp", "rawmakase-midi"):
+        for name in ("rawmakase-mcp", "rawmakase-midi", "rawmakase-ai-masks"):
             program = self.contents / "usr/lib/rawmakase" / name
             shutil.copy2(Path(shutil.which("true")).resolve(), program)
             program.chmod(0o755)
@@ -113,7 +113,7 @@ class VerifyScriptTests(unittest.TestCase):
         self.assertIn("Verified rawmakase-1.2.3-x86_64.AppImage", result.stdout)
 
     def test_the_programs_are_required_from_the_release_that_ships_them(self):
-        for name in ("rawmakase-mcp", "rawmakase-midi"):
+        for name in ("rawmakase-mcp", "rawmakase-midi", "rawmakase-ai-masks"):
             program = self.contents / "usr/lib/rawmakase" / name
             kept = program.read_bytes()
             program.unlink()
@@ -122,7 +122,7 @@ class VerifyScriptTests(unittest.TestCase):
             self.assertIn(name, result.stderr)
             program.write_bytes(kept)
             program.chmod(0o755)
-        for name in ("rawmakase-mcp", "rawmakase-midi"):
+        for name in ("rawmakase-mcp", "rawmakase-midi", "rawmakase-ai-masks"):
             (self.contents / "usr/lib/rawmakase" / name).unlink()
         old = self.image.with_name("rawmakase-0.4.12-x86_64.AppImage")
         self.image.rename(old)

@@ -3,13 +3,15 @@
 RAWmakase: each is there and executable, built for the expected
 architecture, and links nothing but the system's libraries. rawmakase-mcp is
 found by `rawmakase mcp`, which completes an MCP initialize with it: the app
-looks for every bundled program in that folder, rawmakase-midi too.
+looks for every bundled program in that folder, rawmakase-midi and
+rawmakase-ai-masks too.
 
     python3 packaging/check_programs.py RAWMAKASE PROGRAM... [--arch ARCH] [--version VERSION]
 
 RAWMAKASE is what users run (on Linux the usr/bin launcher), each PROGRAM a
-program beside the app (rawmakase-mcp, rawmakase-midi). No running app is
-needed: initialize doesn't reach it, and an empty data folder is used.
+program beside the app (rawmakase-mcp, rawmakase-midi, rawmakase-ai-masks).
+No running app is needed: initialize doesn't reach it, and an empty data
+folder is used.
 """
 import argparse
 import json
