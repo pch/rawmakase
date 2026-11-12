@@ -2,7 +2,7 @@
 name = "rawmakase-midi"
 # The bundled extension's manifest carries the app's version, and so does this
 # program (a test compares them).
-version = "0.4.12"
+version = "0.5.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "MIDI control surfaces for RAWmakase, as a bundled extension: devices, mappings and their page"

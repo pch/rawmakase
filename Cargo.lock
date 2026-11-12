@@ -3724,7 +3724,7 @@ dependencies = [
 
 [[package]]
 name = "rawmakase"
-version = "0.4.12"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "block2 0.6.2",
@@ -3791,7 +3791,7 @@ dependencies = [
 
 [[package]]
 name = "rawmakase-ai-masks"
-version = "0.4.12"
+version = "0.5.0"
 dependencies = [
  "rawmakase-cancel",
  "rawmakase-extension",
@@ -4005,7 +4005,7 @@ dependencies = [
 
 [[package]]
 name = "rawmakase-mcp"
-version = "0.4.12"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -4022,7 +4022,7 @@ dependencies = [
 
 [[package]]
 name = "rawmakase-midi"
-version = "0.4.12"
+version = "0.5.0"
 dependencies = [
  "midir",
  "rawmakase-extension",

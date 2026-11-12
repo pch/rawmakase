@@ -1,7 +1,7 @@
 [package]
 name = "rawmakase-mcp"
 # The MCP server reports this version to its clients, so it follows the app's.
-version = "0.4.12"
+version = "0.5.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "Editing tools for a running RAWmakase, served over MCP stdio"

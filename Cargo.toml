@@ -1,6 +1,6 @@
 [package]
 name = "rawmakase"
-version = "0.4.12"
+version = "0.5.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "A fast, non-destructive RAW photo developer"
@@ -174,11 +174,11 @@ rawmakase-example = { path = "extensions/example", version = "0.1.0" }
 # The MIDI tests run the bundled MIDI extension's program the same way, its
 # input fed by the test; a scripted adapter speaks the protocol through the
 # SDK's channel.
-rawmakase-midi = { path = "extensions/midi", version = "0.4.12" }
+rawmakase-midi = { path = "extensions/midi", version = "0.5.0" }
 # The AI masks tests run the bundled AI masks extension's program the same
 # way, its models a stand-in; the app itself never links the selection models
 # or the remote worker's client.
-rawmakase-ai-masks = { path = "extensions/ai-masks", version = "0.4.12" }
+rawmakase-ai-masks = { path = "extensions/ai-masks", version = "0.5.0" }
 rawmakase-extension = { path = "crates/rawmakase-extension", version = "0.1.0" }
 # Tests set up and inspect catalog files directly; the app itself reaches
 # the catalog's database only through rawmakase-catalog.

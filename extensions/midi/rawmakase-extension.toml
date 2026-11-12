@@ -4,7 +4,7 @@
 [extension]
 id = "rawmakase.midi"
 name = "MIDI"
-version = "0.4.12"
+version = "0.5.0"
 rawmakase = "*"
 api = 1
 authors = ["RAWmakase"]

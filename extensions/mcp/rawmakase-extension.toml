@@ -5,7 +5,7 @@
 [extension]
 id = "rawmakase.mcp"
 name = "MCP"
-version = "0.4.12"
+version = "0.5.0"
 rawmakase = "*"
 api = 1
 authors = ["RAWmakase"]
