@@ -1519,6 +1519,57 @@ Raw than; the bright blues Camera Raw takes above white are not selected at all 
 white ≈ 1.00, no change). **Defringe stays refused in HDR**; it needs SDR parity of the
 hue selection first.
 
+**Modelled on Camera Raw's HDR behaviour (2026-11-12).** Scored as above, with
+RAWmakase's HDR renders of the same twelve photos (CC0 copies, the same edits), each
+against its render without Defringe:
+
+- On the blocks Camera Raw's HDR Defringe changes most below white (the top 1%), SDR's
+  operator at full strength removes what Camera Raw does (chroma kept ×0.68, as
+  Camera Raw's). Its error is elsewhere: it changes blocks Camera Raw leaves alone
+  (mean change 0.032 where Camera Raw's is under 2%). Those are mostly very dark and
+  faint (median luminance 0.010 against 0.071, Oklab chroma 0.012 against 0.026 on the
+  blocks both change) and away from sharp changes of luminance (a range of 1.2 stops
+  across 3×3 blocks against 2.0).
+- A weight on the luminance range around each pixel alone removes Camera Raw's and the
+  rest alike (with the change at ×0.6, kept ×0.87–0.93 on Camera Raw's blocks and the
+  rest 0.008–0.013), as a weaker change does (×0.4: ×0.87, 0.013). A weight on the
+  colour's own Oklab chroma tells them apart (none below 0.015, full from 0.04: ×0.87 on
+  Camera Raw's blocks, 0.006 elsewhere), and the two together more so.
+
+| Master's Defringe (SDR's operator ×1) | Below white | Above white | Kept on Camera Raw's blocks | Change elsewhere |
+| --- | --- | --- | --- | --- |
+| Unweighted (#1002) | 3.78 | 1.29 | ×0.68 | 0.032 |
+| ×0.4 | 1.18 | 1.00 | ×0.87 | 0.013 |
+| Luminance range (8 px, full from 2 stops), ×0.6 | 1.57 | 0.99 | ×0.87 | 0.013 |
+| Chroma 0.015–0.04 | 1.48 | 1.15 | ×0.87 | 0.006 |
+| Chroma 0.02–0.05 | 1.25 | 1.11 | ×0.92 | 0.003 |
+| Chroma 0.01–0.03, range (4 px, 2 stops) | 1.15 | 1.09 | ×0.87 | 0.007 |
+| **Chroma 0.015–0.04, range (4 px, 1 stop)** | **1.06** | **1.09** | ×0.89 | 0.004 |
+
+Above white, Camera Raw takes chroma only where a blue's brightest Display P3 channel
+is 4.5–6.5 times white and it is saturated: the Z 8's sky at saturation (1 − min/max)
+0.5–0.8 keeps ×0.51–0.56, a Sony ARW's (DSC03793) ×0.75–0.80; the Z 8's paler blues at
+6–8 times white, and every photo's blues below four times white (Panasonic,
+Fujifilm, Sony and Panasonic RW2 skies at 1–3 times white), keep theirs. Taking half
+the chroma of blues in that band (Oklab hue 0.63–0.675, saturation above 0.55) brings
+the Z 8 above white from 0.99 to 0.73; the median over the photos stays 1.09, set by
+photos where Camera Raw changes almost nothing above white (Panasonic 3.6, Fujifilm
+1.8). Fading the master's operator out above white would lower that median to 0.98,
+but the synthetic patches show Camera Raw removing the same share at every brightness,
+so it is not done.
+
+Per photo, the chosen weights score below white within 0.2 of RAWmakase's own SDR
+score on every photo and at or below it on eleven (SDR 0.31–2.46, HDR 0.27–2.02). The
+weights and the band are fitted on these twelve photos, which are also the photos the
+rule is applied on; no other HDR Defringe captures exist. SDR renders are
+bit-identical to `main` (36 renders of the twelve photos, Defringe on and off), and so
+are HDR renders without Defringe.
+
+Decision, 2026-11-12: Defringe renders in the HDR master by this model
+([Defringe](../hdr.md#defringe)): HDR below white 1.06 and above white 1.09, against
+SDR's 1.49. Defringe with Black & White stays refused (the master's pass follows the
+gray mix). RAWmakase's SDR Defringe keeps its selection, whose error is SDR's own.
+
 ### Masks
 
 A mask's adjustment is added to the photo's own in RAWmakase's stages: its Temp and
@@ -1826,9 +1877,10 @@ photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
   +40, where Camera Raw's HDR effect strengthens with brightness and the SDR grids don't
   ([Band Luminance](#band-luminance)); Point Color on photos and on the GPU's HDR preview
   ([Point Color](#point-color)).
-- Defringe in HDR: Camera Raw's HDR Defringe removes less than its SDR one below
-  white and takes some bright blues above it; RAWmakase's hue selection misses Camera
-  Raw's in SDR too ([Defringe](#defringe)).
+- Defringe: RAWmakase's SDR selection (by hue and chroma alone) changes smooth and
+  dark colour Camera Raw's leaves alone (1.49 relative error in SDR); the HDR master's
+  model of Camera Raw's ([Defringe](#defringe)) was fitted on the twelve photos it is
+  scored on. Defringe with Black & White in HDR.
 - Channel curves' peak on photos: the Z50 II's brightest block is 0.19 stop high, the
   Z 8's 0.11, where their median and p95 pass ([Tone curves](#tone-curves)).
 - Strong Highlights tints of saturated colours above white, and the Z50 II's peak with
@@ -1892,7 +1944,7 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
   ([Vignette and grain](#vignette-and-grain)); masks with Temp,
   Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from −50 to +50 and Dehaze from −30 to +100 ([Presence](#presence));
-  Red Eye ([Red Eye](#red-eye)); ordinary profiles' sRGB-encoded tables
+  Red Eye ([Red Eye](#red-eye)); Defringe, modelled on Camera Raw's HDR behaviour ([Defringe](#defringe)); ordinary profiles' sRGB-encoded tables
   ([sRGB-encoded tables](#srgb-encoded-tables)). What stays refused, each with its
   measurements, is listed in [completion](hdr-253-closure.md#what-stays-refused);
   52552 grouping (library only, needed when toggling HDR pairs profiles) is open.

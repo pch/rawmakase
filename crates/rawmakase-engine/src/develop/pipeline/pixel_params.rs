@@ -264,6 +264,8 @@ pub(crate) fn supported_hdr(r: &Recipe, metadata: &crate::camera_data::Metadata)
         // The post-crop vignette and grain of a master render on the CPU only.
         && r.effects.grain == 0.
         && r.effects.vignette == 0.
+        // So does its Defringe, which reads the luminance around each pixel.
+        && r.effects.defringe == [0.; 2]
         // A master with masks renders on the CPU only.
         && !r.masks.iter().any(crate::model::masks::MaskGroup::is_active)
         // So does its Point Color.
