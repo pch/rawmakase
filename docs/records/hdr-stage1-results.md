@@ -58,7 +58,7 @@ The HDR stages' captures were frozen in the test dataset on 2026-11-09
 Nine photos do not render. Eight have no Adobe Standard in the profile library the
 gate used: three Samsung phones, the DJI FC9287, the Panasonic DC-G100D and DC-TZ95D
 and the Sony ZV-1. The Leica D-Lux 7's profile has sRGB-encoded tables, which HDR
-refuses. The peak is the most frequent miss, as for the X100V and Z6 III above.
+refused until 2026-11-12 ([sRGB-encoded tables](#srgb-encoded-tables)). The peak is the most frequent miss, as for the X100V and Z6 III above.
 
 `main` b012705d (2026-11-12: Clarity 0 to +50, Dehaze ±30 and the mask operators of
 #1031 among the stages added since f7d7ee9a) is accepted against that baseline on
@@ -473,6 +473,37 @@ below white, where the saturation-0.9 patches miss in SDR too) and a B&W `.cube`
 saturation-0.9 red and magenta patches, far outside its sRGB table's gamut, Camera Raw
 renders almost black at and above white (up to 16 stops darker; 3 of 216 patches at 8
 times white), where RAWmakase renders their gray.
+
+### sRGB-encoded tables
+
+Of the 4,327 DCPs installed with Camera Raw 18.7 that RAWmakase reads, 2,439 have a table
+whose value divisions are sRGB-encoded (`ProfileLookTableEncoding` 1): 2,437
+camera-matching profiles (Camera Standard, Vivid, Flat and the others, for Sony, Nikon,
+Canon, Panasonic, Olympus and OM, Ricoh, Leica, Pentax and Sigma) and two Adobe
+Standard profiles (the Leica D-Lux 7's and a Samsung phone's front camera's). 2,430
+of them have only a 3D look table (90 × 16 × 16 in 2,394); 27 are named as HDR
+profiles (such as the Nikon Z 5 II's Camera Standard HDR).
+
+The only Camera Raw HDR capture of such a profile on a CC0 photo is the gate set's
+Leica D-Lux 7 (Adobe Standard, limit 4; 4.9% of its area above white), with its SDR
+default render in the SDR corpus. Three renderings of the table above white were
+scored on the gate's blocks (luminance error median / p95 in stops, mean ΔE_ITP):
+
+| Rendering | HDR, below 0.9 | HDR, above white | Peak | SDR, below 0.9 |
+| --- | --- | --- | --- | --- |
+| The value sRGB-encoded past 1, as in SDR | 0.008 / 0.040, 0.39 | 0.005 / 0.007, 0.28 | −0.004 | 0.010 / 0.037, 0.59 |
+| The table's change at white as a gain above it | 0.008 / 0.040, 0.39 | 0.005 / 0.007, 0.28 | −0.004 | |
+| The overrange rule of HDR profiles | 0.007 / 0.041, 0.35 | 0.005 / 0.007, 0.23 | −0.001 | |
+
+Each is closer to Camera Raw's HDR render than RAWmakase's SDR render is to its SDR
+one, and the first two are identical on this photo (its table sees few scene values
+above white, before the profile's curve).
+
+Decision, 2026-11-12: an ordinary profile's sRGB-encoded tables render in HDR as in
+SDR, the value encoded past 1 by the sRGB curve: the master matches the SDR rendition
+below white, and the GPU's HDR preview already applies them so. An HDR profile's
+stay refused: how Camera Raw combines its overrange encoding with an sRGB-encoded
+table is not measured, and no capture of one exists.
 
 ### HDR files
 

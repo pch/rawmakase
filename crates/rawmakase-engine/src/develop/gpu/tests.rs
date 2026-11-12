@@ -2152,6 +2152,9 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         )),
         with(profile.clone().as_hdr_for_test()),
         with(profile.clone().with_test_hdr_tables()),
+        // An ordinary profile's sRGB-encoded 3D look table, as camera-matching
+        // profiles have.
+        with(profile.clone().with_test_srgb_look()),
         Recipe {
             exposure: 0.6,
             ..with(profile.clone().with_test_hdr_tables().as_hdr_for_test())
