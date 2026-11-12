@@ -28,6 +28,13 @@ use crate::manifest::{ModelFile, RAWNIND, denoise_files};
 /// Environment variable naming the ONNX Runtime library file to load.
 pub const RUNTIME_ENV: &str = "RAWMAKASE_ORT_LIB";
 
+/// Environment variable in which the app passes a bundled extension's
+/// program the folders it searches for the runtime beside its own
+/// executable ([`runtime_search_dirs`]), joined as `PATH` is
+/// ([`std::env::join_paths`]). The program searches them after
+/// [`RUNTIME_ENV`], so AI masks and AI Denoise share the app's copy.
+pub const HOST_RUNTIME_DIRS: &str = "RAWMAKASE_HOST_RUNTIME_DIRS";
+
 /// How often a running inference polls the caller's cancel flag.
 const CANCEL_POLL: Duration = Duration::from_millis(15);
 
@@ -402,8 +409,9 @@ fn open_first(candidates: Vec<PathBuf>) -> Result<Environment, InferenceError> {
 
 /// The libraries to try, in order: `explicit`, the file `variable` (the value
 /// of [`RUNTIME_ENV`]) names, then the runtime files in each of `dirs` and
-/// then of `own`.
-fn runtime_candidates(
+/// then of `own`. [`load_runtime_with`] passes the environment's variable and
+/// [`runtime_search_dirs`] as `own`.
+pub fn runtime_candidates(
     explicit: Option<&Path>,
     variable: Option<std::ffi::OsString>,
     dirs: &[PathBuf],

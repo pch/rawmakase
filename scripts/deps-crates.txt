@@ -72,7 +72,6 @@ rawmakase-midi never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-mode
 # The AI masks extension runs the selection models, here or on the remote
 # worker, and installs them: the SDK, the models, the remote client, the
 # installer (and the model crate it writes files with) and the local data
-# folder's policy (rawmakase-protocol). It knows
-# no edit, catalog, renderer, decoder or extension host, as a third party's
-# program wouldn't.
+# folder's policy (rawmakase-protocol). It knows no edit, catalog, renderer,
+# decoder or extension host, as a third party's program wouldn't.
 rawmakase-ai-masks never rawmakase-fs rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-ctl rawmakase-mcp rawmakase-extensions cargo-rawmakase rawmakase-example rawmakase-midi
