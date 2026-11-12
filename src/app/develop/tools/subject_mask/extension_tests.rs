@@ -414,6 +414,7 @@ fn a_generator_set_up_then_disabled_keeps_its_saved_masks() {
     let Generator::Extension(offer) = setup.generator.clone() else {
         panic!()
     };
+    let guard = Guard::of(e.document.edit.recipe(), setup.target);
     e.request_selection(setup.clone());
     pump(e, "Setup", settled);
     assert_eq!(
@@ -424,6 +425,7 @@ fn a_generator_set_up_then_disabled_keeps_its_saved_masks() {
                 what: "the Example model".into(),
                 bytes: 12_500_000,
             },
+            guard,
         })
     );
     assert!(e.document.edit.recipe().masks.is_empty());
@@ -519,4 +521,57 @@ fn draw_masking_panel(e: &mut Editor) {
     );
     output.textures_delta.clear();
     e.finish_edit_frame(frame, &ctx);
+}
+
+fn offer(e: &Editor, name: &str) -> Offer {
+    match tile(e, name).generator {
+        Generator::Extension(offer) => offer,
+        Generator::Feature(_) => unreachable!(),
+    }
+}
+
+#[test]
+fn a_setup_finished_after_its_mask_moved_doesnt_go_on() {
+    let mut f = fixture(0.44);
+    let folder = f.folder.clone();
+    let e = &mut f.editor;
+    e.request_selection(tile(e, "Blob"));
+    pump(e, "Blob", settled);
+    e.request_selection(tile(e, "Flat"));
+    pump(e, "Flat", settled);
+    // Asked for mask 0, which then goes: mask 1 takes its index.
+    let mut setup = tile(e, "Setup");
+    setup.target = Target::Component {
+        mask: 0,
+        op: MaskOp::Add,
+    };
+    e.request_selection(setup);
+    pump(e, "Setup", settled);
+    assert!(matches!(e.selection.prompt, Some(Prompt::Setup { .. })));
+    e.setup_generator(&offer(e, "Setup"));
+    pump(e, "the setup to start", |e| {
+        matches!(
+            e.extensions.mask_setup(ID, "setup"),
+            Some(mask_generator::Setup::Running { done: Some(_), .. })
+        )
+    });
+    e.change_edit(
+        Some(crate::app::history::Step::new("Delete Mask", "")),
+        |r| {
+            r.masks.remove(0);
+        },
+    );
+    let flat = e.document.edit.recipe().masks[0].clone();
+    let sent = e.extensions.masks_sent().len();
+    std::fs::write(folder.join("finish-setup"), b"").unwrap();
+    pump(e, "the setup to finish", |e| {
+        e.extensions.mask_setup(ID, "setup").is_none() && e.selection.prompt.is_none()
+    });
+    assert!(settled(e));
+    assert_eq!(e.extensions.masks_sent().len(), sent, "not asked again");
+    assert_eq!(e.document.edit.recipe().masks, [flat]);
+    assert_eq!(
+        e.messages.line(),
+        "The masks changed while setting up; choose where to use Setup again"
+    );
 }

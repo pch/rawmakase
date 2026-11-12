@@ -226,7 +226,8 @@ pub(crate) struct Done {
 }
 
 /// What must still hold when a result arrives for it to be applied.
-struct Guard {
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::app) struct Guard {
     /// The masks' structure: how many, with which components. Any addition, removal,
     /// reordering or replacement (Undo, a snapshot) changes it; sliders, names and
     /// visibility do not.
@@ -345,14 +346,20 @@ struct Call {
 }
 
 /// What the drawer asks the user before a selection can run.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(in crate::app) enum Prompt {
     /// The models have to be downloaded.
     Model(Request),
     /// The catalog has to be upgraded to keep the result.
     Upgrade(Request),
-    /// An extension's generator answered `needs_setup`: what it needs.
-    Setup { request: Request, setup: NeedsSetup },
+    /// An extension's generator answered `needs_setup`: what it needs, and the
+    /// guard the request was first made with, which must still hold for it to
+    /// go on once set up.
+    Setup {
+        request: Request,
+        setup: NeedsSetup,
+        guard: Guard,
+    },
 }
 impl Prompt {
     fn request(&self) -> &Request {
@@ -988,7 +995,7 @@ impl Editor {
         );
     }
     /// After the host's outcomes: an extension's request whose outcome can't
-    /// come any more (its extension was removed or loaded again) ends now.
+    /// come any more (its request is gone from the host) ends now.
     pub(in crate::app) fn check_mask_requests(&mut self) {
         if let Some(Pending {
             request:
@@ -1036,21 +1043,35 @@ impl Editor {
         result: Result<Value, RemoteError>,
     ) {
         let waiting = match &self.selection.prompt {
-            Some(Prompt::Setup { request, setup })
-                if matches!(&request.generator,
+            Some(Prompt::Setup {
+                request,
+                setup,
+                guard,
+            }) if matches!(&request.generator,
                 Generator::Extension(o) if o.extension == extension && o.generator == generator) =>
             {
-                Some((request.clone(), setup.what.clone()))
+                Some((request.clone(), setup.what.clone(), guard.clone()))
             }
             _ => None,
         };
         match result {
             Ok(_) => {
-                let what = waiting.as_ref().map_or("The model", |(_, what)| what);
+                let what = waiting.as_ref().map_or("The model", |(_, what, _)| what);
                 self.messages.done(format!("{what} installed"));
-                if let Some((request, _)) = waiting {
+                if let Some((request, _, guard)) = waiting {
                     self.selection.prompt = None;
-                    self.request_selection(request);
+                    // Indices name the mask it was asked for only while the
+                    // masks are as they were; a new mask needs no such thing.
+                    let target = request.target;
+                    if target == Target::NewMask || guard.holds(self.document.edit.recipe(), target)
+                    {
+                        self.request_selection(request);
+                    } else {
+                        self.messages.warn(format!(
+                            "The masks changed while setting up; choose where to use {} again",
+                            request.generator.name()
+                        ));
+                    }
                 }
             }
             Err(e) if e.code == rawmakase_extensions::protocol::ErrorCode::Cancelled => {
@@ -1092,7 +1113,11 @@ impl Editor {
             Err(Failure::Cancelled) => return,
             Err(Failure::NeedsSetup(setup)) => {
                 self.selection.end_prompting();
-                self.selection.prompt = Some(Prompt::Setup { request, setup });
+                self.selection.prompt = Some(Prompt::Setup {
+                    request,
+                    setup,
+                    guard: pending.guard,
+                });
                 return;
             }
             Err(failure) => {
