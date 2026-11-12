@@ -4,11 +4,15 @@
 //! object matters; the panoptic model knows where the people and animals are but draws
 //! blobs. Subject keeps the outlines SAM 2 drew that lie inside the people and animals and
 //! fills any gap with the label itself. Sky is what the sky model says, pixel by pixel.
-//! Both end with their edges moved onto the photo's. Everything here is pure: what the
-//! models said comes in, coverage in the photo's frame goes out.
+//! Both end with their edges moved onto the photo's, Sky's in the way the kind of
+//! horizon there calls for. Everything here is pure: what the models said comes in,
+//! coverage in the photo's frame goes out.
+use crate::kinds::Kinds;
 use crate::panoptic::Instance;
 use crate::process::{Coverage, Point, Prompt, Rect, RgbImage, output_size, resample};
 use crate::refine::{guided, smooth};
+use crate::sky_edge;
+use rawmakase_cancel::Cancel;
 use rawmakase_inference::InferenceError;
 
 /// Side of the square grid the proposals and the labels live on: the photo
@@ -166,14 +170,33 @@ pub fn iou(a: &[bool], b: &[bool]) -> f32 {
 const SKY_LEAST: f32 = 0.01;
 
 /// Sky: `probability`, the sky model's answer (0..=1 at each of `model_width` x
-/// `model_height` pixels), with its edge moved onto the photo's. All zero when it finds
-/// none.
-pub fn sky(
+/// `model_height` pixels), with its edge snapped onto the photo's, and moved by an edge
+/// mode where a crown or a lattice calls for one ([`sky_edge::blend`]). All zero when it
+/// finds none. `kinds` is what the model sees outside the sky, on its own grid; `cancel`
+/// is checked before the edge is snapped, before and inside each edge mode, which takes
+/// seconds at the sky's input size, and before the final mix.
+#[cfg(test)]
+pub(crate) fn sky(
     image: &RgbImage,
     probability: &[f32],
     model_width: usize,
     model_height: usize,
+    kinds: &Kinds,
+    cancel: Cancel<'_>,
 ) -> Result<Coverage, InferenceError> {
+    sky_with_modes(image, probability, model_width, model_height, kinds, cancel)
+        .map(|(coverage, _)| coverage)
+}
+
+/// [`sky`], and which edge modes it ran and how long they took.
+pub(crate) fn sky_with_modes(
+    image: &RgbImage,
+    probability: &[f32],
+    model_width: usize,
+    model_height: usize,
+    kinds: &Kinds,
+    cancel: Cancel<'_>,
+) -> Result<(Coverage, sky_edge::Modes), InferenceError> {
     if probability.len() != model_width * model_height
         || probability
             .iter()
@@ -188,7 +211,7 @@ pub fn sky(
     let (width, height) = output_size(image);
     let sure = probability.iter().filter(|p| **p > 0.5).count();
     if (sure as f32) < SKY_LEAST * probability.len() as f32 {
-        return Ok(empty(width, height));
+        return Ok((empty(width, height), sky_edge::Modes::default()));
     }
     let whole = Rect {
         x: 0,
@@ -196,24 +219,28 @@ pub fn sky(
         width: model_width,
         height: model_height,
     };
-    let guide = luma(image, width, height);
     let soft = resample(probability, model_width, whole, width, height);
-    let refined = guided(
-        &guide,
+    let (refined, modes) = sky_edge::blend(
+        &colours(image, width, height),
+        &luma(image, width, height),
         &soft,
         width,
         height,
-        (width.max(height) / 200).max(3),
-        1e-3,
-    );
-    Ok(Coverage {
+        kinds,
+        cancel,
+    )?;
+    if cancel.is_cancelled() {
+        return Err(InferenceError::Cancelled);
+    }
+    let coverage = Coverage {
         width,
         height,
         data: refined
             .iter()
-            .map(|v| (smooth(*v) * 255.0 + 0.5) as u8)
+            .map(|v| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8)
             .collect(),
-    })
+    };
+    Ok((coverage, modes))
 }
 
 fn check(len: usize) -> Result<(), InferenceError> {
@@ -237,7 +264,7 @@ fn empty(width: usize, height: usize) -> Coverage {
 
 /// The photo's luminance at `width` x `height` (the coverage's size, which is the
 /// photo's own unless it was capped).
-fn luma(image: &RgbImage, width: usize, height: usize) -> Vec<f32> {
+pub(crate) fn luma(image: &RgbImage, width: usize, height: usize) -> Vec<f32> {
     let full: Vec<f32> = image
         .data
         .as_chunks::<3>()
@@ -259,6 +286,33 @@ fn luma(image: &RgbImage, width: usize, height: usize) -> Vec<f32> {
     resample(&full, image.width, whole, width, height)
 }
 
+/// The photo's colours (sRGB / 255) at `width` x `height`, as [`luma`].
+pub(crate) fn colours(image: &RgbImage, width: usize, height: usize) -> Vec<[f32; 3]> {
+    let whole = Rect {
+        x: 0,
+        y: 0,
+        width: image.width,
+        height: image.height,
+    };
+    let channels: [Vec<f32>; 3] = std::array::from_fn(|k| {
+        let full: Vec<f32> = image
+            .data
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|p| f32::from(p[k]) / 255.0)
+            .collect();
+        if (width, height) == (image.width, image.height) {
+            full
+        } else {
+            resample(&full, image.width, whole, width, height)
+        }
+    });
+    (0..width * height)
+        .map(|i| [channels[0][i], channels[1][i], channels[2][i]])
+        .collect()
+}
+
 /// A [`SIDE`] grid mask bilinearly enlarged to `width` x `height`.
 fn expand(grid: &[f32], width: usize, height: usize) -> Vec<f32> {
     let whole = Rect {
@@ -273,6 +327,7 @@ fn expand(grid: &[f32], width: usize, height: usize) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kinds::Kind;
 
     /// A photo of `w` x `h`: `paint(x, y)` colours each pixel.
     fn photo(w: usize, h: usize, paint: impl Fn(usize, usize) -> [u8; 3]) -> RgbImage {
@@ -359,6 +414,12 @@ mod tests {
         assert!(subject(&img, &[0.0; 3]).is_err());
     }
 
+    /// What the model sees outside the sky: `kind(x, y)` (fractions of the frame) on a
+    /// coarse grid.
+    fn kinds(kind: impl Fn(f32, f32) -> Option<Kind>) -> Kinds {
+        Kinds::painted(64, 48, kind)
+    }
+
     /// `f(x, y)` over a `w` x `h` model answer, x and y as fractions of the frame.
     fn answer(w: usize, h: usize, f: impl Fn(f32, f32) -> f32) -> Vec<f32> {
         (0..w * h)
@@ -377,7 +438,8 @@ mod tests {
             }
         });
         let probability = answer(1024, 683, |_, y| if y < 272. / 683. { 0.99 } else { 0.01 });
-        let cov = sky(&img, &probability, 1024, 683).unwrap();
+        let ground = kinds(|_, y| (y >= 267. / 683.).then_some(Kind::Terrain));
+        let cov = sky(&img, &probability, 1024, 683, &ground, Cancel::NEVER).unwrap();
         assert_eq!((cov.width, cov.height), (1024, 683));
         assert!(at(&cov, 0.5, 0.1) > 240 && at(&cov, 0.5, 0.8) < 10);
         // Under the true edge, where the model's answer still says sky, it has moved up.
@@ -394,8 +456,95 @@ mod tests {
             _ => [115, 155, 225],
         });
         let probability = answer(640, 480, |_, y| if y < 200. / 480. { 0.99 } else { 0.01 });
-        let cov = sky(&img, &probability, 640, 480).unwrap();
+        let lake = kinds(|_, y| match y {
+            ..0.4167 => None,
+            ..0.5833 => Some(Kind::Terrain),
+            _ => Some(Kind::Water),
+        });
+        let cov = sky(&img, &probability, 640, 480, &lake, Cancel::NEVER).unwrap();
         assert!(at(&cov, 0.5, 0.2) > 240 && at(&cov, 0.5, 0.8) < 10);
+    }
+
+    /// A sea horizon the model answers at a quarter of the photo, with a ramp three of
+    /// its rows wide over a sharp step at row 200, on time or (in haze) three photo rows
+    /// late. Over water no edge mode runs: the model's answer, snapped as main snaps it,
+    /// puts the edge within a few rows of the step (later in haze, as main's), and
+    /// nothing well above it is lost.
+    #[test]
+    fn a_sea_horizon_the_model_sees_blurred_keeps_mains_edge() {
+        let img = photo(640, 480, |_, y| {
+            if y < 200 {
+                [120, 160, 230]
+            } else {
+                [60, 90, 140]
+            }
+        });
+        for late in [48.5, 49.25] {
+            let probability = answer(160, 120, |_, y| {
+                let row = y * 120.;
+                (1. - ((row - late) / 3.).clamp(0., 1.)) * 0.98 + 0.01
+            });
+            let sea = kinds(|_, y| (y >= 200. / 480.).then_some(Kind::Water));
+            let cov = sky(&img, &probability, 160, 120, &sea, Cancel::NEVER).unwrap();
+            let rows: Vec<u8> = (190..212).map(|y| at(&cov, 0.5, y as f32 / 480.)).collect();
+            let (above, below) = (at(&cov, 0.5, 195. / 480.), at(&cov, 0.5, 208. / 480.));
+            assert!(
+                above > 230,
+                "{late}: sky five rows above the horizon: {rows:?}"
+            );
+            assert!(
+                below < 15,
+                "{late}: sea eight rows below the horizon: {rows:?}"
+            );
+        }
+    }
+
+    /// Where no kind calls for a mode, the sky is main's edge to the byte: the model's
+    /// answer at the coverage's size, snapped by the luma guided filter and its curve.
+    #[test]
+    fn without_a_crown_or_a_lattice_the_sky_is_mains_formula_exactly() {
+        let img = photo(640, 480, |_, y| {
+            if y < 200 {
+                [120, 160, 230]
+            } else {
+                [60, 90, 140]
+            }
+        });
+        for late in [48.5, 49.25] {
+            let probability = answer(160, 120, |_, y| {
+                let row = y * 120.;
+                (1. - ((row - late) / 3.).clamp(0., 1.)) * 0.98 + 0.01
+            });
+            let ground = kinds(|_, _| Some(Kind::Terrain));
+            let cov = sky(&img, &probability, 160, 120, &ground, Cancel::NEVER).unwrap();
+            let (w, h) = output_size(&img);
+            let whole = Rect {
+                x: 0,
+                y: 0,
+                width: 160,
+                height: 120,
+            };
+            let soft = resample(&probability, 160, whole, w, h);
+            let mains: Vec<u8> = guided(
+                &luma(&img, w, h),
+                &soft,
+                w,
+                h,
+                (w.max(h) / 200).max(3),
+                1e-3,
+            )
+            .iter()
+            .map(|v| smooth(*v))
+            .map(|v| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8)
+            .collect();
+            assert_eq!((cov.width, cov.height), (w, h), "{late}");
+            assert_eq!(cov.data.len(), mains.len(), "{late}");
+            let differs = (0..mains.len()).find(|i| cov.data[*i] != mains[*i]);
+            assert_eq!(
+                differs, None,
+                "{late}: the first pixel unlike main's formula"
+            );
+        }
     }
 
     #[test]
@@ -412,14 +561,28 @@ mod tests {
                 0.01
             }
         });
-        let cov = sky(&img, &probability, 640, 480).unwrap();
+        let leaves = kinds(|_, y| match y {
+            ..0.125 => Some(Kind::Vegetation),
+            ..0.5833 => None,
+            _ => Some(Kind::Terrain),
+        });
+        let cov = sky(&img, &probability, 640, 480, &leaves, Cancel::NEVER).unwrap();
         assert!(at(&cov, 0.5, 0.3) > 240 && at(&cov, 0.5, 0.05) < 10 && at(&cov, 0.5, 0.8) < 10);
     }
 
     #[test]
     fn no_sky_is_exactly_nothing() {
         let img = photo(320, 240, |_, _| [90, 90, 90]);
-        let cov = sky(&img, &vec![0.001; 160 * 120], 160, 120).unwrap();
+        let unclear = kinds(|_, _| Some(Kind::Unclear));
+        let cov = sky(
+            &img,
+            &vec![0.001; 160 * 120],
+            160,
+            120,
+            &unclear,
+            Cancel::NEVER,
+        )
+        .unwrap();
         assert_eq!((cov.width, cov.height), (320, 240));
         assert!(cov.data.iter().all(|v| *v == 0));
     }
@@ -427,9 +590,41 @@ mod tests {
     #[test]
     fn a_sky_answer_of_the_wrong_size_or_with_bad_values_is_refused() {
         let img = photo(320, 240, |_, _| [90, 90, 90]);
-        assert!(sky(&img, &[0.5; 3], 160, 120).is_err());
+        let unclear = kinds(|_, _| Some(Kind::Unclear));
+        let Err(InferenceError::OutputInvalid(why)) =
+            sky(&img, &[0.5; 3], 160, 120, &unclear, Cancel::NEVER)
+        else {
+            panic!("a wrong-sized answer is not refused as invalid");
+        };
+        assert_eq!(
+            why,
+            "the sky model's answer has 3 values, or values that are not probabilities, \
+             for 160x120"
+        );
         let mut bad = vec![0.5; 160 * 120];
         bad[7] = f32::NAN;
-        assert!(sky(&img, &bad, 160, 120).is_err());
+        assert!(sky(&img, &bad, 160, 120, &unclear, Cancel::NEVER).is_err());
+    }
+
+    #[test]
+    fn a_raised_cancel_flag_cancels_the_sky() {
+        let img = photo(320, 240, |_, y| {
+            if y < 120 {
+                [120, 160, 230]
+            } else {
+                [40, 70, 30]
+            }
+        });
+        let probability = answer(320, 240, |_, y| if y < 0.5 { 0.99 } else { 0.01 });
+        let ground = kinds(|_, y| (y >= 0.5).then_some(Kind::Terrain));
+        let result = sky(
+            &img,
+            &probability,
+            320,
+            240,
+            &ground,
+            Cancel::new(&std::sync::atomic::AtomicBool::new(true)),
+        );
+        assert!(matches!(result, Err(InferenceError::Cancelled)));
     }
 }

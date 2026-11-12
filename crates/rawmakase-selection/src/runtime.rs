@@ -4,18 +4,21 @@
 use rawmakase_cancel::Cancel;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use ort::session::Session as OrtSession;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::value::TensorRef;
 use rawmakase_inference::InferenceError;
 use rawmakase_inference::runtime::{
-    LoadOptions, Provider, build_session, cancelled, check_files, default_threads, failed, guarded,
-    load_runtime_with, view,
+    LoadOptions, Provider, build_session, build_session_from_memory, cancelled, check_files,
+    default_threads, failed, guarded, load_runtime_with, view,
 };
 
 use crate::auto::{self, SIDE};
+use crate::kinds;
 use crate::manifest::{ModelSpec, PANOPTIC, SKY, SUBJECT, all_files, sky_files};
+use crate::onnx_patch;
 use crate::panoptic::{self, Labels};
 use crate::process::{self, Coverage, Prompt, RgbImage};
 
@@ -86,10 +89,17 @@ impl Sky {
         check_files(dir, &sky_files())?;
         let threads = options.threads.unwrap_or_else(default_threads).max(1);
         let provider = options.provider.unwrap_or_default();
+        let path = dir.join(SKY.file.name);
+        let model = onnx_patch::read_for_patch(&path, SKY.logits)
+            .map_err(|e| {
+                InferenceError::ModelInvalid(format!("cannot read {}: {e}", path.display()))
+            })
+            .and_then(|file| onnx_patch::expose_output(file, SKY.logits))?;
         let network = catch_unwind(AssertUnwindSafe(|| {
-            build_session(
+            build_session_from_memory(
                 &environment,
-                &dir.join(SKY.file.name),
+                &path,
+                &model,
                 threads,
                 GraphOptimizationLevel::All,
                 provider,
@@ -98,7 +108,11 @@ impl Sky {
         .map_err(|_| {
             InferenceError::Failed("ONNX Runtime panicked while loading the model".into())
         })??;
-        Ok(SkySession { network, provider })
+        Ok(SkySession {
+            network,
+            provider,
+            last: None,
+        })
     }
 }
 
@@ -106,12 +120,34 @@ impl Sky {
 pub struct SkySession {
     network: OrtSession,
     provider: Provider,
+    last: Option<SkyTimings>,
+}
+
+/// Where the time of one [`SkySession::select`] went.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SkyTimings {
+    /// Preparing the input, running the model and reading its classes into kinds.
+    pub model: Duration,
+    /// Everything after the model: the sky's edge, [`SkyTimings::modes`] included.
+    pub edge: Duration,
+    /// The part of [`SkyTimings::edge`] spent weighing and running the edge modes, beyond
+    /// the model's answer snapped to the photo.
+    pub modes: Duration,
+    /// Whether the sparse mode ran (a crown in the photo).
+    pub sparse: bool,
+    /// Whether the dense mode ran (a lattice the model is sure of).
+    pub dense: bool,
 }
 
 impl SkySession {
     /// The provider the runtime accepted, as [`Session::provider`].
     pub fn provider(&self) -> Provider {
         self.provider
+    }
+
+    /// Where the time of the last successful [`SkySession::select`] went.
+    pub fn last_timings(&self) -> Option<SkyTimings> {
+        self.last
     }
 
     /// The photo's sky as coverage in its frame, all zero when there is none. A few
@@ -121,31 +157,73 @@ impl SkySession {
         image: &RgbImage,
         cancel: Cancel<'_>,
     ) -> Result<Coverage, InferenceError> {
+        let started = Instant::now();
+        self.last = None;
         cancelled(cancel)?;
         process::check_image(image)?;
         let (width, height) = sky_input_size(image.width, image.height);
         let tensor = process::preprocess_sized(image, width, height, SKY.mean, SKY.std)?;
         cancelled(cancel)?;
         let network = &mut self.network;
-        let probability = guarded(cancel, |options| {
+        let (probability, kinds) = guarded(cancel, |options| {
             let input = TensorRef::from_array_view(([1usize, 3, height, width], &tensor[..]))
                 .map_err(failed)?;
             let outputs = network
                 .run_with_options(ort::inputs!["pixel_values" => input], options)
                 .map_err(failed)?;
-            let output = outputs.get("sky").ok_or_else(|| {
-                InferenceError::ModelInvalid("the sky model has no output `sky`".into())
-            })?;
-            let (shape, data) = output.try_extract_tensor::<f32>().map_err(failed)?;
+            let get = |name: &str| {
+                let output = outputs.get(name).ok_or_else(|| {
+                    InferenceError::ModelInvalid(format!("the sky model has no output `{name}`"))
+                })?;
+                output.try_extract_tensor::<f32>().map_err(failed)
+            };
+            let (shape, data) = get("sky")?;
             let expected = [1, height as i64, width as i64];
             if **shape != expected {
                 return Err(InferenceError::OutputInvalid(format!(
                     "the sky model answered with shape {shape:?}, expected {expected:?}"
                 )));
             }
-            Ok(data.to_vec())
+            let probability = data.to_vec();
+            let (shape, logits) = get(SKY.logits)?;
+            let (classes, grid_width, grid_height) = logits_grid(shape, width, height)?;
+            Ok((
+                probability,
+                kinds::kinds(logits, classes, grid_width, grid_height)?,
+            ))
         })?;
-        auto::sky(image, &probability, width, height)
+        let modelled = Instant::now();
+        let (coverage, modes) =
+            auto::sky_with_modes(image, &probability, width, height, &kinds, cancel)?;
+        self.last = Some(SkyTimings {
+            model: modelled - started,
+            edge: modelled.elapsed(),
+            modes: modes.took,
+            sparse: modes.sparse,
+            dense: modes.dense,
+        });
+        Ok(coverage)
+    }
+}
+
+/// The classes and grid of the sky model's class scores for an input of `width` x
+/// `height`: one image, on a grid a quarter of the input's sides.
+fn logits_grid(
+    shape: &[i64],
+    width: usize,
+    height: usize,
+) -> Result<(usize, usize, usize), InferenceError> {
+    let dims: Vec<usize> = shape
+        .iter()
+        .filter_map(|d| usize::try_from(*d).ok())
+        .collect();
+    match dims[..] {
+        [1, classes, h, w] if dims.len() == shape.len() && h == height / 4 && w == width / 4 => {
+            Ok((classes, w, h))
+        }
+        _ => Err(InferenceError::OutputInvalid(format!(
+            "the sky model's class scores have shape {shape:?} for a {width}x{height} input"
+        ))),
     }
 }
 
@@ -530,6 +608,29 @@ fn panoptic_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_sky_class_scores_are_one_image_on_a_quarter_grid() {
+        assert_eq!(
+            logits_grid(&[1, 150, 170, 256], 1024, 682).unwrap(),
+            (150, 256, 170)
+        );
+        for shape in [
+            &[1, 150, 171, 256][..],
+            &[2, 150, 170, 256],
+            &[150, 170, 256],
+            &[1, 150, -170, 256],
+            &[1, 150, 170, 256, 1],
+        ] {
+            assert!(
+                matches!(
+                    logits_grid(shape, 1024, 682),
+                    Err(InferenceError::OutputInvalid(_))
+                ),
+                "{shape:?}"
+            );
+        }
+    }
 
     #[test]
     fn a_missing_or_wrong_sized_model_file_is_invalid_before_the_runtime_is_touched() {

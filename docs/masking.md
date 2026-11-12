@@ -24,9 +24,15 @@ neutral sliders and its overlay shown.
   knows nothing else: for a sign, a car or a rocket it says "No person or animal found"
   and offers **Click the subject…**.
 - **Sky** is where a scene-parsing model (UperNet with ConvNeXt, trained on ADE20K) says
-  the sky is, pixel by pixel, with the edge moved onto the photo's. It has its own class
-  for water, so a lake reflecting the sky is left out by the model and not by where it
-  lies. "No sky found" when less than 1% of the frame is sky.
+  the sky is, pixel by pixel, with the edge moved onto the photo's own. Where the
+  same model sees a tree crown, leafy or bare, the photo's colours find the sky between
+  its branches and twigs, and the large sky behind them; where it is sure of a fence,
+  railing or bridge truss, they find the small gaps between the struts. Everywhere else
+  (buildings, land, open sky and its clouds, and whatever it cannot name) the model's
+  answer stands. Over and beside water neither applies, so a lake reflecting
+  the sky or the water between reeds is left out by the model and not by its colours.
+  The colours ease in and out over tens of pixels where the kinds meet, so there is no
+  seam. "No sky found" when less than 1% of the frame is sky.
 - **Background** is the subject inverted as a component, so adding a brush to it still
   adds coverage.
 - **Regenerate** on a selected generated component finds it again, replacing only that
@@ -51,8 +57,10 @@ models.
   computer. **Remove selection model** and **Remove sky model** delete them; saved masks keep
   working without them or the runtime. The first selection on a photo takes a few seconds;
   Subject, Background and clicks on the same photo after that are quick, and so is Sky
-  again. Sky is the slower and heavier one: about 5 seconds and 2.5 GB of memory while it
-  runs, on the 16-thread laptop CPU it was measured on, with 8 threads.
+  again. Sky is the slower one: on the 8-core AMD Ryzen 7 5800X3D it was measured on, the
+  model and the edge took 6.5 seconds a photo on average over 138 photos (median 6.9 s,
+  at most 8.9 s), the photo's render not included; where a tree crown or a lattice calls
+  for the colours' edge, that is about 2 s of it.
 - **Catalog only.** The result is a raster stored in the catalog, so it needs a catalog
   photo. A catalog of the first format asks to **Upgrade catalog…**: a backup copy is
   written beside it, then it becomes the current format version, which older releases
@@ -60,16 +68,19 @@ models.
   Close it on other computers first.
 - **What the models see:** the photo at the camera's default crop with the camera
   rendering (no tone, colour, profile or geometry edits; spots and red eye included),
-  about 1280 pixels on the long side. Sliders and crop edits during or after selecting
-  do not matter; changing spots or red eye meanwhile discards the result, as does any
-  change to the masks' structure (adding, removing, Undo).
+  about 1280 pixels on the long side. Sliders and crop edits during
+  or after selecting do not matter; changing spots or red eye meanwhile discards the
+  result, as does any change to the masks' structure (adding, removing, Undo).
 - **Not copied:** masks made from a selection belong to their photo. Copy, Paste and
   Sync leave them out (and say so), and presets cannot hold them.
 - **Limits:** one 4096-pixel, 8-bit raster per selection; rasters are never
   garbage-collected, so a catalog only grows with them. Grow/shrink and feather are
   not implemented. Fine hair is as sharp as the 256-pixel mask and the edge refinement
   make it, not a matting model's. Subject is limited to what DETR was trained to name (people and animals); clicks
-  cover the rest. Sky is as sharp as the model's answer and the edge refinement make it: thin wires are not separated from it; dark rock or ceilings can be taken for a night sky, a sea lost in haze for sky, and a thin blown-out gap of sky can be missed.
+  cover the rest. Sky is as sharp as the model's answer and the edge
+  refinement make it: thin wires are not separated from the sky; dark rock or ceilings
+  can be taken for a night sky, a sea lost in haze for sky, and a thin blown-out gap of
+  sky can be missed.
 
 ## Using it
 

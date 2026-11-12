@@ -115,8 +115,9 @@ Pixels and masks only. One request, one reply, length-prefixed JSON frames:
 the photo as 8-bit sRGB (the same 1280-pixel-edge render local inference is
 given), the answer as 8-bit coverage, and prompts as fractions. Every request
 carries an id; a cancel is a tiny separate frame the client sends when the
-drawer's Cancel is used, and the worker stops the model run it can; a cancel
-that overtakes its request is remembered, so that request starts cancelled. The worker
+drawer's Cancel is used, and the worker stops the model run it can, and Sky's
+edge refinement stops at its next check; a cancel that overtakes its request is
+remembered, so that request starts cancelled. The worker
 runs at most one model at a time (a second request waits), refuses oversized
 or malformed frames before they reach the models, and bounds every read and
 write with timeouts. The definitions live in `crates/rawmakase-remote`, whose client the AI masks
@@ -136,7 +137,8 @@ under the new version.
 - The worker keeps the analyses of the last two photos (bounded well under a
   gigabyte) so refining clicks stay quick; everything else is recomputed. Sky keeps
   nothing there: the extension's program remembers the last answer while it runs,
-  and the photo travels again for another. With `--sky-model` the worker holds that model too (about 800 MB loaded, more
-  while it runs).
+  and the photo travels again for another. With `--sky-model` the worker holds that model in memory too, as
+  long as the worker runs (plus a copy of the model file while it loads, and more
+  during a run).
 - Local inference remains the default and the reference: without the
   configuration file nothing in this page is in play.
