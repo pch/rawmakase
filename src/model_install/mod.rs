@@ -2,9 +2,10 @@
 //! installed. Installing is [`rawmakase_model_install`]'s; the app's `Installer`
 //! (`app/develop/model_installer.rs`) runs an install on its own thread, only on
 //! the user's choice, and the AI Denoise service finds the installed model and
-//! the runtime here. Select Subject's and Sky's packs, which the app installed
-//! in the same `models` folder before, are the AI masks extension's
-//! (`extensions/ai-masks`), which adopts them.
+//! the runtime here. Select Subject's and Sky's packs sit beside it in the same
+//! `models` folder, installed by the AI masks extension (`extensions/ai-masks`)
+//! there, as the app installed them before; nothing here lists or cleans that
+//! folder, so neither is taken for an orphan.
 use rawmakase_inference::ModelFile;
 use rawmakase_inference::manifest::denoise_files;
 use std::path::{Path, PathBuf};
