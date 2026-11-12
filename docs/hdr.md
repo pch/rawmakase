@@ -472,7 +472,12 @@ still rising at 16 times white, and its mask Blacks −50 brightens light above 
 Saturation brightens saturated colours (×1.11 in value at +50, Camera Raw's ×1.004),
 which white's clip hides in SDR: in the master it is 0.098 stop off at every level.
 Hue is the same Oklab operator, not measured. Highlights has no HDR rendering
-globally, and a mask's Clarity and Dehaze aren't measured. A masked master renders on the CPU.
+globally. A mask's Clarity renders where, with the photo's own and a look's, every
+pixel stays from 0 to +50, the global slider's range: it adds to the photo's in the
+global slider's stage. The check is conservative, taking each mask's Clarity at its
+Amount as reaching every pixel. A mask's Dehaze is refused: on photos the master misses Camera Raw's
+mask Dehaze by about 0.02 stop more than the SDR rendition does. A masked master
+renders on the CPU.
 
 ## What is refused
 
@@ -481,7 +486,7 @@ something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
 channel's) whose last point is left of white, Clarity below 0 or above +50, Dehaze below −30, the
 colour mixer's Luminance beyond ±40, a darkening vignette's Highlights,
-a mask's Whites, Blacks, Hue, Saturation, Highlights, Clarity or Dehaze, Defringe ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
+a mask's Whites, Blacks, Hue, Saturation, Highlights or Dehaze, a mask's Clarity outside 0 to +50 with the photo's own, Defringe ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
 which the look sets, …"; Adobe Vivid's Clarity +10 renders) or split toning, an
 HDR profile's DCP tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is

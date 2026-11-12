@@ -1520,7 +1520,27 @@ factor-8 blocks, mean ΔE_ITP):
 
 The master is further from Camera Raw than the SDR rendition on every photo and
 setting, by colour where not by luminance, and on the A7R III's small highlights above
-white by up to 0.73 stop. Mask Clarity and Dehaze stay refused.
+white by up to 0.73 stop.
+
+Scored as the acceptance criterion is applied to the global sliders (the median over
+the photos, 0.01 stop below white, ΔE_ITP added over the default render within 1):
+
+| Mask slider | HDR below white | SDR below white | HDR above white | ΔE_ITP added, HDR / SDR |
+| --- | --- | --- | --- | --- |
+| Clarity +25 | 0.086 | 0.085 | 0.032 | +2.80 / +2.74 |
+| Clarity +50 | 0.174 | 0.171 | 0.065 | +6.32 / +6.18 |
+| Dehaze +30 | 0.100 | 0.082 | 0.096 | +3.55 / +3.48 |
+| Dehaze −30 | 0.224 | 0.204 | 0.043 | +8.41 / +7.68 |
+
+Camera Raw's mask is stronger than its own global slider, in SDR and HDR alike: its
+mask Dehaze's effect is 1.25–1.36 times its global Dehaze's, its mask Clarity's 1.14–1.22
+times, on each photo. RAWmakase's mask renders the global slider. Scaling the mask's
+Dehaze by 1.3 and Clarity by 1.15 makes every setting pass, but only by moving the SDR
+rendition further from Camera Raw too (Clarity +50 0.182 against 0.171 unscaled,
+Dehaze +30 0.098 against 0.082), so it was not kept.
+
+Decision, 2026-11-12: a mask's Clarity renders where every pixel's Clarity, with the
+photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
 
 ### Decisions
 
