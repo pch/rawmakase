@@ -89,6 +89,10 @@ check rawmakase-selection "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase
 # and the worker know no catalog, renderer, GUI or native library, and only the
 # app composes the client.
 check rawmakase-remote "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-interop|rawmakase-decode|rawmakase-protocol|wgpu.*|naga|$gui|$native"
+# The AI masks extension sits on the selection models, the remote client and
+# the installer: no catalog, renderer, decoder, GUI, GPU or native imaging
+# library.
+check rawmakase-ai-masks "rawmakase|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-interop|rawmakase-decode|wgpu.*|naga|$gui|$native"
 # The MCP server is a client of the control protocol alone: no workspace crate
 # but the protocol and the control client, and no GPU, GUI, native library or
 # inference.
