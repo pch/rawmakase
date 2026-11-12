@@ -41,6 +41,9 @@ pub(super) struct Item {
     pub rules: Names,
     /// How its files are copied, when the destination is on another volume.
     pub copy: Option<CopyTo>,
+    /// How many names the photo's file had when planned: more than one only
+    /// for the Trash (#1027), which goes on only while it has no more.
+    pub links: u64,
 }
 
 /// An item whose files are copied to another volume, as planned.
@@ -194,10 +197,12 @@ pub(super) fn plan_with(
                 kept: Vec::new(),
                 rules: UNKNOWN,
                 copy: None,
+                links: 0,
             })
             .collect(),
         Kind::MovePhotos | Kind::TrashPhotos | Kind::CreateFolder => {
             let mut files = Files::new(catalog, &folders, disk);
+            files.trashing = kind == Kind::TrashPhotos;
             let destination = match (to, create) {
                 (Some((root, to)), _) => Some(files.destination(root, &to)?),
                 (None, Some((root, parent, name))) => {
@@ -797,6 +802,14 @@ pub(super) struct Files<'a> {
     /// The masters of each catalog folder, over the directory they are read in.
     masters: HashMap<(FolderId, PathBuf), Masters>,
     volumes: HashMap<VolumeId, Option<fsops::VolumeFacts>>,
+    /// Whether the photos go to the Trash, which takes a file with other
+    /// names too (#1027).
+    trashing: bool,
+    /// On each volume, the catalog masters whose file has other names, by
+    /// that file: read once, the first time a file with other names is
+    /// trashed there. Or a master's file there that couldn't be looked at,
+    /// which might be any file.
+    linked: HashMap<VolumeId, Result<HashMap<FileId, Vec<PhotoId>>, PathBuf>>,
 }
 
 impl<'a> Files<'a> {
@@ -815,7 +828,62 @@ impl<'a> Files<'a> {
             rules: HashMap::new(),
             masters: HashMap::new(),
             volumes: HashMap::new(),
+            trashing: false,
+            linked: HashMap::new(),
         }
+    }
+
+    /// The catalog masters that are file object `file`, which has other
+    /// names: every master of a folder on its volume is looked at once. A
+    /// missing file is no other name of it; a master's file that can't be
+    /// looked at otherwise might be, and is returned instead.
+    fn linked(
+        &mut self,
+        file: FileId,
+        by_id: &HashMap<PhotoId, &PhotoRow>,
+    ) -> Result<&[PhotoId], PathBuf> {
+        let volume = file.volume();
+        if !self.linked.contains_key(&volume) {
+            let dirs: HashMap<FolderId, &PathBuf> = self
+                .folders
+                .by_dir
+                .iter()
+                .filter(|(dir, _)| dir.volume() == volume)
+                .flat_map(|(_, ids)| ids)
+                .filter_map(|id| Some((*id, self.located.get(id)?.path.as_ref()?)))
+                .collect();
+            let mut index: Result<HashMap<FileId, Vec<PhotoId>>, PathBuf> = Ok(HashMap::new());
+            for p in by_id.values().filter(|p| p.master.is_none()) {
+                let Some(dir) = dirs.get(&p.folder) else {
+                    continue;
+                };
+                let path = dir.join(&p.filename);
+                match self.disk.entry(&path) {
+                    Ok(e) if e.kind == EntryKind::File && e.links != 1 => {
+                        if let Ok(index) = &mut index {
+                            index.entry(e.id).or_default().push(p.id);
+                        }
+                    }
+                    Ok(_) | Err(FsError::NotFound) => {}
+                    Err(_) => {
+                        index = Err(path);
+                        break;
+                    }
+                }
+            }
+            self.linked.insert(volume, index);
+        }
+        match &self.linked[&volume] {
+            Ok(index) => Ok(index.get(&file).map_or(&[][..], Vec::as_slice)),
+            Err(path) => Err(path.clone()),
+        }
+    }
+
+    /// Where the catalog places photo `photo`'s file, if it can tell.
+    fn placed(&self, photo: PhotoId, by_id: &HashMap<PhotoId, &PhotoRow>) -> Option<PathBuf> {
+        let p = by_id.get(&photo)?;
+        let folder = self.located.get(&p.folder)?.path.as_ref()?;
+        Some(folder.join(&p.filename))
     }
 
     /// The names in `dir`, listed once.
@@ -1106,9 +1174,23 @@ impl<'a> Files<'a> {
         if found.kind != EntryKind::File {
             return Err(refuse(Refusal::Unreadable("it is not a file".into())));
         }
-        // Another name of the same file object.
+        let rows = &f.preconditions.rows;
+        // Another name of the same file object. The Trash takes this name
+        // and leaves the others, as Lightroom does, unless another photo
+        // of the catalog is the file through one of them (#1027). Moving or
+        // renaming it is still refused.
         if found.links != 1 {
-            return Err(refuse(Refusal::HardLinked));
+            if !self.trashing {
+                return Err(refuse(Refusal::HardLinked));
+            }
+            let other = match self.linked(found.id, by_id) {
+                Ok(linked) => linked.iter().filter(|p| !rows.contains(p)).min().copied(),
+                Err(unread) => return Err(refuse(Refusal::LinkUnchecked(unread))),
+            };
+            if let Some(other) = other {
+                let place = self.placed(other, by_id).unwrap_or_else(|| file.clone());
+                return Err(refuse(Refusal::Shared(place)));
+            }
         }
         // The folder and the name as the disk spells them, which the
         // catalog may not (a volume that ignores case finds either): what
@@ -1159,19 +1241,15 @@ impl<'a> Files<'a> {
             false => (filename, listing),
         };
         let file = dir.join(&filename);
-        let rows = &f.preconditions.rows;
         let shared = self
             .shared(&dir, &filename, found.id, rows)
             .map_err(|e| refuse(Refusal::Unreadable(format!("{e:#}"))))?;
         if let Some(other) = shared {
             // Where the catalog places the other photo, so it can be found.
-            let place = by_id.get(&other).and_then(|p| {
-                let folder = self.located.get(&p.folder)?.path.as_ref()?;
-                Some(folder.join(&p.filename))
-            });
-            return Err(refuse(Refusal::Shared(
-                place.unwrap_or_else(|| dir.join(&filename)),
-            )));
+            let place = self
+                .placed(other, by_id)
+                .unwrap_or_else(|| dir.join(&filename));
+            return Err(refuse(Refusal::Shared(place)));
         }
         if protected(&file) {
             return Err(refuse(Refusal::Protected));
@@ -1278,6 +1356,7 @@ impl<'a> Files<'a> {
             kept: Vec::new(),
             rules: target.map_or(UNKNOWN, |t| t.rules),
             copy,
+            links: found.links,
         })
     }
 }

@@ -980,9 +980,13 @@ impl Run<'_> {
     ) -> Result<Option<String>> {
         let disk = listings.disk;
         let pre = &item.preconditions;
-        for m in &item.members {
+        for (i, m) in item.members.iter().enumerate() {
+            // As many names as planned: the photo's file may have others
+            // when it goes to the Trash (#1027), and one more since may be
+            // another catalog photo's; its companions have one.
+            let names = if i == 0 { item.links } else { 1 };
             let same = match disk.entry(&m.source) {
-                Ok(e) => e.id == m.id && e.kind == EntryKind::File && e.links == 1,
+                Ok(e) => e.id == m.id && e.kind == EntryKind::File && e.links == names,
                 Err(_) => false,
             };
             if !same || disk.identity(&m.source).ok().as_ref() != Some(&m.identity) {

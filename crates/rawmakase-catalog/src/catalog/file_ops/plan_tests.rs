@@ -693,19 +693,124 @@ fn two_folders_over_one_directory_make_its_files_shared() -> Result<()> {
     Ok(())
 }
 
-/// A file with a second name outside the catalog is refused as a hard
-/// link, not as another catalog photo's file (#1027).
+/// A file with a second name outside the catalog isn't moved, and is
+/// refused as a hard link, not as another catalog photo's file (#1027).
 #[test]
-fn a_hard_linked_file_is_refused_as_a_hard_link() -> Result<()> {
-    let fx = fixture(&["a.NEF"]);
+fn a_hard_linked_file_is_not_moved() -> Result<()> {
+    let fx = fixture(&["a.NEF", "sub/"]);
     let a = fx.photo("a.NEF");
     std::fs::hard_link(fx.root.join("a.NEF"), fx.dir.path().join("elsewhere.NEF"))?;
-    let plan = fx.plan(FileOp::TrashPhotos { photos: vec![a] });
+    let to = fx.folder("sub");
+    let plan = fx.plan(FileOp::MovePhotos {
+        photos: vec![a],
+        root: fx.root_of(to),
+        to: fx.logical(to),
+    });
     assert_eq!(plan.skipped()[0].reason, Skip::Refused(Refusal::HardLinked));
     assert!(
         !plan.skipped()[0].reason.to_string().contains("catalog"),
         "{}",
         plan.skipped()[0].reason
+    );
+    Ok(())
+}
+
+/// The Trash takes a photo whose file has another name outside the
+/// catalog, as Lightroom does, and leaves that name (#1027).
+#[test]
+fn a_hard_linked_file_goes_to_the_trash_and_its_other_name_stays() -> Result<()> {
+    let mut fx = fixture(&["a.NEF", "b.NEF"]);
+    let (a, b) = (fx.photo("a.NEF"), fx.photo("b.NEF"));
+    let elsewhere = fx.dir.path().join("elsewhere.NEF");
+    std::fs::hard_link(fx.root.join("a.NEF"), &elsewhere)?;
+    let trash = FakeTrash::new(&fx);
+    let outcome = fx.run(
+        FileOp::TrashPhotos { photos: vec![a] },
+        &trash,
+        &Faulty::default(),
+    );
+    assert_eq!(results(&outcome), [ItemResult::Trashed]);
+    assert_eq!(fx.rows().into_keys().collect::<Vec<_>>(), [b]);
+    assert!(!fx.root.join("a.NEF").exists());
+    assert_eq!(std::fs::read(&elsewhere)?, bytes("a.NEF"));
+    Ok(())
+}
+
+/// A catalog photo's file made another name of it after the plan, such
+/// as another master replaced by a hard link to it, keeps it out of the
+/// Trash: the run finds more names than were planned (#1027).
+#[test]
+fn a_name_added_to_a_hard_linked_file_after_the_plan_stops_its_trash() -> Result<()> {
+    let mut fx = fixture(&["a.NEF", "sub/b.NEF"]);
+    let (a, b) = (fx.photo("a.NEF"), fx.photo("sub/b.NEF"));
+    std::fs::hard_link(fx.root.join("a.NEF"), fx.dir.path().join("elsewhere.NEF"))?;
+    let plan = fx.plan(FileOp::TrashPhotos { photos: vec![a] });
+    assert!(plan.skipped().is_empty(), "{:?}", plan.skipped());
+    std::fs::remove_file(fx.root.join("sub/b.NEF"))?;
+    std::fs::hard_link(fx.root.join("a.NEF"), fx.root.join("sub/b.NEF"))?;
+    let trash = FakeTrash::new(&fx);
+    let outcome = execute::execute_with(
+        &mut fx.cat,
+        plan.confirm(),
+        &trash,
+        Cancel::NEVER,
+        &Faulty::default(),
+    )?;
+    assert!(
+        matches!(&results(&outcome)[..], [ItemResult::Unchanged(Some(why))] if why.contains("changed since it was planned")),
+        "{:?}",
+        results(&outcome)
+    );
+    assert!(fx.root.join("a.NEF").is_file());
+    assert!(fx.rows().contains_key(&a) && fx.rows().contains_key(&b));
+    Ok(())
+}
+
+/// Another catalog photo's file that can't be looked at might be the
+/// hard-linked file's other name, so the photo stays and the refusal says
+/// which (#1027). A missing one can't be, and doesn't stop it.
+#[cfg(unix)]
+#[test]
+fn a_photo_that_cant_be_checked_keeps_a_hard_linked_file_out_of_the_trash() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    let fx = fixture(&["a.NEF", "locked/b.NEF", "gone.NEF"]);
+    let a = fx.photo("a.NEF");
+    std::fs::remove_file(fx.root.join("gone.NEF"))?;
+    std::fs::hard_link(fx.root.join("a.NEF"), fx.dir.path().join("elsewhere.NEF"))?;
+    let locked = fx.root.join("locked");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000))?;
+    // Run as root, the folder is searched all the same.
+    let blocked = fsops::entry(&locked.join("b.NEF")).is_err();
+    let plan = fx.plan(FileOp::TrashPhotos { photos: vec![a] });
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))?;
+    if !blocked {
+        return Ok(());
+    }
+    assert!(
+        matches!(&plan.skipped()[0].reason, Skip::Refused(Refusal::LinkUnchecked(p)) if p.ends_with("locked/b.NEF")),
+        "{:?}",
+        plan.skipped()
+    );
+    // With it readable, the missing photo doesn't stop it.
+    let plan = fx.plan(FileOp::TrashPhotos { photos: vec![a] });
+    assert!(plan.skipped().is_empty(), "{:?}", plan.skipped());
+    Ok(())
+}
+
+/// Unless another catalog photo, in another folder, is that file through
+/// its other name: the refusal names it (#1027).
+#[test]
+fn a_hard_linked_file_another_photo_is_stays_out_of_the_trash() -> Result<()> {
+    let mut fx = fixture(&["a.NEF"]);
+    let a = fx.photo("a.NEF");
+    let other = fx.dir.path().join("other");
+    std::fs::create_dir(&other)?;
+    std::fs::hard_link(fx.root.join("a.NEF"), other.join("copy.NEF"))?;
+    fx.add_row(&other, "", "copy.NEF");
+    let plan = fx.plan(FileOp::TrashPhotos { photos: vec![a] });
+    assert_eq!(
+        plan.skipped()[0].reason,
+        Skip::Refused(Refusal::Shared(other.join("copy.NEF")))
     );
     Ok(())
 }
