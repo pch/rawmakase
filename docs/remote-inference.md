@@ -1,8 +1,10 @@
 # Remote inference
 
-Optional, off by default. Selections (Select Subject / Sky / Background) normally
-run on this computer: the models are downloaded into its data folder and run
-through the ONNX Runtime library it ships with. This page describes the
+Optional, off by default. Selections (Select Subject / Sky / Background) are
+made by the bundled AI masks extension (`rawmakase.ai-masks`), whose program
+normally runs them on this computer: the models are downloaded into the
+extension's data folder and run through the ONNX Runtime library RAWmakase
+ships with. This page describes the
 alternative: running the same models on another computer that has the capable
 hardware, with RAWmakase asking it over the network. Everything else about the
 feature — the model contract, what a selection becomes, how results are saved
@@ -43,11 +45,15 @@ photo leaves the computer.
 ## The worker
 
 On the computer with the models (the same `models/` folder layout RAWmakase
-installs; download it there once with any RAWmakase, or copy it):
+installs; download it there once with any RAWmakase, or copy it). The AI masks
+extension keeps them in its data folder; RAWmakase before it kept them in
+`~/.local/share/rawmakase/models/`, and the extension moves them from there at
+its first selection:
 
 ```sh
-rawmakase-remote-worker --model ~/.local/share/rawmakase/models/sam2.1-hiera-small-v1 \
-    --sky-model ~/.local/share/rawmakase/models/upernet-convnext-base-v1
+rawmakase-remote-worker \
+    --model ~/.local/share/rawmakase/extension-data/rawmakase.ai-masks/models/sam2.1-hiera-small-v1 \
+    --sky-model ~/.local/share/rawmakase/extension-data/rawmakase.ai-masks/models/upernet-convnext-base-v1
 ```
 
 The worker loads the models once, prints what it loaded — the model, the
@@ -88,15 +94,18 @@ lost, the photo is left as it was, and the next selection starts again.
 Create `remote-inference.json` in RAWmakase's local data folder
 (`~/.local/share/rawmakase/` on Linux, `~/Library/Application Support/RAWmakase/`
 on macOS, `%LOCALAPPDATA%\RAWmakase\` on Windows). It is this computer's own
-setting, so `RAWMAKASE_DATA_DIR` does not move it:
+setting, so `RAWMAKASE_DATA_DIR` does not move it. The AI masks extension's
+program reads it there, at each selection, as the app did before the
+extension; `RAWMAKASE_REMOTE_ENDPOINT` set in the app's environment says the
+same for one launch, and the program inherits it:
 
 ```json
 { "endpoint": "127.0.0.1:8765" }
 ```
 
 That is the whole configuration. With the file present, the Masking drawer
-stops asking for the model download or a local ONNX Runtime, shows the worker
-it is using while a selection runs, and reports the worker's errors in the
+stops asking for the model download, shows the worker it is using while a
+selection runs (the program says so), and reports the worker's errors in the
 drawer like any other selection failure: unreachable, timed out (a request may
 take up to three minutes), cancelled, or the worker forgot the photo (it keeps
 only the last two photos' analyses; the app asks for it again once
@@ -113,7 +122,8 @@ drawer's Cancel is used, and the worker stops the model run it can; a cancel
 that overtakes its request is remembered, so that request starts cancelled. The worker
 runs at most one model at a time (a second request waits), refuses oversized
 or malformed frames before they reach the models, and bounds every read and
-write with timeouts. The definitions live in `crates/rawmakase-remote`; the
+write with timeouts. The definitions live in `crates/rawmakase-remote`, whose client the AI masks
+extension's program uses (the app links neither); the
 protocol version is checked on both ends, and each analyze and sky request
 names the processing version of the model it expects, so an old worker and a
 new app refuse each other instead of the app storing an old pipeline's mask
@@ -128,8 +138,8 @@ under the new version.
   (three minutes by default) bounds how slow a link can be and still work.
 - The worker keeps the analyses of the last two photos (bounded well under a
   gigabyte) so refining clicks stay quick; everything else is recomputed. Sky keeps
-  nothing there: the app remembers the last answer, and the photo travels again for
-  another. With `--sky-model` the worker holds that model too (about 800 MB loaded, more
+  nothing there: the extension's program remembers the last answer while it runs,
+  and the photo travels again for another. With `--sky-model` the worker holds that model too (about 800 MB loaded, more
   while it runs).
 - Local inference remains the default and the reference: without the
   configuration file nothing in this page is in play.

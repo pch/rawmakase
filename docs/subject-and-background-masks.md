@@ -774,6 +774,17 @@ contract. Broader AI work remains independent of shipping Subject and Background
 
 ## Implementation notes
 
+Since phase 3 of the extensions plan (#965), Select Subject, Sky and Background
+are the bundled AI masks extension's (`extensions/ai-masks`,
+`rawmakase.ai-masks`): its program runs the models below, on this computer or
+on the [remote worker](remote-inference.md), installs their packs into the
+extension's data folder (adopting the app's install from before, in
+`<local data>/models`, by moving it there) and loads the ONNX Runtime the app
+bundles. The app renders the model input, keeps the coverage as a raster with
+the provenance masks always recorded (`subject`, `sky`), and renders and labels
+saved masks without the extension. Its Preferences page has **Remove downloaded
+models**, which replaced the drawer's Remove buttons.
+
 Built as one change, after trying candidates on real photographs. SAM 2 alone (what
 RapidRAW uses for subjects; its code in fact downloads SAM 1 ViT-B, with U²-Net for
 foreground and sky) draws crisp outlines but does not decide which object matters.
