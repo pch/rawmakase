@@ -3972,6 +3972,7 @@ dependencies = [
  "ort",
  "rawmakase-cancel",
  "sha2",
+ "tempfile",
 ]
 
 [[package]]

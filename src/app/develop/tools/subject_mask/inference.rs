@@ -262,6 +262,7 @@ fn load_options() -> LoadOptions {
         // Selections made on this computer run on its CPU, as before; the
         // accelerators are the remote worker's concern.
         provider: None,
+        ..Default::default()
     }
 }
 

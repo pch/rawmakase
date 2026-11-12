@@ -269,6 +269,7 @@ fn load_model(dir: &Path, provider: Provider) -> Result<Box<dyn TileModel + Send
             runtime_library,
             threads: Some(threads()),
             provider: Some(provider),
+            ..Default::default()
         },
     )
     .map(|d| Box::new(d) as Box<dyn TileModel + Send>)
