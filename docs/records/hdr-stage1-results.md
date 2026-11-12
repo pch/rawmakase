@@ -310,6 +310,20 @@ the sidecar (`ToneCurvePV2012`, `Parametric*`).
   the X100V's rebuilt highlight peak +0.22–0.24, the Pentax's ΔE_ITP); the Z6 III's
   peak, +0.108 by default, is +0.056 and +0.070.
 
+**Steep curves above 16 times white (2026-11-12).** Camera Raw 18.7 holds a point
+curve's output back above 16 times white: in the look curve's encoding its output
+follows the curve's slope extension up to the encoding of 16 (1.953) and then rolls off
+toward 2.272 (49.26 times white), which curves through (90, 110) and (180, 255) reach
+by scene 8 at HDR limit 8, as does the Fujifilm HS20EXR's profile curve. RAWmakase
+holds the master curve's output so (`hdr_curve::hold`: an exponential approach to 2.272
+from the encoding of 16, with the slope continuous). Fitted on the curve through
+(128, 140) and (220, 255), it renders the earlier ramp's steepest curve, through
+(128, 100), at scene 11.8 as 26.3 against Camera Raw's 25.8 (0.027 stop; the slope
+alone 31.2, 0.27 stop), and the other eight curves as before (within 0.06 stop). It
+acts only on outputs above 16, which HDR limits of 4 or less roll off anyway: the
+twelve photos' brightening-curve captures score identically with and without it.
+A channel's curve is still held at 16.
+
 **Refine Saturation and curves that end left of white (2026-11-12).** Camera Raw 18.7
 rendered gray and colour patches (saturations 0.3, 0.6 and 0.9, 0.125 to 8 times white,
 a linear profile, HDR limit 8 and SDR) through an S curve and a brightening curve at

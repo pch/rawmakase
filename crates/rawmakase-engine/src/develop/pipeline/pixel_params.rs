@@ -113,9 +113,10 @@ pub(crate) mod slot {
         // output at its top and the slope beyond.
         HDR_CONTRAST: 3,
         // An HDR master's tone curves (`tone::HdrCurves`): 1 when they apply, 1 when
-        // Levels do (from `LEVELS`), and the master curve's value at white and slope
-        // beyond it (its samples are `MASTER`'s; the parametric curve's `PARAMETRIC_LUT`).
-        HDR_CURVES: 4,
+        // Levels do (from `LEVELS`), the master curve's value at white and slope
+        // beyond it (its samples are `MASTER`'s; the parametric curve's `PARAMETRIC_LUT`),
+        // and 1 when its output is held above four stops over white (`hdr_curve::hold`).
+        HDR_CURVES: 5,
         // An HDR master's channel curves (`tone::HdrCurves`), per channel: 1 when its
         // curve applies (an identity curve leaves the channel alone), and the curve's
         // value at white and slope beyond it (its samples are `CHANNELS`').
@@ -160,7 +161,7 @@ pub(crate) fn wgsl_prelude() -> String {
                  const HDR_IDENTITY_FROM: f32 = {IDENTITY_FROM:?};\n\
                  const HDR_TONE: vec3<f32> = vec3({:?}, {:?}, {}.0);\n\
                  const LOOK_SLOPE: f32 = {:?};\nconst LOOK_BEND: f32 = {:?};\nconst LOOK_PEAK: f32 = {:?};\n\
-                 const HDR_CONTRAST_SAMPLES: f32 = {}.0;\nconst HDR_CONTRAST_TOP: f32 = {:?};\nconst HDR_CURVE_CEILING: f32 = {:?};\n\
+                 const HDR_CONTRAST_SAMPLES: f32 = {}.0;\nconst HDR_CONTRAST_TOP: f32 = {:?};\nconst HDR_CURVE_CEILING: f32 = {:?};\nconst HDR_CURVE_HOLD: f32 = {:?};\n\
                  const HDR_MIX_VALUE: f32 = {:?};\nconst HDR_MIX_FADE: f32 = {:?};\nconst HDR_LUMINANCE_FADE: f32 = {:?};\nconst HDR_LUMINANCE_VALUE: f32 = {:?};\n",
                 HDR_TONE_FIRST,
                 HDR_TONE_STEP,
@@ -171,6 +172,7 @@ pub(crate) fn wgsl_prelude() -> String {
                 crate::develop::basic_tone::HDR_CONTRAST_SAMPLES,
                 crate::develop::basic_tone::HDR_CONTRAST_TOP,
                 crate::color::hdr_curve::CEILING,
+                crate::color::hdr_curve::HOLD,
                 crate::develop::color_mixer::HDR_VALUE,
                 crate::develop::color_mixer::HDR_FADE,
                 crate::develop::color_mixer::HDR_LUMINANCE_FADE,
@@ -335,8 +337,10 @@ pub(crate) fn pixel_params_hdr(im: Source, r: &Recipe) -> Option<PixelParams> {
     };
     p.set(slot::HDR_CONTRAST, &contrast);
     let curves = match curves {
-        Some((levels, [white, slope])) => [1., levels as u8 as f32, white, slope],
-        None => [0.; 4],
+        Some((levels, [white, slope], holds)) => {
+            [1., levels as u8 as f32, white, slope, holds as u8 as f32]
+        }
+        None => [0.; 5],
     };
     p.set(slot::HDR_CURVES, &curves);
     // Per channel: 1 when its curve applies, its value at white and slope beyond.
@@ -597,7 +601,7 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     p.set(slot::HDR_PROFILE, &[profile.is_hdr() as u8 as f32]);
     p.set(slot::HDR_LOOK, &[0., 0., 0.]);
     p.set(slot::HDR_CONTRAST, &[-1., 0., 0.]);
-    p.set(slot::HDR_CURVES, &[0.; 4]);
+    p.set(slot::HDR_CURVES, &[0.; 5]);
     p.set(slot::HDR_CHANNELS, &[0.; 9]);
     p.set(slot::HDR_MIXER, &[-1.; 4]);
     Some(p)

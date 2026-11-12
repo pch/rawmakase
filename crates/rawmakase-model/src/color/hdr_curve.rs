@@ -17,9 +17,9 @@
 //! Measured on gray ramps (sensor white +4 stops, a linear and the ACR3 profile curve,
 //! HDR limit 8) through nine point curves and nine parametric settings. Up to four
 //! stops above white, the point-curve rule renders each within 0.05 stop (median
-//! 0.004–0.046), but for curves that end much steeper than the identity, whose
-//! output Camera Raw holds back far above 16: a curve through (128, 100) renders
-//! scene 11.8 as 31.2 where Camera Raw renders 25.8 (0.27 stop). The
+//! 0.004–0.046). Camera Raw holds a curve's output back above 16 times white, toward
+//! about 49 ([`hold`]): a curve through (128, 100) renders scene 11.8 as 25.8, where
+//! its slope alone would reach 31.2; with the hold, 26.3 (0.027 stop). The
 //! parametric rule renders each within 0.063 stop (median ≤ 0.016) below and above
 //! white, at HDR limits 2, 4 and 8, and the parametric curve applies before the point
 //! curve, as in SDR. Above four stops, Camera Raw's point curves drift toward the
@@ -43,22 +43,49 @@ pub const PARAMETRIC_TOP: f32 = crate::camera_profiles::hdr_look::PEAK;
 /// into NaN.
 pub const CEILING: f32 = 65536.;
 
+/// The encoded value Camera Raw 18.7 holds a steep point curve's HDR output toward:
+/// 49.26 times white. Its output follows the curve's extension up to four stops above
+/// white ([`PARAMETRIC_TOP`]'s encoding) and rolls off toward this above it, whatever the HDR
+/// limit (curves through (128, 140) and (220, 255), (90, 110) and (180, 255), and a
+/// profile curve, on gray ramps at limit 8; docs/records/hdr-stage1-results.md#tone-curves).
+pub const HOLD: f32 = 2.2723;
+
+/// A point curve's encoded HDR output `e` held toward [`HOLD`] from [`PARAMETRIC_TOP`]'s encoding
+/// up: unchanged below it, then an exponential approach with the same slope there.
+pub fn hold(e: f32) -> f32 {
+    let knee = encode(PARAMETRIC_TOP);
+    if e <= knee {
+        return e;
+    }
+    let room = HOLD - knee;
+    knee + room * (1. - (-(e - knee) / room).exp())
+}
+
 /// A point curve as it renders in HDR, on [`encode`]d values.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HdrPointCurve {
     lut: CurveLut,
     white: f32,
     slope: f32,
+    /// Whether its output is held above four stops over white ([`hold`]): a curve
+    /// that isn't the identity.
+    holds: bool,
 }
 
 impl HdrPointCurve {
     pub fn new(curve: &ToneCurve) -> Self {
+        let slope = curve.end_slope();
         let lut = CurveLut::new(curve);
         Self {
             white: lut.evaluate(1.),
-            slope: curve.end_slope(),
+            slope,
+            holds: !curve.is_identity(),
             lut,
         }
+    }
+    /// Whether its output is held above four stops over white ([`hold`]).
+    pub fn holds(&self) -> bool {
+        self.holds
     }
     /// The encoded output for the encoded input `e`: the curve up to white, its slope
     /// at white above it. The result can fall below 0, which [`decode`] reads as 0.
@@ -68,11 +95,12 @@ impl HdrPointCurve {
         [self.white, self.slope]
     }
     pub fn evaluate(&self, e: f32) -> f32 {
-        if e <= 1. {
+        let out = if e <= 1. {
             self.lut.evaluate(e)
         } else {
             self.white + self.slope * (e - 1.)
-        }
+        };
+        if self.holds { hold(out) } else { out }
     }
 }
 
@@ -197,11 +225,9 @@ mod tests {
             for (x, want) in measured {
                 let got = render(&curve, x);
                 let stops = (got / want).log2().abs();
-                // Camera Raw holds back outputs far above 16: the curve that ends
-                // steepest departs by 0.27 stop at 11.8 (31.2 against 25.8);
-                // everywhere else within 0.06.
-                let allowed = if x > 10. { 0.28 } else { 0.06 };
-                assert!(stops < allowed, "{points:?} at {x}: {got} against {want}");
+                // Camera Raw holds back outputs far above 16 ([`hold`]): the curve
+                // that ends steepest renders 11.8 as 25.8, the slope alone 31.2.
+                assert!(stops < 0.06, "{points:?} at {x}: {got} against {want}");
             }
         }
     }

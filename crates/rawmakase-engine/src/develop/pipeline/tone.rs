@@ -166,7 +166,7 @@ fn rgb_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {
 /// curve's that is not the identity, when any is not.
 pub(crate) struct HdrFinishGpu<'a> {
     pub(crate) contrast: Option<(&'a [f32], f32, f32)>,
-    pub(crate) curves: Option<(bool, [f32; 2])>,
+    pub(crate) curves: Option<(bool, [f32; 2], bool)>,
     pub(crate) channels: Option<[Option<[f32; 2]>; 3]>,
 }
 impl HdrFinish {
@@ -176,7 +176,7 @@ impl HdrFinish {
             curves: self
                 .curves
                 .as_ref()
-                .map(|c| (c.levels.is_some(), c.master.extension())),
+                .map(|c| (c.levels.is_some(), c.master.extension(), c.master.holds())),
             channels: self
                 .curves
                 .as_ref()

@@ -356,11 +356,23 @@ fn encoded_curve(curve: u32, e: f32) -> f32 {
         }
         return lut(offset(P_PARAMETRIC_LUT), 1024u, max(e, 0.0) / top) * top;
     }
-    // HdrPointCurve::evaluate: the curve up to white, then on along its end slope.
+    // HdrPointCurve::evaluate: the curve up to white, then on along its end slope,
+    // held above four stops over white (hdr_curve::hold) unless it is the identity.
+    var out = 0.0;
     if e <= 1.0 {
-        return lut(offset(P_MASTER), 4096u, e);
+        out = lut(offset(P_MASTER), 4096u, e);
+    } else {
+        out = p(P_HDR_CURVES + 2u) + p(P_HDR_CURVES + 3u) * (e - 1.0);
     }
-    return p(P_HDR_CURVES + 2u) + p(P_HDR_CURVES + 3u) * (e - 1.0);
+    if p(P_HDR_CURVES + 4u) == 0.0 {
+        return out;
+    }
+    let knee = look_encode(LOOK_PEAK);
+    if out <= knee {
+        return out;
+    }
+    let room = HDR_CURVE_HOLD - knee;
+    return knee + room * (1.0 - exp(-(out - knee) / room));
 }
 // HdrCurves::apply's last step on channel `c`'s encoded value: its own curve, when it
 // applies (hdr_curve::channel: the samples up to white, then on along its end slope,
