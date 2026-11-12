@@ -502,7 +502,7 @@ impl Fixture {
                     a: [0.2, 0.1],
                     b: [0.25, 0.9],
                 }];
-                e.view.tool = Tool::Guided;
+                e.view.set_tool(Tool::Guided);
                 e.view.guided.selected = Some(0);
             }
             _ => {}
@@ -729,7 +729,7 @@ impl Fixture {
                 .map(|id| self.index(id))
                 .unwrap_or_else(|| "-".into()),
         );
-        put("tool", format!("{:?}", view.tool));
+        put("tool", format!("{:?}", view.tool()));
         put(
             "zoom",
             format!(

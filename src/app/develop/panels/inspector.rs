@@ -323,7 +323,7 @@ impl Editor {
     pub(in crate::app) fn tool_drawer(&mut self, ui: &mut egui::Ui) {
         let Some(name) = DRAWER_TOOLS
             .iter()
-            .find(|(tool, ..)| *tool == self.view.tool)
+            .find(|(tool, ..)| *tool == self.view.tool())
             .map(|(.., name)| *name)
         else {
             return;
@@ -335,7 +335,7 @@ impl Editor {
                 add(ui)
             });
         };
-        match self.view.tool {
+        match self.view.tool() {
             Tool::Remove => {
                 return drawer(ui, &mut |ui| {
                     experimental(ui, UNMEASURED);
@@ -526,7 +526,7 @@ impl Editor {
                     .on_hover_text("Finish cropping · Enter or R")
                     .clicked()
                 {
-                    self.view.tool = Tool::None;
+                    self.view.set_tool(Tool::None);
                 }
             });
             ui.horizontal(|ui| {

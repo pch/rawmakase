@@ -45,7 +45,9 @@ fn remove_tool_adds_spots_paints_brushes_and_edits_the_selection() {
         )
         .into(),
     );
-    editor.view.tool = crate::app::develop::state::Tool::Remove;
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::Remove);
     let mut frame = |events: Vec<egui::Event>| {
         let mut output = ctx.run_ui(
             egui::RawInput {

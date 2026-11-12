@@ -930,10 +930,10 @@ fn panels_presets_opens_develops_tab_panel_in_a_narrow_window_as_the_rail_does()
     e.module = Module::Develop;
     // A tool's drawer is in the adjustments' place: it neither opens the
     // panel nor ends when the tab opens.
-    e.view.tool = crate::app::develop::state::Tool::Crop;
+    e.view.set_tool(crate::app::develop::state::Tool::Crop);
     assert!(!frame(&mut e), "Crop's drawer leaves the panel folded");
     run(&mut e);
-    assert_eq!(e.view.tool, crate::app::develop::state::Tool::Crop);
+    assert_eq!(e.view.tool(), crate::app::develop::state::Tool::Crop);
     assert!(frame(&mut e), "the tab shows beside it");
 }
 #[test]

@@ -335,6 +335,11 @@ pub(in crate::app) enum Tool {
     /// The Targeted Adjustment Tool of the Tone Curve, the Color Mixer or B&W.
     Targeted(crate::develop::targeted::Target),
 }
+/// The tool open, kept where only [`ViewState`]'s methods reach it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::app) struct ToolSlot {
+    tool: Tool,
+}
 /// The Color Mixer's tabs, as in Lightroom.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(in crate::app) enum MixerTab {
@@ -369,7 +374,9 @@ pub(in crate::app) struct ViewState {
     pub(in crate::app) readout: crate::app::develop::readout::Readout,
     /// A drag in the histogram in progress.
     pub(in crate::app) tone_drag: Option<crate::app::develop::panels::tone_drag::ToneDrag>,
-    pub(in crate::app) tool: Tool,
+    /// The tool open, read with [`ViewState::tool`] and set with
+    /// [`ViewState::set_tool`] alone.
+    pub(in crate::app) tool_slot: ToolSlot,
     /// A drag on the crop, from the press to the release.
     pub(in crate::app) crop_drag: Option<crate::app::develop::tools::crop_drag::CropDrag>,
     /// The aspect this photo's crop is locked to, in the Crop menu's values: the
@@ -451,7 +458,7 @@ impl Default for ViewState {
             clipping: Default::default(),
             readout: Default::default(),
             tone_drag: None,
-            tool: Tool::None,
+            tool_slot: ToolSlot::default(),
             crop_drag: None,
             aspect: -1.,
             aspect_read: false,
@@ -770,20 +777,28 @@ impl ViewState {
             .transform(self.system_display.display())
             .map(Into::into)
     }
+    /// The tool open.
+    pub(in crate::app) fn tool(&self) -> Tool {
+        self.tool_slot.tool
+    }
+    /// Opens `tool`, or none.
+    pub(in crate::app) fn set_tool(&mut self, tool: Tool) {
+        self.tool_slot.tool = tool;
+    }
     pub(crate) fn is(&self, tool: Tool) -> bool {
-        self.tool == tool
+        self.tool() == tool
     }
     /// An eyedropper is active: White Balance, the Fringe Color Selector or Point
     /// Color's dropper.
     pub(crate) fn picks_color(&self) -> bool {
         matches!(
-            self.tool,
+            self.tool(),
             Tool::WhiteBalance | Tool::Defringe | Tool::PointColor
         )
     }
     /// What the eyedropper's loupe asks for.
     pub(crate) fn loupe_prompt(&self) -> &'static str {
-        match self.tool {
+        match self.tool() {
             Tool::Defringe => "Pick a purple or green fringe",
             Tool::PointColor => "Pick a color to adjust",
             _ => "Pick a target neutral",
@@ -791,8 +806,12 @@ impl ViewState {
     }
     /// Opens `tool`, or closes it when it is already open.
     pub(crate) fn toggle(&mut self, tool: Tool) {
-        self.tool = if self.tool == tool { Tool::None } else { tool };
-        if matches!(self.tool, Tool::Crop) {
+        self.set_tool(if self.tool() == tool {
+            Tool::None
+        } else {
+            tool
+        });
+        if matches!(self.tool(), Tool::Crop) {
             self.zoom.on = false;
             self.aspect_read = false;
             self.aspect_reloaded = false;
@@ -808,7 +827,7 @@ impl ViewState {
         let crop = self.is(Tool::Crop);
         self.clear_document();
         if crop {
-            self.tool = Tool::Crop;
+            self.set_tool(Tool::Crop);
             self.aspect_read = false;
             self.aspect_reloaded = !another;
         }
@@ -818,7 +837,7 @@ impl ViewState {
         self.zoom_anim = None;
         self.glide = None;
         self.shown_rect = None;
-        self.tool = Tool::None;
+        self.set_tool(Tool::None);
         self.point_color.selected = None;
         self.targeted = None;
         self.crop_drag = None;

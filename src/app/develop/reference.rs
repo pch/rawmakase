@@ -487,11 +487,11 @@ mod tests {
         let mut fixture = fixture()?;
         let (open, other) = (fixture.open, fixture.other);
         let editor = &mut fixture.editor;
-        editor.view.tool = crate::app::develop::state::Tool::Mask;
+        editor.view.set_tool(crate::app::develop::state::Tool::Mask);
         editor.set_reference(other);
         // Setting a reference shows Reference View, which closes tools.
         assert_eq!(editor.view.compare, Compare::Reference(Axis::LeftRight));
-        assert_eq!(editor.view.tool, crate::app::develop::state::Tool::None);
+        assert_eq!(editor.view.tool(), crate::app::develop::state::Tool::None);
         assert!(editor.reference.loading());
         wait_for_reference(editor);
         // Developed in full, for 100%.
@@ -763,10 +763,10 @@ mod tests {
         };
         press(egui::Modifiers::SHIFT, &mut e);
         assert_eq!(e.view.compare, Compare::Reference(Axis::LeftRight));
-        assert_eq!(e.view.tool, crate::app::develop::state::Tool::None);
+        assert_eq!(e.view.tool(), crate::app::develop::state::Tool::None);
         press(egui::Modifiers::SHIFT, &mut e);
         assert_eq!(e.view.compare, Compare::Off);
         press(egui::Modifiers::NONE, &mut e);
-        assert_eq!(e.view.tool, crate::app::develop::state::Tool::Crop);
+        assert_eq!(e.view.tool(), crate::app::develop::state::Tool::Crop);
     }
 }

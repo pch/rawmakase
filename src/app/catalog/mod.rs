@@ -665,7 +665,7 @@ impl Editor {
             }
             // Zoomed in meanwhile (the zoom is shared): Crop cannot stay open.
             if self.view.zoom.on && self.view.is(crate::app::develop::state::Tool::Crop) {
-                self.view.tool = crate::app::develop::state::Tool::None;
+                self.view.set_tool(crate::app::develop::state::Tool::None);
             }
             self.module = Module::Develop;
             return;

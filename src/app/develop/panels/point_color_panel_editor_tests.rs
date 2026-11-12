@@ -65,7 +65,7 @@ fn point_colors_dropper_adds_a_selected_swatch_as_one_step_and_visualizes_it() {
     assert!((swatch.source[0] - 4.).abs() < 0.5, "{swatch:?}");
     assert!(swatch.is_valid());
     assert_eq!(editor.view.point_color.selected, Some(0));
-    assert_eq!(editor.view.tool, crate::app::develop::state::Tool::None);
+    assert_eq!(editor.view.tool(), crate::app::develop::state::Tool::None);
     // The same color again is refused, and changes nothing.
     editor
         .view
@@ -78,7 +78,7 @@ fn point_colors_dropper_adds_a_selected_swatch_as_one_step_and_visualizes_it() {
     assert_eq!(editor.document.edit.recipe().point_colors.len(), 1);
     // A sample still being taken when the dropper is put away is dropped.
     assert_eq!(
-        editor.view.tool,
+        editor.view.tool(),
         crate::app::develop::state::Tool::PointColor
     );
     in_edit_frame(&ctx, &mut editor, |e| {
@@ -106,14 +106,16 @@ fn point_colors_dropper_adds_a_selected_swatch_as_one_step_and_visualizes_it() {
         assert_eq!(editor.document.edit.recipe().point_colors.len(), 1);
         editor.module = Module::Develop;
         editor.view.compare = crate::app::develop::before_after::Compare::Off;
-        editor.view.tool = crate::app::develop::state::Tool::PointColor;
+        editor
+            .view
+            .set_tool(crate::app::develop::state::Tool::PointColor);
     }
     // A sample of a photo edited meanwhile is dropped.
     let mut changed = editor.document.edit.recipe().clone();
     changed.exposure = 1.;
     editor.point_color_sample_ready(&changed, Ok([2., 0.6, 0.3]));
     assert_eq!(editor.document.edit.recipe().point_colors.len(), 1);
-    editor.view.tool = crate::app::develop::state::Tool::None;
+    editor.view.set_tool(crate::app::develop::state::Tool::None);
     editor.view.mixer_tab = crate::app::develop::state::MixerTab::Mixer;
     // Visualize Range shows the selected swatch while the tab is open, on a color photo.
     assert_eq!(editor.visualized_swatch(), None);
@@ -160,7 +162,7 @@ fn point_colors_dropper_adds_a_selected_swatch_as_one_step_and_visualizes_it() {
     in_edit_frame(&ctx, &mut editor, |e| {
         e.view.mixer_tab = crate::app::develop::state::MixerTab::Mixer
     });
-    assert_eq!(editor.view.tool, crate::app::develop::state::Tool::None);
+    assert_eq!(editor.view.tool(), crate::app::develop::state::Tool::None);
     editor.view.mixer_tab = crate::app::develop::state::MixerTab::PointColor;
     // Nor in the Library.
     editor.module = Module::Library;

@@ -412,7 +412,7 @@ impl Editor {
     /// What the active tool draws into the rendered preview.
     pub(in crate::app) fn overlay(&self) -> crate::app::worker::Overlay {
         use crate::app::{develop::state::Tool, worker::Overlay};
-        match self.view.tool {
+        match self.view.tool() {
             Tool::Remove if self.view.retouch.visualize => {
                 Overlay::Spots(self.view.retouch.threshold)
             }

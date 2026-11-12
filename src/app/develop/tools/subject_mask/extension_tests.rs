@@ -967,7 +967,7 @@ fn switching_tools_while_a_setup_runs_drops_the_aiming_it_would_resume() {
         e.extensions.mask_setup(ID, "setup").is_none() && e.selection.prompt.is_none()
     });
     e.background(&ctx);
-    assert_eq!(e.view.tool, tool);
+    assert_eq!(e.view.tool(), tool);
     assert!(e.selection.prompting.is_none());
     assert_eq!(e.extensions.masks_sent().len(), sent, "nothing sent");
     assert_eq!(mask(e), saved);
@@ -1009,12 +1009,12 @@ fn a_setup_finishing_before_the_pass_that_would_drop_its_aiming_leaves_the_tool(
     pump(e, "the setup to finish", |e| {
         e.extensions.mask_setup(ID, "setup").is_none() && e.selection.prompt.is_none()
     });
-    assert_eq!(e.view.tool, tool);
+    assert_eq!(e.view.tool(), tool);
     assert!(e.selection.prompting.is_none());
     // The pass after changes nothing either.
     let ctx = e.context.clone();
     e.background(&ctx);
-    assert_eq!(e.view.tool, tool);
+    assert_eq!(e.view.tool(), tool);
     assert!(e.selection.prompting.is_none());
     assert_eq!(e.extensions.masks_sent().len(), sent, "nothing sent");
     assert!(e.document.edit.recipe().masks.is_empty());

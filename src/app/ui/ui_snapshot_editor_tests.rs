@@ -118,7 +118,7 @@ fn render_the_crop_drawer() -> anyhow::Result<()> {
         crate::app::preferences::session::Session::default(),
         None,
     );
-    e.view.tool = crate::app::develop::state::Tool::Crop;
+    e.view.set_tool(crate::app::develop::state::Tool::Crop);
     let mut textures = Default::default();
     let image = crate::app::ui::ui_snapshot::render(
         &ctx,

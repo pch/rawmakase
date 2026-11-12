@@ -289,7 +289,7 @@ fn dragging_a_mask_pin_moves_the_mask() {
         auto_mask: false,
     };
     in_edit_frame(&ctx, &mut editor, |e| {
-        e.view.tool = crate::app::develop::state::Tool::Mask;
+        e.view.set_tool(crate::app::develop::state::Tool::Mask);
         let mut radial = MaskComponent::new(MaskShape::Radial {
             center: [0.7, 0.7],
             radii: [0.1, 0.1],
@@ -621,7 +621,7 @@ fn masking_tool_draws_gradients_paints_brushes_and_edits_handles() {
         crate::app::develop::state::Tool::Remove,
         crate::app::develop::state::Tool::Crop,
     ] {
-        editor.view.tool = tool;
+        editor.view.set_tool(tool);
         for _ in 0..3 {
             let mut output = ctx.run_ui(
                 egui::RawInput {

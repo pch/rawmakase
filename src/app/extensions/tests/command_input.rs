@@ -292,13 +292,13 @@ fn every_way_out_sends_nothing() {
     let ways: [(&str, Leave); 5] = [
         ("Escape", |e, _| frame(e, vec![key(egui::Key::Escape)])),
         ("Cancel", |e, _| e.end_command_input()),
-        ("a tool", |e, _| e.view.tool = Tool::Crop),
+        ("a tool", |e, _| e.view.set_tool(Tool::Crop)),
         ("Library", |e, _| e.module = Module::Library),
         ("another photo", |e, photos| open(e, &photos[1])),
     ];
     for (what, leave) in ways {
         e.module = Module::Develop;
-        e.view.tool = Tool::None;
+        e.view.set_tool(Tool::None);
         begin(&mut e, "pick-points");
         e.command_input_click([0.5, 0.5], true);
         leave(&mut e, &f.photos);
@@ -319,7 +319,7 @@ fn every_way_out_sends_nothing() {
 
     // Starting it puts the open tool away, Masking included.
     open(&mut e, &f.photos[0]);
-    e.view.tool = Tool::Mask;
+    e.view.set_tool(Tool::Mask);
     begin(&mut e, "pick-point");
     assert!(e.view.is(Tool::None));
     e.end_command_input_when_stale();
@@ -501,7 +501,7 @@ fn a_tool_taken_up_in_the_same_frame_gets_the_click_alone() {
         [key(egui::Key::W), key(egui::Key::Enter)],
         [key(egui::Key::Enter), key(egui::Key::W)],
     ] {
-        e.view.tool = Tool::None;
+        e.view.set_tool(Tool::None);
         begin(&mut e, "pick-points");
         click_at(&mut e, middle, vec![]);
         assert_eq!(e.command_input().unwrap().clicks(), 1);

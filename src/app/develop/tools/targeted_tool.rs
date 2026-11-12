@@ -105,14 +105,14 @@ impl Editor {
             self.view.targeted = None;
             self.document.targeted_pick.invalidate();
         }
-        if let Tool::Targeted(target) = self.view.tool
+        if let Tool::Targeted(target) = self.view.tool()
             && (self.module == Module::Library
                 || !self.targeted_available(target)
                 || !self.targeted_shown(target))
         {
-            self.view.tool = Tool::None;
+            self.view.set_tool(Tool::None);
         }
-        let current = match self.view.tool {
+        let current = match self.view.tool() {
             Tool::Targeted(target) => Some(target),
             _ => None,
         };
@@ -468,7 +468,7 @@ mod tests {
             .set(Panel::ColorMixer, PanelState::Off);
         e.toggle_targeted(Target::Hsl(HslChannel::Saturation));
         assert_eq!(
-            e.view.tool,
+            e.view.tool(),
             Tool::Targeted(Target::Hsl(HslChannel::Saturation))
         );
         assert_eq!(e.view.mixer_adjust, 1);
@@ -519,9 +519,9 @@ mod tests {
         assert_eq!(steps[0].name, "Orange Saturation");
         assert!(e.view.targeted.is_none());
         // The tool stays until Esc or its button puts it away.
-        assert!(matches!(e.view.tool, Tool::Targeted(_)));
+        assert!(matches!(e.view.tool(), Tool::Targeted(_)));
         e.toggle_targeted(Target::Hsl(HslChannel::Saturation));
-        assert_eq!(e.view.tool, Tool::None);
+        assert_eq!(e.view.tool(), Tool::None);
     }
 
     /// Should the sample panic, it still reports, so the drag stops waiting.
@@ -639,20 +639,20 @@ mod tests {
         // B&W's tool is for black & white photos only; converting puts the Color
         // Mixer's away.
         e.toggle_targeted(Target::BlackWhite);
-        assert!(matches!(e.view.tool, Tool::Targeted(Target::Hsl(_))));
+        assert!(matches!(e.view.tool(), Tool::Targeted(Target::Hsl(_))));
         e.document.edit.setup_mut().effects.monochrome = true;
         e.keep_targeted_tool();
-        assert_eq!(e.view.tool, Tool::None);
+        assert_eq!(e.view.tool(), Tool::None);
         assert!(e.view.targeted.is_none());
         e.toggle_targeted(Target::BlackWhite);
-        assert_eq!(e.view.tool, Tool::Targeted(Target::BlackWhite));
+        assert_eq!(e.view.tool(), Tool::Targeted(Target::BlackWhite));
         // Hiding the sliders a tool moves puts it away, and another target drops a
         // drag still waiting for its sample.
         e.document.edit.setup_mut().effects.monochrome = false;
         e.toggle_targeted(Target::ToneCurve);
         e.view.parametric_curve = false;
         e.keep_targeted_tool();
-        assert_eq!(e.view.tool, Tool::None);
+        assert_eq!(e.view.tool(), Tool::None);
         e.toggle_targeted(Target::Hsl(HslChannel::Hue));
         e.view.mixer_adjust = 3;
         e.start_targeted_drag(Target::Hsl(HslChannel::Hue), [0.25, 0.5]);
@@ -691,15 +691,15 @@ mod tests {
             (egui::Key::L, Target::Hsl(HslChannel::Luminance)),
         ] {
             press(&mut e, key, all);
-            assert_eq!(e.view.tool, Tool::Targeted(target), "{key:?}");
+            assert_eq!(e.view.tool(), Tool::Targeted(target), "{key:?}");
         }
         press(&mut e, egui::Key::Escape, egui::Modifiers::NONE);
-        assert_eq!(e.view.tool, Tool::None);
+        assert_eq!(e.view.tool(), Tool::None);
         // B&W's is for black & white photos.
         press(&mut e, egui::Key::G, all);
-        assert_eq!(e.view.tool, Tool::None);
+        assert_eq!(e.view.tool(), Tool::None);
         e.document.edit.setup_mut().effects.monochrome = true;
         press(&mut e, egui::Key::G, all);
-        assert_eq!(e.view.tool, Tool::Targeted(Target::BlackWhite));
+        assert_eq!(e.view.tool(), Tool::Targeted(Target::BlackWhite));
     }
 }

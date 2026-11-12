@@ -11,7 +11,9 @@ fn red_eye_brackets_resize_the_circle_a_click_uses() {
         crate::app::preferences::session::Session::default(),
         None,
     );
-    editor.view.tool = crate::app::develop::state::Tool::RedEye;
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::RedEye);
     let start = editor.view.red_eye.size;
     let mut press = |key| {
         let mut output = ctx.run_ui(
@@ -60,16 +62,20 @@ fn scrolling_over_the_photo_resizes_the_brush_spot_and_red_eye_circle() {
         adjust: Adjust::Size,
         brush: MaskBrush::Current,
     };
-    editor.view.tool = crate::app::develop::state::Tool::Remove;
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::Remove);
     let spot = editor.view.retouch.size;
     editor.scroll_tool_size(size(1.));
     assert!(editor.view.retouch.size > spot);
-    editor.view.tool = crate::app::develop::state::Tool::RedEye;
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::RedEye);
     let eye = editor.view.red_eye.size;
     editor.scroll_tool_size(size(-1.));
     assert!(editor.view.red_eye.size < eye);
     // The mask brush changes only while a brush is in use, as the cursor shows it.
-    editor.view.tool = crate::app::develop::state::Tool::Mask;
+    editor.view.set_tool(crate::app::develop::state::Tool::Mask);
     let brush = editor.view.masking.brushes[0];
     editor.scroll_tool_size(size(1.));
     assert_eq!(editor.view.masking.brushes[0], brush);
@@ -98,7 +104,7 @@ fn scrolling_over_the_photo_resizes_the_brush_spot_and_red_eye_circle() {
     });
     assert!(editor.view.masking.brushes[2].size > erase.size);
     // Other tools ignore it.
-    editor.view.tool = crate::app::develop::state::Tool::Crop;
+    editor.view.set_tool(crate::app::develop::state::Tool::Crop);
     let before = (editor.view.retouch.size, editor.view.red_eye.size);
     editor.scroll_tool_size(size(1.));
     assert_eq!((editor.view.retouch.size, editor.view.red_eye.size), before);
@@ -181,7 +187,9 @@ fn a_wheel_scroll_resizing_a_spot_is_one_history_step() {
         crate::app::preferences::session::Session::default(),
         None,
     );
-    editor.view.tool = crate::app::develop::state::Tool::Remove;
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::Remove);
     editor
         .document
         .edit
@@ -244,7 +252,9 @@ fn brackets_size_the_red_eye_circle_without_rating_the_photo() -> anyhow::Result
     editor.library = Some(Box::new(l));
     editor.module = Module::Develop;
     editor.document.catalog_photo = Some(id);
-    editor.view.tool = crate::app::develop::state::Tool::RedEye;
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::RedEye);
     let mut output = ctx.run_ui(
         egui::RawInput {
             events: vec![egui::Event::Key {
@@ -282,7 +292,9 @@ fn an_edit_right_after_a_wheel_scroll_is_its_own_history_step() {
         crate::app::preferences::session::Session::default(),
         None,
     );
-    editor.view.tool = crate::app::develop::state::Tool::Remove;
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::Remove);
     editor
         .document
         .edit
@@ -328,7 +340,9 @@ fn a_wheel_scroll_is_its_own_step_however_late_the_next_frame_comes() {
         crate::app::preferences::session::Session::default(),
         None,
     );
-    editor.view.tool = crate::app::develop::state::Tool::Remove;
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::Remove);
     editor
         .document
         .edit
@@ -384,7 +398,9 @@ fn a_wheel_scroll_closes_once_paused_even_while_a_button_goes_down() {
         crate::app::preferences::session::Session::default(),
         None,
     );
-    editor.view.tool = crate::app::develop::state::Tool::Remove;
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::Remove);
     editor
         .document
         .edit
@@ -438,7 +454,9 @@ fn a_click_after_a_wheel_scroll_closes_it_at_once() {
         crate::app::preferences::session::Session::default(),
         None,
     );
-    editor.view.tool = crate::app::develop::state::Tool::Remove;
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::Remove);
     editor
         .document
         .edit

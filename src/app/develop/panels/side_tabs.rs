@@ -96,8 +96,8 @@ impl Editor {
             }
             Some(TabClick::Edit) => {
                 // From a tool, back to the adjustments; on them, folds them.
-                if has_drawer(self.view.tool) {
-                    self.view.toggle(self.view.tool);
+                if has_drawer(self.view.tool()) {
+                    self.view.toggle(self.view.tool());
                     if !self.panel_shown(WorkspacePanel::Adjustments) {
                         self.change_panels(PanelChange::Toggle(WorkspacePanel::Adjustments));
                     }
@@ -113,7 +113,7 @@ impl Editor {
     /// Whether the adjustments panel shows, under a shown right panel: the
     /// adjustments unless Edit folded them, or the open tool's drawer.
     pub(in crate::app) fn develop_adjustments_shown(&self) -> bool {
-        self.panel_shown(WorkspacePanel::Adjustments) || has_drawer(self.view.tool)
+        self.panel_shown(WorkspacePanel::Adjustments) || has_drawer(self.view.tool())
     }
     /// Whether the tab panel shows its tab: not folded, and with room beside
     /// the photo as last laid out, or asked for in a narrow window.
@@ -205,7 +205,7 @@ impl Editor {
     fn develop_rail(&mut self, ui: &mut egui::Ui, open: bool) -> Option<TabClick> {
         let palette = theme::palette(ui.ctx());
         let mut click = None;
-        let tool = self.view.tool;
+        let tool = self.view.tool();
         let photo = self.document.full().is_some() && !self.view.compare.before_only();
         egui::Panel::right("develop-rail")
             .resizable(false)

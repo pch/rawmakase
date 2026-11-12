@@ -107,7 +107,7 @@ impl Editor {
     pub(in crate::app) fn inspect(&mut self, at: [f32; 2]) {
         self.view.glide_to(at, self.document.catalog_photo);
         if self.view.is(Tool::Crop) {
-            self.view.tool = Tool::None;
+            self.view.set_tool(Tool::None);
         }
     }
     /// Before the first image arrives: the Library preview of the photo being
@@ -201,7 +201,7 @@ impl Editor {
             return;
         }
         if self.view.zoom.on && self.view.is(Tool::Crop) {
-            self.view.tool = Tool::None;
+            self.view.set_tool(Tool::None);
         }
         self.schedule();
     }
@@ -537,7 +537,7 @@ impl Editor {
             let recipe = self.document.edit.recipe_mut();
             recipe.pick_white_balance(gains, &im.metadata);
             recipe.auto_white_balance = None;
-            self.view.tool = Tool::None;
+            self.view.set_tool(Tool::None);
         }
         // Point Color's dropper adds a swatch of the color under the pointer and
         // selects it; the top bar says why when it can't. The preview must show the
@@ -572,7 +572,7 @@ impl Editor {
                 && self.document.full().is_some();
             match self.shown_color(pos, rect, region_rect).filter(|_| current) {
                 Some(rgb) => match develop::pick_fringe(self.document.edit.recipe_mut(), rgb) {
-                    Some(_) => self.view.tool = Tool::None,
+                    Some(_) => self.view.set_tool(Tool::None),
                     None => {
                         self.messages
                             .warn("Cannot set the fringe color: click a purple or green fringe");

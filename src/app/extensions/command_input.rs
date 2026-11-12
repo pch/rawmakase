@@ -113,7 +113,7 @@ impl Editor {
         if self.view.is(Tool::Mask) {
             self.close_masking();
         }
-        self.view.tool = Tool::None;
+        self.view.set_tool(Tool::None);
         let collecting = Collecting {
             extension: extension.to_string(),
             command: command.to_string(),

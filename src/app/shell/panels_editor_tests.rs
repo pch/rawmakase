@@ -87,7 +87,7 @@ fn hiding_develops_right_panel_takes_its_tab_panel_and_rail() {
             .is_none()
     );
     // A tool's drawer keeps to the hidden side too.
-    e.view.tool = crate::app::develop::state::Tool::Crop;
+    e.view.set_tool(crate::app::develop::state::Tool::Crop);
     panel_frame(&mut e, vec![], FocusedButton::No);
     assert!(ctx.read_response(rail_id(DevelopTab::Presets)).is_none());
 }
@@ -230,19 +230,19 @@ fn edit_on_the_rail_folds_the_adjustments_and_brings_them_back() {
     assert!(!e.panel_shown(WorkspacePanel::Adjustments));
     assert!(e.panel_shown(WorkspacePanel::Right));
     // A tool's drawer shows while they are folded.
-    e.view.tool = crate::app::develop::state::Tool::Crop;
+    e.view.set_tool(crate::app::develop::state::Tool::Crop);
     panel_frame(&mut e, vec![], FocusedButton::No);
     panel_frame(&mut e, vec![], FocusedButton::No);
     assert!(drawn(&ctx));
     // Closing it folds them again; Edit from it brings the adjustments back.
-    e.view.tool = crate::app::develop::state::Tool::None;
+    e.view.set_tool(crate::app::develop::state::Tool::None);
     panel_frame(&mut e, vec![], FocusedButton::No);
     panel_frame(&mut e, vec![], FocusedButton::No);
     assert!(!drawn(&ctx));
-    e.view.tool = crate::app::develop::state::Tool::Crop;
+    e.view.set_tool(crate::app::develop::state::Tool::Crop);
     panel_frame(&mut e, vec![], FocusedButton::No);
     click(&mut e);
-    assert_eq!(e.view.tool, crate::app::develop::state::Tool::None);
+    assert_eq!(e.view.tool(), crate::app::develop::state::Tool::None);
     assert!(drawn(&ctx));
     assert!(e.panel_shown(WorkspacePanel::Adjustments));
     // Tab leaves the fold alone: it is the rail's.

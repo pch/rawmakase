@@ -233,7 +233,7 @@ impl Editor {
     /// Starts a new mask of `kind` (the Create buttons and K, M, Shift+M, Shift+J), or
     /// adds `kind` to the selected mask with `op`.
     pub(in crate::app) fn create_mask(&mut self, kind: Kind, op: Option<MaskOp>) {
-        self.view.tool = crate::app::develop::state::Tool::Mask;
+        self.view.set_tool(crate::app::develop::state::Tool::Mask);
         let op = op.filter(|_| self.selected_mask().is_some());
         match kind {
             Kind::Brush | Kind::Luminance => {
@@ -751,7 +751,7 @@ impl Editor {
         self.view.masking.pending = None;
         self.view.masking.end_drag();
         self.view.masking.leave();
-        self.view.tool = crate::app::develop::state::Tool::None;
+        self.view.set_tool(crate::app::develop::state::Tool::None);
     }
     fn create_row(&mut self, ui: &mut egui::Ui) {
         let pending = self.view.masking.pending;
@@ -1589,7 +1589,7 @@ mod tests {
             crate::app::preferences::session::Session::default(),
             None,
         );
-        e.view.tool = Tool::Mask;
+        e.view.set_tool(Tool::Mask);
         e.view.masking.overlay = false;
         e.document.edit.change(None, |r| r.masks.push(mask("Sky")));
         frame(&mut e, vec![]);
@@ -1642,7 +1642,7 @@ mod tests {
             None,
         );
         e.document.edit.setup_mut().masks = masks.iter().map(|n| mask(n)).collect();
-        e.view.tool = Tool::Mask;
+        e.view.set_tool(Tool::Mask);
         frame(&mut e, vec![]);
         e
     }
@@ -1732,11 +1732,11 @@ mod tests {
         assert!(!e.view.masking.is_renaming());
         // Another tool taken up meanwhile.
         let mut e = renaming(&["Old"]);
-        e.view.tool = Tool::Remove;
+        e.view.set_tool(Tool::Remove);
         frame(&mut e, vec![]);
         frame(&mut e, vec![key(egui::Key::Escape)]);
-        assert_eq!(e.view.tool, Tool::None);
-        e.view.tool = Tool::Mask;
+        assert_eq!(e.view.tool(), Tool::None);
+        e.view.set_tool(Tool::Mask);
         frame(&mut e, vec![key(egui::Key::Enter)]);
         assert_eq!(names(&e), ["Old"]);
     }
