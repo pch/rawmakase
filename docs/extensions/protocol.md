@@ -233,7 +233,8 @@ The app collects `prompt` so far, for mask generators: a click adds a
 positive point and an Alt-click a negative one, a drag draws a box and starts
 over without the clicks, and a negative first click while refining a mask
 takes the mask's extent as the box. The whole prompt is sent after each
-change; input made while a request runs is ignored, not queued.
+change; input made while a request runs is ignored, not queued. Done,
+Escape, another photo or switching to another tool ends aiming.
 
 ## Envelope
 

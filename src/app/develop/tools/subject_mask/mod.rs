@@ -646,6 +646,16 @@ impl Editor {
         self.messages
             .note("Click the part of the photo to add, Alt-click to leave out");
     }
+    /// Aiming belongs to the Mask tool: once Develop switches to another
+    /// (Crop, a key, a panel's tool), aiming has ended, and going back to Mask
+    /// doesn't take up the old clicks again. Runs every pass.
+    pub(in crate::app) fn end_aiming_off_mask(&mut self) {
+        if self.selection.prompting.is_some()
+            && self.view.tool != crate::app::develop::state::Tool::Mask
+        {
+            self.selection.end_prompting();
+        }
+    }
     /// The generator a generated component's raster came from: Subject, Sky or
     /// Background (an inverted Subject) for the app's own and old saved masks,
     /// or the extension's generator its provenance names. `Err` says why that

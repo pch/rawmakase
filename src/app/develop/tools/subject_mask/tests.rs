@@ -1427,6 +1427,28 @@ fn background_aimed_or_refined_by_hand_asks_for_the_subject_and_stays_inverted()
 }
 
 #[test]
+fn switching_tools_ends_aiming() {
+    let mut f = fixture();
+    let e = &mut f.editor;
+    capturing(e);
+    aim(e, SUBJECT);
+    e.prompt_click([0.5, 0.5], true);
+    answer(e, Ok(generated(177)));
+    let ctx = e.context.clone();
+    // A pass with the Mask tool keeps it.
+    e.background(&ctx);
+    assert!(e.selection.prompting.is_some());
+    e.view.toggle(crate::app::develop::state::Tool::Crop);
+    e.background(&ctx);
+    e.view.toggle(crate::app::develop::state::Tool::Mask);
+    e.background(&ctx);
+    assert!(e.selection.prompting.is_none(), "the old prompt came back");
+    // A click on the photo now aims at nothing.
+    e.prompt_click([0.6, 0.6], true);
+    assert_eq!(asked(e).len(), 1);
+}
+
+#[test]
 fn a_saved_mask_is_labelled_from_its_provenance_alone() {
     let source = |feature: &str| BitmapMask {
         source: Some(BitmapSource {
