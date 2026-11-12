@@ -3,7 +3,8 @@
 Status: Current. What an edit with High Dynamic Range on renders, which parts of
 the pipeline are measured against Camera Raw in HDR, and what is refused. The plan
 and its progress are [HDR implementation plan](records/hdr-implementation-plan.md)
-and [HDR results](records/hdr-stage1-results.md); the settings themselves are
+and [HDR results](records/hdr-stage1-results.md), and how #253 meets the plan's
+completion criteria is [HDR completion](records/hdr-253-closure.md); the settings themselves are
 `model::hdr` (Lightroom's `crs:HDREditMode`, `HDRMaxValue` and `SDR*`).
 
 ## Two renderings of one edit

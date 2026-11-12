@@ -1640,6 +1640,8 @@ white by up to 0.73 stop. Mask Clarity and Dehaze stay refused.
 
 ## Progress
 
+How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
+
 - [ ] Stage 1: harness, Nikon measurements, codec spike, the frozen family and the
   broad gate set done; fixtures and display prototype open. Lossy JPEG XL uses jixel, not libjxl (#906).
 - [x] Stage 2 (#905): HDR settings in the recipe (`model::hdr`), schema 14 and catalog
@@ -1647,7 +1649,7 @@ white by up to 0.73 stop. Mask Clarity and Dehaze stay refused.
   Lightroom reading and writing, presets, the High Dynamic Range Copy/Sync group,
   and one shared guard refusing HDR on. Profile grouping (52552) and the previous
   reader's profile check are left for stage 3's DCP work.
-- [ ] Stage 3: the CPU HDR master (`render_hdr`), HDR profiles rendered and
+- [x] Stage 3: the CPU HDR master (`render_hdr`), HDR profiles rendered and
   importable, the ordinary-curve extension, Exposure, negative Whites, Blacks and the
   limit, measured and validated on the family (above); the SDR rendition everywhere
   else; the release guard lifted with Develop's HDR switch and SDR-rendition status;
@@ -1661,11 +1663,11 @@ white by up to 0.73 stop. Mask Clarity and Dehaze stay refused.
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
   ([Vignette and grain](#vignette-and-grain)); masks with Temp,
-  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from 0 to +50 and Dehaze up to ±30 ([Presence](#presence)).
-  Open: Whites above +50, Highlights, the colour
-  mixer's Luminance beyond ±40, Defringe ([Defringe](#defringe), refused again 2026-11-11), looks that set Clarity above +50 or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
-  with them), 52552 grouping (library only,
-  needed when toggling HDR pairs profiles).
+  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from 0 to +50 and Dehaze up to ±30 ([Presence](#presence));
+  Red Eye ([Red Eye](#red-eye)); ordinary profiles' sRGB-encoded tables
+  ([sRGB-encoded tables](#srgb-encoded-tables)). What stays refused, each with its
+  measurements, is listed in [completion](hdr-253-closure.md#what-stays-refused);
+  52552 grouping (library only, needed when toggling HDR pairs profiles) is open.
 - [x] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
   P3, Rec. 709; CICP-tagged ICC; #908), checked against Camera Raw's PQ TIFF through an
   independent decoder; lossless JPEG XL PQ and HLG (and SDR sRGB), checked with
