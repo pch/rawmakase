@@ -33,7 +33,8 @@ turn a request's shared image into coverage (`lib.rs`), the models' half of a
 selection, local or over the remote worker, with the last photo's analysis
 (`inference.rs`), the local models behind an `Engine` (`engine.rs`; `fake.rs` is
 the tests' stand-in, and a fake remote worker), the Subject and Sky packs, their
-setup and the adoption of the app's install from before (`models.rs`),
+setup in the local data folder's `models`, where the app installed them
+before, beside AI Denoise's (`models.rs`),
 `remote-inference.json` (`remote.rs`) and which ONNX Runtime they load
 (`runtime.rs`). It is built with the SDK, the selection models, the remote
 client and the installer; the app doesn't link it. Extensions

@@ -2,8 +2,9 @@
 
 Optional, off by default. Selections (Select Subject / Sky / Background) are
 made by the bundled AI masks extension (`rawmakase.ai-masks`), whose program
-normally runs them on this computer: the models are downloaded into the
-extension's data folder and run through the ONNX Runtime library RAWmakase
+normally runs them on this computer: the models are downloaded into
+RAWmakase's local data folder (`models/`, where RAWmakase has always kept them)
+and run through the ONNX Runtime library RAWmakase
 ships with. This page describes the
 alternative: running the same models on another computer that has the capable
 hardware, with RAWmakase asking it over the network. Everything else about the
@@ -45,15 +46,11 @@ photo leaves the computer.
 ## The worker
 
 On the computer with the models (the same `models/` folder layout RAWmakase
-installs; download it there once with any RAWmakase, or copy it). The AI masks
-extension keeps them in its data folder; RAWmakase before it kept them in
-`~/.local/share/rawmakase/models/`, and the extension moves them from there at
-its first selection:
+installs; download it there once with any RAWmakase, or copy it):
 
 ```sh
-rawmakase-remote-worker \
-    --model ~/.local/share/rawmakase/extension-data/rawmakase.ai-masks/models/sam2.1-hiera-small-v1 \
-    --sky-model ~/.local/share/rawmakase/extension-data/rawmakase.ai-masks/models/upernet-convnext-base-v1
+rawmakase-remote-worker --model ~/.local/share/rawmakase/models/sam2.1-hiera-small-v1 \
+    --sky-model ~/.local/share/rawmakase/models/upernet-convnext-base-v1
 ```
 
 The worker loads the models once, prints what it loaded — the model, the

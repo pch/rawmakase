@@ -777,10 +777,11 @@ contract. Broader AI work remains independent of shipping Subject and Background
 Since phase 3 of the extensions plan (#965), Select Subject, Sky and Background
 are the bundled AI masks extension's (`extensions/ai-masks`,
 `rawmakase.ai-masks`): its program runs the models below, on this computer or
-on the [remote worker](remote-inference.md), installs their packs into the
-extension's data folder (adopting the app's install from before, in
-`<local data>/models`, by moving it there) and loads the ONNX Runtime the app
-bundles. The app renders the model input, keeps the coverage as a raster with
+on the [remote worker](remote-inference.md), installs their packs where the app
+always installed them, in this computer's local data folder
+(`<local data>/models/<id>-v<version>`, beside AI Denoise's; never a roaming or
+`RAWMAKASE_DATA_DIR` folder), so a pack installed before the extension is used
+where it is, and loads the ONNX Runtime the app bundles. The app renders the model input, keeps the coverage as a raster with
 the provenance masks always recorded (`subject`, `sky`), and renders and labels
 saved masks without the extension. Its Preferences page has **Remove downloaded
 models**, which replaced the drawer's Remove buttons.
