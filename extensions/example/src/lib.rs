@@ -15,6 +15,10 @@
 //!   with a notification;
 //! - `refuse`: fails at once, which is no useful work;
 //! - `hang` and `crash`: a program that stops answering, and one that exits;
+//! - `pick-point`, `pick-points`, `pick-box` and `pick-prompt`: answer with
+//!   the viewer input they were sent and the photos of their target
+//!   (`pick-box` applies to the open photo); `paint` takes `brush`, which the
+//!   app doesn't collect;
 //! - the `note` panel: a text field validated by the program, and a button.
 //!
 //! A file `crash-on-event` in its working folder makes the program exit at
@@ -176,6 +180,18 @@ fn read(cx: &Context, _run: CommandRun) -> Result<Value, RemoteError> {
     }))
 }
 
+/// The viewer input it was sent, read as the SDK checked it, and the ids of
+/// its target's photos.
+fn pick(_cx: &Context, run: CommandRun) -> Result<Value, RemoteError> {
+    let input = run.viewer_input()?;
+    let photos: Vec<_> = run
+        .target
+        .iter()
+        .flat_map(|t| t.photos.iter().map(|p| p.id))
+        .collect();
+    Ok(json!({"input": input, "photos": photos}))
+}
+
 /// Says in the status line that it waits, then waits for its cancellation.
 fn wait_until_cancelled(cx: &Context) {
     let _ = cx.host().status(Some("Waiting"));
@@ -254,6 +270,11 @@ pub fn extension() -> Extension {
                 std::process::exit(3)
             },
         )
+        .command("pick-point", pick)
+        .command("pick-points", pick)
+        .command("pick-box", pick)
+        .command("pick-prompt", pick)
+        .command("paint", pick)
         .panel("note", Note::default())
         .on_event(|event, _host| {
             if !matches!(event, AppEvent::Quitting(_))

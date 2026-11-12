@@ -468,6 +468,7 @@ impl Extension {
             AppRequest::Hello(_) => unreachable!("handled before dispatch"),
             AppRequest::CommandRun(run) => {
                 let command: CommandRun = run;
+                command.viewer_input()?;
                 match self.commands.get_mut(&command.command) {
                     Some(handler) => handler.run(cx, command),
                     None => Err(unknown("command", &command.command)),

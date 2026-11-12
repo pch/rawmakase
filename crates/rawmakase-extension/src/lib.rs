@@ -44,6 +44,11 @@ use rawmakase_extension_protocol::method::{CommandRun, MaskGenerate, MaskGenerat
 use serde_json::Value;
 
 /// A `[[command]]`'s implementation.
+///
+/// The SDK checks a request's viewer input ([`CommandRun::viewer_input`])
+/// before calling [`Command::run`], and refuses input that doesn't read or
+/// validate with [`ErrorCode::InvalidRequest`]; the handler reads it with the
+/// same call.
 pub trait Command: Send {
     /// Runs the command. Its edits go to the app as proposals
     /// ([`Host::propose_settings`] with [`Context::op`]) while it runs; what it

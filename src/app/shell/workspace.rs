@@ -252,6 +252,7 @@ impl Editor {
         self.extensions_frame(ctx);
         self.events(ctx);
         self.end_aiming_off_mask();
+        self.end_command_input_when_stale();
         self.finish_paused_turn(ctx);
         self.save_when_due(ctx);
     }
@@ -1456,6 +1457,8 @@ impl Editor {
             // which a quick shortcut can release before the frame ends. Each
             // read lets go of egui's lock before its command runs: a shortcut
             // that opens a photo uploads a texture, which waits for the lock.
+            // A command collecting its input takes Escape and Enter first.
+            self.command_input_keys(ctx);
             use bindings as b;
             let (copy, paste, previous, treatment, reset, sync, match_exposures);
             let (new_preset, auto, export, transfer);

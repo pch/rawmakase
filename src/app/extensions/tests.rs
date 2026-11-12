@@ -3,6 +3,8 @@
 //! `rawmakase_example::extension()` as a third party's program would. Each
 //! test that needs a program starts one, or one per crash it counts; the
 //! token and state tests start none.
+mod command_input;
+
 use super::targets::Proposing;
 use super::{Host, Outcome, RunBy};
 use crate::app::{Editor, Module};

@@ -30,6 +30,9 @@ impl Editor {
             }
             return false;
         }
+        if self.command_input_overlay(ui, response, rect, area) {
+            return true;
+        }
         match self.view.tool {
             Tool::None | Tool::Crop | Tool::WhiteBalance | Tool::Defringe | Tool::PointColor => {
                 false

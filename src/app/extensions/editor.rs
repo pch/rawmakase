@@ -6,10 +6,11 @@ use super::{Answer, Call, Host, Outcome, RunBy};
 use crate::app::Editor;
 use crate::app::worker::Event;
 use crate::catalog::PhotoId;
-use rawmakase_extensions::protocol::manifest::AppliesTo;
+use rawmakase_extensions::protocol::manifest::{AppliesTo, Input};
 use rawmakase_extensions::protocol::method::{
     ActionSupport, AppEvent, Empty, Level, PhotoOpened, ProgramRequest,
 };
+use rawmakase_extensions::protocol::viewer::ViewerInput;
 use rawmakase_extensions::protocol::{ErrorCode, RemoteError};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -303,11 +304,11 @@ impl Editor {
         }
     }
 
-    /// Runs `id`, an enabled extension's command (`<extension>/<command>`),
-    /// on what its manifest says it applies to, read now: photos not open
-    /// are read on a worker, and the command is sent once they are
-    /// ([`Host::finish_read`]); until then it is running, and Stop or
-    /// disabling the extension cancels it.
+    /// Runs `id`, an enabled extension's command (`<extension>/<command>`).
+    /// One that takes no viewer input is sent at once
+    /// ([`Editor::send_extension_command`]); one that does first collects it
+    /// on the photo open in Develop ([`Editor::begin_command_input`]), and is
+    /// sent from there. What it applies to must be there either way.
     pub(in crate::app) fn run_extension_command(
         &mut self,
         id: &str,
@@ -319,14 +320,37 @@ impl Editor {
             return Err(unknown());
         }
         let (extension, command) = id.split_once('/').ok_or_else(unknown)?;
-        let applies = self
-            .extensions
+        let (applies, input) = self.command_needs(extension, command).ok_or_else(unknown)?;
+        if let Some(why) = super::command_input::unsupported(input) {
+            return Err(Error::new("unsupported", why));
+        }
+        if input == Input::None {
+            return self.send_extension_command(extension, command, None, by);
+        }
+        self.extensions
+            .ready(extension)
+            .map_err(|why| Error::new("extension", why))?;
+        self.target_ids(applies)?;
+        self.begin_command_input(extension, command, input, by)
+    }
+
+    /// What command `command` of extension `extension` applies to, and the
+    /// viewer input it takes.
+    fn command_needs(&self, extension: &str, command: &str) -> Option<(AppliesTo, Input)> {
+        self.extensions
             .get(extension)
             .and_then(|e| e.manifest.commands.iter().find(|c| c.id == command))
-            .map(|c| c.applies_to)
-            .ok_or_else(unknown)?;
-        let fail = |e: RemoteError| Error::new("not_ready", e.message);
-        let ids = match applies {
+            .map(|c| (c.applies_to, c.input))
+    }
+
+    /// The photos a command that applies to `applies` acts on now: none for
+    /// `none`, or why they aren't there.
+    fn target_ids(
+        &self,
+        applies: AppliesTo,
+    ) -> crate::app::shell::commands::Result<Option<Vec<PhotoId>>> {
+        use crate::app::shell::commands::Error;
+        Ok(match applies {
             AppliesTo::None => None,
             AppliesTo::Photo => {
                 if self.document.catalog_photo.is_none() {
@@ -341,15 +365,38 @@ impl Editor {
                 }
                 Some(ids)
             }
-        };
-        let target = match ids {
+        })
+    }
+
+    /// Sends command `command` of extension `extension` with `input`, on
+    /// what its manifest says it applies to, read now: the target and the
+    /// input are one job's inputs, captured together. Photos not open are
+    /// read on a worker, and the command is sent once they are
+    /// ([`Host::finish_read`]); until then it is running, and Stop or
+    /// disabling the extension cancels it.
+    pub(in crate::app) fn send_extension_command(
+        &mut self,
+        extension: &str,
+        command: &str,
+        input: Option<ViewerInput>,
+        by: RunBy,
+    ) -> crate::app::shell::commands::Result<()> {
+        use crate::app::shell::commands::Error;
+        let fail = |e: RemoteError| Error::new("not_ready", e.message);
+        let (applies, _) = self.command_needs(extension, command).ok_or_else(|| {
+            Error::new(
+                "unknown_action",
+                format!("No enabled extension has {extension}/{command}"),
+            )
+        })?;
+        let target = match self.target_ids(applies)? {
             None => None,
             Some(ids) => {
                 let reading = self.begin_read(&ids).map_err(fail)?;
                 if reading.needs_worker() {
                     let cancel = self
                         .extensions
-                        .read_for_command(extension, command, by)
+                        .read_for_command(extension, command, input, by)
                         .map_err(|why| Error::new("extension", why))?;
                     self.start_read(cancel.0, reading, cancel.1);
                     return Ok(());
@@ -362,7 +409,7 @@ impl Editor {
             }
         };
         self.extensions
-            .run_command(extension, command, target, by)
+            .run_command(extension, command, target, input, by)
             .map_err(|why| Error::new("extension", why))
     }
 

@@ -1,8 +1,9 @@
 //! Viewer input: what the user points at on the photo before a request runs,
 //! collected here and sent as [`ViewerInput`].
 //!
-//! Only the `prompt` kind is collected so far, for mask generators that aim
-//! and refine with clicks and a box (Select Subject's own aiming among them):
+//! The `prompt` kind serves mask generators that aim and refine with clicks
+//! and a box (Select Subject's own aiming among them), and commands that take
+//! it (`super::command_input`):
 //!
 //! - a click adds a positive point, an Alt-click a negative one;
 //! - a drag draws a box, and a new box starts over, clearing the clicks;
@@ -12,6 +13,9 @@
 //! - at most [`MAX_CLICKS`] clicks are kept;
 //! - a drag under 1% of the photo on either side is not a box. The minimum is
 //!   the gesture's alone: a box taken from a raster's extent may be thinner.
+//!
+//! Commands that take `point`, `points` or `box` collect them here too: plain
+//! clicks ([`Collector::add`]) or one dragged box ([`Collector::drag`]).
 //!
 //! The caller decides when a change is sent: the mask generator's flow allows
 //! one request in flight and ignores input while it runs. Coordinates are in
@@ -72,6 +76,21 @@ impl Collector {
         true
     }
 
+    /// Adds a click at `at` as it is, for `point` and `points`, which have
+    /// no box for a negative click to need. Returns whether it was added: not
+    /// off the photo, nor past [`MAX_CLICKS`].
+    pub(in crate::app) fn add(&mut self, at: [f32; 2], positive: bool) -> bool {
+        if !inside(at[0]) || !inside(at[1]) || self.clicks.len() >= MAX_CLICKS {
+            return false;
+        }
+        self.clicks.push(Click {
+            x: at[0],
+            y: at[1],
+            positive,
+        });
+        true
+    }
+
     /// Takes a box dragged from `a` to `b`, clamped to the photo. A box under
     /// [`MIN_DRAG`] on either side is ignored; one that isn't starts over: the
     /// clicks so far were about the previous outline. Returns whether it was
@@ -112,19 +131,23 @@ impl Collector {
 
     /// Reads the pointer over the photo and draws the clicks and box. With
     /// `busy`, gestures are ignored rather than queued, and the cursor says
-    /// so. Returns the gesture made this frame, if any.
+    /// so; without `drags`, a drag is no gesture and draws no box. Returns
+    /// the gesture made this frame, if any.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::app) fn overlay(
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
         rect: egui::Rect,
         busy: bool,
+        drags: bool,
         to_screen: &dyn Fn([f32; 2]) -> egui::Pos2,
         to_image: &dyn Fn(egui::Pos2) -> [f32; 2],
     ) -> Option<Gesture> {
         let mut gesture = None;
         if !busy {
-            if response.drag_started()
+            if drags
+                && response.drag_started()
                 && let Some(origin) = ui.input(|i| i.pointer.press_origin())
             {
                 self.drag_from = Some(to_image(origin));
@@ -259,6 +282,19 @@ mod tests {
         assert!(!c.click([0.5, 0.5], false, || None));
         assert!(c.clicks.is_empty());
         assert!(!c.click([1.5, 0.5], true, || None), "off the photo");
+    }
+
+    #[test]
+    fn plain_clicks_stop_at_the_cap_and_need_no_box() {
+        let mut c = Collector::default();
+        assert!(c.add([0.5, 0.5], false), "a negative click needs no box");
+        assert!(!c.add([0.5, 1.5], true), "off the photo");
+        for _ in 1..MAX_CLICKS {
+            assert!(c.add([0.25, 0.25], true));
+        }
+        assert!(!c.add([0.75, 0.75], true));
+        assert_eq!(c.clicks.len(), MAX_CLICKS);
+        assert_eq!(c.clicks[0], at(0.5, 0.5, false));
     }
 
     #[test]

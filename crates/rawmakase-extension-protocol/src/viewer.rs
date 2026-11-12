@@ -4,6 +4,7 @@
 //! the camera-oriented default crop, before lens correction, Transform and
 //! crop, normalised to [0, 1] with (0, 0) at the top left. Masks and spots use
 //! the same frame, so a click lands where the mask it shapes is drawn.
+use crate::manifest::Input;
 use crate::message::{ErrorCode, RemoteError};
 use serde::{Deserialize, Serialize};
 
@@ -80,6 +81,17 @@ pub struct Bounds {
 }
 
 impl ViewerInput {
+    /// The manifest's name for its kind: what a command or a generator that
+    /// takes it declares as its `input`.
+    pub fn kind(&self) -> Input {
+        match self {
+            Self::Point { .. } => Input::Point,
+            Self::Points { .. } => Input::Points,
+            Self::Box { .. } => Input::Box,
+            Self::Prompt { .. } => Input::Prompt,
+        }
+    }
+
     /// Checks what the types can't: every coordinate finite and in [0, 1], a
     /// box ordered and not empty, and at most [`MAX_CLICKS`] clicks.
     ///

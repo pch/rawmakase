@@ -64,6 +64,33 @@ title = "Hang"
 id = "crash"
 title = "Crash"
 
+[[command]]
+id = "pick-point"
+title = "Pick a Point"
+input = "point"
+
+[[command]]
+id = "pick-points"
+title = "Pick Points"
+input = "points"
+
+[[command]]
+id = "pick-box"
+title = "Pick a Box"
+applies-to = "photo"
+input = "box"
+
+[[command]]
+id = "pick-prompt"
+title = "Pick a Prompt"
+input = "prompt"
+
+# Brush input isn't collected yet: the command loads, and doesn't run.
+[[command]]
+id = "paint"
+title = "Paint"
+input = "brush"
+
 [[panel]]
 id = "note"
 title = "Note"

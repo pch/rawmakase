@@ -277,9 +277,29 @@ pub struct CommandRun {
     /// was run: none for `none`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<Snapshot>,
-    /// Viewer input (its manifest's `input`); `null` for none.
+    /// Viewer input (its manifest's `input`), a [`ViewerInput`] written as
+    /// JSON; `null` for none. Read it with [`CommandRun::viewer_input`].
     #[serde(default)]
     pub input: Value,
+}
+
+impl CommandRun {
+    /// [`CommandRun::input`] read and checked ([`ViewerInput::validate`]):
+    /// `None` for `null`. Input that doesn't read as a [`ViewerInput`] or
+    /// doesn't validate is an [`ErrorCode::InvalidRequest`].
+    pub fn viewer_input(&self) -> Result<Option<ViewerInput>, RemoteError> {
+        if self.input.is_null() {
+            return Ok(None);
+        }
+        let input = ViewerInput::deserialize(&self.input).map_err(|e| {
+            RemoteError::new(
+                ErrorCode::InvalidRequest,
+                format!("the viewer input doesn't read: {e}"),
+            )
+        })?;
+        input.validate()?;
+        Ok(Some(input))
+    }
 }
 
 /// The longest [`MaskGenerated::model`] and [`MaskGenerated::model_key`], in
@@ -734,6 +754,49 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(range.code, ErrorCode::InvalidRequest);
+    }
+
+    #[test]
+    fn a_commands_viewer_input_reads_as_its_kind_and_is_checked() {
+        let run = |input: Value| {
+            let AppRequest::CommandRun(run) =
+                AppRequest::parse("command.run", json!({"command": "c", "input": input})).unwrap()
+            else {
+                panic!("a command");
+            };
+            run
+        };
+        assert_eq!(run(Value::Null).viewer_input().unwrap(), None);
+        // Absent reads as `null`, as the app sent before it collected input.
+        let AppRequest::CommandRun(absent) =
+            AppRequest::parse("command.run", json!({"command": "c"})).unwrap()
+        else {
+            panic!("a command");
+        };
+        assert_eq!(absent.viewer_input().unwrap(), None);
+        let boxed = run(json!({"kind": "box", "x0": 0.25, "y0": 0.25, "x1": 0.75, "y1": 0.5}))
+            .viewer_input()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            boxed,
+            ViewerInput::Box {
+                x0: 0.25,
+                y0: 0.25,
+                x1: 0.75,
+                y1: 0.5
+            }
+        );
+        assert_eq!(boxed.kind(), crate::manifest::Input::Box);
+        for bad in [
+            json!(5),
+            json!({"kind": "brush"}),
+            json!({"kind": "point", "x": 1.5, "y": 0.5}),
+            json!({"kind": "box", "x0": 0.5, "y0": 0.1, "x1": 0.5, "y1": 0.9}),
+        ] {
+            let error = run(bad.clone()).viewer_input().unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidRequest, "{bad}");
+        }
     }
 
     fn mask_request() -> Value {

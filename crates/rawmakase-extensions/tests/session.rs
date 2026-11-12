@@ -258,6 +258,11 @@ fn later(ms: u64) -> Instant {
     Instant::now() + Duration::from_millis(ms)
 }
 
+/// Viewer input a command echoes: the SDK refuses input that isn't one.
+fn point(x: f32) -> Value {
+    json!({"kind": "point", "x": x, "y": 0.5})
+}
+
 fn run(session: &mut Session, command: &str, input: Value, deadline: Instant) -> u64 {
     let run = json!({"command": command, "input": input});
     session.request("command.run", run, deadline).unwrap()
@@ -298,15 +303,15 @@ fn a_program_answers_cancels_reports_devices_and_times_out() {
         ]
     );
 
-    let echo = run(&mut session, "echo", json!({"n": 1}), later(10_000));
-    assert_eq!(wait_reply(&mut session, echo).unwrap(), json!({"n": 1}));
+    let echo = run(&mut session, "echo", point(0.125), later(10_000));
+    assert_eq!(wait_reply(&mut session, echo).unwrap(), point(0.125));
 
     // Cancelled before its reply is handed over: cancelled it stays, and the
     // program's answer, arriving after, is dropped.
-    let raced = run(&mut session, "echo", json!(2), later(10_000));
+    let raced = run(&mut session, "echo", point(0.25), later(10_000));
     assert!(session.cancel(raced));
     assert!(!session.is_admitted(raced));
-    let after = run(&mut session, "echo", json!(3), later(10_000));
+    let after = run(&mut session, "echo", point(0.375), later(10_000));
     let updates = poll_until(
         &mut session,
         |u| matches!(u, Update::Reply { id, .. } if *id == after),
@@ -417,8 +422,8 @@ fn malformed_and_oversized_lines_are_reported_and_the_session_goes_on() {
         .filter(|u| matches!(u, Update::Malformed { .. }))
         .count();
     assert_eq!(malformed, 3, "{updates:?}");
-    let echo = run(&mut session, "echo", json!("still here"), later(10_000));
-    assert_eq!(wait_reply(&mut session, echo).unwrap(), json!("still here"));
+    let echo = run(&mut session, "echo", point(0.5), later(10_000));
+    assert_eq!(wait_reply(&mut session, echo).unwrap(), point(0.5));
     let stopping = session.stop(later(2_000)).unwrap();
     stopping.join();
 }
@@ -1187,7 +1192,7 @@ fn a_lease_past_its_grace_hangs_the_program_up() {
         started(&mut session, stuck);
         let cancelled = Instant::now();
         assert!(session.cancel(stuck));
-        let waiting = run(&mut session, "echo", json!(1), later(60_000));
+        let waiting = run(&mut session, "echo", point(0.625), later(60_000));
         let mut seen = poll_until(&mut session, |u| matches!(u, Update::Hung { .. }));
         assert!(cancelled.elapsed() >= Duration::from_millis(300));
         assert!(session.is_hung());
