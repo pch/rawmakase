@@ -14,6 +14,7 @@
 //! a display change is a view change, never an edit.
 use crate::app::worker::Latest;
 use crate::camera_data::CameraImage;
+use crate::develop::AiSource;
 use crate::model::recipe::Recipe;
 use eframe::{egui, egui_wgpu};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -62,6 +63,9 @@ pub(in crate::app) struct Key {
     /// another photo while the key exists.
     image: std::sync::Weak<CameraImage>,
     recipe: Recipe,
+    /// The AI Denoise source the render blends in, as the SDR rendition's render job
+    /// captures it: each result, partial or final, is a new render.
+    ai: Option<AiSource>,
     part: Part,
     /// The display's headroom, to a tenth of a stop: macOS moves it with the
     /// display's brightness, and each step is a new render.
@@ -71,12 +75,14 @@ impl Key {
     pub(in crate::app) fn new(
         image: &Arc<CameraImage>,
         recipe: &Recipe,
+        ai: Option<&AiSource>,
         part: Part,
         headroom: f32,
     ) -> Self {
         Self {
             image: Arc::downgrade(image),
             recipe: recipe.clone(),
+            ai: ai.cloned(),
             part,
             headroom: (headroom.log2() * 10.).round() as i32,
         }
@@ -93,6 +99,7 @@ impl PartialEq for Key {
     fn eq(&self, other: &Self) -> bool {
         std::sync::Weak::ptr_eq(&self.image, &other.image)
             && self.recipe == other.recipe
+            && self.ai == other.ai
             && self.part == other.part
             && self.headroom == other.headroom
     }
@@ -393,13 +400,13 @@ fn render(job: &Job) -> anyhow::Result<Done> {
     let key = &job.key;
     let recipe = key.recipe.checked()?;
     let cancel = rawmakase_cancel::Cancel::new(&job.cancel);
+    let ai = key.ai.as_ref();
     let master = match key.part {
         Part::Whole(edge) => {
-            let reduced = crate::develop::preview(&job.image, edge.saturating_mul(2));
-            crate::develop::render_hdr(&reduced, &recipe, None, edge, cancel)?
+            crate::develop::render_hdr_preview(&job.image, &recipe, ai, edge, cancel)?
         }
         Part::Region(region) => {
-            crate::develop::render_hdr_region(&job.image, &recipe, region, cancel)?
+            crate::develop::render_hdr_region(&job.image, &recipe, ai, region, cancel)?
         }
     };
     Ok(Done {
@@ -486,24 +493,27 @@ mod tests {
         let (_, image) =
             crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), false);
         let recipe = Recipe::default();
-        let key = |headroom| Key::new(&image, &recipe, Part::Whole(100), headroom);
+        let key = |headroom| Key::new(&image, &recipe, None, Part::Whole(100), headroom);
         assert_eq!(key(4.), key(4.05));
         assert_ne!(key(4.), key(4.4));
         assert!((key(4.).headroom() - 4.).abs() < 1e-3);
         assert_ne!(
             key(4.),
-            Key::new(&image, &recipe, Part::Region([0, 0, 100, 100]), 4.)
+            Key::new(&image, &recipe, None, Part::Region([0, 0, 100, 100]), 4.)
         );
         let (_, other) =
             crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), false);
-        assert_ne!(key(4.), Key::new(&other, &recipe, Part::Whole(100), 4.));
+        assert_ne!(
+            key(4.),
+            Key::new(&other, &recipe, None, Part::Whole(100), 4.)
+        );
         // A closed photo's key keeps its identity: no photo opened later is it.
-        let closed = Key::new(&other, &recipe, Part::Whole(100), 4.);
+        let closed = Key::new(&other, &recipe, None, Part::Whole(100), 4.);
         drop(other);
         for _ in 0..8 {
             let (_, next) =
                 crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), false);
-            assert_ne!(closed, Key::new(&next, &recipe, Part::Whole(100), 4.));
+            assert_ne!(closed, Key::new(&next, &recipe, None, Part::Whole(100), 4.));
         }
     }
 
@@ -536,7 +546,7 @@ mod tests {
             false,
         );
         let mut preview = HdrPreview::new(ctx);
-        let key = Key::new(&image, &hdr_recipe(), Part::Whole(16), 4.);
+        let key = Key::new(&image, &hdr_recipe(), None, Part::Whole(16), 4.);
         preview.request(Slot::Whole, key.clone(), image.clone());
         let done = finished(&preview, Slot::Whole).1.expect("an HDR master");
         assert_eq!(done.key, key);
@@ -555,7 +565,7 @@ mod tests {
         let (_, image) =
             crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), false);
         let mut preview = HdrPreview::new(ctx);
-        let key = Key::new(&image, &hdr_recipe(), Part::Region([4, 2, 10, 6]), 4.);
+        let key = Key::new(&image, &hdr_recipe(), None, Part::Region([4, 2, 10, 6]), 4.);
         preview.request(Slot::Region, key.clone(), image);
         let done = finished(&preview, Slot::Region).1.expect("an HDR region");
         assert_eq!((done.key, done.width, done.height), (key, 10, 6));
@@ -572,7 +582,7 @@ mod tests {
         let mut preview = HdrPreview::new(ctx);
         // The worker is stopped, so the jobs stay queued and their flags can be read.
         let _ = preview.worker.stop();
-        let key = |edge| Key::new(&image, &hdr_recipe(), Part::Whole(edge), 4.);
+        let key = |edge| Key::new(&image, &hdr_recipe(), None, Part::Whole(edge), 4.);
         preview.request(Slot::Whole, key(16), image.clone());
         preview.request(Slot::BeforeWhole, key(16), image.clone());
         let first = preview.slots[Slot::Whole.lane()].cancel.clone().unwrap();
@@ -611,7 +621,7 @@ mod tests {
             crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), false);
         let mut preview = HdrPreview::new(ctx);
         let _ = preview.worker.stop();
-        let key = Key::new(&image, &hdr_recipe(), Part::Region([0, 0, 8, 8]), 4.);
+        let key = Key::new(&image, &hdr_recipe(), None, Part::Region([0, 0, 8, 8]), 4.);
         preview.request(Slot::Region, key.clone(), image.clone());
         let cancel = preview.slots[Slot::Region.lane()].cancel.clone().unwrap();
         assert!(preview.holds(Slot::Region));
@@ -640,7 +650,7 @@ mod tests {
             crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), false);
         let mut preview = HdrPreview::new(ctx);
         let _ = preview.worker.stop();
-        let key = |part| Key::new(&image, &hdr_recipe(), part, 4.);
+        let key = |part| Key::new(&image, &hdr_recipe(), None, part, 4.);
         for slot in Slot::ALL {
             preview.request(slot, key(Part::Whole(16)), image.clone());
         }
@@ -671,8 +681,8 @@ mod tests {
         let (_, image) =
             crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), false);
         let mut preview = HdrPreview::new(ctx);
-        let a = Key::new(&image, &hdr_recipe(), Part::Whole(16), 4.);
-        let b = Key::new(&image, &hdr_recipe(), Part::Whole(24), 4.);
+        let a = Key::new(&image, &hdr_recipe(), None, Part::Whole(16), 4.);
+        let b = Key::new(&image, &hdr_recipe(), None, Part::Whole(24), 4.);
         let done = |key: &Key| Done {
             key: key.clone(),
             width: 1,
@@ -717,7 +727,7 @@ mod tests {
         let (_, image) =
             crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), false);
         let mut preview = HdrPreview::new(ctx);
-        let key = Key::new(&image, &hdr_recipe(), Part::Whole(16), 4.);
+        let key = Key::new(&image, &hdr_recipe(), None, Part::Whole(16), 4.);
         preview.request(Slot::Whole, key.clone(), image);
         let start = std::time::Instant::now();
         let done = loop {

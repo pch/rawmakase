@@ -1025,7 +1025,7 @@ pub(in crate::app) fn hdr_drawn_at(
 }
 
 /// Why Develop shows no master of `recipe` of `image`, wherever it is shown: HDR is
-/// off, the master is refused, or it can't be rendered for Develop yet.
+/// off, or the master is refused.
 pub(in crate::app) fn hdr_master_refused(
     recipe: &crate::model::recipe::Recipe,
     image: &crate::camera_data::CameraImage,
@@ -1035,11 +1035,6 @@ pub(in crate::app) fn hdr_master_refused(
     refuse(
         crate::model::hdr::check_for(recipe, &image.metadata).is_err(),
         "this edit doesn't render in HDR yet",
-    )?;
-    // Its result is the full photo's, rendered on its own worker.
-    refuse(
-        recipe.ai_denoise.enabled,
-        "AI Denoise isn't previewed in HDR yet",
     )
 }
 
@@ -1094,11 +1089,14 @@ impl crate::app::Editor {
             return Err("the photo is still opening");
         }
         let headroom = self.view.hdr_display.headroom;
-        let whole = Key::new(image, recipe, Part::Whole(max_edge), headroom);
+        // The AI Denoise result the SDR rendition's render of the same side shows.
+        let ai = self.shown_ai_source(image, &recipe.ai_denoise);
+        let ai = ai.as_ref();
+        let whole = Key::new(image, recipe, ai, Part::Whole(max_edge), headroom);
         Ok(match region {
             Some(region) => HdrDue {
                 image: image.clone(),
-                key: Key::new(image, recipe, Part::Region(region), headroom),
+                key: Key::new(image, recipe, ai, Part::Region(region), headroom),
                 under: Some(whole),
             },
             None => HdrDue {

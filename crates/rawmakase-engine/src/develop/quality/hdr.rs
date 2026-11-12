@@ -23,14 +23,32 @@ pub fn render_hdr(
 
 /// The part `[x, y, w, h]` of the HDR master at 100%, in the pixels of the photo as
 /// its geometry lays it out (as a 100% region of the SDR rendition): what
-/// [`render_hdr`] renders there at full size, sharpening included.
+/// [`render_hdr`] renders there at full size, sharpening and AI Denoise included.
 pub fn render_hdr_region(
     im: &CameraImage,
     r: &ValidRecipe,
+    ai: Option<&crate::develop::AiSource>,
     region: [u32; 4],
     cancel: Cancel<'_>,
 ) -> Result<crate::rendered::HdrImage> {
-    master(im, r, None, Part::Region(region), cancel)
+    master(im, r, ai, Part::Region(region), cancel)
+}
+
+/// A preview of the whole HDR master within `max_edge`, as Develop shows it before
+/// a 100% view: [`render_hdr`] of the photo reduced to twice that edge (as
+/// [`crate::develop::preview`] reduces it), with the AI Denoise source reduced
+/// alike, so an edit with AI Denoise previews its result.
+pub fn render_hdr_preview(
+    im: &CameraImage,
+    r: &ValidRecipe,
+    ai: Option<&crate::develop::AiSource>,
+    max_edge: u32,
+    cancel: Cancel<'_>,
+) -> Result<crate::rendered::HdrImage> {
+    let reduce = max_edge.saturating_mul(2);
+    let reduced = crate::develop::preview(im, reduce);
+    let ai = ai.filter(|a| a.fits(im)).map(|a| a.reduced(reduce));
+    master(&reduced, r, ai.as_ref(), Part::Whole(max_edge), cancel)
 }
 
 /// Which part of the master to render: the whole photo within a long edge (0 for
@@ -1000,7 +1018,7 @@ mod tests {
             let (w, h) = (out.width, out.height);
             assert!((at(&out, w / 2, h / 2) / at(&base, w / 2, h / 2) - 1.).abs() < 0.02);
             assert!(at(&out, 0, 0) < 0.8 * at(&base, 0, 0), "{style:?}");
-            let region = render_hdr_region(&im, &v, [40, 1, 24, 6], Cancel::NEVER)?;
+            let region = render_hdr_region(&im, &v, None, [40, 1, 24, 6], Cancel::NEVER)?;
             for row in 0..6 {
                 for col in 0..24 {
                     let a = out.pixels[((1 + row) * w + 40 + col) as usize];
@@ -1655,12 +1673,12 @@ mod tests {
         for region in [[0, 0, 48, 8], [8, 1, 9, 5], [31, 2, 17, 6]] {
             same(
                 &whole,
-                &render_hdr_region(&im, &r, region, Cancel::NEVER)?,
+                &render_hdr_region(&im, &r, None, region, Cancel::NEVER)?,
                 region,
             );
         }
-        assert!(render_hdr_region(&im, &r, [40, 0, 9, 8], Cancel::NEVER).is_err());
-        assert!(render_hdr_region(&im, &r, [0, 0, 0, 8], Cancel::NEVER).is_err());
+        assert!(render_hdr_region(&im, &r, None, [40, 0, 9, 8], Cancel::NEVER).is_err());
+        assert!(render_hdr_region(&im, &r, None, [0, 0, 0, 8], Cancel::NEVER).is_err());
         // A mask's Sharpness and Noise read the same neighbours in a region as in the
         // whole, without global sharpening too.
         use crate::model::masks::{LocalAdjust, MaskComponent, MaskGroup, MaskShape};
@@ -1696,7 +1714,7 @@ mod tests {
             for region in [[8, 1, 9, 5], [31, 2, 17, 6]] {
                 same(
                     &whole,
-                    &render_hdr_region(&im, &masked, region, Cancel::NEVER)?,
+                    &render_hdr_region(&im, &masked, None, region, Cancel::NEVER)?,
                     region,
                 );
             }
@@ -1708,9 +1726,52 @@ mod tests {
         let whole = render_hdr(&file, &r, None, 0, Cancel::NEVER)?;
         same(
             &whole,
-            &render_hdr_region(&file, &r, [2, 1, 3, 2], Cancel::NEVER)?,
+            &render_hdr_region(&file, &r, None, [2, 1, 3, 2], Cancel::NEVER)?,
             [2, 1, 3, 2],
         );
+        Ok(())
+    }
+
+    /// AI Denoise renders in the master as in the SDR rendition: the whole master, a
+    /// 100% region of it and a reduced preview each show the AI source blended in by
+    /// Amount, and a region is still that part of the whole.
+    #[test]
+    fn the_master_renders_ai_denoise() -> Result<()> {
+        let im = grays(&[0.05, 0.2, 1.2, 4.064, 0.4, 2.]);
+        let brighter = CameraImage {
+            pixels: im.pixels.iter().map(|p| p.map(|v| v * 1.5)).collect(),
+            ..im.clone()
+        };
+        let ai = crate::develop::AiSource::recover(brighter, Cancel::NEVER)?;
+        let mut r = hdr_recipe(&im);
+        r.ai_denoise.enabled = true;
+        r.ai_denoise.amount = 1.;
+        let r = r.checked()?;
+        let plain = render_hdr(&im, &r, None, 0, Cancel::NEVER)?;
+        let whole = render_hdr(&im, &r, Some(&ai), 0, Cancel::NEVER)?;
+        // Column 1 (0.2) is below white in both; the source's is 1.5 times brighter.
+        let ratio = centre(&whole, 1) / centre(&plain, 1);
+        assert!(ratio > 1.2, "AI Denoise's source shows: {ratio}");
+        let region = [8, 1, 17, 6];
+        let part = render_hdr_region(&im, &r, Some(&ai), region, Cancel::NEVER)?;
+        for row in 0..6 {
+            for col in 0..17 {
+                let a = whole.pixels[((1 + row) * whole.width + 8 + col) as usize];
+                let b = part.pixels[(row * 17 + col) as usize];
+                for c in 0..3 {
+                    assert!((a[c] - b[c]).abs() <= 1e-4 * a[c].abs().max(1.));
+                }
+            }
+        }
+        // A preview reduced to 24 pixels reduces the source with the photo.
+        let reduced = render_hdr_preview(&im, &r, Some(&ai), 12, Cancel::NEVER)?;
+        let reduced_plain = render_hdr_preview(&im, &r, None, 12, Cancel::NEVER)?;
+        assert_eq!((reduced.width, reduced.height), (12, 2));
+        let luma = |o: &crate::rendered::HdrImage, x: usize| {
+            crate::develop::scene_tone::luminance(o.pixels[o.width as usize + x])
+        };
+        let ratio = luma(&reduced, 2) / luma(&reduced_plain, 2);
+        assert!(ratio > 1.2, "the reduced preview shows the source: {ratio}");
         Ok(())
     }
 

@@ -53,9 +53,8 @@ protocol) have HDR display paths, tested in code and, for Windows, in a virtual
 machine without an HDR display; neither has been seen on a real HDR display. Linux
 under X11 has no HDR display path: an HDR edit shows its SDR rendition there, and the
 Basic panel's note says the display shows no HDR. On every platform an HDR edit's
-master renders for HDR export and its SDR rendition for SDR views and outputs, and an
-HDR edit with AI Denoise shows its SDR rendition in Develop (its HDR export renders
-the master with it).
+master renders for HDR export and its SDR rendition for SDR views and outputs, with
+AI Denoise in both.
 
 On macOS the window's surface is 16-bit float (`egui_wgpu::WgpuConfiguration`'s
 `surface_format_selector`, from RAWmakase's egui fork until it is upstream), and its
@@ -137,10 +136,13 @@ of a stop, or a master that becomes due or stops being due, renders the view aga
 
 Elsewhere, and until the GPU's frame is there, the CPU master shows
 (`app::develop::hdr_preview`). A
-whole photo is rendered on the CPU from a reduced copy of it at the size shown; a
+whole photo is rendered on the CPU from a reduced copy of it at the size shown
+(`develop::render_hdr_preview`); a
 100% region (the part of the photo the SDR rendition renders at 100%, with its
 margin) from the full photo, with the margin sharpening reads around it, so it is
-that part of the full-size master (`develop::render_hdr_region`). The master is
+that part of the full-size master (`develop::render_hdr_region`). AI Denoise blends
+in the result the SDR rendition shows, partial or final, reduced with the photo for
+a whole photo; each result renders the master again. The master is
 converted to linear sRGB primaries, with negative values kept, as extended sRGB
 keeps them. Each channel is rolled off to the display's current headroom with the
 HDR limit's roll-off and sRGB-encoded into a half-float texture.
@@ -173,8 +175,7 @@ Beside the edit, the Basic panel's note also says what the other side shows, nam
 (Before or Reference), so a comparison of brightness says when one side is SDR.
 Everything else shows the SDR rendition, and the Basic panel's note says why: the
 camera's thumbnail, visualizations drawn into the render (the clipping warning,
-Remove's spots), edits with AI Denoise (its result is the full photo's, made on its
-own worker), a monitor profile chosen in RAWmakase (it converts the SDR rendition
+Remove's spots), a monitor profile chosen in RAWmakase (it converts the SDR rendition
 into device RGB, which has no extended range), the Library, other platforms, an SDR
 display, and an 8-bit surface (when wgpu offers no float format). A failed render is
 that edit's alone: its reason shows until the edit changes. The window asks for EDR
@@ -212,7 +213,7 @@ It covers what `pixel_params::supported_hdr` accepts: a master that renders
 (Exposure, Whites, Blacks, Shadows, white balance, Contrast, Levels and the tone
 curves, channel curves included, the colour stage, Color Grading, Texture, sharpening and what the SDR port samples), through
 any profile and look whose HDR rendering is measured (`CameraProfile::hdr_tone`).
-An HDR file's light, AI Denoise, the post-crop vignette and grain, Point Color, masks, and anything the SDR port leaves to the CPU
+An HDR file's light, the post-crop vignette and grain, Point Color, masks, and anything the SDR port leaves to the CPU
 (`quality::HdrNotOnGpu`) give no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
 "GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, looks whose
@@ -238,7 +239,7 @@ long, on a latest-only worker of its own, keyed by the photo and the settings as
 the HDR preview is. A result for anything but the latest request is dropped; while
 the next one renders, the last histogram of the same photo stays (another photo's
 never shows), as the SDR histogram stays until its next render. Where the master is
-refused (HDR off, an unmeasured adjustment, AI Denoise) or hasn't rendered yet for
+refused (HDR off, an unmeasured adjustment) or hasn't rendered yet for
 this photo, or failed, the SDR histogram shows, marked SDR, with the reason in its
 tooltip.
 

@@ -158,9 +158,9 @@ impl PreviewRenderer {
     /// whole photo within `max_edge`, or a 100% `region`), presented for `display`
     /// as extended sRGB held to the display's `headroom`
     /// (`color::hdr_output::extended_srgb`). It shares the SDR rendition's samples,
-    /// pyramid and caches. `None` when the GPU port doesn't render this master
-    /// (`pixel_params::supported_hdr`), the GPU fails or is off, or the edit uses AI
-    /// Denoise: [`super::render_hdr`] on the CPU is the reference and the fallback.
+    /// pyramid and caches, AI Denoise's source included. `None` when the GPU port
+    /// doesn't render this master (`pixel_params::supported_hdr`), or the GPU fails
+    /// or is off: [`super::render_hdr`] on the CPU is the reference and the fallback.
     #[allow(clippy::too_many_arguments)]
     pub fn render_hdr_to(
         &mut self,
@@ -172,9 +172,6 @@ impl PreviewRenderer {
         cancel: Cancel<'_>,
         display: &gpu::Display,
     ) -> Result<Option<gpu::HdrFrame>> {
-        if recipe.ai_denoise.enabled {
-            return Ok(None);
-        }
         hdr_frame(self.render_in(
             image,
             recipe,
@@ -214,7 +211,7 @@ impl PreviewRenderer {
         {
             return Ok(out);
         }
-        let ai = self.ai.clone().filter(|_| hdr.is_none());
+        let ai = self.ai.clone();
         self.release_replaced(image, &resolved.recipe, ai.as_ref(), cancel)?;
         let mut stages = self.stages(display);
         stages.hdr = hdr;
@@ -298,9 +295,6 @@ impl PreviewRenderer {
         cancel: Cancel<'_>,
         display: &gpu::Display,
     ) -> Result<Option<gpu::HdrFrame>> {
-        if recipe.ai_denoise.enabled {
-            return Ok(None);
-        }
         hdr_frame(self.region_preview_in(
             image,
             recipe,

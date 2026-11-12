@@ -107,9 +107,6 @@ renders everything. Each refusal has Camera Raw measurements behind it:
 
 ## Known limitations
 
-- **AI Denoise:** an HDR edit with it shows its SDR rendition in Develop. The denoised
-  result is made on its own worker, and neither preview path takes it yet. Its HDR
-  export renders the master with it.
 - **HDR files:** the GPU doesn't render their master yet, so it renders on the CPU
   (Exposure drags wait for it). A master with masks, Point Color, the vignette or
   grain also renders on the CPU.
@@ -128,5 +125,5 @@ renders everything. Each refusal has Camera Raw measurements behind it:
 - Camera Raw's SDR rendition tone map.
 - The mask operators' own SDR parity (Saturation, Whites, Blacks), after which their
   HDR rendering can be measured again.
-- AI Denoise and HDR files on the GPU's HDR preview.
+- HDR files on the GPU's HDR preview.
 - HDR display checks on real Windows and Wayland HDR displays.
