@@ -1,6 +1,6 @@
 # HDR results: references, measurements and progress
 
-Status: in progress, 2026-11-11. The record of the
+Status: in progress, 2026-11-12. The record of the
 [HDR implementation plan](hdr-implementation-plan.md): what was measured, the
 decisions taken from it, validation results and what remains open. Stage 1 (references,
 codec and display feasibility) comes first; stage 3's rendering measurements follow
@@ -1357,6 +1357,14 @@ above white.
   valid; its SDR rendition renders it, and the master (HDR export) is refused with
   the reason, shown in Develop under the HDR switch. Refusing the edit itself would
   make Develop's ordinary sliders fail to render whenever HDR is on.
+- **JPEG XL interoperability (stage 6, #894).** These decisions are recorded in
+  [JPEG XL interoperability](hdr-jxl-interop.md#decisions):
+  - The HLG workaround stays: jixel 0.5.7, the newest release, still reads HLG input
+    as scene light, and libjxl reads RAWmakase's HLG header correctly.
+  - PQ files keep cjxl's intensity target of 10,000 cd/m², not the content's peak.
+    ImageIO ignores it, and libjxl uses it only when asked to tone map.
+  - HLG exports are compared with the light HLG can represent (BT.2100's per-channel
+    clip after the inverse OOTF).
 - **HDR HEIC (stage 4)** opens as an HDR edit where the system decoder was measured
   to give its signal back as coded: macOS's ImageIO drawn into CoreGraphics' space of
   the file's CICP (every patch of the synthetic fixtures within one 10-bit code value),
@@ -1502,14 +1510,19 @@ above white.
   mixer's Luminance beyond ±40, Defringe ([Defringe](#defringe), refused again 2026-11-11), looks that set Clarity above +50 or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
   with them), 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
-- [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
+- [x] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
   P3, Rec. 709; CICP-tagged ICC; #908), checked against Camera Raw's PQ TIFF through an
   independent decoder; lossless JPEG XL PQ and HLG (and SDR sRGB), checked with
   libjxl's `jxlinfo` and `djxl` and jxl-oxide; gain-map JPEG (ISO 21496-1) checked with
   libultrahdr; JPEG XL gain maps (`jhgm`), the bundle read by libjxl's `jxlinfo`. A
   resized master lost its light above white until #910. Lossy JPEG XL (HDR, gain
-  maps and SDR) through jixel, checked with `djxl` and jxl-oxide (#906). Open: AVIF
-  and HEIC HDR are not planned for #894.
+  maps and SDR) through jixel, checked with `djxl` and jxl-oxide (#906). JPEG XL PQ, HLG
+  and gain maps pass the interoperability harness: libjxl, jxl-oxide, ImageIO and
+  Chrome; the gain map's reconstruction is computed independently from ISO 21496-1.
+  Lossless 16-bit files now declare codestream Level 10 (#1030). The queue's
+  cancellation, failure and publication are tested for HDR JPEG XL
+  ([JPEG XL interoperability](hdr-jxl-interop.md)). AVIF and HEIC HDR export are not
+  planned for #894.
 - [ ] Stage 4: HDR TIFF, PNG, JPEG XL and AVIF files (PQ, HLG or linear in BT.709,
   BT.2020 or P3; identity-curve ICCs; float TIFFs) open as HDR edits
   ([design](hdr-stage4-design.md)): exact light, master identity at their own

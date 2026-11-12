@@ -448,6 +448,8 @@ mod gain_map_input_tests;
 #[cfg(test)]
 mod hdr_tests;
 #[cfg(test)]
+mod jxl_interop;
+#[cfg(test)]
 mod srgb_fixtures;
 #[cfg(test)]
 mod tests;

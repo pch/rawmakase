@@ -785,8 +785,9 @@ ColorSpace is Uncalibrated. No mastering-display metadata is written.
 
 An HDR export needs an edit with HDR on (otherwise it is refused, not exported as
 SDR), refuses watermarks (they are composited in SDR) and is a TIFF or a JPEG XL
-(linear light a TIFF only). An SDR export of an HDR edit is its SDR rendition. Gain
-maps follow (#894).
+(linear light a TIFF only). An SDR export of an HDR edit is its SDR rendition. HDR
+exports go through the export queue as SDR ones do: staged to a temporary file beside
+the target, which a cancel or a failure removes, and committed whole.
 
 ### Gain maps
 
@@ -812,8 +813,10 @@ writes the bundle itself around jixel's or zune's codestreams. For the Z 8 photo
 quality 92 the file is 10.3 MB (74 MB lossless), and the lossy map is within 2 of its
 256 codes at p95 (0.03 stop). libjxl 0.12's `jxlinfo` reads the box as a version 0
 bundle with its 61-byte metadata and the map's codestream, and `djxl` decodes the base
-and the map; no local tool applies a JPEG XL gain map, so its reconstruction is checked
-only through the JPEG form, which shares the map and metadata.
+and the map. No viewer checked applies a JPEG XL gain map: macOS ImageIO and Chrome
+show its base, exactly the SDR export's pixels. Its ISO 21496-1 reconstruction is
+checked by the interoperability harness instead, at several display headrooms
+([JPEG XL interoperability](records/hdr-jxl-interop.md)).
 
 libultrahdr 2.0.2 (`ultrahdr_app`) reads the Z 8 reference photo's gain-map export
 (2048 px) as Ultra HDR with this metadata, and its decode at full headroom matches
@@ -827,3 +830,21 @@ exactly as the master does (median 0.061 stop above white), and the master and t
 decoded export agree to 0.003. libjxl 0.12's `jxlinfo` reads the JPEG XL exports' header
 as written (P3 or Rec. 2100 primaries, PQ or HLG, intensity target), and `djxl`
 decodes the lossless PQ export to exactly the TIFF's 16-bit samples.
+
+JPEG XL PQ, HLG and gain-map exports pass `scripts/jxl-interop.py`, an opt-in harness
+that exports synthetic fixtures and CC0 photos through the export queue and decodes
+them with libjxl 0.12, jxl-oxide 0.12.6, macOS ImageIO and Chrome 156
+([record](records/hdr-jxl-interop.md)):
+- headers and boxes are as written above;
+- the light comes back as BT.2100 defines it: to 0.0005 stop (p95 above white)
+  lossless, and 0.01 stop at quality 92 after a 4× area reduction;
+- a gain map's base is exactly the SDR export;
+- the map's reconstruction follows ISO 21496-1 at every headroom checked, to 0.043
+  stop (p95).
+
+Decoder limits that are not the files':
+- ImageIO renders saturated HLG colours its own way, as it does the same signal from
+  libjxl's own file;
+- ImageIO ignores the intensity target;
+- jxl-oxide clips a lossy frame's saturated wide-gamut colours;
+- Chrome maps HDR images to SDR in canvases.
