@@ -475,6 +475,18 @@ photos at Clarity −30, in SDR and as an HDR edit's SDR rendition, are bit-iden
   darkening by luminance instead of by channel comes closest (0.360 / 1.134 below,
   0.124 / 0.333 above white) but adds more colour error (+24.9 ΔE_ITP against SDR's
   +17.2).
+- **Clarity +100, further attempts (2026-11-12).** Binned by the default render's
+  level, Camera Raw's HDR Clarity +100 lifts upper midtones more than its SDR one
+  (median +0.81, +0.40 and +0.35 stop at levels −2 to −1.5, −1.5 to −1 and −1 to −0.5
+  stops, against +0.66, +0.15 and −0.04), then nothing from half a stop under white;
+  RAWmakase's HDR lift there is its SDR one (+0.31, +0.11, +0.02), and elsewhere its
+  HDR and SDR errors are the same. An HDR gain on the operator growing from +50 (×0.8:
+  below white 0.426 / 1.494; ×1.3: 0.490 / 2.127; ×1.6: 0.541 / 2.701, against SDR's
+  0.389 / 1.604) and reading the operator's level weights as if each level were 0.5,
+  1 or 2 stops lower (0.486 / 1.766, 0.516 / 1.810, 0.551 / 1.834) all miss. Camera
+  Raw's added lift isn't monotonic in level, so it isn't a tone adjustment either.
+  Captures at +75 (and Dehaze −50, −70) are prepared to test whether part of the
+  range passes.
 
 ### Looks
 
