@@ -2450,3 +2450,213 @@ fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
     assert!(none.is_none());
     Ok(())
 }
+
+/// A 256 × 16 HDR file (PQ) whose light runs from 2^-10 to 2^5 times graphics white
+/// across, a colour per row, paired with its SDR rendition as the decoder pairs them.
+fn hdr_file_fixture() -> crate::camera_data::CameraImage {
+    use crate::camera_data::{CameraImage, HdrLight, Metadata, Source};
+    let (w, h) = (256u32, 16u32);
+    let light: Vec<[f32; 3]> = (0..w * h)
+        .map(|i| {
+            let (x, y) = (i % w, i / w);
+            let v = (x as f32 / (w - 1) as f32 * 15. - 10.).exp2();
+            let tint =
+                [[1., 1., 1.], [1., 0.6, 0.3], [0.3, 0.7, 1.], [0.9, 1., 0.2]][(y % 4) as usize];
+            tint.map(|t| v * t)
+        })
+        .collect();
+    let hdr = HdrLight::new(
+        w,
+        h,
+        light.clone(),
+        crate::color::hdr_output::HdrTransfer::Pq,
+    )
+    .unwrap();
+    let metadata = Metadata {
+        width: w,
+        height: h,
+        raw_width: w,
+        raw_height: h,
+        wb: [1.; 3],
+        daylight_wb: [1.; 3],
+        matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+        source: Source::Rendered,
+        ..Default::default()
+    };
+    CameraImage {
+        width: w,
+        height: h,
+        recovered: Default::default(),
+        pixels: light.iter().map(|p| p.map(|v| v.clamp(0., 1.))).collect(),
+        metadata,
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    }
+    .with_hdr(std::sync::Arc::new(hdr))
+    .unwrap()
+}
+
+/// An HDR file's master presented on the GPU is the CPU master (`render_hdr` and
+/// `render_hdr_region`, from the pseudo-scene of its light) at its own settings, with
+/// Exposure (a gain of the light, a new scene for each), the HDR limit, and Rotate and
+/// crop, at full size and in a 100% region. A Fit and a 100% drag's preview render
+/// from reduced light at their sizes; a master the file refuses is left to the CPU.
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn presented_hdr_files_match_the_cpu_master() -> Result<()> {
+    use crate::color::hdr_output::extended_srgb;
+    use crate::develop::{PreviewRenderer, render_hdr, render_hdr_region};
+    use crate::model::recipe::Recipe;
+    let image = hdr_file_fixture();
+    let mut renderer = PreviewRenderer::with_gpu();
+    let cancel = AtomicBool::new(false);
+    let display = |slot| super::Display {
+        slot,
+        clipping: Default::default(),
+        monitor: None,
+        navigator: None,
+        thumbnail: None,
+        samples: false,
+        drawn: Vec::new(),
+    };
+    let base = Recipe::for_new_rendered(&image.metadata);
+    assert!(base.hdr.is_active());
+    let mut recipes = vec![base.clone()];
+    for exposure in [1., -0.7] {
+        let mut r = base.clone();
+        r.exposure = exposure;
+        recipes.push(r);
+    }
+    let mut limited = base.clone();
+    limited.hdr.limit = 3.;
+    recipes.push(limited);
+    let mut turned = base.clone();
+    turned.rotation = 1;
+    turned.crop = [0.1, 0., 0.9, 1.];
+    turned.exposure = 0.5;
+    recipes.push(turned);
+    for (i, recipe) in recipes.iter().enumerate() {
+        let valid = recipe.checked()?;
+        let full = crate::develop::Geometry::new(&image, &valid.resolved_hdr(&image.metadata), 0);
+        // A region within the photo as the recipe lays it out.
+        let inside = match full.width > full.height {
+            true => [37, 3, 150, 9],
+            false => [3, 37, 9, 150],
+        };
+        for headroom in [4., 40.] {
+            for region in [None, Some(inside)] {
+                let expected = match region {
+                    None => render_hdr(&image, &valid, None, 0, Cancel::NEVER)?,
+                    Some(r) => render_hdr_region(&image, &valid, None, r, Cancel::NEVER)?,
+                };
+                let slot = if region.is_some() {
+                    super::Slot::Region
+                } else {
+                    super::Slot::Whole
+                };
+                let frame = renderer
+                    .render_hdr_to(
+                        &image,
+                        recipe,
+                        0,
+                        region,
+                        headroom,
+                        Cancel::new(&cancel),
+                        &display(slot),
+                    )?
+                    .unwrap_or_else(|| panic!("recipe {i}: {:?}", renderer.fallback_reason()));
+                assert_eq!(
+                    (frame.texture.width(), frame.texture.height()),
+                    (expected.width, expected.height),
+                    "recipe {i}"
+                );
+                let actual = read_hdr_texture(renderer.gpu().unwrap(), &frame.texture)?;
+                let wanted: Vec<[f32; 3]> = expected
+                    .pixels
+                    .iter()
+                    .map(|p| extended_srgb(*p, headroom))
+                    .collect();
+                let top = wanted.iter().flatten().copied().fold(0f32, f32::max);
+                assert!(top > 1.2, "recipe {i}: shown up to {top}");
+                let mut d: Vec<f32> = actual
+                    .iter()
+                    .zip(&wanted)
+                    .flat_map(|(a, b)| {
+                        (0..3).map(move |c| (a[c] - b[c]).abs() / b[c].abs().max(0.05))
+                    })
+                    .collect();
+                d.sort_by(f32::total_cmp);
+                let (p999, max) = (d[d.len() * 999 / 1000], d[d.len() - 1]);
+                eprintln!(
+                    "file recipe {i}, headroom {headroom}, {region:?}: max {max:.5}, 99.9% {p999:.5}"
+                );
+                assert!(
+                    p999 < 5e-3 && max < 2e-2,
+                    "file recipe {i}, headroom {headroom}, {region:?}: max {max}, 99.9% {p999}"
+                );
+            }
+        }
+        // Fit, from light reduced to twice its edge: the size the CPU preview has,
+        // close to it.
+        let fit = renderer
+            .render_hdr_to(
+                &image,
+                recipe,
+                64,
+                None,
+                4.,
+                Cancel::new(&cancel),
+                &display(super::Slot::Whole),
+            )?
+            .expect("a Fit of the master");
+        let cpu = crate::develop::render_hdr_preview(&image, &valid, None, 64, Cancel::NEVER)?;
+        assert_eq!(
+            (fit.texture.width(), fit.texture.height()),
+            (cpu.width, cpu.height),
+            "recipe {i}"
+        );
+        let shown = read_hdr_texture(renderer.gpu().unwrap(), &fit.texture)?;
+        let luma = |p: &[f32; 3]| p[0] + p[1] + p[2];
+        let mean = |v: &mut dyn Iterator<Item = f32>| {
+            let (n, s) = v.fold((0, 0.), |(n, s), x| (n + 1, s + x));
+            s / n as f32
+        };
+        let gpu_mean = mean(&mut shown.iter().map(luma));
+        let cpu_mean = mean(&mut cpu.pixels.iter().map(|p| luma(&extended_srgb(*p, 4.))));
+        assert!(
+            (gpu_mean / cpu_mean - 1.).abs() < 0.02,
+            "recipe {i}: Fit mean {gpu_mean} against {cpu_mean}"
+        );
+        // A 100% drag's preview renders too.
+        let drag = renderer.render_hdr_region_preview_to(
+            &image,
+            recipe,
+            [0, 0, full.width, full.height],
+            4.,
+            Cancel::new(&cancel),
+            &display(super::Slot::Region),
+        )?;
+        assert!(drag.is_some(), "recipe {i}: a drag preview");
+    }
+    // A master the file refuses (Contrast is not measured on HDR files) is left to the
+    // CPU, as is the file's SDR rendition.
+    let mut refused = base.clone();
+    refused.contrast = 0.2;
+    let mut sdr = base;
+    sdr.hdr.enabled = false;
+    for recipe in [refused, sdr] {
+        let none = renderer.render_hdr_to(
+            &image,
+            &recipe,
+            0,
+            None,
+            4.,
+            Cancel::new(&cancel),
+            &display(super::Slot::Whole),
+        )?;
+        assert!(none.is_none());
+    }
+    Ok(())
+}

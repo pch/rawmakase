@@ -101,14 +101,8 @@ fn master(
     // renders it.
     let scene;
     let (im, ai) = if im.metadata.hdr_source.is_some() {
-        scene = hdr_file_scene(im, recipe.exposure.exp2())?;
-        let recipe = recipe.to_mut();
-        recipe.exposure = 0.;
-        let profile = match recipe.profile.as_deref() {
-            Some(p) => p.for_hdr_light(),
-            None => crate::camera_profiles::CameraProfile::embedded(&im.metadata).for_hdr_light(),
-        };
-        recipe.profile = Some(std::sync::Arc::new(profile));
+        let gain = hdr_file_recipe(recipe.to_mut(), &im.metadata);
+        scene = hdr_file_scene(im, gain)?;
         (&scene, None)
     } else {
         (im, ai)
@@ -221,6 +215,24 @@ fn master(
     })
 }
 
+/// The recipe an HDR file's pseudo-scene ([`hdr_file_scene`]) renders with, from its
+/// own resolved with HDR on: the profile (the Embedded one when the edit has none)
+/// with a linear curve, and no Exposure, whose gain of the light it returns for the
+/// scene to apply.
+pub(crate) fn hdr_file_recipe(
+    recipe: &mut crate::model::recipe::Recipe,
+    metadata: &crate::camera_data::Metadata,
+) -> f32 {
+    let gain = recipe.exposure.exp2();
+    recipe.exposure = 0.;
+    let profile = match recipe.profile.as_deref() {
+        Some(p) => p.for_hdr_light(),
+        None => crate::camera_profiles::CameraProfile::embedded(metadata).for_hdr_light(),
+    };
+    recipe.profile = Some(std::sync::Arc::new(profile));
+    gain
+}
+
 /// An HDR file as the scene its HDR master renders (docs/records/hdr-stage4-design.md):
 /// its light through [`crate::develop::rendered::scene_from_light`], which the master
 /// at the file's own settings (`Recipe::for_rendered`, the Embedded profile with a
@@ -228,7 +240,7 @@ fn master(
 /// the light; a working image doesn't, and a fact in its metadata alone renders
 /// nothing. The scene carries no light of its own, so no stage can reach it. `gain`
 /// scales the light first.
-fn hdr_file_scene(im: &CameraImage, gain: f32) -> Result<CameraImage> {
+pub(crate) fn hdr_file_scene(im: &CameraImage, gain: f32) -> Result<CameraImage> {
     use anyhow::Context;
     let light = im.hdr().context("This HDR file's light was not decoded")?;
     Ok(CameraImage {
@@ -1543,7 +1555,7 @@ mod tests {
 
     /// The GPU port's SDR rendition has HDR off and leaves an HDR profile to the CPU;
     /// its master preview covers ordinary and HDR profiles and looks, up to the
-    /// profile's finish, and leaves an HDR file to the CPU.
+    /// profile's finish, and an HDR file's master from its pseudo-scene.
     #[test]
     fn the_gpu_port_renders_masters_of_ordinary_profiles_only() {
         use crate::develop::pipeline::pixel_params::{supported, supported_hdr};
@@ -1612,13 +1624,19 @@ mod tests {
             supported_hdr(&looked, &im.metadata),
             "a look's master renders on the GPU"
         );
+        // An HDR file's master renders on the GPU from its pseudo-scene, with the
+        // recipe the scene renders with; an SDR rendered file has no master.
         let file = hdr_file(2, 2, |_, _| [2.; 3]);
-        let r = Recipe::for_new_rendered(&file.metadata);
+        let mut r = Recipe::for_new_rendered(&file.metadata);
         assert!(r.hdr.is_active());
+        hdr_file_recipe(&mut r, &file.metadata);
         assert!(
-            !supported_hdr(&r, &file.metadata),
-            "an HDR file's light renders on the CPU"
+            supported_hdr(&r, &file.metadata),
+            "an HDR file's master renders on the GPU"
         );
+        let mut sdr_file = file.metadata.clone();
+        sdr_file.hdr_source = None;
+        assert!(!supported_hdr(&r, &sdr_file), "an SDR file has no master");
     }
 
     /// A switched-off panel's adjustments don't refuse the master.

@@ -124,6 +124,7 @@ mod prepare;
 mod render;
 mod samples;
 pub(crate) use detail::*;
+pub(crate) use hdr::{hdr_file_recipe, hdr_file_scene};
 pub use hdr::{render_hdr, render_hdr_preview, render_hdr_region};
 pub use highlights::*;
 pub(crate) use local::*;
