@@ -229,7 +229,7 @@ The RAW decoders have fuzz targets (`fuzz/`: `open`, `preview` and `decode` of `
 
 ### Skills
 
-Coding agents follow [AGENTS.md](AGENTS.md). For the recurring maintainer workflows, the repository also has skills in [`.agents/skills/`](.agents/skills) (Codex reads them there; `.claude/skills` links to the same folder for Claude Code). Run one with `/name` in Claude Code or `$name` in Codex, or just ask in plain words: agents pick a skill up from its description.
+Coding agents follow [AGENTS.md](AGENTS.md). For the recurring maintainer workflows, and for writing extensions, the repository also has skills in [`.agents/skills/`](.agents/skills) (Codex reads them there; `.claude/skills` links to the same folder for Claude Code). Run one with `/name` in Claude Code or `$name` in Codex, or just ask in plain words: agents pick a skill up from its description.
 
 | Skill | What it does | Example |
 | --- | --- | --- |
@@ -237,6 +237,7 @@ Coding agents follow [AGENTS.md](AGENTS.md). For the recurring maintainer workfl
 | [`ship`](.agents/skills/ship/SKILL.md) | Has a model from another provider review the change until it approves, then opens the PR, watches CI and bot comments, and merges when green. Can also review a plan before any code is written. | `/ship`<br>"let codex astra medium review, merge when green"<br>"PR only, don't wait for Windows CI"<br>"plan this with codex until you agree, let me approve" |
 | [`release`](.agents/skills/release/SKILL.md) | Waits for the PRs you name, writes the release notes from the tagged range with credits, commits `Release x.y.z`, tags it and follows the build through to publication. | `/release 0.4.12 after #812`<br>"cut 0.4.12, highlights: AI masks, credit contributors, do a tldr"<br>"what would go into the next release?" |
 | [`gh-reply`](.agents/skills/gh-reply/SKILL.md) | Writes issue and PR comments for the maintainer, signed by the model that wrote them. Drafts first when the reply makes a decision: refusing, closing or promising. | "ask the reporter for their system info, they're not technical"<br>"thank the contributor and merge"<br>"decline this PR, cite licensing risk; let me approve before posting" |
+| [`extension`](.agents/skills/extension/SKILL.md) | Takes a new extension from `cargo rawmakase new` to a published package: the manifest rules, the SDK's commands, panels, control adapters and mask generators, `MockHost` tests and the protocol's pitfalls, with tested code sketches. A separate checklist covers bundled extensions in this repo. | "write an extension that adds a film-look command"<br>"add a mask generator to my extension"<br>"package and publish my extension on GitHub" |
 
 The skills call on each other: `issue` hands off to `ship`, and `ship` and `issue` reply on GitHub through `gh-reply`. Each one is a short Markdown file, and the policy it follows stays in `AGENTS.md` and the docs it links.
 
