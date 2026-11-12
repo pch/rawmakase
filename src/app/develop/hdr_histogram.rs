@@ -31,12 +31,19 @@ pub(in crate::app) const EDGE: u32 = 512;
 pub(in crate::app) struct Key {
     image: Weak<CameraImage>,
     recipe: Recipe,
+    /// The AI Denoise source the master blends in, as the HDR preview's key holds it.
+    ai: Option<crate::develop::AiSource>,
 }
 impl Key {
-    pub(in crate::app) fn new(image: &Arc<CameraImage>, recipe: &Recipe) -> Self {
+    pub(in crate::app) fn new(
+        image: &Arc<CameraImage>,
+        recipe: &Recipe,
+        ai: Option<&crate::develop::AiSource>,
+    ) -> Self {
         Self {
             image: Arc::downgrade(image),
             recipe: recipe.clone(),
+            ai: ai.cloned(),
         }
     }
     fn same_photo(&self, other: &Self) -> bool {
@@ -45,7 +52,7 @@ impl Key {
 }
 impl PartialEq for Key {
     fn eq(&self, other: &Self) -> bool {
-        self.same_photo(other) && self.recipe == other.recipe
+        self.same_photo(other) && self.recipe == other.recipe && self.ai == other.ai
     }
 }
 
@@ -201,8 +208,8 @@ impl HdrHistograms {
 fn render(job: &Job) -> anyhow::Result<Measured> {
     let recipe = job.key.recipe.checked()?;
     let cancel = rawmakase_cancel::Cancel::new(&job.cancel);
-    let reduced = crate::develop::preview(&job.image, EDGE * 2);
-    let master = crate::develop::render_hdr(&reduced, &recipe, None, EDGE, cancel)?;
+    let ai = job.key.ai.as_ref();
+    let master = crate::develop::render_hdr_preview(&job.image, &recipe, ai, EDGE, cancel)?;
     Ok(Measured {
         key: job.key.clone(),
         histogram: master.histogram(),
@@ -230,7 +237,8 @@ impl crate::app::Editor {
         let image = self.document.full().ok_or("the photo is still opening")?;
         let recipe = self.effective_recipe();
         crate::app::develop::viewport::hdr_master_refused(&recipe, image)?;
-        Ok((Key::new(image, &recipe), image.clone()))
+        let ai = self.shown_ai_source(image, &recipe.ai_denoise);
+        Ok((Key::new(image, &recipe, ai.as_ref()), image.clone()))
     }
     /// What Develop's histogram shows, asking for the HDR histogram it is due.
     pub(in crate::app) fn histogram_source(&mut self) -> Source<'_> {
@@ -326,7 +334,7 @@ mod tests {
         let ctx = egui::Context::default();
         let image = photo(&ctx);
         let mut h = HdrHistograms::new(ctx);
-        let key = Key::new(&image, &hdr_recipe());
+        let key = Key::new(&image, &hdr_recipe(), None);
         h.request(key.clone(), image.clone());
         finished(&h);
         let Shown::Current(m) = h.shown(&key) else {
@@ -353,10 +361,10 @@ mod tests {
         let image = photo(&ctx);
         let mut h = HdrHistograms::new(ctx);
         let _ = h.worker.stop();
-        let a = Key::new(&image, &hdr_recipe());
+        let a = Key::new(&image, &hdr_recipe(), None);
         let mut brighter = hdr_recipe();
         brighter.exposure = 1.;
-        let b = Key::new(&image, &brighter);
+        let b = Key::new(&image, &brighter, None);
         h.request(a.clone(), image.clone());
         let first = h.cancel.clone().unwrap();
         h.request(b.clone(), image.clone());
@@ -388,20 +396,20 @@ mod tests {
         let image = photo(&ctx);
         let mut h = HdrHistograms::new(ctx.clone());
         let _ = h.worker.stop();
-        let key = Key::new(&image, &hdr_recipe());
+        let key = Key::new(&image, &hdr_recipe(), None);
         h.request(key.clone(), image.clone());
         *h.done.lock().unwrap() = Some((1, Ok(measured(&key, 4.))));
         assert!(matches!(h.shown(&key), Shown::Current(_)));
         // Replaced: the same file decoded again is another photo.
         let replaced = photo(&ctx);
-        let other = Key::new(&replaced, &hdr_recipe());
+        let other = Key::new(&replaced, &hdr_recipe(), None);
         assert!(matches!(h.shown(&other), Shown::Rendering));
         // Deleted: its key matches no photo opened later.
         drop(image);
         for _ in 0..4 {
             let next = photo(&ctx);
             assert!(matches!(
-                h.shown(&Key::new(&next, &hdr_recipe())),
+                h.shown(&Key::new(&next, &hdr_recipe(), None)),
                 Shown::Rendering
             ));
         }
@@ -431,7 +439,7 @@ mod tests {
         let ctx = egui::Context::default();
         let image = photo(&ctx);
         let mut h = HdrHistograms::with_render(ctx, panics);
-        let key = Key::new(&image, &hdr_recipe());
+        let key = Key::new(&image, &hdr_recipe(), None);
         h.request(key.clone(), image.clone());
         finished(&h);
         let Shown::Failed(e) = h.shown(&key) else {
@@ -441,7 +449,7 @@ mod tests {
         // The worker survives it and takes the next edit.
         let mut next = hdr_recipe();
         next.exposure = 0.5;
-        let next = Key::new(&image, &next);
+        let next = Key::new(&image, &next, None);
         OPEN.store(false, Ordering::SeqCst);
         h.request(next.clone(), image.clone());
         assert!(matches!(h.shown(&next), Shown::Rendering));

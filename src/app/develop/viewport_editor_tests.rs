@@ -288,7 +288,13 @@ fn the_hdr_master_is_due_in_every_view_of_an_hdr_edit() {
     assert_eq!(e.hdr_preview_due().unwrap_err(), "HDR is off");
     e.document.edit.setup_mut().hdr.enabled = true;
     let key = |e: &crate::app::Editor, part| {
-        Key::new(e.document.full().unwrap(), &e.effective_recipe(), part, 4.)
+        Key::new(
+            e.document.full().unwrap(),
+            &e.effective_recipe(),
+            None,
+            part,
+            4.,
+        )
     };
     let due = e.hdr_preview_due().expect("an HDR edit in Fit");
     assert_eq!(e.hdr_presentation(), Presentation::Rendering);
@@ -362,9 +368,31 @@ fn the_hdr_master_is_due_in_every_view_of_an_hdr_edit() {
     assert!(e.hdr_preview_due().is_err(), "the Library's Loupe");
     e.module = Module::Develop;
 
+    // AI Denoise previews in HDR, keyed by the result the SDR rendition shows: each
+    // result, partial or final, renders the master again.
     e.document.edit.setup_mut().ai_denoise.enabled = true;
-    assert!(e.hdr_preview_due().is_err(), "AI Denoise");
+    let plain = e.hdr_preview_due().expect("AI Denoise").key;
+    let image = e.document.full().unwrap().clone();
+    let source =
+        crate::develop::AiSource::recover((*image).clone(), rawmakase_cancel::Cancel::NEVER)
+            .unwrap();
+    e.ai_denoise_update(crate::ai_denoise::Update {
+        plain: std::sync::Arc::downgrade(&image),
+        state: crate::ai_denoise::State::Partial(source),
+    });
+    let partial = e.hdr_preview_due().expect("a partial result").key;
+    assert_ne!(partial, plain, "a result is a new render");
+    assert_eq!(
+        e.hdr_histogram_due().map(|(k, _)| k),
+        Ok(crate::app::develop::hdr_histogram::Key::new(
+            &image,
+            &e.effective_recipe(),
+            e.document.ai.source(),
+        )),
+        "the histogram follows the result too"
+    );
     e.document.edit.setup_mut().ai_denoise.enabled = false;
+    assert_eq!(e.hdr_preview_due().unwrap().key, key(&e, Part::Whole(16)));
 
     // Contrast renders in HDR; Highlights does not yet.
     e.document.edit.setup_mut().contrast = 20.;

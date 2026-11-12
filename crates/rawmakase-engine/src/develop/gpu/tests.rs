@@ -2297,7 +2297,8 @@ fn read_hdr_texture(gpu: &Processor, texture: &wgpu::Texture) -> Result<Vec<[f32
 /// An HDR master's preview presented on the GPU is the CPU master, sharpened and
 /// limited, as extended sRGB held to the display's headroom: at full size and in a
 /// 100% region, against `render_hdr` and `render_hdr_region`. A Fit from the pyramid
-/// renders at its size. A master the port doesn't cover is left to the CPU.
+/// renders at its size. AI Denoise renders from the same source as the CPU master's.
+/// A master the port doesn't cover is left to the CPU.
 #[test]
 #[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
 fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
@@ -2319,13 +2320,28 @@ fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
     let mut sharpened = recipes[1].clone();
     sharpened.sharpening = 0.6;
     recipes.push(sharpened);
+    // AI Denoise at 60%, from a source with its own noise, sharpened.
+    let mut denoised = recipes[1].clone();
+    denoised.ai_denoise.enabled = true;
+    denoised.ai_denoise.amount = 0.6;
+    denoised.sharpening = 0.6;
+    recipes.push(denoised);
+    let source = crate::camera_data::CameraImage {
+        pixels: (image.pixels.iter().enumerate())
+            .map(|(k, p)| p.map(|v| v * (0.8 + (k % 7) as f32 * 0.05)))
+            .collect(),
+        ..image.clone()
+    };
+    let ai = crate::develop::AiSource::recover(source, Cancel::NEVER)?;
     for (i, recipe) in recipes.iter().enumerate() {
         let valid = recipe.checked()?;
+        let ai = recipe.ai_denoise.enabled.then_some(&ai);
+        renderer.set_ai(ai.cloned());
         for headroom in [4., 40.] {
             for region in [None, Some([37, 3, 150, 9])] {
                 let expected = match region {
-                    None => render_hdr(&image, &valid, None, 0, Cancel::NEVER)?,
-                    Some(r) => render_hdr_region(&image, &valid, r, Cancel::NEVER)?,
+                    None => render_hdr(&image, &valid, ai, 0, Cancel::NEVER)?,
+                    Some(r) => render_hdr_region(&image, &valid, ai, r, Cancel::NEVER)?,
                 };
                 let slot = if region.is_some() {
                     super::Slot::Region
@@ -2410,23 +2426,19 @@ fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
                 .all(|v| v.is_finite() && *v <= top + 1e-2)
         );
     }
-    // A master the port doesn't render, and an SDR edit, are left to the CPU.
+    // An SDR edit is left to the CPU.
+    renderer.set_ai(None);
     let mut sdr = recipes[0].clone();
     sdr.hdr.enabled = false;
-    // AI Denoise's master renders on the CPU, from the full photo's result.
-    let mut denoised = recipes[0].clone();
-    denoised.ai_denoise.enabled = true;
-    for recipe in [sdr, denoised] {
-        let none = renderer.render_hdr_to(
-            &image,
-            &recipe,
-            0,
-            None,
-            4.,
-            Cancel::new(&cancel),
-            &display(super::Slot::Whole),
-        )?;
-        assert!(none.is_none());
-    }
+    let none = renderer.render_hdr_to(
+        &image,
+        &sdr,
+        0,
+        None,
+        4.,
+        Cancel::new(&cancel),
+        &display(super::Slot::Whole),
+    )?;
+    assert!(none.is_none());
     Ok(())
 }

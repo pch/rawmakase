@@ -64,4 +64,4 @@ pub(crate) use pipeline::{Camera, camera_stage, render_base};
 pub use pipeline::{
     neutral_pick, pick_fringe, preview, render, render_export, render_region, render_with_ai,
 };
-pub use quality::{render_hdr, render_hdr_region};
+pub use quality::{render_hdr, render_hdr_preview, render_hdr_region};

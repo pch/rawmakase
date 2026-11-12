@@ -1641,6 +1641,15 @@ photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
   it is never saved, copied or synced. While it is on, Develop shows the SDR rendition
   on an HDR display, with its histogram, as Lightroom does; it applies to every photo
   and every side until turned off.
+- **AI Denoise previews in HDR from the SDR rendition's result** (stage 5, 2026-11-12).
+  The HDR preview, histogram and readout blend in the result the SDR rendition's
+  render shows, partial or final, keyed by it, so the two renderings never show
+  different results. A whole photo's CPU preview reduces the result with the photo
+  (`AiSource::reduced`); the photo's highlights are recovered after that reduction,
+  the result's before it, as before for the plain photo. The GPU renders the master
+  from the same full-size source as its SDR frame, checked against `render_hdr` with a
+  source at Amount 60 (`presented_hdr_previews_match_the_cpu_master`). HDR export was
+  already rendering it.
 
 ## Open
 
@@ -1762,8 +1771,8 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   for ordinary and HDR profiles and looks (#984), Contrast and the tone curves (#986)
   the colour stage (#987) and Texture (#988), checked against the CPU master in float
   space. HDR files still show the CPU master (their scene carries Exposure as a gain
-  of the light, which a GPU path would rebuild on every change); AI Denoise shows no
-  HDR preview yet. The HDR histogram in stops above white, the HDR readout,
+  of the light, which a GPU path would rebuild on every change). AI Denoise shows in
+  the HDR preview, histogram and readout, on the GPU and the CPU. The HDR histogram in stops above white, the HDR readout,
   and what lies beyond the display's headroom marked in the histogram and its
   highlight triangle. Preview for SDR display, a view choice showing the SDR rendition
   on an HDR display. Open: the rest of the stage (above).
