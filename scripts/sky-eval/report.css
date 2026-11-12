@@ -1,0 +1,89 @@
+/* Layout: single reading column, wide tables scroll in their own boxes; sky-blue accent, red = mask tint as in the panels */
+:root{
+  --bg:#f6f8fa; --surface:#ffffff; --fg:#1b2430; --muted:#5a6878; --line:#d9e0e7;
+  --accent:#2f6fa8; --good:#2e7d4f; --warn:#b26a00; --bad:#b3261e; --tint:#fbeaea;
+  --display:"Fraunces",Georgia,serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11161c; --surface:#18202a; --fg:#e4eaf0; --muted:#97a6b5; --line:#2a3542;
+  --accent:#7db3e3; --good:#6cc28f; --warn:#e3a54a; --bad:#f08a80; --tint:#3a2224; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11161c; --surface:#18202a; --fg:#e4eaf0; --muted:#97a6b5; --line:#2a3542;
+  --accent:#7db3e3; --good:#6cc28f; --warn:#e3a54a; --bad:#f08a80; --tint:#3a2224; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.6 var(--body)}
+main{max-width:1180px;margin:0 auto;grid-template-columns:minmax(0,1fr);padding-block:32px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:28px}
+h1{font:600 clamp(26px,4vw,36px)/1.15 var(--display);margin:0;text-wrap:balance}
+h2{font:600 21px/1.3 var(--display);margin:0 0 10px;text-wrap:balance}
+h3{font:600 15px/1.4 var(--body);margin:14px 0 4px}
+p,li{max-width:68ch}
+p{margin:0 0 10px}
+ul{margin:0;padding-left:20px}
+.eyebrow{font:600 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--muted);font-size:16px}
+.scroll{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:14px}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font:600 12px var(--mono);letter-spacing:.04em;color:var(--muted);text-transform:uppercase}
+td.n{text-align:right;font-family:var(--mono)}
+tr:last-child td{border-bottom:0}
+.win{color:var(--good);font-weight:600}
+.lose{color:var(--bad);font-weight:600}
+.scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.score{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px;display:grid;gap:2px}
+.score b{font:600 34px/1.1 var(--display)}
+.score span{color:var(--muted);font-size:13px}
+.score .src{color:var(--fg);font-weight:600;font-size:14px}
+.score .kind{font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.note{border-left:3px solid var(--warn);padding:8px 12px;background:var(--surface);border-radius:0 6px 6px 0}
+.pill{display:inline-block;font:600 11px var(--mono);padding:1px 7px;border-radius:99px;border:1px solid currentColor;vertical-align:1px}
+.pill.g{color:var(--good)} .pill.b{color:var(--bad)} .pill.w{color:var(--warn)}
+figure{margin:0;display:grid;gap:6px}
+figure img{border-radius:6px;border:1px solid var(--line)}
+figcaption{font-size:13px;color:var(--muted)}
+.photo{display:grid;gap:8px;padding-top:6px;border-top:1px solid var(--line)}
+code{font-family:var(--mono);font-size:13px}
+figure img{max-width:100%;height:auto}
+figure{gap:10px}
+button.zoom{display:block;padding:0;border:0;background:none;cursor:zoom-in;border-radius:6px;max-width:100%}
+button.zoom img{display:block;width:100%;height:auto;border-radius:6px;border:1px solid var(--line)}
+button.zoom:hover img{border-color:var(--accent)}
+button.zoom:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+/* Viewer: always dark, so the panels read the same in both themes */
+#viewer{width:100vw;height:100vh;overflow:hidden;box-sizing:border-box;max-width:none;max-height:none;margin:0;padding:0;border:0;background:#0b0e12;color:#e4eaf0}
+#viewer::backdrop{background:rgba(0,0,0,.85)}
+#viewer[open]{display:grid;grid-template-rows:auto 1fr}
+.vbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;
+  padding:calc(8px + env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-right,0px)) 8px max(12px,env(safe-area-inset-left,0px));
+  background:#151b22;font:13px var(--mono)}
+#vcap{min-width:0;overflow-wrap:anywhere}
+.vbtns{display:flex;gap:6px}
+.vbtns button{font:600 14px var(--mono);color:#e4eaf0;background:#232c37;border:1px solid #344150;border-radius:5px;padding:5px 10px;cursor:pointer;min-width:38px}
+.vbtns button:hover{background:#2f3b4a}
+.vbtns button:focus-visible{outline:2px solid #7db3e3;outline-offset:2px}
+#vstage{overflow:auto;min-height:0;display:block}
+#vstage img{display:block;cursor:zoom-out;max-width:none}
+#vstage.fit{display:grid;place-items:center;overflow:hidden}
+#vstage.fit img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;cursor:zoom-in}
+/* Per-photo table: as wide as the screen allows, as tall as the window, header and names pinned */
+div.wide{margin-inline:min(0px, calc((100% - 100vw) / 2 + 24px))}
+.scroll.tall{max-height:calc(100vh - 120px);overflow:auto}
+table.perphoto{width:auto;font-size:13px;border-collapse:separate;border-spacing:0}
+table.perphoto th,table.perphoto td{padding:5px 8px}
+table.perphoto thead th{position:sticky;top:0;z-index:2;background:var(--surface)}
+table.perphoto thead tr:nth-child(2) th{top:29px}  /* set exactly by script */
+table.perphoto th.grp{text-align:center;white-space:normal;max-width:16ch;line-height:1.25;border-left:1px solid var(--line)}
+table.perphoto .name{position:sticky;left:0;z-index:1;background:var(--surface);max-width:30ch;overflow:hidden;text-overflow:ellipsis}
+table.perphoto thead th.name{z-index:3}
+table.perphoto tbody tr:hover td{background:var(--tint)}
+/* Tables as wide as their columns, centred; numbers and their headers right-aligned; a
+   rule before each source's columns; the best figure of a row marked */
+.scroll.fit{width:fit-content;max-width:100%}
+.wide .scroll.fit{margin-inline:auto}
+table.grid{width:auto}
+th.n{text-align:right}
+th.grp{text-align:center}
+table.grid th.grp,table.grid .first,table.perphoto .first{border-left:1px solid var(--line)}
+td.best{color:var(--good);font-weight:600;background:color-mix(in srgb,var(--good) 12%,transparent)}
+td.winner{font:600 13px var(--mono);text-align:center;color:var(--good)}
+tr.sum td{border-top:1px solid var(--muted);font-weight:600}
+tr.sum + tr.sum td{border-top:0}

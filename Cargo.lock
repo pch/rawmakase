@@ -3766,6 +3766,7 @@ dependencies = [
  "rawmakase-model",
  "rawmakase-model-install",
  "rawmakase-protocol",
+ "rawmakase-selection",
  "rayon",
  "rfd",
  "rusqlite",

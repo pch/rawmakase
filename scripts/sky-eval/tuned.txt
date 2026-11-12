@@ -1,0 +1,5 @@
+# Photos the sky modes were tuned on (stems); everything else counts as holdout.
+commons/
+DSC_1134
+DSC_1452
+DSC_5479
