@@ -184,9 +184,10 @@ const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 /// Raw's HDR Luminance strengthens with brightness where its SDR one rolls off, which
 /// the SDR-fitted grids can't follow at +100 (docs/records/hdr-stage1-results.md#band-luminance).
 const BAND_LUMINANCE_MEASURED: f32 = 0.4;
-/// The largest Clarity (0 to 1) the HDR master renders, the range measured on photos:
-/// there the SDR operator, unclipped, departs from Camera Raw's HDR effect no further
-/// than from its SDR one (docs/records/hdr-stage1-results.md#presence).
+/// The largest Clarity, either sign (−1 to 1), the HDR master renders: up to ±50 the
+/// master's (the SDR operator, stronger beside light above white) departs from Camera
+/// Raw's HDR effect no further than the SDR rendition from its SDR one; at +100 it does
+/// (docs/records/hdr-stage1-results.md#presence).
 const CLARITY_MEASURED: f32 = 0.5;
 /// The most negative Dehaze (−1 to 1) the HDR master renders: positive Dehaze renders
 /// up to +100, where its HDR error on photos is its SDR one; at −100 it is further
@@ -203,7 +204,7 @@ const DEHAZE_MEASURED: f32 = -0.3;
 /// the post-crop vignette (without a darkening vignette's Highlights) and grain,
 /// the master point curve, the channels' point curves and the parametric curve, and
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
-/// camera's samples, as in SDR), Clarity from 0 to +50 and Dehaze from −30 to +100
+/// camera's samples, as in SDR), Clarity from −50 to +50 and Dehaze from −30 to +100
 /// (the SDR operators, unclipped),
 /// Point Color (its swatches in colour grading's HDR domain),
 /// masks whose sliders are Temp, Tint, Exposure, Contrast, Shadows, Texture, Color,
@@ -293,8 +294,8 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
             r.curve_saturation != 1. && !r.curve.is_identity(),
         ),
         (
-            "Clarity outside 0 to +50",
-            !(0. ..=CLARITY_MEASURED).contains(&r.effects.clarity),
+            "Clarity beyond ±50",
+            r.effects.clarity.abs() > CLARITY_MEASURED,
         ),
         ("Dehaze below −30", r.effects.dehaze < DEHAZE_MEASURED),
         (
@@ -676,7 +677,7 @@ mod tests {
                 r.effects.vignette_highlights = 0.4;
             },
             |r| r.effects.clarity = 0.6,
-            |r| r.effects.clarity = -0.1,
+            |r| r.effects.clarity = -0.6,
             |r| r.effects.dehaze = -0.31,
             |r| r.effects.dehaze = -0.5,
             |r| {
@@ -759,7 +760,7 @@ mod tests {
         let refused: [(Change, &str); 3] = [
             (
                 |p| p.enhanced.as_mut().unwrap().clarity = 0.6,
-                "Clarity outside 0 to +50, which the look sets",
+                "Clarity beyond ±50, which the look sets",
             ),
             (
                 |p| p.enhanced.as_mut().unwrap().highlights = -0.12,

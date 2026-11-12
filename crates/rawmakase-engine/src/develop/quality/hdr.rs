@@ -512,7 +512,7 @@ mod tests {
         let im = grays(&[0.5]);
         let master = |r: &Recipe| render_hdr(&im, &r.checked().unwrap(), None, 0, Cancel::NEVER);
         let mut r = hdr_recipe(&im);
-        r.effects.clarity = -0.2;
+        r.effects.clarity = -0.6;
         let error = master(&r).unwrap_err().to_string();
         assert!(error.contains("not supported in HDR"), "{error}");
         crate::develop::render(&im, &r.checked()?, 0, Cancel::NEVER)?;
@@ -1453,8 +1453,8 @@ mod tests {
         }
         type Change = fn(&mut Recipe);
         let refused: [(Change, &str); 3] = [
-            (|r| r.effects.clarity = 0.6, "Clarity outside"),
-            (|r| r.effects.clarity = -0.2, "Clarity outside"),
+            (|r| r.effects.clarity = 0.6, "Clarity beyond"),
+            (|r| r.effects.clarity = -0.6, "Clarity beyond"),
             (|r| r.effects.dehaze = -0.4, "Dehaze below"),
         ];
         for (change, reason) in refused {
