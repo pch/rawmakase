@@ -523,6 +523,49 @@ fn draw_masking_panel(e: &mut Editor) {
     e.finish_edit_frame(frame, &ctx);
 }
 
+/// An event of the selection thread's own test jobs, which nothing applies:
+/// no photo has this load.
+fn nothing() -> crate::app::worker::Event {
+    mask_generator::done(u64::MAX, 0, Err(Failure::Cancelled))
+}
+
+/// Holds the selection thread, which runs its jobs in order, until the
+/// returned sender is dropped: what is queued after waits.
+fn hold_worker(e: &mut Editor) -> std::sync::mpsc::Sender<()> {
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let (tx, ctx) = (e.tx.clone(), e.context.clone());
+    e.selection.worker.call(
+        move || {
+            let _ = held.recv_timeout(Duration::from_secs(20));
+            nothing()
+        },
+        nothing,
+        tx,
+        ctx,
+    );
+    release
+}
+
+/// Waits until the selection thread has run every job queued before, then
+/// handles what they sent and runs a frame.
+fn drain_worker(e: &mut Editor) {
+    let (done, ran) = std::sync::mpsc::channel();
+    let (tx, ctx) = (e.tx.clone(), e.context.clone());
+    e.selection.worker.call(
+        move || {
+            let _ = done.send(());
+            nothing()
+        },
+        nothing,
+        tx,
+        ctx.clone(),
+    );
+    ran.recv_timeout(Duration::from_secs(20))
+        .expect("the selection thread ran its jobs");
+    e.events(&ctx);
+    e.extensions_frame(&ctx);
+}
+
 fn offer(e: &Editor, name: &str) -> Offer {
     match tile(e, name).generator {
         Generator::Extension(offer) => offer,
@@ -574,4 +617,70 @@ fn a_setup_finished_after_its_mask_moved_doesnt_go_on() {
         e.messages.line(),
         "The masks changed while setting up; choose where to use Setup again"
     );
+}
+
+#[test]
+fn rasters_set_aside_are_let_go_of_when_a_selection_ends_without_a_result() {
+    let mut f = fixture(0.52);
+    let folder = f.folder.clone();
+    let e = &mut f.editor;
+    // A result from before, its raster registered: while another runs, it is
+    // set aside rather than dropped, since the running one may share it.
+    let stale = |e: &mut Editor, seed: u8| {
+        let id = mask_assets::register(crate::storage::bitmaps::Bitmap {
+            width: 3,
+            height: 1,
+            channels: 1,
+            depth: 1,
+            data: vec![seed, 52, 52],
+        })
+        .unwrap();
+        let done = Done {
+            load: e.document.load_id(),
+            generation: e.selection.task.id() - 1,
+            result: Ok(Generated {
+                id: id.clone(),
+                width: 3,
+                height: 1,
+                source: BitmapSource {
+                    feature: "dev.rawmakase.masks/blob".into(),
+                    model: "m@1".into(),
+                    input: "i".into(),
+                },
+            }),
+        };
+        e.selection_done(done);
+        assert!(mask_assets::is_held(&id), "set aside");
+        id
+    };
+    hold(&folder);
+    // Cancel ends it.
+    e.request_selection(tile(e, "Gate"));
+    started(e, &folder);
+    let a = stale(e, 1);
+    e.cancel_selection();
+    assert!(!mask_assets::is_held(&a));
+    // So does another photo, at the next frame.
+    e.request_selection(tile(e, "Gate"));
+    started(e, &folder);
+    let b = stale(e, 2);
+    e.selection.clear_document();
+    let ctx = e.context.clone();
+    e.extensions_frame(&ctx);
+    assert!(!mask_assets::is_held(&b));
+    // And a request given up on before it was sent, at its stale preparation.
+    let release = hold_worker(e);
+    e.request_selection(tile(e, "Blob"));
+    let c = stale(e, 3);
+    e.selection.cancel();
+    drop(release);
+    drain_worker(e);
+    assert!(!mask_assets::is_held(&c));
+    release_and_settle(e, &folder);
+}
+
+/// Lets the gates still waiting answer, and waits for their buffers.
+fn release_and_settle(e: &mut Editor, folder: &Path) {
+    release(folder);
+    pump(e, "the buffers", |e| leased(e) == 0);
 }

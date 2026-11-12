@@ -878,7 +878,7 @@ impl Editor {
     pub(in crate::app) fn mask_prepared(&mut self, prepared: mask_generator::Prepared) {
         let (load, generation) = (prepared.load, prepared.generation);
         if load != self.document.load_id() || generation != self.selection.task.id() {
-            return;
+            return self.settle_deferred();
         }
         let Some(Pending {
             request:
@@ -890,7 +890,7 @@ impl Editor {
             ..
         }) = &self.selection.pending
         else {
-            return;
+            return self.settle_deferred();
         };
         let offer = offer.clone();
         let ready = match prepared.result {
@@ -949,7 +949,7 @@ impl Editor {
             return;
         };
         if offer.extension != extension || call.sent.as_ref().is_none_or(|(t, _)| *t != ticket) {
-            return;
+            return self.settle_deferred();
         }
         let Some((_, asked)) = call.sent.take() else {
             return;
@@ -995,7 +995,8 @@ impl Editor {
         );
     }
     /// After the host's outcomes: an extension's request whose outcome can't
-    /// come any more (its request is gone from the host) ends now.
+    /// come any more (its request is gone from the host) ends now. Rasters
+    /// set aside for a selection that ended without a result are let go of.
     pub(in crate::app) fn check_mask_requests(&mut self) {
         if let Some(Pending {
             request:
@@ -1023,6 +1024,16 @@ impl Editor {
                 ))),
             };
             self.selection_done(done);
+        }
+        self.settle_deferred();
+    }
+    /// Lets go of the rasters set aside while a selection ran, once none runs:
+    /// each is discarded unless the edit, its History or Before names it.
+    fn settle_deferred(&mut self) {
+        if self.selection.pending.is_none() {
+            for id in std::mem::take(&mut self.selection.deferred) {
+                self.discard_raster(&id);
+            }
         }
     }
     /// The setup card's Download: asks the generator's extension to set it up.
@@ -1083,6 +1094,7 @@ impl Editor {
     pub(in crate::app) fn cancel_selection(&mut self) {
         self.context.request_repaint();
         self.selection.cancel();
+        self.settle_deferred();
         self.messages.note("Selection cancelled");
     }
     /// A selection finished: apply it if it is still the one wanted and the edit it
@@ -1090,11 +1102,7 @@ impl Editor {
     pub(in crate::app) fn selection_done(&mut self, done: Done) {
         self.apply_done(done);
         // Results set aside while this one ran: let go of the ones nothing took.
-        if self.selection.pending.is_none() {
-            for id in std::mem::take(&mut self.selection.deferred) {
-                self.discard_raster(&id);
-            }
-        }
+        self.settle_deferred();
     }
     fn apply_done(&mut self, done: Done) {
         let result = done.result;
