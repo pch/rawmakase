@@ -1,6 +1,6 @@
 # Remaining Lightroom parity gaps
 
-Status: Record (2026-10-05, last updated 2026-11-03); tone research updated 2026-10-16 for the [scene tone stage](../scene-tone-stage.md); lens, profile and catalog notes updated 2026-10-03. RAWmakase renders close to Lightroom but not identically. Each item below says what differs and, where measured, by how much. Errors are encoded-sRGB mean absolute error (0–1) against Camera Raw 18.6 or Lightroom Classic 15.5 exports, scored with `scripts/lightroom-scorecard.py`; most of the entries below are mean ΔE00 against Camera Raw 18.7 renders of the synthetic charts. For scale: Lightroom X100F references averaged 0.0090, Sony A7 II Camera Raw references 0.0065. The scene tone stage changed the default render and every tone control, so figures measured before it (dated 2026-10-05 and earlier) may have moved. Details: [tone controls](../tone-controls.md), [color mixer and grading](../color-mixer.md), [lens corrections](../lens-corrections.md), [transform](../transform.md).
+Status: Record (2026-10-05, last updated 2026-11-13); tone research updated 2026-10-16 for the [scene tone stage](../scene-tone-stage.md); lens, profile and catalog notes updated 2026-10-03. RAWmakase renders close to Lightroom but not identically. Each item below says what differs and, where measured, by how much. Errors are encoded-sRGB mean absolute error (0–1) against Camera Raw 18.6 or Lightroom Classic 15.5 exports, scored with `scripts/lightroom-scorecard.py`; most of the entries below are mean ΔE00 against Camera Raw 18.7 renders of the synthetic charts. For scale: Lightroom X100F references averaged 0.0090, Sony A7 II Camera Raw references 0.0065. The scene tone stage changed the default render and every tone control, so figures measured before it (dated 2026-10-05 and earlier) may have moved. Details: [tone controls](../tone-controls.md), [color mixer and grading](../color-mixer.md), [lens corrections](../lens-corrections.md), [transform](../transform.md).
 
 ## Measured and matched (for reference)
 
@@ -15,6 +15,151 @@ These controls were fitted to Camera Raw renders and match within the default-re
 - **Curve Refine Saturation** renders as Camera Raw 18.7 does on the chart ([tone controls](../tone-controls.md#refine-saturation)): the `curve-*-refine-saturation-*` cases sit at mean ΔE00 1.1–1.5, against 1.4 for the same S curve at 100. Values above 100 render as 100, as in Camera Raw. It imports, is written back, and has a Refine › Saturation slider (0–100) under the RGB point curve.
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the colour curves was not checked; here they set the RGB curve only.
 - **Auto** tone is fitted to Lightroom Classic's own Auto values, from 452 Auto Settings steps on 439 catalog photos with every fifth photo held out; each slider is a linear fit of one or two display-encoded percentiles of luminance, of the brightest channel or of chroma, and the held-out error is a median 1 step on Contrast and 0.21 EV on Exposure. Lightroom changed Auto in mid-2019 and the catalog's history shows both versions, so the slopes are fitted on every photo and the levels, Contrast, Vibrance and Saturation on the current Auto alone. The WB menu's Auto white balance is fitted to Lightroom's Auto values (a median of 2.7 mired off on 133 photos); see [tone controls](../tone-controls.md#auto).
+
+### Tone experiments on current main (2026-11-12)
+
+Seven bounded Camera Raw 18.7 probes against main `0a711ba5`, planned from the open
+tone issues (#464, #467, #468, #470, #471, #474, #600). Probes are synthetic DNGs read at
+the scene stage; photo numbers are the validation sets; holdout was not touched. One
+engine change came out of it (positive Blacks, #1068); the rest are measurements and refuted
+hypotheses, recorded so that they are not tried again. The scripts and reduced
+renders are local; no Camera Raw render of a photo is in the repository.
+
+**1. Error budget on current main.** The validation gate over all families (79 sets,
+145 photos; `main-0a711ba5-metric2`, which replaces `main-a8c5d6d7-metric2` as the
+baseline) with each case split into the default render's error and the control's own
+(ΔE00 against Camera Raw with the default render's per-pixel Lab error carried over).
+Median over photos, all families:
+
+| Setting | Total | Default | Control's own | Own p90 | Own ΔL\* by band of Camera Raw's L\* |
+| --- | --- | --- | --- | --- | --- |
+| Dehaze −100 | 6.84 | 0.31 | 6.56 | 13.6 | 0–50: +3.4 to +4.2 |
+| Dehaze −50 | 3.39 | 0.31 | 2.92 | 5.3 | 0–40: about +1 |
+| Dehaze +100 | 2.38 | 0.31 | 2.23 | 4.8 | 10–70: −1.3 to −2.7 |
+| Clarity +100 | 2.26 | 0.47 | 1.94 | 3.1 | 10–60: about −1.5 |
+| Blacks +100 | 1.95 | 0.51 | 1.70 | 2.2 | 0–20: +1.5 to +1.9 |
+| Dehaze +40 with Clarity +40 | 1.93 | 0.45 | 1.66 | 2.3 | 70–90: +1.2 to +1.4 |
+| Exposure −1 with Whites +100 | 1.66 | 0.45 | 1.55 | 3.8 | 30–90: +2.0 to +3.6 |
+| Shadows +100 | 1.82 | 0.53 | 1.32 | 3.4 | 0–20: +1.1 |
+| Whites +100 | 1.24 | 0.54 | 1.01 | 3.1 | 50–90: −1.2 to −2.2 |
+| Shadows −100 | 0.73 | 0.53 | 0.59 | 1.9 | 10–40: +1.5 to +2.3 |
+| Highlights +100 | 0.99 | 0.36 | 0.67 | 2.1 | 70–90: −1.4 to −2.3 |
+| Highlights −100 | 0.72 | 0.36 | 0.42 | 0.9 | within 1 |
+| Exposure ±1, ±2 | 0.25–0.56 | 0.44 | 0.20–0.38 | 0.8–1.4 | within 0.5 |
+
+Negative Dehaze is the largest gap by far (2.6 to 14.0 by family and brightness at
+−100), then positive Dehaze and Clarity +100 (both worst on bright photos). The
+default render sits at a median of 0.34 to 0.47; Camera Raw has more pixels at black
+than RAWmakase on low-key photos (3.62% against 2.61%).
+
+**2. Blacks, Exposure and the default black (#474, #470, #471).** Neutral ramps with
+dark keys −14 to −8 and DefaultBlackRender Auto and None; mosaics with a dark tail;
+dark spots of 2 to 32 pixels.
+
+- *Positive Blacks: confirmed, proposed in #1068.* Camera Raw's Blacks +25 with the default black
+  equals the render without one, and +100 equals +100 without one, at every key:
+  positive Blacks works on the scene value. RAWmakase read `blacks.bin` after the
+  photo's own default black though it was measured after a key −8 ramp's, so photos
+  with darker keys were 0.3 to 1.0 EV too light two to four stops above their key. From +25 up the
+  change reads curves measured without a default black on the value before it; below
+  +25, where the default black fades out unevenly and by key, it goes from the photo's
+  default black to the value without it by the share the key −8 row has gone (0.03 to
+  0.09 EV RMS on a key −12 ramp, where main is 0.03 to 0.34). On the
+  ramps the error falls from 0.33–0.52 to 0.008–0.010 EV RMS from +25 up, and on the
+  50 photos of the six Blacks validation sets the median ΔE00 goes 1.95 → 1.23 at
+  +100, 1.17 → 0.71 at +50 and 0.95 → 0.50 at +25 (23 to 25 photos better by more
+  than 0.3, none worse; the darkest band's own error +1.9 → +0.2 L\*). One low-key photo
+  (a 5DS R) fails the gate's clipping rule at +50 and +100 while its ΔE00 falls from 2.80
+  to 0.92: Camera Raw keeps 3.3% of it at black at +100 and RAWmakase 0.05%, the same
+  disagreement it has at default (12.5% against 7.9%), which the old over-crushed
+  path had partly hidden; the gate's accept therefore does not pass, and the change waits
+  on that decision. Profiles without a default black are not changed: on None
+  ramps `blacks.bin` is 0.9 EV off at +50 and +100, but rendered files use that path
+  and were matched to Lightroom with it.
+- *Positive Exposure: refuted.* On the same ramps RAWmakase is within 1 to 3% of Camera
+  Raw at +1 and +2 at every key. What is left of #470 is not Exposure's response to the
+  default black.
+- *A black clip threshold: refuted; the key differs instead.* Camera Raw's default
+  render reaches 0 only at the frame's darkest level, and RAWmakase reaches 0 earlier,
+  not later. But Camera Raw's dark key is not a pixel percentile: one dark spot of 16
+  pixels in a 1024-pixel frame (0.02% of it) moves the default black fully, a spot of 8
+  pixels or less does not move it at all, and a spot at 2^-10 or 2^-9 moves it part of
+  the way. That is a minimum over cells of about 16 pixels (a copy of about 64 pixels
+  on the long edge). RAWmakase's 0.1th percentile of the 512-pixel map ignores such a
+  spot and renders the level above it 1.5 EV darker; on textured photos it reads darker
+  than a cell minimum would, which fits Camera Raw's larger share of black pixels at
+  default. Not changed: it moves every photo's default render, and the cell size needs
+  spots of 10 to 14 pixels and an offset spot first.
+
+**3. Contiguity of the Shadows/Highlights rule: refuted.** One histogram arranged as
+scattered patches of 4 to 128 pixels, as a block and as a strip, for a filled
+histogram, a sky over ground and a dark frame with a small bright area (72 renders).
+Contiguous and scattered arrangements of large patches differ by at most 0.35 EV in
+Camera Raw (the mid levels beside the bright set), and main's engine is within 0.09 to
+0.16 EV RMS of Camera Raw on patches of 32 and 64 pixels, the block and the strip. What
+differs is the amplitude of small structures: at Shadows +100 the darkest stop of the
+filled histogram is lifted 0.81 EV in 4-pixel patches, 1.14 at 8, 1.56 at 16, 1.81 at 32
+and 1.95 at 128; at Highlights −100 the bright area is pulled −1.6, −2.9, −4.5 and −4.7 EV
+at 4, 8, 16 and 32 pixels. Main is 0.2 to 0.5 EV RMS off there. Feeding the shipped rule
+a low-passed map (box radius 0 to 64 map pixels, Gaussian 0.5 to 4, in linear or log
+values, as statistics and level or level only, and guided filters of ε 1 to 8) never
+brings the small sizes under 0.2 EV without losing the large ones (best overall
+0.17 / 0.28 EV for Shadows / Highlights against 0.23 / 0.26 unblurred). Camera Raw still
+tells 4-pixel bright and dark patches apart, so it is not a blur of the base. No
+retrain.
+
+**4. Mosaics for the controls on fitted tables.** Forty mosaics of the rule's families
+at Whites +100, Shadows −100 and Highlights +100 (DefaultBlackRender None, scene
+values), gain by stops below the frame's top, RAWmakase against Camera Raw:
+
+- *Shadows −100* is far too weak in deep tones: 6 to 7 stops down Camera Raw −2.26 EV
+  and RAWmakase −1.76; 8 to 9 stops down −4.38 against −1.44; overall 1.83 EV RMS
+  where doing nothing is 2.45. Camera Raw's own spread across histograms at one depth
+  is 0.5 to 1.4 EV, so it is a per-histogram curve like the positive side.
+- *Whites +100* stretches the mid-tones 0.1 to 0.2 EV too far (0.34 EV RMS; 0.73 on the
+  sky scenes), which is the sign of the photos' +2 to +3.6 L\* at Exposure −1 with
+  Whites +100.
+- *Highlights +100* is the closest: 0.25 EV RMS, 0.1 to 0.2 EV short within three stops
+  of the top; the small-bright-minority mosaics are worst (0.44).
+
+Not fitted in this round: each needs the full mosaic families and the training photos
+at the new setting, as the positive Shadows rule did. Negative Shadows comes first.
+
+**5. Negative Dehaze on tinted mosaics (#467): answered, not fitted.** Five histograms
+in four tints at −50 and −100, plus texture variants. On mosaics Camera Raw's response
+is a function of the histogram and the haze colour: neutral, blue and warm casts give
+the same luminance response, the veil takes the colour of the brightest patches
+(correlation 0.99, also when only the top stop and a half is tinted), and its size
+follows the frame's mean or median luminance (log correlation 0.97 and 0.95; the 99th
+percentile 0.92). Blob texture of 0.05 to 1.0 stop changes nothing (mean gain 1.63 to
+1.68 EV). But RAWmakase's curves are already within 0.16 to 0.42 EV RMS of Camera Raw on
+these mosaics, and a little darker, while on photos they are 6.6 ΔE00 off and too
+light. Flat-patch mosaics therefore do not reproduce what goes wrong on photos, and a
+fit to them would not help. An affine veil per channel does not describe the mosaics
+either (0.3 to 0.4 EV RMS residual): the bright end is held and everything below it is
+lifted toward it. Next: mosaics built from the failing photos' own histograms, to see
+whether the histogram or the spatial structure carries the photos' response.
+
+**6. Clarity +100 on sinusoids and steps (#468): gain depends on amplitude.** Step
+edges of 0.05, 0.2, 1 and 2 EV in one frame: Camera Raw's overshoot beside the edge is
+0.63, 0.45, 0.14 and 0.00 of the step at +100 (half that at +50), with a halo wider
+than 128 pixels; RAWmakase's is 0.21 to 0.27 at every step size, 26 to 85 pixels wide.
+Sinusoids of 0.5 to 2 EV: Camera Raw leaves periods of 32 pixels and more almost alone
+(gain 0.94 to 1.17) and boosts fine ones (1.4 to 1.8 at 8 pixels, 1.4 to 2.1 at 4),
+where RAWmakase applies 1.2 to 1.45 at every period up to 256. Camera Raw's Clarity is
+therefore a compressive detail gain (small differences boosted most, two-stop edges
+not at all), which the linear four-scale model cannot express; that is the 0.03× to
+1.3× spread by photo. Smooth sinusoids of 0.05 and 0.2 EV are degenerate (their flat
+crests are pushed to white, as flat maxima are for Shadows), so the small-amplitude
+gain needs textured gratings. No change yet: it needs a new operator.
+
+**7. Positive Dehaze halos with lens corrections (#600): refuted.** On the reporter's
+ARW at Dehaze +100, the bright rim beside strong edges (the gain 2 to 8 pixels from the
+edge less the gain 24 to 48 pixels away, on the bright side, at 1024 pixels) is +0.25 EV
+in RAWmakase with lens corrections off and +0.22 with them on, against +0.07 and +0.08
+in Camera Raw; on the dark side Camera Raw darkens the band by 1.4 to 1.5 EV more than
+its surroundings and RAWmakase by 0.7 to 0.8. Lens corrections are not the cause; the
+density filter is.
 
 ### The global rule (2026-10-28)
 
