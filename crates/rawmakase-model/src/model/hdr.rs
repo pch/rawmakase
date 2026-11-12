@@ -346,7 +346,6 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
 fn unrendered_mask_slider(a: &crate::model::masks::LocalAdjust) -> Option<&'static str> {
     [
         ("Highlights", a.highlights),
-        ("Whites", a.whites),
         ("Blacks", a.blacks),
         ("Dehaze", a.dehaze),
         ("Hue", a.hue),
@@ -672,6 +671,7 @@ mod tests {
                 shadows: 0.4,
                 texture: -0.3,
                 contrast: 0.3,
+                whites: 0.4,
                 color: [0.6, 0.4],
                 sharpness: 0.5,
                 noise: 0.4,
@@ -681,9 +681,8 @@ mod tests {
         }];
         assert!(check_recipe(&masked).is_ok());
         type Slider = fn(&mut crate::model::masks::LocalAdjust);
-        let refused: [(&str, Slider); 7] = [
+        let refused: [(&str, Slider); 6] = [
             ("Highlights", |a| a.highlights = -0.2),
-            ("Whites", |a| a.whites = 0.2),
             ("Blacks", |a| a.blacks = -0.2),
             ("Clarity", |a| a.clarity = -0.2),
             ("Dehaze", |a| a.dehaze = 0.2),

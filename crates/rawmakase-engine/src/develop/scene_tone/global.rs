@@ -427,10 +427,13 @@ impl GlobalTone {
     /// their own curves.
     pub(crate) fn apply_at(&self, p: [f32; 3], whites: f32, blacks: f32, shadows: f32) -> [f32; 3] {
         let p = self.apply_with_shadow(p, shadows);
-        let p = if whites != 0. {
-            rgb_tone(p, |y| mask_curve(0, whites, y))
-        } else {
-            p
+        let p = match (whites != 0., self.hdr.is_some()) {
+            (false, _) => p,
+            (true, false) => rgb_tone(p, |y| mask_curve(0, whites, y)),
+            (true, true) => {
+                let gain = hdr_mask_whites(whites, super::luminance(p)).exp2();
+                p.map(|v| v * gain)
+            }
         };
         if blacks != 0. {
             p.map(|y| mask_curve(1, blacks, y))
@@ -499,6 +502,58 @@ fn mask_curve(kind: usize, s: f32, y: f32) -> f32 {
         .unwrap_or(MASK_VALUES.len() - 1);
     let t = (s - position(j)) / (position(j + 1) - position(j));
     output(j) * (1. - t) + output(j + 1) * t
+}
+/// A mask's Whites (−1 to 1) in an HDR master, as a log2 gain at a pixel of luminance
+/// `y` (linear, 1 = graphics white). Camera Raw 18.7's HDR mask Whites is one shape over
+/// brightness ([`HDR_MASK_WHITES_SHAPE`]) times 0.874 of the largest change its SDR mask
+/// curve makes (SDR's peak, near three quarters of white), at every setting measured
+/// (−100, −50, +20, +40, +100): unlike SDR's, it keeps going above white
+/// (docs/records/hdr-stage1-results.md#masks).
+fn hdr_mask_whites(s: f32, y: f32) -> f32 {
+    let x = y.max(1e-9).log2();
+    let f = (x - HDR_MASK_WHITES_FIRST).clamp(0., (HDR_MASK_WHITES_SHAPE.len() - 1) as f32);
+    let i = (f as usize).min(HDR_MASK_WHITES_SHAPE.len() - 2);
+    let t = f - i as f32;
+    let shape = HDR_MASK_WHITES_SHAPE[i] * (1. - t) + HDR_MASK_WHITES_SHAPE[i + 1] * t;
+    HDR_MASK_WHITES_SCALE * sdr_mask_whites_peak(s) * shape
+}
+/// How much of SDR's largest change Camera Raw 18.7's HDR mask Whites makes at 16 times
+/// white: 0.870–0.877 over the five settings measured.
+const HDR_MASK_WHITES_SCALE: f32 = 0.874;
+/// log2 of the luminance at [`HDR_MASK_WHITES_SHAPE`]'s first sample; one per stop after.
+const HDR_MASK_WHITES_FIRST: f32 = -10.;
+/// The HDR mask Whites' effect over brightness, relative to its effect at 16 times white,
+/// from 2^-10 to 16 a stop apart: the mean of five settings', each within 0.015 of it.
+const HDR_MASK_WHITES_SHAPE: [f32; 15] = [
+    0.5356, 0.5601, 0.596, 0.6445, 0.7025, 0.7617, 0.8171, 0.8647, 0.9029, 0.9329, 0.9552, 0.9724,
+    0.9844, 0.993, 1.,
+];
+/// The largest change, as a signed log2 gain, SDR's mask Whites curve makes at `s` on
+/// outputs from 1/1024 to 1023/1024, interpolated from a table of it by slider value.
+/// That range is the one [`HDR_MASK_WHITES_SCALE`] was calibrated on (SDR's peak, +0.83
+/// stop at +100, Camera Raw's own 0.828); the curve's table reaches a slightly larger
+/// change in the deepest blacks, outside it.
+fn sdr_mask_whites_peak(s: f32) -> f32 {
+    use std::sync::OnceLock;
+    const STEPS: usize = 64;
+    static PEAKS: OnceLock<Vec<f32>> = OnceLock::new();
+    let peaks = PEAKS.get_or_init(|| {
+        (0..=2 * STEPS)
+            .map(|k| {
+                let s = k as f32 / STEPS as f32 - 1.;
+                (1..1024)
+                    .map(|i| {
+                        let y = i as f32 / 1024.;
+                        (mask_curve(0, s, y).max(1e-9) / y).log2()
+                    })
+                    .fold(0f32, |a, b| if b.abs() > a.abs() { b } else { a })
+            })
+            .collect()
+    });
+    let f = ((s.clamp(-1., 1.) + 1.) * STEPS as f32).min((2 * STEPS) as f32);
+    let i = (f as usize).min(2 * STEPS - 1);
+    let t = f - i as f32;
+    peaks[i] * (1. - t) + peaks[i + 1] * t
 }
 /// The masks' curves as values, for the GPU port.
 pub(crate) fn gpu_mask_table() -> Vec<f32> {

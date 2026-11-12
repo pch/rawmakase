@@ -465,11 +465,14 @@ Raw's SDR one ([record](records/hdr-stage1-results.md#masks)):
   Camera Raw's stops tinting there.
 - **Sharpness and Noise**: SDR's operators on the master's encoded values, as global
   sharpening is; they change detail, not tone.
+- **Whites**: Camera Raw's HDR mask Whites, a gain over brightness of one measured
+  shape (`scene_tone::global`'s `HDR_MASK_WHITES_SHAPE`) times 0.874 of the largest
+  change SDR's mask curve makes at that setting, still rising at 16 times white where
+  SDR's curve falls.
 
-Whites, Blacks, Hue and Saturation in an active mask refuse the master by name ("A
-mask's Whites …"). Camera Raw's HDR mask Whites is a flatter gain than its SDR one,
-still rising at 16 times white, and its mask Blacks −50 brightens light above white
-(+0.39 stop at 16 times); SDR's curves fall steeply above white instead. SDR's mask
+Blacks, Hue and Saturation in an active mask refuse the master by name ("A mask's
+Blacks …"). Camera Raw's HDR mask Blacks −50 brightens light above white (+0.39 stop at
+16 times) and crushes the shadows harder than its SDR one. SDR's mask
 Saturation brightens saturated colours (×1.11 in value at +50, Camera Raw's ×1.004),
 which white's clip hides in SDR: in the master it is 0.098 stop off at every level.
 Hue is the same Oklab operator, not measured. Highlights has no HDR rendering
@@ -487,7 +490,7 @@ something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
 channel's) whose last point is left of white, Clarity beyond ±50, Dehaze below −30, the
 colour mixer's Luminance beyond ±40, a darkening vignette's Highlights,
-a mask's Whites, Blacks, Hue, Saturation, Highlights or Dehaze, a mask's Clarity outside 0 to +50 with the photo's own, Defringe ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
+a mask's Blacks, Hue, Saturation, Highlights or Dehaze, a mask's Clarity outside 0 to +50 with the photo's own, Defringe ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
 which the look sets, …"; Adobe Vivid's Clarity +10 renders) or split toning, an
 HDR profile's DCP tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
