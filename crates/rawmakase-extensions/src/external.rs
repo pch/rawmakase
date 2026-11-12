@@ -23,11 +23,7 @@ pub fn program(manifest: &str, data_dir: &Path, dirs: &[PathBuf]) -> Result<Path
         .expect("one manifest, one result")?;
     let extension = &found.manifest.extension;
     let state = State::read(data_dir)?;
-    if state
-        .extensions
-        .get(&extension.id)
-        .is_some_and(|e| !e.enabled)
-    {
+    if !state.enabled(&extension.id) {
         return Err(Error::new(format!(
             "The {} extension is disabled in Preferences > Extensions",
             extension.name

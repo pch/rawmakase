@@ -1,7 +1,9 @@
 # MIDI devices
 
 MIDI control surfaces are the **MIDI** extension's, which ships with
-RAWmakase, enabled, and starts with it. Its page is in **Preferences >
+RAWmakase, disabled: enable it on its page to use a control surface, and it
+then starts with the app. Upgrading from 0.4.12 or earlier with MIDI devices
+set up enables it once, so those devices keep working. Its page is in **Preferences >
 Extensions > MIDI**; **Preferences > Automation** keeps **Scripts and AI** and
 links there. MIDI input is currently available on macOS and Windows; on Linux
 the page says so and lists no inputs. Scripts and MCP also work on Linux and
@@ -10,7 +12,8 @@ settings stay.
 
 ## Add a device
 
-1. Connect your controller and open **Preferences > Extensions > MIDI**.
+1. Connect your controller, open **Preferences > Extensions > MIDI** and
+   choose **Enable** if the extension is off.
 2. Under **Devices**, choose **Add Loupedeck+** for its supplied layout, or
    **Add Custom MIDI device** for an empty mapping. With several devices,
    **Edit** chooses the one shown under **Device settings**.

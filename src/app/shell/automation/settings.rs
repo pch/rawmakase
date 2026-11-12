@@ -90,7 +90,7 @@ impl Editor {
         form_row(ui, "", |ui| {
             hint(
                 ui,
-                "MIDI control surfaces such as the Loupedeck+ are set up on the MIDI extension's page.",
+                "MIDI control surfaces such as the Loupedeck+ are set up on the MIDI extension's page. The extension is off until you enable it there.",
             );
         });
         form_row(ui, "", |ui| {

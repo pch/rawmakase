@@ -4,10 +4,22 @@
 //! executable, where [`program_search_dirs`] looks, as ONNX Runtime is found
 //! (`rawmakase_inference::runtime::runtime_search_dirs`).
 //!
-//! A bundled extension is enabled unless `extensions.json` says otherwise,
-//! updates with the app and can't be uninstalled.
+//! A bundled extension without an entry in `extensions.json` is enabled,
+//! unless it is one of [`OFF_BY_DEFAULT`]; it updates with the app and can't
+//! be uninstalled.
 use crate::{Error, Manifest, Result};
 use std::path::{Path, PathBuf};
+
+/// Bundled extensions that stay off until the user enables them: MIDI, which
+/// only people with a control surface need. The app enables it once for
+/// someone whose earlier version had MIDI devices set up.
+pub const OFF_BY_DEFAULT: &[&str] = &["rawmakase.midi"];
+
+/// Whether extension `id` is enabled while `extensions.json` has no entry for
+/// it.
+pub fn enabled_by_default(id: &str) -> bool {
+    !OFF_BY_DEFAULT.contains(&id)
+}
 
 /// A bundled extension, found.
 #[derive(Clone, Debug, PartialEq)]

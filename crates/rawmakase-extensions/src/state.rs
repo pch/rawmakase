@@ -99,6 +99,15 @@ impl Default for Entry {
     }
 }
 impl Entry {
+    /// A new entry for extension `id`, enabled unless it is a bundled
+    /// extension that starts off ([`crate::bundled::OFF_BY_DEFAULT`]), so a
+    /// setting changed before it was ever enabled doesn't enable it.
+    pub fn new(id: &str) -> Self {
+        Self {
+            enabled: crate::bundled::enabled_by_default(id),
+            ..Self::default()
+        }
+    }
     /// Where it came from; none when unknown to this version, which keeps
     /// the source as written.
     pub fn source(&self) -> Option<Source> {
@@ -238,9 +247,19 @@ impl State {
         Ok(result)
     }
 
-    /// The entry for `id`, made when there is none.
+    /// The entry for `id`, made by [`Entry::new`] when there is none.
     pub fn entry(&mut self, id: &str) -> &mut Entry {
-        self.extensions.entry(id.to_string()).or_default()
+        self.extensions
+            .entry(id.to_string())
+            .or_insert_with(|| Entry::new(id))
+    }
+
+    /// Whether extension `id` is enabled: its entry's state, or without one
+    /// [`bundled::enabled_by_default`](crate::bundled::enabled_by_default).
+    pub fn enabled(&self, id: &str) -> bool {
+        self.extensions
+            .get(id)
+            .map_or_else(|| crate::bundled::enabled_by_default(id), |e| e.enabled)
     }
 }
 
@@ -314,6 +333,24 @@ mod tests {
         std::fs::write(&path, &before).unwrap();
         State::update(dir.path(), |_| Ok(())).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    /// MIDI starts off without an entry, and a setting changed before it
+    /// was ever enabled leaves it off; others start on.
+    #[test]
+    fn midi_is_off_until_enabled() {
+        let mut state = State::default();
+        assert!(!state.enabled("rawmakase.midi"));
+        assert!(state.enabled("rawmakase.mcp"));
+        assert!(state.enabled("dev.a.b"));
+        state
+            .entry("rawmakase.midi")
+            .settings
+            .insert("speed".into(), 2.into());
+        assert!(!state.enabled("rawmakase.midi"));
+        state.entry("rawmakase.midi").enabled = true;
+        assert!(state.enabled("rawmakase.midi"));
+        assert!(state.entry("dev.a.b").enabled);
     }
 
     #[test]
