@@ -188,6 +188,9 @@ const BAND_LUMINANCE_MEASURED: f32 = 0.4;
 /// there the SDR operator, unclipped, departs from Camera Raw's HDR effect no further
 /// than from its SDR one (docs/records/hdr-stage1-results.md#presence).
 const CLARITY_MEASURED: f32 = 0.5;
+/// The largest Dehaze (−1 to 1, either sign) the HDR master renders, the range measured
+/// on photos (docs/records/hdr-stage1-results.md#presence).
+const DEHAZE_MEASURED: f32 = 0.3;
 
 /// Refuses the HDR master of an active HDR edit that this release can render only in
 /// SDR: an adjustment, look or profile whose rendering above graphics white has not
@@ -199,7 +202,8 @@ const CLARITY_MEASURED: f32 = 0.5;
 /// the post-crop vignette (without a darkening vignette's Highlights) and grain,
 /// the master point curve, the channels' point curves and the parametric curve, and
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
-/// camera's samples, as in SDR), Clarity from 0 to +50 (the SDR operator, unclipped),
+/// camera's samples, as in SDR), Clarity from 0 to +50 and Dehaze up to ±30 (the SDR
+/// operators, unclipped),
 /// Point Color (its swatches in colour grading's HDR domain),
 /// masks whose sliders are Temp, Tint, Exposure, Contrast, Shadows, Texture, Color,
 /// Sharpness and Noise,
@@ -291,7 +295,10 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
             "Clarity outside 0 to +50",
             !(0. ..=CLARITY_MEASURED).contains(&r.effects.clarity),
         ),
-        ("Dehaze", r.effects.dehaze != 0.),
+        (
+            "Dehaze beyond ±30",
+            r.effects.dehaze.abs() > DEHAZE_MEASURED,
+        ),
         (
             "The Color Mixer's Luminance beyond ±40",
             r.hsl
@@ -324,8 +331,8 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
 /// HDR Whites and Blacks in a mask follow neither the SDR mask's curves nor the global
 /// sliders' (docs/records/hdr-stage1-results.md#masks); SDR's Saturation, which Hue
 /// shares, brightens colours Camera Raw's leaves alone, by more in the master than in
-/// SDR, where white clips it; Highlights and Dehaze have no HDR rendering globally,
-/// and a mask's Clarity isn't measured.
+/// SDR, where white clips it; Highlights has no HDR rendering globally, and a mask's
+/// Clarity and Dehaze aren't measured.
 fn unrendered_mask_slider(a: &crate::model::masks::LocalAdjust) -> Option<&'static str> {
     [
         ("Highlights", a.highlights),
@@ -662,7 +669,7 @@ mod tests {
             check_recipe(&masked).is_ok(),
             "a hidden mask renders nothing"
         );
-        let unmeasured: [fn(&mut Recipe); 9] = [
+        let unmeasured: [fn(&mut Recipe); 10] = [
             |r| r.highlights = 0.1,
             |r| r.effects.defringe = [0.3, 0.],
             |r| r.hsl[1][2] = 0.41,
@@ -673,7 +680,8 @@ mod tests {
             },
             |r| r.effects.clarity = 0.6,
             |r| r.effects.clarity = -0.1,
-            |r| r.effects.dehaze = 0.1,
+            |r| r.effects.dehaze = 0.31,
+            |r| r.effects.dehaze = -0.5,
             |r| {
                 r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
                 r.curve_saturation = 0.5;

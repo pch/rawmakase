@@ -355,7 +355,8 @@ out on these photos, 0.146 over the whole frame, in SDR as in HDR).
 
 **Decision, 2026-11-11: Clarity from 0 to +50 renders in the HDR master** by the SDR
 operator, unclipped; negative Clarity and Clarity above +50 stay refused until photos
-are captured there. SDR renders don't change: the change is in the HDR master's checks
+are captured there. Dehaze from −30 to +30 renders too, by the same measurements (since 2026-11-12). SDR
+renders don't change: the change is in the HDR master's checks
 only (`model::hdr::check_recipe`, and the GPU's HDR eligibility, which checks the
 recipe as edited and the resolved one without adding a look's settings again), which
 SDR renders never call. The GPU's HDR preview renders Clarity as the CPU
@@ -1244,8 +1245,8 @@ Decision, 2026-11-10: masks render in the HDR master with Temp, Tint, Exposure,
 Shadows and Texture; any other slider in an active mask refuses it by name.
 Decision, 2026-11-11: Contrast, Color, Sharpness and Noise render too (below). Contrast,
 Whites, Blacks, Hue, Saturation and Color are operators of their own, fitted on SDR
-renders, and Sharpness and Noise work on the SDR rendition's detail; Highlights and
-Dehaze have no HDR rendering globally, and a mask's Clarity isn't measured. A masked master renders on the CPU;
+renders, and Sharpness and Noise work on the SDR rendition's detail; Highlights has no
+HDR rendering globally, and a mask's Clarity and Dehaze aren't measured. A masked master renders on the CPU;
 the GPU's HDR preview doesn't port masks yet.
 
 **Camera Raw (2026-11-11).** Camera Raw 18.7 rendered the Color Grading probe's patches
@@ -1353,7 +1354,7 @@ above white.
   never change the master, which renders with them; the SDR rendition doesn't render
   them until that tone map is matched.
 - **Unmeasured adjustments refuse the HDR master, not the edit.** An imported or
-  edited HDR edit with Dehaze, a look or Whites above +50 keeps HDR on and stays
+  edited HDR edit with Dehaze beyond ±30, a look or Whites above +50 keeps HDR on and stays
   valid; its SDR rendition renders it, and the master (HDR export) is refused with
   the reason, shown in Develop under the HDR switch. Refusing the edit itself would
   make Develop's ordinary sliders fail to render whenever HDR is on.
@@ -1446,7 +1447,7 @@ above white.
 - Masks: a mask's Whites, Blacks, Hue and Saturation (one Camera Raw setting each,
   unlike SDR's operators above white), Temp's strength (SDR's), Shadows' HDR error
   (twice SDR's on the patches), and masks on the GPU's HDR preview ([Masks](#masks)).
-- Negative Clarity, Clarity above +50, and Dehaze in HDR ([Presence](#presence)).
+- Negative Clarity, Clarity above +50, and Dehaze beyond ±30 in HDR ([Presence](#presence)).
 - Positive Shadows lifts small speculars in dark surroundings above Camera Raw's peak
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
@@ -1497,7 +1498,7 @@ above white.
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
   ([Vignette and grain](#vignette-and-grain)); masks with Temp,
-  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from 0 to +50 ([Presence](#presence)).
+  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from 0 to +50 and Dehaze up to ±30 ([Presence](#presence)).
   Open: Whites above +50, Highlights, the colour
   mixer's Luminance beyond ±40, Defringe ([Defringe](#defringe), refused again 2026-11-11), looks that set Clarity above +50 or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
   with them), 52552 grouping (library only,
