@@ -1148,8 +1148,13 @@ impl Editor {
                             request.generator.name()
                         ));
                     } else {
+                        // The tool is checked here too, not only by each
+                        // pass's cleanup: a setup finishing in the pass the
+                        // user left Mask in is handled before the cleanup.
+                        let on_mask = self.view.tool == crate::app::develop::state::Tool::Mask;
                         match then {
                             Resume::Nothing => {}
+                            Resume::Aim if !on_mask => {}
                             Resume::Aim => self.begin_aiming(request),
                             Resume::Select if !request.generator.takes_none() => {
                                 self.begin_aiming(request);

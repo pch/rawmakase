@@ -974,3 +974,47 @@ fn switching_tools_while_a_setup_runs_drops_the_aiming_it_would_resume() {
     e.begin_refining(0, 0);
     assert!(e.selection.prompting.is_some());
 }
+
+#[test]
+fn a_setup_finishing_before_the_pass_that_would_drop_its_aiming_leaves_the_tool() {
+    let mut f = fixture(0.76);
+    let folder = f.folder.clone();
+    let e = &mut f.editor;
+    // Aiming with a generator not set up here: the first click asks for it.
+    e.begin_aiming(tile(e, "Setup"));
+    e.prompt_click([0.5, 0.5], true);
+    pump(e, "the click", settled);
+    assert!(matches!(
+        e.selection.prompt,
+        Some(Prompt::Setup {
+            then: Resume::Aim,
+            ..
+        })
+    ));
+    e.setup_generator(&offer(e, "Setup"));
+    pump(e, "the setup to start", |e| {
+        matches!(
+            e.extensions.mask_setup(ID, "setup"),
+            Some(mask_generator::Setup::Running { done: Some(_), .. })
+        )
+    });
+    // The user goes to Crop, and the setup's answer is handled before any
+    // pass's cleanup has seen the switch.
+    let tool = crate::app::develop::state::Tool::Crop;
+    e.view.toggle(tool);
+    let sent = e.extensions.masks_sent().len();
+    std::fs::write(folder.join("finish-setup"), b"").unwrap();
+    pump(e, "the setup to finish", |e| {
+        e.extensions.mask_setup(ID, "setup").is_none() && e.selection.prompt.is_none()
+    });
+    assert_eq!(e.view.tool, tool);
+    assert!(e.selection.prompting.is_none());
+    // The pass after changes nothing either.
+    let ctx = e.context.clone();
+    e.background(&ctx);
+    assert_eq!(e.view.tool, tool);
+    assert!(e.selection.prompting.is_none());
+    assert_eq!(e.extensions.masks_sent().len(), sent, "nothing sent");
+    assert!(e.document.edit.recipe().masks.is_empty());
+    assert_eq!(e.messages.line(), "the Example model installed");
+}
