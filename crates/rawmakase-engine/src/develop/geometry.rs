@@ -764,7 +764,7 @@ mod constrain_crop_tests {
             // A recipe that stores the constrained crop renders it unchanged.
             let stored = Recipe {
                 crop: g.crop(),
-                ..constrained.clone()
+                ..constrained
             };
             assert_eq!(Geometry::new(&im, &stored, 0).crop(), g.crop(), "{name}");
         }

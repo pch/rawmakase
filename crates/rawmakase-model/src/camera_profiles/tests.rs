@@ -33,7 +33,7 @@ fn a7ii_native_neutral_matches_adobe_as_shot() {
         }
         let gains = p.white_balance(actual[0], actual[1], &m).unwrap();
         assert!(gains.iter().all(|v| (v - 1.).abs() < 0.0005));
-        let mut dng = m.clone();
+        let mut dng = m;
         dng.baseline_exposure = Some(0.35);
         dng.dng_neutral_calibration = Some(crate::camera_data::NeutralCalibration {
             gains: [1.01, 1., calibration_blue],

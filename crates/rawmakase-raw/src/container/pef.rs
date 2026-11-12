@@ -474,7 +474,7 @@ pub(crate) mod tests {
             for end in (0..file.len()).step_by(3) {
                 let _ = decode(&file[..end]);
             }
-            let mut noisy = file.clone();
+            let mut noisy = file;
             for (i, b) in noisy.iter_mut().enumerate().skip(8) {
                 *b ^= (i * 7919 % 251) as u8;
             }

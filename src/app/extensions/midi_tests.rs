@@ -685,14 +685,9 @@ fn midi_is_off_unless_devices_were_set_up() {
 /// first, as `make check` does.
 #[test]
 fn the_built_program_runs_its_page() {
-    let exe = std::env::current_exe().unwrap();
-    let target = exe.parent().and_then(Path::parent).unwrap().to_path_buf();
-    let name = rawmakase_extensions::bundled::program_name("rawmakase-midi");
-    assert!(
-        target.join(&name).is_file(),
-        "{} is missing: build it with cargo build -p rawmakase-midi",
-        target.join(&name).display()
-    );
+    let program = crate::app::testing::built_program("rawmakase-midi")
+        .expect("rawmakase-midi is missing: build it with cargo build -p rawmakase-midi");
+    let target = program.parent().unwrap().to_path_buf();
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");
     let (mut e, _) = editor(dir.path());

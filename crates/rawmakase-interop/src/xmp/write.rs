@@ -259,12 +259,12 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
     if !r.hdr.is_default() {
         s.0.extend(hdr_settings(r).0);
     }
-    for i in 0..4 {
-        s.put(crs::PARAMETRIC[i], r.effects.parametric[i], 0, true);
+    for (slider, value) in crs::PARAMETRIC.iter().zip(r.effects.parametric) {
+        s.put(*slider, value, 0, true);
     }
     s.put(crs::CURVE_REFINE_SATURATION, r.curve_saturation, 0, false);
-    for i in 0..3 {
-        s.put(crs::PARAMETRIC_SPLITS[i], r.effects.splits[i], 0, false);
+    for (slider, value) in crs::PARAMETRIC_SPLITS.iter().zip(r.effects.splits) {
+        s.put(*slider, value, 0, false);
     }
     s.put(crs::SHARPNESS, r.sharpening, 0, false);
     s.put(crs::SHARPEN_RADIUS, r.sharpening_radius, 1, true);
@@ -296,10 +296,12 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
         0,
         false,
     );
-    for j in 0..3 {
-        for i in 0..8 {
-            s.put(crs::HSL[i][j], r.hsl[i][j], 0, true);
-        }
+    // Hue of every band, then Saturation, then Luminance, as Lightroom orders them.
+    let by_property = (0..3).flat_map(|j| {
+        (crs::HSL.iter().zip(&r.hsl)).map(move |(sliders, band)| (sliders[j], band[j]))
+    });
+    for (slider, value) in by_property {
+        s.put(slider, value, 0, true);
     }
     // Black & white by Treatment or by a black & white profile, as Lightroom writes it.
     let black_white = r.treatment() == crate::model::recipe::Treatment::BlackWhite;
@@ -308,8 +310,8 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
         if black_white { "True" } else { "False" },
     );
     if black_white {
-        for i in 0..8 {
-            s.put(crs::GRAY_MIXER[i], r.effects.gray_mix[i], 0, true);
+        for (slider, value) in crs::GRAY_MIXER.iter().zip(r.effects.gray_mix) {
+            s.put(*slider, value, 0, true);
         }
     }
     // The shadows are grading[0], the highlights grading[2].
@@ -341,9 +343,9 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
         0,
         true,
     );
-    for i in 0..3 {
-        s.put(crs::CALIBRATION[i][0], r.effects.calibration[i][0], 0, true);
-        s.put(crs::CALIBRATION[i][1], r.effects.calibration[i][1], 0, true);
+    for (sliders, primary) in crs::CALIBRATION.iter().zip(r.effects.calibration) {
+        s.put(sliders[0], primary[0], 0, true);
+        s.put(sliders[1], primary[1], 0, true);
     }
     s.put(crs::SHADOW_TINT, r.effects.shadow_tint, 0, true);
     s.put(crs::GRAIN_AMOUNT, r.effects.grain, 0, false);

@@ -658,25 +658,19 @@ impl Preset {
                 v.get("ColorVariance").map(String::as_str),
             )?;
         }
-        for i in 0..8 {
-            for j in 0..3 {
-                settings.assign(crs::HSL[i][j], &mut r.hsl[i][j], -1., 1.)?;
+        let bands = crs::HSL.iter().zip(&mut r.hsl);
+        for ((sliders, band), (gray_slider, gray)) in
+            bands.zip(crs::GRAY_MIXER.iter().zip(&mut r.effects.gray_mix))
+        {
+            for (slider, value) in sliders.iter().zip(band) {
+                settings.assign(*slider, value, -1., 1.)?;
             }
-            settings.assign(crs::GRAY_MIXER[i], &mut r.effects.gray_mix[i], -1., 1.)?;
+            settings.assign(*gray_slider, gray, -1., 1.)?;
         }
-        for i in 0..3 {
-            settings.assign(
-                crs::CALIBRATION[i][0],
-                &mut r.effects.calibration[i][0],
-                -1.,
-                1.,
-            )?;
-            settings.assign(
-                crs::CALIBRATION[i][1],
-                &mut r.effects.calibration[i][1],
-                -1.,
-                1.,
-            )?;
+        for (sliders, primary) in crs::CALIBRATION.iter().zip(&mut r.effects.calibration) {
+            for (slider, value) in sliders.iter().zip(primary) {
+                settings.assign(*slider, value, -1., 1.)?;
+            }
         }
         settings.assign(crs::SHADOW_TINT, &mut r.effects.shadow_tint, -1., 1.)?;
         Ok(())
@@ -684,8 +678,8 @@ impl Preset {
 
     fn apply_curves(&self, settings: &mut Settings<'_>, r: &mut Recipe) -> Result<()> {
         let v = settings.values;
-        for i in 0..4 {
-            settings.assign(crs::PARAMETRIC[i], &mut r.effects.parametric[i], -1., 1.)?;
+        for (slider, value) in crs::PARAMETRIC.iter().zip(&mut r.effects.parametric) {
+            settings.assign(*slider, value, -1., 1.)?;
         }
         settings.assign(
             crs::CURVE_REFINE_SATURATION,
@@ -693,13 +687,8 @@ impl Preset {
             0.,
             2.,
         )?;
-        for i in 0..3 {
-            settings.assign(
-                crs::PARAMETRIC_SPLITS[i],
-                &mut r.effects.splits[i],
-                0.01,
-                0.99,
-            )?;
+        for (slider, value) in crs::PARAMETRIC_SPLITS.iter().zip(&mut r.effects.splits) {
+            settings.assign(*slider, value, 0.01, 0.99)?;
         }
         if let Some(c) = self
             .curves
@@ -785,13 +774,11 @@ impl Preset {
             r.effects.global_grade = [0.; 3];
         }
         settings.assign(crs::COLOR_GRADE_BLENDING, &mut r.effects.blending, 0., 1.)?;
-        for i in 0..3 {
-            settings.assign(
-                crs::COLOR_GRADE_GLOBAL[i],
-                &mut r.effects.global_grade[i],
-                if i == 2 { -1. } else { 0. },
-                1.,
-            )?;
+        let global = crs::COLOR_GRADE_GLOBAL
+            .iter()
+            .zip(&mut r.effects.global_grade);
+        for (i, (slider, value)) in global.enumerate() {
+            settings.assign(*slider, value, if i == 2 { -1. } else { 0. }, 1.)?;
         }
         Ok(())
     }
