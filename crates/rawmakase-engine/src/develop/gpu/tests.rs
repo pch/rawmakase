@@ -2073,7 +2073,7 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
     // Band Luminance, by each channel's level, with and without other changes.
     let mut luminance = base.clone();
     luminance.hsl[1][2] = 0.4;
-    luminance.hsl[5][2] = -0.4;
+    luminance.hsl[5][2] = -1.;
     let mut luminance_mixed = bands.clone();
     luminance_mixed.hsl[1][2] = -0.35;
     luminance_mixed.saturation = -0.8;

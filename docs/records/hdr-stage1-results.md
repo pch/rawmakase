@@ -1200,7 +1200,26 @@ before the rule and isn't re-scored by it.
 
 Every band at −100 was captured on 2026-11-12 on the twelve photos: below white HDR
 0.073 / 0.481 against SDR's 0.070 / 0.492, ΔE_ITP added +4.6 against +4.6, but above
-white a median of 0.079 against SDR's 0.070 below it. Beyond −40 stays refused.
+white a median of 0.079 against SDR's 0.070 below it.
+
+Above white the master's darkening was about a tenth too weak on bright colours (Nikon
+Z 8 and Panasonic S1M2ES blocks a stop above white aside, which it over-darkened):
+scaling the effect above white by 1.1 on the reduced blocks passed, while fading it by
+the colour's brightest channel instead of by channel (0.094 / 0.610) or ending the fade
+later (0.081 / 0.397) did not. **Decision, 2026-11-12: negative band Luminance renders
+down to −100**, its change growing up to 1.2 times as the colour's brightest channel goes
+from 0.5 to white (`color_mixer::HDR_LUMINANCE_DARKEN`; 0.1, 0.2 and 0.3 tried, 0.2 and
+0.3 pass, 0.2 the smaller change), on the CPU and the GPU's HDR preview alike:
+
+| Edit | HDR below white | SDR below white | HDR above white | ΔE_ITP added, HDR / SDR |
+| --- | --- | --- | --- | --- |
+| Every band −100 | 0.073 / 0.480 | 0.070 / 0.492 | 0.061 / 0.332 | +4.7 / +4.6 |
+| The mixed edit (±40) | 0.042 / 0.183 | 0.039 / 0.132 | 0.054 / 0.110 | +1.8 / +1.3 |
+
+The mixed edit's error above white falls from 0.056 / 0.141; its p95 below white stays
+past SDR's, as before. Positive Luminance above +40 stays refused. SDR renders don't
+change (48 of 48 renders of 24 photos at every band −80, in SDR and as an HDR edit's SDR
+rendition, bit-identical to `main`'s).
 
 ### Vignette and grain
 
@@ -1742,8 +1761,8 @@ photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
 
 - Whites above +50 (not a gain of one photo level: [Whites](#whites)) and Highlights
   in HDR (a rule trained on HDR targets:
-  [Highlights and Shadows](#highlights-and-shadows)); the colour mixer's Luminance beyond
-  ±40, where Camera Raw's HDR effect strengthens with brightness and the SDR grids don't
+  [Highlights and Shadows](#highlights-and-shadows)); the colour mixer's Luminance above
+  +40, where Camera Raw's HDR effect strengthens with brightness and the SDR grids don't
   ([Band Luminance](#band-luminance)); Point Color on photos and on the GPU's HDR preview
   ([Point Color](#point-color)).
 - Defringe in HDR: Camera Raw's HDR Defringe removes less than its SDR one below
@@ -1805,7 +1824,7 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   ([Looks](#looks)); Contrast ([Contrast](#contrast)); the master point curve, the
   parametric curve, the channels' curves and Levels ([Tone curves](#tone-curves)); Texture ([Presence](#presence)); Saturation, Vibrance, the
   colour mixer's Hue and Saturation, Calibration and Black & White
-  ([Colour stage](#colour-stage)); band Luminance up to ±40
+  ([Colour stage](#colour-stage)); band Luminance from −100 to +40
   ([Band Luminance](#band-luminance)); Whites up to +50 ([Whites](#whites)); Shadows
   ([Highlights and Shadows](#highlights-and-shadows)); looks with RGB tables, B&W,
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
