@@ -70,6 +70,69 @@ fn frame(e: &mut Editor, events: Vec<egui::Event>) {
     e.finish_edit_frame(edit, &ctx);
 }
 
+/// One Develop frame as the window draws it, in order: the shortcuts, then
+/// the photo, whose overlay takes the pointer. The photo fills the 200 by
+/// 200 window's middle; `photo` gives it a texture to draw.
+fn photo_frame(e: &mut Editor, events: Vec<egui::Event>) {
+    let ctx = e.context.clone();
+    if e.preview.texture.is_none() {
+        e.preview.texture = Some(
+            ctx.load_texture(
+                "photo",
+                egui::ColorImage::filled([32, 24], egui::Color32::GRAY),
+                egui::TextureOptions::LINEAR,
+            )
+            .into(),
+        );
+    }
+    let edit = e.begin_develop_frame();
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::splat(200.),
+            )),
+            events,
+            ..Default::default()
+        },
+        |ui| {
+            e.develop_shortcuts(ui.ctx());
+            e.viewport_ui(ui);
+        },
+    );
+    output.textures_delta.clear();
+    e.finish_edit_frame(edit, &ctx);
+}
+
+/// A press and a release of the primary button at `at`, each in a frame of
+/// its own, the release with `with` beside it.
+fn click_at(e: &mut Editor, at: egui::Pos2, with: Vec<egui::Event>) {
+    let button = |pressed| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    photo_frame(e, vec![egui::Event::PointerMoved(at), button(true)]);
+    let mut release = with;
+    release.push(button(false));
+    photo_frame(e, release);
+}
+
+/// A drag of the primary button from `from` to `to`, a frame for each step.
+fn drag_on(e: &mut Editor, from: egui::Pos2, to: egui::Pos2) {
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    photo_frame(e, vec![egui::Event::PointerMoved(from), button(from, true)]);
+    photo_frame(e, vec![egui::Event::PointerMoved(from.lerp(to, 0.5))]);
+    photo_frame(e, vec![egui::Event::PointerMoved(to)]);
+    photo_frame(e, vec![button(to, false)]);
+}
+
 fn key(key: egui::Key) -> egui::Event {
     egui::Event::Key {
         key,
@@ -366,4 +429,52 @@ fn the_host_sends_only_valid_input_of_the_declared_kind() {
     }
     nothing_sent(&e);
     assert!(!e.extensions.get(ID).unwrap().running(), "nothing started");
+}
+
+#[test]
+fn another_command_running_holds_back_only_a_prompt() {
+    let f = fixture(&["a.png"]);
+    let mut e = f.editor;
+    open(&mut e, &f.photos[0]);
+    photo_frame(&mut e, vec![]);
+    e.run_extension_command(&format!("{ID}/hang"), RunBy::Button)
+        .unwrap();
+    assert_eq!(e.extensions.commands_in_flight(ID), ["hang"]);
+    let middle = egui::Pos2::new(100., 100.);
+    // A point, through the pointer: sent at once, to wait behind `hang` in
+    // the program as any command does.
+    begin(&mut e, "pick-point");
+    click_at(&mut e, middle, vec![]);
+    assert!(e.command_input().is_none());
+    assert_eq!(e.extensions.commands_in_flight(ID), ["hang", "pick-point"]);
+    // Points, sent at Enter.
+    begin(&mut e, "pick-points");
+    click_at(&mut e, middle, vec![]);
+    assert_eq!(e.command_input().unwrap().clicks(), 1);
+    photo_frame(&mut e, vec![key(egui::Key::Enter)]);
+    assert!(e.command_input().is_none());
+    assert_eq!(
+        e.extensions.commands_in_flight(ID),
+        ["hang", "pick-point", "pick-points"]
+    );
+    // A box, at the end of its drag.
+    begin(&mut e, "pick-box");
+    drag_on(
+        &mut e,
+        egui::Pos2::new(60., 70.),
+        egui::Pos2::new(140., 130.),
+    );
+    assert!(e.command_input().is_none());
+    assert_eq!(
+        e.extensions.commands_in_flight(ID),
+        ["hang", "pick-box", "pick-point", "pick-points"]
+    );
+    // A prompt waits: its clicks are ignored while a command runs.
+    begin(&mut e, "pick-prompt");
+    click_at(&mut e, middle, vec![]);
+    assert_eq!(e.command_input().unwrap().clicks(), 0);
+    assert_eq!(
+        e.extensions.commands_in_flight(ID),
+        ["hang", "pick-box", "pick-point", "pick-points"]
+    );
 }

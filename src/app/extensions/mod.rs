@@ -1465,6 +1465,26 @@ impl Host {
             })
     }
 
+    /// The commands of extension `id` sent and not answered, or waiting for
+    /// its handshake, for tests.
+    #[cfg(test)]
+    pub(in crate::app) fn commands_in_flight(&self, id: &str) -> Vec<String> {
+        let Some(run) = self.get(id).and_then(|e| e.run.as_ref()) else {
+            return Vec::new();
+        };
+        let mut commands: Vec<String> = run
+            .requests
+            .values()
+            .chain(run.queued.iter().map(|q| &q.pending))
+            .filter_map(|p| match p {
+                Pending::Command { command, .. } => Some(command.clone()),
+                _ => None,
+            })
+            .collect();
+        commands.sort();
+        commands
+    }
+
     /// Notes that command `command` of extension `id` waits for its target,
     /// read on a worker, to be sent with `input`; the ticket that read
     /// reports with ([`Host::finish_read`]), and its cancel.
