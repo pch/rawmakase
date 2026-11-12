@@ -41,6 +41,11 @@ rawmakase-decode never rawmakase-catalog rawmakase-export rawmakase-inference ra
 rawmakase-export never rawmakase-catalog rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-ai-masks
 # Inference runs the ONNX Runtime and AI Denoise's model; the selection models and
 # the remote worker sit on it, never the other way.
+# The app runs Select Subject, Sky and Background only through the bundled AI
+# masks extension's program: it never links the selection models, the remote
+# worker's client or that program's crate, so saved masks render, and the app
+# builds, without them.
+rawmakase never rawmakase-selection rawmakase-remote rawmakase-ai-masks
 rawmakase-inference never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-selection rawmakase-remote rawmakase-fs rawmakase-mcp rawmakase-extension-protocol rawmakase-extension rawmakase-extensions cargo-rawmakase rawmakase-model-install rawmakase-midi rawmakase-ai-masks
 # The selection models take pixels and return coverage; they know no edit, catalog,
 # renderer, decoder or extension host. The remote worker sits on them.

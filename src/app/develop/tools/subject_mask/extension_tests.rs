@@ -142,7 +142,7 @@ fn tile(e: &Editor, name: &str) -> Request {
         .unwrap_or_else(|| panic!("no tile {name}"));
     assert_eq!(why, None);
     Request {
-        generator: Generator::Extension(offer),
+        generator: offer,
         target: Target::NewMask,
     }
 }
@@ -226,10 +226,12 @@ const fn at(x: f32, y: f32, positive: bool) -> Click {
 fn an_extensions_tiles_make_masks_as_select_subject_does() {
     let mut f = fixture(0.12);
     let e = &mut f.editor;
+    // Beside the bundled AI masks' tiles, which this host can't run.
     let names: Vec<String> = e
         .extensions
         .mask_tiles()
         .into_iter()
+        .filter(|(o, _)| o.extension == ID)
         .map(|(o, _)| o.name)
         .collect();
     assert!(names.starts_with(&["Blob".into(), "Not Blob".into(), "Flat".into()]));
@@ -282,7 +284,7 @@ fn an_extensions_tiles_make_masks_as_select_subject_does() {
     assert_eq!((masks.len(), masks[1].name.as_str()), (2, "Not Blob"));
     assert!(masks[1].components[0].invert && !masks[1].invert);
     let not_blob = raster(e, 1, 0);
-    let Ok(Generator::Extension(offer)) = e.raster_generator(&not_blob, true) else {
+    let Ok(offer) = e.raster_generator(&not_blob, true) else {
         panic!("its generator")
     };
     assert_eq!(
@@ -530,9 +532,7 @@ fn a_generator_set_up_then_disabled_keeps_its_saved_masks() {
     let e = &mut f.editor;
     // `needs_setup` shows the card with what it needs.
     let setup = tile(e, "Setup");
-    let Generator::Extension(offer) = setup.generator.clone() else {
-        panic!()
-    };
+    let offer = setup.generator.clone();
     let guard = Guard::of(e.document.edit.recipe(), setup.target);
     e.request_selection(setup.clone());
     pump(e, "Setup", settled);
@@ -586,7 +586,12 @@ fn a_generator_set_up_then_disabled_keeps_its_saved_masks() {
     e.set_extension_enabled(ID, false);
     assert!(settled(e) && !busy_row(e));
     assert!(e.selection.prompting.is_none());
-    assert!(e.extensions.mask_tiles().is_empty());
+    assert!(
+        e.extensions
+            .mask_tiles()
+            .iter()
+            .all(|(o, _)| o.extension != ID)
+    );
     release(&folder);
     assert_eq!(e.document.edit.recipe().masks.len(), 1);
     draw_masking_panel(e);
@@ -695,7 +700,7 @@ fn answered(e: &Editor) -> bool {
     matches!(
         &e.selection.pending,
         Some(Pending {
-            call: Some(Call { sent: None, .. }),
+            call: Call { sent: None, .. },
             ..
         })
     )
@@ -771,10 +776,7 @@ fn an_extension_stopped_in_any_phase_of_a_request_voids_it() {
 }
 
 fn offer(e: &Editor, name: &str) -> Offer {
-    match tile(e, name).generator {
-        Generator::Extension(offer) => offer,
-        Generator::Feature(_) => unreachable!(),
-    }
+    tile(e, name).generator
 }
 
 #[test]

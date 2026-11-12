@@ -143,6 +143,41 @@ mod tests {
         assert!(Pack::Sky.needs_setup().bytes > 200_000_000);
     }
 
+    /// What the app's install from before Sky had its own model holds: its
+    /// receipt is the one this extension checks, so it counts as installed
+    /// without fetching anything, and it doesn't count as Sky's.
+    #[test]
+    fn the_apps_receipts_from_before_are_the_ones_checked() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("subject");
+        fake_install(&dir, Pack::Subject, true);
+        assert!(is_installed(&dir, &Pack::Subject.files()));
+        assert!(!is_installed(&dir, &Pack::Sky.files()));
+        let receipt_of_the_old_install = [
+            "aacf1f7137bb6fffcf6bf166abcfabe28f57a76059254f3fb611c4a64a208119 467440 vision_encoder.onnx",
+            "260fd1f0a34e72a3dc79a739e563b4facc0ba75504818b433a1f808e66637456 162476288 vision_encoder.onnx_data",
+            "079c59b261f723ff5c6a125e69b0170a957b21c58738c28d2b0394ecd0587d7f 213114 prompt_encoder_mask_decoder.onnx",
+            "f9e59a584ab8ced21fa812c211bc01084204db1c9e92a5ef4fb3a49972b4e864 20958208 prompt_encoder_mask_decoder.onnx_data",
+            "afd9f02d864302d690356fd4bfcb2feed2397a1190bf46a7306cb430464d734a 86559030 detr-panoptic-fp16.onnx",
+            "",
+        ]
+        .join("\n");
+        assert_eq!(receipt(&Pack::Subject.files()), receipt_of_the_old_install);
+        let sky = root.path().join("sky");
+        fake_install(&sky, Pack::Sky, true);
+        assert!(is_installed(&sky, &Pack::Sky.files()));
+        assert!(!is_installed(&sky, &Pack::Subject.files()));
+        // The right sizes are not enough without the installer's receipt, nor
+        // with a file cut short.
+        std::fs::remove_file(sky.join(RECEIPT)).unwrap();
+        assert!(!is_installed(&sky, &Pack::Sky.files()));
+        std::fs::File::create(dir.join(Pack::Subject.files()[1].name))
+            .unwrap()
+            .set_len(5)
+            .unwrap();
+        assert!(!is_installed(&dir, &Pack::Subject.files()));
+    }
+
     /// A pack in the folder with its receipt is installed where it is, and
     /// setting it up downloads nothing; one without its receipt, or with a
     /// receipt for other files, isn't, and setting it up fetches it into that

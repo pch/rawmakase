@@ -1638,6 +1638,8 @@ fn the_run_button_applies_a_proposal_for_the_open_photo() {
     let a = f.photos[0].clone();
     open(e, &a);
     select(e, &[a.0]);
+    // The example's page, not the first extension's by name (AI Masks).
+    e.extension_page.select(ID);
     let tree = extensions_page(e);
     // Brighten is the example's first command, so its Run the topmost.
     click_first(e, &tree, "Run");

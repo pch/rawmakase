@@ -1,8 +1,7 @@
-//! Installing and removing the model packs (Select Subject's and Sky's, AI Denoise's)
-//! on their own threads, only on the user's choice. What an install does is in
-//! [`crate::model_install`]. Each feature keeps its own [`Installer`]: Select
-//! Subject's and Sky's in [`Selection`](super::tools::subject_mask::Selection),
-//! AI Denoise's on the editor beside its service.
+//! Installing and removing AI Denoise's model pack on its own thread, only on
+//! the user's choice. What an install does is in [`crate::model_install`]. The
+//! [`Installer`] is kept on the editor beside the AI Denoise service. Subject's
+//! and Sky's models are the AI masks extension's to install.
 use crate::app::task::Stopping;
 use crate::app::worker::Event;
 use crate::model_install::{InstallError, Pack, Progress};
@@ -13,17 +12,8 @@ use std::time::Duration;
 
 impl crate::app::Editor {
     /// The installer of `pack`, wherever the feature using it keeps it.
-    pub(in crate::app) fn installer(&self, pack: Pack) -> &Installer {
-        match pack {
-            Pack::Subject => &self.selection.models.subject,
-            Pack::Sky => &self.selection.models.sky,
-            Pack::Denoise => &self.ai_denoise_model,
-        }
-    }
     pub(in crate::app) fn installer_mut(&mut self, pack: Pack) -> &mut Installer {
         match pack {
-            Pack::Subject => &mut self.selection.models.subject,
-            Pack::Sky => &mut self.selection.models.sky,
             Pack::Denoise => &mut self.ai_denoise_model,
         }
     }
@@ -184,7 +174,7 @@ mod tests {
 
     #[test]
     fn a_failed_install_says_why_until_the_next_one() {
-        let mut installer = Installer::new(Pack::Subject);
+        let mut installer = Installer::new(Pack::Denoise);
         installer.finished(&Err(InstallError::Failed(
             "could not download the model: timed out".into(),
         )));

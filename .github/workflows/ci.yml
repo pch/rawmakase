@@ -97,8 +97,9 @@ jobs:
           cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # The app's tests run `rawmakase mcp`, which runs this program from
-      # beside it in target/debug, and the MIDI program found there.
-      - run: cargo build --locked -p rawmakase-mcp -p rawmakase-midi
+      # beside it in target/debug, and the MIDI and AI masks programs found
+      # there.
+      - run: cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
       # exiftool reads exported metadata back as an independent reader; Arch
       # installs it in vendor_perl, outside PATH.
@@ -131,10 +132,11 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
       # The app's tests run `rawmakase mcp`, which runs this program from
-      # beside it in target/debug, and the MIDI program found there.
+      # beside it in target/debug, and the MIDI and AI masks programs found
+      # there.
       - name: Test
         run: |
-          cargo build --locked -p rawmakase-mcp -p rawmakase-midi
+          cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
           cargo test --locked --workspace
 
   check-windows:
@@ -179,7 +181,7 @@ jobs:
       # beside it in target/debug, and the MIDI program found there.
       - if: steps.source.outputs.windows == 'true'
         run: |
-          cargo build --locked -p rawmakase-mcp -p rawmakase-midi
+          cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
           cargo test --locked --workspace
 
   # Without this job the macOS-only code is compiled for the first time by
@@ -207,7 +209,7 @@ jobs:
       # The app's tests run `rawmakase mcp`, which runs rawmakase-mcp from
       # beside it in target/debug, and the MIDI program found there.
       - run: |
-          cargo build --locked -p rawmakase-mcp -p rawmakase-midi
+          cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
           cargo test --locked --workspace
 
   package:

@@ -1,21 +1,137 @@
+//! Select Subject, Sky and Background through the bundled AI masks extension
+//! (`rawmakase.ai-masks`), whose program is this test binary started again
+//! with [`PROGRAM`] set: the real extension, its models a stand-in
+//! (`rawmakase_ai_masks::fake`) that answers from the photo's pixels and the
+//! clicks, so every case runs with no model, runtime or remote worker
+//! present.
+//!
+//! The state machine's own cases start a request and hand it a result
+//! (`begin`, `finish`), and start no program. The pins of what each gesture
+//! asks (the request the extension was sent) and what the edit becomes run
+//! through the program; each test starts one and runs its cases in turn.
 use super::*;
 use crate::app::Editor;
+use crate::app::extensions::Host;
 use crate::app::extensions::viewer_input::Collector;
 use crate::camera_data::{CameraImage, Metadata};
 use crate::storage::bitmaps::Bitmap;
 use crate::storage::mask_assets;
 use eframe::egui;
 use rawmakase_cancel::Cancel;
+use rawmakase_extensions::protocol::message::NeedsSetup;
+use rawmakase_extensions::protocol::viewer::{Click, MAX_CLICKS};
+use rawmakase_extensions::session::Launch;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-/// An editor with a decoded photo in a catalog, as Develop has one, and a raster of
-/// the kind a selection would register (distinct per `seed`).
+/// Set in the environment of the program the tests start.
+const PROGRAM: &str = "RAWMAKASE_AI_MASKS_TEST";
+/// The program's remote worker, when it has one.
+const ENDPOINT: &str = "RAWMAKASE_AI_MASKS_TEST_ENDPOINT";
+/// The app's local data folder, as the program sees it.
+const LOCAL: &str = "RAWMAKASE_AI_MASKS_TEST_LOCAL";
+/// Where the program writes the runtime variables it was started with.
+const REPORT: &str = "RAWMAKASE_AI_MASKS_TEST_REPORT";
+/// Set when the program runs the real models.
+const REAL: &str = "RAWMAKASE_AI_MASKS_TEST_REAL";
+const ID: &str = rawmakase_ai_masks::ID;
+
+/// The AI masks extension's program, when this binary is started as it,
+/// with the stand-in models and an install that writes their files at once;
+/// a test that does nothing otherwise.
+#[test]
+fn ai_masks_program() {
+    if std::env::var_os(PROGRAM).is_none() {
+        return;
+    }
+    let var = |name| std::env::var_os(name).unwrap_or_default();
+    if let Some(report) = std::env::var_os(REPORT) {
+        let runtime = rawmakase_inference::runtime::HOST_RUNTIME_DIRS;
+        let text = format!(
+            "{:?}\n{:?}\n",
+            std::env::var_os(runtime),
+            std::env::var_os(rawmakase_inference::RUNTIME_ENV)
+        );
+        std::fs::write(report, text).unwrap();
+    }
+    let engine: Box<dyn rawmakase_ai_masks::Engine> = match std::env::var_os(REAL) {
+        Some(_) => Box::new(rawmakase_ai_masks::Onnx::default()),
+        None => Box::new(rawmakase_ai_masks::fake::Fake::default()),
+    };
+    let options = rawmakase_ai_masks::Options {
+        engine,
+        install: Box::new(rawmakase_ai_masks::fake::install),
+        local_data: PathBuf::from(var(LOCAL)),
+        remote: rawmakase_ai_masks::Remote::Fixed(
+            std::env::var(ENDPOINT).ok().filter(|e| !e.is_empty()),
+        ),
+    };
+    let code = i32::from(rawmakase_ai_masks::extension(options).run().is_err());
+    std::process::exit(code);
+}
+
+fn program(local: &Path, endpoint: Option<&str>, report: Option<&Path>) -> Launch {
+    let mut env = vec![(PROGRAM.into(), "1".into()), (LOCAL.into(), local.into())];
+    if let Some(endpoint) = endpoint {
+        env.push((ENDPOINT.into(), endpoint.into()));
+    }
+    if let Some(report) = report {
+        env.push((REPORT.into(), report.into()));
+    }
+    Launch {
+        program: std::env::current_exe().expect("the test binary"),
+        args: [
+            "app::develop::tools::subject_mask::tests::ai_masks_program",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ]
+        .map(Into::into)
+        .to_vec(),
+        dir: PathBuf::new(),
+        env,
+        log: PathBuf::new(),
+    }
+}
+
+/// An editor with a decoded photo in a catalog, as Develop has one, and the
+/// bundled AI masks extension, which starts at its first request.
 struct Fixture {
     _dir: tempfile::TempDir,
     editor: Editor,
-    photo: std::path::PathBuf,
+    photo: PathBuf,
+    /// The app's data folder, with `extensions.json`.
+    data: PathBuf,
 }
-fn fixture() -> Fixture {
+
+/// How a fixture's extension runs.
+#[derive(Clone, Copy, Default)]
+struct Setup<'a> {
+    /// Its models are installed.
+    models: bool,
+    /// Its remote worker.
+    endpoint: Option<&'a str>,
+    /// Where the program reports the runtime variables it was started with.
+    report: Option<&'a Path>,
+}
+
+/// [`fixture_with`] a photo of grey `level` and the models installed.
+///
+/// The raster store is the process's, shared by the tests running at once,
+/// and a raster's id is its content: each test uses a level of its own, so
+/// the stand-in models' coverage, and their rasters, are its own too.
+fn fixture(level: f32) -> Fixture {
+    fixture_with(
+        level,
+        Setup {
+            models: true,
+            ..Default::default()
+        },
+    )
+}
+
+fn fixture_with(level: f32, setup: Setup<'_>) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let photos = dir.path().join("photos");
     std::fs::create_dir(&photos).unwrap();
@@ -37,6 +153,29 @@ fn fixture() -> Fixture {
     editor.library = Some(Box::new(library));
     editor.document.catalog_photo = Some(id);
     editor.document.opened_at(photo.clone());
+    editor.document.set_image(image(level));
+    let data = dir.path().join("data");
+    let local = dir.path().join("local");
+    if setup.models {
+        rawmakase_ai_masks::fake::install_all(&local);
+    }
+    editor.extensions = Host::with_bundled_for_tests(
+        &data,
+        ID,
+        program(&local, setup.endpoint, setup.report),
+        rawmakase_extensions::session::QUEUE,
+    );
+    assert!(editor.extensions.get(ID).is_some(), "AI masks is bundled");
+    Fixture {
+        _dir: dir,
+        editor,
+        photo,
+        data,
+    }
+}
+
+/// The photo: 8 by 6 pixels of an even grey.
+fn image(level: f32) -> Arc<CameraImage> {
     let metadata = Metadata {
         width: 8,
         height: 6,
@@ -45,27 +184,48 @@ fn fixture() -> Fixture {
         matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
         ..Default::default()
     };
-    editor.document.set_image(Arc::new(CameraImage {
+    Arc::new(CameraImage {
         recovered: Default::default(),
         width: 8,
         height: 6,
-        pixels: vec![[0.2; 3]; 48],
+        pixels: vec![[level; 3]; 48],
         metadata,
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
         hdr: Default::default(),
-    }));
-    // The tests say what the configuration file says, so a developer's own
-    // `remote-inference.json` cannot bend them. Tests that exercise the remote
-    // mode call `with_remote` afterwards.
-    editor.selection.remote.force(None);
-    Fixture {
-        _dir: dir,
-        editor,
-        photo,
+    })
+}
+
+/// The tile `name` (Subject, Sky or Background) offers, asking for `target`.
+fn tile(e: &Editor, name: &str, target: Target) -> Request {
+    let (offer, why) = e
+        .extensions
+        .mask_tiles()
+        .into_iter()
+        .find(|(o, _)| o.name == name)
+        .unwrap_or_else(|| panic!("no tile {name}"));
+    assert_eq!(why, None);
+    Request {
+        generator: offer,
+        target,
     }
 }
+fn subject(e: &Editor) -> Request {
+    tile(e, "Subject", Target::NewMask)
+}
+fn sky(e: &Editor) -> Request {
+    tile(e, "Sky", Target::NewMask)
+}
+fn background(e: &Editor) -> Request {
+    tile(e, "Background", Target::NewMask)
+}
+const REFINE: Target = Target::Regenerate {
+    mask: 0,
+    component: 0,
+};
+
+/// A raster of the kind a selection registers (distinct per `seed`).
 fn generated(seed: u8) -> Generated {
     let id = mask_assets::register(Bitmap {
         width: 4,
@@ -86,14 +246,24 @@ fn generated(seed: u8) -> Generated {
         },
     }
 }
-/// Starts a selection the way the worker would be asked to, without a worker.
+/// Starts a selection as a request would, without sending it.
 fn begin(editor: &mut Editor, request: Request) -> u64 {
-    let (generation, _) = editor.selection.task.start();
+    let (generation, cancel) = editor.selection.task.start();
     let guard = Guard::of(editor.document.edit.recipe(), request.target);
+    let lifecycle = editor
+        .extensions
+        .mask_lifecycle(&request.generator.extension)
+        .unwrap();
     editor.selection.pending = Some(Pending {
         request,
         guard,
-        call: None,
+        call: Call {
+            load: editor.document.load_id(),
+            generation,
+            cancel,
+            lifecycle,
+            sent: None,
+        },
     });
     generation
 }
@@ -106,35 +276,96 @@ fn finish(editor: &mut Editor, generation: u64, result: Result<Generated, Failur
     });
 }
 /// Clicks and a box, as aiming collects them.
-fn collector(points: Vec<Point>, bounds: Option<[f32; 4]>) -> Collector {
+fn collector(clicks: Vec<Click>, bounds: Option<[f32; 4]>) -> Collector {
     let mut input = Collector::default();
-    input.clicks = points
-        .into_iter()
-        .map(|p| rawmakase_extensions::protocol::viewer::Click {
-            x: p.x,
-            y: p.y,
-            positive: p.positive,
-        })
-        .collect();
+    input.clicks = clicks;
     input.bounds = bounds;
     input
 }
-/// The app's own selection a request asks for.
-fn feature(request: &Request) -> Feature {
-    match request.generator {
-        Generator::Feature(feature) => feature,
-        Generator::Extension(_) => panic!("an extension's generator"),
+const fn at(x: f32, y: f32, positive: bool) -> Click {
+    Click { x, y, positive }
+}
+
+/// Runs frames, as the app does, until `done` holds, or fails after 20 s.
+fn pump(e: &mut Editor, what: &str, done: impl Fn(&Editor) -> bool) {
+    let ctx = e.context.clone();
+    let until = Instant::now() + Duration::from_secs(20);
+    loop {
+        e.events(&ctx);
+        e.extensions_frame(&ctx);
+        if done(e) {
+            return;
+        }
+        assert!(
+            Instant::now() < until,
+            "timed out waiting for {what}: {}",
+            e.messages.line()
+        );
+        std::thread::sleep(Duration::from_millis(2));
     }
 }
-const SUBJECT: Request = Request::feature(Feature::Subject, Target::NewMask);
+fn settled(e: &Editor) -> bool {
+    e.selection.running().is_none()
+}
+/// What the extension was asked so far: each request's generator and input.
+fn asked(e: &Editor) -> Vec<(String, Option<ViewerInput>)> {
+    e.extensions
+        .masks_sent()
+        .iter()
+        .map(|m| (m.generator.clone(), m.input.clone()))
+        .collect()
+}
+/// The `n`th request's clicks and box, once it is sent.
+fn click(e: &mut Editor, n: usize) -> (Vec<Click>, Option<[f32; 4]>) {
+    pump(e, "the request to be sent", |e| asked(e).len() > n);
+    match &asked(e)[n] {
+        (generator, Some(ViewerInput::Prompt { clicks, bounds })) => {
+            assert_eq!(generator, rawmakase_ai_masks::SUBJECT);
+            (clicks.clone(), bounds.map(|b| [b.x0, b.y0, b.x1, b.y1]))
+        }
+        other => panic!("asked {other:?}, not clicks"),
+    }
+}
+/// Waits for the running request's answer and applies it.
+fn answered(e: &mut Editor) {
+    pump(e, "the answer", settled);
+}
+fn aim(e: &mut Editor, request: Request) {
+    e.begin_aiming(request);
+    assert!(e.selection.prompting.is_some(), "{}", e.messages.line());
+}
+/// The raster of component `component` of mask `mask`.
+fn raster(e: &Editor, mask: usize, component: usize) -> BitmapMask {
+    match &e.document.edit.recipe().masks[mask].components[component].shape {
+        MaskShape::Bitmap(b) => b.clone(),
+        other => panic!("not a raster: {other:?}"),
+    }
+}
+
+fn draw_masking_panel(e: &mut Editor) {
+    let ctx = e.context.clone();
+    let frame = e.begin_edit_frame();
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(400., 900.),
+            )),
+            ..Default::default()
+        },
+        |ui| e.mask_panel(ui),
+    );
+    output.textures_delta.clear();
+    e.finish_edit_frame(frame, &ctx);
+}
 
 #[test]
 fn a_selection_becomes_one_named_mask_and_one_history_step() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
     e.view.tool = crate::app::develop::state::Tool::Mask;
     e.view.masking.overlay = false;
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     let renders = e.preview.task.id();
     finish(e, g, Ok(generated(10)));
     // The mask is selected with its overlay, and the photo rendered again after that so
@@ -172,10 +403,9 @@ fn a_selection_becomes_one_named_mask_and_one_history_step() {
 
 #[test]
 fn background_is_an_inverted_component_not_an_inverted_mask() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
-    let request = Request::feature(Feature::Background, Target::NewMask);
-    let g = begin(e, request);
+    let g = begin(e, background(e));
     finish(e, g, Ok(generated(20)));
     let mask = &e.document.edit.recipe().masks[0];
     assert_eq!(mask.name, "Background");
@@ -188,12 +418,13 @@ fn background_is_an_inverted_component_not_an_inverted_mask() {
 
 #[test]
 fn a_selection_can_join_a_mask_as_a_component() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     finish(e, g, Ok(generated(30)));
-    let request = Request::feature(
-        Feature::Background,
+    let request = tile(
+        e,
+        "Background",
         Target::Component {
             mask: 0,
             op: MaskOp::Subtract,
@@ -210,9 +441,9 @@ fn a_selection_can_join_a_mask_as_a_component() {
 
 #[test]
 fn failures_and_cancellation_record_no_edit() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     finish(e, g, Err(Failure::NoSubject));
     assert!(e.document.edit.recipe().masks.is_empty());
     assert_eq!(e.document.edit.history().steps().1, 0);
@@ -225,7 +456,7 @@ fn failures_and_cancellation_record_no_edit() {
     assert!(e.selection.running().is_none());
 
     e.selection.failure = None;
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     finish(e, g, Err(Failure::Cancelled));
     assert!(e.selection.failure.is_none() && e.selection.running().is_none());
     assert!(e.document.edit.recipe().masks.is_empty());
@@ -233,10 +464,10 @@ fn failures_and_cancellation_record_no_edit() {
 
 #[test]
 fn an_obsolete_result_is_dropped_and_cannot_finish_a_newer_request() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
-    let old = begin(e, SUBJECT);
-    let new = begin(e, SUBJECT);
+    let old = begin(e, subject(e));
+    let new = begin(e, subject(e));
     assert_ne!(old, new);
     // The first one's success and failure both arrive late. Its raster is kept while
     // the newer selection runs, which could produce the same one.
@@ -266,7 +497,7 @@ fn an_obsolete_result_is_dropped_and_cannot_finish_a_newer_request() {
     assert!(e.document.edit.jump(1));
 
     // A result for another photo is dropped.
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     let wrong_load = e.document.load_id() + 5;
     e.selection_done(Done {
         load: wrong_load,
@@ -289,9 +520,9 @@ fn an_obsolete_result_is_dropped_and_cannot_finish_a_newer_request() {
 
 #[test]
 fn a_result_is_not_applied_over_masks_that_changed_meanwhile() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     // The user adds a mask while the model runs.
     e.change_edit(None, |r| {
         r.masks.push(MaskGroup {
@@ -314,7 +545,7 @@ fn a_result_is_not_applied_over_masks_that_changed_meanwhile() {
     assert!(e.messages.line().contains("changed"));
 
     // Sliders, names and visibility are not structure: they survive an accepted result.
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     e.change_edit(None, |r| {
         r.exposure = 1.;
         r.masks[0].adjust.exposure = 0.5;
@@ -336,9 +567,9 @@ fn a_result_is_not_applied_over_masks_that_changed_meanwhile() {
 
 #[test]
 fn spots_changed_while_selecting_invalidate_the_result() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     e.change_edit(None, |r| {
         r.retouch.push(crate::model::retouch::RetouchOp {
             mode: Default::default(),
@@ -354,7 +585,7 @@ fn spots_changed_while_selecting_invalidate_the_result() {
     finish(e, g, Ok(generated(60)));
     assert!(e.document.edit.recipe().masks.is_empty());
     // Changed and changed back is a different input, not the same one.
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     let before = e.document.edit.recipe().retouch.clone();
     e.change_edit(None, |r| r.retouch.clear());
     e.change_edit(None, |r| r.retouch = before);
@@ -364,9 +595,9 @@ fn spots_changed_while_selecting_invalidate_the_result() {
 
 #[test]
 fn regeneration_replaces_only_the_raster() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     finish(e, g, Ok(generated(70)));
     e.change_edit(None, |r| {
         r.masks[0].adjust.exposure = 0.7;
@@ -377,13 +608,7 @@ fn regeneration_replaces_only_the_raster() {
     let old = e.document.edit.recipe().masks[0].components[0]
         .shape
         .clone();
-    let regenerate = Request::feature(
-        Feature::Subject,
-        Target::Regenerate {
-            mask: 0,
-            component: 0,
-        },
-    );
+    let regenerate = tile(e, "Subject", REFINE);
     let g = begin(e, regenerate.clone());
     finish(e, g, Ok(generated(71)));
     let m = &e.document.edit.recipe().masks[0];
@@ -423,9 +648,9 @@ fn regeneration_replaces_only_the_raster() {
 
 #[test]
 fn a_new_photo_forgets_the_selection_that_was_running() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     e.selection.clear_document();
     assert!(e.selection.running().is_none());
     finish(e, g, Ok(generated(80)));
@@ -433,54 +658,12 @@ fn a_new_photo_forgets_the_selection_that_was_running() {
 }
 
 #[test]
-fn a_selection_needs_a_catalog_an_upgraded_one_and_the_model() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    // The catalog is the first format: ask to upgrade before anything else.
-    e.library
-        .as_ref()
-        .unwrap()
-        .session
-        .catalog()
-        .db_for_tests()
-        .execute_batch("PRAGMA user_version=1")
-        .unwrap();
-    e.request_selection(SUBJECT);
-    assert_eq!(e.selection.prompt, Some(Prompt::Upgrade(SUBJECT)));
-    assert!(e.selection.running().is_none());
-    // Upgraded, the model is the next thing asked for (no download starts).
-    e.library
-        .as_mut()
-        .unwrap()
-        .session
-        .catalog_mut_for_tests()
-        .upgrade_for_raster_masks()
-        .unwrap();
-    e.selection.prompt = None;
-    if e.selection.models.subject.installed() {
-        return; // a developer machine with the model installed
-    }
-    e.request_selection(SUBJECT);
-    assert_eq!(e.selection.prompt, Some(Prompt::Model(SUBJECT)));
-    assert!(!e.selection.models.subject.busy());
-    // Without a catalog nothing is offered at all.
-    e.library = None;
-    e.selection.prompt = None;
-    e.request_selection(SUBJECT);
-    assert!(e.selection.prompt.is_none());
-    assert_eq!(
-        e.messages.line(),
-        "Add this photo to a catalog to use AI masks"
-    );
-}
-
-#[test]
 fn a_selected_mask_survives_saving_and_reopening_without_the_store() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let id;
     {
         let e = &mut f.editor;
-        let g = begin(e, SUBJECT);
+        let g = begin(e, subject(e));
         let made = generated(90);
         id = made.id.clone();
         finish(e, g, Ok(made));
@@ -502,359 +685,75 @@ fn a_selected_mask_survives_saving_and_reopening_without_the_store() {
     assert_eq!(read.data, (0..12).map(|i| 90 + i).collect::<Vec<u8>>());
 }
 
-fn draw_masking_panel(e: &mut Editor) {
-    let ctx = e.context.clone();
-    let frame = e.begin_edit_frame();
-    let mut output = ctx.run_ui(
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(400., 900.),
-            )),
-            ..Default::default()
-        },
-        |ui| e.mask_panel(ui),
-    );
-    output.textures_delta.clear();
-    e.finish_edit_frame(frame, &ctx);
-}
-
-/// The tests say what the configuration file says, so a developer's own
-/// `remote-inference.json` cannot bend them.
-fn without_remote(e: &mut Editor) {
-    e.selection.remote.force(None);
-}
-fn with_remote(e: &mut Editor, endpoint: &str) {
-    e.selection.remote.force(Some(endpoint));
-}
-
-#[test]
-fn with_a_remote_worker_the_models_do_not_have_to_be_here() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    without_remote(e);
-    if !e.selection.models.subject.installed() {
-        e.request_selection(SUBJECT);
-        assert_eq!(e.selection.prompt, Some(Prompt::Model(SUBJECT)));
-        e.selection.prompt = None;
-    }
-    // The same request, with a worker configured, starts selecting.
-    with_remote(e, "127.0.0.1:1");
-    e.request_selection(SUBJECT);
-    assert!(e.selection.prompt.is_none(), "{:?}", e.selection.prompt);
-    assert!(e.selection.running().is_some());
-    e.selection.clear_document();
-    // And the drawer draws in the remote states without asking for a download.
-    e.selection.prompt = Some(Prompt::Model(SUBJECT));
-    draw_masking_panel(e);
-    e.selection.prompt = None;
-    draw_masking_panel(e);
-}
-
-/// Waits for the selection the worker is running, whatever it turns out to be.
-fn next_selection(e: &Editor) -> Box<Done> {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    loop {
-        match e.rx.recv_timeout(std::time::Duration::from_millis(200)) {
-            Ok(crate::app::worker::Event::Selection(done)) => return done,
-            _ => assert!(std::time::Instant::now() < deadline, "no selection result"),
-        }
-    }
-}
-
-/// A fake selection worker on a loopback port: what the app is told when the
-/// worker answers, fails, forgets or goes away.
-struct Remote {
-    _holder: std::thread::JoinHandle<()>,
-    endpoint: String,
-}
-impl Remote {
-    fn starting(subject: [u8; 12], sky: u8) -> Self {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = listener.local_addr().unwrap().to_string();
-        let holder = std::thread::spawn(move || {
-            use rawmakase_remote::server::{Engine, EngineError, Outcome, Server};
-            struct Fake {
-                subject: rawmakase_selection::Coverage,
-                sky: rawmakase_selection::Coverage,
-            }
-            impl Engine for Fake {
-                fn analyze(
-                    &mut self,
-                    _photo: &rawmakase_selection::RgbImage,
-                    _cancel: rawmakase_cancel::Cancel<'_>,
-                ) -> Result<Outcome, EngineError> {
-                    Ok(Outcome {
-                        key: "k".into(),
-                        subject: self.subject.clone(),
-                    })
-                }
-                fn sky(
-                    &mut self,
-                    _photo: &rawmakase_selection::RgbImage,
-                    _cancel: rawmakase_cancel::Cancel<'_>,
-                ) -> Result<rawmakase_selection::Coverage, EngineError> {
-                    Ok(self.sky.clone())
-                }
-                fn segment(
-                    &mut self,
-                    key: &str,
-                    _prompt: &rawmakase_selection::Prompt,
-                    _cancel: rawmakase_cancel::Cancel<'_>,
-                ) -> Result<rawmakase_selection::Coverage, EngineError> {
-                    if key == "k" {
-                        Ok(self.subject.clone())
-                    } else {
-                        Err(EngineError::UnknownKey)
-                    }
-                }
-                fn describe(&self) -> rawmakase_remote::server::Info {
-                    rawmakase_remote::server::Info {
-                        model: "fake@0".into(),
-                        panoptic: "fake".into(),
-                        sky: "fake-sky".into(),
-                        provider: "CPU".into(),
-                    }
-                }
-            }
-            let engine = Fake {
-                subject: rawmakase_selection::Coverage {
-                    width: 4,
-                    height: 3,
-                    data: subject.to_vec(),
-                },
-                sky: rawmakase_selection::Coverage {
-                    width: 4,
-                    height: 3,
-                    data: vec![sky; 12],
-                },
-            };
-            Arc::new(Server::new(engine)).serve(listener);
-        });
-        Self {
-            _holder: holder,
-            endpoint,
-        }
-    }
-}
-
-#[test]
-fn a_selection_runs_through_the_remote_worker_into_one_mask() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    let remote = Remote::starting([10; 12], 20);
-    with_remote(e, &remote.endpoint);
-    e.request_selection(SUBJECT);
-    let done = next_selection(e);
-    assert!(done.result.is_ok(), "{:?}", done.result);
-    e.selection_done(*done);
-    assert_eq!(
-        e.document.edit.recipe().masks.len(),
-        1,
-        "{}",
-        e.messages.line()
-    );
-    // The remote coverage is the mask's raster, saved like any other.
-    let MaskShape::Bitmap(b) = &e.document.edit.recipe().masks[0].components[0].shape else {
-        panic!("a selection made a bitmap mask");
-    };
-    let id = b.id.clone();
-    assert_eq!(
-        crate::storage::mask_assets::resolve(&id).unwrap().data,
-        vec![10; 12]
-    );
-    // A sky selection on the same photo comes from the same analysis.
-    e.request_selection(Request::feature(
-        Feature::Sky,
-        Target::Component {
-            mask: 0,
-            op: crate::model::masks::MaskOp::Add,
-        },
-    ));
-    let done = next_selection(e);
-    assert!(done.result.is_ok(), "{:?}", done.result);
-    e.selection_done(*done);
-    assert_eq!(e.document.edit.recipe().masks[0].components.len(), 2);
-}
-
-#[test]
-fn a_remote_worker_that_is_gone_or_slow_fails_like_a_missing_runtime() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    // Nothing listens here.
-    with_remote(e, "127.0.0.1:1");
-    e.request_selection(SUBJECT);
-    let done = next_selection(e);
-    e.selection_done(*done);
-    let (_, failure) = e.selection.failure.clone().unwrap();
-    assert!(
-        matches!(failure, Failure::RuntimeUnavailable(_)),
-        "{failure:?}"
-    );
-    assert_eq!(e.document.edit.recipe().masks.len(), 0);
-}
-
-#[test]
-fn a_cancelled_or_superseded_remote_answer_applies_nothing() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    let remote = Remote::starting([10; 12], 20);
-    with_remote(e, &remote.endpoint);
-    e.request_selection(SUBJECT);
-    e.cancel_selection();
-    // The worker's answer, late by one click, is dropped as stale like a local
-    // one: nothing is applied, nothing is kept, the drawer moves on.
-    let done = next_selection(e);
-    e.selection_done(*done);
-    assert_eq!(e.document.edit.recipe().masks.len(), 0);
-    assert!(e.selection.pending.is_none());
-    assert_eq!(e.messages.line(), "Selection cancelled");
-}
-
 #[test]
 fn the_drawer_draws_in_every_state_a_selection_can_be_in() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
     draw_masking_panel(e);
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     draw_masking_panel(e); // running
     finish(e, g, Ok(generated(100)));
     draw_masking_panel(e); // with a generated component selected
-    e.selection.failure = Some((SUBJECT, Failure::NoSubject));
+    e.selection.failure = Some((subject(e), Failure::NoSubject));
     draw_masking_panel(e);
     e.selection.failure = None;
     e.selection.prompting = Some(Prompting {
-        request: SUBJECT,
-        input: collector(
-            vec![Point {
-                x: 0.5,
-                y: 0.5,
-                positive: true,
-            }],
-            Some([0.1, 0.1, 0.9, 0.9]),
-        ),
+        request: subject(e),
+        input: collector(vec![at(0.5, 0.5, true)], Some([0.1, 0.1, 0.9, 0.9])),
         applied: None,
     });
     draw_masking_panel(e);
     e.selection.prompting = None;
-    e.selection.prompt = Some(Prompt::Model(SUBJECT));
+    e.selection.prompt = Some(Prompt::Setup {
+        request: subject(e),
+        setup: NeedsSetup {
+            what: "the selection models".into(),
+            bytes: 270_000_000,
+        },
+        guard: Guard::of(e.document.edit.recipe(), Target::NewMask),
+        then: Resume::Select,
+    });
     draw_masking_panel(e);
-    e.selection.prompt = Some(Prompt::Upgrade(SUBJECT));
+    e.selection.prompt = Some(Prompt::Upgrade(subject(e)));
     draw_masking_panel(e);
     e.library = None;
     draw_masking_panel(e); // disabled with its reason
 }
 
+/// The drawer offers Subject, Sky and Background in that order, as it always
+/// did, whatever order the extension lists them in, and each asks its own
+/// generator: Background is Subject's, inverted.
 #[test]
-#[ignore = "needs RAWMAKASE_TEST_MODEL, RAWMAKASE_ORT_LIB and RAWMAKASE_TEST_RAW; with \
-            RAWMAKASE_REMOTE_ENDPOINT the same selection runs through the remote worker"]
-fn the_real_model_selects_through_the_worker_and_the_mask_changes_the_render() {
-    let model = std::path::PathBuf::from(std::env::var("RAWMAKASE_TEST_MODEL").unwrap());
-    let raw = std::path::PathBuf::from(std::env::var("RAWMAKASE_TEST_RAW").unwrap());
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let image = Arc::new(
-        crate::photo::open(&raw)
-            .unwrap()
-            .develop(
-                crate::camera_data::Decode::full(Default::default()),
-                Cancel::new(&cancel),
-            )
-            .unwrap(),
-    );
-    let mut f = fixture();
-    let e = &mut f.editor;
-    e.document.set_image(image.clone());
-    let (generation, cancel) = e.selection.task.start();
-    e.selection.pending = Some(Pending {
-        request: SUBJECT,
-        guard: Guard::of(e.document.edit.recipe(), SUBJECT.target),
-        call: None,
-    });
-    e.selection.worker.submit(
-        worker::Job {
-            load: e.document.load_id(),
-            generation,
-            cancel,
-            image: image.clone(),
-            recipe: e.document.edit.recipe().clone(),
-            // With RAWMAKASE_REMOTE_ENDPOINT set, the same request runs
-            // through the remote worker instead of the local session: the
-            // proof that a selection asked over the wire lands as a mask.
-            endpoint: std::env::var("RAWMAKASE_REMOTE_ENDPOINT")
-                .ok()
-                .filter(|endpoint| !endpoint.is_empty()),
-            model: std::env::var("RAWMAKASE_REMOTE_ENDPOINT")
-                .ok()
-                .filter(|endpoint| !endpoint.is_empty())
-                .is_none()
-                .then_some(model),
-            action: Action::Click(rawmakase_selection::Prompt {
-                points: vec![rawmakase_selection::Point {
-                    x: 0.5,
-                    y: 0.62,
-                    positive: true,
-                }],
-                bounds: None,
-            }),
-        },
-        e.tx.clone(),
-        e.context.clone(),
-    );
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
-    loop {
-        match e.rx.recv_timeout(std::time::Duration::from_millis(200)) {
-            Ok(crate::app::worker::Event::Selection(done)) => {
-                e.selection_done(*done);
-                break;
-            }
-            _ => assert!(std::time::Instant::now() < deadline, "no result"),
-        }
-    }
-    assert_eq!(
-        e.document.edit.recipe().masks.len(),
-        1,
-        "{}",
-        e.messages.line()
-    );
-    // The mask selects part of the photo: lift it and compare the two regions.
-    let mut recipe = e.document.edit.recipe().clone();
-    recipe.masks[0].adjust.exposure = 2.;
-    let base = crate::develop::render(
-        &image,
-        &Recipe::default().checked().unwrap(),
-        400,
-        Cancel::NEVER,
-    )
-    .unwrap();
-    let lit =
-        crate::develop::render(&image, &recipe.checked().unwrap(), 400, Cancel::NEVER).unwrap();
-    let mean = |r: &crate::rendered::Rendered| {
-        r.pixels.iter().map(|p| p[1]).sum::<f32>() / r.pixels.len() as f32
-    };
-    assert!(
-        mean(&lit) > mean(&base) * 1.02,
-        "{} {}",
-        mean(&lit),
-        mean(&base)
-    );
-    let changed = base
-        .pixels
+fn the_tiles_are_subject_sky_and_background() {
+    let f = fixture(0.2);
+    let tiles = f.editor.extensions.mask_tiles();
+    let tiles = super::ui::ordered(tiles);
+    let named: Vec<_> = tiles
         .iter()
-        .zip(&lit.pixels)
-        .filter(|(a, b)| (a[1] - b[1]).abs() > 0.02)
-        .count();
-    let share = changed as f32 / base.pixels.len() as f32;
-    assert!((0.01..0.9).contains(&share), "mask covers {share}");
-    // And it survives a save.
-    assert!(e.flush());
+        .map(|(o, _)| (o.name.as_str(), o.generator.as_str(), o.invert, o.feature()))
+        .collect();
+    assert_eq!(
+        named,
+        [
+            ("Subject", "subject", false, Some(Feature::Subject)),
+            ("Sky", "sky", false, Some(Feature::Sky)),
+            ("Background", "subject", true, Some(Feature::Background)),
+        ]
+    );
+    // Subject aims; Sky doesn't.
+    assert!(tiles[0].0.takes_prompt() && !tiles[1].0.takes_prompt());
+    assert_eq!(
+        tiles[0].0.aim_hint(),
+        "Click the subject on the photo, or drag a box around it"
+    );
 }
 
 #[test]
 fn aiming_starts_with_nothing_and_each_click_refines_the_same_mask() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
     e.selection.prompting = Some(Prompting {
-        request: SUBJECT,
+        request: subject(e),
         input: collector(Vec::new(), None),
         applied: None,
     });
@@ -872,20 +771,13 @@ fn aiming_starts_with_nothing_and_each_click_refines_the_same_mask() {
             .is_empty()
     );
     // A first result makes the mask and remembers it; later ones replace its raster.
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     finish(e, g, Ok(generated(110)));
     assert_eq!(
         e.selection.prompting.as_ref().unwrap().applied,
         Some((0, 0))
     );
-    let request = Request::feature(
-        Feature::Subject,
-        Target::Regenerate {
-            mask: 0,
-            component: 0,
-        },
-    );
-    let g = begin(e, request);
+    let g = begin(e, tile(e, "Subject", REFINE));
     finish(e, g, Ok(generated(111)));
     assert_eq!(e.document.edit.recipe().masks.len(), 1);
     assert_eq!(
@@ -897,7 +789,7 @@ fn aiming_starts_with_nothing_and_each_click_refines_the_same_mask() {
     assert!(e.selection.prompting.is_none() && e.document.edit.recipe().masks.len() == 1);
     // Boxes too small to be a drag are ignored.
     e.selection.prompting = Some(Prompting {
-        request: SUBJECT,
+        request: subject(e),
         input: collector(Vec::new(), None),
         applied: None,
     });
@@ -917,10 +809,9 @@ fn aiming_starts_with_nothing_and_each_click_refines_the_same_mask() {
 
 #[test]
 fn sky_is_a_plain_mask_of_its_own_and_background_is_the_inverted_subject() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
-    let sky = Request::feature(Feature::Sky, Target::NewMask);
-    let g = begin(e, sky.clone());
+    let g = begin(e, sky(e));
     let mut made = generated(120);
     made.source.feature = FEATURE_SKY.into();
     finish(e, g, Ok(made));
@@ -935,139 +826,15 @@ fn sky_is_a_plain_mask_of_its_own_and_background_is_the_inverted_subject() {
     assert_eq!(feature_of(b, true), Feature::Sky);
     assert_eq!(e.document.edit.history().steps().0[0].name, "Select Sky");
     // A photo without sky says so and adds nothing.
-    let g = begin(e, sky);
+    let g = begin(e, sky(e));
     finish(e, g, Err(Failure::NoSky));
     assert_eq!(e.messages.line(), "No sky found");
     assert_eq!(e.document.edit.recipe().masks.len(), 1);
 }
 
 #[test]
-fn refining_aims_at_the_selected_component_only_with_the_models_in_place() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    let g = begin(e, SUBJECT);
-    finish(e, g, Ok(generated(130)));
-    // Without the models installed, refining asks for them instead of aiming.
-    if !e.selection.models.subject.installed() {
-        e.begin_refining(0, 0);
-        assert!(e.selection.prompting.is_none());
-        assert!(matches!(
-            e.selection.prompt,
-            Some(Prompt::Model(_) | Prompt::Upgrade(_))
-        ));
-    }
-    // Aimed by hand, the first click's result replaces that component's raster.
-    e.selection.prompt = None;
-    e.selection.prompting = Some(Prompting {
-        request: Request::feature(
-            Feature::Subject,
-            Target::Regenerate {
-                mask: 0,
-                component: 0,
-            },
-        ),
-        input: collector(Vec::new(), None),
-        applied: Some((0, 0)),
-    });
-    let before = e.document.edit.recipe().masks[0].components[0]
-        .shape
-        .clone();
-    let regenerate = Request::feature(
-        Feature::Subject,
-        Target::Regenerate {
-            mask: 0,
-            component: 0,
-        },
-    );
-    let g = begin(e, regenerate);
-    finish(e, g, Ok(generated(131)));
-    assert_ne!(
-        e.document.edit.recipe().masks[0].components[0].shape,
-        before
-    );
-    assert_eq!(e.document.edit.recipe().masks.len(), 1);
-}
-
-#[test]
-#[ignore = "needs RAWMAKASE_TEST_MODEL and RAWMAKASE_TEST_SKY_MODEL (the models' folders) and a HOME of its own: HOME=$(mktemp -d)"]
-fn each_selection_asks_for_its_own_models_once_and_then_runs() {
-    let folder = std::path::PathBuf::from(std::env::var("RAWMAKASE_TEST_MODEL").unwrap());
-    let sky_folder = std::path::PathBuf::from(std::env::var("RAWMAKASE_TEST_SKY_MODEL").unwrap());
-    let mut f = fixture();
-    let e = &mut f.editor;
-    assert!(!e.selection.models.subject.installed());
-    // Subject asks first; the install it offers finishes; the request goes on by itself.
-    e.request_selection(SUBJECT);
-    assert_eq!(e.selection.prompt, Some(Prompt::Model(SUBJECT)));
-    e.install_model_from(Pack::Subject, folder);
-    let result = loop {
-        if let crate::app::worker::Event::ModelInstalled(_, r) =
-            e.rx.recv_timeout(std::time::Duration::from_secs(120))
-                .unwrap()
-        {
-            break r;
-        }
-    };
-    e.selection.models.subject.finished(&result);
-    e.model_installed(Pack::Subject, result);
-    assert!(e.selection.models.subject.installed());
-    assert!(
-        e.selection.running().is_some(),
-        "the request went on: {}",
-        e.messages.line()
-    );
-    e.selection.cancel();
-    // Sky has its own model: it asks, and its waiting request goes on the same way.
-    let sky = Request::feature(Feature::Sky, Target::NewMask);
-    e.request_selection(sky.clone());
-    assert_eq!(e.selection.prompt, Some(Prompt::Model(sky.clone())));
-    assert!(e.selection.running().is_none());
-    e.install_model_from(Pack::Sky, sky_folder);
-    let (pack, result) = loop {
-        if let crate::app::worker::Event::ModelInstalled(pack, r) =
-            e.rx.recv_timeout(std::time::Duration::from_secs(120))
-                .unwrap()
-        {
-            break (pack, r);
-        }
-    };
-    assert_eq!(pack, Pack::Sky);
-    e.selection.models.sky.finished(&result);
-    e.model_installed(Pack::Sky, result);
-    assert!(e.selection.models.sky.installed());
-    assert!(e.selection.prompt.is_none(), "asked again");
-    assert!(e.selection.running().is_some());
-    e.selection.cancel();
-    // Both installed, neither asks again.
-    e.request_selection(SUBJECT);
-    assert!(e.selection.prompt.is_none(), "asked again");
-    e.selection.cancel();
-    e.request_selection(sky);
-    assert!(e.selection.prompt.is_none(), "asked again");
-    assert!(e.selection.running().is_some());
-}
-
-#[test]
-fn when_nothing_is_found_the_user_can_aim_by_hand() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    let g = begin(e, SUBJECT);
-    finish(e, g, Err(Failure::NoSubject));
-    assert!(e.selection.prompting.is_none());
-    // Without the models, aiming asks for them first, as any selection does.
-    if !e.selection.models.subject.installed() {
-        e.begin_aiming(SUBJECT);
-        assert!(e.selection.prompting.is_none());
-        assert!(matches!(
-            e.selection.prompt,
-            Some(Prompt::Model(_) | Prompt::Upgrade(_))
-        ));
-    }
-}
-
-#[test]
 fn a_different_mask_of_the_same_kind_in_the_same_place_is_not_the_one_asked_for() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
     let line = |to: f32| MaskGroup {
         components: vec![MaskComponent::new(MaskShape::Linear {
@@ -1077,8 +844,9 @@ fn a_different_mask_of_the_same_kind_in_the_same_place_is_not_the_one_asked_for(
         ..Default::default()
     };
     e.change_edit(None, |r| r.masks.push(line(1.)));
-    let request = Request::feature(
-        Feature::Subject,
+    let request = tile(
+        e,
+        "Subject",
         Target::Component {
             mask: 0,
             op: MaskOp::Add,
@@ -1093,16 +861,10 @@ fn a_different_mask_of_the_same_kind_in_the_same_place_is_not_the_one_asked_for(
 
 #[test]
 fn a_box_starts_over_without_the_clicks_before_it() {
+    let f = fixture(0.2);
     let mut p = Prompting {
-        request: SUBJECT,
-        input: collector(
-            vec![Point {
-                x: 0.2,
-                y: 0.2,
-                positive: true,
-            }],
-            None,
-        ),
+        request: subject(&f.editor),
+        input: collector(vec![at(0.2, 0.2, true)], None),
         applied: None,
     };
     assert!(p.input.drag([0.3, 0.3], [0.7, 0.8]));
@@ -1112,10 +874,10 @@ fn a_box_starts_over_without_the_clicks_before_it() {
 
 #[test]
 fn an_upgrade_under_way_does_not_select_in_the_next_photo() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
     let (generation, _) = e.selection.upgrade_task.start();
-    e.selection.upgrading = Some((generation, SUBJECT));
+    e.selection.upgrading = Some((generation, subject(e)));
     e.selection.clear_document();
     e.catalog_upgraded(generation, Ok(None));
     assert!(e.selection.running().is_none() && e.selection.prompt.is_none());
@@ -1123,10 +885,10 @@ fn an_upgrade_under_way_does_not_select_in_the_next_photo() {
 
 #[test]
 fn a_stale_result_does_not_drop_the_raster_a_running_selection_may_share() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
-    let old = begin(e, SUBJECT);
-    let new = begin(e, SUBJECT);
+    let old = begin(e, subject(e));
+    let new = begin(e, subject(e));
     // Both produce the same coverage: one ID. The stale one arrives first.
     finish(e, old, Ok(generated(150)));
     let same = generated(150);
@@ -1139,313 +901,12 @@ fn a_stale_result_does_not_drop_the_raster_a_running_selection_may_share() {
 
 #[test]
 fn a_camera_exposure_change_while_selecting_invalidates_the_result() {
-    let mut f = fixture();
+    let mut f = fixture(0.2);
     let e = &mut f.editor;
-    let g = begin(e, SUBJECT);
+    let g = begin(e, subject(e));
     e.change_edit(None, |r| r.camera_exposure += 0.5);
     finish(e, g, Ok(generated(160)));
     assert!(e.document.edit.recipe().masks.is_empty());
-}
-
-#[test]
-fn refining_a_mask_can_start_by_leaving_something_out() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    let g = begin(e, SUBJECT);
-    // A raster selected in its left half.
-    let id = mask_assets::register(Bitmap {
-        width: 4,
-        height: 2,
-        channels: 1,
-        depth: 1,
-        data: vec![255, 255, 0, 0, 255, 255, 0, 0],
-    })
-    .unwrap();
-    assert_eq!(super::raster_extent(&id), Some([0.0, 0.0, 0.5, 1.0]));
-    finish(
-        e,
-        g,
-        Ok(Generated {
-            id,
-            width: 4,
-            height: 2,
-            source: BitmapSource {
-                feature: FEATURE_SUBJECT.into(),
-                model: "test@0".into(),
-                input: "x".into(),
-            },
-        }),
-    );
-    e.selection.prompting = Some(Prompting {
-        request: SUBJECT,
-        input: collector(Vec::new(), None),
-        applied: Some((0, 0)),
-    });
-    e.prompt_click([0.2, 0.5], false);
-    // Taken: with the models it runs (the click and the mask's extent); without them
-    // aiming ends and asks for the models. Either way it is not ignored.
-    let taken = e.selection.running().is_some() || e.selection.prompt.is_some();
-    assert!(taken, "the first leave-out click was ignored");
-}
-
-#[test]
-fn sky_asks_for_its_own_model_and_having_subjects_does_not_install_it() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    if e.selection.models.sky.installed() {
-        // The computer running the tests has it: nothing here can be observed.
-        return;
-    }
-    let sky = Request::feature(Feature::Sky, Target::NewMask);
-    assert_eq!(feature(&sky).pack(), Pack::Sky);
-    assert_eq!(feature(&SUBJECT).pack(), Pack::Subject);
-    e.request_selection(sky.clone());
-    assert_eq!(e.selection.prompt, Some(Prompt::Model(sky.clone())));
-    // Subject's install finishing does not start the sky's waiting request, nor drop it.
-    e.model_installed(Pack::Subject, Ok(()));
-    assert_eq!(e.selection.prompt, Some(Prompt::Model(sky)));
-    assert!(e.selection.running().is_none());
-}
-
-/// Pins of what each gesture asks the model, for the move of AI masks into an
-/// extension (#965): the same gestures must ask the same things afterwards.
-/// The worker keeps the jobs instead of running them, and a remote endpoint
-/// stands in for the models, so these run with no model or worker present.
-fn capturing(e: &mut Editor) {
-    with_remote(e, "127.0.0.1:1");
-    e.selection.worker.captured = Some(Vec::new());
-}
-/// What the model was asked so far, oldest first.
-fn asked(e: &Editor) -> Vec<Action> {
-    let jobs = e.selection.worker.captured.as_ref().unwrap();
-    jobs.iter().map(|j| j.action.clone()).collect()
-}
-fn click(e: &Editor, n: usize) -> ModelPrompt {
-    match &asked(e)[n] {
-        Action::Click(prompt) => prompt.clone(),
-        other => panic!("asked {other:?}, not clicks"),
-    }
-}
-/// Answers the selection that is running, as the worker would.
-fn answer(e: &mut Editor, result: Result<Generated, Failure>) {
-    let generation = e.selection.task.id();
-    finish(e, generation, result);
-}
-fn aim(e: &mut Editor, request: Request) {
-    e.begin_aiming(request);
-    assert!(e.selection.prompting.is_some(), "{}", e.messages.line());
-}
-const fn at(x: f32, y: f32, positive: bool) -> Point {
-    Point { x, y, positive }
-}
-const BACKGROUND: Request = Request::feature(Feature::Background, Target::NewMask);
-const REFINE: Target = Target::Regenerate {
-    mask: 0,
-    component: 0,
-};
-
-#[test]
-fn a_box_and_then_clicks_ask_for_the_box_with_every_click() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    capturing(e);
-    aim(e, SUBJECT);
-    e.prompt_box([0.8, 0.9], [0.2, 0.1]);
-    let bounds = Some([0.2, 0.1, 0.8, 0.9]);
-    assert_eq!(
-        click(e, 0),
-        ModelPrompt {
-            points: vec![],
-            bounds
-        }
-    );
-    assert_eq!(e.selection.pending.as_ref().unwrap().request, SUBJECT);
-    answer(e, Ok(generated(170)));
-    e.prompt_click([0.5, 0.5], true);
-    assert_eq!(
-        click(e, 1),
-        ModelPrompt {
-            points: vec![at(0.5, 0.5, true)],
-            bounds,
-        }
-    );
-    // Every result after the first refines the mask the first one made.
-    assert_eq!(e.selection.pending.as_ref().unwrap().request.target, REFINE);
-    answer(e, Ok(generated(171)));
-    e.prompt_click([0.3, 0.4], false);
-    assert_eq!(
-        click(e, 2),
-        ModelPrompt {
-            points: vec![at(0.5, 0.5, true), at(0.3, 0.4, false)],
-            bounds,
-        }
-    );
-    answer(e, Ok(generated(172)));
-    assert_eq!(e.document.edit.recipe().masks.len(), 1);
-    // A new box starts over: it is sent without the clicks before it.
-    e.prompt_box([0.1, 0.1], [0.4, 0.4]);
-    assert_eq!(
-        click(e, 3),
-        ModelPrompt {
-            points: vec![],
-            bounds: Some([0.1, 0.1, 0.4, 0.4]),
-        }
-    );
-}
-
-#[test]
-fn clicks_and_boxes_while_a_selection_runs_are_ignored_not_queued() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    capturing(e);
-    aim(e, SUBJECT);
-    e.prompt_click([0.5, 0.5], true);
-    e.prompt_click([0.6, 0.6], true);
-    e.prompt_box([0.1, 0.1], [0.9, 0.9]);
-    assert_eq!(asked(e).len(), 1);
-    let p = e.selection.prompting.as_ref().unwrap();
-    assert_eq!((p.input.clicks.len(), p.input.bounds), (1, None));
-    // Once it has answered, the next click is taken, and the lost ones are not.
-    answer(e, Ok(generated(173)));
-    e.prompt_click([0.7, 0.7], true);
-    assert_eq!(click(e, 1).points, [at(0.5, 0.5, true), at(0.7, 0.7, true)]);
-}
-
-#[test]
-fn clicks_past_the_limit_ask_again_without_the_extra_point() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    capturing(e);
-    aim(e, SUBJECT);
-    let max = rawmakase_selection::process::MAX_POINTS;
-    e.selection.prompting.as_mut().unwrap().input = collector(vec![at(0.5, 0.5, true); max], None);
-    e.prompt_click([0.1, 0.1], true);
-    let sent = click(e, 0);
-    assert_eq!(sent.points.len(), max);
-    assert!(!sent.points.contains(&at(0.1, 0.1, true)));
-}
-
-#[test]
-fn a_drag_under_a_hundredth_of_the_photo_is_not_a_box() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    capturing(e);
-    aim(e, SUBJECT);
-    e.prompt_box([0.5, 0.2], [0.509, 0.8]);
-    e.prompt_box([0.2, 0.5], [0.8, 0.509]);
-    assert!(asked(e).is_empty());
-    e.prompt_box([0.5, 0.2], [0.52, 0.8]);
-    assert_eq!(asked(e).len(), 1);
-}
-
-#[test]
-fn leaving_out_first_on_a_thin_mask_sends_its_extent_as_the_box() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    capturing(e);
-    e.request_selection(SUBJECT);
-    // One column of 200 selected: an extent far under the drag minimum.
-    let mut data = vec![0; 200];
-    data[0] = 255;
-    let id = mask_assets::register(Bitmap {
-        width: 200,
-        height: 1,
-        channels: 1,
-        depth: 1,
-        data,
-    })
-    .unwrap();
-    let mut made = generated(174);
-    made.id = id;
-    (made.width, made.height) = (200, 1);
-    answer(e, Ok(made));
-    e.begin_refining(0, 0);
-    e.prompt_click([0.002, 0.5], false);
-    assert_eq!(
-        click(e, 1),
-        ModelPrompt {
-            points: vec![at(0.002, 0.5, false)],
-            bounds: Some([0.0, 0.0, 0.005, 1.0]),
-        }
-    );
-    assert_eq!(e.selection.pending.as_ref().unwrap().request.target, REFINE);
-}
-
-#[test]
-fn each_tile_asks_the_model_for_its_own_feature() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    capturing(e);
-    let sky = Request::feature(Feature::Sky, Target::NewMask);
-    for (n, request) in [SUBJECT, sky.clone(), BACKGROUND].into_iter().enumerate() {
-        e.request_selection(request.clone());
-        assert!(
-            matches!(asked(e)[n], Action::Auto(f) if f == feature(&request)),
-            "{:?}",
-            asked(e)[n]
-        );
-        e.selection.cancel();
-    }
-    // Sky's own model answers Sky; Subject's answers Subject and Background.
-    assert_eq!(
-        [SUBJECT, sky, BACKGROUND].map(|r| feature(&r).pack()),
-        [Pack::Subject, Pack::Sky, Pack::Subject]
-    );
-}
-
-#[test]
-fn background_aimed_or_refined_by_hand_asks_for_the_subject_and_stays_inverted() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    capturing(e);
-    // Nothing found: the drawer offers aiming at the subject for Background.
-    e.request_selection(BACKGROUND);
-    answer(e, Err(Failure::NoSubject));
-    aim(e, BACKGROUND);
-    e.prompt_click([0.5, 0.5], true);
-    assert_eq!(click(e, 1).points, [at(0.5, 0.5, true)]);
-    assert_eq!(e.selection.pending.as_ref().unwrap().request, BACKGROUND);
-    answer(e, Ok(generated(175)));
-    let c = &e.document.edit.recipe().masks[0].components[0];
-    assert!(c.invert);
-    let MaskShape::Bitmap(b) = &c.shape else {
-        panic!()
-    };
-    assert_eq!(feature_of(b, c.invert), Feature::Background);
-    e.selection.end_prompting();
-    // Refining it aims at the subject again, and the result keeps the inversion.
-    e.begin_refining(0, 0);
-    e.prompt_click([0.4, 0.4], true);
-    assert_eq!(click(e, 2).points, [at(0.4, 0.4, true)]);
-    let pending = e.selection.pending.as_ref().unwrap().request.clone();
-    assert_eq!(feature(&pending), Feature::Background);
-    assert_eq!(pending.target, REFINE);
-    answer(e, Ok(generated(176)));
-    let m = &e.document.edit.recipe().masks;
-    assert_eq!(m.len(), 1);
-    assert!(m[0].components[0].invert);
-}
-
-#[test]
-fn switching_tools_ends_aiming() {
-    let mut f = fixture();
-    let e = &mut f.editor;
-    capturing(e);
-    aim(e, SUBJECT);
-    e.prompt_click([0.5, 0.5], true);
-    answer(e, Ok(generated(177)));
-    let ctx = e.context.clone();
-    // A pass with the Mask tool keeps it.
-    e.background(&ctx);
-    assert!(e.selection.prompting.is_some());
-    e.view.toggle(crate::app::develop::state::Tool::Crop);
-    e.background(&ctx);
-    e.view.toggle(crate::app::develop::state::Tool::Mask);
-    e.background(&ctx);
-    assert!(e.selection.prompting.is_none(), "the old prompt came back");
-    // A click on the photo now aims at nothing.
-    e.prompt_click([0.6, 0.6], true);
-    assert_eq!(asked(e).len(), 1);
 }
 
 #[test]
@@ -1486,4 +947,674 @@ fn a_saved_mask_is_labelled_from_its_provenance_alone() {
             "A raster mask",
         ]
     );
+}
+
+/// A raster saved before extensions, by Select Subject or Sky (and one that
+/// saved no provenance, which only Select Subject made), finds the bundled
+/// generator again by its provenance: Subject's, named Background when
+/// inverted, or Sky's. Refining is offered only by Subject's, which takes
+/// clicks, as before.
+#[test]
+fn rasters_saved_before_extensions_find_the_bundled_generators() {
+    let f = fixture(0.2);
+    let e = &f.editor;
+    let saved = |feature: Option<&str>| BitmapMask {
+        source: feature.map(|feature| BitmapSource {
+            feature: feature.into(),
+            model: "sam2.1-hiera-small@0123456789abcdef".into(),
+            input: "0123456789abcdef".into(),
+        }),
+        id: "x".into(),
+        width: 4,
+        height: 3,
+        sampling: BITMAP_SAMPLING,
+    };
+    let found = |feature, invert| {
+        let offer = e.raster_generator(&saved(feature), invert).unwrap();
+        (offer.extension, offer.generator, offer.name, offer.invert)
+    };
+    let of = |generator: &str, name: &str, invert| {
+        (
+            ID.to_string(),
+            generator.to_string(),
+            name.to_string(),
+            invert,
+        )
+    };
+    assert_eq!(
+        found(Some(FEATURE_SUBJECT), false),
+        of("subject", "Subject", false)
+    );
+    assert_eq!(
+        found(Some(FEATURE_SUBJECT), true),
+        of("subject", "Background", true)
+    );
+    assert_eq!(found(Some(FEATURE_SKY), false), of("sky", "Sky", false));
+    assert_eq!(found(None, false), of("subject", "Subject", false));
+    assert!(
+        e.raster_generator(&saved(Some(FEATURE_SUBJECT)), false)
+            .unwrap()
+            .takes_prompt()
+    );
+    assert!(
+        !e.raster_generator(&saved(Some(FEATURE_SKY)), false)
+            .unwrap()
+            .takes_prompt()
+    );
+    // Labelled as before, from the provenance alone.
+    assert_eq!(
+        e.raster_source_text(&saved(Some(FEATURE_SUBJECT))),
+        "Found by the subject models"
+    );
+    assert_eq!(
+        e.raster_source_text(&saved(Some(FEATURE_SKY))),
+        "Found by the sky detector"
+    );
+}
+
+/// What the extension makes records what Select Subject and Sky recorded:
+/// `subject` for Subject and Background, `sky` for Sky, the network that
+/// made it, and an input identity of the same form. Automatic Subject,
+/// Background and Sky each ask their own generator with no input, and the
+/// coverage is the models' at the input's size.
+#[test]
+fn each_tile_asks_its_generator_and_records_what_made_the_mask() {
+    let mut f = fixture(0.21);
+    let e = &mut f.editor;
+    for (n, request) in [subject(e), sky(e), background(e)].into_iter().enumerate() {
+        e.request_selection(request.clone());
+        answered(e);
+        assert_eq!(
+            e.document.edit.recipe().masks.len(),
+            n + 1,
+            "{}",
+            e.messages.line()
+        );
+        let generator = if request.generator.name == "Sky" {
+            "sky"
+        } else {
+            "subject"
+        };
+        assert_eq!(asked(e)[n], (generator.to_string(), None));
+    }
+    let masks = &e.document.edit.recipe().masks;
+    assert_eq!(
+        masks.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(),
+        ["Subject", "Sky", "Background"]
+    );
+    let sources: Vec<_> = (0..3).map(|m| raster(e, m, 0).source.unwrap()).collect();
+    assert_eq!(
+        sources
+            .iter()
+            .map(|s| s.feature.as_str())
+            .collect::<Vec<_>>(),
+        [FEATURE_SUBJECT, FEATURE_SKY, FEATURE_SUBJECT]
+    );
+    assert!(sources[0].model.starts_with("sam2.1-hiera-small@"));
+    assert!(sources[1].model.starts_with("upernet-convnext-base@"));
+    assert_eq!(sources[0].model, sources[2].model);
+    for s in &sources {
+        assert_eq!(s.input.len(), 16, "{}", s.input);
+        assert!(s.input.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+    // Subject and Background asked the same thing of the same photo.
+    assert_eq!(sources[0].input, sources[2].input);
+    assert_ne!(sources[0].input, sources[1].input);
+    assert!(masks[2].components[0].invert && !masks[0].components[0].invert);
+    let subject = raster(e, 0, 0);
+    let pixels = mask_assets::resolve(&subject.id).unwrap();
+    assert_eq!(
+        (pixels.width, pixels.height),
+        (subject.width, subject.height)
+    );
+    // The stand-in's Subject is the left half of the photo.
+    let row = &pixels.data[..pixels.width as usize];
+    assert!(row[0] > 0 && row[row.len() - 1] == 0, "{row:?}");
+}
+
+/// Pins of what each gesture asks the generator (#965): a box, then clicks
+/// that each ask for the box with every click so far; every result after the
+/// first refines the mask the first made; a new box starts over.
+#[test]
+fn a_box_and_then_clicks_ask_for_the_box_with_every_click() {
+    let mut f = fixture(0.22);
+    let e = &mut f.editor;
+    aim(e, subject(e));
+    e.prompt_box([0.8, 0.9], [0.2, 0.1]);
+    let bounds = Some([0.2, 0.1, 0.8, 0.9]);
+    assert_eq!(click(e, 0), (vec![], bounds));
+    assert_eq!(e.selection.pending.as_ref().unwrap().request, subject(e));
+    answered(e);
+    e.prompt_click([0.5, 0.5], true);
+    assert_eq!(click(e, 1), (vec![at(0.5, 0.5, true)], bounds));
+    // Every result after the first refines the mask the first one made.
+    assert_eq!(e.selection.pending.as_ref().unwrap().request.target, REFINE);
+    answered(e);
+    e.prompt_click([0.3, 0.4], false);
+    assert_eq!(
+        click(e, 2),
+        (vec![at(0.5, 0.5, true), at(0.3, 0.4, false)], bounds)
+    );
+    answered(e);
+    assert_eq!(e.document.edit.recipe().masks.len(), 1);
+    assert_eq!(e.document.edit.history().steps().1, 3, "one step each");
+    // A new box starts over: it is sent without the clicks before it.
+    e.prompt_box([0.1, 0.1], [0.4, 0.4]);
+    assert_eq!(click(e, 3), (vec![], Some([0.1, 0.1, 0.4, 0.4])));
+    answered(e);
+
+    // Clicks and boxes while a selection runs are ignored, not queued.
+    e.selection.end_prompting();
+    aim(e, tile(e, "Subject", Target::NewMask));
+    e.prompt_click([0.5, 0.5], true);
+    e.prompt_click([0.6, 0.6], true);
+    e.prompt_box([0.1, 0.1], [0.9, 0.9]);
+    let p = e.selection.prompting.as_ref().unwrap();
+    assert_eq!((p.input.clicks.len(), p.input.bounds), (1, None));
+    assert_eq!(click(e, 4).0, [at(0.5, 0.5, true)]);
+    answered(e);
+    assert_eq!(asked(e).len(), 5, "nothing else was sent");
+    // Once it has answered, the next click is taken, and the lost ones are not.
+    e.prompt_click([0.7, 0.7], true);
+    assert_eq!(click(e, 5).0, [at(0.5, 0.5, true), at(0.7, 0.7, true)]);
+    answered(e);
+
+    // Clicks past the limit ask again without the extra point.
+    e.selection.prompting.as_mut().unwrap().input =
+        collector(vec![at(0.5, 0.5, true); MAX_CLICKS], None);
+    e.prompt_click([0.1, 0.1], true);
+    let (sent, _) = click(e, 6);
+    assert_eq!(sent.len(), MAX_CLICKS);
+    assert!(!sent.contains(&at(0.1, 0.1, true)));
+    answered(e);
+
+    // A drag under a hundredth of the photo is not a box.
+    e.prompt_box([0.5, 0.2], [0.509, 0.8]);
+    e.prompt_box([0.2, 0.5], [0.8, 0.509]);
+    assert!(settled(e));
+    e.prompt_box([0.5, 0.2], [0.52, 0.8]);
+    click(e, 7);
+    answered(e);
+    assert_eq!(asked(e).len(), 8);
+}
+
+/// Leaving something out first, when refining a mask already made, sends the
+/// mask's extent as the box, however thin.
+#[test]
+fn leaving_out_first_on_a_thin_mask_sends_its_extent_as_the_box() {
+    let mut f = fixture(0.23);
+    let e = &mut f.editor;
+    // One column of 200 selected: an extent far under the drag minimum.
+    let mut data = vec![0; 200];
+    data[0] = 255;
+    let id = mask_assets::register(Bitmap {
+        width: 200,
+        height: 1,
+        channels: 1,
+        depth: 1,
+        data,
+    })
+    .unwrap();
+    assert_eq!(super::raster_extent(&id), Some([0.0, 0.0, 0.005, 1.0]));
+    let mut made = generated(174);
+    made.id = id;
+    (made.width, made.height) = (200, 1);
+    let g = begin(e, subject(e));
+    finish(e, g, Ok(made));
+    e.begin_refining(0, 0);
+    e.prompt_click([0.002, 0.5], false);
+    assert_eq!(
+        click(e, 0),
+        (vec![at(0.002, 0.5, false)], Some([0.0, 0.0, 0.005, 1.0]))
+    );
+    assert_eq!(e.selection.pending.as_ref().unwrap().request.target, REFINE);
+    answered(e);
+}
+
+/// Nothing found, the drawer offers aiming at the subject for Background; that
+/// and refining a Background ask Subject's generator, and the result stays
+/// inverted.
+#[test]
+fn background_aimed_or_refined_by_hand_asks_for_the_subject_and_stays_inverted() {
+    // An all-black photo: the stand-in finds no subject in it.
+    let mut f = fixture(0.);
+    let e = &mut f.editor;
+    e.request_selection(background(e));
+    answered(e);
+    assert_eq!(
+        e.selection.failure.as_ref().map(|f| &f.1),
+        Some(&Failure::NoSubject)
+    );
+    assert_eq!(e.messages.line(), "No person or animal found");
+    assert_eq!(asked(e)[0], ("subject".to_string(), None));
+    draw_masking_panel(e);
+    // A box, which the stand-in fills whatever the photo.
+    aim(e, background(e));
+    e.prompt_box([0.1, 0.1], [0.6, 0.6]);
+    assert_eq!(click(e, 1), (vec![], Some([0.1, 0.1, 0.6, 0.6])));
+    assert_eq!(e.selection.pending.as_ref().unwrap().request, background(e));
+    answered(e);
+    let c = &e.document.edit.recipe().masks[0].components[0];
+    assert!(c.invert, "{}", e.messages.line());
+    let MaskShape::Bitmap(b) = &c.shape else {
+        panic!()
+    };
+    assert_eq!(feature_of(b, c.invert), Feature::Background);
+    assert_eq!(e.document.edit.recipe().masks[0].name, "Background");
+    e.selection.end_prompting();
+    // Refining it aims at the subject again, and the result keeps the inversion.
+    e.begin_refining(0, 0);
+    e.prompt_box([0.2, 0.2], [0.7, 0.7]);
+    click(e, 2);
+    let pending = e.selection.pending.as_ref().unwrap().request.clone();
+    assert_eq!(pending.generator.feature(), Some(Feature::Background));
+    assert_eq!(pending.target, REFINE);
+    answered(e);
+    let m = &e.document.edit.recipe().masks;
+    assert_eq!(m.len(), 1);
+    assert!(m[0].components[0].invert);
+    assert_eq!(
+        e.document.edit.history().steps().0.last().unwrap().name,
+        "Refine Background"
+    );
+}
+
+#[test]
+fn switching_tools_ends_aiming() {
+    let mut f = fixture(0.24);
+    let e = &mut f.editor;
+    aim(e, subject(e));
+    e.prompt_click([0.5, 0.5], true);
+    answered(e);
+    let ctx = e.context.clone();
+    // A pass with the Mask tool keeps it.
+    e.background(&ctx);
+    assert!(e.selection.prompting.is_some());
+    e.view.toggle(crate::app::develop::state::Tool::Crop);
+    e.background(&ctx);
+    e.view.toggle(crate::app::develop::state::Tool::Mask);
+    e.background(&ctx);
+    assert!(e.selection.prompting.is_none(), "the old prompt came back");
+    // A click on the photo now aims at nothing.
+    e.prompt_click([0.6, 0.6], true);
+    assert!(settled(e));
+    assert_eq!(asked(e).len(), 1);
+}
+
+/// Without the models, each selection asks for its own before it runs, as
+/// the drawer always did: the catalog's upgrade first, then the download,
+/// with what and how much. Download installs them and the selection goes on
+/// by itself. Sky's are its own: having Subject's doesn't install them.
+/// Aiming without them asks at the first click and goes back to aiming.
+#[test]
+fn each_selection_asks_for_its_own_models_once_and_then_runs() {
+    let mut f = fixture_with(0.25, Setup::default());
+    let e = &mut f.editor;
+    // The catalog is the first format: ask to upgrade before anything else.
+    e.library
+        .as_ref()
+        .unwrap()
+        .session
+        .catalog()
+        .db_for_tests()
+        .execute_batch("PRAGMA user_version=1")
+        .unwrap();
+    e.request_selection(subject(e));
+    assert_eq!(e.selection.prompt, Some(Prompt::Upgrade(subject(e))));
+    assert!(e.selection.running().is_none());
+    e.library
+        .as_mut()
+        .unwrap()
+        .session
+        .catalog_mut_for_tests()
+        .upgrade_for_raster_masks()
+        .unwrap();
+    e.selection.prompt = None;
+    // Upgraded, the models are the next thing asked for; no download starts.
+    let request = subject(e);
+    let guard = Guard::of(e.document.edit.recipe(), Target::NewMask);
+    e.request_selection(request.clone());
+    answered(e);
+    fn what(what: &'static str, megabytes: std::ops::Range<u64>) -> impl Fn(&NeedsSetup) -> bool {
+        move |setup| setup.what == what && megabytes.contains(&setup.bytes.div_ceil(1_000_000))
+    }
+    match &e.selection.prompt {
+        Some(Prompt::Setup {
+            request: r,
+            setup,
+            guard: g,
+            then: Resume::Select,
+        }) if *r == request && *g == guard => {
+            assert!(what("the selection models", 250..300)(setup), "{setup:?}")
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(e.document.edit.recipe().masks.is_empty());
+    draw_masking_panel(e);
+    // Download: the selection goes on once they are in.
+    e.setup_generator(&request.generator);
+    pump(e, "the mask after the download", |e| {
+        e.document.edit.recipe().masks.len() == 1 && settled(e)
+    });
+    assert_eq!(e.selection.prompt, None);
+    assert!(
+        e.messages.line().contains("selected"),
+        "{}",
+        e.messages.line()
+    );
+    // Sky asks for its own.
+    e.request_selection(sky(e));
+    answered(e);
+    match &e.selection.prompt {
+        Some(Prompt::Setup { setup, .. }) => {
+            assert!(what("the sky model", 200..260)(setup), "{setup:?}")
+        }
+        other => panic!("{other:?}"),
+    }
+    e.selection.prompt = None;
+    // Subject's in place, aiming needs nothing more.
+    aim(e, subject(e));
+    e.selection.end_prompting();
+    std::fs::remove_dir_all(f._dir.path().join("local/models")).unwrap();
+    // Without them, aiming starts, and its first click asks for them, then
+    // aims again once they are in.
+    let e = &mut f.editor;
+    aim(e, subject(e));
+    e.prompt_click([0.5, 0.5], true);
+    answered(e);
+    assert!(e.selection.prompting.is_none());
+    assert!(matches!(
+        e.selection.prompt,
+        Some(Prompt::Setup {
+            then: Resume::Aim,
+            ..
+        })
+    ));
+    e.setup_generator(&subject(e).generator);
+    pump(e, "aiming again", |e| e.selection.prompting.is_some());
+}
+
+/// With a remote worker configured, the models don't have to be here:
+/// Subject, its clicks and Sky run on the worker, through the extension, and
+/// make masks as they do here. One that is gone fails as a missing runtime
+/// does, and a cancelled answer applies nothing.
+#[test]
+fn a_selection_runs_through_the_remote_worker_into_one_mask() {
+    let (endpoint, calls) = rawmakase_ai_masks::fake::remote_worker();
+    let mut f = fixture_with(
+        0.26,
+        Setup {
+            endpoint: Some(&endpoint),
+            ..Default::default()
+        },
+    );
+    let e = &mut f.editor;
+    e.request_selection(subject(e));
+    answered(e);
+    assert_eq!(
+        e.document.edit.recipe().masks.len(),
+        1,
+        "{}",
+        e.messages.line()
+    );
+    assert_eq!(e.selection.prompt, None, "nothing to download");
+    let b = raster(e, 0, 0);
+    assert_eq!(b.source.as_ref().unwrap().feature, FEATURE_SUBJECT);
+    // A sky on the same photo, as a component of the same mask.
+    e.request_selection(tile(
+        e,
+        "Sky",
+        Target::Component {
+            mask: 0,
+            op: MaskOp::Add,
+        },
+    ));
+    answered(e);
+    assert_eq!(e.document.edit.recipe().masks[0].components.len(), 2);
+    // Clicks refine it from the analysis the worker kept.
+    e.begin_refining(0, 0);
+    e.prompt_click([0.7, 0.5], true);
+    answered(e);
+    let calls = calls.lock().unwrap().clone();
+    assert_eq!((calls.analyses, calls.skies, calls.segments), (1, 1, 1));
+    assert_eq!(e.document.edit.recipe().masks[0].components.len(), 2);
+    // A cancelled request applies nothing, and the drawer moves on.
+    e.selection.end_prompting();
+    let before = e.document.edit.recipe().clone();
+    e.request_selection(background(e));
+    e.cancel_selection();
+    assert_eq!(e.messages.line(), "Selection cancelled");
+    pump(e, "the cancel to reach the program", |e| {
+        e.extensions.mask_ledger(ID).unwrap().in_use() == 0
+    });
+    assert_eq!(*e.document.edit.recipe(), before);
+    assert!(e.selection.pending.is_none());
+
+    // Nothing listens here.
+    let mut f = fixture_with(
+        0.27,
+        Setup {
+            endpoint: Some("127.0.0.1:1"),
+            ..Default::default()
+        },
+    );
+    let e = &mut f.editor;
+    e.request_selection(subject(e));
+    answered(e);
+    let (_, failure) = e.selection.failure.clone().unwrap();
+    assert!(
+        matches!(failure, Failure::RuntimeUnavailable(_)),
+        "{failure:?}"
+    );
+    assert_eq!(e.document.edit.recipe().masks.len(), 0);
+}
+
+/// The bundled program is told where the app looks for ONNX Runtime, and
+/// inherits the user's RAWMAKASE_ORT_LIB as it is.
+#[test]
+fn the_program_is_told_the_apps_runtime_folders() {
+    let dir = tempfile::tempdir().unwrap();
+    let report = dir.path().join("report");
+    let mut f = fixture_with(
+        0.29,
+        Setup {
+            models: true,
+            report: Some(&report),
+            ..Default::default()
+        },
+    );
+    let e = &mut f.editor;
+    e.request_selection(subject(e));
+    answered(e);
+    let text = std::fs::read_to_string(&report).unwrap();
+    let mut lines = text.lines();
+    let dirs = std::env::join_paths(rawmakase_inference::runtime::runtime_search_dirs()).unwrap();
+    assert_eq!(lines.next(), Some(format!("{:?}", Some(dirs)).as_str()));
+    assert_eq!(
+        lines.next(),
+        Some(format!("{:?}", std::env::var_os(rawmakase_inference::RUNTIME_ENV)).as_str())
+    );
+}
+
+/// A saved Subject, Sky or Background mask with the AI masks extension
+/// disabled, its program missing, or no extensions at all: it renders, keeps
+/// its label, and what would make it again says why it can't.
+#[test]
+fn saved_masks_render_and_keep_their_labels_without_the_extension() {
+    let mut f = fixture(0.3);
+    let e = &mut f.editor;
+    e.request_selection(subject(e));
+    answered(e);
+    e.request_selection(sky(e));
+    answered(e);
+    assert_eq!(e.document.edit.recipe().masks.len(), 2);
+    assert!(e.flush());
+    let (subject_raster, sky_raster) = (raster(e, 0, 0), raster(e, 1, 0));
+    let render = |e: &Editor, recipe: &Recipe| {
+        let image = e.document.full().cloned().unwrap();
+        crate::develop::render(&image, &recipe.checked().unwrap(), 400, Cancel::NEVER).unwrap()
+    };
+    let mut lit = e.document.edit.recipe().clone();
+    lit.masks[0].adjust.exposure = 2.;
+    lit.masks[1].adjust.exposure = -2.;
+    let base = render(e, &Recipe::default());
+    let shown = render(e, &lit);
+    assert_ne!(base.pixels, shown.pixels);
+    let check = |e: &mut Editor, why: &str| {
+        assert_eq!(render(e, &lit).pixels, shown.pixels, "{why}");
+        assert_eq!(
+            e.raster_source_text(&subject_raster),
+            "Found by the subject models"
+        );
+        assert_eq!(
+            e.raster_source_text(&sky_raster),
+            "Found by the sky detector"
+        );
+        assert_eq!(e.raster_generator(&subject_raster, false), Err(why.into()));
+        assert_eq!(e.raster_generator(&sky_raster, false), Err(why.into()));
+        e.begin_refining(0, 0);
+        assert!(e.selection.prompting.is_none());
+        e.view.masking.select_after_selection(0, 0);
+        draw_masking_panel(e);
+    };
+    e.set_extension_enabled(ID, false);
+    assert!(e.extensions.mask_tiles().is_empty());
+    check(e, "AI Masks is disabled");
+    // Its program missing beside the app: the tiles say why.
+    e.extensions = Host::with_search_dirs_for_tests(&f.data.join("other"), Vec::new());
+    let missing = format!(
+        "{} is not installed beside RAWmakase",
+        rawmakase_extensions::bundled::program_name("rawmakase-ai-masks")
+    );
+    let tiles = e.extensions.mask_tiles();
+    assert_eq!(tiles.len(), 3);
+    assert!(
+        tiles
+            .iter()
+            .all(|(_, why)| why.as_deref() == Some(&*missing))
+    );
+    check(e, &missing);
+    // No extensions at all.
+    e.extensions = Host::inert();
+    check(e, "Made by rawmakase.ai-masks, which isn't installed");
+}
+
+/// The built `rawmakase-ai-masks`, found beside the test binary's folder as a
+/// release finds it beside the app: it starts at the first request, takes the
+/// photo through shared memory and answers. It is asked what it refuses before
+/// it looks for any model (Sky with clicks), so it reads and moves no model
+/// folder of this computer's. Run `cargo build -p rawmakase-ai-masks` first,
+/// as `make check` does.
+#[test]
+fn the_built_program_answers_a_request() {
+    let exe = std::env::current_exe().unwrap();
+    let target = exe.parent().and_then(Path::parent).unwrap().to_path_buf();
+    let name = rawmakase_extensions::bundled::program_name("rawmakase-ai-masks");
+    assert!(
+        target.join(&name).is_file(),
+        "{} is missing: build it with cargo build -p rawmakase-ai-masks",
+        target.join(&name).display()
+    );
+    let mut f = fixture(0.31);
+    let e = &mut f.editor;
+    e.extensions = Host::with_search_dirs_for_tests(&f.data, vec![target]);
+    let mut aimed = sky(e);
+    aimed.generator.prompt = true;
+    aim(e, aimed);
+    e.prompt_click([0.5, 0.5], true);
+    answered(e);
+    let (_, failure) = e.selection.failure.clone().expect("an answer");
+    assert_eq!(failure, Failure::Failed("sky takes no such input".into()));
+    pump(e, "the request's buffers to be let go of", |e| {
+        e.extensions.mask_ledger(ID).unwrap().in_use() == 0
+    });
+    assert!(e.document.edit.recipe().masks.is_empty());
+    e.extensions.stop(Instant::now() + Duration::from_secs(2));
+}
+
+/// The real models through the extension: a click on the photo's subject
+/// becomes a mask that changes the render, and survives a save. The models
+/// are linked in as the app's install from before, so their folder is left as
+/// it is. With RAWMAKASE_REMOTE_ENDPOINT set, the same selection runs through
+/// the remote worker instead.
+#[test]
+#[cfg(unix)]
+#[ignore = "needs RAWMAKASE_TEST_MODEL, RAWMAKASE_ORT_LIB and RAWMAKASE_TEST_RAW; with \
+            RAWMAKASE_REMOTE_ENDPOINT the same selection runs through the remote worker"]
+fn the_real_model_selects_through_the_extension_and_the_mask_changes_the_render() {
+    let model = PathBuf::from(std::env::var("RAWMAKASE_TEST_MODEL").unwrap());
+    let raw = PathBuf::from(std::env::var("RAWMAKASE_TEST_RAW").unwrap());
+    let endpoint = std::env::var("RAWMAKASE_REMOTE_ENDPOINT")
+        .ok()
+        .filter(|endpoint| !endpoint.is_empty());
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let image = Arc::new(
+        crate::photo::open(&raw)
+            .unwrap()
+            .develop(
+                crate::camera_data::Decode::full(Default::default()),
+                Cancel::new(&cancel),
+            )
+            .unwrap(),
+    );
+    let mut f = fixture_with(
+        0.32,
+        Setup {
+            endpoint: endpoint.as_deref(),
+            ..Default::default()
+        },
+    );
+    let local = f._dir.path().join("local/models");
+    std::fs::create_dir_all(&local).unwrap();
+    std::os::unix::fs::symlink(
+        &model,
+        local.join(rawmakase_ai_masks::model_folder(
+            rawmakase_ai_masks::SUBJECT,
+        )),
+    )
+    .unwrap();
+    let mut launch = program(&f._dir.path().join("local"), endpoint.as_deref(), None);
+    launch.env.push((REAL.into(), "1".into()));
+    let e = &mut f.editor;
+    e.extensions =
+        Host::with_bundled_for_tests(&f.data, ID, launch, rawmakase_extensions::session::QUEUE);
+    e.document.set_image(image.clone());
+    aim(e, subject(e));
+    e.prompt_click([0.5, 0.62], true);
+    let until = Instant::now() + Duration::from_secs(120);
+    let ctx = e.context.clone();
+    while !settled(e) {
+        e.events(&ctx);
+        e.extensions_frame(&ctx);
+        assert!(Instant::now() < until, "no result: {}", e.messages.line());
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        e.document.edit.recipe().masks.len(),
+        1,
+        "{}",
+        e.messages.line()
+    );
+    // The mask selects part of the photo: lift it and compare the two regions.
+    let mut recipe = e.document.edit.recipe().clone();
+    recipe.masks[0].adjust.exposure = 2.;
+    let base = crate::develop::render(
+        &image,
+        &Recipe::default().checked().unwrap(),
+        400,
+        Cancel::NEVER,
+    )
+    .unwrap();
+    let lit =
+        crate::develop::render(&image, &recipe.checked().unwrap(), 400, Cancel::NEVER).unwrap();
+    let changed = base
+        .pixels
+        .iter()
+        .zip(&lit.pixels)
+        .filter(|(a, b)| (a[1] - b[1]).abs() > 0.02)
+        .count();
+    let share = changed as f32 / base.pixels.len() as f32;
+    assert!((0.01..0.9).contains(&share), "mask covers {share}");
+    // And it survives a save.
+    assert!(e.flush());
 }

@@ -87,7 +87,7 @@ check rawmakase-inference "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase
 check rawmakase-selection "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-interop|rawmakase-decode|rawmakase-protocol|rawmakase-remote|rawmakase-extension.*|wgpu.*|naga|$gui|$native"
 # The remote worker and its client sit on top of the selection models and inference (and the cancellation token) alone: the protocol
 # and the worker know no catalog, renderer, GUI or native library, and only the
-# app composes the client.
+# AI masks extension composes the client.
 check rawmakase-remote "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-interop|rawmakase-decode|rawmakase-protocol|wgpu.*|naga|$gui|$native"
 # The AI masks extension sits on the selection models, the remote client and
 # the installer: no catalog, renderer, decoder, GUI, GPU or native imaging
@@ -104,6 +104,10 @@ check rawmakase "rawmakase-mcp|rmcp.*"
 # Nor does it link the bundled MIDI program, or a MIDI library: MIDI input is
 # that program's (extensions/midi), which the app starts beside it.
 check rawmakase "rawmakase-midi|midir|coremidi|alsa.*"
+# Nor the bundled AI masks program, the selection models it runs or the
+# remote worker's client (extensions/ai-masks): the app runs AI Denoise on
+# rawmakase-inference alone.
+check rawmakase "rawmakase-ai-masks|rawmakase-selection|rawmakase-remote"
 # RAWmakase's own RAW decoders sit on the TIFF reader and the cancellation token alone: no workspace crate
 # above them, no GPU, GUI or inference, and nothing built from C (no build
 # script crates).

@@ -118,7 +118,21 @@ const ERRORS: usize = 5;
 const BUNDLED: &[&str] = &[
     include_str!("../../../extensions/mcp/rawmakase-extension.toml"),
     include_str!("../../../extensions/midi/rawmakase-extension.toml"),
+    include_str!("../../../extensions/ai-masks/rawmakase-extension.toml"),
 ];
+
+/// Tells a bundled program the folders the app searches for ONNX Runtime
+/// beside its executable, `dirs`, in
+/// [`HOST_RUNTIME_DIRS`](rawmakase_inference::runtime::HOST_RUNTIME_DIRS),
+/// so the AI masks extension runs on the runtime the app bundles. The user's
+/// `RAWMAKASE_ORT_LIB` is inherited as it is, and searched before these.
+fn pass_runtime_dirs(launch: &mut Launch, dirs: &[PathBuf]) {
+    use rawmakase_inference::runtime::HOST_RUNTIME_DIRS;
+    launch.env.retain(|(name, _)| name != HOST_RUNTIME_DIRS);
+    if let Ok(joined) = std::env::join_paths(dirs) {
+        launch.env.push((HOST_RUNTIME_DIRS.into(), joined));
+    }
+}
 
 /// Files the core kept in the data folder before an extension took them
 /// over, by extension: on the extension's first start the file is copied
@@ -301,6 +315,9 @@ pub(in crate::app) struct Extension {
     pub panels: BTreeMap<String, PanelView>,
     /// Its mask generators' setups running or failed, by generator.
     pub setups: BTreeMap<String, mask_generator::Setup>,
+    /// What the program last said of a mask request it is answering, by its
+    /// ticket: where it runs (`on <endpoint>`).
+    mask_progress: Option<(u64, String)>,
     /// Commands whose target is being read, before they are sent.
     reading: Vec<TargetRead>,
     last_active: Instant,
@@ -884,6 +901,7 @@ impl Host {
                         status: None,
                         panels: BTreeMap::new(),
                         setups: BTreeMap::new(),
+                        mask_progress: None,
                         reading: Vec::new(),
                         last_active: Instant::now(),
                         mtimes,
@@ -1066,6 +1084,12 @@ impl Host {
         // After the tests' replacement above, which would drop it: the program
         // serves the protocol of the API its manifest declares.
         launch.set_api(e.manifest.extension.api);
+        if e.origin == Origin::Bundled {
+            pass_runtime_dirs(
+                &mut launch,
+                &rawmakase_inference::runtime::runtime_search_dirs(),
+            );
+        }
         let devices = std::sync::Arc::new(Devices::default());
         let adapters: Vec<String> = e
             .manifest
@@ -1747,12 +1771,18 @@ impl Host {
                     }
                 }
                 Update::Progress { id, done, text } => {
-                    if let Some(Pending::MaskSetup { generator }) =
-                        e.run.as_ref().and_then(|r| r.requests.get(&id))
-                        && let Some(mask_generator::Setup::Running { done: d, text: t }) =
-                            e.setups.get_mut(generator)
-                    {
-                        (*d, *t) = (done, text);
+                    match e.run.as_ref().and_then(|r| r.requests.get(&id)) {
+                        Some(Pending::MaskSetup { generator }) => {
+                            if let Some(mask_generator::Setup::Running { done: d, text: t }) =
+                                e.setups.get_mut(generator)
+                            {
+                                (*d, *t) = (done, text);
+                            }
+                        }
+                        Some(Pending::Mask { ticket }) => {
+                            e.mask_progress = text.map(|text| (*ticket, text));
+                        }
+                        _ => {}
                     }
                 }
                 // The same terminal cleanup as `Hung`, whichever comes first:
