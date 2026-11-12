@@ -302,7 +302,7 @@ impl ChannelCurves {
     pub(crate) fn apply_hdr(&self, p: [f32; 3]) -> [f32; 3] {
         let graded = |c: usize, v: f32| {
             let u = self.channel(c, to_hdr_domain(v)).clamp(0., 1.);
-            from_hdr_domain(u)
+            hdr_boost(v, from_hdr_domain(u))
         };
         std::array::from_fn(|c| {
             let v = p[c].max(0.);
@@ -315,6 +315,21 @@ impl ChannelCurves {
     }
 }
 
+/// How much more of its change a graded channel `v` (above white) takes in an HDR
+/// master than the domain alone gives `graded`: the change's log grows by up to
+/// [`HDR_BOOST`], in proportion to `v`'s stops above white up to three. Camera Raw 18.7's
+/// tint above white is that much stronger than the domain's (ours was 0.95 of its log
+/// at white, about 0.9 from twice to four times white, down to 0.73 at eight times, on
+/// the gray ramp's 24 settings; docs/records/hdr-stage1-results.md#color-grading).
+pub(crate) fn hdr_boost(v: f32, graded: f32) -> f32 {
+    if v <= 1. || graded <= 0. {
+        return graded;
+    }
+    let w = 1. + HDR_BOOST * (v.log2() / 3.).min(1.);
+    v * (graded / v).powf(w)
+}
+/// The largest strengthening [`hdr_boost`] gives, three stops above white and over.
+pub(crate) const HDR_BOOST: f32 = 0.1;
 /// The HDR master's value that grades as SDR's graphics white.
 pub(crate) const HDR_TOP: f32 = 16.;
 /// An HDR master's channel in the domain its grading works in: itself in the deep
@@ -334,6 +349,20 @@ mod tests {
     use super::*;
     fn graded(r: &Recipe, p: [f32; 3]) -> [f32; 3] {
         ChannelCurves::new(r).unwrap().apply(p)
+    }
+    /// Above white the grade's change is strengthened by stops above white, up to
+    /// [`HDR_BOOST`] from three stops on; at white and below it is the domain's alone.
+    #[test]
+    fn the_hdr_grade_is_stronger_above_white() {
+        assert_eq!(hdr_boost(0.5, 0.4), 0.4);
+        assert_eq!(hdr_boost(1., 1.2), 1.2);
+        let ratio = |v: f32, gain: f32| hdr_boost(v, v * gain) / v;
+        let half = ratio(2f32.powf(1.5), 0.8).ln() / 0.8f32.ln();
+        assert!((half - (1. + HDR_BOOST / 2.)).abs() < 1e-4, "{half}");
+        for v in [8., 16., 64.] {
+            let w = ratio(v, 1.25).ln() / 1.25f32.ln();
+            assert!((w - (1. + HDR_BOOST)).abs() < 1e-4, "{v}: {w}");
+        }
     }
     #[test]
     fn table_has_the_expected_size() {

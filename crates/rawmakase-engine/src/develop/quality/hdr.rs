@@ -614,6 +614,43 @@ mod tests {
         Ok(())
     }
 
+    /// A look's split toning renders in the master as colour grading does, in its HDR
+    /// domain: it tints the master's grays below and above white, and stays finite.
+    #[test]
+    fn a_looks_split_toning_renders_in_the_master() -> anyhow::Result<()> {
+        let im = grays(&[0.05, 0.3, 1.2, 40.]);
+        let mut r = hdr_recipe(&im);
+        let look = CameraProfile::creative_for_test(&im.metadata);
+        r.profile = Some(std::sync::Arc::new(look.clone()));
+        let plain = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let mut toned = look;
+        toned.enhanced.as_mut().unwrap().settings.toning = Some(crate::camera_profiles::Toning {
+            shadows: [210. / 360., 0.4],
+            highlights: [50. / 360., 0.3],
+            balance: 0.,
+        });
+        r.profile = Some(std::sync::Arc::new(toned));
+        let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let at =
+            |o: &crate::rendered::HdrImage, k: usize| o.pixels[4 * o.width as usize + k * 8 + 4];
+        let tint = |p: [f32; 3]| p[2] / p[0];
+        assert!(
+            tint(at(&out, 0)) > 1.05 * tint(at(&plain, 0)),
+            "cool shadows"
+        );
+        assert!(
+            tint(at(&out, 2)) < tint(at(&plain, 2)) / 1.02,
+            "warm highlights"
+        );
+        assert!(
+            out.pixels
+                .iter()
+                .flatten()
+                .all(|v| v.is_finite() && *v >= 0.)
+        );
+        Ok(())
+    }
+
     /// A `.cube` look's RGB table renders a gray ramp through the ACR3 curve as Camera
     /// Raw 18.7 renders it at HDR limit 8: on overrange-encoded values, and above 16
     /// times white with the light beyond added back (the levels' default renders are

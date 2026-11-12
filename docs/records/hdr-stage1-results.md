@@ -562,7 +562,26 @@ saturation 0.9 it moves the master's mean ΔE_ITP from Camera Raw's from 0.24 to
 below white and to 2.94 above it, where the SDR rendition's goes from 0.23 to 1.05.
 Camera Raw's HDR split tone is stronger than its SDR one there (its mean change 20.6
 ΔE_ITP below white and 25.7 above, against 12.6 in SDR). By the acceptance criterion
-([Decisions](#decisions)) a look's split toning stays refused.
+([Decisions](#decisions)) a look's split toning stayed refused.
+
+The same shortfall is in the user's Color Grading: on the gray ramp's 24 grading
+settings our HDR tint's log is 0.95 of Camera Raw's at white, about 0.9 from twice to
+four times white and down to 0.73–0.82 at eight times for some, so the tint fades too
+early above white. Widening the domain (16 times white at 1 → 24 or 32) didn't help
+(ΔE_ITP added above white 3.11 → 3.31 and 4.58). Strengthening each channel's change
+above white instead, its log by 1 + 0.1 × min(stops above white / 3, 1)
+(`color_grade_curves::hdr_boost`), gives on the 24 settings ΔE_ITP added 2.57 above
+white (3.11 before; 2.78 at 0.2) and luminance 0.0164 stop (0.0175), the same below
+white; on the twelve validation and holdout photos' grading captures (a split tone, a
+Highlights tint with Luminance +30, a Global tint) the master's mean ΔE_ITP from
+Camera Raw falls from 2.46 to 2.32, 2.45 to 2.33 and 2.29 to 2.28, its peak error from
+0.042 to 0.020 and 0.041 to 0.029 stop, and its median above white is the same or
+better but for the Highlights tint (0.014 to 0.019 stop). With it, a look's split
+toning is 0.003 / 0.060 stop below white (SDR 0.002 / 0.036), 0.002 above, and adds
+ΔE_ITP 0.6 below white and 1.2 above (SDR 0.5): within the criterion.
+
+Decision, 2026-11-12: an HDR master's colour grading takes the boost, and a look's
+split toning renders.
 
 **On photos** (2026-11-11). The six validation photos of [Validation](#validation)
 (Adobe Standard, HDR limit 4) through a `.cube` look (creative), an HSV-table look at
@@ -1825,7 +1844,7 @@ photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
   and its sliders.
-- Looks that set Clarity above +50 or Highlights, and split toning, stay refused (Adobe Vivid sets Clarity +10). A B&W `.cube`
+- Looks that set Clarity above +50 or Highlights stay refused (Adobe Vivid sets Clarity +10; a look's split toning renders since 2026-11-12). A B&W `.cube`
   renders saturation-0.9 red and magenta out of its gamut almost black above white in
   Camera Raw ([Looks](#looks)); RAWmakase renders their gray.
 - Saturated colours: with no look, the colour patches at saturation 0.9 differ from

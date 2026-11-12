@@ -233,18 +233,6 @@ impl Enhanced {
             ..self.clone()
         }
     }
-    /// Refuses a look whose HDR rendering is not measured: one with split toning. Its
-    /// HSV and RGB tables and its curve render in HDR (`super::hdr_look`,
-    /// [`RgbTable::apply_hdr`]), a fitted Camera Look's too, by the same rules; its
-    /// sliders and settings are added to the user's, and `model::hdr::check_recipe`
-    /// checks them as it checks those.
-    pub(super) fn check_hdr(&self) -> Result<()> {
-        ensure!(
-            self.settings.toning.is_none(),
-            "Looks with split toning are not supported in HDR yet"
-        );
-        Ok(())
-    }
     /// The look's HSV table in HDR, as Camera Raw 18.7 applies a look's table there:
     /// as the DNG SDK applies an HDR profile's (a 3D table on overrange-encoded
     /// values), unclipped.
