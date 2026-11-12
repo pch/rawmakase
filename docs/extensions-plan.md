@@ -893,6 +893,26 @@ ended with `not_admitted` (codes added to the design's list); a package's
 target comes from its file name, `<id>-<version>-<target>.rmext`, which must
 match its manifest; ids under `rawmakase.` can't be installed from a package.
 
+### Phase 3 decisions
+
+Defaults taken for phase 3 (#965), where the design left a choice open:
+
+| | Decision |
+| --- | --- |
+| D13 | AI masks declares two generators: `subject` (input `none` and `prompt`), with Subject and Background tiles (Background is an inverted Subject component), and `sky` (input `none`) |
+| D14 | Saved masks keep their `subject` and `sky` provenance; only the bundled `rawmakase.ai-masks` may claim those values, and other extensions' generators record `<extension>/<id>` |
+| D15 | The app renders the model input (8-bit sRGB, the selection input render) and owns the raster, its storage and its one History step; an extension sees pixels, never an edit |
+| D16 | A mask request's input and coverage buffers are both allocated by the app at the same size, so programs never send handles; the coverage must come back at that size |
+| D17 | The buffer descriptor gains 8-bit samples beside `f32` and `u16`, and defines its region, overlap and pixel centres now, so filters and patches fit later |
+| D18 | Budgets: 256 MiB of buffers per request and 512 MiB per extension, one ledger per extension id kept across restarts; a cancelled request's buffers stay counted until the program answers, and a program that holds them past a 10 s grace is ended |
+| D19 | Handles go one way, app to program, taken in arrival order; any framing fault ends an API 2 program, while API 1 programs keep phase 2's recovery |
+| D20 | Mask results keep Select Subject's guards (load, task generation, structure, content, shape) and don't check the edit revision, so slider edits made while selecting survive |
+| D21 | AI masks and AI Denoise share the one ONNX Runtime the app ships: the app passes its runtime folders as `RAWMAKASE_HOST_RUNTIME_DIRS` and never overrides `RAWMAKASE_ORT_LIB` |
+| D22 | The selection models stay in this computer's local data folder (`models/`, beside AI Denoise's), where earlier versions put them, so nothing is downloaded again or moved into a synced folder |
+| D23 | `remote-inference.json`, `RAWMAKASE_REMOTE_ENDPOINT` and the remote worker's name and protocol are unchanged; the extension reads them where the app did |
+| D24 | Input made while a prompt request runs is ignored, not queued; a command's `point`, `points` and `box` input is sent at once and queues behind whatever its program runs |
+| D25 | `brush` input is accepted in manifests and its commands are shown disabled with the reason, until brush input is built |
+
 ### Designed, not scheduled
 
 The rest of this plan is designed so that the phases above leave room for it,
@@ -981,7 +1001,8 @@ boundary, lifecycle cases covered deterministically.
 
 Decisions to take when their part is built, not before:
 
-- Memory budgets for shared-memory pixels and for idle programs (phase 2).
+- Memory budgets for idle programs (phase 2). Shared-memory budgets were set in
+  phase 3 (D18).
 - `scene` filters: the measurement design described under [Stages](#stages).
 - Filters limited by masks: stable mask ids and transfer rules, under
   [Kernels](#kernels).
