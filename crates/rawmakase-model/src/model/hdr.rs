@@ -248,6 +248,11 @@ fn check(r: &super::recipe::Recipe, fold: bool) -> Result<()> {
     {
         anyhow::bail!("A mask's {name} is not supported in HDR yet");
     }
+    if !masked_clarity_measured(&r) {
+        anyhow::bail!(
+            "A mask's Clarity outside 0 to +50, with the photo's own, is not supported in HDR yet"
+        );
+    }
     // A look's own settings render as the user's sliders do, added to them, and its
     // table and curve at the Profile Amount (`Recipe::with_profile_adjustments`): each
     // is checked as that slider is.
@@ -261,6 +266,13 @@ fn check(r: &super::recipe::Recipe, fold: bool) -> Result<()> {
         }
         if let Some(name) = unmeasured(folded) {
             anyhow::bail!("{name}, which the look sets, is not supported in HDR yet");
+        }
+        // A look's Clarity adds to the photo's own, so a mask's Clarity is bounded by
+        // their sum.
+        if !masked_clarity_measured(folded) {
+            anyhow::bail!(
+                "A mask's Clarity outside 0 to +50, with the photo's and the look's own, is not supported in HDR yet"
+            );
         }
     }
     Ok(())
@@ -335,13 +347,36 @@ fn unrendered_mask_slider(a: &crate::model::masks::LocalAdjust) -> Option<&'stat
         ("Highlights", a.highlights),
         ("Whites", a.whites),
         ("Blacks", a.blacks),
-        ("Clarity", a.clarity),
         ("Dehaze", a.dehaze),
         ("Hue", a.hue),
         ("Saturation", a.saturation),
     ]
     .into_iter()
     .find_map(|(name, v)| (v != 0.).then_some(name))
+}
+
+/// Whether every pixel's Clarity stays in the range the global slider renders in, 0 to
+/// +50, when masks add theirs to the photo's own. A mask's Clarity works in the global
+/// slider's stage, so a pixel renders the global slider at the sum
+/// (docs/records/hdr-stage1-results.md#masks). The bound is conservative: each active
+/// mask's Clarity at its Amount is taken as reaching every pixel, positive masks and
+/// negative ones apart, whatever its shape covers.
+fn masked_clarity_measured(r: &super::recipe::Recipe) -> bool {
+    let masks: Vec<_> = r
+        .masks
+        .iter()
+        .filter(|g| g.is_active() && g.adjust.clarity != 0.)
+        .collect();
+    if masks.is_empty() {
+        return true;
+    }
+    let (lo, hi) = masks
+        .iter()
+        .fold((r.effects.clarity, r.effects.clarity), |(lo, hi), g| {
+            let v = g.adjust.clarity * g.amount;
+            (lo + v.min(0.), hi + v.max(0.))
+        });
+    lo >= 0. && hi <= CLARITY_MEASURED
 }
 
 /// Whether `r` renders an HDR master of the photo `m` describes, and if not, why;
@@ -619,8 +654,8 @@ mod tests {
         effects.effects.vignette = 0.5;
         assert!(check_recipe(&effects).is_ok());
         // A mask renders with Temp, Tint, Exposure, Contrast, Shadows, Texture, Color,
-        // Sharpness and Noise; any other slider refuses the master by its name
-        // (docs/hdr.md#masks).
+        // Sharpness, Noise and Clarity (in the global slider's range); any other slider
+        // refuses the master by its name (docs/hdr.md#masks).
         let mut masked = r.clone();
         masked.masks = vec![crate::model::masks::MaskGroup {
             components: vec![crate::model::masks::MaskComponent::new(
@@ -649,7 +684,7 @@ mod tests {
             ("Highlights", |a| a.highlights = -0.2),
             ("Whites", |a| a.whites = 0.2),
             ("Blacks", |a| a.blacks = -0.2),
-            ("Clarity", |a| a.clarity = 0.2),
+            ("Clarity", |a| a.clarity = -0.2),
             ("Dehaze", |a| a.dehaze = 0.2),
             ("Hue", |a| a.hue = 10.),
             ("Saturation", |a| a.saturation = 0.2),
@@ -660,7 +695,38 @@ mod tests {
             let error = check_recipe(&edit).unwrap_err().to_string();
             assert!(error.contains(&format!("A mask's {name}")), "{error}");
         }
-        masked.masks[0].adjust.clarity = 0.2;
+        // Clarity renders where, with the photo's own, it stays from 0 to +50, as the
+        // global slider does; overlapping masks add.
+        let mut clarity = masked.clone();
+        clarity.masks[0].adjust.clarity = 0.3;
+        clarity.effects.clarity = 0.2;
+        assert!(check_recipe(&clarity).is_ok());
+        let mut second = clarity.masks[0].clone();
+        second.adjust = crate::model::masks::LocalAdjust {
+            clarity: 0.2,
+            ..Default::default()
+        };
+        second.amount = 0.5;
+        clarity.masks.push(second);
+        let error = check_recipe(&clarity).unwrap_err().to_string();
+        assert!(error.contains("A mask's Clarity"), "{error}");
+        // A look's Clarity adds to the sum.
+        clarity.masks.pop();
+        let mut look = crate::camera_profiles::open::color(&crate::camera_data::Metadata {
+            make: "Fujifilm".into(),
+            model: "X100F".into(),
+            wb: [2., 1., 1.8],
+            daylight_wb: [2., 1., 1.8],
+            matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+            cam_xyz: [[0.9, -0.3, -0.1], [-0.4, 1.2, 0.2], [-0.1, 0.2, 0.6]],
+            ..Default::default()
+        })
+        .unwrap();
+        look.enhanced.as_mut().unwrap().clarity = 0.1;
+        clarity.profile = Some(std::sync::Arc::new(look));
+        let error = check_recipe(&clarity).unwrap_err().to_string();
+        assert!(error.contains("the look's own"), "{error}");
+        masked.masks[0].adjust.clarity = -0.2;
         masked.masks[0].hidden = true;
         assert!(
             check_recipe(&masked).is_ok(),

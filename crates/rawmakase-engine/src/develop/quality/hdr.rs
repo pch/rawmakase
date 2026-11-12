@@ -1099,6 +1099,19 @@ mod tests {
             ),
             (
                 LocalAdjust {
+                    clarity: 0.3,
+                    ..Default::default()
+                },
+                Recipe {
+                    effects: crate::model::effects::Effects {
+                        clarity: 0.3,
+                        ..base.effects.clone()
+                    },
+                    ..base.clone()
+                },
+            ),
+            (
+                LocalAdjust {
                     texture: 0.4,
                     ..Default::default()
                 },
