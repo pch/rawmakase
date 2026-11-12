@@ -1052,9 +1052,9 @@ mod tests {
     /// A mask renders in the master (docs/hdr.md#masks): over the whole frame, its
     /// Exposure, Shadows and Texture render the master the global slider renders, above
     /// white too, and half a frame's mask changes only its half; its Contrast and Color
-    /// leave light above white alone, and Sharpness and Noise leave tone alone. Whites,
-    /// Blacks, Hue, Saturation and Highlights refuse the master by name, and the GPU
-    /// leaves a masked master to the CPU.
+    /// leave light above white alone, its Whites lifts light above white too, and
+    /// Sharpness and Noise leave tone alone. Blacks, Hue, Saturation and Highlights
+    /// refuse the master by name, and the GPU leaves a masked master to the CPU.
     #[test]
     fn a_mask_renders_in_the_master_with_the_global_sliders_it_shares() -> Result<()> {
         use crate::develop::pipeline::pixel_params::supported_hdr;
@@ -1204,6 +1204,20 @@ mod tests {
             t.iter().zip(&q).all(|(a, b)| (a / b - 1.).abs() < 1e-4),
             "{t:?} {q:?}"
         );
+        // Whites follows Camera Raw's HDR mask Whites: a gain that keeps going above
+        // white, where SDR's mask curve falls (docs/records/hdr-stage1-results.md#masks).
+        let whites = render(&everywhere(LocalAdjust {
+            whites: 0.6,
+            ..Default::default()
+        }))?;
+        for column in [0, 3, 4] {
+            let lift = (gray(&whites, column) / gray(&plain, column)).log2();
+            assert!((0.15..0.8).contains(&lift), "{column}: {lift}");
+        }
+        assert!(
+            gray(&whites, 4) / gray(&plain, 4) > gray(&whites, 0) / gray(&plain, 0),
+            "lifts light above white more than the shadows"
+        );
         // Sharpness and Noise change detail, not tone: flat patches keep their light,
         // above white too.
         for adjust in [
@@ -1228,13 +1242,6 @@ mod tests {
             }
         }
         for (name, adjust) in [
-            (
-                "Whites",
-                LocalAdjust {
-                    whites: 0.3,
-                    ..Default::default()
-                },
-            ),
             (
                 "Saturation",
                 LocalAdjust {

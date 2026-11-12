@@ -1529,6 +1529,31 @@ above white.
   controls the master refuses, and refusing them now would take the master from
   edits that have it.
 
+**Whites in a mask (2026-11-12).** Camera Raw 18.7's HDR mask Whites on the gray and
+colour patches (a whole-frame mask; −100, −50, +20, +40 and +100, HDR limit 8) is one
+shape over brightness times an amplitude: normalised by its effect at 16 times white,
+the five settings' effects agree within 0.015 from 2^−10 to 16 times white (0.54 of it at
+2^−10, 0.93 at half of white, 0.96 at white). The amplitude is 0.870–0.877 of the largest
+change SDR's mask Whites curve makes at the same setting (+100: 0.726 stop against SDR's
+0.828; −100: −0.722 against −0.829). Rendered so (the mean shape, 0.874 of SDR's
+largest change, as a gain of the pixel's luminance), against Camera Raw (median / p95
+effect error in stops, ΔE_ITP added over the default render):
+
+| Setting | HDR below 0.9 | SDR below 0.9 | HDR above white |
+| --- | --- | --- | --- |
+| −100 | 0.007 / 0.030, +0.3 | 0.001 / 0.076, −1.5 | 0.004 / 0.008, +0.2 |
+| −50 | 0.003 / 0.005, +0.5 | 0.001 / 0.002, +0.2 | 0.003 / 0.003, +0.4 |
+| +20 | 0.003 / 0.006, +0.2 | 0.003 / 0.066, +1.1 | 0.003 / 0.004, +0.1 |
+| +40 | 0.002 / 0.003, +0.5 | 0.003 / 0.034, +1.1 | 0.003 / 0.003, +0.3 |
+| +100 | 0.008 / 0.042, +0.9 | 0.002 / 0.168, +2.3 | 0.002 / 0.012, +0.4 |
+
+Within the criterion's 0.01 stop below white everywhere and closer than SDR above it.
+At −100 SDR's added ΔE_ITP is negative because white's clip hides the patches' colour
+error; the master's +0.3 is below a ΔE_ITP of 1. The shape is fitted on these
+patches; Camera Raw captures of photos with a mask's Whites are queued to check it.
+Decision, 2026-11-12: a mask's Whites renders in the HDR master by this rule; Blacks
+stays refused.
+
 **Clarity and Dehaze in a mask (2026-11-12).** After global Clarity (0 to +50) and
 Dehaze (±30) came to render in the master, Camera Raw 18.7 rendered a whole-frame mask
 with Clarity +25 and +50 and Dehaze +30 and −30 on three validation photos (Nikon Z 8
