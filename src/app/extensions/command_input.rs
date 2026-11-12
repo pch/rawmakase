@@ -54,6 +54,12 @@ pub(in crate::app) struct Collecting {
     load: u64,
     /// Its extension's lifecycle then ([`super::Host::lifecycle`]).
     lifecycle: u64,
+    /// The tools taken up in Develop then ([`ViewState::tools_taken`]): any
+    /// tool taken up since ends it, though it closed again in the same frame
+    /// (Crop and Enter).
+    ///
+    /// [`ViewState::tools_taken`]: crate::app::develop::state::ViewState::tools_taken
+    tools: u64,
     input: Collector,
 }
 
@@ -122,6 +128,7 @@ impl Editor {
             by,
             load: self.document.load_id(),
             lifecycle,
+            tools: self.view.tools_taken(),
             input: Collector::default(),
         };
         self.messages.note(format!(
@@ -158,6 +165,7 @@ impl Editor {
         };
         let stale = self.module != Module::Develop
             || !self.view.is(Tool::None)
+            || self.view.tools_taken() != c.tools
             || self.document.load_id() != c.load
             || self.document.full().is_none()
             || self.extensions.lifecycle(&c.extension) != Some(c.lifecycle)

@@ -335,10 +335,12 @@ pub(in crate::app) enum Tool {
     /// The Targeted Adjustment Tool of the Tone Curve, the Color Mixer or B&W.
     Targeted(crate::develop::targeted::Target),
 }
-/// The tool open, kept where only [`ViewState`]'s methods reach it.
+/// The tool open, kept where only [`ViewState`]'s methods reach it, and
+/// how many times a tool was taken up.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(in crate::app) struct ToolSlot {
     tool: Tool,
+    taken: u64,
 }
 /// The Color Mixer's tabs, as in Lightroom.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -781,9 +783,20 @@ impl ViewState {
     pub(in crate::app) fn tool(&self) -> Tool {
         self.tool_slot.tool
     }
-    /// Opens `tool`, or none.
+    /// Opens `tool`, or none. Any tool counts as taken up
+    /// ([`ViewState::tools_taken`]), even one put away again in the same
+    /// frame.
     pub(in crate::app) fn set_tool(&mut self, tool: Tool) {
+        if tool != Tool::None {
+            self.tool_slot.taken += 1;
+        }
         self.tool_slot.tool = tool;
+    }
+    /// How many times a tool was taken up: what was begun with no tool open
+    /// ends once it moves, though the tool is gone again by the time it is
+    /// read.
+    pub(in crate::app) fn tools_taken(&self) -> u64 {
+        self.tool_slot.taken
     }
     pub(crate) fn is(&self, tool: Tool) -> bool {
         self.tool() == tool

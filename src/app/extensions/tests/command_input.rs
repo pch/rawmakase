@@ -509,4 +509,14 @@ fn a_tool_taken_up_in_the_same_frame_gets_the_click_alone() {
         assert!(e.command_input().is_none());
         nothing_sent(&e);
     }
+    // A tool opened and put away within the frame is taken up all the same:
+    // C or R opens Crop, and Enter finishes it, before the release.
+    for crop in [egui::Key::C, egui::Key::R] {
+        e.view.set_tool(Tool::None);
+        begin(&mut e, "pick-point");
+        click_at(&mut e, middle, vec![key(crop), key(egui::Key::Enter)]);
+        assert!(e.view.is(Tool::None), "{crop:?} then Enter closes Crop");
+        assert!(e.command_input().is_none(), "{crop:?}");
+        nothing_sent(&e);
+    }
 }
