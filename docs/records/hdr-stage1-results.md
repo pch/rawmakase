@@ -798,6 +798,30 @@ Already below white the HDR master is further from Camera Raw than the SDR rendi
 (the HDR Whites gain reaches down there; Fujifilm XF10 +100: 0.687 against 0.211 stop
 median), and above white more so. Whites above +50 stays refused.
 
+Looked into on 2026-11-12, to find what keeps it from the rule:
+
+- **The level.** Away from a few photos the HDR table follows Camera Raw's HDR effect
+  below white bin by bin; the misses are photos whose level twice the 99th percentile
+  misjudges (Leica V-Lux 5: +3.2 to +4.4 stops in the shadows against Camera Raw's +0.4
+  to +1.1; Fujifilm XF10 and the Nikon Z6 III too strong, the Sony A1 too weak). No
+  single statistic of the photo predicts Camera Raw's best level for all of them: the
+  V-Lux 5's sits near its maximum, the Sony A7R III's (as small a share of light above
+  white) near twice the 99th percentile. Taking the SDR rendition's Whites below white
+  instead is worse (below-white p95 0.169 to 0.540 against 0.146).
+- **The operator.** At Camera Raw's own best level per photo (18 photos with fitted
+  levels), Whites +75 and +100 still fail: below white p95 0.139 against SDR's 0.085
+  at +75, and the colour error it adds 3.8 ΔE_ITP against SDR's 1.1 (+100: 9.3 against
+  1.6). Applied as a gain of luminance rather than RGBTone, the colour gap closes
+  (+1.7 against +1.1 at +75, at Camera Raw's level) and the error falls (below white
+  0.033 / 0.116, above 0.058 / 0.176), but not to SDR's below white (0.039 / 0.085 on
+  those twelve photos). With twice the 99th percentile as the level that form gives
+  0.036 / 0.126 below and 0.074 / 0.168 above white at +75 (SDR's 0.027 / 0.085).
+
+Whites above +50 stays refused: it needs both a level predictor no statistic tried
+gives and a closer operator above white. Positive Whites up to +50, which renders, also
+uses RGBTone; whether a gain of luminance fits Camera Raw's HDR captures at +25 and +50
+better is open.
+
 SDR renders do not change: positive Whites' table and level are read only in the HDR
 branch of the scene tone stage (`SceneTone::new`, `GlobalTone::hdr`), which SDR
 renders, the SDR rendition among them, never take. As a targeted regression check,
