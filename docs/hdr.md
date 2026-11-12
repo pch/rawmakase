@@ -268,6 +268,28 @@ reads nothing back, from the histogram's. A channel up to graphics white reads a
 its Melissa RGB percentage, one above it as its stops above white (`+1.3`), orange
 where the display shows it and red beyond its headroom or at the HDR limit.
 
+### Visualize HDR
+
+**Visualize HDR**, under the Basic panel's HDR switch while HDR is on, colours the
+photo Develop shows (the edit, or Before alone; not the side beside it) by the stop
+above SDR white its master reaches, as Lightroom's does: cyan up to one stop, blue up
+to two, purple up to three, magenta beyond. Light at or below white is left clear,
+so the photo shows through. A pixel's stop is that of its brightest channel in linear
+sRGB primaries, the channels the histogram and readout read, so a saturated colour
+counts by its channel above white. The histogram marks each stop's section with the
+same colour along its foot. Like Preview for SDR display it is a view choice
+(`ViewState::visualize_hdr`), never saved with the edit.
+
+The overlay describes the edit, not the display, so it shows wherever the master
+renders: on an SDR display, under Preview for SDR display, and over the GPU's master
+or the SDR rendition alike. It is the master rendered on the CPU by the HDR preview's
+worker into slots of its own (`hdr_preview::Slot::OverlayWhole` and `OverlayRegion`),
+as the preview renders it (the whole photo at the view's size, a 100% region at full
+size), keyed as the master is but without the display's headroom, so a headroom
+change renders nothing. While a 100% region's overlay renders, the whole photo's
+shows in its place. Where the master is refused nothing is drawn, and the Basic panel's note says
+why.
+
 ## What the master renders
 
 The pipeline is the SDR one up to the scene tone stage's output (S3), with these

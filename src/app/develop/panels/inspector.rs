@@ -128,6 +128,26 @@ impl Editor {
             segment(v[0].0, v[1].0, pair(v[1].1, v[2].1));
             segment(v[1].0, v[2].0, colors[v[2].1]);
         }
+        if let Some(h) = &hdr
+            && self.view.visualize_hdr
+        {
+            // Visualize HDR marks each stop's section in the colour it gives the
+            // photo, as Lightroom's histogram does.
+            let mut stop = 0.;
+            while stop < h.limit {
+                let to = (stop + 1.).min(h.limit);
+                if let Some(k) = crate::app::develop::hdr_preview::stop_color(to) {
+                    let [r, g, b] = crate::app::develop::hdr_preview::STOP_COLORS[k];
+                    let (x0, x1) = (x_at(hdr_x(stop, h.limit)), x_at(hdr_x(to, h.limit)));
+                    painter.rect_filled(
+                        Rect::from_x_y_ranges(x0..=x1, rect.bottom() - 3.0..=rect.bottom()),
+                        0.,
+                        Color32::from_rgb(r, g, b),
+                    );
+                }
+                stop += 1.;
+            }
+        }
         if let Some(h) = &hdr {
             // A dashed line at each whole stop above white, over the bars.
             let mut stop = 1.;

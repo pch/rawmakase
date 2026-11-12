@@ -130,6 +130,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
                 ui,
                 r,
                 &mut view.sdr_preview,
+                &mut view.visualize_hdr,
                 m.unwrap_or(&raw),
                 hdr,
                 hdr_second,
@@ -455,11 +456,14 @@ pub(in crate::app::develop::panels::inspector) fn show(
 /// an edit whose HDR master can't render yet says why (`model::hdr::check_for`).
 /// Beside the edit, what the other side shows too (`second`), so a comparison of
 /// brightness says when one side is SDR. With HDR on, Lightroom's Preview for SDR
-/// display (`sdr_preview`, a view choice, not saved) shows the SDR rendition instead.
+/// display (`sdr_preview`, a view choice, not saved) shows the SDR rendition instead,
+/// and Visualize HDR (`visualize_hdr`, likewise) colours the photo by its stops above
+/// white.
 fn hdr_row(
     ui: &mut egui::Ui,
     r: &mut Recipe,
     sdr_preview: &mut bool,
+    visualize_hdr: &mut bool,
     metadata: &crate::camera_data::Metadata,
     shown: &crate::app::develop::hdr_preview::Presentation,
     second: Option<&(&'static str, crate::app::develop::hdr_preview::Presentation)>,
@@ -478,6 +482,13 @@ fn hdr_row(
                     "Show the SDR rendition, as SDR displays, the Library and SDR exports \
                      show it, on this display too. Not saved with the edit.",
                 );
+        });
+        control_row(ui, "", |ui| {
+            ui.checkbox(visualize_hdr, "Visualize HDR").on_hover_text(
+                "Colour what lies above SDR white by its stops: cyan up to 1, blue up \
+                     to 2, purple up to 3, magenta beyond. The histogram marks its stops \
+                     the same way. Not saved with the edit.",
+            );
         });
         let text = match crate::model::hdr::check_for(r, metadata) {
             Err(e) => format!("Showing the SDR rendition. HDR export unavailable: {e}"),

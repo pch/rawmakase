@@ -427,6 +427,9 @@ pub(in crate::app) struct ViewState {
     /// rendition, its histogram and readout too, on an HDR display as well. A view
     /// choice for every photo while RAWmakase runs, never part of an edit.
     pub(in crate::app) sdr_preview: bool,
+    /// Lightroom's Visualize HDR: the edit shown is coloured by the stop above SDR
+    /// white its master reaches. A view choice like [`Self::sdr_preview`].
+    pub(in crate::app) visualize_hdr: bool,
     pub(in crate::app) selected_band: usize,
     /// The Color Grading panel's view: 3-Way or one wheel.
     pub(in crate::app) grading: crate::app::develop::panels::color_grading::GradingView,
@@ -479,6 +482,7 @@ impl Default for ViewState {
             hdr_display: Default::default(),
             hdr_shown: false,
             sdr_preview: false,
+            visualize_hdr: false,
             selected_band: 0,
             grading: Default::default(),
             selected_curve: 0,

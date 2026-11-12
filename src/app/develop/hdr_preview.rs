@@ -12,6 +12,10 @@
 //! headroom by the HDR limit's roll-off. A result is shown only while it still
 //! matches the photo, the edit, the part of it and the headroom it was rendered for;
 //! a display change is a view change, never an edit.
+//!
+//! Visualize HDR (Lightroom's) has slots of its own: the same master, rendered
+//! whatever the display, drawn as the colour of the stop above SDR white each pixel
+//! reaches ([`overlay`]) and left clear below white.
 use crate::app::worker::Latest;
 use crate::camera_data::CameraImage;
 use crate::develop::AiSource;
@@ -31,17 +35,27 @@ pub(in crate::app) enum Slot {
     BeforeRegion,
     /// Before's (or the reference photo's) whole photo.
     BeforeWhole,
+    /// Visualize HDR's overlay of the shown photo's 100% region.
+    OverlayRegion,
+    /// Visualize HDR's overlay of the shown photo's whole photo.
+    OverlayWhole,
 }
-const SLOTS: usize = 4;
+const SLOTS: usize = 6;
 impl Slot {
     const ALL: [Slot; SLOTS] = [
         Slot::Region,
         Slot::Whole,
         Slot::BeforeRegion,
         Slot::BeforeWhole,
+        Slot::OverlayRegion,
+        Slot::OverlayWhole,
     ];
     fn lane(self) -> usize {
         self as usize
+    }
+    /// Whether this slot holds Visualize HDR's overlay rather than the master.
+    fn overlay(self) -> bool {
+        matches!(self, Slot::OverlayRegion | Slot::OverlayWhole)
     }
 }
 
@@ -409,13 +423,59 @@ fn render(job: &Job) -> anyhow::Result<Done> {
             crate::develop::render_hdr_region(&job.image, &recipe, ai, region, cancel)?
         }
     };
+    let rgba = match job.slot.overlay() {
+        true => overlay(&master.pixels),
+        false => encode(&master.pixels, key.headroom()),
+    };
     Ok(Done {
         key: key.clone(),
         width: master.width,
         height: master.height,
-        rgba: encode(&master.pixels, key.headroom()),
+        rgba,
         master: Master(master.pixels.iter().map(|p| p.map(half)).collect()),
     })
+}
+
+/// Visualize HDR's colours for light 0–1, 1–2, 2–3 and 3 or more stops above SDR
+/// white: cyan, blue, purple and magenta, the order Lightroom's overlay uses (its
+/// values aren't published), sRGB-encoded.
+pub(in crate::app) const STOP_COLORS: [[u8; 3]; 4] = [
+    [0, 224, 255],
+    [40, 110, 255],
+    [150, 70, 255],
+    [255, 50, 220],
+];
+
+/// The [`STOP_COLORS`] index for light `stops` above SDR white, `None` at or below it.
+/// White itself reaches a few millionths above 1 through the primaries' matrix, so
+/// the first thousandth of a stop counts as white.
+pub(in crate::app) fn stop_color(stops: f32) -> Option<usize> {
+    (stops > 1e-3).then(|| (stops.ceil() as usize).clamp(1, 4) - 1)
+}
+
+/// Visualize HDR's overlay of HDR master pixels (linear ProPhoto, 1 = graphics
+/// white), RGBA half floats, premultiplied as egui draws them: each pixel whose
+/// brightest channel in the display's primaries (linear sRGB, as the histogram and
+/// readout read them) is above white takes its stop's colour, opaque; the rest are
+/// clear, so the photo shows through.
+pub(in crate::app) fn overlay(pixels: &[[f32; 3]]) -> Vec<u16> {
+    let to_srgb = crate::color::hdr_output::HdrGamut::Rec709.prophoto_to_rgb();
+    pixels
+        .iter()
+        .flat_map(|p| {
+            let top = crate::color::mul(to_srgb, *p)
+                .into_iter()
+                .filter(|v| v.is_finite())
+                .fold(0f32, f32::max);
+            match stop_color(top.max(f32::MIN_POSITIVE).log2()) {
+                Some(k) => {
+                    let [r, g, b] = STOP_COLORS[k].map(|c| half(f32::from(c) / 255.));
+                    [r, g, b, half(1.)]
+                }
+                None => [0; 4],
+            }
+        })
+        .collect()
 }
 
 /// HDR master pixels (linear ProPhoto, 1 = graphics white) as extended sRGB half
@@ -555,6 +615,35 @@ mod tests {
         preview.request(Slot::Whole, key, image);
         std::thread::sleep(std::time::Duration::from_millis(100));
         assert!(preview.done.lock().unwrap()[Slot::Whole.lane()].is_none());
+        let _ = preview.stop();
+    }
+
+    /// An overlay slot renders the same master as Visualize HDR's overlay; the
+    /// master's slot keeps its own encoding.
+    #[test]
+    fn an_overlay_slot_renders_the_overlay_of_the_master() {
+        let ctx = egui::Context::default();
+        let (_, image) = crate::app::testing::editor_with_blue_photo(
+            &ctx,
+            crate::app::preferences::session::Session::default(),
+            false,
+        );
+        let mut recipe = hdr_recipe();
+        recipe.exposure = 3.;
+        let mut preview = HdrPreview::new(ctx);
+        let key = Key::new(&image, &recipe, None, Part::Whole(16), 1.);
+        preview.request(Slot::OverlayWhole, key.clone(), image.clone());
+        preview.request(Slot::Whole, key, image);
+        let shown = finished(&preview, Slot::OverlayWhole)
+            .1
+            .expect("an overlay");
+        let master = finished(&preview, Slot::Whole).1.expect("a master");
+        let pixels: Vec<[f32; 3]> = (master.master.0.iter()).map(|p| p.map(unhalf)).collect();
+        assert_eq!(shown.rgba, overlay(&pixels));
+        assert!(
+            shown.rgba.chunks(4).any(|p| p[3] != 0),
+            "light above white is coloured"
+        );
         let _ = preview.stop();
     }
 
@@ -740,6 +829,32 @@ mod tests {
         assert_eq!(done.key, key);
         assert_eq!(preview.failure(Slot::Whole, &key), None);
         let _ = preview.stop();
+    }
+
+    /// Visualize HDR colours each pixel by the stop above white its brightest
+    /// display channel reaches and leaves light at or below white clear.
+    #[test]
+    fn the_overlay_colours_light_by_its_stop_above_white() {
+        let white = [1.; 3];
+        let at = |stops: f32| white.map(|v: f32| v * stops.exp2());
+        let shown = overlay(&[at(-1.), white, at(0.5), at(1.5), at(2.5), at(3.5), at(7.)]);
+        let pixel = |k: usize| -> [f32; 4] { std::array::from_fn(|c| unhalf(shown[4 * k + c])) };
+        assert_eq!(pixel(0), [0.; 4], "below white is clear");
+        assert_eq!(pixel(1), [0.; 4], "white is clear");
+        for (k, colour) in [(2, 0), (3, 1), (4, 2), (5, 3), (6, 3)] {
+            let want = STOP_COLORS[colour].map(|c| f32::from(c) / 255.);
+            let got = pixel(k);
+            for c in 0..3 {
+                assert!((got[c] - want[c]).abs() < 2e-3, "pixel {k}: {got:?}");
+            }
+            assert_eq!(got[3], 1.);
+        }
+        // A saturated colour counts by its brightest channel in the display's
+        // primaries, not its luminance.
+        let to_prophoto =
+            crate::color::inverse(crate::color::hdr_output::HdrGamut::Rec709.prophoto_to_rgb());
+        let red = crate::color::mul(to_prophoto, [1.5, 0.1, 0.1]);
+        assert_eq!(unhalf(overlay(&[red])[3]), 1.);
     }
 
     #[test]

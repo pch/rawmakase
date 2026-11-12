@@ -1686,6 +1686,18 @@ photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
   drag remakes a small scene; only 100% views remake the full one. Scenes and their
   stage caches are kept apart from the SDR rendition's, which renders from the file's
   own pixels, so the two renderings of each frame don't evict each other.
+- **Visualize HDR follows Lightroom's order of colours, not its values** (stage 5,
+  2026-11-12). Adobe's help pages refuse automated fetches; Adobe's HDR blog post
+  (2023-10-10) and Greg Benz's Lightroom write-up describe a checkbox under the Basic
+  panel's HDR controls that colours the photo's HDR tones "from cyan to magenta",
+  cyan and blue for 1–2 stops above SDR white and purple and magenta for 3–4, SDR
+  areas uncoloured, with the same colours in the histogram. RAWmakase colours each
+  whole stop (0–1, 1–2, 2–3, above 3) opaque in that order, by the brightest channel
+  in linear sRGB, as its histogram counts channels; the colour values are its own. It
+  shows over the photo Develop shows, not beside it, and on any display, as the
+  histogram does. The overlay is the master rendered on the CPU at the view's size,
+  in slots of the HDR preview's worker, so it costs a CPU master per edit while on,
+  also where the GPU shows the master.
 
 ## Open
 
@@ -1732,9 +1744,8 @@ photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
   starts them as HDR edits; Lightroom's choice is not measured), and HDR toggling
   with unavailable paired profiles.
 - HDR display beyond macOS Develop's views: a GPU
-  HDR path, Windows Advanced Color, Linux. Lightroom's Visualize HDR overlay on the
-  photo (colour by stop above white) is not drawn; the histogram marks what lies
-  beyond the display's headroom.
+  HDR path, Windows Advanced Color, Linux. Lightroom's exact Visualize HDR colours
+  (not published; the overlay follows their order: [Visualize HDR](../hdr.md#visualize-hdr)).
 
 ## Progress
 
@@ -1810,4 +1821,5 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   the HDR preview, histogram and readout, on the GPU and the CPU. The HDR histogram in stops above white, the HDR readout,
   and what lies beyond the display's headroom marked in the histogram and its
   highlight triangle. Preview for SDR display, a view choice showing the SDR rendition
-  on an HDR display. Open: the rest of the stage (above).
+  on an HDR display. Visualize HDR, colouring the photo by its stops above white.
+  Open: the rest of the stage (above).
