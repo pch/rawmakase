@@ -3,7 +3,7 @@ name = "rawmakase-remote"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "Optional remote inference for RAWmakase's selection models: a small TCP worker that runs them where the GPU is, and the client the app talks to"
+description = "Optional remote inference for RAWmakase's selection models: a small TCP worker that runs them where the GPU is, and the client the AI masks extension talks to"
 license.workspace = true
 publish = false
 

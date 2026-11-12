@@ -29,7 +29,7 @@ spctl --assess --type execute --verbose=2 "$app"
 version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")
 binaries=("$app/Contents/MacOS/rawmakase")
 programs=()
-for ships in rawmakase-mcp:0.4.13 rawmakase-midi:0.4.13; do
+for ships in rawmakase-mcp:0.4.13 rawmakase-midi:0.4.13 rawmakase-ai-masks:0.4.13; do
   program="$app/Contents/MacOS/${ships%%:*}" since=${ships#*:}
   if [ "$(printf '%s\n' "$since" "$version" | sort -V | head -n1)" = "$since" ]; then
     test -x "$program"
@@ -48,7 +48,7 @@ for binary in "${binaries[@]}" "$app/Contents/Frameworks/"*.dylib; do
 done
 env -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH "$app/Contents/MacOS/rawmakase" --version
 # `rawmakase mcp` finds its program beside it, where the app looks for
-# MIDI's too, and completes an MCP initialize.
+# MIDI's and AI masks' too, and completes an MCP initialize.
 if [ ${#programs[@]} -gt 0 ]; then
   python3 "$(dirname -- "$0")/../check_programs.py" "$app/Contents/MacOS/rawmakase" "${programs[@]}" --arch "$arch" --version "$version"
 fi

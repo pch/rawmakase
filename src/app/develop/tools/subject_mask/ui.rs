@@ -1,15 +1,15 @@
-//! The Masking drawer's side of Subject, Sky and Background, and of the
-//! extensions' mask generators: their tiles, what they are waiting for, and
+//! The Masking drawer's side of the extensions' mask generators, Subject, Sky
+//! and Background among them: their tiles, what they are waiting for, and
 //! what went wrong. Everything stays in the drawer; a selection that fails or
-//! is cancelled leaves the photo as it was.
-use super::{Failure, Feature, Generator, Pack, Prompt, Request, Target};
+//! is cancelled leaves the photo as it was. The bundled AI masks' tiles keep
+//! the icons, order and wording Select Subject always had.
+use super::{Failure, Feature, Prompt, Request, Target};
 use crate::app::Editor;
 use crate::app::develop::tools::retouch_tool::{control_label, hint, indented};
 use crate::app::extensions::mask_generator::{Offer, Setup};
 use crate::app::extensions::viewer_input::Gesture;
 use crate::app::ui::design::{self, Tone, radius, space, text};
 use eframe::egui;
-use rawmakase_extensions::protocol::message::NeedsSetup;
 
 impl Editor {
     /// The Select Subject and Select Background actions, with whatever the running or
@@ -29,34 +29,25 @@ impl Editor {
             return;
         }
         let reason = self.selection_unavailable();
-        control_label(ui, "Select", |ui| {
-            let gap = 4.;
-            let w = (ui.available_width() - 2. * gap) / 3.;
-            for (feature, tip) in [
-                (Feature::Subject, "Mask the photo's main subject"),
-                (Feature::Sky, "Mask the sky"),
-                (
-                    Feature::Background,
-                    "Mask everything but the photo's main subject",
-                ),
-            ] {
-                if self.feature_tile(ui, feature.name(), Some(feature), w, tip, reason) {
-                    self.request_selection(Request::feature(feature, Target::NewMask));
-                }
-            }
-        });
-        // The enabled extensions' generators, three to a row.
-        let tiles = self.extensions.mask_tiles();
-        for row in tiles.chunks(3) {
-            control_label(ui, "", |ui| {
+        // Three to a row, the first labelled.
+        let tiles = ordered(self.extensions.mask_tiles());
+        for (row, tiles) in tiles.chunks(3).enumerate() {
+            control_label(ui, if row == 0 { "Select" } else { "" }, |ui| {
                 let gap = 4.;
                 let w = (ui.available_width() - 2. * gap) / 3.;
-                for (offer, why) in row {
-                    let tip = format!("Mask with {}", offer.name);
+                for (offer, why) in tiles {
+                    let tip = match offer.feature() {
+                        Some(Feature::Subject) => "Mask the photo's main subject".to_string(),
+                        Some(Feature::Sky) => "Mask the sky".to_string(),
+                        Some(Feature::Background) => {
+                            "Mask everything but the photo's main subject".to_string()
+                        }
+                        None => format!("Mask with {}", offer.name),
+                    };
                     let disabled = reason.or(why.as_deref());
-                    if self.feature_tile(ui, &offer.name, None, w, &tip, disabled) {
+                    if self.feature_tile(ui, &offer.name, offer.feature(), w, &tip, disabled) {
                         self.request_selection(Request {
-                            generator: Generator::Extension(offer.clone()),
+                            generator: offer.clone(),
                             target: Target::NewMask,
                         });
                     }
@@ -69,10 +60,10 @@ impl Editor {
         if let Some((request, failure)) = self.selection.failure.clone() {
             self.selection_failure(ui, request, &failure);
         }
-        self.model_footer(ui);
     }
     /// One of the Select tiles: an icon over its name, as Lightroom's Add New Mask;
-    /// an extension's generator (`feature` none) has a plain frame. Returns whether
+    /// a generator other than Subject's and Sky's (`feature` none) has a plain
+    /// frame. Returns whether
     /// it was clicked; when `disabled` says why, it is dimmed and says so on hover.
     fn feature_tile(
         &self,
@@ -138,19 +129,19 @@ impl Editor {
             p.input.summary(),
             p.applied.is_some(),
         );
-        let first = match &p.request.generator {
-            Generator::Feature(_) => {
-                "Click the subject, or drag a box around it. Each click can be \
-                                      refined with more: click to add, Alt-click to leave out."
-                    .to_string()
-            }
-            Generator::Extension(offer) => format!(
+        let offer = &p.request.generator;
+        let first = if offer.feature().is_some() {
+            "Click the subject, or drag a box around it. Each click can be \
+             refined with more: click to add, Alt-click to leave out."
+                .to_string()
+        } else {
+            format!(
                 "{} Each click can be refined with more: click to add, Alt-click to leave out.",
                 offer
                     .hint
                     .as_deref()
                     .unwrap_or("Click it on the photo, or drag a box around it.")
-            ),
+            )
         };
         let accent = egui::Color32::from_rgb(96, 150, 230);
         let failure = self.selection.failure.as_ref().map(|f| f.1.message());
@@ -227,114 +218,20 @@ impl Editor {
         true
     }
     /// What the first use needs, as a highlighted card in the place the actions were:
-    /// the steps with the finished ones ticked, and the button for the next.
+    /// the steps with the finished ones ticked, and the button for the next: the
+    /// catalog's upgrade when it is needed, then what the generator said it needs,
+    /// with Download, its progress and Cancel.
     fn setup_card(&mut self, ui: &mut egui::Ui) {
         let request = match &self.selection.prompt {
             Some(prompt) => Some(prompt.request().clone()),
             None => self.selection.upgrading.as_ref().map(|(_, r)| r.clone()),
         };
         let Some(request) = request else { return };
-        let feature = match &request.generator {
-            Generator::Feature(feature) => *feature,
-            Generator::Extension(offer) => {
-                let setup = match &self.selection.prompt {
-                    Some(Prompt::Setup { setup, .. }) => Some(setup.clone()),
-                    _ => None,
-                };
-                return self.generator_setup_card(ui, &request, &offer.clone(), setup);
-            }
+        let offer = request.generator.clone();
+        let setup = match &self.selection.prompt {
+            Some(Prompt::Setup { setup, .. }) => Some(setup.clone()),
+            _ => None,
         };
-        let upgraded = self
-            .library
-            .as_ref()
-            .and_then(|l| l.session.catalog().supports_raster_masks().ok())
-            .unwrap_or(false);
-        let pack = feature.pack();
-        let model = self.installer(pack).installed();
-        let upgrading = self.selection.upgrading.is_some();
-        let installing = self.installer(pack).busy();
-        let accent = egui::Color32::from_rgb(96, 150, 230);
-        egui::Frame::new()
-            .fill(egui::Color32::from_rgb(34, 44, 62))
-            .stroke(egui::Stroke::new(1.5, accent))
-            .corner_radius(radius::CONTROL)
-            .inner_margin(design::margin_same(space::M))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.label(
-                    egui::RichText::new(format!("Before “Select {}” can run", feature.name()))
-                        .strong()
-                        .size(text::LABEL),
-                );
-                ui.add_space(space::XS);
-                let step = |ui: &mut egui::Ui, done: bool, current: bool, text: &str| {
-                    ui.horizontal(|ui| {
-                        let (mark, color) = if done {
-                            ("✓", egui::Color32::from_rgb(110, 200, 130))
-                        } else if current {
-                            ("▶", accent)
-                        } else {
-                            ("○", egui::Color32::GRAY)
-                        };
-                        ui.label(egui::RichText::new(mark).color(color).strong());
-                        ui.label(egui::RichText::new(text).color(if done {
-                            egui::Color32::GRAY
-                        } else {
-                            egui::Color32::WHITE
-                        }));
-                    });
-                };
-                step(ui, upgraded, !upgraded, "Upgrade this catalog");
-                step(
-                    ui,
-                    model,
-                    upgraded && !model,
-                    &format!(
-                        "Download the {} ({} MB)",
-                        match pack {
-                            Pack::Subject => "selection models",
-                            Pack::Sky => "sky model",
-                            Pack::Denoise => "AI Denoise model",
-                        },
-                        pack.megabytes()
-                    ),
-                );
-                ui.add_space(space::S);
-                if !upgraded {
-                    self.upgrade_step(ui, &request, upgrading);
-                } else if let Some(endpoint) = self.selection.remote.endpoint() {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(110, 200, 130),
-                        format!(
-                            "Selections run on the worker at {endpoint}; nothing has to be \
-                                 downloaded here."
-                        ),
-                    );
-                } else if !model {
-                    self.model_step(ui, pack, installing);
-                }
-                if self.selection.remote.endpoint().is_none()
-                    && !super::inference::runtime_present()
-                {
-                    ui.add_space(space::XS);
-                    ui.colored_label(
-                        egui::Color32::from_rgb(230, 170, 90),
-                        "This copy of RAWmakase has no ONNX Runtime library, so selecting \
-                         cannot run yet.",
-                    );
-                }
-            });
-    }
-    /// The setup card of an extension's generator: the catalog's upgrade when
-    /// it is needed, then what the generator said it needs, with Download,
-    /// its progress and Cancel.
-    fn generator_setup_card(
-        &mut self,
-        ui: &mut egui::Ui,
-        request: &Request,
-        offer: &Offer,
-        setup: Option<NeedsSetup>,
-    ) {
         let upgraded = self
             .library
             .as_ref()
@@ -359,65 +256,113 @@ impl Editor {
                         .size(text::LABEL),
                 );
                 ui.add_space(space::XS);
+                let step = |ui: &mut egui::Ui, done: bool, current: bool, text: &str| {
+                    ui.horizontal(|ui| {
+                        let (mark, color) = if done {
+                            ("✓", egui::Color32::from_rgb(110, 200, 130))
+                        } else if current {
+                            ("▶", accent)
+                        } else {
+                            ("○", egui::Color32::GRAY)
+                        };
+                        ui.label(egui::RichText::new(mark).color(color).strong());
+                        ui.label(egui::RichText::new(text).color(if done {
+                            egui::Color32::GRAY
+                        } else {
+                            egui::Color32::WHITE
+                        }));
+                    });
+                };
+                step(ui, upgraded, !upgraded, "Upgrade this catalog");
+                if let Some(setup) = &setup {
+                    step(
+                        ui,
+                        false,
+                        upgraded,
+                        &format!(
+                            "Download {} ({} MB)",
+                            setup.what,
+                            setup.bytes.div_ceil(1_000_000)
+                        ),
+                    );
+                }
+                ui.add_space(space::S);
                 if !upgraded {
-                    self.upgrade_step(ui, request, upgrading);
+                    self.upgrade_step(ui, &request, upgrading);
                     return;
                 }
-                let Some(setup) = setup else { return };
-                ui.label(format!(
-                    "Download {} ({} MB)",
-                    setup.what,
-                    setup.bytes.div_ceil(1_000_000)
-                ));
-                ui.add_space(space::S);
-                match state {
-                    Some(Setup::Running { done, text }) => {
-                        let label = text.unwrap_or_else(|| "Downloading…".into());
-                        match done {
-                            Some(done) => {
-                                ui.add(
-                                    egui::ProgressBar::new(done as f32)
-                                        .desired_width(ui.available_width())
-                                        .text(label),
-                                );
-                            }
-                            None => {
-                                ui.horizontal(|ui| {
-                                    crate::app::ui::widgets::spinner(ui, 14.);
-                                    ui.label(label);
-                                });
-                            }
-                        }
-                        if ui.button("Cancel download").clicked() {
-                            self.extensions
-                                .cancel_mask_setup(&offer.extension, &offer.generator);
-                        }
-                        return;
-                    }
-                    Some(Setup::Failed(why)) => {
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(format!("The download stopped: {why}"))
-                                    .size(text::SMALL)
-                                    .color(egui::Color32::from_rgb(230, 170, 90)),
-                            )
-                            .wrap(),
-                        );
-                        ui.add_space(space::XS);
-                    }
-                    None => {}
+                if setup.is_none() {
+                    return;
                 }
-                ui.horizontal(|ui| {
-                    let go = egui::Button::new(egui::RichText::new("Download").strong())
-                        .fill(egui::Color32::from_rgb(52, 98, 170));
-                    if ui.add(go).clicked() {
-                        self.setup_generator(offer);
-                    }
-                    if ui.button("Not now").clicked() {
-                        self.selection.prompt = None;
-                    }
-                });
+                self.download_step(ui, &offer, state);
             });
+    }
+    /// The download a generator needs: its progress and Cancel while it runs,
+    /// why it stopped when it failed, and Download.
+    fn download_step(&mut self, ui: &mut egui::Ui, offer: &Offer, state: Option<Setup>) {
+        match state {
+            Some(Setup::Running { done, text }) => {
+                let label = text.unwrap_or_else(|| "Downloading…".into());
+                match done {
+                    Some(done) => {
+                        ui.add(
+                            egui::ProgressBar::new(done as f32)
+                                .desired_width(ui.available_width())
+                                .text(label),
+                        );
+                    }
+                    None => {
+                        ui.horizontal(|ui| {
+                            crate::app::ui::widgets::spinner(ui, 14.);
+                            ui.label(label);
+                        });
+                    }
+                }
+                if ui.button("Cancel download").clicked() {
+                    self.extensions
+                        .cancel_mask_setup(&offer.extension, &offer.generator);
+                }
+                return;
+            }
+            Some(Setup::Failed(why)) => {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!("The download stopped: {why}"))
+                            .size(text::SMALL)
+                            .color(egui::Color32::from_rgb(230, 170, 90)),
+                    )
+                    .wrap(),
+                );
+                ui.add_space(space::XS);
+            }
+            None => {}
+        }
+        // Subject's and Sky's models run on this computer, unless a remote
+        // worker answers, when nothing is asked to be downloaded.
+        if offer.feature().is_some() {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(
+                        "The model runs on this computer; no photo leaves it. It is a one-time \
+                         download and needs about that much free disk space.",
+                    )
+                    .size(text::SMALL)
+                    .color(egui::Color32::LIGHT_GRAY),
+                )
+                .wrap(),
+            );
+            ui.add_space(space::S);
+        }
+        ui.horizontal(|ui| {
+            let go = egui::Button::new(egui::RichText::new("Download").strong())
+                .fill(egui::Color32::from_rgb(52, 98, 170));
+            if ui.add(go).clicked() {
+                self.setup_generator(offer);
+            }
+            if ui.button("Not now").clicked() {
+                self.selection.prompt = None;
+            }
+        });
     }
     fn upgrade_step(&mut self, ui: &mut egui::Ui, request: &Request, upgrading: bool) {
         let small = |text: &str| {
@@ -454,103 +399,16 @@ impl Editor {
             }
         });
     }
-    fn model_step(&mut self, ui: &mut egui::Ui, pack: Pack, installing: bool) {
-        if let Some((done, total)) = self.installer(pack).progress() {
-            ui.add(
-                egui::ProgressBar::new(done as f32 / total.max(1) as f32)
-                    .desired_width(ui.available_width())
-                    .text(format!("{} of {} MB", done / 1_000_000, total / 1_000_000)),
-            );
-            if ui.button("Cancel download").clicked() {
-                self.installer_mut(pack).cancel();
-            }
-            return;
-        }
-        if installing {
-            ui.horizontal(|ui| {
-                crate::app::ui::widgets::spinner(ui, 14.);
-                ui.label("Working…");
-            });
-            return;
-        }
-        if let Some(why) = self.installer(pack).failure() {
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(format!(
-                        "The download stopped: {why}. Download again to carry on from \
-                         where it stopped."
-                    ))
-                    .size(text::SMALL)
-                    .color(egui::Color32::from_rgb(230, 170, 90)),
-                )
-                .wrap(),
-            );
-            ui.add_space(space::XS);
-        }
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(
-                    "The model runs on this computer; no photo leaves it. It is a one-time \
-                     download and needs about that much free disk space.",
-                )
-                .size(text::SMALL)
-                .color(egui::Color32::LIGHT_GRAY),
-            )
-            .wrap(),
-        );
-        ui.add_space(space::S);
-        ui.horizontal(|ui| {
-            let go = egui::Button::new(egui::RichText::new("Download").strong())
-                .fill(egui::Color32::from_rgb(52, 98, 170));
-            if ui.add(go).clicked() {
-                self.install_model(pack);
-            }
-            if ui.button("Not now").clicked() {
-                self.selection.prompt = None;
-            }
-        });
-    }
-    /// Remove, once a model is installed.
-    fn model_footer(&mut self, ui: &mut egui::Ui) {
-        if self.selection.running().is_some() {
-            return;
-        }
-        for (pack, label) in [
-            (Pack::Subject, "Remove selection model"),
-            (Pack::Sky, "Remove sky model"),
-        ] {
-            if !self.installer(pack).installed() {
-                continue;
-            }
-            indented(ui, |ui| {
-                let remove = ui
-                    .small_button(label)
-                    .on_hover_text(
-                        "Delete the downloaded model. Saved masks keep working; selecting \
-                         again asks to download it.",
-                    )
-                    .clicked();
-                if remove {
-                    let unload = self.selection.worker.unloader();
-                    let (tx, ctx) = (self.tx.clone(), self.context.clone());
-                    self.installer_mut(pack).remove(unload, tx, ctx);
-                }
-            });
-        }
-    }
     fn selection_progress(&mut self, ui: &mut egui::Ui, request: &Request) {
         control_label(ui, "Select", |ui| {
             crate::app::ui::widgets::spinner(ui, 14.);
-            // No percentage: the runtime reports none for a run.
-            let where_at = match &request.generator {
-                Generator::Feature(_) => self
-                    .selection
-                    .remote
-                    .endpoint()
-                    .map(|endpoint| format!(" (on {endpoint})"))
-                    .unwrap_or_default(),
-                Generator::Extension(_) => String::new(),
-            };
+            // No percentage: the runtime reports none for a run. Where it
+            // runs, when the program says (a remote worker).
+            let where_at = self
+                .extensions
+                .mask_progress(&request.generator.extension)
+                .map(|text| format!(" ({text})"))
+                .unwrap_or_default();
             ui.label(format!(
                 "Finding the {}…{where_at}",
                 request.generator.name().to_lowercase()
@@ -568,13 +426,8 @@ impl Editor {
         });
     }
     fn selection_failure(&mut self, ui: &mut egui::Ui, request: Request, failure: &Failure) {
-        if *failure == Failure::ModelMissing {
-            self.selection.failure = None;
-            self.selection.prompt = Some(Prompt::Model(request));
-            return;
-        }
         hint(ui, &failure.message());
-        let builtin = matches!(request.generator, Generator::Feature(_));
+        let builtin = request.generator.feature().is_some();
         if *failure == Failure::NoSubject && builtin {
             hint(
                 ui,
@@ -622,15 +475,10 @@ impl Editor {
     ) {
         ui.separator();
         let reason = self.selection_unavailable();
-        let builtin = [Feature::Subject, Feature::Sky, Feature::Background]
-            .map(|feature| (Generator::Feature(feature), None));
-        let extensions = self
-            .extensions
-            .mask_tiles()
+        let tiles = ordered(self.extensions.mask_tiles())
             .into_iter()
-            .filter(|(offer, _)| offer.auto)
-            .map(|(offer, why)| (Generator::Extension(offer), why));
-        for (generator, why) in builtin.into_iter().chain(extensions) {
+            .filter(|(offer, _)| offer.takes_none());
+        for (generator, why) in tiles {
             let why = reason.map(str::to_string).or(why);
             let response = ui.add_enabled(
                 why.is_none() && self.selection.running().is_none(),
@@ -657,7 +505,7 @@ impl Editor {
         ui: &mut egui::Ui,
         mask: usize,
         component: usize,
-        generator: Result<Generator, String>,
+        generator: Result<Offer, String>,
         source: &str,
     ) {
         hint(ui, source);
@@ -720,7 +568,19 @@ impl Editor {
     }
 }
 
-/// An extension's generator's icon: the dashed frame, with a spark in it.
+/// The tiles as the drawer shows them: Subject, Sky and Background first, in
+/// that order, then the others as their extensions list them.
+pub(super) fn ordered(mut tiles: Vec<(Offer, Option<String>)>) -> Vec<(Offer, Option<String>)> {
+    tiles.sort_by_key(|(offer, _)| match offer.feature() {
+        Some(Feature::Subject) => 0,
+        Some(Feature::Sky) => 1,
+        Some(Feature::Background) => 2,
+        None => 3,
+    });
+    tiles
+}
+
+/// A generator's icon: the dashed frame, with a spark in it.
 fn paint_generator_icon(painter: &egui::Painter, c: egui::Pos2, ink: egui::Color32) {
     let stroke = egui::Stroke::new(1.2, ink);
     let (w, h) = (11., 9.5);

@@ -48,6 +48,16 @@ pub const SKY: &str = "sky";
 /// The command that deletes the downloaded models.
 pub const REMOVE_MODELS: &str = "remove-models";
 
+/// The folder, under `models` in the extension's data folder or the app's
+/// local data folder, that `generator`'s models are installed in: for tests
+/// that put real models there.
+pub fn model_folder(generator: &str) -> String {
+    match generator {
+        SKY => Pack::Sky.folder(),
+        _ => Pack::Subject.folder(),
+    }
+}
+
 /// Which of the selections a request makes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Feature {

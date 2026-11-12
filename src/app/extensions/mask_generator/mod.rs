@@ -28,15 +28,17 @@
 //!
 //! [`Guard`]: crate::app::develop::tools::subject_mask
 use super::{Extension, Host, Pending};
-use crate::app::develop::tools::subject_mask::{Done, Failure, Generated, keep, render_input};
+use crate::app::develop::tools::subject_mask::{
+    Done, Failure, Feature, Generated, keep, render_input,
+};
 use crate::app::worker::Event;
 use crate::camera_data::CameraImage;
-use crate::model::masks::BitmapSource;
+use crate::model::masks::{BitmapSource, FEATURE_SKY, FEATURE_SUBJECT};
 use crate::model::recipe::Recipe;
 use crate::storage::mask_assets::MAX_SIDE;
 use crate::storage::{FNV_OFFSET, fnv1a};
 use rawmakase_extensions::protocol::buffer::{Access, Buffer, Meaning, Region, Sample, Space};
-use rawmakase_extensions::protocol::manifest::Input;
+use rawmakase_extensions::protocol::manifest::{AI_MASKS, Input, LEGACY_PROVENANCE};
 use rawmakase_extensions::protocol::message::NeedsSetup;
 use rawmakase_extensions::protocol::method::{
     AppRequest, EmptyMask, MaskGenerate, MaskGenerated, MaskSetup,
@@ -74,6 +76,38 @@ pub(in crate::app) struct Offer {
     pub(in crate::app) prompt: bool,
     /// The manifest's `prompt-hint`.
     pub(in crate::app) hint: Option<String>,
+}
+
+impl Offer {
+    /// The new mask's name, and its History step's.
+    pub(in crate::app) fn name(&self) -> &str {
+        &self.name
+    }
+    /// Which of the selections that came before extensions it is: the
+    /// bundled AI masks' generators, the only ones that may record `subject`
+    /// or `sky`. The drawer gives them the icons and wording it always had.
+    pub(in crate::app) fn feature(&self) -> Option<Feature> {
+        match self.provenance.as_str() {
+            FEATURE_SKY => Some(Feature::Sky),
+            FEATURE_SUBJECT if self.invert => Some(Feature::Background),
+            FEATURE_SUBJECT => Some(Feature::Subject),
+            _ => None,
+        }
+    }
+    /// Whether it aims with clicks and a box: Sky doesn't.
+    pub(in crate::app) fn takes_prompt(&self) -> bool {
+        self.prompt
+    }
+    /// Whether it makes a mask by itself.
+    pub(in crate::app) fn takes_none(&self) -> bool {
+        self.auto
+    }
+    /// The line shown while aiming at something new.
+    pub(in crate::app) fn aim_hint(&self) -> String {
+        self.hint
+            .clone()
+            .unwrap_or_else(|| "Click it on the photo, or drag a box around it".into())
+    }
 }
 
 /// A mask generator's setup, while it runs or after it failed.
@@ -154,6 +188,10 @@ impl Host {
             None => Err(match provenance.split_once('/') {
                 Some((extension, _)) => {
                     format!("Made by {extension}, which isn't installed")
+                }
+                // Subject's and Sky's, saved before extensions or since.
+                None if LEGACY_PROVENANCE.contains(&provenance) => {
+                    format!("Made by {AI_MASKS}, which isn't installed")
                 }
                 None => format!("Made by {provenance}, which isn't installed"),
             }),
@@ -259,6 +297,14 @@ impl Host {
             run.requests.remove(&id);
             run.session.cancel(id);
         }
+    }
+
+    /// What `extension`'s program last said of the mask request it is
+    /// answering, while that request waits for its outcome.
+    pub(in crate::app) fn mask_progress(&self, extension: &str) -> Option<&str> {
+        let (ticket, text) = self.get(extension)?.mask_progress.as_ref()?;
+        self.mask_in_flight(extension, *ticket)
+            .then_some(text.as_str())
     }
 
     /// Whether mask request `ticket` of `extension` is still waiting for its

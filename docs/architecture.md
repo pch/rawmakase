@@ -32,13 +32,14 @@ flowchart TD
     inference[rawmakase-inference]
     selection[rawmakase-selection]
     modelinstall[rawmakase-model-install]
+    aimasks[rawmakase-ai-masks]
     exthost[rawmakase-extensions]
     extprotocol[rawmakase-extension-protocol]
     sdk[rawmakase-extension]
     cargoext[cargo-rawmakase]
 
     app --> export & decode & catalog & engine & interop & model
-    app --> ctl & remote & selection & inference & modelinstall & fs & exthost
+    app --> ctl & inference & modelinstall & fs & exthost
     export --> decode & engine & interop
     decode --> engine & raw
     catalog --> interop & fs
@@ -51,6 +52,7 @@ flowchart TD
     remote --> selection
     selection --> inference
     modelinstall --> inference & model
+    aimasks --> sdk & remote & modelinstall & protocol
     exthost --> extprotocol & fs
     sdk --> extprotocol
     cargoext --> exthost & protocol
@@ -59,7 +61,9 @@ flowchart TD
 (Edges implied by others are left out: every crate above the model also depends
 on it directly. The app doesn't link `rawmakase-mcp`: `rawmakase mcp` runs its
 program, installed beside the app, and `scripts/crate-closures.sh` keeps it
-out of the app's tree.)
+out of the app's tree. Nor does it link `rawmakase-ai-masks`, the selection
+models or the remote client: the AI masks extension's program, installed beside
+the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
 
 | Crate | Owns | Builds without |
 | --- | --- | --- |
@@ -74,11 +78,12 @@ out of the app's tree.)
 | `rawmakase-decode` | Opening and decoding photos: the only crate that reaches `rawmakase-raw`; colour management, demosaicing, rendered files (JPEG … HEIF), the full-size decode and its cache, AI Denoise's packing and assembly, Camera Look fitting | C imaging libraries, the catalog, export, the GUI |
 | `rawmakase-export` | Developing and writing exports, with their watermarks | The app, a window or GPU backend |
 | `rawmakase-inference` | The lazily loaded ONNX Runtime, the provider choice and the session helpers every model shares, `InferenceError`, the `ModelFile` record, and AI Denoise's model: its contract, tiler and gain fit, packed mosaic in, denoised camera RGB out | Every other workspace crate |
-| `rawmakase-selection` | The selection models (Subject, Background and Sky): their pinned contracts, the image and coverage mappings, automatic selection, edge refinement and their sessions, run through inference's runtime: pixels in, coverage out | Everything but inference |
+| `rawmakase-selection` | The selection models (Subject, Background and Sky): their pinned contracts, the image and coverage mappings, automatic selection, edge refinement and their sessions, run through inference's runtime: pixels in, coverage out. The AI masks extension's program runs them; the app never links them | Everything but inference |
 | `rawmakase-model-install` | Installing a model pack: a folder and its files, downloaded resumably or copied from a folder, each checked against its size and SHA-256, the receipt that makes a pack installed, the lock across instances, and the models and runtime folders in the local data folder. Which packs exist is its caller's | Everything but inference and the model |
-| `rawmakase-remote` | The optional worker binary that runs the same selection models on another computer, and the app's client for it, over a bounded TCP protocol | Everything but the selection models and inference |
+| `rawmakase-remote` | The optional worker binary that runs the same selection models on another computer, and the AI masks extension's client for it, over a bounded TCP protocol | Everything but the selection models and inference |
 | `rawmakase-protocol` | What the app and its control clients agree on: protocol version, `control.json` endpoint, data folder | Everything |
 | `rawmakase-ctl` (`tools/`) | The control client, used by `rawmakase control`, the MCP program and the standalone `rawmakase-ctl` | The app |
+| `rawmakase-ai-masks` (`extensions/ai-masks`) | The bundled AI masks extension: its manifest (the `subject` and `sky` mask generators, which claim the provenance masks saved before it record, and `remove-models`) and its program `rawmakase-ai-masks`, which runs the selection models here (through the ONNX Runtime the app bundles) or on the remote worker, and installs their packs in the local data folder's `models`, where the app always installed them, beside AI Denoise's | Every photo, edit, catalog, renderer, decoder or GUI crate, and the extension host |
 | `rawmakase-mcp` (`extensions/mcp`) | The bundled MCP extension: its manifest and its program `rawmakase-mcp`, an MCP server that is a client of the control protocol, which `rawmakase mcp` runs | Every workspace crate but `rawmakase-protocol` and `rawmakase-ctl` |
 | `rawmakase-extension-protocol` | What the app and extensions agree on ([extensions](extensions/overview.md)): the manifest and its schema, the protocol's messages, error codes and bounded line framing, host-drawn controls | Every other workspace crate |
 | `rawmakase-extension` | The SDK extension programs are written with: the channel, the run loop, handler traits, receiving and mapping the buffers the app passes (`shm`), a mock host for tests that passes them as the app does | Everything but the extension protocol |
@@ -124,11 +129,15 @@ token holds. Every persisted change goes through the host
 crate's `State::update`, so a write failure leaves this session's state as it
 was. Quitting follows [the shutdown contract](shutdown.md).
 
-An extension's mask generator (`app::extensions::mask_generator`) runs
-through the same request state machine as Select Subject
+An extension's mask generator (`app::extensions::mask_generator`), Select
+Subject's, Sky's and Background's among them (the bundled AI masks
+extension's), runs through one request state machine
 (`develop::tools::subject_mask`), which owns the busy state, the guards (load,
 task generation, the masks' structure and content) and the one History step;
 the extension side owns the tiles, the provenance lookup and the requests.
+Saved masks, their rasters and their labels stay the core's: a Subject, Sky or
+Background mask renders, and is labelled from its provenance, whether the AI
+masks extension is enabled, disabled or missing.
 Neither direction does pixel work on the UI thread: the selection worker
 renders the input into the request's shared memory before it is sent, and
 copies the coverage out and registers the raster after the reply, and only
@@ -139,11 +148,11 @@ is void in any phase once it has moved: busy clears at once, the worker's job
 is cancelled, and nothing it produces applies. A mask result is not a proposal and has no
 target token; edits made while it runs that change neither the masks'
 structure nor the content (sliders, names) survive it. Aiming collects
-clicks and a box with `app::extensions::viewer_input`, for Select Subject and
-extensions alike.
+clicks and a box with `app::extensions::viewer_input`.
 
 No value, catalog or rendering crate can reach `rawmakase-inference` or
-`rawmakase-selection`, so saved masks render without any inference installed and a photo with AI Denoise renders from a
+`rawmakase-selection`, and the app never reaches the selection models or the
+remote client, so saved masks render without any inference installed and a photo with AI Denoise renders from a
 result handed to it. The app crate re-exports these crates' modules at its root
 (`crate::model`, `crate::xmp`, `crate::catalog`, `crate::develop`…), so paths read
 the same on either side; parsing, persistence and rendering never import the
@@ -193,7 +202,7 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `diagnostics` | The system report a bug report asks for (Report an Issue…, `rawmakase system-info`): this build, the system probed once per process and what the window knew, as plain snapshots, with no path, user, file, catalog or profile name | `diagnostics.rs` |
 | `updates` | Release checks and self-update through fastframe-update; the notice itself is in `app` | `updates.rs` |
 | `ai_denoise` | AI Denoise's service, shared by the desktop app and the command line: the queue, the worker and its ONNX session, job keys, the finished-result lookup, `AiBase` for export; `CommandLine` for `render` and `render-batch`, and the `rawmakase denoise` development command. No egui and no `app`: the open photo's result and the Loupe's loader are `app::develop::ai_denoise`'s, and the app passes the user's cache in | `mod.rs`, `command_line.rs`, `bench.rs` |
-| `model_install` | The app's model packs (Select Subject's, Sky's, AI Denoise's): which files each holds and its folder; installing them is `rawmakase-model-install`'s, and the threads and the drawer are `app`'s | `mod.rs` |
+| `model_install` | The app's model pack, AI Denoise's: which files it holds and its folder; installing it is `rawmakase-model-install`'s, and the thread and the panel are `app`'s. Select Subject's and Sky's are the AI masks extension's | `mod.rs` |
 | `lensfun_install` | Downloading, checking, publishing and removing Lensfun's lens database on request (never bundled, never fetched unasked); reading it is `lens::lensfun::installed`'s, the panels and the job thread are `app`'s | `lensfun_install.rs` |
 | `comparison` | Reproducible reference-image comparisons using the same develop APIs | `comparison.rs` |
 
@@ -346,7 +355,7 @@ it held and every queued one fail, so no Develop request or export waits for it,
 the next request starts a new worker. The Detail panel's switch and Amount are ordinary edits (one
 History step each); a result arriving is not one. `app::develop::panels::inspector::ai_denoise` draws
 the panel's controls, credit and install offer; the model installs as
-`model_install::Pack::Denoise`, as the selection models do.
+`model_install::Pack::Denoise`, with the installer the AI masks extension uses for the selection models.
 
 ## Data flow
 
@@ -442,7 +451,8 @@ Some features span several owners; each module's docs describe its part:
 - `scripts/deps-crates.txt` lists the workspace crates each crate must never
   depend on, directly or through others: the model never on file formats, the
   catalog, rendering or decoding; the RAW decoders on no edit; the protocol and
-  inference on no other crate, and the selection models on none but inference. `scripts/deps.py check` reads the rules against
+  inference on no other crate, the selection models on none but inference,
+  and the app never on the selection models or the remote client. `scripts/deps.py check` reads the rules against
   `cargo metadata --no-deps`, so an edge that points up the layering fails
   without a build.
 - The model, file formats, catalog and control protocol are crates, so Cargo

@@ -60,7 +60,8 @@ def main():
     parser.add_argument("--icon-assets", type=Path,
                         help="Assets.car compiled on macOS 26 for the layered app icon")
     parser.add_argument("--program", type=Path, action="append", default=[],
-                        help="a bundled extension's program (rawmakase-mcp, rawmakase-midi), installed in "
+                        help="a bundled extension's program (rawmakase-mcp, rawmakase-midi, "
+                             "rawmakase-ai-masks), installed in "
                              "Contents/MacOS beside the executable, where the app looks for it")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]

@@ -1,21 +1,17 @@
-//! Select Subject and Select Background (docs/subject-and-background-masks.md): a
-//! model finds the photo's salient foreground, and the result becomes a mask that
-//! edits like any other. Everything here is the app's side of that: what a request
-//! captures, when its result may still be applied, and what the drawer says
-//! meanwhile. The models are `rawmakase-selection`'s and their runtime
-//! `rawmakase-inference`'s; installing them is
-//! [`model_installer`](crate::app::develop::model_installer)'s. The thread that
-//! runs a selection is `worker`, and the half of it that asks the models is
-//! `inference`.
+//! Select Subject, Sky and Background (docs/subject-and-background-masks.md),
+//! and every other mask generator an extension offers: a model finds what to
+//! mask, and the result becomes a mask that edits like any other. Everything
+//! here is the app's side of that: what a request captures, when its result may
+//! still be applied, and what the drawer says meanwhile.
 //!
-//! The same state machine runs extensions' mask generators
-//! ([`mask_generator`]): a request
-//! names its [`Generator`], Select Subject and Sky being the app's own until
-//! they move into an extension (#965), and an extension's request has its
-//! input rendered and its answer kept on the same worker thread. Aiming, for
-//! either, collects clicks and a box with
-//! [`viewer_input`](crate::app::extensions::viewer_input).
-mod inference;
+//! The generators are extensions' ([`mask_generator`]); Subject, Sky and
+//! Background are the bundled `rawmakase.ai-masks` extension's, whose program
+//! runs the models. A request has its input rendered and its answer kept on
+//! the selection thread (`worker`), so neither does pixel work on the UI
+//! thread. Aiming collects clicks and a box with
+//! [`viewer_input`](crate::app::extensions::viewer_input). Saved masks, their
+//! rasters and their labels are the core's, and render whether or not the
+//! extension that made them is there.
 mod ui;
 mod worker;
 
@@ -36,62 +32,21 @@ use rawmakase_extensions::protocol::message::NeedsSetup;
 use rawmakase_extensions::protocol::method::{MaskGenerate, MaskGenerated};
 use rawmakase_extensions::protocol::viewer::ViewerInput;
 use rawmakase_extensions::shm::Returned;
-use rawmakase_selection::{Point, Prompt as ModelPrompt};
 use serde_json::Value;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::app::develop::model_installer::Installer;
 use crate::model_install::Pack;
 
-/// The installs of Select Subject's and Sky's model packs.
-pub(crate) struct Models {
-    pub(in crate::app) subject: Installer,
-    pub(in crate::app) sky: Installer,
-}
-impl Default for Models {
-    fn default() -> Self {
-        Self {
-            subject: Installer::new(Pack::Subject),
-            sky: Installer::new(Pack::Sky),
-        }
-    }
-}
-
-/// Which of the two selections a request makes. Background is the same coverage with
-/// the component inverted, so adding a brush to it still adds coverage.
+/// The selections that came before extensions, as their saved masks name them:
+/// Subject, Sky, and Background, the same coverage as Subject with the
+/// component inverted, so adding a brush to it still adds coverage.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::app) enum Feature {
     Subject,
     Sky,
     Background,
-}
-impl Feature {
-    pub(in crate::app) fn name(self) -> &'static str {
-        match self {
-            Self::Subject => "Subject",
-            Self::Sky => "Sky",
-            Self::Background => "Background",
-        }
-    }
-    fn invert(self) -> bool {
-        self == Self::Background
-    }
-    /// The models it needs.
-    pub(in crate::app) fn pack(self) -> Pack {
-        match self {
-            Self::Sky => Pack::Sky,
-            Self::Subject | Self::Background => Pack::Subject,
-        }
-    }
-    /// What the raster is a selection of, as its provenance says.
-    pub(in crate::app) fn provenance(self) -> &'static str {
-        match self {
-            Self::Sky => FEATURE_SKY,
-            Self::Subject | Self::Background => FEATURE_SUBJECT,
-        }
-    }
 }
 /// Which selection a generated component is, from where it came from and whether it
 /// is inverted (Background is an inverted subject).
@@ -101,60 +56,6 @@ pub(in crate::app) fn feature_of(b: &BitmapMask, invert: bool) -> Feature {
         _ if invert => Feature::Background,
         _ => Feature::Subject,
     }
-}
-
-/// What a request asks for its coverage: one of the app's own selections, made
-/// here, or an extension's mask generator.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::app) enum Generator {
-    Feature(Feature),
-    Extension(Offer),
-}
-impl Generator {
-    /// The new mask's name, and its History step's.
-    pub(in crate::app) fn name(&self) -> &str {
-        match self {
-            Self::Feature(feature) => feature.name(),
-            Self::Extension(offer) => &offer.name,
-        }
-    }
-    fn invert(&self) -> bool {
-        match self {
-            Self::Feature(feature) => feature.invert(),
-            Self::Extension(offer) => offer.invert,
-        }
-    }
-    /// Whether it aims with clicks and a box: Sky doesn't.
-    pub(in crate::app) fn takes_prompt(&self) -> bool {
-        match self {
-            Self::Feature(feature) => *feature != Feature::Sky,
-            Self::Extension(offer) => offer.prompt,
-        }
-    }
-    /// Whether it makes a mask by itself.
-    pub(in crate::app) fn takes_none(&self) -> bool {
-        match self {
-            Self::Feature(_) => true,
-            Self::Extension(offer) => offer.auto,
-        }
-    }
-    /// The line shown while aiming at something new.
-    fn hint(&self) -> String {
-        match self {
-            Self::Feature(_) => "Click the subject on the photo, or drag a box around it".into(),
-            Self::Extension(offer) => offer
-                .hint
-                .clone()
-                .unwrap_or_else(|| "Click it on the photo, or drag a box around it".into()),
-        }
-    }
-}
-
-/// What a job does: finds the photo's subject or sky by itself, or answers clicks.
-#[derive(Clone, Debug)]
-pub(in crate::app) enum Action {
-    Auto(Feature),
-    Click(ModelPrompt),
 }
 
 /// What a finished selection does to the edit.
@@ -168,20 +69,12 @@ pub(in crate::app) enum Target {
     Regenerate { mask: usize, component: usize },
 }
 
-/// A request, as it was made.
+/// A request, as it was made: the generator it asks, through one of its
+/// tiles or as the one a saved raster names, and what its result does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::app) struct Request {
-    pub(in crate::app) generator: Generator,
+    pub(in crate::app) generator: Offer,
     pub(in crate::app) target: Target,
-}
-impl Request {
-    /// One of the app's own selections.
-    pub(in crate::app) const fn feature(feature: Feature, target: Target) -> Self {
-        Self {
-            generator: Generator::Feature(feature),
-            target,
-        }
-    }
 }
 
 /// Why a selection did not make a mask; the drawer says so with a way to try again.
@@ -195,10 +88,8 @@ pub(crate) enum Failure {
     NothingThere,
     /// An extension's generator found nothing by itself.
     NothingFound,
-    /// An extension's generator has to be set up (its model downloaded) first.
+    /// The generator has to be set up (its model downloaded) first.
     NeedsSetup(NeedsSetup),
-    /// The model file is not installed (or was removed meanwhile).
-    ModelMissing,
     /// The inference runtime could not be loaded or has no support here.
     RuntimeUnavailable(String),
     Failed(String),
@@ -212,7 +103,6 @@ impl Failure {
             Self::NothingThere => "Nothing selected there; click on the subject itself".into(),
             Self::NothingFound => "Nothing found".into(),
             Self::NeedsSetup(setup) => format!("{} has to be downloaded first", setup.what),
-            Self::ModelMissing => "The selection model is not installed".into(),
             Self::RuntimeUnavailable(why) => format!("Selection is unavailable here: {why}"),
             Self::Failed(why) => format!("Selection failed: {why}"),
         }
@@ -342,11 +232,11 @@ fn content(recipe: &Recipe) -> u64 {
 struct Pending {
     request: Request,
     guard: Guard,
-    /// An extension's request: from its input rendered until its answer is kept.
-    call: Option<Call>,
+    /// From its input rendered until its answer is kept.
+    call: Call,
 }
 
-/// What an extension's request was started under, and what it asked once sent.
+/// What a request was started under, and what it asked once sent.
 struct Call {
     load: u64,
     generation: u64,
@@ -365,8 +255,6 @@ struct Call {
 /// What the drawer asks the user before a selection can run.
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::app) enum Prompt {
-    /// The models have to be downloaded.
-    Model(Request),
     /// The catalog has to be upgraded to keep the result.
     Upgrade(Request),
     /// An extension's generator answered `needs_setup`: what it needs, the
@@ -394,7 +282,7 @@ pub(in crate::app) enum Resume {
 impl Prompt {
     fn request(&self) -> &Request {
         match self {
-            Self::Model(request) | Self::Upgrade(request) | Self::Setup { request, .. } => request,
+            Self::Upgrade(request) | Self::Setup { request, .. } => request,
         }
     }
 }
@@ -419,10 +307,6 @@ pub(in crate::app) struct Selection {
     failure: Option<(Request, Failure)>,
     prompt: Option<Prompt>,
     worker: worker::Worker,
-    pub(in crate::app) models: Models,
-    /// The remote worker to ask instead, when configured; `Default` reads
-    /// nothing until the endpoint is asked for.
-    pub(in crate::app) remote: worker::RemoteConfig,
     /// A catalog upgrade under way, and the request it unblocks.
     upgrading: Option<(u64, Request)>,
     upgrade_task: Task,
@@ -442,25 +326,20 @@ impl Selection {
         self.pending.as_ref().map(|p| &p.request)
     }
     /// Stops the running selection, whatever it is for (a new photo, Cancel).
-    /// An extension's request in flight is withdrawn: its answer can't apply
-    /// any more, and the host cancels it at the program.
+    /// A request in flight is withdrawn: its answer can't apply any more, and
+    /// the host cancels it at the program.
     pub(in crate::app) fn cancel(&mut self) {
         self.task.invalidate();
         if let Some(Pending {
-            request:
-                Request {
-                    generator: Generator::Extension(offer),
-                    ..
-                },
-            call:
-                Some(Call {
-                    sent: Some((ticket, _)),
-                    ..
-                }),
+            request,
+            call: Call {
+                sent: Some((ticket, _)),
+                ..
+            },
             ..
         }) = self.pending.take()
         {
-            self.withdrawn.push((offer.extension, ticket));
+            self.withdrawn.push((request.generator.extension, ticket));
         }
     }
     /// The extensions' requests to cancel at the program.
@@ -486,19 +365,17 @@ impl Selection {
     pub(in crate::app) fn clear_catalog(&mut self) {
         self.clear_document();
     }
-    /// Workers to wait for when quitting: inference is asked to stop and handed to the
-    /// shared deadline, never joined without one. An upgrade's backup copy is finished
-    /// within that deadline too, rather than cut off.
+    /// Threads to wait for when quitting: the selection thread is handed to the
+    /// shared deadline, never joined without one. An upgrade's backup copy is
+    /// finished within that deadline too, rather than cut off. The programs
+    /// that run the models are the extension host's to stop.
     pub(in crate::app) fn stop(&mut self) -> Vec<Stopping> {
         self.cancel();
         self.end_prompting();
-        let mut stopping = vec![
+        vec![
             self.worker.stop(),
             Stopping::new(self.upgrade_thread.take()),
-        ];
-        stopping.extend(self.models.subject.stop());
-        stopping.extend(self.models.sky.stop());
-        stopping
+        ]
     }
 }
 
@@ -516,8 +393,9 @@ impl Editor {
         }
         None
     }
-    /// Starts a selection, or asks what it needs first: the model, an upgraded
-    /// catalog, an extension that can run.
+    /// Starts a selection, or asks what it needs first: an upgraded catalog,
+    /// an extension that can run. What its generator needs set up it says
+    /// when asked.
     pub(in crate::app) fn request_selection(&mut self, request: Request) {
         // The frame that shows what a click did comes after it: ask for one.
         self.context.request_repaint();
@@ -551,44 +429,24 @@ impl Editor {
             self.selection.prompt = Some(Prompt::Upgrade(request));
             return;
         }
-        match &request.generator {
-            Generator::Feature(feature) => {
-                // Over the remote worker, the models do not have to be here at all.
-                let remote = self.selection.remote.endpoint().is_some();
-                if !remote && !self.installer(feature.pack()).installed() {
-                    self.selection.prompt = Some(Prompt::Model(request));
-                    return;
-                }
-            }
-            Generator::Extension(offer) => {
-                if let Err(why) = self.extensions.mask_ready(offer) {
-                    self.messages.warn(why);
-                    return;
-                }
-                // A generator that only aims is aimed with.
-                if !offer.auto {
-                    self.begin_aiming(request);
-                    return;
-                }
-            }
+        if let Err(why) = self.extensions.mask_ready(&request.generator) {
+            self.messages.warn(why);
+            return;
+        }
+        // A generator that only aims is aimed with.
+        if !request.generator.takes_none() {
+            self.begin_aiming(request);
+            return;
         }
         self.selection.prompt = None;
         self.selection.failure = None;
         // The models find the subject and the sky by themselves; clicks only refine.
         self.start_selection(request, None);
     }
-    /// Whether `generator` can be aimed with now: Subject's models are here (or
-    /// a remote worker answers), or the extension can run.
-    fn can_aim(&self, generator: &Generator) -> bool {
-        match generator {
-            Generator::Feature(_) => {
-                self.selection.remote.endpoint().is_some()
-                    || self.selection.models.subject.installed()
-            }
-            Generator::Extension(offer) => {
-                offer.prompt && self.extensions.mask_ready(offer).is_ok()
-            }
-        }
+    /// Whether `generator` can be aimed with now: it takes clicks, and its
+    /// extension can run. What its models need it says at the first click.
+    fn can_aim(&self, generator: &Offer) -> bool {
+        generator.takes_prompt() && self.extensions.mask_ready(generator).is_ok()
     }
     /// Aims at the subject by hand, for what the models do not know (a sign, a car, a
     /// rocket): the clicks make the mask, a new one or the one `request` names.
@@ -599,7 +457,7 @@ impl Editor {
             return;
         }
         self.selection.failure = None;
-        let hint = request.generator.hint();
+        let hint = request.generator.aim_hint();
         self.selection.prompting = Some(Prompting {
             applied: match request.target {
                 Target::Regenerate { mask, component } => Some((mask, component)),
@@ -676,28 +534,26 @@ impl Editor {
             *then = Resume::Nothing;
         }
     }
-    /// The generator a generated component's raster came from: Subject, Sky or
-    /// Background (an inverted Subject) for the app's own and old saved masks,
-    /// or the extension's generator its provenance names. `Err` says why that
-    /// one can't run now; the mask renders all the same.
+    /// The generator a generated component's raster came from, by the
+    /// provenance it saved: Subject, Sky and Background (an inverted Subject)
+    /// are the bundled AI masks extension's, as are rasters that saved none,
+    /// which only Select Subject made. `Err` says why that one can't run now
+    /// (its extension disabled, Failed or missing); the mask renders all the
+    /// same.
     pub(in crate::app) fn raster_generator(
         &self,
         b: &BitmapMask,
         invert: bool,
-    ) -> Result<Generator, String> {
-        match b.source.as_ref().map(|s| s.feature.as_str()) {
-            None | Some(FEATURE_SUBJECT | FEATURE_SKY) => {
-                Ok(Generator::Feature(feature_of(b, invert)))
-            }
-            Some(provenance) => self
-                .extensions
-                .mask_generator(provenance, invert)
-                .map(Generator::Extension),
-        }
+    ) -> Result<Offer, String> {
+        let provenance = b
+            .source
+            .as_ref()
+            .map_or(FEATURE_SUBJECT, |s| s.feature.as_str());
+        self.extensions.mask_generator(provenance, invert)
     }
-    /// Where a mask's raster came from, for the component settings: the app's
-    /// own selections as [`source_text`] says, an extension's generator by
-    /// name, whether it is installed or not.
+    /// Where a mask's raster came from, for the component settings: Subject's
+    /// and Sky's as [`source_text`] says, from their saved provenance alone,
+    /// another extension's generator by name, whether it is installed or not.
     pub(in crate::app) fn raster_source_text(&self, b: &BitmapMask) -> String {
         match b.source.as_ref().map(|s| s.feature.as_str()) {
             None | Some(FEATURE_SUBJECT | FEATURE_SKY) => source_text(b),
@@ -764,64 +620,21 @@ impl Editor {
         self.selection.failure = None;
         self.start_selection(request, Some(input));
     }
-    /// Starts `request`, automatic or with the clicks and box of `input`: on
-    /// the worker thread, which runs the app's own models, or renders the
-    /// input for an extension's generator and then hands it back to be sent.
+    /// Starts `request`, automatic or with the clicks and box of `input`: the
+    /// worker thread renders its input, which is then handed back to be sent.
     fn start_selection(&mut self, request: Request, input: Option<ViewerInput>) {
         let Some(image) = self.document.full().cloned() else {
             return;
         };
         let load = self.document.load_id();
-        enum Backend {
-            Here {
-                model: Option<std::path::PathBuf>,
-                endpoint: Option<String>,
-                action: Action,
-            },
-            Extension(Offer, rawmakase_extensions::shm::Ledger, u64),
-        }
-        let backend = match &request.generator {
-            Generator::Feature(feature) => {
-                let action = match &input {
-                    None => Action::Auto(*feature),
-                    Some(input) => Action::Click(model_prompt(input)),
-                };
-                let endpoint = self.selection.remote.endpoint();
-                let model = if endpoint.is_some() {
-                    None
-                } else {
-                    let pack = match &action {
-                        Action::Auto(feature) => feature.pack(),
-                        Action::Click(_) => Pack::Subject,
-                    };
-                    match self.installer(pack).path() {
-                        Some(model) => Some(model),
-                        None => {
-                            self.selection.end_prompting();
-                            self.selection.prompt = Some(Prompt::Model(request));
-                            return;
-                        }
-                    }
-                };
-                Backend::Here {
-                    model,
-                    endpoint,
-                    action,
-                }
-            }
-            Generator::Extension(offer) => match (
-                self.extensions.mask_ledger(&offer.extension),
-                self.extensions.mask_lifecycle(&offer.extension),
-            ) {
-                (Some(ledger), Some(lifecycle)) => {
-                    Backend::Extension(offer.clone(), ledger, lifecycle)
-                }
-                _ => {
-                    self.messages
-                        .warn(format!("{} isn't installed", offer.extension));
-                    return;
-                }
-            },
+        let offer = request.generator.clone();
+        let (Some(ledger), Some(lifecycle)) = (
+            self.extensions.mask_ledger(&offer.extension),
+            self.extensions.mask_lifecycle(&offer.extension),
+        ) else {
+            self.messages
+                .warn(format!("{} isn't installed", offer.extension));
+            return;
         };
         self.context.request_repaint();
         let text: String = match &input {
@@ -831,81 +644,51 @@ impl Editor {
         self.messages.note(text);
         let (generation, cancel) = self.selection.task.start();
         let recipe = self.document.edit.recipe().clone();
-        let call = match &backend {
-            Backend::Extension(_, _, lifecycle) => Some(Call {
-                load,
-                generation,
-                cancel: cancel.clone(),
-                lifecycle: *lifecycle,
-                sent: None,
-            }),
-            Backend::Here { .. } => None,
-        };
         self.selection.pending = Some(Pending {
             guard: Guard::of(&recipe, request.target),
             request,
-            call,
+            call: Call {
+                load,
+                generation,
+                cancel: cancel.clone(),
+                lifecycle,
+                sent: None,
+            },
         });
         let (tx, ctx) = (self.tx.clone(), self.context.clone());
-        match backend {
-            Backend::Here {
-                model,
-                endpoint,
-                action,
-            } => self.selection.worker.submit(
-                worker::Job {
-                    load,
-                    generation,
-                    cancel,
-                    image,
-                    recipe,
-                    model,
-                    endpoint,
-                    action,
-                },
-                tx,
-                ctx,
-            ),
-            Backend::Extension(offer, ledger, _) => {
-                let job = mask_generator::Prepare {
-                    load,
-                    generation,
-                    cancel,
-                    image,
-                    recipe,
-                    ledger,
-                    generator: offer.generator,
-                    input,
-                };
-                self.selection.worker.call(
-                    move || mask_generator::prepare(job),
-                    move || mask_generator::done(load, generation, Err(stopped())),
-                    tx,
-                    ctx,
-                );
-            }
-        }
+        let job = mask_generator::Prepare {
+            load,
+            generation,
+            cancel,
+            image,
+            recipe,
+            ledger,
+            generator: offer.generator,
+            input,
+        };
+        self.selection.worker.call(
+            move || mask_generator::prepare(job),
+            move || mask_generator::done(load, generation, Err(stopped())),
+            tx,
+            ctx,
+        );
     }
-    /// An extension's request has its input rendered: it is sent, unless it
-    /// was given up on meanwhile, when its buffers are let go of.
+    /// A request has its input rendered: it is sent, unless it was given up
+    /// on meanwhile, when its buffers are let go of.
     pub(in crate::app) fn mask_prepared(&mut self, prepared: mask_generator::Prepared) {
         let (load, generation) = (prepared.load, prepared.generation);
         if load != self.document.load_id() || generation != self.selection.task.id() {
             return self.settle_deferred();
         }
         let Some(Pending {
-            request:
-                Request {
-                    generator: Generator::Extension(offer),
-                    ..
-                },
-            call: Some(Call { sent: None, .. }),
+            request,
+            call: Call { sent: None, .. },
             ..
         }) = &self.selection.pending
         else {
             return self.settle_deferred();
         };
-        let offer = offer.clone();
+        let offer = request.generator.clone();
         if self.void_if_moved() {
             return;
         }
@@ -925,13 +708,8 @@ impl Editor {
             .generate_mask(&offer, ready.params, ready.buffers)
         {
             Ok(ticket) => {
-                if let Some(call) = self
-                    .selection
-                    .pending
-                    .as_mut()
-                    .and_then(|p| p.call.as_mut())
-                {
-                    call.sent = Some((ticket, asked));
+                if let Some(pending) = self.selection.pending.as_mut() {
+                    pending.call.sent = Some((ticket, asked));
                 }
             }
             Err(why) => self.selection_done(Done {
@@ -941,7 +719,7 @@ impl Editor {
             }),
         }
     }
-    /// The one outcome of an extension's request `ticket`: its answer is kept
+    /// The one outcome of request `ticket`: its answer is kept
     /// as a raster on the worker thread, its failure ends the selection. An
     /// outcome nothing waits for any more (cancelled, superseded, another
     /// photo) is dropped, and its buffers with it.
@@ -952,18 +730,10 @@ impl Editor {
         result: Result<Value, RemoteError>,
         buffers: Option<Returned>,
     ) {
-        let Some(Pending {
-            request:
-                Request {
-                    generator: Generator::Extension(offer),
-                    ..
-                },
-            call: Some(call),
-            ..
-        }) = &mut self.selection.pending
-        else {
+        let Some(Pending { request, call, .. }) = &mut self.selection.pending else {
             return;
         };
+        let offer = &request.generator;
         if offer.extension != extension || call.sent.as_ref().is_none_or(|(t, _)| *t != ticket) {
             return self.settle_deferred();
         }
@@ -1010,8 +780,8 @@ impl Editor {
             ctx,
         );
     }
-    /// After the host's outcomes: an extension's request whose extension
-    /// moved on in its lifecycle is void in any phase, and one whose outcome
+    /// After the host's outcomes: a request whose extension moved on in its
+    /// lifecycle is void in any phase, and one whose outcome
     /// can't come any more (its request is gone from the host) ends now.
     /// Aiming at a generator that can't run any more (disabled, Failed, gone)
     /// ends, and rasters set aside for a selection that ended without a
@@ -1021,22 +791,21 @@ impl Editor {
             return;
         }
         if let Some(Pending {
-            request:
-                Request {
-                    generator: Generator::Extension(offer),
-                    ..
-                },
+            request,
             call:
-                Some(Call {
+                Call {
                     sent: Some((ticket, _)),
                     load,
                     generation,
                     ..
-                }),
+                },
             ..
         }) = &self.selection.pending
-            && !self.extensions.mask_in_flight(&offer.extension, *ticket)
+            && !self
+                .extensions
+                .mask_in_flight(&request.generator.extension, *ticket)
         {
+            let offer = &request.generator;
             let done = Done {
                 load: *load,
                 generation: *generation,
@@ -1047,39 +816,24 @@ impl Editor {
             };
             self.selection_done(done);
         }
-        if let Some(Prompting {
-            request:
-                Request {
-                    generator: Generator::Extension(offer),
-                    ..
-                },
-            ..
-        }) = &self.selection.prompting
-            && let Err(why) = self.extensions.mask_ready(offer)
+        if let Some(Prompting { request, .. }) = &self.selection.prompting
+            && let Err(why) = self.extensions.mask_ready(&request.generator)
         {
             self.selection.end_prompting();
             self.messages.note(why);
         }
         self.settle_deferred();
     }
-    /// Ends the running extension's request at once if its extension has
+    /// Ends the running request at once if its extension has
     /// moved on in its lifecycle since it started: busy clears, the worker's
     /// job is cancelled, a request sent is withdrawn (its buffers stay leased
     /// until the program answers) and nothing is recorded. Returns whether it
     /// did.
     fn void_if_moved(&mut self) -> bool {
-        let Some(Pending {
-            request:
-                Request {
-                    generator: Generator::Extension(offer),
-                    ..
-                },
-            call: Some(call),
-            ..
-        }) = &self.selection.pending
-        else {
+        let Some(Pending { request, call, .. }) = &self.selection.pending else {
             return false;
         };
+        let offer = &request.generator;
         let now = self.extensions.mask_lifecycle(&offer.extension);
         if now == Some(call.lifecycle) {
             return false;
@@ -1124,8 +878,8 @@ impl Editor {
                 setup,
                 guard,
                 then,
-            }) if matches!(&request.generator,
-                Generator::Extension(o) if o.extension == extension && o.generator == generator) =>
+            }) if request.generator.extension == extension
+                && request.generator.generator == generator =>
             {
                 Some((request.clone(), setup.what.clone(), guard.clone(), *then))
             }
@@ -1221,8 +975,8 @@ impl Editor {
         };
         // An extension disabled, uninstalled or loaded again since: its
         // answer is void, even one that came before.
-        if let (Some(call), Generator::Extension(offer)) = (&pending.call, &request.generator)
-            && self.extensions.mask_lifecycle(&offer.extension) != Some(call.lifecycle)
+        if self.extensions.mask_lifecycle(&request.generator.extension)
+            != Some(pending.call.lifecycle)
         {
             self.discard_generated(Some(generated));
             return;
@@ -1263,7 +1017,7 @@ impl Editor {
             source: Some(generated.source),
         });
         let name = request.generator.name().to_string();
-        let invert = request.generator.invert();
+        let invert = request.generator.invert;
         let step = match request.target {
             Target::Regenerate { .. } => format!("Refine {name}"),
             _ => format!("Select {name}"),
@@ -1346,47 +1100,26 @@ impl Editor {
             crate::storage::mask_assets::discard_unsaved(id);
         }
     }
-    /// The installer finished or was cancelled; a request waiting for the model goes
-    /// on.
+    /// AI Denoise's installer finished: the photo shown asks for its result.
     pub(in crate::app) fn model_installed(
         &mut self,
         pack: Pack,
         result: Result<(), crate::model_install::InstallError>,
     ) {
-        match result {
-            Ok(()) if pack == Pack::Denoise => {
+        match (pack, result) {
+            (Pack::Denoise, Ok(())) => {
                 self.messages.done("AI Denoise model installed");
-                // The photo shown asks for its result now.
                 self.document.ai = Default::default();
                 self.schedule();
             }
-            Ok(()) => {
-                self.messages.done("Selection model installed");
-                match self.selection.prompt.take() {
-                    Some(Prompt::Model(request))
-                        if matches!(request.generator,
-                            Generator::Feature(f) if f.pack() == pack) =>
-                    {
-                        self.request_selection(request);
-                    }
-                    prompt => self.selection.prompt = prompt,
-                }
-            }
-            Err(why) => self.messages.fail(format!("Model not installed: {why}")),
+            (_, Err(why)) => self.messages.fail(format!("Model not installed: {why}")),
         }
     }
-    /// Asks the installer to download the models (the setup card's Download).
+    /// Asks the installer to download AI Denoise's model.
     pub(in crate::app) fn install_model(&mut self, pack: Pack) {
         self.context.request_repaint();
         let (tx, ctx) = (self.tx.clone(), self.context.clone());
         self.installer_mut(pack).install(None, tx, ctx);
-    }
-    /// Installs the models from a folder holding their files, each checked as a
-    /// download is: for tests, which have no network.
-    #[cfg(test)]
-    pub(in crate::app) fn install_model_from(&mut self, pack: Pack, folder: std::path::PathBuf) {
-        let (tx, ctx) = (self.tx.clone(), self.context.clone());
-        self.installer_mut(pack).install(Some(folder), tx, ctx);
     }
     /// Upgrades the open catalog on a thread of its own, after the edit is saved.
     pub(in crate::app) fn upgrade_catalog(&mut self, request: Request) {
@@ -1462,30 +1195,14 @@ impl Editor {
     }
 }
 
-/// What the app's own models are asked for clicks and a box.
-fn model_prompt(input: &ViewerInput) -> ModelPrompt {
-    match input {
-        ViewerInput::Prompt { clicks, bounds } => ModelPrompt {
-            points: clicks
-                .iter()
-                .map(|c| Point {
-                    x: c.x,
-                    y: c.y,
-                    positive: c.positive,
-                })
-                .collect(),
-            bounds: bounds.map(|b| [b.x0, b.y0, b.x1, b.y1]),
-        },
-        _ => ModelPrompt::default(),
-    }
-}
-
 /// What a request whose worker job panicked, or whose worker is gone, ends in.
 fn stopped() -> Failure {
     Failure::Failed("the selection stopped unexpectedly".into())
 }
 
-/// Where a mask's raster came from, for the component settings.
+/// Where a mask's raster came from, for the component settings, from its saved
+/// provenance alone: Subject's and Sky's, made by the AI masks extension or by
+/// the app before it, are labelled whether or not the extension is there.
 pub(in crate::app) fn source_text(b: &BitmapMask) -> String {
     match b.source.as_ref().map(|s| s.feature.as_str()) {
         Some(FEATURE_SUBJECT) => "Found by the subject models".into(),

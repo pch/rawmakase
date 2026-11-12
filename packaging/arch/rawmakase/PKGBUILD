@@ -35,9 +35,9 @@ build() {
   cd "rawmakase-$pkgver"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
-  # The app and the bundled extensions' programs (MCP, MIDI), which
+  # The app and the bundled extensions' programs (MCP, MIDI, AI masks), which
   # `make install` puts in /usr/lib/rawmakase, where the app looks for them.
-  cargo build --frozen --release -p rawmakase -p rawmakase-mcp -p rawmakase-midi
+  cargo build --frozen --release -p rawmakase -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
 }
 
 check() {
@@ -45,8 +45,8 @@ check() {
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
   # The app's tests run `rawmakase mcp`, which runs its program beside it,
-  # and the MIDI program found there.
-  cargo build --frozen -p rawmakase-mcp -p rawmakase-midi
+  # and the MIDI and AI masks programs found there.
+  cargo build --frozen -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
   cargo test --frozen
 }
 

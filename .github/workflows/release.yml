@@ -116,9 +116,9 @@ jobs:
           rustup default 1.98.1
           toolchain_bin=$(dirname "$(rustup which --toolchain 1.98.1 rustc)")
           echo "$toolchain_bin" >> "$GITHUB_PATH"
-      # Sources from 0.4.13 bundle the MCP and MIDI extensions: their programs
-      # ship beside the app, and their .rmext packages are attached to the
-      # release.
+      # Sources from 0.4.13 bundle the MCP, MIDI and AI masks extensions:
+      # their programs ship beside the app, and their .rmext packages are
+      # attached to the release.
       - name: Build and stage portable payload
         run: |
           packages=(-p rawmakase)
@@ -135,6 +135,12 @@ jobs:
             programs+=(--program target/release/rawmakase-midi)
             midi=true
           fi
+          ai_masks=false
+          if [ -f release-source/extensions/ai-masks/rawmakase-extension.toml ]; then
+            packages+=(-p rawmakase-ai-masks -p cargo-rawmakase)
+            programs+=(--program target/release/rawmakase-ai-masks)
+            ai_masks=true
+          fi
           cargo build --release --locked --manifest-path release-source/Cargo.toml --target-dir "$GITHUB_WORKSPACE/target" "${packages[@]}"
           python3 packaging/linux/bundle.py target/release/rawmakase dist/linux-root "${programs[@]}"
           mkdir -p dist/upload
@@ -146,6 +152,10 @@ jobs:
           if [ "$midi" = true ]; then
             (cd release-source/extensions/midi && "$GITHUB_WORKSPACE/target/release/cargo-rawmakase" rawmakase package --program "$GITHUB_WORKSPACE/target/release/rawmakase-midi")
             cp release-source/extensions/midi/target/rmext/*.rmext dist/upload/
+          fi
+          if [ "$ai_masks" = true ]; then
+            (cd release-source/extensions/ai-masks && "$GITHUB_WORKSPACE/target/release/cargo-rawmakase" rawmakase package --program "$GITHUB_WORKSPACE/target/release/rawmakase-ai-masks")
+            cp release-source/extensions/ai-masks/target/rmext/*.rmext dist/upload/
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -190,7 +200,7 @@ jobs:
           python -c "import ctypes; ctypes.CDLL('/usr/lib/rawmakase/libonnxruntime.so')"
           # The bundled extensions' programs, in recipes that build them.
           programs=()
-          for program in rawmakase-mcp rawmakase-midi; do
+          for program in rawmakase-mcp rawmakase-midi rawmakase-ai-masks; do
             if grep -q "$program" dist/arch/PKGBUILD; then
               programs+=("/usr/lib/rawmakase/$program")
             fi
@@ -281,8 +291,8 @@ jobs:
           rustup default 1.98.1
           toolchain_bin=$(dirname "$(rustup which --toolchain 1.98.1 rustc)")
           export PATH="$toolchain_bin:$PATH"
-          # Sources from 0.4.13 bundle the MCP and MIDI extensions: their
-          # programs go in Contents/MacOS, and their .rmext packages are
+          # Sources from 0.4.13 bundle the MCP, MIDI and AI masks extensions:
+          # their programs go in Contents/MacOS, and their .rmext packages are
           # attached to the release.
           packages=(-p rawmakase)
           programs=()
@@ -298,6 +308,12 @@ jobs:
             programs+=(--program target/release/rawmakase-midi)
             midi=true
           fi
+          ai_masks=false
+          if [ -f release-source/extensions/ai-masks/rawmakase-extension.toml ]; then
+            packages+=(-p rawmakase-ai-masks -p cargo-rawmakase)
+            programs+=(--program target/release/rawmakase-ai-masks)
+            ai_masks=true
+          fi
           cargo build --release --locked --manifest-path release-source/Cargo.toml --target-dir "$GITHUB_WORKSPACE/target" "${packages[@]}"
           python3 packaging/macos/bundle.py target/release/rawmakase dist/RAWmakase.app "$VERSION" --minimum-macos "$MACOSX_DEPLOYMENT_TARGET" --icon-assets compiled-icon/Assets.car "${programs[@]}"
           # A tar keeps the bundle's symlinks and permissions through the artifact.
@@ -310,6 +326,10 @@ jobs:
           if [ "$midi" = true ]; then
             (cd release-source/extensions/midi && "$GITHUB_WORKSPACE/target/release/cargo-rawmakase" rawmakase package --program "$GITHUB_WORKSPACE/target/release/rawmakase-midi")
             cp release-source/extensions/midi/target/rmext/*.rmext dist/rmext/
+          fi
+          if [ "$ai_masks" = true ]; then
+            (cd release-source/extensions/ai-masks && "$GITHUB_WORKSPACE/target/release/cargo-rawmakase" rawmakase package --program "$GITHUB_WORKSPACE/target/release/rawmakase-ai-masks")
+            cp release-source/extensions/ai-masks/target/rmext/*.rmext dist/rmext/
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -440,17 +460,20 @@ jobs:
           rustup toolchain install 1.98.1 --profile minimal
           rustup default 1.98.1
           packaging/windows/toolchain.ps1
-          # Sources from 0.4.13 bundle the MCP and MIDI extensions: their
-          # programs are staged beside the app, and their .rmext packages are
-          # attached to the release.
+          # Sources from 0.4.13 bundle the MCP, MIDI and AI masks extensions:
+          # their programs are staged beside the app, and their .rmext
+          # packages are attached to the release.
           $mcp = Test-Path release-source\extensions\mcp\rawmakase-extension.toml
           $midi = Test-Path release-source\extensions\midi\rawmakase-extension.toml
+          $aiMasks = Test-Path release-source\extensions\ai-masks\rawmakase-extension.toml
           "MCP=$mcp" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           "MIDI=$midi" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "AI_MASKS=$aiMasks" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           $packages = @('-p', 'rawmakase')
           $programs = @()
           if ($mcp) { $packages += '-p', 'rawmakase-mcp', '-p', 'cargo-rawmakase'; $programs += 'target\release\rawmakase-mcp.exe' }
           if ($midi) { $packages += '-p', 'rawmakase-midi', '-p', 'cargo-rawmakase'; $programs += 'target\release\rawmakase-midi.exe' }
+          if ($aiMasks) { $packages += '-p', 'rawmakase-ai-masks', '-p', 'cargo-rawmakase'; $programs += 'target\release\rawmakase-ai-masks.exe' }
           cargo build --release --locked --manifest-path release-source/Cargo.toml --target-dir "$env:GITHUB_WORKSPACE\target" @packages
           packaging/windows/stage.ps1 target\release\rawmakase.exe dist\windows -Programs $programs
       - if: steps.source.outputs.windows == 'true'
@@ -486,9 +509,15 @@ jobs:
             Pop-Location
             Copy-Item release-source\extensions\midi\target\rmext\*.rmext dist\upload\
           }
+          if ($env:AI_MASKS -eq 'True') {
+            Push-Location release-source\extensions\ai-masks
+            & "$env:GITHUB_WORKSPACE\target\release\cargo-rawmakase.exe" rawmakase package --program "$env:GITHUB_WORKSPACE\target\release\rawmakase-ai-masks.exe"
+            Pop-Location
+            Copy-Item release-source\extensions\ai-masks\target\rmext\*.rmext dist\upload\
+          }
       - if: steps.source.outputs.windows == 'true'
         name: Verify the finished download
-        run: packaging/windows/verify.ps1 "dist\upload\rawmakase-v$env:VERSION-${{ matrix.arch }}-pc-windows-msvc-setup.exe" $env:VERSION -Mcp:($env:MCP -eq 'True') -Midi:($env:MIDI -eq 'True')
+        run: packaging/windows/verify.ps1 "dist\upload\rawmakase-v$env:VERSION-${{ matrix.arch }}-pc-windows-msvc-setup.exe" $env:VERSION -Mcp:($env:MCP -eq 'True') -Midi:($env:MIDI -eq 'True') -AiMasks:($env:AI_MASKS -eq 'True')
       - if: steps.source.outputs.windows == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

@@ -51,13 +51,15 @@ gh pr list --state merged --base main --search "merged:>=$(git log -1 --format=%
 
 ## 3. Write the release commit
 
-1. Bump the version in `Cargo.toml` (the package and its `rawmakase-midi`
-   dev-dependency pin), `extensions/mcp/Cargo.toml` (the MCP server reports it
-   to its clients), `extensions/mcp/rawmakase-extension.toml`,
-   `extensions/midi/Cargo.toml` and `extensions/midi/rawmakase-extension.toml`
-   (the bundled extensions' `version`; tests compare them with the app's),
-   `Cargo.lock` (the `rawmakase`, `rawmakase-mcp` and `rawmakase-midi` package
-   entries only), `packaging/macos/Info.plist` (`CFBundleShortVersionString`)
+1. Bump the version in `Cargo.toml` (the package and its `rawmakase-midi` and
+   `rawmakase-ai-masks` dev-dependency pins), `extensions/mcp/Cargo.toml` (the
+   MCP server reports it to its clients), `extensions/mcp/rawmakase-extension.toml`,
+   `extensions/midi/Cargo.toml`, `extensions/midi/rawmakase-extension.toml`,
+   `extensions/ai-masks/Cargo.toml` and
+   `extensions/ai-masks/rawmakase-extension.toml` (the bundled extensions'
+   `version`; tests compare them with the app's), `Cargo.lock` (the
+   `rawmakase`, `rawmakase-mcp`, `rawmakase-midi` and `rawmakase-ai-masks`
+   package entries only), `packaging/macos/Info.plist` (`CFBundleShortVersionString`)
    and both `packaging/arch/*/PKGBUILD` (`pkgver`). Compare against the
    previous `Release x.y.z` commit: `git show <prev release commit> --stat`.
 2. Write `packaging/release-notes/vx.y.z.md` following "Writing release notes"

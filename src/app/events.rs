@@ -188,10 +188,7 @@ impl Editor {
                 Event::ModelRemoved(pack, result) => {
                     self.installer_mut(pack).removed();
                     match result {
-                        Ok(()) if pack == crate::model_install::Pack::Denoise => {
-                            self.messages.done("AI Denoise model removed")
-                        }
-                        Ok(()) => self.messages.done("Selection model removed"),
+                        Ok(()) => self.messages.done("AI Denoise model removed"),
                         Err(e) => self.messages.fail(format!("Model not removed: {e}")),
                     }
                 }

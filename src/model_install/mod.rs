@@ -1,32 +1,28 @@
-//! The app's model packs (Select Subject's and Sky's, AI Denoise's): which files each
-//! holds and where it is installed. Installing is
-//! [`rawmakase_model_install`]'s; the app's `Installer`
+//! The app's model pack, AI Denoise's: which files it holds and where it is
+//! installed. Installing is [`rawmakase_model_install`]'s; the app's `Installer`
 //! (`app/develop/model_installer.rs`) runs an install on its own thread, only on
-//! the user's choice, and the AI Denoise service and the selection worker find the
-//! installed models and the runtime here.
+//! the user's choice, and the AI Denoise service finds the installed model and
+//! the runtime here. Select Subject's and Sky's packs sit beside it in the same
+//! `models` folder, installed by the AI masks extension (`extensions/ai-masks`)
+//! there, as the app installed them before; nothing here lists or cleans that
+//! folder, so neither is taken for an orphan.
 use rawmakase_inference::ModelFile;
 use rawmakase_inference::manifest::denoise_files;
-use rawmakase_selection::manifest::{all_files, sky_files};
 use std::path::{Path, PathBuf};
 
 pub(crate) use rawmakase_model_install::{InstallError, Progress, runtime_dir};
 
-/// One set of model files, installed and removed as a unit: Subject and Background share
-/// one, Sky and AI Denoise each have their own, so none obliges anyone to fetch another's.
+/// One set of model files, installed and removed as a unit.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum Pack {
-    #[default]
-    Subject,
-    Sky,
     /// AI Denoise's model, with its `LICENSE` and `NOTICE`: an install without them is
     /// not one.
+    #[default]
     Denoise,
 }
 impl Pack {
     fn files(self) -> Vec<ModelFile> {
         match self {
-            Self::Subject => all_files(),
-            Self::Sky => sky_files(),
             Self::Denoise => denoise_files(),
         }
     }
@@ -37,14 +33,6 @@ impl Pack {
     /// model and its contract version, so a replacement model sits beside it.
     pub(crate) fn dir(self) -> PathBuf {
         let (id, version) = match self {
-            Self::Subject => (
-                rawmakase_selection::SUBJECT.id,
-                rawmakase_selection::SUBJECT.version,
-            ),
-            Self::Sky => (
-                rawmakase_selection::SKY.id,
-                rawmakase_selection::SKY.version,
-            ),
             Self::Denoise => (
                 rawmakase_inference::RAWNIND.id,
                 rawmakase_inference::RAWNIND.version,

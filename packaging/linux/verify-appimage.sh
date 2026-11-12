@@ -27,7 +27,7 @@ test "$(sha256sum < "$root/rawmakase.desktop")" = "$(sha256sum < "$root/usr/shar
 test -x "$root/usr/lib/rawmakase/rawmakase"
 # The bundled extensions' programs, from the first release that ships them.
 programs=()
-for ships in rawmakase-mcp:0.4.13 rawmakase-midi:0.4.13; do
+for ships in rawmakase-mcp:0.4.13 rawmakase-midi:0.4.13 rawmakase-ai-masks:0.4.13; do
   program=${ships%%:*} since=${ships#*:}
   if [ "$(printf '%s\n' "$since" "$version" | sort -V | head -n1)" = "$since" ]; then
     test -x "$root/usr/lib/rawmakase/$program" || { echo "AppImage lacks an executable $program" >&2; exit 1; }
@@ -45,7 +45,8 @@ if [[ "$run" = --run ]]; then
   test "$(cd / && "$root/AppRun" --version)" = "$expected"
   # The programs have this architecture and link only the system's
   # libraries; `rawmakase mcp` from the AppImage finds MCP's beside the app,
-  # where the app looks for MIDI's too, and completes an MCP initialize.
+  # where the app looks for MIDI's and AI masks' too, and completes an MCP
+  # initialize.
   if [[ ${#programs[@]} -gt 0 ]]; then
     APPIMAGE_EXTRACT_AND_RUN=1 python3 "$(dirname -- "$0")/../check_programs.py" "$image" \
       "${programs[@]}" --arch "$arch" --version "$version"

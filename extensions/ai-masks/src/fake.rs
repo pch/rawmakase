@@ -229,3 +229,37 @@ pub fn remote_worker() -> (String, Arc<Mutex<Calls>>) {
     std::thread::spawn(move || Arc::new(Server::new(worker)).serve(listener));
     (endpoint, calls)
 }
+
+/// Installs a pack at once, for tests: each file at its size, empty, and the
+/// receipt the installer writes. The fake models load from it; real ones
+/// wouldn't.
+pub fn install(
+    dir: &Path,
+    files: &[rawmakase_inference::ModelFile],
+    progress: &rawmakase_model_install::Progress,
+) -> Result<(), rawmakase_model_install::InstallError> {
+    let failed = |e: std::io::Error| rawmakase_model_install::InstallError::Failed(e.to_string());
+    std::fs::create_dir_all(dir).map_err(failed)?;
+    let mut done = 0;
+    for file in files {
+        std::fs::File::create(dir.join(file.name))
+            .and_then(|f| f.set_len(file.size_bytes))
+            .map_err(failed)?;
+        done += file.size_bytes;
+        progress.report(done);
+    }
+    std::fs::write(
+        dir.join(rawmakase_model_install::RECEIPT),
+        rawmakase_model_install::receipt(files),
+    )
+    .map_err(failed)
+}
+
+/// Installs every pack with [`install`] in `models` of the local data
+/// folder `local_data`, as setting them up would.
+pub fn install_all(local_data: &Path) {
+    for pack in crate::models::Pack::ALL {
+        let dir = local_data.join("models").join(pack.folder());
+        install(&dir, &pack.files(), &Default::default()).expect("installed");
+    }
+}

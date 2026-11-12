@@ -74,10 +74,6 @@ rawmakase-interop = { path = "crates/rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "crates/rawmakase-model", version = "0.1.0" }
 rawmakase-model-install = { path = "crates/rawmakase-model-install", version = "0.1.0" }
 rawmakase-protocol = { path = "crates/rawmakase-protocol", version = "0.1.0" }
-# The optional remote selection worker's client, and the worker binary itself.
-rawmakase-remote = { path = "crates/rawmakase-remote", version = "0.1.0" }
-# Subject, Background and Sky selection.
-rawmakase-selection = { path = "crates/rawmakase-selection", version = "0.1.0" }
 rawmakase-ctl = { path = "tools/rawmakase-ctl", version = "0.1.0" }
 # Verifies a downloaded or imported selection model against its pinned digest.
 sha2.workspace = true
@@ -179,6 +175,10 @@ rawmakase-example = { path = "extensions/example", version = "0.1.0" }
 # input fed by the test; a scripted adapter speaks the protocol through the
 # SDK's channel.
 rawmakase-midi = { path = "extensions/midi", version = "0.4.12" }
+# The AI masks tests run the bundled AI masks extension's program the same
+# way, its models a stand-in; the app itself never links the selection models
+# or the remote worker's client.
+rawmakase-ai-masks = { path = "extensions/ai-masks", version = "0.4.12" }
 rawmakase-extension = { path = "crates/rawmakase-extension", version = "0.1.0" }
 # Tests set up and inspect catalog files directly; the app itself reaches
 # the catalog's database only through rawmakase-catalog.

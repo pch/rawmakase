@@ -527,3 +527,13 @@ fn the_real_models_select_what_was_clicked() {
         "the background isn't"
     );
 }
+
+/// The clicks a prompt carries are capped where the selection models cap
+/// their points: the app collects no more than the models take.
+#[test]
+fn the_protocols_clicks_cap_is_the_models_points_cap() {
+    assert_eq!(
+        rawmakase_extension::protocol::viewer::MAX_CLICKS,
+        rawmakase_selection::process::MAX_POINTS
+    );
+}
