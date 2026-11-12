@@ -371,14 +371,25 @@ pub(in crate::app) enum Prompt {
     Upgrade(Request),
     /// An extension's generator answered `needs_setup`: what it needs, the
     /// guard the request was first made with, which must still hold for it to
-    /// go on once set up, and whether the request was being aimed, to go back
-    /// to aiming after.
+    /// go on once set up, and what happens once it is.
     Setup {
         request: Request,
         setup: NeedsSetup,
         guard: Guard,
-        aim: bool,
+        then: Resume,
     },
+}
+
+/// What a request that waited for its generator's setup does once set up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum Resume {
+    /// Runs again, automatic as it was.
+    Select,
+    /// Goes back to aiming, as it was being aimed.
+    Aim,
+    /// Nothing: it was being aimed, and the user has left the Mask tool
+    /// since. The generator is ready the next time they aim.
+    Nothing,
 }
 impl Prompt {
     fn request(&self) -> &Request {
@@ -649,11 +660,20 @@ impl Editor {
     /// Aiming belongs to the Mask tool: once Develop switches to another
     /// (Crop, a key, a panel's tool), aiming has ended, and going back to Mask
     /// doesn't take up the old clicks again. Runs every pass.
+    /// Aiming that waits for its generator's setup ends the same way: the
+    /// download goes on, but once it is done aiming doesn't start again over
+    /// the tool the user switched to.
     pub(in crate::app) fn end_aiming_off_mask(&mut self) {
-        if self.selection.prompting.is_some()
-            && self.view.tool != crate::app::develop::state::Tool::Mask
-        {
+        if self.view.tool == crate::app::develop::state::Tool::Mask {
+            return;
+        }
+        if self.selection.prompting.is_some() {
             self.selection.end_prompting();
+        }
+        if let Some(Prompt::Setup { then, .. }) = &mut self.selection.prompt
+            && *then == Resume::Aim
+        {
+            *then = Resume::Nothing;
         }
     }
     /// The generator a generated component's raster came from: Subject, Sky or
@@ -1103,11 +1123,11 @@ impl Editor {
                 request,
                 setup,
                 guard,
-                aim,
+                then,
             }) if matches!(&request.generator,
                 Generator::Extension(o) if o.extension == extension && o.generator == generator) =>
             {
-                Some((request.clone(), setup.what.clone(), guard.clone(), *aim))
+                Some((request.clone(), setup.what.clone(), guard.clone(), *then))
             }
             _ => None,
         };
@@ -1115,7 +1135,7 @@ impl Editor {
             Ok(_) => {
                 let what = waiting.as_ref().map_or("The model", |(_, what, ..)| what);
                 self.messages.done(format!("{what} installed"));
-                if let Some((request, _, guard, aim)) = waiting {
+                if let Some((request, _, guard, then)) = waiting {
                     self.selection.prompt = None;
                     // Indices name the mask it was asked for only while the
                     // masks are as they were; a new mask needs no such thing.
@@ -1127,10 +1147,15 @@ impl Editor {
                             "The masks changed while setting up; choose where to use {} again",
                             request.generator.name()
                         ));
-                    } else if aim || !request.generator.takes_none() {
-                        self.begin_aiming(request);
                     } else {
-                        self.request_selection(request);
+                        match then {
+                            Resume::Nothing => {}
+                            Resume::Aim => self.begin_aiming(request),
+                            Resume::Select if !request.generator.takes_none() => {
+                                self.begin_aiming(request);
+                            }
+                            Resume::Select => self.request_selection(request),
+                        }
                     }
                 }
             }
@@ -1169,13 +1194,17 @@ impl Editor {
             Ok(generated) => generated,
             Err(Failure::Cancelled) => return,
             Err(Failure::NeedsSetup(setup)) => {
-                let aim = self.selection.prompting.is_some();
+                let then = if self.selection.prompting.is_some() {
+                    Resume::Aim
+                } else {
+                    Resume::Select
+                };
                 self.selection.end_prompting();
                 self.selection.prompt = Some(Prompt::Setup {
                     request,
                     setup,
                     guard: pending.guard,
-                    aim,
+                    then,
                 });
                 return;
             }

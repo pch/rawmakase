@@ -545,7 +545,7 @@ fn a_generator_set_up_then_disabled_keeps_its_saved_masks() {
                 bytes: 12_500_000,
             },
             guard,
-            aim: false,
+            then: Resume::Select,
         })
     );
     assert!(e.document.edit.recipe().masks.is_empty());
@@ -887,4 +887,90 @@ fn rasters_set_aside_are_let_go_of_when_a_selection_ends_without_a_result() {
 fn release_and_settle(e: &mut Editor, folder: &Path) {
     release(folder);
     pump(e, "the buffers", |e| leased(e) == 0);
+}
+
+#[test]
+fn switching_tools_while_a_setup_runs_drops_the_aiming_it_would_resume() {
+    let mut f = fixture(0.68);
+    let folder = f.folder.clone();
+    let e = &mut f.editor;
+    let mask = |e: &mut Editor| {
+        pump(e, "the queue", settled);
+        e.document.edit.recipe().masks.clone()
+    };
+    // A saved mask of a generator whose model isn't set up here.
+    let id = mask_assets::register(crate::storage::bitmaps::Bitmap {
+        width: 8,
+        height: 6,
+        channels: 1,
+        depth: 1,
+        data: [vec![68; 24], vec![0; 24]].concat(),
+    })
+    .unwrap();
+    let shape = MaskShape::Bitmap(BitmapMask {
+        id,
+        width: 8,
+        height: 6,
+        sampling: BITMAP_SAMPLING,
+        source: Some(BitmapSource {
+            feature: "dev.rawmakase.masks/setup".into(),
+            model: "example-setup@1".into(),
+            input: "saved".into(),
+        }),
+    });
+    e.change_edit(None, |r| {
+        r.masks.push(MaskGroup {
+            name: "Setup".into(),
+            components: vec![MaskComponent::new(shape)],
+            ..Default::default()
+        });
+    });
+    let saved = mask(e);
+    // Refining it asks for setup at the first click.
+    e.begin_refining(0, 0);
+    assert!(e.selection.prompting.is_some());
+    e.prompt_click([0.5, 0.5], true);
+    pump(e, "the click", settled);
+    assert!(matches!(
+        e.selection.prompt,
+        Some(Prompt::Setup {
+            then: Resume::Aim,
+            ..
+        })
+    ));
+    assert!(e.selection.prompting.is_none());
+    e.setup_generator(&offer(e, "Setup"));
+    pump(e, "the setup to start", |e| {
+        matches!(
+            e.extensions.mask_setup(ID, "setup"),
+            Some(mask_generator::Setup::Running { done: Some(_), .. })
+        )
+    });
+    // The user goes to Crop while it downloads.
+    let tool = crate::app::develop::state::Tool::Crop;
+    e.view.toggle(tool);
+    let ctx = e.context.clone();
+    e.background(&ctx);
+    assert!(matches!(
+        e.selection.prompt,
+        Some(Prompt::Setup {
+            then: Resume::Nothing,
+            ..
+        })
+    ));
+    // The download finishes, and nothing takes Crop away.
+    let sent = e.extensions.masks_sent().len();
+    std::fs::write(folder.join("finish-setup"), b"").unwrap();
+    pump(e, "the setup to finish", |e| {
+        e.extensions.mask_setup(ID, "setup").is_none() && e.selection.prompt.is_none()
+    });
+    e.background(&ctx);
+    assert_eq!(e.view.tool, tool);
+    assert!(e.selection.prompting.is_none());
+    assert_eq!(e.extensions.masks_sent().len(), sent, "nothing sent");
+    assert_eq!(mask(e), saved);
+    assert_eq!(e.messages.line(), "the Example model installed");
+    // Set up, it aims at once the next time.
+    e.begin_refining(0, 0);
+    assert!(e.selection.prompting.is_some());
 }
