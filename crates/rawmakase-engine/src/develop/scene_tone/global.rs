@@ -316,14 +316,18 @@ impl GlobalTone {
     /// The white curve `curve` at scene value `x`.
     fn white_at(&self, curve: &[f32; U_SAMPLES], x: f32) -> f32 {
         if let Some(gains) = &self.hdr {
-            let toe = if x >= super::hdr_whites::IDENTITY_FROM {
-                x
-            } else {
-                self.sdr_white_at(curve, x)
-            };
-            return toe * super::hdr_whites::gain(gains, x).exp2();
+            return self.hdr_toe(curve, x) * super::hdr_whites::gain(gains, x).exp2();
         }
         self.sdr_white_at(curve, x)
+    }
+    /// An HDR render's default curve at scene value `x`: the identity from
+    /// [`super::hdr_whites::IDENTITY_FROM`] up, the default black point's toe below it.
+    fn hdr_toe(&self, curve: &[f32; U_SAMPLES], x: f32) -> f32 {
+        if x >= super::hdr_whites::IDENTITY_FROM {
+            x
+        } else {
+            self.sdr_white_at(curve, x)
+        }
     }
     fn sdr_white_at(&self, curve: &[f32; U_SAMPLES], x: f32) -> f32 {
         let top = self.top.exp2();
@@ -370,7 +374,18 @@ impl GlobalTone {
         self.apply_with_shadow(p, 0.)
     }
     fn apply_with_shadow(&self, p: [f32; 3], shadow_delta: f32) -> [f32; 3] {
-        let p = rgb_tone(p, |x| self.white_at(&self.white, x));
+        let p = match &self.hdr {
+            // Positive Whites in HDR is a gain of the colour's luminance over the default
+            // curve (its toe), RGBTone: Camera Raw 18.7's keeps colours' saturation as it
+            // brightens them, which RGBTone of the whole gained curve doesn't (Whites +50
+            // on the twelve validation photos adds 0.45 ΔE_ITP against 2.0;
+            // docs/records/hdr-stage1-results.md#whites).
+            Some(gains) if self.whites > 0. => {
+                let gain = super::hdr_whites::gain(gains, super::luminance(p)).exp2();
+                rgb_tone(p, |x| self.hdr_toe(&self.white, x)).map(|v| v * gain)
+            }
+            _ => rgb_tone(p, |x| self.white_at(&self.white, x)),
+        };
         let p = if let Some((shadows, rows)) = &self.shadow_black
             && shadow_delta != 0.
         {

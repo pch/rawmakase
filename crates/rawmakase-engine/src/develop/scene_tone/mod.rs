@@ -233,4 +233,34 @@ mod tests {
         assert!((exposed / render(0.5, -1., 0., 0.3) - 1.).abs() < 1e-4);
         assert_eq!(render(-1., -1., 0., 0.3), render(-1., 3., 0., 0.3));
     }
+
+    /// Positive Whites in HDR gains a colour by its luminance, so a saturated colour
+    /// above the toe keeps its channels' ratios, and a gray gains as the table gives.
+    #[test]
+    fn hdr_positive_whites_keeps_a_colours_saturation() {
+        let measures = PhotoMeasures {
+            p99: 0.,
+            ..Default::default()
+        };
+        let mut r = Recipe {
+            whites: 0.5,
+            ..Default::default()
+        };
+        r.hdr.enabled = true;
+        let tone = SceneTone::new(&r, &measures, None);
+        let colour = [1.2, 0.6, 0.8];
+        let out = tone.apply(colour, [0.; 2], 1., None);
+        for i in 1..3 {
+            let (a, b) = (out[i] / out[0], colour[i] / colour[0]);
+            // The default black, per channel below 1, moves them by a little.
+            assert!((a / b - 1.).abs() < 2e-3, "{out:?}");
+        }
+        assert!(out[0] > colour[0] * 1.05, "{out:?}");
+        let y = luminance(colour);
+        let gray = tone.apply([y; 3], [0.; 2], 1., None)[0];
+        assert!(
+            (out[0] / colour[0] - gray / y).abs() < 1e-4,
+            "{out:?} {gray}"
+        );
+    }
 }

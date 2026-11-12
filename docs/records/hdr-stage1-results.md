@@ -855,9 +855,24 @@ Looked into on 2026-11-12, to find what keeps it from the rule:
   0.036 / 0.126 below and 0.074 / 0.168 above white at +75 (SDR's 0.027 / 0.085).
 
 Whites above +50 stays refused: it needs both a level predictor no statistic tried
-gives and a closer operator above white. Positive Whites up to +50, which renders, also
-uses RGBTone; whether a gain of luminance fits Camera Raw's HDR captures at +25 and +50
-better is open.
+gives and a closer operator above white.
+
+**Positive Whites as a gain of luminance, 2026-11-12.** Positive Whites up to +50 renders
+too, and it used RGBTone of the gained curve. Applied instead as a gain of the colour's
+luminance over the default curve's toe (RGBTone), on the twelve validation and holdout
+photos against Camera Raw's HDR captures (effect error in stops, median / p95, median over
+the photos, over the whole frame and above white, and the colour error it adds):
+
+| Whites | RGBTone, all | Luminance gain, all | RGBTone, above white | Luminance gain, above white | ΔE_ITP added, RGBTone / luminance |
+| --- | --- | --- | --- | --- | --- |
+| +25 | 0.004 / 0.019 | 0.003 / 0.012 | 0.013 / 0.038 | 0.006 / 0.037 | +0.50 / +0.09 |
+| +50 | 0.016 / 0.063 | 0.013 / 0.050 | 0.043 / 0.115 | 0.030 / 0.103 | +2.00 / +0.45 |
+
+**Decision, 2026-11-12: positive Whites in the HDR master is a gain of luminance**
+(`GlobalTone::apply`, the GPU's `scene_global` alike); negative Whites keeps RGBTone, as
+measured. SDR renders don't change (48 of 48 renders of 24 photos at Whites +40, in SDR and
+as an HDR edit's SDR rendition, bit-identical to `main`'s). Above +50 it stays refused as
+above.
 
 SDR renders do not change: positive Whites' table and level are read only in the HDR
 branch of the scene tone stage (`SceneTone::new`, `GlobalTone::hdr`), which SDR
