@@ -749,6 +749,9 @@ impl Host {
         let Some(store) = self.store.clone() else {
             return;
         };
+        if let Err(why) = keep_midi_for_its_devices(&store) {
+            self.errors.push(why);
+        }
         let state = match State::read(store.data_dir()) {
             Ok(state) => state,
             Err(e) => {
@@ -852,7 +855,11 @@ impl Host {
         let mut kept = Vec::new();
         for (manifest, origin, dir, program, problem) in wanted {
             let id = manifest.extension.id.clone();
-            let mut entry = state.extensions.get(&id).cloned().unwrap_or_default();
+            let mut entry = state
+                .extensions
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| Entry::new(&id));
             if origin == Origin::Developer {
                 entry.enabled = state.developer.get(&id).is_none_or(|d| d.enabled);
             }
@@ -2363,6 +2370,46 @@ fn take_over(data: &Path, into: &Path, file: &str) -> Result<(), String> {
             into.display()
         )
     })
+}
+
+/// Enables the MIDI extension, which starts off
+/// ([`rawmakase_extensions::bundled::OFF_BY_DEFAULT`]), for someone who
+/// already set up MIDI devices: in the core's `midi.json` of 0.4.12 and
+/// earlier, or in the extension's own copy. Done once, while
+/// `extensions.json` has no entry for MIDI; after that the entry decides,
+/// so disabling it sticks. A `midi.json` that doesn't read counts as set up,
+/// so a device's owner is never turned off by a file this version misreads.
+fn keep_midi_for_its_devices(store: &Store) -> Result<(), String> {
+    const MIDI: &str = "rawmakase.midi";
+    let has_devices = |path: &Path| match std::fs::read(path) {
+        Ok(bytes) => match serde_json::from_slice::<Value>(&bytes) {
+            // The first format, without a version, held one Loupedeck.
+            Ok(v) if v.get("version").is_none() => true,
+            Ok(v) => v["devices"].as_array().is_none_or(|d| !d.is_empty()),
+            Err(_) => true,
+        },
+        Err(e) => e.kind() != std::io::ErrorKind::NotFound,
+    };
+    let undecided = |state: &State| !state.extensions.contains_key(MIDI);
+    if !State::read(store.data_dir()).is_ok_and(|s| undecided(&s)) {
+        return Ok(());
+    }
+    let in_use = [
+        store.data_dir().join("midi.json"),
+        store.extension_data_dir(MIDI).join("midi.json"),
+    ]
+    .iter()
+    .any(|p| has_devices(p));
+    if !in_use {
+        return Ok(());
+    }
+    State::update(store.data_dir(), |state| {
+        if undecided(state) {
+            state.entry(MIDI).enabled = true;
+        }
+        Ok(())
+    })
+    .map_err(|e| format!("MIDI wasn't kept on for its devices: {e}"))
 }
 
 /// The manifest's and the program's modification times.

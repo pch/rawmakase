@@ -37,8 +37,9 @@ installed beside it (their programs): in the executable's folder, which is
 `Contents/MacOS` in the macOS app and the folder holding `rawmakase.exe` on
 Windows, or on Linux in `../lib/rawmakase` beside the executable's folder, where
 the packages and `make install` put it. A bundled extension is enabled unless
-`extensions.json` says it is disabled, updates with the app and can't be
-uninstalled. When its program is missing (an incomplete install), its page says
+`extensions.json` says it is disabled, except MIDI, which is off until it is
+enabled (or was set up before it became an extension); it updates with the
+app and can't be uninstalled. When its program is missing (an incomplete install), its page says
 so. This release bundles three:
 
 - **MCP** (`rawmakase.mcp`, program `rawmakase-mcp`): the MCP server

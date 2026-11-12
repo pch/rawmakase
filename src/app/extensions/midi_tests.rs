@@ -17,6 +17,7 @@ use rawmakase_extensions::protocol::framing::{LineReader, write_line};
 use rawmakase_extensions::protocol::method::{AdapterOperate, Operation, ProgramRequest};
 use rawmakase_extensions::protocol::{ErrorCode, Message, PROTOCOL};
 use rawmakase_extensions::session::Launch;
+use rawmakase_extensions::store::Store;
 use rawmakase_midi::backend::Receive;
 use rawmakase_midi::config::{Encoder, Settings};
 use rawmakase_midi::midi::Port;
@@ -226,6 +227,13 @@ fn pump_for(e: &mut Editor, time: Duration) {
 
 /// The program start's number while MIDI runs, and whether `device` is
 /// connected in `epoch` in it.
+/// Enables MIDI in `data`'s `extensions.json`: it starts off
+/// ([`midi_is_off_unless_devices_were_set_up`]).
+fn enable_midi(data: &Path) {
+    std::fs::create_dir_all(data).unwrap();
+    Store::new(data).set_enabled(MIDI, true, &[MIDI]).unwrap();
+}
+
 fn session(e: &Editor) -> Option<u64> {
     e.extensions.get(MIDI)?.run.as_ref().map(|r| r.number)
 }
@@ -528,6 +536,7 @@ fn a_disconnection_overtakes_a_full_queue() {
     let script = dir.path().join("script");
     std::fs::create_dir(&script).unwrap();
     let (mut e, _) = editor(dir.path());
+    enable_midi(&data);
     e.extensions =
         Host::with_bundled_for_tests(&data, MIDI, launch("scripted_adapter", SCRIPT, &script), 4);
     // The second poll starts the program; then nothing is read until it has
@@ -622,6 +631,54 @@ fn the_cores_midi_settings_are_copied_once_and_left() {
     );
 }
 
+/// MIDI starts disabled, unless the core's `midi.json` or the extension's
+/// own lists devices: then the first start enables it once, and from then on
+/// the user's choice in `extensions.json` stands.
+#[test]
+fn midi_is_off_unless_devices_were_set_up() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = Launch {
+        program: dir.path().join("no-such-program"),
+        args: Vec::new(),
+        dir: PathBuf::new(),
+        env: Vec::new(),
+        log: PathBuf::new(),
+    };
+    let enabled = |data: &Path| {
+        let host = Host::with_bundled_for_tests(data, MIDI, missing.clone(), 64);
+        assert!(host.errors.is_empty(), "{:?}", host.errors);
+        host.get(MIDI).unwrap().enabled()
+    };
+    let data = |name: &str, file: Option<(&str, &str)>| {
+        let data = dir.path().join(name);
+        std::fs::create_dir_all(data.join("extension-data").join(MIDI)).unwrap();
+        if let Some((path, text)) = file {
+            std::fs::write(data.join(path), text).unwrap();
+        }
+        data
+    };
+    let theirs = format!("extension-data/{MIDI}/midi.json");
+    assert!(!enabled(&data("fresh", None)));
+    // Turning Local access on in 0.4.12 saved an empty device list.
+    let empty = r#"{"version": 2, "devices": []}"#;
+    assert!(!enabled(&data("socket-only", Some(("midi.json", empty)))));
+    assert!(!enabled(&data("empty-copy", Some((&theirs, empty)))));
+    let devices = r#"{"version": 2, "devices": [{"id": 1}]}"#;
+    assert!(enabled(&data("devices", Some(("midi.json", devices)))));
+    assert!(enabled(&data("copied", Some((&theirs, devices)))));
+    // The first format, without a version, held one Loupedeck.
+    assert!(enabled(&data(
+        "first",
+        Some(("midi.json", r#"{"port": "x"}"#))
+    )));
+    // A choice made stands, devices or not.
+    let chosen = data("chosen", Some(("midi.json", devices)));
+    Store::new(&chosen)
+        .set_enabled(MIDI, false, &[MIDI])
+        .unwrap();
+    assert!(!enabled(&chosen));
+}
+
 /// The built `rawmakase-midi`, found beside the test binary's folder as a
 /// release finds it beside the app: it starts with the app, draws its page
 /// and saves a device added there. Run `cargo build -p rawmakase-midi`
@@ -639,6 +696,7 @@ fn the_built_program_runs_its_page() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");
     let (mut e, _) = editor(dir.path());
+    enable_midi(&data);
     e.extensions = Host::with_search_dirs_for_tests(&data, vec![target]);
     pump(&mut e, "the program", |e| {
         e.extensions

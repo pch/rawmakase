@@ -33,7 +33,7 @@ any of them.
 | Distribution | Manual install from a GitHub repository's releases or a package file. An official catalogue comes later, once there are third-party extensions to list. No automatic updates: Preferences checks and updates on request |
 | Compatibility | None promised before 1.0. Each package states the RAWmakase versions it supports and is refused outside them |
 | Settings in XMP | Never. Extension data is RAWmakase-only |
-| Official extensions | MIDI, MCP and AI masks move out of the core into extensions bundled with the app, installed and enabled; each one can be disabled. Lens corrections data and community profiles stay as they are |
+| Official extensions | MIDI, MCP and AI masks move out of the core into extensions bundled with the app, installed and enabled (MIDI disabled, D12a); each one can be disabled. Lens corrections data and community profiles stay as they are |
 | Missing extension | The photo renders **without** its effects, says which extension to install, and offers to remove the effects (one History step) |
 | Disabled extension | Its filters **still render**, with a message that they come from a disabled extension; its commands, panels and program are off |
 | Export with a missing filter | Exports without the effect, after warning which photos will look different and why |
@@ -885,6 +885,7 @@ Defaults taken for phase 2 (#964), where the design left a choice open:
 | D10 | An on-demand program stops after 5 minutes idle; requests have a 30 s deadline (5 s for `hello`); the quit grace is 1 s |
 | D11 | `cargo rawmakase new` has command and control-adapter templates only; `cargo rawmakase test` waits for filters |
 | D12 | The Failed state (three crashes in a row) lasts for the session |
+| D12a | MIDI ships disabled (`bundled::OFF_BY_DEFAULT`): only people with a control surface need it. It is enabled once for someone whose `midi.json` already lists devices, the core's or the extension's |
 
 Also decided while building: the manifest's `api` is an integer (1 now);
 contributions are named `<table>/<id>` in `hello`; a program that exits before
