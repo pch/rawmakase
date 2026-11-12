@@ -458,6 +458,24 @@ a map built for an HDR master (`local_tone::Sliders::hdr`); 48 of 48 renders of 
 photos at Clarity −30, in SDR and as an HDR edit's SDR rendition, are bit-identical to
 `main`'s.
 
+**Clarity +100 and Dehaze −100, 2026-11-12.** Both stay refused after these attempts:
+
+- **Clarity +100.** RAWmakase's SDR operator gives a third to a half of Camera Raw's
+  effect at +100, in SDR too (deep shadows of the Canon 850D photo: 0.76 stop against
+  1.96; its SDR error there 1.18). SDR's shoulder compresses Camera Raw's SDR effect on
+  bright midtones, which keeps the SDR error small there; its HDR effect isn't
+  compressed (Nikon Z 8, two stops under white: 1.78 stop in HDR against 0.91 in SDR),
+  so a too-weak operator is further off in HDR wherever the effect is large. It needs
+  the SDR operator's parity at +100 first.
+- **Dehaze −100.** Below white Camera Raw's HDR darkening of bright midtones lies
+  between its SDR one and RAWmakase's HDR one. On the twelve photos (below white HDR
+  0.393 / 1.131 against SDR's 0.316 / 1.128): the SDR rendition's effect below white is
+  worse (0.401–0.432 median), a uniform strength of 0.7–0.9 or 1.1–1.25 is worse
+  (0.346–0.506), as is a strength falling from the shadows to white (0.447–0.483);
+  darkening by luminance instead of by channel comes closest (0.360 / 1.134 below,
+  0.124 / 0.333 above white) but adds more colour error (+24.9 ΔE_ITP against SDR's
+  +17.2).
+
 ### Looks
 
 Measured on gray ramps (sensor white +4 and +6 stops, a linear and the ACR3 profile
