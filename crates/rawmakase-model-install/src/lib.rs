@@ -55,6 +55,15 @@ impl Progress {
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::Relaxed);
     }
+    /// Whether the install was asked to stop.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed)
+    }
+    /// Records that `bytes` have been fetched so far, for an install other
+    /// than [`install`], such as a test's.
+    pub fn report(&self, bytes: u64) {
+        self.done.store(bytes, Ordering::Relaxed);
+    }
 }
 
 /// Where downloaded models are kept: this computer's own data folder, never a

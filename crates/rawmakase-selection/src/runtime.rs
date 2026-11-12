@@ -11,7 +11,7 @@ use ort::value::TensorRef;
 use rawmakase_inference::InferenceError;
 use rawmakase_inference::runtime::{
     LoadOptions, Provider, build_session, cancelled, check_files, default_threads, failed, guarded,
-    load_runtime, view,
+    load_runtime_with, view,
 };
 
 use crate::auto::{self, SIDE};
@@ -30,7 +30,7 @@ impl Subject {
     }
 
     pub fn load_with(dir: &Path, options: &LoadOptions) -> Result<Session, InferenceError> {
-        let environment = load_runtime(options.runtime_library.as_deref())?;
+        let environment = load_runtime_with(options)?;
         let spec = SUBJECT;
         check_files(dir, &all_files())?;
         let threads = options.threads.unwrap_or_else(default_threads).max(1);
@@ -82,7 +82,7 @@ pub struct Sky;
 impl Sky {
     /// Opens the runtime as [`Subject::load_with`] does and the sky model in folder `dir`.
     pub fn load_with(dir: &Path, options: &LoadOptions) -> Result<SkySession, InferenceError> {
-        let environment = load_runtime(options.runtime_library.as_deref())?;
+        let environment = load_runtime_with(options)?;
         check_files(dir, &sky_files())?;
         let threads = options.threads.unwrap_or_else(default_threads).max(1);
         let provider = options.provider.unwrap_or_default();

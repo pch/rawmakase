@@ -69,6 +69,7 @@ fn the_remote_worker_returns_what_the_local_session_computed() {
         runtime_library: std::env::var_os("RAWMAKASE_ORT_LIB").map(std::path::PathBuf::from),
         threads: None,
         provider: Some(Provider::Cpu),
+        ..Default::default()
     };
     let cancel = AtomicBool::new(false);
     let image = photo(640, 426);
@@ -116,6 +117,7 @@ fn a_real_photo_selects_the_same_through_the_worker_process() {
         runtime_library: std::env::var_os("RAWMAKASE_ORT_LIB").map(std::path::PathBuf::from),
         threads: None,
         provider: Some(Provider::Cpu),
+        ..Default::default()
     };
     let cancel = AtomicBool::new(false);
     let decoded = image::open(std::env::var("RAWMAKASE_TEST_RGB").unwrap()).unwrap();

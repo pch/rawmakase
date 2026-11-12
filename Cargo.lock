@@ -3791,6 +3791,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rawmakase-ai-masks"
+version = "0.4.12"
+dependencies = [
+ "rawmakase-cancel",
+ "rawmakase-extension",
+ "rawmakase-inference",
+ "rawmakase-model-install",
+ "rawmakase-protocol",
+ "rawmakase-remote",
+ "rawmakase-selection",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "rawmakase-cancel"
 version = "0.1.0"
 
@@ -3972,6 +3987,7 @@ dependencies = [
  "ort",
  "rawmakase-cancel",
  "sha2",
+ "tempfile",
 ]
 
 [[package]]

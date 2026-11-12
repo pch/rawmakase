@@ -28,6 +28,13 @@ use crate::manifest::{ModelFile, RAWNIND, denoise_files};
 /// Environment variable naming the ONNX Runtime library file to load.
 pub const RUNTIME_ENV: &str = "RAWMAKASE_ORT_LIB";
 
+/// Environment variable in which the app passes a bundled extension's
+/// program the folders it searches for the runtime beside its own
+/// executable ([`runtime_search_dirs`]), joined as `PATH` is
+/// ([`std::env::join_paths`]). The program searches them after
+/// [`RUNTIME_ENV`], so AI masks and AI Denoise share the app's copy.
+pub const HOST_RUNTIME_DIRS: &str = "RAWMAKASE_HOST_RUNTIME_DIRS";
+
 /// How often a running inference polls the caller's cancel flag.
 const CANCEL_POLL: Duration = Duration::from_millis(15);
 
@@ -114,6 +121,10 @@ pub struct LoadOptions {
     /// Explicit runtime library file. Takes precedence over
     /// [`RUNTIME_ENV`] and the package locations.
     pub runtime_library: Option<PathBuf>,
+    /// Folders to look in after [`RUNTIME_ENV`] and before the ones beside
+    /// the running executable ([`runtime_search_dirs`]): where the app that
+    /// started a bundled extension's program keeps its runtime.
+    pub runtime_dirs: Vec<PathBuf>,
     /// Intra-op threads; `None` picks [`default_threads`].
     pub threads: Option<usize>,
     /// Hardware to ask for; `None` is the same as [`Provider::Cpu`].
@@ -149,7 +160,7 @@ impl Denoiser {
                 provider.name()
             )));
         }
-        let environment = load_runtime(options.runtime_library.as_deref())?;
+        let environment = load_runtime_with(options)?;
         check_files(dir, &denoise_files())?;
         let threads = options.threads.unwrap_or_else(default_threads).max(1);
         let network = catch_unwind(AssertUnwindSafe(|| {
@@ -359,8 +370,28 @@ fn build_session_with(
 /// load is process-wide; later calls with another path are no-ops. Returns the
 /// environment sessions are built in.
 pub fn load_runtime(explicit: Option<&Path>) -> Result<Environment, InferenceError> {
+    open_first(runtime_candidates(
+        explicit,
+        env::var_os(RUNTIME_ENV),
+        &[],
+        &runtime_search_dirs(),
+    ))
+}
+
+/// [`load_runtime`] with `options`' library, then [`RUNTIME_ENV`], then
+/// `options`' folders, then the folders beside the running executable.
+pub fn load_runtime_with(options: &LoadOptions) -> Result<Environment, InferenceError> {
+    open_first(runtime_candidates(
+        options.runtime_library.as_deref(),
+        env::var_os(RUNTIME_ENV),
+        &options.runtime_dirs,
+        &runtime_search_dirs(),
+    ))
+}
+
+/// Opens the first of `candidates` that loads.
+fn open_first(candidates: Vec<PathBuf>) -> Result<Environment, InferenceError> {
     let mut tried = Vec::new();
-    let candidates = runtime_candidates(explicit);
     if candidates.is_empty() {
         return Err(InferenceError::RuntimeUnavailable(format!(
             "no ONNX Runtime library found; set {RUNTIME_ENV} or place {} next to the application",
@@ -376,15 +407,24 @@ pub fn load_runtime(explicit: Option<&Path>) -> Result<Environment, InferenceErr
     Err(InferenceError::RuntimeUnavailable(tried.join("; ")))
 }
 
-fn runtime_candidates(explicit: Option<&Path>) -> Vec<PathBuf> {
+/// The libraries to try, in order: `explicit`, the file `variable` (the value
+/// of [`RUNTIME_ENV`]) names, then the runtime files in each of `dirs` and
+/// then of `own`. [`load_runtime_with`] passes the environment's variable and
+/// [`runtime_search_dirs`] as `own`.
+pub fn runtime_candidates(
+    explicit: Option<&Path>,
+    variable: Option<std::ffi::OsString>,
+    dirs: &[PathBuf],
+    own: &[PathBuf],
+) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     if let Some(path) = explicit {
         candidates.push(path.to_path_buf());
     }
-    if let Some(path) = env::var_os(RUNTIME_ENV).filter(|v| !v.is_empty()) {
+    if let Some(path) = variable.filter(|v| !v.is_empty()) {
         candidates.push(PathBuf::from(path));
     }
-    for dir in runtime_search_dirs() {
+    for dir in dirs.iter().chain(own) {
         for name in runtime_file_names() {
             let path = dir.join(name);
             if path.is_file() {
@@ -451,6 +491,42 @@ mod tests {
         assert!(
             matches!(err, InferenceError::RuntimeUnavailable(_)),
             "{err:?}"
+        );
+    }
+
+    /// The explicit library, then the variable's, then the caller's folders,
+    /// then the executable's own: the order a bundled extension's program
+    /// relies on to find the app's runtime before its own.
+    #[test]
+    fn runtime_candidates_keep_their_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = |name: &str| {
+            let path = dir.path().join(name);
+            std::fs::create_dir(&path).unwrap();
+            std::fs::write(path.join(runtime_file_names()[0]), b"").unwrap();
+            path
+        };
+        let (host, own, empty) = (folder("host"), folder("own"), dir.path().join("empty"));
+        let explicit = dir.path().join("explicit");
+        let found = runtime_candidates(
+            Some(&explicit),
+            Some("/the/variable".into()),
+            &[empty, host.clone()],
+            std::slice::from_ref(&own),
+        );
+        assert_eq!(
+            found,
+            [
+                explicit,
+                PathBuf::from("/the/variable"),
+                host.join(runtime_file_names()[0]),
+                own.join(runtime_file_names()[0]),
+            ]
+        );
+        // An empty variable names nothing.
+        assert_eq!(
+            runtime_candidates(None, Some("".into()), &[], std::slice::from_ref(&own)),
+            [own.join(runtime_file_names()[0])]
         );
     }
 

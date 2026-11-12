@@ -1,0 +1,43 @@
+# Bundled with RAWmakase: the app compiles this manifest in, finds the program
+# beside its executable and starts it at the first selection. The version
+# follows the app's, as the program's own does (a test compares them).
+[extension]
+id = "rawmakase.ai-masks"
+name = "AI Masks"
+version = "0.4.12"
+rawmakase = "*"
+api = 2
+authors = ["RAWmakase"]
+license = "MIT"
+repository = "https://github.com/pch/rawmakase"
+description = "Select Subject, Sky and Background: masks found by the selection models, on this computer or on a remote worker."
+
+[program]
+path = "rawmakase-ai-masks"
+start = "on-demand"
+
+# Subject, and Background as its inverted component. Saved masks record
+# "subject", as they did before this extension, so they find it again.
+[[mask-generator]]
+id = "subject"
+input = ["none", "prompt"]
+provenance = "subject"
+prompt-hint = "Click the subject on the photo, or drag a box around it"
+[[mask-generator.tile]]
+name = "Subject"
+[[mask-generator.tile]]
+name = "Background"
+invert = true
+
+[[mask-generator]]
+id = "sky"
+input = ["none"]
+provenance = "sky"
+[[mask-generator.tile]]
+name = "Sky"
+
+# Deletes the downloaded models. Saved masks keep working; selecting again
+# asks to download them.
+[[command]]
+id = "remove-models"
+title = "Remove downloaded models"
