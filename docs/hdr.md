@@ -46,6 +46,16 @@ with the reason when the master can't render.
 
 ## Display
 
+**Coverage.** Light above SDR white has been seen on macOS only, on a MacBook Pro XDR
+display. Windows (Advanced Color, scRGB) and Linux under Wayland (the color-management
+protocol) have HDR display paths, tested in code and, for Windows, in a virtual
+machine without an HDR display; neither has been seen on a real HDR display. Linux
+under X11 has no HDR display path: an HDR edit shows its SDR rendition there, and the
+Basic panel's note says the display shows no HDR. On every platform an HDR edit's
+master renders for HDR export and its SDR rendition for SDR views and outputs, and an
+HDR edit with AI Denoise shows its SDR rendition in Develop (its HDR export renders
+the master with it).
+
 On macOS the window's surface is 16-bit float (`egui_wgpu::WgpuConfiguration`'s
 `surface_format_selector`, from RAWmakase's egui fork until it is upstream), and its
 Core Animation layer is tagged extended sRGB, so values above 1 are light above SDR
@@ -155,7 +165,8 @@ SDR rendition's histogram and readout, and without asking the display for EDR. I
 view choice for every photo while RAWmakase runs (`ViewState::sdr_preview`), not part of
 the edit: Camera Raw 18.7 writes no setting for it, and turning it on or off adds no
 history step. An edit's SDR rendition settings (`crs:SDR*`, from Lightroom or Camera Raw)
-are kept, and the note under the switch says the SDR rendition doesn't render them.
+are kept; the SDR rendition renders them within their measured ranges
+([Two renderings of one edit](#two-renderings-of-one-edit)).
 
 Beside the edit, the Basic panel's note also says what the other side shows, named
 (Before or Reference), so a comparison of brightness says when one side is SDR.
