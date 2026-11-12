@@ -310,11 +310,42 @@ the sidecar (`ToneCurvePV2012`, `Parametric*`).
   the X100V's rebuilt highlight peak +0.22–0.24, the Pentax's ΔE_ITP); the Z6 III's
   peak, +0.108 by default, is +0.056 and +0.070.
 
+**Refine Saturation and curves that end left of white (2026-11-12).** Camera Raw 18.7
+rendered gray and colour patches (saturations 0.3, 0.6 and 0.9, 0.125 to 8 times white,
+a linear profile, HDR limit 8 and SDR) through an S curve and a brightening curve at
+Refine Saturation 0 and 50, and four master curves and a red curve whose last point is
+left of white. Scores are the edit's effect against Camera Raw's (luminance, median /
+p95 stops) and the colour error it adds to the base render's (mean ΔE_ITP), HDR and SDR
+on the patches below 0.9, and HDR above white ([Decisions](#decisions)).
+
+- **Refine Saturation.** SDR's rule on the master's encoded values, without its bound at
+  white, scored against the S curve alone: at 0, 0.003 / 0.156 stop and +1.5 ΔE_ITP
+  below white and +2.3 above, where the SDR rendition is 0.002 / 0.120 and −0.9; at 50,
+  0.001 / 0.072 and +0.6 (+1.3 above) against 0.001 / 0.054 and −0.4. With SDR's bound
+  kept, light above white loses its colour (+20.8 and +53.3). Refused.
+- **Curves that end left of white.** Camera Raw's HDR render doesn't hold such a curve's
+  value, as SDR does: it continues from the last point along its slope there, below
+  white too (a curve through (0, 0) and (200, 200) is the identity), as the master
+  curve continues past white. That rule renders Camera Raw's ramp within 0.03 stop up to
+  16 times white; above, Camera Raw holds steep curves back (scene 16 through (90, 110)
+  and (180, 255) renders 49, the rule 357). On the patches: through (128, 140) and
+  (220, 255), 0.008 / 0.166 stop and +2.8 ΔE_ITP below white against SDR's 0.002 /
+  0.116 and +1.7, and 0.034 / 0.238 (+7.8) above; through (90, 110) and (180, 255),
+  0.016 / 0.893 and 0.822 / 2.419 above white. Refused.
+
 **Levels.** RAWmakase's black point, white point and midtone have no Camera Raw
 counterpart to measure. Decision: they render in HDR as Camera Raw renders a point
 curve of the same shape, by the rule above: as in SDR up to white, then along the
 slope at white, 1 / (midtone (1 − black)); a white point below white leaves a slope of
 0, as Camera Raw's curve through (230, 255) holds white (0.89 by scene 15).
+
+**Curves unlike the family (2026-11-12).** Of the DCPs installed with Camera Raw 18.7,
+two have a curve [`hdr_tone`]'s family refuses: the Fujifilm FinePix HS20EXR's and
+HS30EXR's Adobe Standard (Mahalanobis distance 4.22, the limit 4). Camera Raw rendered
+the HS20EXR's curve on gray and colour patches (HDR limits 8 and 4, and SDR). The fitted
+extension renders them 0.013 / 0.095 stop and 2.49 mean ΔE_ITP from Camera Raw below
+0.9, and 0.067 / 0.160 above white (scene 16: 63 against Camera Raw's 49), where the
+SDR render is 0.005 / 0.043 and 1.00. They stay refused.
 
 ### Presence
 
@@ -1159,6 +1190,17 @@ by squared distance from the centre (quarters to the corners).
 
 Decision, 2026-11-11: Highlight Priority exposes through the master's neutral
 response.
+
+**The vignette's Highlights (2026-11-12).** On the tile checker (a linear profile),
+Camera Raw 18.7's HDR Highlight Priority −50 keeps the gain it has without Highlights
+up to twice white at every Highlights, and protects only four and eight times white,
+almost in proportion to Highlights: the outer ring's gain at eight times white is 0.398,
+0.457, 0.516, 0.575 and 0.634 at Highlights 0, 25, 50, 75 and 100 (0.377 to 0.431 at
+four times), the same at HDR limits 4 and 8. Its SDR protection rises from about half of
+white (0.456 at half, 0.558 at white). Color Priority −100 with Highlights 100 leaves
+light from white up untouched in HDR (gain 1.000), where SDR's gain is 0.696 at white.
+A rule fitted to these tiles would be checked on nothing else (the photo captures carry
+no Highlights); the vignette's Highlights stays refused.
 
 ### Point Color
 
