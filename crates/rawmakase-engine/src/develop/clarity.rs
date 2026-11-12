@@ -89,13 +89,6 @@ impl ClarityField {
     pub(crate) fn at(&self, sample: ClaritySample, log_lum: f32) -> f32 {
         sample.reconstruct(sample.read(&self.gain), sample.read(&self.guide), log_lum)
     }
-    /// This field with each cell's gain multiplied by `weights` (one per cell).
-    pub(crate) fn scaled(mut self, weights: &[f32]) -> Self {
-        for (g, w) in self.gain.iter_mut().zip(weights) {
-            *g *= w;
-        }
-        self
-    }
     /// GPU layout: measured gains, then their log-luminance guide.
     pub(crate) fn values(&self) -> impl Iterator<Item = f32> + '_ {
         self.gain.iter().chain(self.guide.iter()).copied()
@@ -129,6 +122,17 @@ impl ClarityDetail {
                     .collect()
             }),
             guide: logs.into(),
+        }
+    }
+    /// This detail with each cell's fitted gains multiplied by `weights` (one per
+    /// cell): the fields and mask gains made from it are scaled alike.
+    pub(crate) fn scaled(&self, weights: &[f32]) -> Self {
+        Self {
+            fits: self
+                .fits
+                .each_ref()
+                .map(|fit| fit.iter().zip(weights).map(|(g, w)| g * w).collect()),
+            guide: self.guide.clone(),
         }
     }
     pub(crate) fn field(&self, amount: f32) -> ClarityField {

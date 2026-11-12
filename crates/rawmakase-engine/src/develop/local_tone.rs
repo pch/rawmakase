@@ -434,18 +434,20 @@ impl LocalToneMap {
                 0.
             };
         let keys = [base.shadow_key, base.highlight_key, lift_key];
-        let detail = (sliders.clarity != 0. || sliders.mask_clarity).then(|| base.detail());
+        // An HDR master's Clarity is stronger beside light above white, for the global
+        // slider and masks alike.
+        let detail = (sliders.clarity != 0. || sliders.mask_clarity).then(|| {
+            let d = base.detail();
+            if sliders.hdr {
+                std::borrow::Cow::Owned(d.scaled(&hdr_clarity_weights(base)))
+            } else {
+                std::borrow::Cow::Borrowed(d)
+            }
+        });
         let clarity = detail
+            .as_ref()
             .filter(|_| sliders.clarity != 0.)
-            .map(|d| d.field(sliders.clarity))
-            .map(|f| {
-                // An HDR master's Clarity is stronger beside light above white.
-                if sliders.hdr {
-                    f.scaled(&hdr_clarity_weights(base))
-                } else {
-                    f
-                }
-            });
+            .map(|d| d.field(sliders.clarity));
         // Positive Shadows and negative Highlights follow the photo's global rule
         // (`local_tone_rule`); the two-scale lift and the regional level are not read.
         let rule = if sliders.shadows > 0. || sliders.highlights < 0. || local {
@@ -477,7 +479,9 @@ impl LocalToneMap {
             lift: None,
             keys,
             clarity,
-            clarity_detail: detail.filter(|_| sliders.mask_clarity).cloned(),
+            clarity_detail: detail
+                .filter(|_| sliders.mask_clarity)
+                .map(std::borrow::Cow::into_owned),
             rule,
         }
     }
