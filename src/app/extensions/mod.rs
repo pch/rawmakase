@@ -286,6 +286,11 @@ pub(in crate::app) struct Extension {
     /// leases a program that ended still holds until its unit has ended
     /// count against the next, whatever entry it has.
     ledger: Ledger,
+    /// Counts the times its program was ended by the host or ended by itself
+    /// (disabled, uninstalled, loaded again, crashed, hung), shared by every
+    /// entry its id has, as `ledger` is ([`Host`]'s `lifecycles`). Work for
+    /// the extension captures it, and is void once it has moved.
+    lifecycle: Arc<std::sync::atomic::AtomicU64>,
     crashes: u32,
     /// Crashed [`CRASHES`] times in a row: nothing starts it until Retry.
     pub failed: bool,
@@ -451,6 +456,8 @@ pub(in crate::app) struct Host {
     /// or falling back to the bundled one) counts against the same budget as
     /// its predecessors, whose leases may still be held.
     ledgers: HashMap<String, Ledger>,
+    /// Each extension's lifecycle count, by id, for as long as the host runs.
+    lifecycles: HashMap<String, Arc<std::sync::atomic::AtomicU64>>,
     /// Counts changes to the enabled extensions' commands.
     revision: u64,
     /// For the next Preferences page to report.
@@ -501,6 +508,7 @@ impl Host {
             closed: false,
             killers: Vec::new(),
             ledgers: HashMap::new(),
+            lifecycles: HashMap::new(),
             revision: 0,
             errors: Vec::new(),
             search_dirs: Vec::new(),
@@ -853,6 +861,7 @@ impl Host {
                 }
                 existing => {
                     let ledger = self.ledgers.entry(id.clone()).or_default().clone();
+                    let lifecycle = self.lifecycles.entry(id.clone()).or_default().clone();
                     if let Some(mut old) = existing {
                         Self::end(&mut old, ErrorCode::Cancelled);
                     }
@@ -867,6 +876,7 @@ impl Host {
                         entry,
                         run: None,
                         ledger,
+                        lifecycle,
                         crashes: 0,
                         failed: false,
                         errors: VecDeque::new(),
@@ -926,7 +936,10 @@ impl Host {
     /// Ends `e`'s program now, if it runs, without counting a crash: its
     /// requests fail with `code` and are cancelled at the program, and its
     /// status and panels clear. Dropping the session ends its unit at once.
+    /// Its lifecycle moves on, whether it ran or not, so work started for it
+    /// before is void.
     fn end(e: &mut Extension, code: ErrorCode) -> Vec<Outcome> {
+        e.lifecycle.fetch_add(1, Ordering::SeqCst);
         let mut outcomes = Self::stop_reading(e, &code);
         if let Some(mut run) = e.run.take() {
             let mut ids: Vec<u64> = run.requests.keys().copied().collect();

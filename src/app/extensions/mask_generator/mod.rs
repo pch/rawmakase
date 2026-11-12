@@ -196,6 +196,15 @@ impl Host {
         e.can_run()
     }
 
+    /// Where `extension` is in its lifecycle: a request captures it when it
+    /// starts, and is void once it differs (the extension was disabled,
+    /// uninstalled, loaded again, or its program crashed or hung meanwhile).
+    /// `None` once it isn't loaded at all.
+    pub(in crate::app) fn mask_lifecycle(&self, extension: &str) -> Option<u64> {
+        self.get(extension)
+            .map(|e| e.lifecycle.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
     /// What `extension`'s requests' buffers are leased against.
     pub(in crate::app) fn mask_ledger(&self, extension: &str) -> Option<Ledger> {
         self.get(extension).map(|e| e.ledger.clone())

@@ -340,6 +340,12 @@ struct Call {
     load: u64,
     generation: u64,
     cancel: Arc<AtomicBool>,
+    /// The extension's lifecycle when it started ([`Host::mask_lifecycle`]):
+    /// once it has moved (disabled, uninstalled, loaded again, crashed), the
+    /// request is void in whatever phase it is.
+    ///
+    /// [`Host::mask_lifecycle`]: crate::app::extensions::Host::mask_lifecycle
+    lifecycle: u64,
     /// The host's ticket for it and what it asked, from when it is sent until
     /// its outcome arrives.
     sent: Option<(u64, MaskGenerate)>,
@@ -774,7 +780,7 @@ impl Editor {
                 endpoint: Option<String>,
                 action: Action,
             },
-            Extension(Offer, rawmakase_extensions::shm::Ledger),
+            Extension(Offer, rawmakase_extensions::shm::Ledger, u64),
         }
         let backend = match &request.generator {
             Generator::Feature(feature) => {
@@ -805,9 +811,14 @@ impl Editor {
                     action,
                 }
             }
-            Generator::Extension(offer) => match self.extensions.mask_ledger(&offer.extension) {
-                Some(ledger) => Backend::Extension(offer.clone(), ledger),
-                None => {
+            Generator::Extension(offer) => match (
+                self.extensions.mask_ledger(&offer.extension),
+                self.extensions.mask_lifecycle(&offer.extension),
+            ) {
+                (Some(ledger), Some(lifecycle)) => {
+                    Backend::Extension(offer.clone(), ledger, lifecycle)
+                }
+                _ => {
                     self.messages
                         .warn(format!("{} isn't installed", offer.extension));
                     return;
@@ -822,12 +833,16 @@ impl Editor {
         self.messages.note(text);
         let (generation, cancel) = self.selection.task.start();
         let recipe = self.document.edit.recipe().clone();
-        let call = matches!(backend, Backend::Extension(..)).then(|| Call {
-            load,
-            generation,
-            cancel: cancel.clone(),
-            sent: None,
-        });
+        let call = match &backend {
+            Backend::Extension(_, _, lifecycle) => Some(Call {
+                load,
+                generation,
+                cancel: cancel.clone(),
+                lifecycle: *lifecycle,
+                sent: None,
+            }),
+            Backend::Here { .. } => None,
+        };
         self.selection.pending = Some(Pending {
             guard: Guard::of(&recipe, request.target),
             request,
@@ -853,7 +868,7 @@ impl Editor {
                 tx,
                 ctx,
             ),
-            Backend::Extension(offer, ledger) => {
+            Backend::Extension(offer, ledger, _) => {
                 let job = mask_generator::Prepare {
                     load,
                     generation,
@@ -893,6 +908,9 @@ impl Editor {
             return self.settle_deferred();
         };
         let offer = offer.clone();
+        if self.void_if_moved() {
+            return;
+        }
         let ready = match prepared.result {
             Ok(ready) => ready,
             Err(failure) => {
@@ -994,10 +1012,15 @@ impl Editor {
             ctx,
         );
     }
-    /// After the host's outcomes: an extension's request whose outcome can't
-    /// come any more (its request is gone from the host) ends now. Rasters
-    /// set aside for a selection that ended without a result are let go of.
+    /// After the host's outcomes: an extension's request whose extension
+    /// moved on in its lifecycle is void in any phase, and one whose outcome
+    /// can't come any more (its request is gone from the host) ends now.
+    /// Rasters set aside for a selection that ended without a result are let
+    /// go of.
     pub(in crate::app) fn check_mask_requests(&mut self) {
+        if self.void_if_moved() {
+            return;
+        }
         if let Some(Pending {
             request:
                 Request {
@@ -1026,6 +1049,35 @@ impl Editor {
             self.selection_done(done);
         }
         self.settle_deferred();
+    }
+    /// Ends the running extension's request at once if its extension has
+    /// moved on in its lifecycle since it started: busy clears, the worker's
+    /// job is cancelled, a request sent is withdrawn (its buffers stay leased
+    /// until the program answers) and nothing is recorded. Returns whether it
+    /// did.
+    fn void_if_moved(&mut self) -> bool {
+        let Some(Pending {
+            request:
+                Request {
+                    generator: Generator::Extension(offer),
+                    ..
+                },
+            call: Some(call),
+            ..
+        }) = &self.selection.pending
+        else {
+            return false;
+        };
+        let now = self.extensions.mask_lifecycle(&offer.extension);
+        if now == Some(call.lifecycle) {
+            return false;
+        }
+        let name = offer.extension.clone();
+        self.selection.cancel();
+        self.messages
+            .note(format!("Selection stopped: {name} was stopped"));
+        self.settle_deferred();
+        true
     }
     /// Lets go of the rasters set aside while a selection ran, once none runs:
     /// each is discarded unless the edit, its History or Before names it.
@@ -1134,6 +1186,14 @@ impl Editor {
                 return;
             }
         };
+        // An extension disabled, uninstalled or loaded again since: its
+        // answer is void, even one that came before.
+        if let (Some(call), Generator::Extension(offer)) = (&pending.call, &request.generator)
+            && self.extensions.mask_lifecycle(&offer.extension) != Some(call.lifecycle)
+        {
+            self.discard_generated(Some(generated));
+            return;
+        }
         if !pending
             .guard
             .holds(self.document.edit.recipe(), request.target)

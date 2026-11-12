@@ -132,7 +132,11 @@ the extension side owns the tiles, the provenance lookup and the requests.
 Neither direction does pixel work on the UI thread: the selection worker
 renders the input into the request's shared memory before it is sent, and
 copies the coverage out and registers the raster after the reply, and only
-then does the UI thread apply it. A mask result is not a proposal and has no
+then does the UI thread apply it. A request captures its extension's
+lifecycle count (`Host::mask_lifecycle`, moved on whenever the host ends the
+extension's program: disabled, uninstalled, loaded again, crashed, hung), and
+is void in any phase once it has moved: busy clears at once, the worker's job
+is cancelled, and nothing it produces applies. A mask result is not a proposal and has no
 target token; edits made while it runs that change neither the masks'
 structure nor the content (sliders, names) survive it. Extensions' generators
 are not aimed with clicks yet; their tiles are those of generators that take

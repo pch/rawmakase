@@ -52,6 +52,8 @@ struct Fixture {
     editor: Editor,
     /// The extension's developer folder: its program's working folder.
     folder: PathBuf,
+    /// The data folder, with `extensions.json`.
+    data: PathBuf,
 }
 
 /// An editor with a decoded photo of grey `level` in a catalog, as Develop has
@@ -102,6 +104,7 @@ fn fixture(level: f32) -> Fixture {
         _dir: dir,
         editor,
         folder,
+        data,
     }
 }
 
@@ -564,6 +567,86 @@ fn drain_worker(e: &mut Editor) {
         .expect("the selection thread ran its jobs");
     e.events(&ctx);
     e.extensions_frame(&ctx);
+}
+
+/// Whether the running request has its reply, and its finish is queued.
+fn answered(e: &Editor) -> bool {
+    matches!(
+        &e.selection.pending,
+        Some(Pending {
+            call: Some(Call { sent: None, .. }),
+            ..
+        })
+    )
+}
+
+#[test]
+fn an_extension_stopped_in_any_phase_of_a_request_voids_it() {
+    let mut f = fixture(0.36);
+    let (folder, data) = (f.folder.clone(), f.data.clone());
+    let e = &mut f.editor;
+    // The extension's ledger, by its id, whatever entry it has.
+    let ledger = e.extensions.mask_ledger(ID).unwrap();
+    // Disabled while its input is being prepared: idle at once, and enabled
+    // again before the preparation ends, nothing is sent or applied.
+    let release = hold_worker(e);
+    e.request_selection(tile(e, "Blob"));
+    assert!(!settled(e));
+    e.set_extension_enabled(ID, false);
+    assert!(settled(e) && !busy_row(e));
+    e.set_extension_enabled(ID, true);
+    drop(release);
+    drain_worker(e);
+    assert!(e.extensions.masks_sent().is_empty());
+    assert!(e.document.edit.recipe().masks.is_empty() && settled(e));
+    assert_eq!(ledger.in_use(), 0);
+
+    // Disabled, uninstalled or loaded again after a successful reply, while
+    // its raster is being kept: nothing is recorded.
+    let manifest = folder.join(rawmakase_extensions::protocol::manifest::FILE);
+    for change in ["disable", "uninstall", "reload"] {
+        let sent = e.extensions.masks_sent().len();
+        e.request_selection(tile(e, "Blob"));
+        pump(e, "the request to be sent", |e| {
+            e.extensions.masks_sent().len() > sent
+        });
+        let release = hold_worker(e);
+        pump(e, "the reply", answered);
+        match change {
+            "disable" => e.set_extension_enabled(ID, false),
+            "uninstall" => e.uninstall_extension(ID),
+            _ => {
+                let text = std::fs::read_to_string(&manifest).unwrap();
+                std::fs::write(&manifest, text.replace("for tests.", "for tests!")).unwrap();
+                e.reload_extensions();
+                // Loaded again behind the editor's back: void at the next frame.
+                let ctx = e.context.clone();
+                e.extensions_frame(&ctx);
+            }
+        }
+        assert!(settled(e) && !busy_row(e), "{change}");
+        drop(release);
+        drain_worker(e);
+        assert!(e.document.edit.recipe().masks.is_empty(), "{change}");
+        assert_eq!(e.document.edit.history().steps().1, 0, "{change}");
+        pump(e, "the buffers", |_| ledger.in_use() == 0);
+        match change {
+            "disable" => e.set_extension_enabled(ID, true),
+            "uninstall" => {
+                Store::new(&data).add_developer(&folder).unwrap();
+                e.reload_extensions();
+            }
+            _ => {}
+        }
+        assert!(
+            e.extensions.mask_ready(&offer(e, "Blob")).is_ok(),
+            "{change}"
+        );
+    }
+    // Loaded again, it still works.
+    e.request_selection(tile(e, "Blob"));
+    pump(e, "Blob", settled);
+    assert_eq!(e.document.edit.recipe().masks.len(), 1);
 }
 
 fn offer(e: &Editor, name: &str) -> Offer {
