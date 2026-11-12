@@ -121,6 +121,12 @@ impl Context<'_> {
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
     }
+    /// The flag [`Context::is_cancelled`] reads, to lend to work that polls
+    /// a flag of its own, such as a model run. It is set once the app
+    /// cancels this request, and never cleared.
+    pub fn cancel_flag(&self) -> &AtomicBool {
+        &self.cancelled
+    }
     /// The extension's settings, with every change the app reported so far.
     pub fn settings(&self) -> &Map<String, Value> {
         self.settings

@@ -185,8 +185,11 @@ fn a_cancelled_request_ends_cancelled_whether_it_ran_or_waited() {
     let (started_tx, started) = mpsc::channel();
     let extension = Extension::new().command("slow", move |cx: &Context, _run: CommandRun| {
         let _ = started_tx.send(());
+        // The flag lent to work that polls its own is the same one.
+        let flag = cx.cancel_flag();
         for _ in 0..1000 {
-            if cx.is_cancelled() {
+            if flag.load(std::sync::atomic::Ordering::Relaxed) {
+                assert!(cx.is_cancelled());
                 return Err(RemoteError::new(ErrorCode::Cancelled, "stopped"));
             }
             std::thread::sleep(Duration::from_millis(5));
