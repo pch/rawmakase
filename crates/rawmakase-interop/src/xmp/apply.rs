@@ -9,6 +9,40 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
+
+/// Lightroom's crop of a straightened photo (`[left, top, right, bottom]` on the unrotated
+/// frame) holds the turned crop's top-left and bottom-right corners, while RAWmakase's is
+/// axis-aligned on the straightened, enlarged photo (`Geometry::unwarped`). Converts
+/// Lightroom's into RAWmakase's, or back with `to_lightroom`; `straighten` is RAWmakase's.
+pub(super) fn straightened_crop(
+    frame: &crate::model::image_frame::ImageFrame,
+    crop: [f32; 4],
+    straighten: f32,
+    to_lightroom: bool,
+) -> [f32; 4] {
+    // Unturned crops stay exact rather than going through the rounding below.
+    if straighten == 0. {
+        return crop;
+    }
+    let [w, h] = frame.size();
+    let (w, h) = if frame.turns % 2 == 1 { (h, w) } else { (w, h) };
+    let (s, c) = straighten.to_radians().sin_cos();
+    let zoom = (c.abs() + s.abs() * h / w).max(c.abs() + s.abs() * w / h);
+    let (s, k) = if to_lightroom {
+        (s, 1. / zoom)
+    } else {
+        (-s, zoom)
+    };
+    let corner = |x: f32, y: f32| {
+        let (x, y) = ((x - 0.5) * w * k, (y - 0.5) * h * k);
+        [(c * x + s * y) / w + 0.5, (c * y - s * x) / h + 0.5]
+    };
+    let ([l, t], [r, b]) = (corner(crop[0], crop[1]), corner(crop[2], crop[3]));
+    // Both ways to the 6 decimals Lightroom writes: reading the same values changes
+    // nothing, and a crop with up to 6 decimals is read back as it was written.
+    [l, t, r, b].map(|v| (v * 1e6).round() / 1e6)
+}
+
 fn number(values: &BTreeMap<String, String>, key: &str) -> Result<Option<f32>> {
     values
         .get(key)
@@ -964,10 +998,20 @@ impl Preset {
         lensfun: &Handle,
     ) -> Result<()> {
         let v = settings.values;
+        // Presets from RAWmakase before #1059 (marked 1 or 2) hold its own angle, which
+        // turns the other way, and its crop on the straightened frame.
+        let legacy = matches!(
+            v.get("RAWmakasePreset").map(String::as_str),
+            Some("1" | "2")
+        );
         settings.assign(crs::CROP_ANGLE, &mut r.straighten, -45., 45.)?;
         // An angle the settings give is theirs, not Auto's, even Auto's own number.
         if v.contains_key("CropAngle") {
             r.straighten_auto = None;
+            // Lightroom turns the photo counter-clockwise for a positive angle (#1059).
+            if !legacy {
+                r.straighten = -r.straighten;
+            }
         }
         settings.seen.insert("LensProfileEnable".into());
         // Which Adobe profile the edit uses. Whether Lightroom took it from the RAW
@@ -1070,15 +1114,44 @@ impl Preset {
             if v.get("RAWmakasePreset").is_some_and(|v| v == "1") {
                 frame.turns = 0;
             }
-            let start = frame.rect_to_unrotated(r.crop);
+            let angle = if legacy { 0. } else { r.straighten };
+            // Edges the settings give replace edges of Lightroom's crop, not RAWmakase's.
+            let start = straightened_crop(&frame, frame.rect_to_unrotated(r.crop), angle, true);
             let mut crop = start;
             for (edge, out) in crs::CROP.into_iter().zip(&mut crop) {
                 settings.assign(edge, out, 0., 1.)?;
             }
             if crop != start {
-                // Turning sorts the edges, so a reversed crop is refused before it is.
-                ensure!(crop[0] < crop[2] && crop[1] < crop[3], "Invalid crop");
-                r.crop = frame.rect_from_unrotated(crop);
+                // Lightroom's largest crop at an angle measured up to 0.04% off RAWmakase's
+                // frame, and its values round to 6 decimals, so an edge within 0.001 past
+                // the frame is on it. A crop further out reaches into the turned photo's
+                // corners, which RAWmakase does not show.
+                let straightened = straightened_crop(&frame, crop, angle, false).map(|v| {
+                    if (-1e-3..=1. + 1e-3).contains(&v) {
+                        v.clamp(0., 1.)
+                    } else {
+                        v
+                    }
+                });
+                // Turning sorts the edges, so a reversed crop is refused before it is. A
+                // wide crop turned far has its corners' edges swapped on the unrotated
+                // frame, so the order is checked once straightened.
+                let [left, top, right, bottom] = straightened;
+                ensure!(
+                    left < right
+                        && top < bottom
+                        && straightened.iter().all(|v| (0. ..=1.).contains(v)),
+                    "Invalid crop"
+                );
+                r.crop = frame.rect_from_unrotated(straightened);
+                // Conversion and 6-decimal rounding move edges by about 1e-5, so a crop
+                // written at the 1% minimum can read back just under it.
+                for (lo, hi) in [(0, 2), (1, 3)] {
+                    if (0.0099..0.01).contains(&(r.crop[hi] - r.crop[lo])) {
+                        r.crop[hi] = (r.crop[lo] + 0.010_001).min(1.);
+                        r.crop[lo] = r.crop[lo].min(r.crop[hi] - 0.010_001);
+                    }
+                }
             }
         }
         // Lightroom's Constrain Crop, not to be confused with `CropConstrainToUnitSquare`.

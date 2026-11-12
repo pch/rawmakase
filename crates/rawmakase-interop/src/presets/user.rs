@@ -47,7 +47,7 @@ impl UserPresets {
             && preset
                 .settings
                 .get("RAWmakasePreset")
-                .is_some_and(|v| matches!(v.as_str(), "1" | "2"))
+                .is_some_and(|v| matches!(v.as_str(), "1" | "2" | "3"))
     }
     /// Whether `preset` may be updated, renamed or deleted here: made here, or a
     /// copy that Import made in the user library.

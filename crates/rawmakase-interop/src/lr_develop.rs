@@ -266,6 +266,7 @@ pub fn convert_develop(
     for keys in [
         vec!["WhiteBalance", "Temperature", "Tint"],
         vec![
+            "HasCrop",
             "CropLeft",
             "CropTop",
             "CropRight",

@@ -428,6 +428,184 @@ fn lightroom_crops_are_relative_to_the_frame_around_the_camera_crop() -> Result<
     assert!(packet.contains(r#"crs:CropLeft="0.166667""#), "{packet}");
     Ok(())
 }
+/// Lightroom's positive CropAngle turns the photo counter-clockwise, and its crop values
+/// are the turned crop's corners: 0.1 to 0.9 of 6000 x 4000 at 5 degrees is 5060 x 2770
+/// px along the turned axes (#1059). Written back, the same values come out.
+#[test]
+fn lightroom_straightened_crops_are_turned_corners() -> Result<()> {
+    let m = Metadata {
+        width: 6000,
+        height: 4000,
+        ..Default::default()
+    };
+    let base = Recipe::with_profiles(&m, &[]);
+    let attrs = r#"c:HasCrop="True" c:CropLeft="0.1" c:CropTop="0.1" c:CropRight="0.9" c:CropBottom="0.9" c:CropAngle="5""#;
+    let r = parse(Path::new("photo.xmp"), &xml(attrs, ""))?.apply(&base, &m, &[], None)?;
+    assert_eq!(r.straighten, -5.);
+    let [l, t, right, b] = r.crop;
+    let aspect = (right - l) * 6000. / ((b - t) * 4000.);
+    assert!(
+        (aspect - 5060.6 / 2769.6).abs() < 1e-3,
+        "{:?} {aspect}",
+        r.crop
+    );
+    let packet = write::packet(
+        &r,
+        &m,
+        &write::Photo {
+            settings: true,
+            ..Default::default()
+        },
+    );
+    for value in [
+        r#"CropLeft="0.100000""#,
+        r#"CropBottom="0.900000""#,
+        r#"CropAngle="+5.00""#,
+    ] {
+        assert!(packet.contains(value), "{value} {packet}");
+    }
+    Ok(())
+}
+/// RAWmakase's straightened crops read back as written: wide crops turned 30
+/// degrees, whose corners come out with the bottom above the top or the right
+/// left of the left, an angle finer than the 2 decimals CropAngle keeps, and crops at
+/// the 1% minimum, which rounding would bring just under it.
+#[test]
+fn straightened_crops_read_back_as_written() -> Result<()> {
+    for (flip, straighten, crop) in [
+        (0, 30., [0.1, 0.3, 0.9, 0.7]),
+        (0, -30., [0.4, 0.1, 0.6, 0.9]),
+        (0, -1.2345, [0., 0., 1., 1.]),
+        (0, -44.99, [0.3, 0.7, 0.38, 0.710001]),
+        (6, -44.99, [0.3, 0.7, 0.38, 0.710001]),
+        (0, 0., [0.3, 0.7, 0.31, 0.71]),
+    ] {
+        let m = Metadata {
+            width: 6000,
+            height: 4000,
+            flip,
+            ..Default::default()
+        };
+        let base = Recipe::with_profiles(&m, &[]);
+        let mut r = base.clone();
+        r.straighten = straighten;
+        r.crop = crop;
+        let photo = write::Photo {
+            settings: true,
+            ..Default::default()
+        };
+        let packet = write::packet(&r, &m, &photo);
+        // Only the crop, since white balance needs a camera profile to read.
+        let attrs: String = [
+            "HasCrop",
+            "CropLeft",
+            "CropTop",
+            "CropRight",
+            "CropBottom",
+            "CropAngle",
+        ]
+        .map(|key| {
+            let value = packet.split(&format!("crs:{key}=\"")).nth(1).unwrap();
+            format!(r#" c:{key}="{}""#, &value[..value.find('"').unwrap()])
+        })
+        .concat();
+        let again = parse(Path::new("again.xmp"), &xml(&attrs, ""))?.apply(&base, &m, &[], None)?;
+        for (got, want) in again.crop.into_iter().zip(crop) {
+            assert!((got - want).abs() < 1e-5, "{straighten}: {:?}", again.crop);
+        }
+    }
+    // A crop clearly under the minimum is still refused.
+    let m = Metadata {
+        width: 6000,
+        height: 4000,
+        ..Default::default()
+    };
+    let attrs = r#"c:HasCrop="True" c:CropLeft="0.3" c:CropTop="0.1" c:CropRight="0.309" c:CropBottom="0.9""#;
+    let thin = parse(Path::new("thin.xmp"), &xml(attrs, ""))?;
+    assert!(
+        thin.apply(&Recipe::with_profiles(&m, &[]), &m, &[], None)
+            .is_err()
+    );
+    Ok(())
+}
+
+/// A catalog edit with an angle but HasCrop off keeps the angle: its crop values are not
+/// used, so they are not checked against it.
+#[test]
+fn catalog_angle_without_a_crop_survives() -> Result<()> {
+    let m = Metadata {
+        width: 6000,
+        height: 4000,
+        ..Default::default()
+    };
+    let text = "s = { HasCrop = false, CropAngle = 5, CropLeft = 0, CropTop = 0, CropRight = 1, CropBottom = 1 }";
+    let (r, warnings) = crate::lr_develop::convert_develop(text, &m, &[], None)?;
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(r.straighten, -5.);
+    Ok(())
+}
+
+/// A preset RAWmakase wrote before #1059 (marked 2) holds its own angle and its crop on
+/// the straightened frame, and keeps meaning them.
+#[test]
+fn earlier_presets_keep_their_angle_and_crop() -> Result<()> {
+    let m = Metadata {
+        width: 6000,
+        height: 4000,
+        ..Default::default()
+    };
+    let base = Recipe::with_profiles(&m, &[]);
+    let attrs = r#"c:RAWmakasePreset="2" c:HasCrop="True" c:CropLeft="0.1" c:CropTop="0.1" c:CropRight="0.9" c:CropBottom="0.9" c:CropAngle="5""#;
+    let r = parse(Path::new("preset.xmp"), &xml(attrs, ""))?.apply(&base, &m, &[], None)?;
+    assert_eq!(r.straighten, 5.);
+    assert_eq!(r.crop, [0.1, 0.1, 0.9, 0.9]);
+    Ok(())
+}
+
+/// At 7 degrees on 6000 x 4000, a Lightroom crop on the straightened frame's sides loads,
+/// as does a largest crop 0.04% wider than RAWmakase's, which lands 0.0002 past the frame.
+/// A crop 5% past the frame reaches into the turned photo's corners: it is refused, and
+/// a lenient read leaves the geometry out with a warning.
+#[test]
+fn lightroom_straightened_crops_keep_to_the_frame() -> Result<()> {
+    let m = Metadata {
+        width: 6000,
+        height: 4000,
+        ..Default::default()
+    };
+    let base = Recipe::with_profiles(&m, &[]);
+    let read = |[l, t, r, b]: [&str; 4]| {
+        let attrs = format!(
+            r#"c:HasCrop="True" c:CropLeft="{l}" c:CropTop="{t}" c:CropRight="{r}" c:CropBottom="{b}" c:CropAngle="7""#
+        );
+        parse(Path::new("photo.xmp"), &xml(&attrs, ""))
+    };
+    for (lightroom, want) in [
+        (
+            ["0.098503", "0.168894", "0.901497", "0.831106"],
+            [0., 0.2, 1., 0.8],
+        ),
+        (["0.112128", "0", "0.887872", "1"], [0., 0., 1., 1.]),
+        // 0.001 past the right edge.
+        (
+            ["0.182950", "0.184447", "0.902341", "0.831262"],
+            [0.1, 0.2, 1., 0.8],
+        ),
+    ] {
+        let recipe = read(lightroom)?.apply(&base, &m, &[], None)?;
+        for (got, want) in recipe.crop.into_iter().zip(want) {
+            assert!((got - want).abs() < 1e-4, "{:?}", recipe.crop);
+        }
+    }
+    // Corners in order on the unrotated frame, but bottom above top once straightened.
+    let reversed = read(["0.2", "0.49", "0.8", "0.51"])?;
+    assert!(reversed.apply(&base, &m, &[], None).is_err());
+    let past = read(["0.056280", "0.161117", "0.943720", "0.838883"])?;
+    assert!(past.apply(&base, &m, &[], None).is_err());
+    let (_, warnings) = past.apply_lenient(&base, &m, &[], None)?;
+    assert!(!warnings.is_empty());
+    Ok(())
+}
 /// Lightroom records crops on the unrotated frame. A Canon EOS Rebel T6i CR2 held
 /// upright (orientation 5) and shot at 4:3 starts at the 5334 × 4000 middle of its
 /// 6000 × 4000 sensor; Camera Raw writes CropLeft 0.0555, CropRight 0.9445 and
