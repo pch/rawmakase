@@ -397,6 +397,7 @@ impl Editor {
                 region: gpu_region,
             };
             self.hdr_preview_ui(&painter, rect, g, due, false, gpu);
+            self.hdr_overlay_ui(&painter, rect, g);
         }
         if self.view.compare.renders_before_alone() {
             before_after::badge(ui, area, "Before");
@@ -1083,12 +1084,29 @@ impl crate::app::Editor {
         region: Option<[u32; 4]>,
         max_edge: u32,
     ) -> Result<HdrDue, &'static str> {
-        use crate::app::develop::hdr_preview::{Key, Part};
         hdr_master_refused(recipe, image)?;
+        self.hdr_due_at(
+            image,
+            recipe,
+            region,
+            max_edge,
+            self.view.hdr_display.headroom,
+        )
+    }
+    /// As [`Self::hdr_due_for`], for a master shown at `headroom`, once it isn't
+    /// refused.
+    fn hdr_due_at(
+        &self,
+        image: &std::sync::Arc<crate::camera_data::CameraImage>,
+        recipe: &crate::model::recipe::Recipe,
+        region: Option<[u32; 4]>,
+        max_edge: u32,
+        headroom: f32,
+    ) -> Result<HdrDue, &'static str> {
+        use crate::app::develop::hdr_preview::{Key, Part};
         if max_edge == 0 {
             return Err("the photo is still opening");
         }
-        let headroom = self.view.hdr_display.headroom;
         // The AI Denoise result the SDR rendition's render of the same side shows.
         let ai = self.shown_ai_source(image, &recipe.ai_denoise);
         let ai = ai.as_ref();
@@ -1121,6 +1139,69 @@ impl crate::app::Editor {
         let g = Geometry::new(image, &recipe, 0);
         let max_edge = self.render_edges(&g).max_edge;
         self.hdr_due_for(image, &recipe, self.region_in(&g), max_edge)
+    }
+    /// Visualize HDR's overlay due over the photo Develop's viewport renders (the edit,
+    /// or Before alone), at its zoom: wherever its master renders, whatever the
+    /// display shows, as the histogram describes the edit, not the display. Its key
+    /// is the master's at no headroom, so a display change renders nothing.
+    pub(in crate::app) fn hdr_overlay_due(&self) -> Result<HdrDue, &'static str> {
+        let refuse = |no: bool, why| if no { Err(why) } else { Ok(()) };
+        refuse(!self.view.visualize_hdr, "Visualize HDR is off")?;
+        refuse(self.module != Module::Develop, "HDR shows in Develop")?;
+        refuse(
+            self.view.compare == before_after::Compare::CameraThumbnail,
+            "the camera's thumbnail is shown",
+        )?;
+        let image = self.document.full().ok_or("the photo is still opening")?;
+        if self.preview.last_fit_edge == 0 {
+            return Err("the photo is still opening");
+        }
+        let recipe = self.effective_recipe();
+        hdr_master_refused(&recipe, image)?;
+        let g = Geometry::new(image, &recipe, 0);
+        let max_edge = self.render_edges(&g).max_edge;
+        self.hdr_due_at(image, &recipe, self.region_in(&g), max_edge, 1.)
+    }
+    /// Draws Visualize HDR's overlay over the photo drawn at `rect` with geometry `g`
+    /// when it is due: the whole photo's, and over it the 100% region's once there.
+    /// A view that is gone releases its slot when the frame ends.
+    pub(in crate::app) fn hdr_overlay_ui(
+        &mut self,
+        painter: &egui::Painter,
+        rect: Rect,
+        g: &Geometry,
+    ) {
+        use crate::app::develop::hdr_preview::{Part, Slot};
+        let (Ok(due), Some(state)) = (self.hdr_overlay_due(), self.render_state.clone()) else {
+            return;
+        };
+        let (slot, other) = match due.key.part() {
+            Part::Region(_) => (Slot::OverlayRegion, Slot::OverlayWhole),
+            Part::Whole(_) => (Slot::OverlayWhole, Slot::OverlayRegion),
+        };
+        self.hdr_preview
+            .request(slot, due.key.clone(), due.image.clone());
+        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
+        let shown = self.hdr_preview.texture(slot, &due.key, &state);
+        // While a region renders, the whole photo's overlay of the same edit shows,
+        // coarser, rather than none. Not under the region's own: its clear pixels
+        // would show the coarser colours through.
+        if let Some(under) = &due.under {
+            self.hdr_preview.keep(other);
+            if shown.is_none()
+                && let Some(id) = self.hdr_preview.texture(other, under, &state)
+            {
+                painter.image(id, hdr_drawn_at(rect, g, under.part()), uv, Color32::WHITE);
+            }
+        }
+        if let Some(id) = shown {
+            painter.image(
+                id,
+                hdr_drawn_at(rect, g, due.key.part()),
+                uv,
+                Color32::WHITE,
+            );
+        }
     }
     /// The HDR preview due beside the edit: of Before, or of the reference photo, as
     /// its SDR rendition last asked for it.

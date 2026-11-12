@@ -263,6 +263,69 @@ fn a_zoomed_in_photo_sits_on_whole_screen_pixels() {
     }
 }
 
+/// Visualize HDR's overlay is due over an HDR edit whose master renders, whatever
+/// the display: on an SDR display, under Preview for SDR display and beside a
+/// clipping warning too, keyed without the display's headroom; the whole photo in
+/// Fit, a 100% region over it zoomed in. It isn't while it is off, HDR is off, the
+/// master is refused or the camera's thumbnail shows.
+#[test]
+fn the_hdr_overlay_is_due_wherever_the_master_renders() {
+    use crate::app::develop::before_after::Compare;
+    use crate::app::develop::hdr_preview::{Key, Part};
+    use crate::app::shell::display::HdrDisplay;
+    let ctx = egui::Context::default();
+    let (mut e, _) = crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), true);
+    e.preview.last_fit_edge = 64;
+    e.view.viewport = egui::Vec2::new(16., 12.);
+    e.document.edit.setup_mut().hdr.enabled = true;
+    assert_eq!(e.hdr_overlay_due().unwrap_err(), "Visualize HDR is off");
+    e.view.visualize_hdr = true;
+    let key = |e: &crate::app::Editor, part| {
+        Key::new(
+            e.document.full().unwrap(),
+            &e.effective_recipe(),
+            None,
+            part,
+            1.,
+        )
+    };
+    // An SDR display: no master shows, the overlay does.
+    assert!(e.hdr_preview_due().is_err());
+    let due = e
+        .hdr_overlay_due()
+        .expect("over an HDR edit on an SDR display");
+    assert_eq!(due.key, key(&e, Part::Whole(16)));
+    e.view.hdr_display = HdrDisplay {
+        headroom: 4.,
+        potential: 16.,
+        float_surface: true,
+        ..HdrDisplay::default()
+    };
+    assert_eq!(
+        e.hdr_overlay_due().unwrap().key,
+        due.key,
+        "the display changes nothing"
+    );
+    e.view.sdr_preview = true;
+    assert!(e.hdr_overlay_due().is_ok(), "Preview for SDR display");
+    e.view.sdr_preview = false;
+    e.view.zoom.set(1.);
+    let region = e.region().expect("a 100% region");
+    let due = e.hdr_overlay_due().expect("at 100%");
+    assert_eq!(due.key, key(&e, Part::Region(region)));
+    assert_eq!(due.under, Some(key(&e, Part::Whole(16))));
+    e.view.zoom.set(0.);
+
+    e.view.compare = Compare::CameraThumbnail;
+    assert!(e.hdr_overlay_due().is_err(), "the camera's thumbnail");
+    e.view.compare = Compare::Off;
+    e.document.edit.setup_mut().highlights = 20.;
+    assert!(e.hdr_overlay_due().is_err(), "refused in HDR");
+    e.document.edit.setup_mut().highlights = 0.;
+    e.document.edit.setup_mut().hdr.enabled = false;
+    assert_eq!(e.hdr_overlay_due().unwrap_err(), "HDR is off");
+}
+
 /// Develop is due to show an HDR edit's master on a display with headroom: the whole
 /// photo in Fit and zoomed out, a 100% region over it zoomed in, of Before alone, and
 /// of each side of Before/After. The SDR rendition shows where the display has none,

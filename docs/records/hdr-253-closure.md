@@ -114,8 +114,6 @@ renders everything. Each refusal has Camera Raw measurements behind it:
 - **Camera Raw's own SDR rendition** is a local tone map of the master. RAWmakase's is
   the edit with HDR off, with the SDR rendition sliders rendered as one measured curve
   ([SDR rendition](hdr-stage1-results.md#sdr-rendition)).
-- **Lightroom's Visualize HDR overlay** on the photo is not drawn. The histogram marks
-  what lies beyond the display's headroom.
 
 ## Follow-ups
 
