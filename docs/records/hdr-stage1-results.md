@@ -30,7 +30,8 @@ diagnostics. The frozen references are in the dataset ([Frozen references](#froz
 The HDR stages' captures were frozen in the test dataset on 2026-11-09
 ([HDR references](../../tests/corpus/README.md#hdr-references)); none was re-rendered:
 
-- **Family:** 1,003 distinct jobs. The twelve photos of [Validation](#validation) at
+- **Family:** 1,003 distinct jobs (1,091 since 2026-11-12, with the band Luminance,
+  channel-curve and twelve training photos' Whites +75 / +100 captures of 2026-11-11). The twelve photos of [Validation](#validation) at
   neutral HDR and every measured setting, with their SDR captures; the six HDRMerge
   floating-point DNGs of a Canon EOS 5D Mark III (CC0, 16, 24 and 32 bit, compressed
   and not) at neutral HDR and SDR; and 565 synthetic ramp, scene and patch jobs. The
@@ -58,6 +59,13 @@ Nine photos do not render. Eight have no Adobe Standard in the profile library t
 gate used: three Samsung phones, the DJI FC9287, the Panasonic DC-G100D and DC-TZ95D
 and the Sony ZV-1. The Leica D-Lux 7's profile has sRGB-encoded tables, which HDR
 refuses. The peak is the most frequent miss, as for the X100V and Z6 III above.
+
+`main` b012705d (2026-11-12: Clarity 0 to +50, Dehaze ±30 and the mask operators of
+#1031 among the stages added since f7d7ee9a) is accepted against that baseline on
+validation (51 of 51) and holdout (47 scored; the two excluded). The gate scores neutral
+renders, so it checks that the stages added since leave the default master alone; the
+controls themselves are scored on the family's captures (re-scored on the same build:
+Clarity, Dehaze and the masks' Contrast and Color reproduce their sections' tables).
 
 ## Measurements
 
