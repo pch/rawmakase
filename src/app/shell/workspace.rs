@@ -251,6 +251,7 @@ impl Editor {
         self.control_commands(ctx);
         self.extensions_frame(ctx);
         self.events(ctx);
+        self.end_aiming_off_mask();
         self.finish_paused_turn(ctx);
         self.save_when_due(ctx);
     }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::app::Editor;
+use crate::app::extensions::viewer_input::Collector;
 use crate::camera_data::{CameraImage, Metadata};
 use crate::storage::bitmaps::Bitmap;
 use crate::storage::mask_assets;
@@ -103,6 +104,20 @@ fn finish(editor: &mut Editor, generation: u64, result: Result<Generated, Failur
         generation,
         result,
     });
+}
+/// Clicks and a box, as aiming collects them.
+fn collector(points: Vec<Point>, bounds: Option<[f32; 4]>) -> Collector {
+    let mut input = Collector::default();
+    input.clicks = points
+        .into_iter()
+        .map(|p| rawmakase_extensions::protocol::viewer::Click {
+            x: p.x,
+            y: p.y,
+            positive: p.positive,
+        })
+        .collect();
+    input.bounds = bounds;
+    input
 }
 /// The app's own selection a request asks for.
 fn feature(request: &Request) -> Feature {
@@ -710,12 +725,14 @@ fn the_drawer_draws_in_every_state_a_selection_can_be_in() {
     e.selection.failure = None;
     e.selection.prompting = Some(Prompting {
         request: SUBJECT,
-        points: vec![Point {
-            x: 0.5,
-            y: 0.5,
-            positive: true,
-        }],
-        bounds: Some([0.1, 0.1, 0.9, 0.9]),
+        input: collector(
+            vec![Point {
+                x: 0.5,
+                y: 0.5,
+                positive: true,
+            }],
+            Some([0.1, 0.1, 0.9, 0.9]),
+        ),
         applied: None,
     });
     draw_masking_panel(e);
@@ -838,15 +855,22 @@ fn aiming_starts_with_nothing_and_each_click_refines_the_same_mask() {
     let e = &mut f.editor;
     e.selection.prompting = Some(Prompting {
         request: SUBJECT,
-        points: Vec::new(),
-        bounds: None,
+        input: collector(Vec::new(), None),
         applied: None,
     });
     // Outside the photo, and a leave-out click before anything is selected, do nothing.
     e.prompt_click([1.5, 0.5], true);
     e.prompt_click([0.5, 0.5], false);
     assert!(e.selection.running().is_none());
-    assert!(e.selection.prompting.as_ref().unwrap().points.is_empty());
+    assert!(
+        e.selection
+            .prompting
+            .as_ref()
+            .unwrap()
+            .input
+            .clicks
+            .is_empty()
+    );
     // A first result makes the mask and remembers it; later ones replace its raster.
     let g = begin(e, SUBJECT);
     finish(e, g, Ok(generated(110)));
@@ -874,12 +898,19 @@ fn aiming_starts_with_nothing_and_each_click_refines_the_same_mask() {
     // Boxes too small to be a drag are ignored.
     e.selection.prompting = Some(Prompting {
         request: SUBJECT,
-        points: Vec::new(),
-        bounds: None,
+        input: collector(Vec::new(), None),
         applied: None,
     });
     e.prompt_box([0.5, 0.5], [0.501, 0.501]);
-    assert!(e.selection.prompting.as_ref().unwrap().bounds.is_none());
+    assert!(
+        e.selection
+            .prompting
+            .as_ref()
+            .unwrap()
+            .input
+            .bounds
+            .is_none()
+    );
     e.selection.clear_document();
     assert!(e.selection.prompting.is_none());
 }
@@ -935,8 +966,7 @@ fn refining_aims_at_the_selected_component_only_with_the_models_in_place() {
                 component: 0,
             },
         ),
-        points: Vec::new(),
-        bounds: None,
+        input: collector(Vec::new(), None),
         applied: Some((0, 0)),
     });
     let before = e.document.edit.recipe().masks[0].components[0]
@@ -1065,17 +1095,19 @@ fn a_different_mask_of_the_same_kind_in_the_same_place_is_not_the_one_asked_for(
 fn a_box_starts_over_without_the_clicks_before_it() {
     let mut p = Prompting {
         request: SUBJECT,
-        points: vec![Point {
-            x: 0.2,
-            y: 0.2,
-            positive: true,
-        }],
-        bounds: None,
+        input: collector(
+            vec![Point {
+                x: 0.2,
+                y: 0.2,
+                positive: true,
+            }],
+            None,
+        ),
         applied: None,
     };
-    p.set_box([0.3, 0.3, 0.7, 0.8]);
-    assert!(p.points.is_empty());
-    assert_eq!(p.bounds, Some([0.3, 0.3, 0.7, 0.8]));
+    assert!(p.input.drag([0.3, 0.3], [0.7, 0.8]));
+    assert!(p.input.clicks.is_empty());
+    assert_eq!(p.input.bounds, Some([0.3, 0.3, 0.7, 0.8]));
 }
 
 #[test]
@@ -1146,8 +1178,7 @@ fn refining_a_mask_can_start_by_leaving_something_out() {
     );
     e.selection.prompting = Some(Prompting {
         request: SUBJECT,
-        points: Vec::new(),
-        bounds: None,
+        input: collector(Vec::new(), None),
         applied: Some((0, 0)),
     });
     e.prompt_click([0.2, 0.5], false);
@@ -1273,7 +1304,7 @@ fn clicks_and_boxes_while_a_selection_runs_are_ignored_not_queued() {
     e.prompt_box([0.1, 0.1], [0.9, 0.9]);
     assert_eq!(asked(e).len(), 1);
     let p = e.selection.prompting.as_ref().unwrap();
-    assert_eq!((p.points.len(), p.bounds), (1, None));
+    assert_eq!((p.input.clicks.len(), p.input.bounds), (1, None));
     // Once it has answered, the next click is taken, and the lost ones are not.
     answer(e, Ok(generated(173)));
     e.prompt_click([0.7, 0.7], true);
@@ -1287,7 +1318,7 @@ fn clicks_past_the_limit_ask_again_without_the_extra_point() {
     capturing(e);
     aim(e, SUBJECT);
     let max = rawmakase_selection::process::MAX_POINTS;
-    e.selection.prompting.as_mut().unwrap().points = vec![at(0.5, 0.5, true); max];
+    e.selection.prompting.as_mut().unwrap().input = collector(vec![at(0.5, 0.5, true); max], None);
     e.prompt_click([0.1, 0.1], true);
     let sent = click(e, 0);
     assert_eq!(sent.points.len(), max);
@@ -1393,6 +1424,28 @@ fn background_aimed_or_refined_by_hand_asks_for_the_subject_and_stays_inverted()
     let m = &e.document.edit.recipe().masks;
     assert_eq!(m.len(), 1);
     assert!(m[0].components[0].invert);
+}
+
+#[test]
+fn switching_tools_ends_aiming() {
+    let mut f = fixture();
+    let e = &mut f.editor;
+    capturing(e);
+    aim(e, SUBJECT);
+    e.prompt_click([0.5, 0.5], true);
+    answer(e, Ok(generated(177)));
+    let ctx = e.context.clone();
+    // A pass with the Mask tool keeps it.
+    e.background(&ctx);
+    assert!(e.selection.prompting.is_some());
+    e.view.toggle(crate::app::develop::state::Tool::Crop);
+    e.background(&ctx);
+    e.view.toggle(crate::app::develop::state::Tool::Mask);
+    e.background(&ctx);
+    assert!(e.selection.prompting.is_none(), "the old prompt came back");
+    // A click on the photo now aims at nothing.
+    e.prompt_click([0.6, 0.6], true);
+    assert_eq!(asked(e).len(), 1);
 }
 
 #[test]

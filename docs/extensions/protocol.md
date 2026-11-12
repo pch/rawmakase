@@ -229,6 +229,13 @@ there are at most 32 clicks (`MAX_CLICKS`). There is no minimum box size: the
 app ignores a drag under 1% of the photo as a gesture, but a box it derives,
 such as a mask's extent, may be thinner.
 
+The app collects `prompt` so far, for mask generators: a click adds a
+positive point and an Alt-click a negative one, a drag draws a box and starts
+over without the clicks, and a negative first click while refining a mask
+takes the mask's extent as the box. The whole prompt is sent after each
+change; input made while a request runs is ignored, not queued. Done,
+Escape, another photo or switching to another tool ends aiming.
+
 ## Envelope
 
 | Message | Shape |

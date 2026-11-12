@@ -12,8 +12,9 @@
 //! ([`mask_generator`]): a request
 //! names its [`Generator`], Select Subject and Sky being the app's own until
 //! they move into an extension (#965), and an extension's request has its
-//! input rendered and its answer kept on the same worker thread. Only the
-//! app's own selections are aimed with clicks so far.
+//! input rendered and its answer kept on the same worker thread. Aiming, for
+//! either, collects clicks and a box with
+//! [`viewer_input`](crate::app::extensions::viewer_input).
 mod inference;
 mod ui;
 mod worker;
@@ -23,6 +24,7 @@ pub(in crate::app) use worker::{keep, render_input};
 
 use crate::app::Editor;
 use crate::app::extensions::mask_generator::{self, Offer};
+use crate::app::extensions::viewer_input::Collector;
 use crate::app::task::{Stopping, Task};
 use crate::model::masks::{
     BITMAP_SAMPLING, BitmapMask, BitmapSource, FEATURE_SKY, FEATURE_SUBJECT, MAX_COMPONENTS,
@@ -32,7 +34,7 @@ use crate::model::recipe::Recipe;
 use rawmakase_extensions::protocol::RemoteError;
 use rawmakase_extensions::protocol::message::NeedsSetup;
 use rawmakase_extensions::protocol::method::{MaskGenerate, MaskGenerated};
-use rawmakase_extensions::protocol::viewer::{Bounds, Click, ViewerInput};
+use rawmakase_extensions::protocol::viewer::ViewerInput;
 use rawmakase_extensions::shm::Returned;
 use rawmakase_selection::{Point, Prompt as ModelPrompt};
 use serde_json::Value;
@@ -122,12 +124,11 @@ impl Generator {
             Self::Extension(offer) => offer.invert,
         }
     }
-    /// Whether it aims with clicks and a box: Sky doesn't, nor, until the app
-    /// collects viewer input for them, does an extension's generator.
+    /// Whether it aims with clicks and a box: Sky doesn't.
     pub(in crate::app) fn takes_prompt(&self) -> bool {
         match self {
             Self::Feature(feature) => *feature != Feature::Sky,
-            Self::Extension(_) => false,
+            Self::Extension(offer) => offer.prompt,
         }
     }
     /// Whether it makes a mask by itself.
@@ -135,6 +136,16 @@ impl Generator {
         match self {
             Self::Feature(_) => true,
             Self::Extension(offer) => offer.auto,
+        }
+    }
+    /// The line shown while aiming at something new.
+    fn hint(&self) -> String {
+        match self {
+            Self::Feature(_) => "Click the subject on the photo, or drag a box around it".into(),
+            Self::Extension(offer) => offer
+                .hint
+                .clone()
+                .unwrap_or_else(|| "Click it on the photo, or drag a box around it".into()),
         }
     }
 }
@@ -358,14 +369,27 @@ pub(in crate::app) enum Prompt {
     Model(Request),
     /// The catalog has to be upgraded to keep the result.
     Upgrade(Request),
-    /// An extension's generator answered `needs_setup`: what it needs, and the
+    /// An extension's generator answered `needs_setup`: what it needs, the
     /// guard the request was first made with, which must still hold for it to
-    /// go on once set up.
+    /// go on once set up, and what happens once it is.
     Setup {
         request: Request,
         setup: NeedsSetup,
         guard: Guard,
+        then: Resume,
     },
+}
+
+/// What a request that waited for its generator's setup does once set up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum Resume {
+    /// Runs again, automatic as it was.
+    Select,
+    /// Goes back to aiming, as it was being aimed.
+    Aim,
+    /// Nothing: it was being aimed, and the user has left the Mask tool
+    /// since. The generator is ready the next time they aim.
+    Nothing,
 }
 impl Prompt {
     fn request(&self) -> &Request {
@@ -379,25 +403,15 @@ impl Prompt {
 /// each further one refines that same mask until the user is done.
 pub(in crate::app) struct Prompting {
     pub(in crate::app) request: Request,
-    pub(in crate::app) points: Vec<Point>,
-    pub(in crate::app) bounds: Option<[f32; 4]>,
+    pub(in crate::app) input: Collector,
     /// The mask and component the first result made (or the one being regenerated).
     applied: Option<(usize, usize)>,
-}
-impl Prompting {
-    /// A box starts over: the clicks so far were about the previous outline.
-    fn set_box(&mut self, bounds: [f32; 4]) {
-        self.points.clear();
-        self.bounds = Some(bounds);
-    }
 }
 
 #[derive(Default)]
 pub(in crate::app) struct Selection {
     /// Waiting for clicks on the photo.
     pub(in crate::app) prompting: Option<Prompting>,
-    /// Where a drag for a box began, in image space.
-    pub(in crate::app) drag_from: Option<[f32; 2]>,
     /// The running selection's generation; a newer request or a new photo supersedes.
     task: Task,
     pending: Option<Pending>,
@@ -456,7 +470,6 @@ impl Selection {
     /// Stops aiming (Done, Escape, a new photo).
     pub(in crate::app) fn end_prompting(&mut self) {
         self.prompting = None;
-        self.drag_from = None;
     }
     /// The photo changed: nothing asked for the previous one applies, an upgrade under
     /// way included; it finishes, but does not go on to select in this photo. Its
@@ -552,6 +565,11 @@ impl Editor {
                     self.messages.warn(why);
                     return;
                 }
+                // A generator that only aims is aimed with.
+                if !offer.auto {
+                    self.begin_aiming(request);
+                    return;
+                }
             }
         }
         self.selection.prompt = None;
@@ -560,14 +578,16 @@ impl Editor {
         self.start_selection(request, None);
     }
     /// Whether `generator` can be aimed with now: Subject's models are here (or
-    /// a remote worker answers). Extensions' generators aren't aimed yet.
+    /// a remote worker answers), or the extension can run.
     fn can_aim(&self, generator: &Generator) -> bool {
         match generator {
             Generator::Feature(_) => {
                 self.selection.remote.endpoint().is_some()
                     || self.selection.models.subject.installed()
             }
-            Generator::Extension(_) => false,
+            Generator::Extension(offer) => {
+                offer.prompt && self.extensions.mask_ready(offer).is_ok()
+            }
         }
     }
     /// Aims at the subject by hand, for what the models do not know (a sign, a car, a
@@ -579,18 +599,17 @@ impl Editor {
             return;
         }
         self.selection.failure = None;
+        let hint = request.generator.hint();
         self.selection.prompting = Some(Prompting {
             applied: match request.target {
                 Target::Regenerate { mask, component } => Some((mask, component)),
                 _ => None,
             },
             request,
-            points: Vec::new(),
-            bounds: None,
+            input: Collector::default(),
         });
         self.view.tool = crate::app::develop::state::Tool::Mask;
-        self.messages
-            .note("Click the subject on the photo, or drag a box around it");
+        self.messages.note(hint);
     }
     /// Aims at a generated component: clicks on the photo add to it and leave things
     /// out of it, each one refining the same mask. Only a generator that takes
@@ -631,13 +650,31 @@ impl Editor {
         self.selection.failure = None;
         self.selection.prompting = Some(Prompting {
             request,
-            points: Vec::new(),
-            bounds: None,
+            input: Collector::default(),
             applied: Some((mask, component)),
         });
         self.view.tool = crate::app::develop::state::Tool::Mask;
         self.messages
             .note("Click the part of the photo to add, Alt-click to leave out");
+    }
+    /// Aiming belongs to the Mask tool: once Develop switches to another
+    /// (Crop, a key, a panel's tool), aiming has ended, and going back to Mask
+    /// doesn't take up the old clicks again. Runs every pass.
+    /// Aiming that waits for its generator's setup ends the same way: the
+    /// download goes on, but once it is done aiming doesn't start again over
+    /// the tool the user switched to.
+    pub(in crate::app) fn end_aiming_off_mask(&mut self) {
+        if self.view.tool == crate::app::develop::state::Tool::Mask {
+            return;
+        }
+        if self.selection.prompting.is_some() {
+            self.selection.end_prompting();
+        }
+        if let Some(Prompt::Setup { then, .. }) = &mut self.selection.prompt
+            && *then == Resume::Aim
+        {
+            *then = Resume::Nothing;
+        }
     }
     /// The generator a generated component's raster came from: Subject, Sky or
     /// Background (an inverted Subject) for the app's own and old saved masks,
@@ -671,72 +708,44 @@ impl Editor {
     /// false, on something to leave out). Starts or refines the selection.
     pub(in crate::app) fn prompt_click(&mut self, at: [f32; 2], positive: bool) {
         self.context.request_repaint();
+        if self.selection.pending.is_some() {
+            return;
+        }
+        let masks = &self.document.edit.recipe().masks;
         let Some(p) = &mut self.selection.prompting else {
             return;
         };
-        if self.selection.pending.is_some()
-            || !(0. ..=1.).contains(&at[0])
-            || !(0. ..=1.).contains(&at[1])
-        {
-            return;
-        }
         // A negative point means nothing without something to be negative about: when
         // refining a mask already made, that is the mask's own extent.
-        if !positive && p.points.iter().all(|q| !q.positive) && p.bounds.is_none() {
-            let shape = p.applied.and_then(|(m, c)| {
-                let masks = &self.document.edit.recipe().masks;
-                Some(masks.get(m)?.components.get(c)?.shape.clone())
-            });
-            let Some(extent) = shape.and_then(|shape| match shape {
+        let applied = p.applied;
+        let extent = || {
+            let (m, c) = applied?;
+            match &masks.get(m)?.components.get(c)?.shape {
                 MaskShape::Bitmap(b) => raster_extent(&b.id),
                 _ => None,
-            }) else {
-                return;
-            };
-            let Some(p) = &mut self.selection.prompting else {
-                return;
-            };
-            p.bounds = Some(extent);
-        }
-        let Some(p) = &mut self.selection.prompting else {
-            return;
+            }
         };
-        if p.points.len() < rawmakase_selection::process::MAX_POINTS {
-            p.points.push(Point {
-                x: at[0],
-                y: at[1],
-                positive,
-            });
+        if p.input.click(at, positive, extent) {
+            self.run_prompt();
         }
-        self.run_prompt();
     }
     /// A box dragged on the photo while aiming (image space corners).
     pub(in crate::app) fn prompt_box(&mut self, a: [f32; 2], b: [f32; 2]) {
+        if self.selection.pending.is_some() {
+            return;
+        }
         let Some(p) = &mut self.selection.prompting else {
             return;
         };
-        let clamp = |v: f32| v.clamp(0., 1.);
-        let bounds = [
-            clamp(a[0].min(b[0])),
-            clamp(a[1].min(b[1])),
-            clamp(a[0].max(b[0])),
-            clamp(a[1].max(b[1])),
-        ];
-        if self.selection.pending.is_some()
-            || bounds[2] - bounds[0] < 0.01
-            || bounds[3] - bounds[1] < 0.01
-        {
-            return;
+        if p.input.drag(a, b) {
+            self.run_prompt();
         }
-        p.set_box(bounds);
-        self.run_prompt();
     }
     /// Forgets the clicks and box, so the next click starts the selection over (the
     /// mask made so far is replaced by it).
     pub(in crate::app) fn clear_prompt(&mut self) {
         if let Some(p) = &mut self.selection.prompting {
-            p.points.clear();
-            p.bounds = None;
+            p.input.clear();
         }
     }
     /// Runs the model on the clicks and box so far.
@@ -751,18 +760,7 @@ impl Editor {
                 None => p.request.target,
             },
         };
-        let input = ViewerInput::Prompt {
-            clicks: p
-                .points
-                .iter()
-                .map(|p| Click {
-                    x: p.x,
-                    y: p.y,
-                    positive: p.positive,
-                })
-                .collect(),
-            bounds: p.bounds.map(|[x0, y0, x1, y1]| Bounds { x0, y0, x1, y1 }),
-        };
+        let input = p.input.input();
         self.selection.failure = None;
         self.start_selection(request, Some(input));
     }
@@ -1015,8 +1013,9 @@ impl Editor {
     /// After the host's outcomes: an extension's request whose extension
     /// moved on in its lifecycle is void in any phase, and one whose outcome
     /// can't come any more (its request is gone from the host) ends now.
-    /// Rasters set aside for a selection that ended without a result are let
-    /// go of.
+    /// Aiming at a generator that can't run any more (disabled, Failed, gone)
+    /// ends, and rasters set aside for a selection that ended without a
+    /// result are let go of.
     pub(in crate::app) fn check_mask_requests(&mut self) {
         if self.void_if_moved() {
             return;
@@ -1047,6 +1046,19 @@ impl Editor {
                 ))),
             };
             self.selection_done(done);
+        }
+        if let Some(Prompting {
+            request:
+                Request {
+                    generator: Generator::Extension(offer),
+                    ..
+                },
+            ..
+        }) = &self.selection.prompting
+            && let Err(why) = self.extensions.mask_ready(offer)
+        {
+            self.selection.end_prompting();
+            self.messages.note(why);
         }
         self.settle_deferred();
     }
@@ -1098,7 +1110,8 @@ impl Editor {
             self.messages.fail(why);
         }
     }
-    /// A generator's setup finished: the request that asked for it goes on.
+    /// A generator's setup finished: the request that asked for it goes on,
+    /// automatic or aimed as it was.
     pub(in crate::app) fn mask_setup_done(
         &mut self,
         extension: &str,
@@ -1110,30 +1123,44 @@ impl Editor {
                 request,
                 setup,
                 guard,
+                then,
             }) if matches!(&request.generator,
                 Generator::Extension(o) if o.extension == extension && o.generator == generator) =>
             {
-                Some((request.clone(), setup.what.clone(), guard.clone()))
+                Some((request.clone(), setup.what.clone(), guard.clone(), *then))
             }
             _ => None,
         };
         match result {
             Ok(_) => {
-                let what = waiting.as_ref().map_or("The model", |(_, what, _)| what);
+                let what = waiting.as_ref().map_or("The model", |(_, what, ..)| what);
                 self.messages.done(format!("{what} installed"));
-                if let Some((request, _, guard)) = waiting {
+                if let Some((request, _, guard, then)) = waiting {
                     self.selection.prompt = None;
                     // Indices name the mask it was asked for only while the
                     // masks are as they were; a new mask needs no such thing.
                     let target = request.target;
-                    if target == Target::NewMask || guard.holds(self.document.edit.recipe(), target)
+                    if target != Target::NewMask
+                        && !guard.holds(self.document.edit.recipe(), target)
                     {
-                        self.request_selection(request);
-                    } else {
                         self.messages.warn(format!(
                             "The masks changed while setting up; choose where to use {} again",
                             request.generator.name()
                         ));
+                    } else {
+                        // The tool is checked here too, not only by each
+                        // pass's cleanup: a setup finishing in the pass the
+                        // user left Mask in is handled before the cleanup.
+                        let on_mask = self.view.tool == crate::app::develop::state::Tool::Mask;
+                        match then {
+                            Resume::Nothing => {}
+                            Resume::Aim if !on_mask => {}
+                            Resume::Aim => self.begin_aiming(request),
+                            Resume::Select if !request.generator.takes_none() => {
+                                self.begin_aiming(request);
+                            }
+                            Resume::Select => self.request_selection(request),
+                        }
                     }
                 }
             }
@@ -1172,11 +1199,17 @@ impl Editor {
             Ok(generated) => generated,
             Err(Failure::Cancelled) => return,
             Err(Failure::NeedsSetup(setup)) => {
+                let then = if self.selection.prompting.is_some() {
+                    Resume::Aim
+                } else {
+                    Resume::Select
+                };
                 self.selection.end_prompting();
                 self.selection.prompt = Some(Prompt::Setup {
                     request,
                     setup,
                     guard: pending.guard,
+                    then,
                 });
                 return;
             }
