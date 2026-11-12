@@ -4,8 +4,9 @@ Status: Phase 2 built ([design](../extensions-plan.md)). The manifest,
 packages, installation, `extensions.json`, the extension protocol, the SDK and
 `cargo rawmakase` exist, and the app runs extensions: it supervises their
 programs, and has Preferences > Extensions, their commands, settings and
-panels, reads and proposals with target tokens, and control adapters, the app's
-own and externally launched ones. MIDI and MCP are bundled extensions.
+panels, reads and proposals with target tokens, control adapters, the app's
+own and externally launched ones, and mask generators (`api = 2`). MCP, MIDI
+and AI Masks are bundled extensions.
 
 An **extension** adds to RAWmakase without changing it: commands, settings,
 panels of controls the app draws, and control adapters (a MIDI device, an MCP
@@ -38,7 +39,7 @@ Windows, or on Linux in `../lib/rawmakase` beside the executable's folder, where
 the packages and `make install` put it. A bundled extension is enabled unless
 `extensions.json` says it is disabled, updates with the app and can't be
 uninstalled. When its program is missing (an incomplete install), its page says
-so. This release bundles two:
+so. This release bundles three:
 
 - **MCP** (`rawmakase.mcp`, program `rawmakase-mcp`): the MCP server
   ([MCP setup](../mcp.md)), an externally launched control adapter, `mcp`.
@@ -47,6 +48,12 @@ so. This release bundles two:
   `midi`, and its page, a panel the program drives. Its settings are in its
   data folder; on its first start the app copies the `midi.json` the core kept
   there, and leaves the original.
+- **AI Masks** (`rawmakase.ai-masks`, program `rawmakase-ai-masks`): Select
+  Subject, Sky and Background, two mask generators (`subject`, `sky`) run by
+  the selection models on this computer or on a remote worker
+  ([Subject and Background masks](../subject-and-background-masks.md)). It
+  keeps the models in the local data folder's `models`, where the app always
+  installed them.
 
 ## Control adapters
 
@@ -94,6 +101,7 @@ Under the data folder (`RAWMAKASE_DATA_DIR`, else the platform's, as for
 | `extensions.json` | What is installed, which version is active, enabled or not, where it came from, its settings, developer folders ([below](#extensionsjson)) |
 | `extensions.lock` | Held while `extensions.json` changes |
 | `extension-data/<id>/` | The extension's private data, kept across versions and uninstalls; its program's `log.txt` (rotated at 1 MiB) |
+| `extension-cache/<id>/` | The extension's cache folder, `hello`'s `cache_dir` |
 
 ## `extensions.json`
 

@@ -21,9 +21,10 @@ cargo rawmakase new my-dial --id dev.me.my-dial --template control-adapter
 extension's menu, that reads the selection and says how many photos it holds,
 with a test against the SDK's mock host. The `control-adapter` template starts
 a device thread that reports a connection and turns Exposure. `--rawmakase`
-sets the supported range (the current minor version by default). The other
-templates the design names (filter, importer, source, mask generator) come
-with their contributions.
+sets the supported range (the current minor version by default). There is no
+mask generator template yet: start from `command`, set `api = 2`, and follow
+the example in `extensions/example/src/masks.rs`. The other templates the
+design names (filter, importer, source) come with their contributions.
 
 ## Build and try
 
