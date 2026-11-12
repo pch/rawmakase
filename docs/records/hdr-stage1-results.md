@@ -1229,6 +1229,25 @@ blocks either changes most (the top 1% of each).
 Decision, 2026-11-11: Defringe refuses the master again ("Defringe is not supported in
 HDR yet"); the edit and its SDR rendition keep it.
 
+Re-examined on 2026-11-12 under the [acceptance rule](#decisions), with RAWmakase's HDR
+renders of the twelve photos (CC0 copies) through #1002's operator, its change scaled to
+a fraction of SDR's. The relative error here is taken over the 2% of blocks either render
+changes most, below white (both of Camera Raw's renders below it) and above white (its
+HDR base above it), the median over the photos; SDR's own below white is 1.49 (above 1:
+in SDR too, leaving Defringe out is closer to Camera Raw).
+
+| HDR change, of SDR's | Below white | Above white |
+| --- | --- | --- |
+| ×1 (#1002) | 3.78 | 1.29 |
+| ×0.6 (Camera Raw's HDR removal over its SDR one below white, 0.30 / 0.46 kept-chroma loss) | 1.86 | 1.00 |
+| ×0.4 | 1.20 | 1.00 |
+
+Only a change weaker than Camera Raw's own HDR one passes, and only because it comes
+closer to leaving Defringe out, which SDR's operator is already further from Camera
+Raw than; the bright blues Camera Raw takes above white are not selected at all (above
+white ≈ 1.00, no change). **Defringe stays refused in HDR**; it needs SDR parity of the
+hue selection first.
+
 ### Masks
 
 A mask's adjustment is added to the photo's own in RAWmakase's stages: its Temp and
