@@ -68,7 +68,7 @@ fn the_crop_drawer_keeps_its_layout_whatever_its_buttons_show() {
         crate::app::preferences::session::Session::default(),
         None,
     );
-    e.view.tool = crate::app::develop::state::Tool::Crop;
+    e.view.set_tool(crate::app::develop::state::Tool::Crop);
     let size = |e: &mut Editor, width: f32| {
         let mut rect = Rect::NOTHING;
         for _ in 0..2 {

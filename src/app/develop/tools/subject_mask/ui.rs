@@ -209,7 +209,7 @@ impl Editor {
         };
         match p
             .input
-            .overlay(ui, response, rect, busy, to_screen, to_image)
+            .overlay(ui, response, rect, busy, true, to_screen, to_image)
         {
             Some(Gesture::Click { at, positive }) => self.prompt_click(at, positive),
             Some(Gesture::Drag { from, to }) => self.prompt_box(from, to),

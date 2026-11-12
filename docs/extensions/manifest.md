@@ -124,7 +124,32 @@ from the extension's page.
 | `places` | `[]` | Fixed slots it is shown in (below) |
 | `key` | none | Its default key in the key map's notation (`Ctrl+Alt+F`); the user's key map overrides it |
 | `applies-to` | `"none"` | `none`, `photo` (the open photo) or `selection`; the app refuses the command when that isn't there |
-| `input` | `"none"` | Viewer input collected first: `none`, `point`, `points`, `box`, `prompt`, `brush` (accepted now; collected from phase 3) |
+| `input` | `"none"` | Viewer input collected on the photo first: `none`, `point`, `points`, `box`, `prompt` or `brush` ([below](#viewer-input-for-commands)) |
+
+### Viewer input for commands
+
+A command whose `input` isn't `none` asks for a photo open in Develop; run
+anywhere else, it says so and doesn't run. Run there, from any place commands
+run, it puts away the open tool and shows a card on the photo naming the
+command and what to do:
+
+| `input` | On the photo | Sent |
+| --- | --- | --- |
+| `point` | One click | At the click, once |
+| `points` | Clicks, and Alt-clicks for points to leave out, at most 32 | Once, at Done or Enter |
+| `box` | One drag, at least 1% of the photo on each side; a smaller drag is ignored | At the end of the drag, once |
+| `prompt` | Clicks, Alt-clicks and a box, refined together as a mask generator's aiming is | After each change, one at a time: input made while the last runs is ignored |
+
+Escape or Cancel ends collecting without running the command; for `prompt`,
+Done or Escape ends it after the runs already sent. Another photo, taking up
+a tool, leaving Develop, and the extension being disabled or crashing end it
+too. The command's `applies-to` target is read each time it is sent, with the
+input. The [protocol](protocol.md#commandrun-request) says what `input`
+carries.
+
+`brush` isn't collected yet. A manifest that declares it loads, but its
+command doesn't run: its Run button is disabled, and running it any other way
+says why.
 
 `places` takes these names: `library.photo-menu`, `library.toolbar`,
 `library.auto`, `develop.auto`, `develop.tool-strip`, `file.import`,

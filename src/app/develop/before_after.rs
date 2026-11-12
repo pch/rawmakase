@@ -276,7 +276,7 @@ impl Editor {
     /// the edit alone, as in Lightroom.
     pub(in crate::app) fn set_compare(&mut self, view: Compare) {
         if view.two_up() {
-            self.view.tool = crate::app::develop::state::Tool::None;
+            self.view.set_tool(crate::app::develop::state::Tool::None);
         }
         // Before and the reference share a lane: neither shows the other's render.
         if view.reference() != self.view.compare.reference() {
@@ -292,7 +292,8 @@ impl Editor {
     }
     /// A tool opened while Before is beside the edit goes back to the edit alone.
     pub(in crate::app) fn leave_compare_for_tools(&mut self) {
-        if self.view.compare.two_up() && self.view.tool != crate::app::develop::state::Tool::None {
+        if self.view.compare.two_up() && self.view.tool() != crate::app::develop::state::Tool::None
+        {
             self.view.compare = Compare::Off;
         }
     }
@@ -878,9 +879,9 @@ mod tests {
     fn tools_work_on_the_edit_alone() {
         use crate::app::develop::state::Tool;
         let mut e = editor();
-        e.view.tool = Tool::Mask;
+        e.view.set_tool(Tool::Mask);
         e.set_compare(Compare::Split(Axis::LeftRight));
-        assert_eq!(e.view.tool, Tool::None);
+        assert_eq!(e.view.tool(), Tool::None);
         // Opening a tool goes back to the edit alone, as in Lightroom.
         e.view.toggle(Tool::Remove);
         e.leave_compare_for_tools();

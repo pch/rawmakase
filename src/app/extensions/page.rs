@@ -424,11 +424,17 @@ impl Editor {
             group(ui, "Commands");
             for c in &m.commands {
                 let full = format!("{id}/{}", c.id);
+                let unsupported = super::command_input::unsupported(c.input);
                 form_row(ui, &c.title, |ui| {
-                    if ui
-                        .add_enabled(enabled && !failed, egui::Button::new("Run"))
-                        .clicked()
-                    {
+                    let run = ui.add_enabled(
+                        enabled && !failed && unsupported.is_none(),
+                        egui::Button::new("Run"),
+                    );
+                    let run = match unsupported {
+                        Some(why) => run.on_disabled_hover_text(why),
+                        None => run,
+                    };
+                    if run.clicked() {
                         // Preferences closes first, as its other buttons that
                         // act on the window do: the command's change to the
                         // open photo is then made, not refused as behind a

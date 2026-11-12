@@ -357,7 +357,7 @@ mod tests {
         // One being typed goes on while a tool's drawer opens: History stays.
         e.snapshot_action(SnapshotAction::StartRename(e.document.snapshots.list[0].id));
         e.document.snapshots.renaming.as_mut().unwrap().name = "Before crop".into();
-        e.view.tool = crate::app::develop::state::Tool::Crop;
+        e.view.set_tool(crate::app::develop::state::Tool::Crop);
         let mut output = ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(

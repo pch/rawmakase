@@ -107,7 +107,7 @@ impl crate::app::Editor {
                 // Selected, with the dropper put away, before the render is
                 // scheduled: Visualize Range shows the new swatch.
                 self.view.point_color.selected = Some(i);
-                self.view.tool = Tool::None;
+                self.view.set_tool(Tool::None);
                 let step = crate::app::history::Step::new("Point Color", "Add Swatch");
                 self.change_edit(Some(step), |r| r.point_colors = swatches);
             }
@@ -126,7 +126,7 @@ pub(in crate::app) fn point_color_panel(
     set_edit_context(ui, "Point Color");
     let pc = &mut view.point_color;
     pc.selected = pc.selected.filter(|i| *i < list.len());
-    let picking = view.tool == Tool::PointColor;
+    let picking = view.tool() == Tool::PointColor;
     if swatch_row(ui, step, list, &mut view.point_color, picking) {
         view.toggle(Tool::PointColor);
     }

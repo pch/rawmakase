@@ -363,7 +363,7 @@ fn draw_masking_panel(e: &mut Editor) {
 fn a_selection_becomes_one_named_mask_and_one_history_step() {
     let mut f = fixture(0.2);
     let e = &mut f.editor;
-    e.view.tool = crate::app::develop::state::Tool::Mask;
+    e.view.set_tool(crate::app::develop::state::Tool::Mask);
     e.view.masking.overlay = false;
     let g = begin(e, subject(e));
     let renders = e.preview.task.id();

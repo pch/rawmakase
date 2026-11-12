@@ -365,10 +365,10 @@ fn the_selection_stays_across_photos_and_modules_and_keys_rest_in_the_library() 
 fn keys_step_the_global_setting_with_a_tool_open_or_a_mask_selected() {
     let mut e = develop(raw());
     select(&mut e, ParameterId::Exposure);
-    e.view.tool = Tool::Crop;
+    e.view.set_tool(Tool::Crop);
     tap(&mut e, Key::Equals, Modifiers::NONE);
     assert!(close(e.document.edit.recipe().exposure, 0.1));
-    e.view.tool = Tool::Mask;
+    e.view.set_tool(Tool::Mask);
     e.document
         .edit
         .setup_mut()

@@ -366,11 +366,11 @@ fn delete_in_develop_asks_for_the_open_photo_unless_a_tool_is_open() -> anyhow::
     e.document.catalog_photo = Some(ids[1]);
     e.document.opened_at(d.path().join("photos/b.RAF"));
     // A tool takes Delete for its own (a spot, a mask, a guide).
-    e.view.tool = crate::app::develop::state::Tool::Crop;
+    e.view.set_tool(crate::app::develop::state::Tool::Crop);
     tap(&mut e, Key::Delete, Modifiers::NONE);
     settle(&mut e);
     assert!(!e.file_ops.confirming());
-    e.view.tool = crate::app::develop::state::Tool::None;
+    e.view.set_tool(crate::app::develop::state::Tool::None);
     tap(&mut e, Key::Delete, Modifiers::NONE);
     settle(&mut e);
     assert_eq!(

@@ -113,7 +113,7 @@ impl Editor {
         if self.module != Module::Develop {
             return None;
         }
-        match self.view.tool {
+        match self.view.tool() {
             Tool::Crop => Some(KeyTool::Crop),
             Tool::Remove => Some(KeyTool::Remove),
             Tool::RedEye => Some(KeyTool::RedEye),
@@ -252,6 +252,7 @@ impl Editor {
         self.extensions_frame(ctx);
         self.events(ctx);
         self.end_aiming_off_mask();
+        self.end_command_input_when_stale();
         self.finish_paused_turn(ctx);
         self.save_when_due(ctx);
     }
@@ -1011,13 +1012,13 @@ impl Editor {
         }
         // Develop's tools, Before view, clipping warning and preset preview
         // stay in Develop.
-        if self.view.tool != Tool::None
+        if self.view.tool() != Tool::None
             || self.view.compare.shows_before()
             || self.view.compare == crate::app::develop::before_after::Compare::CameraThumbnail
             || self.view.clipping != Default::default()
             || self.presets.preview.is_some()
         {
-            self.view.tool = Tool::None;
+            self.view.set_tool(Tool::None);
             self.view.compare = Default::default();
             self.view.clipping.clear();
             self.presets.preview = None;
@@ -1456,6 +1457,9 @@ impl Editor {
             // which a quick shortcut can release before the frame ends. Each
             // read lets go of egui's lock before its command runs: a shortcut
             // that opens a photo uploads a texture, which waits for the lock.
+            // A command collecting its input takes Escape before the tools do;
+            // Enter is taken last, below.
+            self.command_input_escape(ctx);
             use bindings as b;
             let (copy, paste, previous, treatment, reset, sync, match_exposures);
             let (new_preset, auto, export, transfer);
@@ -1587,7 +1591,7 @@ impl Editor {
             if (self.view.is(Tool::Crop) && self.keys(ctx).take(&b::FINISH_CROP).is_some())
                 || (self.view.is(Tool::Guided) && self.keys(ctx).take(&b::FINISH_GUIDED).is_some())
             {
-                self.view.tool = Tool::None;
+                self.view.set_tool(Tool::None);
             }
             if self.keys(ctx).take(&b::WHITE_BALANCE).is_some() {
                 self.view.toggle(Tool::WhiteBalance);
@@ -1609,7 +1613,7 @@ impl Editor {
             if !self.view.masking.is_renaming() {
                 if !self.view.is(Tool::Mask) {
                     if self.keys(ctx).take(&b::CLOSE_TOOL).is_some() {
-                        self.view.tool = Tool::None;
+                        self.view.set_tool(Tool::None);
                     }
                 } else if self.keys(ctx).take(&b::CLOSE_MASKING).is_some() {
                     self.close_masking();
@@ -1713,6 +1717,8 @@ impl Editor {
             if let Some(transfer) = transfer {
                 self.transfer(transfer);
             }
+            // After every key that may take up a tool or open another photo.
+            self.command_input_enter(ctx);
         }
     }
 
@@ -1877,7 +1883,7 @@ impl Editor {
                     .show(ui, |ui| {
                         ui.add_enabled_ui(enabled, |ui| self.histogram_ui(ui));
                     });
-                if crate::app::develop::panels::inspector::has_drawer(self.view.tool) {
+                if crate::app::develop::panels::inspector::has_drawer(self.view.tool()) {
                     // The drawers' labels are short: their controls take the room.
                     let _labels = crate::app::ui::widgets::LabelColumn::enter(
                         ui,

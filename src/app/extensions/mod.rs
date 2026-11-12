@@ -64,6 +64,7 @@
 //! ([`Host::close_channels`]), each program is stopped by the shared deadline
 //! ([`Host::stop`]), and the exit hook ends every unit left
 //! ([`Host::kill_remaining`]).
+pub(in crate::app) mod command_input;
 mod devices;
 mod editor;
 pub(in crate::app) mod mask_generator;
@@ -82,11 +83,12 @@ pub(crate) use editor::{Done, PathTarget};
 pub(in crate::app) use page::Page;
 
 use crate::app::shell::commands::registry::{self, Dynamic};
-use rawmakase_extensions::protocol::manifest::{Launch as AdapterLaunch, Start};
+use rawmakase_extensions::protocol::manifest::{Input, Launch as AdapterLaunch, Start};
 use rawmakase_extensions::protocol::method::{
     AppEvent, AppRequest, CommandRun, Hello, Level, PanelChanged, PanelClicked, PanelOpen,
     ProgramEvent, ProgramRequest, SettingChanged, Snapshot,
 };
+use rawmakase_extensions::protocol::viewer::ViewerInput;
 use rawmakase_extensions::protocol::{ErrorCode, PROTOCOL, RemoteError, controls::Control};
 use rawmakase_extensions::session::{
     self, Killer, Launch, Session, SessionOptions, Update, check_hello,
@@ -240,6 +242,8 @@ struct TargetRead {
     ticket: u64,
     command: String,
     by: RunBy,
+    /// The viewer input collected for it, sent with its target.
+    input: Option<ViewerInput>,
     cancel: Arc<AtomicBool>,
 }
 impl Drop for TargetRead {
@@ -1240,22 +1244,40 @@ impl Host {
         Ok(())
     }
 
-    /// Runs command `command` of extension `id` on `target`.
+    /// Runs command `command` of extension `id` on `target`, with the viewer
+    /// input collected for it: input of the kind its manifest declares, or
+    /// none for `none`, checked before it is sent ([`ViewerInput::validate`]).
     pub(in crate::app) fn run_command(
         &mut self,
         id: &str,
         command: &str,
         target: Option<Snapshot>,
+        input: Option<ViewerInput>,
         by: RunBy,
     ) -> Result<(), String> {
         let e = self.get(id).ok_or_else(|| format!("No extension {id}"))?;
-        if !e.manifest.commands.iter().any(|c| c.id == command) {
-            return Err(format!("{} has no command {command}", e.name()));
+        let declared = e
+            .manifest
+            .commands
+            .iter()
+            .find(|c| c.id == command)
+            .ok_or_else(|| format!("{} has no command {command}", e.name()))?
+            .input;
+        let given = input.as_ref().map_or(Input::None, ViewerInput::kind);
+        if given != declared {
+            return Err(format!("{command} takes {declared:?} input, not {given:?}"));
         }
+        let input = match input {
+            Some(input) => {
+                input.validate().map_err(|e| e.message)?;
+                serde_json::to_value(input).expect("viewer input is JSON")
+            }
+            None => Value::Null,
+        };
         let request = AppRequest::CommandRun(CommandRun {
             command: command.to_string(),
             target,
-            input: Value::Null,
+            input,
         });
         let pending = Pending::Command {
             command: command.to_string(),
@@ -1415,6 +1437,22 @@ impl Host {
         }
         outcomes
     }
+    /// Where extension `id` is in its lifecycle: work for it captures this,
+    /// and is void once it differs (the extension was disabled, uninstalled,
+    /// loaded again, or its program crashed or hung meanwhile). `None` once
+    /// it isn't loaded at all.
+    pub(in crate::app) fn lifecycle(&self, id: &str) -> Option<u64> {
+        self.get(id).map(|e| e.lifecycle.load(Ordering::SeqCst))
+    }
+    /// Why extension `id` can't take a request now, if it can't.
+    pub(in crate::app) fn ready(&self, id: &str) -> Result<(), String> {
+        if self.closed {
+            return Err("RAWmakase is quitting".into());
+        }
+        self.get(id)
+            .ok_or_else(|| format!("No extension {id}"))?
+            .can_run()
+    }
     /// Whether extension `id` has a command in flight.
     pub(in crate::app) fn command_running(&self, id: &str) -> bool {
         let Some(e) = self.get(id) else { return false };
@@ -1427,13 +1465,34 @@ impl Host {
             })
     }
 
+    /// The commands of extension `id` sent and not answered, or waiting for
+    /// its handshake, for tests.
+    #[cfg(test)]
+    pub(in crate::app) fn commands_in_flight(&self, id: &str) -> Vec<String> {
+        let Some(run) = self.get(id).and_then(|e| e.run.as_ref()) else {
+            return Vec::new();
+        };
+        let mut commands: Vec<String> = run
+            .requests
+            .values()
+            .chain(run.queued.iter().map(|q| &q.pending))
+            .filter_map(|p| match p {
+                Pending::Command { command, .. } => Some(command.clone()),
+                _ => None,
+            })
+            .collect();
+        commands.sort();
+        commands
+    }
+
     /// Notes that command `command` of extension `id` waits for its target,
-    /// read on a worker; the ticket that read reports with
-    /// ([`Host::finish_read`]), and its cancel.
+    /// read on a worker, to be sent with `input`; the ticket that read
+    /// reports with ([`Host::finish_read`]), and its cancel.
     pub(in crate::app) fn read_for_command(
         &mut self,
         id: &str,
         command: &str,
+        input: Option<ViewerInput>,
         by: RunBy,
     ) -> Result<(u64, Arc<AtomicBool>), String> {
         if self.closed {
@@ -1453,6 +1512,7 @@ impl Host {
             ticket,
             command: command.to_string(),
             by,
+            input,
             cancel: cancel.clone(),
         });
         e.last_active = Instant::now();
@@ -1481,7 +1541,7 @@ impl Host {
             let Some(at) = e.reading.iter().position(|r| r.ticket == ticket) else {
                 continue;
             };
-            let read = e.reading.remove(at);
+            let mut read = e.reading.remove(at);
             let id = e.manifest.extension.id.clone();
             let title = command_title(&e.manifest, &read.command);
             let failed = |err: RemoteError| {
@@ -1494,7 +1554,13 @@ impl Host {
             };
             return match result {
                 Err(err) => failed(err),
-                Ok(target) => match self.run_command(&id, &read.command, Some(target), read.by) {
+                Ok(target) => match self.run_command(
+                    &id,
+                    &read.command,
+                    Some(target),
+                    read.input.take(),
+                    read.by,
+                ) {
                     Ok(()) => Vec::new(),
                     Err(why) => failed(RemoteError::new(ErrorCode::Exited, why)),
                 },

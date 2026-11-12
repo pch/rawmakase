@@ -501,7 +501,7 @@ impl Editor {
                 .on_hover_text("Close the tool · Q")
                 .clicked()
             {
-                self.view.tool = crate::app::develop::state::Tool::None;
+                self.view.set_tool(crate::app::develop::state::Tool::None);
             }
         });
     }

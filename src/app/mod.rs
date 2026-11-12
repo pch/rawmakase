@@ -144,6 +144,8 @@ pub(crate) struct Editor {
     extensions_told: crate::app::extensions::Told,
     /// Preferences > Extensions.
     extension_page: crate::app::extensions::Page,
+    /// A command collecting its viewer input on the photo.
+    command_input: Option<crate::app::extensions::command_input::Collecting>,
     /// Runs on a proposal's worker before its work, for a test to hold it
     /// there or make it panic.
     #[cfg(test)]
@@ -421,6 +423,7 @@ impl Editor {
             extensions: crate::app::extensions::Host::inert(),
             extensions_told: Default::default(),
             extension_page: Default::default(),
+            command_input: None,
             #[cfg(test)]
             proposal_hook: None,
             #[cfg(test)]

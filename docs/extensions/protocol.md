@@ -229,12 +229,14 @@ there are at most 32 clicks (`MAX_CLICKS`). There is no minimum box size: the
 app ignores a drag under 1% of the photo as a gesture, but a box it derives,
 such as a mask's extent, may be thinner.
 
-The app collects `prompt` so far, for mask generators: a click adds a
-positive point and an Alt-click a negative one, a drag draws a box and starts
-over without the clicks, and a negative first click while refining a mask
-takes the mask's extent as the box. The whole prompt is sent after each
-change; input made while a request runs is ignored, not queued. Done,
-Escape, another photo or switching to another tool ends aiming.
+Mask generators take `prompt`: a click adds a positive point and an
+Alt-click a negative one, a drag draws a box and starts over without the
+clicks, and a negative first click while refining a mask takes the mask's
+extent as the box. The whole prompt is sent after each change; input made
+while a request runs is ignored, not queued. Done, Escape, another photo or
+switching to another tool ends aiming. Commands take every kind but `brush`,
+which isn't collected yet, as the [manifest](manifest.md#viewer-input-for-commands)
+describes.
 
 ## Envelope
 
@@ -305,8 +307,19 @@ restarted program's devices are never taken for the previous run's. Reply:
 
 `{"command":"auto-film-look","target":snapshot,"input":null}`. `target` is a
 [snapshot](#snapshots-and-proposals) of what the command applies to (absent for
-`applies-to = "none"`); `input` is viewer input (phase 3). Reply: any value
-(`null` for nothing). Edits go as `propose.settings` while it runs.
+`applies-to = "none"`). `input` is the [viewer input](#viewer-input) the
+manifest's `input` declares, of that kind, such as
+`{"kind":"box","x0":0.1,"y0":0.2,"x1":0.6,"y1":0.9}`; it is `null` (or absent)
+for `input = "none"`. The target is read when the command is sent, with its
+input, so a proposal applies only to what the command was sent with. The app
+checks the input before sending it, whatever the program's API. Serving
+API 2, the SDK checks it again before the handler runs, refusing input that
+doesn't pass with `invalid_request`; serving API 1, it hands the input over
+as it came, as it always has. Handlers read it with
+`CommandRun::viewer_input`, which checks it either way. A `prompt` command is
+sent again at each change ([manifest](manifest.md#viewer-input-for-commands)).
+Reply: any value (`null` for nothing). Edits go as `propose.settings` while it
+runs.
 
 ### Panels (requests)
 

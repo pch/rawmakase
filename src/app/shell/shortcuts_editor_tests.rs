@@ -294,7 +294,7 @@ fn shift_cmd_c_and_v_reach_develop_though_winit_reads_them_as_the_clipboard() {
         "Shift+Cmd+C opens Copy Settings"
     );
     // The C, with its modifiers gone by the frame's end, is not Crop's.
-    assert!(editor.view.tool == crate::app::develop::state::Tool::None);
+    assert!(editor.view.tool() == crate::app::develop::state::Tool::None);
     editor.close_copy_dialog(crate::app::develop::settings_transfer::CopyChoice::Confirm);
     let copied = editor.document.edit.recipe().exposure;
     editor.document.edit.setup_mut().exposure = copied + 1.5;

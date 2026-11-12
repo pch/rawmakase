@@ -119,7 +119,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
                 });
             }
         } else if view.is(Tool::Guided) {
-            view.tool = Tool::None;
+            view.set_tool(Tool::None);
         }
         control_row(ui, "", |ui| {
             ui.checkbox(&mut r.constrain_crop, "Constrain Crop")

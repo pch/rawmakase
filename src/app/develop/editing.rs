@@ -123,14 +123,14 @@ impl Editor {
             && self.document.edit.recipe().upright.mode
                 != crate::model::transform::UprightMode::Guided
         {
-            self.view.tool = crate::app::develop::state::Tool::None;
+            self.view.set_tool(crate::app::develop::state::Tool::None);
         }
         // Point Color's dropper goes with its tab: another tab, black & white, an older
         // process or the Library put it away, so a click never adds a hidden swatch.
         if self.view.is(crate::app::develop::state::Tool::PointColor)
             && !self.point_color_tab_shown()
         {
-            self.view.tool = crate::app::develop::state::Tool::None;
+            self.view.set_tool(crate::app::develop::state::Tool::None);
         }
         // The Targeted Adjustment Tool goes with its panel's treatment.
         self.keep_targeted_tool();

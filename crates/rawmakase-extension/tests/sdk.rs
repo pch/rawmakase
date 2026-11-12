@@ -10,7 +10,7 @@ use rawmakase_extension::protocol::method::{
     AppEvent, AppRequest, CommandRun, DeviceState, Empty, EmptyMask, Hello, MaskGenerate,
     MaskGenerated, Operation, SettingChanged, SettingsChange,
 };
-use rawmakase_extension::protocol::viewer::{Bounds, Click, ViewerInput};
+use rawmakase_extension::protocol::viewer::{Bounds, Click, MAX_CLICKS, ViewerInput};
 use rawmakase_extension::{
     Context, ControlAdapter, ErrorCode, Extension, Host, MaskAsk, MaskGenerator, Panel,
     RemoteError, ServeOptions,
@@ -69,6 +69,7 @@ fn a_session_says_hello_runs_commands_and_ends_on_quitting() {
         hello.implements,
         ["command/echo", "command/setting", "panel/switch"]
     );
+    // API 1 hands the input over as it came, whatever it is.
     assert_eq!(
         host.run_command("echo", None, json!({"a": 1})).unwrap(),
         json!({"a": 1})
@@ -222,6 +223,60 @@ fn a_cancelled_request_ends_cancelled_whether_it_ran_or_waited() {
             .code,
         ErrorCode::InvalidRequest
     );
+    host.finish().unwrap();
+}
+
+#[test]
+fn api_2_checks_a_commands_viewer_input_before_its_handler_runs() {
+    let (ran_tx, ran) = mpsc::channel();
+    let extension = Extension::new().command("pick", move |_cx: &Context, run: CommandRun| {
+        let _ = ran_tx.send(());
+        let input = run.viewer_input()?;
+        Ok(serde_json::to_value(input).unwrap())
+    });
+    let host =
+        MockHost::start_with_options(extension, ServeOptions { api: 2 }, |_, _| Ok(Value::Null));
+    host.hello().unwrap();
+    let clicks = json!({"kind": "points", "clicks": [
+        {"x": 0.25, "y": 0.5, "positive": true},
+        {"x": 0.75, "y": 0.5, "positive": false}]});
+    assert_eq!(
+        host.run_command("pick", None, clicks.clone()).unwrap(),
+        clicks
+    );
+    assert_eq!(
+        host.run_command("pick", None, Value::Null).unwrap(),
+        Value::Null
+    );
+    assert_eq!(ran.try_iter().count(), 2);
+    let too_many = json!({"kind": "points", "clicks":
+        vec![json!({"x": 0.5, "y": 0.5, "positive": true}); MAX_CLICKS + 1]});
+    for bad in [
+        json!({"a": 1}),
+        json!({"kind": "brush"}),
+        json!({"kind": "point", "x": 1.5, "y": 0.5}),
+        json!({"kind": "box", "x0": 0.6, "y0": 0.1, "x1": 0.5, "y1": 0.9}),
+        too_many,
+    ] {
+        let error = host.run_command("pick", None, bad.clone()).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidRequest, "{bad}");
+    }
+    assert_eq!(ran.try_iter().count(), 0, "refused before the handler ran");
+    host.finish().unwrap();
+    // API 1 hands it over as it came; the handler checks it if it asks.
+    let (ran_tx, ran) = mpsc::channel();
+    let extension = Extension::new().command("pick", move |_cx: &Context, run: CommandRun| {
+        let _ = ran_tx.send(());
+        run.viewer_input()
+            .map(|input| serde_json::to_value(input).unwrap())
+    });
+    let host = MockHost::start(extension);
+    host.hello().unwrap();
+    let error = host
+        .run_command("pick", None, json!({"kind": "brush"}))
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    assert_eq!(ran.try_iter().count(), 1, "the handler ran and refused it");
     host.finish().unwrap();
 }
 

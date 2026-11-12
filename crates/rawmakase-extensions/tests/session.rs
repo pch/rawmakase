@@ -1187,7 +1187,9 @@ fn a_lease_past_its_grace_hangs_the_program_up() {
         started(&mut session, stuck);
         let cancelled = Instant::now();
         assert!(session.cancel(stuck));
-        let waiting = run(&mut session, "echo", json!(1), later(60_000));
+        // API 2 checks a command's viewer input: this one is valid.
+        let point = json!({"kind": "point", "x": 0.5, "y": 0.5});
+        let waiting = run(&mut session, "echo", point, later(60_000));
         let mut seen = poll_until(&mut session, |u| matches!(u, Update::Hung { .. }));
         assert!(cancelled.elapsed() >= Duration::from_millis(300));
         assert!(session.is_hung());

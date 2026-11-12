@@ -50,7 +50,9 @@ fn red_eye_tool_adds_moves_and_deletes_one_history_step_each() {
         )
         .into(),
     );
-    editor.view.tool = crate::app::develop::state::Tool::RedEye;
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::RedEye);
     editor.view.red_eye.size = 0.06;
     let mut frame = |events: Vec<egui::Event>| {
         let edit = editor.begin_edit_frame();
@@ -265,7 +267,9 @@ fn pet_eye_type_finds_a_glowing_pupil_and_adds_a_catchlight() {
         )
         .into(),
     );
-    editor.view.tool = crate::app::develop::state::Tool::RedEye;
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::RedEye);
     let handle = editor.document.edit.recipe().red_eye[0]
         .catchlight_at(1.)
         .unwrap();

@@ -36,7 +36,7 @@ fn guided_upright_gestures_are_one_history_step_each() {
     }));
     // The other modes analysed already, so the guides are solved at once.
     e.document.edit.setup_mut().upright.corrections = vec![[1., 0., 0., 0., 1., 0., 0., 0., 1.]; 5];
-    e.view.tool = crate::app::develop::state::Tool::Guided;
+    e.view.set_tool(crate::app::develop::state::Tool::Guided);
     let area = Rect::from_min_size(Pos2::ZERO, Vec2::new(600., 400.));
     let mut frame = |e: &mut Editor, events: Vec<egui::Event>| {
         let edit = e.begin_edit_frame();
@@ -136,7 +136,7 @@ fn guided_upright_gestures_are_one_history_step_each() {
     assert_eq!(e.document.edit.recipe().upright.guides.len(), 2);
     assert!(e.document.edit.recipe().upright.correction().is_some());
     // Leaving Guided by any route closes the tool, so a drag can't switch it back.
-    e.view.tool = crate::app::develop::state::Tool::Guided;
+    e.view.set_tool(crate::app::develop::state::Tool::Guided);
     let edit = e.begin_edit_frame();
     e.document.edit.setup_mut().upright = Default::default();
     e.finish_edit_frame(edit, &ctx);

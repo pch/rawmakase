@@ -30,7 +30,7 @@ fn crop_tool_reads_each_photos_own_aspect() {
     });
     editor.document.set_image(image);
     let open = |editor: &mut Editor, crop: [f32; 4]| {
-        editor.view.tool = crate::app::develop::state::Tool::None;
+        editor.view.set_tool(crate::app::develop::state::Tool::None);
         editor.document.edit.setup_mut().crop = crop;
         editor.view.toggle(crate::app::develop::state::Tool::Crop);
         let frame = editor.begin_edit_frame();
@@ -197,7 +197,7 @@ fn fitting_a_crop_dragged_to_its_smallest_keeps_it_valid() {
         scale_clipped: 0,
         hdr: Default::default(),
     }));
-    editor.view.tool = crate::app::develop::state::Tool::Crop;
+    editor.view.set_tool(crate::app::develop::state::Tool::Crop);
     editor.view.aspect = -1.;
     // A handle dragged to the smallest crop: 0.11 - 0.1 is just under 0.01 in f32,
     // though the crop is already at the photo's aspect.
@@ -334,7 +334,7 @@ fn crop_tool_keeps_the_chosen_aspect_for_uncropped_photos() -> anyhow::Result<()
         editor
     };
     let open = |editor: &mut Editor, crop: [f32; 4]| {
-        editor.view.tool = crate::app::develop::state::Tool::None;
+        editor.view.set_tool(crate::app::develop::state::Tool::None);
         editor.document.edit.setup_mut().crop = crop;
         editor.view.toggle(crate::app::develop::state::Tool::Crop);
         let frame = editor.begin_edit_frame();
@@ -524,7 +524,7 @@ fn crop_keys_swap_and_cycle_the_overlay_but_not_while_typing() -> anyhow::Result
     assert_eq!(saved.crop_guides.guide, "triangle");
     assert_eq!(saved.crop_guides.orientation, 1);
     // Outside the Crop tool X rejects as before.
-    e.view.tool = crate::app::develop::state::Tool::None;
+    e.view.set_tool(crate::app::develop::state::Tool::None);
     press(&mut e, egui::Key::X, false, false);
     assert_eq!(e.library.as_ref().unwrap().photo(ids[0]).unwrap().flag, -1);
     Ok(())

@@ -466,7 +466,7 @@ impl Editor {
             request,
             input: Collector::default(),
         });
-        self.view.tool = crate::app::develop::state::Tool::Mask;
+        self.view.set_tool(crate::app::develop::state::Tool::Mask);
         self.messages.note(hint);
     }
     /// Aims at a generated component: clicks on the photo add to it and leave things
@@ -511,7 +511,7 @@ impl Editor {
             input: Collector::default(),
             applied: Some((mask, component)),
         });
-        self.view.tool = crate::app::develop::state::Tool::Mask;
+        self.view.set_tool(crate::app::develop::state::Tool::Mask);
         self.messages
             .note("Click the part of the photo to add, Alt-click to leave out");
     }
@@ -522,7 +522,7 @@ impl Editor {
     /// download goes on, but once it is done aiming doesn't start again over
     /// the tool the user switched to.
     pub(in crate::app) fn end_aiming_off_mask(&mut self) {
-        if self.view.tool == crate::app::develop::state::Tool::Mask {
+        if self.view.tool() == crate::app::develop::state::Tool::Mask {
             return;
         }
         if self.selection.prompting.is_some() {
@@ -905,7 +905,7 @@ impl Editor {
                         // The tool is checked here too, not only by each
                         // pass's cleanup: a setup finishing in the pass the
                         // user left Mask in is handled before the cleanup.
-                        let on_mask = self.view.tool == crate::app::develop::state::Tool::Mask;
+                        let on_mask = self.view.tool() == crate::app::develop::state::Tool::Mask;
                         match then {
                             Resume::Nothing => {}
                             Resume::Aim if !on_mask => {}

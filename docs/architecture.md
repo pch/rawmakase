@@ -148,7 +148,9 @@ is void in any phase once it has moved: busy clears at once, the worker's job
 is cancelled, and nothing it produces applies. A mask result is not a proposal and has no
 target token; edits made while it runs that change neither the masks'
 structure nor the content (sliders, names) survive it. Aiming collects
-clicks and a box with `app::extensions::viewer_input`.
+clicks and a box with `app::extensions::viewer_input`, as do commands that
+take viewer input (`app::extensions::command_input`), whose input is sent with
+the target read at the same moment.
 
 No value, catalog or rendering crate can reach `rawmakase-inference` or
 `rawmakase-selection`, and the app never reaches the selection models or the

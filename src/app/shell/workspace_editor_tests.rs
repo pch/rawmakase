@@ -47,23 +47,23 @@ fn a_tools_drawer_takes_the_adjustments_place_beside_the_tabs() {
     }
     assert!(tabs_drawn(&ctx));
     // Crop's drawer leaves the Presets tab open.
-    e.view.tool = crate::app::develop::state::Tool::Crop;
+    e.view.set_tool(crate::app::develop::state::Tool::Crop);
     panel_frame(&mut e, vec![], FocusedButton::No);
     assert!(tabs_drawn(&ctx));
     // Switching the tab keeps the tool.
     click(&mut e, rail_id(DevelopTab::History));
     assert_eq!(e.panels.develop_tab, DevelopTab::History);
-    assert_eq!(e.view.tool, crate::app::develop::state::Tool::Crop);
+    assert_eq!(e.view.tool(), crate::app::develop::state::Tool::Crop);
     assert!(tabs_drawn(&ctx));
     // Edit closes the drawer, the tab panel stays.
     click(&mut e, edit_id());
-    assert_eq!(e.view.tool, crate::app::develop::state::Tool::None);
+    assert_eq!(e.view.tool(), crate::app::develop::state::Tool::None);
     assert!(tabs_drawn(&ctx));
     // Folding the tabs leaves a tool open.
-    e.view.tool = crate::app::develop::state::Tool::Mask;
+    e.view.set_tool(crate::app::develop::state::Tool::Mask);
     click(&mut e, rail_id(DevelopTab::History));
     assert!(!tabs_drawn(&ctx));
-    assert_eq!(e.view.tool, crate::app::develop::state::Tool::Mask);
+    assert_eq!(e.view.tool(), crate::app::develop::state::Tool::Mask);
 }
 
 #[test]
@@ -376,9 +376,9 @@ fn a_tools_drawer_keeps_the_adjustments_width() {
         crate::app::develop::state::Tool::RedEye,
         crate::app::develop::state::Tool::Mask,
     ] {
-        e.view.tool = tool;
+        e.view.set_tool(tool);
         assert_eq!(width(&mut e), edit, "{tool:?} widened the panel");
-        e.view.tool = crate::app::develop::state::Tool::None;
+        e.view.set_tool(crate::app::develop::state::Tool::None);
         assert_eq!(width(&mut e), edit, "after {tool:?}");
     }
 }
