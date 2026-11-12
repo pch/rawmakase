@@ -1998,7 +1998,7 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         // Dehaze, the SDR operator unclipped, both ways.
         Recipe {
             effects: crate::model::effects::Effects {
-                dehaze: 0.3,
+                dehaze: 0.9,
                 ..base.effects.clone()
             },
             ..base.clone()
