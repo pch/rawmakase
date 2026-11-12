@@ -96,7 +96,7 @@ renders everything. Each refusal has Camera Raw measurements behind it:
 | Whites above +50 | No photo level reaches Camera Raw's render: 0.17–0.52 stop off on 4 of 12 photos at its own best level; on 24 photos the master is further from Camera Raw than the SDR rendition, below white too (+75: 0.039 / 0.146 stop against 0.027 / 0.085) ([Whites](hdr-stage1-results.md#whites)) |
 | Clarity beyond ±50, Dehaze below −30 | The master is further from Camera Raw than the SDR rendition (Clarity −50 and +100, Dehaze −100 measured on 12 photos; [Presence](hdr-stage1-results.md#presence)) |
 | The colour mixer's Luminance above +40 | Camera Raw's HDR effect strengthens with brightness where its SDR one rolls off ([Band Luminance](hdr-stage1-results.md#band-luminance)) |
-| Defringe | SDR's operator moves the master further from Camera Raw's than leaving it out would ([Defringe](hdr-stage1-results.md#defringe)) |
+| Defringe with Black & White | The master's Defringe follows the gray mix, where it changes nothing; SDR's precedes it ([Defringe](hdr-stage1-results.md#defringe)). Defringe itself renders (#1048) |
 | Refine Saturation other than 100% | Adds colour error in HDR (+1.5 to +2.3 ΔE_ITP) where SDR's removes it ([Tone curves](hdr-stage1-results.md#tone-curves)) |
 | A point curve that ends left of white | Camera Raw continues it past its last point, within 0.03 stop up to 16 times white, then holds steep curves back (0.82 stop off above white) ([Tone curves](hdr-stage1-results.md#tone-curves)) |
 | A darkening vignette's Highlights | Camera Raw protects only from four times white up, in proportion to Highlights; one synthetic probe, no photos ([Vignette and grain](hdr-stage1-results.md#vignette-and-grain)) |

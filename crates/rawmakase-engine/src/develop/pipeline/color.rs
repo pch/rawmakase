@@ -20,7 +20,7 @@ pub(crate) fn srgb_to_lab(p: [f32; 3]) -> [f32; 3] {
         a,
     )
 }
-pub(super) fn lab_to_srgb(p: [f32; 3]) -> [f32; 3] {
+pub(crate) fn lab_to_srgb(p: [f32; 3]) -> [f32; 3] {
     let a = mul(
         [
             [1., 0.39633778, 0.21580376],
