@@ -149,7 +149,9 @@ impl Editor {
 
     /// Ends collecting once what it was for has gone: Develop left, a tool
     /// taken up, another photo (or none) open, or its extension disabled,
-    /// removed, loaded again, Failed or crashed. Runs every pass.
+    /// removed, loaded again, Failed or crashed. Runs every pass, and again
+    /// before collecting takes keys or the pointer, as what ends it may have
+    /// happened earlier in the same pass.
     pub(in crate::app) fn end_command_input_when_stale(&mut self) {
         let Some(c) = &self.command_input else {
             return;
@@ -244,18 +246,24 @@ impl Editor {
         }
     }
 
-    /// Escape ends collecting, Enter is Done. Returns whether either was
-    /// taken.
-    pub(in crate::app) fn command_input_keys(&mut self, ctx: &egui::Context) -> bool {
+    /// Escape ends collecting. Taken before Develop's other keys, which
+    /// would take it to put a tool away.
+    pub(in crate::app) fn command_input_escape(&mut self, ctx: &egui::Context) {
         use crate::app::shell::commands::registry::bindings as b;
+        self.end_command_input_when_stale();
+        if self.command_input.is_some() && self.keys(ctx).take(&b::CLOSE_TOOL).is_some() {
+            self.end_command_input();
+        }
+    }
+
+    /// Enter is Done. Taken after Develop's other keys, so a tool one of
+    /// them took up this frame ends collecting first, and nothing is sent.
+    pub(in crate::app) fn command_input_enter(&mut self, ctx: &egui::Context) {
+        self.end_command_input_when_stale();
         if self.command_input.is_none() {
-            return false;
+            return;
         }
         let keys = self.keys(ctx);
-        if keys.take(&b::CLOSE_TOOL).is_some() {
-            self.end_command_input();
-            return true;
-        }
         let enter = keys
             .presses()
             .into_iter()
@@ -264,9 +272,7 @@ impl Editor {
             keys.take_press(&press);
             keys.remove_press(&press);
             self.command_input_done();
-            return true;
         }
-        false
     }
 
     /// Sends the command with `input`, saying in the top bar why it can't
@@ -289,6 +295,10 @@ impl Editor {
     /// Clicks, drags and markers on the photo, and the card that says what to
     /// do, while a command collects its input. Returns whether it owns the
     /// pointer: it does while it collects.
+    ///
+    /// The photo is drawn after Develop's keys, panels and toolbar, so a tool
+    /// they took up this frame ends collecting here first: the pointer is
+    /// that tool's alone, and nothing is sent.
     pub(in crate::app) fn command_input_overlay(
         &mut self,
         ui: &mut egui::Ui,
@@ -296,6 +306,7 @@ impl Editor {
         rect: egui::Rect,
         area: egui::Rect,
     ) -> bool {
+        self.end_command_input_when_stale();
         if self.command_input.is_none() {
             return false;
         }

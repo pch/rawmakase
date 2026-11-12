@@ -478,3 +478,35 @@ fn another_command_running_holds_back_only_a_prompt() {
         ["hang", "pick-box", "pick-point", "pick-points"]
     );
 }
+
+#[test]
+fn a_tool_taken_up_in_the_same_frame_gets_the_click_alone() {
+    let f = fixture(&["a.png"]);
+    let mut e = f.editor;
+    open(&mut e, &f.photos[0]);
+    photo_frame(&mut e, vec![]);
+    let middle = egui::Pos2::new(100., 100.);
+    // W opens White Balance in the frame the click is released in: the
+    // click is the tool's, and the command isn't sent.
+    begin(&mut e, "pick-point");
+    let before = e.document.edit.recipe().clone();
+    click_at(&mut e, middle, vec![key(egui::Key::W)]);
+    assert!(e.command_input().is_none());
+    nothing_sent(&e);
+    // White Balance picked a neutral with it, and put itself away.
+    assert_ne!(*e.document.edit.recipe(), before, "the tool took the click");
+    assert!(e.view.is(Tool::None));
+    // W with Enter: points aren't sent either, whichever key came first.
+    for keys in [
+        [key(egui::Key::W), key(egui::Key::Enter)],
+        [key(egui::Key::Enter), key(egui::Key::W)],
+    ] {
+        e.view.tool = Tool::None;
+        begin(&mut e, "pick-points");
+        click_at(&mut e, middle, vec![]);
+        assert_eq!(e.command_input().unwrap().clicks(), 1);
+        photo_frame(&mut e, keys.to_vec());
+        assert!(e.command_input().is_none());
+        nothing_sent(&e);
+    }
+}

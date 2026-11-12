@@ -1457,8 +1457,9 @@ impl Editor {
             // which a quick shortcut can release before the frame ends. Each
             // read lets go of egui's lock before its command runs: a shortcut
             // that opens a photo uploads a texture, which waits for the lock.
-            // A command collecting its input takes Escape and Enter first.
-            self.command_input_keys(ctx);
+            // A command collecting its input takes Escape before the tools do;
+            // Enter is taken last, below.
+            self.command_input_escape(ctx);
             use bindings as b;
             let (copy, paste, previous, treatment, reset, sync, match_exposures);
             let (new_preset, auto, export, transfer);
@@ -1716,6 +1717,8 @@ impl Editor {
             if let Some(transfer) = transfer {
                 self.transfer(transfer);
             }
+            // After every key that may take up a tool or open another photo.
+            self.command_input_enter(ctx);
         }
     }
 
