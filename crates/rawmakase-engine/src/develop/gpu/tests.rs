@@ -1987,6 +1987,14 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
             whites: 0.4,
             ..base.clone()
         },
+        // Clarity, the SDR operator unclipped.
+        Recipe {
+            effects: crate::model::effects::Effects {
+                clarity: 0.45,
+                ..base.effects.clone()
+            },
+            ..base.clone()
+        },
         Recipe {
             blacks: -0.8,
             incremental_temperature: 20.,

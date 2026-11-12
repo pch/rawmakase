@@ -512,7 +512,7 @@ mod tests {
         let im = grays(&[0.5]);
         let master = |r: &Recipe| render_hdr(&im, &r.checked().unwrap(), None, 0, Cancel::NEVER);
         let mut r = hdr_recipe(&im);
-        r.effects.clarity = 0.2;
+        r.effects.clarity = -0.2;
         let error = master(&r).unwrap_err().to_string();
         assert!(error.contains("not supported in HDR"), "{error}");
         crate::develop::render(&im, &r.checked()?, 0, Cancel::NEVER)?;
@@ -537,8 +537,12 @@ mod tests {
         let rgb = CameraProfile::creative_for_test(&im.metadata).with_test_rgb_tables();
         r.profile = Some(std::sync::Arc::new(rgb[0].clone()));
         master(&r)?;
+        // A look's Clarity +10 (Adobe Vivid's) renders; above +50 it refuses.
         let mut clarity = rgb[0].clone();
-        clarity.enhanced.as_mut().unwrap().clarity = 0.2;
+        clarity.enhanced.as_mut().unwrap().clarity = 0.1;
+        r.profile = Some(std::sync::Arc::new(clarity.clone()));
+        master(&r)?;
+        clarity.enhanced.as_mut().unwrap().clarity = 0.6;
         r.profile = Some(std::sync::Arc::new(clarity));
         let error = master(&r).unwrap_err().to_string();
         assert!(error.contains("which the look sets"), "{error}");
@@ -1398,22 +1402,28 @@ mod tests {
         Ok(())
     }
 
-    /// Texture renders in the master, on the camera image before tone as in SDR;
-    /// Clarity and Dehaze still refuse it.
+    /// Texture renders in the master, on the camera image before tone as in SDR, and
+    /// Clarity up to +50 by the SDR operator, unclipped; negative Clarity, Clarity above
+    /// +50 and Dehaze still refuse it.
     #[test]
-    fn texture_renders_in_the_master_and_clarity_and_dehaze_do_not() -> anyhow::Result<()> {
+    fn texture_and_clarity_render_in_the_master_and_dehaze_does_not() -> anyhow::Result<()> {
         let im = grays(&[0.2, 0.6, 1.5, 3.]);
         let mut r = hdr_recipe(&im);
         r.effects.texture = 0.5;
         render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
-        for change in [
-            |r: &mut Recipe| r.effects.clarity = 0.5,
-            |r: &mut Recipe| r.effects.dehaze = 0.3,
-        ] {
+        r.effects.clarity = 0.5;
+        render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        type Change = fn(&mut Recipe);
+        let refused: [(Change, &str); 3] = [
+            (|r| r.effects.clarity = 0.6, "Clarity outside"),
+            (|r| r.effects.clarity = -0.2, "Clarity outside"),
+            (|r| r.effects.dehaze = 0.3, "Dehaze"),
+        ];
+        for (change, reason) in refused {
             let mut edit = r.clone();
             change(&mut edit);
             let error = render_hdr(&im, &edit.checked()?, None, 0, Cancel::NEVER).unwrap_err();
-            assert!(error.to_string().contains("Presence"), "{error}");
+            assert!(error.to_string().contains(reason), "{error}");
         }
         Ok(())
     }
@@ -1496,6 +1506,19 @@ mod tests {
             "a master that doesn't render"
         );
         r.highlights = 0.;
+        // A look's Clarity is in the resolved recipe's own, and counted once: +10 with
+        // the user's +35 is +45, which renders on the GPU too.
+        let mut look = r.clone();
+        let mut profile = CameraProfile::creative_for_test(&im.metadata);
+        profile.enhanced.as_mut().unwrap().clarity = 0.1;
+        look.profile = Some(std::sync::Arc::new(profile));
+        look.effects.clarity = 0.35;
+        let resolved = look
+            .checked()
+            .unwrap()
+            .resolved_hdr(&im.metadata)
+            .into_owned();
+        assert!(supported_hdr(&resolved, &im.metadata));
         r.hdr.enabled = false;
         assert!(supported(&r) && !supported_hdr(&r, &im.metadata));
         let hdr = r.profile.as_deref().unwrap().clone().as_hdr_for_test();

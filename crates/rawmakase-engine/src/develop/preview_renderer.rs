@@ -205,9 +205,7 @@ impl PreviewRenderer {
             Some(_) => quality::resolve_hdr(image, recipe),
             None => quality::resolve(image, recipe),
         };
-        if hdr.is_some()
-            && !super::pipeline::pixel_params::supported_hdr(&resolved.recipe, &image.metadata)
-        {
+        if hdr.is_some() && !gpu_renders_hdr(image, recipe, &resolved.recipe) {
             return Err(quality::HdrNotOnGpu.into());
         }
         if region.is_none()
@@ -329,9 +327,7 @@ impl PreviewRenderer {
             Some(_) => quality::resolve_hdr(image, recipe),
             None => quality::resolve(image, recipe),
         };
-        if hdr.is_some()
-            && !super::pipeline::pixel_params::supported_hdr(&resolved.recipe, &image.metadata)
-        {
+        if hdr.is_some() && !gpu_renders_hdr(image, recipe, &resolved.recipe) {
             return Err(quality::HdrNotOnGpu.into());
         }
         let full = resolved.geometry;
@@ -543,6 +539,15 @@ impl Backend {
     }
 }
 
+/// Whether the GPU renders the HDR master of `recipe` (resolved for it as `resolved`): the
+/// master renders (`model::hdr::check_for`, on the recipe as edited, as the CPU's master
+/// checks it), and the GPU port covers it (`supported_hdr`, on the resolved recipe,
+/// whose look settings are its own).
+fn gpu_renders_hdr(image: &CameraImage, recipe: &Recipe, resolved: &Recipe) -> bool {
+    crate::model::hdr::check_for(recipe, &image.metadata).is_ok()
+        && super::pipeline::pixel_params::supported_hdr(resolved, &image.metadata)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -568,6 +573,35 @@ mod tests {
             scale_clipped: 0,
             hdr: Default::default(),
         }
+    }
+    /// The GPU renders the HDR master of what the CPU's master renders, no more: a look's
+    /// Clarity +10 with the user's +35 renders on both, and the user's −5 (refused, though
+    /// the look's +10 brings it to +5) on neither.
+    #[test]
+    fn the_gpu_renders_the_hdr_masters_the_cpu_renders() {
+        use crate::camera_profiles::CameraProfile;
+        let mut im = image(8, 8, 0.4);
+        im.metadata.cam_xyz = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
+        let mut look = CameraProfile::creative_for_test(&im.metadata);
+        look.enhanced.as_mut().unwrap().clarity = 0.1;
+        let mut r = Recipe {
+            profile: Some(Arc::new(look)),
+            sharpening: 0.,
+            ..Default::default()
+        };
+        r.hdr.enabled = true;
+        r.hdr.limit = 4.;
+        let gpu = |r: &Recipe| {
+            let checked = r.checked().unwrap();
+            let resolved = quality::resolve_hdr(&im, &checked);
+            gpu_renders_hdr(&im, r, &resolved.recipe)
+        };
+        r.effects.clarity = 0.35;
+        assert!(crate::model::hdr::check_for(&r, &im.metadata).is_ok());
+        assert!(gpu(&r));
+        r.effects.clarity = -0.05;
+        assert!(crate::model::hdr::check_for(&r, &im.metadata).is_err());
+        assert!(!gpu(&r));
     }
     /// A render in a space other than sRGB never reaches the preview's GPU or caches:
     /// given them, it is refused before anything renders.

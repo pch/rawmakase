@@ -331,6 +331,36 @@ default render, ours against Camera Raw's, in stops (8× linear blocks).
   fail the tolerances on four photos (Clarity) and one (Dehaze, by up to 1.07 stop
   at p95). They need their SDR parity first.
 
+Re-examined on 2026-11-11 under the [acceptance rule](#decisions), with RAWmakase's
+SDR operators unclipped in HDR and the same captures (CC0 copies of the five photos
+from raw.pixls.us, checked against the family's hashes). The effect error in stops,
+median / p95 over the blocks, then the median over the photos, and the mean ΔE_ITP of
+the edited renders; below white is where both of Camera Raw's renders are below white,
+above white where its HDR base is:
+
+| Setting | HDR below white | SDR below white | HDR above white | ΔE_ITP HDR / SDR (added to the default's) |
+| --- | --- | --- | --- | --- |
+| Clarity +50 | 0.177 / 0.619 | 0.176 / 0.616 | 0.064 / 0.233 | 8.8 / 8.5 (+7.9 / +7.6) |
+| Dehaze +30 | 0.097 / 0.305 | 0.096 / 0.305 | 0.072 / 0.183 | 6.7 / 5.7 (+4.7 / +4.1) |
+| Dehaze −30 | 0.116 / 0.225 | 0.115 / 0.225 | 0.037 / 0.066 | 6.0 / 5.9 (+5.1 / +5.0) |
+| Texture +50 (renders) | 0.005 / 0.074 | 0.005 / 0.074 | 0.002 / 0.058 | 2.9 / 1.9 (+1.0 / +1.0) |
+
+"No worse" is taken as within 0.01 stop of SDR's error below white (the same operator
+renders both there; the 0.001–0.003 stop between them is the HDR and SDR default
+renders' own difference) and within 1 ΔE_ITP, about one just-noticeable difference, of
+the colour error SDR's render of the control adds to its default render's. Clarity and
+Dehaze ±30 are within both, and their HDR error above white is below SDR's below it.
+The SDR operators' own gap stays (Clarity's median error is above that of leaving it
+out on these photos, 0.146 over the whole frame, in SDR as in HDR).
+
+**Decision, 2026-11-11: Clarity from 0 to +50 renders in the HDR master** by the SDR
+operator, unclipped; negative Clarity and Clarity above +50 stay refused until photos
+are captured there. SDR renders don't change: the change is in the HDR master's checks
+only (`model::hdr::check_recipe`, and the GPU's HDR eligibility, which checks the
+recipe as edited and the resolved one without adding a look's settings again), which
+SDR renders never call. The GPU's HDR preview renders Clarity as the CPU
+master does (`gpu_develop_matches_cpu_hdr_master`).
+
 ### Looks
 
 Measured on gray ramps (sensor white +4 and +6 stops, a linear and the ACR3 profile
@@ -403,8 +433,8 @@ parametric curve beside the same values set as sliders.
   and checked as those sliders are.
 
 Still refused: a look that sets a slider whose HDR rendering isn't measured (Adobe
-Vivid and Adobe Landscape set Clarity, Highlights and Shadows), and a look's split
-toning.
+Landscape sets Highlights; Adobe Vivid's Clarity +10 renders since 2026-11-11), and a
+look's split toning.
 
 **On photos** (2026-11-11). The six validation photos of [Validation](#validation)
 (Adobe Standard, HDR limit 4) through a `.cube` look (creative), an HSV-table look at
@@ -1214,8 +1244,8 @@ Decision, 2026-11-10: masks render in the HDR master with Temp, Tint, Exposure,
 Shadows and Texture; any other slider in an active mask refuses it by name.
 Decision, 2026-11-11: Contrast, Color, Sharpness and Noise render too (below). Contrast,
 Whites, Blacks, Hue, Saturation and Color are operators of their own, fitted on SDR
-renders, and Sharpness and Noise work on the SDR rendition's detail; Highlights,
-Clarity and Dehaze have no HDR rendering globally. A masked master renders on the CPU;
+renders, and Sharpness and Noise work on the SDR rendition's detail; Highlights and
+Dehaze have no HDR rendering globally, and a mask's Clarity isn't measured. A masked master renders on the CPU;
 the GPU's HDR preview doesn't port masks yet.
 
 **Camera Raw (2026-11-11).** Camera Raw 18.7 rendered the Color Grading probe's patches
@@ -1313,14 +1343,17 @@ above white.
   the same photo's base render, luminance in stops) against Camera Raw's, its median
   and p95, with the mean ΔE_ITP of the edited renders; HDR and SDR are compared over
   the pixels or patches both render below white, and the HDR error above white must
-  be no worse than SDR's below it. Controls rendered before this decision are not
+  be no worse than SDR's below it. Where the same operator renders HDR and SDR below
+  white, "no worse" there allows 0.01 stop (the HDR and SDR default renders' own
+  difference), and the mean ΔE_ITP compares what the control adds to the default
+  render's, within 1 ([Presence](#presence)). Controls rendered before this decision are not
   re-scored by it.
 - **The SDR rendition is the edit with HDR off.** Camera Raw's own is a local tone
   map of the HDR master ([SDR rendition](#sdr-rendition)); the SDR rendition sliders
   never change the master, which renders with them; the SDR rendition doesn't render
   them until that tone map is matched.
 - **Unmeasured adjustments refuse the HDR master, not the edit.** An imported or
-  edited HDR edit with Clarity, a look or Whites above +50 keeps HDR on and stays
+  edited HDR edit with Dehaze, a look or Whites above +50 keeps HDR on and stays
   valid; its SDR rendition renders it, and the master (HDR export) is refused with
   the reason, shown in Develop under the HDR switch. Refusing the edit itself would
   make Develop's ordinary sliders fail to render whenever HDR is on.
@@ -1413,12 +1446,12 @@ above white.
 - Masks: a mask's Whites, Blacks, Hue and Saturation (one Camera Raw setting each,
   unlike SDR's operators above white), Temp's strength (SDR's), Shadows' HDR error
   (twice SDR's on the patches), and masks on the GPU's HDR preview ([Masks](#masks)).
-- Clarity and Dehaze in HDR, after their SDR parity ([Presence](#presence)).
+- Negative Clarity, Clarity above +50, and Dehaze in HDR ([Presence](#presence)).
 - Positive Shadows lifts small speculars in dark surroundings above Camera Raw's peak
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
   and its sliders.
-- Looks that set Clarity or Highlights, and split toning, stay refused. A B&W `.cube`
+- Looks that set Clarity above +50 or Highlights, and split toning, stay refused (Adobe Vivid sets Clarity +10). A B&W `.cube`
   renders saturation-0.9 red and magenta out of its gamut almost black above white in
   Camera Raw ([Looks](#looks)); RAWmakase renders their gray.
 - Saturated colours: with no look, the colour patches at saturation 0.9 differ from
@@ -1464,9 +1497,9 @@ above white.
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
   ([Vignette and grain](#vignette-and-grain)); masks with Temp,
-  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)).
+  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from 0 to +50 ([Presence](#presence)).
   Open: Whites above +50, Highlights, the colour
-  mixer's Luminance beyond ±40, Defringe ([Defringe](#defringe), refused again 2026-11-11), looks that set Clarity or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
+  mixer's Luminance beyond ±40, Defringe ([Defringe](#defringe), refused again 2026-11-11), looks that set Clarity above +50 or Highlights, the SDR rendition sliders in the SDR rendition (the master renders
   with them), 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display

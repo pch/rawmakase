@@ -184,6 +184,10 @@ const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 /// Raw's HDR Luminance strengthens with brightness where its SDR one rolls off, which
 /// the SDR-fitted grids can't follow at +100 (docs/records/hdr-stage1-results.md#band-luminance).
 const BAND_LUMINANCE_MEASURED: f32 = 0.4;
+/// The largest Clarity (0 to 1) the HDR master renders, the range measured on photos:
+/// there the SDR operator, unclipped, departs from Camera Raw's HDR effect no further
+/// than from its SDR one (docs/records/hdr-stage1-results.md#presence).
+const CLARITY_MEASURED: f32 = 0.5;
 
 /// Refuses the HDR master of an active HDR edit that this release can render only in
 /// SDR: an adjustment, look or profile whose rendering above graphics white has not
@@ -195,7 +199,7 @@ const BAND_LUMINANCE_MEASURED: f32 = 0.4;
 /// the post-crop vignette (without a darkening vignette's Highlights) and grain,
 /// the master point curve, the channels' point curves and the parametric curve, and
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
-/// camera's samples, as in SDR),
+/// camera's samples, as in SDR), Clarity from 0 to +50 (the SDR operator, unclipped),
 /// Point Color (its swatches in colour grading's HDR domain),
 /// masks whose sliders are Temp, Tint, Exposure, Contrast, Shadows, Texture, Color,
 /// Sharpness and Noise,
@@ -207,6 +211,18 @@ const BAND_LUMINANCE_MEASURED: f32 = 0.4;
 /// AI Denoise, Heal and Clone, and output sharpening. The SDR rendition's sliders never
 /// change the master, so they are not checked.
 pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
+    check(r, true)
+}
+
+/// [`check_recipe`] of a raw's recipe already resolved for its master
+/// ([`super::recipe::Recipe::resolved_hdr`]): its look's settings are in its own sliders
+/// already, so they aren't added a second time.
+pub fn check_resolved_recipe(r: &super::recipe::Recipe) -> Result<()> {
+    check(r, false)
+}
+
+/// [`check_recipe`], adding a look's settings to the user's when `fold`.
+fn check(r: &super::recipe::Recipe, fold: bool) -> Result<()> {
     // What renders: a switched-off panel's adjustments do not.
     let r = r.as_rendered();
     if !r.hdr.is_active() {
@@ -230,6 +246,9 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
     // A look's own settings render as the user's sliders do, added to them, and its
     // table and curve at the Profile Amount (`Recipe::with_profile_adjustments`): each
     // is checked as that slider is.
+    if !fold {
+        return Ok(());
+    }
     let folded = r.with_profile_adjustments();
     if let std::borrow::Cow::Owned(folded) = &folded {
         if let Some(profile) = &folded.profile {
@@ -247,7 +266,7 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
 fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
     // The SDR rendition's sliders are not here: they never change the master (Camera
     // Raw 18.7's is bit-identical with each at ±50), so it renders with them set.
-    let unmeasured: [(&'static str, bool); 9] = [
+    let unmeasured: [(&'static str, bool); 10] = [
         // Camera Raw's positive Whites follows the photo's level, which twice the 99th
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
@@ -269,9 +288,10 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
             r.curve_saturation != 1. && !r.curve.is_identity(),
         ),
         (
-            "Presence",
-            r.effects.clarity != 0. || r.effects.dehaze != 0.,
+            "Clarity outside 0 to +50",
+            !(0. ..=CLARITY_MEASURED).contains(&r.effects.clarity),
         ),
+        ("Dehaze", r.effects.dehaze != 0.),
         (
             "The Color Mixer's Luminance beyond ±40",
             r.hsl
@@ -304,8 +324,8 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
 /// HDR Whites and Blacks in a mask follow neither the SDR mask's curves nor the global
 /// sliders' (docs/records/hdr-stage1-results.md#masks); SDR's Saturation, which Hue
 /// shares, brightens colours Camera Raw's leaves alone, by more in the master than in
-/// SDR, where white clips it; Highlights, Clarity and Dehaze have no HDR rendering
-/// globally.
+/// SDR, where white clips it; Highlights and Dehaze have no HDR rendering globally,
+/// and a mask's Clarity isn't measured.
 fn unrendered_mask_slider(a: &crate::model::masks::LocalAdjust) -> Option<&'static str> {
     [
         ("Highlights", a.highlights),
@@ -642,7 +662,7 @@ mod tests {
             check_recipe(&masked).is_ok(),
             "a hidden mask renders nothing"
         );
-        let unmeasured: [fn(&mut Recipe); 8] = [
+        let unmeasured: [fn(&mut Recipe); 9] = [
             |r| r.highlights = 0.1,
             |r| r.effects.defringe = [0.3, 0.],
             |r| r.hsl[1][2] = 0.41,
@@ -651,7 +671,8 @@ mod tests {
                 r.effects.vignette = -0.3;
                 r.effects.vignette_highlights = 0.4;
             },
-            |r| r.effects.clarity = 0.1,
+            |r| r.effects.clarity = 0.6,
+            |r| r.effects.clarity = -0.1,
             |r| r.effects.dehaze = 0.1,
             |r| {
                 r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
@@ -712,12 +733,13 @@ mod tests {
         let color = open::color(&m).unwrap();
         r.profile = Some(Arc::new(color.clone()));
         check_recipe(&r).unwrap();
-        let rendered: [fn(&mut CameraProfile); 7] = [
+        let rendered: [fn(&mut CameraProfile); 8] = [
             |p| p.enhanced.as_mut().unwrap().monochrome = true,
             |p| p.enhanced.as_mut().unwrap().settings.hsl[1][2] = -0.2,
             |p| p.enhanced.as_mut().unwrap().settings.exposure = 0.3,
             |p| p.enhanced.as_mut().unwrap().contrast = 0.2,
             |p| p.enhanced.as_mut().unwrap().shadows = 0.25,
+            |p| p.enhanced.as_mut().unwrap().clarity = 0.1,
             |p| p.enhanced.as_mut().unwrap().camera_look = Some("Velvia".into()),
             |p| *p = p.clone().with_test_rgb_tables().remove(0),
         ];
@@ -731,8 +753,8 @@ mod tests {
         type Change = fn(&mut CameraProfile);
         let refused: [(Change, &str); 3] = [
             (
-                |p| p.enhanced.as_mut().unwrap().clarity = 0.1,
-                "Presence, which the look sets",
+                |p| p.enhanced.as_mut().unwrap().clarity = 0.6,
+                "Clarity outside 0 to +50, which the look sets",
             ),
             (
                 |p| p.enhanced.as_mut().unwrap().highlights = -0.12,
@@ -756,6 +778,19 @@ mod tests {
             edit.hdr.enabled = false;
             assert!(check_recipe(&edit).is_ok());
         }
+        // A look's Clarity is added to the user's once: checked before the recipe is
+        // resolved, or after it without adding it again.
+        let mut both = r.clone();
+        let mut p = color;
+        p.enhanced.as_mut().unwrap().clarity = 0.1;
+        both.profile = Some(Arc::new(p));
+        both.effects.clarity = 0.35;
+        check_recipe(&both).unwrap();
+        let resolved = both.with_profile_adjustments();
+        assert_eq!(resolved.effects.clarity, 0.45);
+        check_resolved_recipe(&resolved).unwrap();
+        both.effects.clarity = 0.45;
+        assert!(check_recipe(&both).is_err());
         // The user's own Highlights is named as the user's.
         let mut own = r.clone();
         own.highlights = 0.1;
