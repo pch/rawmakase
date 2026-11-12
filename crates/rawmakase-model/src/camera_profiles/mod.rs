@@ -588,13 +588,16 @@ impl CameraProfile {
         if let Some(look) = &self.enhanced {
             look.check_hdr()?;
         }
-        // An sRGB-encoded table's lookup above white is not measured.
+        // An ordinary profile's sRGB-encoded table looks up its value as in SDR, the
+        // encoding extended above white (docs/records/hdr-stage1-results.md#srgb-encoded-tables).
+        // How an HDR profile's overrange encoding combines with one is not measured.
         ensure!(
-            [&self.hue1, &self.hue2, &self.look]
-                .into_iter()
-                .flatten()
-                .all(|t| !t.srgb),
-            "This profile's sRGB-encoded tables are not supported in HDR yet"
+            !self.is_hdr()
+                || [&self.hue1, &self.hue2, &self.look]
+                    .into_iter()
+                    .flatten()
+                    .all(|t| !t.srgb),
+            "This HDR profile's sRGB-encoded tables are not supported in HDR yet"
         );
         if self.is_hdr() {
             Ok(hdr_tone::HdrTone::Overrange)
@@ -779,6 +782,29 @@ impl CameraProfile {
     #[cfg(any(test, feature = "test-support"))]
     pub fn as_hdr_for_test(mut self) -> Self {
         self.dynamic_range = DynamicRange::High;
+        self
+    }
+    /// A profile whose look table is 3D and sRGB-encoded, as camera-matching
+    /// profiles' are, changing nothing at no saturation, for GPU tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_test_srgb_look(mut self) -> Self {
+        let dims = [36, 8, 16];
+        self.look = Some(Table {
+            dims,
+            data: (0..dims.iter().product::<usize>())
+                .map(|i| {
+                    let f = i as f32 * 0.29 + 0.5;
+                    let s = (i % dims[1]) as f32 / (dims[1] - 1) as f32;
+                    let v = (i / (dims[0] * dims[1])) as f32 / (dims[2] - 1) as f32;
+                    [
+                        f.sin() * 6. * s,
+                        1. + 0.12 * f.cos() * s,
+                        1. + 0.1 * s * (1. - v),
+                    ]
+                })
+                .collect(),
+            srgb: true,
+        });
         self
     }
     /// This profile with linearly encoded 3D hue/saturation tables and a 3D look table,

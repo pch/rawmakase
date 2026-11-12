@@ -569,3 +569,29 @@ fn an_identity_look_curve_leaves_hdr_light_above_sixteen() {
     let lifting = base.with_test_look(1, |_| 1., &[[0., 0.], [0.5, 0.6], [1., 1.]]);
     assert!(lifting.hdr_look().is_some());
 }
+
+/// An ordinary profile's sRGB-encoded look table renders in HDR as in SDR below white,
+/// and keeps light above it (Camera Raw 18.7's HDR render of the Leica D-Lux 7's Adobe
+/// Standard, docs/records/hdr-stage1-results.md#srgb-encoded-tables); an HDR profile's
+/// stays refused.
+#[test]
+fn an_ordinary_profiles_srgb_tables_render_in_hdr() {
+    let profile = CameraProfile::camera_matrix_default(&x100f())
+        .unwrap()
+        .with_test_srgb_look();
+    let tone = profile.hdr_tone().unwrap();
+    let below = [0.2, 0.15, 0.1];
+    let hdr = profile.finish_hdr(below, &tone, None);
+    assert!(hdr.iter().all(|v| v.is_finite() && *v > 0.), "{hdr:?}");
+    let bright = profile.finish_hdr([6., 5., 4.], &tone, None);
+    assert!(
+        bright.iter().all(|v| v.is_finite() && *v > 2.),
+        "{bright:?}"
+    );
+    let error = profile
+        .as_hdr_for_test()
+        .hdr_tone()
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("sRGB-encoded"), "{error}");
+}

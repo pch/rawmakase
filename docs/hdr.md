@@ -268,7 +268,7 @@ HDR reference family):
 | Exposure | A gain before S3, as in SDR. |
 | Whites | A measured gain over scene value (`scene_tone::hdr_whites`), the same at every sensor white and HDR limit. Negative Whites is the same at every photo maximum too. Positive Whites follows the photo's level, twice its 99th percentile of luminance with Exposure (`PhotoMeasures::hdr_whites_level`): the darker it is, the further Whites stretches, and from a level of 4 up the gain no longer changes. Rendered up to +50; above it refused, as no level reaches Camera Raw's render: at Camera Raw's own best level per photo, 4 of 12 training photos stay 0.17–0.52 stop off above white at +75 and +100. |
 | Blacks, default black | As in SDR, on values below 1; values above white are left alone. |
-| Profile look table | An HDR profile's 3D table on overrange-encoded values, as the DNG SDK applies it; an ordinary profile's keeps the values above white it scales. |
+| Profile look table | An HDR profile's 3D table on overrange-encoded values, as the DNG SDK applies it; an ordinary profile's keeps the values above white it scales, its value looked up in the table's own encoding (an sRGB-encoded table's, as camera-matching profiles have, extended above white). An HDR profile with an sRGB-encoded table is refused. |
 | Profile tone curve | `camera_profiles::hdr_tone`: an HDR profile's curve by the DNG SDK's overrange rule; an ordinary curve by the measured extension (ACR3's measured HDR curve, and a fitted deviation for other curves); a curve that never brightens as the identity. RGBTone. |
 | Look table | A look's HSV table (Adobe Color's and the other Adobe Raw looks', RAWmakase Color's) after the profile's, on overrange-encoded values, as the DNG SDK applies an HDR profile's, unclipped. |
 | Look curve | `camera_profiles::hdr_look`, after the profile's curve: the look's curve in an encoding that is sRGB's up to graphics white and logarithmic above. A curve that ends at white follows itself up to its largest lift, then runs parallel to the identity at that lift, at most 16 (so a curve that never lifts renders as the identity); one that ends below white continues along its slope there. A look whose curve is the identity (a `.cube` look's) applies none, so its light above 16 is not held there. RGBTone. |
@@ -481,8 +481,8 @@ something without a measured HDR rendering: Highlights, Whites above
 channel's) whose last point is left of white, Clarity below 0 or above +50, Dehaze beyond ±30, the
 colour mixer's Luminance beyond ±40, a darkening vignette's Highlights,
 a mask's Whites, Blacks, Hue, Saturation, Highlights, Clarity or Dehaze, Defringe ([Defringe](#defringe)), Red Eye, a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
-which the look sets, …"; Adobe Vivid's Clarity +10 renders) or split toning, DCP
-tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
+which the look sets, …"; Adobe Vivid's Clarity +10 renders) or split toning, an
+HDR profile's DCP tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
 asked for.
 
