@@ -1125,7 +1125,7 @@ mod tests {
                 d.extend(u32b(little, *count));
                 let bytes = value(at);
                 if bytes.len() <= 4 {
-                    let mut inline = bytes.clone();
+                    let mut inline = bytes;
                     inline.resize(4, 0);
                     d.extend(inline);
                 } else {

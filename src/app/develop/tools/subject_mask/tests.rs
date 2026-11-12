@@ -1507,14 +1507,9 @@ fn saved_masks_render_and_keep_their_labels_without_the_extension() {
 /// as `make check` does.
 #[test]
 fn the_built_program_answers_a_request() {
-    let exe = std::env::current_exe().unwrap();
-    let target = exe.parent().and_then(Path::parent).unwrap().to_path_buf();
-    let name = rawmakase_extensions::bundled::program_name("rawmakase-ai-masks");
-    assert!(
-        target.join(&name).is_file(),
-        "{} is missing: build it with cargo build -p rawmakase-ai-masks",
-        target.join(&name).display()
-    );
+    let program = crate::app::testing::built_program("rawmakase-ai-masks")
+        .expect("rawmakase-ai-masks is missing: build it with cargo build -p rawmakase-ai-masks");
+    let target = program.parent().unwrap().to_path_buf();
     let mut f = fixture(0.31);
     let e = &mut f.editor;
     e.extensions = Host::with_search_dirs_for_tests(&f.data, vec![target]);

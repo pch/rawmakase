@@ -1130,7 +1130,7 @@ mod tests {
             let picks = if choose_files {
                 vec![pack.join("Repro Look.xmp"), pack.join("Repro Preset.xmp")]
             } else {
-                vec![pack.clone()]
+                vec![pack]
             };
             let found = gather(ImportKind::Presets, &picks);
             let import = || {

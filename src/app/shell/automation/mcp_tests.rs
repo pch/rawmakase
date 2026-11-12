@@ -22,20 +22,11 @@ use std::time::{Duration, Instant};
 
 const MCP: &str = "rawmakase.mcp";
 
-/// A program of the workspace, built into the folder above this test binary.
+/// A program of the workspace, as `cargo build` leaves it.
 fn built(name: &str) -> PathBuf {
-    let exe = std::env::current_exe().expect("the test binary");
-    let dir = exe
-        .parent()
-        .and_then(Path::parent)
-        .expect("target/<profile>/deps");
-    let path = dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
-    assert!(
-        path.is_file(),
-        "{} isn't built; run `cargo build -p rawmakase -p rawmakase-mcp` first",
-        path.display()
-    );
-    path
+    crate::app::testing::built_program(name).unwrap_or_else(|| {
+        panic!("{name} isn't built; run `cargo build -p rawmakase -p rawmakase-mcp` first")
+    })
 }
 
 /// An MCP client of `rawmakase mcp`, over its standard streams.

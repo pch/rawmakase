@@ -103,7 +103,7 @@ impl Editor {
                             let old = self.document.edit.replace(r);
                             // Before the step is taken, as the Presets panel does.
                             self.ensure_analysis();
-                            self.commit_edit(old.clone(), None);
+                            self.commit_edit(old, None);
                         }
                         Err(e) => self.messages.fail(e.to_string()),
                     }
