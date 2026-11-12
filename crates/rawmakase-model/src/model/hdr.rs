@@ -782,8 +782,8 @@ mod tests {
     /// Looks render their master: an HSV table and a curve, as Adobe Color is, an RGB
     /// table, B&W, a fitted Camera Look, any Profile Amount, and their own sliders and
     /// settings where the same sliders render. A look's setting whose HDR rendering is
-    /// not measured refuses the master by name, saying the look sets it, and so does
-    /// split toning; the edit stays valid.
+    /// not measured refuses the master by name, saying the look sets it; the edit stays
+    /// valid. Split toning renders, as colour grading does.
     #[test]
     fn looks_render_in_hdr_as_their_parts_do() {
         use crate::camera_profiles::{CameraProfile, open};
@@ -803,8 +803,12 @@ mod tests {
         let color = open::color(&m).unwrap();
         r.profile = Some(Arc::new(color.clone()));
         check_recipe(&r).unwrap();
-        let rendered: [fn(&mut CameraProfile); 8] = [
+        let rendered: [fn(&mut CameraProfile); 9] = [
             |p| p.enhanced.as_mut().unwrap().monochrome = true,
+            |p| {
+                p.enhanced.as_mut().unwrap().settings.toning =
+                    Some(crate::camera_profiles::Toning::default())
+            },
             |p| p.enhanced.as_mut().unwrap().settings.hsl[1][2] = -0.2,
             |p| p.enhanced.as_mut().unwrap().settings.exposure = 0.3,
             |p| p.enhanced.as_mut().unwrap().contrast = 0.2,
@@ -821,7 +825,7 @@ mod tests {
             check_recipe(&edit).unwrap();
         }
         type Change = fn(&mut CameraProfile);
-        let refused: [(Change, &str); 3] = [
+        let refused: [(Change, &str); 2] = [
             (
                 |p| p.enhanced.as_mut().unwrap().clarity = 0.6,
                 "Clarity beyond ±50, which the look sets",
@@ -829,13 +833,6 @@ mod tests {
             (
                 |p| p.enhanced.as_mut().unwrap().highlights = -0.12,
                 "Highlights, which the look sets",
-            ),
-            (
-                |p| {
-                    p.enhanced.as_mut().unwrap().settings.toning =
-                        Some(crate::camera_profiles::Toning::default())
-                },
-                "split toning",
             ),
         ];
         for (change, reason) in refused {

@@ -582,12 +582,11 @@ impl CameraProfile {
     }
 }
 impl CameraProfile {
-    /// How this profile's tone curve renders in HDR, or why it cannot yet: a look
-    /// renders when it is a table and a curve (`Enhanced::check_hdr`).
+    /// How this profile's tone curve renders in HDR, or why it cannot yet. A look's
+    /// tables, curve and split toning render in HDR (`super::hdr_look`, and colour
+    /// grading's HDR domain for its split toning); its sliders are checked as the
+    /// user's (`model::hdr::check_recipe`).
     pub fn hdr_tone(&self) -> Result<hdr_tone::HdrTone> {
-        if let Some(look) = &self.enhanced {
-            look.check_hdr()?;
-        }
         // An ordinary profile's sRGB-encoded table looks up its value as in SDR, the
         // encoding extended above white (docs/records/hdr-stage1-results.md#srgb-encoded-tables).
         // How an HDR profile's overrange encoding combines with one is not measured.

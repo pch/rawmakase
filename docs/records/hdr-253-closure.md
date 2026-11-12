@@ -101,7 +101,7 @@ renders everything. Each refusal has Camera Raw measurements behind it:
 | A point curve that ends left of white | Camera Raw continues it past its last point, within 0.03 stop up to 16 times white, then holds steep curves back (0.82 stop off above white) ([Tone curves](hdr-stage1-results.md#tone-curves)) |
 | A darkening vignette's Highlights | Camera Raw protects only from four times white up, in proportion to Highlights; one synthetic probe, no photos ([Vignette and grain](hdr-stage1-results.md#vignette-and-grain)) |
 | A mask's Whites, Blacks, Hue, Saturation, Highlights, Clarity, Dehaze | Camera Raw's HDR mask operators differ from SDR's above white, or RAWmakase's master is further off than its SDR rendition ([Masks](hdr-stage1-results.md#masks)) |
-| A look's split toning, and a look that sets a refused slider (Adobe Landscape) | Split toning's colour error doubles in HDR (1.79 against 1.05 ΔE_ITP) ([Looks](hdr-stage1-results.md#looks)) |
+| A look that sets a refused slider (Adobe Landscape) | As the slider it sets; a look's split toning renders since 2026-11-12 ([Looks](hdr-stage1-results.md#looks)) |
 | An HDR profile's sRGB-encoded tables (27 installed) | How Camera Raw combines overrange encoding with them is not measured ([sRGB-encoded tables](hdr-stage1-results.md#srgb-encoded-tables)) |
 | Two profile curves unlike the family (Fujifilm HS20EXR, HS30EXR) | The fitted extension is 0.013 stop off below 0.9 against SDR's 0.005 ([Tone curves](hdr-stage1-results.md#tone-curves)) |
 

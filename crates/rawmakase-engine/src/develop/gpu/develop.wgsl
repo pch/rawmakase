@@ -1414,11 +1414,18 @@ fn grade_channel(c: i32, v: f32) -> f32 {
 // ChannelCurves::apply_hdr: each channel graded in `to_hdr_domain`, whose 1 is
 // HDR_GRADE_TOP; above it the gain at it. Linear ProPhoto, not negative, in and out.
 const HDR_GRADE_TOP: f32 = 16.0;
+const HDR_GRADE_BOOST: f32 = 0.1;
 fn grade_hdr_channel(c: i32, v: f32) -> f32 {
     let k = (HDR_GRADE_TOP - 1.0) / HDR_GRADE_TOP;
     let x = min(v, HDR_GRADE_TOP);
     let u = clamp(grade_channel(c, x / (1.0 + x * k)), 0.0, 1.0);
-    let graded = u / (1.0 - u * k);
+    var graded = u / (1.0 - u * k);
+    // color_grade_curves::hdr_boost: above white the change's log grows by up to
+    // HDR_GRADE_BOOST, by stops above white up to three.
+    if x > 1.0 && graded > 0.0 {
+        let w = 1.0 + HDR_GRADE_BOOST * min(log2(x) / 3.0, 1.0);
+        graded = x * pow(graded / x, w);
+    }
     if v <= HDR_GRADE_TOP {
         return graded;
     }
