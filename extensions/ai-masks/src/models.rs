@@ -3,11 +3,12 @@
 //! Sky's, each installed and removed as a unit, so neither obliges anyone to
 //! fetch the other.
 //!
-//! A pack lives in the extension's data folder, in `models/<id>-v<version>`.
-//! The app installed the same packs in `<local data>/models/<id>-v<version>`
-//! before this extension took them over; on first use a pack found there with
-//! its receipt is adopted by renaming it into the extension's folder, or used
-//! where it is when it can't be moved, so nobody downloads it again.
+//! A pack lives where the app has always installed it, in
+//! `<local data>/models/<id>-v<version>` beside AI Denoise's
+//! ([`rawmakase_model_install::models_dir`]): this computer's own folder,
+//! never a roaming or `RAWMAKASE_DATA_DIR` one, so an install the app made
+//! before this extension counts as installed, and older versions of the app
+//! still find it.
 use rawmakase_extension::protocol::message::NeedsSetup;
 use rawmakase_inference::ModelFile;
 use rawmakase_model_install::{InstallError, Progress, is_installed};
@@ -64,50 +65,25 @@ pub fn download(dir: &Path, files: &[ModelFile], progress: &Progress) -> Result<
     rawmakase_model_install::install(dir, files, None, progress)
 }
 
-/// Where the packs are: the extension's own folder, and the app's from before.
+/// Where the packs are: `<local data>/models`.
 pub(crate) struct Models {
-    /// `<extension data>/models`.
-    own: PathBuf,
-    /// `<local data>/models`, where the app installed them.
-    legacy: PathBuf,
+    dir: PathBuf,
 }
 
 impl Models {
-    pub(crate) fn new(own: PathBuf, legacy: PathBuf) -> Self {
-        Self { own, legacy }
+    pub(crate) fn new(dir: PathBuf) -> Self {
+        Self { dir }
     }
 
-    /// The pack's folder when it is installed, adopting the app's install of
-    /// it on first use: moved into the extension's folder, or, when it can't
-    /// be moved, used where it is. A folder without its receipt, or whose
-    /// files don't match it, is not an install, and is left alone.
+    /// The pack's folder when it is installed: every file there with its
+    /// size, and the installer's receipt naming exactly those files.
     pub(crate) fn installed(&self, pack: Pack) -> Option<PathBuf> {
-        let files = pack.files();
-        let own = self.own.join(pack.folder());
-        if is_installed(&own, &files) {
-            return Some(own);
-        }
-        let legacy = self.legacy.join(pack.folder());
-        if !is_installed(&legacy, &files) {
-            return None;
-        }
-        // A download that stopped part way may have left a folder here: it
-        // holds nothing the app's install hasn't.
-        if own.is_dir() && std::fs::read_dir(&own).is_ok_and(|mut d| d.next().is_none()) {
-            let _ = std::fs::remove_dir(&own);
-        }
-        let moved = std::fs::create_dir_all(&self.own).is_ok()
-            && !own.exists()
-            && std::fs::rename(&legacy, &own).is_ok();
-        if moved && is_installed(&own, &files) {
-            Some(own)
-        } else {
-            Some(legacy)
-        }
+        let dir = self.dir.join(pack.folder());
+        is_installed(&dir, &pack.files()).then_some(dir)
     }
 
-    /// Fetches `pack` into the extension's folder with `install`, unless it
-    /// is installed already, here or in the app's folder.
+    /// Fetches `pack` into its folder with `install`, unless it is installed
+    /// already.
     pub(crate) fn set_up(
         &self,
         pack: Pack,
@@ -117,25 +93,21 @@ impl Models {
         if self.installed(pack).is_some() {
             return Ok(());
         }
-        install(&self.own.join(pack.folder()), &pack.files(), progress)
+        install(&self.dir.join(pack.folder()), &pack.files(), progress)
     }
 
-    /// Removes every pack, the extension's and any of the app's it used in
-    /// place. Returns how many folders went.
+    /// Removes Subject's and Sky's packs, and nothing else of the folder (AI
+    /// Denoise's pack is the app's). Returns how many folders went.
     pub(crate) fn remove(&self) -> Result<usize, String> {
         let mut removed = 0;
         for pack in Pack::ALL {
-            for dir in [
-                self.own.join(pack.folder()),
-                self.legacy.join(pack.folder()),
-            ] {
-                if !dir.exists() {
-                    continue;
-                }
-                std::fs::remove_dir_all(&dir)
-                    .map_err(|e| format!("could not remove {}: {e}", dir.display()))?;
-                removed += 1;
+            let dir = self.dir.join(pack.folder());
+            if !dir.exists() {
+                continue;
             }
+            std::fs::remove_dir_all(&dir)
+                .map_err(|e| format!("could not remove {}: {e}", dir.display()))?;
+            removed += 1;
         }
         Ok(removed)
     }
@@ -160,10 +132,6 @@ mod tests {
         }
     }
 
-    fn models(root: &Path) -> Models {
-        Models::new(root.join("own/models"), root.join("local/models"))
-    }
-
     #[test]
     fn each_pack_has_a_folder_named_for_its_model_and_version() {
         assert_eq!(
@@ -175,73 +143,49 @@ mod tests {
         assert!(Pack::Sky.needs_setup().bytes > 200_000_000);
     }
 
-    /// An install the app made before is adopted without downloading: moved
-    /// into the extension's folder, which then has it, and the old one
-    /// doesn't.
+    /// A pack in the folder with its receipt is installed where it is, and
+    /// setting it up downloads nothing; one without its receipt, or with a
+    /// receipt for other files, isn't, and setting it up fetches it into that
+    /// same folder. Nothing is moved.
     #[test]
-    fn the_apps_install_with_its_receipt_is_moved_in() {
+    fn a_pack_with_a_valid_receipt_in_the_folder_is_installed_where_it_is() {
         let root = tempfile::tempdir().unwrap();
-        let m = models(root.path());
-        let legacy = root
-            .path()
-            .join("local/models")
-            .join(Pack::Subject.folder());
-        fake_install(&legacy, Pack::Subject, true);
-        let own = root.path().join("own/models").join(Pack::Subject.folder());
-        assert_eq!(m.installed(Pack::Subject), Some(own.clone()));
-        assert!(!legacy.exists());
-        assert!(is_installed(&own, &Pack::Subject.files()));
-        // Sky's wasn't installed, and isn't now.
-        assert_eq!(m.installed(Pack::Sky), None);
-        // Nothing is fetched to set it up.
+        let m = Models::new(root.path().join("models"));
+        let subject = root.path().join("models").join(Pack::Subject.folder());
+        fake_install(&subject, Pack::Subject, true);
+        assert_eq!(m.installed(Pack::Subject), Some(subject.clone()));
         let fetch: Install = Box::new(|_, _, _| panic!("downloaded again"));
         m.set_up(Pack::Subject, &fetch, &Progress::default())
             .unwrap();
-    }
-
-    /// One without its receipt, or with a file of the wrong size, is not an
-    /// install: it isn't adopted, and setting up downloads into the
-    /// extension's own folder.
-    #[test]
-    fn the_apps_folder_without_a_good_receipt_is_left_alone() {
-        let root = tempfile::tempdir().unwrap();
-        let m = models(root.path());
-        let legacy = root.path().join("local/models").join(Pack::Sky.folder());
-        fake_install(&legacy, Pack::Sky, false);
+        assert!(is_installed(&subject, &Pack::Subject.files()));
+        let sky = root.path().join("models").join(Pack::Sky.folder());
+        fake_install(&sky, Pack::Sky, false);
         assert_eq!(m.installed(Pack::Sky), None);
-        assert!(legacy.exists(), "left where it is");
-        std::fs::write(legacy.join(RECEIPT), "a receipt for other files\n").unwrap();
+        std::fs::write(sky.join(RECEIPT), "a receipt for other files\n").unwrap();
         assert_eq!(m.installed(Pack::Sky), None);
-        let fetch: Install = Box::new(move |dir, files, _| {
-            fake_install(dir, Pack::Sky, true);
+        let fetch: Install = Box::new(|dir, files, _| {
             assert_eq!(files.len(), Pack::Sky.files().len());
+            fake_install(dir, Pack::Sky, true);
             Ok(())
         });
         m.set_up(Pack::Sky, &fetch, &Progress::default()).unwrap();
-        let own = root.path().join("own/models").join(Pack::Sky.folder());
-        assert_eq!(m.installed(Pack::Sky), Some(own));
-        assert!(legacy.exists());
+        assert_eq!(m.installed(Pack::Sky), Some(sky));
     }
 
-    /// When the app's install can't be moved (a folder of the same name is
-    /// in the way), it is used where it is.
+    /// Removing takes Subject's and Sky's packs and leaves the rest of the
+    /// folder, AI Denoise's pack among it.
     #[test]
-    fn the_apps_install_that_cant_move_is_used_in_place() {
+    fn removing_leaves_the_other_packs_alone() {
         let root = tempfile::tempdir().unwrap();
-        let m = models(root.path());
-        let legacy = root
-            .path()
-            .join("local/models")
-            .join(Pack::Subject.folder());
-        fake_install(&legacy, Pack::Subject, true);
-        let own = root.path().join("own/models").join(Pack::Subject.folder());
-        std::fs::create_dir_all(&own).unwrap();
-        std::fs::write(own.join(".vision_encoder.onnx.part"), b"part").unwrap();
-        assert_eq!(m.installed(Pack::Subject), Some(legacy.clone()));
-        assert!(is_installed(&legacy, &Pack::Subject.files()));
-        // Removing the models removes that one too.
-        assert_eq!(m.remove().unwrap(), 2);
-        assert!(!legacy.exists() && !own.exists());
+        let dir = root.path().join("models");
+        let m = Models::new(dir.clone());
+        fake_install(&dir.join(Pack::Subject.folder()), Pack::Subject, true);
+        let denoise = dir.join("rawnind-v1");
+        std::fs::create_dir_all(&denoise).unwrap();
+        std::fs::write(denoise.join("model.onnx"), b"").unwrap();
+        assert_eq!(m.remove().unwrap(), 1);
         assert_eq!(m.installed(Pack::Subject), None);
+        assert!(denoise.join("model.onnx").is_file());
+        assert_eq!(m.remove().unwrap(), 0);
     }
 }

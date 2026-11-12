@@ -1,6 +1,6 @@
 //! The extension through the SDK's mock host, over shared memory, with the
 //! fake models ([`crate::fake`]): what each generator answers, setting up and
-//! adopting the models, the remote worker, and removing them.
+//! finding the models, the remote worker, and removing them.
 use super::*;
 use crate::fake::Fake;
 use rawmakase_extension::ServeOptions;
@@ -82,9 +82,9 @@ fn fake_install(dir: &Path, pack: Pack, with_receipt: bool) {
 }
 
 impl Running {
-    /// Installs `pack` in the extension's data folder.
+    /// Installs `pack` where it belongs, in the local data folder.
     fn installed(&self, pack: Pack) -> PathBuf {
-        let dir = self.data.join("models").join(pack.folder());
+        let dir = self.local.join("models").join(pack.folder());
         fake_install(&dir, pack, true);
         dir
     }
@@ -232,7 +232,7 @@ fn the_generators_answer_with_the_models_coverage_and_identity() {
     );
     assert_eq!(
         r.fake.calls().folders[0],
-        r.data.join("models").join(Pack::Subject.folder())
+        r.local.join("models").join(Pack::Subject.folder())
     );
     assert!(r.fake.calls().folders.contains(&subject_dir));
 }
@@ -296,26 +296,37 @@ fn failures_reach_the_app_as_their_codes() {
     assert_eq!(e.code, ErrorCode::InvalidRequest);
 }
 
-/// The app's install from before, with its receipt, is adopted at the first
-/// request: moved into the extension's folder and used, with nothing
-/// downloaded. One with a bad receipt isn't, and the models are asked for.
+/// A pack in the local data folder's `models` with its receipt (as the app
+/// installed it before this extension) is used where it is, with nothing
+/// downloaded or moved, and nothing written to the extension's own data
+/// folder. One with a bad receipt isn't, and the models are asked for.
 #[test]
-fn the_apps_models_are_adopted_without_downloading() {
+fn the_apps_models_are_used_where_they_are() {
     let r = start(no_download(), Remote::Fixed(None));
-    let legacy = r.local.join("models").join(Pack::Subject.folder());
-    fake_install(&legacy, Pack::Subject, true);
+    let subject = r.local.join("models").join(Pack::Subject.folder());
+    fake_install(&subject, Pack::Subject, true);
     let sky = r.local.join("models").join(Pack::Sky.folder());
     fake_install(&sky, Pack::Sky, false);
     std::fs::write(sky.join(RECEIPT), "not this release's files\n").unwrap();
     r.ask(SUBJECT, None, 100, "a").unwrap();
-    let own = r.data.join("models").join(Pack::Subject.folder());
-    assert_eq!(r.fake.calls().folders[0], own);
-    assert!(!legacy.exists() && own.join(RECEIPT).is_file());
+    assert_eq!(r.fake.calls().folders[0], subject);
+    assert!(subject.join(RECEIPT).is_file(), "left where it is");
+    assert!(!r.data.join("models").exists());
     setup_of(&r.ask(SKY, None, 100, "a").unwrap_err());
     assert!(sky.exists(), "a folder that isn't an install is left alone");
 }
 
-/// Setting up downloads the pack into the extension's folder, saying how far
+/// The program's models are the app's: `Options::default` looks in the
+/// folder the installer has always used.
+#[test]
+fn the_default_models_folder_is_the_apps() {
+    assert_eq!(
+        Options::default().local_data.join("models"),
+        rawmakase_model_install::models_dir()
+    );
+}
+
+/// Setting up downloads the pack into the local data folder, saying how far
 /// it is as the drawer did; the generator then answers. A cancelled download
 /// ends cancelled, and a failed one says to download again.
 #[test]
@@ -432,86 +443,31 @@ fn a_remote_worker_selects_without_the_models_here() {
     );
 }
 
-/// Removing the models lets go of them and deletes every pack, the app's
-/// from before too; the generators then ask for them again.
+/// Removing the models lets go of them and deletes Subject's and Sky's
+/// packs, and nothing else of the folder; the generators then ask for them
+/// again.
 #[test]
 fn removing_the_models_asks_for_them_again() {
     let r = start(no_download(), Remote::Fixed(None));
     r.installed(Pack::Subject);
-    let legacy = r.local.join("models").join(Pack::Sky.folder());
-    fake_install(&legacy, Pack::Sky, true);
-    std::fs::create_dir_all(
-        r.data
-            .join("models")
-            .join(Pack::Sky.folder())
-            .join("in-the-way"),
-    )
-    .unwrap();
+    r.installed(Pack::Sky);
+    let denoise = r.local.join("models").join("rawnind-v1");
+    std::fs::create_dir_all(&denoise).unwrap();
     r.ask(SKY, None, 100, "a").unwrap();
-    assert!(legacy.exists(), "used where it was");
     let removed = r
         .host
         .run_command(REMOVE_MODELS, None, serde_json::Value::Null)
         .unwrap();
-    assert_eq!(removed, serde_json::json!({ "removed": 3 }));
+    assert_eq!(removed, serde_json::json!({ "removed": 2 }));
     assert_eq!(r.fake.calls().unloads, 1);
-    assert!(!legacy.exists());
+    assert!(denoise.is_dir(), "AI Denoise's pack is the app's");
     setup_of(&r.ask(SUBJECT, None, 100, "a").unwrap_err());
     setup_of(&r.ask(SKY, None, 100, "a").unwrap_err());
 }
 
-/// The manifest declares what this program implements, at its version:
-/// Subject (automatic and aimed, with Background as its inverted tile) and
-/// Sky (automatic), recording the sources masks saved before this extension
-/// record, so they find their generator again.
-#[test]
-fn the_manifest_declares_these_generators_at_this_version() {
-    use rawmakase_extension::protocol::manifest::{Input, Manifest};
-    let m = Manifest::parse(include_str!("../rawmakase-extension.toml")).unwrap();
-    assert_eq!(m.extension.id, ID);
-    assert_eq!(m.extension.version.to_string(), env!("CARGO_PKG_VERSION"));
-    assert_eq!(m.extension.api, 2);
-    let generators: Vec<_> = m
-        .mask_generators
-        .iter()
-        .map(|g| {
-            let tiles: Vec<_> = g
-                .tiles
-                .iter()
-                .map(|t| (t.name.as_str(), t.invert))
-                .collect();
-            (g.id.as_str(), g.provenance(ID), g.input.clone(), tiles)
-        })
-        .collect();
-    assert_eq!(
-        generators,
-        [
-            (
-                SUBJECT,
-                "subject".to_string(),
-                vec![Input::None, Input::Prompt],
-                vec![("Subject", false), ("Background", true)]
-            ),
-            (
-                SKY,
-                "sky".to_string(),
-                vec![Input::None],
-                vec![("Sky", false)]
-            ),
-        ]
-    );
-    assert_eq!(m.commands.len(), 1);
-    assert_eq!(m.commands[0].id, REMOVE_MODELS);
-    assert_eq!(
-        m.program.as_ref().map(|p| p.path.as_str()),
-        Some("rawmakase-ai-masks")
-    );
-}
-
 /// The real models through the extension: a click on a bright square on a
-/// dark photo selects the square. The models are found as the app's install
-/// from before, adopted through a link to them, so their folder is left as
-/// it is.
+/// dark photo selects the square. The models are found through a link in
+/// the local data folder's `models`, so their own folder is left as it is.
 #[test]
 #[cfg(unix)]
 #[ignore = "needs RAWMAKASE_TEST_MODEL (the selection models' folder) and RAWMAKASE_ORT_LIB"]

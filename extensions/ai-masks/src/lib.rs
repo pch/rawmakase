@@ -11,9 +11,10 @@
 //! The app renders the photo as the models see it and keeps the coverage as a
 //! raster. This program runs the models ([`engine`]) or asks the remote worker
 //! the user configured ([`Remote`]), keeps the last photo's analysis between
-//! requests, and installs the models when asked to (`mask.setup`), adopting
-//! the app's own install of them from before ([`models`]). The models run on
-//! the ONNX Runtime the app bundles ([`runtime`]).
+//! requests, and installs the models when asked to (`mask.setup`) where the
+//! app always installed them, in the local data folder's `models`
+//! ([`models`]). The models run on the ONNX Runtime the app bundles
+//! ([`runtime`]).
 //!
 //! Requests run one at a time, so the generators share their state behind a
 //! lock no two hold at once.
@@ -86,7 +87,8 @@ pub struct Options {
     /// How a pack's files are fetched.
     pub install: Install,
     /// The app's local data folder, which holds `remote-inference.json`, the
-    /// models it installed in `models/` and a runtime it didn't come with in
+    /// model packs in `models/` (Subject's and Sky's, which this extension
+    /// installs, beside AI Denoise's) and a runtime the app didn't come with in
     /// `runtime/`.
     pub local_data: PathBuf,
     /// Where the endpoint of a remote worker comes from.
@@ -116,9 +118,9 @@ struct Masks {
 }
 
 impl Masks {
-    /// The packs, in the extension's data folder and the app's from before.
-    fn models(&self, cx: &Context) -> Models {
-        Models::new(cx.data_dir().join("models"), self.local_data.join("models"))
+    /// The packs, in `<local data>/models`.
+    fn models(&self) -> Models {
+        Models::new(self.local_data.join("models"))
     }
 }
 
@@ -147,8 +149,8 @@ pub fn extension(options: Options) -> Extension {
             },
         )
         .mask_generator(SKY, Generator { id: SKY, masks })
-        .command(REMOVE_MODELS, move |cx: &Context, _run: CommandRun| {
-            remove_models(cx, &remove)
+        .command(REMOVE_MODELS, move |_: &Context, _run: CommandRun| {
+            remove_models(&remove)
         })
 }
 
@@ -176,7 +178,7 @@ impl MaskGenerator for Generator {
             }
             None => Some(
                 masks
-                    .models(cx)
+                    .models()
                     .installed(pack)
                     .ok_or_else(|| pack.needs_setup().error())?,
             ),
@@ -233,7 +235,7 @@ impl MaskGenerator for Generator {
             _ => Pack::Subject,
         };
         let masks = lock(&self.masks);
-        let (models, install) = (masks.models(cx), &masks.install);
+        let (models, install) = (masks.models(), &masks.install);
         let total = pack.needs_setup().bytes.max(1);
         let progress = Progress::default();
         let result = std::thread::scope(|scope| {
@@ -336,14 +338,14 @@ fn error(failure: Failure, pack: Pack) -> RemoteError {
 }
 
 /// The `remove-models` command: lets go of the loaded models, then deletes
-/// every pack. Saved masks keep working; selecting again asks to download
+/// Subject's and Sky's packs. Saved masks keep working; selecting again asks to download
 /// them.
-fn remove_models(cx: &Context, masks: &Shared) -> Result<serde_json::Value, RemoteError> {
+fn remove_models(masks: &Shared) -> Result<serde_json::Value, RemoteError> {
     let mut masks = lock(masks);
     masks.engine.unload();
     masks.state = State::default();
     let removed = masks
-        .models(cx)
+        .models()
         .remove()
         .map_err(|why| RemoteError::new(ErrorCode::Other("failed".into()), why))?;
     Ok(serde_json::json!({ "removed": removed }))
