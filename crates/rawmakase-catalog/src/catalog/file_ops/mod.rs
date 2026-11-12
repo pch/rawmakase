@@ -187,12 +187,16 @@ pub enum Refusal {
     /// it, or it is one itself.
     NotPlain(PathBuf),
     /// Another photo of the catalog, whose file is at this path, is the same
-    /// file: a second root or folder over the same directory, or a
-    /// duplicate row.
+    /// file: a second root or folder over the same directory, a duplicate
+    /// row, or, for the Trash, another name of a hard-linked file.
     Shared(PathBuf),
     /// Its file has another name (a hard link), which may be outside the
-    /// catalog.
+    /// catalog, and it would be moved or renamed. The Trash takes it.
     HardLinked,
+    /// Its file has another name (a hard link), and the file of another
+    /// photo of the catalog, at this path, can't be looked at to tell
+    /// whether it is that name.
+    LinkUnchecked(PathBuf),
     /// It was chosen twice, as the same file through another photo.
     Twice,
     /// Its volume is read-only.
@@ -252,8 +256,13 @@ impl fmt::Display for Refusal {
                 "Another photo in the catalog, {}, is the same file.",
                 p.display()
             ),
+            Self::LinkUnchecked(p) => write!(
+                f,
+                "Its file has a second name on its drive (a hard link), and RAWmakase can't check whether another photo in the catalog, {}, is the same file.",
+                p.display()
+            ),
             Self::HardLinked => f.write_str(
-                "Its file has a second name on its drive (a hard link), so RAWmakase leaves it alone.",
+                "Its file has a second name on its drive (a hard link), so RAWmakase doesn't move or rename it.",
             ),
             Self::Twice => f.write_str("The same file was chosen twice."),
             Self::ReadOnly => f.write_str("Its volume is read-only."),
