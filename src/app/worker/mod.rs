@@ -77,6 +77,8 @@ pub(crate) enum Event {
     },
     /// A Subject or Background selection finished (or failed).
     Selection(Box<crate::app::develop::tools::subject_mask::Done>),
+    /// An extension's mask request has its input rendered, ready to send.
+    MaskPrepared(Box<crate::app::extensions::mask_generator::Prepared>),
     /// News of AI Denoise for a photo Develop asked for (`app::develop::ai_denoise`).
     AiDenoise(Box<crate::ai_denoise::Update>),
     /// An AI Denoise result was stored for the photo at this path, by any job.

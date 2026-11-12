@@ -206,13 +206,23 @@ const WORK: &[Row] = &[
         pauses_checksums: false,
         stop: Some(|e, _| Vec::from(e.stand_ins.stop())),
     },
-    // Its tile (Subject, Sky); Subject's and Sky's model installers and the
-    // upgrade thread are stopped with it.
+    // Its tile (Subject, Sky, an extension's mask generator), and the status
+    // line while a request is in flight, until its reply, error, cancel, the
+    // program's crash or hang, disabling or a new photo ends it. Subject's and
+    // Sky's model installers and the upgrade thread are stopped with it; an
+    // extension's request is cancelled by `Kind::Extensions`.
     Row {
         kind: Kind::Selection,
         running: None,
         closing: None,
-        status: None,
+        status: Some(|e| {
+            e.selection.running().map(|request| {
+                work(
+                    "selection",
+                    &format!("Finding the {}…", request.generator.name().to_lowercase()),
+                )
+            })
+        }),
         slows_previews: false,
         pauses_checksums: false,
         stop: Some(|e, _| e.selection.stop()),

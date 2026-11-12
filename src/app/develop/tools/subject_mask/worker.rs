@@ -5,6 +5,13 @@
 //! of the photo last asked about, so a second click on it takes milliseconds
 //! instead of a second.
 //!
+//! An extension's mask generator runs in its program instead, and this thread
+//! does the pixel work on either side of the request
+//! ([`Worker::call`]): rendering the input into the request's buffers, and
+//! copying the coverage out of them and keeping it as a raster
+//! ([`crate::app::extensions::mask_generator`]). Both kinds of request share
+//! [`render_input`] and [`keep`], so neither does pixel work on the UI thread.
+//!
 //! Cancelling raises the request's flag, which the runtime notices within a few
 //! milliseconds. Quitting hands the thread to the shared shutdown deadline
 //! rather than joining it, and the thread keeps its session until it ends, so a
@@ -47,8 +54,13 @@ pub(super) struct Job {
     pub(super) action: Action,
 }
 
+/// Work of an extension's request to run here, and the event to send in its
+/// place if it panics or the thread is gone.
+type Call = Box<dyn FnOnce() -> Event + Send>;
+
 enum Message {
     Run(Box<Job>, Sender<Event>, egui::Context),
+    Call(Call, Call, Sender<Event>, egui::Context),
     /// Let go of the model, then say so.
     Unload(Sender<()>),
 }
@@ -72,13 +84,33 @@ impl Worker {
             return;
         }
         let (load, generation) = (job.load, job.generation);
-        let failed = |why: &str| {
+        let failed = |why: String| {
             let _ = tx.send(Event::Selection(Box::new(Done {
                 load,
                 generation,
-                result: Err(Failure::Failed(why.into())),
+                result: Err(Failure::Failed(why)),
             })));
         };
+        if let Err(why) = self.send(Message::Run(Box::new(job), tx.clone(), ctx)) {
+            failed(why);
+        }
+    }
+    /// Runs `work` on the thread, after the jobs queued before it, and sends
+    /// the event it returns. If it panics, or the thread can't take it,
+    /// `fallback`'s event is sent instead, so whatever waits on it ends.
+    pub(in crate::app) fn call(
+        &mut self,
+        work: impl FnOnce() -> Event + Send + 'static,
+        fallback: impl FnOnce() -> Event + Send + 'static,
+        tx: Sender<Event>,
+        ctx: egui::Context,
+    ) {
+        let (work, fallback): (Call, Call) = (Box::new(work), Box::new(fallback));
+        // Refused, the fallback has been sent.
+        let _ = self.send(Message::Call(work, fallback, tx, ctx));
+    }
+    /// Sends `message` to the thread, starting it first when it isn't running.
+    fn send(&mut self, message: Message) -> Result<(), String> {
         if self.thread.as_ref().is_some_and(|t| t.is_finished()) {
             self.messages = None;
             self.thread = None;
@@ -93,16 +125,28 @@ impl Worker {
                     self.messages = Some(messages);
                     self.thread = Some(thread);
                 }
-                Err(e) => return failed(&format!("could not start the selection thread: {e}")),
+                Err(e) => {
+                    Self::refused(message);
+                    return Err(format!("could not start the selection thread: {e}"));
+                }
             }
         }
-        let sent = self
-            .messages
-            .as_ref()
-            .is_some_and(|m| m.send(Message::Run(Box::new(job), tx.clone(), ctx)).is_ok());
-        if !sent {
+        let Some(messages) = &self.messages else {
+            return Err("the selection thread stopped".into());
+        };
+        if let Err(mpsc::SendError(message)) = messages.send(message) {
             self.messages = None;
-            failed("the selection thread stopped");
+            Self::refused(message);
+            return Err("the selection thread stopped".into());
+        }
+        Ok(())
+    }
+    /// A message the thread never got: a call's fallback is sent, so its
+    /// request ends; a run's caller says so itself.
+    fn refused(message: Message) {
+        if let Message::Call(_, fallback, tx, ctx) = message {
+            let _ = tx.send(fallback());
+            ctx.request_repaint();
         }
     }
     /// A closure that makes the thread release the model and waits (briefly) for it
@@ -135,6 +179,12 @@ fn run(inbox: mpsc::Receiver<Message>) {
                 state = State::default();
                 let _ = ack.send(());
             }
+            Message::Call(work, fallback, tx, ctx) => {
+                let event = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work))
+                    .unwrap_or_else(|_| fallback());
+                let _ = tx.send(event);
+                ctx.request_repaint();
+            }
             Message::Run(job, tx, ctx) => {
                 let (load, generation) = (job.load, job.generation);
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -160,26 +210,11 @@ fn run(inbox: mpsc::Receiver<Message>) {
 /// unsaved raster. All of it runs on the worker thread.
 fn select(job: &Job, state: &mut State) -> Result<Generated, Failure> {
     let cancelled = || job.cancel.load(Ordering::Relaxed);
-    if cancelled() {
-        return Err(Failure::Cancelled);
-    }
-    let input = crate::develop::masks::selection_input(
-        &job.image,
-        &job.recipe,
-        INPUT_EDGE,
-        Cancel::new(&job.cancel),
-    )
-    .map_err(|e| {
-        if cancelled() {
-            Failure::Cancelled
-        } else {
-            Failure::Failed(format!("{e:#}"))
-        }
-    })?;
+    let (width, height, data) = render_input(&job.image, &job.recipe, &job.cancel)?;
     let rgb = RgbImage {
-        width: input.width as usize,
-        height: input.height as usize,
-        data: input.rgb8(),
+        width: width as usize,
+        height: height as usize,
+        data,
     };
     let answer = inference::generate(
         &Ask {
@@ -194,29 +229,70 @@ fn select(job: &Job, state: &mut State) -> Result<Generated, Failure> {
     if cancelled() {
         return Err(Failure::Cancelled);
     }
-    // Exactly nothing selected is the only emptiness decided here.
     let coverage = answer.coverage;
-    if coverage.data.iter().all(|v| *v == 0) {
-        return Err(answer.empty);
+    keep(
+        coverage.width as u32,
+        coverage.height as u32,
+        coverage.data,
+        answer.empty,
+        BitmapSource {
+            feature: answer.feature.provenance().into(),
+            model: answer.model,
+            input: answer.input,
+        },
+    )
+}
+
+/// The photo as a mask generator sees it ([`crate::develop::masks::selection_input`]):
+/// its width, height and 8-bit sRGB pixels, at most [`INPUT_EDGE`] on the long
+/// side. Fails with [`Failure::Cancelled`] once `cancel` is raised.
+pub(in crate::app) fn render_input(
+    image: &CameraImage,
+    recipe: &Recipe,
+    cancel: &AtomicBool,
+) -> Result<(u32, u32, Vec<u8>), Failure> {
+    let cancelled = || cancel.load(Ordering::Relaxed);
+    if cancelled() {
+        return Err(Failure::Cancelled);
     }
-    let (width, height) = (coverage.width as u32, coverage.height as u32);
+    let input =
+        crate::develop::masks::selection_input(image, recipe, INPUT_EDGE, Cancel::new(cancel))
+            .map_err(|e| {
+                if cancelled() {
+                    Failure::Cancelled
+                } else {
+                    Failure::Failed(format!("{e:#}"))
+                }
+            })?;
+    Ok((input.width, input.height, input.rgb8()))
+}
+
+/// Keeps a coverage of `width` by `height` as an unsaved raster from
+/// `source`; all-zero coverage is `empty` instead. Exactly nothing selected is
+/// the only emptiness decided here.
+pub(in crate::app) fn keep(
+    width: u32,
+    height: u32,
+    coverage: Vec<u8>,
+    empty: Failure,
+    source: BitmapSource,
+) -> Result<Generated, Failure> {
+    if coverage.iter().all(|v| *v == 0) {
+        return Err(empty);
+    }
     let id = mask_assets::register(Bitmap {
         width,
         height,
         channels: 1,
         depth: 1,
-        data: coverage.data,
+        data: coverage,
     })
     .map_err(|e| Failure::Failed(format!("{e:#}")))?;
     Ok(Generated {
         id,
         width,
         height,
-        source: BitmapSource {
-            feature: answer.feature.provenance().into(),
-            model: answer.model,
-            input: answer.input,
-        },
+        source,
     })
 }
 

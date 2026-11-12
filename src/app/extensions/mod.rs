@@ -66,6 +66,7 @@
 //! ([`Host::kill_remaining`]).
 mod devices;
 mod editor;
+pub(in crate::app) mod mask_generator;
 #[cfg(test)]
 mod midi_tests;
 mod page;
@@ -89,7 +90,7 @@ use rawmakase_extensions::protocol::{ErrorCode, PROTOCOL, RemoteError, controls:
 use rawmakase_extensions::session::{
     self, Killer, Launch, Session, SessionOptions, Update, check_hello,
 };
-use rawmakase_extensions::shm::Ledger;
+use rawmakase_extensions::shm::{Buffers, Ledger, Returned};
 use rawmakase_extensions::state::{Entry, Source, State};
 use rawmakase_extensions::store::Store;
 use rawmakase_extensions::{Manifest, semver};
@@ -150,14 +151,30 @@ pub(in crate::app) enum RunBy {
 #[derive(Clone, Debug, PartialEq)]
 enum Pending {
     Hello,
-    Command { command: String, by: RunBy },
-    Panel { panel: String },
+    Command {
+        command: String,
+        by: RunBy,
+    },
+    Panel {
+        panel: String,
+    },
+    /// `mask.generate`, named by the host's ticket: its id is known only once
+    /// it is sent, which may wait for the handshake.
+    Mask {
+        ticket: u64,
+    },
+    /// `mask.setup` for one of the extension's generators.
+    MaskSetup {
+        generator: String,
+    },
 }
 
 /// A request waiting for the program's handshake.
 struct Queued {
     request: AppRequest,
     pending: Pending,
+    /// Its buffers, sent with it; their lease is held meanwhile.
+    buffers: Option<Buffers>,
 }
 
 /// A program's proposal being applied by a worker, until the worker reports
@@ -269,6 +286,11 @@ pub(in crate::app) struct Extension {
     /// leases a program that ended still holds until its unit has ended
     /// count against the next, whatever entry it has.
     ledger: Ledger,
+    /// Counts the times its program was ended by the host or ended by itself
+    /// (disabled, uninstalled, loaded again, crashed, hung), shared by every
+    /// entry its id has, as `ledger` is ([`Host`]'s `lifecycles`). Work for
+    /// the extension captures it, and is void once it has moved.
+    lifecycle: Arc<std::sync::atomic::AtomicU64>,
     crashes: u32,
     /// Crashed [`CRASHES`] times in a row: nothing starts it until Retry.
     pub failed: bool,
@@ -276,6 +298,8 @@ pub(in crate::app) struct Extension {
     /// The program's `status` entry.
     pub status: Option<String>,
     pub panels: BTreeMap<String, PanelView>,
+    /// Its mask generators' setups running or failed, by generator.
+    pub setups: BTreeMap<String, mask_generator::Setup>,
     /// Commands whose target is being read, before they are sent.
     reading: Vec<TargetRead>,
     last_active: Instant,
@@ -365,6 +389,20 @@ pub(in crate::app) enum Outcome {
     },
     /// Something for the top bar.
     Message { level: Level, text: String },
+    /// A `mask.generate` request's one outcome: the program's reply with the
+    /// buffers it wrote, or its failure (`exited`, `disabled`, `deadline`).
+    Mask {
+        extension: String,
+        ticket: u64,
+        result: Result<Value, RemoteError>,
+        buffers: Option<Returned>,
+    },
+    /// A `mask.setup` request's one outcome.
+    MaskSetup {
+        extension: String,
+        generator: String,
+        result: Result<Value, RemoteError>,
+    },
 }
 
 /// A request from a program for the editor to answer: everything but the
@@ -418,6 +456,8 @@ pub(in crate::app) struct Host {
     /// or falling back to the bundled one) counts against the same budget as
     /// its predecessors, whose leases may still be held.
     ledgers: HashMap<String, Ledger>,
+    /// Each extension's lifecycle count, by id, for as long as the host runs.
+    lifecycles: HashMap<String, Arc<std::sync::atomic::AtomicU64>>,
     /// Counts changes to the enabled extensions' commands.
     revision: u64,
     /// For the next Preferences page to report.
@@ -436,6 +476,9 @@ pub(in crate::app) struct Host {
     /// without a program.
     #[cfg(test)]
     pub(in crate::app) finished: Vec<(u64, Result<Value, RemoteError>)>,
+    /// Every `mask.generate` sent, for tests of what a gesture asked.
+    #[cfg(test)]
+    masks_sent: Vec<rawmakase_extensions::protocol::method::MaskGenerate>,
     /// Tests start these bundled extensions, by id, as these programs.
     #[cfg(test)]
     bundled_override: Vec<(String, Launch)>,
@@ -465,6 +508,7 @@ impl Host {
             closed: false,
             killers: Vec::new(),
             ledgers: HashMap::new(),
+            lifecycles: HashMap::new(),
             revision: 0,
             errors: Vec::new(),
             search_dirs: Vec::new(),
@@ -474,6 +518,8 @@ impl Host {
             program_override: None,
             #[cfg(test)]
             finished: Vec::new(),
+            #[cfg(test)]
+            masks_sent: Vec::new(),
             #[cfg(test)]
             bundled_override: Vec::new(),
             #[cfg(test)]
@@ -815,6 +861,7 @@ impl Host {
                 }
                 existing => {
                     let ledger = self.ledgers.entry(id.clone()).or_default().clone();
+                    let lifecycle = self.lifecycles.entry(id.clone()).or_default().clone();
                     if let Some(mut old) = existing {
                         Self::end(&mut old, ErrorCode::Cancelled);
                     }
@@ -829,11 +876,13 @@ impl Host {
                         entry,
                         run: None,
                         ledger,
+                        lifecycle,
                         crashes: 0,
                         failed: false,
                         errors: VecDeque::new(),
                         status: None,
                         panels: BTreeMap::new(),
+                        setups: BTreeMap::new(),
                         reading: Vec::new(),
                         last_active: Instant::now(),
                         mtimes,
@@ -887,31 +936,21 @@ impl Host {
     /// Ends `e`'s program now, if it runs, without counting a crash: its
     /// requests fail with `code` and are cancelled at the program, and its
     /// status and panels clear. Dropping the session ends its unit at once.
+    /// Its lifecycle moves on, whether it ran or not, so work started for it
+    /// before is void.
     fn end(e: &mut Extension, code: ErrorCode) -> Vec<Outcome> {
+        e.lifecycle.fetch_add(1, Ordering::SeqCst);
         let mut outcomes = Self::stop_reading(e, &code);
         if let Some(mut run) = e.run.take() {
             let mut ids: Vec<u64> = run.requests.keys().copied().collect();
             ids.sort_unstable();
-            for id in ids {
+            let pending = ids.into_iter().filter_map(|id| {
                 run.session.cancel(id);
-                if let Some(Pending::Command { command, by }) = run.requests.remove(&id) {
-                    outcomes.push(Outcome::Command {
-                        extension: e.manifest.extension.id.clone(),
-                        title: command_title(&e.manifest, &command),
-                        by,
-                        result: Err(RemoteError::new(code.clone(), "the command was stopped")),
-                    });
-                }
-            }
-            for queued in run.queued.drain(..) {
-                if let Pending::Command { command, by } = queued.pending {
-                    outcomes.push(Outcome::Command {
-                        extension: e.manifest.extension.id.clone(),
-                        title: command_title(&e.manifest, &command),
-                        by,
-                        result: Err(RemoteError::new(code.clone(), "the command was stopped")),
-                    });
-                }
+                run.requests.remove(&id)
+            });
+            let queued = run.queued.drain(..).map(|q| q.pending);
+            for pending in pending.collect::<Vec<_>>().into_iter().chain(queued) {
+                outcomes.extend(Self::stopped(e, pending, &code));
             }
             run.stopping = true;
             drop(run);
@@ -919,6 +958,36 @@ impl Host {
         e.status = None;
         e.panels.clear();
         outcomes
+    }
+
+    /// What the editor is told of `e`'s request `pending` stopped with `code`
+    /// before it was answered: commands and mask requests fail.
+    fn stopped(e: &mut Extension, pending: Pending, code: &ErrorCode) -> Option<Outcome> {
+        let extension = e.manifest.extension.id.clone();
+        let error = |what: &str| RemoteError::new(code.clone(), format!("the {what} was stopped"));
+        match pending {
+            Pending::Command { command, by } => Some(Outcome::Command {
+                title: command_title(&e.manifest, &command),
+                extension,
+                by,
+                result: Err(error("command")),
+            }),
+            Pending::Mask { ticket } => Some(Outcome::Mask {
+                extension,
+                ticket,
+                result: Err(error("mask request")),
+                buffers: None,
+            }),
+            Pending::MaskSetup { generator } => {
+                e.setups.remove(&generator);
+                Some(Outcome::MaskSetup {
+                    extension,
+                    generator,
+                    result: Err(error("setup")),
+                })
+            }
+            Pending::Hello | Pending::Panel { .. } => None,
+        }
     }
 
     /// Cancels the reads of `e`'s commands' targets: those commands are never
@@ -1104,7 +1173,13 @@ impl Host {
 
     /// Sends `request` to extension `id`, starting its program first when it
     /// isn't running.
-    fn send(&mut self, id: &str, request: AppRequest, pending: Pending) -> Result<(), String> {
+    fn send(
+        &mut self,
+        id: &str,
+        request: AppRequest,
+        pending: Pending,
+        buffers: Option<Buffers>,
+    ) -> Result<(), String> {
         if self.closed {
             return Err("RAWmakase is quitting".into());
         }
@@ -1117,15 +1192,25 @@ impl Host {
         e.last_active = Instant::now();
         let run = e.run.as_mut().expect("started above");
         if !run.ready {
-            run.queued.push(Queued { request, pending });
+            run.queued.push(Queued {
+                request,
+                pending,
+                buffers,
+            });
             return Ok(());
         }
         let (method, params) = request.into_parts();
-        let deadline = Instant::now() + self.request_deadline;
-        let request = run
-            .session
-            .request(&method, params, deadline)
-            .map_err(|err| err.to_string())?;
+        let deadline = Instant::now()
+            + match pending {
+                Pending::Mask { .. } => mask_generator::GENERATE_DEADLINE,
+                Pending::MaskSetup { .. } => mask_generator::SETUP_DEADLINE,
+                _ => self.request_deadline,
+            };
+        let request = match buffers {
+            Some(buffers) => run.session.request_with(&method, params, buffers, deadline),
+            None => run.session.request(&method, params, deadline),
+        }
+        .map_err(|err| err.to_string())?;
         run.requests.insert(request, pending);
         Ok(())
     }
@@ -1151,7 +1236,7 @@ impl Host {
             command: command.to_string(),
             by,
         };
-        self.send(id, request, pending)
+        self.send(id, request, pending, None)
     }
 
     /// Opens panel `panel` of extension `id`: its program answers with its
@@ -1206,6 +1291,7 @@ impl Host {
             Pending::Panel {
                 panel: panel.to_string(),
             },
+            None,
         );
         if let Some(index) = self.index(id) {
             let view = self.extensions[index]
@@ -1604,14 +1690,19 @@ impl Host {
                 break;
             }
             match update {
-                Update::Reply { id, result, .. } => {
+                Update::Reply {
+                    id,
+                    result,
+                    buffers,
+                    ..
+                } => {
                     let Some(run) = e.run.as_mut() else { break };
                     let Some(pending) = run.requests.remove(&id) else {
                         continue;
                     };
                     // An answered command admits no more of its proposals.
                     Self::sweep(e);
-                    self.settle(index, pending, result, outcomes);
+                    self.settle(index, pending, result, buffers, outcomes);
                 }
                 Update::Request { id, method, params } => {
                     let answered = match ProgramRequest::parse(&method, params) {
@@ -1654,7 +1745,15 @@ impl Host {
                         );
                     }
                 }
-                Update::Progress { .. } => {}
+                Update::Progress { id, done, text } => {
+                    if let Some(Pending::MaskSetup { generator }) =
+                        e.run.as_ref().and_then(|r| r.requests.get(&id))
+                        && let Some(mask_generator::Setup::Running { done: d, text: t }) =
+                            e.setups.get_mut(generator)
+                    {
+                        (*d, *t) = (done, text);
+                    }
+                }
                 // The same terminal cleanup as `Hung`, whichever comes first:
                 // what waits on the program fails with `exited` (commands
                 // queued before the handshake, targets being read) and the
@@ -1699,10 +1798,41 @@ impl Host {
         index: usize,
         pending: Pending,
         result: Result<Value, RemoteError>,
+        buffers: Option<Returned>,
         outcomes: &mut Vec<Outcome>,
     ) {
         let e = &mut self.extensions[index];
         match pending {
+            Pending::Mask { ticket } => {
+                if result.is_ok() {
+                    e.crashes = 0;
+                }
+                outcomes.push(Outcome::Mask {
+                    extension: e.manifest.extension.id.clone(),
+                    ticket,
+                    result,
+                    buffers,
+                });
+            }
+            Pending::MaskSetup { generator } => {
+                match &result {
+                    Err(err) if err.code != ErrorCode::Cancelled => {
+                        e.error(format!("Setting up {generator}: {err}"));
+                        e.setups.insert(
+                            generator.clone(),
+                            mask_generator::Setup::Failed(err.message.clone()),
+                        );
+                    }
+                    _ => {
+                        e.setups.remove(&generator);
+                    }
+                }
+                outcomes.push(Outcome::MaskSetup {
+                    extension: e.manifest.extension.id.clone(),
+                    generator,
+                    result,
+                });
+            }
             Pending::Hello => match result.and_then(check_hello) {
                 Ok(_) => {
                     let Some(run) = e.run.as_mut() else { return };
@@ -1710,7 +1840,7 @@ impl Host {
                     let queued = std::mem::take(&mut run.queued);
                     let id = e.manifest.extension.id.clone();
                     for q in queued {
-                        if let Err(why) = self.send(&id, q.request, q.pending.clone()) {
+                        if let Err(why) = self.send(&id, q.request, q.pending.clone(), q.buffers) {
                             self.failed_request(index, q.pending, why, outcomes);
                         }
                     }
@@ -1768,6 +1898,9 @@ impl Host {
                 by,
                 result: Err(RemoteError::new(ErrorCode::Exited, why)),
             }),
+            Pending::Mask { .. } | Pending::MaskSetup { .. } => {
+                outcomes.extend(Self::stopped(e, pending, &ErrorCode::Exited));
+            }
             Pending::Panel { panel } => {
                 let view = e.panels.entry(panel).or_default();
                 view.waiting = false;

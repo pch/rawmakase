@@ -214,6 +214,21 @@ typed into it lands, a text field on Enter or when it loses focus.
 **Panels** are drawn on the extension's page from the controls its program
 returns.
 
+**Mask generators** add tiles to the Masking drawer, beside Subject, Sky and
+Background, and to a mask's Add, Subtract and Intersect menus. A tile asks its
+generator for a new mask (inverted for a Background-style tile), one request
+at a time; aiming with `prompt` isn't collected for extensions yet, so only
+generators that take `none` show tiles. The
+app renders the photo for it, keeps the coverage as a raster mask stored with
+the edit, and makes one History step of each result; a result arriving after
+the photo, its masks or its spots changed is dropped. A generator that answers
+`needs_setup` shows a card with what it needs and its size; Download sends
+`mask.setup`, with its progress and Cancel, and the selection goes on once it
+is done. Regenerate finds the generator from the provenance a mask saved. A
+disabled, Failed or missing extension's tiles go, and Regenerate on its masks
+shows disabled with why; the masks themselves
+render as before, labelled from their provenance.
+
 **Reads and proposals**: a program reads the selection, the open photo or
 photos by id, with a token naming what it read, and proposes settings with
 that token while its command runs. A photo changed since (another edit, its
