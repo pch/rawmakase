@@ -23,6 +23,76 @@ pub struct PreviewRenderer {
     retouch: super::retouch::RetouchCache,
     /// The AI Denoise source the next renders use ([`Self::set_ai`]).
     ai: Option<super::AiSource>,
+    /// An HDR file's master on the GPU ([`HdrFileScenes`]), apart from the stages and
+    /// caches its SDR rendition renders with, so the two don't replace each other's.
+    hdr_files: HdrFileScenes,
+}
+/// The pseudo-scenes of an HDR file's light the GPU renders its master from
+/// (`quality::hdr_file_scene`), with their own stage and retouch caches. A scene
+/// bakes Exposure in as a gain of the light, as the CPU master does, so a new
+/// Exposure makes a new one; every other change renders from the one kept. Kept per
+/// size: the whole photo reduced for Fit, a smaller copy for a 100% drag's preview,
+/// and the full photo for 100%.
+#[derive(Default)]
+struct HdrFileScenes {
+    scenes: Vec<HdrFileScene>,
+    cache: StageCache,
+    retouch: super::retouch::RetouchCache,
+}
+struct HdrFileScene {
+    /// The file's light, by its allocation, held weakly: another photo's is another.
+    light: std::sync::Weak<crate::camera_data::HdrLight>,
+    /// Exposure's gain of the light, by its bits.
+    gain: u32,
+    /// The long edge the light was reduced to (as `develop::preview` reduces it), 0
+    /// for the full photo.
+    edge: u32,
+    scene: Arc<CameraImage>,
+}
+/// Scenes kept: one per size a view shows.
+const HDR_FILE_SCENES: usize = 3;
+impl HdrFileScenes {
+    /// Lets go of the scenes unless they are of `image`'s light: a full photo's scene
+    /// is as large as the photo, and no other photo renders from it.
+    fn keep_only(&mut self, image: &CameraImage) {
+        let light = image.hdr().map(Arc::as_ptr);
+        if (self.scenes.iter()).any(|s| Some(s.light.as_ptr()) != light) {
+            *self = Self::default();
+        }
+    }
+    /// The scene of `file`'s light at `gain`, reduced to `edge` (0 for full size),
+    /// made when it isn't kept. Scenes of other light are let go first.
+    fn scene(&mut self, file: &CameraImage, gain: f32, edge: u32) -> Result<Arc<CameraImage>> {
+        let light = file
+            .hdr()
+            .ok_or_else(|| anyhow::anyhow!("This HDR file's light was not decoded"))?;
+        self.keep_only(file);
+        if let Some(k) =
+            (self.scenes.iter()).position(|s| s.gain == gain.to_bits() && s.edge == edge)
+        {
+            let kept = self.scenes.remove(k);
+            let scene = kept.scene.clone();
+            self.scenes.push(kept);
+            return Ok(scene);
+        }
+        // The one at this size at another gain is replaced, so an Exposure drag keeps
+        // a scene a size, not one an Exposure.
+        self.scenes.retain(|s| s.edge != edge);
+        if self.scenes.len() >= HDR_FILE_SCENES {
+            self.scenes.remove(0);
+        }
+        let scene = Arc::new(match edge {
+            0 => quality::hdr_file_scene(file, gain)?,
+            edge => quality::hdr_file_scene(&super::preview(file, edge), gain)?,
+        });
+        self.scenes.push(HdrFileScene {
+            light: Arc::downgrade(light),
+            gain: gain.to_bits(),
+            edge,
+            scene: scene.clone(),
+        });
+        Ok(scene)
+    }
 }
 /// The optional GPU and why it is not used.
 #[derive(Default)]
@@ -198,6 +268,16 @@ impl PreviewRenderer {
         self.backend.used_gpu = false;
         anyhow::ensure!(!cancel.is_cancelled(), "Render superseded");
         let recipe = &recipe.checked()?;
+        self.hdr_files.keep_only(image);
+        if let Some(headroom) = hdr
+            && image.metadata.hdr_source.is_some()
+        {
+            let part = match region {
+                Some(region) => HdrFilePart::Region(region),
+                None => HdrFilePart::Whole(max_edge),
+            };
+            return self.render_hdr_file(image, recipe, part, headroom, cancel, display);
+        }
         let resolved = match hdr {
             Some(_) => quality::resolve_hdr(image, recipe),
             None => quality::resolve(image, recipe),
@@ -317,6 +397,13 @@ impl PreviewRenderer {
         let recipe = shown.as_ref();
         self.backend.used_gpu = false;
         let recipe = &recipe.checked()?;
+        self.hdr_files.keep_only(image);
+        if let Some(headroom) = hdr
+            && image.metadata.hdr_source.is_some()
+        {
+            let part = HdrFilePart::Preview(region);
+            return self.render_hdr_file(image, recipe, part, headroom, cancel, display);
+        }
         let resolved = match hdr {
             Some(_) => quality::resolve_hdr(image, recipe),
             None => quality::resolve(image, recipe),
@@ -349,6 +436,83 @@ impl PreviewRenderer {
         stages.hdr = hdr;
         let recipe = &resolved.recipe;
         quality::render_level(&level, &source, recipe, size, region, cancel, &mut stages)
+    }
+    /// An HDR file's master on the GPU, as `render_hdr` renders it on the CPU: from
+    /// the pseudo-scene of its light, through the same stages as a raw's
+    /// (`quality::hdr_file_recipe`). A whole photo within an edge renders from the
+    /// light reduced to twice that edge, as `render_hdr_preview` does; a 100% region,
+    /// or the whole photo at full size, from the full light; a 100% drag's preview
+    /// from the light at that preview's scale. `HdrNotOnGpu` where the port doesn't
+    /// render the master.
+    fn render_hdr_file(
+        &mut self,
+        image: &CameraImage,
+        recipe: &crate::model::valid::ValidRecipe<'_>,
+        part: HdrFilePart,
+        headroom: f32,
+        cancel: Cancel<'_>,
+        display: Option<&gpu::Display>,
+    ) -> Result<Output> {
+        let mut resolved = recipe.resolved_hdr(&image.metadata);
+        let gain = quality::hdr_file_recipe(resolved.to_mut(), &image.metadata);
+        if crate::model::hdr::check_for(recipe, &image.metadata).is_err()
+            || !super::pipeline::pixel_params::supported_hdr(&resolved, &image.metadata)
+        {
+            return Err(quality::HdrNotOnGpu.into());
+        }
+        let full = super::Geometry::new(image, &resolved, 0);
+        let long = full.width.max(full.height);
+        let image_long = image.width.max(image.height);
+        // The light's long edge to reduce to (0 for full size), the output's size and
+        // the part of it rendered.
+        let (edge, size, region) = match part {
+            HdrFilePart::Whole(max_edge) if max_edge > 0 && long > max_edge => {
+                let size = quality::output_size(full.width, full.height, max_edge);
+                (max_edge.saturating_mul(2), size, [0, 0, size.0, size.1])
+            }
+            HdrFilePart::Whole(_) => {
+                let size = (full.width, full.height);
+                (0, size, [0, 0, size.0, size.1])
+            }
+            HdrFilePart::Region(region) => (0, (full.width, full.height), region),
+            HdrFilePart::Preview([x, y, w, h]) => {
+                // As `region_preview_in`: halved until at most PREVIEW_PIXELS.
+                let mut k = 1;
+                while (w as u64 * h as u64) >> (2 * k) > PREVIEW_PIXELS && k < 4 {
+                    k += 1;
+                }
+                let div = |v: u32| v.div_ceil(1 << k).max(1);
+                let size = (div(full.width), div(full.height));
+                let (px, py) = (x >> k, y >> k);
+                let region = [px, py, div(w).min(size.0 - px), div(h).min(size.1 - py)];
+                (image_long.div_ceil(1 << k), size, region)
+            }
+        };
+        let edge = if edge >= image_long { 0 } else { edge };
+        let scene = self.hdr_files.scene(image, gain, edge)?;
+        // An HDR file has no noise reduction, AI Denoise, retouching or lens
+        // corrections in HDR (`model::hdr::check_hdr_file`), and a rendered file's
+        // recovery is the file itself: the scene is what the stages sample.
+        let source = quality::Retouched {
+            image: scene.clone(),
+            unretouched: scene.clone(),
+        };
+        let mut stages = Stages {
+            cache: &mut self.hdr_files.cache,
+            retouch: &mut self.hdr_files.retouch,
+            backend: &mut self.backend,
+            display,
+            hdr: Some(headroom),
+        };
+        quality::render_level(
+            &scene,
+            &source,
+            &resolved,
+            size,
+            region,
+            cancel,
+            &mut stages,
+        )
     }
     /// The pyramid level for `needed` source pixels on the long edge, and the level-0
     /// image (recovered and retouched), building the pyramid when the photo changed and
@@ -389,6 +553,16 @@ impl PreviewRenderer {
     ) -> Option<Rendered> {
         self.backend.finish(image, recipe, sigma, max_edge, cancel)
     }
+}
+/// What [`PreviewRenderer::render_hdr_file`] renders of an HDR file's master.
+#[derive(Clone, Copy)]
+enum HdrFilePart {
+    /// The whole photo within this long edge (0 for full size).
+    Whole(u32),
+    /// This region at 100%.
+    Region([u32; 4]),
+    /// A 100% drag's reduced preview of this region.
+    Preview([u32; 4]),
 }
 /// An HDR render's frame, or `None` where the GPU port doesn't render it.
 fn hdr_frame(out: Result<Output>) -> Result<Option<gpu::HdrFrame>> {
@@ -1909,5 +2083,46 @@ mod tests {
         )
         .unwrap();
         assert!(p.used_gpu());
+    }
+
+    /// An HDR file's scenes are kept a size each: Exposure replaces the scene of its
+    /// size, another size adds one, and another photo lets them all go.
+    #[test]
+    fn hdr_file_scenes_are_kept_a_size_each() {
+        let file = |w: u32| {
+            let im = image(w, 4, 0.5);
+            let light = crate::camera_data::HdrLight::new(
+                w,
+                4,
+                im.pixels.iter().map(|p| p.map(|v| v * 3.)).collect(),
+                crate::color::hdr_output::HdrTransfer::Pq,
+            )
+            .unwrap();
+            im.with_hdr(Arc::new(light)).unwrap()
+        };
+        let (a, b) = (file(32), file(32));
+        let mut scenes = HdrFileScenes::default();
+        let full = scenes.scene(&a, 1., 0).unwrap();
+        assert!(
+            Arc::ptr_eq(&full, &scenes.scene(&a, 1., 0).unwrap()),
+            "kept"
+        );
+        let small = scenes.scene(&a, 1., 16).unwrap();
+        assert_eq!((small.width, small.height), (16, 2));
+        assert!(
+            Arc::ptr_eq(&full, &scenes.scene(&a, 1., 0).unwrap()),
+            "both kept"
+        );
+        let brighter = scenes.scene(&a, 2., 16).unwrap();
+        assert!(
+            !Arc::ptr_eq(&small, &brighter),
+            "Exposure makes a new scene"
+        );
+        assert_eq!(scenes.scenes.len(), 2, "replacing its size's");
+        scenes.keep_only(&b);
+        assert!(
+            scenes.scenes.is_empty(),
+            "another photo's light lets them go"
+        );
     }
 }

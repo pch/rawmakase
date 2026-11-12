@@ -249,11 +249,13 @@ pub(crate) fn supported(r: &Recipe) -> bool {
 /// (`model::hdr::check_resolved_recipe`): what the SDR port samples (Texture's image among it), an
 /// ordinary profile's tables and HDR tone curve, an HDR profile's overrange-encoded ones, a look's table and curve
 /// (`CameraProfile::finish_hdr`), then Contrast, the tone curves and the colour stage
-/// (`tone::HdrFinish`). An HDR file's light (`render_hdr`'s own path) renders on the
-/// CPU.
+/// (`tone::HdrFinish`). An HDR file's master renders from the pseudo-scene of its
+/// light with its own recipe (`quality::hdr_file_recipe`), as `render_hdr` renders
+/// it; `PreviewRenderer::render_hdr_file` gives the port nothing else of one. Other
+/// rendered files have no master.
 pub(crate) fn supported_hdr(r: &Recipe, metadata: &crate::camera_data::Metadata) -> bool {
     r.hdr.is_active()
-        && metadata.hdr_source.is_none()
+        && (metadata.hdr_source.is_some() || !metadata.is_rendered())
         // The post-crop vignette and grain of a master render on the CPU only.
         && r.effects.grain == 0.
         && r.effects.vignette == 0.
@@ -262,7 +264,6 @@ pub(crate) fn supported_hdr(r: &Recipe, metadata: &crate::camera_data::Metadata)
         // So does its Point Color.
         && r.point_colors.is_empty()
         // `r` is resolved: its look's settings are its own already.
-        && !metadata.is_rendered()
         && crate::model::hdr::check_resolved_recipe(r).is_ok()
         && r.profile.as_ref().is_some_and(|p| p.hdr_tone().is_ok())
 }

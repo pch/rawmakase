@@ -1703,6 +1703,14 @@ photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
   from the same full-size source as its SDR frame, checked against `render_hdr` with a
   source at Amount 60 (`presented_hdr_previews_match_the_cpu_master`). HDR export was
   already rendering it.
+- **HDR files' masters render on the GPU from a scene per Exposure** (stage 5,
+  2026-11-12). The pseudo-scene inverts the tone stage, so Exposure, a gain of the
+  light, can't be a gain of the scene: the GPU renders from the scene of the light at
+  that gain, made again when Exposure changes, as the CPU master is. A Fit's scene is of
+  the light reduced to twice the edge (the CPU preview's reduction), so an Exposure
+  drag remakes a small scene; only 100% views remake the full one. Scenes and their
+  stage caches are kept apart from the SDR rendition's, which renders from the file's
+  own pixels, so the two renderings of each frame don't evict each other.
 
 ## Open
 
@@ -1823,8 +1831,7 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   Reference View (#924). The master's preview on the GPU during slider drags (#983),
   for ordinary and HDR profiles and looks (#984), Contrast and the tone curves (#986)
   the colour stage (#987) and Texture (#988), checked against the CPU master in float
-  space. HDR files still show the CPU master (their scene carries Exposure as a gain
-  of the light, which a GPU path would rebuild on every change). AI Denoise shows in
+  space. HDR files' masters on the GPU too, from their pseudo-scenes. AI Denoise shows in
   the HDR preview, histogram and readout, on the GPU and the CPU. The HDR histogram in stops above white, the HDR readout,
   and what lies beyond the display's headroom marked in the histogram and its
   highlight triangle. Preview for SDR display, a view choice showing the SDR rendition

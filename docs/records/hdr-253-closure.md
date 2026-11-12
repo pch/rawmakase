@@ -107,9 +107,8 @@ renders everything. Each refusal has Camera Raw measurements behind it:
 
 ## Known limitations
 
-- **HDR files:** the GPU doesn't render their master yet, so it renders on the CPU
-  (Exposure drags wait for it). A master with masks, Point Color, the vignette or
-  grain also renders on the CPU.
+- **The CPU renders the master** of an edit with masks, Point Color, the vignette or
+  grain.
 - **HDR HEIC:** opens on macOS and Linux, not on Windows. HEIC gain maps open on macOS
   only.
 - **Camera Raw's own SDR rendition** is a local tone map of the master. RAWmakase's is
@@ -125,5 +124,4 @@ renders everything. Each refusal has Camera Raw measurements behind it:
 - Camera Raw's SDR rendition tone map.
 - The mask operators' own SDR parity (Saturation, Whites, Blacks), after which their
   HDR rendering can be measured again.
-- HDR files on the GPU's HDR preview.
 - HDR display checks on real Windows and Wayland HDR displays.

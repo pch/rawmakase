@@ -213,7 +213,13 @@ It covers what `pixel_params::supported_hdr` accepts: a master that renders
 (Exposure, Whites, Blacks, Shadows, white balance, Contrast, Levels and the tone
 curves, channel curves included, the colour stage, Color Grading, Texture, sharpening and what the SDR port samples), through
 any profile and look whose HDR rendering is measured (`CameraProfile::hdr_tone`).
-An HDR file's light, the post-crop vignette and grain, Point Color, masks, and anything the SDR port leaves to the CPU
+An HDR file's master renders from the pseudo-scene of its light, as `render_hdr`
+renders it (`PreviewRenderer::render_hdr_file`): Exposure is a gain of the light baked
+into the scene, so a new Exposure makes a new scene while every other change renders
+from the one kept. Scenes are kept a size each, with stage caches of their own apart
+from the SDR rendition's: Fit from the light reduced to twice its edge, as the CPU's
+whole-photo preview reduces it, a 100% drag's preview from the light at its scale, and
+100% from the full light. The post-crop vignette and grain, Point Color, masks, and anything the SDR port leaves to the CPU
 (`quality::HdrNotOnGpu`) give no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
 "GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, looks whose
@@ -221,7 +227,11 @@ curves end at white and below it, positive and negative Contrast, Levels, point 
 parametric curves, channel curves, Saturation, Vibrance, the colour mixer (band Luminance included), colour grading, black & white, looks' RGB tables of every kind and amount, and Texture (neutral
 colours, whose hue is undefined, left out of the colour stage's comparison): the per-pixel stage agrees to 2×10^-4 of the value,
 the presented texture to 1.3×10^-3 (half-float steps), at full size and in a
-region, at headrooms 4 and 40, sharpened and not.
+region, at headrooms 4 and 40, sharpened and not. An HDR file's master (a PQ ramp
+from 2^-10 to 2^5 times white in four colours, at its own settings, Exposure +1, −0.7
+and +0.5, limit 3, Rotate with a crop) agrees to 1.3×10^-3 at full size and in a
+region, and a Fit's mean to 2% of the CPU preview's
+(`presented_hdr_files_match_the_cpu_master`).
 
 ### Histogram and readout
 
