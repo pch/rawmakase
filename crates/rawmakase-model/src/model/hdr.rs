@@ -188,9 +188,10 @@ const BAND_LUMINANCE_MEASURED: f32 = 0.4;
 /// there the SDR operator, unclipped, departs from Camera Raw's HDR effect no further
 /// than from its SDR one (docs/records/hdr-stage1-results.md#presence).
 const CLARITY_MEASURED: f32 = 0.5;
-/// The largest Dehaze (−1 to 1, either sign) the HDR master renders, the range measured
-/// on photos (docs/records/hdr-stage1-results.md#presence).
-const DEHAZE_MEASURED: f32 = 0.3;
+/// The most negative Dehaze (−1 to 1) the HDR master renders: positive Dehaze renders
+/// up to +100, where its HDR error on photos is its SDR one; at −100 it is further
+/// from Camera Raw below white than in SDR (docs/records/hdr-stage1-results.md#presence).
+const DEHAZE_MEASURED: f32 = -0.3;
 
 /// Refuses the HDR master of an active HDR edit that this release can render only in
 /// SDR: an adjustment, look or profile whose rendering above graphics white has not
@@ -202,8 +203,8 @@ const DEHAZE_MEASURED: f32 = 0.3;
 /// the post-crop vignette (without a darkening vignette's Highlights) and grain,
 /// the master point curve, the channels' point curves and the parametric curve, and
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
-/// camera's samples, as in SDR), Clarity from 0 to +50 and Dehaze up to ±30 (the SDR
-/// operators, unclipped),
+/// camera's samples, as in SDR), Clarity from 0 to +50 and Dehaze from −30 to +100
+/// (the SDR operators, unclipped),
 /// Point Color (its swatches in colour grading's HDR domain),
 /// masks whose sliders are Temp, Tint, Exposure, Contrast, Shadows, Texture, Color,
 /// Sharpness and Noise,
@@ -295,10 +296,7 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
             "Clarity outside 0 to +50",
             !(0. ..=CLARITY_MEASURED).contains(&r.effects.clarity),
         ),
-        (
-            "Dehaze beyond ±30",
-            r.effects.dehaze.abs() > DEHAZE_MEASURED,
-        ),
+        ("Dehaze below −30", r.effects.dehaze < DEHAZE_MEASURED),
         (
             "The Color Mixer's Luminance beyond ±40",
             r.hsl
@@ -679,7 +677,7 @@ mod tests {
             },
             |r| r.effects.clarity = 0.6,
             |r| r.effects.clarity = -0.1,
-            |r| r.effects.dehaze = 0.31,
+            |r| r.effects.dehaze = -0.31,
             |r| r.effects.dehaze = -0.5,
             |r| {
                 r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];

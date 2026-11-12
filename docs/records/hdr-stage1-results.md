@@ -401,6 +401,21 @@ recipe as edited and the resolved one without adding a look's settings again), w
 SDR renders never call. The GPU's HDR preview renders Clarity as the CPU
 master does (`gpu_develop_matches_cpu_hdr_master`).
 
+Wider ranges, measured on 2026-11-12 with Camera Raw 18.7 captures of the twelve photos
+of [Validation](#validation) at Clarity −50 and +100 and Dehaze ±100 in HDR and SDR (by
+the same measure, median over the twelve; ΔE_ITP added to the default render's):
+
+| Setting | HDR below white | SDR below white | HDR above white | ΔE_ITP added, HDR / SDR | Result |
+| --- | --- | --- | --- | --- | --- |
+| Clarity −50 | 0.051 / 0.267 | 0.049 / 0.252 | 0.022 / 0.274 | +1.5 / +1.3 | refused (p95 0.015 over below white; above white past SDR's p95) |
+| Clarity +100 | 0.441 / 1.616 | 0.389 / 1.604 | 0.128 / 0.451 | +17.6 / +15.4 | refused |
+| Dehaze +100 | 0.356 / 1.656 | 0.354 / 1.655 | 0.244 / 0.646 | +17.8 / +17.6 | renders |
+| Dehaze −100 | 0.393 / 1.131 | 0.316 / 1.128 | 0.198 / 0.383 | +21.7 / +17.2 | refused |
+
+**Decision, 2026-11-12: Dehaze renders in the HDR master from −30 to +100**; Dehaze
+below −30 stays refused, as do negative Clarity and Clarity above +50. Between the
+measured settings the operator is the same, so +30 to +100 renders as both ends do.
+
 ### Looks
 
 Measured on gray ramps (sensor white +4 and +6 stops, a linear and the ACR3 profile
@@ -726,6 +741,20 @@ forced levels to find the one whose median error above white is zero:
 **Decision, 2026-11-11: Whites above +50 stays refused.** Part of Camera Raw's positive
 Whites above +50 is not a gain of one photo level; a better level predictor alone
 cannot reach the tolerances.
+
+Re-examined on 2026-11-12 under the [acceptance rule](#decisions), with Camera Raw 18.7's
+SDR renders of the 24 photos (validation, holdout and training) at Whites +75 and +100
+and RAWmakase's HDR master at twice the 99th percentile (effect error in stops, median /
+p95, median over the photos):
+
+| Whites | HDR below white | SDR below white | HDR above white | ΔE_ITP HDR / SDR |
+| --- | --- | --- | --- | --- |
+| +75 | 0.039 / 0.146 | 0.027 / 0.085 | 0.091 / 0.214 | 7.9 / 4.6 |
+| +100 | 0.085 / 0.271 | 0.057 / 0.154 | 0.103 / 0.161 | 12.7 / 6.6 |
+
+Already below white the HDR master is further from Camera Raw than the SDR rendition
+(the HDR Whites gain reaches down there; Fujifilm XF10 +100: 0.687 against 0.211 stop
+median), and above white more so. Whites above +50 stays refused.
 
 SDR renders do not change: positive Whites' table and level are read only in the HDR
 branch of the scene tone stage (`SceneTone::new`, `GlobalTone::hdr`), which SDR
@@ -1127,6 +1156,10 @@ better in HDR than in SDR (median 0.061 / 1.140 against 0.111 / 1.783 at −100)
 is captured there. The ±40 edit that renders is past the rule too; it was rendered
 before the rule and isn't re-scored by it.
 
+Every band at −100 was captured on 2026-11-12 on the twelve photos: below white HDR
+0.073 / 0.481 against SDR's 0.070 / 0.492, ΔE_ITP added +4.6 against +4.6, but above
+white a median of 0.079 against SDR's 0.070 below it. Beyond −40 stays refused.
+
 ### Vignette and grain
 
 Measured with Camera Raw 18.7 on a synthetic DNG through `probe_dng.py` (a linear
@@ -1509,7 +1542,7 @@ white by up to 0.73 stop. Mask Clarity and Dehaze stay refused.
   never change the master, which renders with them; the SDR rendition doesn't render
   them until that tone map is matched.
 - **Unmeasured adjustments refuse the HDR master, not the edit.** An imported or
-  edited HDR edit with Dehaze beyond ±30, a look or Whites above +50 keeps HDR on and stays
+  edited HDR edit with Dehaze below −30, a look or Whites above +50 keeps HDR on and stays
   valid; its SDR rendition renders it, and the master (HDR export) is refused with
   the reason, shown in Develop under the HDR switch. Refusing the edit itself would
   make Develop's ordinary sliders fail to render whenever HDR is on.
@@ -1610,7 +1643,7 @@ white by up to 0.73 stop. Mask Clarity and Dehaze stay refused.
 - Masks: a mask's Whites, Blacks, Hue and Saturation (one Camera Raw setting each,
   unlike SDR's operators above white), Temp's strength (SDR's), Shadows' HDR error
   (twice SDR's on the patches), and masks on the GPU's HDR preview ([Masks](#masks)).
-- Negative Clarity, Clarity above +50, and Dehaze beyond ±30 in HDR ([Presence](#presence)).
+- Negative Clarity, Clarity above +50, and Dehaze below −30 in HDR ([Presence](#presence)).
 - Positive Shadows lifts small speculars in dark surroundings above Camera Raw's peak
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
@@ -1663,7 +1696,7 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
   ([Vignette and grain](#vignette-and-grain)); masks with Temp,
-  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from 0 to +50 and Dehaze up to ±30 ([Presence](#presence));
+  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from 0 to +50 and Dehaze from −30 to +100 ([Presence](#presence));
   Red Eye ([Red Eye](#red-eye)); ordinary profiles' sRGB-encoded tables
   ([sRGB-encoded tables](#srgb-encoded-tables)). What stays refused, each with its
   measurements, is listed in [completion](hdr-253-closure.md#what-stays-refused);
