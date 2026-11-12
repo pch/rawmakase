@@ -61,7 +61,7 @@ fn a_session_says_hello_runs_commands_and_ends_on_quitting() {
         .panel("switch", Switch(false));
     let host = MockHost::start(extension);
     // Nothing before the handshake.
-    let early = host.run_command("echo", None, Value::Null).unwrap_err();
+    let early = host.run_command("echo", None, json!(1)).unwrap_err();
     assert_eq!(early.code, ErrorCode::InvalidRequest);
     let hello = host.hello().unwrap();
     assert_eq!(hello.protocol, rawmakase_extension::protocol::PROTOCOL);
@@ -69,10 +69,10 @@ fn a_session_says_hello_runs_commands_and_ends_on_quitting() {
         hello.implements,
         ["command/echo", "command/setting", "panel/switch"]
     );
-    let point = json!({"kind": "point", "x": 0.25, "y": 0.5});
+    // API 1 hands the input over as it came, whatever it is.
     assert_eq!(
-        host.run_command("echo", None, point.clone()).unwrap(),
-        point
+        host.run_command("echo", None, json!({"a": 1})).unwrap(),
+        json!({"a": 1})
     );
     let unknown = host.run_command("nope", None, Value::Null).unwrap_err();
     assert_eq!(unknown.code, ErrorCode::InvalidRequest);
@@ -227,14 +227,15 @@ fn a_cancelled_request_ends_cancelled_whether_it_ran_or_waited() {
 }
 
 #[test]
-fn a_commands_viewer_input_is_checked_before_its_handler_runs() {
+fn api_2_checks_a_commands_viewer_input_before_its_handler_runs() {
     let (ran_tx, ran) = mpsc::channel();
     let extension = Extension::new().command("pick", move |_cx: &Context, run: CommandRun| {
         let _ = ran_tx.send(());
         let input = run.viewer_input()?;
         Ok(serde_json::to_value(input).unwrap())
     });
-    let host = MockHost::start(extension);
+    let host =
+        MockHost::start_with_options(extension, ServeOptions { api: 2 }, |_, _| Ok(Value::Null));
     host.hello().unwrap();
     let clicks = json!({"kind": "points", "clicks": [
         {"x": 0.25, "y": 0.5, "positive": true},
@@ -261,6 +262,21 @@ fn a_commands_viewer_input_is_checked_before_its_handler_runs() {
         assert_eq!(error.code, ErrorCode::InvalidRequest, "{bad}");
     }
     assert_eq!(ran.try_iter().count(), 0, "refused before the handler ran");
+    host.finish().unwrap();
+    // API 1 hands it over as it came; the handler checks it if it asks.
+    let (ran_tx, ran) = mpsc::channel();
+    let extension = Extension::new().command("pick", move |_cx: &Context, run: CommandRun| {
+        let _ = ran_tx.send(());
+        run.viewer_input()
+            .map(|input| serde_json::to_value(input).unwrap())
+    });
+    let host = MockHost::start(extension);
+    host.hello().unwrap();
+    let error = host
+        .run_command("pick", None, json!({"kind": "brush"}))
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    assert_eq!(ran.try_iter().count(), 1, "the handler ran and refused it");
     host.finish().unwrap();
 }
 

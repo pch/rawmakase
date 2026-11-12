@@ -293,7 +293,7 @@ impl Extension {
                 .name("extension reader".into())
                 .spawn(move || reading.run(reader))?;
         }
-        let result = self.handle(&host, &requests, &queue);
+        let result = self.handle(&host, &requests, &queue, options.api);
         for adapter in self.adapters.values_mut() {
             adapter.stop();
         }
@@ -308,6 +308,7 @@ impl Extension {
         host: &Host,
         requests: &Requests,
         queue: &mpsc::Receiver<Inbound>,
+        api: u32,
     ) -> io::Result<()> {
         let mut settings = Map::new();
         let mut dirs = (PathBuf::new(), PathBuf::new());
@@ -391,7 +392,7 @@ impl Extension {
                                 // The handles go when the handler is done,
                                 // before its reply.
                                 let handles = handles.take().unwrap_or_default();
-                                self.dispatch(&cx, request, handles)
+                                self.dispatch(&cx, request, handles, api)
                             }
                         }
                     };
@@ -452,6 +453,7 @@ impl Extension {
         cx: &Context,
         request: AppRequest,
         handles: Vec<Handle>,
+        api: u32,
     ) -> Result<Value, RemoteError> {
         let unknown = |kind: &str, id: &str| {
             RemoteError::new(
@@ -468,7 +470,11 @@ impl Extension {
             AppRequest::Hello(_) => unreachable!("handled before dispatch"),
             AppRequest::CommandRun(run) => {
                 let command: CommandRun = run;
-                command.viewer_input()?;
+                // API 1 hands the input over as it came, as before viewer
+                // input was collected; API 2 checks it first.
+                if api >= 2 {
+                    command.viewer_input()?;
+                }
                 match self.commands.get_mut(&command.command) {
                     Some(handler) => handler.run(cx, command),
                     None => Err(unknown("command", &command.command)),

@@ -15,8 +15,7 @@
 //! let extension = Extension::new().command("echo", |_cx: &Context, run: CommandRun| Ok(run.input));
 //! let host = MockHost::start(extension);
 //! host.hello().unwrap();
-//! let point = json!({"kind": "point", "x": 0.5, "y": 0.5});
-//! assert_eq!(host.run_command("echo", None, point.clone()).unwrap(), point);
+//! assert_eq!(host.run_command("echo", None, json!(5)).unwrap(), json!(5));
 //! host.finish().unwrap();
 //! ```
 use crate::run::OnFault;

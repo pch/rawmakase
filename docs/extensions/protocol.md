@@ -312,9 +312,11 @@ manifest's `input` declares, of that kind, such as
 `{"kind":"box","x0":0.1,"y0":0.2,"x1":0.6,"y1":0.9}`; it is `null` (or absent)
 for `input = "none"`. The target is read when the command is sent, with its
 input, so a proposal applies only to what the command was sent with. The app
-checks the input before sending it, and the SDK checks it again before the
-handler runs (`CommandRun::viewer_input`, which handlers read it with),
-refusing input that doesn't pass with `invalid_request`. A `prompt` command is
+checks the input before sending it, whatever the program's API. Serving
+API 2, the SDK checks it again before the handler runs, refusing input that
+doesn't pass with `invalid_request`; serving API 1, it hands the input over
+as it came, as it always has. Handlers read it with
+`CommandRun::viewer_input`, which checks it either way. A `prompt` command is
 sent again at each change ([manifest](manifest.md#viewer-input-for-commands)).
 Reply: any value (`null` for nothing). Edits go as `propose.settings` while it
 runs.

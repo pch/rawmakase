@@ -45,10 +45,12 @@ use serde_json::Value;
 
 /// A `[[command]]`'s implementation.
 ///
-/// The SDK checks a request's viewer input ([`CommandRun::viewer_input`])
-/// before calling [`Command::run`], and refuses input that doesn't read or
-/// validate with [`ErrorCode::InvalidRequest`]; the handler reads it with the
-/// same call.
+/// Serving API 2 ([`ServeOptions::api`]), the SDK checks a request's viewer
+/// input ([`CommandRun::viewer_input`]) before calling [`Command::run`], and
+/// refuses input that doesn't read or validate with
+/// [`ErrorCode::InvalidRequest`]. Serving API 1 it hands the input over as it
+/// came, as it always has. Either way the handler reads it with the same
+/// call, which checks it.
 pub trait Command: Send {
     /// Runs the command. Its edits go to the app as proposals
     /// ([`Host::propose_settings`] with [`Context::op`]) while it runs; what it
