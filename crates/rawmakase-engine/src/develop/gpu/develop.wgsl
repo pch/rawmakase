@@ -507,7 +507,11 @@ fn mixer_hdr(rgb: vec3<f32>, base: i32, fading: i32, luminance: i32, scene: vec3
         // it, none from white up.
         let level = select(out, max(scene, vec3(0.0)) * out / max(q, vec3(1e-9)), q > vec3(1e-9));
         let w = clamp((vec3(1.0) - level) / (1.0 - HDR_LUMINANCE_FADE), vec3(0.0), vec3(1.0));
-        out = out * exp2(lum * w);
+        // Darkening grows with the colour's brightest channel towards white.
+        let top = max(max(level.x, level.y), level.z);
+        let t = clamp((top - HDR_LUMINANCE_DARKEN_FROM) / (1.0 - HDR_LUMINANCE_DARKEN_FROM), 0.0, 1.0);
+        let l = select(lum, lum * (1.0 + HDR_LUMINANCE_DARKEN * t), lum < 0.0);
+        out = out * exp2(l * w);
     }
     return PRO_TO_RGB * out;
 }

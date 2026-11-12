@@ -174,6 +174,13 @@ pub(crate) const HDR_LUMINANCE_VALUE: f32 = 0.5;
 /// to 3 times white, ±50 and ±100, a linear and the ACR3 profile curve; fades from 0.5
 /// to 0.7 and lookup values from 0.4 to 0.6 score alike).
 pub(crate) const HDR_LUMINANCE_FADE: f32 = 0.6;
+/// How much stronger negative band Luminance is in an HDR master on a colour whose
+/// brightest channel's scene level is at white, growing from none at
+/// [`HDR_LUMINANCE_DARKEN_FROM`]. Camera Raw 18.7's HDR Luminance −100 darkens bright
+/// colours just above white more than the SDR grids' change faded by channel gives
+/// (docs/records/hdr-stage1-results.md#band-luminance).
+pub(crate) const HDR_LUMINANCE_DARKEN: f32 = 0.2;
+pub(crate) const HDR_LUMINANCE_DARKEN_FROM: f32 = 0.5;
 impl ColorMixer {
     pub(crate) fn new(r: &Recipe) -> Option<Self> {
         debug_assert_eq!(CHART.len(), TABLES * TABLE * 2);
@@ -337,15 +344,25 @@ pub(crate) fn tables_in(delta: &[[f32; 3]], rgb: [f32; 3], lookup: Lookup) -> [f
             Lookup::Hdr(_, scene) => scene,
             Lookup::Sdr => None,
         };
-        std::array::from_fn(|i| {
-            let level = scene.map_or(q[i], |scene| {
+        let levels: [f32; 3] = std::array::from_fn(|i| {
+            scene.map_or(q[i], |scene| {
                 if p[i] > 1e-9 {
                     scene[i].max(0.) * q[i] / p[i]
                 } else {
                     q[i]
                 }
-            });
-            let weight = ((1. - level) / (1. - HDR_LUMINANCE_FADE)).clamp(0., 1.);
+            })
+        });
+        // Darkening grows with the colour's brightest channel towards white.
+        let top = levels.into_iter().fold(0f32, f32::max);
+        let luminance = if luminance < 0. {
+            let t = (top - HDR_LUMINANCE_DARKEN_FROM) / (1. - HDR_LUMINANCE_DARKEN_FROM);
+            luminance * (1. + HDR_LUMINANCE_DARKEN * t.clamp(0., 1.))
+        } else {
+            luminance
+        };
+        std::array::from_fn(|i| {
+            let weight = ((1. - levels[i]) / (1. - HDR_LUMINANCE_FADE)).clamp(0., 1.);
             q[i] * (luminance * weight).exp2()
         })
     };
