@@ -435,16 +435,18 @@ impl LocalToneMap {
             };
         let keys = [base.shadow_key, base.highlight_key, lift_key];
         let detail = (sliders.clarity != 0. || sliders.mask_clarity).then(|| base.detail());
+        // An HDR master's Clarity is stronger beside light above white, a mask's too.
+        let hdr_weights = detail
+            .is_some()
+            .then_some(())
+            .filter(|_| sliders.hdr)
+            .map(|_| hdr_clarity_weights(base));
         let clarity = detail
             .filter(|_| sliders.clarity != 0.)
             .map(|d| d.field(sliders.clarity))
-            .map(|f| {
-                // An HDR master's Clarity is stronger beside light above white.
-                if sliders.hdr {
-                    f.scaled(&hdr_clarity_weights(base))
-                } else {
-                    f
-                }
+            .map(|f| match &hdr_weights {
+                Some(weights) => f.scaled(weights),
+                None => f,
             });
         // Positive Shadows and negative Highlights follow the photo's global rule
         // (`local_tone_rule`); the two-scale lift and the regional level are not read.
@@ -477,7 +479,12 @@ impl LocalToneMap {
             lift: None,
             keys,
             clarity,
-            clarity_detail: detail.filter(|_| sliders.mask_clarity).cloned(),
+            clarity_detail: detail
+                .filter(|_| sliders.mask_clarity)
+                .map(|d| match &hdr_weights {
+                    Some(weights) => d.scaled(weights),
+                    None => d.clone(),
+                }),
             rule,
         }
     }

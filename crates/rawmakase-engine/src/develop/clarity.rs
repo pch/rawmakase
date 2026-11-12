@@ -142,6 +142,19 @@ impl ClarityDetail {
             guide: self.guide.clone(),
         }
     }
+    /// This detail with each cell's gains, at every slider position, multiplied by
+    /// `weights` (one per cell), as [`ClarityField::scaled`] scales one field.
+    pub(crate) fn scaled(&self, weights: &[f32]) -> Self {
+        Self {
+            fits: self.fits.clone().map(|mut fit| {
+                for (g, w) in fit.iter_mut().zip(weights) {
+                    *g *= w;
+                }
+                fit
+            }),
+            guide: self.guide.clone(),
+        }
+    }
     /// Guidance weights do not depend on the slider, so interpolation of the
     /// fitted gains commutes with reconstruction for global and masked Clarity.
     pub(crate) fn at(&self, sample: ClaritySample, amount: f32, log_lum: f32) -> f32 {
