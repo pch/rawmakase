@@ -445,6 +445,19 @@ Still refused: a look that sets a slider whose HDR rendering isn't measured (Ado
 Landscape sets Highlights; Adobe Vivid's Clarity +10 renders since 2026-11-11), and a
 look's split toning.
 
+**A look's split toning (2026-11-12).** Camera Raw 18.7 rendered the synthetic split
+look (`tests/corpus/looks/synthetic-split.xmp`: shadows 210° at 40, highlights 50° at
+30, balance +20) on gray and colour patches (saturations 0.3, 0.6 and 0.9, 0.125 to 8
+times white, a linear profile, HDR limit 8 and SDR). RAWmakase's SDR grading pass for
+it, in colour grading's HDR domain ([Color grading](#color-grading)), renders the
+effect on luminance as closely in HDR as in SDR (median 0.003 against 0.002 stop, p95
+0.060 against 0.036; above white 0.002), but not its colour: on the patches below
+saturation 0.9 it moves the master's mean ΔE_ITP from Camera Raw's from 0.24 to 1.79
+below white and to 2.94 above it, where the SDR rendition's goes from 0.23 to 1.05.
+Camera Raw's HDR split tone is stronger than its SDR one there (its mean change 20.6
+ΔE_ITP below white and 25.7 above, against 12.6 in SDR). By the acceptance criterion
+([Decisions](#decisions)) a look's split toning stays refused.
+
 **On photos** (2026-11-11). The six validation photos of [Validation](#validation)
 (Adobe Standard, HDR limit 4) through a `.cube` look (creative), an HSV-table look at
 50%, an Adobe RGB RGB-table look at 150% and the B&W look, against Camera Raw 18.7's
@@ -1391,6 +1404,27 @@ above white.
   stop, and 0.107 against 0.086). They stay rendered: the criterion is applied to
   controls the master refuses, and refusing them now would take the master from
   edits that have it.
+
+**Clarity and Dehaze in a mask (2026-11-12).** After global Clarity (0 to +50) and
+Dehaze (±30) came to render in the master, Camera Raw 18.7 rendered a whole-frame mask
+with Clarity +25 and +50 and Dehaze +30 and −30 on three validation photos (Nikon Z 8
+and Z f, Sony A7R III; Adobe Standard, HDR limit 4 and SDR). The mask's value adds to
+the photo's own in the global sliders' stages, so RAWmakase's whole-frame mask renders
+the global slider's master (a test). Its effect against Camera Raw's (median stops on
+factor-8 blocks, mean ΔE_ITP):
+
+| Photo, mask slider | HDR below 0.9 | SDR below 0.9 | HDR above white |
+| --- | --- | --- | --- |
+| Z 8, Clarity +25 / +50 | 0.323, 18.7 / 0.604, 30.6 | 0.284, 17.5 / 0.492, 26.7 | 0.032 / 0.065 |
+| Z 8, Dehaze +30 / −30 | 0.061, 11.4 / 0.235, 17.4 | 0.060, 11.2 / 0.209, 16.4 | 0.110 / 0.043 |
+| Z f, Clarity +25 / +50 | 0.083, 9.1 / 0.165, 12.6 | 0.081, 8.7 / 0.163, 12.1 | 0.007 / 0.014 |
+| Z f, Dehaze +30 / −30 | 0.097, 10.5 / 0.056, 11.4 | 0.080, 9.4 / 0.044, 11.1 | 0.071 / 0.019 |
+| A7R III, Clarity +25 / +50 | 0.050, 3.7 / 0.093, 6.4 | 0.050, 3.5 / 0.093, 6.0 | 0.130 / 0.235 |
+| A7R III, Dehaze +30 / −30 | 0.104, 6.0 / 0.235, 12.1 | 0.104, 5.9 / 0.234, 12.0 | 0.096 / 0.733 |
+
+The master is further from Camera Raw than the SDR rendition on every photo and
+setting, by colour where not by luminance, and on the A7R III's small highlights above
+white by up to 0.73 stop. Mask Clarity and Dehaze stay refused.
 
 ### Decisions
 
