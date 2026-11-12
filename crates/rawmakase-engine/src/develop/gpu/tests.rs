@@ -2140,6 +2140,10 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         channels,
         together,
     ]);
+    // A steep master curve, whose output the hold takes back above 16 times white.
+    let mut steep = base.clone();
+    steep.curve.points = vec![[0., 0.], [0.5, 0.3], [1., 1.]];
+    let variants: Vec<Recipe> = variants.into_iter().chain([steep]).collect();
     // Looks, a table and a curve: one that lifts and ends at white (Lifted), one that
     // ends below it (Extended); and an HDR profile with 3D tables.
     let profile = base.profile.as_deref().unwrap().clone();

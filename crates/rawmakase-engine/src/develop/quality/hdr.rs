@@ -756,7 +756,8 @@ mod tests {
     }
 
     /// A curve that ends steeply extends far past every limit; the master stays finite
-    /// through sharpening and resizing and rolls off to the limit, not to black.
+    /// through sharpening and resizing and reaches the curve's hold (about 49 times
+    /// white, `hdr_curve::hold`) or the limit, whichever is lower, not black.
     #[test]
     fn a_steep_curve_rolls_off_to_the_limit_through_sharpening_and_resizing() -> anyhow::Result<()>
     {
@@ -765,11 +766,13 @@ mod tests {
         let mut r = hdr_recipe(&im);
         r.curve.points = vec![[0.99, 0.], [1., 1.]];
         r.sharpening = 0.5;
+        let held = crate::color::hdr_curve::decode(crate::color::hdr_curve::HOLD);
         for max_edge in [0, 12] {
             let out = render_hdr(&im, &r.checked()?, None, max_edge, Cancel::NEVER)?;
-            // Every gray renders past the limit's knee: none is lost to NaN.
+            // Every gray renders near the hold or the limit: none is lost to NaN.
             let darkest = out.pixels.iter().flatten().fold(f32::MAX, |a, v| a.min(*v));
-            assert!(darkest > out.peak * 0.9, "{max_edge}: {darkest}");
+            assert!(darkest > out.peak.min(held) * 0.85, "{max_edge}: {darkest}");
+            assert!(out.pixels.iter().flatten().all(|v| v.is_finite()));
         }
         Ok(())
     }
