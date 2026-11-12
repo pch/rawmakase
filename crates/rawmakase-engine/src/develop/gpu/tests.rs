@@ -1995,6 +1995,14 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
             },
             ..base.clone()
         },
+        // Negative Clarity, stronger beside light above white.
+        Recipe {
+            effects: crate::model::effects::Effects {
+                clarity: -0.5,
+                ..base.effects.clone()
+            },
+            ..base.clone()
+        },
         // Dehaze, the SDR operator unclipped, both ways.
         Recipe {
             effects: crate::model::effects::Effects {

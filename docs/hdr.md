@@ -288,7 +288,7 @@ HDR reference family):
 | Black & White | The SDR mix's gray (`develop::black_white`) looked up as the colour mixer's, unclipped above white. |
 | Calibration | As in SDR: a matrix on scene colour before Exposure, and Shadows tint, which only reaches values below white. |
 | Shadows | The SDR local tone operator (`develop::local_tone`) on scene values, unclipped: its gain at a pixel's base level as in SDR, before S3. |
-| Clarity | 0 to +50: the SDR operator (`develop::clarity`, in the local tone map) on scene values, unclipped, as in SDR. Negative Clarity and Clarity above +50 are refused (not measured on photos). |
+| Clarity | −50 to +50: the SDR operator (`develop::clarity`, in the local tone map) on scene values, unclipped, its gain 1.5 times SDR's within 1.6% of the long edge of light above scene level −1 (`local_tone::HDR_CLARITY_NEAR_GAIN`), as Camera Raw's HDR Clarity is stronger beside light above white. Beyond ±50 it is refused (+100 is further from Camera Raw below white than in SDR). |
 | Dehaze | −30 to +100: the SDR operator, with the photo's haze, unclipped, as in SDR. Below −30 it is refused (at −100 it is further from Camera Raw below white than in SDR). |
 | Post-crop vignette | After sharpening, on linear values, unclipped ([Vignette and grain](#vignette-and-grain)): darkening a gain (of the scene through the profile's HDR curve for Highlight Priority); lightening a blend towards graphics white (Paint Overlay, Color Priority) or the scene towards 14.4 (Highlight Priority). |
 | Grain | After the vignette: SDR's grain added to sRGB-curve-encoded values extended above 1, its strength going on above white and fading out by 16 times white. |
@@ -485,7 +485,7 @@ renders on the CPU.
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
 something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
-channel's) whose last point is left of white, Clarity below 0 or above +50, Dehaze below −30, the
+channel's) whose last point is left of white, Clarity beyond ±50, Dehaze below −30, the
 colour mixer's Luminance beyond ±40, a darkening vignette's Highlights,
 a mask's Whites, Blacks, Hue, Saturation, Highlights or Dehaze, a mask's Clarity outside 0 to +50 with the photo's own, Defringe ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
 which the look sets, …"; Adobe Vivid's Clarity +10 renders) or split toning, an

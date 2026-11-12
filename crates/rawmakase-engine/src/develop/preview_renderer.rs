@@ -569,8 +569,8 @@ mod tests {
         }
     }
     /// The GPU renders the HDR master of what the CPU's master renders, no more: a look's
-    /// Clarity +10 with the user's +35 renders on both, and the user's −5 (refused, though
-    /// the look's +10 brings it to +5) on neither.
+    /// Clarity +10 with the user's +35 renders on both, and the user's −60 (refused, though
+    /// the look's +10 brings it to −50) on neither.
     #[test]
     fn the_gpu_renders_the_hdr_masters_the_cpu_renders() {
         use crate::camera_profiles::CameraProfile;
@@ -593,7 +593,7 @@ mod tests {
         r.effects.clarity = 0.35;
         assert!(crate::model::hdr::check_for(&r, &im.metadata).is_ok());
         assert!(gpu(&r));
-        r.effects.clarity = -0.05;
+        r.effects.clarity = -0.6;
         assert!(crate::model::hdr::check_for(&r, &im.metadata).is_err());
         assert!(!gpu(&r));
     }

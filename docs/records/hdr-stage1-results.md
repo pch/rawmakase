@@ -416,6 +416,34 @@ the same measure, median over the twelve; ΔE_ITP added to the default render's)
 below −30 stays refused, as do negative Clarity and Clarity above +50. Between the
 measured settings the operator is the same, so +30 to +100 renders as both ends do.
 
+**Negative Clarity, 2026-11-12.** Clarity −50 missed by its p95 below white (0.267
+against 0.252) and above white (0.274). The difference is beside light above white:
+far from it Camera Raw's HDR and SDR effects agree (median 0.000–0.001 stop) as
+RAWmakase's do, but within a few percent of the frame of light above white Camera
+Raw's HDR effect is stronger than its SDR one, both on the dark side it lifts (Sony
+A7R III, 1–2 stops under white: +0.53 against +0.24) and on the light side it pulls
+(Nikon Z 8, just under white: −0.53 against −0.26), while RAWmakase's HDR and SDR
+effects there were nearly the same. White compresses that local contrast in SDR; in
+HDR it is not. RAWmakase's HDR master therefore multiplies Clarity's gain by 1.5 within
+1.6% of the long edge of light above scene level −1 (softened over half that distance;
+`local_tone::HDR_CLARITY_NEAR_GAIN`), on the cells of the gain field the GPU reads too.
+Fitted on the twelve photos (gains 1.3, 1.5 and 1.8 and levels −1, −0.5 and 0 tried;
+1.5 and −1 leave the most margin):
+
+| Setting | HDR below white | SDR below white | HDR above white | ΔE_ITP added, HDR / SDR |
+| --- | --- | --- | --- | --- |
+| Clarity −50 | 0.051 / 0.256 | 0.049 / 0.252 | 0.013 / 0.241 | +1.4 / +1.3 |
+| Clarity +50 (five photos) | 0.177 / 0.619 | 0.176 / 0.616 | 0.087 / 0.202 | +7.9 / +7.6 |
+| Clarity +100 | 0.447 / 1.671 | 0.389 / 1.604 | 0.154 / 0.461 | +18.5 / +15.4 |
+
+**Decision, 2026-11-12: Clarity renders in the HDR master from −50 to +50**, stronger
+beside light above white; beyond ±50 it stays refused (+100 is 0.06 stop further from
+Camera Raw below white than SDR, away from light above white, where the HDR master and
+the SDR rendition render alike). SDR renders don't change: the weight is read only for
+a map built for an HDR master (`local_tone::Sliders::hdr`); 48 of 48 renders of 24
+photos at Clarity −30, in SDR and as an HDR edit's SDR rendition, are bit-identical to
+`main`'s.
+
 ### Looks
 
 Measured on gray ramps (sensor white +4 and +6 stops, a linear and the ACR3 profile
@@ -1725,7 +1753,7 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
   ([Vignette and grain](#vignette-and-grain)); masks with Temp,
-  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from 0 to +50 and Dehaze from −30 to +100 ([Presence](#presence));
+  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from −50 to +50 and Dehaze from −30 to +100 ([Presence](#presence));
   Red Eye ([Red Eye](#red-eye)); ordinary profiles' sRGB-encoded tables
   ([sRGB-encoded tables](#srgb-encoded-tables)). What stays refused, each with its
   measurements, is listed in [completion](hdr-253-closure.md#what-stays-refused);

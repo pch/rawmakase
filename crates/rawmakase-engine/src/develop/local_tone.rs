@@ -179,14 +179,16 @@ impl Curve {
             + self.tail * past_hi(self.lo, self.hi, self.key, tb)
     }
 }
-/// The slider values a map is built for: Shadows, Highlights and Clarity, and whether
-/// masks change Clarity.
+/// The slider values a map is built for: Shadows, Highlights and Clarity, whether
+/// masks change Clarity, and whether it is for an HDR master.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct Sliders {
     pub(crate) shadows: f32,
     pub(crate) highlights: f32,
     pub(crate) clarity: f32,
     pub(crate) mask_clarity: bool,
+    /// Whether the map is for an HDR master.
+    pub(crate) hdr: bool,
 }
 impl Sliders {
     pub(crate) fn of(r: &crate::model::recipe::Recipe) -> Self {
@@ -198,6 +200,7 @@ impl Sliders {
                 .masks
                 .iter()
                 .any(|m| m.is_active() && m.adjust.clarity != 0.),
+            hdr: r.hdr.is_active(),
         }
     }
 }
@@ -434,7 +437,15 @@ impl LocalToneMap {
         let detail = (sliders.clarity != 0. || sliders.mask_clarity).then(|| base.detail());
         let clarity = detail
             .filter(|_| sliders.clarity != 0.)
-            .map(|d| d.field(sliders.clarity));
+            .map(|d| d.field(sliders.clarity))
+            .map(|f| {
+                // An HDR master's Clarity is stronger beside light above white.
+                if sliders.hdr {
+                    f.scaled(&hdr_clarity_weights(base))
+                } else {
+                    f
+                }
+            });
         // Positive Shadows and negative Highlights follow the photo's global rule
         // (`local_tone_rule`); the two-scale lift and the regional level are not read.
         let rule = if sliders.shadows > 0. || sliders.highlights < 0. || local {
@@ -644,6 +655,38 @@ pub(crate) fn gpu_families() -> Vec<f32> {
         out.extend(f.tail);
     }
     out
+}
+/// How much stronger an HDR master's Clarity is near light above white, the base level
+/// (log2 scene luminance) that counts as that light, and how near (a fraction of the
+/// long edge). Camera Raw 18.7's HDR Clarity departs from its SDR one only beside light
+/// above white, where its local contrast is no longer compressed by white: there it
+/// lifts the dark side and pulls the light side further (Clarity −50 on the Nikon Z 8
+/// photo: −0.53 stop just under white against −0.26 in SDR). Fitted on the twelve
+/// validation and holdout photos (docs/records/hdr-stage1-results.md#presence).
+const HDR_CLARITY_NEAR_GAIN: f32 = 1.5;
+const HDR_CLARITY_LIGHT: f32 = -1.;
+const HDR_CLARITY_NEAR: f32 = 0.016;
+/// Clarity's per-cell weight in an HDR master: [`HDR_CLARITY_NEAR_GAIN`] within
+/// [`HDR_CLARITY_NEAR`] of light above [`HDR_CLARITY_LIGHT`], softened over half that
+/// distance, and 1 elsewhere.
+fn hdr_clarity_weights(base: &MapBase) -> Vec<f32> {
+    let (w, h) = (base.width, base.height);
+    let r = ((HDR_CLARITY_NEAR * w.max(h) as f32).round() as usize).max(1);
+    let light: Vec<f32> = base
+        .lum
+        .iter()
+        .map(|y| {
+            if level(*y) > HDR_CLARITY_LIGHT {
+                1.
+            } else {
+                0.
+            }
+        })
+        .collect();
+    let near = blur(&dilate(&light, w, h, r), w, h, (r / 2).max(1));
+    near.into_iter()
+        .map(|n| 1. + (HDR_CLARITY_NEAR_GAIN - 1.) * n)
+        .collect()
 }
 /// The largest value over a (2r+1)² window, clamped at the borders.
 fn dilate(x: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
@@ -904,6 +947,53 @@ mod tests {
         assert!(
             (striped - flat).abs() < 2.,
             "flat {flat}, striped {striped}"
+        );
+    }
+
+    #[test]
+    fn an_hdr_masters_clarity_is_stronger_beside_light_above_white() {
+        // A frame 3 stops under white with a block 2 stops over it on the left: Clarity's
+        // gain is the SDR map's far from the block, and up to HDR_CLARITY_NEAR_GAIN times
+        // it beside the block (softened at the edge of the near zone).
+        let (w, h) = (256usize, 128usize);
+        let lum: Vec<f32> = (0..w * h)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                let texture = if (x / 3 + y / 3) % 2 == 0 { 1.1 } else { 0.9 };
+                if (20..60).contains(&x) && (40..90).contains(&y) {
+                    4.
+                } else {
+                    0.125 * texture
+                }
+            })
+            .collect();
+        let map = |hdr: bool| {
+            LocalToneMap::from_luminance(
+                lum.clone(),
+                [w as u32, h as u32],
+                [w as u32, h as u32],
+                Sliders {
+                    clarity: -0.5,
+                    hdr,
+                    ..Default::default()
+                },
+                false,
+            )
+        };
+        let (sdr, hdr) = (map(false), map(true));
+        let at = |m: &LocalToneMap, x: usize, y: usize| {
+            let l = lum[y * w + x];
+            m.gain(x as f32, y as f32, l, l).log2()
+        };
+        // Far from the block (more than the near distance plus its softening).
+        assert_eq!(at(&hdr, 230, 64), at(&sdr, 230, 64));
+        // Just beside it, where its local contrast moves the gain.
+        let (s, d) = (at(&sdr, 62, 64), at(&hdr, 62, 64));
+        assert!(s.abs() > 1e-3, "{s}");
+        let ratio = d / s;
+        assert!(
+            ratio > 1.2 && ratio <= HDR_CLARITY_NEAR_GAIN + 1e-3,
+            "{s} {d}"
         );
     }
 
