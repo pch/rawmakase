@@ -275,6 +275,7 @@ HDR reference family):
 | Black & White | The SDR mix's gray (`develop::black_white`) looked up as the colour mixer's, unclipped above white. |
 | Calibration | As in SDR: a matrix on scene colour before Exposure, and Shadows tint, which only reaches values below white. |
 | Shadows | The SDR local tone operator (`develop::local_tone`) on scene values, unclipped: its gain at a pixel's base level as in SDR, before S3. |
+| Clarity | 0 to +50: the SDR operator (`develop::clarity`, in the local tone map) on scene values, unclipped, as in SDR. Negative Clarity and Clarity above +50 are refused (not measured on photos). |
 | Post-crop vignette | After sharpening, on linear values, unclipped ([Vignette and grain](#vignette-and-grain)): darkening a gain (of the scene through the profile's HDR curve for Highlight Priority); lightening a blend towards graphics white (Paint Overlay, Color Priority) or the scene towards 14.4 (Highlight Priority). |
 | Grain | After the vignette: SDR's grain added to sRGB-curve-encoded values extended above 1, its strength going on above white and fading out by 16 times white. |
 | Masks | Temp, Tint, Exposure, Shadows and Texture, through the same stages as their global sliders, weighted by the mask; Contrast below white only, Color fading out by white, and Sharpness and Noise on the encoded master ([Masks](#masks)). |
@@ -457,18 +458,18 @@ still rising at 16 times white, and its mask Blacks −50 brightens light above 
 (+0.39 stop at 16 times); SDR's curves fall steeply above white instead. SDR's mask
 Saturation brightens saturated colours (×1.11 in value at +50, Camera Raw's ×1.004),
 which white's clip hides in SDR: in the master it is 0.098 stop off at every level.
-Hue is the same Oklab operator, not measured. Highlights, Clarity and Dehaze have no
-HDR rendering globally. A masked master renders on the CPU.
+Hue is the same Oklab operator, not measured. Highlights and Dehaze have no HDR
+rendering globally, and a mask's Clarity isn't measured. A masked master renders on the CPU.
 
 ## What is refused
 
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
 something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
-channel's) whose last point is left of white, Presence (Clarity, Dehaze), the
+channel's) whose last point is left of white, Clarity below 0 or above +50, Dehaze, the
 colour mixer's Luminance beyond ±40, a darkening vignette's Highlights,
-a mask's Whites, Blacks, Hue, Saturation, Highlights, Clarity or Dehaze, Defringe ([Defringe](#defringe)), Red Eye, a look that sets any of these (Adobe Vivid and Adobe Landscape set Clarity,
-Highlights and Shadows: "Highlights, which the look sets, …") or split toning, DCP
+a mask's Whites, Blacks, Hue, Saturation, Highlights, Clarity or Dehaze, Defringe ([Defringe](#defringe)), Red Eye, a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
+which the look sets, …"; Adobe Vivid's Clarity +10 renders) or split toning, DCP
 tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
 asked for.

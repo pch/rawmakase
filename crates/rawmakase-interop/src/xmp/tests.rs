@@ -212,13 +212,13 @@ fn photo_sidecar_empty_point_colors_and_preset_provenance() {
     // HDR master is what is refused (`model::hdr::check_recipe`).
     let clarity = hdr.replace(
         "c:Exposure2012=\"0.5\"",
-        "c:Exposure2012=\"0.5\" c:Clarity2012=\"20\"",
+        "c:Exposure2012=\"0.5\" c:Clarity2012=\"-20\"",
     );
     let p = parse(Path::new("hdr.xmp"), &clarity).unwrap();
     let r = p
         .apply(&Recipe::default(), &Metadata::default(), &[], None)
         .unwrap();
-    assert!(r.hdr.is_active() && r.effects.clarity > 0.);
+    assert!(r.hdr.is_active() && r.effects.clarity < 0.);
     let error = crate::model::hdr::check_recipe(&r).unwrap_err().to_string();
     assert!(error.contains("not supported in HDR"), "{error}");
 }
