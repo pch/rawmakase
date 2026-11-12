@@ -151,6 +151,25 @@ Exposure, and parts of the cool magenta corner of Temp and Tint.
   percentile changes nothing, and a key relative to the median gains under 0.1 ΔE00
   on the train photos ([parity gaps](records/parity-gaps.md), 2026-10-20).
 
+  **Positive Blacks works on the scene value, not on the default render.** On neutral
+  ramps with dark keys from −14 to −8, Camera Raw's Blacks +25 with the default black
+  equals the render without one (DefaultBlackRender None) to six digits, and +100
+  equals None's +100: the first 25 points remove the default black and the rest of
+  the slider is None's Blacks from 0 to +100, at any dark key and white point
+  (2026-11-12). `blacks_none.bin` holds None's curves (`scene-tone-tables.py
+  render-blacks-none`, `blacks-none-table`), and `positive_blacks` reads them on the
+  value without the default black from +25 up: within 0.011 EV RMS of Camera Raw on
+  those ramps. Before, `blacks.bin` was read after the photo's own default black,
+  though it was measured after the default black of a ramp whose key is −8, and photos
+  with darker keys came out 0.3 to 1.0 EV too light two to four stops above their key
+  (#474). Below +25 the default black fades out unevenly and by key (at +12.5, 0.90 of
+  it is left at a key of −8 and 0.69 at −12); the output goes from the photo's default
+  black alone to the value without it by the share of the way `blacks.bin`'s first
+  row, measured at a key of −8, has gone at the same scene value (exact at that key,
+  0.03 to 0.09 EV RMS at a key of −12), so a higher Blacks is never darker. Profiles without a default black, which rendered files use, keep `blacks.bin`
+  as it is: on None ramps that is 0.9 EV off at +50 and +100, not yet changed because
+  rendered files were matched to Lightroom with it.
+
   Camera Raw 18.7 neutral ramps with the same scene values and different camera
   baselines produce the same dark outputs; raising Exposure moves the response.
   The earlier model subtracted sensor white from the key and used incomplete
