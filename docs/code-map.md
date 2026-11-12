@@ -579,7 +579,7 @@ sibling `tests.rs`. Keep regressions with the domain that owns the behavior.
 | [tests/persistence.rs](../tests/persistence.rs) | Public API regressions for relative paths, malformed legacy recipes and invalid export defaults; isolates process-wide path settings in a child process. |
 | [tests/raw_fixtures.rs](../tests/raw_fixtures.rs) | Ignored private RAW development/export and repeated-navigation memory tests (`RAWMAKASE_FIXTURES`). |
 | [scripts/sky-eval/README.md](../scripts/sky-eval/README.md), [tests/sky_eval_dump.rs](../tests/sky_eval_dump.rs) | Ignored Select Sky evaluation against a baseline commit and Lightroom's sky masks on a private photo set: masks, IoU and boundary F, blind review panels, HTML report. |
-| [tests/sky_samples.rs](../tests/sky_samples.rs), [crates/rawmakase-inference/tests/sky_batch.rs](../crates/rawmakase-inference/tests/sky_batch.rs) | Ignored local Select Sky checks on private samples: the earlier Lightroom comparison and a batch mask dump. |
+| [tests/sky_samples.rs](../tests/sky_samples.rs), [crates/rawmakase-selection/tests/sky_batch.rs](../crates/rawmakase-selection/tests/sky_batch.rs) | Ignored local Select Sky checks on private samples: the earlier Lightroom comparison and a batch mask dump. |
 | [tests/private_profiles.rs](../tests/private_profiles.rs) | Ignored installed/private DCP coverage (`RAWMAKASE_PROFILES`). |
 | [tests/xmp_presets.rs](../tests/xmp_presets.rs) | Ignored installed XMP collection audit. |
 | [catalog/private_tests.rs](../crates/rawmakase-catalog/src/catalog/private_tests.rs) | Ignored private Lightroom catalog validation (`RAWMAKASE_LRCAT`). |

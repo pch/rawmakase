@@ -12,7 +12,7 @@
 //!
 //! Each mode returns coverage (0..=1) at the size it was given, before the final luma
 //! guided filter.
-//! [`blend`] keeps the model's answer, snapped to the photo's edges, and blends a mode
+//! [`blend`](fn@blend) keeps the model's answer, snapped to the photo's edges, and blends a mode
 //! in only where the kind of horizon the model sees calls for it: a crown, or a lattice
 //! it is sure of, never water.
 

@@ -53,7 +53,7 @@ const SKY_ITSELF: (f32, f32) = (1.5, 2.5);
 /// How many times coarser a grid the sky's colour is measured on over a wide window.
 const COARSE: usize = 4;
 
-/// What [`sparse`] measures before it decides: where the model and the colours are
+/// What [`sparse_with`] measures before it decides: where the model and the colours are
 /// sure of sky, the sky's colour around each pixel and how far each pixel is from it,
 /// and what is clearly not sky. `None` where there is no sure sky, no known
 /// foreground or nothing clearly not sky, and the model's answer stands.

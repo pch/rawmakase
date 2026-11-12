@@ -5,7 +5,7 @@
 //! RAWMAKASE_SKY_INPUT=<folder of .ppm> \
 //! RAWMAKASE_SKY_MODEL=<the sky model's folder> \
 //! RAWMAKASE_SKY_OUT=<output folder> \
-//! cargo test -p rawmakase-inference --test sky_batch -- --ignored --nocapture
+//! cargo test -p rawmakase-selection --test sky_batch -- --ignored --nocapture
 //! ```
 
 use rawmakase_cancel::Cancel;

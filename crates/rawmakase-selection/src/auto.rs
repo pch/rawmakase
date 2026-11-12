@@ -188,7 +188,7 @@ pub(crate) fn sky(
         .map(|(coverage, _)| coverage)
 }
 
-/// [`sky`], and which edge modes it ran and how long they took.
+/// The sky's coverage, and which edge modes it ran and how long they took.
 pub(crate) fn sky_with_modes(
     image: &RgbImage,
     probability: &[f32],

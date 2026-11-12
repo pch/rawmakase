@@ -89,8 +89,8 @@ truth: Lightroom itself errs (it leaves bare crowns out, selects parts of signs)
 
 Blind means the panels carry only letters, shuffled per photo with a fixed seed; the reviewer
 is asked not to open other files and runs with the panels' folder as its working directory,
-but nothing stops a reviewer from reading `../key.json`, and Lightroom's reconstructed mask and
-main's coarser 1280 px staircase can be told apart by eye. In the `--prompts-only` flow
+but nothing stops a reviewer from reading `../key.json`, and Lightroom's reconstructed mask can
+be told apart by eye. In the `--prompts-only` flow
 blindness rests on the answering agents being fresh.
 
 ## Large runs
@@ -103,8 +103,8 @@ blindness rests on the answering agents being fresh.
   used inline and full screen: 138 photos = 276 files, ~106 MB, which fits an Artifact in
   two publishes (≤ 255 files and 64 MB each).
 - `tuned.txt` lists what the modes were tuned on; the report scores holdout and tuned apart.
-  The holdout is not untouched: the 138-photo run at `89e0bac7` showed the first design losing
-  to main, and the design that ships (`d781bb6a`, main's edge as the base, modes only for
+  The holdout is not untouched: a 138-photo run showed the first design of the edge modes
+  losing to main, and the design that ships (main's edge as the base, modes only for
   crowns and sure lattices, water a veto) was chosen from those results. The holdout numbers
   therefore show how that design does on photos its thresholds were not tuned on, not on
   photos nobody looked at.

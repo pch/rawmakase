@@ -1,9 +1,9 @@
 //! The sky's edge: the model's own answer everywhere, with an edge mode blended in only
 //! where it does better than the model, by the kind of horizon the model sees there.
 //!
-//! A crown, bare or leafy, gets the [`sparse`] mode, which finds the sky between its
+//! A crown, bare or leafy, gets the [`sparse`](super::sparse) mode, which finds the sky between its
 //! branches and twigs; a lattice the model is sure of (a bridge's truss, a fence) gets the
-//! [`dense`] mode, for the small gaps between its struts. Everything else keeps the
+//! [`dense`](super::dense) mode, for the small gaps between its struts. Everything else keeps the
 //! model's answer snapped to the photo's edges as it always was: a facade, a hillside, a
 //! sea horizon, the open sky and its clouds. Water vetoes both modes, with priority: a
 //! crown or reeds at a shore get the model's edge where they meet the water, since a
@@ -984,7 +984,7 @@ mod tests {
         }
     }
 
-    /// [`crown`]'s crown at the sky's input size, 2560 pixels wide, the crown
+    /// [`crown`]'s crown at 2560 pixels wide (twice the app's input), the crown
     /// vegetation: the sky between its branches is found and the branches are not, as at
     /// 1024.
     #[test]
