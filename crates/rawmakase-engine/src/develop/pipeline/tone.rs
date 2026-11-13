@@ -76,13 +76,20 @@ impl HdrCurves {
         let parametric = parametric_curve(r);
         let levels = [r.black_point, r.white_point, r.midtone];
         let levels = (levels != [0., 1., 1.]).then_some(levels);
-        let channels = (!r.effects.channels.iter().all(|c| c.is_identity())).then(|| {
+        // A channel curve that renders as the identity (`hdr_curve::renders_identity`,
+        // also one on the diagonal that ends left of white) leaves its channel alone.
+        use crate::color::hdr_curve::renders_identity;
+        let channels = (!r.effects.channels.iter().all(renders_identity)).then(|| {
             r.effects
                 .channels
                 .each_ref()
-                .map(|c| (!c.is_identity()).then(|| HdrPointCurve::new(c)))
+                .map(|c| (!renders_identity(c)).then(|| HdrPointCurve::new(c)))
         });
-        if levels.is_none() && parametric.is_none() && r.curve.is_identity() && channels.is_none() {
+        if levels.is_none()
+            && parametric.is_none()
+            && renders_identity(&r.curve)
+            && channels.is_none()
+        {
             return None;
         }
         Some(Self {
@@ -192,12 +199,13 @@ fn rgb_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {
 }
 /// What the GPU port's HDR master reads of [`HdrFinish`] past the profile: Contrast's
 /// table, output at its top and slope beyond; and, with tone curves, whether Levels
-/// apply and the master curve's value at white and slope beyond it, and each channel
+/// apply and where the master curve's extension starts, its value there and slope
+/// beyond ([`crate::color::hdr_curve::HdrPointCurve::extension`]), and each channel
 /// curve's that is not the identity, when any is not.
 pub(crate) struct HdrFinishGpu<'a> {
     pub(crate) contrast: Option<(&'a [f32], f32, f32)>,
-    pub(crate) curves: Option<(bool, [f32; 2], bool)>,
-    pub(crate) channels: Option<[Option<[f32; 2]>; 3]>,
+    pub(crate) curves: Option<(bool, [f32; 3], bool)>,
+    pub(crate) channels: Option<[Option<[f32; 3]>; 3]>,
 }
 impl HdrFinish {
     pub(super) fn gpu(&self) -> HdrFinishGpu<'_> {
@@ -852,6 +860,23 @@ mod tests {
                 (rendered[c] - expected[c]).abs() < 1e-4,
                 "{rendered:?} {expected:?}"
             );
+        }
+    }
+
+    /// A channel curve on the diagonal that ends left of white renders its channel as
+    /// the identity in the master, above 16 times white too, as the default curve does.
+    #[test]
+    fn a_diagonal_channel_curve_ending_left_of_white_is_the_identity() {
+        let mut r = Recipe::default();
+        r.hdr.enabled = true;
+        r.effects.channels[0].points = vec![[0., 0.], [200. / 255., 200. / 255.]];
+        r.curve.points = vec![[0., 0.], [0.5, 0.55], [1., 1.]];
+        let with = HdrCurves::new(&r).unwrap();
+        r.effects.channels[0] = Default::default();
+        let without = HdrCurves::new(&r).unwrap();
+        for v in [0.2, 1., 3., 32., 64.] {
+            let pro = [v, v * 0.8, v * 0.6];
+            assert_eq!(with.apply(pro), without.apply(pro), "{v}");
         }
     }
 }

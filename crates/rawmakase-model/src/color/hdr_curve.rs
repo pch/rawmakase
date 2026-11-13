@@ -9,7 +9,8 @@
 //!   unchanged up to white and continues along its slope at its last point
 //!   ([`ToneCurve::end_slope`], the spline's own, before clamping), so a curve that
 //!   ends steeper than the identity brightens highlights and one that overshoots
-//!   white and comes back to it darkens them.
+//!   white and comes back to it darkens them. A curve whose last point is left of
+//!   white continues from that point, below white too, where SDR holds its value.
 //! - **The parametric curve** is laid over an axis from black to four stops above
 //!   white ([`PARAMETRIC_TOP`]): its regions and splits divide that whole range, and
 //!   values above it are left alone ([`parametric`]).
@@ -50,6 +51,17 @@ pub const CEILING: f32 = 65536.;
 /// profile curve, on gray ramps at limit 8; docs/records/hdr-stage1-results.md#tone-curves).
 pub const HOLD: f32 = 2.2723;
 
+/// The most a point curve whose last point is left of white may reach at white,
+/// continued from that point along its slope ([`HdrPointCurve::value_at_white`]), for
+/// the HDR master to render it. Camera Raw 18.7 continues such a curve from its last
+/// point, below white too. On six photos that rule renders a curve through (128, 128)
+/// and (230, 240), which reaches 1.051, within the acceptance rule (median 0.008 stop
+/// above white, allowed 0.011), and one through (0, 0) and (200, 200) as the identity;
+/// one through (128, 140) and (220, 255), which reaches 1.176, misses (0.017), and one
+/// through (90, 110) and (180, 255) misses further on the gray and colour patches
+/// (docs/records/hdr-stage1-results.md#tone-curves).
+pub const LEFT_END_MEASURED: f32 = 1.06;
+
 /// A point curve's encoded HDR output `e` held toward [`HOLD`] from [`PARAMETRIC_TOP`]'s encoding
 /// up: unchanged below it, then an exponential approach with the same slope there.
 pub fn hold(e: f32) -> f32 {
@@ -61,14 +73,25 @@ pub fn hold(e: f32) -> f32 {
     knee + room * (1. - (-(e - knee) / room).exp())
 }
 
+/// Whether `curve` renders as the identity in HDR: its points on the diagonal from
+/// black, also when it ends left of white, as it continues along the diagonal there
+/// (in SDR such a curve holds its last value).
+pub fn renders_identity(curve: &ToneCurve) -> bool {
+    curve.points.first() == Some(&[0., 0.]) && curve.points.iter().all(|p| p[0] == p[1])
+}
+
 /// A point curve as it renders in HDR, on [`encode`]d values.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HdrPointCurve {
     lut: CurveLut,
-    white: f32,
+    /// Where the curve's extension starts: white, or its last point when that is left
+    /// of white.
+    start: f32,
+    /// The curve's value at `start`.
+    value: f32,
     slope: f32,
     /// Whether its output is held above four stops over white ([`hold`]): a curve
-    /// that isn't the identity.
+    /// that doesn't render as the identity.
     holds: bool,
 }
 
@@ -76,29 +99,41 @@ impl HdrPointCurve {
     pub fn new(curve: &ToneCurve) -> Self {
         let slope = curve.end_slope();
         let lut = CurveLut::new(curve);
+        let (start, value) = match curve.points.last() {
+            Some(&[x, y]) if x < 1. => (x, y),
+            _ => (1., lut.evaluate(1.)),
+        };
         Self {
-            white: lut.evaluate(1.),
+            start,
+            value,
             slope,
-            holds: !curve.is_identity(),
+            holds: !renders_identity(curve),
             lut,
         }
+    }
+    /// The curve's extension at white: at most [`LEFT_END_MEASURED`] for one whose last
+    /// point is left of white, whose extension starts there.
+    pub fn value_at_white(&self) -> f32 {
+        self.value + self.slope * (1. - self.start)
     }
     /// Whether its output is held above four stops over white ([`hold`]).
     pub fn holds(&self) -> bool {
         self.holds
     }
-    /// The encoded output for the encoded input `e`: the curve up to white, its slope
-    /// at white above it. The result can fall below 0, which [`decode`] reads as 0.
-    /// The curve's value at white and its slope beyond, for the GPU port, which reads
-    /// the curve's samples from its own copy of the same [`CurveLut`].
-    pub fn extension(&self) -> [f32; 2] {
-        [self.white, self.slope]
+    /// Where the curve's extension starts, its value there and its slope beyond, for
+    /// the GPU port, which reads the curve's samples from its own copy of the same
+    /// [`CurveLut`].
+    pub fn extension(&self) -> [f32; 3] {
+        [self.start, self.value, self.slope]
     }
+    /// The encoded output for the encoded input `e`: the curve up to white, or to its
+    /// last point when that is left of white, and on along its slope there above it.
+    /// The result can fall below 0, which [`decode`] reads as 0.
     pub fn evaluate(&self, e: f32) -> f32 {
-        let out = if e <= 1. {
+        let out = if e <= self.start {
             self.lut.evaluate(e)
         } else {
-            self.white + self.slope * (e - 1.)
+            self.value + self.slope * (e - self.start)
         };
         if self.holds { hold(out) } else { out }
     }
@@ -191,6 +226,37 @@ mod tests {
         // A dark colour is still scaled down to stay above 0.
         let dark = refine_saturation([0.3, 0.05, 0.01], [0.1, 0.02, 0.0], 0.);
         assert!(dark.iter().all(|v| *v >= -1e-6), "{dark:?}");
+    }
+
+    /// A curve whose last point is left of white continues from that point along its
+    /// slope, below white too, where SDR holds its value: one that ends on the identity
+    /// renders as the identity; another follows its end slope from its last point; and
+    /// the left of the last point is the curve's own.
+    #[test]
+    fn a_curve_ending_left_of_white_continues_from_its_last_point() {
+        let identity = natural(&[[0., 0.], [200., 200.]]);
+        for x in [0.05, 0.5, 0.9, 1., 3., 15., 32., 64.] {
+            let rendered = render(&identity, x);
+            assert!((rendered / x - 1.).abs() < 1e-3, "{x}: {rendered}");
+        }
+        let curve = natural(&[[0., 0.], [128., 128.], [230., 240.]]);
+        let hdr = HdrPointCurve::new(&curve);
+        let (x0, y0, slope) = (230. / 255., 240. / 255., curve.end_slope());
+        assert!((slope - 1.12).abs() < 0.01, "{slope}");
+        for e in [0.95, 1., 1.3] {
+            let expected = y0 + slope * (e - x0);
+            assert!((hdr.evaluate(e) - expected).abs() < 1e-5, "{e}");
+        }
+        assert!((hdr.value_at_white() - 1.051).abs() < 1e-3);
+        assert!(hdr.value_at_white() <= LEFT_END_MEASURED);
+        // A channel's curve on the diagonal renders its channel as the identity too,
+        // not held at 16.
+        assert!(renders_identity(&identity));
+        assert!(!renders_identity(&curve));
+        let lut = CurveLut::new(&curve);
+        assert_eq!(hdr.evaluate(0.6), lut.evaluate(0.6));
+        let steep = HdrPointCurve::new(&natural(&[[0., 0.], [128., 140.], [220., 255.]]));
+        assert!(steep.value_at_white() > LEFT_END_MEASURED);
     }
 
     /// Camera Raw 18.7's gray ramp through point curves, HDR limit 8, a linear

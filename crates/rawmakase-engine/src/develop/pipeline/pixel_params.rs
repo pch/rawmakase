@@ -113,14 +113,16 @@ pub(crate) mod slot {
         // output at its top and the slope beyond.
         HDR_CONTRAST: 3,
         // An HDR master's tone curves (`tone::HdrCurves`): 1 when they apply, 1 when
-        // Levels do (from `LEVELS`), the master curve's value at white and slope
-        // beyond it (its samples are `MASTER`'s; the parametric curve's `PARAMETRIC_LUT`),
-        // and 1 when its output is held above four stops over white (`hdr_curve::hold`).
-        HDR_CURVES: 5,
+        // Levels do (from `LEVELS`), where the master curve's extension starts (white,
+        // or its last point left of white), its value there and slope beyond (its
+        // samples are `MASTER`'s; the parametric curve's `PARAMETRIC_LUT`), and 1 when
+        // its output is held above four stops over white (`hdr_curve::hold`).
+        HDR_CURVES: 6,
         // An HDR master's channel curves (`tone::HdrCurves`), per channel: 1 when its
-        // curve applies (an identity curve leaves the channel alone), and the curve's
-        // value at white and slope beyond it (its samples are `CHANNELS`').
-        HDR_CHANNELS: 9,
+        // curve applies (an identity curve leaves the channel alone), and where the
+        // curve's extension starts, its value there and slope beyond (its samples are
+        // `CHANNELS`').
+        HDR_CHANNELS: 12,
         // An HDR master's colour mixer (`ColorMixer::hdr_fading`): the fading Vibrance
         // value factors of its changes' grid and of its gray source (one float a cell),
         // then band Luminance's whole changes (three floats a cell), or -1 each; its grids are `MIXER`'s and `GRAY_SOURCE`'s, and black
@@ -342,19 +344,25 @@ pub(crate) fn pixel_params_hdr(im: Source, r: &Recipe) -> Option<PixelParams> {
     };
     p.set(slot::HDR_CONTRAST, &contrast);
     let curves = match curves {
-        Some((levels, [white, slope], holds)) => {
-            [1., levels as u8 as f32, white, slope, holds as u8 as f32]
-        }
-        None => [0.; 5],
+        Some((levels, [start, value, slope], holds)) => [
+            1.,
+            levels as u8 as f32,
+            start,
+            value,
+            slope,
+            holds as u8 as f32,
+        ],
+        None => [0.; 6],
     };
     p.set(slot::HDR_CURVES, &curves);
-    // Per channel: 1 when its curve applies, its value at white and slope beyond.
-    let channels: [f32; 9] = match channels {
-        Some(curves) => std::array::from_fn(|i| match curves[i / 3] {
-            Some([white, slope]) => [1., white, slope][i % 3],
+    // Per channel: 1 when its curve applies, where its extension starts, its value
+    // there and slope beyond.
+    let channels: [f32; 12] = match channels {
+        Some(curves) => std::array::from_fn(|i| match curves[i / 4] {
+            Some([start, value, slope]) => [1., start, value, slope][i % 4],
             None => 0.,
         }),
-        None => [0.; 9],
+        None => [0.; 12],
     };
     p.set(slot::HDR_CHANNELS, &channels);
     let gains = p.push(gains);
@@ -606,8 +614,8 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     p.set(slot::HDR_PROFILE, &[profile.is_hdr() as u8 as f32]);
     p.set(slot::HDR_LOOK, &[0., 0., 0.]);
     p.set(slot::HDR_CONTRAST, &[-1., 0., 0.]);
-    p.set(slot::HDR_CURVES, &[0.; 5]);
-    p.set(slot::HDR_CHANNELS, &[0.; 9]);
+    p.set(slot::HDR_CURVES, &[0.; 6]);
+    p.set(slot::HDR_CHANNELS, &[0.; 12]);
     p.set(slot::HDR_MIXER, &[-1.; 4]);
     Some(p)
 }

@@ -371,6 +371,30 @@ photo's base render, so they carried the S curve's own error. Decision: Refine
 Saturation renders in the master from 50% to 100%, on the CPU and the GPU's HDR preview;
 below 50% it stays refused.
 
+**Curves that end left of white render (2026-11-13).** Rendered by the master's own
+curve (`HdrPointCurve`: the spline up to its last point, then along its end slope, held
+above 16 as other curves) and scored on the six photos of [the last
+refusals](#the-last-refusals-on-photos-2026-11-13) by the [acceptance rule](#decisions)
+(effect error median / p95 in stops, ΔE_ITP added, medians over the photos), the two
+captured curves score better than the emulation in that table:
+
+| Curve | Value at white | Below white, HDR / SDR | Above white (allowed) | ΔE_ITP added | |
+| --- | --- | --- | --- | --- | --- |
+| (0, 0) (128, 128) (230, 240) | 1.051 | 0.001 / 0.001 | 0.008 (0.011) | +0.07 / +0.03 | passes |
+| (0, 0) (128, 140) (220, 255) | 1.176 | 0.001 / 0.001 | 0.017 (0.011) | +0.30 / +0.10 | misses |
+
+"Value at white" is the curve continued from its last point, at white, in the curve's
+encoding. The slope is Camera Raw's: scaling it by 0.97 or 1.03, from the last point or
+above white only, or bending it down above white, puts both curves 0.024–0.070 stop off
+above white. On the synthetic gray and colour patches (HDR limit 8) the rule renders a
+curve through (0, 0) and (200, 200) exactly, as the identity Camera Raw renders; (230,
+240) is 0.010 stop off above white (median), (220, 255) 0.029 and (90, 110) (180, 255),
+which reaches 1.50, 0.059. Decision: a curve whose last point is left of white renders
+in HDR when its continuation reaches at most 1.06 at white
+(`hdr_curve::LEFT_END_MEASURED`; the two photo curves' errors put the allowance at about
+1.09), master and channel curves alike; steeper ones stay refused. The GPU port reads
+where each curve's extension starts.
+
 **Levels.** RAWmakase's black point, white point and midtone have no Camera Raw
 counterpart to measure. Decision: they render in HDR as Camera Raw renders a point
 curve of the same shape, by the rule above: as in SDR up to white, then along the
@@ -1965,7 +1989,7 @@ renders, which made the SDR rendition the stricter reference.
 
 Decision, 2026-11-13: Refine Saturation other than 100% (since rendered from 50%:
 [Tone curves](#tone-curves)), curves that end left of
-white, a darkening vignette's Highlights and a mask's Blacks, Hue and Saturation stay
+white (since rendered up to a value at white of 1.06: [Tone curves](#tone-curves)), a darkening vignette's Highlights and a mask's Blacks, Hue and Saturation stay
 refused (mask Saturation from 0 to +50 renders since: above). Look split toning keeps rendering.
 
 ### Decisions

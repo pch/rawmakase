@@ -356,15 +356,17 @@ fn encoded_curve(curve: u32, e: f32) -> f32 {
         }
         return lut(offset(P_PARAMETRIC_LUT), 1024u, max(e, 0.0) / top) * top;
     }
-    // HdrPointCurve::evaluate: the curve up to white, then on along its end slope,
-    // held above four stops over white (hdr_curve::hold) unless it is the identity.
+    // HdrPointCurve::evaluate: the curve up to white (or its last point left of
+    // white), then on along its end slope, held above four stops over white
+    // (hdr_curve::hold) unless it is the identity.
     var out = 0.0;
-    if e <= 1.0 {
+    let start = p(P_HDR_CURVES + 2u);
+    if e <= start {
         out = lut(offset(P_MASTER), 4096u, e);
     } else {
-        out = p(P_HDR_CURVES + 2u) + p(P_HDR_CURVES + 3u) * (e - 1.0);
+        out = p(P_HDR_CURVES + 3u) + p(P_HDR_CURVES + 4u) * (e - start);
     }
-    if p(P_HDR_CURVES + 4u) == 0.0 {
+    if p(P_HDR_CURVES + 5u) == 0.0 {
         return out;
     }
     let knee = look_encode(LOOK_PEAK);
@@ -375,18 +377,19 @@ fn encoded_curve(curve: u32, e: f32) -> f32 {
     return knee + room * (1.0 - exp(-(out - knee) / room));
 }
 // HdrCurves::apply's last step on channel `c`'s encoded value: its own curve, when it
-// applies (hdr_curve::channel: the samples up to white, then on along its end slope,
-// held at 16), else the master curve's output decoded.
+// applies (hdr_curve::channel: the samples up to white or its last point left of it,
+// then on along its end slope, held at 16), else the master curve's output decoded.
 fn hdr_channel(c: u32, e: f32) -> f32 {
-    let at = P_HDR_CHANNELS + 3u * c;
+    let at = P_HDR_CHANNELS + 4u * c;
     if p(at) == 0.0 {
         return min(look_decode(e), HDR_CURVE_CEILING);
     }
     var q = 0.0;
-    if e <= 1.0 {
+    let start = p(at + 1u);
+    if e <= start {
         q = lut(offset(P_CHANNELS + c), 4096u, e);
     } else {
-        q = p(at + 1u) + p(at + 2u) * (e - 1.0);
+        q = p(at + 2u) + p(at + 3u) * (e - start);
     }
     return min(look_decode(q), LOOK_PEAK);
 }
