@@ -209,7 +209,8 @@ const DEHAZE_MEASURED: f32 = -0.5;
 /// Measured: white balance, Exposure, Contrast, Shadows, Whites up to +50, Blacks, the HDR limit,
 /// Color Grading (the SDR curves in a domain that compresses the HDR range),
 /// the post-crop vignette (without a darkening vignette's Highlights) and grain,
-/// the master point curve, the channels' point curves and the parametric curve, and
+/// the master point curve, the channels' point curves (also those whose last point is
+/// left of white, within [`crate::color::hdr_curve::LEFT_END_MEASURED`]) and the parametric curve, and
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
 /// camera's samples, as in SDR), Clarity from −50 to +50 and Dehaze from −50 to +100
 /// (the SDR operators, unclipped),
@@ -320,14 +321,18 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
         // Camera Raw's HDR Highlights levels off (negative) or fades (positive) above
         // white, unlike the SDR-trained rule; Shadows renders as in SDR.
         ("Highlights", r.highlights != 0.),
-        // Point curves were measured ending at white; one whose last point is left
-        // of it holds its value beyond, which Camera Raw was not seen to do above
-        // white.
+        // A point curve whose last point is left of white continues from it along its
+        // slope, as Camera Raw's does; measured up to a value at white of
+        // `LEFT_END_MEASURED` (docs/records/hdr-stage1-results.md#tone-curves).
         (
-            "A point curve that ends left of white",
+            "A point curve that ends steeply left of white",
             std::iter::once(&r.curve)
                 .chain(&r.effects.channels)
-                .any(|c| c.points.last().is_some_and(|p| p[0] < 1.)),
+                .any(|c| {
+                    c.points.last().is_some_and(|p| p[0] < 1.)
+                        && crate::color::hdr_curve::HdrPointCurve::new(c).value_at_white()
+                            > crate::color::hdr_curve::LEFT_END_MEASURED
+                }),
         ),
         (
             "Refine Saturation below 50%",
@@ -868,8 +873,13 @@ mod tests {
             assert!(check_recipe(&edit).is_ok());
         }
         // Point and parametric curves render, with Refine Saturation from 50% to 100%,
-        // and so does a curve whose first point is right of black; one whose last point
-        // is left of white does not.
+        // and so does a curve whose first point is right of black, and one whose last
+        // point is left of white as far as it was measured: continued from that point,
+        // it reaches at most 1.06 at white. Camera Raw's curves through (128, 128) and
+        // (230, 240), and through (200, 200), render; through (220, 255) doesn't.
+        let curve = |points: &[[f32; 2]]| -> Vec<[f32; 2]> {
+            points.iter().map(|p| [p[0] / 255., p[1] / 255.]).collect()
+        };
         r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
         r.effects.parametric = [0.1, -0.2, 0.3, -0.4];
         r.black_point = 0.05;
@@ -884,13 +894,25 @@ mod tests {
         r.curve_saturation = 1.;
         r.curve.points = vec![[0.2, 0.], [1., 1.]];
         assert!(check_recipe(&r).is_ok());
-        r.curve.points = vec![[0.2, 0.2], [0.8, 0.8]];
-        assert!(check_recipe(&r).is_err());
-        // A channel's own curve renders too.
+        for (points, renders) in [
+            (&[[0., 0.], [128., 128.], [230., 240.]][..], true),
+            (&[[0., 0.], [200., 200.]], true),
+            (&[[51., 51.], [204., 204.]], true),
+            (&[[0., 0.], [128., 140.], [220., 255.]], false),
+            (&[[0., 0.], [90., 110.], [180., 255.]], false),
+        ] {
+            r.curve.points = curve(points);
+            assert_eq!(check_recipe(&r).is_ok(), renders, "{points:?}");
+        }
+        let error = check_recipe(&r).unwrap_err().to_string();
+        assert!(error.contains("ends steeply left of white"), "{error}");
+        // A channel's own curve renders too, by the same rule.
         r.curve = Default::default();
         r.effects.channels[1].points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
         assert!(check_recipe(&r).is_ok());
         r.effects.channels[1].points = vec![[0., 0.], [0.8, 0.8]];
+        assert!(check_recipe(&r).is_ok());
+        r.effects.channels[1].points = curve(&[[0., 0.], [128., 140.], [220., 255.]]);
         assert!(check_recipe(&r).is_err());
     }
 
