@@ -111,6 +111,15 @@ impl ImageFrame {
         ]
     }
 }
+/// How much Straighten enlarges a `width` by `height` photo turned by `degrees`, so
+/// that the photo fills its own frame with no white corners: the photo behind a crop
+/// of 0–1 is `width / zoom` by `height / zoom` of the turned photo. Only the ratio of
+/// `width` to `height` matters, and swapping them gives the same zoom.
+pub fn straighten_zoom(degrees: f32, [width, height]: [f32; 2]) -> f32 {
+    let (s, c) = degrees.to_radians().sin_cos();
+    let (s, c) = (s.abs(), c.abs());
+    (c + s * height / width).max(c + s * width / height)
+}
 /// `turns` quarter turns of normalised coordinates, as `Geometry::source` applies them.
 pub fn turn(turns: u8, x: f32, y: f32) -> [f32; 2] {
     match turns % 4 {

@@ -131,7 +131,7 @@
   writes ColorNoiseReductionSmoothness=7
   writes Contrast2012=+7
   writes ConvertToGrayscale=True
-  writes CropAngle=+7.00
+  writes CropAngle=0.00
   writes CropBottom=0.300000
   writes CropConstrainToWarp=1
   writes CropLeft=0.300000
@@ -268,7 +268,7 @@
   writes ColorNoiseReductionSmoothness=7
   writes Contrast2012=+7
   writes ConvertToGrayscale=True
-  writes CropAngle=+7.00
+  writes CropAngle=0.00
   writes CropBottom=0.300000
   writes CropConstrainToWarp=1
   writes CropLeft=0.300000
@@ -1724,28 +1724,7 @@ jpeg ConvertToGrayscale=["0"] ok | writes || lenient same
 jpeg ConvertToGrayscale=["-0", "-1", "7", "50", "-100", "100", "5500", "x"] error Invalid boolean ConvertToGrayscale || lenient warns ["Invalid boolean ConvertToGrayscale"]
 jpeg ConvertToGrayscale=["1", "True"] ok .effects.monochrome=true | writes ConvertToGrayscale=True GrayMixerAqua=0 GrayMixerBlue=0 GrayMixerGreen=0 GrayMixerMagenta=0 GrayMixerOrange=0 GrayMixerPurple=0 GrayMixerRed=0 GrayMixerYellow=0 || lenient same
 # CropAngle group Some(Crop)
-plain CropAngle=["0"] ok | writes || lenient same
-plain CropAngle=["-0"] ok .straighten=-0.0 | writes || lenient same
-plain CropAngle=["1e-7"] ok .straighten=1e-7 | writes HasCrop=True || lenient same
-plain CropAngle=["-1e-7"] ok .straighten=-1e-7 | writes HasCrop=True || lenient same
-plain CropAngle=["+0.5"] ok .straighten=0.5 | writes CropAngle=+0.50 HasCrop=True || lenient same
-plain CropAngle=["-0.5"] ok .straighten=-0.5 | writes CropAngle=-0.50 HasCrop=True || lenient same
-plain CropAngle=["0.49"] ok .straighten=0.49 | writes CropAngle=+0.49 HasCrop=True || lenient same
-plain CropAngle=["0.51"] ok .straighten=0.51 | writes CropAngle=+0.51 HasCrop=True || lenient same
-plain CropAngle=["1"] ok .straighten=1.0 | writes CropAngle=+1.00 HasCrop=True || lenient same
-plain CropAngle=["-1"] ok .straighten=-1.0 | writes CropAngle=-1.00 HasCrop=True || lenient same
-plain CropAngle=["2.4"] ok .straighten=2.4 | writes CropAngle=+2.40 HasCrop=True || lenient same
-plain CropAngle=["2.005"] ok .straighten=2.005 | writes CropAngle=+2.01 HasCrop=True || lenient same
-plain CropAngle=["2.015"] ok .straighten=2.015 | writes CropAngle=+2.02 HasCrop=True || lenient same
-plain CropAngle=["5"] ok .straighten=5.0 | writes CropAngle=+5.00 HasCrop=True || lenient same
-plain CropAngle=["7.99"] ok .straighten=7.99 | writes CropAngle=+7.99 HasCrop=True || lenient same
-plain CropAngle=["8"] ok .straighten=8.0 | writes CropAngle=+8.00 HasCrop=True || lenient same
-plain CropAngle=["8.01"] ok .straighten=8.01 | writes CropAngle=+8.01 HasCrop=True || lenient same
-plain CropAngle=["-8"] ok .straighten=-8.0 | writes CropAngle=-8.00 HasCrop=True || lenient same
-plain CropAngle=["-8.01"] ok .straighten=-8.01 | writes CropAngle=-8.01 HasCrop=True || lenient same
-plain CropAngle=["-12.5"] ok .straighten=-12.5 | writes CropAngle=-12.50 HasCrop=True || lenient same
-plain CropAngle=["25"] ok .straighten=25.0 | writes CropAngle=+25.00 HasCrop=True || lenient same
-plain CropAngle=["33.3"] ok .straighten=33.3 | writes CropAngle=+33.30 HasCrop=True || lenient same
+plain CropAngle=["0", "-0", "1e-7", "-1e-7", "+0.5", "-0.5", "0.49", "0.51", "1", "-1", "2.4", "2.005", "2.015", "5", "7.99", "8", "8.01", "-8", "-8.01", "-12.5", "25", "33.3"] ok | writes || lenient same
 plain CropAngle=["49.5", "50", "-75", "99.5", "100", "-100", "100.01", "150", "180", "360", "2000", "5500", "50000", "50001"] error CropAngle is outside supported range || lenient warns ["CropAngle is outside supported range"]
 plain CropAngle=["inf", "-inf", "NaN"] error Non-finite CropAngle || lenient warns ["Non-finite CropAngle"]
 plain CropAngle=["x"] error Invalid CropAngle: x: invalid float literal || lenient warns ["Invalid CropAngle: x: invalid float literal"]
@@ -1753,27 +1732,21 @@ plain CropAngle=["True"] error Invalid CropAngle: True: invalid float literal ||
 plain CropAngle=["False"] error Invalid CropAngle: False: invalid float literal || lenient warns ["Invalid CropAngle: False: invalid float literal"]
 plain CropAngle=["Custom"] error Invalid CropAngle: Custom: invalid float literal || lenient warns ["Invalid CropAngle: Custom: invalid float literal"]
 plain CropAngle=["As Shot"] error Invalid CropAngle: As Shot: invalid float literal || lenient warns ["Invalid CropAngle: As Shot: invalid float literal"]
-rich CropAngle=["0"] ok .straighten=0.0 | writes CropAngle=0.00 || lenient same
-rich CropAngle=["-0"] ok .straighten=-0.0 | writes CropAngle=0.00 || lenient same
-rich CropAngle=["1"] ok .straighten=1.0 | writes CropAngle=+1.00 || lenient same
-rich CropAngle=["-1"] ok .straighten=-1.0 | writes CropAngle=-1.00 || lenient same
-rich CropAngle=["7"] ok | writes || lenient same
+rich CropAngle=["0", "-0"] ok | writes || lenient same
+rich CropAngle=["1"] ok .crop[0]=0.30774632 .crop[2]=0.99165833 .crop[3]=0.27383292 .straighten=-1.0 | writes CropAngle=+1.00 CropBottom=0.292148 CropLeft=0.318321 CropRight=0.981679 CropTop=0.007852 || lenient same
+rich CropAngle=["-1"] ok .crop[0]=0.34085125 .crop[2]=0.97526616 .crop[3]=0.28994882 .straighten=1.0 | writes CropAngle=-1.00 CropBottom=0.283182 CropLeft=0.339242 CropRight=0.960758 CropTop=0.016818 || lenient same
+rich CropAngle=["7"] ok .crop[0]=0.38971496 .crop[2]=0.8934169 .crop[3]=0.1189298 .straighten=-7.0 | writes CropAngle=+7.00 CropBottom=0.239387 CropLeft=0.441430 CropRight=0.858570 CropTop=0.060613 || lenient same
 rich CropAngle=["50", "-100", "100", "5500"] error CropAngle is outside supported range || lenient warns ["CropAngle is outside supported range"]
 rich CropAngle=["True"] error Invalid CropAngle: True: invalid float literal || lenient warns ["Invalid CropAngle: True: invalid float literal"]
 rich CropAngle=["x"] error Invalid CropAngle: x: invalid float literal || lenient warns ["Invalid CropAngle: x: invalid float literal"]
-off CropAngle=["0"] ok .straighten=0.0 | writes CropAngle=0.00 || lenient same
-off CropAngle=["-0"] ok .straighten=-0.0 | writes CropAngle=0.00 || lenient same
-off CropAngle=["1"] ok .straighten=1.0 | writes CropAngle=+1.00 || lenient same
-off CropAngle=["-1"] ok .straighten=-1.0 | writes CropAngle=-1.00 || lenient same
-off CropAngle=["7"] ok | writes || lenient same
+off CropAngle=["0", "-0"] ok | writes || lenient same
+off CropAngle=["1"] ok .crop[0]=0.30774632 .crop[2]=0.99165833 .crop[3]=0.27383292 .straighten=-1.0 | writes CropAngle=+1.00 CropBottom=0.292148 CropLeft=0.318321 CropRight=0.981679 CropTop=0.007852 || lenient same
+off CropAngle=["-1"] ok .crop[0]=0.34085125 .crop[2]=0.97526616 .crop[3]=0.28994882 .straighten=1.0 | writes CropAngle=-1.00 CropBottom=0.283182 CropLeft=0.339242 CropRight=0.960758 CropTop=0.016818 || lenient same
+off CropAngle=["7"] ok .crop[0]=0.38971496 .crop[2]=0.8934169 .crop[3]=0.1189298 .straighten=-7.0 | writes CropAngle=+7.00 CropBottom=0.239387 CropLeft=0.441430 CropRight=0.858570 CropTop=0.060613 || lenient same
 off CropAngle=["50", "-100", "100", "5500"] error CropAngle is outside supported range || lenient warns ["CropAngle is outside supported range"]
 off CropAngle=["True"] error Invalid CropAngle: True: invalid float literal || lenient warns ["Invalid CropAngle: True: invalid float literal"]
 off CropAngle=["x"] error Invalid CropAngle: x: invalid float literal || lenient warns ["Invalid CropAngle: x: invalid float literal"]
-jpeg CropAngle=["0"] ok | writes || lenient same
-jpeg CropAngle=["-0"] ok .straighten=-0.0 | writes || lenient same
-jpeg CropAngle=["1"] ok .straighten=1.0 | writes CropAngle=+1.00 HasCrop=True || lenient same
-jpeg CropAngle=["-1"] ok .straighten=-1.0 | writes CropAngle=-1.00 HasCrop=True || lenient same
-jpeg CropAngle=["7"] ok .straighten=7.0 | writes CropAngle=+7.00 HasCrop=True || lenient same
+jpeg CropAngle=["0", "-0", "1", "-1", "7"] ok | writes || lenient same
 jpeg CropAngle=["50", "-100", "100", "5500"] error CropAngle is outside supported range || lenient warns ["CropAngle is outside supported range"]
 jpeg CropAngle=["True"] error Invalid CropAngle: True: invalid float literal || lenient warns ["Invalid CropAngle: True: invalid float literal"]
 jpeg CropAngle=["x"] error Invalid CropAngle: x: invalid float literal || lenient warns ["Invalid CropAngle: x: invalid float literal"]
@@ -3483,10 +3456,10 @@ jpeg HDRMaxValue=["x"] error Invalid HDRMaxValue: x: invalid float literal || le
 # HasCrop group Some(Crop)
 plain HasCrop=["0", "1", "True", "False"] ok | writes || lenient same
 plain HasCrop=["-0", "1e-7", "-1e-7", "+0.5", "-0.5", "0.49", "0.51", "-1", "2.4", "2.005", "2.015", "5", "7.99", "8", "8.01", "-8", "-8.01", "-12.5", "25", "33.3", "49.5", "50", "-75", "99.5", "100", "-100", "100.01", "150", "180", "360", "2000", "5500", "50000", "50001", "inf", "-inf", "NaN", "x", "Custom", "As Shot"] error Invalid boolean HasCrop || lenient warns ["Invalid boolean HasCrop"]
-rich HasCrop=["0"] ok .crop[0]=0.0 .crop[3]=1.0 | writes CropBottom=1.000000 CropLeft=0.000000 || lenient same
+rich HasCrop=["0"] ok .crop[0]=0.0 .crop[3]=1.0 | writes CropBottom=1.000000 CropLeft=0.000000 HasCrop=False || lenient same
 rich HasCrop=["-0", "-1", "7", "50", "-100", "100", "5500", "x"] error Invalid boolean HasCrop || lenient warns ["Invalid boolean HasCrop"]
 rich HasCrop=["1", "True"] ok | writes || lenient same
-off HasCrop=["0"] ok .crop[0]=0.0 .crop[3]=1.0 | writes CropBottom=1.000000 CropLeft=0.000000 || lenient same
+off HasCrop=["0"] ok .crop[0]=0.0 .crop[3]=1.0 | writes CropBottom=1.000000 CropLeft=0.000000 HasCrop=False || lenient same
 off HasCrop=["-0", "-1", "7", "50", "-100", "100", "5500", "x"] error Invalid boolean HasCrop || lenient warns ["Invalid boolean HasCrop"]
 off HasCrop=["1", "True"] ok | writes || lenient same
 jpeg HasCrop=["0", "1", "True"] ok | writes || lenient same
@@ -8878,7 +8851,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:WhiteBalance="Custom"
      crs:Temperature="5300"
      crs:Tint="+7"
@@ -8930,7 +8903,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:Exposure2012="+7.00"
      crs:HasSettings="True">
      <crs:Name>
@@ -8980,7 +8953,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:Contrast2012="+7"
      crs:HasSettings="True">
      <crs:Name>
@@ -9030,7 +9003,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:Highlights2012="+7"
      crs:HasSettings="True">
      <crs:Name>
@@ -9080,7 +9053,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:Shadows2012="+7"
      crs:HasSettings="True">
      <crs:Name>
@@ -9130,7 +9103,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:Whites2012="+7"
      crs:HasSettings="True">
      <crs:Name>
@@ -9180,7 +9153,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:Blacks2012="+7"
      crs:HasSettings="True">
      <crs:Name>
@@ -9230,7 +9203,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:HDREditMode="0"
      crs:HDRMaxValue="+7.00"
      crs:SDRBrightness="+7"
@@ -9288,7 +9261,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:Texture="+7"
      crs:HasSettings="True">
      <crs:Name>
@@ -9338,7 +9311,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:Clarity2012="+7"
      crs:HasSettings="True">
      <crs:Name>
@@ -9388,7 +9361,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:Dehaze="+7"
      crs:HasSettings="True">
      <crs:Name>
@@ -9438,7 +9411,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:Vibrance="+7"
      crs:HasSettings="True">
      <crs:Name>
@@ -9488,7 +9461,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:Saturation="+7"
      crs:HasSettings="True">
      <crs:Name>
@@ -9538,7 +9511,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:ConvertToGrayscale="True"
      crs:HasSettings="True">
      <crs:Name>
@@ -9588,7 +9561,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:ParametricShadows="+7"
      crs:ParametricDarks="+7"
      crs:ParametricLights="+7"
@@ -9670,7 +9643,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:HueAdjustmentRed="+7"
      crs:HueAdjustmentOrange="+7"
      crs:HueAdjustmentYellow="+7"
@@ -9754,7 +9727,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:GrayMixerRed="+7"
      crs:GrayMixerOrange="+7"
      crs:GrayMixerYellow="+7"
@@ -9812,7 +9785,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:SplitToningShadowHue="200"
      crs:SplitToningShadowSaturation="20"
      crs:ColorGradeShadowLum="+7"
@@ -9876,7 +9849,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:Sharpness="7"
      crs:SharpenRadius="+3.0"
      crs:SharpenDetail="7"
@@ -9930,7 +9903,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:LuminanceSmoothing="7"
      crs:LuminanceNoiseReductionDetail="7"
      crs:LuminanceNoiseReductionContrast="7"
@@ -9983,7 +9956,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:ColorNoiseReduction="7"
      crs:ColorNoiseReductionDetail="7"
      crs:ColorNoiseReductionSmoothness="7"
@@ -10036,7 +10009,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:EnableDetail="True"
      crs:HasSettings="True">
      <crs:Name>
@@ -10086,7 +10059,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:LensProfileEnable="1"
      crs:LensProfileSetup="LensDefaults"
      crs:LensProfileDistortionScale="7"
@@ -10141,7 +10114,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:DefringePurpleAmount="7"
      crs:DefringePurpleHueLo="7"
      crs:DefringePurpleHueHi="7"
@@ -10198,7 +10171,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:VignetteAmount="+7"
      crs:VignetteMidpoint="7"
      crs:EnableLensCorrections="True"
@@ -10250,7 +10223,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:PerspectiveUpright="0"
      crs:EnableTransform="True"
      crs:HasSettings="True">
@@ -10301,7 +10274,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:HasSettings="True">
      <crs:Name>
       <rdf:Alt>
@@ -10350,7 +10323,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:PerspectiveVertical="+7"
      crs:PerspectiveHorizontal="+7"
      crs:PerspectiveRotate="+7.0"
@@ -10407,7 +10380,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:PostCropVignetteAmount="+7"
      crs:PostCropVignetteMidpoint="7"
      crs:PostCropVignetteRoundness="+7"
@@ -10463,7 +10436,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:GrainAmount="7"
      crs:GrainSize="7"
      crs:GrainFrequency="7"
@@ -10517,7 +10490,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:ProcessVersion="11.0"
      crs:HasSettings="True">
      <crs:Name>
@@ -10567,7 +10540,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:RedHue="+7"
      crs:RedSaturation="+7"
      crs:GreenHue="+7"
@@ -10624,7 +10597,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:EnableRetouch="True"
      crs:HasSettings="True">
      <crs:Name>
@@ -10674,12 +10647,12 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:CropLeft="0.300000"
      crs:CropTop="0.000000"
      crs:CropRight="1.000000"
      crs:CropBottom="0.300000"
-     crs:CropAngle="+7.00"
+     crs:CropAngle="0.00"
      crs:CropConstrainToWarp="1"
      crs:HasCrop="True"
      crs:HasSettings="True">
@@ -10730,7 +10703,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:EnableMaskGroupBasedCorrections="True"
      crs:EnablePaintBasedCorrections="True"
      crs:EnableGradientBasedCorrections="True"
@@ -10783,7 +10756,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Copyright=""
      crs:ContactInfo=""
      crs:Version="15.4"
-     crs:RAWmakasePreset="2"
+     crs:RAWmakasePreset="3"
      crs:ProcessVersion="11.0"
      crs:WhiteBalance="Custom"
      crs:Temperature="5300"
@@ -10916,7 +10889,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:CropTop="0.000000"
      crs:CropRight="1.000000"
      crs:CropBottom="0.300000"
-     crs:CropAngle="+7.00"
+     crs:CropAngle="0.00"
      crs:CropConstrainToWarp="1"
      crs:HasCrop="True"
      crs:EnableToneCurve="True"

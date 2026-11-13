@@ -951,7 +951,6 @@ impl Preset {
         lensfun: &Handle,
     ) -> Result<()> {
         let v = settings.values;
-        settings.assign(crs::CROP_ANGLE, &mut r.straighten, -45., 45.)?;
         // An angle the settings give is theirs, not Auto's, even Auto's own number.
         if v.contains_key("CropAngle") {
             r.straighten_auto = None;
@@ -1040,11 +1039,18 @@ impl Preset {
         settings.assign(crs::PERSPECTIVE_SCALE, &mut t.scale, 0.5, 1.5)?;
         settings.assign(crs::PERSPECTIVE_X, &mut t.offset_x, -1., 1.)?;
         settings.assign(crs::PERSPECTIVE_Y, &mut t.offset_y, -1., 1.)?;
-        // Camera Raw crops only with HasCrop: without it the photo is uncropped, even
-        // one the camera cropped to another aspect ratio, which Camera Raw records as
-        // a crop. Without HasCrop or crop values the photo keeps its starting crop.
-        if boolean(v, "HasCrop")? == Some(false) {
+        // HasCrop False without all four corners is the whole frame, even for a photo the
+        // camera cropped to another aspect ratio, which Camera Raw records as a crop.
+        // Camera Raw crops to the four corners the settings give whatever HasCrop says
+        // (docs/transform.md). Without HasCrop or crop values the photo keeps its
+        // starting crop.
+        let all_corners = crs::CROP.iter().all(|edge| v.contains_key(edge.key));
+        if boolean(v, "HasCrop")? == Some(false) && !all_corners {
+            // Without a crop Camera Raw leaves the photo unturned too.
+            let mut angle = 0.;
+            settings.assign(crs::CROP_ANGLE, &mut angle, -45., 45.)?;
             r.crop = [0., 0., 1., 1.];
+            r.straighten = 0.;
             for name in ["Left", "Top", "Right", "Bottom"] {
                 settings.seen.insert(format!("Crop{name}"));
             }
@@ -1053,19 +1059,47 @@ impl Preset {
             // the camera records its aspect-ratio crop; RAWmakase's is of the photo as
             // shown. Rotate and Flip stay out of XMP (docs/transform.md). Presets from
             // RAWmakase before #483 (marked 1) hold the crop as shown, and keep meaning it.
+            let marker = v.get("RAWmakasePreset").map(String::as_str);
             let mut frame = crate::model::image_frame::ImageFrame::for_metadata(m);
-            if v.get("RAWmakasePreset").is_some_and(|v| v == "1") {
+            if marker == Some("1") {
                 frame.turns = 0;
             }
-            let start = frame.rect_to_unrotated(r.crop);
-            let mut crop = start;
-            for (edge, out) in crs::CROP.into_iter().zip(&mut crop) {
+            // Presets from RAWmakase before #1059 (marked 1 or 2) hold its own crop of the
+            // straightened photo and its own Straighten, and keep meaning them. Everything
+            // else holds Lightroom's turned crop (`crop.rs`).
+            let own = matches!(marker, Some("1" | "2"));
+            let [w, h] = frame.size();
+            let size = if frame.turns % 2 == 1 { [h, w] } else { [w, h] };
+            let unrotated = frame.rect_to_unrotated(r.crop);
+            let start = if own {
+                (unrotated, r.straighten)
+            } else {
+                super::crop::to_lightroom(unrotated, r.straighten, size)
+            };
+            let (mut corners, mut angle) = start;
+            for (edge, out) in crs::CROP.into_iter().zip(&mut corners) {
                 settings.assign(edge, out, 0., 1.)?;
             }
-            if crop != start {
-                // Turning sorts the edges, so a reversed crop is refused before it is.
-                ensure!(crop[0] < crop[2] && crop[1] < crop[3], "Invalid crop");
+            settings.assign(crs::CROP_ANGLE, &mut angle, -45., 45.)?;
+            // Camera Raw leaves a photo whose settings give an angle without all four
+            // corners unturned and uncropped, so an uncropped photo stays so.
+            if !own && !all_corners && start == (super::crop::WHOLE, 0.) {
+                angle = 0.;
+            }
+            if (corners, angle) != start {
+                let (crop, straighten) = if own {
+                    // Turning sorts the edges, so a reversed crop is refused before it is.
+                    let ordered = corners[0] < corners[2] && corners[1] < corners[3];
+                    ordered.then_some((corners, angle))
+                } else {
+                    super::crop::from_lightroom(corners, angle, size)
+                }
+                .context("Invalid crop")?;
                 r.crop = frame.rect_from_unrotated(crop);
+                if !own {
+                    r.crop = super::crop::at_least_minimum(r.crop);
+                }
+                r.straighten = straighten;
             }
         }
         // Lightroom's Constrain Crop, not to be confused with `CropConstrainToUnitSquare`.

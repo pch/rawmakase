@@ -468,17 +468,28 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
     // With Constrain Crop, the crop as rendered: Camera Raw renders the stored crop as it
     // is, and Lightroom stores the crop it constrained. Without the photo (a preset),
     // the crop as drawn, which the photo it is applied to constrains again.
-    let crop = ImageFrame::for_metadata(shown)
-        .rect_to_unrotated(photo.and_then(|p| p.crop).unwrap_or(r.crop));
+    // Lightroom's crop is turned with the photo, and its angle turns the other way
+    // (`crop.rs`). The corners are found for the angle as written, to 0.01°, so that
+    // reading them back gives this crop.
+    let frame = ImageFrame::for_metadata(shown);
+    let [w, h] = frame.size();
+    let size = if frame.turns % 2 == 1 { [h, w] } else { [w, h] };
+    let straighten = (r.straighten * 100.).round() / 100.;
+    let (crop, angle) = super::crop::to_lightroom(
+        frame.rect_to_unrotated(photo.and_then(|p| p.crop).unwrap_or(r.crop)),
+        straighten,
+        size,
+    );
     for (edge, value) in crs::CROP.into_iter().zip(crop) {
         s.put(edge, value, 6, false);
     }
-    s.put(crs::CROP_ANGLE, r.straighten, 2, true);
+    // Not −0.00.
+    s.put(crs::CROP_ANGLE, angle + 0., 2, true);
     s.text(
         "CropConstrainToWarp",
         if r.constrain_crop { "1" } else { "0" },
     );
-    let cropped = crop != [0., 0., 1., 1.] || r.straighten != 0.;
+    let cropped = crop != [0., 0., 1., 1.] || angle != 0.;
     s.text("HasCrop", if cropped { "True" } else { "False" });
     s.text("HasSettings", "True");
     s

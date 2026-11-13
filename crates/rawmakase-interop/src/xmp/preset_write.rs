@@ -73,8 +73,10 @@ pub fn preset(r: &Recipe, shown: &Metadata, info: &PresetInfo, groups: &GroupSel
         ("Copyright", ""),
         ("ContactInfo", ""),
         ("Version", "15.4"),
-        // 2: the crop is on the unrotated frame, as Lightroom's; 1 wrote it as shown.
-        ("RAWmakasePreset", "2"),
+        // 3: the crop and angle are Lightroom's; 2 wrote RAWmakase's own crop of the
+        // straightened photo and its Straighten on the unrotated frame; 1 wrote them as
+        // shown.
+        ("RAWmakasePreset", "3"),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v.to_string()))
