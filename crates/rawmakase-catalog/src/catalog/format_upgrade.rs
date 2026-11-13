@@ -7,17 +7,18 @@
 //! loses the settings earlier releases chose an engine or operator with
 //! (`saved_format::OBSOLETE_SETTINGS`). Versions 4 to 6 only marked what releases
 //! before them could not render (Lensfun choices, AI Denoise, HDR). Version 7
-//! ([`PROFILE_ASSETS`]) stores each camera profile and Lensfun calibration once, in
-//! `recipe_assets`, and every stored recipe, History state and snapshot names them
-//! by content id instead of holding a copy; `preset_settings`, a copy of an applied
-//! XMP preset's settings that nothing read, is dropped.
+//! ([`PROFILE_ASSETS`](super::db::PROFILE_ASSETS)) stores each camera profile and
+//! Lensfun calibration once, in `recipe_assets`, and every stored recipe, History
+//! state and snapshot names them by content id instead of holding a copy;
+//! `preset_settings`, a copy of an applied XMP preset's settings that nothing read,
+//! is dropped.
 //!
 //! The rows are rewritten as JSON, so everything else in them stays as stored,
 //! settings and History fields of a later release included, and read back in the
 //! same transaction to check they still give the same recipes, through the
 //! transaction alone (never the values this process holds). A row this release
 //! cannot read is left as it is and counted.
-use super::db::{NEWEST, PROFILE_ASSETS, Write};
+use super::db::{NEWEST, Write};
 use super::recipe_assets::ReadsSource;
 use super::{Catalog, CatalogLocation};
 use crate::camera_profiles::CameraProfile;
@@ -110,17 +111,12 @@ impl Catalog {
         let CatalogLocation::File(path) = &self.location;
         let backup = backup_path(path)?;
         let mut upgrade = None;
-        self.db.upgrade(
-            NEWEST,
-            &backup,
-            |w, _| {
-                let mut u = Upgrade::new(w, progress)?;
-                migrate(w, &mut u)?;
-                upgrade = Some(u.unreadable);
-                Ok(())
-            },
-            |_| Ok(()),
-        )?;
+        self.db.upgrade(NEWEST, &backup, |w, _| {
+            let mut u = Upgrade::new(w, progress)?;
+            migrate(w, &mut u)?;
+            upgrade = Some(u.unreadable);
+            Ok(())
+        })?;
         let vacuum_error = self.db.vacuum().err().map(|e| format!("{e:#}"));
         self.upgraded = Some(Upgraded {
             from,
@@ -129,88 +125,6 @@ impl Catalog {
             vacuum_error,
         });
         Ok(())
-    }
-    /// Upgrades a catalog of an earlier format to the current one, after writing
-    /// a consistent backup next to it. Returns the backup's path, or `None` when it
-    /// already was current. Catalogs are upgraded as they open, so this finds them
-    /// current.
-    pub fn upgrade_format(&mut self) -> Result<Option<PathBuf>> {
-        if self.db.version()? >= NEWEST {
-            return Ok(None);
-        }
-        let CatalogLocation::File(path) = &self.location;
-        let backup = backup_path(path)?;
-        self.db.upgrade(
-            NEWEST,
-            &backup,
-            |w, _| migrate(w, &mut Upgrade::new(w, &mut |_| {})?),
-            |_| Ok(()),
-        )?;
-        Ok(Some(backup))
-    }
-    /// The write that stores a recipe (an edit, its History, a snapshot), checked
-    /// beforehand by the caller. Catalogs are upgraded to the current format as they
-    /// open, so this is a plain write; an older one would be upgraded in the same
-    /// transaction, after its backup.
-    pub(super) fn write_recipes<R>(
-        &mut self,
-        stores: Stores,
-        write: impl FnOnce(&mut Write<'_>) -> Result<R>,
-    ) -> Result<R> {
-        let target = stores.version();
-        if self.db.version()? >= target {
-            return self.db.write(write);
-        }
-        let CatalogLocation::File(path) = &self.location;
-        let backup = backup_path(path)?;
-        self.db.upgrade(
-            NEWEST,
-            &backup,
-            |w, _| migrate(w, &mut Upgrade::new(w, &mut |_| {})?),
-            write,
-        )
-    }
-}
-
-/// What a write of recipes stores, for the format it needs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Stores {
-    Recipes,
-    /// A Lensfun lens choice, in use or not, resolved or not.
-    Lensfun,
-    /// AI Denoise not at its default (on, or its Amount moved), with or without a
-    /// Lensfun lens choice.
-    AiDenoise,
-    /// HDR on, with or without the others.
-    Hdr,
-}
-impl Stores {
-    /// For a write of `recipes`.
-    pub(super) fn of<'r>(
-        recipes: impl IntoIterator<Item = &'r crate::model::recipe::Recipe>,
-    ) -> Self {
-        recipes
-            .into_iter()
-            .map(|r| {
-                if r.uses_hdr() {
-                    Self::Hdr
-                } else if !r.ai_denoise.is_default() {
-                    Self::AiDenoise
-                } else if r.uses_lensfun() {
-                    Self::Lensfun
-                } else {
-                    Self::Recipes
-                }
-            })
-            .max_by_key(|s| s.version())
-            .unwrap_or(Self::Recipes)
-    }
-    /// Every stored recipe names its assets by id, which only the current format
-    /// holds.
-    pub(super) fn version(self) -> i64 {
-        match self {
-            Self::Recipes | Self::Lensfun | Self::AiDenoise | Self::Hdr => PROFILE_ASSETS,
-        }
     }
 }
 

@@ -255,8 +255,6 @@ struct Call {
 /// What the drawer asks the user before a selection can run.
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::app) enum Prompt {
-    /// The catalog has to be upgraded to keep the result.
-    Upgrade(Request),
     /// An extension's generator answered `needs_setup`: what it needs, the
     /// guard the request was first made with, which must still hold for it to
     /// go on once set up, and what happens once it is.
@@ -282,7 +280,7 @@ pub(in crate::app) enum Resume {
 impl Prompt {
     fn request(&self) -> &Request {
         match self {
-            Self::Upgrade(request) | Self::Setup { request, .. } => request,
+            Self::Setup { request, .. } => request,
         }
     }
 }
@@ -307,11 +305,6 @@ pub(in crate::app) struct Selection {
     failure: Option<(Request, Failure)>,
     prompt: Option<Prompt>,
     worker: worker::Worker,
-    /// A catalog upgrade under way, and the request it unblocks.
-    upgrading: Option<(u64, Request)>,
-    upgrade_task: Task,
-    /// Its thread, to wait for when quitting: cut off, it would leave a partial backup.
-    upgrade_thread: Option<std::thread::JoinHandle<()>>,
     /// Rasters of results not taken while another selection was running, to let go of
     /// once it has finished unless it took the same one.
     deferred: Vec<String>,
@@ -350,32 +343,24 @@ impl Selection {
     pub(in crate::app) fn end_prompting(&mut self) {
         self.prompting = None;
     }
-    /// The photo changed: nothing asked for the previous one applies, an upgrade under
-    /// way included; it finishes, but does not go on to select in this photo. Its
-    /// thread is still waited for at exit.
+    /// The photo changed: nothing asked for the previous one applies.
     pub(in crate::app) fn clear_document(&mut self) {
         self.cancel();
         self.end_prompting();
         self.failure = None;
         self.prompt = None;
-        self.upgrading = None;
-        self.upgrade_task.invalidate();
     }
     /// The catalog changed.
     pub(in crate::app) fn clear_catalog(&mut self) {
         self.clear_document();
     }
     /// Threads to wait for when quitting: the selection thread is handed to the
-    /// shared deadline, never joined without one. An upgrade's backup copy is
-    /// finished within that deadline too, rather than cut off. The programs
-    /// that run the models are the extension host's to stop.
+    /// shared deadline, never joined without one. The programs that run the
+    /// models are the extension host's to stop.
     pub(in crate::app) fn stop(&mut self) -> Vec<Stopping> {
         self.cancel();
         self.end_prompting();
-        vec![
-            self.worker.stop(),
-            Stopping::new(self.upgrade_thread.take()),
-        ]
+        vec![self.worker.stop()]
     }
 }
 
@@ -393,9 +378,8 @@ impl Editor {
         }
         None
     }
-    /// Starts a selection, or asks what it needs first: an upgraded catalog,
-    /// an extension that can run. What its generator needs set up it says
-    /// when asked.
+    /// Starts a selection, or asks what it needs first: an extension that can
+    /// run. What its generator needs set up it says when asked.
     pub(in crate::app) fn request_selection(&mut self, request: Request) {
         // The frame that shows what a click did comes after it: ask for one.
         self.context.request_repaint();
@@ -418,15 +402,6 @@ impl Editor {
         if !room {
             self.messages
                 .warn(format!("A photo holds up to {MAX_GROUPS} masks"));
-            return;
-        }
-        let upgraded = self
-            .library
-            .as_ref()
-            .and_then(|l| l.session.catalog().supports_raster_masks().ok())
-            .unwrap_or(false);
-        if !upgraded {
-            self.selection.prompt = Some(Prompt::Upgrade(request));
             return;
         }
         if let Err(why) = self.extensions.mask_ready(&request.generator) {
@@ -1120,78 +1095,6 @@ impl Editor {
         self.context.request_repaint();
         let (tx, ctx) = (self.tx.clone(), self.context.clone());
         self.installer_mut(pack).install(None, tx, ctx);
-    }
-    /// Upgrades the open catalog on a thread of its own, after the edit is saved.
-    pub(in crate::app) fn upgrade_catalog(&mut self, request: Request) {
-        self.context.request_repaint();
-        let running = self
-            .selection
-            .upgrade_thread
-            .as_ref()
-            .is_some_and(|t| !t.is_finished());
-        if self.selection.upgrading.is_some() || running {
-            self.messages.note("The catalog is being upgraded");
-            return;
-        }
-        if !self.flush() {
-            return;
-        }
-        let Some(location) = self
-            .library
-            .as_ref()
-            .map(|l| l.session.catalog().location().clone())
-        else {
-            return;
-        };
-        let (generation, _) = self.selection.upgrade_task.start();
-        self.selection.upgrading = Some((generation, request));
-        let (tx, ctx) = (self.tx.clone(), self.context.clone());
-        let thread = std::thread::Builder::new()
-            .name("catalog-upgrade".into())
-            .spawn(move || {
-                let result = std::panic::catch_unwind(|| {
-                    crate::catalog::Catalog::open(&location)
-                        .and_then(|mut c| c.upgrade_for_raster_masks())
-                        .map_err(|e| format!("{e:#}"))
-                })
-                .unwrap_or_else(|_| Err("the upgrade stopped unexpectedly".into()));
-                let _ = tx.send(crate::app::worker::Event::CatalogUpgraded { generation, result });
-                ctx.request_repaint();
-            });
-        match thread {
-            Ok(thread) => self.selection.upgrade_thread = Some(thread),
-            Err(e) => {
-                self.selection.upgrading = None;
-                self.selection.upgrade_task.finish(generation);
-                self.messages.fail(format!("Catalog not upgraded: {e}"));
-            }
-        }
-    }
-    pub(in crate::app) fn catalog_upgraded(
-        &mut self,
-        generation: u64,
-        result: Result<Option<std::path::PathBuf>, String>,
-    ) {
-        let Some((current, request)) = self.selection.upgrading.clone() else {
-            return;
-        };
-        if generation != current {
-            return;
-        }
-        self.selection.upgrading = None;
-        self.selection.upgrade_task.finish(generation);
-        self.selection.upgrade_thread = None;
-        match result {
-            Ok(backup) => {
-                if let Some(backup) = backup {
-                    self.messages
-                        .done(format!("Catalog upgraded · backup: {}", backup.display()));
-                }
-                self.selection.prompt = None;
-                self.request_selection(request);
-            }
-            Err(why) => self.messages.fail(format!("Catalog not upgraded: {why}")),
-        }
     }
 }
 

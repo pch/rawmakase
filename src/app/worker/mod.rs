@@ -95,11 +95,6 @@ pub(crate) enum Event {
         job: crate::app::develop::lensfun::Job,
         result: Result<crate::app::develop::lensfun::Done, crate::app::develop::lensfun::Failure>,
     },
-    /// A catalog upgrade for raster masks finished: the backup it made, or why not.
-    CatalogUpgraded {
-        generation: u64,
-        result: Result<Option<PathBuf>, String>,
-    },
     /// A catalog import or open is under way, as a status line.
     CatalogWorking(String),
     CatalogReady(Result<Box<crate::app::library::Library>, String>),

@@ -319,42 +319,7 @@ impl Catalog {
             }
             Ok(Some(written))
         };
-        // The format is raised for what will be written: a photo that has
-        // already moved on is written nothing, so its recipe raises nothing.
-        // One that moves on between here and the transaction, or a proposal
-        // no longer admitted there, may still leave the format raised, with
-        // its backup, as the next write of such a recipe would.
-        let mut still = Vec::with_capacity(changes.len());
-        for (expected, change) in changes {
-            if fingerprint(&self.db, id_of(change))?.as_deref() == Some(*expected) {
-                still.push(change);
-            }
-        }
-        let recipes = still.into_iter().flat_map(|change| match change {
-            EditChange::Save(e) => {
-                let history = match e.history {
-                    super::HistoryUpdate::Replace(h) => Some(h),
-                    super::HistoryUpdate::Keep => None,
-                };
-                std::iter::once(e.recipe)
-                    .chain(history.map(|h| &h.origin))
-                    .chain(
-                        history
-                            .into_iter()
-                            .flat_map(|h| h.steps.iter().map(|s| &s.recipe)),
-                    )
-                    .collect::<Vec<_>>()
-            }
-            EditChange::Clear { .. } => Vec::new(),
-        });
-        let written = if changes
-            .iter()
-            .any(|(_, c)| matches!(c, EditChange::Save(_)))
-        {
-            self.write_recipes(super::format_upgrade::Stores::of(recipes), write)?
-        } else {
-            self.db.write(write)?
-        };
+        let written = self.db.write(write)?;
         if let Some(written) = &written {
             for (checked, result) in checked.iter().zip(written) {
                 if *result == Conditional::Written {

@@ -192,9 +192,6 @@ impl Editor {
                         Err(e) => self.messages.fail(format!("Model not removed: {e}")),
                     }
                 }
-                Event::CatalogUpgraded { generation, result } => {
-                    self.catalog_upgraded(generation, result)
-                }
                 Event::XmpLibrary { scan, library } => self.presets_scanned(scan, library),
                 Event::PresetScanFailed { scan, error } => self.preset_scan_failed(scan, error),
                 Event::Profiles {
