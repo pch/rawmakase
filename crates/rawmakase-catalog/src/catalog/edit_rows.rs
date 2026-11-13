@@ -11,6 +11,7 @@
 //! and the catalog upgrade's migration of every stored edit
 //! ([`migrate_edits`]).
 use super::db::{Reads, Write, sql};
+use super::format_upgrade::{BATCH, Rewrite, Upgrade};
 use super::value::row;
 use super::{Catalog, EditChange, HistoryUpdate, PhotoId};
 use crate::storage::Identity;
@@ -25,10 +26,12 @@ pub(super) struct CheckedChange<'a> {
     save: Option<Checked<'a>>,
 }
 impl CheckedChange<'_> {
-    /// Notes that the change committed: its mask rasters are stored.
+    /// Notes that the change committed: its mask rasters, profiles and
+    /// calibrations are stored.
     pub(super) fn committed(&self) {
         if let Some(save) = &self.save {
             save.assets.saved();
+            super::recipe_assets::committed(&save.recipe_assets);
         }
     }
 }
@@ -41,8 +44,12 @@ struct Checked<'a> {
     /// Spots and masks, `None` without any.
     local: Option<String>,
     history: HistoryUpdate<'a>,
+    /// A replaced History with steps, as stored.
+    history_data: Option<Vec<u8>>,
     /// The mask rasters the recipe and a replaced History refer to.
     assets: super::mask_assets::Assets,
+    /// The profiles and calibrations the recipe and a replaced History name.
+    recipe_assets: Vec<crate::storage::recipe_assets::Asset>,
 }
 
 /// The edit of a photo that the same transaction adds, checked as a save is,
@@ -120,15 +127,27 @@ impl Catalog {
             HistoryUpdate::Keep => Default::default(),
         };
         let assets = self.assets_of(recipe.mask_asset_ids().chain(history_ids))?;
+        // The recipe and every History state in the catalog's stored form, each
+        // profile and calibration stored once.
+        let mut storer = crate::model::stored_recipe::Storer::new();
+        let stored = storer.to_stored(&saved).to_text();
+        let history_data = match history {
+            HistoryUpdate::Replace(h) if !h.steps.is_empty() => {
+                Some(super::develop_history::encode(h, &mut storer)?)
+            }
+            _ => None,
+        };
         Ok(Checked {
-            recipe: serde_json::to_string(&saved)?,
+            recipe: stored,
             export: serde_json::to_string(export)?,
             identity: serde_json::to_string(identity)?,
             local: (!local.is_empty())
                 .then(|| serde_json::to_string(&local))
                 .transpose()?,
             history,
+            history_data,
             assets,
+            recipe_assets: storer.into_assets(),
         })
     }
 }
@@ -159,6 +178,7 @@ pub(super) fn write_edit(
         return Ok(());
     };
     e.assets.write(w)?;
+    super::recipe_assets::write(w, &e.recipe_assets)?;
     ensure!(
         w.execute(
             sql!("UPDATE photos SET recipe=?,export_options=?,identity=?,edited_at=? WHERE id=?"),
@@ -180,20 +200,20 @@ pub(super) fn write_edit(
             )?;
         }
     }
-    match e.history {
-        HistoryUpdate::Keep => {}
-        // An empty History stores as none (Sync's Undo on a photo that had none).
-        HistoryUpdate::Replace(h) if h.steps.is_empty() => {
-            w.execute(sql!("DELETE FROM develop_history WHERE photo=?"), &[id])?;
-        }
-        HistoryUpdate::Replace(h) => {
+    match (e.history, &e.history_data) {
+        (HistoryUpdate::Keep, _) => {}
+        (HistoryUpdate::Replace(_), Some(data)) => {
             w.execute(
                 sql!(
                     "INSERT INTO develop_history(photo, data) VALUES (?, ?)
                      ON CONFLICT(photo) DO UPDATE SET data=excluded.data"
                 ),
-                &[id, &super::develop_history::encode(h)?],
+                &[id, data],
             )?;
+        }
+        // An empty History stores as none (Sync's Undo on a photo that had none).
+        (HistoryUpdate::Replace(_), None) => {
+            w.execute(sql!("DELETE FROM develop_history WHERE photo=?"), &[id])?;
         }
     }
     Ok(())
@@ -275,44 +295,90 @@ pub(super) fn delete_edits(w: &mut Write<'_>, photo: PhotoId) -> Result<()> {
     Ok(())
 }
 
-/// Removes the settings that chose an engine or operator
-/// (`saved_format::OBSOLETE_SETTINGS`) from every stored edit and History, in the
-/// catalog's upgrade. Everything else stays as stored, edit times included; rows
-/// this release cannot read are left as they are.
-pub(super) fn migrate_edits(w: &mut Write<'_>) -> Result<()> {
-    use crate::model::saved_format::recipe_text_without_obsolete_settings;
+/// How many stored edits and Histories an upgrade reads.
+pub(super) fn stored_recipes(db: &impl Reads) -> Result<i64> {
+    db.read_one(
+        sql!(
+            "SELECT (SELECT COUNT(*) FROM photos WHERE recipe IS NOT NULL)
+                  + (SELECT COUNT(*) FROM develop_history)"
+        ),
+        &[],
+    )
+}
+
+/// Rewrites every stored edit as the current format stores it, in the catalog's
+/// upgrade ([`Upgrade::recipe`]), a batch at a time. Everything else stays as
+/// stored, edit times included; edits this release cannot read are left as they are.
+pub(super) fn migrate_edits(w: &mut Write<'_>, u: &mut Upgrade<'_>) -> Result<()> {
     row! {
         struct Edit {
             id: PhotoId,
             recipe: String,
         }
     }
-    let edits: Vec<Edit> = w.read(
-        sql!("SELECT id, recipe FROM photos WHERE recipe IS NOT NULL"),
-        &[],
-    )?;
-    for edit in edits {
-        if let Some(recipe) = recipe_text_without_obsolete_settings(&edit.recipe) {
-            w.execute(
-                sql!("UPDATE photos SET recipe=? WHERE id=?"),
-                &[&recipe, &edit.id],
-            )?;
+    let mut after = PhotoId(i64::MIN);
+    loop {
+        let edits: Vec<Edit> = w.read(
+            sql!(
+                "SELECT id, recipe FROM photos WHERE recipe IS NOT NULL AND id > ?
+                 ORDER BY id LIMIT ?"
+            ),
+            &[&after, &BATCH],
+        )?;
+        let Some(last) = edits.last() else {
+            return Ok(());
+        };
+        after = last.id;
+        let rows = edits.len();
+        for edit in edits {
+            if let Rewrite::To(recipe, original) = u.recipe(w, &edit.recipe)? {
+                w.execute(
+                    sql!("UPDATE photos SET recipe=? WHERE id=?"),
+                    &[&recipe, &edit.id],
+                )?;
+                let stored: String =
+                    w.read_one(sql!("SELECT recipe FROM photos WHERE id=?"), &[&edit.id])?;
+                u.check_recipe(w, &stored, &original)?;
+            }
         }
+        u.batch_done(rows);
     }
+}
+
+/// Rewrites every stored History as the current format stores it, in the
+/// catalog's upgrade ([`Upgrade::history`]), a batch at a time; ones this release
+/// cannot read are left as they are.
+pub(super) fn migrate_histories(w: &mut Write<'_>, u: &mut Upgrade<'_>) -> Result<()> {
     row! {
         struct History {
             photo: PhotoId,
             data: Vec<u8>,
         }
     }
-    let histories: Vec<History> = w.read(sql!("SELECT photo, data FROM develop_history"), &[])?;
-    for history in histories {
-        if let Some(data) = super::develop_history::without_obsolete_settings(&history.data) {
-            w.execute(
-                sql!("UPDATE develop_history SET data=? WHERE photo=?"),
-                &[&data, &history.photo],
-            )?;
+    let mut after = PhotoId(i64::MIN);
+    loop {
+        let histories: Vec<History> = w.read(
+            sql!("SELECT photo, data FROM develop_history WHERE photo > ? ORDER BY photo LIMIT ?"),
+            &[&after, &BATCH],
+        )?;
+        let Some(last) = histories.last() else {
+            return Ok(());
+        };
+        after = last.photo;
+        let rows = histories.len();
+        for history in histories {
+            if let Rewrite::To(data, original) = u.history(w, &history.data)? {
+                w.execute(
+                    sql!("UPDATE develop_history SET data=? WHERE photo=?"),
+                    &[&data, &history.photo],
+                )?;
+                let stored: Vec<u8> = w.read_one(
+                    sql!("SELECT data FROM develop_history WHERE photo=?"),
+                    &[&history.photo],
+                )?;
+                u.check_history(w, &stored, &original)?;
+            }
         }
+        u.batch_done(rows);
     }
-    Ok(())
 }

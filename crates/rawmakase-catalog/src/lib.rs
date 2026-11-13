@@ -5,11 +5,11 @@
 //! renderer, wgpu or the GUI.
 use rawmakase_fs as fsops;
 use rawmakase_interop::{edits, exif, export_settings, isobmff, jpeg, riff, xmp};
-use rawmakase_model::{ids, metadata, model, storage, tiff, time, xml};
+use rawmakase_model::{camera_profiles, ids, metadata, model, optics, storage, tiff, time, xml};
 #[cfg(test)]
 use {
     rawmakase_interop::{lr_develop, presets, raw_defaults},
-    rawmakase_model::{camera_data, camera_profiles, optics},
+    rawmakase_model::camera_data,
 };
 
 pub mod catalog;

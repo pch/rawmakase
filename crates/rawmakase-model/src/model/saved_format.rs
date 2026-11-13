@@ -49,10 +49,12 @@ pub fn schema_for(recipe: &super::recipe::Recipe) -> u32 {
 }
 
 /// Recipe settings of earlier releases that chose a rendering engine or an
-/// operator for a control: the process version, five opt-in flags and the
-/// eighteen per-control operator choices. They mean nothing to the one engine and
-/// are dropped; every other setting, known or not, is kept.
+/// operator for a control (the process version, five opt-in flags and the
+/// eighteen per-control operator choices), and `preset_settings`, the copy of an
+/// applied XMP preset's settings recipes kept and nothing read. They mean nothing to
+/// the one engine and are dropped; every other setting, known or not, is kept.
 pub const OBSOLETE_SETTINGS: &[&str] = &[
+    "preset_settings",
     "engine",
     "profile_tone",
     "wide_gamut_curves",
@@ -78,6 +80,33 @@ pub const OBSOLETE_SETTINGS: &[&str] = &[
     "gamut_model",
     "noise_model",
 ];
+
+/// Writes `recipe` inside a saved envelope (a native preset, a legacy sidecar):
+/// inline, with an empty `preset_settings`, which every release before its removal
+/// requires of a recipe it reads. A catalog's stored form leaves it out
+/// ([`crate::model::stored_recipe`]): no release that reads a catalog's recipes
+/// opens a catalog of that format.
+pub fn serialize_envelope_recipe<S: serde::Serializer>(
+    recipe: &super::recipe::Recipe,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    /// The recipe as it serializes, written exactly as before, then the empty map.
+    #[derive(serde::Serialize)]
+    struct Envelope<'a> {
+        #[serde(flatten)]
+        recipe: &'a super::recipe::Recipe,
+        preset_settings: Empty,
+    }
+    #[derive(serde::Serialize)]
+    struct Empty {}
+    serde::Serialize::serialize(
+        &Envelope {
+            recipe,
+            preset_settings: Empty {},
+        },
+        s,
+    )
+}
 
 /// Whether `key` is one of the [`OBSOLETE_SETTINGS`].
 pub fn is_obsolete(key: &str) -> bool {
@@ -193,12 +222,13 @@ mod tests {
         recipe
     }
     #[test]
-    fn the_obsolete_settings_are_the_eighteen_operators_and_six_selectors() {
+    fn the_obsolete_settings_are_the_eighteen_operators_six_selectors_and_the_preset_copy() {
         let models = super::OBSOLETE_SETTINGS
             .iter()
             .filter(|key| key.ends_with("_model"))
             .count();
-        assert_eq!((models, super::OBSOLETE_SETTINGS.len()), (18, 24));
+        assert_eq!((models, super::OBSOLETE_SETTINGS.len()), (18, 25));
+        assert!(super::is_obsolete("preset_settings"));
         // None of them is a setting this build reads.
         let known = serde_json::to_value(crate::model::recipe::Recipe::default()).unwrap();
         for key in super::OBSOLETE_SETTINGS {
@@ -353,16 +383,35 @@ mod tests {
             offset: [0.05, 0.],
         });
         let (saved, local) = r.split_local();
-        let json = serde_json::to_value(&saved).unwrap();
-        let written: Vec<&str> = json
+        // The envelope (a preset, a legacy sidecar) writes them all, `preset_settings`
+        // included, which releases before its removal require.
+        let mut envelope = Vec::new();
+        super::serialize_envelope_recipe(&saved, &mut serde_json::Serializer::new(&mut envelope))
+            .unwrap();
+        let enveloped: serde_json::Value = serde_json::from_slice(&envelope).unwrap();
+        let mut written: Vec<&str> = enveloped
             .as_object()
             .unwrap()
             .keys()
             .map(String::as_str)
             .collect();
+        written.sort();
         assert_eq!(
             written, SAVED_FIELDS,
             "a saved recipe's fields changed; see SAVED_FIELDS before updating it"
+        );
+        assert_eq!(enveloped["preset_settings"], serde_json::json!({}));
+        // The recipe itself no longer holds the copy.
+        let json = serde_json::to_value(&saved).unwrap();
+        let mut without: Vec<&str> = SAVED_FIELDS.to_vec();
+        without.retain(|f| *f != "preset_settings");
+        assert_eq!(
+            json.as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            without
         );
         let mut v =
             serde_json::json!({"schema": super::SCHEMA, "pipeline": super::SCHEMA, "recipe": json});

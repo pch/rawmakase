@@ -115,6 +115,12 @@ CREATE TABLE IF NOT EXISTS bitmaps (
     data BYTEA NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS recipe_assets (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    data BYTEA NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS photo_info (
     photo BIGINT PRIMARY KEY,
     camera TEXT,

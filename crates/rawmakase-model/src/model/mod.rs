@@ -11,6 +11,7 @@ pub mod operators;
 pub mod panels;
 pub mod params;
 pub mod point_color;
+pub mod raw_json;
 pub mod recipe;
 pub mod red_eye;
 pub mod retouch;

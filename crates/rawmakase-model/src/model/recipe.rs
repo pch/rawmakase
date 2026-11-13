@@ -49,11 +49,6 @@ pub struct Recipe {
     pub lens_ca: bool,
     pub effects: crate::model::effects::Effects,
     pub preset_name: String,
-    /// Always empty. Earlier releases kept a copy of an applied XMP preset's settings
-    /// here that nothing read; a saved map is dropped on read, so the next save writes
-    /// `{}`. The key is still written because releases before this one require it.
-    #[serde(deserialize_with = "emptied_preset_settings")]
-    pub preset_settings: std::collections::BTreeMap<String, String>,
     /// A saved Embedded profile loads with today's tone curve (`CameraProfile::loaded`),
     /// wherever a recipe is read: sessions, the catalog, History, presets and sidecars.
     /// Written inline; a catalog stores it once and names it by id
@@ -213,7 +208,6 @@ impl Default for Recipe {
             lens_ca: false,
             effects: Default::default(),
             preset_name: String::new(),
-            preset_settings: Default::default(),
             profile: None,
             sharpening_radius: 0.8,
             sharpening_detail: 0.25,
@@ -1099,14 +1093,6 @@ fn loaded_profile<'de, D: serde::Deserializer<'de>>(
     }
     deserializer.deserialize_any(Profile)
 }
-/// [`Recipe::preset_settings`] as read: still checked to be a map of strings, as
-/// before, then dropped.
-fn emptied_preset_settings<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<std::collections::BTreeMap<String, String>, D::Error> {
-    std::collections::BTreeMap::<String, String>::deserialize(deserializer)?;
-    Ok(Default::default())
-}
 fn is_one(v: &f32) -> bool {
     *v == 1.
 }
@@ -1225,7 +1211,6 @@ mod tests {
                 "noise_chroma",
                 "noise_luma",
                 "preset_name",
-                "preset_settings",
                 "profile",
                 "rotation",
                 "saturation",
@@ -1252,21 +1237,23 @@ mod tests {
     }
 
     /// The copy of an applied XMP preset's settings earlier releases kept in every
-    /// recipe is never read: a saved map loads empty, so the next save writes `{}`.
-    /// The key itself is still written, as releases before this one require it.
+    /// recipe is dropped on read, never kept as a setting this release doesn't know
+    /// ([`crate::model::saved_format::OBSOLETE_SETTINGS`]), and a recipe no longer
+    /// writes it.
     #[test]
-    fn a_legacy_preset_settings_map_loads_empty_and_saves_empty() {
+    fn a_legacy_preset_settings_map_is_dropped_on_read() {
         let mut stored = serde_json::to_value(Recipe::default()).unwrap();
+        assert!(stored.get("preset_settings").is_none());
         stored["preset_settings"] = serde_json::json!({"Exposure2012": "+1.00", "Look": "x"});
         let r: Recipe = serde_json::from_value(stored).unwrap();
-        assert!(r.preset_settings.is_empty());
         assert_eq!(r, Recipe::default());
-        let saved = serde_json::to_value(&r).unwrap();
-        assert_eq!(saved["preset_settings"], serde_json::json!({}));
-        // It is still a map of strings: other values are refused as before.
-        let mut wrong = serde_json::to_value(Recipe::default()).unwrap();
-        wrong["preset_settings"] = serde_json::json!(["x"]);
-        assert!(serde_json::from_value::<Recipe>(wrong).is_err());
+        assert!(r.unknown.is_empty(), "{:?}", r.unknown.keys());
+        assert!(
+            serde_json::to_value(&r)
+                .unwrap()
+                .get("preset_settings")
+                .is_none()
+        );
     }
 
     /// Settings a recipe was saved without take their defaults, and ones this build

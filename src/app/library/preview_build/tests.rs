@@ -298,7 +298,7 @@ fn edited_in_grid(e: &mut Editor, id: PhotoId) {
         rendered.as_ref(),
         crate::app::library::PreviewAi::Off,
         image::RgbImage::new(4, 4),
-        "{}".into(),
+        &Default::default(),
     );
 }
 

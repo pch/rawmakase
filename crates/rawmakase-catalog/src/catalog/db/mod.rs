@@ -13,6 +13,15 @@
 mod sql;
 #[cfg(test)]
 mod tests;
+/// Failures tests inject into the upgrade, on this thread.
+#[cfg(test)]
+pub(in crate::catalog) mod faults {
+    thread_local! {
+        /// The upgrade's backup fails, as on a full disk.
+        pub(in crate::catalog) static FAIL_BACKUP: std::cell::Cell<bool> =
+            const { std::cell::Cell::new(false) };
+    }
+}
 #[cfg(test)]
 mod value_tests;
 
@@ -27,12 +36,13 @@ pub(in crate::catalog) use sql::{Sql, SqliteSql, sql, sqlite_sql};
 
 /// Marks a file as a RAWmakase catalog (`PRAGMA application_id`).
 const APPLICATION_ID: i64 = 0x4f4d4152;
-/// The catalog format version (`PRAGMA user_version`) new catalogs get; older
-/// releases check it too. Version 2 may hold raster mask data, which a release
-/// that cannot read it must not open and rewrite. Version 3 holds edits rendered by
-/// the one engine, which releases before it would render with operators they no
-/// longer choose.
-pub(in crate::catalog) const VERSION: i64 = 3;
+/// The first catalog format version (`PRAGMA user_version`) holding only edits
+/// rendered by the one engine, which releases before it would render with
+/// operators they no longer choose; older releases check the version too. Version 2
+/// may hold raster mask data, which a release that cannot read it must not open and
+/// rewrite. Catalogs below it lose the settings that chose an engine or operator
+/// when they are upgraded.
+pub(in crate::catalog) const ONE_ENGINE: i64 = 3;
 /// The first version, still read and written as it is until a catalog is upgraded.
 pub(in crate::catalog) const FIRST_VERSION: i64 = 1;
 /// The first version that may hold raster masks.
@@ -41,28 +51,35 @@ pub(in crate::catalog) const RASTER_MASKS: i64 = 2;
 /// a snapshot naming a Lensfun lens), which releases before Lensfun would read as an
 /// Adobe profile without a name and save without it. A catalog is raised to it by the
 /// first write that stores one ([`Catalog::write_recipes`]); others stay at
-/// [`VERSION`], which those releases open.
+/// [`ONE_ENGINE`], which those releases open.
 ///
 /// [`Catalog::write_recipes`]: super::Catalog
+#[cfg(test)]
 pub(in crate::catalog) const LENSFUN: i64 = 4;
 /// The first version that may hold AI Denoise settings (an edit, a History state or a
 /// snapshot with AI Denoise on or its Amount moved), which releases before it would
 /// render without AI Denoise and save without the setting. Raised to by the first
 /// write that stores one, as [`LENSFUN`] is.
+#[cfg(test)]
 pub(in crate::catalog) const AI_DENOISE: i64 = 5;
 /// The first version that may hold HDR edits (an edit, a History state or a snapshot
 /// with HDR on), which releases before it would render as SDR and save without the
 /// setting. Values kept while HDR is off don't raise it. Raised to by the first write
 /// that stores one, as [`LENSFUN`] is.
-pub(in crate::catalog) const HDR: i64 = 6;
-/// The newest version this release opens.
-pub(in crate::catalog) const NEWEST: i64 = HDR;
-/// The newest version the releases before the one engine open.
 #[cfg(test)]
-pub(in crate::catalog) const BEFORE_ONE_ENGINE: i64 = 2;
+pub(in crate::catalog) const HDR: i64 = 6;
+/// The first version that stores each camera profile and Lensfun calibration once,
+/// in `recipe_assets`, and has stored recipes, History states and snapshots name
+/// them by content id: releases before it would read such a recipe as damaged.
+/// Every catalog below it is upgraded to it when it opens
+/// ([`Catalog::open_as`](super::Catalog::open_as)), and new ones are created at it.
+pub(in crate::catalog) const PROFILE_ASSETS: i64 = 7;
+/// The newest version this release opens, and the one it creates and upgrades
+/// catalogs to.
+pub(in crate::catalog) const NEWEST: i64 = PROFILE_ASSETS;
 
 /// Whether a release that opens versions up to `newest` opens a catalog of
-/// `version`: this one with [`VERSION`], an earlier one with its own (the check is
+/// `version`: this one with [`NEWEST`], an earlier one with its own (the check is
 /// the same in every release).
 pub(in crate::catalog) fn opens(version: i64, newest: i64) -> bool {
     (FIRST_VERSION..=newest).contains(&version)
@@ -94,7 +111,7 @@ impl Db {
         #[cfg(test)]
         db.execute_batch("PRAGMA synchronous=OFF;")?;
         db.execute_batch(&format!(
-            "PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={VERSION};"
+            "PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={NEWEST};"
         ))?;
         db.execute_batch(include_str!("../schema.sql"))?;
         Ok(())
@@ -135,22 +152,22 @@ impl Db {
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?)
     }
 
-    /// Upgrades a catalog of an earlier version to `target` ([`VERSION`] or
-    /// [`LENSFUN`]), after writing a consistent copy of it to `backup` (a path nothing
-    /// exists at). The copy is SQLite's own (`VACUUM INTO`), not a copy of the live
-    /// file, and is checked before the upgrade commits. `migrate` brings the stored
-    /// rows of a catalog before [`VERSION`] up to date and `then` writes what needed
-    /// the upgrade, both in the upgrade's transaction: when either fails, nothing is
-    /// changed and the backup stays. On a catalog already at `target` or later, only
-    /// `then` runs, as a [`write`](Self::write).
+    /// Upgrades a catalog of an earlier version to `target`, after writing a
+    /// consistent copy of it to `backup` (a path nothing exists at). The copy is
+    /// SQLite's own (`VACUUM INTO`), not a copy of the live file, and is checked
+    /// before anything is written. Then one immediate transaction gives the catalog
+    /// the tables added since, runs `migrate` with the version found, raises the
+    /// version and runs `then`, which writes what needed the upgrade: when any of it
+    /// fails, nothing is changed and the backup stays. On a catalog already at
+    /// `target` or later, only `then` runs, as a [`write`](Self::write).
     pub(in crate::catalog) fn upgrade<R>(
         &mut self,
         target: i64,
         backup: &Path,
-        migrate: impl FnOnce(&mut Write<'_>) -> Result<()>,
+        migrate: impl FnOnce(&mut Write<'_>, i64) -> Result<()>,
         then: impl FnOnce(&mut Write<'_>) -> Result<R>,
     ) -> Result<R> {
-        debug_assert!((VERSION..=NEWEST).contains(&target));
+        debug_assert!((ONE_ENGINE..=NEWEST).contains(&target));
         if self.version()? >= target {
             return self.write(then);
         }
@@ -162,20 +179,32 @@ impl Db {
         );
         if let Err(error) = copy_into(db, backup) {
             let _ = std::fs::remove_file(backup);
-            return Err(error.context("Could not back up the catalog; it was not upgraded"));
+            let size = std::fs::metadata(path_of(db)).map_or(0, |m| m.len());
+            return Err(error.context(format!(
+                "Could not back up the catalog before upgrading it; it was left unchanged. \
+                 The backup needs about {} free beside it",
+                megabytes(size)
+            )));
         }
         // The upgrade is one immediate transaction that rechecks what it read.
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let found = tx.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?;
         if found < target {
-            if found < VERSION {
-                migrate(&mut Write { db: &tx })?;
-            }
+            // The tables added since, before any row is touched; created in the
+            // transaction, so a failure leaves the file as it was.
+            tx.execute_batch(include_str!("../schema.sql"))?;
+            migrate(&mut Write { db: &tx }, found)?;
             tx.execute_batch(&format!("PRAGMA user_version={target}"))?;
         }
         let result = then(&mut Write { db: &tx })?;
         tx.commit()?;
         Ok(result)
+    }
+
+    /// Gives the disk back the space deleted and rewritten rows leave in the file.
+    pub(in crate::catalog) fn vacuum(&mut self) -> Result<()> {
+        self.connection().execute_batch("VACUUM")?;
+        Ok(())
     }
 
     /// Writes a consistent copy of the catalog, every row and its format as
@@ -310,8 +339,22 @@ impl Db {
     }
 }
 
+/// The file `db` is, as SQLite names it.
+fn path_of(db: &Connection) -> std::path::PathBuf {
+    db.path().map(std::path::PathBuf::from).unwrap_or_default()
+}
+
+/// `bytes` as people read a file's size.
+fn megabytes(bytes: u64) -> String {
+    format!("{:.0} MB", (bytes as f64 / 1e6).ceil())
+}
+
 /// SQLite's consistent copy of `db` at `path`, checked to be an intact catalog.
 fn copy_into(db: &Connection, path: &Path) -> Result<()> {
+    #[cfg(test)]
+    if faults::FAIL_BACKUP.with(std::cell::Cell::get) {
+        anyhow::bail!("disk full (injected)");
+    }
     // SQLite takes the name as text; a path that is not valid UTF-8 cannot be
     // passed to it unchanged, and a changed one would put the copy elsewhere.
     let name = path

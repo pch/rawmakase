@@ -188,7 +188,7 @@ impl Editor {
                 })();
                 let event = match result {
                     Ok(Some(location)) => {
-                        reopened(&location, false, &Default::default(), &[], &ctx)
+                        reopened(&location, false, &Default::default(), &[], tx, &ctx)
                     }
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
@@ -218,7 +218,10 @@ impl Editor {
                     if create && !path.exists() {
                         crate::catalog::Catalog::create(&path)?;
                     }
-                    crate::catalog_session::CatalogSession::open(&CatalogLocation::File(path))
+                    crate::catalog_session::CatalogSession::open_reporting(
+                        &CatalogLocation::File(path),
+                        &mut upgrade_progress(tx, &ctx),
+                    )
                 })()
                 .map(|opened| Box::new(crate::app::library::Library::new(opened, ctx.clone())))
                 .map_err(|e| format!("{e:#}"));
@@ -380,7 +383,9 @@ impl Editor {
                     ctx.request_repaint();
                 }
                 let event = match result {
-                    Ok(Some(location)) => reopened(&location, relinks, &report, &conflicts, &ctx),
+                    Ok(Some(location)) => {
+                        reopened(&location, relinks, &report, &conflicts, tx, &ctx)
+                    }
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
                 };
@@ -1020,3 +1025,15 @@ pub(in crate::app) mod export_catalog_tests;
 pub(crate) mod folder_locations;
 pub(in crate::app) mod folder_sync;
 pub(in crate::app) mod onboarding;
+
+/// Says through `tx` how far upgrading a catalog of an earlier format as it opens
+/// has got: it can take a while on a large catalog.
+pub(in crate::app) fn upgrade_progress<'a>(
+    tx: &'a std::sync::mpsc::Sender<Event>,
+    ctx: &'a egui::Context,
+) -> impl FnMut(crate::catalog::UpgradeProgress) + 'a {
+    move |progress| {
+        let _ = tx.send(Event::CatalogWorking(progress.to_string()));
+        ctx.request_repaint();
+    }
+}

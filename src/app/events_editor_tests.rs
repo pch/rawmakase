@@ -262,8 +262,7 @@ fn develop_renders_with_ai_denoise_are_kept_apart_from_plain_previews() -> anyho
         state: State::Ready(source),
     });
     render(&mut e);
-    let json = serde_json::to_string(e.document.edit.recipe())?;
-    let source = library::EditSource::Recipe(json);
+    let source = library::EditSource::saved(e.document.edit.recipe().clone());
     let stored = sent.stored_tags();
     assert_eq!(stored.len(), 1, "{stored:?}");
     assert_ne!(

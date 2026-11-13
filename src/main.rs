@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 use rawmakase::model::recipe::Recipe;
 use rawmakase::{camera_data, develop, export_settings::ExportOptions, raw};
 use rawmakase_cancel::Cancel;
-use std::{path::PathBuf, time::Instant};
+use std::{path::Path, path::PathBuf, time::Instant};
 #[derive(Parser)]
 #[command(version, about = "A personal RAW photo editor")]
 struct Args {
@@ -445,7 +445,7 @@ fn main() -> Result<()> {
         }
         Some(Command::ImportCatalog { source, output }) => {
             let path = rawmakase::catalog::lightroom::import_lightroom(&source, &output)?;
-            let c = rawmakase::catalog::Catalog::open(&path)?;
+            let c = open_catalog(&path)?;
             println!(
                 "Imported {} photographs into {}",
                 c.photos()?.len(),
@@ -453,7 +453,7 @@ fn main() -> Result<()> {
             );
         }
         Some(Command::CatalogInfo { catalog }) => {
-            let c = rawmakase::catalog::Catalog::open(&catalog)?;
+            let c = open_catalog(&catalog)?;
             let photos = c.photos()?;
             println!(
                 "{} photographs · {} folders · {} collections · {} offline",
@@ -474,8 +474,7 @@ fn main() -> Result<()> {
             root,
             folder,
         }) => {
-            rawmakase::catalog::Catalog::open(&catalog)?
-                .relink_root(rawmakase::catalog::RootId(root), &folder)?;
+            open_catalog(&catalog)?.relink_root(rawmakase::catalog::RootId(root), &folder)?;
             println!("Root folder relinked");
         }
 
@@ -1049,7 +1048,7 @@ fn catalog_edit(
     catalog: &std::path::Path,
     input: &std::path::Path,
 ) -> Result<rawmakase::edits::EditRecord> {
-    let c = rawmakase::catalog::Catalog::open(catalog)?;
+    let c = open_catalog(catalog)?;
     let input = input.canonicalize()?;
     let found: Vec<_> = c
         .photos()?
@@ -1081,7 +1080,7 @@ fn sync_folder(
     apply: bool,
 ) -> Result<()> {
     use rawmakase::catalog::folder_sync::{SyncScope, scan};
-    let mut c = rawmakase::catalog::Catalog::open(catalog)?;
+    let mut c = open_catalog(catalog)?;
     let scope = match folder {
         None => SyncScope::All,
         Some(path) => {
@@ -1177,7 +1176,7 @@ fn find_photo(
     apply: bool,
 ) -> Result<()> {
     use rawmakase::catalog::folder_sync::find_on_disk;
-    let mut c = rawmakase::catalog::Catalog::open(catalog)?;
+    let mut c = open_catalog(catalog)?;
     let inputs = c.find_inputs(photo, file)?;
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let online = |path: &std::path::Path| rawmakase::volume_mounted(path);
@@ -1538,6 +1537,42 @@ fn confirm(yes: bool) -> Result<bool> {
         println!("Nothing installed");
     }
     Ok(yes)
+}
+
+/// Opens the catalog at `path` for a command, upgrading one of an earlier format
+/// first: its progress, and where its backup is, go to standard error.
+fn open_catalog(path: impl AsRef<Path>) -> Result<rawmakase::catalog::Catalog> {
+    use std::io::Write as _;
+    let mut last = None;
+    let catalog = rawmakase::catalog::Catalog::open_reporting(
+        path.as_ref(),
+        &rawmakase::catalog::locations::Computer::this(),
+        &mut |progress| {
+            // A line per tenth of the way.
+            let tenth = progress.done * 10 / progress.total.max(1);
+            if last != Some(tenth) {
+                last = Some(tenth);
+                let _ = writeln!(std::io::stderr(), "{progress}");
+            }
+        },
+    )?;
+    if let Some(upgraded) = catalog.upgraded() {
+        eprintln!(
+            "Upgraded the catalog from format {} for this release. A copy of it as it was is at {}.",
+            upgraded.from,
+            upgraded.backup.display()
+        );
+        if upgraded.unreadable > 0 {
+            eprintln!(
+                "{} stored edits could not be read and were left as they were.",
+                upgraded.unreadable
+            );
+        }
+        if let Some(error) = &upgraded.vacuum_error {
+            eprintln!("The disk space it no longer needs could not be given back: {error}");
+        }
+    }
+    Ok(catalog)
 }
 
 #[cfg(test)]

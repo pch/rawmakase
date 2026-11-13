@@ -1,13 +1,19 @@
 //! A photo's Develop History, kept with its edit so it survives switching photos and
 //! restarting. Stored zlib-compressed in `develop_history`; each step holds the full
-//! state it leaves, with large settings (camera profile, masks, spots, curves) stored
-//! once per History and referred to from every step that has them.
+//! state it leaves, with large settings (masks, spots, curves) stored once per
+//! History and referred to from every step that has them. Each state is a recipe in
+//! the catalog's stored form ([`crate::model::stored_recipe`]): its camera profile
+//! and Lensfun calibration are named by id and stored once in the catalog.
 use super::db::{Reads, sql};
 use super::{Catalog, PhotoId};
+use crate::model::raw_json::RawObject;
 use crate::model::recipe::Recipe;
+use crate::model::stored_recipe::Storer;
+use crate::storage::recipe_assets::{self, AssetSource};
 use anyhow::{Context, Result, ensure};
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 use std::io::Read;
 
@@ -52,34 +58,54 @@ struct Stored {
     applied: usize,
 }
 
+/// One recipe as [`encode`] writes it: its settings as the text the recipe's
+/// stored form gives them, the large ones as indexes into `Encoded::pool`.
+#[derive(Serialize)]
+struct EncodedState {
+    fields: RawObject,
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pooled: std::collections::BTreeMap<String, usize>,
+}
+#[derive(Serialize)]
+struct EncodedStep {
+    name: String,
+    value: String,
+    state: EncodedState,
+}
+#[derive(Serialize)]
+struct Encoded {
+    version: u32,
+    pool: Vec<Box<RawValue>>,
+    origin: EncodedState,
+    steps: Vec<EncodedStep>,
+    applied: usize,
+}
+
 /// Interns large setting values so each is stored once.
 #[derive(Default)]
 struct Pool {
-    values: Vec<Value>,
+    values: Vec<Box<RawValue>>,
     index: std::collections::HashMap<String, usize>,
 }
 impl Pool {
-    fn state(&mut self, r: &Recipe) -> Result<StoredState> {
-        let Value::Object(all) = serde_json::to_value(r)? else {
-            anyhow::bail!("Recipe is not an object");
-        };
-        let mut state = StoredState {
-            fields: Map::new(),
+    fn state(&mut self, storer: &mut Storer, r: &Recipe) -> EncodedState {
+        let mut state = EncodedState {
+            fields: RawObject::default(),
             pooled: Default::default(),
         };
-        for (key, value) in all {
-            let text = value.to_string();
+        for (key, value) in storer.to_stored(r).iter() {
+            let text = value.get();
             if text.len() <= POOLED_BYTES {
-                state.fields.insert(key, value);
+                state.fields.set(key, value.to_owned());
                 continue;
             }
-            let n = *self.index.entry(text).or_insert_with(|| {
-                self.values.push(value);
+            let n = *self.index.entry(text.to_string()).or_insert_with(|| {
+                self.values.push(value.to_owned());
                 self.values.len() - 1
             });
-            state.pooled.insert(key, n);
+            state.pooled.insert(key.to_string(), n);
         }
-        Ok(state)
+        state
     }
 }
 impl StoredState {
@@ -108,26 +134,25 @@ impl<'a> HistoryUpdate<'a> {
     }
 }
 
-/// `history` as stored.
-pub(super) fn encode(history: &SavedHistory) -> Result<Vec<u8>> {
+/// `history` as stored, its profiles and calibrations named by `storer`, which
+/// collects them for the write.
+pub(super) fn encode(history: &SavedHistory, storer: &mut Storer) -> Result<Vec<u8>> {
     ensure!(
         history.applied <= history.steps.len(),
         "Invalid History position"
     );
     let mut pool = Pool::default();
-    let origin = pool.state(&history.origin)?;
+    let origin = pool.state(storer, &history.origin);
     let steps = history
         .steps
         .iter()
-        .map(|s| {
-            Ok(StoredStep {
-                name: s.name.clone(),
-                value: s.value.clone(),
-                state: pool.state(&s.recipe)?,
-            })
+        .map(|s| EncodedStep {
+            name: s.name.clone(),
+            value: s.value.clone(),
+            state: pool.state(storer, &s.recipe),
         })
-        .collect::<Result<_>>()?;
-    let stored = Stored {
+        .collect();
+    let stored = Encoded {
         version: VERSION,
         pool: pool.values,
         origin,
@@ -137,9 +162,17 @@ pub(super) fn encode(history: &SavedHistory) -> Result<Vec<u8>> {
     compress(&stored)
 }
 
-fn compress(stored: &impl Serialize) -> Result<Vec<u8>> {
+pub(super) fn compress(stored: &impl Serialize) -> Result<Vec<u8>> {
     let mut z = ZlibEncoder::new(Vec::new(), Compression::default());
     serde_json::to_writer(&mut z, stored)?;
+    Ok(z.finish()?)
+}
+
+/// `text`, a History's JSON, zlib-compressed as it is stored.
+pub(super) fn compress_text(text: &str) -> Result<Vec<u8>> {
+    use std::io::Write;
+    let mut z = ZlibEncoder::new(Vec::new(), Compression::default());
+    z.write_all(text.as_bytes())?;
     Ok(z.finish()?)
 }
 
@@ -154,10 +187,11 @@ pub(super) fn text(data: &[u8]) -> Result<Vec<u8>> {
     Ok(text)
 }
 
-/// The stored History in `data` as JSON; `None` for a format from a newer release.
-fn stored_json(data: &[u8]) -> Result<Option<(Vec<u8>, Value)>> {
-    let text = text(data)?;
-    let value: Value = serde_json::from_slice(&text)?;
+/// The History stored as `text`; `None` for a format from a newer release. A
+/// reference to a stored profile or calibration resolves through the
+/// [`recipe_assets::reading`] around the call.
+pub(super) fn parse(text: &[u8]) -> Result<Option<SavedHistory>> {
+    let value: Value = serde_json::from_slice(text)?;
     let version = value
         .get("version")
         .and_then(Value::as_u64)
@@ -165,53 +199,31 @@ fn stored_json(data: &[u8]) -> Result<Option<(Vec<u8>, Value)>> {
     if version > u64::from(VERSION) {
         return Ok(None);
     }
-    Ok(Some((text, value)))
-}
-
-/// The stored History in `data`; `None` for a format from a newer release.
-fn stored(data: &[u8]) -> Result<Option<Stored>> {
-    stored_json(data)?
-        .map(|(_, value)| Ok(serde_json::from_value(value)?))
-        .transpose()
-}
-
-/// `data` with every step's recipe rid of the settings that chose an engine or
-/// operator (`saved_format::OBSOLETE_SETTINGS`), for the catalog's upgrade: only
-/// the recipes' objects change, every other JSON value (including fields of a
-/// later History format) stays as stored. `None` when there were none, or the
-/// History is not one this release reads (from a newer release, damaged, or with a
-/// key given twice, which reading would silently collapse): it is then left as it is.
-pub(super) fn without_obsolete_settings(data: &[u8]) -> Option<Vec<u8>> {
-    use crate::model::saved_format::{drop_obsolete_settings, is_obsolete};
-    decode(data).ok().flatten()?;
-    let (text, mut value) = stored_json(data).ok().flatten()?;
-    if has_duplicate_keys(&text) {
-        return None;
-    }
-    // Each state: `fields`, and `pooled` naming settings stored once in `pool`.
-    let strip = |state: &mut Value| {
-        let mut changed = false;
-        if let Some(fields) = state.get_mut("fields").and_then(Value::as_object_mut) {
-            changed |= drop_obsolete_settings(fields);
-        }
-        if let Some(pooled) = state.get_mut("pooled").and_then(Value::as_object_mut) {
-            let before = pooled.len();
-            pooled.retain(|key, _| !is_obsolete(key));
-            changed |= pooled.len() != before;
-        }
-        changed
-    };
-    let mut changed = value.get_mut("origin").is_some_and(strip);
-    if let Some(steps) = value.get_mut("steps").and_then(Value::as_array_mut) {
-        for state in steps.iter_mut().filter_map(|step| step.get_mut("state")) {
-            changed |= strip(state);
-        }
-    }
-    changed.then(|| compress(&value).ok()).flatten()
+    let stored: Stored = serde_json::from_value(value)?;
+    ensure!(
+        stored.applied <= stored.steps.len(),
+        "Invalid History position"
+    );
+    let pool = stored.pool;
+    Ok(Some(SavedHistory {
+        origin: stored.origin.recipe(&pool)?,
+        steps: stored
+            .steps
+            .into_iter()
+            .map(|s| {
+                Ok(SavedStep {
+                    name: s.name,
+                    value: s.value,
+                    recipe: s.state.recipe(&pool)?,
+                })
+            })
+            .collect::<Result<_>>()?,
+        applied: stored.applied,
+    }))
 }
 
 /// Whether any JSON object in `text` gives a key twice.
-fn has_duplicate_keys(text: &[u8]) -> bool {
+pub(super) fn has_duplicate_keys(text: &[u8]) -> bool {
     struct Unique;
     impl<'de> serde::de::DeserializeSeed<'de> for Unique {
         type Value = ();
@@ -261,31 +273,12 @@ fn has_duplicate_keys(text: &[u8]) -> bool {
     serde::de::DeserializeSeed::deserialize(Unique, &mut d).is_err()
 }
 
-/// The History in `data`; `None` for a format from a newer release.
-pub(super) fn decode(data: &[u8]) -> Result<Option<SavedHistory>> {
-    let Some(stored) = stored(data)? else {
-        return Ok(None);
-    };
-    ensure!(
-        stored.applied <= stored.steps.len(),
-        "Invalid History position"
-    );
-    let pool = stored.pool;
-    Ok(Some(SavedHistory {
-        origin: stored.origin.recipe(&pool)?,
-        steps: stored
-            .steps
-            .into_iter()
-            .map(|s| {
-                Ok(SavedStep {
-                    name: s.name,
-                    value: s.value,
-                    recipe: s.state.recipe(&pool)?,
-                })
-            })
-            .collect::<Result<_>>()?,
-        applied: stored.applied,
-    }))
+/// The History in `data`, its references resolved through `source`; `None` for a
+/// format from a newer release.
+pub(super) fn decode(data: &[u8], source: &dyn AssetSource) -> Result<Option<SavedHistory>> {
+    let text = text(data)?;
+    let utf8 = std::str::from_utf8(&text).context("Develop History is not text")?;
+    recipe_assets::reading(source, utf8, || parse(&text))
 }
 
 impl Catalog {
@@ -296,7 +289,8 @@ impl Catalog {
             sql!("SELECT data FROM develop_history WHERE photo=?"),
             &[&id],
         )?;
-        Ok(data.and_then(|d| decode(&d).ok().flatten()))
+        let source = super::recipe_assets::ReadsSource(&self.db);
+        Ok(data.and_then(|d| decode(&d, &source).ok().flatten()))
     }
     /// Whether the photo has a stored History, readable here or not.
     pub fn has_history(&self, id: PhotoId) -> Result<bool> {

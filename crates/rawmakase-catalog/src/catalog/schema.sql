@@ -123,6 +123,15 @@ CREATE TABLE IF NOT EXISTS bitmaps (
     data BLOB NOT NULL
 );
 
+-- Camera profiles and Lensfun calibrations stored once and named by content from
+-- saved recipes (see `storage::recipe_assets`); `data` is the zlib-compressed
+-- canonical JSON. Format 7 and later.
+CREATE TABLE IF NOT EXISTS recipe_assets (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    data BLOB NOT NULL
+);
+
 -- Camera settings and size of a photo, from the Lightroom catalog it came from
 -- or read from its file; a row of NULLs records a file that had none.
 CREATE TABLE IF NOT EXISTS photo_info (

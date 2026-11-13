@@ -245,6 +245,102 @@ impl AssetSource for NoAssets {
     }
 }
 
+/// Assets held in memory as a catalog stores them, for tests.
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Default)]
+pub struct InMemory(HashMap<String, (AssetKind, Vec<u8>)>);
+#[cfg(any(test, feature = "test-support"))]
+impl InMemory {
+    pub fn of<'a>(assets: impl IntoIterator<Item = &'a Asset>) -> Self {
+        Self(
+            assets
+                .into_iter()
+                .map(|a| (a.id.clone(), (a.kind(), a.compressed())))
+                .collect(),
+        )
+    }
+}
+#[cfg(any(test, feature = "test-support"))]
+impl AssetSource for InMemory {
+    fn stored(&self, id: &str) -> Result<Option<(AssetKind, Vec<u8>)>, String> {
+        Ok(self.0.get(id).cloned())
+    }
+}
+
+/// A shared handle on a source, kept by a value read from a catalog (an edit's
+/// record) so it still resolves its references on another thread or after the
+/// catalog is closed. The default has no assets. Two handles are equal when they
+/// are the same source.
+#[derive(Clone, Default)]
+pub struct SharedSource(Option<Arc<dyn AssetSource + Send + Sync>>);
+impl SharedSource {
+    pub fn new(source: Arc<dyn AssetSource + Send + Sync>) -> Self {
+        Self(Some(source))
+    }
+}
+impl AssetSource for SharedSource {
+    fn stored(&self, id: &str) -> Result<Option<(AssetKind, Vec<u8>)>, String> {
+        match &self.0 {
+            Some(source) => source.stored(id),
+            None => Ok(None),
+        }
+    }
+}
+impl std::fmt::Debug for SharedSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() {
+            "SharedSource(..)"
+        } else {
+            "SharedSource(none)"
+        })
+    }
+}
+impl PartialEq for SharedSource {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.0, &other.0) {
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
+/// Assets read from a source and verified against their ids, past the cache: what a
+/// check of stored rows resolves references with, so a damaged row is caught even
+/// while the right value is in memory. Built only by [`Verified::read`].
+#[derive(Default)]
+pub struct Verified(HashMap<String, Result<AssetValue, AssetError>>);
+impl Verified {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    /// Reads and verifies, through `source`, each id in `text` not read yet.
+    pub fn read(&mut self, source: &dyn AssetSource, text: &str) {
+        for id in ids_in(text) {
+            if self.0.contains_key(&id) {
+                continue;
+            }
+            let found = match source.stored(&id) {
+                Ok(None) => continue,
+                Ok(Some((kind, stored))) => Asset::from_stored(&id, kind, &stored).map(|a| a.value),
+                Err(why) => Err(AssetError::Unreadable(id.clone(), why)),
+            };
+            self.0.insert(id, found);
+        }
+    }
+    /// Runs `parse` with references resolved from these assets alone.
+    pub fn reading<R>(&self, parse: impl FnOnce() -> R) -> R {
+        with_scope(self.0.clone(), parse)
+    }
+    /// How many assets it holds.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// Runs `parse`, which deserializes recipes from `text`, with the references in
 /// `text` resolved through `source`. Every id in `text` is resolved before `parse`
 /// runs (from the cache when it holds it), so the deserializers find them without
