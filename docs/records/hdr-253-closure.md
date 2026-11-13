@@ -63,7 +63,7 @@ Every control of the SDR pipeline renders in the HDR master except those listed 
 output:
 
 - **Tone:** Exposure, Contrast, Shadows, Whites up to +50, Blacks, Clarity −50 to +50,
-  Dehaze −30 to +100, Texture.
+  Dehaze −50 to +100, Texture.
 - **Curves:** the master, channel and parametric curves, and Levels.
 - **Colour:** Saturation, Vibrance, the colour mixer (Luminance −100 to +40), Black &
   White, Calibration, Point Color and Color Grading.
@@ -94,7 +94,7 @@ renders everything. Each refusal has Camera Raw measurements behind it:
 | --- | --- |
 | Highlights | Camera Raw's HDR Highlights levels off or fades above white; held rules miss by 0.2–0.4 stop ([Highlights and Shadows](hdr-stage1-results.md#highlights-and-shadows)) |
 | Whites above +50 | No photo level reaches Camera Raw's render: 0.17–0.52 stop off on 4 of 12 photos at its own best level; on 24 photos the master is further from Camera Raw than the SDR rendition, below white too (+75: 0.039 / 0.146 stop against 0.027 / 0.085) ([Whites](hdr-stage1-results.md#whites)) |
-| Clarity beyond ±50, Dehaze below −30 | The master is further from Camera Raw than the SDR rendition (Clarity −50 and +100, Dehaze −100 measured on 12 photos; [Presence](hdr-stage1-results.md#presence)) |
+| Clarity beyond ±50, Dehaze below −50 | The master is further from Camera Raw than the SDR rendition (Clarity +75 and +100, Dehaze −70 and −100 measured on 12 photos; [Presence](hdr-stage1-results.md#presence)) |
 | The colour mixer's Luminance above +40 | Camera Raw's HDR effect strengthens with brightness where its SDR one rolls off ([Band Luminance](hdr-stage1-results.md#band-luminance)) |
 | Defringe with Black & White | The master's Defringe follows the gray mix, where it changes nothing; SDR's precedes it ([Defringe](hdr-stage1-results.md#defringe)). Defringe itself renders (#1048) |
 | Refine Saturation other than 100% | Adds colour error in HDR (+1.5 to +2.3 ΔE_ITP) where SDR's removes it ([Tone curves](hdr-stage1-results.md#tone-curves)) |
