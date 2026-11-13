@@ -24,7 +24,7 @@ impl Editor {
             self.prompting_card(ui);
             return;
         }
-        if self.selection.prompt.is_some() || self.selection.upgrading.is_some() {
+        if self.selection.prompt.is_some() {
             self.setup_card(ui);
             return;
         }
@@ -218,26 +218,21 @@ impl Editor {
         true
     }
     /// What the first use needs, as a highlighted card in the place the actions were:
-    /// the steps with the finished ones ticked, and the button for the next: the
-    /// catalog's upgrade when it is needed, then what the generator said it needs,
-    /// with Download, its progress and Cancel.
+    /// the steps with the finished ones ticked, and the button for the next: what
+    /// the generator said it needs, with Download, its progress and Cancel.
     fn setup_card(&mut self, ui: &mut egui::Ui) {
-        let request = match &self.selection.prompt {
-            Some(prompt) => Some(prompt.request().clone()),
-            None => self.selection.upgrading.as_ref().map(|(_, r)| r.clone()),
+        let Some(offer) = self
+            .selection
+            .prompt
+            .as_ref()
+            .map(|p| p.request().generator.clone())
+        else {
+            return;
         };
-        let Some(request) = request else { return };
-        let offer = request.generator.clone();
         let setup = match &self.selection.prompt {
             Some(Prompt::Setup { setup, .. }) => Some(setup.clone()),
             _ => None,
         };
-        let upgraded = self
-            .library
-            .as_ref()
-            .and_then(|l| l.session.catalog().supports_raster_masks().ok())
-            .unwrap_or(false);
-        let upgrading = self.selection.upgrading.is_some();
         let state = self
             .extensions
             .mask_setup(&offer.extension, &offer.generator)
@@ -273,12 +268,11 @@ impl Editor {
                         }));
                     });
                 };
-                step(ui, upgraded, !upgraded, "Upgrade this catalog");
                 if let Some(setup) = &setup {
                     step(
                         ui,
                         false,
-                        upgraded,
+                        true,
                         &format!(
                             "Download {} ({} MB)",
                             setup.what,
@@ -287,10 +281,6 @@ impl Editor {
                     );
                 }
                 ui.add_space(space::S);
-                if !upgraded {
-                    self.upgrade_step(ui, &request, upgrading);
-                    return;
-                }
                 if setup.is_none() {
                     return;
                 }
@@ -358,41 +348,6 @@ impl Editor {
                 .fill(egui::Color32::from_rgb(52, 98, 170));
             if ui.add(go).clicked() {
                 self.setup_generator(offer);
-            }
-            if ui.button("Not now").clicked() {
-                self.selection.prompt = None;
-            }
-        });
-    }
-    fn upgrade_step(&mut self, ui: &mut egui::Ui, request: &Request, upgrading: bool) {
-        let small = |text: &str| {
-            egui::RichText::new(text)
-                .size(text::SMALL)
-                .color(egui::Color32::LIGHT_GRAY)
-        };
-        ui.add(
-            egui::Label::new(small(
-                "Masks made from a selection are stored in the catalog, which needs a newer \
-                 format. RAWmakase first saves a backup copy beside the catalog (as large as \
-                 it), then upgrades it. Older versions of RAWmakase cannot open an upgraded \
-                 catalog, and it must not be open on another computer or in another copy of \
-                 RAWmakase.",
-            ))
-            .wrap(),
-        );
-        ui.add_space(space::S);
-        if upgrading {
-            ui.horizontal(|ui| {
-                crate::app::ui::widgets::spinner(ui, 14.);
-                ui.label("Backing up and upgrading the catalog…");
-            });
-            return;
-        }
-        ui.horizontal(|ui| {
-            let go = egui::Button::new(egui::RichText::new("Upgrade catalog…").strong())
-                .fill(egui::Color32::from_rgb(52, 98, 170));
-            if ui.add(go).clicked() {
-                self.upgrade_catalog(request.clone());
             }
             if ui.button("Not now").clicked() {
                 self.selection.prompt = None;
@@ -562,7 +517,7 @@ impl Editor {
         if let Some((request, failure)) = self.selection.failure.clone() {
             self.selection_failure(ui, request, &failure);
         }
-        if self.selection.prompt.is_some() || self.selection.upgrading.is_some() {
+        if self.selection.prompt.is_some() {
             self.setup_card(ui);
         }
     }

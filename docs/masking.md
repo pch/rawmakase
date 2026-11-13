@@ -37,8 +37,7 @@ neutral sliders and its overlay shown.
   ordinary Add or Subtract brush components.
 
 Setting up: the first use shows a card in place of the tiles with the steps that are
-left, in order, with the finished ones ticked: upgrade the catalog, then download the
-models.
+left, in order, with the finished ones ticked: download the models.
 
 - **On this computer.** The models are downloaded on request, each feature's when it is
   first used: Subject and Background share Segment Anything 2.1 Hiera small (four files,
@@ -54,10 +53,8 @@ models.
   again. Sky is the slower and heavier one: about 5 seconds and 2.5 GB of memory while it
   runs, on the 16-thread laptop CPU it was measured on, with 8 threads.
 - **Catalog only.** The result is a raster stored in the catalog, so it needs a catalog
-  photo. A catalog of the first format asks to **Upgrade catalog…**: a backup copy is
-  written beside it, then it becomes the current format version, which older releases
-  refuse.
-  Close it on other computers first.
+  photo. Every catalog keeps rasters: one of an earlier format is upgraded when it opens
+  (see [catalogs](catalogs.md)).
 - **What the models see:** the photo at the camera's default crop with the camera
   rendering (no tone, colour, profile or geometry edits; spots and red eye included),
   about 1280 pixels on the long side. Sliders and crop edits during or after selecting

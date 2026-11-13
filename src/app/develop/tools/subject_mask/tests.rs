@@ -714,8 +714,6 @@ fn the_drawer_draws_in_every_state_a_selection_can_be_in() {
         then: Resume::Select,
     });
     draw_masking_panel(e);
-    e.selection.prompt = Some(Prompt::Upgrade(subject(e)));
-    draw_masking_panel(e);
     e.library = None;
     draw_masking_panel(e); // disabled with its reason
 }
@@ -870,17 +868,6 @@ fn a_box_starts_over_without_the_clicks_before_it() {
     assert!(p.input.drag([0.3, 0.3], [0.7, 0.8]));
     assert!(p.input.clicks.is_empty());
     assert_eq!(p.input.bounds, Some([0.3, 0.3, 0.7, 0.8]));
-}
-
-#[test]
-fn an_upgrade_under_way_does_not_select_in_the_next_photo() {
-    let mut f = fixture(0.2);
-    let e = &mut f.editor;
-    let (generation, _) = e.selection.upgrade_task.start();
-    e.selection.upgrading = Some((generation, subject(e)));
-    e.selection.clear_document();
-    e.catalog_upgraded(generation, Ok(None));
-    assert!(e.selection.running().is_none() && e.selection.prompt.is_none());
 }
 
 #[test]
@@ -1242,35 +1229,14 @@ fn switching_tools_ends_aiming() {
 }
 
 /// Without the models, each selection asks for its own before it runs, as
-/// the drawer always did: the catalog's upgrade first, then the download,
-/// with what and how much. Download installs them and the selection goes on
+/// the drawer always did: the download, with what and how much. Download installs them and the selection goes on
 /// by itself. Sky's are its own: having Subject's doesn't install them.
 /// Aiming without them asks at the first click and goes back to aiming.
 #[test]
 fn each_selection_asks_for_its_own_models_once_and_then_runs() {
     let mut f = fixture_with(0.25, Setup::default());
     let e = &mut f.editor;
-    // The catalog is the first format: ask to upgrade before anything else.
-    e.library
-        .as_ref()
-        .unwrap()
-        .session
-        .catalog()
-        .db_for_tests()
-        .execute_batch("PRAGMA user_version=1")
-        .unwrap();
-    e.request_selection(subject(e));
-    assert_eq!(e.selection.prompt, Some(Prompt::Upgrade(subject(e))));
-    assert!(e.selection.running().is_none());
-    e.library
-        .as_mut()
-        .unwrap()
-        .session
-        .catalog_mut_for_tests()
-        .upgrade_for_raster_masks()
-        .unwrap();
-    e.selection.prompt = None;
-    // Upgraded, the models are the next thing asked for; no download starts.
+    // The models are the first thing asked for; no download starts.
     let request = subject(e);
     let guard = Guard::of(e.document.edit.recipe(), Target::NewMask);
     e.request_selection(request.clone());

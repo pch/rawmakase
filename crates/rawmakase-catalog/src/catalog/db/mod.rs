@@ -43,29 +43,21 @@ const APPLICATION_ID: i64 = 0x4f4d4152;
 /// rewrite. Catalogs below it lose the settings that chose an engine or operator
 /// when they are upgraded.
 pub(in crate::catalog) const ONE_ENGINE: i64 = 3;
-/// The first version, still read and written as it is until a catalog is upgraded.
+/// The first version, the oldest this release opens; it is upgraded as it opens.
 pub(in crate::catalog) const FIRST_VERSION: i64 = 1;
-/// The first version that may hold raster masks.
-pub(in crate::catalog) const RASTER_MASKS: i64 = 2;
-/// The first version that may hold Lensfun lens choices (an edit, a History state or
-/// a snapshot naming a Lensfun lens), which releases before Lensfun would read as an
-/// Adobe profile without a name and save without it. A catalog is raised to it by the
-/// first write that stores one ([`Catalog::write_recipes`]); others stay at
-/// [`ONE_ENGINE`], which those releases open.
-///
-/// [`Catalog::write_recipes`]: super::Catalog
+/// The first version that could hold Lensfun lens choices (an edit, a History state
+/// or a snapshot naming a Lensfun lens), which releases before Lensfun would read as
+/// an Adobe profile without a name and save without it. This release no longer
+/// writes it; tests use it to check that each earlier release refused the next
+/// format.
 #[cfg(test)]
 pub(in crate::catalog) const LENSFUN: i64 = 4;
-/// The first version that may hold AI Denoise settings (an edit, a History state or a
-/// snapshot with AI Denoise on or its Amount moved), which releases before it would
-/// render without AI Denoise and save without the setting. Raised to by the first
-/// write that stores one, as [`LENSFUN`] is.
+/// The first version that could hold AI Denoise settings, which releases before it
+/// would render without AI Denoise. Kept for tests, as [`LENSFUN`] is.
 #[cfg(test)]
 pub(in crate::catalog) const AI_DENOISE: i64 = 5;
-/// The first version that may hold HDR edits (an edit, a History state or a snapshot
-/// with HDR on), which releases before it would render as SDR and save without the
-/// setting. Values kept while HDR is off don't raise it. Raised to by the first write
-/// that stores one, as [`LENSFUN`] is.
+/// The first version that could hold HDR edits, which releases before it would
+/// render as SDR. Kept for tests, as [`LENSFUN`] is.
 #[cfg(test)]
 pub(in crate::catalog) const HDR: i64 = 6;
 /// The first version that stores each camera profile and Lensfun calibration once,
@@ -156,20 +148,18 @@ impl Db {
     /// consistent copy of it to `backup` (a path nothing exists at). The copy is
     /// SQLite's own (`VACUUM INTO`), not a copy of the live file, and is checked
     /// before anything is written. Then one immediate transaction gives the catalog
-    /// the tables added since, runs `migrate` with the version found, raises the
-    /// version and runs `then`, which writes what needed the upgrade: when any of it
-    /// fails, nothing is changed and the backup stays. On a catalog already at
-    /// `target` or later, only `then` runs, as a [`write`](Self::write).
-    pub(in crate::catalog) fn upgrade<R>(
+    /// the tables added since, runs `migrate` with the version found and raises the
+    /// version: when any of it fails, nothing is changed and the backup stays. A
+    /// catalog already at `target` or later is left as it is.
+    pub(in crate::catalog) fn upgrade(
         &mut self,
         target: i64,
         backup: &Path,
         migrate: impl FnOnce(&mut Write<'_>, i64) -> Result<()>,
-        then: impl FnOnce(&mut Write<'_>) -> Result<R>,
-    ) -> Result<R> {
+    ) -> Result<()> {
         debug_assert!((ONE_ENGINE..=NEWEST).contains(&target));
         if self.version()? >= target {
-            return self.write(then);
+            return Ok(());
         }
         let Backend::Sqlite(db) = &mut self.backend;
         ensure!(
@@ -196,9 +186,8 @@ impl Db {
             migrate(&mut Write { db: &tx }, found)?;
             tx.execute_batch(&format!("PRAGMA user_version={target}"))?;
         }
-        let result = then(&mut Write { db: &tx })?;
         tx.commit()?;
-        Ok(result)
+        Ok(())
     }
 
     /// Gives the disk back the space deleted and rewritten rows leave in the file.
