@@ -1832,8 +1832,8 @@ Decision, 2026-11-12: a mask's Clarity renders where every pixel's Clarity, with
 photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
 
 **Mask Dehaze on six photos (2026-11-13).** Camera Raw 18.7 rendered the same mask
-Dehaze ±30 on three more CC0 photos (the Z6 III's, the Panasonic S1 II's and a Canon
-CR3), and the three above were rendered again with `main` 50c199a9 (Dehaze down to −50,
+Dehaze ±30 on three more CC0 photos (the Z6 III's, the Panasonic S1 II's and the EOS
+850D's), and the three above were rendered again with `main` 50c199a9 (Dehaze down to −50,
 #1070). Effect error median below white, HDR / SDR, and above white, per photo:
 
 | Photo | +30 below | +30 above | −30 below | −30 above |
@@ -1843,7 +1843,7 @@ CR3), and the three above were rendered again with `main` 50c199a9 (Dehaze down 
 | A7R III | 0.105 / 0.105 | 0.096 | 0.238 / 0.236 | 0.733 |
 | Z6 III | 0.099 / 0.098 | 0.021 | 0.169 / 0.165 | 0.147 |
 | S1 II | 0.150 / 0.142 | 0.075 | 0.183 / 0.147 | 0.118 |
-| Canon CR3 | 0.058 / 0.057 | 0.119 | 0.212 / 0.212 | 0.055 |
+| EOS 850D | 0.058 / 0.057 | 0.119 | 0.212 / 0.212 | 0.055 |
 
 On the medians over the six photos, +30 meets the [acceptance rule](#decisions): 0.0996
 against 0.0901 below white, 0.085 above it, ΔE_ITP added +3.50 against +3.14. −30
@@ -1853,6 +1853,74 @@ is within 0.008 of the SDR rendition; the Z f still misses by 0.018.
 
 Decision, 2026-11-13: a mask's Dehaze renders from 0 to +30 (overlapping masks added),
 and up to +100 with the photo's own; negative mask Dehaze stays refused.
+
+### The last refusals on photos (2026-11-13)
+
+Camera Raw 18.7 rendered the remaining refused controls on six CC0 validation photos
+(the Z 8's, the Z f's, the Z6 III's, the S1 II's, the A7R III's and the EOS 850D's; HDR
+limit 4 and SDR), and mask Blacks at −75, −25, +25, +75 and +100 on the synthetic
+patches. Each was rendered by `main` 50c199a9 with the refusal lifted, and with the
+candidate rules below, and scored by the [acceptance rule](#decisions): effect error
+median in stops below white, HDR / SDR, HDR above white, and ΔE_ITP added over the
+default render, medians over the photos. Above white is allowed the SDR below-white
+error plus 0.01 stop.
+
+| Control | Rendering | Below white | Above white (allowed) | ΔE_ITP added | |
+| --- | --- | --- | --- | --- | --- |
+| Refine Saturation 0, S curve | SDR's rule, unbounded | 0.026 / 0.016 | 0.046 (0.026) | +2.22 / −0.60 | misses |
+| Curve (0,0) (128,140) (220,255) | flat to white, then the end slope | 0.005 / 0.005 | 0.632 (0.015) | +3.43 / +0.02 | misses |
+| | from the last point along the end slope | 0.005 / 0.005 | 0.053 (0.015) | +0.73 / +0.02 | misses |
+| | the same at 0.98 of the slope | 0.005 / 0.005 | 0.034 (0.015) | +0.44 / +0.02 | misses |
+| Curve (0,0) (128,128) (230,240) | flat to white, then the end slope | 0.002 / 0.002 | 0.402 (0.012) | +0.94 / −0.17 | misses |
+| | from the last point along the end slope | 0.002 / 0.002 | 0.024 (0.012) | +0.14 / −0.17 | misses |
+| | the same at 0.98 of the slope | 0.002 / 0.002 | 0.018 (0.012) | +0.02 / −0.17 | misses |
+| Mask Saturation +50 | SDR's operator | 0.025 / 0.024 | 0.122 (0.034) | +7.24 / +6.30 | misses |
+| | value kept, saturation s^(1 − 0.74k^1.4), in both renders | 0.011 / 0.011 | 0.030 (0.021) | +0.17 / +0.17 | misses |
+| Mask Hue +30 | SDR's operator | 0.035 / 0.033 | 0.056 (0.043) | +3.42 / +3.04 | misses |
+| Look split toning | the grading boost (#1061) | 0.086 / 0.084 | 0.097 (0.094) | −5.52 / −5.53 | misses by 0.003 |
+
+- **Refine Saturation** adds colour where SDR's removes it, as on the patches. The S
+  curve itself, at Refine Saturation 100, which renders, is 0.048 stop off above white
+  on these photos (0.015 / 0.014 below).
+- **Curves that end left of white.** Continuing from the last point, as the gray ramps
+  showed, takes the error above white from 0.63 and 0.40 stop to 0.053 and 0.024.
+  Just above white the master is 0.02–0.06 stop too bright on every photo, and higher
+  up the sign varies by photo (the Z6 III's −0.10 at 2.8 times white, the A7R III's
+  +0.05). A slope of 0.98 is the best single factor (0.96: 0.050 and 0.035; 0.9: 0.117
+  and 0.107), still outside the 0.01 allowance that SDR's exact render leaves.
+- **Mask Saturation.** The power operator, rendered in SDR too, halves the SDR
+  rendition's error on these photos (0.024 to 0.011 stop, colour +6.30 to +0.17 ΔE_ITP);
+  on the saturation-0.9 patches it made SDR worse (0.089 to 0.148 at +100). Above white
+  it is 0.03–0.05 stop too dark on near-neutral light and 0.09–0.13 too bright on
+  saturated light, where Camera Raw darkens it by 0.25–0.34 stop. Both renders' rule
+  needs a fuller fit before it changes SDR. Hue shares the operator and isn't helped.
+- **Look split toning** renders since #1061 on the synthetic probe's evidence; on
+  these photos it misses above white by 0.003 stop. It is left rendering: the miss is
+  inside the photos' spread (0.07–0.12 per photo).
+- **A darkening vignette's Highlights** (Highlight Priority −30, Midpoint 50, Feather
+  50). Camera Raw's HDR protection is far stronger than its SDR one and reaches below
+  white: Highlights 50 lifts the Z 8's vignetted light at one to two times white by
+  +0.86 stop (+1.48 at 100), and the EOS 850D's at a quarter to half of white by +0.30
+  (+0.56). Scored on the vignetted area only (where Camera Raw's vignette darkens by
+  more than 0.1 stop): without protection the master is 0.194 / 0.380 stop off above
+  white at 50 / 100; SDR's protection on the master's luminance 0.232 / 0.020 (+3.98
+  ΔE_ITP at 50); on a quarter of its luminance 0.118 / 0.077. No one rule fits both
+  settings.
+- **Mask Blacks.** On the patches Camera Raw's HDR mask Blacks is one curve per channel
+  of linear ProPhoto (within 0.001 stop), darkening below about 0.6 of white and
+  brightening above it (−100: +0.26 stop at white, +0.72 at 16 times; +100: −0.67 at
+  16), smooth in the slider. SDR's mask curve in the master is 1.3–2.2 stop off above
+  white, where SDR's error is 0.001–0.007. On photos the SDR rendition's own mask Blacks
+  is off: at −50 it darkens about twice as much as Camera Raw's (the Z 8 at an eighth of
+  white: −1.62 against −0.69 stop; median 0.80 stop below white), because RAWmakase's
+  mask curve works before the profile's tone curve and Camera Raw's nearer the output.
+  Camera Raw's HDR curve from the patches, applied in the same place, is further off on
+  photos (1.05 against 0.80 stop, ΔE_ITP +32.1 against +22.1). The SDR operator's place
+  in the pipeline has to be fixed first.
+
+Decision, 2026-11-13: Refine Saturation other than 100%, curves that end left of
+white, a darkening vignette's Highlights and a mask's Blacks, Hue and Saturation stay
+refused. Look split toning keeps rendering.
 
 ### Decisions
 
