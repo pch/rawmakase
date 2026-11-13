@@ -111,6 +111,32 @@ impl HdrCurves {
         })
     }
 }
+/// A mask's Hue and Saturation `d` on an HDR master's linear display RGB (1 = graphics
+/// white): positive Saturation keeping the colour's value (`local::saturate_hdr`), then
+/// Hue, or any other Saturation, on Oklab of the light clipped at 0. Without them
+/// nothing is clipped, so a colour outside the display gamut keeps its value and hue.
+fn local_color_hdr(d: &LocalDelta, rgb: [f32; 3]) -> [f32; 3] {
+    let saturated = d[slot::SATURATION] > 0.;
+    let rgb = if saturated {
+        mul(
+            crate::camera_profiles::PRO_TO_RGB,
+            local::saturate_hdr(d, mul(crate::camera_profiles::RGB_TO_PRO, rgb)),
+        )
+    } else {
+        rgb
+    };
+    let mut rest = *d;
+    if saturated {
+        rest[slot::SATURATION] = 0.;
+    }
+    if rest[slot::HUE] == 0. && rest[slot::SATURATION] == 0. {
+        return rgb;
+    }
+    lab_to_srgb(local::hue_saturation(
+        &rest,
+        srgb_to_lab(rgb.map(|v| v.max(0.))),
+    ))
+}
 /// Point Color on an HDR master's linear display RGB (1 = graphics white). Camera Raw
 /// 18.7 applies its swatches to each channel taken into colour grading's HDR domain
 /// (`color_grade_curves::to_hdr_domain`, 16 times white at 1) and back, where they
@@ -256,15 +282,11 @@ impl HdrFinish {
         let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply_hdr(rgb));
         // Colour grading follows the colour mixer and a look's RGB table, as in SDR.
         let rgb = lut.grade.as_ref().map_or(rgb, |g| g.apply_hdr(rgb));
-        // A mask's Hue and Saturation follow grading, as in SDR, on Oklab of the
-        // unclipped light: Camera Raw 18.7's HDR render of a mask's Saturation changes
-        // saturation alike at every brightness (docs/records/hdr-stage1-results.md#masks).
-        let rgb = local_color.map_or(rgb, |d| {
-            lab_to_srgb(local::hue_saturation(
-                d,
-                srgb_to_lab(rgb.map(|v| v.max(0.))),
-            ))
-        });
+        // A mask's Hue and Saturation follow grading, as in SDR, on the unclipped light:
+        // positive Saturation keeping the colour's value (`local::saturate_hdr`), as
+        // Camera Raw 18.7's HDR render of it does at every brightness, and Hue on Oklab
+        // (docs/records/hdr-stage1-results.md#masks).
+        let rgb = local_color.map_or(rgb, |d| local_color_hdr(d, rgb));
         // The gray's luminance, unclipped: SDR renders clip it at white.
         let rgb = lut.gray_grid.as_ref().map_or(rgb, |g| {
             let lookup = crate::develop::color_mixer::Lookup::Hdr(None, None);
@@ -800,4 +822,32 @@ pub(super) fn curve_input(
         // the GPU port also applies.
         x / (x + (1. - x)).max(1e-8)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A mask's positive Saturation in the master keeps a colour outside the display
+    /// gamut as `saturate_hdr` renders it: its value and hue are not clipped away.
+    #[test]
+    fn hdr_mask_saturation_keeps_wide_gamut_colours() {
+        use crate::camera_profiles::{PRO_TO_RGB, RGB_TO_PRO};
+        let mut d = [0.; crate::develop::masks::local::LEN];
+        d[slot::SATURATION] = 0.5;
+        let pro = [3., 0.3, 0.15];
+        let rgb = mul(PRO_TO_RGB, pro);
+        assert!(
+            rgb.iter().any(|v| *v < 0.),
+            "{rgb:?} is in the display gamut"
+        );
+        let expected = local::saturate_hdr(&d, pro);
+        let rendered = mul(RGB_TO_PRO, local_color_hdr(&d, rgb));
+        for c in 0..3 {
+            assert!(
+                (rendered[c] - expected[c]).abs() < 1e-4,
+                "{rendered:?} {expected:?}"
+            );
+        }
+    }
 }
