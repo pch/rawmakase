@@ -423,7 +423,8 @@ fn hdr_tone_controls(rgb: vec3<f32>) -> vec3<f32> {
         if offset(P_PARAMETRIC_LUT) >= 0 {
             q = encoded_tone(q, 1u);
         }
-        q = encoded_tone(q, 2u);
+        let input = q;
+        q = refine_saturation_hdr(input, encoded_tone(q, 2u));
         out = vec3(hdr_channel(0u, q.x), hdr_channel(1u, q.y), hdr_channel(2u, q.z));
     }
     return out;
@@ -1099,6 +1100,23 @@ fn refine_saturation(input: vec3<f32>, curved: vec3<f32>) -> vec3<f32> {
     if high > 1e-6 {
         scale = min(scale, (1.0 - goal) / high);
     }
+    if low < -1e-6 {
+        scale = min(scale, goal / -low);
+    }
+    let kept = goal + offset * max(scale, 0.0);
+    return kept + (curved - kept) * amount;
+}
+// hdr_curve::refine_saturation: refine_saturation without its bound at white.
+fn refine_saturation_hdr(input: vec3<f32>, curved: vec3<f32>) -> vec3<f32> {
+    let amount = p(P_REFINE_SATURATION);
+    if amount >= 1.0 {
+        return curved;
+    }
+    let luma = vec3(0.299, 0.587, 0.114);
+    let goal = dot(curved, luma);
+    let offset = input - vec3(dot(input, luma));
+    let low = min(min(min(offset.x, offset.y), offset.z), 0.0);
+    var scale = 1.0;
     if low < -1e-6 {
         scale = min(scale, goal / -low);
     }

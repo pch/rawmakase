@@ -312,6 +312,7 @@ HDR reference family):
 | Levels | RAWmakase's own (Camera Raw has none), after Contrast: as a point curve of its shape renders, as in SDR up to white and along its slope at white above it (none when the white point is below white). |
 | Parametric curve | After Levels, RGBTone on the same encoding, its regions and splits laid over black to four stops above white (16); values above 16 are left alone. |
 | Point curve | `color::hdr_curve`, after the parametric curve: the master curve, RGBTone on the look curve's encoding, as in SDR up to white; above it, along the curve's slope at its last point (a natural spline's own derivative there, before clamping), held back above 16 times white toward about 49 times (`hdr_curve::hold`), as Camera Raw holds steep curves. |
+| Refine Saturation | `color::hdr_curve::refine_saturation`, on the master point curve from 50% to 100%: SDR's rule on the same encoded values, the colour keeping its channel differences from before the curve, without SDR's bound at white (with it light above white loses its colour). |
 | Channel curves | `color::hdr_curve::channel`, after the master curve: each channel's own curve on that channel of the look curve's encoding of ProPhoto RGB, by the master curve's rule, its output held at 16. An identity curve leaves its channel alone. |
 | Saturation, Vibrance, the colour mixer | The SDR grids of `develop::color_mixer`, after Contrast, the tone curves and Levels, as in SDR, on unclipped linear values ([The colour stage](#the-colour-stage)): looked up at the colour's value up to 0.2 and at 0.2 above it; Vibrance's value change fades out from 0.5 to white; band Luminance, from −100 to +40, is looked up up to 0.5 and its value change applied per channel, fading out by the channel's scene level from 0.6 to white; negative Luminance is up to 1.2 times stronger as the colour's brightest channel goes from 0.5 to white. |
 | Look's RGB table | After the colour mixer, as in SDR (`RgbTable::apply_hdr`): in the table's primaries, each channel is overrange-encoded (0 to 16 times white onto 0 to 1) before the table's own encoding and decoded after it, and what it encodes beyond 1 skips the table and is added back to its output in that encoding. `.cube` looks, Lightroom's creative looks and fitted Camera Looks' tables alike. |
@@ -540,7 +541,7 @@ master renders on the CPU.
 
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
 something without a measured HDR rendering: Highlights, Whites above
-+50, Refine Saturation other than 100%, a point curve (the master's or a
++50, Refine Saturation below 50%, a point curve (the master's or a
 channel's) whose last point is left of white, Clarity beyond ±50, Dehaze below −50, the
 colour mixer's Luminance above +40, a darkening vignette's Highlights,
 a mask's Blacks, Hue or Highlights, a mask's Saturation outside 0 to +50, a mask's Clarity outside 0 to +50 with the photo's own, a mask's Dehaze outside 0 to +30, Defringe with Black & White ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,

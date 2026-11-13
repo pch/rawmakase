@@ -67,6 +67,8 @@ struct HdrCurves {
     /// Red, green and blue's own curves, each when it is not the identity; when none
     /// is, `None`.
     channels: Option<[Option<crate::color::hdr_curve::HdrPointCurve>; 3]>,
+    /// Refine Saturation (0 to 1) on the master curve.
+    refine: f32,
 }
 impl HdrCurves {
     fn new(r: &Recipe) -> Option<Self> {
@@ -88,6 +90,7 @@ impl HdrCurves {
             parametric,
             master: HdrPointCurve::new(&r.curve),
             channels,
+            refine: r.curve_saturation,
         })
     }
     /// Linear ProPhoto RGB (1 = graphics white, not negative) through the curves.
@@ -102,7 +105,8 @@ impl HdrCurves {
             Some(curve) => rgb_tone(p, |e| parametric(e, |x| curve.eval(x))),
             None => p,
         };
-        let p = rgb_tone(p, |e| self.master.evaluate(e));
+        let curved = rgb_tone(p, |e| self.master.evaluate(e));
+        let p = crate::color::hdr_curve::refine_saturation(p, curved, self.refine);
         // An identity channel curve leaves its channel as the master curve renders it.
         let channels = self.channels.as_ref();
         std::array::from_fn(|c| match channels.and_then(|curves| curves[c].as_ref()) {

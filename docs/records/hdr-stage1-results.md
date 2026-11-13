@@ -347,6 +347,30 @@ on the patches below 0.9, and HDR above white ([Decisions](#decisions)).
   0.116 and +1.7, and 0.034 / 0.238 (+7.8) above; through (90, 110) and (180, 255),
   0.016 / 0.893 and 0.822 / 2.419 above white. Refused.
 
+**Refine Saturation from 50% renders (2026-11-13).** Scored as the control's own effect,
+the S curve at Refine Saturation 0 or 50 over the same curve at 100 (photos and patches),
+with SDR's rule on the master's encoded values, its bound at black kept and its bound at
+white dropped (`hdr_curve::refine_saturation`); effect error median in stops below
+white, HDR / SDR, HDR above white, and ΔE_ITP added, HDR / SDR (patches below 0.9 of
+white in Camera Raw's SDR base):
+
+| Setting | Captures | Below white | Above white (allowed) | ΔE_ITP added | |
+| --- | --- | --- | --- | --- | --- |
+| 0% | six photos | 0.001 / 0.001 | 0.001 (0.011) | −0.02 / −0.10 | passes |
+| 0% | patches, limit 8 | 0.002 / 0.001 | 0.001 (0.011) | −0.06 / −1.90 | misses on colour |
+| 50% | patches, limit 8 | 0.001 / 0.001 | 0.001 (0.011) | −0.09 / −0.93 | passes |
+
+Without the bound at black too, 0% on the patches adds +0.01; keeping each channel's
+ratio to the luma instead of its difference, in the encoding or in linear light, adds
++2.5 / +2.2 on the photos. Camera Raw's HDR Refine Saturation changes the patches' colour
+about twice as much as its SDR one (ΔE_ITP 6.70 against 3.59 at 0%), and RAWmakase's
+about 1.3 times Camera Raw's in both; at 0% the master's S curve is already nearer
+Camera Raw's colour than the SDR rendition's, so Refine Saturation brings it no nearer.
+The earlier photo figures (0.026 / 0.016, +2.22 / −0.60) scored the edit against the
+photo's base render, so they carried the S curve's own error. Decision: Refine
+Saturation renders in the master from 50% to 100%, on the CPU and the GPU's HDR preview;
+below 50% it stays refused.
+
 **Levels.** RAWmakase's black point, white point and midtone have no Camera Raw
 counterpart to measure. Decision: they render in HDR as Camera Raw renders a point
 curve of the same shape, by the rule above: as in SDR up to white, then along the
@@ -1939,7 +1963,8 @@ added; below 0 and above +50 it stays refused, and so does Hue. The SDR renditio
 unchanged (bit-identical on 54 jobs of the family); the earlier attempt changed both
 renders, which made the SDR rendition the stricter reference.
 
-Decision, 2026-11-13: Refine Saturation other than 100%, curves that end left of
+Decision, 2026-11-13: Refine Saturation other than 100% (since rendered from 50%:
+[Tone curves](#tone-curves)), curves that end left of
 white, a darkening vignette's Highlights and a mask's Blacks, Hue and Saturation stay
 refused (mask Saturation from 0 to +50 renders since: above). Look split toning keeps rendering.
 
@@ -2090,7 +2115,7 @@ refused (mask Saturation from 0 to +50 renders since: above). Look split toning 
   a Global tint ([Color grading](#color-grading)).
 - The vignette's Highlights in HDR, and Highlight Priority −100 in a frame's darkest
   tiles (p95 1.5 stops on the synthetic tiles) ([Vignette and grain](#vignette-and-grain)).
-- Refine Saturation in HDR ([Tone curves](#tone-curves)).
+- Refine Saturation below 50% in HDR ([Tone curves](#tone-curves)).
 - Masks: a mask's Whites, Blacks, Hue and Saturation outside 0 to +50 (one Camera Raw setting each,
   unlike SDR's operators above white), Temp's strength (SDR's), Shadows' HDR error
   (twice SDR's on the patches), and masks on the GPU's HDR preview ([Masks](#masks)).
