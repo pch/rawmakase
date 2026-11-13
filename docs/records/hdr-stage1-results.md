@@ -488,6 +488,27 @@ photos at Clarity −30, in SDR and as an HDR edit's SDR rendition, are bit-iden
   Captures at +75 (and Dehaze −50, −70) are prepared to test whether part of the
   range passes.
 
+**Clarity +75, Dehaze −50 and −70, 2026-11-13.** Camera Raw 18.7 rendered them on the
+twelve validation and holdout photos, HDR (limit 4) and SDR, frozen into the family
+(dataset d761c42, 1467 jobs). Scored by the Decisions rule with today's operators
+(median over photos; below white HDR against SDR, med / p95 stop; above white; ΔE_ITP
+added):
+
+| Setting | HDR below white | SDR below white | HDR above white | ΔE_ITP added HDR / SDR | |
+| --- | --- | --- | --- | --- | --- |
+| Clarity +75 | 0.339 / 1.272 | 0.299 / 1.223 | 0.115 / 0.341 | +13.5 / +11.4 | refused |
+| Dehaze −50 | 0.198 / 0.627 | 0.189 / 0.627 | 0.085 / 0.166 | +8.8 / +8.5 | renders |
+| Dehaze −70 | 0.261 / 0.842 | 0.243 / 0.841 | 0.128 / 0.249 | +13.5 / +12.5 | refused |
+
+Dehaze −50 meets the rule with 0.001 stop to spare on the median below white; −70
+misses it there by 0.008 (its p95, above white and colour pass). Clarity +75 misses
+below white (by 0.03 / 0.04) and in colour (2.1 ΔE_ITP added beyond SDR's, where the rule allows 1), as
++100 does: the HDR operator's lift of upper midtones is SDR's.
+
+**Decision, 2026-11-13: Dehaze renders in the HDR master from −50 to +100**; below −50
+it stays refused. Between −30 and −50, both measured, the operator is the same.
+Clarity stays within ±50.
+
 ### Looks
 
 Measured on gray ramps (sensor white +4 and +6 stops, a linear and the ACR3 profile
@@ -1787,7 +1808,7 @@ photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
   never change the master, which renders with them; the SDR rendition doesn't render
   them until that tone map is matched.
 - **Unmeasured adjustments refuse the HDR master, not the edit.** An imported or
-  edited HDR edit with Dehaze below −30, a look or Whites above +50 keeps HDR on and stays
+  edited HDR edit with Dehaze below −50, a look or Whites above +50 keeps HDR on and stays
   valid; its SDR rendition renders it, and the master (HDR export) is refused with
   the reason, shown in Develop under the HDR switch. Refusing the edit itself would
   make Develop's ordinary sliders fail to render whenever HDR is on.
@@ -1918,7 +1939,7 @@ photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
 - Masks: a mask's Whites, Blacks, Hue and Saturation (one Camera Raw setting each,
   unlike SDR's operators above white), Temp's strength (SDR's), Shadows' HDR error
   (twice SDR's on the patches), and masks on the GPU's HDR preview ([Masks](#masks)).
-- Negative Clarity, Clarity above +50, and Dehaze below −30 in HDR ([Presence](#presence)).
+- Clarity beyond ±50 and Dehaze below −50 in HDR ([Presence](#presence)).
 - Positive Shadows lifts small speculars in dark surroundings above Camera Raw's peak
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
@@ -1970,7 +1991,7 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
   ([Vignette and grain](#vignette-and-grain)); masks with Temp,
-  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from −50 to +50 and Dehaze from −30 to +100 ([Presence](#presence));
+  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from −50 to +50 and Dehaze from −50 to +100 ([Presence](#presence));
   Red Eye ([Red Eye](#red-eye)); Defringe, modelled on Camera Raw's HDR behaviour ([Defringe](#defringe)); ordinary profiles' sRGB-encoded tables
   ([sRGB-encoded tables](#srgb-encoded-tables)). What stays refused, each with its
   measurements, is listed in [completion](hdr-253-closure.md#what-stays-refused);

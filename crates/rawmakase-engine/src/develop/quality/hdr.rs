@@ -1540,8 +1540,8 @@ mod tests {
     }
 
     /// Texture renders in the master, on the camera image before tone as in SDR, and
-    /// Clarity up to +50 and Dehaze from −30 to +100 by the SDR operators, unclipped;
-    /// negative Clarity, Clarity above +50 and Dehaze below −30 still refuse it.
+    /// Clarity up to +50 and Dehaze from −50 to +100 by the SDR operators, unclipped;
+    /// Clarity beyond ±50 and Dehaze below −50 still refuse it.
     #[test]
     fn texture_clarity_and_dehaze_render_in_the_master() -> anyhow::Result<()> {
         let im = grays(&[0.2, 0.6, 1.5, 3.]);
@@ -1550,7 +1550,7 @@ mod tests {
         render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
         r.effects.clarity = 0.5;
         render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
-        for dehaze in [0.3, 1., -0.3] {
+        for dehaze in [0.3, 1., -0.3, -0.5] {
             r.effects.dehaze = dehaze;
             render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
         }
@@ -1558,7 +1558,7 @@ mod tests {
         let refused: [(Change, &str); 3] = [
             (|r| r.effects.clarity = 0.6, "Clarity beyond"),
             (|r| r.effects.clarity = -0.6, "Clarity beyond"),
-            (|r| r.effects.dehaze = -0.4, "Dehaze below"),
+            (|r| r.effects.dehaze = -0.6, "Dehaze below"),
         ];
         for (change, reason) in refused {
             let mut edit = r.clone();
