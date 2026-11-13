@@ -70,7 +70,11 @@ impl Catalog {
                  }| {
                     let settings = match (recipe, lightroom) {
                         (Some(json), _) => {
-                            let recipe: Recipe = serde_json::from_str(&json).ok()?;
+                            let recipe: Recipe = crate::model::stored_recipe::from_text(
+                                &super::recipe_assets::ReadsSource(&self.db),
+                                &json,
+                            )
+                            .ok()?;
                             recipe.validate().ok()?;
                             SnapshotSettings::Recipe(Box::new(recipe))
                         }
@@ -91,9 +95,11 @@ impl Catalog {
         recipe.validate()?;
         let assets = self.assets_of(recipe.mask_asset_ids())?;
         let stores = super::format_upgrade::Stores::of([recipe]);
-        let (name, recipe) = (snapshot_name(name)?, serde_json::to_string(recipe)?);
+        let (stored, recipe_assets) = crate::model::stored_recipe::to_stored(recipe);
+        let (name, recipe) = (snapshot_name(name)?, stored.to_text());
         let id = self.write_recipes(stores, |w| {
             assets.write(w)?;
+            super::recipe_assets::write(w, &recipe_assets)?;
             w.insert_returning_id(
                 sql!(
                     "INSERT INTO develop_snapshots(photo, name, recipe) VALUES (?, ?, ?)
@@ -103,6 +109,7 @@ impl Catalog {
             )
         })?;
         assets.saved();
+        super::recipe_assets::committed(&recipe_assets);
         Ok(id)
     }
     /// Lightroom's Update with Current Settings: the snapshot now holds `recipe`.
@@ -110,9 +117,11 @@ impl Catalog {
         recipe.validate()?;
         let assets = self.assets_of(recipe.mask_asset_ids())?;
         let stores = super::format_upgrade::Stores::of([recipe]);
-        let recipe = serde_json::to_string(recipe)?;
+        let (stored, recipe_assets) = crate::model::stored_recipe::to_stored(recipe);
+        let recipe = stored.to_text();
         self.write_recipes(stores, |w| {
             assets.write(w)?;
+            super::recipe_assets::write(w, &recipe_assets)?;
             let n = w.execute(
                 sql!("UPDATE develop_snapshots SET recipe=?, lightroom=NULL WHERE id=?"),
                 &[&recipe, &id],
@@ -121,6 +130,7 @@ impl Catalog {
             Ok(())
         })?;
         assets.saved();
+        super::recipe_assets::committed(&recipe_assets);
         Ok(())
     }
     pub fn rename_snapshot(&mut self, id: i64, name: &str) -> Result<()> {
@@ -157,28 +167,55 @@ fn snapshot_name(name: &str) -> Result<&str> {
         .context("A snapshot needs a name")
 }
 
-/// Removes the settings that chose an engine or operator
-/// (`saved_format::OBSOLETE_SETTINGS`) from every stored snapshot recipe, in the
-/// catalog's upgrade; ones this release cannot read are left as they are.
-pub(super) fn migrate_snapshots(w: &mut super::db::Write<'_>) -> Result<()> {
-    use crate::model::saved_format::recipe_text_without_obsolete_settings;
+/// How many stored snapshot recipes an upgrade reads.
+pub(super) fn stored_recipes(db: &impl Reads) -> Result<i64> {
+    db.read_one(
+        sql!("SELECT COUNT(*) FROM develop_snapshots WHERE recipe IS NOT NULL"),
+        &[],
+    )
+}
+
+/// Rewrites every stored snapshot recipe as the current format stores it, in the
+/// catalog's upgrade, a batch at a time; ones this release cannot read are left as
+/// they are.
+pub(super) fn migrate_snapshots(
+    w: &mut super::db::Write<'_>,
+    u: &mut super::format_upgrade::Upgrade<'_>,
+) -> Result<()> {
+    use super::format_upgrade::{BATCH, Rewrite};
     row! {
         struct Stored {
             id: i64,
             recipe: String,
         }
     }
-    let snapshots: Vec<Stored> = w.read(
-        sql!("SELECT id, recipe FROM develop_snapshots WHERE recipe IS NOT NULL"),
-        &[],
-    )?;
-    for snapshot in snapshots {
-        if let Some(recipe) = recipe_text_without_obsolete_settings(&snapshot.recipe) {
-            w.execute(
-                sql!("UPDATE develop_snapshots SET recipe=? WHERE id=?"),
-                &[&recipe, &snapshot.id],
-            )?;
+    let mut after = i64::MIN;
+    loop {
+        let snapshots: Vec<Stored> = w.read(
+            sql!(
+                "SELECT id, recipe FROM develop_snapshots WHERE recipe IS NOT NULL AND id > ?
+                 ORDER BY id LIMIT ?"
+            ),
+            &[&after, &BATCH],
+        )?;
+        let Some(last) = snapshots.last() else {
+            return Ok(());
+        };
+        after = last.id;
+        let rows = snapshots.len();
+        for snapshot in snapshots {
+            if let Rewrite::To(recipe, original) = u.recipe(w, &snapshot.recipe)? {
+                w.execute(
+                    sql!("UPDATE develop_snapshots SET recipe=? WHERE id=?"),
+                    &[&recipe, &snapshot.id],
+                )?;
+                let stored: String = w.read_one(
+                    sql!("SELECT recipe FROM develop_snapshots WHERE id=?"),
+                    &[&snapshot.id],
+                )?;
+                u.check_recipe(w, &stored, &original)?;
+            }
         }
+        u.batch_done(rows);
     }
-    Ok(())
 }

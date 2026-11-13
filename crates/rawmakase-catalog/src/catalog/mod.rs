@@ -17,6 +17,10 @@ pub struct Catalog {
     /// The file object the catalog was when it opened, if that could be
     /// told; file operations check it is still the one at its path.
     file: Option<crate::fsops::FileId>,
+    /// Where values read from it resolve their stored profiles and calibrations.
+    assets: crate::storage::recipe_assets::SharedSource,
+    /// What upgrading it as it opened did.
+    upgraded: Option<format_upgrade::Upgraded>,
 }
 
 mod checksums;
@@ -42,6 +46,9 @@ pub mod locations;
 mod mask_assets;
 mod models;
 mod naming;
+mod recipe_assets;
+#[cfg(any(test, feature = "test-support"))]
+pub mod upgrade_fixtures;
 // XMP metadata sidecars; `legacy_sidecar` is the old `*.rawmakase.json` edits.
 mod sequences;
 mod sidecar;
@@ -56,9 +63,11 @@ pub use db::assert_shape as assert_sql_shape;
 pub use defaults::{CameraExifReader, ImportOptions, MetadataDefaults, NewPhotoDefaults};
 pub use descriptive::MetadataSnapshot;
 pub use develop_history::{HistoryUpdate, SavedHistory, SavedStep};
+pub use edits::PreviewEdit;
 pub use edits::{EditChange, EditToSave};
 pub use export_catalog::{CatalogExport, ExportScope, ExportedFolders};
 pub use fingerprint::Conditional;
+pub use format_upgrade::{UpgradeProgress, Upgraded};
 pub use ingest::{Ambiguity, Choice, Conflict, IMPORT_BURST_SECONDS, PendingBurstStacks};
 pub use lightroom::HistoryStep;
 pub use location::CatalogLocation;
@@ -88,21 +97,34 @@ impl Catalog {
     /// Opens a catalog on `computer`, whose folder locations apply.
     ///
     /// The format is checked before anything is written, and a catalog this
-    /// release can't read is left as it was. An open writes only what is
-    /// missing for this computer, and a catalog that can't be readied isn't
-    /// opened.
+    /// release can't read is left as it was. A catalog of an earlier format is
+    /// upgraded first, after a verified backup beside it
+    /// ([`Catalog::upgraded`]); when that fails, it is left unchanged and not
+    /// opened. An open writes only what is missing for this computer, and a
+    /// catalog that can't be readied isn't opened.
     pub fn open_as(
         location: impl Into<CatalogLocation>,
         computer: &locations::Computer,
+    ) -> Result<Self> {
+        Self::open_reporting(location, computer, &mut |_| {})
+    }
+    /// [`Catalog::open_as`], telling `progress` how far an upgrade has got.
+    pub fn open_reporting(
+        location: impl Into<CatalogLocation>,
+        computer: &locations::Computer,
+        progress: &mut dyn FnMut(UpgradeProgress),
     ) -> Result<Self> {
         let location = location.into();
         let (db, file) = file_ops::opening(&location, || Db::open(&location));
         let mut catalog = Self {
             db: db?,
+            assets: recipe_assets::shared_source(&location),
             location,
             computer: computer.clone(),
             file,
+            upgraded: None,
         };
+        catalog.upgrade_on_open(progress)?;
         catalog.prepare()?;
         Ok(catalog)
     }

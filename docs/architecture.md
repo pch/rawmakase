@@ -179,14 +179,14 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `camera_profiles` | DCP parsing and validation, camera transforms, RAWmakase's own profiles, profile library and camera matching, the community profile catalogue (`data/camera-profiles`: parsing, validation, matching, byte and identity verification, and its generator), `.cube` LUTs imported as look profiles, fitted camera looks as profiles (built only; fitting is `camera_look`'s), DNG temperature/tint | `dcp.rs`, `library.rs`, `catalogue.rs`, `open.rs`, `cube_look.rs`, `fitted.rs`, `reference.rs` |
 | `camera_look` | Fitting Camera Look (fitted) to a RAW's embedded JPEG: preview choice, pairing with the photo's render, solvers and acceptance on held-out tiles, and the default fit of photos without colour data through its fit cache. In `rawmakase-decode`, as it opens RAWs and decodes their previews; the model only builds and checks what it finds, and the catalog, `xmp` and presets never fit (the app and export pass the default in with the photo's profiles) | `camera_look/` |
 | `optics` | The lens correction model the renderer evaluates (vignetting, distortion and lateral CA as radial functions), Adobe lens profiles (LCP) as data, and Lensfun calibrations as data with their evaluation for a photo; depends only on `xml` | `mod.rs`, `lcp.rs`, `lensfun.rs` |
-| `lens` | Readers that fill the `optics` model: imported Adobe LCPs, Lensfun's database (read, matched, installed) and lateral CA measurement, plus profile selection; an edit's Lensfun lens carries its own copy of the calibration, so rendering never reads the database. The tables cameras embed in their RAWs are read next to the RAW containers, by the decode crate's `raw::lens` | `lcp.rs`, `lensfun/`, `auto_ca.rs`, `choice.rs` |
+| `lens` | Readers that fill the `optics` model: imported Adobe LCPs, Lensfun's database (read, matched, installed) and lateral CA measurement, plus profile selection; an edit's Lensfun lens carries its calibration (which a catalog stores once and names by content id), so rendering never reads the database. The tables cameras embed in their RAWs are read next to the RAW containers, by the decode crate's `raw::lens` | `lcp.rs`, `lensfun/`, `auto_ca.rs`, `choice.rs` |
 | `rendered` | Developed pixels as values: an output image, its histogram and clipping overlay, which the renderer produces and export and watermarks use; depends on nothing | `rendered.rs` |
 | `model` | What an edit is, as values shared by the renderer, the catalog and file formats: the `Recipe` with its validation (`ValidRecipe`), saved versions and migration, panel switches, and the settings it is made of: Effects, Heal and Clone, Red Eye, Point Color, masks, Transform with Upright, white balance from metadata, the image space positions are kept in (`image_frame.rs`), the sliders as parameters, the rules an edit follows, the setting groups Copy Settings, Sync and presets use, and Camera Raw's keys for the sliders (`camera_raw.rs`). Depends on camera profiles, lenses and optics, never on rendering | `recipe.rs`, `valid.rs`, `saved_format.rs`, `panels.rs`, `operators.rs`, `effects.rs`, `masks.rs`, `transform.rs` |
 | `develop` | Rendering a recipe: geometry, color processing, the scene tone stage, curves, effects, local adjustments, detail rendering and the GPU port | `pipeline/`, `scene_tone/`, `quality/`, `geometry.rs`, `gpu/` |
 | `xmp` | Namespace-aware Adobe settings parsing and application to recipes. Settings that ask for Auto measure the photo through the model's `PhotoMeasures` (`model::measures`), which `develop::Measures` provides, and packets take the crop as rendered from the caller, so XMP needs no rendering code | `parse.rs`, `apply.rs` |
 | `raw_defaults` | Lightroom's Raw Defaults: the master and per-camera choices and a photo's starting settings. Above `presets`, whose library it reads | `raw_defaults.rs` |
 | `presets` | Native JSON recipe presets, installed XMP collections, favorites and preset import, and a preset's application to one photo, which Develop and the Library's batch share | `native.rs`, `library.rs`, `photo.rs` |
-| `storage` | RAW identity checks, which files are photos and the rendered formats' facts (`RasterFormat`: extensions, MIME types, names; the codecs are `raster`'s and `export`'s), application paths and atomic JSON writes. The file system primitives moving a user's files needs are `rawmakase-fs`'s. Saved-recipe versions are `model::saved_format`, the desktop session is `app::preferences::session` and legacy sidecar import is `catalog::legacy_sidecar` | `identity.rs`, `files.rs`, `formats.rs` |
+| `storage` | RAW identity checks, the camera profiles and calibrations catalogs store once (`recipe_assets`: content ids, the source stored text is read through, the shared cache), which files are photos and the rendered formats' facts (`RasterFormat`: extensions, MIME types, names; the codecs are `raster`'s and `export`'s), application paths and atomic JSON writes. The file system primitives moving a user's files needs are `rawmakase-fs`'s. Saved-recipe versions are `model::saved_format`, the desktop session is `app::preferences::session` and legacy sidecar import is `catalog::legacy_sidecar` | `identity.rs`, `files.rs`, `formats.rs` |
 | `export_settings` | Export choices as values: the Export dialog's settings, Rename Photos' remembered choices (`RenameSettings`), the user's saved file-name templates (`SavedTemplates`), a photo's saved `ExportOptions`, and the naming templates (`NameTemplate`: Lightroom's presets and Filename Template Editor templates, `TokenTemplate`) exports and renames name files by, from the `NameFields` taken once per export | `export_settings.rs`, `export_settings/tokens.rs`, `export_settings/rename.rs`, `export_settings/saved.rs` |
 | `export` | JPEG, 16-bit TIFF and PNG encoding, selected EXIF with the colour space's ColorSpace and interoperability index, ICC embedding of the pixels' colour space (taken from the `ExportImage`, never from a second setting), the sRGB conversion of watermark colours, atomic output publication | `mod.rs`, `metadata.rs` |
 | `ids` | Typed catalog row ids (`PhotoId`, `FolderId`, `RootId`, `CollectionId`), stored and serialized as their integers; a leaf, so edit resolution and export use them below the catalog | `ids.rs` |
@@ -498,14 +498,24 @@ Some features span several owners; each module's docs describe its part:
   and masks, and History) is written only by `catalog::edit_rows`: a checked
   save or clear, an exact copy for a virtual copy, removal with one, and the
   format upgrade's migration of every stored edit.
-- The settings earlier releases chose an engine or operator with are
+- The settings earlier releases chose an engine or operator with, and
+  `preset_settings` (a copy of an applied preset's settings nothing read), are
   `model::saved_format::OBSOLETE_SETTINGS`, its one owner. Reading any `Recipe`
   drops them from its unknown settings (and nothing else), so catalog edits,
   History, snapshots, presets, sidecars and the session all migrate on the way
-  in; `catalog::format_upgrade` removes them from stored rows after a backup,
-  in the same transaction as the first write of a recipe into a catalog of an
-  earlier format (`Catalog::write_recipes`, from saving edits and snapshots),
-  once that write's checks have passed.
+  in; `catalog::format_upgrade` removes them from stored rows when a catalog of
+  an earlier format opens, after a backup and in one transaction.
+- A catalog stores each camera profile and Lensfun calibration once
+  (`recipe_assets`), and its stored recipes, History states and snapshots name
+  them by content id. `model::stored_recipe` owns that stored form and only the
+  catalog writes it (`edit_rows`, `develop_history`, `snapshots`); the derived
+  `Serialize` keeps writing them inline everywhere else. Stored text is read only
+  inside `storage::recipe_assets::reading` with the source it came from (the
+  catalog's own connection, or the `SharedSource` an `EditRecord` carries to
+  another thread), and a reference read with no source fails rather than
+  rendering without its profile. Values read are verified against their id before
+  they are parsed; the process-wide cache only shares verified values, and the
+  upgrade's check reads past it.
 - Parsing XMP produces settings, while application validates and resolves a
   recipe. Collection discovery and favorites belong in `presets`. Auto settings in
   XMP are interpreted in `xmp` and measured by the engine through the model's `PhotoMeasures`,
@@ -626,11 +636,14 @@ compiler reports what in them nothing uses. The compatibility surface is the sav
 preset envelopes are versioned and migrated by `model::saved_format` (written as
 version 11, which releases before the one engine refuse, 12 for a recipe naming a
 Lensfun lens, which releases before Lensfun refuse, or 13 for one with AI Denoise
-not at its default, which releases before AI Denoise refuse); a catalog opens at
-versions 1 to 5 (others are refused, the file left unchanged), is upgraded to 3
-before a recipe is stored in it, to 4 before a Lensfun choice is and to 5 before an
-AI Denoise setting is, and its schema only ever gains tables, applied idempotently
-on open; see [catalogs](catalogs.md#sqlite-format-versions-1-to-5). An AI Denoise
+not at its default, which releases before AI Denoise refuse, 14 for one with HDR
+on); a catalog opens at versions 1 to 7 (others are refused, the file left
+unchanged), one below 7 is upgraded to it as it opens, after a verified backup and
+in one transaction, and its schema only ever gains tables, applied idempotently on
+open; see [catalogs](catalogs.md#sqlite-format-versions-1-to-7). A catalog stores
+each camera profile and Lensfun calibration once and its recipes name them by
+content id; that stored form never leaves the catalog, so presets, sidecars and the
+session keep holding them inline. An AI Denoise
 result is never part of the saved data: the recipe names no model, and results are
 cached under a key holding the model's SHA-256 and the adapter version.
 

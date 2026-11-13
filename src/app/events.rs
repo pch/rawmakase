@@ -713,9 +713,6 @@ impl Editor {
             RenderedAi::Complete => PreviewAi::Finished,
             RenderedAi::Partial => return,
         };
-        let Ok(json) = serde_json::to_string(self.document.edit.recipe()) else {
-            return;
-        };
         let (Some(library), Some(id)) = (&mut self.library, self.document.catalog_photo) else {
             return;
         };
@@ -725,7 +722,7 @@ impl Editor {
             self.document.image_file.as_ref(),
             shows,
             small,
-            json,
+            self.document.edit.recipe(),
         );
     }
 }

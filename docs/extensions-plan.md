@@ -651,8 +651,9 @@ without the filters it controls.
   for another reason. Without `migrate_params`, unknown parameters are kept and
   missing ones take their defaults.
 - **Saved format.** A recipe with any filter is written as a new schema version
-  (`model::saved_format`, after `HDR_SCHEMA`), and a catalog upgrades to a new
-  format version before it stores one ([catalogs](catalogs.md)). Releases from
+  (`model::saved_format`, after `HDR_SCHEMA`: 15), and a catalog upgrades to a new
+  format version (8; 7 is the one that stores profiles once, which changed no
+  recipe schema) before it stores one ([catalogs](catalogs.md)). Releases from
   before extensions then refuse such an edit instead of rendering it without its
   filters and dropping them when saving, as they do for Lensfun, AI Denoise and
   HDR today.

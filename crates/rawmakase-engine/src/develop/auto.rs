@@ -99,7 +99,6 @@ pub fn auto_tone_basis(r: &Recipe) -> Recipe {
         masks: Vec::new(),
         // Bookkeeping that does not render.
         preset_name: d.preset_name,
-        preset_settings: d.preset_settings,
         auto_white_balance: None,
         unknown: d.unknown,
         // Auto measures the edit, not its SDR rendition's own adjustments.

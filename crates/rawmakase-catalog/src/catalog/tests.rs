@@ -727,8 +727,10 @@ fn catalog_keeps_spots_and_masks_out_of_the_recipe_column() -> Result<()> {
             })?;
     assert!(!column.contains("masks"));
     assert_eq!(c.load_edit(id, &photo)?.unwrap().recipe, r);
-    let (text, _) = c.edit_texts(id)?;
-    assert_eq!(serde_json::from_str::<Recipe>(&text.unwrap())?, r);
+    assert_eq!(
+        c.preview_edit(id)?,
+        crate::catalog::PreviewEdit::Saved(Ok(Box::new(r.clone())))
+    );
     c.save_edit(
         id,
         &photo,
@@ -1410,14 +1412,19 @@ fn develop_history_stores_each_large_setting_once() -> Result<()> {
         steps,
         applied: 100,
     };
-    let encoded = super::develop_history::encode(&history)?;
+    let mut storer = crate::model::stored_recipe::Storer::new();
+    let encoded = super::develop_history::encode(&history, &mut storer)?;
+    let assets = crate::storage::recipe_assets::InMemory::of(storer.assets());
     // A hundred steps cost less than two recipes would uncompressed.
     assert!(
         encoded.len() < 2 * one,
         "{} bytes for a {one}-byte recipe",
         encoded.len()
     );
-    assert_eq!(super::develop_history::decode(&encoded)?, Some(history));
+    assert_eq!(
+        super::develop_history::decode(&encoded, &assets)?,
+        Some(history)
+    );
     Ok(())
 }
 #[test]

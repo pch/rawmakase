@@ -312,6 +312,7 @@ impl Library {
         let Opened {
             mut session,
             keyword_export,
+            upgraded,
         } = opened;
         session.wake_with(wake(&ctx));
         let loupe = loupe::Loupe::new(&ctx);
@@ -380,6 +381,9 @@ impl Library {
         };
         s.reloaded();
         s.check_files();
+        if let Some(upgraded) = upgraded {
+            s.messages.note(upgrade_note(&upgraded));
+        }
         if let Some(e) = keyword_export {
             s.messages.warn(format!(
                 "Lightroom's keyword export options could not be read: {e:#}. \
@@ -622,16 +626,13 @@ impl Library {
             return Some(Err(refusal));
         }
         let edit = match self.session.catalog().load_edit(id, &photo.path) {
-            Ok(Some(saved)) => serde_json::to_string(&saved.recipe)
-                .ok()
-                .map(EditSource::Recipe),
-            Ok(None) => self
-                .session
-                .catalog()
-                .edit_texts(id)
-                .ok()
-                .and_then(|(_, lightroom)| lightroom)
-                .map(EditSource::Lightroom),
+            Ok(Some(saved)) => Some(EditSource::saved(saved.recipe)),
+            Ok(None) => match self.session.catalog().preview_edit(id) {
+                Ok(crate::catalog::PreviewEdit::Lightroom(text)) => {
+                    Some(EditSource::Lightroom(text))
+                }
+                _ => None,
+            },
             // A protected edit: Develop shows the defaults too.
             Err(_) => None,
         }
@@ -1363,13 +1364,13 @@ impl Library {
         rendered: Option<&crate::storage::Identity>,
         ai: PreviewAi,
         image: image::RgbImage,
-        recipe_json: String,
+        recipe: &crate::model::recipe::Recipe,
     ) {
         let Some(path) = self.photo(id).map(|p| p.path.clone()) else {
             return;
         };
         let stamp = rendered.map(crate::storage::Identity::stamp);
-        let tag = EditSource::Recipe(recipe_json).preview_tag(ai);
+        let tag = EditSource::saved(recipe.clone()).preview_tag(ai);
         self.cache.store_edited(ctx, id, path, stamp, tag, image);
     }
     /// An AI Denoise result was stored for the file at `path`: its photos' edited
@@ -1550,13 +1551,30 @@ pub(in crate::app) fn develop_refusal(photo: &Photo, available: bool) -> Option<
         .err()
         .map(|unsupported| Refusal::unsupported(&photo.path, &unsupported))
 }
+/// What the Library says after the catalog it opened was upgraded.
+fn upgrade_note(upgraded: &crate::catalog::Upgraded) -> String {
+    let mut note = format!(
+        "This catalog was upgraded for this release. A copy of it as it was is at {}; \
+         older releases of RAWmakase open that copy, not the catalog.",
+        upgraded.backup.display()
+    );
+    if upgraded.unreadable > 0 {
+        note.push_str(&format!(
+            " {} stored edits could not be read and were left as they were.",
+            upgraded.unreadable
+        ));
+    }
+    if let Some(error) = &upgraded.vacuum_error {
+        note.push_str(&format!(
+            " The disk space it no longer needs could not be given back ({error})."
+        ));
+    }
+    note
+}
 /// The edit a photo's previews are rendered with: its RAWmakase recipe, or
 /// else its Lightroom settings.
 fn edit_source(catalog: &Catalog, id: PhotoId) -> Option<previews::EditSource> {
-    let (recipe, lightroom) = catalog.edit_texts(id).ok()?;
-    recipe
-        .map(previews::EditSource::Recipe)
-        .or(lightroom.map(previews::EditSource::Lightroom))
+    previews::EditSource::of(catalog.preview_edit(id).ok()?)
 }
 
 mod availability;

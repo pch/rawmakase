@@ -13,6 +13,7 @@ use std::{fs::File, path::Path};
 struct Preset {
     schema: u32,
     pipeline: u32,
+    #[serde(serialize_with = "crate::model::saved_format::serialize_envelope_recipe")]
     recipe: Recipe,
     /// Masks, kept outside the recipe so releases before them read the rest (the
     /// envelope accepts unknown keys in every release).
@@ -264,6 +265,38 @@ mod tests {
         );
         assert!(!reads(&saved, BEFORE_ONE_ENGINE));
         assert_eq!(load_preset(&path).unwrap().recipe.exposure, 0.5);
+    }
+    /// A preset holds its recipe inline, written as before (the profile in it, each
+    /// setting as the recipe writes it), with the empty `preset_settings` releases
+    /// before its removal require; it loads back as it was.
+    #[test]
+    fn a_preset_writes_its_recipe_inline_as_before() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p.json");
+        let m = Metadata {
+            cam_xyz: [[0.9, -0.2, 0.1], [-0.4, 1.2, 0.15], [-0.05, 0.1, 0.6]],
+            ..Default::default()
+        };
+        let r = Recipe {
+            exposure: 0.4,
+            profile: crate::camera_profiles::CameraProfile::camera_matrix_default(&m)
+                .map(std::sync::Arc::new),
+            ..Default::default()
+        };
+        save_preset(&path, &r, &m).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let mut before = serde_json::to_value(serde_json::json!({
+            "schema": 11, "pipeline": 11, "recipe": serde_json::from_str::<serde_json::Value>(
+                &serde_json::to_string(&r).unwrap()).unwrap(),
+        }))
+        .unwrap();
+        before["recipe"]["preset_settings"] = serde_json::json!({});
+        let saved: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(saved, before);
+        assert!(text.contains("\"exposure\": 0.4,"), "{text}");
+        assert!(text.contains("\"preset_settings\": {}"), "{text}");
+        assert!(saved["recipe"]["profile"].is_object());
+        assert_eq!(load_preset(&path).unwrap().recipe, r);
     }
     /// HDR values kept while HDR is off save in the version earlier releases read and
     /// load back; a preset with HDR on saves in the HDR schema and loads back.

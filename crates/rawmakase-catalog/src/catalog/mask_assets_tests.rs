@@ -121,7 +121,7 @@ fn a_catalog_of_the_first_format_is_upgraded_for_rasters_with_a_backup() -> Resu
     assert_eq!(cat.format_version()?, 1);
 
     let backup = cat.upgrade_for_raster_masks()?.unwrap();
-    assert_eq!(cat.format_version()?, super::db::VERSION);
+    assert_eq!(cat.format_version()?, super::db::NEWEST);
     assert!(cat.supports_raster_masks()?);
     assert!(backup.starts_with(dir.path()) && backup.exists());
     // The backup is a catalog of the first format, as it was.
@@ -160,7 +160,7 @@ fn a_catalog_of_the_second_format_keeps_its_rasters_through_the_upgrade() -> Res
     assert_eq!(cat.upgrade_for_raster_masks()?, None);
     assert_eq!(cat.format_version()?, 2);
     save(&mut cat, id, &file, &recipe)?;
-    assert_eq!(cat.format_version()?, super::db::VERSION);
+    assert_eq!(cat.format_version()?, super::db::NEWEST);
     assert_eq!(stored(&cat, &recipe)?, 1);
     Ok(())
 }

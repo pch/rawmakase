@@ -68,6 +68,7 @@ fn edit(seed: f32) -> Recipe {
 fn a_stored_recipe_names_its_profile_and_calibration_and_reads_back() {
     let r = edit(0.021);
     let (stored, assets) = to_stored(&r);
+    let stored: serde_json::Value = serde_json::from_str(&stored.to_text()).unwrap();
     assert_eq!(assets.len(), 2);
     let profile_id = stored["profile"].as_str().unwrap();
     let calibration_id = stored
@@ -109,7 +110,10 @@ fn a_stored_recipe_names_its_profile_and_calibration_and_reads_back() {
     // A recipe with neither stores neither.
     let (plain, none) = to_stored(&Recipe::default());
     assert!(none.is_empty());
-    assert_eq!(plain, serde_json::to_value(Recipe::default()).unwrap());
+    assert_eq!(
+        plain.to_text(),
+        serde_json::to_string(&Recipe::default()).unwrap()
+    );
 }
 
 /// Everything outside a catalog keeps writing the profile inline, and an inline
@@ -160,11 +164,8 @@ fn one_write_stores_a_shared_profile_once() {
         })
         .collect();
     assert_eq!(storer.assets().count(), 2);
-    assert!(
-        states
-            .windows(2)
-            .all(|w| w[0]["profile"] == w[1]["profile"])
-    );
+    let profile = |s: &RawObject| s.get("profile").unwrap().get().to_string();
+    assert!(states.windows(2).all(|w| profile(&w[0]) == profile(&w[1])));
     // An equal profile in another Arc is the same asset.
     let mut other = r.clone();
     other.profile = Some(Arc::new((**r.profile.as_ref().unwrap()).clone()));
@@ -177,7 +178,7 @@ fn one_write_stores_a_shared_profile_once() {
 fn loaded_edits_share_their_profile() {
     let (stored, assets) = to_stored(&edit(0.025));
     let catalog = Assets::of(&assets);
-    let text = stored.to_string();
+    let text = stored.to_text();
     let loaded: Vec<Recipe> = (0..4)
         .map(|_| from_text(&catalog, &text).unwrap())
         .collect();
@@ -195,10 +196,16 @@ fn loaded_edits_share_their_profile() {
 fn the_stored_text_is_the_same_from_either_form() {
     let r = edit(0.026);
     let (stored, assets) = to_stored(&r);
-    let from_stored = from_text(&Assets::of(&assets), &stored.to_string()).unwrap();
+    let from_stored = from_text(&Assets::of(&assets), &stored.to_text()).unwrap();
     let from_inline: Recipe = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
     assert_eq!(to_text(&from_stored), to_text(&from_inline));
-    assert_eq!(to_text(&from_stored), stored.to_string());
+    assert_eq!(to_text(&from_stored), stored.to_text());
+    // Settings keep the text a recipe writes them with.
+    assert!(
+        stored.to_text().contains("\"exposure\":0.25"),
+        "{}",
+        stored.to_text()
+    );
     let mut changed = from_inline.clone();
     changed.profile = Some(profile(0.027));
     assert_ne!(to_text(&changed), to_text(&from_inline));
