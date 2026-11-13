@@ -88,7 +88,7 @@ fn sky_eval_dump() {
             );
         }
         // sky-eval: timings end
-        GrayImage::from_raw(cov.width as u32, cov.height as u32, cov.data.clone())
+        GrayImage::from_raw(cov.width as u32, cov.height as u32, cov.data)
             .unwrap_or_else(|| panic!("{}: the coverage does not fit its size", path.display()))
             .save(out.join(format!(
                 "{}.png",
