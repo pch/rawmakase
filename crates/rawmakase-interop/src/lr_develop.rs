@@ -232,6 +232,28 @@ pub fn convert_develop(
             preset.settings.insert(key.clone(), value);
         }
     }
+    // The catalog leaves out corners at their defaults (Lightroom 5 writes no CropLeft or
+    // CropRight for a crop that keeps the full width, #1059). The angle turns the crop only
+    // with all four corners, as in Camera Raw's sidecars, so the missing ones are written out.
+    const CORNERS: [(&str, &str); 4] = [
+        ("CropLeft", "0"),
+        ("CropTop", "0"),
+        ("CropRight", "1"),
+        ("CropBottom", "1"),
+    ];
+    if CORNERS
+        .iter()
+        .map(|(key, _)| *key)
+        .chain(["CropAngle"])
+        .any(|key| preset.settings.contains_key(key))
+    {
+        for (key, default) in CORNERS {
+            preset
+                .settings
+                .entry(key.into())
+                .or_insert_with(|| default.into());
+        }
+    }
     // A look that isn't available is reported on its own, so the base profile's
     // fallback and every other setting still apply.
     if !preset.look_available(m, profiles) {
