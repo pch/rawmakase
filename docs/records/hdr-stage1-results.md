@@ -1918,9 +1918,30 @@ error plus 0.01 stop.
   photos (1.05 against 0.80 stop, ΔE_ITP +32.1 against +22.1). The SDR operator's place
   in the pipeline has to be fixed first.
 
+**Mask Saturation from 0 to +50 renders (2026-11-13).** The value-preserving power
+operator above, rendered in the master only, the SDR rendition keeping its Oklab
+operator, scored by the [acceptance rule](#decisions) against the SDR rendition as it
+renders:
+
+| Mask setting | Rendering | Below white, HDR / SDR | Above white (allowed) | ΔE_ITP added | |
+| --- | --- | --- | --- | --- | --- |
+| Saturation +50, six photos | power operator | 0.011 / 0.021 | 0.030 (0.031) | +2.65 / +5.50 | passes |
+| | scale 0.65 / 0.82, power 1.2 | 0.009–0.014 / 0.021 | 0.029–0.039 | +2.89–3.08 | 0.82 passes, others miss |
+| | luminance kept by 0.3 / −0.3 | 0.007 / 0.017 | 0.053 / 0.034 | +3.10 / +2.84 | misses |
+| Saturation +100, patches | power operator | 0.038 / 0.047 | 0.083 (0.057) | +4.61 / +12.82 | misses |
+| Saturation −50, patches | SDR's operator | 0.034 / 0.021 | 0.093 (0.031) | −2.44 / −2.38 | misses |
+| | power s^(1 + 0.6–1.5 k) | 0.030–0.060 / 0.021 | 0.085–0.155 | +5.1 to +7.1 | misses |
+| Hue +30, six photos | SDR's operator | 0.037 / 0.035 | 0.057 (0.045) | +7.34 / +7.01 | misses |
+
+The +50 pass is narrow (0.001 stop above white) and the fit's scale and power are at
+their best. Decision: a mask's Saturation renders in the master from 0 to +50, masks
+added; below 0 and above +50 it stays refused, and so does Hue. The SDR rendition is
+unchanged (bit-identical on 54 jobs of the family); the earlier attempt changed both
+renders, which made the SDR rendition the stricter reference.
+
 Decision, 2026-11-13: Refine Saturation other than 100%, curves that end left of
 white, a darkening vignette's Highlights and a mask's Blacks, Hue and Saturation stay
-refused. Look split toning keeps rendering.
+refused (mask Saturation from 0 to +50 renders since: above). Look split toning keeps rendering.
 
 ### Decisions
 
@@ -2070,7 +2091,7 @@ refused. Look split toning keeps rendering.
 - The vignette's Highlights in HDR, and Highlight Priority −100 in a frame's darkest
   tiles (p95 1.5 stops on the synthetic tiles) ([Vignette and grain](#vignette-and-grain)).
 - Refine Saturation in HDR ([Tone curves](#tone-curves)).
-- Masks: a mask's Whites, Blacks, Hue and Saturation (one Camera Raw setting each,
+- Masks: a mask's Whites, Blacks, Hue and Saturation outside 0 to +50 (one Camera Raw setting each,
   unlike SDR's operators above white), Temp's strength (SDR's), Shadows' HDR error
   (twice SDR's on the patches), and masks on the GPU's HDR preview ([Masks](#masks)).
 - Clarity beyond ±50 and Dehaze below −50 in HDR ([Presence](#presence)).

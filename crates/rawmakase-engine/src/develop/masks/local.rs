@@ -195,6 +195,34 @@ pub(crate) fn color_hdr_strength(rgb: [f32; 3]) -> f32 {
 }
 /// Where a mask's Color starts and ends fading out in an HDR master.
 const COLOR_FADE: [f32; 2] = [0.25, 1.];
+/// A mask's positive Saturation in the HDR master, on linear ProPhoto RGB `p`: Camera
+/// Raw 18.7's keeps each colour's value (its largest channel) and hue and raises its
+/// HSV saturation as a power of itself, s^(1 − 0.74 k^1.4) at Saturation k, at every
+/// brightness (fitted on the synthetic patches at +50 and +100; on six photos at +50 it
+/// renders within the acceptance rule where SDR's Oklab operator doesn't:
+/// docs/records/hdr-stage1-results.md#masks). Other values are left to
+/// [`hue_saturation`].
+pub(crate) fn saturate_hdr(d: &LocalDelta, p: [f32; 3]) -> [f32; 3] {
+    let k = d[slot::SATURATION];
+    if k <= 0. {
+        return p;
+    }
+    let max = p.into_iter().fold(f32::NEG_INFINITY, f32::max);
+    let min = p.into_iter().fold(f32::INFINITY, f32::min);
+    if max <= 0. || min >= max {
+        return p;
+    }
+    let s = 1. - min.max(0.) / max;
+    if s <= 1e-6 {
+        return p;
+    }
+    let to = s.powf(1. - SATURATE_SCALE * k.min(1.).powf(SATURATE_POWER));
+    let scale = to / s;
+    p.map(|v| max - (max - v) * scale)
+}
+/// [`saturate_hdr`]'s exponent's scale and power in the Saturation slider (0 to 1).
+const SATURATE_SCALE: f32 = 0.74;
+const SATURATE_POWER: f32 = 1.4;
 /// Local Hue (degrees) and Saturation on Oklab.
 pub(crate) fn hue_saturation(d: &LocalDelta, mut lab: [f32; 3]) -> [f32; 3] {
     let (hue, saturation) = (d[slot::HUE], d[slot::SATURATION]);
@@ -212,6 +240,25 @@ pub(crate) fn hue_saturation(d: &LocalDelta, mut lab: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// The master's mask Saturation keeps a colour's value and hue: its largest
+    /// channel stays, and the others move away from it in proportion. A gray and
+    /// negative Saturation are left alone.
+    #[test]
+    fn hdr_saturation_keeps_a_colours_value_and_hue() {
+        let mut d = [0.; LEN];
+        d[slot::SATURATION] = 0.5;
+        // Value 3 (above white), saturation 0.5, the middle channel halfway.
+        let p = [3., 2.25, 1.5];
+        let q = saturate_hdr(&d, p);
+        assert_eq!(q[0], 3.);
+        let s = 1. - q[2] / q[0];
+        let expected = 0.5f32.powf(1. - 0.74 * 0.5f32.powf(1.4));
+        assert!((s - expected).abs() < 1e-5, "{s} {expected}");
+        assert!(((q[0] - q[1]) / (q[0] - q[2]) - 0.5).abs() < 1e-5);
+        assert_eq!(saturate_hdr(&d, [2.; 3]), [2.; 3]);
+        d[slot::SATURATION] = -0.5;
+        assert_eq!(saturate_hdr(&d, p), p);
+    }
     #[test]
     fn deltas_scale_with_amount_and_neutral_color_adds_nothing() {
         let a = LocalAdjust {

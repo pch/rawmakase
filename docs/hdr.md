@@ -509,6 +509,10 @@ Raw's SDR one ([record](records/hdr-stage1-results.md#masks)):
 - **Color**: SDR's tint of the scene, in full up to a quarter of white and fading out
   by white on the pixel's brightest channel (`masks::local::color_hdr_strength`), as
   Camera Raw's stops tinting there.
+- **Saturation** from 0 to +50, overlapping masks added: Camera Raw's HDR mask
+  Saturation, which keeps a colour's value and hue and raises its HSV saturation as a
+  power of itself, s^(1 − 0.74 k^1.4) at Saturation k, at every brightness
+  (`masks::local::saturate_hdr`). The SDR rendition keeps SDR's Oklab operator.
 - **Sharpness and Noise**: SDR's operators on the master's encoded values, as global
   sharpening is; they change detail, not tone.
 - **Whites**: Camera Raw's HDR mask Whites, a gain over brightness of one measured
@@ -516,12 +520,13 @@ Raw's SDR one ([record](records/hdr-stage1-results.md#masks)):
   change SDR's mask curve makes at that setting, still rising at 16 times white where
   SDR's curve falls.
 
-Blacks, Hue and Saturation in an active mask refuse the master by name ("A mask's
-Blacks …"). Camera Raw's HDR mask Blacks −50 brightens light above white (+0.39 stop at
-16 times) and crushes the shadows harder than its SDR one. SDR's mask
-Saturation brightens saturated colours (×1.11 in value at +50, Camera Raw's ×1.004),
-which white's clip hides in SDR: in the master it is 0.098 stop off at every level.
-Hue is the same Oklab operator, not measured. Highlights has no HDR rendering
+Blacks and Hue in an active mask refuse the master by name ("A mask's
+Blacks …"), and so does Saturation below 0 or above +50. Camera Raw's HDR mask Blacks
+−50 brightens light above white (+0.39 stop at 16 times) and crushes the shadows harder
+than its SDR one. SDR's mask Saturation brightens saturated colours (×1.11 in value at
++50, Camera Raw's ×1.004), which white's clip hides in SDR; the master's own operator
+misses above white at +100 on the colour patches and at −50. Hue is SDR's Oklab
+rotation, further from Camera Raw above white than the SDR rendition is below it. Highlights has no HDR rendering
 globally. A mask's Clarity renders where, with the photo's own and a look's, every
 pixel stays from 0 to +50, the global slider's range: it adds to the photo's in the
 global slider's stage. The check is conservative, taking each mask's Clarity at its
@@ -538,7 +543,7 @@ something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
 channel's) whose last point is left of white, Clarity beyond ±50, Dehaze below −50, the
 colour mixer's Luminance above +40, a darkening vignette's Highlights,
-a mask's Blacks, Hue, Saturation or Highlights, a mask's Clarity outside 0 to +50 with the photo's own, a mask's Dehaze outside 0 to +30, Defringe with Black & White ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
+a mask's Blacks, Hue or Highlights, a mask's Saturation outside 0 to +50, a mask's Clarity outside 0 to +50 with the photo's own, a mask's Dehaze outside 0 to +30, Defringe with Black & White ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
 which the look sets, …"; Adobe Vivid's Clarity +10 renders), and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
 asked for.

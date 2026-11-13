@@ -210,7 +210,7 @@ const DEHAZE_MEASURED: f32 = -0.5;
 /// (the SDR operators, unclipped),
 /// Point Color (its swatches in colour grading's HDR domain),
 /// masks whose sliders are Temp, Tint, Exposure, Contrast, Shadows, Texture, Color,
-/// Sharpness and Noise, Clarity and Dehaze within [`masked_clarity_measured`] and
+/// Sharpness and Noise, Saturation within [`masked_saturation_measured`], Clarity and Dehaze within [`masked_clarity_measured`] and
 /// [`masked_dehaze_measured`],
 /// camera profiles
 /// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks (their
@@ -251,6 +251,9 @@ fn check(r: &super::recipe::Recipe, fold: bool) -> Result<()> {
         .find_map(|g| unrendered_mask_slider(&g.adjust))
     {
         anyhow::bail!("A mask's {name} is not supported in HDR yet");
+    }
+    if !masked_saturation_measured(&r) {
+        anyhow::bail!("A mask's Saturation outside 0 to +50 is not supported in HDR yet");
     }
     if !masked_clarity_measured(&r) {
         anyhow::bail!(
@@ -352,20 +355,39 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
 /// Lightroom name (docs/hdr.md#masks). A mask renders in the master with Temp and Tint,
 /// Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise. Camera Raw 18.7's
 /// HDR Whites and Blacks in a mask follow neither the SDR mask's curves nor the global
-/// sliders' (docs/records/hdr-stage1-results.md#masks); SDR's Saturation, which Hue
-/// shares, brightens colours Camera Raw's leaves alone, by more in the master than in
-/// SDR, where white clips it; Highlights has no HDR rendering globally. A mask's
-/// Clarity and Dehaze are bounded with the photo's own ([`masked_clarity_measured`],
+/// sliders' (docs/records/hdr-stage1-results.md#masks); SDR's Hue rotation is further
+/// from Camera Raw's above white than the SDR rendition is below it; Highlights has no
+/// HDR rendering globally. A mask's Saturation, Clarity and Dehaze are bounded
+/// ([`masked_saturation_measured`], [`masked_clarity_measured`],
 /// [`masked_dehaze_measured`]).
 fn unrendered_mask_slider(a: &crate::model::masks::LocalAdjust) -> Option<&'static str> {
     [
         ("Highlights", a.highlights),
         ("Blacks", a.blacks),
         ("Hue", a.hue),
-        ("Saturation", a.saturation),
     ]
     .into_iter()
     .find_map(|(name, v)| (v != 0.).then_some(name))
+}
+
+/// The most Saturation (−1 to 1) the masks add to a pixel in the HDR master, which
+/// raises a colour's saturation keeping its value, as Camera Raw's HDR mask Saturation
+/// does: at +50 on six photos it is within the acceptance rule; at +100 on the colour
+/// patches, and below 0, it is further from Camera Raw above white than the SDR
+/// rendition is below it (docs/records/hdr-stage1-results.md#masks).
+const MASK_SATURATION_MEASURED: f32 = 0.5;
+
+/// Whether the masks' Saturation stays in the range measured for the master, 0 to +50,
+/// overlapping masks added. As for Clarity, each active mask's Saturation at its Amount
+/// is taken as reaching every pixel.
+fn masked_saturation_measured(r: &super::recipe::Recipe) -> bool {
+    let masks: Vec<f32> = r
+        .masks
+        .iter()
+        .filter(|g| g.is_active() && g.adjust.saturation != 0.)
+        .map(|g| g.adjust.saturation * g.amount)
+        .collect();
+    masks.iter().all(|v| *v >= 0.) && masks.iter().sum::<f32>() <= MASK_SATURATION_MEASURED
 }
 
 /// Whether every pixel's Clarity stays in the range the global slider renders in, 0 to
@@ -726,7 +748,7 @@ mod tests {
             ("Clarity", |a| a.clarity = -0.2),
             ("Dehaze", |a| a.dehaze = -0.2),
             ("Hue", |a| a.hue = 10.),
-            ("Saturation", |a| a.saturation = 0.2),
+            ("Saturation", |a| a.saturation = -0.2),
         ];
         for (name, set) in refused {
             let mut edit = masked.clone();
@@ -734,6 +756,22 @@ mod tests {
             let error = check_recipe(&edit).unwrap_err().to_string();
             assert!(error.contains(&format!("A mask's {name}")), "{error}");
         }
+        // Saturation renders from 0 to +50, overlapping masks added.
+        let mut saturation = masked.clone();
+        saturation.masks[0].adjust.saturation = 0.5;
+        assert!(check_recipe(&saturation).is_ok());
+        let mut more = saturation.clone();
+        more.masks[0].adjust.saturation = 0.6;
+        let error = check_recipe(&more).unwrap_err().to_string();
+        assert!(
+            error.contains("A mask's Saturation outside 0 to +50"),
+            "{error}"
+        );
+        let mut second = saturation.masks[0].clone();
+        second.adjust.saturation = 0.2;
+        second.amount = 0.5;
+        saturation.masks.push(second);
+        assert!(check_recipe(&saturation).is_err());
         // Clarity renders where, with the photo's own, it stays from 0 to +50, as the
         // global slider does; overlapping masks add.
         let mut clarity = masked.clone();
