@@ -303,9 +303,14 @@ fn every_camera_raw_key_reads_writes_and_groups_as_before() -> Result<()> {
             }
         }
     }
-    // No later key undid an earlier one: setting each again changes nothing.
+    // No later key undid an earlier one: setting each again changes nothing. CropAngle
+    // turns the crop the corners make, and Camera Raw ignores it on the whole frame,
+    // so over the crop set after it, it turns the photo (#1059).
     for set in &chosen {
         let (key, value) = set.split_once('=').expect("key=value");
+        if key == "CropAngle" {
+            continue;
+        }
         let again = read(&attribute(key, value))?.apply(&rich, &m, &[], None)?;
         let kept = |r: &Recipe| {
             fields(r)

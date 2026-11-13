@@ -1,7 +1,7 @@
 use super::*;
 use crate::xml::ns::{CRS, RDF};
 use crate::{camera_data::Metadata, model::recipe::Recipe};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::Path;
 fn xml(attrs: &str, body: &str) -> String {
     format!(
@@ -503,6 +503,188 @@ fn lightroom_crops_of_a_photo_held_upright_are_of_the_unrotated_frame() -> Resul
     );
     let back = parse(Path::new("top.xmp"), &preset)?.apply(&base, &cw, &[], None)?;
     near(back.crop, drawn.crop);
+    Ok(())
+}
+/// Lightroom's `CropAngle` turns the photo the other way from Straighten, and its
+/// corners are opposite corners of the turned crop (#1059). Sizes are Camera Raw's
+/// renders of a synthetic 970 × 742 chart (docs/transform.md).
+#[test]
+fn lightroom_crop_angle_turns_its_crop() -> Result<()> {
+    use crate::model::image_frame::straighten_zoom;
+    let m = Metadata {
+        width: 970,
+        height: 742,
+        wb: [2., 1., 1.5],
+        daylight_wb: [2., 1., 1.5],
+        ..Default::default()
+    };
+    let base = Recipe::with_profiles(&m, &[]);
+    let apply = |m: &Metadata, attrs: &str| -> Result<Recipe> {
+        parse(Path::new("photo.xmp"), &xml(attrs, ""))?.apply(&base, m, &[], None)
+    };
+    // The output's size in the photo's pixels, as shown.
+    let size = |r: &Recipe, [w, h]: [f32; 2]| {
+        let zoom = straighten_zoom(r.straighten, [w, h]);
+        [
+            (r.crop[2] - r.crop[0]) * w / zoom,
+            (r.crop[3] - r.crop[1]) * h / zoom,
+        ]
+    };
+    let near = |got: [f32; 2], want: [f32; 2]| {
+        assert!(
+            (got[0] - want[0]).abs() < 1. && (got[1] - want[1]).abs() < 1.,
+            "{got:?} != {want:?}"
+        );
+    };
+    let turned = r#"c:HasCrop="True" c:CropLeft="0.1" c:CropTop="0.1" c:CropRight="0.9" c:CropBottom="0.9" c:CropAngle="5""#;
+    let r = apply(&m, turned)?;
+    assert_eq!(r.straighten, -5.);
+    near(size(&r, [970., 742.]), [825., 524.]);
+    // On a photo the camera turned a quarter, the same crop of the sensor, turned with it.
+    let portrait = Metadata {
+        flip: 6,
+        ..m.clone()
+    };
+    let p = apply(&portrait, turned)?;
+    assert_eq!(p.straighten, -5.);
+    near(size(&p, [742., 970.]), [524., 825.]);
+    // With an angle but not all four corners, Camera Raw leaves the photo unturned.
+    for attrs in [
+        r#"c:CropAngle="5""#,
+        r#"c:HasCrop="True" c:CropAngle="5""#,
+        r#"c:HasCrop="False" c:CropAngle="5""#,
+    ] {
+        let r = apply(&m, attrs)?;
+        assert_eq!((r.straighten, r.crop), (0., [0., 0., 1., 1.]), "{attrs}");
+    }
+    // Some corners alone move their sides, as a preset that gives them does, but don't
+    // turn the photo. (A sidecar with some corners Camera Raw leaves uncropped.)
+    let left = apply(&m, r#"c:HasCrop="True" c:CropLeft="0.1" c:CropAngle="5""#)?;
+    assert_eq!((left.straighten, left.crop), (0., [0.1, 0., 1., 1.]));
+    // Corners on the whole frame turn, shrunk to fit at their aspect (Camera Raw: 922 ×
+    // 585, shrunk to the photo itself).
+    let whole = apply(
+        &m,
+        r#"c:HasCrop="True" c:CropLeft="0" c:CropTop="0" c:CropRight="1" c:CropBottom="1" c:CropAngle="5""#,
+    )?;
+    assert_eq!(whole.straighten, -5.);
+    let [w, h] = size(&whole, [970., 742.]);
+    assert!((w / h / (922. / 585.) - 1.).abs() < 0.005, "{w} × {h}");
+
+    // Written back, Lightroom's corners and angle, which read back as the same edit.
+    let photo = write::Photo {
+        settings: true,
+        ..Default::default()
+    };
+    for (m, r) in [(&m, &r), (&portrait, &p)] {
+        let packet = write::packet(r, m, &photo);
+        assert!(packet.contains(r#"crs:CropAngle="+5.00""#), "{packet}");
+        for (key, value) in [
+            ("Left", "0.1"),
+            ("Top", "0.1"),
+            ("Right", "0.9"),
+            ("Bottom", "0.9"),
+        ] {
+            assert!(
+                packet.contains(&format!("crs:Crop{key}=\"{value}00000\"")),
+                "{packet}"
+            );
+        }
+    }
+    // A photo straightened but not cropped is written as the largest crop at its
+    // aspect inside the turned photo, not the whole frame Camera Raw would leave level.
+    let straightened = Recipe {
+        straighten: 3.,
+        ..base.clone()
+    };
+    let packet = write::packet(&straightened, &m, &photo);
+    assert!(packet.contains(r#"crs:CropAngle="-3.00""#), "{packet}");
+    assert!(packet.contains(r#"crs:HasCrop="True""#), "{packet}");
+    assert!(!packet.contains(r#"crs:CropLeft="0.000000""#), "{packet}");
+    let back = parse(Path::new("back.xmp"), &packet)?.apply(&base, &m, &[], None)?;
+    assert_eq!(back.straighten, 3.);
+    assert!(
+        back.crop
+            .iter()
+            .zip([0., 0., 1., 1.])
+            .all(|(a, b)| (a - b).abs() < 1e-5),
+        "{:?}",
+        back.crop
+    );
+
+    // Presets RAWmakase wrote before (marked 2) hold its own crop and Straighten.
+    let legacy = apply(&m, &format!(r#"c:RAWmakasePreset="2" {turned}"#))?;
+    assert_eq!((legacy.straighten, legacy.crop), (5., [0.1, 0.1, 0.9, 0.9]));
+    // Presets written now carry Lightroom's, and read back as drawn.
+    let drawn = Recipe {
+        straighten: 4.,
+        crop: [0.1, 0.2, 0.7, 0.9],
+        ..base.clone()
+    };
+    let preset = crate::xmp::preset_write::preset(
+        &drawn,
+        &m,
+        &crate::xmp::preset_write::PresetInfo::new("Level", "Mine"),
+        &crate::model::settings_groups::GroupSelection::all(),
+    );
+    assert!(preset.contains(r#"crs:CropAngle="-4.00""#), "{preset}");
+    let back = parse(Path::new("level.xmp"), &preset)?.apply(&base, &m, &[], None)?;
+    assert_eq!(back.straighten, 4.);
+    assert!(
+        back.crop
+            .iter()
+            .zip(drawn.crop)
+            .all(|(a, b)| (a - b).abs() < 1e-5),
+        "{:?}",
+        back.crop
+    );
+    Ok(())
+}
+/// A crop at the smallest size, written and read back at any angle and camera
+/// orientation, loads: the corners' six decimals and the orientation's turn leave it
+/// just under the minimum, which is widened back (found in #1072).
+#[test]
+fn the_smallest_crop_reads_back_in_every_orientation() -> Result<()> {
+    let photo = write::Photo {
+        settings: true,
+        ..Default::default()
+    };
+    for flip in [0, 3, 5, 6] {
+        let m = Metadata {
+            width: 970,
+            height: 742,
+            flip,
+            wb: [2., 1., 1.5],
+            daylight_wb: [2., 1., 1.5],
+            ..Default::default()
+        };
+        let base = Recipe::with_profiles(&m, &[]);
+        for straighten in [-44.99, -5., -1.23, 0., 1.23, 30.] {
+            for crop in [
+                [0.75, 0.2, 0.7600001, 0.9],
+                [0.3, 0.4, 0.3100001, 0.4100001],
+                [0., 0.9899999, 0.5, 1.],
+            ] {
+                let r = Recipe {
+                    straighten,
+                    crop,
+                    ..base.clone()
+                };
+                let packet = write::packet(&r, &m, &photo);
+                let back = parse(Path::new("min.xmp"), &packet)?
+                    .apply(&base, &m, &[], None)
+                    .with_context(|| format!("flip {flip}, {straighten}°, {crop:?}"))?;
+                assert!(
+                    back.crop
+                        .iter()
+                        .zip(crop)
+                        .all(|(a, b)| (a - b).abs() < 1e-4),
+                    "flip {flip}, {straighten}°, {crop:?}: {:?}",
+                    back.crop
+                );
+            }
+        }
+    }
     Ok(())
 }
 #[test]

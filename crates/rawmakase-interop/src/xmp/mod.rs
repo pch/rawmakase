@@ -1,5 +1,6 @@
 //! Namespace-aware Adobe settings parsing and application to a develop recipe.
 mod apply;
+mod crop;
 pub(crate) use apply::AUTO_TONE_KEYS;
 pub mod descriptive;
 mod filter_list;
