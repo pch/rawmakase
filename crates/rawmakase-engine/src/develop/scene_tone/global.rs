@@ -21,6 +21,13 @@
 //!   `black_correction` replaces it with the photo's response, rather than adding
 //!   a second black curve. CPU and GPU use the same composed samples.
 //!
+//! - `blacks_none.bin`: the output without the default black (DefaultBlackRender None)
+//!   to its positive Blacks render, at Blacks 0 to +100 in steps of 12.5, over log2
+//!   outputs −16 to 0 in eighth stops, f32. Camera Raw's positive Blacks is a function
+//!   of the scene value, not of the default render: with the default black, Blacks +25
+//!   renders exactly as no default black at Blacks 0, and +100 as no default black at
+//!   +100, whatever the photo's dark key ([`positive_blacks`]).
+//!
 //! - `masks.bin`: a mask's Whites, then its Blacks: the global stage's output to the
 //!   output with the mask, at −1, −0.75, −0.5, −0.25, 0.25, 0.5, 0.75 and 1, over log2
 //!   outputs −16 to 0 in eighth stops, f32. Camera Raw applies them after the global
@@ -34,6 +41,13 @@ static WHITE: &[u8] = include_bytes!("white.bin");
 static BLACKS: &[u8] = include_bytes!("blacks.bin");
 static MASKS: &[u8] = include_bytes!("masks.bin");
 static DEFAULT_BLACK: &[u8] = include_bytes!("default_black.bin");
+static BLACKS_NONE: &[u8] = include_bytes!("blacks_none.bin");
+/// Rows of `blacks_none.bin`: Blacks 0 to 1 in steps of [`SLIDER_STEP`].
+const NONE_ROWS: usize = 9;
+/// The Blacks position at which Camera Raw has removed the default black: +25 renders
+/// as a profile without one does at 0, and the rest of the slider as that profile's
+/// Blacks from 0 to +100 (measured on ramps with dark keys −14 to −8, 2026-11-12).
+const BLACK_REMOVED: f32 = 0.25;
 /// Absolute scene log luminance of the darkest region, including Exposure.
 /// The measured response stops changing above −7 stops.
 const DEFAULT_BLACK_KEYS: [f32; 15] = [
@@ -248,17 +262,24 @@ impl GlobalTone {
         // The white probes' darkest patch is 14 stops below their maximum.
         // Their black response is already present; adding the photo's response
         // directly would apply black rendering twice.
-        let default_black = black_point
-            .then(|| black_correction(dark_key, top - 14.))
-            .filter(|curve| {
-                // An output LUT interpolated on a log input grid does not render
-                // the identity exactly between knots. Bypass a true no-op.
-                curve
-                    .iter()
-                    .enumerate()
-                    .any(|(k, value)| *value != (Y_FIRST + k as f32 * Y_STEP).exp2())
-            });
-        let blacks_curve = (blacks != 0.).then(|| {
+        // With the default black, positive Blacks is one curve with it
+        // ([`positive_blacks`]); otherwise Blacks follows the default black.
+        let together = black_point && blacks > 0.;
+        let default_black = if together {
+            Some(positive_blacks(blacks, dark_key, top - 14.))
+        } else {
+            black_point
+                .then(|| black_correction(dark_key, top - 14.))
+                .filter(|curve| {
+                    // An output LUT interpolated on a log input grid does not render
+                    // the identity exactly between knots. Bypass a true no-op.
+                    curve
+                        .iter()
+                        .enumerate()
+                        .any(|(k, value)| *value != (Y_FIRST + k as f32 * Y_STEP).exp2())
+                })
+        };
+        let blacks_curve = (blacks != 0. && !together).then(|| {
             let corners = blacks_corners(black_key, blacks);
             Box::new(std::array::from_fn(|k| blacks_sample(&corners, k)))
         });
@@ -360,7 +381,13 @@ impl GlobalTone {
                 shadows,
                 dark_keys
                     .iter()
-                    .flat_map(|key| black_correction(*key, self.top - 14.).to_vec())
+                    .flat_map(|key| {
+                        if self.blacks > 0. {
+                            positive_blacks(self.blacks, *key, self.top - 14.).to_vec()
+                        } else {
+                            black_correction(*key, self.top - 14.).to_vec()
+                        }
+                    })
                     .collect(),
             ));
         }
@@ -611,19 +638,88 @@ fn black_correction(key: f32, calibration_key: f32) -> Box<[f32; Y_SAMPLES]> {
     let desired: [f32; Y_SAMPLES] = std::array::from_fn(|k| default_black(key, k));
     Box::new(std::array::from_fn(|k| {
         let y = (Y_FIRST + k as f32 * Y_STEP).exp2();
-        let input = if y < calibration[0] {
-            y / calibration[0].max(1e-12) * Y_FIRST.exp2()
-        } else {
-            let j = calibration
-                .partition_point(|v| *v < y)
-                .clamp(1, Y_SAMPLES - 1);
-            let t = ((y - calibration[j - 1]) / (calibration[j] - calibration[j - 1]).max(1e-12))
-                .clamp(0., 1.);
-            (Y_FIRST + (j as f32 - 1. + t) * Y_STEP).exp2()
-        };
+        let input = without_black(&calibration, y);
         let before = evaluate(&calibration, Y_FIRST, Y_STEP, input);
         let after = evaluate(&desired, Y_FIRST, Y_STEP, input);
         (y + (after - before)).max(0.)
+    }))
+}
+/// The output without a default black that the None → Auto transfer `calibration`
+/// maps to `y`.
+fn without_black(calibration: &[f32; Y_SAMPLES], y: f32) -> f32 {
+    if y < calibration[0] {
+        return y / calibration[0].max(1e-12) * Y_FIRST.exp2();
+    }
+    let j = calibration
+        .partition_point(|v| *v < y)
+        .clamp(1, Y_SAMPLES - 1);
+    let t =
+        ((y - calibration[j - 1]) / (calibration[j] - calibration[j - 1]).max(1e-12)).clamp(0., 1.);
+    (Y_FIRST + (j as f32 - 1. + t) * Y_STEP).exp2()
+}
+/// The default black and positive Blacks (0 to 1) as one curve over white-curve outputs,
+/// which carry the black response of `calibration_key`.
+///
+/// Camera Raw 18.7's positive Blacks works on the scene value, not on the default
+/// render: on ramps with dark keys from −14 to −8, Blacks +25 with the default black
+/// equals the render without one to six digits, and +100 equals +100 without one. So
+/// from [`BLACK_REMOVED`] up the output is `blacks_none.bin`'s curve of the value
+/// without the default black, at the rest of the slider's travel; the photo's dark key
+/// plays no part (within 0.011 EV RMS of Camera Raw on those ramps, where Blacks read
+/// after the photo's own default black was 0.33 to 1.05 EV off below a key of −8).
+///
+/// Below [`BLACK_REMOVED`] the default black fades out, faster near +25 and by an
+/// amount that depends on the key (at +12.5, 0.90 of it is left at a key of −8 and 0.69
+/// at −12). `blacks.bin`'s first row is that fade measured at a key of −8. The output
+/// goes from the photo's default black alone to the value without it by the share of
+/// the way that row has gone at the same scene value: exact at a key of −8, within 0.03
+/// to 0.09 EV RMS at +6, +12.5 and +19 on a ramp with a key of −12, and never darker
+/// for a higher Blacks. Reading `blacks.bin` after the photo's own default black
+/// instead overshoots the value at +25 when that black is darker than the row's.
+fn positive_blacks(blacks: f32, key: f32, calibration_key: f32) -> Box<[f32; Y_SAMPLES]> {
+    let calibration: [f32; Y_SAMPLES] = std::array::from_fn(|k| default_black(calibration_key, k));
+    let none = |blacks: f32| -> [f32; Y_SAMPLES] {
+        let (r, t) = bracket(blacks, 0., SLIDER_STEP, NONE_ROWS);
+        std::array::from_fn(|k| {
+            value(BLACKS_NONE, r * Y_SAMPLES + k) * (1. - t)
+                + value(BLACKS_NONE, (r + 1) * Y_SAMPLES + k) * t
+        })
+    };
+    if blacks >= BLACK_REMOVED {
+        let row = none((blacks - BLACK_REMOVED) / (1. - BLACK_REMOVED));
+        return Box::new(std::array::from_fn(|k| {
+            let y = (Y_FIRST + k as f32 * Y_STEP).exp2();
+            evaluate(&row, Y_FIRST, Y_STEP, without_black(&calibration, y))
+        }));
+    }
+    let row = |blacks: f32| -> [f32; Y_SAMPLES] {
+        let corners = blacks_corners(BLACK_KEYS[0], blacks);
+        std::array::from_fn(|k| blacks_sample(&corners, k))
+    };
+    // The row at 0 is measured too, and not exactly the identity: the share is counted
+    // from it, so that the fade starts at nothing.
+    let (measured_zero, measured, measured_removed) = (row(0.), row(blacks), row(BLACK_REMOVED));
+    let photo: [f32; Y_SAMPLES] = std::array::from_fn(|k| default_black(key, k));
+    let reference: [f32; Y_SAMPLES] = std::array::from_fn(|k| default_black(BLACK_KEYS[0], k));
+    let removed = none(0.);
+    Box::new(std::array::from_fn(|k| {
+        let y = (Y_FIRST + k as f32 * Y_STEP).exp2();
+        let input = without_black(&calibration, y);
+        let before = evaluate(&calibration, Y_FIRST, Y_STEP, input);
+        let after = |response: &[f32; Y_SAMPLES]| {
+            (y + (evaluate(response, Y_FIRST, Y_STEP, input) - before)).max(0.)
+        };
+        // How far the measured fade has gone at this scene value.
+        let reference = after(&reference);
+        let at = |row: &[f32; Y_SAMPLES]| evaluate(row, Y_FIRST, Y_STEP, reference);
+        let (start, now, end) = (at(&measured_zero), at(&measured), at(&measured_removed));
+        let share = if end - start > 1e-9 {
+            ((now - start) / (end - start)).clamp(0., 1.)
+        } else {
+            blacks / BLACK_REMOVED
+        };
+        let (low, high) = (after(&photo), evaluate(&removed, Y_FIRST, Y_STEP, input));
+        low + (high - low).max(0.) * share
     }))
 }
 /// DNG RGBTone: `curve` maps the brightest and darkest channel, and the middle one
@@ -899,6 +995,109 @@ mod tests {
                 keyed(-14., false).apply([x; 3])
             );
         }
+    }
+
+    /// Camera Raw 18.7 on a neutral ramp whose darkest level is 2^-10 (sensor white 4,
+    /// DefaultBlackRender Auto): linear output at six scene values for Blacks +25, +62.5
+    /// and +100. Blacks read after the photo's own default black rendered 2^-9 to 2^-7
+    /// 0.3 to 0.8 EV too light here (#474).
+    #[test]
+    fn positive_blacks_follows_camera_raw_below_the_measured_key() {
+        const SCENE: [f32; 6] = [
+            0.001960226,
+            0.003992238,
+            0.007727906,
+            0.01573882,
+            0.06204801,
+            0.2446153,
+        ];
+        const CAMERA_RAW: [(f32, [f32; 6]); 3] = [
+            (
+                0.25,
+                [
+                    0.00195318, 0.00397197, 0.00775794, 0.015767, 0.0621517, 0.244442,
+                ],
+            ),
+            (
+                0.625,
+                [
+                    0.00264288, 0.00533213, 0.010309, 0.0204643, 0.0738112, 0.257927,
+                ],
+            ),
+            (
+                1.,
+                [
+                    0.00363501, 0.0072665, 0.0138012, 0.0266115, 0.0865195, 0.269715,
+                ],
+            ),
+        ];
+        for (blacks, outputs) in CAMERA_RAW {
+            let tone = GlobalTone::new([2.; 4], 0., blacks, -10., -10., true);
+            for (x, y) in SCENE.into_iter().zip(outputs) {
+                let ours = tone.apply([x; 3])[1];
+                assert!(
+                    (ours / y).log2().abs() < 0.03,
+                    "{blacks} at {x}: {ours}, {y}"
+                );
+            }
+        }
+    }
+
+    /// From +25 up the photo's dark key plays no part; below it the curve meets the
+    /// default black at 0 and the key-free curve at +25 without a step.
+    #[test]
+    fn positive_blacks_leaves_the_default_black_continuously() {
+        let tone = |blacks: f32, dark: f32| GlobalTone::new([2.; 4], 0., blacks, dark, dark, true);
+        for x in [2f32.powf(-9.), 2f32.powf(-7.), 2f32.powf(-5.), 0.18] {
+            let at = |blacks: f32, dark: f32| tone(blacks, dark).apply([x; 3])[1];
+            assert_eq!(at(0.5, -12.), at(0.5, -8.5));
+            assert!((at(0.001, -11.) / at(0., -11.) - 1.).abs() < 0.01);
+            assert!((at(1e-6, -11.) / at(0., -11.) - 1.).abs() < 1e-4);
+            assert!((at(0.249, -11.) / at(0.25, -11.) - 1.).abs() < 0.01);
+            assert!(at(0.1, -11.) > at(0., -11.) && at(0.25, -11.) > at(0.1, -11.));
+        }
+        // The smallest Blacks changes nothing, down to the darkest values and at a
+        // calibration key between the measured ones (a photo whose top is 0.525).
+        for dark in [-14., -12., -9.3] {
+            let tone =
+                |blacks: f32| GlobalTone::new([1., 0.525, 0.525, 1.], 0., blacks, dark, dark, true);
+            for x in [
+                2f32.powf(-18.),
+                2f32.powf(-16.),
+                2f32.powf(-13.),
+                2f32.powf(-9.),
+                0.1,
+            ] {
+                let (zero, tiny) = (tone(0.).apply([x; 3])[1], tone(1e-6).apply([x; 3])[1]);
+                assert!(
+                    (tiny - zero).abs() <= 1e-4 * zero,
+                    "{dark} {x}: {tiny}, {zero}"
+                );
+            }
+        }
+        // Raising Blacks never darkens, at any dark key (`blacks.bin` read after a
+        // darker default black than its own overshoots the value at +25).
+        for dark in [-14., -11., -8.] {
+            for x in [
+                0.0015522925,
+                2f32.powf(-11.),
+                2f32.powf(-7.),
+                2f32.powf(-4.),
+                0.18,
+            ] {
+                let mut last = 0.;
+                for step in 0..=100 {
+                    let y = tone(step as f32 / 100., dark).apply([x; 3])[1];
+                    assert!(y >= last * 0.9999, "{dark} {x} +{step}: {y} after {last}");
+                    last = y;
+                }
+            }
+        }
+        // Its masks' Shadows rows carry the same curve.
+        let mut masked = tone(0.5, -11.);
+        masked.set_shadow_black(0.3, &[-11.; 11]);
+        let (_, rows) = masked.shadow_black_samples().unwrap();
+        assert_eq!(&rows[..Y_SAMPLES], masked.default_black_samples().unwrap());
     }
 
     #[test]
