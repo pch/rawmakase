@@ -2167,6 +2167,9 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         // An ordinary profile's sRGB-encoded 3D look table, as camera-matching
         // profiles have.
         with(profile.clone().with_test_srgb_look()),
+        // An HDR profile's, as Nikon's Camera Standard HDR has: on the overrange
+        // encoding.
+        with(profile.clone().with_test_srgb_look().as_hdr_for_test()),
         Recipe {
             exposure: 0.6,
             ..with(profile.clone().with_test_hdr_tables().as_hdr_for_test())

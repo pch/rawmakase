@@ -587,17 +587,10 @@ impl CameraProfile {
     /// grading's HDR domain for its split toning); its sliders are checked as the
     /// user's (`model::hdr::check_recipe`).
     pub fn hdr_tone(&self) -> Result<hdr_tone::HdrTone> {
-        // An ordinary profile's sRGB-encoded table looks up its value as in SDR, the
-        // encoding extended above white (docs/records/hdr-stage1-results.md#srgb-encoded-tables).
-        // How an HDR profile's overrange encoding combines with one is not measured.
-        ensure!(
-            !self.is_hdr()
-                || [&self.hue1, &self.hue2, &self.look]
-                    .into_iter()
-                    .flatten()
-                    .all(|t| !t.srgb),
-            "This HDR profile's sRGB-encoded tables are not supported in HDR yet"
-        );
+        // An sRGB-encoded table looks up its value in its own encoding: an ordinary
+        // profile's as in SDR, the encoding extended above white, and an HDR profile's
+        // on the overrange-encoded value, as Camera Raw 18.7 renders both
+        // (docs/records/hdr-stage1-results.md#srgb-encoded-tables).
         if self.is_hdr() {
             Ok(hdr_tone::HdrTone::Overrange)
         } else {
