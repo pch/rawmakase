@@ -1992,6 +1992,43 @@ Decision, 2026-11-13: Refine Saturation other than 100% (since rendered from 50%
 white (since rendered up to a value at white of 1.06: [Tone curves](#tone-curves)), a darkening vignette's Highlights and a mask's Blacks, Hue and Saturation stay
 refused (mask Saturation from 0 to +50 renders since: above). Look split toning keeps rendering.
 
+### Group 1 refusals re-measured (2026-11-13)
+
+On the frozen family, by the [acceptance rule](#decisions), with `main` after #1081 and
+#1083 (effect error median / p95 in stops, below white HDR / SDR, HDR above white, ΔE_ITP
+added HDR / SDR, medians over the photos):
+
+| Control | Rendering tried | Below white | Above white (allowed) | ΔE_ITP added | |
+| --- | --- | --- | --- | --- | --- |
+| Dehaze −70, twelve photos | the SDR operator, unclipped | 0.261 / 0.243 | 0.128 | +13.51 / +12.49 | misses below white |
+| | its effect ×0.8 to ×1.2 from 1, 2 or 3 stops under white up | 0.266–0.314 / 0.243 | 0.090–0.185 | +13.3 to +14.8 | misses |
+| Band Luminance +100, six photos | the SDR grids faded by channel, as ≤ +40 | 0.031 / 0.035 | 0.058 / 0.200 (0.045 / 0.131) | +1.35 / +1.05 | misses |
+| | stronger by up to ×2 toward white, from 0.2–0.5; fades ending at 0.9–1.4 | 0.031–0.032 / 0.035 | 0.051–0.089 / 0.138–0.416 | +1.32 to +2.20 | misses |
+| Whites +75, twelve photos | the luminance gain of #1067 | 0.036 / 0.027 | 0.074 | +2.01 / +0.84 | misses below white |
+| Whites +100, twelve photos | the same | 0.077 / 0.057 | 0.104 | +4.47 / +1.69 | misses |
+
+- **Dehaze below −50.** Below about three stops under white the master's effect and the
+  SDR rendition's are the same, and both are as far from Camera Raw's. Nearer white the
+  master's HDR curve is steeper than the SDR curve, so the SDR operator's own error
+  there, which changes sign from photo to photo (the Z 8's effect is three times Camera
+  Raw's at a stop under white, the S1M2ES's three quarters), is larger in stops. No
+  strength reshaping near white helps: −70 is at its best unchanged. A mask's negative
+  Dehaze misses for the same reason (−30: 0.198 against 0.184). Both wait on the SDR
+  operator's parity ([parity gaps](parity-gaps.md), negative Dehaze as added haze).
+- **Band Luminance above +40.** Camera Raw's HDR effect at +100 is 1.3–1.6 times the
+  master's from a stop under white to half a stop over it, and none from 1.5 stops over
+  white, where the master's still lifts weak channels by about 0.05 stop. Strengthening
+  toward white trims the p95 (0.200 to 0.138) but leaves the median above white at
+  0.051 or more.
+- **Whites above +50** is unchanged by #1067 below white, where the miss is.
+- A darkening vignette's Highlights, the curves unlike the family (Fujifilm HS20EXR and
+  HS30EXR) and Defringe with Black & White weren't re-measured: the first needs a rule
+  that fits both the tiles and the photos, the others new captures (a batch of B&W with
+  and without Defringe, and of mask Dehaze +60 and +100, on the six photos is
+  prepared).
+
+Decision, 2026-11-13: these stay refused.
+
 ### Decisions
 
 - **When a refused control renders** (2026-11-11). A control the master refuses
