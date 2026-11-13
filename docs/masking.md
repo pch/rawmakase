@@ -58,9 +58,9 @@ models.
   working without them or the runtime. The first selection on a photo takes a few seconds;
   Subject, Background and clicks on the same photo after that are quick, and so is Sky
   again. Sky is the slower one: on the 8-core AMD Ryzen 7 5800X3D it was measured on, the
-  model and the edge took 6.5 seconds a photo on average over 138 photos (median 6.9 s,
-  at most 8.9 s), the photo's render not included; where a tree crown or a lattice calls
-  for the colours' edge, that is about 2 s of it.
+  model and the edge took 4.4 seconds a photo on average over 138 photos (median 4.6 s,
+  at most 6.0 s), the photo's render not included; where a tree crown or a lattice calls
+  for the colours' edge, that is about 0.6 s of it.
 - **Catalog only.** The result is a raster stored in the catalog, so it needs a catalog
   photo. A catalog of the first format asks to **Upgrade catalog…**: a backup copy is
   written beside it, then it becomes the current format version, which older releases
