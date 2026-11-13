@@ -131,7 +131,15 @@ fn develop_settings_round_trip_through_the_exported_xmp() -> Result<()> {
     ] {
         assert!((a - b).abs() < 0.006, "{a} != {b}");
     }
-    assert_eq!(back.crop, r.crop);
+    // Lightroom's corners of the turned crop, to six decimals.
+    assert!(
+        back.crop
+            .iter()
+            .zip(r.crop)
+            .all(|(a, b)| (a - b).abs() < 1e-5),
+        "{:?}",
+        back.crop
+    );
     assert_eq!(back.curve.points.len(), 3);
     assert_eq!(back.upright, r.upright);
     assert!(back.lens_ca);
@@ -184,14 +192,23 @@ fn a_turned_and_mirrored_crop_round_trips_through_xmp() -> Result<()> {
         &[],
         None,
     )?;
-    assert_eq!(back.crop, r.crop);
+    // Lightroom's corners of the turned crop, written to six decimals, give it back
+    // to within their rounding.
+    assert!(
+        back.crop
+            .iter()
+            .zip(r.crop)
+            .all(|(a, b)| (a - b).abs() < 1e-5),
+        "{:?}",
+        back.crop
+    );
     assert_eq!(back.straighten, r.straighten);
     // A lens preset applied on top keeps the crop and angle.
     let lens = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:LensManualDistortionAmount="20" crs:LensProfileEnable="1"/></rdf:RDF></x:xmpmeta>"#;
     let lensed = crate::xmp::parse(Path::new("lens.xmp"), lens)?.apply(&back, &m, &[], None)?;
     assert_ne!(lensed.lens_manual_distortion, back.lens_manual_distortion);
-    assert_eq!(lensed.crop, r.crop);
-    assert_eq!(lensed.straighten, r.straighten);
+    assert_eq!(lensed.crop, back.crop);
+    assert_eq!(lensed.straighten, back.straighten);
     Ok(())
 }
 /// With Constrain Crop the settings carry the crop as rendered, which Camera Raw renders

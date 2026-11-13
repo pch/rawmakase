@@ -33,7 +33,7 @@ fn a7ii_native_neutral_matches_adobe_as_shot() {
         }
         let gains = p.white_balance(actual[0], actual[1], &m).unwrap();
         assert!(gains.iter().all(|v| (v - 1.).abs() < 0.0005));
-        let mut dng = m.clone();
+        let mut dng = m;
         dng.baseline_exposure = Some(0.35);
         dng.dng_neutral_calibration = Some(crate::camera_data::NeutralCalibration {
             gains: [1.01, 1., calibration_blue],
@@ -572,10 +572,11 @@ fn an_identity_look_curve_leaves_hdr_light_above_sixteen() {
 
 /// An ordinary profile's sRGB-encoded look table renders in HDR as in SDR below white,
 /// and keeps light above it (Camera Raw 18.7's HDR render of the Leica D-Lux 7's Adobe
-/// Standard, docs/records/hdr-stage1-results.md#srgb-encoded-tables); an HDR profile's
-/// stays refused.
+/// Standard); an HDR profile's looks up the sRGB encoding of the overrange-encoded
+/// value (its render of Nikon's Camera Standard HDR on the Z5 II and Z50 II,
+/// docs/records/hdr-stage1-results.md#srgb-encoded-tables).
 #[test]
-fn an_ordinary_profiles_srgb_tables_render_in_hdr() {
+fn srgb_encoded_tables_render_in_hdr() {
     let profile = CameraProfile::camera_matrix_default(&x100f())
         .unwrap()
         .with_test_srgb_look();
@@ -588,10 +589,26 @@ fn an_ordinary_profiles_srgb_tables_render_in_hdr() {
         bright.iter().all(|v| v.is_finite() && *v > 2.),
         "{bright:?}"
     );
-    let error = profile
-        .as_hdr_for_test()
-        .hdr_tone()
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("sRGB-encoded"), "{error}");
+    let hdr = profile.as_hdr_for_test();
+    let tone = hdr.hdr_tone().unwrap();
+    let plain = CameraProfile {
+        look: None,
+        ..hdr.clone()
+    };
+    for p in [below, [6., 5., 4.]] {
+        let table = hdr.look.as_ref().unwrap();
+        // The table's own lookup (of the sRGB-encoded value) on the overrange encoding,
+        // then the rest of the finish.
+        let looked = table
+            .apply(p.map(overrange::encode), None, 0.)
+            .map(overrange::decode);
+        let expected = plain.finish_hdr(looked, &tone, None);
+        let got = hdr.finish_hdr(p, &tone, None);
+        assert!(
+            got.iter()
+                .zip(expected)
+                .all(|(a, b)| (a - b).abs() <= 1e-4 * b.abs().max(1.)),
+            "{p:?}: {got:?} {expected:?}"
+        );
+    }
 }

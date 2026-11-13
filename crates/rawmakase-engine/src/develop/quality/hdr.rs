@@ -139,6 +139,15 @@ fn master(
     } else {
         0
     };
+    // Defringe weighs each pixel by the luminance range around it, read as far as its
+    // window reaches beyond what sharpening reads.
+    let defringe_radius = super::hdr_defringe::radius(im);
+    let halo = halo
+        + if r.effects.defringe != [0.; 2] {
+            defringe_radius
+        } else {
+            0
+        };
     let left = x.saturating_sub(halo);
     let top = y.saturating_sub(halo);
     let base = [
@@ -151,6 +160,7 @@ fn master(
     let srgb = crate::color::OutputSpace::Srgb;
     let (mut out, weights) =
         develop::render_base(&toned, &tonal_recipe, &g, base, 0., cancel, None, srgb)?;
+    super::hdr_defringe::apply(&mut out.pixels, out.width as usize, r, defringe_radius);
     // A mask's Sharpness and Noise finish the master as they finish SDR renders, on
     // its encoded values: they change detail, not tone.
     let local_finish = weights
@@ -1530,8 +1540,8 @@ mod tests {
     }
 
     /// Texture renders in the master, on the camera image before tone as in SDR, and
-    /// Clarity up to +50 and Dehaze from −30 to +100 by the SDR operators, unclipped;
-    /// negative Clarity, Clarity above +50 and Dehaze below −30 still refuse it.
+    /// Clarity up to +50 and Dehaze from −50 to +100 by the SDR operators, unclipped;
+    /// Clarity beyond ±50 and Dehaze below −50 still refuse it.
     #[test]
     fn texture_clarity_and_dehaze_render_in_the_master() -> anyhow::Result<()> {
         let im = grays(&[0.2, 0.6, 1.5, 3.]);
@@ -1540,7 +1550,7 @@ mod tests {
         render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
         r.effects.clarity = 0.5;
         render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
-        for dehaze in [0.3, 1., -0.3] {
+        for dehaze in [0.3, 1., -0.3, -0.5] {
             r.effects.dehaze = dehaze;
             render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
         }
@@ -1548,7 +1558,7 @@ mod tests {
         let refused: [(Change, &str); 3] = [
             (|r| r.effects.clarity = 0.6, "Clarity beyond"),
             (|r| r.effects.clarity = -0.6, "Clarity beyond"),
-            (|r| r.effects.dehaze = -0.4, "Dehaze below"),
+            (|r| r.effects.dehaze = -0.6, "Dehaze below"),
         ];
         for (change, reason) in refused {
             let mut edit = r.clone();
@@ -1674,6 +1684,10 @@ mod tests {
             supported_hdr(&looked, &im.metadata),
             "a look's master renders on the GPU"
         );
+        // Defringe reads the luminance around each pixel: the CPU renders it.
+        let mut defringed = hdr_recipe(&im);
+        defringed.effects.defringe = [0.4, 0.];
+        assert!(!supported_hdr(&defringed, &im.metadata), "Defringe");
         // An HDR file's master renders on the GPU from its pseudo-scene, with the
         // recipe the scene renders with; an SDR rendered file has no master.
         let file = hdr_file(2, 2, |_, _| [2.; 3]);
@@ -1799,6 +1813,37 @@ mod tests {
                     region,
                 );
             }
+        }
+
+        // Defringe reads the luminance around each pixel, as far in a region as in the
+        // whole.
+        let fringes = patches(&[
+            [0.004; 3],
+            [0.12, 0.02, 0.16],
+            [0.004; 3],
+            [0.2, 0.03, 0.26],
+        ]);
+        let mut defringed = hdr_recipe(&fringes);
+        defringed.effects.defringe = [0.6, 0.];
+        let defringed = defringed.checked()?;
+        let whole = render_hdr(&fringes, &defringed, None, 0, Cancel::NEVER)?;
+        let plain = render_hdr(
+            &fringes,
+            &hdr_recipe(&fringes).checked()?,
+            None,
+            0,
+            Cancel::NEVER,
+        )?;
+        assert_ne!(
+            whole.pixels, plain.pixels,
+            "Defringe changes the fringe colours"
+        );
+        for region in [[5, 1, 9, 5], [12, 0, 14, 8], [27, 2, 5, 3]] {
+            same(
+                &whole,
+                &render_hdr_region(&fringes, &defringed, None, region, Cancel::NEVER)?,
+                region,
+            );
         }
 
         let file = hdr_file(6, 4, |x, y| [0.5 * x as f32, 0.1 * y as f32, 3.]);

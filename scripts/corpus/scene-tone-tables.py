@@ -30,6 +30,13 @@ linear profile tone curve, so Camera Raw's ProPhoto output is its scene tone sta
   renders at absolute scene dark keys −14 to −7. The runtime replaces the black
   response already present in the white calibration with the photo's response.
   Render and fit it alone with render-default-black and default-black-table.
+- Positive Blacks without the default black (blacks_none.bin): the black ramp from
+  2^-12 with DefaultBlackRender None at Blacks 0 to +100 in steps of 12.5. Camera Raw's
+  positive Blacks is a function of the scene value: with the default black (Auto),
+  Blacks +25 renders exactly as None at 0 and +100 as None at +100, at every dark key
+  (2026-11-12), so from +25 up Auto's Blacks v is None's (v - 25) / 0.75. The table maps
+  None's default output (log2, -16 to 0 in eighth stops) to its Blacks render. Render
+  and fit it alone with render-blacks-none and blacks-none-table.
 
 - Masks (masks.bin): the ramp at a sensor white of 1 and 4 with a mask covering the
   whole frame, at its Whites and then its Blacks −100 to +100 in steps of 25. A mask's
@@ -58,6 +65,7 @@ WHITE_POINTS = np.arange(-1, 5.001, 0.25)            # log2 W*
 SLIDER = np.arange(-100, 100.001, 12.5)
 BLACK_KEYS = np.array([-8.] + list(np.arange(-6.5, -1.999, 0.5)))
 DEFAULT_BLACK_KEYS = np.arange(-14., -6.999, 0.5)
+NONE_BLACKS = np.arange(0, 100.001, 12.5)             # Blacks of blacks_none.bin
 T = np.arange(-16, 6.0001, 0.125)                     # log2 scene value
 SENSOR = np.arange(-3, 4.001, 0.5)                    # log2 sensor white (white3)
 BELOW = np.arange(0, 5.001, 0.5)                      # stops the maximum is below it
@@ -248,6 +256,43 @@ def default_black_only(args):
     print(f'default black {table.shape} -> {out}')
 
 
+def blacks_none_table(d, read=None):
+    """None's default output → its positive Blacks render (see the module docs)."""
+    g = black_ramp(-14.)
+    read = read or (lambda v: g.measure(camera_raw.read_linear(d / f'blacks-none-{name(v)}.tif')))
+    default = read(0)
+    order = np.argsort(default)
+    x = np.log2(np.maximum(default[order], 2.0 ** -20))
+    out = np.zeros((len(NONE_BLACKS), len(Y)), np.float32)
+    for j, v in enumerate(NONE_BLACKS):
+        y = np.maximum.accumulate(read(v)[order])
+        row = np.interp(Y, x, y, right=1.0)
+        below = Y < x[0]
+        row[below] = 2.0 ** (Y[below] - x[0]) * y[0]
+        out[j] = row
+    return out
+
+
+def render_blacks_none(args):
+    d = args.dir.resolve()
+    d.mkdir(parents=True, exist_ok=True)
+    source = d / 'blacks-none.dng'
+    probe_dng.write(source, black_ramp(-14.).image(2.0 ** -14), baseline_exposure=2, black_render=1)
+    jobs = [dict(source=source, settings={} if v == 0 else {'Blacks2012': f'{v:g}'},
+                 out=d / f'blacks-none-{name(v)}.tif') for v in NONE_BLACKS]
+    failures = camera_raw.render(jobs, work=d / 'blacks-none-work')
+    if failures:
+        raise RuntimeError(f'{len(failures)} blacks-none renders failed: {failures}')
+
+
+def blacks_none_only(args):
+    out = args.out.resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    table = blacks_none_table(args.dir.resolve())
+    (out / 'blacks_none.bin').write_bytes(table.astype('<f4').tobytes())
+    print(f'blacks none {table.shape} -> {out}')
+
+
 def masks_table(d):
     out = np.zeros((2, len(MASK_VALUES), len(Y)), np.float32)
     for i, kind in enumerate(('Whites', 'Blacks')):
@@ -286,12 +331,14 @@ def tables(args):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('step', choices=['render', 'tables', 'render-default-black', 'default-black-table'])
+    p.add_argument('step', choices=['render', 'tables', 'render-default-black', 'default-black-table',
+                                    'render-blacks-none', 'blacks-none-table'])
     p.add_argument('dir', type=Path, help='folder for the probes and their renders (outside the repository)')
     p.add_argument('--out', type=Path, default=OUT, help='folder for the tables (default: the engine\'s)')
     args = p.parse_args()
     {'render': render, 'tables': tables, 'render-default-black': render_default_black,
-     'default-black-table': default_black_only}[args.step](args)
+     'default-black-table': default_black_only, 'render-blacks-none': render_blacks_none,
+     'blacks-none-table': blacks_none_only}[args.step](args)
 
 
 if __name__ == '__main__':

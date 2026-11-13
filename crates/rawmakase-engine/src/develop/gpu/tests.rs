@@ -754,7 +754,7 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
             .map(|(a, b)| (a - b).abs())
             .collect();
         let mean = d.iter().sum::<f32>() / d.len() as f32;
-        let mut sorted = d.clone();
+        let mut sorted = d;
         sorted.sort_by(f32::total_cmp);
         let (p999, max) = (sorted[sorted.len() * 999 / 1000], sorted[sorted.len() - 1]);
         eprintln!("recipe {i}: max {max:.6}, 99.9% {p999:.6}, mean {mean:.8}");
@@ -2167,6 +2167,9 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         // An ordinary profile's sRGB-encoded 3D look table, as camera-matching
         // profiles have.
         with(profile.clone().with_test_srgb_look()),
+        // An HDR profile's, as Nikon's Camera Standard HDR has: on the overrange
+        // encoding.
+        with(profile.clone().with_test_srgb_look().as_hdr_for_test()),
         Recipe {
             exposure: 0.6,
             ..with(profile.clone().with_test_hdr_tables().as_hdr_for_test())
@@ -2404,7 +2407,7 @@ fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
                         (0..3).map(move |c| (a[c] - b[c]).abs() / b[c].abs().max(0.05))
                     })
                     .collect();
-                let mut sorted = d.clone();
+                let mut sorted = d;
                 sorted.sort_by(f32::total_cmp);
                 let (p999, max) = (sorted[sorted.len() * 999 / 1000], sorted[sorted.len() - 1]);
                 eprintln!(

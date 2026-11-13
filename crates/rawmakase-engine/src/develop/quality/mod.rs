@@ -118,6 +118,7 @@ pub(crate) fn resize_unbounded(image: Rendered, max_edge: u32) -> Rendered {
 
 mod detail;
 mod hdr;
+mod hdr_defringe;
 mod highlights;
 mod local;
 mod prepare;

@@ -259,12 +259,12 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
     if !r.hdr.is_default() {
         s.0.extend(hdr_settings(r).0);
     }
-    for i in 0..4 {
-        s.put(crs::PARAMETRIC[i], r.effects.parametric[i], 0, true);
+    for (slider, value) in crs::PARAMETRIC.iter().zip(r.effects.parametric) {
+        s.put(*slider, value, 0, true);
     }
     s.put(crs::CURVE_REFINE_SATURATION, r.curve_saturation, 0, false);
-    for i in 0..3 {
-        s.put(crs::PARAMETRIC_SPLITS[i], r.effects.splits[i], 0, false);
+    for (slider, value) in crs::PARAMETRIC_SPLITS.iter().zip(r.effects.splits) {
+        s.put(*slider, value, 0, false);
     }
     s.put(crs::SHARPNESS, r.sharpening, 0, false);
     s.put(crs::SHARPEN_RADIUS, r.sharpening_radius, 1, true);
@@ -296,10 +296,12 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
         0,
         false,
     );
-    for j in 0..3 {
-        for i in 0..8 {
-            s.put(crs::HSL[i][j], r.hsl[i][j], 0, true);
-        }
+    // Hue of every band, then Saturation, then Luminance, as Lightroom orders them.
+    let by_property = (0..3).flat_map(|j| {
+        (crs::HSL.iter().zip(&r.hsl)).map(move |(sliders, band)| (sliders[j], band[j]))
+    });
+    for (slider, value) in by_property {
+        s.put(slider, value, 0, true);
     }
     // Black & white by Treatment or by a black & white profile, as Lightroom writes it.
     let black_white = r.treatment() == crate::model::recipe::Treatment::BlackWhite;
@@ -308,8 +310,8 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
         if black_white { "True" } else { "False" },
     );
     if black_white {
-        for i in 0..8 {
-            s.put(crs::GRAY_MIXER[i], r.effects.gray_mix[i], 0, true);
+        for (slider, value) in crs::GRAY_MIXER.iter().zip(r.effects.gray_mix) {
+            s.put(*slider, value, 0, true);
         }
     }
     // The shadows are grading[0], the highlights grading[2].
@@ -341,9 +343,9 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
         0,
         true,
     );
-    for i in 0..3 {
-        s.put(crs::CALIBRATION[i][0], r.effects.calibration[i][0], 0, true);
-        s.put(crs::CALIBRATION[i][1], r.effects.calibration[i][1], 0, true);
+    for (sliders, primary) in crs::CALIBRATION.iter().zip(r.effects.calibration) {
+        s.put(sliders[0], primary[0], 0, true);
+        s.put(sliders[1], primary[1], 0, true);
     }
     s.put(crs::SHADOW_TINT, r.effects.shadow_tint, 0, true);
     s.put(crs::GRAIN_AMOUNT, r.effects.grain, 0, false);
@@ -466,17 +468,28 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
     // With Constrain Crop, the crop as rendered: Camera Raw renders the stored crop as it
     // is, and Lightroom stores the crop it constrained. Without the photo (a preset),
     // the crop as drawn, which the photo it is applied to constrains again.
-    let crop = ImageFrame::for_metadata(shown)
-        .rect_to_unrotated(photo.and_then(|p| p.crop).unwrap_or(r.crop));
+    // Lightroom's crop is turned with the photo, and its angle turns the other way
+    // (`crop.rs`). The corners are found for the angle as written, to 0.01°, so that
+    // reading them back gives this crop.
+    let frame = ImageFrame::for_metadata(shown);
+    let [w, h] = frame.size();
+    let size = if frame.turns % 2 == 1 { [h, w] } else { [w, h] };
+    let straighten = (r.straighten * 100.).round() / 100.;
+    let (crop, angle) = super::crop::to_lightroom(
+        frame.rect_to_unrotated(photo.and_then(|p| p.crop).unwrap_or(r.crop)),
+        straighten,
+        size,
+    );
     for (edge, value) in crs::CROP.into_iter().zip(crop) {
         s.put(edge, value, 6, false);
     }
-    s.put(crs::CROP_ANGLE, r.straighten, 2, true);
+    // Not −0.00.
+    s.put(crs::CROP_ANGLE, angle + 0., 2, true);
     s.text(
         "CropConstrainToWarp",
         if r.constrain_crop { "1" } else { "0" },
     );
-    let cropped = crop != [0., 0., 1., 1.] || r.straighten != 0.;
+    let cropped = crop != [0., 0., 1., 1.] || angle != 0.;
     s.text("HasCrop", if cropped { "True" } else { "False" });
     s.text("HasSettings", "True");
     s

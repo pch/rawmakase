@@ -290,3 +290,18 @@ pub(in crate::app) fn click(
     controls_frame(ctx, editor, down);
     controls_frame(ctx, editor, up);
 }
+
+/// A program of the workspace (`name`, without the platform's suffix), as
+/// `cargo build -p <package>` leaves it: in the profile's folder (`target/debug`),
+/// found among the folders above this test binary. Cargo keeps unit test binaries
+/// at different depths below that folder (`deps/` until 1.99, `build/<package>/<hash>/out/`
+/// from 1.100) and gives unit tests no variable naming it, so the nearest folder
+/// above that holds the program is taken. `None` until it is built.
+pub(in crate::app) fn built_program(name: &str) -> Option<std::path::PathBuf> {
+    let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    let exe = std::env::current_exe().ok()?;
+    exe.ancestors()
+        .skip(1)
+        .map(|dir| dir.join(&file))
+        .find(|path| path.is_file())
+}

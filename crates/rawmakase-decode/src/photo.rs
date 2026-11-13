@@ -396,7 +396,7 @@ mod tests {
             let color = std::sync::Arc::new(crate::camera_profiles::open::color(&m).unwrap());
             for profiles in [vec![], vec![color]] {
                 let recipe = rawmakase_model::model::recipe::Recipe::with_profiles(&m, &profiles);
-                let mut edited = recipe.clone();
+                let mut edited = recipe;
                 edited.temperature = 5600.;
                 edited.tint = 12.;
                 edited.update_wb(&m);

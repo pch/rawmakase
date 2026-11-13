@@ -475,6 +475,39 @@ photos at Clarity −30, in SDR and as an HDR edit's SDR rendition, are bit-iden
   darkening by luminance instead of by channel comes closest (0.360 / 1.134 below,
   0.124 / 0.333 above white) but adds more colour error (+24.9 ΔE_ITP against SDR's
   +17.2).
+- **Clarity +100, further attempts (2026-11-12).** Binned by the default render's
+  level, Camera Raw's HDR Clarity +100 lifts upper midtones more than its SDR one
+  (median +0.81, +0.40 and +0.35 stop at levels −2 to −1.5, −1.5 to −1 and −1 to −0.5
+  stops, against +0.66, +0.15 and −0.04), then nothing from half a stop under white;
+  RAWmakase's HDR lift there is its SDR one (+0.31, +0.11, +0.02), and elsewhere its
+  HDR and SDR errors are the same. An HDR gain on the operator growing from +50 (×0.8:
+  below white 0.426 / 1.494; ×1.3: 0.490 / 2.127; ×1.6: 0.541 / 2.701, against SDR's
+  0.389 / 1.604) and reading the operator's level weights as if each level were 0.5,
+  1 or 2 stops lower (0.486 / 1.766, 0.516 / 1.810, 0.551 / 1.834) all miss. Camera
+  Raw's added lift isn't monotonic in level, so it isn't a tone adjustment either.
+  Captures at +75 (and Dehaze −50, −70) are prepared to test whether part of the
+  range passes.
+
+**Clarity +75, Dehaze −50 and −70, 2026-11-13.** Camera Raw 18.7 rendered them on the
+twelve validation and holdout photos, HDR (limit 4) and SDR, frozen into the family
+(dataset d761c42, 1467 jobs). Scored by the Decisions rule with today's operators
+(median over photos; below white HDR against SDR, med / p95 stop; above white; ΔE_ITP
+added):
+
+| Setting | HDR below white | SDR below white | HDR above white | ΔE_ITP added HDR / SDR | |
+| --- | --- | --- | --- | --- | --- |
+| Clarity +75 | 0.339 / 1.272 | 0.299 / 1.223 | 0.115 / 0.341 | +13.5 / +11.4 | refused |
+| Dehaze −50 | 0.198 / 0.627 | 0.189 / 0.627 | 0.085 / 0.166 | +8.8 / +8.5 | renders |
+| Dehaze −70 | 0.261 / 0.842 | 0.243 / 0.841 | 0.128 / 0.249 | +13.5 / +12.5 | refused |
+
+Dehaze −50 meets the rule with 0.001 stop to spare on the median below white; −70
+misses it there by 0.008 (its p95, above white and colour pass). Clarity +75 misses
+below white (by 0.03 / 0.04) and in colour (2.1 ΔE_ITP added beyond SDR's, where the rule allows 1), as
++100 does: the HDR operator's lift of upper midtones is SDR's.
+
+**Decision, 2026-11-13: Dehaze renders in the HDR master from −50 to +100**; below −50
+it stays refused. Between −30 and −50, both measured, the operator is the same.
+Clarity stays within ±50.
 
 ### Looks
 
@@ -640,8 +673,29 @@ above white, before the profile's curve).
 Decision, 2026-11-12: an ordinary profile's sRGB-encoded tables render in HDR as in
 SDR, the value encoded past 1 by the sRGB curve: the master matches the SDR rendition
 below white, and the GPU's HDR preview already applies them so. An HDR profile's
-stay refused: how Camera Raw combines its overrange encoding with an sRGB-encoded
-table is not measured, and no capture of one exists.
+stayed refused: how Camera Raw combines its overrange encoding with an sRGB-encoded
+table was not measured.
+
+Camera Raw 18.7 then rendered Nikon's Camera Standard HDR, an HDR profile whose only
+table is a 3D sRGB-encoded look table (90 × 16 × 16), on two CC0 photos at limit 4 in
+HDR and SDR: the Z50 II's (17% of its area above white) and the Z5 II's (none). Three
+renderings of the table were scored on factor-8 pixels against Camera Raw (luminance
+error median in stops below white, from 2^-8, and above it; mean ΔE_ITP):
+
+| Rendering | Z50 II | Z5 II |
+| --- | --- | --- |
+| The sRGB encoding of the overrange-encoded value | 0.007 / 0.001, 0.78 | 0.008, 1.00 |
+| The linear value's sRGB encoding, past 1, as an ordinary profile's | 0.007 / 0.002, 0.79 | 0.009, 1.45 |
+| The overrange-encoded value, the table's encoding ignored | 0.011 / 0.010, 1.42 | 0.052, 5.16 |
+| RAWmakase's SDR rendition against Camera Raw's | 0.005, 0.67 | 0.012, 1.05 |
+
+Decision, 2026-11-13: an HDR profile's sRGB-encoded table looks up the sRGB encoding
+of the overrange-encoded value, the first rendering, which is what the overrange path
+did with the refusal lifted. It meets the [acceptance rule](#decisions) on both photos
+(medians 0.0075 against 0.0085 below white, 0.001 above it, ΔE_ITP 0.89 against
+0.86). The other 25 installed HDR profiles with such tables are of the same kind,
+camera-matching HDR profiles for Nikon (Camera Standard, Flat and Monochrome HDR) and
+Panasonic (Standard, Flat and Monochrome HDR v2) bodies, and render by the same rule.
 
 ### Red Eye
 
@@ -855,9 +909,24 @@ Looked into on 2026-11-12, to find what keeps it from the rule:
   0.036 / 0.126 below and 0.074 / 0.168 above white at +75 (SDR's 0.027 / 0.085).
 
 Whites above +50 stays refused: it needs both a level predictor no statistic tried
-gives and a closer operator above white. Positive Whites up to +50, which renders, also
-uses RGBTone; whether a gain of luminance fits Camera Raw's HDR captures at +25 and +50
-better is open.
+gives and a closer operator above white.
+
+**Positive Whites as a gain of luminance, 2026-11-12.** Positive Whites up to +50 renders
+too, and it used RGBTone of the gained curve. Applied instead as a gain of the colour's
+luminance over the default curve's toe (RGBTone), on the twelve validation and holdout
+photos against Camera Raw's HDR captures (effect error in stops, median / p95, median over
+the photos, over the whole frame and above white, and the colour error it adds):
+
+| Whites | RGBTone, all | Luminance gain, all | RGBTone, above white | Luminance gain, above white | ΔE_ITP added, RGBTone / luminance |
+| --- | --- | --- | --- | --- | --- |
+| +25 | 0.004 / 0.019 | 0.003 / 0.012 | 0.013 / 0.038 | 0.006 / 0.037 | +0.50 / +0.09 |
+| +50 | 0.016 / 0.063 | 0.013 / 0.050 | 0.043 / 0.115 | 0.030 / 0.103 | +2.00 / +0.45 |
+
+**Decision, 2026-11-12: positive Whites in the HDR master is a gain of luminance**
+(`GlobalTone::apply`, the GPU's `scene_global` alike); negative Whites keeps RGBTone, as
+measured. SDR renders don't change (48 of 48 renders of 24 photos at Whites +40, in SDR and
+as an HDR edit's SDR rendition, bit-identical to `main`'s). Above +50 it stays refused as
+above.
 
 SDR renders do not change: positive Whites' table and level are read only in the HDR
 branch of the scene tone stage (`SceneTone::new`, `GlobalTone::hdr`), which SDR
@@ -943,6 +1012,28 @@ white, above white where its HDR base is:
 Highlights stays refused in HDR. Scored over the whole frame instead (a measure first
 tried here), the held negative Highlights would pass, as the light above white is a
 few percent of the frame; that measure was dropped for this reason.
+
+Re-examined on 2026-11-13 with Camera Raw 18.7 captures of more photos (Highlights −100,
+−50 and +50 in HDR and SDR; 58 of a 144-job batch were captured before Photoshop stopped
+responding), on 16 photo renders (the twelve validation and holdout photos and four
+HDRMerge DNGs of one scene):
+
+| Highlights | HDR below white | SDR below white | HDR above white |
+| --- | --- | --- | --- |
+| −100, pull held from −0.25 | 0.084 / 0.242 | 0.084 / 0.233 | 0.207 / 0.357 |
+| −50, pull held from −0.25 | 0.041 / 0.120 | 0.041 / 0.101 | 0.112 / 0.217 |
+| +50 | 0.053 / 0.146 | 0.050 / 0.105 | 0.240 / 0.473 |
+
+Just above white the rule's pull is Camera Raw's on most photos (within 0.1 stop on 7 of
+9 scenes at −100), but on two it is the SDR rule's own error at white, which SDR's shoulder
+hides (Nikon Z6 III −1.24 against −0.75, Sony A7R III −0.97 against −1.47), and further
+up Camera Raw's pull is 0.9 to 2.3 times its pull just above white, varying by photo.
+No reshaping above white tried reaches the rule: holding the pull, growing it 1.2 or 1.4
+times above the hold (above white 0.361 / 0.614 and 0.367 / 0.697 at −100 on six
+photos), the per-level tables instead of the rule (0.328 / 0.861), or fading positive
+Highlights above white or white's level (above white 0.171 / 0.381 at +50 at best). It
+needs the rule's gain at and above white fitted to HDR targets, which these captures now
+give for 10 scenes; that is the SDR rule's own top end, not an HDR-only change.
 
 ### Validation
 
@@ -1519,6 +1610,57 @@ Raw than; the bright blues Camera Raw takes above white are not selected at all 
 white ≈ 1.00, no change). **Defringe stays refused in HDR**; it needs SDR parity of the
 hue selection first.
 
+**Modelled on Camera Raw's HDR behaviour (2026-11-12).** Scored as above, with
+RAWmakase's HDR renders of the same twelve photos (CC0 copies, the same edits), each
+against its render without Defringe:
+
+- On the blocks Camera Raw's HDR Defringe changes most below white (the top 1%), SDR's
+  operator at full strength removes what Camera Raw does (chroma kept ×0.68, as
+  Camera Raw's). Its error is elsewhere: it changes blocks Camera Raw leaves alone
+  (mean change 0.032 where Camera Raw's is under 2%). Those are mostly very dark and
+  faint (median luminance 0.010 against 0.071, Oklab chroma 0.012 against 0.026 on the
+  blocks both change) and away from sharp changes of luminance (a range of 1.2 stops
+  across 3×3 blocks against 2.0).
+- A weight on the luminance range around each pixel alone removes Camera Raw's and the
+  rest alike (with the change at ×0.6, kept ×0.87–0.93 on Camera Raw's blocks and the
+  rest 0.008–0.013), as a weaker change does (×0.4: ×0.87, 0.013). A weight on the
+  colour's own Oklab chroma tells them apart (none below 0.015, full from 0.04: ×0.87 on
+  Camera Raw's blocks, 0.006 elsewhere), and the two together more so.
+
+| Master's Defringe (SDR's operator ×1) | Below white | Above white | Kept on Camera Raw's blocks | Change elsewhere |
+| --- | --- | --- | --- | --- |
+| Unweighted (#1002) | 3.78 | 1.29 | ×0.68 | 0.032 |
+| ×0.4 | 1.18 | 1.00 | ×0.87 | 0.013 |
+| Luminance range (8 px, full from 2 stops), ×0.6 | 1.57 | 0.99 | ×0.87 | 0.013 |
+| Chroma 0.015–0.04 | 1.48 | 1.15 | ×0.87 | 0.006 |
+| Chroma 0.02–0.05 | 1.25 | 1.11 | ×0.92 | 0.003 |
+| Chroma 0.01–0.03, range (4 px, 2 stops) | 1.15 | 1.09 | ×0.87 | 0.007 |
+| **Chroma 0.015–0.04, range (4 px, 1 stop)** | **1.06** | **1.09** | ×0.89 | 0.004 |
+
+Above white, Camera Raw takes chroma only where a blue's brightest Display P3 channel
+is 4.5–6.5 times white and it is saturated: the Z 8's sky at saturation (1 − min/max)
+0.5–0.8 keeps ×0.51–0.56, a Sony ARW's (DSC03793) ×0.75–0.80; the Z 8's paler blues at
+6–8 times white, and every photo's blues below four times white (Panasonic,
+Fujifilm, Sony and Panasonic RW2 skies at 1–3 times white), keep theirs. Taking half
+the chroma of blues in that band (Oklab hue 0.63–0.675, saturation above 0.55) brings
+the Z 8 above white from 0.99 to 0.73; the median over the photos stays 1.09, set by
+photos where Camera Raw changes almost nothing above white (Panasonic 3.6, Fujifilm
+1.8). Fading the master's operator out above white would lower that median to 0.98,
+but the synthetic patches show Camera Raw removing the same share at every brightness,
+so it is not done.
+
+Per photo, the chosen weights score below white within 0.2 of RAWmakase's own SDR
+score on every photo and at or below it on eleven (SDR 0.31–2.46, HDR 0.27–2.02). The
+weights and the band are fitted on these twelve photos, which are also the photos the
+rule is applied on; no other HDR Defringe captures exist. SDR renders are
+bit-identical to `main` (36 renders of the twelve photos, Defringe on and off), and so
+are HDR renders without Defringe.
+
+Decision, 2026-11-12: Defringe renders in the HDR master by this model
+([Defringe](../hdr.md#defringe)): HDR below white 1.06 and above white 1.09, against
+SDR's 1.49. Defringe with Black & White stays refused (the master's pass follows the
+gray mix). RAWmakase's SDR Defringe keeps its selection, whose error is SDR's own.
+
 ### Masks
 
 A mask's adjustment is added to the photo's own in RAWmakase's stages: its Temp and
@@ -1709,7 +1851,7 @@ photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
   never change the master, which renders with them; the SDR rendition doesn't render
   them until that tone map is matched.
 - **Unmeasured adjustments refuse the HDR master, not the edit.** An imported or
-  edited HDR edit with Dehaze below −30, a look or Whites above +50 keeps HDR on and stays
+  edited HDR edit with Dehaze below −50, a look or Whites above +50 keeps HDR on and stays
   valid; its SDR rendition renders it, and the master (HDR export) is refused with
   the reason, shown in Develop under the HDR switch. Refusing the edit itself would
   make Develop's ordinary sliders fail to render whenever HDR is on.
@@ -1826,9 +1968,10 @@ photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
   +40, where Camera Raw's HDR effect strengthens with brightness and the SDR grids don't
   ([Band Luminance](#band-luminance)); Point Color on photos and on the GPU's HDR preview
   ([Point Color](#point-color)).
-- Defringe in HDR: Camera Raw's HDR Defringe removes less than its SDR one below
-  white and takes some bright blues above it; RAWmakase's hue selection misses Camera
-  Raw's in SDR too ([Defringe](#defringe)).
+- Defringe: RAWmakase's SDR selection (by hue and chroma alone) changes smooth and
+  dark colour Camera Raw's leaves alone (1.49 relative error in SDR); the HDR master's
+  model of Camera Raw's ([Defringe](#defringe)) was fitted on the twelve photos it is
+  scored on. Defringe with Black & White in HDR.
 - Channel curves' peak on photos: the Z50 II's brightest block is 0.19 stop high, the
   Z 8's 0.11, where their median and p95 pass ([Tone curves](#tone-curves)).
 - Strong Highlights tints of saturated colours above white, and the Z50 II's peak with
@@ -1839,7 +1982,7 @@ photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
 - Masks: a mask's Whites, Blacks, Hue and Saturation (one Camera Raw setting each,
   unlike SDR's operators above white), Temp's strength (SDR's), Shadows' HDR error
   (twice SDR's on the patches), and masks on the GPU's HDR preview ([Masks](#masks)).
-- Negative Clarity, Clarity above +50, and Dehaze below −30 in HDR ([Presence](#presence)).
+- Clarity beyond ±50 and Dehaze below −50 in HDR ([Presence](#presence)).
 - Positive Shadows lifts small speculars in dark surroundings above Camera Raw's peak
   (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
@@ -1891,8 +2034,8 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
   Color Grading ([Color grading](#color-grading)); the post-crop vignette and grain
   ([Vignette and grain](#vignette-and-grain)); masks with Temp,
-  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from −50 to +50 and Dehaze from −30 to +100 ([Presence](#presence));
-  Red Eye ([Red Eye](#red-eye)); ordinary profiles' sRGB-encoded tables
+  Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and Noise ([Masks](#masks)); Point Color ([Point Color](#point-color)); Clarity from −50 to +50 and Dehaze from −50 to +100 ([Presence](#presence));
+  Red Eye ([Red Eye](#red-eye)); Defringe, modelled on Camera Raw's HDR behaviour ([Defringe](#defringe)); ordinary profiles' sRGB-encoded tables
   ([sRGB-encoded tables](#srgb-encoded-tables)). What stays refused, each with its
   measurements, is listed in [completion](hdr-253-closure.md#what-stays-refused);
   52552 grouping (library only, needed when toggling HDR pairs profiles) is open.

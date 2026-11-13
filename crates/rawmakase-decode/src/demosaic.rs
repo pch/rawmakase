@@ -117,14 +117,10 @@ pub(crate) fn demosaic(cfa: &Cfa) -> Vec<[f32; 3]> {
         // mean of a dark noisy area rises less than clipping each sample would
         // (Camera Raw's dark noisy patches sit at that lower bias).
         let mut out = colour_difference(cfa, &green_bayer(cfa));
-        for px in &mut out {
-            for v in px {
-                *v = v.max(0.);
-            }
-        }
+        out.par_iter_mut().flatten().for_each(|v| *v = v.max(0.));
         out
     } else {
-        let data: Vec<f32> = cfa.data.iter().map(|v| v.max(0.)).collect();
+        let data: Vec<f32> = cfa.data.par_iter().map(|v| v.max(0.)).collect();
         xtrans::demosaic(&Cfa {
             data: &data,
             ..*cfa
@@ -136,76 +132,181 @@ fn green_bayer(cfa: &Cfa) -> Vec<f32> {
     let (w, h) = (cfa.width, cfa.height);
     let mut g = vec![0f32; w * h];
     g.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
-        let y = y as isize;
+        // Two pixels or more from every border nothing is mirrored, so the
+        // samples `green_at` reads are read directly.
+        let inner = y >= 2 && y + 2 < h;
         for (x, out) in row.iter_mut().enumerate() {
-            let xi = x as isize;
-            let c = cfa.at(xi, y);
-            if cfa.color(x, y as usize) == 1 {
-                *out = c;
-                continue;
+            if cfa.color(x, y) == 1 {
+                *out = cfa.data[y * w + x];
+            } else if inner && x >= 2 && x + 2 < w {
+                let i = y * w + x;
+                let d = &cfa.data;
+                *out = green_estimate(
+                    d[i],
+                    [d[i - 1], d[i + 1], d[i - w], d[i + w]],
+                    [d[i - 2], d[i + 2], d[i - 2 * w], d[i + 2 * w]],
+                );
+            } else {
+                *out = green_at(cfa, x, y);
             }
-            let (l, r) = (cfa.at(xi - 1, y), cfa.at(xi + 1, y));
-            let (u, d) = (cfa.at(xi, y - 1), cfa.at(xi, y + 1));
-            let lap_h = 2. * c - cfa.at(xi - 2, y) - cfa.at(xi + 2, y);
-            let lap_v = 2. * c - cfa.at(xi, y - 2) - cfa.at(xi, y + 2);
-            let gh = (l + r) * 0.5 + lap_h * 0.25;
-            let gv = (u + d) * 0.5 + lap_v * 0.25;
-            let dh = (l - r).abs() + lap_h.abs();
-            let dv = (u - d).abs() + lap_v.abs();
-            // Blend by inverse gradient instead of a hard switch, avoiding zipper edges.
-            let (wh, wv) = (1. / (dh + 1e-5), 1. / (dv + 1e-5));
-            let est = (gh * wh + gv * wv) / (wh + wv);
-            // Keep the estimate within the neighbouring greens (no overshoot halos).
-            let lo = l.min(r).min(u).min(d);
-            let hi = l.max(r).max(u).max(d);
-            *out = est.clamp(lo, hi);
         }
     });
     g
 }
 
+/// Green at the red or blue sample (`x`, `y`) of [`green_bayer`], mirrored at the
+/// borders.
+fn green_at(cfa: &Cfa, x: usize, y: usize) -> f32 {
+    let (x, y) = (x as isize, y as isize);
+    green_estimate(
+        cfa.at(x, y),
+        [
+            cfa.at(x - 1, y),
+            cfa.at(x + 1, y),
+            cfa.at(x, y - 1),
+            cfa.at(x, y + 1),
+        ],
+        [
+            cfa.at(x - 2, y),
+            cfa.at(x + 2, y),
+            cfa.at(x, y - 2),
+            cfa.at(x, y + 2),
+        ],
+    )
+}
+
+/// Green at a red or blue sample `c`, from its neighbours one pixel away (left,
+/// right, up, down) and the same colour two pixels away (in the same order).
+#[inline]
+fn green_estimate(c: f32, [l, r, u, d]: [f32; 4], [l2, r2, u2, d2]: [f32; 4]) -> f32 {
+    let lap_h = 2. * c - l2 - r2;
+    let lap_v = 2. * c - u2 - d2;
+    let gh = (l + r) * 0.5 + lap_h * 0.25;
+    let gv = (u + d) * 0.5 + lap_v * 0.25;
+    let dh = (l - r).abs() + lap_h.abs();
+    let dv = (u - d).abs() + lap_v.abs();
+    // Blend by inverse gradient instead of a hard switch, avoiding zipper edges.
+    let (wh, wv) = (1. / (dh + 1e-5), 1. / (dv + 1e-5));
+    let est = (gh * wh + gv * wv) / (wh + wv);
+    // Keep the estimate within the neighbouring greens (no overshoot halos).
+    let lo = l.min(r).min(u).min(d);
+    let hi = l.max(r).max(u).max(d);
+    est.clamp(lo, hi)
+}
+
 fn colour_difference(cfa: &Cfa, green: &[f32]) -> Vec<[f32; 3]> {
     let (w, h) = (cfa.width, cfa.height);
-    let g = |x: isize, y: isize| green[Cfa::reflect(y, h) * w + Cfa::reflect(x, w)];
+    // Away from the borders the nearest same-colour samples are those at radius 1
+    // (a Bayer block's 3 × 3 neighbourhood holds every site) and need no
+    // mirroring, so each of the four sites has a fixed list of them; the borders
+    // search as `colour_difference_at` does. Both visit the samples in the same
+    // order with the same weights, so the result is the same.
+    let sites: [[Source; 2]; 4] =
+        std::array::from_fn(|site| [0, 2].map(|c| Source::of(cfa, site % 2, site / 2, c)));
     let mut out = vec![[0f32; 3]; w * h];
     out.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
-        let yi = y as isize;
+        let inner = y > 0 && y + 1 < h;
         for (x, px) in row.iter_mut().enumerate() {
-            let xi = x as isize;
-            let gc = g(xi, yi);
-            let own = cfa.color(x, y);
+            if !(inner && x > 0 && x + 1 < w) {
+                *px = colour_difference_at(cfa, green, x, y);
+                continue;
+            }
+            let i = y * w + x;
+            let gc = green[i];
             px[1] = gc;
-            for c in [0u8, 2] {
-                if own == c {
-                    px[c as usize] = cfa.at(xi, yi);
-                    continue;
-                }
-                // Nearest same-colour samples within radius 1, else 2, weighted by
-                // inverse distance, interpolating their difference to green.
-                let mut sum = 0.;
-                let mut total = 0.;
-                for radius in 1..=2isize {
-                    for dy in -radius..=radius {
-                        for dx in -radius..=radius {
-                            if dx.abs().max(dy.abs()) != radius
-                                || cfa.color_at(xi + dx, yi + dy) != c
-                            {
-                                continue;
-                            }
-                            let wgt = 1. / ((dx * dx + dy * dy) as f32).sqrt();
-                            sum += (cfa.at(xi + dx, yi + dy) - g(xi + dx, yi + dy)) * wgt;
+            for (c, source) in [0, 2].into_iter().zip(&sites[(y % 2) * 2 + x % 2]) {
+                px[c] = match source {
+                    Source::Own => cfa.data[i],
+                    Source::Ring { len, at } => {
+                        let mut sum = 0.;
+                        let mut total = 0.;
+                        for &([dx, dy], wgt) in &at[..*len] {
+                            let j = (i as isize + dy * w as isize + dx) as usize;
+                            sum += (cfa.data[j] - green[j]) * wgt;
                             total += wgt;
                         }
+                        gc + if total > 0. { sum / total } else { 0. }
                     }
-                    if total > 0. {
-                        break;
-                    }
-                }
-                px[c as usize] = gc + if total > 0. { sum / total } else { 0. };
+                };
             }
         }
     });
     out
+}
+
+/// Where a Bayer site away from the borders takes red or blue from: its own
+/// sample, or its same-colour neighbours at radius 1, as `[dx, dy]` and weight, in
+/// the order `colour_difference_at` visits them.
+#[derive(Clone, Copy)]
+enum Source {
+    Own,
+    Ring {
+        len: usize,
+        at: [([isize; 2], f32); 8],
+    },
+}
+impl Source {
+    /// Colour `c` at the site (`x`, `y`) of the 2 × 2 Bayer block.
+    fn of(cfa: &Cfa, x: usize, y: usize, c: u8) -> Self {
+        if cfa.color(x, y) == c {
+            return Self::Own;
+        }
+        let mut at = [([0, 0], 0.); 8];
+        let mut len = 0;
+        for dy in -1..=1isize {
+            for dx in -1..=1isize {
+                // Two pixels on keeps the site's colour and the index positive.
+                let (nx, ny) = (
+                    (x as isize + dx + 2) as usize,
+                    (y as isize + dy + 2) as usize,
+                );
+                if (dx, dy) == (0, 0) || cfa.color(nx, ny) != c {
+                    continue;
+                }
+                at[len] = ([dx, dy], 1. / ((dx * dx + dy * dy) as f32).sqrt());
+                len += 1;
+            }
+        }
+        Self::Ring { len, at }
+    }
+}
+
+/// Pixel (`x`, `y`) of [`colour_difference`]: red and blue from the colour
+/// difference to green of the nearest same-colour samples, mirrored at the borders.
+fn colour_difference_at(cfa: &Cfa, green: &[f32], x: usize, y: usize) -> [f32; 3] {
+    let (w, h) = (cfa.width, cfa.height);
+    let g = |x: isize, y: isize| green[Cfa::reflect(y, h) * w + Cfa::reflect(x, w)];
+    let (xi, yi) = (x as isize, y as isize);
+    let gc = g(xi, yi);
+    let own = cfa.color(x, y);
+    let mut px = [0., gc, 0.];
+    for c in [0u8, 2] {
+        if own == c {
+            px[c as usize] = cfa.at(xi, yi);
+            continue;
+        }
+        // Nearest same-colour samples within radius 1, else 2, weighted by
+        // inverse distance, interpolating their difference to green.
+        let mut sum = 0.;
+        let mut total = 0.;
+        for radius in 1..=2isize {
+            for dy in -radius..=radius {
+                for dx in -radius..=radius {
+                    if dx.abs().max(dy.abs()) != radius || cfa.color_at(xi + dx, yi + dy) != c {
+                        continue;
+                    }
+                    let wgt = 1. / ((dx * dx + dy * dy) as f32).sqrt();
+                    sum += (cfa.at(xi + dx, yi + dy) - g(xi + dx, yi + dy)) * wgt;
+                    total += wgt;
+                }
+            }
+            if total > 0. {
+                break;
+            }
+        }
+        px[c as usize] = gc + if total > 0. { sum / total } else { 0. };
+    }
+    px
 }
 
 #[cfg(test)]
@@ -240,6 +341,60 @@ mod tests {
                 f(i % w, i / w)[pattern[((i / w) % PATTERN) * PATTERN + (i % w) % PATTERN] as usize]
             })
             .collect()
+    }
+    #[test]
+    fn bayer_away_from_the_borders_is_as_at_the_borders() {
+        // Every Bayer phase, and the other blocks of two greens `is_bayer`
+        // accepts (greens side by side, no blue, two blues), on noise with
+        // samples below black, at sizes down to a single pixel.
+        let phases = [
+            [0, 1, 1, 2],
+            [1, 0, 2, 1],
+            [1, 2, 0, 1],
+            [2, 1, 1, 0],
+            [1, 1, 0, 2],
+            [1, 0, 1, 2],
+            [0, 1, 1, 0],
+            [2, 1, 1, 2],
+        ];
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut noise = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 40) as f32 / (1u64 << 24) as f32 * 1.2 - 0.1
+        };
+        for block in phases {
+            let pattern: [u8; PATTERN * PATTERN] =
+                std::array::from_fn(|i| block[((i / PATTERN) % 2) * 2 + i % 2]);
+            for (w, h) in [(1, 1), (2, 3), (3, 2), (17, 12), (40, 31)] {
+                let data: Vec<f32> = (0..w * h).map(|_| noise()).collect();
+                let cfa = Cfa {
+                    data: &data,
+                    width: w,
+                    height: h,
+                    pattern: &pattern,
+                    white: [1.; 3],
+                };
+                let green = green_bayer(&cfa);
+                for (i, g) in green.iter().enumerate() {
+                    let (x, y) = (i % w, i / w);
+                    if cfa.color(x, y) != 1 {
+                        let searched = green_at(&cfa, x, y);
+                        assert_eq!(g.to_bits(), searched.to_bits(), "{block:?} {w}×{h} at {i}");
+                    }
+                }
+                let out = colour_difference(&cfa, &green);
+                for (i, p) in out.iter().enumerate() {
+                    let searched = colour_difference_at(&cfa, &green, i % w, i / w);
+                    assert_eq!(
+                        p.map(f32::to_bits),
+                        searched.map(f32::to_bits),
+                        "{block:?} {w}×{h} at {i}"
+                    );
+                }
+            }
+        }
     }
     #[test]
     fn flat_colour_is_reconstructed_exactly() {

@@ -724,8 +724,10 @@ fn hdr_gain(x: f32) -> f32 {
 // default black point's toe below it (the white curve at Whites 0, which `hdr` builds
 // the rows at), each times the Whites gain.
 fn hdr_white(x: f32) -> f32 {
-    let toe = select(white_curve(0.0, x), x, x >= HDR_IDENTITY_FROM);
-    return toe * exp2(hdr_gain(x));
+    return hdr_toe(x) * exp2(hdr_gain(x));
+}
+fn hdr_toe(x: f32) -> f32 {
+    return select(white_curve(0.0, x), x, x >= HDR_IDENTITY_FROM);
 }
 // global::mask_curve: a mask's Whites (`kind` 0) or Blacks (1) at `s` on output `y`.
 fn mask_row(kind: u32, row: u32, y: f32) -> f32 {
@@ -775,7 +777,12 @@ fn scene_global(q: vec3<f32>) -> vec3<f32> {
     let hi = max(max(q.x, q.y), q.z);
     var ya: f32;
     var yb: f32;
-    if V_HDR {
+    // Positive Whites in HDR: the toe RGBTone, times the gain of the colour's luminance.
+    let lum_gain = V_HDR && whites > 0.0;
+    if lum_gain {
+        ya = hdr_toe(lo);
+        yb = hdr_toe(hi);
+    } else if V_HDR {
         ya = hdr_white(lo);
         yb = hdr_white(hi);
     } else {
@@ -785,6 +792,9 @@ fn scene_global(q: vec3<f32>) -> vec3<f32> {
     var out = vec3(ya);
     if hi - lo > 1e-12 {
         out = ya + (yb - ya) * (q - lo) / (hi - lo);
+    }
+    if lum_gain {
+        out = out * exp2(hdr_gain(dot(q, vec3(0.2880402, 0.7118741, 0.0000857))));
     }
     let black = offset(P_SCENE_DEFAULT_BLACK);
     let shadow_black = offset(P_SCENE_SHADOW_BLACK);

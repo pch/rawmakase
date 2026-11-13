@@ -260,7 +260,7 @@ fn conflicts(
             let from = key(m.source.file_name().unwrap_or_default());
             sources.insert((dir.clone(), from));
             if let Some(to) = m.destination.as_deref().and_then(Path::file_name) {
-                *taken.entry((dir.clone(), key(to))).or_default() += 1;
+                *taken.entry((dir, key(to))).or_default() += 1;
             }
             ids.insert(m.id);
         }

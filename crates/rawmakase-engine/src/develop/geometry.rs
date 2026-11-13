@@ -189,8 +189,7 @@ impl Geometry {
         let [w, h] = frame.size();
         let (ow, oh) = if r.rotation % 2 == 1 { (h, w) } else { (w, h) };
         let angle = r.straighten.to_radians();
-        let (s, c) = angle.sin_cos();
-        let zoom = (c.abs() + s.abs() * oh / ow).max(c.abs() + s.abs() * ow / oh);
+        let zoom = crate::model::image_frame::straighten_zoom(r.straighten, [ow, oh]);
         let [width, height] = size;
         let (frame_width, frame_height) = (
             width as f32 * frame.inset[2],
@@ -764,7 +763,7 @@ mod constrain_crop_tests {
             // A recipe that stores the constrained crop renders it unchanged.
             let stored = Recipe {
                 crop: g.crop(),
-                ..constrained.clone()
+                ..constrained
             };
             assert_eq!(Geometry::new(&im, &stored, 0).crop(), g.crop(), "{name}");
         }

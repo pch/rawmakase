@@ -48,16 +48,20 @@ fn key(s: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
-/// Canon RAWs can spell the mount "EF 24-105mm" where an LCP says
-/// "EF24-105mm". Only join EF to a following focal length: keep the rest
-/// of the name, including mount and lens-version suffixes, distinct.
+/// Canon RAWs can spell the mount "EF 24-105mm" or "EF-S 18-55mm" where an LCP
+/// says "EF24-105mm" or "EF-S18-55mm": the Canon decoder puts a space after the
+/// mount of a maker-note lens name. Only join the mount to a following focal
+/// length: keep the rest of the name, including lens-version suffixes, distinct.
 fn lens_key(s: &str) -> String {
     let mut name = key(s);
-    if name
-        .strip_prefix("ef ")
-        .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
-    {
-        name.remove(2);
+    for mount in ["ef ", "ef-s ", "ef-m "] {
+        if name
+            .strip_prefix(mount)
+            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+        {
+            name.remove(mount.len() - 1);
+            break;
+        }
     }
     name
 }
@@ -759,6 +763,25 @@ pub fn test_profile_with_lens_id(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn lens_key_joins_canon_mounts_to_the_focal_length() {
+        assert_eq!(
+            lens_key("EF-S 18-55mm f/3.5-5.6 IS"),
+            lens_key("EF-S18-55mm f/3.5-5.6 IS")
+        );
+        assert_eq!(
+            lens_key("EF-M 15-45mm f/3.5-6.3 IS STM"),
+            lens_key("EF-M15-45mm f/3.5-6.3 IS STM")
+        );
+        assert_eq!(
+            lens_key("EF 24-105mm f/4L IS USM"),
+            "ef24-105mm f/4l is usm"
+        );
+        assert_ne!(
+            lens_key("EF-S 55-250mm f/4-5.6 IS"),
+            lens_key("EF-S55-250mm f/4-5.6 IS II")
+        );
+    }
     const SAMPLE: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
 <rdf:Description xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/" xmlns:stCamera="http://ns.adobe.com/photoshop/1.0/camera-profile">
 <photoshop:CameraProfiles><rdf:Seq>

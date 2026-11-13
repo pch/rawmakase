@@ -890,7 +890,7 @@ impl Host {
                 }
                 existing => {
                     let ledger = self.ledgers.entry(id.clone()).or_default().clone();
-                    let lifecycle = self.lifecycles.entry(id.clone()).or_default().clone();
+                    let lifecycle = self.lifecycles.entry(id).or_default().clone();
                     if let Some(mut old) = existing {
                         Self::end(&mut old, ErrorCode::Cancelled);
                     }

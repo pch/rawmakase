@@ -191,9 +191,10 @@ const BAND_LUMINANCE_MEASURED: f32 = 0.4;
 /// (docs/records/hdr-stage1-results.md#presence).
 const CLARITY_MEASURED: f32 = 0.5;
 /// The most negative Dehaze (−1 to 1) the HDR master renders: positive Dehaze renders
-/// up to +100, where its HDR error on photos is its SDR one; at −100 it is further
-/// from Camera Raw below white than in SDR (docs/records/hdr-stage1-results.md#presence).
-const DEHAZE_MEASURED: f32 = -0.3;
+/// up to +100, where its HDR error on photos is its SDR one; at −50 it is too, and at
+/// −70 and −100 it is further from Camera Raw below white than in SDR
+/// (docs/records/hdr-stage1-results.md#presence).
+const DEHAZE_MEASURED: f32 = -0.5;
 
 /// Refuses the HDR master of an active HDR edit that this release can render only in
 /// SDR: an adjustment, look or profile whose rendering above graphics white has not
@@ -205,7 +206,7 @@ const DEHAZE_MEASURED: f32 = -0.3;
 /// the post-crop vignette (without a darkening vignette's Highlights) and grain,
 /// the master point curve, the channels' point curves and the parametric curve, and
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
-/// camera's samples, as in SDR), Clarity from −50 to +50 and Dehaze from −30 to +100
+/// camera's samples, as in SDR), Clarity from −50 to +50 and Dehaze from −50 to +100
 /// (the SDR operators, unclipped),
 /// Point Color (its swatches in colour grading's HDR domain),
 /// masks whose sliders are Temp, Tint, Exposure, Contrast, Shadows, Texture, Color,
@@ -286,6 +287,13 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
     // The SDR rendition's sliders are not here: they never change the master (Camera
     // Raw 18.7's is bit-identical with each at ±50), so it renders with them set.
     let unmeasured: [(&'static str, bool); 9] = [
+        // The master's Defringe follows its colour stage, after the black & white mix,
+        // where it would change nothing; SDR's precedes the mix
+        // (docs/records/hdr-stage1-results.md#defringe).
+        (
+            "Defringe with Black & White",
+            r.effects.defringe != [0.; 2] && r.effects.monochrome,
+        ),
         // Camera Raw's positive Whites follows the photo's level, which twice the 99th
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
@@ -310,7 +318,7 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
             "Clarity beyond ±50",
             r.effects.clarity.abs() > CLARITY_MEASURED,
         ),
-        ("Dehaze below −30", r.effects.dehaze < DEHAZE_MEASURED),
+        ("Dehaze below −50", r.effects.dehaze < DEHAZE_MEASURED),
         (
             "The Color Mixer's Luminance above +40",
             r.hsl.iter().any(|band| band[2] > BAND_LUMINANCE_MEASURED),
@@ -323,11 +331,6 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
                 && r.effects.vignette_highlights > 0.
                 && r.effects.vignette_style != super::effects::VignetteStyle::PaintOverlay,
         ),
-        // Camera Raw's HDR Defringe removes less of a fringe colour below white than its
-        // SDR one and takes some bright blues above white, so SDR's operator moves the
-        // master further from Camera Raw's than leaving it out would
-        // (docs/records/hdr-stage1-results.md#defringe).
-        ("Defringe", r.effects.defringe != [0.; 2]),
     ];
     unmeasured
         .into_iter()
@@ -731,9 +734,16 @@ mod tests {
             check_recipe(&masked).is_ok(),
             "a hidden mask renders nothing"
         );
+        // Defringe renders, except with Black & White.
+        let mut defringe = r.clone();
+        defringe.effects.defringe = [0.3, 0.2];
+        assert!(check_recipe(&defringe).is_ok());
         let unmeasured: [fn(&mut Recipe); 10] = [
+            |r| {
+                r.effects.defringe = [0.3, 0.];
+                r.effects.monochrome = true;
+            },
             |r| r.highlights = 0.1,
-            |r| r.effects.defringe = [0.3, 0.],
             |r| r.hsl[1][2] = 0.41,
             |r| r.hsl[5][2] = 0.6,
             |r| {
@@ -742,8 +752,8 @@ mod tests {
             },
             |r| r.effects.clarity = 0.6,
             |r| r.effects.clarity = -0.6,
-            |r| r.effects.dehaze = -0.31,
-            |r| r.effects.dehaze = -0.5,
+            |r| r.effects.dehaze = -0.51,
+            |r| r.effects.dehaze = -0.7,
             |r| {
                 r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
                 r.curve_saturation = 0.5;

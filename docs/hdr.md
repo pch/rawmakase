@@ -219,7 +219,7 @@ into the scene, so a new Exposure makes a new scene while every other change ren
 from the one kept. Scenes are kept a size each, with stage caches of their own apart
 from the SDR rendition's: Fit from the light reduced to twice its edge, as the CPU's
 whole-photo preview reduces it, a 100% drag's preview from the light at its scale, and
-100% from the full light. The post-crop vignette and grain, Point Color, masks, and anything the SDR port leaves to the CPU
+100% from the full light. The post-crop vignette and grain, Defringe, Point Color, masks, and anything the SDR port leaves to the CPU
 (`quality::HdrNotOnGpu`) give no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
 "GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, looks whose
@@ -300,9 +300,9 @@ HDR reference family):
 | --- | --- |
 | S3 default | Identity from scene 0.5 up (`scene_tone::hdr_whites::IDENTITY_FROM`), with the default black point's toe below, whatever the sensor's white or the photo's maximum. SDR's shoulder to the white point is not applied. |
 | Exposure | A gain before S3, as in SDR. |
-| Whites | A measured gain over scene value (`scene_tone::hdr_whites`), the same at every sensor white and HDR limit. Negative Whites is the same at every photo maximum too. Positive Whites follows the photo's level, twice its 99th percentile of luminance with Exposure (`PhotoMeasures::hdr_whites_level`): the darker it is, the further Whites stretches, and from a level of 4 up the gain no longer changes. Rendered up to +50; above it refused, as no level reaches Camera Raw's render: at Camera Raw's own best level per photo, 4 of 12 training photos stay 0.17–0.52 stop off above white at +75 and +100. |
+| Whites | A measured gain over scene value (`scene_tone::hdr_whites`), the same at every sensor white and HDR limit. Negative Whites is the same at every photo maximum too. Positive Whites is a gain of the colour's luminance over the default curve (RGBTone), so it keeps colours' saturation as Camera Raw's does; negative Whites is the gained curve RGBTone. Positive Whites follows the photo's level, twice its 99th percentile of luminance with Exposure (`PhotoMeasures::hdr_whites_level`): the darker it is, the further Whites stretches, and from a level of 4 up the gain no longer changes. Rendered up to +50; above it refused, as no level reaches Camera Raw's render: at Camera Raw's own best level per photo, 4 of 12 training photos stay 0.17–0.52 stop off above white at +75 and +100. |
 | Blacks, default black | As in SDR, on values below 1; values above white are left alone. |
-| Profile look table | An HDR profile's 3D table on overrange-encoded values, as the DNG SDK applies it; an ordinary profile's keeps the values above white it scales, its value looked up in the table's own encoding (an sRGB-encoded table's, as camera-matching profiles have, extended above white). An HDR profile with an sRGB-encoded table is refused. |
+| Profile look table | An HDR profile's 3D table on overrange-encoded values, as the DNG SDK applies it; an ordinary profile's keeps the values above white it scales, its value looked up in the table's own encoding (an sRGB-encoded table's, as camera-matching profiles have, extended above white). An HDR profile's sRGB-encoded table looks up the sRGB encoding of the overrange-encoded value. |
 | Profile tone curve | `camera_profiles::hdr_tone`: an HDR profile's curve by the DNG SDK's overrange rule; an ordinary curve by the measured extension (ACR3's measured HDR curve, and a fitted deviation for other curves); a curve that never brightens as the identity. RGBTone. |
 | Look table | A look's HSV table (Adobe Color's and the other Adobe Raw looks', RAWmakase Color's) after the profile's, on overrange-encoded values, as the DNG SDK applies an HDR profile's, unclipped. |
 | Look curve | `camera_profiles::hdr_look`, after the profile's curve: the look's curve in an encoding that is sRGB's up to graphics white and logarithmic above. A curve that ends at white follows itself up to its largest lift, then runs parallel to the identity at that lift, at most 16 (so a curve that never lifts renders as the identity); one that ends below white continues along its slope there. A look whose curve is the identity (a `.cube` look's) applies none, so its light above 16 is not held there. RGBTone. |
@@ -318,10 +318,11 @@ HDR reference family):
 | Point Color | SDR's swatches (`develop::point_color`), after the colour mixer, on each channel taken into Color Grading's HDR domain (16 times white at 1) and back, clipping at 16 ([Point Color](#point-color)). |
 | Color Grading | The SDR curves (`develop::color_grade_curves`), after the colour mixer and a look's RGB table, on each channel taken into a domain that is the value itself in the deep shadows and 1 at 16 times white, u = x / (1 + 15x/16), and back ([Color grading](#color-grading)); above white each channel's change strengthened by up to a tenth of its log by three stops above white (`color_grade_curves::hdr_boost`). Above 16 the gain at 16. A look's split toning is a pass of its own, as in SDR. |
 | Black & White | The SDR mix's gray (`develop::black_white`) looked up as the colour mixer's, unclipped above white. |
+| Defringe | After the colour stage, before sharpening: SDR's operator weighted by the luminance range around each pixel and the colour's chroma, and a band of bright, saturated blues losing chroma above white ([Defringe](#defringe)). |
 | Calibration | As in SDR: a matrix on scene colour before Exposure, and Shadows tint, which only reaches values below white. |
 | Shadows | The SDR local tone operator (`develop::local_tone`) on scene values, unclipped: its gain at a pixel's base level as in SDR, before S3. |
 | Clarity | −50 to +50: the SDR operator (`develop::clarity`, in the local tone map) on scene values, unclipped, its gain 1.5 times SDR's within 1.6% of the long edge of light above scene level −1 (`local_tone::HDR_CLARITY_NEAR_GAIN`), as Camera Raw's HDR Clarity is stronger beside light above white. Beyond ±50 it is refused (+100 is further from Camera Raw below white than in SDR). |
-| Dehaze | −30 to +100: the SDR operator, with the photo's haze, unclipped, as in SDR. Below −30 it is refused (at −100 it is further from Camera Raw below white than in SDR). |
+| Dehaze | −50 to +100: the SDR operator, with the photo's haze, unclipped, as in SDR. Below −50 it is refused (at −70 and −100 it is further from Camera Raw below white than in SDR). |
 | Post-crop vignette | After sharpening, on linear values, unclipped ([Vignette and grain](#vignette-and-grain)): darkening a gain (of the scene through the profile's HDR curve for Highlight Priority); lightening a blend towards graphics white (Paint Overlay, Color Priority) or the scene towards 14.4 (Highlight Priority). |
 | Grain | After the vignette: SDR's grain added to sRGB-curve-encoded values extended above 1, its strength going on above white and fading out by 16 times white. |
 | Masks | Temp, Tint, Exposure, Shadows and Texture, through the same stages as their global sliders, weighted by the mask; Contrast below white only, Color fading out by white, and Sharpness and Noise on the encoded master ([Masks](#masks)). |
@@ -449,29 +450,40 @@ default renders do (median above white within 0.02 stop of the default's, mean
 
 ### Defringe
 
-Defringe refuses the master ("Defringe is not supported in HDR yet"); its SDR
-rendition renders it. On synthetic patches Camera Raw 18.7's HDR Defringe removes the
-same share of a fringe hue's chroma at every brightness (Purple Amount 20 keeps ×0.01 to
-×0.04 of the selected hues' saturation from 0.0625 to four times white), and SDR's
-Oklab operator, applied to a colour with its brightest channel at white, does too,
-with SDR's hue-selection error (×0.18 to ×0.28 kept). On photos Camera Raw's HDR
-Defringe departs from its SDR one:
+Defringe renders in the master as Camera Raw 18.7's HDR Defringe was measured on
+photos, not as SDR's (`develop::quality::hdr_defringe`). On the twelve validation and
+holdout photos (Purple Amount 8 and Green Amount 4) Camera Raw's HDR Defringe departs
+from its SDR one:
 
 - below white it removes less than its SDR render (chroma kept ×0.67–0.74 where SDR
-  keeps ×0.45–0.63 on the blocks it changes, Purple 8 and Green 4 on the twelve
-  validation and holdout photos), while SDR's operator removes in the master what it
-  removes in SDR;
-- above white it takes bright, saturated blues its SDR render leaves alone: on the
-  Z 8 photo's sky at 2.7 to 3.7 times white (Oklab hue 0.65–0.67, outside
-  RAWmakase's Purple window) it keeps ×0.47 of their chroma, where both SDR renders keep it all.
+  keeps ×0.45–0.63 on the blocks it changes), and changes colour along edges, leaving
+  smooth and faint colour alone; SDR's operator, by hue and chroma alone, also changes
+  smooth areas and deep shadows Camera Raw leaves;
+- above white it takes a band of bright, saturated blues its SDR render leaves alone:
+  the Z 8 photo's sky with its brightest channel 4.5–6.5 times white (Oklab hue
+  0.65–0.67, outside RAWmakase's Purple window) keeps ×0.51–0.56 of its chroma, and a
+  Sony ARW's blues in the same band ×0.75–0.80; dimmer or paler blues keep it all.
 
-Over the blocks either render changes most, the error of RAWmakase's change against
-Camera Raw's, relative to Camera Raw's change, is a median 1.49 in HDR (worse than
-SDR's 0.94 by over 0.2 on 8 of the 12 photos): above 1, the master would be closer to
-Camera Raw's without Defringe. The master refuses it rather than render it worse than
-leaving it out. Taking Defringe into Color Grading's HDR domain instead
-leaves the photos as they were and worsens the patches (Green above white: mean
-ΔE_ITP 12.1 against 5.3). Measurements: [record](records/hdr-stage1-results.md#defringe).
+So the master runs SDR's Oklab operator on each pixel (a colour above white taken with
+its brightest channel at white, then scaled back), weighted by the luminance range
+within 4 pixels of the full photo (full from one stop) and by the colour's Oklab chroma
+(none below 0.015, full from 0.04); then a colour in that band of blues (its brightest
+Display P3 channel 4.5–6.5 times white, saturation above 0.55, Oklab hue 0.63–0.675)
+loses half its chroma at Purple Amount 8, other Amounts by SDR's Amount curve. It runs
+on the CPU after the colour stage and before sharpening, the vignette and grain, as
+SDR's Defringe precedes them; a region reads the window around it, so it renders as
+that part of the whole. The GPU's HDR preview leaves it to the CPU.
+
+On those photos the master's change scores a median 1.06 below white and 1.09 above
+it, against 1.49 for RAWmakase's SDR Defringe against Camera Raw's SDR (the error over
+the blocks either render changes most, relative to Camera Raw's change), and no photo
+is worse than its SDR score by more than 0.2. On the blocks Camera Raw changes most it
+keeps ×0.89 of their chroma where Camera Raw keeps ×0.68. The weights and the band were
+fitted on these photos; no other photos have HDR Defringe captures.
+
+Defringe with Black & White is refused: the master's runs after the gray mix, where it
+would change nothing, while SDR's precedes it. Measurements:
+[record](records/hdr-stage1-results.md#defringe).
 
 ### Masks
 
@@ -522,11 +534,10 @@ renders on the CPU.
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
 something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation other than 100%, a point curve (the master's or a
-channel's) whose last point is left of white, Clarity beyond ±50, Dehaze below −30, the
+channel's) whose last point is left of white, Clarity beyond ±50, Dehaze below −50, the
 colour mixer's Luminance above +40, a darkening vignette's Highlights,
-a mask's Blacks, Hue, Saturation, Highlights or Dehaze, a mask's Clarity outside 0 to +50 with the photo's own, Defringe ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
-which the look sets, …"; Adobe Vivid's Clarity +10 renders), an
-HDR profile's DCP tables encoded in sRGB, and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
+a mask's Blacks, Hue, Saturation, Highlights or Dehaze, a mask's Clarity outside 0 to +50 with the photo's own, Defringe with Black & White ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
+which the look sets, …"; Adobe Vivid's Clarity +10 renders), and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
 asked for.
 
