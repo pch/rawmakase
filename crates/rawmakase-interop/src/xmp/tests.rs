@@ -383,7 +383,8 @@ fn auto_white_balance_presets_use_the_wb_menus_auto() -> Result<()> {
 /// A photo the camera cropped to 1:1 starts with that crop, which Camera Raw writes
 /// as a crop of the whole frame (CR3 from an EOS M6 Mark II through DNG Converter:
 /// CropLeft 0.166667, CropRight 0.833333, HasCrop True). Lightroom's crop values
-/// replace it; HasCrop False is the whole frame; an edit without crop keeps it.
+/// replace it, all four with or without HasCrop; HasCrop False without all four is the
+/// whole frame; an edit without crop keeps it.
 #[test]
 fn lightroom_crops_are_relative_to_the_frame_around_the_camera_crop() -> Result<()> {
     let m = Metadata {
@@ -414,6 +415,14 @@ fn lightroom_crops_are_relative_to_the_frame_around_the_camera_crop() -> Result<
     assert_eq!(apply(r#"c:HasCrop="False""#)?.crop, [0., 0., 1., 1.]);
     let ignored = r#"c:HasCrop="False" c:CropLeft="0.3" c:CropRight="0.7""#;
     assert_eq!(apply(ignored)?.crop, [0., 0., 1., 1.]);
+    // Camera Raw crops to all four corners even with HasCrop False (corners 0.1 to 0.9
+    // on a synthetic chart render cropped, docs/transform.md).
+    let unflagged =
+        r#"c:HasCrop="False" c:CropTop="0" c:CropLeft="0.3" c:CropBottom="1" c:CropRight="0.7""#;
+    assert_eq!(apply(unflagged)?.crop, [0.3, 0., 0.7, 1.]);
+    let uncropped =
+        r#"c:HasCrop="False" c:CropLeft="0" c:CropTop="0" c:CropRight="1" c:CropBottom="1""#;
+    assert_eq!(apply(uncropped)?.crop, [0., 0., 1., 1.]);
     assert_eq!(apply(r#"c:Exposure2012="0.5""#)?.crop, base.crop);
     // Written back as Camera Raw writes it, and read back the same.
     let packet = write::packet(

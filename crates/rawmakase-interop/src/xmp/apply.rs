@@ -1039,10 +1039,13 @@ impl Preset {
         settings.assign(crs::PERSPECTIVE_SCALE, &mut t.scale, 0.5, 1.5)?;
         settings.assign(crs::PERSPECTIVE_X, &mut t.offset_x, -1., 1.)?;
         settings.assign(crs::PERSPECTIVE_Y, &mut t.offset_y, -1., 1.)?;
-        // Camera Raw crops only with HasCrop: without it the photo is uncropped, even
-        // one the camera cropped to another aspect ratio, which Camera Raw records as
-        // a crop. Without HasCrop or crop values the photo keeps its starting crop.
-        if boolean(v, "HasCrop")? == Some(false) {
+        // HasCrop False without all four corners is the whole frame, even for a photo the
+        // camera cropped to another aspect ratio, which Camera Raw records as a crop.
+        // Camera Raw crops to the four corners the settings give whatever HasCrop says
+        // (docs/transform.md). Without HasCrop or crop values the photo keeps its
+        // starting crop.
+        let all_corners = crs::CROP.iter().all(|edge| v.contains_key(edge.key));
+        if boolean(v, "HasCrop")? == Some(false) && !all_corners {
             // Without a crop Camera Raw leaves the photo unturned too.
             let mut angle = 0.;
             settings.assign(crs::CROP_ANGLE, &mut angle, -45., 45.)?;
@@ -1080,7 +1083,6 @@ impl Preset {
             settings.assign(crs::CROP_ANGLE, &mut angle, -45., 45.)?;
             // Camera Raw leaves a photo whose settings give an angle without all four
             // corners unturned and uncropped, so an uncropped photo stays so.
-            let all_corners = crs::CROP.iter().all(|edge| v.contains_key(edge.key));
             if !own && !all_corners && start == (super::crop::WHOLE, 0.) {
                 angle = 0.;
             }
