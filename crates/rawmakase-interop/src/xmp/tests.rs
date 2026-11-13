@@ -2254,6 +2254,57 @@ fn lightroom_unresolved_auto_placeholders_are_measured() -> Result<()> {
     assert!((r.sharpening - 40. / 150.).abs() < 1e-6);
     Ok(())
 }
+/// A Lightroom catalog leaves crop corners at their defaults out of the record (Lightroom
+/// 5 writes no CropLeft or CropRight for a crop that keeps the full width), so its angle
+/// still turns the crop.
+#[test]
+fn lightroom_catalog_crops_without_default_corners_still_turn() -> Result<()> {
+    use crate::model::image_frame::straighten_zoom;
+    let m = Metadata {
+        width: 5472,
+        height: 3648,
+        ..Default::default()
+    };
+    let convert = |text: &str| -> Result<Recipe> {
+        let (r, warnings) = crate::lr_develop::convert_develop(text, &m, &[], None)?;
+        assert!(warnings.is_empty(), "{warnings:?}");
+        Ok(r)
+    };
+    // Lightroom renders this record at 5320×2264 (#1059). The full-width strip reaches past
+    // what the straighten zoom fills, so it is fitted about its centre at the same aspect.
+    let r = convert(
+        "s = { HasCrop = true, CropTop = 0.12944, CropBottom = 0.641451, CropAngle = -4.20443 }",
+    )?;
+    assert_eq!(r.straighten, 4.20443);
+    let zoom = straighten_zoom(r.straighten, [5472., 3648.]);
+    let got = [
+        (r.crop[2] - r.crop[0]) * 5472. / zoom,
+        (r.crop[3] - r.crop[1]) * 3648. / zoom,
+    ];
+    assert!(got[0] <= 5321. && got[1] <= 2265., "{got:?}");
+    assert!(
+        (got[0] / got[1] / (5320. / 2264.) - 1.).abs() < 1e-3,
+        "{got:?}"
+    );
+    // Missing corners read as the defaults written out.
+    for (short, full) in [
+        (
+            "CropAngle = 5",
+            "CropLeft = 0, CropTop = 0, CropRight = 1, CropBottom = 1, CropAngle = 5",
+        ),
+        (
+            "CropLeft = 0.2, CropAngle = -2",
+            "CropLeft = 0.2, CropTop = 0, CropRight = 1, CropBottom = 1, CropAngle = -2",
+        ),
+    ] {
+        let a = convert(&format!("s = {{ HasCrop = true, {short} }}"))?;
+        let b = convert(&format!("s = {{ HasCrop = true, {full} }}"))?;
+        assert_ne!(a.straighten, 0.);
+        assert_eq!((a.crop, a.straighten), (b.crop, b.straighten), "{short}");
+    }
+    Ok(())
+}
+
 /// A Lightroom 5 record before process version 2012 carries the 2012 tone keys at 0, which
 /// Lightroom ignores: its Exposure still converts, and the rest is reported (#1060).
 #[test]
