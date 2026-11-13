@@ -16,6 +16,71 @@ These controls were fitted to Camera Raw renders and match within the default-re
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the colour curves was not checked; here they set the RGB curve only.
 - **Auto** tone is fitted to Lightroom Classic's own Auto values, from 452 Auto Settings steps on 439 catalog photos with every fifth photo held out; each slider is a linear fit of one or two display-encoded percentiles of luminance, of the brightest channel or of chroma, and the held-out error is a median 1 step on Contrast and 0.21 EV on Exposure. Lightroom changed Auto in mid-2019 and the catalog's history shows both versions, so the slopes are fitted on every photo and the levels, Contrast, Vibrance and Saturation on the current Auto alone. The WB menu's Auto white balance is fitted to Lightroom's Auto values (a median of 2.7 mired off on 133 photos); see [tone controls](../tone-controls.md#auto).
 
+### Negative Dehaze as added haze, and the dark key (2026-11-13)
+
+Follow-ups of the round below, on Camera Raw's scene values of the training photos (98
+photos of the three families' `dehaze-train` and `clarity-train` sets, read through a linear
+profile and reduced to 2048 px; nothing fitted on validation).
+
+**Negative Dehaze: the haze model run backwards (branch `t3/dehaze-added-haze`, not merged).**
+
+- *What does not predict it.* Per photo, Camera Raw's gain at −100 is close to one curve of
+  the level (0.225 EV RMS; with a blur of 6% of the long edge 0.145) whose position moves by
+  about a stop from photo to photo. Percentiles, the mean, the airlight and blurred maxima
+  do not predict that position. The Shadows/Highlights rule's 24 histogram descriptors and
+  network, cross-validated by photo, do no better than the level under the 99th percentile
+  (0.510 against 0.475 on 94 photos). A table of the channel's level under the maximum of
+  blurred luminance and of the local level cross-validates at 0.354 (per channel; main
+  0.42), but in the gate its median at −100 stayed at 5.88 with 9 of 29 photos worse.
+- *Probes built from photos.* Three training photos' scene values written as probe DNGs in
+  13 variants each (78 renders). The gain curve at −100 keeps its place relative to the
+  photo when the data is scaled by −1 or −2 stops, and when the frame is flipped or doubled
+  in size. A bright patch of 1% of the frame moves it by +0.53 stop on a photo with nothing
+  near white (5%: +0.64, 20%: +0.75); on photos that already reach white a patch adds little
+  at 1% and up to +0.47 at 20%, far more in the darks (+1.6 at −9 stops). A dark patch does
+  nothing. Removing colour moves it by +0.07 to +0.26, more in the darks. Blurring by 8 px
+  moves it by up to +0.83, shuffling 64 px blocks by −0.13 to +0.38.
+- *The model.* That is the dark-channel haze model with a transmission above 1:
+  J = (p − A) / t + A, t = 1 + k·density, with the airlight and density positive Dehaze
+  already measures. One k for all photos fits −100 to 0.31 EV RMS (median of 98, per
+  channel; k free per photo 0.28, all three constants free per photo 0.21). The fit wants
+  no exponent on the density (0.98) and no scaling of the airlight (0.98). The engine's
+  window (0.5% of the long edge), guided filter and airlight percentile fit best: no guided
+  filter 0.40, double the window 0.34, four times 0.40, the haziest 0.1% or 5% 0.33 and
+  0.34. k at −10, −25, −50, −75 and −100 is 0.22, 0.67, 1.79, 3.64 and 6.71:
+  e^(2.05·|s|) − 1 within 1% (`scripts/corpus/scene-dehaze.py`).
+- *Gate* (Dehaze validation sets against `main-0a711ba5-metric2`, median display ΔE00): main
+  families, 29 photos: −100 5.88 → 2.90 (mean 7.36 → 3.45, 90th percentile 13.51 → 5.58; 27
+  better and 1 worse by more than 0.3), −50 2.93 → 1.71 (26 and 1), −25 1.50 → 1.18 (14 and
+  2). Stress families, 24 photos: −100 7.51 → 3.56 (19 and 3), −50 3.46 → 2.20 (17 and 4),
+  −25 1.81 → 1.27 (13 and 2). Default and positive Dehaze are unchanged. HDR family,
+  validation, mean ΔE ITP: Dehaze −30 11.73 → 6.68, 8.91 → 6.80, 5.11 → 5.11, 5.98 → 7.10;
+  −50 better on all six photos (19.44 → 8.91 the largest).
+- *What fails.* `accept` fails on the photo rule for three photos: a moonrise over a harbour
+  (−100 3.79 → 11.64, −50 2.28 → 6.10), a lit sign at night (stress, −50 4.99 → 7.36) and a
+  portrait (stress, −100 5.74 → 9.20); on single regions of photos that improve overall;
+  and on clipping (+0.5 point) for three stress photos. On the moonrise the airlight is the
+  moon's orange and the whole frame is veiled in it, where Camera Raw's veil is weak and
+  the sky's blue. Two night frames and a dark DNG among the training photos fail the same
+  way (Camera Raw lifts the bulk 0.3 to 0.5 stop, the model 1.4 to 2). Tried on the training
+  photos without effect: a veil fading toward black (four forms; the fit sets the fade to
+  nothing), the density capped by or blended with the pixel's own darkest channel, the
+  density clipped at 1 and no darkening, a strength predicted from one or two statistics of
+  the photo (leave-one-out mean 0.357 against 0.384, worst photo still above 1.1), and an
+  airlight from a larger window (2% to 10% of the long edge: median 0.40 to 0.53). The
+  synthetic scene probes at Dehaze −40 move both ways against their recorded errors (mean
+  absolute error 0.0105 → 0.0144, 0.0065 → 0.0052, 0.0089 → 0.0117).
+
+**The dark key (#471): identified on probes, a wash on photos.** 58 probe renders: Camera
+Raw's default black follows the 0.01th percentile (index ⌊n·10⁻⁴⌋) of the mean luminance of
+the cells of a copy 128 px on the long edge. In a 1024² frame one dark 8 px cell does
+nothing and two, adjacent or far apart, move the black fully; in 512 × 1024 one is enough;
+in 2048² the cell is 16 px; partly dark cells count by their linear mean; a spot dark in
+red only does nothing. With that key the probes below −4 stops go from 0.30 to 0.02 EV RMS.
+On 61 training photos at default it changes little: −11 to −9 stops 0.251 → 0.242 EV, −9
+to −7 0.088 → 0.080, black share against Camera Raw's 0.16 → 0.24 point (about 8 photos
+better, 5 worse), and several photos stay 0.8 EV off with either key. Not taken further.
+
 ### Tone experiments on current main (2026-11-12)
 
 Seven bounded Camera Raw 18.7 probes against main `0a711ba5`, planned from the open
