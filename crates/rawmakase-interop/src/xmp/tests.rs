@@ -2254,6 +2254,16 @@ fn lightroom_unresolved_auto_placeholders_are_measured() -> Result<()> {
     assert!((r.sharpening - 40. / 150.).abs() < 1e-6);
     Ok(())
 }
+/// A Lightroom 5 record before process version 2012 carries the 2012 tone keys at 0, which
+/// Lightroom ignores: its Exposure still converts, and the rest is reported (#1060).
+#[test]
+fn lightroom_5_legacy_records_keep_exposure_over_zeroed_2012_keys() -> Result<()> {
+    let text = r#"s = { ProcessVersion = "5.0", Exposure = 1.7, Exposure2012 = 0, Contrast = 17, Contrast2012 = 0, Brightness = 3, FillLight = 100, Clarity2012 = 0 }"#;
+    let (r, warnings) = crate::lr_develop::convert_develop(text, &Metadata::default(), &[], None)?;
+    assert_eq!(r.exposure, 1.7);
+    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    Ok(())
+}
 
 /// Raw defaults and imports apply settings without the photo: an Auto Tone preset
 /// then leaves the sliders as they were rather than guess, and asks nothing.

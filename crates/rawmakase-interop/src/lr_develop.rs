@@ -99,12 +99,12 @@ pub fn convert_develop(
         builtin: false,
     };
     let mut warnings = Vec::new();
-    // A record from before process version 2012 (6.7) with no 2012 tone keys.
+    // A record from before process version 2012 (6.7). Lightroom 5 stores the 2012 tone
+    // keys in these too, all 0, and ignores them (#1060).
     let legacy = fields
         .get("ProcessVersion")
         .and_then(|v| v.trim_matches('"').parse::<f32>().ok())
-        .is_some_and(|v| v < 6.7)
-        && !fields.keys().any(|k| k.ends_with("2012"));
+        .is_some_and(|v| v < 6.7);
     for (key, value) in &fields {
         if value.starts_with('{') {
             if key == "Look" && !value[1..value.len() - 1].trim().is_empty() {
@@ -187,6 +187,20 @@ pub fn convert_develop(
             // their 2012 counterparts; never apply both generations. Older records have
             // only these: exposure converts directly, the rest cannot be converted
             // faithfully and are reported instead of silently dropped.
+            if legacy
+                && matches!(
+                    key.as_str(),
+                    "Exposure2012"
+                        | "Contrast2012"
+                        | "Highlights2012"
+                        | "Shadows2012"
+                        | "Whites2012"
+                        | "Blacks2012"
+                        | "Clarity2012"
+                )
+            {
+                continue;
+            }
             if matches!(
                 key.as_str(),
                 "Exposure"
