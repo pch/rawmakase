@@ -75,8 +75,8 @@ output:
     Looks included.
 - **Effects and local work:**
   - the post-crop vignette and grain;
-  - masks with Temp, Tint, Exposure, Contrast, Shadows, Texture, Color, Sharpness and
-    Noise;
+  - masks with Temp, Tint, Exposure, Contrast, Shadows, Whites, Texture, Color,
+    Sharpness and Noise, Clarity 0 to +50 and Dehaze 0 to +30;
   - Red Eye;
   - everything that works on the camera's samples: lens corrections, geometry, noise
     reduction, AI Denoise, Heal and Clone.
@@ -100,7 +100,7 @@ renders everything. Each refusal has Camera Raw measurements behind it:
 | Refine Saturation other than 100% | Adds colour error in HDR (+1.5 to +2.3 ΔE_ITP) where SDR's removes it ([Tone curves](hdr-stage1-results.md#tone-curves)) |
 | A point curve that ends left of white | Camera Raw continues it past its last point, within 0.03 stop up to 16 times white, then holds steep curves back (0.82 stop off above white) ([Tone curves](hdr-stage1-results.md#tone-curves)) |
 | A darkening vignette's Highlights | Camera Raw protects only from four times white up, in proportion to Highlights; one synthetic probe, no photos ([Vignette and grain](hdr-stage1-results.md#vignette-and-grain)) |
-| A mask's Whites, Blacks, Hue, Saturation, Highlights, Clarity, Dehaze | Camera Raw's HDR mask operators differ from SDR's above white, or RAWmakase's master is further off than its SDR rendition ([Masks](hdr-stage1-results.md#masks)) |
+| A mask's Blacks, Hue, Saturation and Highlights, Clarity outside 0 to +50 and Dehaze outside 0 to +30 | Camera Raw's HDR mask operators differ from SDR's above white, or RAWmakase's master is further off than its SDR rendition ([Masks](hdr-stage1-results.md#masks)) |
 | A look that sets a refused slider (Adobe Landscape) | As the slider it sets; a look's split toning renders since 2026-11-12 ([Looks](hdr-stage1-results.md#looks)) |
 | Two profile curves unlike the family (Fujifilm HS20EXR, HS30EXR) | The fitted extension is 0.013 stop off below 0.9 against SDR's 0.005 ([Tone curves](hdr-stage1-results.md#tone-curves)) |
 

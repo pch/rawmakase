@@ -1115,7 +1115,8 @@ mod tests {
     }
 
     /// A mask renders in the master (docs/hdr.md#masks): over the whole frame, its
-    /// Exposure, Shadows and Texture render the master the global slider renders, above
+    /// Exposure, Shadows, Clarity, Dehaze and Texture render the master the global slider
+    /// renders, above
     /// white too, and half a frame's mask changes only its half; its Contrast and Color
     /// leave light above white alone, its Whites lifts light above white too, and
     /// Sharpness and Noise leave tone alone. Blacks, Hue, Saturation and Highlights
@@ -1188,6 +1189,19 @@ mod tests {
                 Recipe {
                     effects: crate::model::effects::Effects {
                         clarity: 0.3,
+                        ..base.effects.clone()
+                    },
+                    ..base.clone()
+                },
+            ),
+            (
+                LocalAdjust {
+                    dehaze: 0.3,
+                    ..Default::default()
+                },
+                Recipe {
+                    effects: crate::model::effects::Effects {
+                        dehaze: 0.3,
                         ..base.effects.clone()
                     },
                     ..base.clone()
