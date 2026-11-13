@@ -971,6 +971,28 @@ Highlights stays refused in HDR. Scored over the whole frame instead (a measure 
 tried here), the held negative Highlights would pass, as the light above white is a
 few percent of the frame; that measure was dropped for this reason.
 
+Re-examined on 2026-11-13 with Camera Raw 18.7 captures of more photos (Highlights −100,
+−50 and +50 in HDR and SDR; 58 of a 144-job batch were captured before Photoshop stopped
+responding), on 16 photo renders (the twelve validation and holdout photos and four
+HDRMerge DNGs of one scene):
+
+| Highlights | HDR below white | SDR below white | HDR above white |
+| --- | --- | --- | --- |
+| −100, pull held from −0.25 | 0.084 / 0.242 | 0.084 / 0.233 | 0.207 / 0.357 |
+| −50, pull held from −0.25 | 0.041 / 0.120 | 0.041 / 0.101 | 0.112 / 0.217 |
+| +50 | 0.053 / 0.146 | 0.050 / 0.105 | 0.240 / 0.473 |
+
+Just above white the rule's pull is Camera Raw's on most photos (within 0.1 stop on 7 of
+9 scenes at −100), but on two it is the SDR rule's own error at white, which SDR's shoulder
+hides (Nikon Z6 III −1.24 against −0.75, Sony A7R III −0.97 against −1.47), and further
+up Camera Raw's pull is 0.9 to 2.3 times its pull just above white, varying by photo.
+No reshaping above white tried reaches the rule: holding the pull, growing it 1.2 or 1.4
+times above the hold (above white 0.361 / 0.614 and 0.367 / 0.697 at −100 on six
+photos), the per-level tables instead of the rule (0.328 / 0.861), or fading positive
+Highlights above white or white's level (above white 0.171 / 0.381 at +50 at best). It
+needs the rule's gain at and above white fitted to HDR targets, which these captures now
+give for 10 scenes; that is the SDR rule's own top end, not an HDR-only change.
+
 ### Validation
 
 `scripts/corpus/hdr_validate.py` renders each HDR job of the family with
