@@ -45,7 +45,6 @@ fn markers_of_earlier_releases_are_ignored() -> Result<()> {
         assert_eq!(
             Recipe {
                 preset_name: expected.preset_name.clone(),
-                preset_settings: expected.preset_settings.clone(),
                 ..back
             },
             expected,
@@ -55,6 +54,35 @@ fn markers_of_earlier_releases_are_ignored() -> Result<()> {
     Ok(())
 }
 
+/// Applying a preset keeps its name but no copy of its settings: recipes no longer
+/// carry the map, which nothing read.
+#[test]
+fn an_applied_preset_keeps_no_copy_of_its_settings() -> Result<()> {
+    let m = Metadata {
+        wb: [2., 1., 1.5],
+        daylight_wb: [2., 1., 1.5],
+        ..Default::default()
+    };
+    let fresh = Recipe::with_profiles(&m, &[]);
+    let preset = parse(
+        Path::new("plain.xmp"),
+        &xml(r#"c:Exposure2012="+0.50" c:Contrast2012="20""#, ""),
+    )?;
+    let strict = preset.apply(&fresh, &m, &[], None)?;
+    assert!(
+        strict.preset_settings.is_empty(),
+        "{:?}",
+        strict.preset_settings
+    );
+    assert_eq!(strict.preset_name, preset.name);
+    let (lenient, _) = preset.apply_lenient(&fresh, &m, &[], None)?;
+    assert!(
+        lenient.preset_settings.is_empty(),
+        "{:?}",
+        lenient.preset_settings
+    );
+    Ok(())
+}
 #[test]
 fn lenient_white_balance_failure_preserves_its_basic_edits() -> Result<()> {
     let m = Metadata {

@@ -1,4 +1,4 @@
-# rich sets AutoLateralCA=7 Blacks2012=7 BlueHue=7 BlueSaturation=7 Clarity2012=7 ColorGradeBlending=7 ColorGradeGlobalHue=7 ColorGradeGlobalLum=7 ColorGradeGlobalSat=7 ColorGradeHighlightLum=7 ColorGradeMidtoneHue=7 ColorGradeMidtoneLum=7 ColorGradeMidtoneSat=7 ColorGradeShadowLum=7 ColorNoiseReduction=7 ColorNoiseReductionDetail=7 ColorNoiseReductionSmoothness=7 ColorVariance=7 Contrast2012=7 CropAngle=7 CropBottom=0.3 CropConstrainToWarp=7 CropLeft=0.3 CurveRefineSaturation=7 DefringeGreenAmount=7 DefringeGreenHueHi=7 DefringeGreenHueLo=7 DefringePurpleAmount=7 DefringePurpleHueHi=7 DefringePurpleHueLo=7 Dehaze=7 Exposure2012=7 GrainAmount=7 GrainFrequency=7 GrainSeed=7 GrainSize=7 GrayMixerAqua=7 GrayMixerBlue=7 GrayMixerGreen=7 GrayMixerMagenta=7 GrayMixerOrange=7 GrayMixerPurple=7 GrayMixerRed=7 GrayMixerYellow=7 GreenHue=7 GreenSaturation=7 HDRMaxValue=7 HasSettings=7 Highlights2012=7 HueAdjustmentAqua=7 HueAdjustmentBlue=7 HueAdjustmentGreen=7 HueAdjustmentMagenta=7 HueAdjustmentOrange=7 HueAdjustmentPurple=7 HueAdjustmentRed=7 HueAdjustmentYellow=7 LensManualDistortionAmount=7 LensProfileDistortionScale=7 LensProfileEnable=7 LensProfileVignettingScale=7 LuminanceAdjustmentAqua=7 LuminanceAdjustmentBlue=7 LuminanceAdjustmentGreen=7 LuminanceAdjustmentMagenta=7 LuminanceAdjustmentOrange=7 LuminanceAdjustmentPurple=7 LuminanceAdjustmentRed=7 LuminanceAdjustmentYellow=7 LuminanceNoiseReductionContrast=7 LuminanceNoiseReductionDetail=7 LuminanceSmoothing=7 ParametricDarks=7 ParametricHighlightSplit=70 ParametricHighlights=7 ParametricLights=7 ParametricMidtoneSplit=45 ParametricShadowSplit=7 ParametricShadows=7 PerspectiveAspect=7 PerspectiveHorizontal=7 PerspectiveRotate=7 PerspectiveScale=70 PerspectiveUpright=-7 PerspectiveVertical=7 PerspectiveX=7 PerspectiveY=7 PostCropVignetteAmount=7 PostCropVignetteFeather=7 PostCropVignetteHighlightContrast=7 PostCropVignetteMidpoint=7 PostCropVignetteRoundness=7 PostCropVignetteStyle=3 ProcessVersion=7 RedHue=7 RedSaturation=7 SDRBlend=7 SDRBrightness=7 SDRClarity=7 SDRContrast=7 SDRHighlights=7 SDRShadows=7 SDRWhites=7 Saturation=7 SaturationAdjustmentAqua=7 SaturationAdjustmentBlue=7 SaturationAdjustmentGreen=7 SaturationAdjustmentMagenta=7 SaturationAdjustmentOrange=7 SaturationAdjustmentPurple=7 SaturationAdjustmentRed=7 SaturationAdjustmentYellow=7 ShadowTint=7 Shadows2012=7 SharpenDetail=7 SharpenEdgeMasking=7 SharpenRadius=3 Sharpness=7 Temperature=5300 Texture=7 Tint=7 UprightCenterMode=7 UprightFocalMode=7 UprightPreview=7 UprightTransformCount=7 UprightVersion=7 Vibrance=7 VignetteAmount=7 VignetteMidpoint=7 Whites2012=7
+# rich sets AutoLateralCA=7 Blacks2012=7 BlueHue=7 BlueSaturation=7 Clarity2012=7 ColorGradeBlending=7 ColorGradeGlobalHue=7 ColorGradeGlobalLum=7 ColorGradeGlobalSat=7 ColorGradeHighlightLum=7 ColorGradeMidtoneHue=7 ColorGradeMidtoneLum=7 ColorGradeMidtoneSat=7 ColorGradeShadowLum=7 ColorNoiseReduction=7 ColorNoiseReductionDetail=7 ColorNoiseReductionSmoothness=7 Contrast2012=7 CropBottom=0.3 CropConstrainToWarp=7 CropLeft=0.3 CurveRefineSaturation=7 DefringeGreenAmount=7 DefringeGreenHueHi=7 DefringeGreenHueLo=7 DefringePurpleAmount=7 DefringePurpleHueHi=7 DefringePurpleHueLo=7 Dehaze=7 Exposure2012=7 GrainAmount=7 GrainFrequency=7 GrainSeed=7 GrainSize=7 GrayMixerAqua=7 GrayMixerBlue=7 GrayMixerGreen=7 GrayMixerMagenta=7 GrayMixerOrange=7 GrayMixerPurple=7 GrayMixerRed=7 GrayMixerYellow=7 GreenHue=7 GreenSaturation=7 HDRMaxValue=7 Highlights2012=7 HueAdjustmentAqua=7 HueAdjustmentBlue=7 HueAdjustmentGreen=7 HueAdjustmentMagenta=7 HueAdjustmentOrange=7 HueAdjustmentPurple=7 HueAdjustmentRed=7 HueAdjustmentYellow=7 LensManualDistortionAmount=7 LensProfileDistortionScale=7 LensProfileEnable=7 LensProfileVignettingScale=7 LuminanceAdjustmentAqua=7 LuminanceAdjustmentBlue=7 LuminanceAdjustmentGreen=7 LuminanceAdjustmentMagenta=7 LuminanceAdjustmentOrange=7 LuminanceAdjustmentPurple=7 LuminanceAdjustmentRed=7 LuminanceAdjustmentYellow=7 LuminanceNoiseReductionContrast=7 LuminanceNoiseReductionDetail=7 LuminanceSmoothing=7 ParametricDarks=7 ParametricHighlightSplit=70 ParametricHighlights=7 ParametricLights=7 ParametricMidtoneSplit=45 ParametricShadowSplit=7 ParametricShadows=7 PerspectiveAspect=7 PerspectiveHorizontal=7 PerspectiveRotate=7 PerspectiveScale=70 PerspectiveUpright=3 PerspectiveVertical=7 PerspectiveX=7 PerspectiveY=7 PostCropVignetteAmount=7 PostCropVignetteFeather=7 PostCropVignetteHighlightContrast=7 PostCropVignetteMidpoint=7 PostCropVignetteRoundness=7 PostCropVignetteStyle=3 RedHue=7 RedSaturation=7 SDRBlend=7 SDRBrightness=7 SDRClarity=7 SDRContrast=7 SDRHighlights=7 SDRShadows=7 SDRWhites=7 Saturation=7 SaturationAdjustmentAqua=7 SaturationAdjustmentBlue=7 SaturationAdjustmentGreen=7 SaturationAdjustmentMagenta=7 SaturationAdjustmentOrange=7 SaturationAdjustmentPurple=7 SaturationAdjustmentRed=7 SaturationAdjustmentYellow=7 ShadowTint=7 Shadows2012=7 SharpenDetail=7 SharpenEdgeMasking=7 SharpenRadius=3 Sharpness=7 Temperature=5300 Texture=7 Tint=7 Vibrance=7 VignetteAmount=7 VignetteMidpoint=7 Whites2012=7
 # base plain
   writes AutoLateralCA=0
   writes Blacks2012=0
@@ -200,7 +200,7 @@
   writes PerspectiveHorizontal=+7
   writes PerspectiveRotate=+7.0
   writes PerspectiveScale=70
-  writes PerspectiveUpright=0
+  writes PerspectiveUpright=3
   writes PerspectiveVertical=+7
   writes PerspectiveX=+7.00
   writes PerspectiveY=+7.00
@@ -347,7 +347,7 @@
   writes PerspectiveHorizontal=+7
   writes PerspectiveRotate=+7.0
   writes PerspectiveScale=70
-  writes PerspectiveUpright=0
+  writes PerspectiveUpright=3
   writes PerspectiveVertical=+7
   writes PerspectiveX=+7.00
   writes PerspectiveY=+7.00
@@ -5829,7 +5829,7 @@ plain PerspectiveUpright=["True"] error Invalid PerspectiveUpright: True: invali
 plain PerspectiveUpright=["False"] error Invalid PerspectiveUpright: False: invalid float literal || lenient warns ["Invalid PerspectiveUpright: False: invalid float literal"]
 plain PerspectiveUpright=["Custom"] error Invalid PerspectiveUpright: Custom: invalid float literal || lenient warns ["Invalid PerspectiveUpright: Custom: invalid float literal"]
 plain PerspectiveUpright=["As Shot"] error Invalid PerspectiveUpright: As Shot: invalid float literal || lenient warns ["Invalid PerspectiveUpright: As Shot: invalid float literal"]
-rich PerspectiveUpright=["0", "-0", "-1", "-100"] ok | writes || lenient same
+rich PerspectiveUpright=["0", "-0", "-1", "-100"] ok -.upright.mode | writes PerspectiveUpright=0 || lenient same
 rich PerspectiveUpright=["1"] ok .upright.mode="auto" | writes PerspectiveUpright=1 || lenient same
 rich PerspectiveUpright=["7"] error Unsupported PerspectiveUpright 7 || lenient warns ["Unsupported PerspectiveUpright 7"]
 rich PerspectiveUpright=["50"] error Unsupported PerspectiveUpright 50 || lenient warns ["Unsupported PerspectiveUpright 50"]
@@ -5837,7 +5837,7 @@ rich PerspectiveUpright=["100"] error Unsupported PerspectiveUpright 100 || leni
 rich PerspectiveUpright=["5500"] error Unsupported PerspectiveUpright 5500 || lenient warns ["Unsupported PerspectiveUpright 5500"]
 rich PerspectiveUpright=["True"] error Invalid PerspectiveUpright: True: invalid float literal || lenient warns ["Invalid PerspectiveUpright: True: invalid float literal"]
 rich PerspectiveUpright=["x"] error Invalid PerspectiveUpright: x: invalid float literal || lenient warns ["Invalid PerspectiveUpright: x: invalid float literal"]
-off PerspectiveUpright=["0", "-0", "-1", "-100"] ok | writes || lenient same
+off PerspectiveUpright=["0", "-0", "-1", "-100"] ok -.upright.mode | writes PerspectiveUpright=0 || lenient same
 off PerspectiveUpright=["1"] ok .upright.mode="auto" | writes PerspectiveUpright=1 || lenient same
 off PerspectiveUpright=["7"] error Unsupported PerspectiveUpright 7 || lenient warns ["Unsupported PerspectiveUpright 7"]
 off PerspectiveUpright=["50"] error Unsupported PerspectiveUpright 50 || lenient warns ["Unsupported PerspectiveUpright 50"]
@@ -10224,7 +10224,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:ContactInfo=""
      crs:Version="15.4"
      crs:RAWmakasePreset="3"
-     crs:PerspectiveUpright="0"
+     crs:PerspectiveUpright="3"
      crs:EnableTransform="True"
      crs:HasSettings="True">
      <crs:Name>
@@ -10884,7 +10884,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:PerspectiveScale="70"
      crs:PerspectiveX="+7.00"
      crs:PerspectiveY="+7.00"
-     crs:PerspectiveUpright="0"
+     crs:PerspectiveUpright="3"
      crs:CropLeft="0.300000"
      crs:CropTop="0.000000"
      crs:CropRight="1.000000"

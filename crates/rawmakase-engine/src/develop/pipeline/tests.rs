@@ -2497,3 +2497,38 @@ fn a_render_fits_in_an_eighth_of_a_worker_stack() -> anyhow::Result<()> {
     })?;
     Ok(())
 }
+/// An edit whose recipe still carries the copy of an applied preset's settings
+/// earlier releases saved renders bit for bit as it did: the map is emptied on read
+/// and never reached the renderer.
+#[test]
+fn a_legacy_preset_settings_map_does_not_change_the_render() -> anyhow::Result<()> {
+    let mut im = fixture();
+    im.metadata.cam_xyz = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
+    let base = Recipe {
+        profile: crate::camera_profiles::CameraProfile::camera_matrix_default(&im.metadata)
+            .map(std::sync::Arc::new),
+        exposure: 0.4,
+        contrast: 0.3,
+        preset_name: "Preset".into(),
+        ..Default::default()
+    };
+    let with_map = Recipe {
+        preset_settings: [("Exposure2012".to_string(), "+0.40".to_string())].into(),
+        ..base.clone()
+    };
+    let mut stored = serde_json::to_value(&with_map)?;
+    assert_eq!(stored["preset_settings"]["Exposure2012"], "+0.40");
+    let loaded: Recipe = serde_json::from_value(stored.take())?;
+    assert_eq!(loaded, base);
+    let bits = |r: &Recipe| -> anyhow::Result<Vec<u32>> {
+        let rendered = crate::develop::render(&im, &r.checked()?, 0, Cancel::NEVER)?;
+        Ok(rendered
+            .pixels
+            .iter()
+            .flatten()
+            .map(|v| v.to_bits())
+            .collect())
+    };
+    assert_eq!(bits(&loaded)?, bits(&with_map)?);
+    Ok(())
+}
