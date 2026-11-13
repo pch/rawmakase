@@ -69,8 +69,8 @@ output:
   White, Calibration, Point Color and Color Grading.
 - **Profiles and looks:**
   - camera profiles, HDR profiles among them;
-  - ordinary profiles' sRGB-encoded tables, the 2,437 camera-matching profiles
-    installed with Camera Raw;
+  - sRGB-encoded tables: the 2,437 camera-matching profiles installed with Camera
+    Raw, the 27 HDR profiles among them;
   - looks: tables, curves, RGB tables, B&W, Amount and their own sliders, fitted Camera
     Looks included.
 - **Effects and local work:**
@@ -102,7 +102,6 @@ renders everything. Each refusal has Camera Raw measurements behind it:
 | A darkening vignette's Highlights | Camera Raw protects only from four times white up, in proportion to Highlights; one synthetic probe, no photos ([Vignette and grain](hdr-stage1-results.md#vignette-and-grain)) |
 | A mask's Whites, Blacks, Hue, Saturation, Highlights, Clarity, Dehaze | Camera Raw's HDR mask operators differ from SDR's above white, or RAWmakase's master is further off than its SDR rendition ([Masks](hdr-stage1-results.md#masks)) |
 | A look that sets a refused slider (Adobe Landscape) | As the slider it sets; a look's split toning renders since 2026-11-12 ([Looks](hdr-stage1-results.md#looks)) |
-| An HDR profile's sRGB-encoded tables (27 installed) | How Camera Raw combines overrange encoding with them is not measured ([sRGB-encoded tables](hdr-stage1-results.md#srgb-encoded-tables)) |
 | Two profile curves unlike the family (Fujifilm HS20EXR, HS30EXR) | The fitted extension is 0.013 stop off below 0.9 against SDR's 0.005 ([Tone curves](hdr-stage1-results.md#tone-curves)) |
 
 ## Known limitations

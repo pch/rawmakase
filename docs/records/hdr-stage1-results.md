@@ -673,8 +673,29 @@ above white, before the profile's curve).
 Decision, 2026-11-12: an ordinary profile's sRGB-encoded tables render in HDR as in
 SDR, the value encoded past 1 by the sRGB curve: the master matches the SDR rendition
 below white, and the GPU's HDR preview already applies them so. An HDR profile's
-stay refused: how Camera Raw combines its overrange encoding with an sRGB-encoded
-table is not measured, and no capture of one exists.
+stayed refused: how Camera Raw combines its overrange encoding with an sRGB-encoded
+table was not measured.
+
+Camera Raw 18.7 then rendered Nikon's Camera Standard HDR, an HDR profile whose only
+table is a 3D sRGB-encoded look table (90 × 16 × 16), on two CC0 photos at limit 4 in
+HDR and SDR: the Z50 II's (17% of its area above white) and the Z5 II's (none). Three
+renderings of the table were scored on factor-8 pixels against Camera Raw (luminance
+error median in stops below white, from 2^-8, and above it; mean ΔE_ITP):
+
+| Rendering | Z50 II | Z5 II |
+| --- | --- | --- |
+| The sRGB encoding of the overrange-encoded value | 0.007 / 0.001, 0.78 | 0.008, 1.00 |
+| The linear value's sRGB encoding, past 1, as an ordinary profile's | 0.007 / 0.002, 0.79 | 0.009, 1.45 |
+| The overrange-encoded value, the table's encoding ignored | 0.011 / 0.010, 1.42 | 0.052, 5.16 |
+| RAWmakase's SDR rendition against Camera Raw's | 0.005, 0.67 | 0.012, 1.05 |
+
+Decision, 2026-11-13: an HDR profile's sRGB-encoded table looks up the sRGB encoding
+of the overrange-encoded value, the first rendering, which is what the overrange path
+did with the refusal lifted. It meets the [acceptance rule](#decisions) on both photos
+(medians 0.0075 against 0.0085 below white, 0.001 above it, ΔE_ITP 0.89 against
+0.86). The other 25 installed HDR profiles with such tables are of the same kind,
+camera-matching HDR profiles for Nikon (Camera Standard, Flat and Monochrome HDR) and
+Panasonic (Standard, Flat and Monochrome HDR v2) bodies, and render by the same rule.
 
 ### Red Eye
 
