@@ -210,7 +210,8 @@ const DEHAZE_MEASURED: f32 = -0.5;
 /// (the SDR operators, unclipped),
 /// Point Color (its swatches in colour grading's HDR domain),
 /// masks whose sliders are Temp, Tint, Exposure, Contrast, Shadows, Texture, Color,
-/// Sharpness and Noise,
+/// Sharpness and Noise, Clarity and Dehaze within [`masked_clarity_measured`] and
+/// [`masked_dehaze_measured`],
 /// camera profiles
 /// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks (their
 /// tables and curve, [`crate::camera_profiles::hdr_look`], at any Profile Amount, and
@@ -256,6 +257,11 @@ fn check(r: &super::recipe::Recipe, fold: bool) -> Result<()> {
             "A mask's Clarity outside 0 to +50, with the photo's own, is not supported in HDR yet"
         );
     }
+    if !masked_dehaze_measured(&r) {
+        anyhow::bail!(
+            "A mask's Dehaze outside 0 to +30, or above +100 with the photo's own, is not supported in HDR yet"
+        );
+    }
     // A look's own settings render as the user's sliders do, added to them, and its
     // table and curve at the Profile Amount (`Recipe::with_profile_adjustments`): each
     // is checked as that slider is.
@@ -275,6 +281,11 @@ fn check(r: &super::recipe::Recipe, fold: bool) -> Result<()> {
         if !masked_clarity_measured(folded) {
             anyhow::bail!(
                 "A mask's Clarity outside 0 to +50, with the photo's and the look's own, is not supported in HDR yet"
+            );
+        }
+        if !masked_dehaze_measured(folded) {
+            anyhow::bail!(
+                "A mask's Dehaze above +100 with the photo's and the look's own is not supported in HDR yet"
             );
         }
     }
@@ -343,13 +354,13 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
 /// HDR Whites and Blacks in a mask follow neither the SDR mask's curves nor the global
 /// sliders' (docs/records/hdr-stage1-results.md#masks); SDR's Saturation, which Hue
 /// shares, brightens colours Camera Raw's leaves alone, by more in the master than in
-/// SDR, where white clips it; Highlights has no HDR rendering globally, and a mask's
-/// Clarity and Dehaze aren't measured.
+/// SDR, where white clips it; Highlights has no HDR rendering globally. A mask's
+/// Clarity and Dehaze are bounded with the photo's own ([`masked_clarity_measured`],
+/// [`masked_dehaze_measured`]).
 fn unrendered_mask_slider(a: &crate::model::masks::LocalAdjust) -> Option<&'static str> {
     [
         ("Highlights", a.highlights),
         ("Blacks", a.blacks),
-        ("Dehaze", a.dehaze),
         ("Hue", a.hue),
         ("Saturation", a.saturation),
     ]
@@ -379,6 +390,32 @@ fn masked_clarity_measured(r: &super::recipe::Recipe) -> bool {
             (lo + v.min(0.), hi + v.max(0.))
         });
     lo >= 0. && hi <= CLARITY_MEASURED
+}
+
+/// The most Dehaze (−1 to 1) the masks add to a pixel in the HDR master: Camera Raw
+/// 18.7's HDR render of a mask's Dehaze +30 on six photos is as close to the master as
+/// its SDR render to the SDR rendition, and −30's is further
+/// (docs/records/hdr-stage1-results.md#masks).
+const MASK_DEHAZE_MEASURED: f32 = 0.3;
+
+/// Whether the masks' Dehaze stays in the range measured for them, 0 to +30, and, with
+/// the photo's own, within the global slider's, up to +100. A mask's Dehaze works in
+/// the global slider's stage, so a pixel renders the global slider at the sum. As for
+/// Clarity, each active mask's Dehaze at its Amount is taken as reaching every pixel.
+fn masked_dehaze_measured(r: &super::recipe::Recipe) -> bool {
+    let masks: Vec<f32> = r
+        .masks
+        .iter()
+        .filter(|g| g.is_active() && g.adjust.dehaze != 0.)
+        .map(|g| g.adjust.dehaze * g.amount)
+        .collect();
+    if masks.is_empty() {
+        return true;
+    }
+    let added: f32 = masks.iter().sum();
+    masks.iter().all(|v| *v >= 0.)
+        && added <= MASK_DEHAZE_MEASURED
+        && r.effects.dehaze + added <= 1.
 }
 
 /// Whether `r` renders an HDR master of the photo `m` describes, and if not, why;
@@ -687,7 +724,7 @@ mod tests {
             ("Highlights", |a| a.highlights = -0.2),
             ("Blacks", |a| a.blacks = -0.2),
             ("Clarity", |a| a.clarity = -0.2),
-            ("Dehaze", |a| a.dehaze = 0.2),
+            ("Dehaze", |a| a.dehaze = -0.2),
             ("Hue", |a| a.hue = 10.),
             ("Saturation", |a| a.saturation = 0.2),
         ];
@@ -712,6 +749,25 @@ mod tests {
         clarity.masks.push(second);
         let error = check_recipe(&clarity).unwrap_err().to_string();
         assert!(error.contains("A mask's Clarity"), "{error}");
+        // Dehaze renders from 0 to +30 in masks, overlapping masks added, and up to
+        // +100 with the photo's own.
+        let mut dehaze = masked.clone();
+        dehaze.masks[0].adjust.dehaze = 0.3;
+        dehaze.effects.dehaze = 0.7;
+        assert!(check_recipe(&dehaze).is_ok());
+        for (mask, own) in [(0.4, 0.), (0.2, 0.9)] {
+            let mut edit = dehaze.clone();
+            edit.masks[0].adjust.dehaze = mask;
+            edit.effects.dehaze = own;
+            let error = check_recipe(&edit).unwrap_err().to_string();
+            assert!(error.contains("A mask's Dehaze"), "{mask} {own}: {error}");
+        }
+        let mut overlapping = dehaze.clone();
+        let mut second = overlapping.masks[0].clone();
+        second.adjust.dehaze = 0.2;
+        second.amount = 0.5;
+        overlapping.masks.push(second);
+        assert!(check_recipe(&overlapping).is_err());
         // A look's Clarity adds to the sum.
         clarity.masks.pop();
         let mut look = crate::camera_profiles::open::color(&crate::camera_data::Metadata {

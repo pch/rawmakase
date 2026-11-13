@@ -1831,6 +1831,29 @@ Dehaze +30 0.098 against 0.082), so it was not kept.
 Decision, 2026-11-12: a mask's Clarity renders where every pixel's Clarity, with the
 photo's own, stays from 0 to +50; a mask's Dehaze stays refused.
 
+**Mask Dehaze on six photos (2026-11-13).** Camera Raw 18.7 rendered the same mask
+Dehaze ±30 on three more CC0 photos (the Z6 III's, the Panasonic S1 II's and a Canon
+CR3), and the three above were rendered again with `main` 50c199a9 (Dehaze down to −50,
+#1070). Effect error median below white, HDR / SDR, and above white, per photo:
+
+| Photo | +30 below | +30 above | −30 below | −30 above |
+| --- | --- | --- | --- | --- |
+| Z 8 | 0.065 / 0.065 | 0.110 | 0.224 / 0.204 | 0.043 |
+| Z f | 0.100 / 0.082 | 0.071 | 0.057 / 0.047 | 0.019 |
+| A7R III | 0.105 / 0.105 | 0.096 | 0.238 / 0.236 | 0.733 |
+| Z6 III | 0.099 / 0.098 | 0.021 | 0.169 / 0.165 | 0.147 |
+| S1 II | 0.150 / 0.142 | 0.075 | 0.183 / 0.147 | 0.118 |
+| Canon CR3 | 0.058 / 0.057 | 0.119 | 0.212 / 0.212 | 0.055 |
+
+On the medians over the six photos, +30 meets the [acceptance rule](#decisions): 0.0996
+against 0.0901 below white, 0.085 above it, ΔE_ITP added +3.50 against +3.14. −30
+doesn't: 0.1976 against 0.1845 below white (ΔE_ITP +6.99 against +6.58). The margin at
++30 is small (0.0005 stop), and it comes from the three added photos, where the master
+is within 0.008 of the SDR rendition; the Z f still misses by 0.018.
+
+Decision, 2026-11-13: a mask's Dehaze renders from 0 to +30 (overlapping masks added),
+and up to +100 with the photo's own; negative mask Dehaze stays refused.
+
 ### Decisions
 
 - **When a refused control renders** (2026-11-11). A control the master refuses
