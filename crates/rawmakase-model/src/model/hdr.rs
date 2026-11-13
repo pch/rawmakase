@@ -185,6 +185,11 @@ const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 /// its SDR one rolls off, which the SDR-fitted grids can't follow at +100
 /// (docs/records/hdr-stage1-results.md#band-luminance).
 const BAND_LUMINANCE_MEASURED: f32 = 0.4;
+/// The lowest Refine Saturation (0 to 1) the HDR master renders: SDR's rule without
+/// its bound at white is within the acceptance rule at 50% on the patches and at 0% on
+/// six photos, but at 0% on the patches adds more colour error than SDR's
+/// (docs/records/hdr-stage1-results.md#tone-curves).
+const REFINE_SATURATION_MEASURED: f32 = 0.5;
 /// The largest Clarity, either sign (−1 to 1), the HDR master renders: up to ±50 the
 /// master's (the SDR operator, stronger beside light above white) departs from Camera
 /// Raw's HDR effect no further than the SDR rendition from its SDR one; at +100 it does
@@ -325,8 +330,8 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
                 .any(|c| c.points.last().is_some_and(|p| p[0] < 1.)),
         ),
         (
-            "Refine Saturation",
-            r.curve_saturation != 1. && !r.curve.is_identity(),
+            "Refine Saturation below 50%",
+            r.curve_saturation < REFINE_SATURATION_MEASURED && !r.curve.is_identity(),
         ),
         (
             "Clarity beyond ±50",
@@ -850,7 +855,7 @@ mod tests {
             |r| r.effects.dehaze = -0.7,
             |r| {
                 r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
-                r.curve_saturation = 0.5;
+                r.curve_saturation = 0.49;
             },
         ];
         for change in unmeasured {
@@ -862,15 +867,21 @@ mod tests {
             edit.hdr.enabled = false;
             assert!(check_recipe(&edit).is_ok());
         }
-        // Point and parametric curves render, with Refine Saturation at 100%, and so
-        // does a curve whose first point is right of black; one whose last point is
-        // left of white does not.
+        // Point and parametric curves render, with Refine Saturation from 50% to 100%,
+        // and so does a curve whose first point is right of black; one whose last point
+        // is left of white does not.
         r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
         r.effects.parametric = [0.1, -0.2, 0.3, -0.4];
         r.black_point = 0.05;
         r.white_point = 0.9;
         r.midtone = 1.2;
         assert!(check_recipe(&r).is_ok());
+        r.curve_saturation = 0.5;
+        assert!(check_recipe(&r).is_ok());
+        r.curve_saturation = 0.4;
+        let error = check_recipe(&r).unwrap_err().to_string();
+        assert!(error.contains("Refine Saturation below 50%"), "{error}");
+        r.curve_saturation = 1.;
         r.curve.points = vec![[0.2, 0.], [1., 1.]];
         assert!(check_recipe(&r).is_ok());
         r.curve.points = vec![[0.2, 0.2], [0.8, 0.8]];

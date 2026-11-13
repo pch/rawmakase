@@ -337,6 +337,20 @@ const REFINE_LUMA: [f32; 3] = [0.299, 0.587, 0.114];
 /// as far as it must to stay within 0–1. Other amounts blend linearly, and amounts above
 /// 1 render as 1, as Camera Raw does.
 pub fn refine_saturation(input: [f32; 3], curved: [f32; 3], amount: f32) -> [f32; 3] {
+    refine(input, curved, amount, true)
+}
+
+/// [`refine_saturation`] in an HDR master, on values that go on above white: kept within
+/// 0 but not within 1 (super::hdr_curve::refine_saturation).
+pub(crate) fn refine_saturation_unbounded_above(
+    input: [f32; 3],
+    curved: [f32; 3],
+    amount: f32,
+) -> [f32; 3] {
+    refine(input, curved, amount, false)
+}
+
+fn refine(input: [f32; 3], curved: [f32; 3], amount: f32, white_bound: bool) -> [f32; 3] {
     let amount = amount.clamp(0., 1.);
     if amount == 1. {
         return curved;
@@ -348,7 +362,7 @@ pub fn refine_saturation(input: [f32; 3], curved: [f32; 3], amount: f32) -> [f32
     let high = offset.into_iter().fold(0f32, f32::max);
     let low = offset.into_iter().fold(0f32, f32::min);
     let mut scale = 1f32;
-    if high > 1e-6 {
+    if white_bound && high > 1e-6 {
         scale = scale.min((1. - target) / high);
     }
     if low < -1e-6 {

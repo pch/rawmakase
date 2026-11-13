@@ -2061,6 +2061,9 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
     let mut channels = curves.clone();
     channels.effects.channels[0].points = vec![[0., 0.], [0.5, 0.63], [1., 1.]];
     channels.effects.channels[2].points = vec![[0., 0.], [0.5, 0.39], [1., 1.]];
+    // Refine Saturation at 60% on the master curve, light above white included.
+    let mut refine = curves.clone();
+    refine.curve_saturation = 0.6;
     let mut together = curves.clone();
     together.contrast = 0.35;
     together.effects.parametric = parametric.effects.parametric;
@@ -2138,6 +2141,7 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         curves,
         parametric,
         channels,
+        refine,
         together,
     ]);
     // A steep master curve, whose output the hold takes back above 16 times white.
