@@ -86,12 +86,51 @@ pub struct LensfunChoice {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub camera: Option<LensfunCamera>,
     /// The calibration, copied from the database when the lens was chosen; `None`
-    /// while the edit only names the lens (from XMP) and it isn't resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// while the edit only names the lens (from XMP) and it isn't resolved. Written
+    /// inline; a catalog stores it once and names it by id
+    /// ([`crate::model::stored_recipe`]), and both forms are read.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "stored_calibration"
+    )]
     pub calibration: Option<Arc<Calibration>>,
     /// Where the copy came from. An unresolved choice records the database the
     /// identity was written from, when known.
     pub provenance: Provenance,
+}
+
+/// [`LensfunChoice::calibration`] as saved: inline, as a catalog's reference to its
+/// stored copy (a string, resolved by [`crate::storage::recipe_assets`]), or null.
+fn stored_calibration<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Arc<Calibration>>, D::Error> {
+    struct Stored;
+    impl<'de> serde::de::Visitor<'de> for Stored {
+        type Value = Option<Arc<Calibration>>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a Lensfun calibration, a stored calibration's id or null")
+        }
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+        fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+        fn visit_some<D: serde::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+            d.deserialize_any(self)
+        }
+        fn visit_str<E: serde::de::Error>(self, id: &str) -> Result<Self::Value, E> {
+            crate::storage::recipe_assets::calibration(id)
+                .map(Some)
+                .map_err(E::custom)
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+            Calibration::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                .map(|c| Some(Arc::new(c)))
+        }
+    }
+    deserializer.deserialize_any(Stored)
 }
 
 /// What a Lensfun choice does for one photo.

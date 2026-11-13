@@ -1000,6 +1000,7 @@ fn matmul(a: Matrix, b: Matrix) -> Matrix {
     std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| a[i][k] * b[k][j]).sum()))
 }
 
+pub mod asset;
 pub mod catalogue;
 mod cube;
 mod cube_look;
