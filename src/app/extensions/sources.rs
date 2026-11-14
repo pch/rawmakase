@@ -214,14 +214,16 @@ impl Editor {
             .is_some_and(|l| *l.session.catalog().location() == catalog);
         // Reading the catalog again drops what is being typed in the
         // Library: it is saved first, and kept when it can't be.
-        if same && !added.added.is_empty() && self.commit_library_drafts() {
-            if let Some(library) = &mut self.library {
-                match library.reread_after(&[]) {
-                    Ok(()) => library.start_background_reads(),
-                    Err(e) => self.messages.fail(format!(
-                        "{title}: photos added, but the catalog could not be read again: {e:#}"
-                    )),
-                }
+        if same
+            && !added.added.is_empty()
+            && self.commit_library_drafts()
+            && let Some(library) = &mut self.library
+        {
+            match library.reread_after(&[]) {
+                Ok(()) => library.start_background_reads(),
+                Err(e) => self.messages.fail(format!(
+                    "{title}: photos added, but the catalog could not be read again: {e:#}"
+                )),
             }
         }
         if !added.report.unreadable.is_empty() {
