@@ -347,11 +347,57 @@ impl Ready {
         composite(image.pixels_mut(), width, height, &mark);
         true
     }
+
+    /// Lays the mark over an HDR master (linear ProPhoto RGB, 1 = graphics white) as
+    /// [`Ready::apply`] lays it over an sRGB SDR rendition: placed and scaled the same
+    /// way for the master's size and blended as the sRGB export blends it, in sRGB's
+    /// primaries and its encoded values, with the sRGB curve continued above white (and
+    /// its linear segment below 0, for colours outside sRGB). The mark's white is
+    /// therefore graphics white, never the peak above it, and where the master is
+    /// within sRGB and white the marked pixels are the sRGB export's. Pixels the mark
+    /// doesn't cover keep their exact values. False when there was nothing to draw.
+    pub fn apply_hdr(&self, master: &mut crate::rendered::HdrImage) -> bool {
+        use crate::color::{hdr_output::HdrGamut, mul, srgb_decode, srgb_encode};
+        let Some(mark) = self.place(master.width, master.height) else {
+            return false;
+        };
+        let to_srgb = HdrGamut::Rec709.prophoto_to_rgb();
+        let to_prophoto = crate::color::inverse(to_srgb);
+        covered(
+            &mut master.pixels,
+            master.width,
+            master.height,
+            &mark,
+            |p, m, a| {
+                let encoded = mul(to_srgb, *p).map(srgb_encode);
+                let blended =
+                    std::array::from_fn(|c| srgb_decode(m[c] * a + encoded[c] * (1. - a)));
+                *p = mul(to_prophoto, blended);
+            },
+        );
+        true
+    }
 }
 
 /// Alpha-over in the image's encoded values: pixels the mark doesn't cover keep
 /// their exact values.
 fn composite(pixels: &mut [[f32; 3]], width: u32, height: u32, mark: &Placed) {
+    covered(pixels, width, height, mark, |p, m, a| {
+        for (c, m) in p.iter_mut().zip(m) {
+            *c = m * a + *c * (1. - a);
+        }
+    });
+}
+
+/// Calls `blend` with each pixel the mark covers, the mark's colour there and its
+/// alpha; pixels outside the mark or under its fully transparent parts are left alone.
+fn covered(
+    pixels: &mut [[f32; 3]],
+    width: u32,
+    height: u32,
+    mark: &Placed,
+    blend: impl Fn(&mut [f32; 3], [f32; 3], f32),
+) {
     let (w, h) = (i64::from(width), i64::from(height));
     for my in 0..mark.height as i64 {
         let y = mark.y + my;
@@ -367,10 +413,7 @@ fn composite(pixels: &mut [[f32; 3]], width: u32, height: u32, mark: &Placed) {
             if a <= 0. {
                 continue;
             }
-            let p = &mut pixels[(y * w + x) as usize];
-            for (c, m) in p.iter_mut().zip([r, g, b]) {
-                *c = m * a + *c * (1. - a);
-            }
+            blend(&mut pixels[(y * w + x) as usize], [r, g, b], a);
         }
     }
 }

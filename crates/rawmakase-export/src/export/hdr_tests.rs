@@ -1,7 +1,7 @@
 //! HDR exports through the whole export path: the pixels as the `tiff` crate's
 //! decoder reads them back and decoded by PQ's EOTF or read as float, the embedded
 //! profile's CICP as moxcms reads it, and the refusals before rendering.
-use super::srgb_fixtures::{photo, synthetic, text_watermark};
+use super::srgb_fixtures::{photo, synthetic};
 use crate::{
     camera_profiles::CameraProfile,
     color::hdr_output::{GRAPHICS_WHITE_NITS, HdrGamut, HdrOutput, HdrTransfer, pq_decode},
@@ -117,7 +117,7 @@ fn an_hdr_tiff_keeps_highlights_above_white() -> Result<()> {
     Ok(())
 }
 
-/// An HDR export needs an HDR edit, a TIFF and no watermark; each is refused before
+/// An HDR export needs an HDR edit and a TIFF; each is refused before
 /// anything is written.
 #[test]
 fn an_hdr_export_refuses_what_it_cannot_write() -> Result<()> {
@@ -135,14 +135,6 @@ fn an_hdr_export_refuses_what_it_cannot_write() -> Result<()> {
     let error = export(&off, &settings(output), dir.path(), "off").unwrap_err();
     assert!(error.to_string().contains("HDR off"), "{error}");
     recipe.hdr.enabled = true;
-    let mut marked = photo(
-        image.clone(),
-        &dir.path().join("in.dng"),
-        dir.path(),
-        recipe.clone(),
-    );
-    marked.watermark = Some(text_watermark());
-    assert!(export(&marked, &settings(output), dir.path(), "marked").is_err());
     let on = photo(image, &dir.path().join("in.dng"), dir.path(), recipe);
     let mut jpeg = settings(output);
     jpeg.choose_format(Format::Jpeg);

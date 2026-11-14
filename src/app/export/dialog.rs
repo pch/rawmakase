@@ -690,13 +690,13 @@ fn hdr_rows(ui: &mut egui::Ui, s: &mut crate::export_settings::ExportSettings) {
                 "Export HDR edits with a gain map",
                 "Writes the SDR rendition with an ISO 21496-1 gain map to the HDR master: \
                  HDR displays show the master, others the SDR rendition. \
-                 Watermarks are not supported in HDR yet.",
+                 A watermark is drawn in both.",
             )
         } else {
             (
                 "Export HDR edits in HDR",
                 "Writes the HDR master of edits with High Dynamic Range on. \
-                 Graphics white is 203 cd/m². Watermarks are not supported in HDR yet.",
+                 Graphics white is 203 cd/m², and a watermark's white is graphics white.",
             )
         };
         if ui.checkbox(&mut on, label).on_hover_text(tip).changed() {

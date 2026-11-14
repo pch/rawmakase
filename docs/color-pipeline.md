@@ -76,6 +76,7 @@ An export is written in sRGB (the default), Adobe RGB (1998) or ProPhoto RGB, ch
 | Grain (`effects.rs`) | Encoded 0–1 | Strength by the destination's luminance |
 | Resize | None | Per channel, unchanged |
 | Watermark (`watermark::Ready::apply`) | None (alpha-over) | The mark's sRGB colours (text, shadow, graphic) converted first, so a red mark is the same red; a graphic's own profile is still ignored |
+| HDR watermark (`watermark::Ready::apply_hdr`) | None (alpha-over in sRGB primaries and the sRGB encoding continued above white) | The mark at graphics white (1.0), never the HDR peak; covered pixels go to linear sRGB and back to the master's ProPhoto ([HDR export](hdr.md#watermarks)) |
 | Quantizing (`Rendered::rgb8`, `rgb16`) | 0–1 | Unchanged |
 
 Before it, a camera profile's or `.cube` look's RGB table may still clip in its own space by design (`Gamut::Clip`), limiting those profiles' gamut. Range masks (Color and Luminance Range) measure an unmasked sRGB render whatever the export's space, so a mask selects the same pixels in every space. For Adobe RGB and ProPhoto the finishing stages' result differs slightly from "render sRGB, then convert", as they see the destination's values.

@@ -562,10 +562,7 @@ fn render(
     {
         notes.push(issue.message().into());
     }
-    if preset.is_some() && batch.settings.hdr.is_some() {
-        anyhow::bail!("Watermarks are not supported in HDR exports yet");
-    }
-    let mut prepared = job::prepare(
+    let prepared = job::prepare(
         &job::Photo {
             image,
             source: photo.source.clone(),
@@ -577,18 +574,11 @@ fn render(
             ai: batch.ai.clone(),
             file,
         },
+        preset,
         &batch.settings,
         cancel,
         &|p| progress(p * 0.9),
     )?;
-    if let Some(preset) = preset {
-        let super::Pixels::Sdr(rendered) = &mut prepared.rendered else {
-            anyhow::bail!("Watermarks are not supported in HDR exports yet");
-        };
-        if !preset.apply(rendered) {
-            notes.push("the watermark's text has no characters its font can draw".into());
-        }
-    }
     notes.extend(prepared.notice.clone());
     Ok((prepared, notes))
 }

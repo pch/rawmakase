@@ -382,3 +382,57 @@ fn renaming_by_case_alone_keeps_the_preset() -> Result<()> {
     assert!(renamed.ready_in(&store.join("images")).is_ok());
     Ok(())
 }
+
+/// An HDR master gets the mark the sRGB export gets: its white is graphics white
+/// (1.0 in linear light), not the light above white it covers; where the master is
+/// within sRGB and white, the half-opaque mix is the sRGB export's; pixels outside
+/// the mark, bright ones included, keep their exact values.
+#[test]
+fn an_hdr_master_gets_the_marks_white_at_graphics_white() -> Result<()> {
+    use crate::color::{hdr_output::HdrGamut, mul, srgb_decode, srgb_encode};
+    let (dir, mut w) = graphic(100, 50, false)?;
+    let images = dir.path().join("watermarks/images");
+    w.size = Size::Fit;
+    w.anchor = Anchor(0, 0);
+    let to_prophoto = crate::color::inverse(HdrGamut::Rec709.prophoto_to_rgb());
+    let to_srgb = HdrGamut::Rec709.prophoto_to_rgb();
+    // Light above white on the top rows, a mid grey (linear 0.2) below.
+    let light = |y: u32| if y < 25 { 6. } else { 0.2 };
+    let master = |pixels: Vec<[f32; 3]>| crate::rendered::HdrImage {
+        width: 100,
+        height: 100,
+        pixels,
+        peak: 16.,
+    };
+    let mut hdr = master(
+        (0..100 * 100)
+            .map(|i| mul(to_prophoto, [light(i / 100); 3]))
+            .collect(),
+    );
+    let before = hdr.pixels.clone();
+    // Opaque: the red is sRGB's red at graphics white over the bright rows.
+    let ready = w.ready_in(&images)?;
+    assert!(ready.apply_hdr(&mut hdr));
+    let srgb = |p: [f32; 3]| mul(to_srgb, p);
+    let red = srgb(hdr.pixels[10 * 100 + 90]);
+    assert!((red[0] - 1.).abs() < 1e-4 && red[1].abs() < 1e-4, "{red:?}");
+    assert_eq!(hdr.pixels[10 * 100 + 10], before[10 * 100 + 10]);
+    assert_eq!(hdr.pixels[99 * 100 + 99], before[99 * 100 + 99]);
+    // Half opaque over the grey: the sRGB export's mix, in its encoding.
+    w.opacity = 0.5;
+    let mut hdr = master(before);
+    w.ready_in(&images)?.apply_hdr(&mut hdr);
+    let mut sdr = crate::develop::ExportImage::srgb(gray(100, 100, srgb_encode(0.2)));
+    w.ready_in(&images)?.apply(&mut sdr);
+    let ours = srgb(hdr.pixels[40 * 100 + 90]).map(srgb_encode);
+    let theirs = sdr.pixels()[40 * 100 + 90];
+    for c in 0..3 {
+        assert!((ours[c] - theirs[c]).abs() < 1e-4, "{ours:?} {theirs:?}");
+    }
+    // Over light above white, the half-opaque red sits between it and the mark.
+    let bright = srgb(hdr.pixels[10 * 100 + 90]);
+    let expected = srgb_decode(0.5 + 0.5 * srgb_encode(6.));
+    assert!((bright[0] - expected).abs() < 1e-3, "{bright:?}");
+    assert!(bright[0] < 6. && bright[0] > 1.);
+    Ok(())
+}

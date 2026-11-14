@@ -851,10 +851,31 @@ the gamut's colorants and a `cicp` tag naming primaries and transfer; EXIF's
 ColorSpace is Uncalibrated. No mastering-display metadata is written.
 
 An HDR export needs an edit with HDR on (otherwise it is refused, not exported as
-SDR), refuses watermarks (they are composited in SDR) and is a TIFF or a JPEG XL
-(linear light a TIFF only). An SDR export of an HDR edit is its SDR rendition. HDR
+SDR) and is a TIFF or a JPEG XL (linear light a TIFF only). An SDR export of an HDR edit is its SDR rendition. HDR
 exports go through the export queue as SDR ones do: staged to a temporary file beside
 the target, which a cancel or a failure removes, and committed whole.
+
+### Watermarks
+
+A watermark goes into the HDR master before it is encoded
+(`watermark::Ready::apply_hdr`), placed, scaled and turned by the same code as in the
+SDR export, for the master's size, which is the SDR rendition's. Its colours are sRGB
+at graphics white: a white mark is 1.0 in linear light (203 cd/m² in PQ, HLG signal
+0.75), never the peak, so it looks as it does in the SDR export instead of glowing
+over the photo's highlights. It is blended as the sRGB SDR export blends it, in sRGB's
+primaries and encoded values, with the sRGB curve continued above white (and its
+linear segment below 0 for colours outside sRGB): where the master is within sRGB and
+white, a marked pixel is the sRGB export's, and a partly transparent mark or a text's
+antialiased edge weighs the photo as it does there. (Blending in linear light would
+make a 60% white mark over black 0.6 of white instead of the SDR export's 0.32.) Over
+light above white a partly transparent mark lets the light through as the blend
+says: half-opaque white over 6× white is 2.88× white. Pixels the mark doesn't cover
+keep their exact values. A gain-map export marks both its SDR base (exactly as the SDR
+export) and its master, so the map between them keeps the mark at graphics white.
+Each HDR format is checked on synthetic photos: the decoded light under an opaque
+white mark is graphics white within 0.001 in PQ, HLG and linear TIFFs and lossless
+JPEG XL, 0.05 (median) lossy, and in a gain-map JPEG's reconstruction at full
+headroom.
 
 ### Gain maps
 
