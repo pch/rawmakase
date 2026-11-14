@@ -45,7 +45,7 @@ any of them.
 | Viewer tools | The app provides point, box, combined click-and-box prompts and brush input; an extension asks for one kind and receives the result |
 | AI upscaling | Not planned; the design leaves room for it (see [Future](#future-derived-photos)) |
 | Scope of the first version | Only what moves MIDI, MCP and AI masks out ([Phases](#phases)). Every other contribution is designed here but built only when a real extension needs it ([Designed, not scheduled](#designed-not-scheduled)); nothing built first may close off room for it |
-| Extensions RAWmakase writes | Only the extracted features. Film grain, Auto modes, Capture One import, tethering, watched folders and object removal are examples of what others could write, not planned work |
+| Extensions RAWmakase writes | The extracted features, and experimental AI Remove (`dev.pch.ai-remove`, its own repository, not bundled but listed in Preferences > Extensions > Available), which proves retouch generators. Film grain, Auto modes, Capture One import, tethering and watched folders are examples of what others could write, not planned work |
 | Lightroom import | Stays in the core for now. Its edits are converted once, at import (a separate change, planned on its own). Moving the importer into an extension is a follow-up the importer contract leaves room for |
 | Other importers | One-time imports, such as Capture One and Lightroom CC: photos, metadata and edits converted to RAWmakase settings at import, with no ongoing link to the source |
 | Filters before the scene tone stage, filters limited by a mask | Deferred until designs of their own; the filter design leaves room for both ([Filters](#filters)) |
@@ -428,7 +428,7 @@ What each contribution is, which side owns what, and the invariants it keeps.
 | `panel` | program, or none for filter panels | Declares controls; reacts to their values | Drawing, layout, undo grouping |
 | `filter` | kernels | Computes pixels | Its place in the recipe, validation, scheduling, caches, missing and disabled handling ([Filters](#filters)) |
 | `mask-generator` | program | Returns coverage for the photo (with optional point/box input) | Validating the raster, storing it through `mask_assets`, the mask and its History step |
-| `retouch-generator` | program | Returns RGB pixels and coverage for a region (object removal) | Storing the patch as an asset, its place among retouches, rendering it ([Retouch patches](#retouch-patches)) |
+| `retouch-generator` | program | Returns RGB pixels for a painted area of a region (object removal); built with `api = 3` | The region and its rendition, storing the patch as an asset, its place among retouches, rendering it ([Retouch patches](#retouch-patches)) |
 | `importer` | program | Reads another application's catalog, once, into an import plan | Validating and committing the plan in one transaction; preserving the source's unsupported data |
 | `source` | program | Watches for arriving files (a watched folder, a tethered camera) and reports each complete one | Adding them to the catalog, duplicates, conflicts, never moving or deleting originals |
 | `export-destination` | program | Receives each published file and sends it somewhere (upload, gallery, printer) | Rendering, encoding and atomic publication; "exported" and "uploaded" reported separately |
@@ -690,6 +690,9 @@ automation's export reply carries it.
 
 ## Retouch patches
 
+Status: built for experimental AI Remove, with the decisions [below](#ai-remove-decisions);
+where they differ from this section's design, they are what was built.
+
 AI object removal needs something the model doesn't have yet: generated pixels
 stored with the edit. A **patch** is a raster with coverage, held by content id
 in an asset store like `model::storage::mask_assets`, saved by
@@ -716,6 +719,32 @@ white balance or exposure change after the patch, patches interleaved with Heal
 and Clone, a patch asset that can't be loaded (the render fails as for a mask
 raster, never renders without it silently), catalog export, and an asset whose
 save fails (the edit isn't saved without it).
+
+### AI Remove decisions
+
+Where the built AI Remove departs from the design above, and why:
+
+1. **No generic `brush` viewer input.** The Remove tool already paints brushed
+   areas; AI Remove is a third Mode of that tool beside Heal and Clone, and the
+   painted shape is the request's coverage. D25 stays as it is.
+2. **The app owns colour; the program sees 8-bit sRGB only.** Hosted removers take
+   8-bit display images, so every extension would otherwise reimplement the same
+   tone mapping and its inverse. The app renders the region through a fixed
+   rendition it captures with the request (the default white balance, the camera
+   stage's matrix, the default exposure, Camera Raw's default rendering `F`) and
+   inverts the answer itself with the captured values. It is lossy on purpose:
+   colours outside sRGB, clipped channels, shadow quantisation and the reduction
+   to at most 2048 pixels are not recovered.
+3. **The patch blends with Heal's membrane**: Heal with the patch as its source,
+   which takes the residual error at the shape's border back to the photo's own
+   values. Tests against a plain feathered composite on saturated, dark, gradient
+   and textured surroundings found it never worse and far better where the
+   rendition clipped, so it is the one way a patch renders.
+
+Also: secret settings (`control = "secret"`) keep keys in the system's credential
+store; a generator that uploads asks the user once; results apply only while what
+they were made from still holds, and are never asked again by themselves; HDR
+edits are refused for now; and catalog photos only.
 
 ## Future: derived photos
 
@@ -821,7 +850,7 @@ write them; they show which contribution each request people make would use.
 | Capture One import | `importer` for Capture One catalogs and sessions |
 | Watched folders | `source` that adds files appearing in chosen folders |
 | Tethering | `source` for a connected camera, plus commands |
-| AI object removal | `retouch-generator` with brush input |
+| AI object removal | `retouch-generator` (built, experimental: AI Remove) |
 | AI upscaling | `derive`, once it exists ([Future](#future-derived-photos)) |
 
 **Externally launched adapters.** An MCP server is started by its client (an AI
@@ -955,10 +984,9 @@ test extension in the SDK proves it here as well.
 | Part | Builds on | Who asked for it |
 | --- | --- | --- |
 | `files` content: presets, LUTs, profiles, key maps | Phase 2 | Preset and LUT packs |
-| Brush input | Phase 3 | Object removal |
+| Brush input | Phase 3 | A tool beyond the Remove tool's own brush (AI Remove paints with it) |
 | `importer` | Phase 2 | One-time Capture One and Lightroom CC imports; then moving the Lightroom importer out, after Lightroom edits are converted at import |
 | Filters | Phase 2 | Film grain, custom filters |
-| Retouch patches and `retouch-generator` | Phase 3 and brush input | AI object removal |
 | `export-destination` | Phase 2 | Uploads, galleries |
 | The official catalogue | Third-party extensions to list | — |
 | `derive` | Phase 3 | AI upscaling |

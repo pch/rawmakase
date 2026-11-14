@@ -827,8 +827,9 @@ impl RetouchGenerator for Fill {
         for y in 0..h {
             for x in 0..w {
                 if ask.coverage[y * coverage.stride as usize + x] == 0 {
-                    for c in 0..3 {
-                        sum[c] += u64::from(ask.image[y * image.stride as usize + x * 3 + c]);
+                    let pixel = &ask.image[y * image.stride as usize + x * 3..][..3];
+                    for (total, v) in sum.iter_mut().zip(pixel) {
+                        *total += u64::from(*v);
                     }
                     n += 1;
                 }
@@ -839,13 +840,8 @@ impl RetouchGenerator for Fill {
             for x in 0..w {
                 let i = y * ask.request.result.stride as usize + x * 3;
                 let painted = ask.coverage[y * coverage.stride as usize + x] > 0;
-                for c in 0..3 {
-                    ask.result[i + c] = if painted {
-                        mean[c]
-                    } else {
-                        ask.image[y * image.stride as usize + x * 3 + c]
-                    };
-                }
+                let from = &ask.image[y * image.stride as usize + x * 3..][..3];
+                ask.result[i..i + 3].copy_from_slice(if painted { &mean } else { from });
             }
         }
         Ok(RetouchGenerated {

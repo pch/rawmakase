@@ -1,4 +1,5 @@
 //! Develop's tools that work on the photo itself: crop, masks, retouching, the targeted adjustment.
+pub(in crate::app) mod ai_remove;
 pub(in crate::app) mod brush_scroll;
 pub(in crate::app) mod crop_drag;
 pub(in crate::app) mod crop_tool;

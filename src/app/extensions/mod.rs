@@ -84,6 +84,8 @@ pub(in crate::app) mod mask_generator;
 mod midi_tests;
 mod page;
 mod panels;
+pub(in crate::app) mod retouch_generator;
+pub(in crate::app) mod secrets;
 mod sources;
 #[cfg(test)]
 mod sources_tests;
@@ -95,11 +97,15 @@ pub(in crate::app) mod viewer_input;
 pub(in crate::app) use devices::Devices;
 pub(in crate::app) use editor::Told;
 pub(crate) use editor::{Done, PathTarget};
+#[cfg(test)]
+pub(in crate::app) use page::AVAILABLE;
 pub(in crate::app) use page::Page;
 pub(crate) use sources::ReportDone;
 
 use crate::app::shell::commands::registry::{self, Dynamic};
-use rawmakase_extensions::protocol::manifest::{Input, Launch as AdapterLaunch, Start};
+use rawmakase_extensions::protocol::manifest::{
+    Input, Launch as AdapterLaunch, SettingControl, Start,
+};
 use rawmakase_extensions::protocol::method::{
     AppEvent, AppRequest, CommandRun, Hello, Level, PanelChanged, PanelClicked, PanelOpen,
     ProgramEvent, ProgramRequest, SettingChanged, Snapshot, SourceStarted, SourceStopped,
@@ -199,6 +205,10 @@ enum Pending {
     /// `mask.setup` for one of the extension's generators.
     MaskSetup {
         generator: String,
+    },
+    /// `retouch.generate`, named by the host's ticket, as `Mask` is.
+    Retouch {
+        ticket: u64,
     },
 }
 
@@ -342,6 +352,10 @@ pub(in crate::app) struct Extension {
     pub panels: BTreeMap<String, PanelView>,
     /// Its mask generators' setups running or failed, by generator.
     pub setups: BTreeMap<String, mask_generator::Setup>,
+    /// Its secret settings as this session knows them, by setting.
+    secrets: BTreeMap<String, secrets::State>,
+    /// Secret settings being written for the page, or whose write failed.
+    pub secret_writes: BTreeMap<String, secrets::Writing>,
     /// What the program last said of a mask request it is answering, by its
     /// ticket: where it runs (`on <endpoint>`).
     mask_progress: Option<(u64, String)>,
@@ -367,22 +381,49 @@ impl Extension {
         self.run.is_some()
     }
     /// Its settings: the manifest's defaults, with the values `extensions.json`
-    /// holds where they fit their control.
+    /// holds where they fit their control. A secret setting is always `""`
+    /// here, whatever is kept for it: this is what the page and comparisons
+    /// read; only [`Extension::program_settings`] holds secrets.
     pub(in crate::app) fn settings(&self) -> Map<String, Value> {
         self.manifest
             .settings
             .iter()
             .map(|s| {
-                let value = self
-                    .entry
-                    .settings
-                    .get(&s.id)
-                    .filter(|v| s.control.accepts(v))
-                    .cloned()
-                    .unwrap_or_else(|| s.default.clone());
+                let value = match s.control {
+                    SettingControl::Secret => Value::String(String::new()),
+                    _ => self
+                        .entry
+                        .settings
+                        .get(&s.id)
+                        .filter(|v| s.control.accepts(v))
+                        .cloned()
+                        .unwrap_or_else(|| s.default.clone()),
+                };
                 (s.id.clone(), value)
             })
             .collect()
+    }
+    /// What its program is told its settings are: [`Extension::settings`]
+    /// with each secret this session loaded.
+    fn program_settings(&self) -> Map<String, Value> {
+        let mut settings = self.settings();
+        for (id, state) in &self.secrets {
+            if let secrets::State::Set(secret) = state {
+                settings.insert(id.clone(), Value::String(secret.expose().to_string()));
+            }
+        }
+        settings
+    }
+    /// What this session knows of secret setting `id`.
+    pub(in crate::app) fn secret(&self, id: &str) -> Option<&secrets::State> {
+        self.secrets.get(id)
+    }
+    /// Whether a secret setting is still being read from the store: its
+    /// program would be told it is empty meanwhile.
+    pub(in crate::app) fn secrets_loading(&self) -> bool {
+        self.secrets
+            .values()
+            .any(|s| matches!(s, secrets::State::Loading))
     }
     fn error(&mut self, text: impl Into<String>) {
         if self.errors.len() == ERRORS {
@@ -447,6 +488,13 @@ pub(in crate::app) enum Outcome {
         extension: String,
         generator: String,
         result: Result<Value, RemoteError>,
+    },
+    /// A `retouch.generate` request's one outcome, as [`Outcome::Mask`] is.
+    Retouch {
+        extension: String,
+        ticket: u64,
+        result: Result<Value, RemoteError>,
+        buffers: Option<Returned>,
     },
 }
 
@@ -520,6 +568,10 @@ pub(in crate::app) struct Host {
     catalog: Option<sources::OpenCatalog>,
     /// The number the next source scope gets.
     next_scope: u64,
+    /// What finished well, for the top bar, from the next poll.
+    messages_done: Vec<String>,
+    /// Where secret settings are read and written, off the UI thread.
+    credentials: secrets::Credentials,
     /// Tests start every program that isn't bundled as this instead: their
     /// own test binary, running the example extension.
     #[cfg(test)]
@@ -531,6 +583,9 @@ pub(in crate::app) struct Host {
     /// Every `mask.generate` sent, for tests of what a gesture asked.
     #[cfg(test)]
     masks_sent: Vec<rawmakase_extensions::protocol::method::MaskGenerate>,
+    /// Every `retouch.generate` sent, for tests.
+    #[cfg(test)]
+    retouches_sent: Vec<rawmakase_extensions::protocol::method::RetouchGenerate>,
     /// Tests start these bundled extensions, by id, as these programs.
     #[cfg(test)]
     bundled_override: Vec<(String, Launch)>,
@@ -568,12 +623,19 @@ impl Host {
             notices: Vec::new(),
             catalog: None,
             next_scope: 1,
+            messages_done: Vec::new(),
+            credentials: secrets::Credentials::new(
+                Arc::new(rawmakase_extensions::secrets::MemoryStore::default()),
+                None,
+            ),
             #[cfg(test)]
             program_override: None,
             #[cfg(test)]
             finished: Vec::new(),
             #[cfg(test)]
             masks_sent: Vec::new(),
+            #[cfg(test)]
+            retouches_sent: Vec::new(),
             #[cfg(test)]
             bundled_override: Vec::new(),
             #[cfg(test)]
@@ -678,6 +740,10 @@ impl Host {
     pub(in crate::app) fn start(data_dir: &Path, wake: session::Wake) -> Self {
         let mut host = Self {
             store: Some(Store::new(data_dir)),
+            credentials: secrets::Credentials::new(
+                crate::platform::credentials::system_store(),
+                Some(wake.clone()),
+            ),
             wake: Some(wake),
             search_dirs: rawmakase_extensions::bundled::program_search_dirs(),
             ..Self::inert()
@@ -688,6 +754,20 @@ impl Host {
             store.clean(&[]);
         }
         host
+    }
+    /// Keeps secret settings in `store` from now on, for tests.
+    #[cfg(test)]
+    pub(in crate::app) fn use_secret_store_for_tests(
+        &mut self,
+        store: Arc<dyn rawmakase_extensions::secrets::SecretStore>,
+    ) {
+        self.credentials = secrets::Credentials::new(store, self.wake.clone());
+        for e in &mut self.extensions {
+            e.secrets.clear();
+        }
+        for index in 0..self.extensions.len() {
+            self.sync_secrets(index);
+        }
     }
     /// Whether this host loads extensions at all.
     pub(in crate::app) fn active(&self) -> bool {
@@ -944,6 +1024,8 @@ impl Host {
                         status: None,
                         panels: BTreeMap::new(),
                         setups: BTreeMap::new(),
+                        secrets: BTreeMap::new(),
+                        secret_writes: BTreeMap::new(),
                         mask_progress: None,
                         reading: Vec::new(),
                         last_active: Instant::now(),
@@ -960,8 +1042,227 @@ impl Host {
         }
         kept.sort_by_key(|e| e.name().to_lowercase());
         self.extensions = kept;
+        for index in 0..self.extensions.len() {
+            self.sync_secrets(index);
+        }
         if changed {
             self.revision += 1;
+        }
+    }
+
+    /// Brings extension `index`'s secret settings in line with what
+    /// `extensions.json` records as set: a newly recorded one is read from
+    /// the store, one no longer recorded is forgotten (and its program told).
+    fn sync_secrets(&mut self, index: usize) {
+        let inert = self.store.is_none();
+        let e = &mut self.extensions[index];
+        let declared: Vec<String> = e
+            .manifest
+            .settings
+            .iter()
+            .filter(|s| s.control == SettingControl::Secret)
+            .map(|s| s.id.clone())
+            .collect();
+        e.secrets.retain(|id, _| declared.contains(id));
+        let mut load = Vec::new();
+        for id in declared {
+            let recorded = e.entry.secrets.contains(&id);
+            let state = e.secrets.get(&id);
+            match (recorded, state) {
+                (true, None | Some(secrets::State::Unset)) if !inert => {
+                    e.secrets.insert(id.clone(), secrets::State::Loading);
+                    load.push(id);
+                }
+                (true, None | Some(secrets::State::Unset)) => {
+                    e.secrets.insert(id, secrets::State::Unset);
+                }
+                (false, Some(secrets::State::Set(_))) => {
+                    e.secrets.insert(id.clone(), secrets::State::Unset);
+                    Self::secret_event(e, &id, "");
+                }
+                (false, _) => {
+                    e.secrets.insert(id, secrets::State::Unset);
+                }
+                (true, Some(_)) => {}
+            }
+        }
+        let id = e.id().to_string();
+        for setting in load {
+            if let Err(why) = self.credentials.load(&id, &setting) {
+                self.extensions[index]
+                    .secrets
+                    .insert(setting, secrets::State::Unreadable(why));
+            }
+        }
+    }
+
+    /// Tells `e`'s program, if it runs, that secret setting `id` is now
+    /// `value`. Sent even before the program has answered `hello`, which
+    /// went out first: it reads the event after the handshake.
+    fn secret_event(e: &mut Extension, id: &str, value: &str) {
+        if let Some(run) = e.run.as_mut().filter(|r| !r.stopping) {
+            let (name, params) = AppEvent::SettingChanged(SettingChanged {
+                id: id.to_string(),
+                value: Value::String(value.to_string()),
+            })
+            .into_parts();
+            let _ = run.session.event(&name, params);
+        }
+    }
+
+    /// Applies what the credentials thread finished: loaded values become
+    /// the program's, and a write is recorded in `extensions.json` once it
+    /// succeeded, then told to the program and the page.
+    fn credentials_finished(&mut self) {
+        for done in self.credentials.finished() {
+            match done {
+                secrets::Done::Loaded {
+                    extension,
+                    setting,
+                    result,
+                } => {
+                    let Some(index) = self.index(&extension) else {
+                        continue;
+                    };
+                    let e = &mut self.extensions[index];
+                    // Written or cleared since the read was asked for.
+                    if e.secrets.get(&setting) != Some(&secrets::State::Loading) {
+                        continue;
+                    }
+                    let state = match result {
+                        Ok(Some(secret)) if !secret.is_empty() => {
+                            Self::secret_event(e, &setting, secret.expose());
+                            secrets::State::Set(secret)
+                        }
+                        Ok(_) => secrets::State::Unset,
+                        Err(why) => {
+                            let why = secrets::advice(&why);
+                            e.error(format!("{setting}: {why}"));
+                            secrets::State::Unreadable(why)
+                        }
+                    };
+                    e.secrets.insert(setting, state);
+                }
+                secrets::Done::Written {
+                    extension,
+                    setting,
+                    value,
+                    result,
+                } => self.secret_written(&extension, &setting, value, result),
+            }
+        }
+    }
+
+    fn secret_written(
+        &mut self,
+        id: &str,
+        setting: &str,
+        value: Option<rawmakase_extensions::secrets::Secret>,
+        result: Result<(), rawmakase_extensions::secrets::SecretError>,
+    ) {
+        let Some(index) = self.index(id) else {
+            return;
+        };
+        if let Err(why) = result {
+            let why = secrets::advice(&why);
+            let e = &mut self.extensions[index];
+            e.secret_writes
+                .insert(setting.to_string(), secrets::Writing::Failed(why.clone()));
+            self.notices.push(format!("{}: not saved: {why}", e.name()));
+            return;
+        }
+        let set = value.as_ref().is_some_and(|v| !v.is_empty());
+        let recorded = self.store.as_ref().map(|store| {
+            State::update(store.data_dir(), |state| {
+                let entry = state.entry(id);
+                if set {
+                    entry.secrets.insert(setting.to_string());
+                } else {
+                    entry.secrets.remove(setting);
+                }
+                Ok(())
+            })
+        });
+        let e = &mut self.extensions[index];
+        e.secret_writes.remove(setting);
+        let before = e.secrets.get(setting).cloned();
+        if set {
+            e.entry.secrets.insert(setting.to_string());
+        } else {
+            e.entry.secrets.remove(setting);
+        }
+        let written = match (&before, set) {
+            (_, false) => secrets::Written::Cleared,
+            (Some(secrets::State::Set(_)), true) => secrets::Written::Replaced,
+            _ => secrets::Written::Set,
+        };
+        let shown = match value.filter(|_| set) {
+            Some(secret) => {
+                Self::secret_event(e, setting, secret.expose());
+                secrets::State::Set(secret)
+            }
+            None => {
+                Self::secret_event(e, setting, "");
+                secrets::State::Unset
+            }
+        };
+        e.secrets.insert(setting.to_string(), shown);
+        let name = e
+            .manifest
+            .settings
+            .iter()
+            .find(|s| s.id == setting)
+            .and_then(|s| s.name.clone())
+            .unwrap_or_else(|| setting.to_string());
+        let text = match written {
+            secrets::Written::Set => format!("{name} saved"),
+            secrets::Written::Replaced => format!("{name} replaced"),
+            secrets::Written::Cleared => format!("{name} removed"),
+        };
+        match recorded {
+            Some(Err(err)) => self.notices.push(format!(
+                "{text} in the credential store, but extensions.json couldn't record it: {err}"
+            )),
+            _ => self.messages_done.push(text),
+        }
+    }
+
+    /// Keeps `value` as secret setting `setting` of extension `id` in the
+    /// credential store, or removes it with `None` (or an empty value). The
+    /// write runs off the UI thread; until it succeeds nothing says it is
+    /// set. The value is never formatted into what this returns.
+    pub(in crate::app) fn set_secret(
+        &mut self,
+        id: &str,
+        setting: &str,
+        value: Option<String>,
+    ) -> Result<(), String> {
+        if self.store.is_none() {
+            return Err("Extensions are off in this editor".into());
+        }
+        let index = self.index(id).ok_or_else(|| format!("No extension {id}"))?;
+        let e = &self.extensions[index];
+        let declared = e
+            .manifest
+            .settings
+            .iter()
+            .any(|s| s.id == setting && s.control == SettingControl::Secret);
+        if !declared {
+            return Err(format!("{} has no secret setting {setting}", e.name()));
+        }
+        let value = value
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .map(rawmakase_extensions::secrets::Secret::new);
+        let result = self.credentials.write(id, setting, value);
+        let e = &mut self.extensions[index];
+        match result {
+            Ok(()) => {
+                e.secret_writes
+                    .insert(setting.to_string(), secrets::Writing::Saving);
+                Ok(())
+            }
+            Err(why) => Err(why),
         }
     }
 
@@ -1038,6 +1339,12 @@ impl Host {
                 extension,
                 ticket,
                 result: Err(error("mask request")),
+                buffers: None,
+            }),
+            Pending::Retouch { ticket } => Some(Outcome::Retouch {
+                extension,
+                ticket,
+                result: Err(error("retouch request")),
                 buffers: None,
             }),
             Pending::MaskSetup { generator } => {
@@ -1190,7 +1497,7 @@ impl Host {
             protocol: PROTOCOL,
             app_version: self.app.to_string(),
             extension: id,
-            settings: e.settings(),
+            settings: e.program_settings(),
             contributions: e.manifest.contributions(),
             data_dir,
             cache_dir,
@@ -1272,6 +1579,7 @@ impl Host {
         let deadline = Instant::now()
             + match pending {
                 Pending::Mask { .. } => mask_generator::GENERATE_DEADLINE,
+                Pending::Retouch { .. } => retouch_generator::GENERATE_DEADLINE,
                 Pending::MaskSetup { .. } => mask_generator::SETUP_DEADLINE,
                 _ => self.request_deadline,
             };
@@ -1673,6 +1981,10 @@ impl Host {
             .iter()
             .find(|s| s.id == setting)
             .ok_or_else(|| format!("{} has no setting {setting}", e.name()))?;
+        // A secret is kept elsewhere, and its value must never reach an error.
+        if declared.control == SettingControl::Secret {
+            return Err(format!("{setting} is kept in the credential store"));
+        }
         if !declared.control.accepts(&value) {
             return Err(format!("{value} doesn't fit {setting}"));
         }
@@ -1857,8 +2169,13 @@ impl Host {
             return None;
         }
         self.polls += 1;
+        self.credentials_finished();
         outcomes.extend(self.notices.drain(..).map(|text| Outcome::Message {
             level: Level::Warning,
+            text,
+        }));
+        outcomes.extend(self.messages_done.drain(..).map(|text| Outcome::Message {
+            level: Level::Info,
             text,
         }));
         // After the first frame: the window shows before any program starts.
@@ -2073,6 +2390,17 @@ impl Host {
                     buffers,
                 });
             }
+            Pending::Retouch { ticket } => {
+                if result.is_ok() {
+                    e.crashes = 0;
+                }
+                outcomes.push(Outcome::Retouch {
+                    extension: e.manifest.extension.id.clone(),
+                    ticket,
+                    result,
+                    buffers,
+                });
+            }
             Pending::MaskSetup { generator } => {
                 match &result {
                     Err(err) if err.code != ErrorCode::Cancelled => {
@@ -2157,7 +2485,7 @@ impl Host {
                 by,
                 result: Err(RemoteError::new(ErrorCode::Exited, why)),
             }),
-            Pending::Mask { .. } | Pending::MaskSetup { .. } => {
+            Pending::Mask { .. } | Pending::MaskSetup { .. } | Pending::Retouch { .. } => {
                 outcomes.extend(Self::stopped(e, pending, &ErrorCode::Exited));
             }
             Pending::Panel { panel } => {
@@ -2537,7 +2865,7 @@ impl Host {
     /// finished by the deadline.
     pub(in crate::app) fn stop(&mut self, deadline: Instant) -> Vec<crate::app::task::Stopping> {
         self.closed = true;
-        let mut stopping = Vec::new();
+        let mut stopping = vec![self.credentials.stop()];
         for e in &mut self.extensions {
             if let Some(run) = e.run.take() {
                 // A stop that fails to start its thread has ended the unit
@@ -2594,6 +2922,7 @@ fn placeholder(id: &str, name: &str) -> Manifest {
         control_adapters: Vec::new(),
         mask_generators: Vec::new(),
         sources: Vec::new(),
+        retouch_generators: Vec::new(),
     }
 }
 

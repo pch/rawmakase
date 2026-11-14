@@ -4,7 +4,8 @@ Status: experimental and early. It works, but none of it is measured against
 Lightroom yet, and details may change.
 
 The Remove tool (Q) works like Lightroom Classic's Remove panel in Heal and Clone
-modes. The AI Remove mode is not implemented yet.
+modes. Its third mode, AI Remove, is experimental and comes from an extension
+([below](#ai-remove-experimental)).
 
 ## Using it
 
@@ -27,9 +28,9 @@ Paste Settings and presets leave a photo's spots alone, as Lightroom's defaults 
 ## How it renders
 
 - Spots are stored as parameters (`retouch`) beside the recipe, not in it: in the
-  catalog's `local_edits` table, or for photos opened directly in
-  `photo.ARW.rawmakase-local.json` next to the sidecar, so the recipe itself holds
-  none. Positions are in image space: the photo as the camera oriented it, within its default crop, before lens
+  catalog's `local_edits` table, so the recipe itself holds none. Photos are edited
+  in a catalog; `photo.ARW.rawmakase-local.json` files that development builds wrote
+  next to a sidecar are only read, when a legacy sidecar is imported. Positions are in image space: the photo as the camera oriented it, within its default crop, before lens
   correction, Transform, crop and straightening. Spots stay on their dust when those
   change. Sizes are fractions of the long edge.
 - Operations apply in order to the linear, highlight-recovered camera image before
@@ -63,6 +64,77 @@ Paste Settings and presets leave a photo's spots alone, as Lightroom's defaults 
   patch those areas of the preview pyramid. Exports build the retouched image at
   once. Tests check that the tiles match a full rebuild and that Fit, 100% regions
   and exports agree.
+
+## AI Remove (experimental)
+
+AI Remove regenerates what you paint over with a hosted model, through an extension
+that holds your own API key. It isn't bundled: install **AI Remove** from
+Preferences > Extensions > Available (`dev.pch.ai-remove`,
+[github.com/pch/rawmakase-ai-remove](https://github.com/pch/rawmakase-ai-remove)),
+set the key on its page, and the Remove tool's Mode offers **AI Remove**. Without
+the extension the drawer says where to get it. Any extension declaring a
+`[[retouch-generator]]` ([manifest](extensions/manifest.md#retouch-generator)) is
+offered the same way; RAWmakase knows no provider.
+
+- **Click** places a spot, a **drag** paints an area; on release the area is sent,
+  and a card on the photo says Removing… with Cancel. One request runs at a time.
+- The first time, RAWmakase asks once per extension whether it may send the painted
+  area and its surroundings to the service set up in it; the answer is kept in
+  `extensions.json`.
+- Success adds one Generate spot as one History step, "AI Remove". A failure adds
+  nothing and says why: the extension needs setting up (a key; the drawer opens its
+  page), the service is unavailable, or it declined the area. Nothing is ever sent
+  again by itself: each removal is one paid call.
+- A Generate spot can be selected, have its Feather and Opacity changed, hidden and
+  deleted, but not moved, resized or given a source (`/`, the source circle and
+  Cmd-drag don't apply), and Mode never turns it into Heal or Clone, nor those into
+  it: choosing a mode with one selected applies to new spots.
+- It works on catalog photos only, once the photo has finished developing, and
+  waits for AI Denoise to finish when it is on. HDR files and edits with HDR on are
+  refused: "AI Remove doesn't work on HDR edits yet".
+- The result applies only if what it was made from still holds when it arrives:
+  the same photo and load, file, catalog photo, decoded image, AI Denoise source and
+  noise reduction, and the same spots, red eye corrections, camera exposure and
+  Spot Removal and Red Eye panel switches. Otherwise it is dropped: "The photo
+  changed while removing; paint again". Slider edits made meanwhile survive.
+
+How it works (`develop::retouch::rendition`, `app::develop::tools::ai_remove`):
+
+- The request is the region around the painted area (its bounds grown by half their
+  size on each side, at least 64 pixels, within the photo, upright, reduced to at
+  most 2048 pixels on its long side), rendered from the image the patch will be laid
+  on: noise reduction as the edit has it and every existing spot and red eye
+  correction applied. It is 8-bit sRGB through a fixed rendition captured with the
+  request: the photo's default white balance, the camera stage's matrix for the
+  edit's profile, the default exposure and Camera Raw's default rendering, so a
+  JPEG or TIFF is sent as its own pixels and a RAW as its default rendering. The
+  painted area goes with it as continuous coverage; the extension decides the
+  binary mask its service takes.
+- The answer is inverted through the captured rendition back to linear camera RGB,
+  before white balance, and kept as the spot's patch: three half-precision channels
+  over the region, stored by content id with the edit as mask rasters are. The patch
+  follows white balance, exposure and profile changes, and renders without the
+  extension, in previews, Library previews and exports alike.
+- It renders as Heal does with the patch as its source: the membrane over the
+  shape's ring takes the residual error back to the photo's own values, then the
+  feathered coverage and opacity apply. On synthetic saturated, dark, gradient and
+  textured surroundings this was never worse than a plain feathered composite of
+  the patch, and far better where the rendition had clipped (an out-of-sRGB ground:
+  a log error of 0.003 against 0.66), so it is the one way patches render.
+- A patch that can't be provided fails the render with its reason and protects the
+  edit when it opens, as a missing mask raster does; it never renders without it.
+- A patch records whether it was made with AI Denoise on; it renders on either, and
+  the spot's settings say when the photo's differs.
+- Formats: a recipe with a Generate spot is saved as schema 15, and a catalog that
+  stores one is raised to version 7 ([catalogs](catalogs.md)), so earlier releases
+  refuse it rather than drop the spot. Generate spots never go to XMP: Lightroom
+  can't read them, and RAWmakase writes no spots to XMP.
+
+Known limitations: the round trip is 8-bit, so clipped highlights and colours
+outside sRGB inside the painted area are not recovered, and deep shadows are
+quantised (about 2% on test data); a patch is at most 2048 pixels on its long side,
+so a large area of a high-resolution photo is softer at 100%; Lightroom never sees
+these spots; the photo's region leaves the computer.
 
 ## Not verified against Lightroom
 

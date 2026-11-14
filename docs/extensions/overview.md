@@ -5,8 +5,10 @@ packages, installation, `extensions.json`, the extension protocol, the SDK and
 `cargo rawmakase` exist, and the app runs extensions: it supervises their
 programs, and has Preferences > Extensions, their commands, settings and
 panels, reads and proposals with target tokens, control adapters, the app's
-own and externally launched ones, mask generators (`api = 2`) and photo
-sources (`api = 3`). MCP, MIDI and AI Masks are bundled extensions.
+own and externally launched ones, mask generators (`api = 2`), and photo
+sources, retouch generators and secret settings (`api = 3`); experimental AI
+Remove uses the last two. MCP, MIDI and AI Masks are bundled extensions; AI
+Remove is listed for installing but not bundled.
 
 An **extension** adds to RAWmakase without changing it: commands, settings,
 panels of controls the app draws, control adapters (a MIDI device, an MCP
@@ -170,6 +172,13 @@ Under the data folder (`RAWMAKASE_DATA_DIR`, else the platform's, as for
       "source": {"kind": "github", "repository": "https://github.com/jane/rawmakase-analog"},
       "settings": {"default-stock": "HP5"}
     },
+    "dev.pch.ai-remove": {
+      "active": "0.1.0", "installed": ["0.1.0"], "enabled": true,
+      "source": {"kind": "github", "repository": "https://github.com/pch/rawmakase-ai-remove"},
+      "settings": {"provider": "fal.ai"},
+      "secrets": ["fal-key"],
+      "uploads_allowed": true
+    },
     "rawmakase.mcp": {"enabled": false}
   },
   "developer": {
@@ -181,6 +190,9 @@ Under the data folder (`RAWMAKASE_DATA_DIR`, else the platform's, as for
 A bundled extension has an entry only once something about it was changed.
 An entry's `sources` lists the catalogs each of its sources adds photos to
 ([Photo sources](#photo-sources)).
+`secrets` names the secret settings whose value is kept in the system's
+credential store; the values are never in the file. `uploads_allowed` records the
+user's answer, asked once, to a retouch generator that uploads.
 `source.kind` is `bundled`, `file` (with `path`) or `github` (with
 `repository`). The app and `rawmakase extensions` both change the file, each
 change under the lock, reading the file again first, so neither overwrites
@@ -240,7 +252,10 @@ and **Install from File…** reads a `.rmext`; either shows the package's
 manifest, its access and the **Not reviewed** warning, and installs it only
 when the user confirms (a file is read again then, and refused if it changed).
 An installed extension's page and its line in the list say **Not reviewed**
-too. Every change is
+too. **Available** lists the extensions RAWmakase knows of but doesn't bundle,
+while they aren't installed (AI Remove, `dev.pch.ai-remove`): **Install…** finds
+the latest release of its repository as Install from GitHub… does, with the same
+confirmation and Not reviewed mark. Every change is
 written to `extensions.json` first; when that fails, the page says so and
 nothing changes.
 

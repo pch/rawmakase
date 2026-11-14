@@ -187,7 +187,8 @@ impl Editor {
             match scroll.adjust {
                 Adjust::Size => {
                     tool.size = (tool.size * scroll.scale()).clamp(0.001, 0.25);
-                    if let Some(op) = op {
+                    // A Generate spot keeps the size its patch was made for.
+                    if let Some(op) = op.filter(|op| !op.is_generated()) {
                         op.set_radius((op.radius() * scroll.scale()).clamp(0.001, 0.25));
                     }
                 }

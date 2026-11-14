@@ -33,12 +33,27 @@ type Call = Box<dyn FnOnce() -> Event + Send>;
 /// A call, its fallback, and where to send the event.
 struct Message(Call, Call, Sender<Event>, egui::Context);
 
-#[derive(Default)]
-pub(super) struct Worker {
+/// A thread that runs a tool's pixel work in order, started at its first
+/// call. Select Subject's is this module's; AI Remove has one of its own.
+pub(in crate::app) struct Worker {
+    name: &'static str,
     messages: Option<Sender<Message>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
+impl Default for Worker {
+    fn default() -> Self {
+        Self::named("subject-select")
+    }
+}
 impl Worker {
+    /// A worker whose thread is called `name`.
+    pub(in crate::app) fn named(name: &'static str) -> Self {
+        Self {
+            name,
+            messages: None,
+            thread: None,
+        }
+    }
     /// Runs `work` on the thread, after the jobs queued before it, and sends
     /// the event it returns. If it panics, or the thread can't take it,
     /// `fallback`'s event is sent instead, so whatever waits on it ends.
@@ -62,7 +77,7 @@ impl Worker {
         if self.messages.is_none() {
             let (messages, inbox) = mpsc::channel();
             match std::thread::Builder::new()
-                .name("subject-select".into())
+                .name(self.name.into())
                 .spawn(move || run(inbox))
             {
                 Ok(thread) => {
@@ -94,7 +109,7 @@ impl Worker {
     }
     /// Closes the mailbox and returns the thread to wait for under the shutdown
     /// deadline.
-    pub(super) fn stop(&mut self) -> Stopping {
+    pub(in crate::app) fn stop(&mut self) -> Stopping {
         self.messages = None;
         Stopping::new(self.thread.take())
     }

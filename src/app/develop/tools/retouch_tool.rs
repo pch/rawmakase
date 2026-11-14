@@ -5,6 +5,13 @@
 //! area, whose source is chosen when the stroke ends; Cmd/Ctrl-drag places a spot and
 //! drags its source by hand. Dragging a spot's pin or circle moves it, dragging its
 //! source circle moves the source.
+//!
+//! In the experimental AI Remove mode ([`super::ai_remove`]) a click or a
+//! painted area is sent to an extension's retouch generator instead, and the
+//! spot is added once its patch comes back. A Generate spot is fixed where its
+//! patch was made: it can be selected, its Feather and Opacity changed, hidden
+//! and deleted, but not moved, resized or given a source, and it never becomes
+//! a Heal or Clone spot, nor one of those a Generate spot.
 use crate::app::Editor;
 use crate::app::develop::tools::overlay;
 use crate::app::ui::design::{Tone, space, text};
@@ -118,7 +125,8 @@ impl Editor {
         let selected = self.view.retouch.selected.filter(|i| *i < ops.len());
         let hit = |pos: Pos2| -> Option<Hit> {
             // The selected spot's source first, then pins and shapes, newest on top.
-            if let Some(i) = selected {
+            // A Generate spot has no source to drag.
+            if let Some(i) = selected.filter(|i| !ops[*i].is_generated()) {
                 let op = &ops[i];
                 if covers(op, pos, |p| to_screen(source_of(op, p)), &radius_on_screen) {
                     return Some(Hit::Source(i));
@@ -140,10 +148,16 @@ impl Editor {
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
         {
             let at = to_image(origin);
+            let generating = self.view.retouch.mode == RetouchMode::Generate;
             self.view.retouch.drag = match hit(origin) {
-                _ if command => {
+                _ if command && !generating => {
                     self.add_spot(at, [0., 0.]);
                     Drag::Manual
+                }
+                // Fixed where its patch was made: selected, never moved.
+                Some(Hit::Dest(i)) if ops[i].is_generated() => {
+                    self.view.retouch.select(Some(i));
+                    Drag::None
                 }
                 Some(Hit::Dest(i)) => {
                     self.view.retouch.select(Some(i));
@@ -204,7 +218,10 @@ impl Editor {
         }
         if response.drag_stopped() {
             if let Drag::Stroke(points) = std::mem::take(&mut self.view.retouch.drag) {
-                self.add_brush(points);
+                match self.view.retouch.mode {
+                    RetouchMode::Generate => self.request_ai_remove(self.brush_op(points)),
+                    _ => self.add_brush(points),
+                }
             }
             self.view.retouch.drag = Drag::None;
         }
@@ -213,6 +230,9 @@ impl Editor {
         {
             match hit(pos) {
                 Some(Hit::Dest(i) | Hit::Source(i)) => self.view.retouch.select(Some(i)),
+                None if self.view.retouch.mode == RetouchMode::Generate => {
+                    self.request_ai_remove(self.spot_op(to_image(pos), [0.; 2]));
+                }
                 None => self.add_spot(to_image(pos), [f32::NAN; 2]),
             }
         }
@@ -225,7 +245,7 @@ impl Editor {
             if selected || hovered == Some(Hit::Dest(i)) {
                 draw_shape(&painter, op, to_screen, &radius_on_screen, true);
             }
-            if selected {
+            if selected && !op.is_generated() {
                 draw_shape(
                     &painter,
                     op,
@@ -255,12 +275,31 @@ impl Editor {
         } else if hovered.is_some() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Move);
         }
+        // The area being removed, with its card: what it waits for, and Cancel.
+        if let Some(op) = self.ai_remove.running().cloned() {
+            draw_shape(&painter, &op, to_screen, &radius_on_screen, true);
+            let at = to_screen(op.pin()) + Vec2::new(14., -10.);
+            let card = Rect::from_min_size(at, Vec2::new(150., 26.)).intersect(rect);
+            painter.rect_filled(card, 4., ui.visuals().window_fill);
+            let mut cancel = false;
+            ui.scope_builder(egui::UiBuilder::new().max_rect(card.shrink(3.)), |ui| {
+                ui.horizontal_centered(|ui| {
+                    crate::app::ui::widgets::spinner(ui, 12.);
+                    ui.label(egui::RichText::new("Removing…").size(text::SMALL));
+                    cancel = ui.small_button("Cancel").clicked();
+                });
+            });
+            if cancel {
+                self.cancel_ai_remove();
+            }
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
+        }
     }
-    /// A new spot at image position `at` with the tool's settings. A NaN offset asks
-    /// for an automatic source.
-    fn add_spot(&mut self, at: [f32; 2], offset: [f32; 2]) {
+    /// A spot at image position `at` with the tool's settings.
+    fn spot_op(&self, at: [f32; 2], offset: [f32; 2]) -> RetouchOp {
         let t = &self.view.retouch;
-        let op = RetouchOp {
+        RetouchOp {
             mode: t.mode,
             shape: RetouchShape::Spot {
                 center: at,
@@ -270,12 +309,12 @@ impl Editor {
             opacity: t.opacity,
             offset,
             patch: None,
-        };
-        self.push_op(op);
+        }
     }
-    fn add_brush(&mut self, points: Vec<[f32; 2]>) {
+    /// A brushed area along `points` with the tool's settings.
+    fn brush_op(&self, points: Vec<[f32; 2]>) -> RetouchOp {
         let t = &self.view.retouch;
-        let op = RetouchOp {
+        RetouchOp {
             mode: t.mode,
             shape: RetouchShape::Brush {
                 points: points.into(),
@@ -284,8 +323,16 @@ impl Editor {
             feather: t.feather,
             opacity: t.opacity,
             offset: [f32::NAN; 2],
-        };
-        self.push_op(op);
+            patch: None,
+        }
+    }
+    /// A new spot at image position `at` with the tool's settings. A NaN offset asks
+    /// for an automatic source.
+    fn add_spot(&mut self, at: [f32; 2], offset: [f32; 2]) {
+        self.push_op(self.spot_op(at, offset));
+    }
+    fn add_brush(&mut self, points: Vec<[f32; 2]>) {
+        self.push_op(self.brush_op(points));
     }
     fn push_op(&mut self, mut op: RetouchOp) {
         if self.document.edit.recipe().retouch.len() >= crate::model::retouch::MAX_OPS {
@@ -330,6 +377,24 @@ impl Editor {
             self.view.retouch.visualize ^= true;
         }
     }
+    /// Mode chosen in the drawer: new spots' mode, and the selected spot's when
+    /// Heal and Clone trade places on it. AI Remove, and a selected Generate
+    /// spot, apply to new spots only: a Generate spot never becomes Heal or
+    /// Clone, nor one of those a Generate spot.
+    pub(in crate::app) fn choose_retouch_mode(&mut self, mode: RetouchMode) {
+        self.view.retouch.mode = mode;
+        let selected = self
+            .view
+            .retouch
+            .selected
+            .filter(|i| *i < self.document.edit.recipe().retouch.len());
+        if let Some(i) = selected
+            && mode != RetouchMode::Generate
+            && !self.document.edit.recipe().retouch[i].is_generated()
+        {
+            self.document.edit.recipe_mut().retouch[i].mode = mode;
+        }
+    }
     /// `/`: the next best source for the selected spot.
     pub(in crate::app) fn next_source(&mut self) {
         let Some(i) = self.view.retouch.selected else {
@@ -338,6 +403,10 @@ impl Editor {
         let Some(op) = self.document.edit.recipe().retouch.get(i).cloned() else {
             return;
         };
+        // A Generate spot's source is its patch.
+        if op.is_generated() {
+            return;
+        }
         let tool = &mut self.view.retouch;
         if !tool.tried.contains(&op.offset) {
             tool.tried.push(op.offset);
@@ -369,7 +438,8 @@ impl Editor {
         } else {
             let k = if grow { 1.15 } else { 1. / 1.15 };
             tool.size = (tool.size * k).clamp(0.001, 0.25);
-            if let Some(op) = op {
+            // A Generate spot keeps the size its patch was made for.
+            if let Some(op) = op.filter(|op| !op.is_generated()) {
                 op.set_radius((op.radius() * k).clamp(0.001, 0.25));
             }
         }
@@ -386,23 +456,36 @@ impl Editor {
             .selected
             .filter(|i| *i < self.document.edit.recipe().retouch.len());
         crate::app::ui::widgets::set_edit_context(ui, "Spot");
+        let offer = self.ai_remove_offer();
+        // Its extension was disabled or removed: back to Heal for new spots.
+        if offer.is_none() && self.view.retouch.mode == RetouchMode::Generate {
+            self.view.retouch.mode = RetouchMode::Heal;
+        }
+        let selected_generated =
+            selected.is_some_and(|i| self.document.edit.recipe().retouch[i].is_generated());
         control_label(ui, "Mode", |ui| {
-            let mut mode = selected.map_or(self.view.retouch.mode, |i| {
-                self.document.edit.recipe().retouch[i].mode
-            });
-            let w = ui.available_width();
-            if segmented(
-                ui,
-                &mut mode,
-                &[(RetouchMode::Heal, "Heal"), (RetouchMode::Clone, "Clone")],
-                w,
-            ) {
-                self.view.retouch.mode = mode;
-                if let Some(i) = selected {
-                    self.document.edit.recipe_mut().retouch[i].mode = mode;
+            let mut mode = match selected {
+                Some(i)
+                    if !selected_generated || self.view.retouch.mode == RetouchMode::Generate =>
+                {
+                    self.document.edit.recipe().retouch[i].mode
                 }
+                _ => self.view.retouch.mode,
+            };
+            let w = ui.available_width();
+            let mut modes = vec![(RetouchMode::Heal, "Heal"), (RetouchMode::Clone, "Clone")];
+            if offer.is_some() {
+                modes.push((RetouchMode::Generate, "AI Remove"));
+            }
+            if segmented(ui, &mut mode, &modes, w) {
+                self.choose_retouch_mode(mode);
             }
         });
+        if self.view.retouch.mode == RetouchMode::Generate || selected_generated {
+            self.ai_remove_section(ui, offer, selected);
+        } else if offer.is_none() {
+            self.ai_remove_install_hint(ui);
+        }
         ui.add_space(space::XS);
         let (mut size, mut feather, mut opacity) = match selected {
             Some(i) => {
@@ -414,16 +497,19 @@ impl Editor {
                 (t.size, t.feather, t.opacity)
             }
         };
-        slider_with(
-            ui,
-            &mut self.step_name,
-            "Size",
-            &mut size,
-            0.001..=0.25,
-            0.012,
-            Some((long, 0)),
-            None,
-        );
+        // A Generate spot keeps the size its patch was made for.
+        ui.add_enabled_ui(!selected_generated, |ui| {
+            slider_with(
+                ui,
+                &mut self.step_name,
+                "Size",
+                &mut size,
+                0.001..=0.25,
+                0.012,
+                Some((long, 0)),
+                None,
+            );
+        });
         slider_with(
             ui,
             &mut self.step_name,
@@ -445,10 +531,16 @@ impl Editor {
             None,
         );
         let t = &mut self.view.retouch;
-        (t.size, t.feather, t.opacity) = (size, feather, opacity);
+        (t.feather, t.opacity) = (feather, opacity);
+        // A Generate spot keeps the size its patch was made for.
+        if !selected_generated {
+            t.size = size;
+        }
         if let Some(i) = selected {
             let op = &mut self.document.edit.recipe_mut().retouch[i];
-            op.set_radius(size);
+            if !op.is_generated() {
+                op.set_radius(size);
+            }
             (op.feather, op.opacity) = (feather, opacity);
         }
         ui.add_space(space::S);

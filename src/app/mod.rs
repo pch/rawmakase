@@ -116,6 +116,8 @@ pub(crate) struct Editor {
     /// Select Subject and Select Background: the running selection, the selection
     /// model's install and what the drawer asks.
     selection: crate::app::develop::tools::subject_mask::Selection,
+    /// Experimental AI Remove's request, one at a time.
+    ai_remove: crate::app::develop::tools::ai_remove::AiRemove,
     /// Lensfun's lens database: installing, updating and removing it.
     lensfun: crate::app::develop::lensfun::Lensfun,
     /// Synchronize Folder: the scan under way or the plan waiting for review.
@@ -411,6 +413,7 @@ impl Editor {
             modal: None,
             undo_log: Default::default(),
             selection: Default::default(),
+            ai_remove: Default::default(),
             lensfun: crate::app::develop::lensfun::Lensfun::suggesting(
                 !session.no_lensfun_suggestions,
             ),

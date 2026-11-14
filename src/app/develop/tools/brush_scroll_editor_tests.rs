@@ -310,6 +310,7 @@ fn an_edit_right_after_a_wheel_scroll_is_its_own_history_step() {
             feather: 0.5,
             opacity: 1.,
             offset: [0.1, 0.],
+            patch: None,
         });
     editor.view.retouch.selected = Some(0);
     let edit = editor.begin_edit_frame();
@@ -358,6 +359,7 @@ fn a_wheel_scroll_is_its_own_step_however_late_the_next_frame_comes() {
             feather: 0.5,
             opacity: 1.,
             offset: [0.1, 0.],
+            patch: None,
         });
     editor.view.retouch.selected = Some(0);
     let notch = crate::app::develop::tools::brush_scroll::Scroll {
@@ -416,6 +418,7 @@ fn a_wheel_scroll_closes_once_paused_even_while_a_button_goes_down() {
             feather: 0.5,
             opacity: 1.,
             offset: [0.1, 0.],
+            patch: None,
         });
     editor.view.retouch.selected = Some(0);
     let edit = editor.begin_edit_frame();
@@ -472,6 +475,7 @@ fn a_click_after_a_wheel_scroll_closes_it_at_once() {
             feather: 0.5,
             opacity: 1.,
             offset: [0.1, 0.],
+            patch: None,
         });
     editor.view.retouch.selected = Some(0);
     let edit = editor.begin_edit_frame();

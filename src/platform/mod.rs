@@ -1,4 +1,5 @@
 //! Platform integration, independent of catalog and rendering policy.
+pub(crate) mod credentials;
 pub(crate) mod display;
 pub(crate) mod locale;
 pub(crate) mod memory;
