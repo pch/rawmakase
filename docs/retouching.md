@@ -136,16 +136,19 @@ How it works (`develop::retouch::rendition`, `app::develop::tools::ai_remove`):
     patch pixel, added in log values, so the patch keeps its tone. On a textured
     test ground a 4× coarser patch's fill had 0.01 of the photo's fine texture
     without it and 0.99 with it.
-  - Grain: the noise of a band 8 pixels around the shape and of the fill is
-    measured (in square-root values, where shot noise is about constant), and
-    what the result lacks is added as Gaussian noise fixed by the pixel and the
-    patch, so a render is repeatable. Where the feather or opacity mixes the fill
-    with the photo, it adds what the mix lacks, given the noise of the photo under
-    the feather and how alike the fill's fine detail is to it, so the grain holds
-    across the soft edge. It is added in linear values, symmetric about each
-    pixel's and never below black, so it leaves the tone the membrane matched. A photo without grain gives none, and a
-    fill as grainy as the photo takes about none. Spots too small to measure (under
-    32 pixels of fill or band) take none.
+  - Grain: the noise of a band 8 pixels around the shape is measured (in
+    square-root values, where shot noise is about constant, with a median that
+    edges hardly move), and so is the noise of what renders without grain, the
+    fill mixed with the photo by coverage and opacity, among pixels mixed alike
+    (eight steps of the mix). What each step lacks is added to the fill as
+    Gaussian noise fixed by the pixel and the patch, so a render is repeatable.
+    Measuring the mix as it renders counts whatever the fill shares with the
+    photo: a fill that reproduces the photo takes none, and independent grain
+    mixed half and half is made up, so the grain holds across a soft edge and at
+    partial opacity. It is added in linear values, symmetric about each pixel's
+    and never below black, so it leaves the tone the membrane matched. A photo
+    without grain gives none; a step of the mix with fewer than 32 pixels to
+    measure takes none.
 - A patch that can't be provided fails the render with its reason and protects the
   edit when it opens, as a missing mask raster does; it never renders without it.
 - A patch records whether it was made with AI Denoise on; it renders on either, and

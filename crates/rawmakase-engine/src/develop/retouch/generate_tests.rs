@@ -1096,9 +1096,11 @@ fn grain_accounts_for_opacity_when_the_fill_has_some() {
     assert!((0.88..1.12).contains(&(grain / want)), "{}", grain / want);
 }
 
-/// A fill too small to measure takes no grain, however grainy the photo.
+/// A small, fully feathered spot over a fill as grainy as the photo keeps the
+/// photo's grain: what renders is measured at each mix, so the fill's own grain
+/// is never taken for none, and the spot isn't made grainier than the photo.
 #[test]
-fn a_fill_too_small_to_measure_takes_no_grain() {
+fn a_small_spot_keeps_the_photo_s_grain() {
     let photo = grainy_photo(200, 200, 0.1, 0.01, 70);
     let fill = grainy_photo(200, 200, 0.1, 0.01, 80);
     let at = |x: f32, y: f32| fill.pixels[(y as u32 * 200 + x as u32) as usize];
@@ -1114,10 +1116,15 @@ fn a_fill_too_small_to_measure_takes_no_grain() {
         radius: 12. / 200.,
     };
     op.feather = 1.;
-    assert_eq!(
-        lay(&photo, &op, GenerateBlend::Membrane).pixels,
-        lay(&photo, &op, GenerateBlend::Untextured).pixels
+    let (_, want) = ring_stats(&photo, [100., 100.], 0., 12.);
+    let (_, got) = ring_stats(
+        &lay(&photo, &op, GenerateBlend::Membrane),
+        [100., 100.],
+        0.,
+        12.,
     );
+    eprintln!("small spot grain ratio {:.3}", got / want);
+    assert!((0.88..1.12).contains(&(got / want)), "{}", got / want);
 }
 
 /// Grain leaves a dark fill's tone as the membrane made it, across the feather too.
@@ -1142,4 +1149,83 @@ fn grain_keeps_a_dark_fill_s_tone() {
         let e = (mean / want).ln().abs();
         assert!(e < 0.03, "{r0}..{r1}: {mean} against {want}");
     }
+}
+
+/// A hard edge at half opacity over a fill that matches the photo: the mix is as
+/// grainy as the photo already, and takes none.
+#[test]
+fn a_hard_edge_over_a_matching_fill_takes_no_grain() {
+    let clean = grainy_photo(400, 400, 0.1, 0.01, 10);
+    let mut photo = clean.clone();
+    for y in 0..400 {
+        for x in 0..400 {
+            if (x as f32 - 200.).hypot(y as f32 - 200.) < 10. {
+                photo.pixels[y * 400 + x] = [0.9; 3];
+            }
+        }
+    }
+    let at = |x: f32, y: f32| clean.pixels[y as usize * 400 + x as usize];
+    let mut op = laid_over(
+        &photo,
+        [40., 40., 360., 360.],
+        (320, 320),
+        at,
+        (200., 200., 100.),
+    );
+    op.opacity = 0.5;
+    op.feather = 0.;
+    let (_, before) = ring_stats(
+        &lay(&photo, &op, GenerateBlend::Untextured),
+        [200., 200.],
+        20.,
+        40.,
+    );
+    let (_, after) = ring_stats(
+        &lay(&photo, &op, GenerateBlend::Membrane),
+        [200., 200.],
+        20.,
+        40.,
+    );
+    assert!(
+        (0.88..1.12).contains(&(after / before)),
+        "{}",
+        after / before
+    );
+}
+
+/// Edges the fill shares with the photo don't count as shared grain: independent
+/// grain over a striped ground, mixed at half opacity, is made up as on a flat one.
+#[test]
+fn shared_edges_are_not_shared_grain() {
+    let ground = |x: f32| {
+        if (x as usize / 80).is_multiple_of(2) {
+            0.64f32
+        } else {
+            0.04
+        }
+    };
+    let striped = |k: u64| {
+        image(400, 400, move |x, y| {
+            std::array::from_fn(|c| (ground(x).sqrt() + 0.01 * gauss(x, y, k + c as u64)).powi(2))
+        })
+    };
+    let (photo, fill) = (striped(20), striped(30));
+    let at = |x: f32, y: f32| fill.pixels[y as usize * 400 + x as usize];
+    let mut op = laid_over(
+        &photo,
+        [40., 40., 360., 360.],
+        (320, 320),
+        at,
+        (200., 200., 100.),
+    );
+    op.opacity = 0.5;
+    op.feather = 0.75;
+    let (_, want) = ring_stats(&photo, [200., 200.], 0., 20.);
+    let (_, got) = ring_stats(
+        &lay(&photo, &op, GenerateBlend::Membrane),
+        [200., 200.],
+        0.,
+        20.,
+    );
+    assert!((0.88..1.12).contains(&(got / want)), "{}", got / want);
 }
