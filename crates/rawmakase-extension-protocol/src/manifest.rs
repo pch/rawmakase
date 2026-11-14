@@ -16,10 +16,13 @@ pub const FILE: &str = "rawmakase-extension.toml";
 /// The manifest format this version reads, the `api` key. A manifest with a
 /// later one was written for a later RAWmakase, which knows tables this one
 /// doesn't.
-pub const API: u32 = 2;
+pub const API: u32 = 3;
 
 /// The first `api` that reads `[[mask-generator]]`.
 pub const MASK_GENERATOR_API: u32 = 2;
+
+/// The first `api` that reads `[[source]]`.
+pub const SOURCE_API: u32 = 3;
 
 /// The bundled extension that may claim the provenance Select Subject and
 /// Select Sky saved before extensions existed.
@@ -65,6 +68,10 @@ pub struct Manifest {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub mask_generators: Vec<MaskGenerator>,
+    /// Sources of new photos (a watched folder, a tethered camera), from
+    /// `api = 3`.
+    #[serde(default, rename = "source", skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<Source>,
 }
 
 /// The `[extension]` table.
@@ -450,6 +457,27 @@ pub struct Tile {
     pub invert: bool,
 }
 
+/// A `[[source]]`: the program reports files as they arrive (a watched
+/// folder, a tethered camera), and the app adds them to the open catalog, for
+/// each catalog the user turned the source on for.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Source {
+    /// Unique among the extension's sources.
+    #[schemars(regex(pattern = r"^[a-z0-9][a-z0-9-]*$"))]
+    pub id: String,
+    /// The name shown on the extension's page, for example `Tethered camera`;
+    /// the id without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+impl Source {
+    /// The name shown: the stated one, or the id.
+    pub fn name(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.id)
+    }
+}
+
 /// Why a manifest was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Invalid(pub String);
@@ -480,10 +508,12 @@ impl Manifest {
             .mask_generators
             .iter()
             .map(|g| format!("mask-generator/{}", g.id));
+        let sources = self.sources.iter().map(|s| format!("source/{}", s.id));
         commands
             .chain(panels)
             .chain(adapters)
             .chain(generators)
+            .chain(sources)
             .collect()
     }
 
@@ -494,6 +524,7 @@ impl Manifest {
             && (!self.commands.is_empty()
                 || !self.panels.is_empty()
                 || !self.mask_generators.is_empty()
+                || !self.sources.is_empty()
                 || self
                     .control_adapters
                     .iter()
@@ -546,6 +577,7 @@ impl Manifest {
                 "mask-generator",
                 self.mask_generators.iter().map(|g| &g.id).collect(),
             ),
+            ("source", self.sources.iter().map(|s| &s.id).collect()),
         ];
         for (table, ids) in tables {
             let mut seen = std::collections::BTreeSet::new();
@@ -597,12 +629,44 @@ impl Manifest {
         let needs_program = !self.commands.is_empty()
             || !self.panels.is_empty()
             || !self.control_adapters.is_empty()
-            || !self.mask_generators.is_empty();
+            || !self.mask_generators.is_empty()
+            || !self.sources.is_empty();
         if needs_program && self.program.is_none() {
             return fail(
-                "commands, panels, control adapters and mask generators need a [program] to run them"
+                "commands, panels, control adapters, mask generators and sources need a [program] to run them"
                     .into(),
             );
+        }
+        self.validate_sources()
+    }
+
+    /// The `[[source]]` rules: the `api` that reads them, and a program that
+    /// starts with the app, since a source watches for files whether or not
+    /// anything else asks the program for something.
+    fn validate_sources(&self) -> Result<(), Invalid> {
+        if self.sources.is_empty() {
+            return Ok(());
+        }
+        let api = self.extension.api;
+        if api < SOURCE_API {
+            return Err(Invalid(format!(
+                "[[source]] needs extension.api = {SOURCE_API} or later (this one says {api})"
+            )));
+        }
+        if self
+            .program
+            .as_ref()
+            .is_some_and(|p| p.start != Start::WithApp)
+        {
+            return Err(Invalid(
+                "a [[source]] needs program.start = \"with-app\": it watches while the app runs"
+                    .into(),
+            ));
+        }
+        for source in &self.sources {
+            if source.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
+                return Err(Invalid(format!("source {}: its name is empty", source.id)));
+            }
         }
         Ok(())
     }
@@ -860,7 +924,7 @@ launch = "external"
             ("id = \"dev.jane.analog\"", "id = \"Dev.Jane.Analog\""),
             ("version = \"1.2.0\"", "version = \"1.2\""),
             ("rawmakase = \">=0.6, <0.7\"", "rawmakase = \"sometime\""),
-            ("api = 1", "api = 3"),
+            ("api = 1", "api = 4"),
             ("api = 1", "api = 0"),
             ("path = \"bin/analog\"", "path = \"../analog\""),
             ("path = \"bin/analog\"", "path = \"/usr/bin/analog\""),
@@ -1032,6 +1096,66 @@ input = ["prompt"]
         assert!(generators("input = [\"prompt\"]", "").is_err());
     }
 
+    const SOURCES: &str = r#"
+[extension]
+id = "dev.jane.tether"
+name = "Tether"
+version = "1.0.0"
+rawmakase = ">=0.6"
+api = 3
+
+[program]
+path = "bin/tether"
+start = "with-app"
+
+[[source]]
+id = "camera"
+name = "Tethered camera"
+
+[[source]]
+id = "folder"
+"#;
+
+    fn sources(replace: &str, by: &str) -> Result<Manifest, Invalid> {
+        assert!(SOURCES.contains(replace), "{replace}");
+        Manifest::parse(&SOURCES.replacen(replace, by, 1))
+    }
+
+    #[test]
+    fn sources_read_and_round_trip() {
+        let manifest = Manifest::parse(SOURCES).unwrap();
+        let [camera, folder] = &manifest.sources[..] else {
+            panic!("two sources");
+        };
+        assert_eq!(camera.name(), "Tethered camera");
+        assert_eq!(folder.name(), "folder");
+        assert_eq!(manifest.contributions(), ["source/camera", "source/folder"]);
+        assert!(manifest.runs_in_app());
+        let written = toml::to_string(&manifest).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+    }
+
+    #[test]
+    fn sources_need_api_3_and_a_program_that_starts_with_the_app() {
+        let error = sources("api = 3", "api = 2").unwrap_err();
+        assert!(error.0.contains("api = 3"), "{error}");
+        let error = sources("start = \"with-app\"", "start = \"on-demand\"").unwrap_err();
+        assert!(error.0.contains("with-app"), "{error}");
+        // Without `start`, a program starts on demand.
+        assert!(sources("start = \"with-app\"", "").is_err());
+        let without_program =
+            SOURCES.replace("[program]\npath = \"bin/tether\"\nstart = \"with-app\"", "");
+        assert!(Manifest::parse(&without_program).is_err());
+        for (replace, by) in [
+            ("id = \"folder\"", "id = \"camera\""),
+            ("id = \"folder\"", "id = \"Folder\""),
+            ("name = \"Tethered camera\"", "name = \" \""),
+            ("id = \"folder\"", "id = \"folder\"\nwatch = \"/tmp\""),
+        ] {
+            assert!(sources(replace, by).is_err(), "{by}");
+        }
+    }
+
     #[test]
     fn every_place_the_design_names_is_accepted() {
         for place in [
@@ -1092,6 +1216,7 @@ input = ["prompt"]
         assert_eq!(schema["additionalProperties"], Value::Bool(false));
         assert!(schema["properties"]["control-adapter"].is_object());
         assert!(schema["properties"]["mask-generator"].is_object());
+        assert!(schema["properties"]["source"].is_object());
         assert!(schema["properties"].get("filter").is_none());
     }
 }

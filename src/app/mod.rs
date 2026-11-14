@@ -153,6 +153,10 @@ pub(crate) struct Editor {
     /// Runs on a read's worker before its work, as `proposal_hook` does.
     #[cfg(test)]
     read_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    /// Runs on a source report's worker once its files are read, right
+    /// before it passes its write gate, as `proposal_hook` does.
+    #[cfg(test)]
+    report_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 impl Editor {
     pub(crate) fn new(
@@ -428,6 +432,8 @@ impl Editor {
             proposal_hook: None,
             #[cfg(test)]
             read_hook: None,
+            #[cfg(test)]
+            report_hook: None,
         };
         app.reload_presets(ctx);
         // A catalog passed on the command line opens instead of the last one;

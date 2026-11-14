@@ -64,7 +64,7 @@ launch = "external"
 | `name` | yes | Shown in Preferences |
 | `version` | yes | The extension's version, [semver](https://semver.org) (`1.2.0`) |
 | `rawmakase` | yes | The RAWmakase versions it supports, a semver range (`>=0.5, <0.6`). Outside it the package is refused, and an installed one is listed as incompatible. Before 1.0 no compatibility is promised, so state the minor versions tested |
-| `api` | yes | The manifest format it was written for. This version reads `1` and `2`; a higher one is refused as written for a newer RAWmakase. `2` adds [`[[mask-generator]]`](#mask-generator). The app tells the program its manifest's `api` when it starts it ([protocol](protocol.md#api-mode)) |
+| `api` | yes | The manifest format it was written for. This version reads `1` to `3`; a higher one is refused as written for a newer RAWmakase. `2` adds [`[[mask-generator]]`](#mask-generator), `3` adds [`[[source]]`](#source). The app tells the program its manifest's `api` when it starts it ([protocol](protocol.md#api-mode)) |
 | `authors` | no | Names |
 | `license` | no | An SPDX expression |
 | `repository` | no | `https://github.com/<owner>/<repo>` |
@@ -84,8 +84,8 @@ update asks for more. Not enforced: an extension runs with your permissions.
 
 ## `[program]`
 
-Needed by every extension with commands, panels, control adapters or mask
-generators.
+Needed by every extension with commands, panels, control adapters, mask
+generators or sources.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -221,3 +221,36 @@ Each `[[mask-generator.tile]]`:
 | --- | --- | --- |
 | `name` | — | The tile's name |
 | `invert` | `false` | Whether the new component is inverted: Background is an inverted Subject |
+
+## `[[source]]`
+
+From `api = 3`; a manifest with an earlier `api` that declares one is
+refused. A source finds new photos as they arrive, such as a watched folder
+or a tethered camera, and reports each file once it is complete
+([`source.report`](protocol.md#sourcereport-request)); the app adds them to
+the catalog. Talking to the camera or watching the folder is the program's
+work; placing, adding and showing the photos is the app's.
+
+```toml
+[program]
+path = "bin/tether"
+start = "with-app"
+
+[[source]]
+id = "camera"
+name = "Tethered camera"
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `id` | — | Lowercase letters, digits and hyphens, unique among the sources |
+| `name` | the id | Shown on the extension's page |
+
+A source needs `program.start = "with-app"`: it watches while the app runs,
+whether or not anything asks the program for something. It is off until the
+user turns it on for a catalog on the extension's page in Preferences >
+Extensions, and adds only to the catalogs it is on for, while they are open
+([Photo sources](overview.md#photo-sources)). A source that reads files
+outside the photos the app hands it should say so with `files = "any"` in
+[`[access]`](#access).
+

@@ -1,0 +1,23 @@
+# A test-only extension of a photo source: the app's tests run it as a third
+# party's program. Its program is the example crate's library
+# (`rawmakase_example::sources`), never bundled with RAWmakase.
+[extension]
+id = "dev.rawmakase.sources"
+name = "Example Sources"
+version = "0.1.0"
+rawmakase = ">=0.1"
+api = 3
+authors = ["RAWmakase"]
+license = "MIT"
+description = "Reports the files a test names, as a watched folder or a tethered camera would."
+
+[access]
+files = "any"
+
+[program]
+path = "rawmakase-example-sources"
+start = "with-app"
+
+[[source]]
+id = "drop"
+name = "Drop folder"

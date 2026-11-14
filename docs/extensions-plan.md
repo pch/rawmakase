@@ -9,7 +9,10 @@ job object, channel, deadlines, stop), `cargo rawmakase` and
 the app (`app::work`), Preferences > Extensions, commands, settings, panels,
 reads, proposals and target tokens in the app; control adapters, the app's own
 and externally launched ones; and moved MCP and MIDI out as bundled
-extensions. This page is the
+extensions. Phase 3 built viewer input and mask generators and moved AI masks
+out. The `source` contract is built too ([decisions](#source-decisions)),
+proved by a test-only extension; no watched-folder or tethering extension
+exists yet. This page is the
 design we agreed on before implementation; once a part is built, its reference
 moves to `docs/extensions/` and this page records only what is still open.
 
@@ -469,7 +472,10 @@ the Lightroom import does today.
 
 **Sources** report files only when complete (a tethered capture fully written, a
 copy finished). Reconnection and duplicate reports are expected; the app matches
-by identity, so a file reported twice is added once.
+each file with the catalog's photos as Add Folder does (root, folder and name),
+so a file reported twice is added once. Built: see
+[Source decisions](#source-decisions) and
+[Photo sources](extensions/overview.md#photo-sources).
 
 ## Filters
 
@@ -914,6 +920,31 @@ Defaults taken for phase 3 (#965), where the design left a choice open:
 | D24 | Input made while a prompt request runs is ignored, not queued; a command's `point`, `points` and `box` input is sent at once and queues behind whatever its program runs |
 | D25 | `brush` input is accepted in manifests and its commands are shown disabled with the reason, until brush input is built |
 
+### Source decisions
+
+Defaults taken for `[[source]]`, built without a real source in this
+repository: the test-only `dev.rawmakase.sources` (`extensions/example/sources`)
+proves the contract here, and watched folders and tethering are left to
+others ([Photo sources](extensions/overview.md#photo-sources)).
+
+| | Decision |
+| --- | --- |
+| D26 | `[[source]]` is read from `api = 3` (API 3 is API 2 plus sources), has an `id` and a `name`, and needs `program.start = "with-app"` |
+| D27 | A source is off until the user turns it on for a catalog, on its extension's page; `extensions.json` keeps the catalogs it is on for under the extension's entry (`sources`), by catalog file, on this computer only |
+| D28 | Scopes: the app starts one (`source-started`, with a number never reused and the catalog's name) while the program is ready, the extension enabled, a catalog open and the source on for it, and stops it (`source-stopped`) when the catalog closes or changes or the source is turned off; a program start gets its scopes again after `hello`. A report outside its source's current scope is `not_admitted` |
+| D29 | `source.report` names the folder the source writes to and up to 200 complete files in it; the app places them as Add Folder places the folders below the one chosen (the folder becomes a new root where no catalog folder holds it) and refuses, rather than asks about, files in ambiguous or linked-elsewhere folders |
+| D30 | One report is one import batch; a report of files the catalog has already starts none, so Previous Import survives a source reporting again |
+| D31 | A report takes the catalog's folder-change activity; while other work holds the catalog it is answered `busy`, and the SDK's `Host::report` tries again every 250 ms for up to a minute. Reports are not queued in the app |
+| D32 | Once added, the Library reads the catalog again in place, so Develop's photo, edit, History and pending save stay; nothing reopens the catalog. A Copy Name or metadata field being typed is saved first; when it can't be, the Library isn't read again, so the typing survives. A keyword being typed (saved only on Enter) stays with the photos it is typed for |
+| D33 | `show` selects the last photo the report added (never one the catalog had), or opens it in Develop when Develop shows a photo, through the path a click takes (saving first) |
+| D34 | A report's worker passes a write gate once the files are read, right before the transaction: closed by the scope ending, the program cancelling or its session ending, it writes nothing; once writing, it finishes and its result stands |
+
+Not part of the contract yet: settings proposals from a source (presets on
+import) still belong to a command; the app has no live view or camera
+controls of its own (an extension's commands and panels serve those); and a
+report blocks opening another photo in Develop while it is added, as Add
+Folder does.
+
 ### Designed, not scheduled
 
 The rest of this plan is designed so that the phases above leave room for it,
@@ -926,7 +957,6 @@ test extension in the SDK proves it here as well.
 | `files` content: presets, LUTs, profiles, key maps | Phase 2 | Preset and LUT packs |
 | Brush input | Phase 3 | Object removal |
 | `importer` | Phase 2 | One-time Capture One and Lightroom CC imports; then moving the Lightroom importer out, after Lightroom edits are converted at import |
-| `source` | Phase 2 | Watched folders, tethering |
 | Filters | Phase 2 | Film grain, custom filters |
 | Retouch patches and `retouch-generator` | Phase 3 and brush input | AI object removal |
 | `export-destination` | Phase 2 | Uploads, galleries |

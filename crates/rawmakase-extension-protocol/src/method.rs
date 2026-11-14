@@ -1,7 +1,8 @@
 //! The requests and events of protocol version 1, with their parameters.
 //!
 //! `mask.generate` and `mask.setup` serve `[[mask-generator]]`, which manifests
-//! declare from `api = 2`.
+//! declare from `api = 2`; `source-started`, `source-stopped` and
+//! `source.report` serve `[[source]]`, from `api = 3`.
 //!
 //! [`AppRequest`] and [`AppEvent`] go from the app to the program,
 //! [`ProgramRequest`] and [`ProgramEvent`] the other way. Each reads from a
@@ -91,6 +92,10 @@ pub enum ProgramRequest {
     /// The extension's entry in the status line, or none. Answered with `null`.
     #[serde(rename = "status")]
     Status(Status),
+    /// Files a source found complete, for the app to add to the catalog of
+    /// the source's scope. Answered with [`Reported`] once they are added.
+    #[serde(rename = "source.report")]
+    SourceReport(SourceReport),
 }
 
 /// Events the app sends a program.
@@ -109,6 +114,14 @@ pub enum AppEvent {
     /// The catalog closed: tokens from it are refused from now on.
     #[serde(rename = "catalog-closed")]
     CatalogClosed(Empty),
+    /// A source may report files now, in a scope of its own: the catalog open
+    /// now, for which the user turned the source on.
+    #[serde(rename = "source-started")]
+    SourceStarted(SourceStarted),
+    /// A source's scope ended: its catalog closed, or the user turned the
+    /// source off for it. Reports in it are refused from now on.
+    #[serde(rename = "source-stopped")]
+    SourceStopped(SourceStopped),
     /// The app is quitting: the channel closes next, and the program is ended
     /// if it hasn't exited by the quit deadline.
     #[serde(rename = "quitting")]
@@ -169,6 +182,7 @@ impl ProgramRequest {
         "adapter.operate",
         "notify",
         "status",
+        "source.report",
     ];
     /// Whether the request reports a lifecycle change the host applies on its
     /// reader thread, outside the queue of operations, so it is never held up
@@ -184,6 +198,8 @@ impl AppEvent {
         "selection-changed",
         "photo-opened",
         "catalog-closed",
+        "source-started",
+        "source-stopped",
         "quitting",
     ];
 }
@@ -704,6 +720,120 @@ pub struct Status {
     pub text: Option<String>,
 }
 
+/// `source-started`'s parameters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceStarted {
+    /// The source's id within its extension.
+    pub source: String,
+    /// The scope's number, issued by the app and never reused: a report
+    /// names it, and is refused once the scope has stopped.
+    pub scope: u64,
+    /// The name of the catalog the scope adds to, for the program to show.
+    pub catalog: String,
+}
+
+/// `source-stopped`'s parameters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceStopped {
+    /// The source's id within its extension.
+    pub source: String,
+    /// The scope that ended.
+    pub scope: u64,
+}
+
+/// The most files one [`SourceReport`] names, so its reply stays well inside
+/// a protocol line and adding them stays bounded.
+pub const MAX_REPORTED_FILES: usize = 200;
+
+/// `source.report`'s parameters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceReport {
+    /// The source's id within its extension.
+    pub source: String,
+    /// The scope the files were found in, from `source-started`.
+    pub scope: u64,
+    /// The folder the source puts its files in, absolute: each file is in it
+    /// or below it. Placed as Add Folder places a folder it is given: where
+    /// no catalog folder holds it, it becomes a new root.
+    pub folder: PathBuf,
+    /// The files, absolute, each complete: written whole and closed.
+    pub files: Vec<PathBuf>,
+    /// Show the last file this report added, in the order reported: it
+    /// becomes the Library's selected photo, and opens in Develop when
+    /// Develop is open, as a tethered capture does. A file the catalog had
+    /// already is never shown.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub show: bool,
+}
+impl SourceReport {
+    /// Checks the shape the app relies on before it looks at a file: one
+    /// to [`MAX_REPORTED_FILES`] files, every path absolute.
+    pub fn validate(&self) -> Result<(), RemoteError> {
+        let fail = |why: String| Err(RemoteError::new(ErrorCode::InvalidRequest, why));
+        if self.files.is_empty() || self.files.len() > MAX_REPORTED_FILES {
+            return fail(format!(
+                "a report names {} files, not 1 to {MAX_REPORTED_FILES}",
+                self.files.len()
+            ));
+        }
+        if !self.folder.is_absolute() {
+            return fail(format!("{} is not an absolute path", self.folder.display()));
+        }
+        if let Some(file) = self.files.iter().find(|f| !f.is_absolute()) {
+            return fail(format!("{} is not an absolute path", file.display()));
+        }
+        Ok(())
+    }
+}
+
+/// What `source.report` answers, once the files are added.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reported {
+    /// How many photos the report added; the others were there already.
+    pub added: u32,
+    /// The files now in the catalog, added or already there, in the order
+    /// reported.
+    pub photos: Vec<ReportedPhoto>,
+    /// The files not added, with why.
+    pub refused: Vec<RefusedFile>,
+}
+
+/// A reported file that is in the catalog.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReportedPhoto {
+    /// The file as reported.
+    pub path: PathBuf,
+    /// Its photo's catalog id.
+    pub photo: i64,
+}
+
+/// A reported file the app didn't add.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RefusedFile {
+    /// The file as reported.
+    pub path: PathBuf,
+    /// Why.
+    pub reason: FileRefusal,
+}
+
+/// Why a reported file wasn't added.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileRefusal {
+    /// It isn't there.
+    NotFound,
+    /// It isn't a file RAWmakase reads as a photo, or it is hidden.
+    NotAPhoto,
+    /// It isn't in the report's folder.
+    OutsideFolder,
+    /// Its folder belongs to a catalog folder that is elsewhere on this
+    /// computer.
+    LinkedElsewhere,
+    /// More than one catalog folder could be its folder: the user adds it
+    /// with Add Folder…, which asks which.
+    Ambiguous,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -951,5 +1081,58 @@ mod tests {
         assert_eq!(ProgramRequest::parse(&name, params).unwrap(), operate);
         assert!(ProgramRequest::is_lifecycle("adapter.device"));
         assert!(!ProgramRequest::is_lifecycle("adapter.operate"));
+    }
+
+    #[test]
+    fn a_sources_events_and_report_read_and_are_checked() {
+        let started = AppEvent::parse(
+            "source-started",
+            json!({"source": "camera", "scope": 4, "catalog": "Photos"}),
+        )
+        .unwrap();
+        assert_eq!(
+            started,
+            AppEvent::SourceStarted(SourceStarted {
+                source: "camera".into(),
+                scope: 4,
+                catalog: "Photos".into(),
+            })
+        );
+        let (name, params) = AppEvent::SourceStopped(SourceStopped {
+            source: "camera".into(),
+            scope: 4,
+        })
+        .into_parts();
+        assert_eq!(name, "source-stopped");
+        assert_eq!(params, json!({"source": "camera", "scope": 4}));
+        let root = if cfg!(windows) { "C:\\shoot" } else { "/shoot" };
+        let file = format!("{root}/a.cr3");
+        let ProgramRequest::SourceReport(report) = ProgramRequest::parse(
+            "source.report",
+            json!({"source": "camera", "scope": 4, "folder": root, "files": [file]}),
+        )
+        .unwrap() else {
+            panic!("a report");
+        };
+        assert!(!report.show);
+        report.validate().unwrap();
+        let broken = |change: &dyn Fn(&mut SourceReport)| {
+            let mut report = report.clone();
+            change(&mut report);
+            assert_eq!(
+                report.validate().unwrap_err().code,
+                ErrorCode::InvalidRequest
+            );
+        };
+        broken(&|r| r.files.clear());
+        broken(&|r| r.files = vec![r.files[0].clone(); MAX_REPORTED_FILES + 1]);
+        broken(&|r| r.folder = "shoot".into());
+        broken(&|r| r.files.push("a.cr3".into()));
+        let reported: Reported = serde_json::from_value(json!({
+            "added": 1, "photos": [{"path": file, "photo": 9}],
+            "refused": [{"path": "/x.txt", "reason": "not_a_photo"}]
+        }))
+        .unwrap();
+        assert_eq!(reported.refused[0].reason, FileRefusal::NotAPhoto);
     }
 }

@@ -86,6 +86,7 @@ that drops it.
 | Update checker | `app/shell/updates.rs` | Up to an hour between checks; a check or download of up to 15 min | Its request sender dropped, between requests | No: a download has no cancel |
 | Installation probe | `diagnostics.rs` | `updates::installation()`, which can run the package manager | None; the system probe stops waiting for it after 10 s and reports it unavailable | No |
 | GVFS bridge reaper (Linux) | `platform/network.rs` | The bridge process, which outlives the app | None | Never |
+| Extension source report | `app/extensions/sources.rs` (`Editor::add_reported`; the work is `Catalog::import_files`) | Adding up to 200 files a photo source reported, possibly on a network share: opening the catalog, each file's metadata and sidecar, then one SQLite write transaction, as Add Folder's | Its write gate, closed when the report's scope ends, its program cancels it or its session ends (disabled, uninstalled, crashed, quitting's step 2.1). Looked at before the catalog is opened, and taken once the files are read, right before the transaction: a closed gate writes nothing; once the write has begun it completes or fails as a whole and stands | No: a one-shot job, detached, as Add Folder is. It holds the catalog's folder-change activity until it reports back, on every path, a panic included; the Library then reads the catalog again in place and the program is answered |
 | Extension program | `app/extensions/mod.rs` (the process is `crates/rawmakase-extensions/src/process.rs`) | A program of the user's: anything, for as long as it likes. The app never waits for it except through the stopper below; its requests have deadlines (30 s, 5 s for `hello`), checked on the UI thread each frame, after which they are cancelled and failed 2 s later | `quitting`, then its channel's sending side closed | Through its stopper |
 | Extension reader | `rawmakase-extensions` `session.rs` | A blocking read of the program's channel; **a send on the owner's queue, bounded at 64**, which it never blocks on: an operation that doesn't fit is refused `channel_full`, anything else dropped and counted | The program's end of the channel closing, when it exits or is ended | No: it ends on EOF once its process unit is gone. Nothing joins it in `Drop` |
 | Extension writer | `rawmakase-extensions` `session.rs` | Its queue (64 of the app's lines and 1024 of the reader's answers, sends refused rather than blocking when full); a write to the channel | Its queue's sender dropped (`Session::stop`, or the session dropped) | No: it ends with its queue or on the broken pipe |
@@ -116,7 +117,7 @@ dialogs, bulk import, the preset scan, batch edits (Sync Settings, Auto Settings
 preset on the Library's selection; their Cancel is taken between photos and right
 before saving, discards the whole batch, and the batch ends only when its worker
 reports back, a panic included), an extension's read and proposal of photos not
-open (their rows above), folder relink and move, the
+open and a source's report (their rows above), folder relink and move, the
 file operations' plan, run and recovery (Remove from Catalog, moving photos, New
 Folder Inside, and deciding what a crash left when a catalog opens; the close guard
 waits for a run, with Close anyway, and the journal leaves anything cut short to

@@ -59,7 +59,9 @@ pub use develop_history::{HistoryUpdate, SavedHistory, SavedStep};
 pub use edits::{EditChange, EditToSave};
 pub use export_catalog::{CatalogExport, ExportScope, ExportedFolders};
 pub use fingerprint::Conditional;
-pub use ingest::{Ambiguity, Choice, Conflict, IMPORT_BURST_SECONDS, PendingBurstStacks};
+pub use ingest::{
+    Ambiguity, Choice, Conflict, FileRefusal, FilesAdded, IMPORT_BURST_SECONDS, PendingBurstStacks,
+};
 pub use lightroom::HistoryStep;
 pub use location::CatalogLocation;
 pub use locations::{Override, Overrides, RootLocations};

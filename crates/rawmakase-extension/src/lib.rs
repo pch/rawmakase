@@ -40,7 +40,9 @@ pub use run::{Context, Extension, ServeOptions};
 pub use shm::mapped_buffers;
 
 use rawmakase_extension_protocol::controls::Control;
-use rawmakase_extension_protocol::method::{CommandRun, MaskGenerate, MaskGenerated};
+use rawmakase_extension_protocol::method::{
+    CommandRun, MaskGenerate, MaskGenerated, SourceStarted,
+};
 use serde_json::Value;
 
 /// A `[[command]]`'s implementation.
@@ -138,4 +140,22 @@ pub trait ControlAdapter: Send {
     /// Called when the session ends: stop the threads, without waiting for a
     /// device.
     fn stop(&mut self) {}
+}
+
+/// A `[[source]]`'s implementation: while a scope of it runs, it watches for
+/// files (a folder, a tethered camera) on threads of its own and reports each
+/// complete one with [`Host::report`]. Sources need `api = 3`.
+///
+/// The app starts a scope for each catalog the user turned the source on
+/// for, while that catalog is open, and stops it when the catalog closes or
+/// the source is turned off; a program start gets its scopes again after
+/// `hello`. The SDK stops every scope still running when the session ends.
+pub trait Source: Send {
+    /// A scope started: what the source reports in it, naming
+    /// [`SourceStarted::scope`], goes to the catalog the scope is for. Starts
+    /// watching on a thread that keeps `host`.
+    fn start(&mut self, host: Host, started: SourceStarted) -> Result<(), RemoteError>;
+    /// Scope `scope` ended: reports in it are refused. Stops watching,
+    /// without waiting on a device.
+    fn stop(&mut self, scope: u64);
 }

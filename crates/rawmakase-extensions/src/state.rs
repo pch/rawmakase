@@ -79,6 +79,11 @@ pub struct Entry {
     /// manifest default.
     #[serde(default, skip_serializing_if = "Map::is_empty")]
     pub settings: Map<String, Value>,
+    /// The catalogs each of its `[[source]]`s adds photos to, by source id:
+    /// each catalog's file on this computer, as the app opened it. A source
+    /// is off for every catalog not listed.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sources: BTreeMap<String, Vec<String>>,
     /// Fields a later release wrote.
     #[serde(flatten)]
     pub unknown: Map<String, Value>,
@@ -94,6 +99,7 @@ impl Default for Entry {
             enabled: true,
             source: None,
             settings: Map::new(),
+            sources: BTreeMap::new(),
             unknown: Map::new(),
         }
     }
@@ -118,6 +124,23 @@ impl Entry {
     /// Records where it came from.
     pub fn set_source(&mut self, source: &Source) {
         self.source = Some(serde_json::to_value(source).expect("a source is JSON"));
+    }
+    /// Whether its source `source` adds photos to the catalog `catalog`.
+    pub fn source_on(&self, source: &str, catalog: &str) -> bool {
+        self.sources
+            .get(source)
+            .is_some_and(|catalogs| catalogs.iter().any(|c| c == catalog))
+    }
+    /// Turns its source `source` on or off for the catalog `catalog`.
+    pub fn set_source_on(&mut self, source: &str, catalog: &str, on: bool) {
+        let catalogs = self.sources.entry(source.to_string()).or_default();
+        catalogs.retain(|c| c != catalog);
+        if on {
+            catalogs.push(catalog.to_string());
+        }
+        if catalogs.is_empty() {
+            self.sources.remove(source);
+        }
     }
 }
 
@@ -466,5 +489,36 @@ mod tests {
             entry.set_source(&source);
             assert_eq!(entry.source(), Some(source));
         }
+    }
+
+    #[test]
+    fn a_photo_source_is_turned_on_per_catalog_and_kept_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        State::update(dir.path(), |s| {
+            let entry = s.entry("dev.a.tether");
+            entry.set_source_on("camera", "/c/Studio.rawmakase", true);
+            entry.set_source_on("camera", "/c/Studio.rawmakase", true);
+            entry.set_source_on("camera", "/c/Home.rawmakase", true);
+            Ok(())
+        })
+        .unwrap();
+        let state = State::read(dir.path()).unwrap();
+        let entry = &state.extensions["dev.a.tether"];
+        assert_eq!(
+            entry.sources["camera"],
+            ["/c/Studio.rawmakase", "/c/Home.rawmakase"]
+        );
+        assert!(entry.source_on("camera", "/c/Home.rawmakase"));
+        assert!(!entry.source_on("camera", "/c/Other.rawmakase"));
+        assert!(!entry.source_on("folder", "/c/Home.rawmakase"));
+        let mut entry = entry.clone();
+        entry.set_source_on("camera", "/c/Studio.rawmakase", false);
+        entry.set_source_on("camera", "/c/Home.rawmakase", false);
+        assert!(
+            entry.sources.is_empty(),
+            "a source on for nothing is dropped"
+        );
+        let written = serde_json::to_value(&entry).unwrap();
+        assert!(written.get("sources").is_none());
     }
 }

@@ -129,6 +129,14 @@ token holds. Every persisted change goes through the host
 crate's `State::update`, so a write failure leaves this session's state as it
 was. Quitting follows [the shutdown contract](shutdown.md).
 
+An extension's photo source (`app::extensions::sources`) reports files in a
+scope the host issues per source and open catalog; the catalog owns placing
+and writing them (`Catalog::import_files`, Add Folder's steps), and the
+editor owns when: under the folder-change activity, on a worker that passes
+the report's write gate first, with the Library read again in place
+afterwards so Develop's photo and edit stay. A source's photos are ordinary
+catalog rows; nothing depends on the extension once they are added.
+
 An extension's mask generator (`app::extensions::mask_generator`), Select
 Subject's, Sky's and Background's among them (the bundled AI masks
 extension's), runs through one request state machine

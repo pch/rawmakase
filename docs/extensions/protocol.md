@@ -62,7 +62,11 @@ program exits.
   Exiting closes every handle the program holds, and the app fails the
   requests it was waiting on with `exited`.
 
-The app's side keeps the recovery rules in both modes: a program's malformed
+- **API 3** is API 2, and adds [photo sources](#sourcereport-request): the
+  events `source-started` and `source-stopped`, and `source.report`. A
+  manifest declaring a `[[source]]` declares `api = 3`.
+
+The app's side keeps the recovery rules in every mode: a program's malformed
 line never ends a session.
 
 ### Handles
@@ -395,6 +399,8 @@ mask with `model` and an input identity computed from `image_key`,
 | `selection-changed` | none; read it with `read.selection` |
 | `photo-opened` | `{"photo":id}` or `{"photo":null}` |
 | `catalog-closed` | none; tokens from it are refused from now on |
+| `source-started` | `{"source":id,"scope":n,"catalog":"Photos"}`: a source may report in scope `n`, adding to the catalog named ([below](#sourcereport-request)) |
+| `source-stopped` | `{"source":id,"scope":n}`: reports in scope `n` are refused from now on |
 | `quitting` | none; the channel closes next |
 
 ## Program to app
@@ -411,6 +417,7 @@ mask with `model` and an input identity computed from `image_key`,
 | `adapter.operate` | `{"adapter":id,"device":id,"epoch":n,"ops":[…]}` | `{"applied":n}` |
 | `notify` | `{"level":"info"\|"warning"\|"error","text":"…"}` | `null` |
 | `status` | `{"text":"…"}` or `{"text":null}` | `null` |
+| `source.report` | `{"source":id,"scope":n,"folder":"…","files":["…"],"show":bool}` | `{"added":n,"photos":[{"path":"…","photo":id}],"refused":[{"path":"…","reason":r}]}`, once the files are added |
 
 Event: `panel-update` `{"panel":id,"controls":[…]}` replaces an open panel's
 controls unasked.
@@ -474,6 +481,62 @@ opened) has no settings and an `error` saying why, and a proposal for it is
 refused `stale_target`. Photos not open are read off the UI thread, and the
 reply comes when that is done; a program that cancels its read is answered
 `cancelled`.
+
+### `source.report` (request)
+
+A `[[source]]`'s files, found complete, for the app to add to the catalog of
+its scope ([Photo sources](overview.md#photo-sources)):
+
+```json
+{"source":"camera","scope":4,"folder":"/Users/jane/Captures",
+ "files":["/Users/jane/Captures/2026-11-14/DSC01234.ARW"],"show":true}
+```
+
+- `scope` is the number `source-started` gave. A report in a scope that isn't
+  its source's current one (stopped, of an earlier program start, or never
+  issued) is refused `not_admitted` and adds nothing.
+- `folder` is absolute, the folder the source puts its files in; `files` are
+  1 to 200 absolute paths, each in `folder` or below it, written whole and
+  closed. Each file's folder is placed as Add Folder places the folders below
+  the one chosen: in the catalog folder this computer's locations name, or
+  under a new root, `folder`, when none does.
+- `show` (default `false`) shows the last photo the report added, in the
+  order reported: it becomes the Library's selected photo, or opens in
+  Develop when Develop shows a photo, as a click opens it. A file the
+  catalog had already is never shown, and a report that adds nothing shows
+  nothing.
+
+While other work holds the catalog (a folder being added or synchronized, a
+batch edit, a file operation, another report), the request is answered
+`busy` at once, and the program reports again; the SDK's `Host::report` does
+so for up to a minute. Otherwise the app adds the files on a worker, as one
+import batch, and answers once they are added:
+
+```json
+{"added":1,
+ "photos":[{"path":"/Users/jane/Captures/2026-11-14/DSC01234.ARW","photo":812}],
+ "refused":[{"path":"/Users/jane/Captures/notes.txt","reason":"not_a_photo"}]}
+```
+
+`added` counts the photos added; `photos` lists, in the order reported, every
+file the catalog has now, added or there already, with its photo's id; files
+reported twice are listed once. A Copy Name or metadata field being typed in
+the Library is saved before the Library reads the catalog again, and a
+keyword being typed stays; when it
+can't be saved, the Library isn't read again, so the typing stays, and the
+photos added are missing from `photos` and show with the next read. `refused` lists the others with a `reason`:
+`not_found`, `not_a_photo` (not a format RAWmakase reads, or hidden),
+`outside_folder`, `linked_elsewhere` (its folder's catalog folder is elsewhere
+on this computer) or `ambiguous` (more than one catalog folder could be its
+folder; Add Folder… asks which). A report of files the catalog has already
+starts no import batch.
+
+Until the worker begins writing, once it has read the files, the report is
+withdrawn when its scope stops (`not_admitted`), when the program cancels it
+(`cancelled`) or with its session, and nothing is written. Once the write has begun it finishes, and
+the program, if its session still runs and it wasn't answered already, is
+answered with what was added. A report that fails to write is answered
+`not_added` with why.
 
 ### Control adapters
 
@@ -560,6 +623,7 @@ controls, reuses an id, or has a value outside its range.
 | `not_admitted` | A proposal for an app request no longer in flight |
 | `needs_setup` | The contribution needs something installed first. The message is JSON, `{"what":"the Subject model","bytes":184000000}`, for the app's setup card; a message that doesn't read as that is shown as text |
 | `unavailable` | What the contribution runs on, such as a runtime library or a remote worker, isn't available; the message says why |
+| `not_added` | A source's report couldn't be written to the catalog; the message says why |
 
 The control layer's own codes (`no_document`, `not_editable`, …, [automation](../automation.md))
 pass through unchanged.

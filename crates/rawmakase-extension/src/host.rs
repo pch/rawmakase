@@ -4,7 +4,7 @@ use rawmakase_extension_protocol::framing::write_line;
 use rawmakase_extension_protocol::method::{
     ActionSupport, AdapterDevice, AdapterOperate, DeviceState, Empty, Level, Notify, Operated,
     PanelUpdate, ProgramEvent, ProgramRequest, ProposeSettings, Proposed, ReadAction, ReadPhotos,
-    SettingsChange, Snapshot, Status,
+    Reported, SettingsChange, Snapshot, SourceReport, Status,
 };
 use rawmakase_extension_protocol::{ErrorCode, Message, RemoteError};
 use serde_json::Value;
@@ -135,6 +135,9 @@ pub struct Host(pub(crate) Arc<Shared>);
 /// proposals within a frame or two; a minute means it is stuck.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long [`Host::report`] waits between tries while the app is busy.
+const BUSY_RETRY: Duration = Duration::from_millis(250);
+
 impl Host {
     /// Sends a request and waits for its reply, at most a minute.
     pub fn request(&self, method: &str, params: Value) -> Result<Value, RemoteError> {
@@ -261,6 +264,32 @@ impl Host {
             epoch,
             ops,
         }))
+    }
+    /// Reports files a source found complete, in its scope `scope`, for the
+    /// app to add to that scope's catalog; answered once they are added.
+    /// `report` is [`SourceReport`]'s fields: the folder the files are in, the
+    /// files, and whether the last one added is shown.
+    ///
+    /// While other work holds the catalog (a folder being added, a batch
+    /// edit, another report), the app answers [`ErrorCode::Busy`] at once:
+    /// this tries again every quarter of a second, and returns that error
+    /// once a minute has passed. A report the app takes is waited for as
+    /// any request is, for up to a minute more while its files are added;
+    /// past that it is cancelled and [`ErrorCode::Deadline`] returned, and
+    /// it adds nothing unless its write had begun. The longest this waits
+    /// is therefore about two minutes. A report in a scope that has stopped is
+    /// [`ErrorCode::NotAdmitted`]. Reporting a file again is harmless: one
+    /// already in the catalog is listed with its photo and not added twice.
+    pub fn report(&self, report: SourceReport) -> Result<Reported, RemoteError> {
+        let until = std::time::Instant::now() + DEFAULT_TIMEOUT;
+        loop {
+            match self.call(ProgramRequest::SourceReport(report.clone())) {
+                Err(e) if e.code == ErrorCode::Busy && std::time::Instant::now() < until => {
+                    std::thread::sleep(BUSY_RETRY);
+                }
+                result => return result,
+            }
+        }
     }
     /// Shows the user a notification.
     pub fn notify(&self, level: Level, text: &str) -> Result<(), RemoteError> {
