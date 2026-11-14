@@ -23,6 +23,9 @@ pub const MASK_GENERATOR_API: u32 = 2;
 
 /// The first `api` that reads `[[source]]`.
 pub const SOURCE_API: u32 = 3;
+/// The first `api` that reads `[[retouch-generator]]` and the `secret`
+/// setting control. Its framing and handle rules are API 2's.
+pub const RETOUCH_GENERATOR_API: u32 = 3;
 
 /// The bundled extension that may claim the provenance Select Subject and
 /// Select Sky saved before extensions existed.
@@ -72,6 +75,13 @@ pub struct Manifest {
     /// `api = 3`.
     #[serde(default, rename = "source", skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<Source>,
+    /// Generators of retouch patches (object removal), from `api = 3`.
+    #[serde(
+        default,
+        rename = "retouch-generator",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub retouch_generators: Vec<RetouchGenerator>,
 }
 
 /// The `[extension]` table.
@@ -232,6 +242,11 @@ pub enum SettingControl {
     File,
     /// A folder chosen in the system's dialog.
     Folder,
+    /// Text kept secret, such as an API key, from `api = 3`. The app keeps
+    /// its value in the system's credential store, never in
+    /// `extensions.json`, and never shows it again; the program receives it
+    /// as a string, `""` while none is set. Its default is `""`.
+    Secret,
 }
 impl SettingControl {
     /// Whether `value` is one this control holds.
@@ -244,7 +259,7 @@ impl SettingControl {
             Self::Choice(options) | Self::Segmented(options) => value
                 .as_str()
                 .is_some_and(|v| options.iter().any(|o| o == v)),
-            Self::Text | Self::File | Self::Folder => value.is_string(),
+            Self::Text | Self::File | Self::Folder | Self::Secret => value.is_string(),
             Self::Color => value.as_array().is_some_and(|c| {
                 c.len() == 3
                     && c.iter()
@@ -444,6 +459,31 @@ impl MaskGenerator {
     }
 }
 
+/// A `[[retouch-generator]]`: the program turns a region of the photo and
+/// the area the user painted in it into new pixels for that area, such as
+/// the area with an object removed. The app keeps the result as a retouch
+/// patch, which renders without the extension.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct RetouchGenerator {
+    /// Unique among the extension's retouch generators; saved patches record
+    /// `<extension>/<id>`.
+    #[schemars(regex(pattern = r"^[a-z0-9][a-z0-9-]*$"))]
+    pub id: String,
+    /// What the Remove tool calls it, for example `AI Remove`.
+    pub name: String,
+    /// Whether it sends the pixels it is given off this computer (to a
+    /// hosted model). The app asks the user once before the first request.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub uploads: bool,
+}
+impl RetouchGenerator {
+    /// What saved patches record as the generator that made them.
+    pub fn provenance(&self, extension: &str) -> String {
+        format!("{extension}/{}", self.id)
+    }
+}
+
 /// A `[[mask-generator.tile]]`: a shortcut in the mask drawer that asks its
 /// generator for a new mask component.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -509,11 +549,16 @@ impl Manifest {
             .iter()
             .map(|g| format!("mask-generator/{}", g.id));
         let sources = self.sources.iter().map(|s| format!("source/{}", s.id));
+        let retouch = self
+            .retouch_generators
+            .iter()
+            .map(|g| format!("retouch-generator/{}", g.id));
         commands
             .chain(panels)
             .chain(adapters)
             .chain(generators)
             .chain(sources)
+            .chain(retouch)
             .collect()
     }
 
@@ -525,6 +570,7 @@ impl Manifest {
                 || !self.panels.is_empty()
                 || !self.mask_generators.is_empty()
                 || !self.sources.is_empty()
+                || !self.retouch_generators.is_empty()
                 || self
                     .control_adapters
                     .iter()
@@ -578,6 +624,10 @@ impl Manifest {
                 self.mask_generators.iter().map(|g| &g.id).collect(),
             ),
             ("source", self.sources.iter().map(|s| &s.id).collect()),
+            (
+                "retouch-generator",
+                self.retouch_generators.iter().map(|g| &g.id).collect(),
+            ),
         ];
         for (table, ids) in tables {
             let mut seen = std::collections::BTreeSet::new();
@@ -605,6 +655,14 @@ impl Manifest {
                 {
                     return fail(format!("setting {id}: it has no options"));
                 }
+                SettingControl::Secret if e.api < RETOUCH_GENERATOR_API => {
+                    return fail(format!(
+                        "setting {id}: control \"secret\" needs extension.api = {RETOUCH_GENERATOR_API} or later"
+                    ));
+                }
+                SettingControl::Secret if setting.default != Value::String(String::new()) => {
+                    return fail(format!("setting {id}: a secret's default is \"\""));
+                }
                 _ => {}
             }
             if !setting.control.accepts(&setting.default) {
@@ -626,14 +684,16 @@ impl Manifest {
             }
         }
         self.validate_mask_generators()?;
+        self.validate_retouch_generators()?;
         let needs_program = !self.commands.is_empty()
             || !self.panels.is_empty()
             || !self.control_adapters.is_empty()
             || !self.mask_generators.is_empty()
-            || !self.sources.is_empty();
+            || !self.sources.is_empty()
+            || !self.retouch_generators.is_empty();
         if needs_program && self.program.is_none() {
             return fail(
-                "commands, panels, control adapters, mask generators and sources need a [program] to run them"
+                "commands, panels, control adapters, mask and retouch generators and sources need a [program] to run them"
                     .into(),
             );
         }
@@ -666,6 +726,30 @@ impl Manifest {
         for source in &self.sources {
             if source.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
                 return Err(Invalid(format!("source {}: its name is empty", source.id)));
+            }
+        }
+        Ok(())
+    }
+
+    /// The `[[retouch-generator]]` rules: the `api` that reads them, and a
+    /// name to show.
+    fn validate_retouch_generators(&self) -> Result<(), Invalid> {
+        let e = &self.extension;
+        if self.retouch_generators.is_empty() {
+            return Ok(());
+        }
+        if e.api < RETOUCH_GENERATOR_API {
+            return Err(Invalid(format!(
+                "[[retouch-generator]] needs extension.api = {RETOUCH_GENERATOR_API} or later (this one says {})",
+                e.api
+            )));
+        }
+        for generator in &self.retouch_generators {
+            if generator.name.trim().is_empty() {
+                return Err(Invalid(format!(
+                    "retouch-generator {}: its name is empty",
+                    generator.id
+                )));
             }
         }
         Ok(())
@@ -1039,6 +1123,77 @@ input = ["prompt"]
         assert!(Manifest::parse(&without_program).is_err());
     }
 
+    const REMOVER: &str = r#"
+[extension]
+id = "dev.pch.ai-remove"
+name = "AI Remove"
+version = "0.1.0"
+rawmakase = ">=0.5"
+api = 3
+
+[access]
+network = true
+
+[program]
+path = "bin/ai-remove"
+
+[[setting]]
+id = "fal-key"
+name = "fal.ai API key"
+control = "secret"
+default = ""
+
+[[retouch-generator]]
+id = "remove"
+name = "AI Remove"
+uploads = true
+"#;
+
+    fn remover(replace: &str, by: &str) -> Result<Manifest, Invalid> {
+        assert!(REMOVER.contains(replace), "{replace}");
+        Manifest::parse(&REMOVER.replacen(replace, by, 1))
+    }
+
+    #[test]
+    fn retouch_generators_and_secrets_read_from_api_3() {
+        let manifest = Manifest::parse(REMOVER).unwrap();
+        let [generator] = &manifest.retouch_generators[..] else {
+            panic!("one generator");
+        };
+        assert_eq!(generator.name, "AI Remove");
+        assert!(generator.uploads);
+        assert_eq!(
+            generator.provenance(&manifest.extension.id),
+            "dev.pch.ai-remove/remove"
+        );
+        assert_eq!(manifest.settings[0].control, SettingControl::Secret);
+        assert_eq!(manifest.contributions(), ["retouch-generator/remove"]);
+        assert!(manifest.runs_in_app());
+        let written = toml::to_string(&manifest).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+        // `uploads` is false unless stated.
+        let local = remover("uploads = true\n", "").unwrap();
+        assert!(!local.retouch_generators[0].uploads);
+
+        // Both need api = 3, a generator a program and a name, and a secret
+        // starts empty.
+        let error = remover("api = 3", "api = 2").unwrap_err();
+        assert!(error.0.contains("api = 3"), "{error}");
+        let only_secret = REMOVER.replace("api = 3", "api = 2").replace(
+            "[[retouch-generator]]\nid = \"remove\"\nname = \"AI Remove\"\nuploads = true\n",
+            "",
+        );
+        let error = Manifest::parse(&only_secret).unwrap_err();
+        assert!(error.0.contains("secret"), "{error}");
+        assert!(remover("[program]\npath = \"bin/ai-remove\"", "").is_err());
+        assert!(remover("name = \"AI Remove\"\nuploads", "name = \" \"\nuploads").is_err());
+        assert!(remover("default = \"\"", "default = \"sk-123\"").is_err());
+        assert!(remover("default = \"\"", "default = 1").is_err());
+        assert!(remover("uploads = true", "uploads = true\nmodel = \"x\"").is_err());
+        assert!(SettingControl::Secret.accepts(&Value::String("k".into())));
+        assert!(!SettingControl::Secret.accepts(&Value::Null));
+    }
+
     #[test]
     fn a_mask_generator_claims_only_its_own_provenance() {
         // A third party gets <extension>/<id>, stated or not.
@@ -1217,6 +1372,7 @@ id = "folder"
         assert!(schema["properties"]["control-adapter"].is_object());
         assert!(schema["properties"]["mask-generator"].is_object());
         assert!(schema["properties"]["source"].is_object());
+        assert!(schema["properties"]["retouch-generator"].is_object());
         assert!(schema["properties"].get("filter").is_none());
     }
 }

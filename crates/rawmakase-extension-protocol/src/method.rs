@@ -2,7 +2,8 @@
 //!
 //! `mask.generate` and `mask.setup` serve `[[mask-generator]]`, which manifests
 //! declare from `api = 2`; `source-started`, `source-stopped` and
-//! `source.report` serve `[[source]]`, from `api = 3`.
+//! `source.report` serve `[[source]]`, and `retouch.generate` serves
+//! `[[retouch-generator]]`, from `api = 3`.
 //!
 //! [`AppRequest`] and [`AppEvent`] go from the app to the program,
 //! [`ProgramRequest`] and [`ProgramEvent`] the other way. Each reads from a
@@ -50,6 +51,11 @@ pub enum AppRequest {
     /// answered `needs_setup` and the user agreed. Answered with `null`.
     #[serde(rename = "mask.setup")]
     MaskSetup(MaskSetup),
+    /// Generates new pixels for a painted area of a region of the photo (an
+    /// object removed). Answered with [`RetouchGenerated`]. Sent only to a
+    /// program serving `api = 3` or later.
+    #[serde(rename = "retouch.generate")]
+    RetouchGenerate(RetouchGenerate),
 }
 
 /// Requests a program sends the app.
@@ -167,6 +173,7 @@ impl AppRequest {
         "panel.clicked",
         "mask.generate",
         "mask.setup",
+        "retouch.generate",
     ];
 }
 impl ProgramRequest {
@@ -434,6 +441,120 @@ impl MaskGenerated {
             }
         }
         Ok(())
+    }
+}
+
+/// The longest side of a `retouch.generate` request's buffers, in pixels.
+pub const MAX_RETOUCH_SIDE: u32 = 2048;
+
+/// `retouch.generate`'s parameters.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RetouchGenerate {
+    /// The retouch generator's id within its extension.
+    pub generator: String,
+    /// The region of the photo around the painted area, upright, as 8-bit
+    /// sRGB ([`RetouchGenerate::IMAGE`]), for reading. Its region names
+    /// where it lies in the image frame and its scale.
+    pub image: Buffer,
+    /// How much of each pixel the user painted, 0 to 255, for reading: the
+    /// image's size and region.
+    pub coverage: Buffer,
+    /// Where the program writes the region with the painted area
+    /// regenerated: the image's size, region and meaning, for writing.
+    /// Outside the painted area the app keeps its own pixels.
+    pub result: Buffer,
+    /// The app's digest of the image's and the coverage's sizes, pixels and
+    /// how they were rendered.
+    pub image_key: String,
+}
+impl RetouchGenerate {
+    /// What a retouch request's image and result are: 8-bit sRGB.
+    pub const IMAGE: Meaning = MaskGenerate::IMAGE;
+
+    /// Checks the three buffers ([`Buffer::validate`]) and that they have the
+    /// retouch contract's shape:
+    ///
+    /// - the image is 3-channel `u8` [`RetouchGenerate::IMAGE`] for reading,
+    ///   in the image frame without overlap, at most [`MAX_RETOUCH_SIDE`]
+    ///   along either side;
+    /// - the coverage is 1-channel `u8` [`Meaning::Coverage`] for reading,
+    ///   and the result 3-channel `u8` [`RetouchGenerate::IMAGE`] for
+    ///   writing, both with the image's width, height and region;
+    /// - they are in three handles, together within [`MAX_REQUEST_BYTES`].
+    pub fn validate(&self) -> Result<(), RemoteError> {
+        let fail = |why: &str| Err(RemoteError::new(ErrorCode::InvalidRequest, why));
+        self.image.validate()?;
+        self.coverage.validate()?;
+        self.result.validate()?;
+        let (image, coverage, result) = (&self.image, &self.coverage, &self.result);
+        let colour = |b: &Buffer, access: Access| {
+            b.channels == 3
+                && b.sample == Sample::U8
+                && b.meaning == Self::IMAGE
+                && b.access == access
+        };
+        if !colour(image, Access::Read) {
+            return fail("the image must be 3-channel 8-bit sRGB, for reading");
+        }
+        if image.region.space != Space::ImageFrame || image.region.overlap != 0 {
+            return fail("the image must lie in the image frame, without overlap");
+        }
+        if image.width > MAX_RETOUCH_SIDE || image.height > MAX_RETOUCH_SIDE {
+            return fail("the image is larger than a retouch request may be");
+        }
+        if coverage.channels != 1
+            || coverage.sample != Sample::U8
+            || coverage.meaning != Meaning::Coverage
+            || coverage.access != Access::Read
+        {
+            return fail("the coverage must be 1-channel 8-bit coverage, for reading");
+        }
+        if !colour(result, Access::Write) {
+            return fail("the result must be 3-channel 8-bit sRGB, for writing");
+        }
+        for other in [coverage, result] {
+            if (image.width, image.height) != (other.width, other.height)
+                || image.region != other.region
+            {
+                return fail("the coverage and the result must match the image's size and region");
+            }
+        }
+        let handles = [image.handle, coverage.handle, result.handle];
+        if handles[0] == handles[1] || handles[0] == handles[2] || handles[1] == handles[2] {
+            return fail("the buffers share a handle");
+        }
+        let total = image
+            .bytes
+            .saturating_add(coverage.bytes)
+            .saturating_add(result.bytes);
+        if total > MAX_REQUEST_BYTES {
+            return fail("the buffers are over the request's budget");
+        }
+        Ok(())
+    }
+}
+
+/// What a program answers `retouch.generate` with, once it has written the
+/// result.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RetouchGenerated {
+    /// The model that made the pixels, saved with the patch as its
+    /// provenance, for example `bria/fibo-edit-1.5/eraser`. At most
+    /// [`MAX_MODEL_LEN`] bytes.
+    pub model: String,
+    /// Everything besides the pixels that the result depends on (the
+    /// service, the model and its options). At most [`MAX_MODEL_LEN`] bytes.
+    pub model_key: String,
+}
+impl RetouchGenerated {
+    /// Checks that `model` and `model_key` are 1 to [`MAX_MODEL_LEN`] bytes.
+    pub fn validate(&self) -> Result<(), RemoteError> {
+        MaskGenerated {
+            model: self.model.clone(),
+            model_key: self.model_key.clone(),
+            empty: None,
+        }
+        .validate()
     }
 }
 
@@ -1049,6 +1170,86 @@ mod tests {
             json!({"model": "m", "model_key": "k", "empty": "no_cat"}),
         );
         assert!(unknown.is_err());
+    }
+
+    fn retouch_request() -> Value {
+        let buffer = |handle: u32, channels: u32, meaning: Value, access: &str| {
+            json!({
+                "handle": handle, "bytes": 64 * 48 * channels, "width": 64, "height": 48,
+                "stride": 64 * channels, "channels": channels, "sample": "u8",
+                "meaning": meaning,
+                "region": {"space": "image_frame", "rect": [0.25, 0.5, 0.375, 0.6875],
+                           "scale": 0.05, "overlap": 0},
+                "access": access
+            })
+        };
+        let color = json!({"color": {"primaries": "srgb", "white": "d65",
+                                     "transfer": "srgb", "alpha": "none"}});
+        json!({
+            "generator": "remove",
+            "image": buffer(0, 3, color.clone(), "read"),
+            "coverage": buffer(1, 1, json!("coverage"), "read"),
+            "result": buffer(2, 3, color, "write"),
+            "image_key": "0123456789abcdef"
+        })
+    }
+
+    #[test]
+    fn a_retouch_request_reads_and_is_checked_whole() {
+        let AppRequest::RetouchGenerate(request) =
+            AppRequest::parse("retouch.generate", retouch_request()).unwrap()
+        else {
+            panic!("a retouch request");
+        };
+        request.validate().unwrap();
+        let (name, params) = AppRequest::RetouchGenerate(request.clone()).into_parts();
+        assert_eq!(name, "retouch.generate");
+        assert_eq!(
+            AppRequest::parse(&name, params).unwrap(),
+            AppRequest::RetouchGenerate(request.clone())
+        );
+        let broken = |change: &dyn Fn(&mut RetouchGenerate)| {
+            let mut request = request.clone();
+            change(&mut request);
+            let error = request.validate().unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidRequest);
+        };
+        broken(&|r| r.image.stride = 1);
+        broken(&|r| r.coverage.handle = 0);
+        broken(&|r| r.result.handle = 1);
+        broken(&|r| r.coverage.width = 32);
+        broken(&|r| r.result.height = 32);
+        broken(&|r| r.result.region.rect = [0.0, 0.0, 0.5, 1.0]);
+        broken(&|r| r.coverage.access = Access::Write);
+        broken(&|r| r.result.access = Access::Read);
+        broken(&|r| r.image.access = Access::Write);
+        broken(&|r| r.image.region.overlap = 1);
+        broken(&|r| r.image.region.space = Space::Developed);
+        broken(&|r| std::mem::swap(&mut r.image.meaning, &mut r.coverage.meaning));
+        broken(&|r| {
+            for b in [&mut r.image, &mut r.coverage, &mut r.result] {
+                b.width = MAX_RETOUCH_SIDE + 1;
+                b.stride = b.width * u32::from(b.channels);
+                b.bytes = u64::from(b.stride) * u64::from(b.height);
+            }
+        });
+        broken(&|r| {
+            r.image.bytes = MAX_REQUEST_BYTES;
+            r.result.bytes = MAX_REQUEST_BYTES;
+        });
+        let answer: RetouchGenerated =
+            serde_json::from_value(json!({"model": "bria/eraser", "model_key": "fal|1"})).unwrap();
+        answer.validate().unwrap();
+        let empty = RetouchGenerated {
+            model: String::new(),
+            ..answer
+        };
+        assert_eq!(
+            empty.validate().unwrap_err().code,
+            ErrorCode::InvalidRequest
+        );
+        assert_eq!(ErrorCode::parse("refused"), ErrorCode::Refused);
+        assert_eq!(ErrorCode::Refused.as_str(), "refused");
     }
 
     #[test]

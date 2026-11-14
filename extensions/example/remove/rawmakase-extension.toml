@@ -1,0 +1,65 @@
+# A test-only extension of retouch generators: the app's tests run it, through
+# shared memory, as a third party's program. Its program is the example
+# crate's library (`rawmakase_example::remove`), never bundled with RAWmakase.
+[extension]
+id = "dev.rawmakase.remove"
+name = "Example Remove"
+version = "0.1.0"
+rawmakase = ">=0.1"
+api = 3
+authors = ["RAWmakase"]
+license = "MIT"
+description = "Retouch generators that answer from the region's pixels, for tests."
+
+[program]
+path = "rawmakase-example-remove"
+start = "on-demand"
+
+# What `setup` needs before it answers.
+[[setting]]
+id = "key"
+name = "API key"
+control = "secret"
+default = ""
+
+# The painted pixels filled with a flat grey; the rest as given.
+[[retouch-generator]]
+id = "fill"
+name = "Fill"
+uploads = true
+
+# Fills as `fill`, without uploading anything.
+[[retouch-generator]]
+id = "local"
+name = "Local Fill"
+
+# Answers as `fill` once `release` appears in its working folder, or
+# `cancelled` when cancelled first.
+[[retouch-generator]]
+id = "gate"
+name = "Gate"
+
+# Needs the `key` setting first.
+[[retouch-generator]]
+id = "setup"
+name = "Setup"
+
+# Declined on its content.
+[[retouch-generator]]
+id = "refuse"
+name = "Refuse"
+
+# The service can't be reached.
+[[retouch-generator]]
+id = "unavailable"
+name = "Unavailable"
+
+# Names its model with nothing.
+[[retouch-generator]]
+id = "unnamed"
+name = "Unnamed"
+
+# Exits.
+[[retouch-generator]]
+id = "crash"
+name = "Crash"
