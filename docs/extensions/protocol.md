@@ -500,9 +500,11 @@ its scope ([Photo sources](overview.md#photo-sources)):
   closed. Each file's folder is placed as Add Folder places the folders below
   the one chosen: in the catalog folder this computer's locations name, or
   under a new root, `folder`, when none does.
-- `show` (default `false`) shows the last photo added: it becomes the
-  Library's selected photo, or opens in Develop when Develop shows a photo,
-  as a click opens it.
+- `show` (default `false`) shows the last photo the report added, in the
+  order reported: it becomes the Library's selected photo, or opens in
+  Develop when Develop shows a photo, as a click opens it. A file the
+  catalog had already is never shown, and a report that adds nothing shows
+  nothing.
 
 While other work holds the catalog (a folder being added or synchronized, a
 batch edit, a file operation, another report), the request is answered
@@ -518,16 +520,19 @@ import batch, and answers once they are added:
 
 `added` counts the photos added; `photos` lists, in the order reported, every
 file the catalog has now, added or there already, with its photo's id; files
-reported twice are listed once. `refused` lists the others with a `reason`:
+reported twice are listed once. A Copy Name or metadata field being typed in
+the Library is saved before the Library reads the catalog again; when it
+can't be saved, the Library isn't read again, so the typing stays, and the
+photos added are missing from `photos` and show with the next read. `refused` lists the others with a `reason`:
 `not_found`, `not_a_photo` (not a format RAWmakase reads, or hidden),
 `outside_folder`, `linked_elsewhere` (its folder's catalog folder is elsewhere
 on this computer) or `ambiguous` (more than one catalog folder could be its
 folder; Add Folder… asks which). A report of files the catalog has already
 starts no import batch.
 
-Until the worker begins writing, the report is withdrawn when its scope stops
-(`not_admitted`), when the program cancels it (`cancelled`) or with its
-session, and nothing is written. Once the write has begun it finishes, and
+Until the worker begins writing, once it has read the files, the report is
+withdrawn when its scope stops (`not_admitted`), when the program cancels it
+(`cancelled`) or with its session, and nothing is written. Once the write has begun it finishes, and
 the program, if its session still runs and it wasn't answered already, is
 answered with what was added. A report that fails to write is answered
 `not_added` with why.

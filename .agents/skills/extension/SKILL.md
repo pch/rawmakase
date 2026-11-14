@@ -216,7 +216,7 @@ The details are in [protocol.md](../../../docs/extensions/protocol.md).
   catalog, and it is refused `not_admitted` once the scope has stopped, so
   report from your own thread, never from `start`. Reporting a file again is
   harmless, so after a restart or a reconnection, report everything that
-  might be missing. `show: true` selects the last photo added, or opens it in
+  might be missing. `show: true` selects the last photo the report added, or opens it in
   Develop, as a tethered capture does. `stop(scope)` must not wait on a
   device. Read `refused`: `not_found`, `not_a_photo`, `outside_folder`,
   `linked_elsewhere` (its folder belongs to a catalog folder linked to

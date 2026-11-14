@@ -313,6 +313,38 @@ fn a_shown_report_selects_its_photo_in_the_library() {
     let library = f.editor.library.as_ref().unwrap();
     assert_eq!(library.selected_photos(), [c_id]);
     assert_eq!(f.editor.module, Module::Library);
+    // A file the catalog had is listed, but only the one added is shown,
+    // wherever it is in the report.
+    let d = f.captures.join("d.png");
+    picture(&d, 180);
+    let reply = report(&mut f, &[d.clone(), c.clone()], true, None);
+    assert_eq!(reply["added"], json!(1), "{reply}");
+    assert_eq!(reply["photos"].as_array().unwrap().len(), 2, "{reply}");
+    let d_id = photo_at(&f.editor, &d).unwrap();
+    assert_eq!(f.editor.library.as_ref().unwrap().selected_photos(), [d_id]);
+    // A report adding nothing, a source reporting again after it
+    // reconnected, leaves the selection alone.
+    let reply = report(&mut f, std::slice::from_ref(&c), true, None);
+    assert_eq!(reply["added"], json!(0), "{reply}");
+    assert_eq!(f.editor.library.as_ref().unwrap().selected_photos(), [d_id]);
+}
+
+#[test]
+fn a_copy_name_being_typed_is_saved_before_a_report_reads_the_catalog_again() {
+    let mut f = fixture();
+    turn_on(&mut f.editor);
+    hear(&mut f.editor, "started 1 test");
+    let library = f.editor.library.as_mut().unwrap();
+    let copy = library.create_virtual_copy(f.photo.0).unwrap().value;
+    library.set_copy_name_draft(copy, "Typed name");
+    let c = f.captures.join("c.png");
+    picture(&c, 120);
+    let reply = report(&mut f, std::slice::from_ref(&c), false, None);
+    assert_eq!(reply["added"], json!(1), "{reply}");
+    let library = f.editor.library.as_ref().unwrap();
+    assert!(photo_at(&f.editor, &c).is_some(), "the new photo is shown");
+    assert_eq!(library.photo(copy).unwrap().copy_name, "Typed name");
+    assert!(!library.has_drafts());
 }
 
 #[test]
@@ -376,8 +408,9 @@ fn a_report_withdrawn_before_its_write_adds_nothing() {
         e.extensions.proposing()
     });
     barrier.wait();
-    // Its scope stops while the worker is held: the program is answered at
-    // once, and the worker, let go, writes nothing.
+    // Its scope stops while the worker is held, its files read and nothing
+    // written yet: the program is answered at once, and the worker, let go,
+    // writes nothing.
     f.editor
         .extensions
         .set_source_on(ID, "drop", false)

@@ -758,8 +758,10 @@ pub struct SourceReport {
     pub folder: PathBuf,
     /// The files, absolute, each complete: written whole and closed.
     pub files: Vec<PathBuf>,
-    /// Show the last file added: it becomes the Library's selected photo, and
-    /// opens in Develop when Develop is open, as a tethered capture does.
+    /// Show the last file this report added, in the order reported: it
+    /// becomes the Library's selected photo, and opens in Develop when
+    /// Develop is open, as a tethered capture does. A file the catalog had
+    /// already is never shown.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub show: bool,
 }

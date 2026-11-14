@@ -64,8 +64,9 @@ pub struct Choice {
 /// What adding files a source reported did ([`Catalog::import_files`]).
 #[derive(Debug, Default)]
 pub struct FilesAdded {
-    /// Photos added; the other files placed were in the catalog already.
-    pub added: usize,
+    /// The files added, as resolved; the other files placed were in the
+    /// catalog already.
+    pub added: Vec<PathBuf>,
     /// Sidecars that could not be read.
     pub report: super::SidecarReport,
     /// The files the catalog has now, added or already there, as reported,
@@ -268,8 +269,16 @@ impl Catalog {
             result.ambiguous = placed.ambiguous;
             return Ok(result);
         }
-        (result.added, result.report) =
-            self.insert(&folder, files, &placed.places, defaults, ImportKind::Add)?;
+        if let Some((added, report)) = self.insert(
+            &folder,
+            files,
+            &placed.places,
+            defaults,
+            ImportKind::Add,
+            || true,
+        )? {
+            (result.added, result.report) = (added.len(), report);
+        }
         Ok(result)
     }
     /// Adds `files`, found complete in or below `folder` (a watched folder, a
@@ -281,12 +290,18 @@ impl Catalog {
     /// placed, so a file reported twice is added once. A file whose folder
     /// is ambiguous or linked elsewhere is refused, not asked about: Add
     /// Folder… asks.
+    ///
+    /// `begin` is asked once, after the files are read and before anything
+    /// is written: when it says no (the report was withdrawn while the files
+    /// were read), nothing is written and `None` is returned. It is asked
+    /// even when every file is in the catalog already.
     pub fn import_files(
         &mut self,
         folder: &Path,
         files: &[PathBuf],
         defaults: &super::NewPhotoDefaults,
-    ) -> Result<FilesAdded> {
+        begin: impl FnOnce() -> bool,
+    ) -> Result<Option<FilesAdded>> {
         let folder = folder.canonicalize()?;
         let mut result = FilesAdded::default();
         // Each file as reported, and the file it is.
@@ -358,11 +373,22 @@ impl Catalog {
             }
             Ok(false)
         })?;
-        if any_new {
-            (result.added, result.report) =
-                self.insert(&folder, to_add, &placed.places, defaults, ImportKind::Add)?;
+        if !any_new {
+            return Ok(begin().then_some(result));
         }
-        Ok(result)
+        let Some((added, report)) = self.insert(
+            &folder,
+            to_add,
+            &placed.places,
+            defaults,
+            ImportKind::Add,
+            begin,
+        )?
+        else {
+            return Ok(None);
+        };
+        (result.added, result.report) = (added, report);
+        Ok(Some(result))
     }
     /// Where the directories of `files`, found below the `chosen` folder, go
     /// in the catalog (see `import_folder`).
@@ -400,8 +426,10 @@ impl Catalog {
     /// Adds the photos of `files` the catalog doesn't have, each with what
     /// its files hold, in one transaction, their folders where `places` says
     /// (a new root being the `chosen` folder). Files in a directory `places`
-    /// has no place for are left out. Returns how many were added, and what
-    /// reading their sidecars found.
+    /// has no place for are left out. Returns the files added, and what
+    /// reading their sidecars found; `None`, with nothing written, when
+    /// `begin`, asked once the files are read and before the transaction,
+    /// says no.
     pub(in crate::catalog) fn insert(
         &mut self,
         chosen: &Path,
@@ -409,7 +437,8 @@ impl Catalog {
         places: &HashMap<PathBuf, Place>,
         defaults: &super::NewPhotoDefaults,
         kind: ImportKind,
-    ) -> Result<(usize, super::SidecarReport)> {
+        begin: impl FnOnce() -> bool,
+    ) -> Result<Option<(Vec<PathBuf>, super::SidecarReport)>> {
         // Photos already in the catalog are left before their files are read.
         let files: Vec<(PathBuf, &Place)> = self.db.snapshot(|s| {
             let mut new = Vec::new();
@@ -429,6 +458,9 @@ impl Catalog {
         // Everything each photo brings is read before the transaction, so
         // that it is written with the photo or not at all.
         let photos = self.read_new_photos(files, defaults);
+        if !begin() {
+            return Ok(None);
+        }
         let stores = stores(&photos);
         self.write_new_photos(stores, |w, writer| {
             // The newest batch is Previous Import, empty when nothing new
@@ -436,7 +468,7 @@ impl Catalog {
             let batch = new_batch(w, kind)?;
             let mut new_root = None;
             let mut folders: HashMap<(RootId, String), FolderId> = HashMap::new();
-            let mut added = 0;
+            let mut added = Vec::new();
             let mut report = super::SidecarReport::default();
             for photo in photos {
                 let (root, logical) = match photo.place {
@@ -465,19 +497,20 @@ impl Catalog {
                         id
                     }
                 };
+                let file = photo.file.clone();
                 let (_, read) = writer.insert(w, photo, fid, batch)?;
                 report.add(read);
-                added += 1;
+                added.push(file);
             }
             // Its bursts are stacked once their files are read; asked with
             // the batch, so it is there with the photos or not at all.
-            if defaults.stack_bursts() && added > 0 {
+            if defaults.stack_bursts() && !added.is_empty() {
                 w.execute(
                     sql!("INSERT INTO import_burst_stacks(batch, seconds) VALUES(?, ?)"),
                     &[&batch, &IMPORT_BURST_SECONDS],
                 )?;
             }
-            Ok((added, report))
+            Ok(Some((added, report)))
         })
     }
     /// What each of `files` brings (see [`NewPhoto`]), read from its files,

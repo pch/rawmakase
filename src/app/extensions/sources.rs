@@ -8,15 +8,20 @@
 //! [`crate::catalog::Catalog::import_files`]: Add Folder's placement and
 //! steps, one import batch, on a connection of its own. While other work
 //! holds the catalog, the report is answered `busy` and the program reports
-//! again. The worker first passes the report's [`WriteGate`]: closed (the
-//! scope ended, the program cancelled the report, its session ended,
-//! quitting), it writes nothing.
+//! again. Once the files are read, right before its transaction, the
+//! worker passes the report's [`WriteGate`]: closed (the scope ended, the
+//! program cancelled the report, its session ended, quitting), it writes
+//! nothing.
 //!
 //! Once the worker reports back, the Library reads the catalog again in
 //! place, as after a file operation, so the photo open in Develop, its
 //! edit, History and any save still pending stay as they were; only
-//! the lists shown, and the background reads of what is new, change. The
-//! program is then answered with the photos its files are.
+//! the lists shown, and the background reads of what is new, change. A
+//! Copy Name or metadata field being typed in the Library is saved first,
+//! as anything else that reads the catalog again saves it; when it can't
+//! be saved, the catalog isn't read again, so the text stays, and the new
+//! photos show with the next read. The program is then answered with the
+//! photos its files are.
 use super::Answer;
 use crate::app::Editor;
 use crate::catalog::{CatalogLocation, FileRefusal as Refusal, FilesAdded};
@@ -66,6 +71,11 @@ impl WriteGate {
             Ok(_) => true,
             Err(state) => state == CLOSED,
         }
+    }
+    /// Whether the gate was closed: a worker that sees it closed doesn't
+    /// read the files at all.
+    fn is_closed(&self) -> bool {
+        self.0.load(Ordering::SeqCst) == CLOSED
     }
     /// Begins the write; false when the gate was closed first.
     fn begin(&self) -> bool {
@@ -123,27 +133,33 @@ impl Editor {
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
-                #[cfg(test)]
-                if let Some(hook) = hook {
-                    hook();
-                }
-                let result = if worker_gate.begin() {
+                let withdrawn =
+                    || RemoteError::new(ErrorCode::Cancelled, "the report was withdrawn");
+                // The gate is claimed once the files are read, right before
+                // the transaction, so a report withdrawn while a slow disk is
+                // read writes nothing.
+                let result = if worker_gate.is_closed() {
+                    Err(withdrawn())
+                } else {
                     crate::catalog::Catalog::open(&location)
                         .and_then(|mut catalog| {
                             catalog.import_files(
                                 &report.folder,
                                 &report.files,
                                 &crate::catalog_session::new_photo_defaults(),
+                                || {
+                                    #[cfg(test)]
+                                    if let Some(hook) = &hook {
+                                        hook();
+                                    }
+                                    worker_gate.begin()
+                                },
                             )
                         })
                         .map_err(|e| {
                             RemoteError::new(ErrorCode::Other("not_added".into()), format!("{e:#}"))
                         })
-                } else {
-                    Err(RemoteError::new(
-                        ErrorCode::Cancelled,
-                        "the report was withdrawn",
-                    ))
+                        .and_then(|added| added.ok_or_else(withdrawn))
                 };
                 let _ = tx.send(crate::app::worker::Event::Extensions(Box::new(
                     super::Done::Reported(Box::new(ReportDone {
@@ -196,15 +212,16 @@ impl Editor {
             .library
             .as_ref()
             .is_some_and(|l| *l.session.catalog().location() == catalog);
-        if same
-            && added.added > 0
-            && let Some(library) = &mut self.library
-        {
-            match library.reread_after(&[]) {
-                Ok(()) => library.start_background_reads(),
-                Err(e) => self.messages.fail(format!(
-                    "{title}: photos added, but the catalog could not be read again: {e:#}"
-                )),
+        // Reading the catalog again drops what is being typed in the
+        // Library: it is saved first, and kept when it can't be.
+        if same && !added.added.is_empty() && self.commit_library_drafts() {
+            if let Some(library) = &mut self.library {
+                match library.reread_after(&[]) {
+                    Ok(()) => library.start_background_reads(),
+                    Err(e) => self.messages.fail(format!(
+                        "{title}: photos added, but the catalog could not be read again: {e:#}"
+                    )),
+                }
             }
         }
         if !added.report.unreadable.is_empty() {
@@ -214,7 +231,7 @@ impl Editor {
             ));
         }
         let mut reported = Reported {
-            added: u32::try_from(added.added).unwrap_or(u32::MAX),
+            added: u32::try_from(added.added.len()).unwrap_or(u32::MAX),
             photos: Vec::new(),
             refused: added
                 .refused
@@ -225,9 +242,15 @@ impl Editor {
                 })
                 .collect(),
         };
+        // The last photo this report added, in the order reported: a file
+        // the catalog had already is listed, but not shown.
+        let mut last_added = None;
         if same {
             for (path, file) in added.placed {
                 if let Some(photo) = self.catalog_photo_at(&file) {
+                    if added.added.contains(&file) {
+                        last_added = Some(photo);
+                    }
                     reported.photos.push(ReportedPhoto {
                         path,
                         photo: photo.0,
@@ -235,13 +258,13 @@ impl Editor {
                 }
             }
         }
-        if added.added > 0 {
-            let s = if added.added == 1 { "" } else { "s" };
-            self.messages
-                .note(format!("{title}: added {} photo{s}", added.added));
+        if !added.added.is_empty() {
+            let n = added.added.len();
+            let s = if n == 1 { "" } else { "s" };
+            self.messages.note(format!("{title}: added {n} photo{s}"));
         }
-        if show && let Some(last) = reported.photos.last() {
-            self.show_reported(crate::catalog::PhotoId(last.photo));
+        if show && let Some(last) = last_added {
+            self.show_reported(last);
         }
         let value = serde_json::to_value(&reported).expect("a reply is JSON");
         self.extensions.finish_report(ticket, Ok(value));

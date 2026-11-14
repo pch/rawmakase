@@ -231,6 +231,13 @@ fn watched() -> Result<(tempfile::TempDir, PathBuf, Catalog)> {
     Ok((dir, folder, cat))
 }
 
+/// What adding `files` reported in `folder` did, never withdrawn.
+fn report(cat: &mut Catalog, folder: &Path, files: &[PathBuf]) -> Result<FilesAdded> {
+    Ok(cat
+        .import_files(folder, files, &defaults(), || true)?
+        .expect("not withdrawn"))
+}
+
 #[test]
 fn reported_files_are_added_under_their_folder_and_the_rest_refused() -> Result<()> {
     let (dir, folder, mut cat) = watched()?;
@@ -246,8 +253,8 @@ fn reported_files_are_added_under_their_folder_and_the_rest_refused() -> Result<
         dir.path().join("outside.dng"),
         folder.join("2026-11-14"),
     ];
-    let added = cat.import_files(&folder, &reported, &defaults())?;
-    assert_eq!(added.added, 2);
+    let added = report(&mut cat, &folder, &reported)?;
+    assert_eq!(added.added.len(), 2);
     let placed: Vec<&PathBuf> = added.placed.iter().map(|(r, _)| r).collect();
     assert_eq!(placed, [&a, &b], "a file reported twice is placed once");
     let refused: Vec<(&Path, FileRefusal)> = added
@@ -284,18 +291,23 @@ fn reported_files_are_added_under_their_folder_and_the_rest_refused() -> Result<
 fn a_file_reported_again_adds_nothing_and_keeps_previous_import() -> Result<()> {
     let (_dir, folder, mut cat) = watched()?;
     let a = folder.join("a.dng");
-    cat.import_files(&folder, std::slice::from_ref(&a), &defaults())?;
+    report(&mut cat, &folder, std::slice::from_ref(&a))?;
     let before = cat.previous_import()?;
     assert_eq!(before.len(), 1);
-    let again = cat.import_files(&folder, std::slice::from_ref(&a), &defaults())?;
-    assert_eq!(again.added, 0);
+    let again = report(&mut cat, &folder, std::slice::from_ref(&a))?;
+    assert!(again.added.is_empty());
     assert_eq!(again.placed.len(), 1, "it is in the catalog");
     assert_eq!(cat.photos()?.len(), 1);
     assert_eq!(cat.previous_import()?, before, "no empty batch replaces it");
     // A new file joins the folder the first report placed, as one batch.
     let b = folder.join("2026-11-14/b.dng");
-    let added = cat.import_files(&folder, &[a, b], &defaults())?;
-    assert_eq!(added.added, 1);
+    let added = report(&mut cat, &folder, &[b.clone(), a])?;
+    assert_eq!(
+        added.added,
+        [b.canonicalize()?],
+        "only the new file is added"
+    );
+    assert_eq!(added.placed.len(), 2);
     assert_eq!(cat.roots()?.len(), 1);
     assert_eq!(cat.previous_import()?.len(), 1);
     Ok(())
@@ -310,8 +322,30 @@ fn a_watched_folder_inside_a_catalog_folder_joins_it() -> Result<()> {
     let roots = cat.roots()?;
     assert_eq!(roots.len(), 1);
     std::fs::write(folder.join("c.dng"), b"synthetic raw c")?;
-    let added = cat.import_files(&folder, &[folder.join("c.dng")], &defaults())?;
-    assert_eq!(added.added, 1);
+    let added = report(&mut cat, &folder, &[folder.join("c.dng")])?;
+    assert_eq!(added.added.len(), 1);
     assert_eq!(cat.roots()?, roots, "no new root");
+    Ok(())
+}
+
+#[test]
+fn a_report_withdrawn_while_its_files_are_read_writes_nothing() -> Result<()> {
+    let (_dir, folder, mut cat) = watched()?;
+    let a = folder.join("a.dng");
+    // Asked once the files are read: a file read later (its sidecar, say)
+    // is still read before the answer counts.
+    let asked = std::cell::Cell::new(0);
+    let withdrawn = cat.import_files(&folder, std::slice::from_ref(&a), &defaults(), || {
+        asked.set(asked.get() + 1);
+        false
+    })?;
+    assert!(withdrawn.is_none());
+    assert_eq!(asked.get(), 1);
+    assert!(cat.photos()?.is_empty());
+    assert!(cat.roots()?.is_empty(), "no root either");
+    // A report of files the catalog has is asked too.
+    report(&mut cat, &folder, std::slice::from_ref(&a))?;
+    let again = cat.import_files(&folder, std::slice::from_ref(&a), &defaults(), || false)?;
+    assert!(again.is_none());
     Ok(())
 }

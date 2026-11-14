@@ -935,9 +935,9 @@ others ([Photo sources](extensions/overview.md#photo-sources)).
 | D29 | `source.report` names the folder the source writes to and up to 200 complete files in it; the app places them as Add Folder places the folders below the one chosen (the folder becomes a new root where no catalog folder holds it) and refuses, rather than asks about, files in ambiguous or linked-elsewhere folders |
 | D30 | One report is one import batch; a report of files the catalog has already starts none, so Previous Import survives a source reporting again |
 | D31 | A report takes the catalog's folder-change activity; while other work holds the catalog it is answered `busy`, and the SDK's `Host::report` tries again every 250 ms for up to a minute. Reports are not queued in the app |
-| D32 | Once added, the Library reads the catalog again in place, so Develop's photo, edit, History and pending save stay; nothing reopens the catalog |
-| D33 | `show` selects the last photo added, or opens it in Develop when Develop shows a photo, through the path a click takes (saving first) |
-| D34 | A report's worker passes a write gate first: closed by the scope ending, the program cancelling or its session ending, it writes nothing; once writing, it finishes and its result stands |
+| D32 | Once added, the Library reads the catalog again in place, so Develop's photo, edit, History and pending save stay; nothing reopens the catalog. A Copy Name or metadata field being typed is saved first; when it can't be, the Library isn't read again, so the typing survives |
+| D33 | `show` selects the last photo the report added (never one the catalog had), or opens it in Develop when Develop shows a photo, through the path a click takes (saving first) |
+| D34 | A report's worker passes a write gate once the files are read, right before the transaction: closed by the scope ending, the program cancelling or its session ending, it writes nothing; once writing, it finishes and its result stands |
 
 Not part of the contract yet: settings proposals from a source (presets on
 import) still belong to a command; the app has no live view or camera

@@ -386,14 +386,17 @@ impl Catalog {
             }
             keep
         });
-        let (added, report) = self.insert(
-            Path::new(""),
-            files.to_vec(),
-            &placed.places,
-            defaults,
-            crate::catalog::ingest::ImportKind::Sync,
-        )?;
-        Ok((added, report, not_placed))
+        let (added, report) = self
+            .insert(
+                Path::new(""),
+                files.to_vec(),
+                &placed.places,
+                defaults,
+                crate::catalog::ingest::ImportKind::Sync,
+                || true,
+            )?
+            .unwrap_or_default();
+        Ok((added.len(), report, not_placed))
     }
 }
 

@@ -114,8 +114,9 @@ stays when the extension is gone.
   While a report is added, the same work waits for it.
 - **Develop stays.** The Library reads the catalog again in place once the
   photos are added, so the photo open in Develop, its edit, History and any
-  save pending are as they were. A report that asks to be shown (`show`)
-  makes the last photo added the Library's selected one, or, when Develop
+  save pending are as they were; a Copy Name or metadata field being typed
+  in the Library is saved first. A report that asks to be shown (`show`)
+  makes the last photo it added the Library's selected one, or, when Develop
   shows a photo, opens it there as a click would: the edit left is saved
   first, and nothing opens when that fails.
 - **Stopping.** A report being added is answered `not_admitted` when its

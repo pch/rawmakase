@@ -153,8 +153,8 @@ pub(crate) struct Editor {
     /// Runs on a read's worker before its work, as `proposal_hook` does.
     #[cfg(test)]
     read_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
-    /// Runs on a source report's worker before it passes its write gate, as
-    /// `proposal_hook` does.
+    /// Runs on a source report's worker once its files are read, right
+    /// before it passes its write gate, as `proposal_hook` does.
     #[cfg(test)]
     report_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
