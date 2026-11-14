@@ -140,15 +140,18 @@ How it works (`develop::retouch::rendition`, `app::develop::tools::ai_remove`):
     square-root values, where shot noise is about constant, with a median that
     edges hardly move), and so is the noise of what renders without grain, the
     fill mixed with the photo by coverage and opacity, among pixels mixed alike
-    (eight steps of the mix). What each step lacks is added to the fill as
-    Gaussian noise fixed by the pixel and the patch, so a render is repeatable.
+    (eight steps of the mix) in each 16-pixel block, so a fill that keeps the
+    photo's grain in one part and lacks it in another is made up only where it
+    lacks it. What each lacks is added to the fill as Gaussian noise fixed by the
+    pixel and the patch, so a render is repeatable, and sized to the brightness
+    that renders.
     Measuring the mix as it renders counts whatever the fill shares with the
     photo: a fill that reproduces the photo takes none, and independent grain
     mixed half and half is made up, so the grain holds across a soft edge and at
     partial opacity. It is added in linear values, symmetric about each pixel's
     and never below black, so it leaves the tone the membrane matched. A photo
-    without grain gives none; a step of the mix with fewer than 32 pixels to
-    measure takes none.
+    without grain gives none; a block with fewer than 32 pixels at a step of the
+    mix is measured over that whole step, and a step with fewer takes none.
 - A patch that can't be provided fails the render with its reason and protects the
   edit when it opens, as a missing mask raster does; it never renders without it.
 - A patch records whether it was made with AI Denoise on; it renders on either, and

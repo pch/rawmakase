@@ -1229,3 +1229,96 @@ fn shared_edges_are_not_shared_grain() {
     );
     assert!((0.88..1.12).contains(&(got / want)), "{}", got / want);
 }
+
+/// The square-root Laplacian RMS of channel 1 of `im` over `rect`.
+fn region_grain(im: &CameraImage, rect: [i32; 4]) -> f32 {
+    let w = im.width as i32;
+    let v = |x: i32, y: i32| im.pixels[(y * w + x) as usize][1].max(0.).sqrt();
+    let (mut sum, mut n) = (0., 0.);
+    for y in rect[1]..rect[3] {
+        for x in rect[0]..rect[2] {
+            let l = v(x, y) - (v(x - 1, y) + v(x + 1, y) + v(x, y - 1) + v(x, y + 1)) / 4.;
+            sum += l * l;
+            n += 1.;
+        }
+    }
+    (sum / n).sqrt()
+}
+
+/// A fill that replaces an object with smooth ground and copies the photo's
+/// surroundings, grain and all, elsewhere in a generously painted spot: the
+/// copied surroundings take no grain because the smooth part lacks it.
+#[test]
+fn copied_surroundings_take_no_grain_for_a_smooth_part() {
+    let clean = grainy_photo(400, 400, 0.1, 0.01, 50);
+    let object = |x: f32, y: f32| (x - 215.).hypot(y - 200.) < 65.;
+    let photo = image(400, 400, |x, y| {
+        if object(x, y) {
+            [0.4; 3]
+        } else {
+            clean.pixels[(y as u32 * 400 + x as u32) as usize]
+        }
+    });
+    let fill = |x: f32, y: f32| {
+        if object(x.floor(), y.floor()) {
+            [0.1; 3]
+        } else {
+            photo.pixels[(y as u32 * 400 + x as u32) as usize]
+        }
+    };
+    let mut op = laid_over(
+        &photo,
+        [40., 40., 360., 360.],
+        (320, 320),
+        fill,
+        (200., 200., 100.),
+    );
+    op.shape = RetouchShape::Spot {
+        center: [200.5 / 400., 200.5 / 400.],
+        radius: 100. / 400.,
+    };
+    op.feather = 0.;
+    let out = lay(&photo, &op, GenerateBlend::Membrane);
+    let copied = [112, 185, 127, 215];
+    let ratio = region_grain(&out, copied) / region_grain(&clean, copied);
+    assert!((0.88..1.12).contains(&ratio), "copied: {ratio}");
+    let made = [195, 185, 235, 215];
+    let ratio = region_grain(&out, made) / region_grain(&clean, made);
+    assert!((0.85..1.15).contains(&ratio), "made up: {ratio}");
+}
+
+/// Grain is sized to the brightness that renders, not the fill's: a fill darker
+/// or brighter than the photo, laid at half opacity, renders as grainy as it.
+#[test]
+fn grain_is_sized_to_what_renders() {
+    for (original, replacement) in [(0.4f32, 0.1f32), (0.1, 0.4)] {
+        let photo = grainy_photo(400, 400, original, 0.01, 50);
+        let fill = |x: f32, y: f32| {
+            if (x.floor() - 200.).hypot(y.floor() - 200.) < 99. {
+                [replacement; 3]
+            } else {
+                photo.pixels[(y as u32 * 400 + x as u32) as usize]
+            }
+        };
+        let mut op = laid_over(
+            &photo,
+            [40., 40., 360., 360.],
+            (320, 320),
+            fill,
+            (200., 200., 100.),
+        );
+        op.shape = RetouchShape::Spot {
+            center: [200.5 / 400., 200.5 / 400.],
+            radius: 100. / 400.,
+        };
+        op.feather = 0.;
+        op.opacity = 0.5;
+        let out = lay(&photo, &op, GenerateBlend::Membrane);
+        let rect = [175, 175, 225, 225];
+        let ratio = region_grain(&out, rect) / region_grain(&photo, rect);
+        assert!(
+            (0.88..1.12).contains(&ratio),
+            "{original} under {replacement}: {ratio}"
+        );
+    }
+}

@@ -16,7 +16,8 @@
 //!   the median absolute deviation of a 4-neighbour Laplacian, in square-root
 //!   values, where shot noise is about constant: in a band around the shape, and
 //!   in what renders without grain (the fill mixed with the photo by coverage and
-//!   opacity) among pixels mixed alike. What each mix lacks is added to the fill
+//!   opacity) among pixels mixed alike, block by block. What each lacks is added
+//!   to the fill
 //!   as Gaussian noise drawn from the pixel's position and the patch, so every
 //!   render of it is the same; a mix too rare to measure takes none. Measuring the
 //!   mix as it renders counts whatever the fill shares with the photo, as two
@@ -46,6 +47,8 @@ const MAX_CELLS: f32 = 32768.;
 const ROUNDS: u64 = 6;
 /// The steps of coverage × opacity grain is measured in.
 const BINS: usize = 8;
+/// The blocks of pixels grain is measured in, along each side.
+const BLOCK: usize = 16;
 /// The fewest pixels a measurement of grain is made from.
 const MIN_SAMPLES: usize = 32;
 
@@ -494,19 +497,47 @@ fn grain(
             std::array::from_fn(|c| d[c] + (out[i][c] - d[c]) * a)
         })
         .collect();
-    let measured: Vec<[Option<f32>; 3]> = (0..BINS)
+    // Each pixel's deviation, by block of `BLOCK` pixels and step of the mix: a
+    // fill can keep the photo's grain in one part (copied surroundings) and lack
+    // it in another (smooth regenerated ground), so the deficit is measured where
+    // the pixel is, and over the whole step only where a block has too few.
+    let (bw, bh) = (gw.div_ceil(BLOCK), gh.div_ceil(BLOCK));
+    let mut local: Vec<[Vec<f32>; 3]> = (0..bw * bh * BINS).map(|_| Default::default()).collect();
+    let root = |p: [f32; 3]| p.map(|v| v.max(0.).sqrt());
+    for y in 1..gh.saturating_sub(1) {
+        for x in 1..gw.saturating_sub(1) {
+            let i = y * gw + x;
+            let a = mix(i);
+            if a <= 0. {
+                continue;
+            }
+            let (p, n) = (
+                root(composite[i]),
+                [i - 1, i + 1, i - gw, i + gw].map(|j| root(composite[j])),
+            );
+            let k = ((y / BLOCK) * bw + x / BLOCK) * BINS + bin(a);
+            for c in 0..3 {
+                local[k][c].push((p[c] - (n[0][c] + n[1][c] + n[2][c] + n[3][c]) / 4.).abs());
+            }
+        }
+    }
+    let step: Vec<[Option<f32>; 3]> = (0..BINS)
         .map(|b| {
-            residuals(
-                grid,
-                |x, y| {
-                    let i = (y - grid[1]) as usize * gw + (x - grid[0]) as usize;
-                    (mix(i) > 0. && bin(mix(i)) == b).then(|| composite[i])
-                },
-                |x, y| {
-                    let i = (y - grid[1]) as usize * gw + (x - grid[0]) as usize;
-                    Some(composite[i])
-                },
-            )
+            std::array::from_fn(|c| {
+                let mut all: Vec<f32> = (0..bw * bh)
+                    .flat_map(|k| local[k * BINS + b][c].iter().copied())
+                    .collect();
+                sigma(&mut all)
+            })
+        })
+        .collect();
+    let measured: Vec<[Option<f32>; 3]> = local
+        .iter_mut()
+        .enumerate()
+        .map(|(k, d)| {
+            let [r, g, b] = d;
+            let own = [sigma(r), sigma(g), sigma(b)];
+            std::array::from_fn(|c| own[c].or(step[k % BINS][c]))
         })
         .collect();
     out.par_iter_mut().enumerate().for_each(|(i, p)| {
@@ -514,10 +545,12 @@ fn grain(
         if a <= 0. {
             return;
         }
-        let (x, y) = (grid[0] + (i % gw) as i32, grid[1] + (i / gw) as i32);
+        let (gx, gy) = (i % gw, i / gw);
+        let (x, y) = (grid[0] + gx as i32, grid[1] + gy as i32);
+        let k = ((gy / BLOCK) * bw + gx / BLOCK) * BINS + bin(a);
         for c in 0..3 {
             // A mix too rare to measure takes none.
-            let Some(rendered) = measured[bin(a)][c] else {
+            let Some(rendered) = measured[k][c] else {
                 continue;
             };
             // Noise of σ_n added to the fill adds a² σ_n² to the mix. Kept to
@@ -525,16 +558,30 @@ fn grain(
             let lacking =
                 ((photo[c] * photo[c] - rendered * rendered).max(0.) / a.max(0.05).powi(2)).sqrt();
             if lacking > 0. {
-                // σ in square-root values is 2 √v σ in linear ones. Added linearly
-                // and clamped to ±v, symmetric noise keeps the mean exactly and
-                // never goes below black; squaring a noisy square root would add
-                // σ² on average, brightening shadows.
+                // σ in square-root values of what renders is 2 √C σ in linear
+                // ones, C the composite's value. Added linearly and clamped to
+                // ±v, the fill's value, symmetric noise keeps the mean exactly
+                // and never goes below black; squaring a noisy square root would
+                // add σ² on average, brightening shadows.
                 let v = p[c].max(0.);
+                let rendered = composite[i][c].max(0.);
                 let n = gaussian(patch.seed, x, y, c);
-                p[c] = v + (2. * v.sqrt() * lacking * n).clamp(-v, v);
+                p[c] = v + (2. * rendered.sqrt() * lacking * n).clamp(-v, v);
             }
         }
     });
+}
+
+/// A Gaussian's σ in square-root values from absolute 4-neighbour Laplacians
+/// `d`: their median, as a Gaussian's median absolute value is 0.6745 σ and the
+/// Laplacian of white noise of σ has σ √1.25. `None` with too few.
+fn sigma(d: &mut [f32]) -> Option<f32> {
+    if d.len() < MIN_SAMPLES {
+        return None;
+    }
+    let mid = d.len() / 2;
+    let (_, m, _) = d.select_nth_unstable_by(mid, f32::total_cmp);
+    Some(*m / 0.6745 / 1.25f32.sqrt())
 }
 
 /// The noise of each channel over `rect`, as a Gaussian's σ in square-root values:
@@ -560,16 +607,7 @@ fn residuals(
             }
         }
     }
-    deviations.map(|mut d| {
-        if d.len() < MIN_SAMPLES {
-            return None;
-        }
-        let mid = d.len() / 2;
-        let (_, m, _) = d.select_nth_unstable_by(mid, f32::total_cmp);
-        // A Gaussian's median absolute value is 0.6745 σ; the Laplacian of white
-        // noise of σ has σ √1.25.
-        Some(*m / 0.6745 / 1.25f32.sqrt())
-    })
+    deviations.map(|mut d| sigma(&mut d))
 }
 
 /// A standard Gaussian value for channel `c` of pixel (`x`, `y`) under `seed`.
