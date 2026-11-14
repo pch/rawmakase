@@ -3935,6 +3935,7 @@ dependencies = [
  "rfd",
  "rusqlite",
  "rustix 1.1.6",
+ "security-framework",
  "serde",
  "serde_json",
  "sha2",

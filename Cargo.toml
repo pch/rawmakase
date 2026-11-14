@@ -123,6 +123,8 @@ fastframe-theme = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0",
 [target.'cfg(target_os = "macos")'.dependencies]
 # Extensions' secret settings (src/platform/credentials.rs): the login keychain.
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
+# Its errors' status codes, to tell a refused keychain from a missing one.
+security-framework = "3.7"
 objc2.workspace = true
 # The title bar's event monitor (src/platform/titlebar.rs).
 block2 = "0.6"

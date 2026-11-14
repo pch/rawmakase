@@ -720,3 +720,104 @@ fn a_removal_finishing_mid_drag_is_its_own_history_step() {
     e.undo();
     assert_eq!(*e.document.edit.recipe(), start);
 }
+
+/// Not on the half-size draft shown while the full size decodes; and a
+/// switch of Detail while it runs changes the pixels it was made from.
+#[test]
+fn drafts_and_a_switched_off_panel_count() {
+    let mut f = fixture(0.43);
+    let (e, folder) = (&mut f.editor, f.folder.clone());
+    let mut draft = (*image(0.43)).clone();
+    draft.fast = true;
+    e.document.set_image(Arc::new(draft));
+    assert!(e.ai_remove_unavailable().is_some());
+    remove_with(e, "local");
+    assert!(settled(e) && e.extensions.retouches_sent().is_empty());
+    e.document.set_image(image(0.43));
+    e.change_edit(None, |r| r.noise_luma = 30.);
+    hold(&folder);
+    remove_with(e, "gate");
+    started(e, &folder);
+    e.change_edit(None, |r| {
+        r.panels.set(
+            crate::model::panels::Panel::Detail,
+            crate::model::panels::PanelState::Off,
+        )
+    });
+    release(&folder);
+    pump(e, "the removal", settled);
+    assert!(generated(e).is_empty());
+    assert_eq!(e.ai_remove.failure, Some(Failure::Failed(STALE.into())));
+}
+
+/// A spot being dragged when the result lands keeps its own edit, and its
+/// drag can't write over the new spot, now selected.
+#[test]
+fn a_spot_dragged_when_the_result_lands_keeps_the_new_spot() {
+    let mut f = fixture(0.45);
+    let (e, folder) = (&mut f.editor, f.folder.clone());
+    let heal = RetouchOp {
+        mode: RetouchMode::Heal,
+        offset: [0.1, 0.],
+        ..painted()
+    };
+    e.change_edit(None, |r| r.add_retouch(heal.clone()));
+    hold(&folder);
+    remove_with(e, "gate");
+    started(e, &folder);
+    e.view.retouch.selected = Some(0);
+    e.view.retouch.drag_spot_for_tests([0.5, 0.5], heal);
+    release(&folder);
+    pump(e, "the removal", settled);
+    assert_eq!(generated(e).len(), 1);
+    assert!(!e.view.retouch.is_dragging());
+}
+
+/// A key another instance replaced is read again when extensions are
+/// reloaded; a first key is recorded before it is written, and unrecorded
+/// when the write fails.
+#[test]
+fn a_secret_is_read_again_and_recorded_before_its_first_write() {
+    let mut f = fixture(0.47);
+    let e = &mut f.editor;
+    use crate::app::extensions::secrets::State;
+    let state = || std::fs::read_to_string(f.data.join("extensions.json")).unwrap_or_default();
+    f.secrets
+        .unavailable(SecretError::Unavailable("none here".into()));
+    e.extensions
+        .set_secret(ID, "key", Some(SENTINEL.into()))
+        .unwrap();
+    assert!(state().contains("\"secrets\""), "{}", state());
+    pump(e, "the write to fail", |e| {
+        e.extensions
+            .get(ID)
+            .unwrap()
+            .secret_writes
+            .values()
+            .any(|w| matches!(w, crate::app::extensions::secrets::Writing::Failed(_)))
+    });
+    assert!(!state().contains("\"secrets\""), "{}", state());
+    f.secrets.heal();
+    e.extensions
+        .set_secret(ID, "key", Some(SENTINEL.into()))
+        .unwrap();
+    pump(e, "the key to be saved", |e| {
+        e.extensions.get(ID).unwrap().secret("key") == Some(&secrets_state(SENTINEL))
+    });
+    let account = rawmakase_extensions::secrets::account(ID, "key");
+    f.secrets
+        .set(
+            &account,
+            &rawmakase_extensions::secrets::Secret::new("sk-SENTINEL-other"),
+        )
+        .unwrap();
+    e.extensions.reload();
+    pump(e, "the key to be read again", |e| {
+        e.extensions.get(ID).unwrap().secret("key") == Some(&secrets_state("sk-SENTINEL-other"))
+    });
+    f.secrets.delete(&account).unwrap();
+    e.extensions.reload();
+    pump(e, "the key to be gone", |e| {
+        e.extensions.get(ID).unwrap().secret("key") == Some(&State::Unset)
+    });
+}

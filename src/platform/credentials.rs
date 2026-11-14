@@ -13,11 +13,13 @@ use rawmakase_extensions::secrets::{SERVICE, Secret, SecretError, SecretStore};
 use std::sync::Arc;
 
 /// The system's store, or why there is none (Linux without a Secret
-/// Service, say): every call then fails with that reason.
-pub(crate) fn system_store() -> Arc<dyn SecretStore> {
+/// Service, say). Opening it may wait (the Secret Service's D-Bus session):
+/// the credentials thread opens it, and tries again at its next call when
+/// it fails.
+pub(crate) fn system_store() -> Result<Arc<dyn SecretStore>, SecretError> {
     match platform_store() {
-        Ok(store) => Arc::new(System(store)),
-        Err(e) => Arc::new(Missing(reason(&e))),
+        Ok(store) => Ok(Arc::new(System(store))),
+        Err(e) => Err(failure(e)),
     }
 }
 
@@ -65,25 +67,26 @@ impl SecretStore for System {
     }
 }
 
-/// There is no store here; why.
-struct Missing(String);
-impl SecretStore for Missing {
-    fn get(&self, _: &str) -> Result<Option<Secret>, SecretError> {
-        Err(SecretError::Unavailable(self.0.clone()))
-    }
-    fn set(&self, _: &str, _: &Secret) -> Result<(), SecretError> {
-        Err(SecretError::Unavailable(self.0.clone()))
-    }
-    fn delete(&self, _: &str) -> Result<(), SecretError> {
-        Err(SecretError::Unavailable(self.0.clone()))
-    }
-}
-
 fn failure(e: Error) -> SecretError {
     match e {
         Error::NoStorageAccess(_) => SecretError::Locked(reason(&e)),
+        Error::PlatformFailure(ref p) if refused(p.as_ref()) => SecretError::Locked(reason(&e)),
         other => SecretError::Unavailable(reason(&other)),
     }
+}
+
+/// Whether a platform failure is the store refusing access (the user
+/// denied it, or it can't ask), which `keyring-core`'s macOS store reports
+/// as a failure rather than as no access.
+#[cfg(target_os = "macos")]
+fn refused(e: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
+    // errSecUserCanceled, errSecAuthFailed, errSecInteractionNotAllowed.
+    e.downcast_ref::<security_framework::base::Error>()
+        .is_some_and(|e| matches!(e.code(), -128 | -25293 | -25308))
+}
+#[cfg(not(target_os = "macos"))]
+fn refused(_: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
+    false
 }
 
 /// What failed, in words that hold no stored value.

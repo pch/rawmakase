@@ -356,6 +356,13 @@ pub(in crate::app) struct Extension {
     secrets: BTreeMap<String, secrets::State>,
     /// Secret settings being written for the page, or whose write failed.
     pub secret_writes: BTreeMap<String, secrets::Writing>,
+    /// The latest read asked for each secret setting, by its ticket: an
+    /// earlier one, or one for an entry this extension replaced, is dropped.
+    secret_reads: BTreeMap<String, u64>,
+    /// Secret settings recorded as set in `extensions.json` before their first
+    /// write, so a key the store keeps is found again even if quitting cut off
+    /// the write's answer; unrecorded again if the write fails.
+    secret_premarked: std::collections::BTreeSet<String>,
     /// What the program last said of a mask request it is answering, by its
     /// ticket: where it runs (`on <endpoint>`).
     mask_progress: Option<(u64, String)>,
@@ -625,7 +632,12 @@ impl Host {
             next_scope: 1,
             messages_done: Vec::new(),
             credentials: secrets::Credentials::new(
-                Arc::new(rawmakase_extensions::secrets::MemoryStore::default()),
+                Arc::new(|| {
+                    Ok(
+                        Arc::new(rawmakase_extensions::secrets::MemoryStore::default())
+                            as Arc<dyn rawmakase_extensions::secrets::SecretStore>,
+                    )
+                }),
                 None,
             ),
             #[cfg(test)]
@@ -741,7 +753,7 @@ impl Host {
         let mut host = Self {
             store: Some(Store::new(data_dir)),
             credentials: secrets::Credentials::new(
-                crate::platform::credentials::system_store(),
+                Arc::new(crate::platform::credentials::system_store),
                 Some(wake.clone()),
             ),
             wake: Some(wake),
@@ -761,7 +773,8 @@ impl Host {
         &mut self,
         store: Arc<dyn rawmakase_extensions::secrets::SecretStore>,
     ) {
-        self.credentials = secrets::Credentials::new(store, self.wake.clone());
+        self.credentials =
+            secrets::Credentials::new(Arc::new(move || Ok(store.clone())), self.wake.clone());
         for e in &mut self.extensions {
             e.secrets.clear();
         }
@@ -1026,6 +1039,8 @@ impl Host {
                         setups: BTreeMap::new(),
                         secrets: BTreeMap::new(),
                         secret_writes: BTreeMap::new(),
+                        secret_reads: BTreeMap::new(),
+                        secret_premarked: Default::default(),
                         mask_progress: None,
                         reading: Vec::new(),
                         last_active: Instant::now(),
@@ -1051,8 +1066,9 @@ impl Host {
     }
 
     /// Brings extension `index`'s secret settings in line with what
-    /// `extensions.json` records as set: a newly recorded one is read from
-    /// the store, one no longer recorded is forgotten (and its program told).
+    /// `extensions.json` records as set: a recorded one is read from the store
+    /// (again, when it was read before: another instance may have replaced
+    /// it), one no longer recorded is forgotten (and its program told).
     fn sync_secrets(&mut self, index: usize) {
         let inert = self.store.is_none();
         let e = &mut self.extensions[index];
@@ -1083,15 +1099,23 @@ impl Host {
                 (false, _) => {
                     e.secrets.insert(id, secrets::State::Unset);
                 }
+                // Read again, kept meanwhile; not while one is being written.
+                (true, Some(_)) if !inert && !e.secret_writes.contains_key(&id) => load.push(id),
                 (true, Some(_)) => {}
             }
         }
         let id = e.id().to_string();
         for setting in load {
-            if let Err(why) = self.credentials.load(&id, &setting) {
-                self.extensions[index]
-                    .secrets
-                    .insert(setting, secrets::State::Unreadable(why));
+            match self.credentials.load(&id, &setting) {
+                Ok(ticket) => {
+                    self.extensions[index].secret_reads.insert(setting, ticket);
+                }
+                Err(why) => {
+                    let e = &mut self.extensions[index];
+                    if e.secrets.get(&setting) == Some(&secrets::State::Loading) {
+                        e.secrets.insert(setting, secrets::State::Unreadable(why));
+                    }
+                }
             }
         }
     }
@@ -1119,22 +1143,37 @@ impl Host {
                 secrets::Done::Loaded {
                     extension,
                     setting,
+                    ticket,
                     result,
                 } => {
                     let Some(index) = self.index(&extension) else {
                         continue;
                     };
                     let e = &mut self.extensions[index];
-                    // Written or cleared since the read was asked for.
-                    if e.secrets.get(&setting) != Some(&secrets::State::Loading) {
+                    // Not the latest read: superseded, written since, or for an
+                    // entry this one replaced.
+                    if e.secret_reads.get(&setting) != Some(&ticket) {
                         continue;
                     }
+                    e.secret_reads.remove(&setting);
+                    let before = e.secrets.get(&setting).cloned();
                     let state = match result {
                         Ok(Some(secret)) if !secret.is_empty() => {
-                            Self::secret_event(e, &setting, secret.expose());
+                            if before.as_ref() != Some(&secrets::State::Set(secret.clone())) {
+                                Self::secret_event(e, &setting, secret.expose());
+                            }
                             secrets::State::Set(secret)
                         }
-                        Ok(_) => secrets::State::Unset,
+                        Ok(_) => {
+                            if matches!(before, Some(secrets::State::Set(_))) {
+                                Self::secret_event(e, &setting, "");
+                            }
+                            secrets::State::Unset
+                        }
+                        // A read again that fails keeps what was read before.
+                        Err(_) if matches!(before, Some(secrets::State::Set(_))) => {
+                            continue;
+                        }
                         Err(why) => {
                             let why = secrets::advice(&why);
                             e.error(format!("{setting}: {why}"));
@@ -1163,8 +1202,19 @@ impl Host {
         let Some(index) = self.index(id) else {
             return;
         };
+        let premarked = self.extensions[index].secret_premarked.remove(setting);
         if let Err(why) = result {
             let why = secrets::advice(&why);
+            // Recorded before the write, which didn't happen: unrecorded again.
+            if premarked && let Some(store) = &self.store {
+                let unrecorded = State::update(store.data_dir(), |state| {
+                    state.entry(id).secrets.remove(setting);
+                    Ok(())
+                });
+                if unrecorded.is_ok() {
+                    self.extensions[index].entry.secrets.remove(setting);
+                }
+            }
             let e = &mut self.extensions[index];
             e.secret_writes
                 .insert(setting.to_string(), secrets::Writing::Failed(why.clone()));
@@ -1254,15 +1304,48 @@ impl Host {
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())
             .map(rawmakase_extensions::secrets::Secret::new);
+        // A first key is recorded before it is written, so one the store keeps
+        // is found again even if quitting cuts off the write's answer.
+        let first = value.is_some() && !self.extensions[index].entry.secrets.contains(setting);
+        if first {
+            let store = self
+                .store
+                .clone()
+                .ok_or("Extensions are off in this editor")?;
+            State::update(store.data_dir(), |state| {
+                state.entry(id).secrets.insert(setting.to_string());
+                Ok(())
+            })
+            .map_err(|err| format!("{} not changed: {err}", self.extensions[index].name()))?;
+            let e = &mut self.extensions[index];
+            e.entry.secrets.insert(setting.to_string());
+            e.secret_premarked.insert(setting.to_string());
+        }
         let result = self.credentials.write(id, setting, value);
         let e = &mut self.extensions[index];
+        // A read asked before this write must not land after it.
+        e.secret_reads.remove(setting);
         match result {
             Ok(()) => {
                 e.secret_writes
                     .insert(setting.to_string(), secrets::Writing::Saving);
                 Ok(())
             }
-            Err(why) => Err(why),
+            Err(why) => {
+                if first {
+                    e.secret_premarked.remove(setting);
+                    if let Some(store) = &self.store
+                        && State::update(store.data_dir(), |state| {
+                            state.entry(id).secrets.remove(setting);
+                            Ok(())
+                        })
+                        .is_ok()
+                    {
+                        self.extensions[index].entry.secrets.remove(setting);
+                    }
+                }
+                Err(why)
+            }
         }
     }
 

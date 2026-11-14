@@ -653,8 +653,16 @@ impl Editor {
                         refs.iter().map(|(id, w, h)| (id.as_str(), *w, *h)),
                     )
                     .and_then(|()| {
-                        crate::develop::retouch::ensure_patches(
-                            &self.document.edit.recipe().retouch,
+                        // Read and checked as mask rasters are, not decoded: that
+                        // waits for the first render, off this thread.
+                        crate::storage::mask_assets::ensure_patches(
+                            self.document
+                                .edit
+                                .recipe()
+                                .retouch
+                                .iter()
+                                .filter_map(|op| op.patch.as_ref())
+                                .map(|p| (p.id.as_str(), p.width, p.height)),
                         )
                     });
                     if let Err(e) = checked {
