@@ -29,7 +29,7 @@ roxmltree.workspace = true
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json.workspace = true
 # Glyph outlines for text watermarks.
-skrifa = "0.49"
+skrifa = "0.50"
 tempfile.workspace = true
 tiff.workspace = true
 unicode-normalization.workspace = true
