@@ -772,12 +772,10 @@ impl Editor {
                         .secrets
                         .insert(key.clone(), text.clone());
                 }
-                let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 let typed = !text.trim().is_empty();
-                save = (ui
+                save = ui
                     .add_enabled(!saving && typed, egui::Button::new("Save"))
                     .clicked()
-                    || entered)
                     && typed;
                 if matches!(state, State::Set(_) | State::Unreadable(_)) {
                     remove = ui

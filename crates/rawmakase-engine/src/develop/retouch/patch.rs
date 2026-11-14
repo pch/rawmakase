@@ -37,8 +37,9 @@ impl PatchPixels {
 /// (at most 48 MiB each), so dragging a slider doesn't decode them again.
 const KEPT: usize = 4;
 
-/// Decoded patches by content id, the most recently used first.
-type Kept = Mutex<Vec<(String, Arc<PatchPixels>)>>;
+/// Decoded patches by the reference that placed them (content id, size and
+/// rect), the most recently used first.
+type Kept = Mutex<Vec<(RetouchPatch, Arc<PatchPixels>)>>;
 
 fn kept() -> &'static Kept {
     static KEPT_PATCHES: OnceLock<Kept> = OnceLock::new();
@@ -51,7 +52,9 @@ pub(crate) fn resolve(patch: &RetouchPatch) -> Result<Arc<PatchPixels>, AssetErr
     let kept = kept();
     {
         let list = kept.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((_, p)) = list.iter().find(|(id, _)| *id == patch.id) {
+        // The whole reference: the same pixels laid elsewhere, or described at
+        // another size, are another placement (or a damaged reference).
+        if let Some((_, p)) = list.iter().find(|(kept, _)| placed_alike(kept, patch)) {
             return Ok(p.clone());
         }
     }
@@ -66,10 +69,17 @@ pub(crate) fn resolve(patch: &RetouchPatch) -> Result<Arc<PatchPixels>, AssetErr
         pixels,
     });
     let mut list = kept.lock().unwrap_or_else(|e| e.into_inner());
-    list.retain(|(id, _)| *id != patch.id);
-    list.insert(0, (patch.id.clone(), decoded.clone()));
+    list.retain(|(kept, _)| !placed_alike(kept, patch));
+    list.insert(0, (patch.clone(), decoded.clone()));
     list.truncate(KEPT);
     Ok(decoded)
+}
+
+/// Whether `a` and `b` lay the same pixels the same way.
+fn placed_alike(a: &RetouchPatch, b: &RetouchPatch) -> bool {
+    a.id == b.id
+        && (a.width, a.height) == (b.width, b.height)
+        && a.rect.map(f32::to_bits) == b.rect.map(f32::to_bits)
 }
 
 /// Checks that every patch of `ops` can be provided, as rendering will need:

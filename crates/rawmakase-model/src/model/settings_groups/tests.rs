@@ -986,3 +986,43 @@ fn a_fitted_look_moves_as_the_sources_own() {
     assert_eq!(out.recipe.profile, kept.profile);
     assert!(!out.notes.is_empty());
 }
+
+/// An AI Remove spot's patch was made from its own photo: Copy and Sync with
+/// Spot Removal never take one to another photo, and the target keeps its own.
+#[test]
+fn spot_removal_leaves_ai_remove_spots_on_their_photo() {
+    use crate::model::retouch::RetouchPatch;
+    let generated = |id: char| RetouchOp {
+        mode: RetouchMode::Generate,
+        shape: RetouchShape::Spot {
+            center: [0.5, 0.5],
+            radius: 0.02,
+        },
+        feather: 0.5,
+        opacity: 1.,
+        offset: [0.; 2],
+        patch: Some(RetouchPatch {
+            id: format!("sha256:{}", id.to_string().repeat(64)),
+            width: 4,
+            height: 4,
+            rect: [0.4, 0.4, 0.6, 0.6],
+            generator: "dev.pch.ai-remove/remove".into(),
+            model: "m".into(),
+            ai_denoise: false,
+        }),
+    };
+    let mut source = everything_changed();
+    let heal = source.retouch[0].clone();
+    source.retouch.push(generated('a'));
+    let mut to = Recipe::default();
+    to.retouch.push(generated('b'));
+    let m = camera("Fujifilm", "X100F");
+    let target = Target {
+        metadata: &m,
+        profiles: &[],
+    };
+    let mut spots = GroupSelection::none();
+    spots.set(SettingGroup::SpotRemoval, GroupInclusion::Included);
+    let copied = transfer(from(&source, &m), &to, &spots, target).recipe;
+    assert_eq!(copied.retouch, [heal, generated('b')]);
+}

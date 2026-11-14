@@ -173,6 +173,7 @@ fn quitting_stops_the_workers_in_order() {
             PreviewBuilds,
             StandIns,
             Selection,
+            AiRemove,
             AiDenoise,
             AiLoupe,
             Lensfun,

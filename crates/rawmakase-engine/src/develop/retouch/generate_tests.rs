@@ -491,3 +491,29 @@ fn hdr_edits_are_refused() {
         rendition::render(&im, &r, None, &op, &rendition, Cancel::new(&cancel)).unwrap_err();
     assert_eq!(error.to_string(), rendition::HDR_REFUSAL);
 }
+
+/// The same pixels laid at two places are two placements, and a reference
+/// describing the pixels at another size fails even once they are decoded.
+#[test]
+fn the_decoded_patch_is_the_placement_asked_for() {
+    let samples: Vec<f32> = (0..2 * 2 * 3).map(|i| 0.1 + i as f32 * 0.07).collect();
+    let id = mask_assets::register(patches::encode(2, 2, &samples).unwrap()).unwrap();
+    let at = |rect: [f32; 4], width: u32| RetouchPatch {
+        id: id.clone(),
+        width,
+        height: 2,
+        rect,
+        generator: "dev.rawmakase.remove/fill".into(),
+        model: "test".into(),
+        ai_denoise: false,
+    };
+    let left = super::patch::resolve(&at([0., 0., 0.5, 0.5], 2)).unwrap();
+    let right = super::patch::resolve(&at([0.5, 0.5, 1., 1.], 2)).unwrap();
+    // At (0.375, 0.375) the left placement has its bottom-right pixel's centre;
+    // the right one, held at its edge, its top-left pixel.
+    let pixel = |i: usize| [samples[i * 3], samples[i * 3 + 1], samples[i * 3 + 2]];
+    let near = |a: [f32; 3], b: [f32; 3]| (0..3).all(|c| (a[c] - b[c]).abs() < 1e-3);
+    assert!(near(left.sample([0.375, 0.375]), pixel(3)));
+    assert!(near(right.sample([0.375, 0.375]), pixel(0)));
+    assert!(super::patch::resolve(&at([0., 0., 0.5, 0.5], 3)).is_err());
+}
