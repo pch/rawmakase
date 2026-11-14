@@ -2159,6 +2159,77 @@ added HDR / SDR, medians over the photos):
 
 Decision, 2026-11-13: these stay refused.
 
+### Round 2 refusals re-measured (2026-11-14)
+
+A second attempt at the controls [group 1](#group-1-refusals-re-measured-2026-11-13) left
+refused, with other models and, where needed, new Camera Raw 18.7 captures (batch r2: mask
+Saturation −100 to +100 and Dehaze +80 on the six photos of [the last
+refusals](#the-last-refusals-on-photos-2026-11-13), a darkening vignette's Highlights 25
+and 75 on the same photos, and the two CC0 samples with the Fujifilm HS30EXR's Adobe
+Standard; 106 jobs, 1,849 in the family). Band Luminance above +40 renders since
+([Band Luminance](#band-luminance)), and so do a mask's negative Saturation and its Dehaze
+above +60 ([Masks](#masks)). Scored by the [acceptance rule](#decisions); effect error
+median / p95 in stops, below white HDR / SDR, HDR above white, ΔE_ITP added HDR / SDR:
+
+| Control | Rendering tried | Below white | Above white (allowed) | ΔE_ITP added | |
+| --- | --- | --- | --- | --- | --- |
+| Vignette Highlights 50 (Highlight Priority −30), six photos, vignetted area | none (before) | 0.000 / 0.097, 0.000 / 0.041 | 0.194 / 0.524 (0.010 / 0.051) | +0.99 / +0.16 | misses |
+| | protection by the pixel's own light, smoothstep from 2 stops under white to 1.5 over, Highlights^0.9 | 0.000 / 0.050 | 0.008 / 0.039 | +0.16 | passes |
+| Vignette Highlights 25 | the same | 0.000 / 0.029, 0.000 / 0.015 | 0.007 / 0.023 (0.010 / 0.025) | +0.08 / +0.02 | misses below white |
+| | Highlights^1 | 0.000 / 0.020 | 0.007 / 0.040 | +0.02 | misses above white |
+| Vignette Highlights 75 | Highlights^0.9 | 0.000 / 0.073, 0.000 / 0.069 | 0.010 / 0.058 (0.010 / 0.079) | +0.26 / +0.30 | passes |
+| Vignette Highlights 100 | Highlights^0.9; ends 1 to 1.5, from −2.25 to −1.75 | 0.000 / 0.099–0.143, 0.000 / 0.090 | 0.012–0.013 / 0.059–0.064 (0.010 / 0.100) | +0.41 to +0.70 / +0.42 | misses |
+| Mask Hue +30, six photos | SDR's Oklab turn (before) | 0.037 / 0.105, 0.035 / 0.095 | 0.057 / 0.120 (0.045 / 0.105) | +7.34 / +7.01 | misses |
+| | an HSV hue shift of 22.5° in linear ProPhoto | 0.064 / 0.210 | 0.050 / 0.082 | +3.59 | misses below white |
+| | the same, its luminance change kept by 0, 0.5 | 0.053–0.063 / 0.133–0.153 | 0.012–0.073 | +2.8 | misses below white |
+| | SDR's turn below 0.8 of white, blending to the HSV shift (half its luminance change) by 1.5 | 0.037 / 0.105 | 0.013 / 0.054 | +7.33 | passes narrowly; not kept |
+| Mask Saturation +75 / +100, six photos | the power operator (as up to +50) | 0.023 / 0.161, 0.034 / 0.109; 0.041 / 0.424, 0.053 / 0.183 | 0.072 / 0.127 (0.044 / 0.119); 0.110 / 0.230 (0.063 / 0.193) | +6.51 / +7.47; +14.36 / +9.39 | misses |
+| Refine Saturation 0, S curve, patches (below 0.9 of white) | SDR's rule (as from 50%) | 0.008 / 0.005 | 0.021 (0.015) | +0.95 / −1.27 | misses |
+| | its strength ×0.5 to ×0.7 | 0.004–0.005 | 0.016–0.017 | +1.07 to +1.28 | misses |
+| Whites +75 / +100, 24 photos | the luminance gain at twice the 99th percentile (as up to +50) | 0.036 / 0.126, 0.027 / 0.085; 0.077 / 0.229, 0.057 / 0.154 | 0.074 / 0.168; 0.104 / 0.155 | +2.01 / +0.84; +4.47 / +1.69 | misses below white |
+| | the level limited at the sensor's white, as SDR's | 0.037 / 0.126; 0.081 / 0.229 | 0.085 / 0.198; 0.119 / 0.164 | +2.18; +5.06 | misses |
+| | the level a quarter of the way to the photo's maximum | 0.053 / 0.188; 0.108 / 0.373 | 0.134 / 0.274; 0.080 / 0.258 | +4.15; +7.74 | misses |
+| HS30EXR Adobe Standard curve, HS30EXR and HS33EXR, neutral (absolute error, 64×48 blocks) | the fitted extension, its distance limit raised | 0.174 / 0.310, 0.130 / 0.288; 0.171 / 0.263, 0.158 / 0.244 | 0.213 / 0.271; 0.170 / 0.276 | 9.33 / 5.91; 8.45 / 7.43 (mean) | misses |
+
+- **A darkening vignette's Highlights.** On the photos Camera Raw's HDR protection is
+  linear in the slider (Highlights 50 undoes 0.51–0.55 of what 100 undoes, on every
+  photo), and at 100 it undoes the vignette's darkening in full on light from about half
+  a stop over white. Its strength by level differs from photo to photo below white (at a
+  stop under white 0.10–0.17 of the darkening on four photos, 0.45 and 0.53 on the 850D
+  and the S1 II), and no level of the pixel, of a blurred or a local-maximum neighbourhood,
+  of the vignetted pixel or of the SDR render brings them together; on the tile checker
+  (a linear profile) it starts only at four times white. The best rule passes at 50 and
+  75 but not at 25 or 100, so it stays refused.
+- **A mask's Hue.** Camera Raw's HDR mask Hue is the same at every level, as the master's
+  Oklab turn is, but it isn't that turn: +30 turns the patches' hues by 19° to 48° in
+  Oklab by hue, scales their chroma by 0.82–1.41 and changes their luminance by −0.30 to
+  +0.18 stop. An HSV hue shift in linear ProPhoto is nearer on the patches (ΔE_ITP 9.98
+  against the turn's 12.12, luminance 0.027 against 0.036 stop) but further on the photos
+  below white. The one blend that passes the rule keeps SDR's turn below white and the
+  shift above it, which Camera Raw's level-independent operator contradicts, and passes
+  only with half the shift's luminance change kept (0.3: 0.047 above white); it is not
+  kept, and Hue stays refused.
+- **A mask's Saturation above +50** misses on the photos as it did on the patches; blending
+  toward the HSL lightness, as negative Saturation does, is further still.
+- **Whites above +50.** Group 1 found that even Camera Raw's own best level per photo
+  leaves the luminance gain past the SDR rendition below white; the two other levels
+  tried here are further off than twice the 99th percentile.
+- **Refine Saturation below 50%** misses on colour: at 0% the master's S curve is already
+  nearer Camera Raw's colour, so the change adds where SDR's removes; weaker strengths add
+  more.
+- **The HS30EXR curve.** The HS20EXR sample on raw.pixls.us isn't CC0; the HS30EXR's and
+  the HS33EXR's are (the HS33EXR is a rebranded HS30EXR, rendered with the HS30EXR DCP).
+  Camera Raw renders them at 4608×3456 and RAWmakase at 3248×2436, so they are compared on
+  64×48 block means (correlation of log luminance 0.999). Both RAWmakase renders are
+  0.13–0.17 stop darker than Camera Raw's; the master's error below white is past the SDR
+  rendition's by 0.044 and 0.013 stop. RAWmakase also refuses the HS30EXR DCP for these
+  photos ("Profile belongs to Fujifilm FinePix HS30EXR, not Fujifilm HS30EXR"): the camera
+  name match doesn't know the FinePix name.
+
+Decision, 2026-11-14: Whites above +50, a darkening vignette's Highlights, a mask's Hue, a
+mask's Saturation above +50, Refine Saturation below 50% and the curves unlike the family
+stay refused.
+
 ### Decisions
 
 - **When a refused control renders** (2026-11-11). A control the master refuses
