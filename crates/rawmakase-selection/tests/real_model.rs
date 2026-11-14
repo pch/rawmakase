@@ -152,6 +152,9 @@ fn the_sky_model_answers_at_any_shape_and_a_raised_flag_stops_it() {
     use rawmakase_selection::Sky;
     let cancel = AtomicBool::new(false);
     let mut session = Sky::load_with(&sky_model(), &LoadOptions::default()).unwrap();
+    // `select` reads the class scores the loader made an output and refuses the answer
+    // unless they are one image of 150 classes on a grid a quarter of the input's sides,
+    // so every answer below also checks the logits' shape.
     for (w, h) in [
         (1280, 853),
         (853, 1280),

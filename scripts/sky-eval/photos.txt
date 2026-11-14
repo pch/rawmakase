@@ -1,0 +1,8 @@
+# Select Sky evaluation set, relative to ../rawmakase-samples/sky.
+# Each photo needs Lightroom exports in LR-mask-exports/: <stem>_original.(tif|jpg) and <stem>_sky-exp_-4.(tif|jpg).
+# Holdout (not used for tuning), one failure mode each:
+commons-holdout/mirror-reflection-on-lake-mcdonald-7198413770.jpg
+commons-holdout/edges-electric-atmosphere-streetcorner-with-overhead-p.jpg
+commons-holdout/sea-haze-tall-ship-la-malouine-flickr-cazalegg.jpg
+commons-holdout/city-church-hillsborough-nh-july-2023.jpg
+commons-holdout/fields-dulmen-kirchspiel-bauerschaft-bornste-2021-4408.jpg

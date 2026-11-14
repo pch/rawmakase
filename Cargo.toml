@@ -179,6 +179,9 @@ rawmakase-midi = { path = "extensions/midi", version = "0.5.0" }
 # way, its models a stand-in; the app itself never links the selection models
 # or the remote worker's client.
 rawmakase-ai-masks = { path = "extensions/ai-masks", version = "0.5.0" }
+# The ignored Select Sky tools (tests/sky_eval_dump.rs, tests/sky_samples.rs) run
+# the sky model on the app's own selection input; only those test binaries link it.
+rawmakase-selection = { path = "crates/rawmakase-selection", version = "0.1.0" }
 rawmakase-extension = { path = "crates/rawmakase-extension", version = "0.1.0" }
 # Tests set up and inspect catalog files directly; the app itself reaches
 # the catalog's database only through rawmakase-catalog.
