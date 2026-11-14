@@ -684,3 +684,39 @@ fn the_available_list_installs_from_github() {
             .any(|a| a.id == "dev.pch.ai-remove")
     );
 }
+
+/// A result arriving during a slider drag lands between its two halves:
+/// undoing the rest of the drag keeps the spot, and undoing the spot keeps
+/// the drag's first half, as Auto does.
+#[test]
+fn a_removal_finishing_mid_drag_is_its_own_history_step() {
+    let mut f = fixture(0.41);
+    let (e, folder) = (&mut f.editor, f.folder.clone());
+    hold(&folder);
+    remove_with(e, "gate");
+    started(e, &folder);
+    let start = e.document.edit.recipe().clone();
+    e.document.edit.setup_mut().exposure = 0.5;
+    let mid = e.document.edit.recipe().clone();
+    e.document
+        .edit
+        .history_mut()
+        .observe(start.clone(), &mid, true);
+    release(&folder);
+    pump(e, "the removal", settled);
+    let with_spot = e.document.edit.recipe().clone();
+    assert_eq!(generated(e).len(), 1, "{}", e.messages.line());
+    assert_eq!(with_spot.exposure, 0.5);
+    e.document.edit.setup_mut().exposure = 0.8;
+    let end = e.document.edit.recipe().clone();
+    e.document
+        .edit
+        .history_mut()
+        .observe(with_spot.clone(), &end, false);
+    e.undo();
+    assert_eq!(*e.document.edit.recipe(), with_spot);
+    e.undo();
+    assert_eq!(*e.document.edit.recipe(), mid);
+    e.undo();
+    assert_eq!(*e.document.edit.recipe(), start);
+}

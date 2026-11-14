@@ -547,14 +547,24 @@ pub struct RetouchGenerated {
     pub model_key: String,
 }
 impl RetouchGenerated {
-    /// Checks that `model` and `model_key` are 1 to [`MAX_MODEL_LEN`] bytes.
+    /// Checks that `model` and `model_key` are 1 to [`MAX_MODEL_LEN`] bytes,
+    /// without control characters, as a saved patch keeps them.
     pub fn validate(&self) -> Result<(), RemoteError> {
         MaskGenerated {
             model: self.model.clone(),
             model_key: self.model_key.clone(),
             empty: None,
         }
-        .validate()
+        .validate()?;
+        for (name, value) in [("model", &self.model), ("model_key", &self.model_key)] {
+            if value.chars().any(char::is_control) {
+                return Err(RemoteError::new(
+                    ErrorCode::InvalidRequest,
+                    format!("{name} holds a control character"),
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1246,6 +1256,14 @@ mod tests {
         };
         assert_eq!(
             empty.validate().unwrap_err().code,
+            ErrorCode::InvalidRequest
+        );
+        let two_lines = RetouchGenerated {
+            model: "model\nversion".into(),
+            model_key: "k".into(),
+        };
+        assert_eq!(
+            two_lines.validate().unwrap_err().code,
             ErrorCode::InvalidRequest
         );
         assert_eq!(ErrorCode::parse("refused"), ErrorCode::Refused);

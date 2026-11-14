@@ -641,6 +641,19 @@ impl Editor {
         }
         let mut op = pending.op;
         op.patch = Some(generated.patch);
+        // Checked as a save will check it, so the edit never holds what it can't save.
+        if let Err(why) = op.validate() {
+            let id = op.patch.as_ref().map(|p| p.id.clone()).unwrap_or_default();
+            self.messages.fail(format!("AI Remove failed: {why:#}"));
+            self.ai_remove.failure = Some(Failure::Failed(format!("{why:#}")));
+            self.discard_patch(&id);
+            return;
+        }
+        // A drag still under way is recorded first, so undoing it keeps the spot,
+        // and undoing the spot keeps the drag.
+        if self.document.edit.history().in_gesture() {
+            self.document.edit.finish_gesture();
+        }
         let added = self.change_edit(Some(crate::app::history::Step::new("AI Remove", "")), |r| {
             r.add_retouch(op);
             r.retouch.len() - 1

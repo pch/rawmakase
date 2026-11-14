@@ -362,8 +362,21 @@ impl SettingGroup {
                 e.calibration = f.calibration;
                 e.shadow_tint = f.shadow_tint;
             }
+            // An AI Remove spot's patch is the photo it was made on: it never
+            // goes to another, and the target keeps its own.
             SpotRemoval => {
-                to.retouch = from.retouch.clone();
+                let own: Vec<_> = to
+                    .retouch
+                    .drain(..)
+                    .filter(|op| op.is_generated())
+                    .collect();
+                to.retouch = from
+                    .retouch
+                    .iter()
+                    .filter(|op| !op.is_generated())
+                    .cloned()
+                    .chain(own)
+                    .collect();
             }
             Crop => {
                 to.crop = from.crop;
