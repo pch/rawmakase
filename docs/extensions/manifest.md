@@ -64,7 +64,7 @@ launch = "external"
 | `name` | yes | Shown in Preferences |
 | `version` | yes | The extension's version, [semver](https://semver.org) (`1.2.0`) |
 | `rawmakase` | yes | The RAWmakase versions it supports, a semver range (`>=0.5, <0.6`). Outside it the package is refused, and an installed one is listed as incompatible. Before 1.0 no compatibility is promised, so state the minor versions tested |
-| `api` | yes | The manifest format it was written for. This version reads `1` to `3`; a higher one is refused as written for a newer RAWmakase. `2` adds [`[[mask-generator]]`](#mask-generator), `3` adds [`[[source]]`](#source). The app tells the program its manifest's `api` when it starts it ([protocol](protocol.md#api-mode)) |
+| `api` | yes | The manifest format it was written for. This version reads `1` to `3`; a higher one is refused as written for a newer RAWmakase. `2` adds [`[[mask-generator]]`](#mask-generator); `3` adds [`[[source]]`](#source), [`[[retouch-generator]]`](#retouch-generator) and the `secret` setting control, with API 2's framing and handle rules. The app tells the program its manifest's `api` when it starts it ([protocol](protocol.md#api-mode)) |
 | `authors` | no | Names |
 | `license` | no | An SPDX expression |
 | `repository` | no | `https://github.com/<owner>/<repo>` |
@@ -109,7 +109,22 @@ Settings shown on the extension's page in Preferences, stored in
 
 `control` is one of: `{ slider = [min, max] }`, `{ number = [min, max] }`,
 `"angle"`, `"toggle"`, `{ choice = ["a", "b"] }`, `{ segmented = ["a", "b"] }`,
-`"text"`, `"color"` (a default of `[r, g, b]`, 0 to 1), `"file"`, `"folder"`.
+`"text"`, `"color"` (a default of `[r, g, b]`, 0 to 1), `"file"`, `"folder"`, and,
+from `api = 3`, `"secret"`.
+
+A **secret** setting holds something like an API key. Its default must be `""`.
+The app keeps its value in the system's credential store (the macOS keychain, the
+Windows Credential Manager, the Secret Service on Linux), never in
+`extensions.json`, which records only that one is set (`secrets`), and never shows
+it again: its page has a field to type a new one into, Save and Remove, and says
+Set only once the store has it. The program receives it as a string in `hello` and
+`setting-changed` (`""` while none is set, or while the store is still being read
+when the program starts: a `setting-changed` follows once it is). The app keeps it
+out of its own JSON, errors, logs and diagnostics; what the program does with it is
+the program's, so never log it and keep it out of the errors you answer with. Where
+there is no store (Linux without a Secret Service) the page says so; an extension
+may read a conventional environment variable then, which an app started from the
+desktop may not inherit.
 
 ## `[[command]]`
 
@@ -254,3 +269,28 @@ Extensions, and adds only to the catalogs it is on for, while they are open
 outside the photos the app hands it should say so with `files = "any"` in
 [`[access]`](#access).
 
+## `[[retouch-generator]]`
+
+From `api = 3`; a manifest with an earlier `api` that declares one is refused,
+and the app never sends `retouch.generate` to a program serving an earlier one.
+A retouch generator regenerates the area the user painted in the Remove tool
+([`retouch.generate`](protocol.md#retouchgenerate-request)), as the experimental
+AI Remove mode ([retouching](../retouching.md#ai-remove-experimental)). The app
+renders the region for it, keeps the answer as a patch saved with the edit, and
+makes one History step of it; the patch renders without the extension.
+
+```toml
+[[retouch-generator]]
+id = "remove"
+name = "AI Remove"
+uploads = true
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `id` | — | Lowercase letters, digits and hyphens, unique among the retouch generators. Patches record `<extension>/<id>` as what made them |
+| `name` | — | Its name in the Remove tool |
+| `uploads` | `false` | It sends what it is given off this computer (a hosted model). The app asks the user once per extension before the first request, and keeps the answer in `extensions.json` |
+
+The Remove tool offers the first enabled extension's generator as its AI Remove
+mode.

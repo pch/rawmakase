@@ -51,7 +51,8 @@ cargo rawmakase new my-dial --id dev.me.my-dial --template control-adapter
 Read [manifest.md](../../../docs/extensions/manifest.md) for every key:
 `[extension]`, `[access]`, `[program]`, `[[setting]]`, `[[command]]`,
 `[[panel]]`, `[[control-adapter]]`, `[[mask-generator]]` with its
-`[[mask-generator.tile]]`s, and `[[source]]`. The rules people hit:
+`[[mask-generator.tile]]`s, `[[source]]` and `[[retouch-generator]]`. The rules
+people hit:
 
 - **Unknown keys are errors** at every level, so a typo fails instead of
   silently turning a feature off. Tables the design plans but no version
@@ -61,9 +62,11 @@ Read [manifest.md](../../../docs/extensions/manifest.md) for every key:
 - **`api`**: `1` to `3`. A higher value is refused as "for a newer
   RAWmakase". Use the lowest one that has what you need: `2` adds
   `[[mask-generator]]` and the shared-memory buffers that mask requests
-  carry; `3` is API 2 plus `[[source]]`. The app starts the program with
-  `RAWMAKASE_EXTENSION_API`, and the SDK serves that mode. API 2 and up
-  also make the program's reader strict (step 6).
+  carry; `3` is API 2 plus `[[source]]`, `[[retouch-generator]]` and
+  `control = "secret"` settings (an API key kept in the system's credential
+  store, sent to the program as a string; never log it). The app starts the
+  program with `RAWMAKASE_EXTENSION_API`, and the SDK serves that mode. API 2
+  and up also make the program's reader strict (step 6).
 - **Sources** (watched folders, tethering) need `api = 3` and
   `[program] start = "with-app"`. A source is off until the user turns it on
   for a catalog on the extension's page, so a freshly installed one reports
@@ -97,6 +100,7 @@ Extension::new()
     .adapter("device", Device::default())   // impl ControlAdapter
     .mask_generator("left", Left)           // impl MaskGenerator
     .source("drop", Drop::default())        // impl Source
+    .retouch_generator("remove", Remove)    // impl RetouchGenerator
     .on_event(|event, host| { /* AppEvent */ })
     .run()
 ```
@@ -122,7 +126,7 @@ app over the real transport (`crates/rawmakase-extension/src/mock.rs`):
   `api: 3`). A mock
   serving API 1 refuses `generate_mask` at once, as the app does.
 - `hello()` or `hello_with(Hello { settings, .. })`, then `run_command`,
-  `open_panel` / `change` / `click`, `generate_mask(request, &image)` (it
+  `open_panel` / `change` / `click`, `generate_retouch(request, &image, &coverage)`, `generate_mask(request, &image)` (it
   returns the result and the coverage written), `send_mask` + `cancel` +
   `wait_mask`, `setup_mask`, `event` (a source's scopes start and stop
   through `AppEvent::SourceStarted` / `SourceStopped`), `recorded()` /

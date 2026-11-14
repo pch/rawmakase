@@ -109,6 +109,7 @@ impl Editor {
         self.presets.clear_document();
         self.view.next_document(another);
         self.selection.clear_document();
+        self.ai_remove.clear_document();
         if let Some(photo) = photo {
             self.request_stand_ins(id, photo, neighbour);
         }

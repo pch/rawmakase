@@ -41,7 +41,9 @@ pub fn decode(bitmap: &Bitmap) -> Result<Vec<[f32; 3]>> {
     let sample = |s: &[u8]| f16::from_le_bytes([s[0], s[1]]).to_f32();
     Ok(bitmap
         .data
-        .chunks_exact(6)
+        .as_chunks::<6>()
+        .0
+        .iter()
         .map(|p| [sample(&p[0..2]), sample(&p[2..4]), sample(&p[4..6])])
         .collect())
 }

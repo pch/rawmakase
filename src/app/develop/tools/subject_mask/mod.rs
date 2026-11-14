@@ -16,7 +16,7 @@ mod ui;
 mod worker;
 
 pub(in crate::app) use ui::paint_feature_icon;
-pub(in crate::app) use worker::{keep, render_input};
+pub(in crate::app) use worker::{Worker, keep, render_input};
 
 use crate::app::Editor;
 use crate::app::extensions::mask_generator::{self, Offer};
@@ -211,8 +211,9 @@ fn raster_extent(id: &str) -> Option<[f32; 4]> {
     })
 }
 /// What the model is given besides pixels the settings do not change: spots and red
-/// eye, which alter the content to select.
-fn content(recipe: &Recipe) -> u64 {
+/// eye, which alter the content to select (and the content AI Remove regenerates
+/// from).
+pub(in crate::app) fn content(recipe: &Recipe) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     serde_json::to_string(&(
         &recipe.retouch,

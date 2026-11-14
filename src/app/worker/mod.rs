@@ -79,6 +79,11 @@ pub(crate) enum Event {
     Selection(Box<crate::app::develop::tools::subject_mask::Done>),
     /// An extension's mask request has its input rendered, ready to send.
     MaskPrepared(Box<crate::app::extensions::mask_generator::Prepared>),
+    /// An AI Remove request's region, rendered into its buffers, or why it
+    /// couldn't be.
+    RetouchPrepared(Box<crate::app::extensions::retouch_generator::Prepared>),
+    /// An AI Remove request ended: its patch kept, or why not.
+    AiRemoved(Box<crate::app::develop::tools::ai_remove::Done>),
     /// News of AI Denoise for a photo Develop asked for (`app::develop::ai_denoise`).
     AiDenoise(Box<crate::ai_denoise::Update>),
     /// An AI Denoise result was stored for the photo at this path, by any job.

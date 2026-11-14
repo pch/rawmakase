@@ -37,8 +37,11 @@ impl PatchPixels {
 /// (at most 48 MiB each), so dragging a slider doesn't decode them again.
 const KEPT: usize = 4;
 
-fn kept() -> &'static Mutex<Vec<(String, Arc<PatchPixels>)>> {
-    static KEPT_PATCHES: OnceLock<Mutex<Vec<(String, Arc<PatchPixels>)>>> = OnceLock::new();
+/// Decoded patches by content id, the most recently used first.
+type Kept = Mutex<Vec<(String, Arc<PatchPixels>)>>;
+
+fn kept() -> &'static Kept {
+    static KEPT_PATCHES: OnceLock<Kept> = OnceLock::new();
     KEPT_PATCHES.get_or_init(Default::default)
 }
 
@@ -76,21 +79,4 @@ pub fn ensure(ops: &[RetouchOp]) -> Result<(), AssetError> {
         resolve(patch)?;
     }
     Ok(())
-}
-
-/// `frame`'s decoded pixel rectangle `[x0, y0, x1, y1)` covering image-frame
-/// `rect`, for tests that place patches.
-#[cfg(test)]
-pub(crate) fn pixel_rect(
-    frame: &crate::model::image_frame::ImageFrame,
-    rect: [f32; 4],
-) -> [i32; 4] {
-    let a = frame.to_source([rect[0], rect[1]]);
-    let b = frame.to_source([rect[2], rect[3]]);
-    [
-        a[0].min(b[0]).floor() as i32,
-        a[1].min(b[1]).floor() as i32,
-        a[0].max(b[0]).ceil() as i32 + 1,
-        a[1].max(b[1]).ceil() as i32 + 1,
-    ]
 }

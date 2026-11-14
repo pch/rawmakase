@@ -157,8 +157,10 @@ pub fn validate_kind(bitmap: &Bitmap, kind: Kind) -> Result<()> {
         ensure!(
             bitmap
                 .data
-                .chunks_exact(2)
-                .all(|s| u16::from_le_bytes([s[0], s[1]]) & 0x7c00 != 0x7c00),
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .all(|s| u16::from_le_bytes(*s) & 0x7c00 != 0x7c00),
             "An AI Remove patch holds a sample that isn't a finite number"
         );
     }
@@ -555,11 +557,11 @@ mod tests {
             Err(AssetError::PatchMissing(..))
         ));
         assert!(
-            AssetError::PatchMissing(patch_id.clone())
+            AssetError::PatchMissing(patch_id)
                 .to_string()
                 .starts_with("An AI Remove spot's pixels")
         );
-        let mut infinite = patch.clone();
+        let mut infinite = patch;
         infinite.data[0..2].copy_from_slice(&0x7c00u16.to_le_bytes());
         assert!(register(infinite).is_err());
         let wide = Bitmap {

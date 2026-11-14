@@ -171,7 +171,7 @@ fn the_rendition_round_trips_what_it_can() {
     let clipped = rendition.inverse(rendition.forward([40.; 3]));
     assert!(clipped[1] < 40.);
     // What it captured is what it inverts with, whatever the recipe does next.
-    let mut warmer = r.clone();
+    let mut warmer = r;
     warmer.wb = [1.4, 1., 0.7];
     warmer.exposure = 1.5;
     assert_eq!(Rendition::of(&im.metadata, &warmer).unwrap(), rendition);
@@ -260,7 +260,8 @@ fn a_region_is_the_shape_with_its_margin_within_the_photo() {
 /// `GENERATE_BLEND`.
 #[test]
 fn the_membrane_lays_a_patch_better_than_a_composite() {
-    let grounds: [(&str, Box<dyn Fn(f32, f32) -> [f32; 3]>); 4] = [
+    type Ground = Box<dyn Fn(f32, f32) -> [f32; 3]>;
+    let grounds: [(&str, Ground); 4] = [
         ("saturated", Box::new(|_, _| [0.03, 0.2, 0.45])),
         ("dark", Box::new(|x, _| [0.004 + x * 1e-5, 0.005, 0.0045])),
         (
@@ -292,7 +293,7 @@ fn the_membrane_lays_a_patch_better_than_a_composite() {
             rendition::render(&object, &r, None, &op, &rendition, Cancel::new(&cancel)).unwrap();
         let clean =
             rendition::render(&truth, &r, None, &op, &rendition, Cancel::new(&cancel)).unwrap();
-        assert!(input.coverage.iter().any(|c| *c == 255));
+        assert!(input.coverage.contains(&255));
         for drift in [1., 1.03] {
             let result = answer(&input, &clean, drift);
             let samples = rendition::patch_samples(
