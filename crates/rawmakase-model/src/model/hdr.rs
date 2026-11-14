@@ -268,7 +268,7 @@ fn check(r: &super::recipe::Recipe, fold: bool) -> Result<()> {
     }
     if !masked_dehaze_measured(&r) {
         anyhow::bail!(
-            "A mask's Dehaze outside 0 to +30, or above +100 with the photo's own, is not supported in HDR yet"
+            "A mask's Dehaze outside 0 to +60, or above +100 with the photo's own, is not supported in HDR yet"
         );
     }
     // A look's own settings render as the user's sliders do, added to them, and its
@@ -425,12 +425,12 @@ fn masked_clarity_measured(r: &super::recipe::Recipe) -> bool {
 }
 
 /// The most Dehaze (−1 to 1) the masks add to a pixel in the HDR master: Camera Raw
-/// 18.7's HDR render of a mask's Dehaze +30 on six photos is as close to the master as
-/// its SDR render to the SDR rendition, and −30's is further
+/// 18.7's HDR render of a mask's Dehaze +30 and +60 on six photos is as close to the
+/// master as its SDR render to the SDR rendition; +100's and −30's are further
 /// (docs/records/hdr-stage1-results.md#masks).
-const MASK_DEHAZE_MEASURED: f32 = 0.3;
+const MASK_DEHAZE_MEASURED: f32 = 0.6;
 
-/// Whether the masks' Dehaze stays in the range measured for them, 0 to +30, and, with
+/// Whether the masks' Dehaze stays in the range measured for them, 0 to +60, and, with
 /// the photo's own, within the global slider's, up to +100. A mask's Dehaze works in
 /// the global slider's stage, so a pixel renders the global slider at the sum. As for
 /// Clarity, each active mask's Dehaze at its Amount is taken as reaching every pixel.
@@ -797,13 +797,13 @@ mod tests {
         clarity.masks.push(second);
         let error = check_recipe(&clarity).unwrap_err().to_string();
         assert!(error.contains("A mask's Clarity"), "{error}");
-        // Dehaze renders from 0 to +30 in masks, overlapping masks added, and up to
+        // Dehaze renders from 0 to +60 in masks, overlapping masks added, and up to
         // +100 with the photo's own.
         let mut dehaze = masked.clone();
-        dehaze.masks[0].adjust.dehaze = 0.3;
-        dehaze.effects.dehaze = 0.7;
+        dehaze.masks[0].adjust.dehaze = 0.6;
+        dehaze.effects.dehaze = 0.4;
         assert!(check_recipe(&dehaze).is_ok());
-        for (mask, own) in [(0.4, 0.), (0.2, 0.9)] {
+        for (mask, own) in [(0.7, 0.), (0.5, 0.6), (-0.2, 0.)] {
             let mut edit = dehaze.clone();
             edit.masks[0].adjust.dehaze = mask;
             edit.effects.dehaze = own;
@@ -814,6 +814,7 @@ mod tests {
         let mut second = overlapping.masks[0].clone();
         second.adjust.dehaze = 0.2;
         second.amount = 0.5;
+        overlapping.effects.dehaze = 0.;
         overlapping.masks.push(second);
         assert!(check_recipe(&overlapping).is_err());
         // A look's Clarity adds to the sum.

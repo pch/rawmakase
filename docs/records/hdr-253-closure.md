@@ -76,7 +76,7 @@ output:
 - **Effects and local work:**
   - the post-crop vignette and grain;
   - masks with Temp, Tint, Exposure, Contrast, Shadows, Whites, Texture, Color,
-    Sharpness and Noise, Clarity 0 to +50 and Dehaze 0 to +30;
+    Sharpness and Noise, Clarity 0 to +50 and Dehaze 0 to +30 (+60 since #1048);
   - Red Eye;
   - everything that works on the camera's samples: lens corrections, geometry, noise
     reduction, AI Denoise, Heal and Clone.
@@ -100,7 +100,7 @@ renders everything. Each refusal has Camera Raw measurements behind it:
 | Refine Saturation below 50% | Renders from 50% (#1048); at 0% on the colour patches it adds more colour error than SDR's (−0.06 against −1.90 ΔE_ITP; [Tone curves](hdr-stage1-results.md#tone-curves)) |
 | A point curve that ends steeply left of white | Camera Raw continues it from its last point, as the master does since #1048; one whose continuation passes 1.06 at white is 0.017 stop off above white on six photos, where SDR's exact render allows 0.011 ([Tone curves](hdr-stage1-results.md#tone-curves)) |
 | A darkening vignette's Highlights | Camera Raw's HDR protection is much stronger than its SDR one and reaches below white (+0.86 stop at Highlights 50 on the Z 8); no rule tried fits both 50 and 100 ([the last refusals](hdr-stage1-results.md#the-last-refusals-on-photos-2026-11-13)) |
-| A mask's Blacks, Hue and Highlights, Saturation outside 0 to +50, Clarity outside 0 to +50 and Dehaze outside 0 to +30 | Camera Raw's HDR mask operators differ from SDR's above white, or RAWmakase's master is further off than its SDR rendition; mask Blacks needs the SDR operator moved nearer the output first ([Masks](hdr-stage1-results.md#masks), [the last refusals](hdr-stage1-results.md#the-last-refusals-on-photos-2026-11-13)) |
+| A mask's Blacks, Hue and Highlights, Saturation outside 0 to +50, Clarity outside 0 to +50 and Dehaze outside 0 to +60 | Camera Raw's HDR mask operators differ from SDR's above white, or RAWmakase's master is further off than its SDR rendition; mask Blacks needs the SDR operator moved nearer the output first ([Masks](hdr-stage1-results.md#masks), [the last refusals](hdr-stage1-results.md#the-last-refusals-on-photos-2026-11-13)) |
 | A look that sets a refused slider (Adobe Landscape) | As the slider it sets; a look's split toning renders since 2026-11-12 ([Looks](hdr-stage1-results.md#looks)) |
 | Two profile curves unlike the family (Fujifilm HS20EXR, HS30EXR) | The fitted extension is 0.013 stop off below 0.9 against SDR's 0.005 ([Tone curves](hdr-stage1-results.md#tone-curves)) |
 
