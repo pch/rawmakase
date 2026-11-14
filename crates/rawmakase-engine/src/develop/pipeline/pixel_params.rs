@@ -165,7 +165,8 @@ pub(crate) fn wgsl_prelude() -> String {
                  const LOOK_SLOPE: f32 = {:?};\nconst LOOK_BEND: f32 = {:?};\nconst LOOK_PEAK: f32 = {:?};\n\
                  const HDR_CONTRAST_SAMPLES: f32 = {}.0;\nconst HDR_CONTRAST_TOP: f32 = {:?};\nconst HDR_CURVE_CEILING: f32 = {:?};\nconst HDR_CURVE_HOLD: f32 = {:?};\n\
                  const HDR_MIX_VALUE: f32 = {:?};\nconst HDR_MIX_FADE: f32 = {:?};\nconst HDR_LUMINANCE_FADE: f32 = {:?};\nconst HDR_LUMINANCE_VALUE: f32 = {:?};\n\
-                 const HDR_LUMINANCE_DARKEN: f32 = {:?};\nconst HDR_LUMINANCE_DARKEN_FROM: f32 = {:?};\n",
+                 const HDR_LUMINANCE_DARKEN: f32 = {:?};\nconst HDR_LUMINANCE_DARKEN_FROM: f32 = {:?};\n\
+                 const HDR_LUMINANCE_LIFT: f32 = {:?};\nconst HDR_LUMINANCE_LIFT_FROM: f32 = {:?};\nconst HDR_LUMINANCE_LIFT_CURVE: f32 = {:?};\n",
                 HDR_TONE_FIRST,
                 HDR_TONE_STEP,
                 HDR_TONE_SAMPLES,
@@ -182,6 +183,9 @@ pub(crate) fn wgsl_prelude() -> String {
                 crate::develop::color_mixer::HDR_LUMINANCE_VALUE,
                 crate::develop::color_mixer::HDR_LUMINANCE_DARKEN,
                 crate::develop::color_mixer::HDR_LUMINANCE_DARKEN_FROM,
+                crate::develop::color_mixer::HDR_LUMINANCE_LIFT,
+                crate::develop::color_mixer::HDR_LUMINANCE_LIFT_FROM,
+                crate::develop::color_mixer::HDR_LUMINANCE_LIFT_CURVE,
             )
         }
 }

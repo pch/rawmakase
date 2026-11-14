@@ -181,6 +181,34 @@ pub(crate) const HDR_LUMINANCE_FADE: f32 = 0.6;
 /// (docs/records/hdr-stage1-results.md#band-luminance).
 pub(crate) const HDR_LUMINANCE_DARKEN: f32 = 0.2;
 pub(crate) const HDR_LUMINANCE_DARKEN_FROM: f32 = 0.5;
+/// How much stronger positive band Luminance is in an HDR master on a colour whose
+/// scene luminance has reached [`HDR_LUMINANCE_FADE`], from none at
+/// [`HDR_LUMINANCE_LIFT_FROM`], in proportion to how far the profile's curve brightens
+/// the colour, in full from [`HDR_LUMINANCE_LIFT_CURVE`] stops. Camera Raw 18.7's HDR
+/// Luminance +100 lifts colours a stop or two under white 1.3–1.6 times as much as the
+/// SDR grids give on photos through Adobe Standard; through a linear profile, which
+/// leaves the scene as it is, its HDR and SDR changes agree
+/// (docs/records/hdr-stage1-results.md#band-luminance).
+pub(crate) const HDR_LUMINANCE_LIFT: f32 = 0.5;
+/// The colour's scene luminance (linear ProPhoto) from which [`HDR_LUMINANCE_LIFT`]
+/// grows.
+pub(crate) const HDR_LUMINANCE_LIFT_FROM: f32 = 0.35;
+/// How far, in stops, the profile's curve brightens a colour's luminance for the full
+/// [`HDR_LUMINANCE_LIFT`].
+pub(crate) const HDR_LUMINANCE_LIFT_CURVE: f32 = 0.5;
+/// ProPhoto RGB's luminance weights.
+const PRO_LUMA: [f32; 3] = [0.2880402, 0.7118741, 0.0000857];
+
+/// The share of [`HDR_LUMINANCE_LIFT`] a colour takes: `scene`, its channels' scene
+/// levels, and `rendered`, the same colour after the profile's curve, both linear
+/// ProPhoto.
+pub(crate) fn hdr_luminance_lift(scene: [f32; 3], rendered: [f32; 3]) -> f32 {
+    let luma = |q: [f32; 3]| q[0] * PRO_LUMA[0] + q[1] * PRO_LUMA[1] + q[2] * PRO_LUMA[2];
+    let (scene, rendered) = (luma(scene).max(1e-6), luma(rendered));
+    let level = (scene - HDR_LUMINANCE_LIFT_FROM) / (HDR_LUMINANCE_FADE - HDR_LUMINANCE_LIFT_FROM);
+    let curve = (rendered / scene).max(1e-6).log2() / HDR_LUMINANCE_LIFT_CURVE;
+    level.clamp(0., 1.) * curve.clamp(0., 1.)
+}
 impl ColorMixer {
     pub(crate) fn new(r: &Recipe) -> Option<Self> {
         debug_assert_eq!(CHART.len(), TABLES * TABLE * 2);
@@ -353,13 +381,14 @@ pub(crate) fn tables_in(delta: &[[f32; 3]], rgb: [f32; 3], lookup: Lookup) -> [f
                 }
             })
         });
-        // Darkening grows with the colour's brightest channel towards white.
+        // Darkening grows with the colour's brightest channel towards white, and
+        // brightening with its luminance where the profile's curve brightens it.
         let top = levels.into_iter().fold(0f32, f32::max);
         let luminance = if luminance < 0. {
             let t = (top - HDR_LUMINANCE_DARKEN_FROM) / (1. - HDR_LUMINANCE_DARKEN_FROM);
             luminance * (1. + HDR_LUMINANCE_DARKEN * t.clamp(0., 1.))
         } else {
-            luminance
+            luminance * (1. + HDR_LUMINANCE_LIFT * hdr_luminance_lift(levels, q))
         };
         std::array::from_fn(|i| {
             let weight = ((1. - levels[i]) / (1. - HDR_LUMINANCE_FADE)).clamp(0., 1.);
@@ -614,6 +643,47 @@ mod tests {
         assert!(
             gain(full) > 1.1 && gain(full) > gain(out),
             "{full:?} {out:?}"
+        );
+    }
+    /// Positive band Luminance in an HDR master is stronger on a colour the profile's
+    /// curve brightens from a scene luminance near [`HDR_LUMINANCE_FADE`], as Camera Raw
+    /// 18.7's HDR render of photos through Adobe Standard is; through a linear profile
+    /// (scene and rendered alike) it is the SDR grids' change faded by channel, as on
+    /// the linear patches (docs/records/hdr-stage1-results.md#band-luminance).
+    #[test]
+    fn hdr_band_luminance_lifts_where_the_curve_brightens() {
+        assert_eq!(hdr_luminance_lift([0.6; 3], [0.6; 3]), 0.);
+        assert_eq!(hdr_luminance_lift([0.3; 3], [0.9; 3]), 0.);
+        assert!((hdr_luminance_lift([0.6; 3], [0.9; 3]) - 1.).abs() < 1e-6);
+        let half = hdr_luminance_lift([0.475; 3], [0.475 * 2f32.powf(0.25); 3]);
+        assert!((half - 0.25).abs() < 1e-3, "{half}");
+        let mut r = Recipe::default();
+        for band in &mut r.hsl {
+            band[2] = 1.;
+        }
+        r.hdr.enabled = true;
+        let mixer = ColorMixer::new(&r).unwrap();
+        let pro = |rgb: [f32; 3]| mul(crate::camera_profiles::RGB_TO_PRO, rgb);
+        let rgb = |pro: [f32; 3]| mul(crate::camera_profiles::PRO_TO_RGB, pro);
+        // A warm colour at a scene luminance of about half of white: rendered by a
+        // linear profile as it is, and by a curve a stop brighter. The curved one's
+        // channels gain more (their fade is the same, read from the same scene).
+        let scene = [0.55, 0.5, 0.45];
+        let gain = |rendered: [f32; 3], out: [f32; 3]| (out[1] / rendered[1]).log2();
+        let linear = gain(scene, pro(mixer.apply_at(rgb(scene), Some(scene))));
+        let bright = scene.map(|v| v * 2.);
+        let curved = gain(bright, pro(mixer.apply_at(rgb(bright), Some(scene))));
+        assert!(linear > 0.1 && curved > linear * 1.2, "{curved} {linear}");
+        // Negative Luminance is not lifted.
+        for band in &mut r.hsl {
+            band[2] = -1.;
+        }
+        let mixer = ColorMixer::new(&r).unwrap();
+        let curved = gain(bright, pro(mixer.apply_at(rgb(bright), Some(scene))));
+        let linear = gain(scene, pro(mixer.apply_at(rgb(scene), Some(scene))));
+        assert!(
+            curved < 0. && (curved / linear - 1.).abs() < 0.1,
+            "{curved} {linear}"
         );
     }
     /// Below [`HDR_LUMINANCE_VALUE`] and [`HDR_LUMINANCE_FADE`] band Luminance renders

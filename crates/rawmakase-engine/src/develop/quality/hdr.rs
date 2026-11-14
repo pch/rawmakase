@@ -980,15 +980,16 @@ mod tests {
         let [low, high] = [value(low) / value(base_low), value(high) / value(base_high)];
         assert!(low > 1.02 && (high - 1.).abs() < 0.01, "{low} {high}");
         // Band Luminance brightens the orange at a quarter of white and leaves its
-        // value alone at 20 times white; negative Luminance renders down to −100, and
-        // above +40 it refuses the master.
-        let [(low, _, _), (high, _, _)] = both(|r| r.hsl[1][2] = 0.4)?;
-        assert!(value(low) > value(base_low) * 1.002, "{low:?} {base_low:?}");
-        assert!(
-            (value(high) / value(base_high) - 1.).abs() < 1e-3,
-            "{high:?} {base_high:?}"
-        );
-        assert!(at(0., |r| r.hsl[1][2] = 0.5).is_err());
+        // value alone at 20 times white, at any amount of either sign.
+        let edits: [fn(&mut Recipe); 2] = [|r| r.hsl[1][2] = 0.4, |r| r.hsl[1][2] = 1.];
+        for edit in edits {
+            let [(low, _, _), (high, _, _)] = both(edit)?;
+            assert!(value(low) > value(base_low) * 1.002, "{low:?} {base_low:?}");
+            assert!(
+                (value(high) / value(base_high) - 1.).abs() < 1e-3,
+                "{high:?} {base_high:?}"
+            );
+        }
         let [(low, _, _), _] = both(|r| r.hsl[1][2] = -1.)?;
         assert!(value(low) < value(base_low) * 0.995, "{low:?} {base_low:?}");
 

@@ -180,11 +180,6 @@ impl HdrSettings {
 
 /// The highest Whites (−1 to 1) the HDR master renders.
 const POSITIVE_WHITES_MEASURED: f32 = 0.5;
-/// The largest positive band Luminance (0 to 1) the HDR master renders; negative renders
-/// down to −100. Camera Raw's positive HDR Luminance strengthens with brightness where
-/// its SDR one rolls off, which the SDR-fitted grids can't follow at +100
-/// (docs/records/hdr-stage1-results.md#band-luminance).
-const BAND_LUMINANCE_MEASURED: f32 = 0.4;
 /// The lowest Refine Saturation (0 to 1) the HDR master renders: SDR's rule without
 /// its bound at white is within the acceptance rule at 50% on the patches and at 0% on
 /// six photos, but at 0% on the patches adds more colour error than SDR's
@@ -306,7 +301,7 @@ fn check(r: &super::recipe::Recipe, fold: bool) -> Result<()> {
 fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
     // The SDR rendition's sliders are not here: they never change the master (Camera
     // Raw 18.7's is bit-identical with each at ±50), so it renders with them set.
-    let unmeasured: [(&'static str, bool); 8] = [
+    let unmeasured: [(&'static str, bool); 7] = [
         // Camera Raw's positive Whites follows the photo's level, which twice the 99th
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
@@ -336,10 +331,6 @@ fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
             r.effects.clarity.abs() > CLARITY_MEASURED,
         ),
         ("Dehaze below −50", r.effects.dehaze < DEHAZE_MEASURED),
-        (
-            "The Color Mixer's Luminance above +40",
-            r.hsl.iter().any(|band| band[2] > BAND_LUMINANCE_MEASURED),
-        ),
         // Camera Raw protects highlights from a darkening vignette in HDR only from
         // about four times white up (docs/records/hdr-stage1-results.md#vignette-and-grain).
         (
@@ -687,9 +678,9 @@ mod tests {
         colour.saturation = 0.3;
         colour.vibrance = -0.2;
         colour.hsl[2] = [0.1, -0.4, 0.];
-        // Band Luminance too, per channel by the scene's level, up to ±40.
-        colour.hsl[5][2] = -0.4;
-        colour.hsl[1][2] = 0.4;
+        // Band Luminance too, per channel by the scene's level, at any amount.
+        colour.hsl[5][2] = -1.;
+        colour.hsl[1][2] = 1.;
         colour.effects.calibration[1] = [0.2, 0.3];
         colour.effects.shadow_tint = 0.1;
         colour.effects.monochrome = true;
@@ -839,10 +830,8 @@ mod tests {
         assert!(check_recipe(&defringe).is_ok());
         defringe.effects.monochrome = true;
         assert!(check_recipe(&defringe).is_ok());
-        let unmeasured: [fn(&mut Recipe); 9] = [
+        let unmeasured: [fn(&mut Recipe); 7] = [
             |r| r.highlights = 0.1,
-            |r| r.hsl[1][2] = 0.41,
-            |r| r.hsl[5][2] = 0.6,
             |r| {
                 r.effects.vignette = -0.3;
                 r.effects.vignette_highlights = 0.4;

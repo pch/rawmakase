@@ -65,7 +65,7 @@ output:
 - **Tone:** Exposure, Contrast, Shadows, Whites up to +50, Blacks, Clarity −50 to +50,
   Dehaze −50 to +100, Texture.
 - **Curves:** the master, channel and parametric curves, and Levels.
-- **Colour:** Saturation, Vibrance, the colour mixer (Luminance −100 to +40), Black &
+- **Colour:** Saturation, Vibrance, the colour mixer (Luminance −100 to +100, #1048), Black &
   White, Calibration, Point Color and Color Grading.
 - **Profiles and looks:**
   - camera profiles, HDR profiles among them;
@@ -95,7 +95,6 @@ renders everything. Each refusal has Camera Raw measurements behind it:
 | Highlights | Camera Raw's HDR Highlights levels off or fades above white; held rules miss by 0.2–0.4 stop ([Highlights and Shadows](hdr-stage1-results.md#highlights-and-shadows)) |
 | Whites above +50 | No photo level reaches Camera Raw's render: 0.17–0.52 stop off on 4 of 12 photos at its own best level; on 24 photos the master is further from Camera Raw than the SDR rendition, below white too (+75: 0.039 / 0.146 stop against 0.027 / 0.085) ([Whites](hdr-stage1-results.md#whites)) |
 | Clarity beyond ±50, Dehaze below −50 | The master is further from Camera Raw than the SDR rendition (Clarity +75 and +100, Dehaze −70 and −100 measured on 12 photos; [Presence](hdr-stage1-results.md#presence)) |
-| The colour mixer's Luminance above +40 | Camera Raw's HDR effect strengthens with brightness where its SDR one rolls off ([Band Luminance](hdr-stage1-results.md#band-luminance)) |
 | Refine Saturation below 50% | Renders from 50% (#1048); at 0% on the colour patches it adds more colour error than SDR's (−0.06 against −1.90 ΔE_ITP; [Tone curves](hdr-stage1-results.md#tone-curves)) |
 | A point curve that ends steeply left of white | Camera Raw continues it from its last point, as the master does since #1048; one whose continuation passes 1.06 at white is 0.017 stop off above white on six photos, where SDR's exact render allows 0.011 ([Tone curves](hdr-stage1-results.md#tone-curves)) |
 | A darkening vignette's Highlights | Camera Raw's HDR protection is much stronger than its SDR one and reaches below white (+0.86 stop at Highlights 50 on the Z 8); no rule tried fits both 50 and 100 ([the last refusals](hdr-stage1-results.md#the-last-refusals-on-photos-2026-11-13)) |
