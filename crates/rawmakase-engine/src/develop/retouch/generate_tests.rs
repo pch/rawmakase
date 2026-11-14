@@ -566,3 +566,335 @@ fn what_a_program_writes_outside_the_painted_area_is_not_kept() {
     }
     assert!(rendition::keep_unpainted(&input, &garbage[..10], stride).is_err());
 }
+
+/// A deterministic, roughly unit Gaussian value for pixel (`x`, `y`) and `k`.
+fn gauss(x: f32, y: f32, k: u64) -> f32 {
+    let mut h = (x as u64)
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add((y as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F))
+        .wrapping_add(k.wrapping_mul(0x1656_67B1_9E37_79F9));
+    let mut sum = 0.;
+    for _ in 0..4 {
+        h ^= h >> 31;
+        h = h.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        h ^= h >> 29;
+        sum += (h >> 40) as f32 / (1u64 << 24) as f32;
+    }
+    (sum - 2.) * 3f32.sqrt()
+}
+
+/// The RMS of channel `c`'s 4-neighbour Laplacian over the pixels of `im` within
+/// `r` of `center`, in square-root values (`sqrt`) or log values: how much fine
+/// texture or grain is there.
+fn roughness(im: &CameraImage, center: [f32; 2], r: f32, c: usize, sqrt: bool) -> f32 {
+    let v = |x: i32, y: i32| {
+        let p = im.pixels[(y as u32 * im.width + x as u32) as usize][c].max(0.);
+        if sqrt { p.sqrt() } else { (p + 1e-3).ln() }
+    };
+    let (mut sum, mut n) = (0., 0.);
+    for y in 1..im.height as i32 - 1 {
+        for x in 1..im.width as i32 - 1 {
+            if (x as f32 - center[0]).hypot(y as f32 - center[1]) >= r {
+                continue;
+            }
+            let l = v(x, y) - (v(x - 1, y) + v(x + 1, y) + v(x, y - 1) + v(x, y + 1)) / 4.;
+            sum += l * l;
+            n += 1.;
+        }
+    }
+    (sum / n).sqrt()
+}
+
+/// A Generate operation over `rect` (frame pixels of `im`) laying a `w` × `h`
+/// patch whose pixel (`i`, `j`) is `f` of its centre in frame pixels, brushed at
+/// (`x`, `y`) with radius `r`.
+fn laid_over(
+    im: &CameraImage,
+    rect: [f32; 4],
+    (w, h): (u32, u32),
+    f: impl Fn(f32, f32) -> [f32; 3],
+    (x, y, r): (f32, f32, f32),
+) -> RetouchOp {
+    let (sx, sy) = (
+        (rect[2] - rect[0]) / w as f32,
+        (rect[3] - rect[1]) / h as f32,
+    );
+    let mut samples = Vec::with_capacity((w * h * 3) as usize);
+    for j in 0..h {
+        for i in 0..w {
+            samples.extend(f(
+                rect[0] + (i as f32 + 0.5) * sx,
+                rect[1] + (j as f32 + 0.5) * sy,
+            ));
+        }
+    }
+    let id = mask_assets::register(patches::encode(w, h, &samples).unwrap()).unwrap();
+    let (iw, ih) = (im.width as f32, im.height as f32);
+    RetouchOp {
+        mode: RetouchMode::Generate,
+        patch: Some(RetouchPatch {
+            id,
+            width: w,
+            height: h,
+            rect: [rect[0] / iw, rect[1] / ih, rect[2] / iw, rect[3] / ih],
+            generator: "dev.rawmakase.remove/fill".into(),
+            model: "test".into(),
+            ai_denoise: false,
+        }),
+        ..brush(im, x, y, r)
+    }
+}
+
+/// `op` laid on `im` with `blend`.
+fn lay(im: &CameraImage, op: &RetouchOp, blend: GenerateBlend) -> CameraImage {
+    let frame = ImageFrame::new(im);
+    let pixels = super::patch::resolve(op.patch.as_ref().unwrap()).unwrap();
+    let placed = Placed::new(op, &frame, heal::FeatherProfile::Measured).with_patch(pixels, &frame);
+    let mut out = im.clone();
+    heal::apply_blend(&mut out, &placed, blend);
+    out
+}
+
+/// A dark region is exposed up before it is quantised to 8 bits, a region whose
+/// highlights the default rendering would clip is exposed down, a mid-grey one and
+/// a rendered file are sent as they were; the answer is inverted through the
+/// exposure the request was sent with.
+#[test]
+fn each_request_is_exposed_for_its_region() {
+    let cancel = AtomicBool::new(false);
+    let r = plain();
+    let send = |im: &CameraImage| {
+        let op = brush(im, 100., 75., 12.);
+        let base = Rendition::of(&im.metadata, &r).unwrap();
+        let input = rendition::render(im, &r, None, &op, &base, Cancel::new(&cancel)).unwrap();
+        (base, input)
+    };
+    // Shadows: the base rendition quantises them coarsely, the request's finely.
+    let dark = image(200, 150, |x, y| {
+        let v = 0.004 + 0.003 * ((x * 0.05).sin() * (y * 0.07).cos()).abs();
+        [v, v * 1.1, v * 0.9]
+    });
+    let (base, input) = send(&dark);
+    assert_ne!(input.rendition, base);
+    let error = |rendition: &Rendition| {
+        (0..50)
+            .map(|k| {
+                let v = 0.004 + 0.003 * k as f32 / 50.;
+                let p = [v, v * 1.1, v * 0.9];
+                let back = rendition.inverse(rendition.forward(p));
+                (0..3)
+                    .map(|c| (back[c] / p[c]).ln().abs())
+                    .fold(0f32, f32::max)
+            })
+            .fold(0f32, f32::max)
+    };
+    eprintln!(
+        "shadows: base {:.4}, request {:.4}",
+        error(&base),
+        error(&input.rendition)
+    );
+    assert!(error(&base) > 0.03, "{}", error(&base));
+    assert!(
+        error(&input.rendition) < 0.015,
+        "{}",
+        error(&input.rendition)
+    );
+    // The painted area doesn't count: a bright object over the shadows changes nothing.
+    let object = image(200, 150, |x, y| {
+        if (x - 100.).hypot(y - 75.) < 8. {
+            [5.; 3]
+        } else {
+            dark.pixels[(y as u32 * 200 + x as u32) as usize]
+        }
+    });
+    assert_eq!(send(&object).1.rendition, input.rendition);
+    // Highlights above what the default rendering shows are brought below white.
+    let bright = image(200, 150, |x, _| [2. + x * 0.02; 3]);
+    let (base, input) = send(&bright);
+    let top = [6.; 3];
+    assert_eq!(base.forward(top), [255; 3]);
+    assert!(input.rendition.forward(top).iter().all(|v| *v < 255));
+    // Mid-tones are sent as they are.
+    let grey = image(200, 150, |x, _| [0.15 + x * 0.001; 3]);
+    let (base, input) = send(&grey);
+    assert_eq!(input.rendition, base);
+    // A rendered file is sent as its own pixels.
+    let mut file = dark;
+    file.metadata.source = crate::camera_data::Source::Rendered;
+    let (base, input) = send(&file);
+    assert_eq!(input.rendition, base);
+}
+
+/// A patch coarser than the photo takes the fine detail of its surroundings: with
+/// the detail the fill is about as textured as the photo around it, without it
+/// it is smooth; its tone stays the patch's.
+#[test]
+fn a_coarse_patch_takes_the_detail_of_its_surroundings() {
+    let ground = |x: f32, y: f32| {
+        let t = 1. + 0.3 * (x * 2.1).sin() * (y * 1.7).cos() + 0.1 * gauss(x, y, 1);
+        [0.12 * t, 0.1 * t, 0.08 * t]
+    };
+    let truth = image(400, 300, ground);
+    let photo = image(400, 300, |x, y| {
+        if (x - 200.).hypot(y - 150.) < 30. {
+            [0.8; 3]
+        } else {
+            ground(x, y)
+        }
+    });
+    // A patch four times coarser than the photo: the truth averaged over each pixel.
+    let coarse = |cx: f32, cy: f32| {
+        let mut sum = [0.; 3];
+        for j in 0..4 {
+            for i in 0..4 {
+                let p = ground((cx - 2. + i as f32).floor(), (cy - 2. + j as f32).floor());
+                (0..3).for_each(|c| sum[c] += p[c] / 16.);
+            }
+        }
+        sum
+    };
+    let op = laid_over(
+        &photo,
+        [100., 75., 300., 225.],
+        (50, 38),
+        coarse,
+        (200., 150., 34.),
+    );
+    let detailed = lay(&photo, &op, GenerateBlend::Membrane);
+    let smooth = lay(&photo, &op, GenerateBlend::Untextured);
+    let centre = [200., 150.];
+    let texture = |im: &CameraImage| roughness(im, centre, 16., 1, false);
+    eprintln!(
+        "texture: truth {:.4}, detailed {:.4}, smooth {:.4}",
+        texture(&truth),
+        texture(&detailed),
+        texture(&smooth)
+    );
+    assert!(texture(&smooth) < 0.35 * texture(&truth));
+    let ratio = texture(&detailed) / texture(&truth);
+    assert!((0.6..1.4).contains(&ratio), "{ratio}");
+    // Its tone is the patch's: the mean over the fill within 2% of the truth's.
+    let mean = |im: &CameraImage| {
+        let (mut s, mut n) = (0., 0.);
+        for y in 134..166 {
+            for x in 184..216 {
+                if (x as f32 - 200.).hypot(y as f32 - 150.) < 16. {
+                    s += im.pixels[y * 400 + x][1];
+                    n += 1.;
+                }
+            }
+        }
+        s / n
+    };
+    let e = (mean(&detailed) / mean(&truth)).ln().abs();
+    assert!(e < 0.02, "{e}");
+    // A patch as fine as the photo has no detail to take, and about the grain it
+    // has already.
+    let fine = laid_over(
+        &photo,
+        [100., 75., 300., 225.],
+        (200, 150),
+        ground,
+        (200., 150., 34.),
+    );
+    let ratio = texture(&lay(&photo, &fine, GenerateBlend::Membrane))
+        / texture(&lay(&photo, &fine, GenerateBlend::Untextured));
+    assert!((0.95..1.1).contains(&ratio), "{ratio}");
+}
+
+/// A fill smoother than the photo takes the photo's grain; one as grainy takes
+/// none to speak of, and a photo without grain gives none.
+#[test]
+fn a_smooth_fill_takes_the_grain_of_its_surroundings() {
+    let grainy = |sigma: f32, k: u64| {
+        move |x: f32, y: f32| -> [f32; 3] {
+            std::array::from_fn(|c| {
+                (0.1f32.sqrt() + sigma * gauss(x, y, k + c as u64))
+                    .max(0.)
+                    .powi(2)
+            })
+        }
+    };
+    let photo = image(300, 200, grainy(0.01, 10));
+    let centre = [150., 100.];
+    let grain = |im: &CameraImage| roughness(im, centre, 16., 1, true);
+    let flat = |_: f32, _: f32| [0.1; 3];
+    let smooth = laid_over(
+        &photo,
+        [80., 30., 220., 170.],
+        (140, 140),
+        flat,
+        (150., 100., 30.),
+    );
+    let matched = lay(&photo, &smooth, GenerateBlend::Membrane);
+    let untextured = lay(&photo, &smooth, GenerateBlend::Untextured);
+    eprintln!(
+        "grain: photo {:.5}, matched {:.5}, untextured {:.5}",
+        grain(&photo),
+        grain(&matched),
+        grain(&untextured)
+    );
+    assert!(grain(&untextured) < 0.2 * grain(&photo));
+    let ratio = grain(&matched) / grain(&photo);
+    assert!((0.75..1.25).contains(&ratio), "{ratio}");
+    // A fill as grainy as the photo keeps about its own.
+    let noisy = laid_over(
+        &photo,
+        [80., 30., 220., 170.],
+        (140, 140),
+        grainy(0.01, 20),
+        (150., 100., 30.),
+    );
+    let ratio = grain(&lay(&photo, &noisy, GenerateBlend::Membrane)) / grain(&photo);
+    assert!((0.75..1.25).contains(&ratio), "{ratio}");
+    // A photo without grain gives none.
+    let clean = image(300, 200, flat);
+    assert_eq!(
+        lay(&clean, &smooth, GenerateBlend::Membrane).pixels,
+        lay(&clean, &smooth, GenerateBlend::Untextured).pixels
+    );
+}
+
+/// An operation that reruns reads its source as it was before later operations
+/// changed it: a Heal spot whose source a later Clone spot covers, then changed,
+/// renders in the cache as a full rebuild does. The same holds for a Generate
+/// spot, which reads its surroundings for their detail and grain.
+#[test]
+fn a_rerun_reads_what_later_spots_left_alone() {
+    let base = Arc::new(image(700, 300, |x, y| {
+        let v = 0.1 + 0.05 * (x * 0.3).sin() * (y * 0.2).cos() + 0.01 * gauss(x, y, 3);
+        [v, v * 0.9, v * 0.8]
+    }));
+    let mut heal = brush(&base, 100., 100., 12.);
+    heal.offset = [300. / 700., 0.];
+    let mut clone = brush(&base, 400., 100., 14.);
+    clone.mode = RetouchMode::Clone;
+    clone.offset = [0., 120. / 300.];
+    let coarse = |_: f32, _: f32| [0.1, 0.09, 0.08];
+    let generate = laid_over(
+        &base,
+        [500., 100., 700., 300.],
+        (50, 50),
+        coarse,
+        (560., 280., 12.),
+    );
+    let mut late = brush(&base, 660., 140., 10.);
+    late.mode = RetouchMode::Clone;
+    late.offset = [-300. / 700., 0.];
+    let cancel = AtomicBool::new(false);
+    let mut cache = RetouchCache::default();
+    let mut ops = vec![heal, clone, generate, late];
+    let check = |cache: &mut RetouchCache, ops: &[RetouchOp]| {
+        let ops = Retouching {
+            red_eye: &[],
+            retouch: ops,
+        };
+        let incremental = cache.get(&base, ops, Cancel::new(&cancel)).unwrap();
+        assert_eq!(incremental.pixels, apply(&base, ops).unwrap().pixels);
+    };
+    check(&mut cache, &ops);
+    ops[0].opacity = 0.6;
+    check(&mut cache, &ops);
+    ops[2].opacity = 0.7;
+    check(&mut cache, &ops);
+}

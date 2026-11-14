@@ -14,6 +14,7 @@ mod layer;
 mod patch;
 pub mod rendition;
 mod search;
+mod texture;
 
 use crate::model::retouch::RetouchOp;
 

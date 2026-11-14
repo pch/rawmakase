@@ -281,6 +281,24 @@ fn ai_remove_asks_once_before_uploading_then_adds_a_generated_spot() {
     assert_eq!(generated(e).len(), 2);
 }
 
+/// A dark photo is sent exposed up, and its answer is inverted through that
+/// exposure: where nothing was painted the patch is the photo's own level.
+#[test]
+fn a_dark_photo_is_inverted_through_the_exposure_it_was_sent_with() {
+    let mut f = fixture(0.004);
+    let e = &mut f.editor;
+    remove_with(e, "fill");
+    e.answer_ai_remove_consent(true);
+    pump(e, "the removal", settled);
+    let ops = generated(e);
+    assert_eq!(ops.len(), 1, "{}", e.messages.line());
+    let patch = ops[0].patch.clone().unwrap();
+    let bitmap = crate::storage::mask_assets::resolve_patch(&patch.id).unwrap();
+    let pixels = crate::storage::patches::decode(&bitmap).unwrap();
+    let corner = pixels[0];
+    assert!((corner[1] / 0.004 - 1.).abs() < 0.05, "{corner:?}");
+}
+
 #[test]
 fn a_result_for_pixels_that_changed_is_dropped_and_other_edits_survive() {
     let mut f = fixture(0.23);

@@ -10,20 +10,26 @@
 //!   the camera stage's matrix (`profile_matrix` with the current recipe, to linear
 //!   sRGB primaries, as [`crate::develop::camera_stage`] uses it), then to linear
 //!   ProPhoto; a rendered file's pixels as they are, its pseudo-scene. Then × the
-//!   default exposure the photo opens with (its baseline), Camera Raw's default
-//!   rendering `F` ([`crate::develop::rendered`]) DNG RGBTone fashion, ProPhoto to
-//!   linear sRGB with negative and above-1 channels clipped, the sRGB transfer and
-//!   rounding to 8 bits. A JPEG or TIFF gives the generator its own pixels back; a
-//!   RAW, its default rendering.
+//!   default exposure the photo opens with (its baseline), times an exposure for
+//!   the region ([`Rendition::exposed_for`]: up for a dark one, so its shadows
+//!   take more of the 8-bit steps, down for one whose highlights would clip),
+//!   Camera Raw's default rendering `F` ([`crate::develop::rendered`]) DNG
+//!   RGBTone fashion, ProPhoto to linear sRGB with negative and above-1 channels
+//!   clipped, the sRGB transfer and rounding to 8 bits. A JPEG or TIFF gives the
+//!   generator its own pixels back, with no exposure of its own; a RAW, its
+//!   default rendering, exposed for the region.
 //! - inverse: 8 bits to linear sRGB, to linear ProPhoto, `F⁻¹`
 //!   ([`crate::develop::rendered::scene_from_rendered`]), ÷ exposure, the inverse
-//!   matrix, ÷ white balance, with the values captured: whatever the user changes
-//!   meanwhile, the inverse undoes exactly what the forward did.
+//!   matrix, ÷ white balance, with the values the request was sent through
+//!   ([`Input::rendition`]): whatever the user changes meanwhile, the inverse
+//!   undoes exactly what the forward did.
 //!
 //! It is lossy on purpose: colours outside sRGB, clipped channels, quantisation
 //! in the shadows and the reduction to at most [`MAX_SIDE`] pixels are not
 //! recovered. The renderer lays the patch with Heal's membrane, which takes the
-//! residual error at the shape's border back to the photo's own values. The
+//! residual error at the shape's border back to the photo's own values, then
+//! gives it the detail a reduced patch lacks and the grain the fill lacks
+//! (`retouch::texture`). The
 //! rendition is the experiment's default, the matrix and the fixed `F`, without a
 //! profile's tables or look: it changes how the region looks to the model, not
 //! which pixels it is.
@@ -41,6 +47,12 @@ use rawmakase_model::color::{inverse, mul, mul_matrix, srgb_decode, srgb_encode}
 pub const MAX_SIDE: u32 = 2048;
 /// The least margin around the painted area, in the photo's pixels.
 const MIN_MARGIN: f32 = 64.;
+/// The scene luminance a dark region's median is exposed up to.
+const MID: f32 = 0.18;
+/// The rendered value a region's brightest channels are kept below.
+const WHITE: f32 = 0.98;
+/// The most a region is exposed up or down, as a linear gain.
+const MAX_EXPOSURE: f32 = 8.;
 /// Why an HDR edit isn't removed from yet.
 pub const HDR_REFUSAL: &str = "AI Remove doesn't work on HDR edits yet";
 
@@ -163,6 +175,68 @@ impl Rendition {
             gain,
         })
     }
+    /// `self` exposed for a region of camera `samples` with `coverage`, before it
+    /// is quantised: up by as much as brings the median luminance of its unpainted
+    /// pixels to [`MID`], or down by as much as keeps the brightest 0.5% of their
+    /// channels below what the default rendering takes to [`WHITE`], whichever
+    /// is less, within [`MAX_EXPOSURE`] either way. A dark region then takes more
+    /// of the 8-bit steps, and highlights above white aren't clipped; a mid-grey
+    /// region is sent as it is.
+    fn exposed_for(&self, samples: &[[f32; 3]], coverage: &[u8]) -> Self {
+        let unpainted: Vec<&[f32; 3]> = samples
+            .iter()
+            .zip(coverage)
+            .filter(|(_, c)| **c == 0)
+            .map(|(p, _)| p)
+            .collect();
+        let pixels = if unpainted.is_empty() {
+            samples.iter().collect()
+        } else {
+            unpainted
+        };
+        let scenes: Vec<[f32; 3]> = pixels
+            .into_iter()
+            .map(|p| {
+                mul(self.to_pro, std::array::from_fn(|c| p[c] * self.wb[c])).map(|v| v * self.gain)
+            })
+            .filter(|s| s.iter().all(|v| v.is_finite()))
+            .collect();
+        if scenes.is_empty() {
+            return *self;
+        }
+        let nth = |mut v: Vec<f32>, at: f32| {
+            let k = ((v.len() - 1) as f32 * at).round() as usize;
+            *v.select_nth_unstable_by(k, f32::total_cmp).1
+        };
+        // ProPhoto's luminance.
+        let median = nth(
+            scenes
+                .iter()
+                .map(|s| 0.2880 * s[0] + 0.7119 * s[1] + 0.0001 * s[2])
+                .collect(),
+            0.5,
+        );
+        let peak = nth(
+            scenes.iter().map(|s| s[0].max(s[1]).max(s[2])).collect(),
+            0.995,
+        );
+        let white = crate::develop::rendered::scene_from_rendered([WHITE; 3])[1];
+        let up = if median > 0. {
+            (MID / median).max(1.)
+        } else {
+            MAX_EXPOSURE
+        };
+        let down = if peak > 0. {
+            white / peak
+        } else {
+            MAX_EXPOSURE
+        };
+        let k = up.min(down).clamp(1. / MAX_EXPOSURE, MAX_EXPOSURE);
+        Self {
+            gain: self.gain * k,
+            ..*self
+        }
+    }
     /// One camera sample as the generator sees it.
     pub fn forward(&self, p: [f32; 3]) -> [u8; 3] {
         let scene = mul(self.to_pro, std::array::from_fn(|c| p[c] * self.wb[c]))
@@ -190,6 +264,9 @@ impl Rendition {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Input {
     pub region: Region,
+    /// The rendition the pixels were sent through, which the answer is inverted
+    /// through.
+    pub rendition: Rendition,
     pub rgb: Vec<u8>,
     pub coverage: Vec<u8>,
 }
@@ -225,10 +302,10 @@ pub fn render(
     let [x0, y0, x1, y1] = region.rect;
     // A box filter over each region pixel's footprint: `taps`² bilinear samples.
     let taps = (1. / region.scale).ceil().clamp(1., 16.) as usize;
-    let mut rgb = vec![0u8; w * h * 3];
-    for (j, row) in rgb.chunks_mut(w * 3).enumerate() {
+    let mut samples = vec![[0f32; 3]; w * h];
+    for (j, row) in samples.chunks_mut(w).enumerate() {
         ensure!(!cancel.is_cancelled(), "Cancelled");
-        for i in 0..w {
+        for (i, out) in row.iter_mut().enumerate() {
             let mut sum = [0f32; 3];
             for ty in 0..taps {
                 for tx in 0..taps {
@@ -244,13 +321,20 @@ pub fn render(
                 }
             }
             let n = (taps * taps) as f32;
-            let out = rendition.forward(sum.map(|v| v / n));
-            row[i * 3..i * 3 + 3].copy_from_slice(&out);
+            *out = sum.map(|v| v / n);
         }
     }
     let coverage = coverage(op, &frame, &region);
+    // A rendered file is sent as its own pixels: they are 8-bit already.
+    let rendition = if im.metadata.is_rendered() {
+        *rendition
+    } else {
+        rendition.exposed_for(&samples, &coverage)
+    };
+    let rgb = samples.iter().flat_map(|p| rendition.forward(*p)).collect();
     Ok(Input {
         region,
+        rendition,
         rgb,
         coverage,
     })

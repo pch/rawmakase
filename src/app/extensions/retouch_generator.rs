@@ -9,14 +9,15 @@
 //!
 //! 1. On the AI Remove worker thread, [`prepare`] captures the rendition
 //!    ([`crate::develop::retouch::rendition::Rendition::of`]), renders the
-//!    region around the painted area and its coverage into input buffers
+//!    region around the painted area through it, exposed for the region
+//!    ([`rendition::Input::rendition`]), and its coverage into input buffers
 //!    leased from the extension's [`Ledger`], allocates the result beside
 //!    them and names the pixels with [`image_key`].
 //! 2. On the UI thread it is sent ([`Host::generate_retouch`]) with a
 //!    [`GENERATE_DEADLINE`]; its one outcome comes back as
 //!    [`Outcome::Retouch`](super::Outcome::Retouch), however it ends.
 //! 3. An answer goes back to the worker thread with the buffers: [`finish`]
-//!    copies the result out, inverts the captured rendition and keeps the
+//!    copies the result out, inverts the rendition it was sent through and keeps the
 //!    camera RGB as an unsaved patch in the asset store.
 //!
 //! Cancelling, a new photo or a stale result leave the buffers to the host,
@@ -334,7 +335,9 @@ pub(in crate::app) fn prepare(job: Prepare) -> Event {
         Ok(Ready {
             params,
             buffers,
-            rendition,
+            // What the region was sent through: the photo's rendition exposed
+            // for the region.
+            rendition: input.rendition,
             region: input.region,
             input: Arc::new(input),
         })

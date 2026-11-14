@@ -149,8 +149,11 @@ fn touches(dirty: &BTreeSet<(i32, i32)>, rect: &PixelRect) -> bool {
 }
 /// Tiles that must be recomputed when `before` becomes `after`: those of changed
 /// operations, then, until nothing changes, those written by any operation that reads
-/// or writes a dirty tile. Recomputing exactly these tiles, and rerunning the
-/// operations that touch them in order, gives the same image as starting over.
+/// or writes a dirty tile, and those an operation that reruns reads where a later
+/// operation wrote: outside dirty tiles the image holds every operation's result,
+/// and the rerun must read what was there before the later ones. Recomputing
+/// exactly these tiles, and rerunning the operations that touch them in order,
+/// gives the same image as starting over.
 pub(crate) fn dirty_tiles(
     frame: &ImageFrame,
     before: Retouching,
@@ -161,11 +164,22 @@ pub(crate) fn dirty_tiles(
         dirty.extend(tiles(&rect));
     }
     let placed = after.placed(frame);
+    // The last operation that writes each tile.
+    let mut last = std::collections::BTreeMap::new();
+    for (i, p) in placed.iter().enumerate() {
+        for t in tiles(&p.dest()) {
+            last.insert(t, i);
+        }
+    }
     loop {
         let size = dirty.len();
-        for p in &placed {
-            if p.reads().iter().any(|r| touches(&dirty, r)) {
+        for (i, p) in placed.iter().enumerate() {
+            let reads = p.reads();
+            if reads.iter().any(|r| touches(&dirty, r)) {
                 dirty.extend(tiles(&p.dest()));
+                for r in reads.iter().filter(|r| r[2] > r[0] && r[3] > r[1]) {
+                    dirty.extend(tiles(r).filter(|t| last.get(t).is_some_and(|l| *l > i)));
+                }
             }
         }
         if dirty.len() == size {

@@ -107,7 +107,12 @@ How it works (`develop::retouch::rendition`, `app::develop::tools::ai_remove`):
   correction applied. It is 8-bit sRGB through a fixed rendition captured with the
   request: the photo's default white balance, the camera stage's matrix for the
   edit's profile, the default exposure and Camera Raw's default rendering, so a
-  JPEG or TIFF is sent as its own pixels and a RAW as its default rendering. The
+  JPEG or TIFF is sent as its own pixels and a RAW as its default rendering. A
+  RAW's region is also exposed for itself before it is quantised: up to three
+  stops brighter when its unpainted pixels' median is below mid-grey (deep
+  shadows: a round-trip error of 1% instead of 4% on test data), or darker when
+  the brightest 0.5% would render above 98% white; the answer is inverted through
+  that same exposure. The
   painted area goes with it as continuous coverage; the extension decides the
   binary mask its service takes.
 - The answer is inverted through the captured rendition back to linear camera RGB,
@@ -121,6 +126,22 @@ How it works (`develop::retouch::rendition`, `app::develop::tools::ai_remove`):
   textured surroundings this was never worse than a plain feathered composite of
   the patch, and far better where the rendition had clipped (an out-of-sRGB ground:
   a log error of 0.003 against 0.66), so it is the one way patches render.
+- Then the fill is given the photo's texture (`develop::retouch::texture`), at
+  every render, from the image it is laid on:
+  - Detail: where the photo has at least 1.25 pixels per patch pixel (a large area
+    of a large photo), each painted pixel takes the fine detail the patch can't
+    hold from the unpainted neighbourhood that looks most like it. A
+    nearest-neighbour field over the patch (PatchMatch's search) is found once
+    per patch and shape. The detail is the photo there less its average over a
+    patch pixel, added in log values, so the patch keeps its tone. On a textured
+    test ground a 4× coarser patch's fill had 0.01 of the photo's fine texture
+    without it and 0.99 with it.
+  - Grain: the noise of a band 8 pixels around the shape and of the fill is
+    measured (in square-root values, where shot noise is about constant), and
+    what the fill lacks is added as Gaussian noise fixed by the pixel and the
+    patch, so a render is repeatable. A photo without grain gives none, and a
+    fill as grainy as the photo takes about none. Spots too small to measure (under
+    32 pixels of fill or band) take none.
 - A patch that can't be provided fails the render with its reason and protects the
   edit when it opens, as a missing mask raster does; it never renders without it.
 - A patch records whether it was made with AI Denoise on; it renders on either, and
@@ -131,10 +152,13 @@ How it works (`develop::retouch::rendition`, `app::develop::tools::ai_remove`):
   can't read them, and RAWmakase writes no spots to XMP.
 
 Known limitations: the round trip is 8-bit, so clipped highlights and colours
-outside sRGB inside the painted area are not recovered, and deep shadows are
-quantised (about 2% on test data); a patch is at most 2048 pixels on its long side,
-so a large area of a high-resolution photo is softer at 100%; Lightroom never sees
-these spots; the photo's region leaves the computer.
+outside sRGB inside the painted area are not recovered, and shadows more than three
+stops below mid-grey are still quantised (about 1% on test data); a patch is at
+most 2048 pixels on its long side, and on a large area of a high-resolution photo
+the detail it lacks is borrowed from its surroundings, not generated, so structure
+finer than the patch (lettering, a fence) isn't recreated; grain is matched in
+strength, not in its pattern or colour; Lightroom never sees these spots; the
+photo's region leaves the computer.
 
 ## Not verified against Lightroom
 

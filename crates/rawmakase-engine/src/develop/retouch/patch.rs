@@ -2,19 +2,45 @@
 //! (`storage::mask_assets::resolve_patch`, which checks they are patches),
 //! checked against the size their spot describes, and decoded from half
 //! precision once while something renders them.
-use crate::model::retouch::{RetouchOp, RetouchPatch};
+use super::texture::Field;
+use crate::model::retouch::{RetouchOp, RetouchPatch, RetouchShape};
 use anyhow::Result;
 use rawmakase_model::storage::mask_assets::{self, AssetError};
 use std::sync::{Arc, Mutex, OnceLock};
 
 /// A patch's pixels in linear camera RGB, upright over `rect` of the image frame.
 pub(crate) struct PatchPixels {
-    width: u32,
-    height: u32,
-    rect: [f32; 4],
-    pixels: Vec<[f32; 3]>,
+    pub(super) width: u32,
+    pub(super) height: u32,
+    pub(super) rect: [f32; 4],
+    pub(super) pixels: Vec<[f32; 3]>,
+    /// Seeds the grain laid with it ([`super::texture`]), from its content id, so
+    /// two patches over one pixel don't share their grain.
+    pub(super) seed: u64,
+    /// Where each painted pixel takes its detail from, per shape laid with it.
+    fields: Mutex<Vec<(FieldKey, Arc<Field>)>>,
 }
+/// A shape a patch is laid with, and the photo's aspect (its width and height over
+/// its long edge).
+type FieldKey = (RetouchShape, [u32; 2]);
 impl PatchPixels {
+    /// [`Field::new`] for `shape` on a photo of `aspect`, found once and kept with
+    /// the patch.
+    pub(super) fn field(&self, shape: &RetouchShape, radius: f32, aspect: [f32; 2]) -> Arc<Field> {
+        let key = (shape.clone(), aspect.map(f32::to_bits));
+        {
+            let kept = self.fields.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((_, f)) = kept.iter().find(|(k, _)| *k == key) {
+                return f.clone();
+            }
+        }
+        let field = Arc::new(Field::new(self, shape, radius, aspect));
+        let mut kept = self.fields.lock().unwrap_or_else(|e| e.into_inner());
+        kept.retain(|(k, _)| *k != key);
+        kept.insert(0, (key, field.clone()));
+        kept.truncate(2);
+        field
+    }
     /// The patch at image-frame position `p`, interpolated between pixel
     /// centres (`(i + 0.5) / width` across `rect`), held at its edge outside.
     pub(crate) fn sample(&self, p: [f32; 2]) -> [f32; 3] {
@@ -67,6 +93,10 @@ pub(crate) fn resolve(patch: &RetouchPatch) -> Result<Arc<PatchPixels>, AssetErr
         height: patch.height,
         rect: patch.rect,
         pixels,
+        seed: patch.id.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+        }),
+        fields: Mutex::default(),
     });
     let mut list = kept.lock().unwrap_or_else(|e| e.into_inner());
     list.retain(|(kept, _)| !placed_alike(kept, patch));
