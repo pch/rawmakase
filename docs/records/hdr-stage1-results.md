@@ -2102,9 +2102,14 @@ Decision, 2026-11-13: these stay refused.
   to give its signal back as coded: macOS's ImageIO drawn into CoreGraphics' space of
   the file's CICP (every patch of the synthetic fixtures within one 10-bit code value),
   and libheif, which converts by the `nclx` alone. Windows' decoder isn't checked
-  here, so an HDR HEIC stays refused there; so does one with an ICC profile beside its
-  `nclx`, which ImageIO would draw through, or with a matrix that isn't a matrix
-  (constant luminance, ICtCp).
+  here, so an HDR HEIC stays refused there; so does one with a matrix that isn't a
+  matrix (constant luminance, ICtCp). (#1048) ImageIO is now drawn into the space it
+  decoded into, which gives back the patches of a DCI-P3 file and of files whose HDR
+  an ICC profile's `cicp` names, alone or beside an `nclx`, within one code value too.
+  The DCI-P3 file and a profile beside an agreeing `nclx` open as HDR edits; a profile
+  alone stays refused, its matrix unread. HDR files in other CICP or JPEG XL custom
+  primaries and float files through parametric ICC curves open as HDR edits too
+  ([other primaries and curves](../hdr.md#other-primaries-and-curves)).
 - **`hdrgm` gain maps (stage 4)** are read like ISO 21496-1 ones, with these choices:
   - Located by the MPF index, as for ISO; Ultra HDR's GContainer item lengths alone are
     not read, since its specification requires writers to add the MPF index.

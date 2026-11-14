@@ -113,6 +113,106 @@ impl HdrGamut {
     }
 }
 
+/// HDR light in CICP colour primaries (ITU-T H.273) other than an [`HdrGamut`]'s, as
+/// an HDR file in them decodes (docs/hdr.md#hdr-files): their linear RGB to linear
+/// ProPhoto, and their luminance for HLG's system gamma.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CicpPrimaries {
+    /// Linear RGB in these primaries to linear ProPhoto (D50), 1 = graphics white:
+    /// to XYZ by their chromaticities, their white adapted to D65 by Bradford, then
+    /// as the gamuts' matrices go to ProPhoto. Their white comes out neutral.
+    pub to_pro_photo: [[f32; 3]; 3],
+    /// The luminance weights of their linear RGB, in their own white.
+    pub luminance: [f32; 3],
+}
+
+/// Bradford's cone response matrix.
+const BRADFORD: [[f64; 3]; 3] = [
+    [0.8951, 0.2664, -0.1614],
+    [-0.7502, 1.7135, 0.0367],
+    [0.0389, -0.0685, 1.0296],
+];
+/// D65's chromaticity, as BT.709, BT.2020 and Display P3 give it.
+const D65: [f64; 2] = [0.3127, 0.3290];
+/// CIE illuminant C's, as H.273 gives it.
+const ILLUMINANT_C: [f64; 2] = [0.310, 0.316];
+
+impl CicpPrimaries {
+    /// The primaries whose CICP code is `code`, among those H.273 gives
+    /// chromaticities for beyond BT.709, BT.2020 and Display P3: BT.470 System M
+    /// (4), BT.470 System B and G (5), SMPTE 170M and 240M (6, 7), generic film (8),
+    /// SMPTE RP 431-2's DCI-P3 with its own white (11) and EBU Tech. 3213 (22).
+    /// `None` for the three gamuts, XYZ (10), whose primaries aren't a triangle of
+    /// chromaticities, and codes without primaries.
+    pub fn from_cicp(code: u8) -> Option<Self> {
+        let [r, g, b, w] = match code {
+            4 => [[0.67, 0.33], [0.21, 0.71], [0.14, 0.08], ILLUMINANT_C],
+            5 => [[0.64, 0.33], [0.29, 0.60], [0.15, 0.06], D65],
+            6 | 7 => [[0.630, 0.340], [0.310, 0.595], [0.155, 0.070], D65],
+            8 => [[0.681, 0.319], [0.243, 0.692], [0.145, 0.049], ILLUMINANT_C],
+            11 => [
+                [0.680, 0.320],
+                [0.265, 0.690],
+                [0.150, 0.060],
+                [0.314, 0.351],
+            ],
+            22 => [[0.630, 0.340], [0.295, 0.605], [0.155, 0.077], D65],
+            _ => return None,
+        };
+        Self::from_chromaticities([r, g, b], w)
+    }
+
+    /// The primaries of chromaticities `rgb` (x, y each) with white `white`, as a
+    /// JPEG XL may give them; `None` when they don't make a finite, invertible matrix
+    /// (a chromaticity with y = 0, say).
+    pub fn from_chromaticities(rgb: [[f64; 2]; 3], white: [f64; 2]) -> Option<Self> {
+        let xyz = |[x, y]: [f64; 2]| [x / y, 1., (1. - x - y) / y];
+        // The primaries' XYZ as columns, scaled so that RGB 1 is the white.
+        let columns = rgb.map(xyz);
+        let unscaled = [0, 1, 2].map(|r| [0, 1, 2].map(|c| columns[c][r]));
+        let scale = mul64(inverse64(unscaled)?, xyz(white));
+        let to_xyz = [0, 1, 2].map(|r| [0, 1, 2].map(|c| unscaled[r][c] * scale[c]));
+        // Bradford from their white to D65.
+        let (from, to) = (mul64(BRADFORD, xyz(white)), mul64(BRADFORD, xyz(D65)));
+        let gains = [0, 1, 2].map(|i| [0, 1, 2].map(|j| if i == j { to[i] / from[i] } else { 0. }));
+        let adapt = matrix64(inverse64(BRADFORD)?, matrix64(gains, BRADFORD));
+        let prophoto = PROPHOTO_TO_XYZ_D65.map(|row| row.map(f64::from));
+        let m = matrix64(inverse64(prophoto)?, matrix64(adapt, to_xyz));
+        if !m.iter().chain(&to_xyz).flatten().all(|v| v.is_finite()) {
+            return None;
+        }
+        Some(Self {
+            to_pro_photo: m.map(|row| row.map(|v| v as f32)),
+            luminance: to_xyz[1].map(|v| v as f32),
+        })
+    }
+}
+
+fn mul64(m: [[f64; 3]; 3], v: [f64; 3]) -> [f64; 3] {
+    m.map(|row| row[0] * v[0] + row[1] * v[1] + row[2] * v[2])
+}
+
+fn matrix64(a: [[f64; 3]; 3], b: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    [0, 1, 2].map(|r| [0, 1, 2].map(|c| (0..3).map(|k| a[r][k] * b[k][c]).sum()))
+}
+
+/// The inverse of `m`; `None` when it is singular.
+fn inverse64(m: [[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
+    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    if det.abs() < 1e-12 || !det.is_finite() {
+        return None;
+    }
+    Some([0, 1, 2].map(|r| {
+        [0, 1, 2].map(|c| {
+            let (r1, r2) = ((c + 1) % 3, (c + 2) % 3);
+            let (c1, c2) = ((r + 1) % 3, (r + 2) % 3);
+            (m[r1][c1] * m[r2][c2] - m[r1][c2] * m[r2][c1]) / det
+        })
+    }))
+}
+
 impl HdrTransfer {
     pub const ALL: [Self; 3] = [Self::Pq, Self::Hlg, Self::Linear];
     pub fn label(self) -> &'static str {
@@ -274,6 +374,63 @@ pub fn hlg_inverse_oetf(signal: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The construction from chromaticities gives the gamuts' own published
+    /// matrices for their chromaticities, and every other primaries' white comes out
+    /// neutral (ProPhoto's white).
+    #[test]
+    fn other_cicp_primaries_convert_as_the_gamuts_do() {
+        for (gamut, rgb) in [
+            (HdrGamut::Rec709, [[0.64, 0.33], [0.30, 0.60], [0.15, 0.06]]),
+            (
+                HdrGamut::Rec2020,
+                [[0.708, 0.292], [0.170, 0.797], [0.131, 0.046]],
+            ),
+            (
+                HdrGamut::DisplayP3,
+                [[0.680, 0.320], [0.265, 0.690], [0.150, 0.060]],
+            ),
+        ] {
+            let built = CicpPrimaries::from_chromaticities(rgb, D65).unwrap();
+            let published = super::super::inverse(gamut.prophoto_to_rgb());
+            for (b, p) in built
+                .to_pro_photo
+                .iter()
+                .flatten()
+                .zip(published.iter().flatten())
+            {
+                assert!(
+                    (b - p).abs() < 2e-4,
+                    "{gamut:?}: {built:?} against {published:?}"
+                );
+            }
+            for (b, p) in built.luminance.iter().zip(gamut.luminance()) {
+                assert!((b - p).abs() < 2e-4, "{gamut:?}");
+            }
+        }
+        for code in [4, 5, 6, 7, 8, 11, 22] {
+            let p = CicpPrimaries::from_cicp(code).unwrap();
+            // Neutral to the precision of the published ProPhoto matrix, which maps
+            // the three gamuts' white as closely.
+            let white = super::super::mul(p.to_pro_photo, [1.; 3]);
+            assert!(
+                white.iter().all(|v| (v - 1.).abs() < 5e-4),
+                "{code}: {white:?}"
+            );
+            assert!(
+                (p.luminance.iter().sum::<f32>() - 1.).abs() < 1e-5,
+                "{code}"
+            );
+        }
+        for code in [0, 1, 2, 3, 9, 10, 12, 13, 23] {
+            assert!(CicpPrimaries::from_cicp(code).is_none(), "{code}");
+        }
+        // A white or primary with y = 0, as a malformed JPEG XL could give.
+        let bt709 = [[0.64, 0.33], [0.30, 0.60], [0.15, 0.06]];
+        assert!(CicpPrimaries::from_chromaticities(bt709, [0.3, 0.]).is_none());
+        let flat = [[0.64, 0.33], [0.30, 0.60], [0.15, 0.]];
+        assert!(CicpPrimaries::from_chromaticities(flat, D65).is_none());
+    }
 
     #[test]
     fn graphics_white_lands_on_each_transfers_reference() {

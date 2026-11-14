@@ -36,11 +36,72 @@ impl JxlFile {
     pub(super) fn turned(&self) -> bool {
         self.header.turned
     }
+
+    /// How its HDR samples decode, by its codestream's own colour encoding.
+    pub(super) fn hdr_decoding(&self) -> Option<super::HdrDecoding> {
+        self.header.decoding
+    }
+}
+
+/// How the samples of a codestream whose colour encoding is enum values decode, when
+/// its transfer is PQ or HLG, read from the encoding itself: the profile jxl-oxide
+/// makes of it names CICP primaries by the primaries alone, so Display P3's (D65
+/// white) come out as DCI-P3's (11, with DCI's white). BT.709, BT.2020 and Display P3
+/// decode as their gamuts; any other primaries or white, DCI-P3's and custom
+/// chromaticities among them, through
+/// [`CicpPrimaries::from_chromaticities`](rawmakase_model::color::hdr_output::CicpPrimaries::from_chromaticities).
+/// `None` for an ICC profile, grey, XYB or an SDR transfer, and for linear light:
+/// jxl-oxide's profile names only PQ and HLG by `cicp`, so a linear JPEG XL has always
+/// opened as an SDR file, and its edits keep rendering so.
+fn decoding(encoding: &jxl_oxide::color::ColourEncoding) -> Option<super::HdrDecoding> {
+    use jxl_oxide::color::{ColourEncoding, ColourSpace, Primaries, TransferFunction, WhitePoint};
+    use rawmakase_model::color::hdr_output::{CicpPrimaries, HdrGamut, HdrOutput, HdrTransfer};
+    let ColourEncoding::Enum(e) = encoding else {
+        return None;
+    };
+    if e.colour_space != ColourSpace::Rgb {
+        return None;
+    }
+    let transfer = match e.tf {
+        TransferFunction::Pq => HdrTransfer::Pq,
+        TransferFunction::Hlg => HdrTransfer::Hlg,
+        _ => return None,
+    };
+    let gamut = match (&e.primaries, &e.white_point) {
+        (Primaries::Srgb, WhitePoint::D65) => Some(HdrGamut::Rec709),
+        (Primaries::Bt2100, WhitePoint::D65) => Some(HdrGamut::Rec2020),
+        (Primaries::P3, WhitePoint::D65) => Some(HdrGamut::DisplayP3),
+        _ => None,
+    };
+    if let Some(gamut) = gamut {
+        return Some(super::HdrDecoding::Signal(HdrOutput {
+            gamut,
+            transfer,
+            ..Default::default()
+        }));
+    }
+    let xy = |c: &jxl_oxide::color::Customxy| [f64::from(c.x) / 1e6, f64::from(c.y) / 1e6];
+    let rgb = match &e.primaries {
+        Primaries::Srgb => [[0.64, 0.33], [0.30, 0.60], [0.15, 0.06]],
+        Primaries::Bt2100 => [[0.708, 0.292], [0.170, 0.797], [0.131, 0.046]],
+        Primaries::P3 => [[0.680, 0.320], [0.265, 0.690], [0.150, 0.060]],
+        Primaries::Custom { red, green, blue } => [xy(red), xy(green), xy(blue)],
+    };
+    let white = match &e.white_point {
+        WhitePoint::D65 => [0.3127, 0.3290],
+        WhitePoint::Dci => [0.314, 0.351],
+        WhitePoint::E => [1. / 3., 1. / 3.],
+        WhitePoint::Custom(c) => xy(c),
+    };
+    let primaries = CicpPrimaries::from_chromaticities(rgb, white)?;
+    Some(super::HdrDecoding::Primaries(transfer, primaries))
 }
 
 /// What a JPEG XL file's or codestream's headers say.
 pub(super) struct Header {
     pub(super) hdr: bool,
+    /// How its HDR samples decode, by its colour encoding ([`decoding`]).
+    pub(super) decoding: Option<super::HdrDecoding>,
     pub(super) animated: bool,
     /// Its orientation is not the identity.
     pub(super) turned: bool,
@@ -71,6 +132,7 @@ impl Header {
                     let metadata = &image.image_header().metadata;
                     return Ok(Self {
                         hdr: image.hdr_type().is_some(),
+                        decoding: decoding(&metadata.colour_encoding),
                         animated: metadata.animation.is_some(),
                         turned: metadata.orientation != 1,
                         width: image.width(),

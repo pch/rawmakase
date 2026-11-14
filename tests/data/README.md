@@ -43,13 +43,24 @@ HDR rendition is a ramp to 8× SDR white; the SDR one compresses each channel di
 the map's channels differ. Made with libultrahdr 2.0.2.
 
 The HDR HEIC fixtures are written by libheif's `heif-enc` (x265) from a 16-bit PNG drawn by
-`python3 scripts/make-hdr-heic-fixtures.py tests/data/formats`. `hdr-pq.heic`, `hdr-hlg.heic` and
-`hdr-pq-p3.heic` are 64×32: eight flat 16×16 patches of known 10-bit signal (the script's
-`PATCHES`, repeated in the decoder test), deep shadow to highlights and saturated colours, in
-BT.2020 primaries (PQ and HLG) or Display P3 (PQ), BT.2020's matrix, full range, 4:2:0.
+`python3 scripts/make-hdr-heic-fixtures.py tests/data/formats`. `hdr-pq.heic`, `hdr-hlg.heic`,
+`hdr-pq-p3.heic` and `hdr-pq-dci.heic` are 64×32: eight flat 16×16 patches of known 10-bit
+signal (the script's `PATCHES`, repeated in the decoder test), deep shadow to highlights and
+saturated colours, in BT.2020 primaries (PQ and HLG), Display P3 (PQ) or SMPTE RP 431-2's
+DCI-P3 with its own white (PQ), BT.2020's matrix, full range, 4:2:0.
 `hdr-pq-icc.heic` is the PQ signal with no `nclx`, its transfer named only by the `cicp` tag of a
-minimal ICC v4 profile the script writes (BT.2020 colorants, linear curves). Made with libheif
-1.23.6 and x265 4.3.
+minimal ICC v4 profile the script writes (BT.2020 colorants, linear curves), and
+`hdr-pq-nclx-icc.heic` the same with an `nclx` of BT.2020 PQ beside the profile. Made with
+libheif 1.23.6 and x265 4.3.
+
+The HDR JPEG XL fixtures `hdr-pq-p3.jxl`, `hdr-pq-dci.jxl` and `hdr-hlg-ebu.jxl` are written by
+libjxl's `cjxl` 0.12 (lossless) from 4×1 16-bit PNGs with a cICP chunk drawn by
+`python3 scripts/make-hdr-jxl-fixtures.py tests/data/formats`: PQ in Display P3 and in DCI-P3,
+and HLG in EBU Tech. 3213's primaries, which JPEG XL writes as custom chromaticities;
+`hdr-pq-709-dci.jxl` and `hdr-pq-2020-e.jxl` are PQ in BT.709's primaries with DCI's white and
+in BT.2020's with illuminant E, written with cjxl's `-x color_space=…` from the same signal.
+`linear-ebu.jxl` and `linear-srgb.jxl` are linear light in those chromaticities and in sRGB's
+primaries, SDR files.
 
 The HEIC gain-map fixtures are written by macOS's ImageIO with
 `swift scripts/make-heic-gain-map-fixtures.swift tests/data/formats` (macOS 15 or later; the
