@@ -44,7 +44,7 @@ program exits.
   `invalid_request` (the app never sends one: it fails such a request itself),
   a malformed request is answered `invalid_request`, an oversized line is
   skipped, and the session goes on.
-- **API 2** takes the [handles](#handles) the app passes with its requests,
+- **API 2** and **API 3** take the [handles](#handles) the app passes with its requests,
   and the program's reader gives up the recovery above: a framing fault ends
   the program, which logs why. The app is the only sender of handles and
   serialises every line itself, so a fault means corruption, not input to
@@ -61,6 +61,10 @@ program exits.
 
   Exiting closes every handle the program holds, and the app fails the
   requests it was waiting on with `exited`.
+- **API 3** is API 2 with [`retouch.generate`](#retouchgenerate-request), which the
+  app sends only to a program serving it; the SDK refuses one serving an earlier
+  `api` with `invalid_request`, and an SDK that serves only up to API 2 refuses to
+  start for an `api = 3` manifest.
 
 - **API 3** is API 2, and adds [photo sources](#sourcereport-request): the
   events `source-started` and `source-stopped`, and `source.report`. A
@@ -302,7 +306,8 @@ readable id, it is answered `invalid_request`.
  "data_dir":"…/extension-data/dev.jane.analog","cache_dir":"…","session":3}
 ```
 
-`settings` holds every setting, defaults filled in. `contributions` are the
+`settings` holds every setting, defaults filled in, a [secret](manifest.md#setting)
+one as the string kept for it (`""` when none is). `contributions` are the
 manifest's, as `<table>/<id>`. `session` numbers this program start, so a
 restarted program's devices are never taken for the previous run's. Reply:
 `{"protocol":1,"implements":["command/auto-film-look","panel/looks"]}`.
@@ -390,6 +395,58 @@ answers. The app copies the coverage out, refuses it when its size doesn't
 match the request, takes an all-zero coverage as nothing found, and saves the
 mask with `model` and an input identity computed from `image_key`,
 `model_key`, the generator and the viewer input.
+
+### `retouch.generate` (request)
+
+Asks a [retouch generator](manifest.md#retouch-generator) to regenerate the area
+the user painted (experimental AI Remove):
+
+```json
+{"generator":"remove","image":buffer,"coverage":buffer,"result":buffer,"image_key":"…"}
+```
+
+- `image` is the region of the photo around the painted area, upright, as
+  [buffer](#buffers) for reading: 3-channel `u8` sRGB, region `image_frame` with
+  its `rect` and `scale`, no overlap, at most 2048 pixels along either side
+  (`MAX_RETOUCH_SIDE`). It is the photo as the patch will be laid on it (noise
+  reduction, spots and red eye applied) through a fixed rendition: a JPEG or TIFF
+  as its own pixels, a RAW as its default rendering.
+- `coverage` is how much of each pixel the user painted, 0 to 255 with the
+  brush's feather, for reading: 1-channel `u8` `coverage`, the image's size and
+  region. A service that takes a binary mask needs the program to make one (for
+  example everything above 0, grown by a few pixels).
+- `result` is where the program writes the region with the painted area
+  regenerated, for writing: the image's size, region and meaning. Outside the
+  painted area the app keeps its own pixels, so what is written there doesn't
+  matter.
+- All three are allocated by the app, in three handles, 256 MiB at most together.
+- `image_key` is the app's digest of the image's and the coverage's sizes and
+  pixels and how they were rendered.
+
+The SDK refuses a request whose buffers don't pass their checks, don't fit
+together or don't map, with `invalid_request`, before the handler runs, and
+borrows the image and coverage read-only and the result writable for the call
+(`RetouchAsk`). Reply:
+
+```json
+{"model":"bria/fibo-edit-1.5/eraser","model_key":"fal|bria/fibo-edit-1.5/eraser|composite|1"}
+```
+
+`model` names the model, saved with the patch as its provenance; `model_key`
+stands for everything besides the pixels the result depends on. Each is 1 to 128
+bytes. Errors: `needs_setup` when the user has to set something up first (an API
+key), with a plain-text message the Remove tool shows with a button to the
+extension's page; `unavailable` when its service can't be reached or won't work
+now (offline, a quota, a rate limit), with the service's message; `refused` when
+the service declined the request's content. Keep keys out of every message.
+
+The app gives `retouch.generate` 200 seconds, one request at a time. A request
+the user gave up on (Cancel, another photo, disabling the extension, quitting) is
+cancelled at once and its answer dropped, while its buffers stay leased until the
+program answers. The app copies the result out, inverts the rendition it captured
+for the request, and keeps it as the spot's patch only if what the region was made
+from still holds; it never sends the same request again by itself, since each may
+be a paid call.
 
 ### Events
 
@@ -624,6 +681,7 @@ controls, reuses an id, or has a value outside its range.
 | `needs_setup` | The contribution needs something installed first. The message is JSON, `{"what":"the Subject model","bytes":184000000}`, for the app's setup card; a message that doesn't read as that is shown as text |
 | `unavailable` | What the contribution runs on, such as a runtime library or a remote worker, isn't available; the message says why |
 | `not_added` | A source's report couldn't be written to the catalog; the message says why |
+| `refused` | The service the contribution runs on declined the request on its content (a hosted model's safety policy); the message says why |
 
 The control layer's own codes (`no_document`, `not_editable`, …, [automation](../automation.md))
 pass through unchanged.

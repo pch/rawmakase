@@ -84,6 +84,14 @@ pub struct Entry {
     /// is off for every catalog not listed.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sources: BTreeMap<String, Vec<String>>,
+    /// The secret settings (`control = "secret"`) whose value is kept in
+    /// the credential store, by setting id. Their values are never here.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub secrets: std::collections::BTreeSet<String>,
+    /// The user agreed, once, that its retouch generators send the pixels
+    /// they are given off this computer (`uploads = true`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub uploads_allowed: bool,
     /// Fields a later release wrote.
     #[serde(flatten)]
     pub unknown: Map<String, Value>,
@@ -100,6 +108,8 @@ impl Default for Entry {
             source: None,
             settings: Map::new(),
             sources: BTreeMap::new(),
+            secrets: std::collections::BTreeSet::new(),
+            uploads_allowed: false,
             unknown: Map::new(),
         }
     }

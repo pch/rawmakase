@@ -719,6 +719,7 @@ mod tests {
             feather: 0.5,
             opacity: 1.,
             offset: [0.02, 0.],
+            patch: None,
         });
         assert_eq!(describe(&before, &after).name, "Spot Removal");
         assert_eq!(describe(&after, &before).name, "Delete Spot");

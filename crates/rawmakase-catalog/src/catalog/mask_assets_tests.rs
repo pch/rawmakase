@@ -192,3 +192,76 @@ fn a_stored_raster_larger_than_any_raster_is_not_read() -> Result<()> {
     assert!(matches!(error, AssetError::Corrupt(..)), "{error:?}");
     Ok(())
 }
+
+/// A recipe with one AI Remove spot whose patch is a new raster.
+fn generated(seed: f32) -> Recipe {
+    use crate::model::retouch::{RetouchMode, RetouchOp, RetouchPatch, RetouchShape};
+    let samples: Vec<f32> = (0..4 * 3 * 3).map(|i| seed + i as f32 * 0.01).collect();
+    let patch = crate::storage::patches::encode(4, 3, &samples).unwrap();
+    let id = mask_assets::register(patch).unwrap();
+    Recipe {
+        retouch: vec![RetouchOp {
+            mode: RetouchMode::Generate,
+            shape: RetouchShape::Brush {
+                points: vec![[0.4, 0.4], [0.45, 0.42]].into(),
+                radius: 0.02,
+            },
+            feather: 0.5,
+            opacity: 1.,
+            offset: [0.; 2],
+            patch: Some(RetouchPatch {
+                id,
+                width: 4,
+                height: 3,
+                rect: [0.35, 0.35, 0.5, 0.47],
+                generator: "dev.pch.ai-remove/remove".into(),
+                model: "bria/fibo-edit-1.5/eraser".into(),
+                ai_denoise: false,
+            }),
+        }],
+        ..Default::default()
+    }
+}
+
+/// An AI Remove spot's patch is stored with the edit that names it, raising the
+/// catalog to the version releases before AI Remove refuse; it reads back
+/// through the loader as the patch it was, in a snapshot and a virtual copy too.
+#[test]
+fn a_generated_spot_is_stored_with_its_patch_and_raises_the_format() -> Result<()> {
+    let (_dir, mut cat, file, id) = catalog()?;
+    let recipe = generated(0.1);
+    save(&mut cat, id, &file, &recipe)?;
+    assert_eq!(cat.format_version()?, super::db::GENERATED);
+    assert_eq!(stored(&cat, &recipe)?, 1);
+    let patch_id = recipe.mask_asset_ids().next().unwrap().to_string();
+    assert!(mask_assets::unsaved([patch_id.as_str()]).is_empty());
+    let read = cat.mask_asset_loader().load(&patch_id).unwrap().unwrap();
+    assert!(read.matches_id(&patch_id));
+    assert_eq!((read.channels, read.depth), (3, 2));
+    assert_eq!(
+        cat.load_edit(id, &file)?.unwrap().recipe.retouch,
+        recipe.retouch
+    );
+    let copy = cat.create_virtual_copy(id)?;
+    assert_eq!(
+        cat.load_edit(copy, &file)?.unwrap().recipe.retouch,
+        recipe.retouch
+    );
+    let again = generated(0.2);
+    cat.add_snapshot(id, "Removed", &again)?;
+    assert_eq!(stored(&cat, &again)?, 1);
+    Ok(())
+}
+
+/// An edit whose patch nothing holds is refused whole, as one naming a missing
+/// mask raster is: the edit is never saved without its pixels.
+#[test]
+fn an_edit_naming_a_patch_nothing_stores_is_not_saved() -> Result<()> {
+    let (_dir, mut cat, file, id) = catalog()?;
+    let mut recipe = generated(0.3);
+    recipe.retouch[0].patch.as_mut().unwrap().id = format!("sha256:{}", "c7".repeat(32));
+    let error = save(&mut cat, id, &file, &recipe).unwrap_err();
+    assert!(error.to_string().contains("missing"), "{error}");
+    assert!(cat.load_edit(id, &file)?.is_none());
+    Ok(())
+}

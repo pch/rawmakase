@@ -1,7 +1,9 @@
 //! Preferences > Extensions: the loaded extensions with their source, state
 //! and available update; one extension's page with what it declares, its
-//! settings and panels, its last errors and its log; and installing from
-//! GitHub, from a file or, in developer mode, from a folder.
+//! settings and panels, its last errors and its log; installing from GitHub,
+//! from a file or, in developer mode, from a folder; and the extensions
+//! RAWmakase lists but doesn't bundle ([`AVAILABLE`]), each installed through
+//! Install from GitHub with its confirmation and Not reviewed mark.
 //!
 //! Every change goes through the host, which writes `extensions.json` first
 //! and leaves the session as it was when that fails. Downloads, installs and
@@ -25,6 +27,26 @@ const WATCH: Duration = Duration::from_secs(1);
 /// What an installed extension's page and an offer say of its trust.
 const NOT_REVIEWED: &str = "RAWmakase hasn't reviewed this extension. It runs with your \
      permissions.";
+
+/// An extension RAWmakase lists for installing, without bundling it.
+pub(in crate::app) struct Available {
+    pub(in crate::app) id: &'static str,
+    pub(in crate::app) name: &'static str,
+    /// One line of what it does.
+    pub(in crate::app) line: &'static str,
+    /// The GitHub repository whose releases it installs from.
+    pub(in crate::app) repository: &'static str,
+}
+
+/// The extensions Preferences > Extensions offers to install, while they
+/// aren't installed.
+pub(in crate::app) const AVAILABLE: &[Available] = &[Available {
+    id: "dev.pch.ai-remove",
+    name: "AI Remove",
+    line: "Experimental: removes what you paint over in the Remove tool with a hosted \
+           model and your own API key (fal.ai or Replicate).",
+    repository: "https://github.com/pch/rawmakase-ai-remove",
+}];
 
 /// What the page keeps between frames.
 #[derive(Default)]
@@ -50,6 +72,9 @@ pub(in crate::app) struct Page {
     /// Number and Angle settings being dragged, by extension and setting
     /// ([`number_control`]).
     numbers: HashMap<(String, String), f64>,
+    /// Secret settings being typed, by extension and setting: never filled
+    /// from what is kept, and forgotten once saved.
+    secrets: HashMap<(String, String), String>,
 }
 
 /// A package inspected for the user to review before it is installed: its
@@ -109,6 +134,7 @@ impl Editor {
         if let Some(offer) = self.extension_page.offer.take() {
             self.extension_offer(ui, offer);
         }
+        self.extensions_available(ui);
         group(ui, "Extensions");
         if self.extensions.extensions().is_empty() {
             hint(
@@ -221,6 +247,42 @@ impl Editor {
                 ui.spinner();
             });
         }
+        gap(ui);
+    }
+
+    /// The listed extensions not installed yet, each with Install, which
+    /// finds its latest release as Install from GitHub… does and shows it
+    /// for the user to confirm.
+    fn extensions_available(&mut self, ui: &mut egui::Ui) {
+        let missing: Vec<&Available> = AVAILABLE
+            .iter()
+            .filter(|a| self.extensions.get(a.id).is_none())
+            .collect();
+        if missing.is_empty() {
+            return;
+        }
+        group(ui, "Available");
+        let busy = self.extension_page.busy || self.activity.is_busy();
+        for available in missing {
+            form_row(ui, available.name, |ui| {
+                if ui
+                    .add_enabled(!busy, egui::Button::new("Install…"))
+                    .on_hover_text(available.repository)
+                    .clicked()
+                {
+                    self.extension_page.repository = available.repository.to_string();
+                    self.inspect_repository();
+                }
+                hint(ui, available.line);
+            });
+        }
+        form_row(ui, "", |ui| {
+            hint(
+                ui,
+                "Not bundled with RAWmakase: each installs from its GitHub releases, \
+                 marked Not reviewed.",
+            );
+        });
         gap(ui);
     }
 
@@ -654,6 +716,10 @@ impl Editor {
                 (r.changed() && released)
                     .then(|| Value::from(rgb.iter().map(|c| f64::from(*c)).collect::<Vec<_>>()))
             }
+            SettingControl::Secret => {
+                self.secret_control(ui, id, &s.id);
+                None
+            }
             SettingControl::File | SettingControl::Folder => {
                 let folder = matches!(s.control, SettingControl::Folder);
                 ui.add(egui::Label::new(value.as_str().unwrap_or("None chosen")).truncate());
@@ -666,6 +732,79 @@ impl Editor {
                 }
                 None
             }
+        }
+    }
+
+    /// A secret setting: whether one is kept, a field to type a new one into
+    /// (shown as dots, never filled with what is kept), Save and Remove. It
+    /// says Set only once the credential store has it.
+    fn secret_control(&mut self, ui: &mut egui::Ui, id: &str, setting: &str) {
+        use super::secrets::{State, Writing};
+        let Some(e) = self.extensions.get(id) else {
+            return;
+        };
+        let writing = e.secret_writes.get(setting).cloned();
+        let state = e.secret(setting).cloned().unwrap_or(State::Unset);
+        let key = (id.to_string(), setting.to_string());
+        let mut text = self
+            .extension_page
+            .secrets
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
+        let saving = writing == Some(Writing::Saving);
+        let mut save = false;
+        let mut remove = false;
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                let field = ui.add_enabled(
+                    !saving,
+                    egui::TextEdit::singleline(&mut text)
+                        .password(true)
+                        .hint_text(match state {
+                            State::Set(_) => "Type a new one to replace it",
+                            _ => "Paste it here",
+                        })
+                        .desired_width(220.),
+                );
+                if field.changed() {
+                    self.extension_page
+                        .secrets
+                        .insert(key.clone(), text.clone());
+                }
+                let typed = !text.trim().is_empty();
+                save = ui
+                    .add_enabled(!saving && typed, egui::Button::new("Save"))
+                    .clicked()
+                    && typed;
+                if matches!(state, State::Set(_) | State::Unreadable(_)) {
+                    remove = ui
+                        .add_enabled(!saving, egui::Button::new("Remove"))
+                        .clicked();
+                }
+            });
+            let status = match (&writing, &state) {
+                (Some(Writing::Saving), _) => {
+                    "Saving to the system's credential store…".to_string()
+                }
+                (Some(Writing::Failed(why)), _) => format!("Not saved: {why}"),
+                (None, State::Loading) => "Reading from the system's credential store…".into(),
+                (None, State::Set(_)) => "Set · kept in the system's credential store".into(),
+                (None, State::Unset) => "Not set".into(),
+                (None, State::Unreadable(why)) => format!("Set, but it can't be read: {why}"),
+            };
+            hint(ui, &status);
+        });
+        let result = if save {
+            self.extension_page.secrets.remove(&key);
+            self.extensions.set_secret(id, setting, Some(text))
+        } else if remove {
+            self.extensions.set_secret(id, setting, None)
+        } else {
+            Ok(())
+        };
+        if let Err(why) = result {
+            self.messages.fail(why);
         }
     }
 

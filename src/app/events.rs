@@ -166,6 +166,8 @@ impl Editor {
                 }
                 Event::Selection(done) => self.selection_done(*done),
                 Event::MaskPrepared(prepared) => self.mask_prepared(*prepared),
+                Event::RetouchPrepared(prepared) => self.retouch_prepared(*prepared),
+                Event::AiRemoved(done) => self.ai_remove_done(*done),
                 Event::AiDenoise(update) => self.ai_denoise_update(*update),
                 Event::AiDenoiseStored(path) => self.ai_result_stored(&path),
                 Event::ModelInstalled(pack, result) => {
@@ -517,6 +519,7 @@ impl Editor {
                 }
                 self.close_document();
                 self.selection.clear_catalog();
+                self.ai_remove.clear_document();
                 if !l.messages.line().is_empty() {
                     self.messages.absorb(&mut l.messages);
                 } else if l.session.photos().is_empty() {
@@ -638,16 +641,31 @@ impl Editor {
                         self.document.edit.save_state_mut().protect(why.clone());
                         self.document.lightroom_notice = why;
                     }
-                    // Masks made from a selection are read from the catalog now. One
-                    // that cannot be leaves the edit and its History as they are, but
-                    // protected: saving it would lose the mask for good.
+                    // Masks made from a selection, and AI Remove's patches, are read from
+                    // the catalog now. One that cannot be leaves the edit and its History
+                    // as they are, but protected: saving it would lose it for good.
                     let refs: Vec<(String, u32, u32)> =
                         crate::model::masks::bitmap_refs(&self.document.edit.recipe().masks)
                             .map(|(id, w, h)| (id.to_owned(), w, h))
                             .collect();
-                    if let Err(e) = crate::storage::mask_assets::ensure_shaped(
+                    // An AI Remove spot's patch likewise.
+                    let checked = crate::storage::mask_assets::ensure_shaped(
                         refs.iter().map(|(id, w, h)| (id.as_str(), *w, *h)),
-                    ) {
+                    )
+                    .and_then(|()| {
+                        // Read and checked as mask rasters are, not decoded: that
+                        // waits for the first render, off this thread.
+                        crate::storage::mask_assets::ensure_patches(
+                            self.document
+                                .edit
+                                .recipe()
+                                .retouch
+                                .iter()
+                                .filter_map(|op| op.patch.as_ref())
+                                .map(|p| (p.id.as_str(), p.width, p.height)),
+                        )
+                    });
+                    if let Err(e) = checked {
                         self.document.edit.save_state_mut().protect(e.to_string());
                         self.document.lightroom_notice = e.to_string();
                     }

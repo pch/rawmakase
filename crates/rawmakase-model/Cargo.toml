@@ -16,6 +16,8 @@ rawmakase-protocol = { path = "../rawmakase-protocol", version = "0.1.0" }
 rawmakase-tiff = { path = "../rawmakase-tiff", version = "0.1.0" }
 anyhow.workspace = true
 flate2.workspace = true
+# AI Remove patches keep camera RGB at half precision (`storage::mask_assets`).
+half = "2.7"
 # Names a look's RGB table, as Adobe names tables (`Table_<md5>`).
 md-5.workspace = true
 sha2.workspace = true

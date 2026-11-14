@@ -259,7 +259,7 @@ impl Weigher {
                             Shape::Luminance(*low, *high, *falloff)
                         }
                         MaskShape::Bitmap(b) => Shape::Bitmap(
-                            rawmakase_model::storage::mask_assets::resolve(&b.id)
+                            rawmakase_model::storage::mask_assets::resolve_coverage(&b.id)
                                 .ok()
                                 .filter(|r| (r.width, r.height) == (b.width, b.height)),
                         ),

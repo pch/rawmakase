@@ -1,11 +1,14 @@
-//! The raster coverage that bitmap mask components refer to by content ID.
+//! The rasters recipes refer to by content ID: the coverage of bitmap mask
+//! components, and the camera RGB of AI Remove patches.
 //!
 //! Recipes carry only IDs. The pixels live in one process-wide store: a generated
 //! selection is registered here the moment it exists and is *unsaved* until a
 //! catalog write has stored it; anything else is read through the catalog the app
 //! installed as the [`AssetLoader`] the first time it is needed and may be evicted
 //! again, so saved history never pins every decoded raster. Rendering, previews and
-//! exports all read through [`resolve`], so no job has to carry rasters along.
+//! exports all read through [`resolve_coverage`] and [`resolve_patch`], which
+//! check that what they find is the kind of raster asked for, so no job has to
+//! carry rasters along.
 //!
 //! The store knows nothing of catalogs, renderers or inference: the model crate owns
 //! only the values and their budget.
@@ -16,8 +19,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 /// Most pixels along either axis of one raster.
 pub const MAX_SIDE: u32 = 4096;
-/// Most decoded bytes of one raster (8-bit coverage).
-pub const MAX_RASTER_BYTES: usize = 16 << 20;
+/// Most decoded bytes of one raster: a patch of [`MAX_PATCH_SIDE`]² pixels of
+/// three half-precision samples, over 8-bit coverage's 16 MiB.
+pub const MAX_RASTER_BYTES: usize = 24 << 20;
+/// Most pixels along either side of an AI Remove patch.
+pub const MAX_PATCH_SIDE: u32 = crate::model::retouch::MAX_PATCH_SIDE;
 /// Most decoded bytes the store keeps of rasters that are saved and can be read
 /// again. Unsaved rasters are never evicted.
 const CACHE_BYTES: usize = 256 << 20;
@@ -31,12 +37,34 @@ pub enum AssetError {
     Missing(String),
     /// A raster is stored but is damaged or is not what the recipe describes.
     Corrupt(String, String),
+    /// An AI Remove patch's pixels are missing.
+    PatchMissing(String),
+    /// An AI Remove patch's pixels are damaged or not what the spot describes.
+    PatchCorrupt(String, String),
+}
+impl AssetError {
+    /// The same failure, said of a patch.
+    fn of_patch(self) -> Self {
+        match self {
+            Self::Missing(id) => Self::PatchMissing(id),
+            Self::Corrupt(id, why) => Self::PatchCorrupt(id, why),
+            other => other,
+        }
+    }
 }
 impl std::fmt::Display for AssetError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Missing(id) => write!(f, "A mask's data ({}) is missing", short(id)),
             Self::Corrupt(id, why) => write!(f, "A mask's data ({}) is damaged: {why}", short(id)),
+            Self::PatchMissing(id) => {
+                write!(f, "An AI Remove spot's pixels ({}) are missing", short(id))
+            }
+            Self::PatchCorrupt(id, why) => write!(
+                f,
+                "An AI Remove spot's pixels ({}) are damaged: {why}",
+                short(id)
+            ),
         }
     }
 }
@@ -83,22 +111,66 @@ fn lock() -> std::sync::MutexGuard<'static, Store> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Checks that `bitmap` is a coverage raster within the limits.
-pub fn validate_raster(bitmap: &Bitmap) -> Result<()> {
+/// What a stored raster is, by its samples.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// A mask's coverage: one 8-bit channel.
+    Coverage,
+    /// An AI Remove patch: three channels of little-endian f16, every sample
+    /// finite, at most [`MAX_PATCH_SIDE`] along either side.
+    Patch,
+}
+impl Kind {
+    /// What `bitmap`'s samples say it is, whether or not it is valid.
+    fn of(bitmap: &Bitmap) -> Option<Self> {
+        match (bitmap.channels, bitmap.depth) {
+            (1, 1) => Some(Self::Coverage),
+            (3, 2) => Some(Self::Patch),
+            _ => None,
+        }
+    }
+}
+
+/// Checks that `bitmap` is a raster of `kind` within the limits.
+pub fn validate_kind(bitmap: &Bitmap, kind: Kind) -> Result<()> {
+    let (channels, depth, side, name) = match kind {
+        Kind::Coverage => (1, 1, MAX_SIDE, "A mask raster"),
+        Kind::Patch => (3, 2, MAX_PATCH_SIDE, "An AI Remove patch"),
+    };
     ensure!(
-        bitmap.channels == 1 && bitmap.depth == 1,
-        "A mask raster is 8-bit coverage"
+        bitmap.channels == channels && bitmap.depth == depth,
+        match kind {
+            Kind::Coverage => "A mask raster is 8-bit coverage",
+            Kind::Patch => "An AI Remove patch is three channels of half-precision camera RGB",
+        }
     );
     ensure!(
-        (1..=MAX_SIDE).contains(&bitmap.width) && (1..=MAX_SIDE).contains(&bitmap.height),
-        "A mask raster is at most {MAX_SIDE} pixels along either side"
+        (1..=side).contains(&bitmap.width) && (1..=side).contains(&bitmap.height),
+        "{name} is at most {side} pixels along either side"
     );
+    let len = bitmap.width as usize * bitmap.height as usize * channels as usize * depth as usize;
     ensure!(
-        bitmap.data.len() == bitmap.width as usize * bitmap.height as usize
-            && bitmap.data.len() <= MAX_RASTER_BYTES,
-        "A mask raster has the wrong size"
+        bitmap.data.len() == len && bitmap.data.len() <= MAX_RASTER_BYTES,
+        "{name} has the wrong size"
     );
+    if kind == Kind::Patch {
+        ensure!(
+            bitmap
+                .data
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .all(|s| u16::from_le_bytes(*s) & 0x7c00 != 0x7c00),
+            "An AI Remove patch holds a sample that isn't a finite number"
+        );
+    }
     Ok(())
+}
+
+/// Checks that `bitmap` is a raster of either kind within the limits.
+pub fn validate_raster(bitmap: &Bitmap) -> Result<()> {
+    let kind = Kind::of(bitmap).unwrap_or(Kind::Coverage);
+    validate_kind(bitmap, kind)
 }
 
 /// Registers a new raster as unsaved and returns its content ID. Registering the
@@ -193,23 +265,66 @@ pub fn resolve(id: &str) -> Result<Arc<Bitmap>, AssetError> {
     Ok(out)
 }
 
+/// The raster stored under `id`, checked to be `kind`: a raster of another
+/// kind is as damaged as a missing one.
+fn resolve_kind(id: &str, kind: Kind) -> Result<Arc<Bitmap>, AssetError> {
+    let raster = resolve(id)?;
+    validate_kind(&raster, kind).map_err(|e| AssetError::Corrupt(id.to_string(), e.to_string()))?;
+    Ok(raster)
+}
+
+/// A mask's coverage stored under `id`: 8-bit, one channel.
+pub fn resolve_coverage(id: &str) -> Result<Arc<Bitmap>, AssetError> {
+    resolve_kind(id, Kind::Coverage)
+}
+
+/// An AI Remove patch stored under `id`: three channels of finite f16, at most
+/// [`MAX_PATCH_SIDE`] along either side.
+pub fn resolve_patch(id: &str) -> Result<Arc<Bitmap>, AssetError> {
+    resolve_kind(id, Kind::Patch).map_err(AssetError::of_patch)
+}
+
 /// Makes sure every raster of `refs` (`(id, width, height)` as a mask describes it)
-/// can be provided and is the size the mask says: a stored raster of another size is
-/// as damaged as a missing one, since the mask would render wrongly placed or empty.
+/// can be provided, is coverage and is the size the mask says: a stored raster of
+/// another size is as damaged as a missing one, since the mask would render wrongly
+/// placed or empty.
 pub fn ensure_shaped<'a>(
     refs: impl IntoIterator<Item = (&'a str, u32, u32)>,
 ) -> Result<(), AssetError> {
     for (id, width, height) in refs {
-        let raster = resolve(id)?;
-        if (raster.width, raster.height) != (width, height) {
-            return Err(AssetError::Corrupt(
-                id.to_string(),
-                format!(
-                    "it is {}x{} but the mask describes {width}x{height}",
-                    raster.width, raster.height
-                ),
-            ));
-        }
+        let raster = resolve_coverage(id)?;
+        check_shape(id, &raster, width, height, "the mask")?;
+    }
+    Ok(())
+}
+
+/// Makes sure every patch of `refs` (`(id, width, height)` as a spot describes
+/// it) can be provided, is a patch and is the size the spot says.
+pub fn ensure_patches<'a>(
+    refs: impl IntoIterator<Item = (&'a str, u32, u32)>,
+) -> Result<(), AssetError> {
+    for (id, width, height) in refs {
+        let raster = resolve_patch(id)?;
+        check_shape(id, &raster, width, height, "the spot").map_err(AssetError::of_patch)?;
+    }
+    Ok(())
+}
+
+fn check_shape(
+    id: &str,
+    raster: &Bitmap,
+    width: u32,
+    height: u32,
+    what: &str,
+) -> Result<(), AssetError> {
+    if (raster.width, raster.height) != (width, height) {
+        return Err(AssetError::Corrupt(
+            id.to_string(),
+            format!(
+                "it is {}x{} but {what} describes {width}x{height}",
+                raster.width, raster.height
+            ),
+        ));
     }
     Ok(())
 }
@@ -417,6 +532,46 @@ mod tests {
         assert!(!is_held(&unkept));
         discard_unsaved(&id);
         assert!(is_held(&id));
+
+        // A patch is three channels of finite f16; each kind resolves only as
+        // itself.
+        let samples: Vec<f32> = (0..2 * 2 * 3).map(|i| i as f32 * 0.25).collect();
+        let patch = super::super::patches::encode(2, 2, &samples).unwrap();
+        let patch_id = register(patch.clone()).unwrap();
+        assert!(resolve_patch(&patch_id).is_ok());
+        assert!(ensure_patches([(patch_id.as_str(), 2, 2)]).is_ok());
+        assert!(matches!(
+            ensure_patches([(patch_id.as_str(), 2, 3)]),
+            Err(AssetError::PatchCorrupt(..))
+        ));
+        assert!(matches!(
+            resolve_coverage(&patch_id),
+            Err(AssetError::Corrupt(..))
+        ));
+        assert!(matches!(
+            resolve_patch(&id),
+            Err(AssetError::PatchCorrupt(..))
+        ));
+        assert!(matches!(
+            resolve_patch("sha256:ffff"),
+            Err(AssetError::PatchMissing(..))
+        ));
+        assert!(
+            AssetError::PatchMissing(patch_id)
+                .to_string()
+                .starts_with("An AI Remove spot's pixels")
+        );
+        let mut infinite = patch;
+        infinite.data[0..2].copy_from_slice(&0x7c00u16.to_le_bytes());
+        assert!(register(infinite).is_err());
+        let wide = Bitmap {
+            width: MAX_PATCH_SIDE + 1,
+            height: 1,
+            channels: 3,
+            depth: 2,
+            data: vec![0; (MAX_PATCH_SIDE as usize + 1) * 6],
+        };
+        assert!(register(wide).is_err());
         reset();
     }
 }

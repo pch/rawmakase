@@ -55,8 +55,13 @@ pub(in crate::catalog) const AI_DENOISE: i64 = 5;
 /// setting. Values kept while HDR is off don't raise it. Raised to by the first write
 /// that stores one, as [`LENSFUN`] is.
 pub(in crate::catalog) const HDR: i64 = 6;
+/// The first version that may hold AI Remove spots (an edit, a History state or a
+/// snapshot with a generated patch), which releases before it can't render and
+/// would drop when saving. Raised to by the first write that stores one, as
+/// [`LENSFUN`] is.
+pub(in crate::catalog) const GENERATED: i64 = 7;
 /// The newest version this release opens.
-pub(in crate::catalog) const NEWEST: i64 = HDR;
+pub(in crate::catalog) const NEWEST: i64 = GENERATED;
 /// The newest version the releases before the one engine open.
 #[cfg(test)]
 pub(in crate::catalog) const BEFORE_ONE_ENGINE: i64 = 2;

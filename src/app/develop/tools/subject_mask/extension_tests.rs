@@ -504,6 +504,7 @@ fn an_extensions_failures_and_stale_answers_record_nothing() {
             feather: 0.5,
             opacity: 1.,
             offset: [0.1, 0.],
+            patch: None,
         });
     });
     release(&folder);

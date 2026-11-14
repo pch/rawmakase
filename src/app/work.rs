@@ -30,6 +30,7 @@ pub(in crate::app) enum Kind {
     PreviewBuilds,
     StandIns,
     Selection,
+    AiRemove,
     AiDenoise,
     AiLoupe,
     Auto,
@@ -226,6 +227,24 @@ const WORK: &[Row] = &[
         slows_previews: false,
         pauses_checksums: false,
         stop: Some(|e, _| e.selection.stop()),
+    },
+    // Experimental AI Remove: the shape's card on the photo and the Remove
+    // drawer, and the status line while a request is in flight, until its
+    // answer, error, Cancel, the program's crash or hang, disabling, the
+    // deadline or a new photo ends it. Its worker thread is stopped here; the
+    // request itself is cancelled by `Kind::Extensions`.
+    Row {
+        kind: Kind::AiRemove,
+        running: None,
+        closing: None,
+        status: Some(|e| {
+            e.ai_remove
+                .running()
+                .map(|_| work("ai-remove", "Removing…"))
+        }),
+        slows_previews: false,
+        pauses_checksums: false,
+        stop: Some(|e, _| e.ai_remove.stop()),
     },
     // Detail's AI Denoise status line; its model installer is stopped with it.
     Row {

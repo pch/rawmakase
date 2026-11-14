@@ -26,7 +26,8 @@ use rawmakase_extension_protocol::framing::LineReader;
 use rawmakase_extension_protocol::message::Handles;
 use rawmakase_extension_protocol::method::{
     AppEvent, AppRequest, CommandRun, Controls, Empty, Hello, HelloReply, MaskGenerate,
-    MaskGenerated, MaskSetup, PanelChanged, PanelClicked, PanelOpen, Snapshot,
+    MaskGenerated, MaskSetup, PanelChanged, PanelClicked, PanelOpen, RetouchGenerate,
+    RetouchGenerated, Snapshot,
 };
 use rawmakase_extension_protocol::{ErrorCode, Message, PROTOCOL, RemoteError};
 use serde_json::{Map, Value};
@@ -238,11 +239,17 @@ impl MockHost {
         self.send(&Message::event(&name, params));
     }
 
-    /// The handshake, with no settings, session 1 and folders in the
-    /// system's temporary folder, which it doesn't create.
+    /// The handshake, with [`MockHost::hello_params`].
     pub fn hello(&self) -> Result<HelloReply, RemoteError> {
+        self.hello_with(Self::hello_params())
+    }
+
+    /// What [`MockHost::hello`] sends: no settings, session 1 and folders in
+    /// the system's temporary folder, which it doesn't create. A test that
+    /// needs settings changes these.
+    pub fn hello_params() -> Hello {
         let temp = std::env::temp_dir().join("rawmakase-extension-mock");
-        self.hello_with(Hello {
+        Hello {
             protocol: PROTOCOL,
             app_version: "0.0.0".into(),
             extension: "test.extension".into(),
@@ -251,7 +258,7 @@ impl MockHost {
             data_dir: temp.join("data"),
             cache_dir: temp.join("cache"),
             session: 1,
-        })
+        }
     }
 
     /// The handshake with these parameters.
@@ -379,6 +386,92 @@ impl MockHost {
             memory.contents()[..len.min(memory.contents().len())].to_vec()
         });
         Ok((result, coverage))
+    }
+
+    /// Asks a retouch generator for a region's new pixels and returns its
+    /// answer with the result it wrote, refusing an answer that doesn't
+    /// validate ([`RetouchGenerated::validate`]) as the app does.
+    ///
+    /// As the app does, the mock puts `image` and `coverage` in shared inputs
+    /// of their descriptors' `bytes` (zero after their ends), allocates the
+    /// result, and passes the three in the order their descriptors' handles
+    /// name. A mock serving an `api` below 3 refuses at once with
+    /// [`ErrorCode::InvalidRequest`], as the app never sends this request to
+    /// such a program.
+    pub fn generate_retouch(
+        &self,
+        request: RetouchGenerate,
+        image: &[u8],
+        coverage: &[u8],
+    ) -> Result<(RetouchGenerated, Vec<u8>), RemoteError> {
+        let id = self.send_retouch(request, image, coverage)?;
+        self.wait_retouch(id)
+    }
+
+    /// [`MockHost::generate_retouch`] without waiting: returns the request's
+    /// id for [`MockHost::cancel`] and [`MockHost::wait_retouch`].
+    pub fn send_retouch(
+        &self,
+        request: RetouchGenerate,
+        image: &[u8],
+        coverage: &[u8],
+    ) -> Result<u64, RemoteError> {
+        if self.api < rawmakase_extension_protocol::manifest::RETOUCH_GENERATOR_API {
+            return Err(RemoteError::new(
+                ErrorCode::InvalidRequest,
+                "the app sends retouch requests to API 3 programs only",
+            ));
+        }
+        let failed =
+            |e: io::Error| RemoteError::new(ErrorCode::Unavailable, format!("shared memory: {e}"));
+        let size = |bytes: u64| usize::try_from(bytes).unwrap_or(usize::MAX);
+        let input = |data: &[u8], bytes: u64| {
+            let mut pixels = data.to_vec();
+            pixels.resize(size(bytes).max(data.len()), 0);
+            Memory::input(&pixels).map_err(failed)
+        };
+        let image_memory = input(image, request.image.bytes)?;
+        let coverage_memory = input(coverage, request.coverage.bytes)?;
+        let result_len = size(request.result.bytes);
+        let output = Memory::output(result_len).map_err(failed)?;
+        let mut buffers = [
+            (request.image.handle, &image_memory),
+            (request.coverage.handle, &coverage_memory),
+            (request.result.handle, &output),
+        ];
+        buffers.sort_by_key(|(handle, _)| *handle);
+        let buffers = buffers.map(|(_, memory)| memory);
+        let id = self.next_id();
+        let (method, params) = AppRequest::RetouchGenerate(request).into_parts();
+        send(
+            &self.to_program,
+            &Message::request(id, &method, params),
+            &buffers,
+        )
+        .map_err(|e| RemoteError::new(ErrorCode::Exited, e.to_string()))?;
+        drop((image_memory, coverage_memory));
+        self.outputs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, (output, result_len));
+        Ok(id)
+    }
+
+    /// The reply to a retouch request [`MockHost::send_retouch`] sent, with
+    /// the result the program wrote.
+    pub fn wait_retouch(&self, id: u64) -> Result<(RetouchGenerated, Vec<u8>), RemoteError> {
+        let reply = self.wait(id);
+        let output = self
+            .outputs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id);
+        let answer: RetouchGenerated = decode(reply?)?;
+        answer.validate()?;
+        let result = output.map_or_else(Vec::new, |(memory, len)| {
+            memory.contents()[..len.min(memory.contents().len())].to_vec()
+        });
+        Ok((answer, result))
     }
 
     /// Asks a mask generator to install what it needs.

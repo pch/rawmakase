@@ -900,6 +900,7 @@ impl Editor {
     pub(in crate::app) fn close_document(&mut self) {
         self.messages.document_closed();
         self.selection.clear_document();
+        self.ai_remove.clear_document();
         self.document.close();
         self.preview.clear_document();
         self.presets.clear_document();

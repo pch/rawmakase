@@ -65,6 +65,9 @@ rawmakase-catalog = { path = "crates/rawmakase-catalog", version = "0.1.0" }
 rawmakase-decode = { path = "crates/rawmakase-decode", version = "0.1.0" }
 rawmakase-engine = { path = "crates/rawmakase-engine", version = "0.1.0" }
 rawmakase-export = { path = "crates/rawmakase-export", version = "0.1.0" }
+# Extensions' secret settings (src/platform/credentials.rs): the system's
+# credential store, behind each platform's store below.
+keyring-core = "1"
 # Installed extensions, for `rawmakase extensions`, and the bundled MCP
 # program `rawmakase mcp` runs.
 rawmakase-extensions = { path = "crates/rawmakase-extensions", version = "0.1.0" }
@@ -118,6 +121,10 @@ fastframe-theme = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0",
 
 # Native quit handling and display color management (src/platform/).
 [target.'cfg(target_os = "macos")'.dependencies]
+# Extensions' secret settings (src/platform/credentials.rs): the login keychain.
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+# Its errors' status codes, to tell a refused keychain from a missing one.
+security-framework = "3.7"
 objc2.workspace = true
 # The title bar's event monitor (src/platform/titlebar.rs).
 block2 = "0.6"
@@ -143,11 +150,17 @@ rustix = { version = "1.1", features = ["fs", "process", "system"] }
 # the color-management protocol on winit's own connection. winit and
 # smithay-client-toolkit build these already; `staging` adds the protocol.
 [target.'cfg(target_os = "linux")'.dependencies]
+# Extensions' secret settings (src/platform/credentials.rs): the Secret
+# Service over D-Bus, in Rust, on the zbus and async-io the title bar builds.
+zbus-secret-service-keyring-store = { version = "1", features = ["rt-async-io-crypto-rust"] }
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 
 [target.'cfg(windows)'.dependencies]
+# Extensions' secret settings (src/platform/credentials.rs): the Credential
+# Manager.
+windows-native-keyring-store = "1"
 # Win32_Storage_FileSystem and Win32_System_WindowsProgramming: the drive
 # type of a volume, for whether it has a Recycle Bin (src/platform/trash/
 # windows.rs); rawmakase-fs builds both already.

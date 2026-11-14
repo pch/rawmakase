@@ -13,6 +13,8 @@
 //!   (`rawmakase mcp`), unless its extension is disabled.
 //! - [`session`]: starting a program in a process group or job object, the
 //!   message channel to it, request deadlines and ending it.
+//! - [`secrets`]: where secret settings' values are kept, never in
+//!   `extensions.json`.
 //! - [`shm`]: the shared memory of the app's request buffers, leased against
 //!   the budgets, and passing its handles to the program.
 //!
@@ -24,6 +26,7 @@ pub mod external;
 pub mod github;
 pub mod package;
 mod process;
+pub mod secrets;
 pub mod session;
 pub mod shm;
 pub mod state;

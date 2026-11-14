@@ -123,6 +123,9 @@ impl Editor {
         for (extension, ticket) in self.selection.take_withdrawn() {
             self.extensions.cancel_mask(&extension, ticket);
         }
+        for (extension, ticket) in self.ai_remove.take_withdrawn() {
+            self.extensions.cancel_retouch(&extension, ticket);
+        }
         // The host answers through the editor, which then can't reach it: it
         // is taken out for the poll, and an inert one stands in.
         let mut host = std::mem::take(&mut self.extensions);
@@ -177,9 +180,16 @@ impl Editor {
                     generator,
                     result,
                 } => self.mask_setup_done(&extension, &generator, result),
+                Outcome::Retouch {
+                    extension,
+                    ticket,
+                    result,
+                    buffers,
+                } => self.retouch_answered(&extension, ticket, result, buffers),
             }
         }
         self.check_mask_requests();
+        self.check_ai_remove();
     }
 
     /// Tells programs what changed since the last frame: the selection, the

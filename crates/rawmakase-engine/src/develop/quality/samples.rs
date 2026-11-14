@@ -64,7 +64,7 @@ pub(crate) fn retouched(
             };
             let image = match ops.is_empty() {
                 true => base.clone(),
-                false => Arc::new(develop::retouch::apply(&base, ops)),
+                false => Arc::new(develop::retouch::apply(&base, ops)?),
             };
             (base, image)
         }

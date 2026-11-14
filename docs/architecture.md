@@ -87,7 +87,7 @@ the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
 | `rawmakase-mcp` (`extensions/mcp`) | The bundled MCP extension: its manifest and its program `rawmakase-mcp`, an MCP server that is a client of the control protocol, which `rawmakase mcp` runs | Every workspace crate but `rawmakase-protocol` and `rawmakase-ctl` |
 | `rawmakase-extension-protocol` | What the app and extensions agree on ([extensions](extensions/overview.md)): the manifest and its schema, the protocol's messages, error codes and bounded line framing, host-drawn controls | Every other workspace crate |
 | `rawmakase-extension` | The SDK extension programs are written with: the channel, the run loop, handler traits, receiving and mapping the buffers the app passes (`shm`), a mock host for tests that passes them as the app does | Everything but the extension protocol |
-| `rawmakase-extensions` | The extension host: manifests, `.rmext` packages, installation from a file or GitHub, `extensions.json`, bundled discovery, starting programs in a process group or job object, sessions with deadlines and bounded queues, request buffers in shared memory with their leases and handle passing (`shm`), and running an externally launched adapter's program in place of its launcher (`external`) | Any photo, edit, catalog, renderer, decoder or GUI crate |
+| `rawmakase-extensions` | The extension host: manifests, `.rmext` packages, installation from a file or GitHub, `extensions.json`, the interface secret settings are kept behind (`secrets`), bundled discovery, starting programs in a process group or job object, sessions with deadlines and bounded queues, request buffers in shared memory with their leases and handle passing (`shm`), and running an externally launched adapter's program in place of its launcher (`external`) | Any photo, edit, catalog, renderer, decoder or GUI crate |
 | `cargo-rawmakase` (`tools/`) | The extension author's tool: `new`, `build`, `package`, `release`, `dev` | The same |
 
 The extension crates know no photo, edit or catalog: what an extension's
@@ -160,6 +160,31 @@ clicks and a box with `app::extensions::viewer_input`, as do commands that
 take viewer input (`app::extensions::command_input`), whose input is sent with
 the target read at the same moment.
 
+Experimental AI Remove is the same shape for retouch generators
+(`[[retouch-generator]]`, `api = 3`): `develop::tools::ai_remove` owns the one
+request, its busy state, its guard and its one History step ("AI Remove"), and
+`app::extensions::retouch_generator` owns the requests and their buffers. A
+request captures the photo's load, the decoded image, the recipe, the AI Denoise
+source and the extension's lifecycle count once; on its own worker thread the
+engine's `develop::retouch::rendition` renders the region around the painted
+area through a fixed 8-bit rendition it captures with its inverse, and after the
+reply inverts the answer into a patch of linear camera RGB registered unsaved in
+the asset store. The result applies only if the guard re-read then still holds
+(the load, file, catalog photo, decoded image, AI Denoise source, noise
+reduction, and `subject_mask`'s content digest of spots, red eye and their panel
+switches); otherwise it is dropped and never asked again, since each request is a
+paid call. A spot is appended, so other edits made meanwhile survive. The patch is
+the core's: it renders, and is saved, whether the extension is there or not. The
+user is asked once per extension, kept in `extensions.json`, before a generator
+that declares `uploads = true` is sent anything.
+
+An extension's secret settings (`control = "secret"`) are kept in the system's
+credential store (`platform::credentials`, behind the host crate's `SecretStore`),
+never in `extensions.json`, which records only which are set. `app::extensions::secrets`
+reads and writes them on a thread of its own, since a store may wait for the user to
+unlock it, and sends loaded values to the program in `hello` and
+`setting-changed`; the page, errors, logs and diagnostics never see them.
+
 No value, catalog or rendering crate can reach `rawmakase-inference` or
 `rawmakase-selection`, and the app never reaches the selection models or the
 remote client, so saved masks render without any inference installed and a photo with AI Denoise renders from a
@@ -208,7 +233,7 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `catalog_session` | The open catalog and the lists read from it, with no window: opening it, reading it again, writes that must keep those lists in step (ratings, descriptive metadata, collections, virtual copies and their names, stacks), behind private fields: the lists and catalog are read through accessors, and the writes that change no list (edits, History, snapshots, camera sequences) are methods of their own, the background reads that fill in capture times and photo info for photos added from folders, and the throttled checksum reader, whose results a structural generation guards. Above `photo` and `raw`, as reading a RAW's info opens it; `app::library` decides which photos are online and shows the lists | `mod.rs`, `backfill.rs`, `background.rs`, `checksums.rs`, `stacks.rs` |
 | `lr_develop` | Best-effort conversion of Lightroom's serialized Develop settings into a recipe, through XMP; below the catalog, so edit resolution can use it | `lr_develop.rs` |
 | `app` | Desktop editor state, UI, dialogs, background task coordination and presentation | Components described below |
-| `platform` | OS integration: the Linux GVFS filesystem bridge, drives, the file manager, the browser, the system Trash file operations get (`trash::SystemTrash`, failing closed, and whether a drive has one; no policy), and the display's color management (macOS surface tagging and EDR, the Windows display profile), and whether a RAW on a network volume is read for its embedded preview alone (`preview_reads`) | `network.rs`, `volume.rs`, `reveal.rs`, `web.rs`, `trash.rs`, `display.rs`, `preview_reads.rs` |
+| `platform` | OS integration: the system's credential store extensions' secret settings are kept in (`credentials.rs`, through `keyring-core`), the Linux GVFS filesystem bridge, drives, the file manager, the browser, the system Trash file operations get (`trash::SystemTrash`, failing closed, and whether a drive has one; no policy), and the display's color management (macOS surface tagging and EDR, the Windows display profile), and whether a RAW on a network volume is read for its embedded preview alone (`preview_reads`) | `network.rs`, `volume.rs`, `reveal.rs`, `web.rs`, `trash.rs`, `display.rs`, `preview_reads.rs` |
 | `diagnostics` | The system report a bug report asks for (Report an Issue…, `rawmakase system-info`): this build, the system probed once per process and what the window knew, as plain snapshots, with no path, user, file, catalog or profile name | `diagnostics.rs` |
 | `updates` | Release checks and self-update through fastframe-update; the notice itself is in `app` | `updates.rs` |
 | `ai_denoise` | AI Denoise's service, shared by the desktop app and the command line: the queue, the worker and its ONNX session, job keys, the finished-result lookup, `AiBase` for export; `CommandLine` for `render` and `render-batch`, and the `rawmakase denoise` development command. No egui and no `app`: the open photo's result and the Loupe's loader are `app::develop::ai_denoise`'s, and the app passes the user's cache in | `mod.rs`, `command_line.rs`, `bench.rs` |
@@ -493,12 +518,16 @@ Some features span several owners; each module's docs describe its part:
   path: sessions, autosave, Sync and folder jobs carry it, and behaviour that
   only makes sense for a file (its size, revealing it, the path `session.json`
   keeps) matches on `CatalogLocation::File`.
-- Raster masks (`MaskShape::Bitmap`) hold only a content ID. The pixels live in
-  `model::storage::mask_assets`, a process-wide store: a generated raster is
+- Raster masks (`MaskShape::Bitmap`) and AI Remove patches (`RetouchOp::patch`)
+  hold only a content ID. The pixels live in
+  `model::storage::mask_assets`, a process-wide store that resolves each kind as
+  itself (`resolve_coverage`, `resolve_patch`): a generated raster is
   *unsaved* until a catalog write stores it, saved ones are read back through the
   loader the app installs from the open catalog (`Catalog::mask_asset_loader`) and
   can be evicted. Rendering resolves rasters through it and fails, never renders an
-  empty mask, when one cannot be provided. `edit_rows` stores a save's unsaved
+  empty mask or a spot without its patch, when one cannot be provided; the retouch
+  layer resolves patches for every caller (preview, export, Library previews,
+  measurement). `edit_rows` stores a save's unsaved
   rasters in the same transaction as the rows naming them and rejects an edit
   whose references do not exist; rasters are never collected. Catalogs that keep
   them are format version 2 or later (see [catalogs](catalogs.md)).
@@ -633,12 +662,14 @@ are `pub(crate)`, and the desktop app exposes only `app::run`, so the
 compiler reports what in them nothing uses. The compatibility surface is the saved data: recipe and
 preset envelopes are versioned and migrated by `model::saved_format` (written as
 version 11, which releases before the one engine refuse, 12 for a recipe naming a
-Lensfun lens, which releases before Lensfun refuse, or 13 for one with AI Denoise
-not at its default, which releases before AI Denoise refuse); a catalog opens at
-versions 1 to 5 (others are refused, the file left unchanged), is upgraded to 3
-before a recipe is stored in it, to 4 before a Lensfun choice is and to 5 before an
-AI Denoise setting is, and its schema only ever gains tables, applied idempotently
-on open; see [catalogs](catalogs.md#sqlite-format-versions-1-to-5). An AI Denoise
+Lensfun lens, which releases before Lensfun refuse, 13 for one with AI Denoise
+not at its default, which releases before AI Denoise refuse, 14 for one with HDR
+on, or 15 for one holding an AI Remove spot, which releases before AI Remove
+refuse); a catalog opens at versions 1 to 7 (others are refused, the file left
+unchanged), is upgraded to 3 before a recipe is stored in it, to 4 before a Lensfun
+choice is, to 5 before an AI Denoise setting is, to 6 before an HDR edit is and to 7
+before an AI Remove spot is, and its schema only ever gains tables, applied
+idempotently on open; see [catalogs](catalogs.md#sqlite-format-versions-1-to-7). An AI Denoise
 result is never part of the saved data: the recipe names no model, and results are
 cached under a key holding the model's SHA-256 and the adapter version.
 

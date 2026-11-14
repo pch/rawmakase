@@ -580,6 +580,7 @@ fn spots_changed_while_selecting_invalidate_the_result() {
             feather: 0.5,
             opacity: 1.,
             offset: [0.1, 0.],
+            patch: None,
         });
     });
     finish(e, g, Ok(generated(60)));

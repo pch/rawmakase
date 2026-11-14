@@ -8,13 +8,13 @@ use rawmakase_extension::protocol::controls::{Control, ControlKind};
 use rawmakase_extension::protocol::message::NeedsSetup;
 use rawmakase_extension::protocol::method::{
     AppEvent, AppRequest, CommandRun, DeviceState, Empty, EmptyMask, Hello, MaskGenerate,
-    MaskGenerated, Operation, SettingChanged, SettingsChange, SourceReport, SourceStarted,
-    SourceStopped,
+    MaskGenerated, Operation, RetouchGenerate, RetouchGenerated, SettingChanged, SettingsChange,
+    SourceReport, SourceStarted, SourceStopped,
 };
 use rawmakase_extension::protocol::viewer::{Bounds, Click, MAX_CLICKS, ViewerInput};
 use rawmakase_extension::{
     Context, ControlAdapter, ErrorCode, Extension, Host, MaskAsk, MaskGenerator, Panel,
-    RemoteError, ServeOptions, Source,
+    RemoteError, RetouchAsk, RetouchGenerator, ServeOptions, Source,
 };
 use serde_json::{Value, json};
 use std::sync::mpsc;
@@ -806,5 +806,162 @@ fn a_request_off_the_mask_contract_never_reaches_the_handler() {
     // The contract's own shape still gets through.
     host.generate_mask(mask_request(None), &image()).unwrap();
     requests.recv_timeout(Duration::from_secs(10)).unwrap();
+    host.finish().unwrap();
+}
+
+/// A retouch generator that fills the painted pixels with the mean of the
+/// unpainted ones, and refuses when the settings say so.
+struct Fill;
+impl RetouchGenerator for Fill {
+    fn generate(
+        &mut self,
+        cx: &Context,
+        ask: RetouchAsk<'_>,
+    ) -> Result<RetouchGenerated, RemoteError> {
+        if cx.settings().get("key").and_then(Value::as_str) == Some("") {
+            return Err(RemoteError::new(ErrorCode::NeedsSetup, "Set an API key"));
+        }
+        let (image, coverage) = (&ask.request.image, &ask.request.coverage);
+        let (w, h) = (image.width as usize, image.height as usize);
+        let (mut sum, mut n) = ([0u64; 3], 0u64);
+        for y in 0..h {
+            for x in 0..w {
+                if ask.coverage[y * coverage.stride as usize + x] == 0 {
+                    let pixel = &ask.image[y * image.stride as usize + x * 3..][..3];
+                    for (total, v) in sum.iter_mut().zip(pixel) {
+                        *total += u64::from(*v);
+                    }
+                    n += 1;
+                }
+            }
+        }
+        let mean = sum.map(|s| (s / n.max(1)) as u8);
+        for y in 0..h {
+            for x in 0..w {
+                let i = y * ask.request.result.stride as usize + x * 3;
+                let painted = ask.coverage[y * coverage.stride as usize + x] > 0;
+                let from = &ask.image[y * image.stride as usize + x * 3..][..3];
+                ask.result[i..i + 3].copy_from_slice(if painted { &mean } else { from });
+            }
+        }
+        Ok(RetouchGenerated {
+            model: "mean-fill".into(),
+            model_key: "mean-fill/1".into(),
+        })
+    }
+}
+
+/// A retouch request for a 64x48 region, as the app will send it: the image
+/// in handle 2, the coverage in 0 and the result in 1, so the order the
+/// handles travel in is the descriptors', not the fields'.
+fn retouch_request() -> RetouchGenerate {
+    let mut image = mask_request(None).image;
+    image.region.rect = [0.25, 0.25, 0.5, 0.5];
+    image.handle = 2;
+    let coverage = Buffer {
+        handle: 0,
+        bytes: 64 * 48,
+        stride: 64,
+        channels: 1,
+        meaning: Meaning::Coverage,
+        ..image
+    };
+    let result = Buffer {
+        handle: 1,
+        access: Access::Write,
+        ..image
+    };
+    RetouchGenerate {
+        generator: "remove".into(),
+        image,
+        coverage,
+        result,
+        image_key: "0123456789abcdef".into(),
+    }
+}
+
+#[test]
+fn a_retouch_generator_writes_its_result_from_checked_requests() {
+    let _mapping = mapping();
+    let host = MockHost::start_with_options(
+        Extension::new().retouch_generator("remove", Fill),
+        ServeOptions { api: 3 },
+        |_, _| Ok(Value::Null),
+    );
+    let mut settings = serde_json::Map::new();
+    settings.insert("key".into(), json!(""));
+    let hello = host
+        .hello_with(Hello {
+            settings,
+            ..MockHost::hello_params()
+        })
+        .unwrap();
+    assert_eq!(hello.implements, ["retouch-generator/remove"]);
+    // The left half painted.
+    let coverage: Vec<u8> = (0..48usize)
+        .flat_map(|_| (0..64usize).map(|x| if x < 32 { 255 } else { 0 }))
+        .collect();
+    let error = host
+        .generate_retouch(retouch_request(), &image(), &coverage)
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::NeedsSetup);
+    host.event(AppEvent::SettingChanged(SettingChanged {
+        id: "key".into(),
+        value: json!("k"),
+    }));
+    let (answer, result) = host
+        .generate_retouch(retouch_request(), &image(), &coverage)
+        .unwrap();
+    assert_eq!(answer.model, "mean-fill");
+    let source = image();
+    for y in 0..48usize {
+        for x in 0..64usize {
+            let i = (y * 64 + x) * 3;
+            if x >= 32 {
+                assert_eq!(result[i..i + 3], source[i..i + 3], "{x},{y}");
+            } else {
+                assert_eq!(result[i + 1..i + 3], [7, 9], "{x},{y}");
+            }
+        }
+    }
+    // Off the contract, the handler is never called.
+    let mut sideways = retouch_request();
+    sideways.coverage.access = Access::Write;
+    assert_eq!(
+        host.generate_retouch(sideways, &image(), &coverage)
+            .unwrap_err()
+            .code,
+        ErrorCode::InvalidRequest
+    );
+    let mut other = retouch_request();
+    other.generator = "inpaint".into();
+    assert_eq!(
+        host.generate_retouch(other, &image(), &coverage)
+            .unwrap_err()
+            .code,
+        ErrorCode::InvalidRequest
+    );
+    host.finish().unwrap();
+}
+
+#[test]
+fn a_program_serving_api_2_refuses_a_retouch_request() {
+    let _mapping = mapping();
+    let host = MockHost::start_with_options(
+        Extension::new().retouch_generator("remove", Fill),
+        ServeOptions { api: 2 },
+        |_, _| Ok(Value::Null),
+    );
+    host.hello().unwrap();
+    // The mock refuses to send it, as the app does.
+    let error = host
+        .generate_retouch(retouch_request(), &image(), &[0; 64 * 48])
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    // Sent anyway, without handles, the program refuses it too.
+    let id = host.send_request(AppRequest::RetouchGenerate(retouch_request()));
+    let error = host.wait(id).unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    assert!(error.message.contains("api 3"), "{error}");
     host.finish().unwrap();
 }
