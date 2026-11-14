@@ -517,7 +517,10 @@ Raw's SDR one ([record](records/hdr-stage1-results.md#masks)):
 - **Saturation** from 0 to +50, overlapping masks added: Camera Raw's HDR mask
   Saturation, which keeps a colour's value and hue and raises its HSV saturation as a
   power of itself, s^(1 − 0.74 k^1.4) at Saturation k, at every brightness
-  (`masks::local::saturate_hdr`). The SDR rendition keeps SDR's Oklab operator.
+  (`masks::local::saturate_hdr`). Below 0, down to −100, Camera Raw's blends each
+  channel of linear ProPhoto toward the colour's HSL lightness, the mean of its largest
+  and smallest channels, by 1 + Saturation, at every brightness
+  (`masks::local::desaturate_hdr`). The SDR rendition keeps SDR's Oklab operator.
 - **Sharpness and Noise**: SDR's operators on the master's encoded values, as global
   sharpening is; they change detail, not tone.
 - **Whites**: Camera Raw's HDR mask Whites, a gain over brightness of one measured
@@ -526,20 +529,22 @@ Raw's SDR one ([record](records/hdr-stage1-results.md#masks)):
   SDR's curve falls.
 
 Blacks and Hue in an active mask refuse the master by name ("A mask's
-Blacks …"), and so does Saturation below 0 or above +50. Camera Raw's HDR mask Blacks
+Blacks …"), and so does Saturation above +50. Camera Raw's HDR mask Blacks
 −50 brightens light above white (+0.39 stop at 16 times) and crushes the shadows harder
 than its SDR one. SDR's mask Saturation brightens saturated colours (×1.11 in value at
 +50, Camera Raw's ×1.004), which white's clip hides in SDR; the master's own operator
-misses above white at +100 on the colour patches and at −50. Hue is SDR's Oklab
+misses above white at +75 and +100 on six photos. Hue is SDR's Oklab
 rotation, further from Camera Raw above white than the SDR rendition is below it. Highlights has no HDR rendering
 globally. A mask's Clarity renders where, with the photo's own and a look's, every
 pixel stays from 0 to +50, the global slider's range: it adds to the photo's in the
 global slider's stage. The check is conservative, taking each mask's Clarity at its
-Amount as reaching every pixel. A mask's Dehaze renders from 0 to +60, overlapping
-masks added, and up to +100 with the photo's own: it adds to the photo's in the global
-slider's stage too. Negative mask Dehaze is refused: at −30 the master is further from
-Camera Raw than the SDR rendition (0.198 against 0.184 stop on six photos), and so is
-+100 (0.479 against 0.459 below white). A masked
+Amount as reaching every pixel. A mask's Dehaze renders from 0 up to +100 with the
+photo's own, overlapping masks added: it adds to the photo's in the global slider's
+stage too, and above +60 the master's is a little stronger, growing to 1.1 times at
++100 (`scene_tone::hdr_mask_dehaze`), as Camera Raw's mask Dehaze is stronger than its
+global slider; past +100 the haze fraction continues along its last segment
+(`haze::omega_hdr`). Negative mask Dehaze is refused: at −30 the master is further from
+Camera Raw than the SDR rendition (0.198 against 0.184 stop on six photos). A masked
 master renders on the CPU.
 
 ## What is refused
@@ -549,7 +554,7 @@ something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation below 50%, a point curve (the master's or a
 channel's) whose last point is left of white and which, continued from it, passes 1.06
 at white in the curve's encoding (`hdr_curve::LEFT_END_MEASURED`), Clarity beyond ±50, Dehaze below −50, a darkening vignette's Highlights,
-a mask's Blacks, Hue or Highlights, a mask's Saturation outside 0 to +50, a mask's Clarity outside 0 to +50 with the photo's own, a mask's Dehaze outside 0 to +60, a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
+a mask's Blacks, Hue or Highlights, a mask's Saturation above +50, a mask's Clarity outside 0 to +50 with the photo's own, a mask's negative Dehaze or Dehaze above +100 with the photo's own, a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
 which the look sets, …"; Adobe Vivid's Clarity +10 renders), and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
 asked for.

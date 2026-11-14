@@ -1321,11 +1321,32 @@ mod tests {
                 );
             }
         }
+        // Negative Saturation renders, toward the colour's HSL lightness
+        // (`masks::local::desaturate_hdr`): the coloured patch loses most of its
+        // channels' spread, and the gray patches keep their light, above white too.
+        let desaturated = render(&everywhere(LocalAdjust {
+            saturation: -0.6,
+            ..Default::default()
+        }))?;
+        let spread = |p: [f32; 3]| {
+            p.into_iter().fold(f32::MIN, f32::max) - p.into_iter().fold(f32::MAX, f32::min)
+        };
+        let (p, q) = (at(&desaturated, 1), at(&plain, 1));
+        assert!(spread(p) < 0.6 * spread(q), "{p:?} {q:?}");
+        for column in [0, 3, 4] {
+            let (p, q) = (at(&desaturated, column), at(&plain, column));
+            assert!(
+                p.iter()
+                    .zip(&q)
+                    .all(|(a, b)| (a - b).abs() <= 1e-3 * b.max(0.05)),
+                "{column}: {p:?} {q:?}"
+            );
+        }
         for (name, adjust) in [
             (
                 "Saturation",
                 LocalAdjust {
-                    saturation: -0.3,
+                    saturation: 0.6,
                     ..Default::default()
                 },
             ),
