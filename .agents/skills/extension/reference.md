@@ -300,10 +300,17 @@ fn watch(host: &Host, scope: &AtomicU64, folder: &Path) {
                             let _ = host.notify(Level::Warning, &format!("{}: {:?}", refused.path.display(), refused.reason));
                         }
                     }
-                    // The scope stopped, or the app stayed busy for a minute:
-                    // report the files again in the next scope or pass.
-                    Err(e) if matches!(e.code, ErrorCode::NotAdmitted | ErrorCode::Busy) => break,
-                    Err(_) => return, // The session ended.
+                    // The session ended: nothing more can be reported.
+                    Err(e) if e.code == ErrorCode::Exited => return,
+                    // The scope stopped, the app stayed busy, the files couldn't
+                    // be added or the answer was late: report them again next
+                    // pass, which is harmless for any that were added.
+                    Err(e) => {
+                        if !matches!(e.code, ErrorCode::NotAdmitted | ErrorCode::Busy) {
+                            let _ = host.notify(Level::Warning, &e.message);
+                        }
+                        break;
+                    }
                 }
             }
         }

@@ -271,9 +271,13 @@ impl Host {
     /// files, and whether the last one added is shown.
     ///
     /// While other work holds the catalog (a folder being added, a batch
-    /// edit, another report), the app answers [`ErrorCode::Busy`]: this tries
-    /// again every quarter of a second, for up to a minute, and then returns
-    /// that error. A report in a scope that has stopped is
+    /// edit, another report), the app answers [`ErrorCode::Busy`] at once:
+    /// this tries again every quarter of a second, and returns that error
+    /// once a minute has passed. A report the app takes is waited for as
+    /// any request is, for up to a minute more while its files are added;
+    /// past that it is cancelled and [`ErrorCode::Deadline`] returned, and
+    /// it adds nothing unless its write had begun. The longest this waits
+    /// is therefore about two minutes. A report in a scope that has stopped is
     /// [`ErrorCode::NotAdmitted`]. Reporting a file again is harmless: one
     /// already in the catalog is listed with its photo and not added twice.
     pub fn report(&self, report: SourceReport) -> Result<Reported, RemoteError> {
