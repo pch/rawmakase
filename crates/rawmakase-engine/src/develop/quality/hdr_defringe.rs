@@ -194,6 +194,26 @@ mod tests {
         r
     }
 
+    /// Gray light, as Black & White's mix leaves the master before Defringe, is left as
+    /// it is beside an edge and above white: Camera Raw 18.7's HDR Defringe changes
+    /// nothing under Black & White (docs/records/hdr-stage1-results.md#defringe).
+    #[test]
+    fn gray_light_is_left_alone() {
+        let w = 40usize;
+        let gray: Vec<[f32; 3]> = (0..w)
+            .map(|x| [if x < 8 { 0.004 } else { 0.3 + x as f32 * 0.1 }; 3])
+            .collect();
+        let mut r = purple();
+        r.effects.defringe = [0.4, 0.3];
+        let mut pixels = gray.clone();
+        apply(&mut pixels, w, &r, 4);
+        for (a, b) in pixels.iter().zip(&gray) {
+            for c in 0..3 {
+                assert!((a[c] - b[c]).abs() <= 1e-5 * b[c].max(1.), "{a:?} {b:?}");
+            }
+        }
+    }
+
     /// A fringe colour beside a sharp change of luminance loses chroma as SDR's
     /// operator removes it; the same colour away from the edge, and a faint one beside
     /// it, keep theirs.

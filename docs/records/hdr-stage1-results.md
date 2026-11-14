@@ -1706,8 +1706,21 @@ are HDR renders without Defringe.
 
 Decision, 2026-11-12: Defringe renders in the HDR master by this model
 ([Defringe](../hdr.md#defringe)): HDR below white 1.06 and above white 1.09, against
-SDR's 1.49. Defringe with Black & White stays refused (the master's pass follows the
-gray mix). RAWmakase's SDR Defringe keeps its selection, whose error is SDR's own.
+SDR's 1.49. Defringe with Black & White stayed refused (the master's pass follows the
+gray mix; since rendered, below). RAWmakase's SDR Defringe keeps its selection, whose error is SDR's own.
+
+**Defringe with Black & White (2026-11-14).** Camera Raw 18.7 rendered Black & White
+with and without Defringe (Purple 8, hues 30–70; Green 4, hues 40–60) on the six photos
+of [the last refusals](#the-last-refusals-on-photos-2026-11-13), HDR limit 4 and SDR (the
+SDR render opens as a gray document, taken to Display P3 through its own profile). In
+HDR, Defringe changes nothing under Black & White: on every photo the largest change of
+any factor-8 block is under 0.005 stop (p99 0.001). In SDR it changes up to 0.16 stop
+(the Z 8; at most 1% of the blocks by more than 0.01 stop), as RAWmakase's SDR Defringe,
+which precedes the gray mix, does. The master's Defringe follows the gray mix and
+changes nothing either: scored by the [acceptance rule](#decisions), Defringe's effect
+over the Black & White render is 0.000 stop off below and above white (SDR 0.001),
+ΔE_ITP added +0.00 against +0.01. Decision, 2026-11-14: Defringe with Black & White
+renders in the master.
 
 ### Masks
 
@@ -2046,7 +2059,7 @@ added HDR / SDR, medians over the photos):
   0.051 or more.
 - **Whites above +50** is unchanged by #1067 below white, where the miss is.
 - A darkening vignette's Highlights, the curves unlike the family (Fujifilm HS20EXR and
-  HS30EXR) and Defringe with Black & White weren't re-measured: the first needs a rule
+  HS30EXR) and Defringe with Black & White (since captured: [Defringe](#defringe)) weren't re-measured: the first needs a rule
   that fits both the tiles and the photos, the others new captures (a batch of B&W with
   and without Defringe, and of mask Dehaze +60 and +100, on the six photos is
   prepared).
@@ -2193,7 +2206,7 @@ Decision, 2026-11-13: these stay refused.
 - Defringe: RAWmakase's SDR selection (by hue and chroma alone) changes smooth and
   dark colour Camera Raw's leaves alone (1.49 relative error in SDR); the HDR master's
   model of Camera Raw's ([Defringe](#defringe)) was fitted on the twelve photos it is
-  scored on. Defringe with Black & White in HDR.
+  scored on.
 - Channel curves' peak on photos: the Z50 II's brightest block is 0.19 stop high, the
   Z 8's 0.11, where their median and p95 pass ([Tone curves](#tone-curves)).
 - Strong Highlights tints of saturated colours above white, and the Z50 II's peak with
