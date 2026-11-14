@@ -815,7 +815,8 @@ PQ and HLG are also written as 16-bit JPEG XL (`export::jxl`), lossy at the Expo
 dialog's quality or, with Lossless checked, lossless (`ExportSettings::jxl_lossy`,
 `render --jxl-quality`). The header names the primaries (JPEG XL's enumeration: P3 is
 11 there, 12 in CICP) and the transfer, with the tone mapping's intensity target
-(10,000 cd/m² for PQ, 1,000 for HLG), and the file is a container with `Exif` and
+([below](#hdr-metadata): the content's brightest light for PQ, 1,000 cd/m² for HLG),
+and the file is a container with `Exif` and
 `xml ` boxes. A file beyond codestream Level 5's limits declares Level 10 in a `jxll`
 box, as cjxl's do: a lossless HDR export (its 16-bit samples need wider modular
 buffers than Level 5 allows), and any export with a side longer than 262,144 pixels
@@ -848,12 +849,51 @@ Gamuts: Rec. 2020, Display P3 and Rec. 709, all D65 (Bradford from the master's 
 Out-of-gamut channels clip at 0, and each channel is held to the HDR limit again in
 the output gamut. The ICC profile (`color_management::hdr_profile`) is ICC v4 with
 the gamut's colorants and a `cicp` tag naming primaries and transfer; EXIF's
-ColorSpace is Uncalibrated. No mastering-display metadata is written.
+ColorSpace is Uncalibrated.
 
 An HDR export needs an edit with HDR on (otherwise it is refused, not exported as
 SDR) and is a TIFF or a JPEG XL (linear light a TIFF only). An SDR export of an HDR edit is its SDR rendition. HDR
 exports go through the export queue as SDR ones do: staged to a temporary file beside
 the target, which a cancel or a failure removes, and committed whole.
+
+### HDR metadata
+
+Each HDR format gets the light-level metadata it has a field for, measured from the
+exported pixels, and nothing it would have to invent:
+
+| Export | Written | Not written, and why |
+| --- | --- | --- |
+| JPEG XL, PQ | Intensity target: the brightest channel of the 16-bit samples written, in cd/m² (the content light level MaxCLL, CTA-861.3), or of their light in BT.709's primaries if that is brighter; at least 203 cd/m², at most 10,000; rounded up to the header's half float. `min_nits` 0, `linear_below` 0, absolute (not relative to the display) | JPEG XL has no field for a mastering display or for MaxFALL |
+| JPEG XL, HLG | Intensity target 1,000 cd/m²: HLG's reference display, which decoders' inverse OOTF is defined for, so the decoded light stays BT.2100's | As PQ |
+| TIFF (PQ, HLG, linear) | The ICC profile's `cicp` tag | TIFF and ICC v4 have no standard tag for content light level or a mastering display |
+| Gain-map JPEG and JPEG XL | ISO 21496-1 headrooms (above) | ISO 21496-1 has neither; the base is SDR |
+
+The intensity target is ISO/IEC 18181-1's upper bound on the image's luminance. It
+was 10,000 cd/m² for every PQ export, cjxl's default and PQ's limit; with the
+content's own light, a decoder that tone maps (libjxl, `djxl --display_nits`) maps
+from where the photo's light stops rather than from 10,000. BT.709's primaries are included because
+jxl-oxide clips a lossy file's light to the target in them before converting it to
+wider primaries; a saturated P3 or Rec. 2020 colour can be brighter there than in any
+of its own channels, and this way jxl-oxide clips no light below 10,000 cd/m² at
+the target (it still clips channels that are negative in BT.709, colours outside it,
+as it did before). The light a lossy file decodes to
+doesn't depend on the target: jixel and libjxl code XYB in absolute luminance (255
+cd/m² is 1). HLG keeps 1,000 cd/m², because libjxl's HLG OOTF takes the target as the
+display's peak and another value would change the decoded light.
+
+Checked with libjxl 0.12 on a CC0 Z 8 photo (45 MP, HDR on at limit 4, Display P3
+PQ): `jxlinfo` reads an intensity target of 2,422 cd/m² from both the lossless and
+the quality 92 export. Read independently from the same pixels' PQ TIFF (`tifffile`
+and ST 2084's EOTF), its brightest P3 channel (MaxCLL) is 2,297 cd/m² and its
+brightest BT.709 channel 2,421, which the header's half float rounds up to 2,422.
+`djxl` decodes the lossless export to the TIFF's light (to 0.001 cd/m²) and the
+lossy one to it within 0.0035 stop above white at the median (p95 0.035), per pixel.
+An HLG export of the photo reads 1,000 cd/m².
+
+No mastering-display colour volume (SMPTE ST 2086) is written: none of these formats
+has a field for it (PNG's `mDCv` and AVIF's `mdcv` would, but RAWmakase exports
+neither in HDR), and a photo has no mastering display to describe. MaxFALL is not
+computed, as nothing would hold it.
 
 ### Watermarks
 

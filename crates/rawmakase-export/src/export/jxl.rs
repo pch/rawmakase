@@ -367,7 +367,8 @@ fn enumeration(w: &mut Bits, v: u32) {
     }
 }
 
-/// `v` as IEEE 754 half precision bits, for the header's F16 fields; `v` must be a
+/// `v` as IEEE 754 half precision bits, for the header's F16 fields, rounded up, so
+/// an intensity target that bounds a file's light still bounds it; `v` must be a
 /// normal half (between 2^-14 and 65504) or 0.
 fn f16(v: f32) -> u16 {
     if v == 0. {
@@ -376,7 +377,19 @@ fn f16(v: f32) -> u16 {
     let bits = v.to_bits();
     let exponent = ((bits >> 23) & 0xff) as i32 - 127 + 15;
     let mantissa = (bits >> 13) & 0x3ff;
-    ((exponent as u32) << 10 | mantissa) as u16
+    // A carry out of the mantissa steps the exponent, which is the next half up.
+    (((exponent as u32) << 10 | mantissa) + u32::from(bits & 0x1fff != 0)) as u16
+}
+
+/// The half [`f16()`] writes for `v`, as an `f32`: `v` rounded up to a half, which
+/// every encoder writes as the same bits.
+pub(super) fn half_up(v: f32) -> f32 {
+    let h = f16(v);
+    if h == 0 {
+        return 0.;
+    }
+    let (exponent, mantissa) = (i32::from(h >> 10), f32::from(h & 0x3ff));
+    (1. + mantissa / 1024.) * 2f32.powi(exponent - 15)
 }
 
 /// Bits written least significant first, as JPEG XL's bit stream is.
@@ -454,6 +467,11 @@ mod tests {
         assert_eq!(f16(10_000.), 0x70e2);
         assert_eq!(f16(1000.), 0x63d0);
         assert_eq!(f16(255.), 0x5bf8);
+        // Between halves: the next one up (halves are 2 apart from 2,048 to 4,096).
+        assert_eq!(f16(3248.3), 0x6a59);
+        assert_eq!(f16(3250.), 0x6a59);
+        assert_eq!(half_up(3248.3), 3250.);
+        assert_eq!(half_up(10_000.), 10_000.);
         let mut w = Bits::default();
         enumeration(&mut w, 18);
         assert_eq!(w.bytes(), [0b11]);

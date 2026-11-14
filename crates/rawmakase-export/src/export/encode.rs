@@ -211,8 +211,9 @@ pub(super) fn jxl(
 }
 
 /// An HDR export's 16-bit JPEG XL: the header naming the primaries and transfer
-/// (PQ or HLG), with the intensity target their maximum stands for (10,000 cd/m² for
-/// PQ, HLG's 1,000 cd/m² reference display). Lossless, the PQ or HLG signal values;
+/// (PQ or HLG), with its intensity target: for PQ the brightest light its samples
+/// hold ([`pq_intensity_target`]), for HLG its 1,000 cd/m² reference display, which
+/// decoders' inverse OOTF is defined for. Lossless, the PQ or HLG signal values;
 /// lossy as `options` say, the PQ of the light they stand for
 /// ([`super::jxl::lossy_hdr_codestream`]).
 pub(super) fn jxl_hdr(
@@ -225,8 +226,12 @@ pub(super) fn jxl_hdr(
     use crate::color::hdr_output::{
         GRAPHICS_WHITE_NITS, HLG_PEAK_NITS, HdrGamut, HdrTransfer, hlg_decode, pq_encode,
     };
+    let sample = |v: f32| (v.clamp(0., 1.) * 65535. + 0.5) as u16;
     let intensity_target = match image.output.transfer {
-        HdrTransfer::Pq => 10_000.,
+        HdrTransfer::Pq => pq_intensity_target(
+            image.pixels.iter().map(|p| p.map(sample)),
+            image.output.gamut,
+        ),
         HdrTransfer::Hlg => HLG_PEAK_NITS,
         HdrTransfer::Linear => anyhow::bail!("Linear HDR is written as TIFF only"),
     };
@@ -241,7 +246,6 @@ pub(super) fn jxl_hdr(
         transfer: image.output.transfer.cicp(),
         intensity_target,
     };
-    let sample = |v: f32| (v.clamp(0., 1.) * 65535. + 0.5) as u16;
     let codestream = match jxl_distance(options) {
         None => {
             let samples: Vec<u16> = image.pixels.iter().flatten().map(|v| sample(*v)).collect();
@@ -276,6 +280,37 @@ pub(super) fn jxl_hdr(
         None,
     )?)?;
     Ok(())
+}
+
+/// A PQ JPEG XL's intensity target (ISO/IEC 18181-1: an upper bound on the luminance
+/// of the image, cd/m²): the brightest channel of the 16-bit PQ samples written, as
+/// the content light level MaxCLL is measured (CTA-861.3), and also of their light in
+/// BT.709's primaries, where jxl-oxide clips a lossy file's light to the target before
+/// converting it to wider ones. At least graphics white and at most PQ's 10,000
+/// cd/m², rounded up to the header's half float. Decoders that tone map (libjxl) map from it to the display's peak, so a
+/// photo whose light stops at 3,248 cd/m² is not compressed as if it reached 10,000.
+/// The light a lossy file decodes to is coded in absolute luminance whatever the
+/// target is (jixel's XYB, as libjxl's, is scaled to 255 cd/m²).
+fn pq_intensity_target(
+    samples: impl Iterator<Item = [u16; 3]>,
+    gamut: crate::color::hdr_output::HdrGamut,
+) -> f32 {
+    use crate::color::hdr_output::{GRAPHICS_WHITE_NITS, HdrGamut, pq_decode};
+    let to_709 = crate::color::mul_matrix(
+        HdrGamut::Rec709.prophoto_to_rgb(),
+        crate::color::inverse(gamut.prophoto_to_rgb()),
+    );
+    let nits: Vec<f32> = (0..=u16::MAX)
+        .map(|v| pq_decode(f32::from(v) / 65535.))
+        .collect();
+    let brightest = samples
+        .map(|p| {
+            let light = p.map(|v| nits[usize::from(v)]);
+            let in_709 = crate::color::mul(to_709, light);
+            light.into_iter().chain(in_709).fold(0f32, f32::max)
+        })
+        .fold(0f32, f32::max);
+    super::jxl::half_up(brightest.clamp(GRAPHICS_WHITE_NITS, 10_000.))
 }
 
 /// A gain-map JPEG XL: the sRGB base as an SDR JPEG XL export is, with the map's
