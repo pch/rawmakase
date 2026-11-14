@@ -599,9 +599,54 @@ def expected_light(master, gamut, transfer, peak):
     return representable, float(changed.mean())
 
 
-def check_header(path, info, oxide_info, transfer, gamut, lossy, gain_map):
+def half_up(v):
+    """`v` rounded up to a half float, as the header holds it."""
+    h = np.float16(v)
+    if float(h) < v:
+        h = np.nextafter(h, np.float16(np.inf))
+    return float(h)
+
+
+def pq_intensity_target(light, gamut):
+    """The intensity target a PQ export of `light` (1 = graphics white) says
+    (docs/hdr.md): its brightest channel in cd/m², in its own primaries and in
+    BT.709's, at least graphics white and at most 10,000 cd/m², before rounding."""
+    in_709 = light @ gamut_to(gamut, "rec709").T
+    brightest = max(float(light.max()), float(in_709.max())) * WHITE
+    return min(max(brightest, WHITE), 10000.0)
+
+
+# How far a channel's light may move when it is quantised to a 16-bit PQ sample, as a
+# fraction: under 0.06% from 1 to 10,000 cd/m², with room for the master's own
+# rounding.
+PQ_SAMPLE_ROUNDING = 0.002
+
+
+def pq_target_bounds(path, dec, expected, gamut, lossy):
+    """The intensity targets a PQ export may say: the rounded-up target of its samples
+    when lossless (djxl gives them back), else that of the master's light
+    within a 16-bit sample's rounding; never outside graphics white to 10,000 cd/m²."""
+    if not lossy:
+        signal, _ = dec.decode("djxl", path)
+        if signal is not None:
+            # RAWmakase finds the brightest light in f32, this in f64: a target on a
+            # half itself may round up one half here and not there.
+            return within(pq_intensity_target(pq_decode(signal), gamut), 1e-5)
+    return within(pq_intensity_target(expected, gamut), PQ_SAMPLE_ROUNDING)
+
+
+def within(target, slack):
+    """The rounded-up targets within `slack` (a fraction) of `target`, held to graphics
+    white and 10,000 cd/m² before rounding."""
+    low = half_up(min(max(target * (1 - slack), WHITE), 10000.0))
+    high = half_up(min(max(target * (1 + slack), WHITE), 10000.0))
+    return low, high
+
+
+def check_header(path, info, oxide_info, transfer, gamut, lossy, gain_map, target=None):
     """Header facts libjxl's jxlinfo (and jxl-oxide's info) report, against what the
-    export must say."""
+    export must say. `target` is the lowest and highest intensity target a PQ export
+    may say ([`pq_target_bounds`])."""
     fails, facts = [], {}
     if info is None:
         return fails, facts
@@ -612,7 +657,7 @@ def check_header(path, info, oxide_info, transfer, gamut, lossy, gain_map):
         want = {
             "Primaries": GAMUT_CODE[gamut],
             "Transfer function": "PQ" if transfer == "pq" else "HLG",
-            "Intensity target": "10000.000000" if transfer == "pq" else "1000.000000",
+            "Intensity target": target if transfer == "pq" else "1000.000000",
             "bits": "16-bit",
         }
     for key, value in want.items():
@@ -624,7 +669,14 @@ def check_header(path, info, oxide_info, transfer, gamut, lossy, gain_map):
             m = re.search(rf"{re.escape(key)}: ([^\n]+)", info)
             got = m.group(1).split(" nits")[0].strip() if m else None
             facts[key] = got
-            ok = got == value
+            if isinstance(value, tuple):
+                # jxlinfo prints six decimals of a half float.
+                try:
+                    ok = value[0] - 1e-3 <= float(got) <= value[1] + 1e-3
+                except (TypeError, ValueError):
+                    ok = False
+            else:
+                ok = got == value
         if not ok:
             fails.append(f"jxlinfo {key}: {facts.get(key)!r}, want {value!r}")
     if ("lossy" in info) != lossy:
@@ -679,10 +731,13 @@ def check_hdr_export(dec, path, master, meta, transfer, gamut, lossy, anchors):
     results = {"file": path.name, "size": path.stat().st_size, "decoders": {}}
     fails = []
     info = dec.info(path)
-    hf, facts = check_header(path, info, dec.oxide_info(path), transfer, gamut, lossy, False)
+    expected, clipped = expected_light(master, gamut, transfer, meta["peak"])
+    target = pq_target_bounds(path, dec, expected, gamut, lossy) if transfer == "pq" else None
+    hf, facts = check_header(
+        path, info, dec.oxide_info(path), transfer, gamut, lossy, False, target
+    )
     fails += hf
     results["header"] = facts
-    expected, clipped = expected_light(master, gamut, transfer, meta["peak"])
     results["hlg_scene_clipped"] = clipped
     neutral = erode((expected.max(-1) <= 1.05 * expected.min(-1)) & (expected.max(-1) > 0), 8)
     for name in dec.names():

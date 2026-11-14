@@ -293,12 +293,12 @@ fn a_lossy_hdr_jpeg_xl_carries_the_tiffs_light() -> Result<()> {
     let recipe = hdr_recipe(&image);
     let photo = photo(image, &dir.path().join("in.dng"), dir.path(), recipe);
     for (gamut, transfer, encoding, target_nits) in [
-        (HdrGamut::DisplayP3, HdrTransfer::Pq, ["P3", "Pq"], 10_000.),
+        (HdrGamut::DisplayP3, HdrTransfer::Pq, ["P3", "Pq"], None),
         (
             HdrGamut::Rec2020,
             HdrTransfer::Hlg,
             ["Bt2100", "Hlg"],
-            1000.,
+            Some(1000.),
         ),
     ] {
         let output = HdrOutput {
@@ -326,7 +326,12 @@ fn a_lossy_hdr_jpeg_xl_carries_the_tiffs_light() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         let header = decoded.image_header();
         assert!(header.metadata.xyb_encoded, "{name}: lossy");
-        assert!((header.metadata.tone_mapping.intensity_target - target_nits).abs() < 1.);
+        let target_nits = target_nits.unwrap_or_else(|| brightest_nits(&tiff, gamut));
+        let target = header.metadata.tone_mapping.intensity_target;
+        assert!(
+            target >= target_nits && target - target_nits <= 2.,
+            "{name}: {target} for {target_nits}"
+        );
         let signalled = format!("{:?}", header.metadata.colour_encoding);
         assert!(
             encoding.iter().all(|e| signalled.contains(e)),
@@ -372,6 +377,24 @@ fn a_lossy_hdr_jpeg_xl_carries_the_tiffs_light() -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The brightest channel, in cd/m², of a PQ TIFF's light in its own primaries and in
+/// BT.709's: what a PQ JPEG XL of the same pixels gives as its intensity target.
+fn brightest_nits(tiff: &Path, gamut: HdrGamut) -> f32 {
+    let to_709 = crate::color::mul_matrix(
+        HdrGamut::Rec709.prophoto_to_rgb(),
+        crate::color::inverse(gamut.prophoto_to_rgb()),
+    );
+    read(tiff)
+        .unwrap()
+        .0
+        .chunks(3)
+        .flat_map(|p| {
+            let nits = [p[0], p[1], p[2]].map(pq_decode);
+            nits.into_iter().chain(crate::color::mul(to_709, nits))
+        })
+        .fold(0f32, f32::max)
 }
 
 /// The boxes of a JPEG XL container (ISO/IEC 18181-2), by type, with their payloads.

@@ -103,7 +103,8 @@ the lossy tolerances.
 
 Header and container checks, with `jxlinfo`:
 - primaries (Rec. 2100, P3, sRGB), transfer (PQ, HLG) and intensity target (10,000
-  cd/m² for PQ, 1,000 for HLG);
+  cd/m² for PQ, 1,000 for HLG; since 2026-11-14 PQ says the content's brightest light,
+  [HDR metadata](../hdr.md#hdr-metadata));
 - 16-bit for HDR and 8-bit for SDR and gain-map files;
 - the lossy or lossless flag;
 - the `Exif` and `xml ` boxes, and `jhgm` for gain maps;
@@ -190,10 +191,11 @@ Nothing else failed. The exports' pixels, headers and gain maps were as document
 - **The HLG workaround stays.** The problem is in jixel, not in libjxl: jixel 0.5.7
   (still the newest release) reads HLG input as scene light, without the OOTF. libjxl
   and every decoder above read RAWmakase's HLG header correctly.
-- **Intensity target.** PQ files say 10,000 cd/m², cjxl's default for PQ and the
-  format's upper bound. The content's own peak (2^limit × 203 cd/m², at most 10,000) is
-  not written. ImageIO ignores the field, and libjxl uses it only when asked to tone
-  map (`djxl --display_nits`). Mastering-display metadata stays unwritten.
+- **Intensity target.** PQ files said 10,000 cd/m², cjxl's default for PQ and the
+  format's upper bound. ImageIO ignores the field, and libjxl uses it only when asked
+  to tone map (`djxl --display_nits`). Superseded on 2026-11-14: PQ files say their
+  content's brightest light ([HDR metadata](../hdr.md#hdr-metadata)), which the
+  harness checks against the master's. Mastering-display metadata stays unwritten.
 - **Saturated HLG near its peak** is clipped per channel after the inverse OOTF, as
   BT.2100's display defines what HLG can hold. The harness compares HLG exports with
   that representable light.
