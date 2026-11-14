@@ -1902,6 +1902,30 @@ is within 0.008 of the SDR rendition; the Z f still misses by 0.018.
 Decision, 2026-11-13: a mask's Dehaze renders from 0 to +30 (overlapping masks added),
 and up to +100 with the photo's own; negative mask Dehaze stays refused.
 
+**Mask Dehaze +60 and +100 (2026-11-14).** Camera Raw 18.7 rendered the same whole-frame
+mask at Dehaze +60 and +100 on the six photos of [the last
+refusals](#the-last-refusals-on-photos-2026-11-13) (HDR limit 4 and SDR), scored with
+`main` after #1083 by the [acceptance rule](#decisions). Effect error median below
+white, HDR / SDR, and above white, per photo:
+
+| Photo | +60 below | +60 above | +100 below | +100 above |
+| --- | --- | --- | --- | --- |
+| Z 8 | 0.091 / 0.090 | 0.224 | 0.149 / 0.148 | 0.168 |
+| Z f | 0.278 / 0.231 | 0.147 | 0.544 / 0.508 | 0.257 |
+| A7R III | 0.219 / 0.219 | 0.148 | 0.954 / 0.954 | 0.184 |
+| Z6 III | 0.166 / 0.165 | 0.036 | 0.368 / 0.368 | 0.091 |
+| S1 II | 0.349 / 0.340 | 0.202 | 0.683 / 0.679 | 0.325 |
+| EOS 850D | 0.171 / 0.169 | 0.260 | 0.415 / 0.410 | 0.356 |
+
+On the medians, +60 meets the rule: 0.195 against 0.194 below white, 0.175 above it
+(allowed 0.204), ΔE_ITP added +12.50 against +11.83. +100 misses below white: 0.479
+against 0.459, 0.010 past the tolerance (above white 0.220, ΔE_ITP +30.54 against
++30.47). The same scoring gives +30 0.089 / 0.086 below white and 0.094 above, and −30
+0.204 / 0.182 below white, as before.
+
+Decision, 2026-11-14: a mask's Dehaze renders from 0 to +60 (overlapping masks added),
+and up to +100 with the photo's own; above +60 and below 0 it stays refused.
+
 ### The last refusals on photos (2026-11-13)
 
 Camera Raw 18.7 rendered the remaining refused controls on six CC0 validation photos

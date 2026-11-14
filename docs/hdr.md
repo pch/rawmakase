@@ -531,10 +531,11 @@ rotation, further from Camera Raw above white than the SDR rendition is below it
 globally. A mask's Clarity renders where, with the photo's own and a look's, every
 pixel stays from 0 to +50, the global slider's range: it adds to the photo's in the
 global slider's stage. The check is conservative, taking each mask's Clarity at its
-Amount as reaching every pixel. A mask's Dehaze renders from 0 to +30, overlapping
+Amount as reaching every pixel. A mask's Dehaze renders from 0 to +60, overlapping
 masks added, and up to +100 with the photo's own: it adds to the photo's in the global
 slider's stage too. Negative mask Dehaze is refused: at −30 the master is further from
-Camera Raw than the SDR rendition (0.198 against 0.184 stop on six photos). A masked
+Camera Raw than the SDR rendition (0.198 against 0.184 stop on six photos), and so is
++100 (0.479 against 0.459 below white). A masked
 master renders on the CPU.
 
 ## What is refused
@@ -545,7 +546,7 @@ something without a measured HDR rendering: Highlights, Whites above
 channel's) whose last point is left of white and which, continued from it, passes 1.06
 at white in the curve's encoding (`hdr_curve::LEFT_END_MEASURED`), Clarity beyond ±50, Dehaze below −50, the
 colour mixer's Luminance above +40, a darkening vignette's Highlights,
-a mask's Blacks, Hue or Highlights, a mask's Saturation outside 0 to +50, a mask's Clarity outside 0 to +50 with the photo's own, a mask's Dehaze outside 0 to +30, Defringe with Black & White ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
+a mask's Blacks, Hue or Highlights, a mask's Saturation outside 0 to +50, a mask's Clarity outside 0 to +50 with the photo's own, a mask's Dehaze outside 0 to +60, Defringe with Black & White ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
 which the look sets, …"; Adobe Vivid's Clarity +10 renders), and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
 asked for.
