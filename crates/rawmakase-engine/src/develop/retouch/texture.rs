@@ -93,6 +93,8 @@ pub(super) fn apply(
 /// × `step` patch pixels, the offset to the unpainted cell whose neighbourhood is
 /// most like the painted cell's, in patch pixels. Unpainted cells have none.
 pub(crate) struct Field {
+    /// The patch's size in its pixels.
+    size: [f32; 2],
     step: usize,
     width: usize,
     height: usize,
@@ -110,7 +112,9 @@ impl Field {
         let (pw, ph) = (patch.width as usize, patch.height as usize);
         let step = ((pw * ph) as f32 / MAX_CELLS).sqrt().ceil().max(1.) as usize;
         let (w, h) = (pw.div_ceil(step), ph.div_ceil(step));
+        let size = [pw as f32, ph as f32];
         let none = || Self {
+            size,
             step,
             width: w,
             height: h,
@@ -245,6 +249,7 @@ impl Field {
             ]);
         }
         Self {
+            size,
             step,
             width: w,
             height: h,
@@ -252,10 +257,16 @@ impl Field {
         }
     }
     /// The offset for the patch pixel position `c` (pixel `i` spans `[i, i + 1)`).
+    /// None beyond the patch (a shape crossing the photo's default crop paints
+    /// decoded pixels there): its source would lie beyond the patch too, outside
+    /// what the operation reads.
     fn offset(&self, c: [f32; 2]) -> Option<[f32; 2]> {
-        let x = ((c[0] / self.step as f32).floor() as i64).clamp(0, self.width as i64 - 1);
-        let y = ((c[1] / self.step as f32).floor() as i64).clamp(0, self.height as i64 - 1);
-        self.offsets[y as usize * self.width + x as usize]
+        if !(c[0] >= 0. && c[1] >= 0. && c[0] < self.size[0] && c[1] < self.size[1]) {
+            return None;
+        }
+        let x = ((c[0] / self.step as f32) as usize).min(self.width - 1);
+        let y = ((c[1] / self.step as f32) as usize).min(self.height - 1);
+        self.offsets[y * self.width + x]
     }
 }
 

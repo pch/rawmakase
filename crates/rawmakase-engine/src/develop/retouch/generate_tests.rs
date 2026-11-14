@@ -965,3 +965,76 @@ fn grain_holds_across_the_feather() {
     eprintln!("feather grain ratio {ratio:.3}");
     assert!((0.88..1.12).contains(&ratio), "{ratio}");
 }
+
+/// A Generate spot crossing the camera's default crop paints decoded pixels
+/// beyond its patch; those take no detail, so it reads only what it declares and
+/// the cache renders it as a full rebuild does, with a Clone under its detail's
+/// reach before it and one copying from beyond the crop after it.
+#[test]
+fn a_spot_beyond_its_patch_reads_only_what_it_declares() {
+    let mut im = image(1050, 1000, |x, y| [0.1 + 0.01 * gauss(x, y, 5); 3]);
+    im.metadata.crop_left = 280;
+    im.metadata.crop_top = 310;
+    im.metadata.crop_width = 500;
+    im.metadata.crop_height = 600;
+    let base = Arc::new(im);
+    let frame = ImageFrame::new(&base);
+    let mut op = brush(&base, 100., 100., 10.);
+    op.shape = RetouchShape::Spot {
+        center: [0., 0.2],
+        radius: 0.1,
+    };
+    let region = rendition::region(&op, &frame).unwrap();
+    let id = mask_assets::register(patches::encode(40, 40, &[0.2; 40 * 40 * 3]).unwrap()).unwrap();
+    op.mode = RetouchMode::Generate;
+    op.patch = Some(RetouchPatch {
+        id,
+        width: 40,
+        height: 40,
+        rect: region.rect,
+        generator: "dev.rawmakase.remove/fill".into(),
+        model: "test".into(),
+        ai_denoise: false,
+    });
+    let template = op.clone();
+    let spot = |at: [f32; 2], from: [f32; 2]| {
+        let center = frame.to_image(at[0], at[1]);
+        let source = frame.to_image(from[0], from[1]);
+        RetouchOp {
+            mode: RetouchMode::Clone,
+            shape: RetouchShape::Spot {
+                center,
+                radius: 8. / frame.long_edge(),
+            },
+            offset: [source[0] - center[0], source[1] - center[1]],
+            patch: None,
+            ..template.clone()
+        }
+    };
+    let mut ops = vec![
+        spot([243., 523.], [600., 523.]),
+        op,
+        spot([700., 800.], [231., 395.]),
+    ];
+    for op in &ops {
+        op.validate().unwrap();
+    }
+    let cancel = AtomicBool::new(false);
+    let mut cache = RetouchCache::default();
+    for _ in 0..2 {
+        let r = Retouching {
+            red_eye: &[],
+            retouch: &ops,
+        };
+        let incremental = cache.get(&base, r, Cancel::new(&cancel)).unwrap();
+        let full = apply(&base, r).unwrap();
+        let differ = incremental
+            .pixels
+            .iter()
+            .zip(&full.pixels)
+            .filter(|(a, b)| a != b)
+            .count();
+        assert_eq!(differ, 0);
+        ops[0].opacity = 0.3;
+    }
+}
