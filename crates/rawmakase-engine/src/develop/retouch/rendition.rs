@@ -120,6 +120,8 @@ impl Rendition {
     /// The rendition of `m`'s photo edited with `r`: the camera stage's matrix for
     /// `r`, and the white balance and exposure the photo opens with.
     pub fn of(m: &Metadata, r: &Recipe) -> Result<Self> {
+        // What the camera stage renders with: switched-off panels bypassed.
+        let r = &*r.resolved(m);
         // The white balance and exposure a photo opens with: as shot (gains of 1
         // over the camera image), and the camera's baseline.
         let mut default = Recipe::default();
@@ -211,6 +213,9 @@ pub fn render(
     if let Some(why) = refusal(im, r) {
         bail!(why);
     }
+    // As every render reads it: switched-off panels bypassed (Detail's noise
+    // reduction, Spot Removal's and Red Eye's corrections).
+    let r = &*r.resolved(&im.metadata);
     let retouched = crate::develop::quality::retouched(im, r, ai, cancel, None)?.image;
     let frame = ImageFrame::new(&retouched);
     let Some(region) = region(op, &frame) else {
@@ -277,6 +282,28 @@ pub fn coverage(op: &RetouchOp, frame: &ImageFrame, region: &Region) -> Vec<u8> 
     .into_iter()
     .map(|c| (c.clamp(0., 1.) * 255.).round() as u8)
     .collect()
+}
+
+/// The generator's answer (rows `stride` bytes apart) with `input`'s own pixels
+/// wherever it wasn't painted, rows packed. The protocol leaves what a program
+/// writes outside the painted area unspecified, and the patch is the membrane's
+/// source on the ring around the shape too: there it must be the photo's own.
+pub fn keep_unpainted(input: &Input, result: &[u8], stride: usize) -> Result<Vec<u8>> {
+    let (w, h) = (input.region.width as usize, input.region.height as usize);
+    ensure!(
+        stride >= w * 3 && result.len() >= stride * (h - 1) + w * 3,
+        "The result is smaller than the request"
+    );
+    let mut out = input.rgb.clone();
+    for j in 0..h {
+        for i in 0..w {
+            if input.coverage[j * w + i] > 0 {
+                let k = (j * w + i) * 3;
+                out[k..k + 3].copy_from_slice(&result[j * stride + i * 3..][..3]);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// The generator's answer (`width` × `height` 8-bit sRGB, rows `stride` bytes

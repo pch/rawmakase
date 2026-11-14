@@ -131,6 +131,8 @@ struct Pending {
 struct Sent {
     ticket: u64,
     asked: RetouchGenerate,
+    /// What was sent, kept to stand outside the painted area of the answer.
+    input: Arc<crate::develop::retouch::rendition::Input>,
     rendition: crate::develop::retouch::rendition::Rendition,
     region: crate::develop::retouch::rendition::Region,
 }
@@ -218,7 +220,9 @@ impl Editor {
         if self.library.is_none() || self.document.catalog_photo.is_none() {
             return Some("Add this photo to a catalog to use AI Remove".into());
         }
-        let Some(image) = self.document.full() else {
+        // Not on the half-size draft shown while the full size decodes: its
+        // answer would be dropped once the full image replaces it.
+        let Some(image) = self.document.full().filter(|im| !im.fast) else {
             return Some("Available once the photo has finished developing".into());
         };
         if self.document.edit.save_state().is_protected() {
@@ -237,7 +241,8 @@ impl Editor {
     fn ai_remove_guard(&self, image: &Arc<CameraImage>, recipe: &Recipe) -> Guard {
         Guard {
             content: crate::app::develop::tools::subject_mask::content(recipe),
-            denoise: denoise(recipe),
+            // As rendered: Detail switched off bypasses its noise reduction.
+            denoise: denoise(&recipe.resolved(&image.metadata)),
             ai: self.document.ai_source(image, &recipe.ai_denoise),
             image: Arc::as_ptr(image) as usize,
             load: self.document.load_id(),
@@ -420,6 +425,7 @@ impl Editor {
                     pending.sent = Some(Sent {
                         ticket,
                         asked,
+                        input: ready.input,
                         rendition: ready.rendition,
                         region: ready.region,
                     });
@@ -485,6 +491,7 @@ impl Editor {
             generation,
             cancel,
             asked: sent.asked,
+            input: sent.input,
             answer,
             buffers,
             rendition: sent.rendition,
@@ -658,6 +665,9 @@ impl Editor {
             r.add_retouch(op);
             r.retouch.len() - 1
         });
+        // A spot being dragged meanwhile keeps its own edit; the drag ends, so
+        // its next frame can't write over the new spot now selected.
+        self.view.retouch.end_spot_drag();
         self.view.retouch.selected = Some(added);
         self.messages.done("Removed");
     }

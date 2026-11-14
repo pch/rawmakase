@@ -71,6 +71,19 @@ impl RetouchTool {
     pub(in crate::app) fn is_dragging(&self) -> bool {
         !matches!(self.drag, Drag::None)
     }
+    /// Starts moving `op` from `at`, as a drag on its pin does, for tests.
+    #[cfg(test)]
+    pub(in crate::app) fn drag_spot_for_tests(&mut self, at: [f32; 2], op: RetouchOp) {
+        self.drag = Drag::Dest(at, op);
+    }
+    /// Forgets a drag of a spot or its source under way, which writes into
+    /// the selected spot: its next frames change nothing. A stroke being
+    /// painted, which edits no spot until it ends, goes on.
+    pub(in crate::app) fn end_spot_drag(&mut self) {
+        if !matches!(self.drag, Drag::Stroke(_)) {
+            self.drag = Drag::None;
+        }
+    }
     pub(in crate::app) fn clear_document(&mut self) {
         self.selected = None;
         self.drag = Drag::None;
@@ -464,12 +477,11 @@ impl Editor {
         let selected_generated =
             selected.is_some_and(|i| self.document.edit.recipe().retouch[i].is_generated());
         control_label(ui, "Mode", |ui| {
+            // What a stroke now makes: AI Remove whenever it is chosen, else a
+            // selected Heal or Clone spot's mode, which Mode changes.
             let mut mode = match selected {
-                Some(i)
-                    if !selected_generated || self.view.retouch.mode == RetouchMode::Generate =>
-                {
-                    self.document.edit.recipe().retouch[i].mode
-                }
+                _ if self.view.retouch.mode == RetouchMode::Generate => RetouchMode::Generate,
+                Some(i) if !selected_generated => self.document.edit.recipe().retouch[i].mode,
                 _ => self.view.retouch.mode,
             };
             let w = ui.available_width();

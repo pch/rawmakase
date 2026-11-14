@@ -246,6 +246,8 @@ pub(crate) struct Prepared {
 pub(crate) struct Ready {
     pub(crate) params: RetouchGenerate,
     pub(crate) buffers: Buffers,
+    /// The region and coverage sent.
+    pub(crate) input: Arc<rendition::Input>,
     pub(crate) rendition: Rendition,
     pub(crate) region: rendition::Region,
 }
@@ -334,6 +336,7 @@ pub(in crate::app) fn prepare(job: Prepare) -> Event {
             buffers,
             rendition,
             region: input.region,
+            input: Arc::new(input),
         })
     })();
     Event::RetouchPrepared(Box::new(Prepared {
@@ -349,6 +352,9 @@ pub(in crate::app) struct Finish {
     pub(in crate::app) generation: u64,
     pub(in crate::app) cancel: Arc<AtomicBool>,
     pub(in crate::app) asked: RetouchGenerate,
+    /// The region and coverage sent: outside the painted area the patch is
+    /// the app's own pixels, whatever the program wrote there.
+    pub(in crate::app) input: Arc<rendition::Input>,
     pub(in crate::app) answer: RetouchGenerated,
     pub(in crate::app) buffers: Returned,
     pub(in crate::app) rendition: Rendition,
@@ -376,8 +382,11 @@ pub(in crate::app) fn finish(job: Finish) -> Event {
         if job.cancel.load(Ordering::Relaxed) {
             return Err(Failure::Cancelled);
         }
-        let samples = rendition::patch_samples(&job.rendition, &bytes, width, height, stride)
+        let bytes = rendition::keep_unpainted(&job.input, &bytes, stride)
             .map_err(|e| Failure::Failed(format!("{e:#}")))?;
+        let samples =
+            rendition::patch_samples(&job.rendition, &bytes, width, height, width as usize * 3)
+                .map_err(|e| Failure::Failed(format!("{e:#}")))?;
         let bitmap = crate::storage::patches::encode(width, height, &samples)
             .map_err(|e| Failure::Failed(format!("{e:#}")))?;
         let id = crate::storage::mask_assets::register(bitmap)

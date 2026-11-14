@@ -517,3 +517,52 @@ fn the_decoded_patch_is_the_placement_asked_for() {
     assert!(near(right.sample([0.375, 0.375]), pixel(0)));
     assert!(super::patch::resolve(&at([0., 0., 0.5, 0.5], 3)).is_err());
 }
+
+/// The request renders the photo as every render does: Detail switched off
+/// leaves its noise reduction out, though its sliders keep their values.
+#[test]
+fn a_request_renders_switched_off_panels_as_bypassed() {
+    use crate::model::panels::{Panel, PanelState};
+    let im = image(64, 48, |x, y| {
+        let n = ((x * 7. + y * 13.) % 5.) * 0.01;
+        [0.2 + n, 0.18 - n, 0.15 + n]
+    });
+    let op = brush(&im, 32., 24., 6.);
+    let cancel = AtomicBool::new(false);
+    let render = |r: &Recipe| {
+        let rendition = Rendition::of(&im.metadata, r).unwrap();
+        rendition::render(&im, r, None, &op, &rendition, Cancel::new(&cancel)).unwrap()
+    };
+    let mut noisy = plain();
+    noisy.noise_chroma = 60.;
+    noisy.noise_luma = 60.;
+    let mut off = noisy.clone();
+    off.panels.set(Panel::Detail, PanelState::Off);
+    assert_ne!(render(&noisy).rgb, render(&plain()).rgb);
+    assert_eq!(render(&off).rgb, render(&plain()).rgb);
+}
+
+/// Outside the painted area the patch is the photo's own rendition, whatever
+/// the program wrote there: the protocol leaves those pixels to it.
+#[test]
+fn what_a_program_writes_outside_the_painted_area_is_not_kept() {
+    let im = image(64, 48, |_, _| [0.2; 3]);
+    let op = brush(&im, 32., 24., 6.);
+    let r = plain();
+    let rendition = Rendition::of(&im.metadata, &r).unwrap();
+    let cancel = AtomicBool::new(false);
+    let input = rendition::render(&im, &r, None, &op, &rendition, Cancel::new(&cancel)).unwrap();
+    let stride = input.region.width as usize * 3 + 6;
+    let rows = input.region.height as usize;
+    let garbage = vec![7u8; stride * rows];
+    let kept = rendition::keep_unpainted(&input, &garbage, stride).unwrap();
+    for (i, c) in input.coverage.iter().enumerate() {
+        let want = if *c > 0 {
+            [7; 3]
+        } else {
+            [input.rgb[i * 3], input.rgb[i * 3 + 1], input.rgb[i * 3 + 2]]
+        };
+        assert_eq!(kept[i * 3..i * 3 + 3], want);
+    }
+    assert!(rendition::keep_unpainted(&input, &garbage[..10], stride).is_err());
+}
