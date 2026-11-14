@@ -2096,7 +2096,7 @@ dependencies = [
  "bytemuck",
  "byteorder-lite",
  "image-webp",
- "moxcms",
+ "moxcms 0.8.1",
  "num-traits",
  "png 0.18.1",
  "tiff",
@@ -2770,6 +2770,16 @@ name = "moxcms"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b"
+dependencies = [
+ "num-traits",
+ "pxfm",
+]
+
+[[package]]
+name = "moxcms"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "561875e11b3d8618524f974f85e4bbd05a64a112b8f7541ffcc236b5166c0564"
 dependencies = [
  "num-traits",
  "pxfm",
@@ -3847,7 +3857,7 @@ dependencies = [
  "image",
  "jxl-oxide",
  "libc",
- "moxcms",
+ "moxcms 0.9.2",
  "objc2 0.6.5",
  "objc2-core-foundation",
  "objc2-core-graphics",
@@ -3906,7 +3916,7 @@ dependencies = [
  "jxl-oxide",
  "md-5",
  "memmap2",
- "moxcms",
+ "moxcms 0.9.2",
  "png 0.18.1",
  "rawmakase-cancel",
  "rawmakase-catalog",
