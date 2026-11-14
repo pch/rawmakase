@@ -141,6 +141,71 @@ fn a_gain_map_jpeg_xl_opens_as_an_hdr_edit_of_its_master() -> Result<()> {
     round_trip(Format::Jxl, 0.008, 0.02)
 }
 
+/// A gain-map JPEG export also describes its map with Adobe's `hdrgm` XMP, merged
+/// into the base's own XMP packet (the edit's metadata, which it keeps). A reader
+/// that knows only `hdrgm` gets exactly the light that ISO 21496-1 gives: with the
+/// ISO URNs made unrecognisable in place, so every offset stays, the file opens
+/// through its XMP alone.
+#[test]
+fn a_gain_map_jpegs_hdrgm_xmp_gives_the_light_of_its_iso_metadata() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let image = synthetic(96, 48);
+    let recipe = hdr_recipe(&image);
+    let photo = photo(image, &dir.path().join("in.dng"), dir.path(), recipe);
+    let both = export(&photo, Format::Jpeg, true, dir.path())?;
+    let bytes = std::fs::read(&both)?;
+    // One standard XMP packet on the base, the edit's with the gain map's directory.
+    let header = b"http://ns.adobe.com/xap/1.0/\0";
+    let packets: Vec<usize> = bytes
+        .windows(header.len())
+        .enumerate()
+        .filter(|(_, w)| *w == header)
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(packets.len(), 2, "the base's packet and the map's");
+    let base_xmp = String::from_utf8_lossy(&bytes[packets[0]..packets[1]]);
+    for expected in [
+        "hdrgm:Version=\"1.0\"",
+        "Item:Semantic=\"GainMap\"",
+        "xmlns:dc=",
+    ] {
+        assert!(base_xmp.contains(expected), "{expected} in {base_xmp}");
+    }
+    // The directory's length of the map is the MPF entry's, and the map is the
+    // file's last bytes.
+    let length: usize = base_xmp
+        .split("Item:Length=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("the map's length")
+        .parse()?;
+    let tiff = bytes.windows(4).position(|w| w == b"MPF\0").unwrap() + 4;
+    let field = |o: usize| u32::from_be_bytes(bytes[o..o + 4].try_into().unwrap()) as usize;
+    let (size, offset) = (field(tiff + 50 + 20), field(tiff + 50 + 24));
+    assert_eq!(length, size);
+    assert_eq!(tiff + offset + size, bytes.len());
+    assert_eq!(&bytes[tiff + offset..tiff + offset + 2], &[0xff, 0xd8]);
+    let urn = b"urn:iso:std:iso:ts:21496:-1\0";
+    let mut xmp_only = bytes.clone();
+    let mut blinded = 0;
+    while let Some(at) = xmp_only.windows(urn.len()).position(|w| w == urn) {
+        xmp_only[at] = b'x';
+        blinded += 1;
+    }
+    assert_eq!(
+        blinded, 2,
+        "the base's version marker and the map's metadata"
+    );
+    let iso = opened(&both)?;
+    let hdrgm = opened(&file(dir.path(), "hdrgm.jpg", &xmp_only))?;
+    let (iso, hdrgm) = (
+        iso.hdr().expect("ISO 21496-1 gives light"),
+        hdrgm.hdr().expect("hdrgm gives light"),
+    );
+    assert_eq!(iso.pixels(), hdrgm.pixels());
+    Ok(())
+}
+
 /// A base JPEG of `width` × `height`: horizontal and vertical ramps, so a turned or
 /// mirrored image doesn't match itself.
 fn base(width: u32, height: u32) -> image::RgbImage {

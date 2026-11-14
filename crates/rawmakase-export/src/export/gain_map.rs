@@ -4,18 +4,30 @@
 //! Apple and Adobe read: the base JPEG with an ISO 21496-1 version marker and an MPF
 //! index, followed by the gain map's own JPEG carrying the metadata.
 //!
+//! The same metadata is also written as Adobe's gain-map XMP (`hdrgm` 1.0, which
+//! Android's Ultra HDR 1.0 adopted), for readers that know only that form: the base's
+//! XMP gets `hdrgm:Version` and a GContainer directory of the two images, and the
+//! map's own XMP the values. Both forms carry the same rationals, so a reader that
+//! knows both gets the same light from either; ISO 21496-1 is the one that wins.
+//!
 //! The map is one channel, computed in the base's colour space (sRGB primaries, linear)
 //! from luminance: log2 of (HDR + offset) / (SDR + offset), with both offsets 1/64,
 //! scaled between its minimum and maximum over the image (gamma 1). The base's headroom
 //! is 0 and the alternate's log2 of the master's peak, so a display with that headroom
 //! shows the master and one with none the base.
-use anyhow::{Result, ensure};
+use crate::xml::{self, ns::RDF};
+use anyhow::{Context, Result, ensure};
 
 /// Both offsets, in linear units where 1 is graphics white.
 const OFFSET: f32 = 1. / 64.;
 /// Rational fields' denominator: 2^16 holds the offsets exactly and log2 values to
 /// 1/65536 of a stop.
 const DENOMINATOR: u32 = 1 << 16;
+/// Adobe's gain-map XMP namespace (`hdrgm`).
+pub(super) const HDRGM: &str = "http://ns.adobe.com/hdr-gain-map/1.0/";
+/// GContainer's namespaces, of the directory Ultra HDR lists a file's images in.
+pub(super) const CONTAINER: &str = "http://ns.google.com/photos/1.0/container/";
+const ITEM: &str = "http://ns.google.com/photos/1.0/container/item/";
 /// Rec. 709 / sRGB luminance weights.
 const LUMINANCE: [f32; 3] = [0.2126, 0.7152, 0.0722];
 
@@ -40,11 +52,11 @@ impl Metadata {
         out.extend(0u16.to_be_bytes()); // writer version
         out.push(0x40); // use the base colour space
         let unsigned = |out: &mut Vec<u8>, v: f32| {
-            out.extend(((v.max(0.) * DENOMINATOR as f32).round() as u32).to_be_bytes());
+            out.extend((numerator(v.max(0.)) as u32).to_be_bytes());
             out.extend(DENOMINATOR.to_be_bytes());
         };
         let signed = |out: &mut Vec<u8>, v: f32| {
-            out.extend(((v * DENOMINATOR as f32).round() as i32).to_be_bytes());
+            out.extend(numerator(v).to_be_bytes());
             out.extend(DENOMINATOR.to_be_bytes());
         };
         unsigned(&mut out, self.base_headroom);
@@ -56,6 +68,31 @@ impl Metadata {
         signed(&mut out, OFFSET); // alternate offset
         out
     }
+
+    /// The map's own XMP packet: the same values as [`Metadata::iso_21496`] as Adobe's
+    /// `hdrgm` 1.0 names them, each the same rational written as a decimal. hdrgm's
+    /// capacities are ISO 21496-1's headrooms of an SDR base.
+    pub fn hdrgm(&self) -> String {
+        let value = |v: f32| f64::from(numerator(v)) / f64::from(DENOMINATOR);
+        xml::packet(&format!(
+            "  <rdf:Description rdf:about=\"\"\n    xmlns:hdrgm=\"{HDRGM}\"\n   \
+             hdrgm:Version=\"1.0\"\n   hdrgm:GainMapMin=\"{}\"\n   hdrgm:GainMapMax=\"{}\"\n   \
+             hdrgm:Gamma=\"1\"\n   hdrgm:OffsetSDR=\"{}\"\n   hdrgm:OffsetHDR=\"{}\"\n   \
+             hdrgm:HDRCapacityMin=\"{}\"\n   hdrgm:HDRCapacityMax=\"{}\"\n   \
+             hdrgm:BaseRenditionIsHDR=\"False\"/>\n",
+            value(self.min),
+            value(self.max),
+            value(OFFSET),
+            value(OFFSET),
+            value(self.base_headroom.max(0.)),
+            value(self.alternate_headroom.max(0.)),
+        ))
+    }
+}
+
+/// `v` in 1/[`DENOMINATOR`] units, as both metadata forms write it.
+fn numerator(v: f32) -> i32 {
+    (v * DENOMINATOR as f32).round() as i32
 }
 
 /// The gain map of `hdr` over `sdr`, both linear sRGB-primaries RGB of the same size
@@ -95,25 +132,102 @@ pub fn compute(sdr: &[[f32; 3]], hdr: &[[f32; 3]], peak: f32) -> Result<(Vec<u8>
 /// The APP2 payload naming ISO 21496-1, before its metadata.
 const ISO_URN: &[u8] = b"urn:iso:std:iso:ts:21496:-1\0";
 
-/// The gain-map JPEG: `primary` (the base, a complete JPEG) with an ISO 21496-1
-/// version marker and an MPF index, followed by `gain_map` (a complete grayscale JPEG)
-/// with the metadata, as libultrahdr writes them.
-pub fn assemble(primary: &[u8], gain_map: &[u8], metadata: &Metadata) -> Result<Vec<u8>> {
-    assemble_iso(primary, gain_map, &metadata.iso_21496())
+/// The gain map's JPEG: `gain_map` (a complete grayscale JPEG) with its `hdrgm` XMP
+/// and then its ISO 21496-1 metadata, as libultrahdr writes them.
+pub fn map_jpeg(gain_map: &[u8], metadata: &Metadata) -> Result<Vec<u8>> {
+    ensure!(gain_map.starts_with(&[0xff, 0xd8]), "Not a JPEG");
+    let xmp = [xml::ns::JPEG_HEADER, metadata.hdrgm().as_bytes()].concat();
+    let (gain_map, _) = insert(gain_map, 0xe1, &[xmp])?;
+    let (gain_map, _) = insert(
+        &gain_map,
+        0xe2,
+        &[[ISO_URN, &metadata.iso_21496()].concat()],
+    )?;
+    Ok(gain_map)
 }
 
-/// [`assemble`] with the metadata already serialised: `iso` is the map's ISO 21496-1
-/// payload after its URN, written as it is.
-pub(super) fn assemble_iso(primary: &[u8], gain_map: &[u8], iso: &[u8]) -> Result<Vec<u8>> {
+/// The base's XMP packet: `edit` (the packet the export embeds, if any) with
+/// `hdrgm:Version` and a GContainer directory of the base and its gain map, whose
+/// JPEG ([`map_jpeg`]) is `map_len` bytes, as Ultra HDR 1.0 lists them.
+pub fn primary_xmp(edit: Option<&str>, map_len: usize) -> Result<String> {
+    let namespaces = format!(
+        "\n    xmlns:hdrgm=\"{HDRGM}\"\n    xmlns:Container=\"{CONTAINER}\"\n    \
+         xmlns:Item=\"{ITEM}\"\n   hdrgm:Version=\"1.0\""
+    );
+    let directory = format!(
+        "   <Container:Directory>\n    <rdf:Seq>\n     <rdf:li rdf:parseType=\"Resource\">\n      \
+         <Container:Item Item:Semantic=\"Primary\" Item:Mime=\"image/jpeg\"/>\n     </rdf:li>\n     \
+         <rdf:li rdf:parseType=\"Resource\">\n      <Container:Item Item:Semantic=\"GainMap\" \
+         Item:Mime=\"image/jpeg\" Item:Length=\"{map_len}\"/>\n     </rdf:li>\n    </rdf:Seq>\n   \
+         </Container:Directory>\n"
+    );
+    let Some(edit) = edit else {
+        return Ok(xml::packet(&format!(
+            "  <rdf:Description rdf:about=\"\"{namespaces}>\n{directory}  </rdf:Description>\n"
+        )));
+    };
+    // The edit's packet is `xmp::write`'s: one description, which takes the new
+    // properties, under an `rdf` prefix.
+    let doc = roxmltree::Document::parse(edit).context("XMP packet is not valid XML")?;
+    let mut descriptions = doc
+        .descendants()
+        .filter(|n| n.has_tag_name((RDF, "RDF")))
+        .flat_map(|n| n.children())
+        .filter(|n| n.has_tag_name((RDF, "Description")));
+    let description = descriptions
+        .next()
+        .context("XMP packet has no description")?;
     ensure!(
-        primary.starts_with(&[0xff, 0xd8]) && gain_map.starts_with(&[0xff, 0xd8]),
+        descriptions.next().is_none(),
+        "XMP packet has more than one description"
+    );
+    ensure!(
+        description.lookup_prefix(RDF) == Some("rdf")
+            && ["hdrgm", "Container", "Item"]
+                .iter()
+                .all(|p| description.lookup_namespace_uri(Some(p)).is_none()),
+        "XMP packet's prefixes clash with the gain map's"
+    );
+    let range = description.range();
+    let element = &edit[range.clone()];
+    let name_end = range.start
+        + element
+            .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
+            .context("XMP description is not an element")?;
+    let mut out = String::with_capacity(edit.len() + namespaces.len() + directory.len() + 32);
+    out.push_str(&edit[..name_end]);
+    out.push_str(&namespaces);
+    if element.ends_with("/>") {
+        out.push_str(&edit[name_end..range.end - 2]);
+        out.push_str(">\n");
+        out.push_str(&directory);
+        out.push_str("  </rdf:Description>");
+    } else {
+        let close = range.start
+            + element
+                .rfind("</")
+                .context("XMP description is not closed")?;
+        out.push_str(&edit[name_end..close]);
+        out.push_str(&directory);
+        out.push_str("  ");
+        out.push_str(&edit[close..range.end]);
+    }
+    out.push_str(&edit[range.end..]);
+    Ok(out)
+}
+
+/// The gain-map JPEG: `primary` (the base, a complete JPEG) with an ISO 21496-1
+/// version marker and an MPF index, followed by `map` ([`map_jpeg`]), as libultrahdr
+/// writes them.
+pub fn assemble(primary: &[u8], map: &[u8]) -> Result<Vec<u8>> {
+    ensure!(
+        primary.starts_with(&[0xff, 0xd8]) && map.starts_with(&[0xff, 0xd8]),
         "Not a JPEG"
     );
-    let (gain_map, _) = insert_app2(gain_map, &[[ISO_URN, iso].concat()])?;
     // The primary's version marker: the versions alone.
     let marker = [ISO_URN, &[0, 0, 0, 0]].concat();
     let placeholder = mpf(0, 0, 0);
-    let (mut out, at) = insert_app2(primary, &[marker, placeholder])?;
+    let (mut out, at) = insert(primary, 0xe2, &[marker, placeholder])?;
     // The MPF index, now that the sizes and the map's offset are known, where it was
     // inserted (the same bytes may be in the primary's own metadata). Offsets count
     // from its TIFF header, four bytes into its payload ("MPF\0").
@@ -122,12 +236,21 @@ pub(super) fn assemble_iso(primary: &[u8], gain_map: &[u8], iso: &[u8]) -> Resul
     let primary_size = out.len();
     let index = mpf(
         u32::try_from(primary_size)?,
-        u32::try_from(gain_map.len())?,
+        u32::try_from(map.len())?,
         u32::try_from(primary_size - tiff)?,
     );
     out[at..at + index.len()].copy_from_slice(&index);
-    out.extend_from_slice(&gain_map);
+    out.extend_from_slice(map);
     Ok(out)
+}
+
+/// [`assemble`] with ISO 21496-1 metadata alone, already serialised: `iso` is the
+/// map's payload after its URN, written as it is.
+#[cfg(test)]
+pub(super) fn assemble_iso(primary: &[u8], gain_map: &[u8], iso: &[u8]) -> Result<Vec<u8>> {
+    ensure!(gain_map.starts_with(&[0xff, 0xd8]), "Not a JPEG");
+    let (gain_map, _) = insert(gain_map, 0xe2, &[[ISO_URN, iso].concat()])?;
+    assemble(primary, &gain_map)
 }
 
 /// An MPF APP2 payload for a primary image of `primary` bytes and a second image of
@@ -163,9 +286,9 @@ fn mpf(primary: u32, second: u32, offset: u32) -> Vec<u8> {
     p
 }
 
-/// `jpeg` with APP2 segments of `payloads` after the APPn segments it has, and where
-/// each payload begins in it.
-fn insert_app2(jpeg: &[u8], payloads: &[Vec<u8>]) -> Result<(Vec<u8>, Vec<usize>)> {
+/// `jpeg` with `marker` (APP1 or APP2) segments of `payloads` after the APPn segments
+/// it has, and where each payload begins in it.
+fn insert(jpeg: &[u8], marker: u8, payloads: &[Vec<u8>]) -> Result<(Vec<u8>, Vec<usize>)> {
     let mut at = 2;
     while at + 4 <= jpeg.len() && jpeg[at] == 0xff && (0xe0..=0xef).contains(&jpeg[at + 1]) {
         at += 2 + u16::from_be_bytes([jpeg[at + 2], jpeg[at + 3]]) as usize;
@@ -177,7 +300,7 @@ fn insert_app2(jpeg: &[u8], payloads: &[Vec<u8>]) -> Result<(Vec<u8>, Vec<usize>
     let mut starts = Vec::with_capacity(payloads.len());
     for p in payloads {
         ensure!(p.len() + 2 <= 65_535, "A JPEG segment is too large");
-        out.extend([0xff, 0xe2]);
+        out.extend([0xff, marker]);
         out.extend(((p.len() + 2) as u16).to_be_bytes());
         starts.push(out.len());
         out.extend_from_slice(p);
@@ -231,7 +354,7 @@ mod tests {
             base_headroom: 0.,
             alternate_headroom: 1.,
         };
-        let out = assemble(&primary, &map, &m)?;
+        let out = assemble(&primary, &map_jpeg(&map, &m)?)?;
         assert_eq!(
             &out[6..6 + decoy.len()],
             &decoy[..],
@@ -249,6 +372,136 @@ mod tests {
         assert_eq!(field(tiff + 50 + 4), out.len() - size);
         assert_eq!(&out[tiff + offset..tiff + offset + 2], &[0xff, 0xd8]);
         assert_eq!(tiff + offset + size, out.len());
+        Ok(())
+    }
+
+    /// The `hdrgm` values are the ISO 21496-1 rationals, as decimals that parse back
+    /// to the same numbers.
+    #[test]
+    fn the_hdrgm_xmp_carries_the_iso_21496_values() -> Result<()> {
+        let m = Metadata {
+            min: -0.123_45,
+            max: 6.712_5,
+            base_headroom: 0.,
+            alternate_headroom: 5.622,
+        };
+        let iso = m.iso_21496();
+        let rational = |at: usize| {
+            let n = i32::from_be_bytes(iso[at..at + 4].try_into().unwrap());
+            let d = u32::from_be_bytes(iso[at + 4..at + 8].try_into().unwrap());
+            f64::from(n) / f64::from(d)
+        };
+        let packet = m.hdrgm();
+        let doc = roxmltree::Document::parse(&packet)?;
+        let d = doc
+            .descendants()
+            .find(|n| n.has_tag_name((RDF, "Description")))
+            .unwrap();
+        let get = |name: &str| d.attribute((HDRGM, name)).unwrap();
+        let number = |name: &str| get(name).parse::<f64>().unwrap();
+        assert_eq!(get("Version"), "1.0");
+        assert_eq!(get("BaseRenditionIsHDR"), "False");
+        assert_eq!(number("HDRCapacityMin"), rational(5));
+        assert_eq!(number("HDRCapacityMax"), rational(13));
+        assert_eq!(number("GainMapMin"), rational(21));
+        assert_eq!(number("GainMapMax"), rational(29));
+        assert_eq!(number("Gamma"), rational(37));
+        assert_eq!(number("OffsetSDR"), rational(45));
+        assert_eq!(number("OffsetHDR"), rational(53));
+        // The map's JPEG: XMP, then the ISO 21496-1 metadata, after its own APPn.
+        let map = map_jpeg(&[0xff, 0xd8, 0xff, 0xd9], &m)?;
+        let xmp = [xml::ns::JPEG_HEADER, packet.as_bytes()].concat();
+        let mut expected = vec![0xff, 0xd8, 0xff, 0xe1];
+        expected.extend(((xmp.len() + 2) as u16).to_be_bytes());
+        expected.extend(&xmp);
+        expected.extend([0xff, 0xe2]);
+        expected.extend(((ISO_URN.len() + iso.len() + 2) as u16).to_be_bytes());
+        expected.extend(ISO_URN);
+        expected.extend(&iso);
+        expected.extend([0xff, 0xd9]);
+        assert_eq!(map, expected);
+        Ok(())
+    }
+
+    /// The base's XMP is the edit's packet with `hdrgm:Version` and the directory
+    /// added to its one top-level description; its own properties and nested
+    /// descriptions stay as they were. Without an edit's packet it is a packet of
+    /// its own.
+    #[test]
+    fn the_base_xmp_adds_the_directory_to_the_edits_packet() -> Result<()> {
+        const ITEMS: (&str, &str) = (CONTAINER, "Item");
+        let check = |packet: &str| -> Result<()> {
+            let doc = roxmltree::Document::parse(packet)?;
+            let rdf = doc
+                .descendants()
+                .find(|n| n.has_tag_name((RDF, "RDF")))
+                .unwrap();
+            let d = rdf.children().find(|n| n.is_element()).unwrap();
+            assert_eq!(d.attribute((HDRGM, "Version")), Some("1.0"));
+            let items: Vec<_> = d
+                .descendants()
+                .filter(|n| n.has_tag_name(ITEMS))
+                .map(|n| {
+                    (
+                        n.attribute((ITEM, "Semantic")).unwrap(),
+                        n.attribute((ITEM, "Mime")).unwrap(),
+                        n.attribute((ITEM, "Length")),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                items,
+                [
+                    ("Primary", "image/jpeg", None),
+                    ("GainMap", "image/jpeg", Some("1234"))
+                ]
+            );
+            Ok(())
+        };
+        check(&primary_xmp(None, 1234)?)?;
+        let edit = xml::packet(
+            "  <rdf:Description rdf:about=\"\"\n    xmlns:dc=\"http://purl.org/dc/elements/1.1/\"\n    \
+             xmlns:crs=\"http://ns.adobe.com/camera-raw-settings/1.0/\"\n   crs:Exposure2012=\"+1.00\">\n   \
+             <crs:Look>\n    <rdf:Description\n     crs:Name=\"Look\"/>\n   </crs:Look>\n   \
+             <dc:title>\n    <rdf:Alt>\n     <rdf:li xml:lang=\"x-default\">Title</rdf:li>\n    \
+             </rdf:Alt>\n   </dc:title>\n  </rdf:Description>\n",
+        );
+        let merged = primary_xmp(Some(&edit), 1234)?;
+        check(&merged)?;
+        let doc = roxmltree::Document::parse(&merged)?;
+        let d = doc
+            .descendants()
+            .find(|n| n.has_tag_name((RDF, "Description")))
+            .unwrap();
+        assert_eq!(
+            d.attribute((
+                "http://ns.adobe.com/camera-raw-settings/1.0/",
+                "Exposure2012"
+            )),
+            Some("+1.00")
+        );
+        assert!(merged.contains("<crs:Look>\n    <rdf:Description\n     crs:Name=\"Look\"/>"));
+        assert!(merged.contains("<rdf:li xml:lang=\"x-default\">Title</rdf:li>"));
+        // A self-closed description takes the directory too.
+        let empty = xml::packet("  <rdf:Description rdf:about=\"\"/>\n");
+        check(&primary_xmp(Some(&empty), 1234)?)?;
+        Ok(())
+    }
+
+    /// When the base's XMP is too large for one segment, the gain map's properties
+    /// stay in the standard packet, which Ultra HDR readers read.
+    #[test]
+    fn the_gain_maps_xmp_stays_in_the_standard_packet() -> Result<()> {
+        let long = "x".repeat(70_000);
+        let edit = xml::packet(&format!(
+            "  <rdf:Description rdf:about=\"\"\n    xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n   \
+             <dc:description>{long}</dc:description>\n  </rdf:Description>\n"
+        ));
+        let split = super::super::extended_xmp::split(&primary_xmp(Some(&edit), 1234)?)?;
+        assert!(split.extended.is_some());
+        assert!(split.standard.contains("hdrgm:Version=\"1.0\""));
+        assert!(split.standard.contains("Item:Length=\"1234\""));
+        assert!(!split.standard.contains(&long));
         Ok(())
     }
 

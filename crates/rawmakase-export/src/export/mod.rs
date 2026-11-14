@@ -335,6 +335,19 @@ pub fn stage_gain_map(
             _unfinished: unfinished,
         });
     }
+    let mut map = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut map, options.quality).encode(
+        &image.map,
+        base.width(),
+        base.height(),
+        image::ExtendedColorType::L8,
+    )?;
+    let map = gain_map::map_jpeg(&map, &image.metadata)?;
+    // The base's XMP lists the map, so it is written once the map's size is known.
+    let embed = Embed {
+        xmp: Some(gain_map::primary_xmp(embed.xmp.as_deref(), map.len())?),
+        ..embed.clone()
+    };
     let profile = crate::color_management::output_profile(base.space()).to_vec();
     let mut primary = Vec::new();
     encode::jpeg(
@@ -343,19 +356,9 @@ pub fn stage_gain_map(
         options.quality,
         profile,
         directories,
-        embed,
+        &embed,
     )?;
-    let mut map = Vec::new();
-    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut map, options.quality).encode(
-        &image.map,
-        base.width(),
-        base.height(),
-        image::ExtendedColorType::L8,
-    )?;
-    std::io::Write::write_all(
-        &mut temp,
-        &gain_map::assemble(&primary, &map, &image.metadata)?,
-    )?;
+    std::io::Write::write_all(&mut temp, &gain_map::assemble(&primary, &map)?)?;
     temp.as_file().sync_all()?;
     Ok(Staged {
         file: temp,
