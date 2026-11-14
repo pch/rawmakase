@@ -901,8 +901,21 @@ between its minimum and maximum over the photo, gamma 1. The base's headroom is 
 the alternate's log2 of 2^limit. The SDR rendition's sliders (`crs:SDR*`), which Camera
 Raw's base follows, render in the base as in SDR exports, where they render. The file is laid out as libultrahdr writes it: the base
 with an ISO 21496-1 version marker and an MPF index, then the map's grayscale JPEG with
-the metadata in APP2. No XMP `hdrgm` metadata (Adobe's earlier gain-map format) is
-written. A gain map's gamut is the base's, Rec. 709.
+the metadata in APP2. A gain map's gamut is the base's, Rec. 709.
+
+Since 2026-11-14 the JPEG also carries the same metadata as Adobe's gain-map XMP
+(`hdrgm` 1.0, which Android's Ultra HDR 1.0 adopted), for readers that know only that
+form: older Android releases, Chrome and Lightroom builds. Before, only ISO 21496-1 was
+written. The base's XMP packet, the edit's metadata when it has any, gets
+`hdrgm:Version="1.0"` and a GContainer `Container:Directory` listing the base
+(`Primary`) and the map (`GainMap`, with its length in bytes); these stay in the
+standard packet when the rest moves to ExtendedXMP. The map's own XMP, before its ISO
+APP2 segment, holds `GainMapMin`, `GainMapMax`, `Gamma`, `OffsetSDR`, `OffsetHDR`,
+`HDRCapacityMin`, `HDRCapacityMax` (the ISO base and alternate headrooms) and
+`BaseRenditionIsHDR="False"`. Each value is the ISO field's own rational
+(1/65,536 units) written as a decimal, so a reader gets the same numbers from either
+form; ISO 21496-1 stays the authoritative one, and the one RAWmakase and libultrahdr
+read when both are there. A JPEG XL gain map has no `hdrgm`.
 
 A JPEG XL export can carry the same gain map (the Export dialog's "As a gain map over
 the SDR rendition", or `--hdr-export gain-map` to a `.jxl`): the base is the 8-bit
@@ -924,6 +937,20 @@ libultrahdr 2.0.2 (`ultrahdr_app`) reads the Z 8 reference photo's gain-map expo
 RAWmakase's own reconstruction to 0.002 stop and the master above white to 0.006 stop
 median (p95 0.022). Deep shadows carry the 8-bit JPEG base's quantization (p95 0.4
 stop below 0.05 of white).
+
+The `hdrgm` XMP was checked on the same photo's gain-map export (2048 px, HDR limit
++3) and on a copy whose two ISO 21496-1 URNs are made unrecognisable in place, so
+readers can only use the XMP:
+- exiftool 13.36 reads the base's `hdrgm:Version`, the directory (`Primary`, `GainMap`
+  and its length, which matches the MPF entry), and the map's nine values as written;
+- libultrahdr 2.0.2 reads both files as Ultra HDR with the same metadata (content
+  boost 0.315 to 9.72, capacity 1 to 8, offsets 1/64), and decodes them to identical
+  linear half floats;
+- macOS 27.2's ImageIO, which Preview uses, gives the copy its gain map with the same
+  values and an HDR decode at headroom 8, pixel for pixel the one it gives the file
+  with both forms (within 0.0013 stop of libultrahdr's above white, median);
+- RAWmakase opens a synthetic export through its `hdrgm` XMP with exactly the light
+  its ISO 21496-1 metadata gives (`export::gain_map_input_tests`).
 
 Checked with an independent reader: the Z 8 reference photo's PQ Display P3 export,
 decoded by `tifffile` and the ST 2084 EOTF, scores against Camera Raw's own PQ TIFF

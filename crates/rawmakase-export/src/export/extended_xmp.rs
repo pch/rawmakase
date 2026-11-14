@@ -24,6 +24,9 @@ struct Property {
     xml: String,
     attribute: bool,
     camera_raw: bool,
+    /// A gain map's (`hdrgm`, GContainer), which Ultra HDR reads from the standard
+    /// packet only.
+    gain_map: bool,
 }
 
 /// The standard packet and, when it does not fit one segment, the GUID and
@@ -66,6 +69,7 @@ pub(super) fn split(packet: &str) -> Result<Split> {
             ),
             attribute: true,
             camera_raw: a.namespace() == Some(CRS),
+            gain_map: gain_map(a.namespace()),
         })
         .collect();
     properties.extend(
@@ -76,11 +80,12 @@ pub(super) fn split(packet: &str) -> Result<Split> {
                 xml: packet[n.range()].to_string(),
                 attribute: false,
                 camera_raw: n.tag_name().namespace() == Some(CRS),
+                gain_map: gain_map(n.tag_name().namespace()),
             }),
     );
     // Then the largest, until the rest fits.
     let mut order: Vec<usize> = (0..properties.len()).collect();
-    order.retain(|i| !properties[*i].camera_raw);
+    order.retain(|i| !properties[*i].camera_raw && !properties[*i].gain_map);
     order.sort_by_key(|i| std::cmp::Reverse(properties[*i].xml.len()));
     // All Camera Raw settings move together, as Adobe moves them.
     let mut moved: Vec<bool> = properties.iter().map(|p| p.camera_raw).collect();
@@ -119,6 +124,12 @@ pub(super) fn split(packet: &str) -> Result<Split> {
         standard,
         extended: Some((guid, extended)),
     })
+}
+
+/// Whether a property of `namespace` describes a gain map.
+fn gain_map(namespace: Option<&str>) -> bool {
+    use super::gain_map::{CONTAINER, HDRGM};
+    namespace.is_some_and(|ns| ns == HDRGM || ns == CONTAINER)
 }
 
 /// The extended segments of `extended`: each its header, GUID, full length,
