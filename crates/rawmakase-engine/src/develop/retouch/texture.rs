@@ -15,8 +15,10 @@
 //! - Grain. A generator's fill is smoother than the photo. The noise in a band
 //!   around the shape and in the fill is measured as the median absolute deviation
 //!   of a 4-neighbour Laplacian, in square-root values, where shot noise is about
-//!   constant. What the fill lacks is added as Gaussian noise drawn from the
-//!   pixel's position and the patch, so every render of it is the same.
+//!   constant. What the composite would lack is added as Gaussian noise drawn
+//!   from the pixel's position and the patch, so every render of it is the same:
+//!   more where the feather or opacity mixes the fill with the photo, since two
+//!   independent noises mixed half and half have half the variance.
 //!
 //! Both read the image the patch is laid on, so noise reduction or an earlier spot
 //! changes the detail and grain a patch takes, as it changes the membrane.
@@ -418,7 +420,9 @@ fn detail(
     }
 }
 
-/// Adds to `out` the grain it lacks against the photo around the shape.
+/// Adds to `out` the grain it lacks against the photo around the shape, so that
+/// the composite, where coverage and opacity mix the fill with the photo, is as
+/// grainy as the photo.
 fn grain(
     im: &CameraImage,
     op: &Placed,
@@ -437,34 +441,50 @@ fn grain(
         im.width,
         im.height,
     );
+    // The band: within `BAND` pixels of the shape's edge, outside its coverage.
     let ring = heal::coverage(&op.points, op.radius, op.feather, op.profile, band);
+    let reach = heal::coverage(
+        &op.points,
+        op.radius + BAND as f32,
+        0.,
+        heal::FeatherProfile::Smoothstep,
+        band,
+    );
     let width = im.width as usize;
     let photo = residuals(band, |x, y| {
-        let a = ring[((y - band[1]) * (band[2] - band[0]) + x - band[0]) as usize];
-        (a <= 0.).then(|| im.pixels[y as usize * width + x as usize])
+        let k = ((y - band[1]) * (band[2] - band[0]) + x - band[0]) as usize;
+        (ring[k] <= 0. && reach[k] > 0.).then(|| im.pixels[y as usize * width + x as usize])
     });
     let gw = grid[2] - grid[0];
     let fill = residuals(grid, |x, y| {
         let i = ((y - grid[1]) * gw + x - grid[0]) as usize;
         (alpha[i] >= 0.99).then(|| out[i])
     });
-    let lacking: [f32; 3] = std::array::from_fn(|c| match (&photo[c], &fill[c]) {
-        (Some(p), Some(f)) => (p * p - f * f).max(0.).sqrt(),
-        _ => 0.,
-    });
-    if lacking.iter().all(|v| *v <= 0.) {
+    let (photo, fill): ([f32; 3], [f32; 3]) = (
+        std::array::from_fn(|c| photo[c].unwrap_or(0.)),
+        std::array::from_fn(|c| fill[c].unwrap_or(0.)),
+    );
+    if photo.iter().zip(&fill).all(|(p, f)| p <= f) {
         return;
     }
     let gw = gw as usize;
     out.par_iter_mut().enumerate().for_each(|(i, p)| {
-        if alpha[i] <= 0. {
+        // The composite is `(1 - a)` of the photo and `a` of the fill, whose noise
+        // is independent: its variance is σ_p² when the fill's is σ_p² (2 / a - 1).
+        // Kept to coverage of 5% and more, where the factor is at most 39.
+        let a = alpha[i] * op.opacity;
+        if a <= 0. {
             return;
         }
+        let gain = 2. / a.max(0.05) - 1.;
         let (x, y) = (grid[0] + (i % gw) as i32, grid[1] + (i / gw) as i32);
         for c in 0..3 {
-            if lacking[c] > 0. {
+            let lacking = (photo[c] * photo[c] * gain - fill[c] * fill[c])
+                .max(0.)
+                .sqrt();
+            if lacking > 0. {
                 let n = gaussian(patch.seed, x, y, c);
-                p[c] = (p[c].max(0.).sqrt() + lacking[c] * n).max(0.).powi(2);
+                p[c] = (p[c].max(0.).sqrt() + lacking * n).max(0.).powi(2);
             }
         }
     });

@@ -898,3 +898,70 @@ fn a_rerun_reads_what_later_spots_left_alone() {
     ops[2].opacity = 0.7;
     check(&mut cache, &ops);
 }
+
+/// Grain is measured in the band around the shape, not in the rest of its
+/// bounding rectangle: noise beyond the band of a diagonal stroke gives none.
+#[test]
+fn grain_is_measured_around_the_shape_only() {
+    let photo = image(400, 400, |x, y| {
+        if (x - y).abs() / 2f32.sqrt() < 24. {
+            [0.1; 3]
+        } else {
+            std::array::from_fn(|c| (0.1f32.sqrt() + 0.02 * gauss(x, y, 30 + c as u64)).powi(2))
+        }
+    });
+    let flat = |_: f32, _: f32| [0.1; 3];
+    let mut op = laid_over(
+        &photo,
+        [80., 80., 320., 320.],
+        (240, 240),
+        flat,
+        (200., 200., 8.),
+    );
+    op.shape = RetouchShape::Brush {
+        points: vec![[100.5 / 400., 100.5 / 400.], [300.5 / 400., 300.5 / 400.]].into(),
+        radius: 8. / 400.,
+    };
+    assert_eq!(
+        lay(&photo, &op, GenerateBlend::Membrane).pixels,
+        lay(&photo, &op, GenerateBlend::Untextured).pixels
+    );
+}
+
+/// The grain of the composite, not of the fill alone, matches the photo's:
+/// across a wide feather, where the fill and the photo mix, it is as strong as
+/// in the core.
+#[test]
+fn grain_holds_across_the_feather() {
+    let photo = image(400, 400, |x, y| {
+        std::array::from_fn(|c| (0.1f32.sqrt() + 0.01 * gauss(x, y, 40 + c as u64)).powi(2))
+    });
+    let flat = |_: f32, _: f32| [0.1; 3];
+    let mut op = laid_over(
+        &photo,
+        [40., 40., 360., 360.],
+        (320, 320),
+        flat,
+        (200., 200., 100.),
+    );
+    op.feather = 0.75;
+    let out = lay(&photo, &op, GenerateBlend::Membrane);
+    let ring = |im: &CameraImage| {
+        let v = |x: i32, y: i32| im.pixels[(y * 400 + x) as usize][1].max(0.).sqrt();
+        let (mut sum, mut n) = (0., 0.);
+        for y in 1..399 {
+            for x in 1..399 {
+                let d = (x as f32 - 200.).hypot(y as f32 - 200.);
+                if (45. ..80.).contains(&d) {
+                    let l = v(x, y) - (v(x - 1, y) + v(x + 1, y) + v(x, y - 1) + v(x, y + 1)) / 4.;
+                    sum += l * l;
+                    n += 1.;
+                }
+            }
+        }
+        (sum / n).sqrt()
+    };
+    let ratio = ring(&out) / ring(&photo);
+    eprintln!("feather grain ratio {ratio:.3}");
+    assert!((0.88..1.12).contains(&ratio), "{ratio}");
+}
