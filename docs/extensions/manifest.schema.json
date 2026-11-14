@@ -569,6 +569,28 @@
         }
       ]
     },
+    "Source": {
+      "additionalProperties": false,
+      "description": "A `[[source]]`: the program reports files as they arrive (a watched\nfolder, a tethered camera), and the app adds them to the open catalog, for\neach catalog the user turned the source on for.",
+      "properties": {
+        "id": {
+          "description": "Unique among the extension's sources.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name shown on the extension's page, for example `Tethered camera`;\nthe id without one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
     "Start": {
       "description": "When a program starts.",
       "oneOf": [
@@ -663,6 +685,13 @@
       "description": "Settings, shown on the extension's page in Preferences.",
       "items": {
         "$ref": "#/$defs/Setting"
+      },
+      "type": "array"
+    },
+    "source": {
+      "description": "Sources of new photos (a watched folder, a tethered camera), from\n`api = 3`.",
+      "items": {
+        "$ref": "#/$defs/Source"
       },
       "type": "array"
     }

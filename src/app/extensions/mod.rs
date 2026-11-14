@@ -46,6 +46,18 @@
 //! (or `cancelled` when it cancelled the proposal itself), unless the write
 //! had begun: then it is answered with what was written.
 //!
+//! A `[[source]]` reports files in a scope the host issues
+//! ([`Host::set_catalog`], [`Host::sync_sources`]): one per source, while its
+//! program is ready, its extension enabled, a catalog open and the source
+//! turned on for that catalog (in `extensions.json`). The program hears
+//! `source-started` and `source-stopped`; a scope's number is never reused,
+//! and a program start gets its scopes again after `hello`. A
+//! `source.report` is admitted only in its source's current scope, and is
+//! added on a worker (see `sources.rs`) as a [`Deferred`] holding the
+//! worker's write gate: the scope ending, the program cancelling it or its
+//! session ending closes the gate, and the worker writes nothing unless it
+//! has begun.
+//!
 //! A read of photos not open in Develop opens their files, so it runs on a
 //! worker too: a program's read is a [`Deferred`] with no `op`, answered by
 //! [`Host::finish_read`] and cancelled with its session or by the program;
@@ -72,6 +84,9 @@ pub(in crate::app) mod mask_generator;
 mod midi_tests;
 mod page;
 mod panels;
+mod sources;
+#[cfg(test)]
+mod sources_tests;
 mod targets;
 #[cfg(test)]
 mod tests;
@@ -81,12 +96,13 @@ pub(in crate::app) use devices::Devices;
 pub(in crate::app) use editor::Told;
 pub(crate) use editor::{Done, PathTarget};
 pub(in crate::app) use page::Page;
+pub(crate) use sources::ReportDone;
 
 use crate::app::shell::commands::registry::{self, Dynamic};
 use rawmakase_extensions::protocol::manifest::{Input, Launch as AdapterLaunch, Start};
 use rawmakase_extensions::protocol::method::{
     AppEvent, AppRequest, CommandRun, Hello, Level, PanelChanged, PanelClicked, PanelOpen,
-    ProgramEvent, ProgramRequest, SettingChanged, Snapshot,
+    ProgramEvent, ProgramRequest, SettingChanged, Snapshot, SourceStarted, SourceStopped,
 };
 use rawmakase_extensions::protocol::viewer::ViewerInput;
 use rawmakase_extensions::protocol::{ErrorCode, PROTOCOL, RemoteError, controls::Control};
@@ -205,8 +221,10 @@ struct Deferred {
     ticket: u64,
     /// The program's request, answered when the work finishes.
     request: u64,
-    /// The `command.run` a proposal belongs to; none for a read.
+    /// The `command.run` a proposal belongs to; none for a read or a report.
     op: Option<u64>,
+    /// The source and scope a report belongs to; none for anything else.
+    scope: Option<(String, u64)>,
     cancel: Work,
 }
 impl Drop for Deferred {
@@ -221,6 +239,7 @@ impl Drop for Deferred {
 enum Work {
     Proposal(Arc<crate::app::library::sync::BatchProgress>),
     Read(Arc<AtomicBool>),
+    Report(Arc<sources::WriteGate>),
 }
 impl Work {
     /// Stops the work; false once a proposal has begun its write, which it
@@ -232,6 +251,7 @@ impl Work {
                 cancel.store(true, Ordering::Relaxed);
                 true
             }
+            Self::Report(gate) => gate.close(),
         }
     }
 }
@@ -269,6 +289,9 @@ struct Running {
     number: u64,
     /// Its control adapters' devices.
     devices: std::sync::Arc<Devices>,
+    /// Its sources' scopes running now, by source: the scope's number and
+    /// the catalog it is for.
+    scopes: BTreeMap<String, (u64, String)>,
 }
 
 /// One host-drawn panel's controls, as its program last returned them.
@@ -451,6 +474,9 @@ pub(in crate::app) enum Answer {
     /// The editor started a read that answers it, through
     /// [`Host::finish_read`] with the call's ticket; this is its cancel.
     Reading(Arc<AtomicBool>),
+    /// The editor started adding a report's files, which answers it through
+    /// [`Host::finish_report`] with the call's ticket; this is its gate.
+    Adding(Arc<sources::WriteGate>),
 }
 
 /// An extension found while loading: its manifest, origin, folder, program
@@ -490,6 +516,10 @@ pub(in crate::app) struct Host {
     request_deadline: Duration,
     /// Problems for the top bar, from the next poll.
     notices: Vec<String>,
+    /// The catalog open in the editor, which sources' scopes are for.
+    catalog: Option<sources::OpenCatalog>,
+    /// The number the next source scope gets.
+    next_scope: u64,
     /// Tests start every program that isn't bundled as this instead: their
     /// own test binary, running the example extension.
     #[cfg(test)]
@@ -536,6 +566,8 @@ impl Host {
             search_dirs: Vec::new(),
             request_deadline: session::REQUEST_DEADLINE,
             notices: Vec::new(),
+            catalog: None,
+            next_scope: 1,
             #[cfg(test)]
             program_override: None,
             #[cfg(test)]
@@ -1187,6 +1219,7 @@ impl Host {
             deferred: Vec::new(),
             number,
             devices,
+            scopes: BTreeMap::new(),
         });
         e.last_active = now;
         Ok(())
@@ -1681,6 +1714,124 @@ impl Host {
         }
     }
 
+    /// The catalog open in the editor changed (opened, closed or another
+    /// one): sources' scopes follow it.
+    pub(in crate::app) fn set_catalog(&mut self, catalog: Option<sources::OpenCatalog>) {
+        if self.catalog != catalog {
+            self.catalog = catalog;
+            self.sync_sources();
+        }
+    }
+
+    /// Starts and stops sources' scopes so that each ready program has one
+    /// for each of its sources turned on for the open catalog, and none
+    /// other: a scope of another catalog, or of a source turned off, stops
+    /// (reports in it being added are withdrawn), and a new one starts with
+    /// a number never used before.
+    pub(in crate::app) fn sync_sources(&mut self) {
+        if self.closed {
+            return;
+        }
+        let catalog = self.catalog.clone();
+        let mut next = self.next_scope;
+        for e in &mut self.extensions {
+            if e.manifest.sources.is_empty() {
+                continue;
+            }
+            let wanted: Vec<String> = match &catalog {
+                Some(c) if e.entry.enabled => e
+                    .manifest
+                    .sources
+                    .iter()
+                    .filter(|s| e.entry.source_on(&s.id, &c.key))
+                    .map(|s| s.id.clone())
+                    .collect(),
+                _ => Vec::new(),
+            };
+            let Some(run) = e.ready_session() else {
+                continue;
+            };
+            let stale: Vec<String> = run
+                .scopes
+                .iter()
+                .filter(|(id, (_, key))| {
+                    !wanted.contains(id) || catalog.as_ref().map(|c| &c.key) != Some(key)
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            let changed = !stale.is_empty();
+            for source in stale {
+                if let Some((scope, _)) = run.scopes.remove(&source) {
+                    let (name, params) =
+                        AppEvent::SourceStopped(SourceStopped { source, scope }).into_parts();
+                    let _ = run.session.event(&name, params);
+                }
+            }
+            if let Some(c) = &catalog {
+                for source in wanted {
+                    if run.scopes.contains_key(&source) {
+                        continue;
+                    }
+                    let scope = next;
+                    next += 1;
+                    run.scopes.insert(source.clone(), (scope, c.key.clone()));
+                    let (name, params) = AppEvent::SourceStarted(SourceStarted {
+                        source,
+                        scope,
+                        catalog: c.name.clone(),
+                    })
+                    .into_parts();
+                    let _ = run.session.event(&name, params);
+                }
+            }
+            if changed {
+                Self::sweep(e);
+            }
+        }
+        self.next_scope = next;
+    }
+
+    /// Whether source `source` of extension `id` adds photos to the open
+    /// catalog; none when no catalog is open.
+    pub(in crate::app) fn source_on(&self, id: &str, source: &str) -> Option<bool> {
+        let catalog = self.catalog.as_ref()?;
+        let e = self.get(id)?;
+        Some(e.entry.source_on(source, &catalog.key))
+    }
+
+    /// Turns source `source` of extension `id` on or off for the open
+    /// catalog, in `extensions.json` first; its scope starts or stops.
+    pub(in crate::app) fn set_source_on(
+        &mut self,
+        id: &str,
+        source: &str,
+        on: bool,
+    ) -> Result<(), String> {
+        let store = self
+            .store
+            .clone()
+            .ok_or("Extensions are off in this editor")?;
+        let catalog = self
+            .catalog
+            .clone()
+            .ok_or("Open a catalog to add photos to")?;
+        let index = self.index(id).ok_or_else(|| format!("No extension {id}"))?;
+        let e = &self.extensions[index];
+        if !e.manifest.sources.iter().any(|s| s.id == source) {
+            return Err(format!("{} has no source {source}", e.name()));
+        }
+        State::update(store.data_dir(), |state| {
+            state.entry(id).set_source_on(source, &catalog.key, on);
+            Ok(())
+        })
+        .map_err(|err| format!("{} not changed: {err}", e.name()))?;
+        self.extensions[index]
+            .entry
+            .set_source_on(source, &catalog.key, on);
+        self.sync_sources();
+        Ok(())
+    }
+
     /// Whether `op`, an app request of extension `id`'s current session,
     /// is a `command.run` still in flight and admitted.
     fn admitted(e: &Extension, op: u64) -> bool {
@@ -1730,6 +1881,7 @@ impl Host {
                 }
             }
         }
+        self.sync_sources();
         let mut next: Option<Instant> = None;
         for index in 0..self.extensions.len() {
             self.poll_one(index, now, answer, outcomes);
@@ -1761,6 +1913,9 @@ impl Host {
                 next = Some(next.map_or(at, |n: Instant| n.min(at)));
             }
         }
+        // Programs that finished their handshake in this poll get their
+        // scopes now, not a frame later.
+        self.sync_sources();
         self.killers.retain(|k| !k.has_ended());
         next
     }
@@ -2079,6 +2234,47 @@ impl Host {
                 ErrorCode::Other("adapter_disabled".into()),
                 "this extension declares no control adapter RAWmakase launches",
             ))),
+            ProgramRequest::SourceReport(report) => {
+                let Some(source) = e.manifest.sources.iter().find(|s| s.id == report.source) else {
+                    return Answer::Now(Err(RemoteError::new(
+                        ErrorCode::InvalidRequest,
+                        format!("the manifest declares no source {}", report.source),
+                    )));
+                };
+                let title = format!("{}: {}", e.name(), source.name());
+                if !Self::in_scope(e, &report.source, report.scope) {
+                    return Answer::Now(Err(RemoteError::new(
+                        ErrorCode::NotAdmitted,
+                        format!("scope {} of {title} is not running", report.scope),
+                    )));
+                }
+                if let Err(err) = report.validate() {
+                    return Answer::Now(Err(err));
+                }
+                let scope = (report.source.clone(), report.scope);
+                let answered = answer(Call {
+                    request: ProgramRequest::SourceReport(report),
+                    title,
+                    ticket,
+                    deadline: None,
+                    devices: None,
+                });
+                if let Answer::Adding(gate) = &answered {
+                    match self.extensions[index].run.as_mut() {
+                        Some(run) => run.deferred.push(Deferred {
+                            ticket,
+                            request: id,
+                            op: None,
+                            scope: Some(scope),
+                            cancel: Work::Report(gate.clone()),
+                        }),
+                        None => {
+                            gate.close();
+                        }
+                    }
+                }
+                answered
+            }
             ProgramRequest::ProposeSettings(proposal) => {
                 if !Self::admitted(e, proposal.op) {
                     return Answer::Now(Err(RemoteError::new(
@@ -2107,6 +2303,7 @@ impl Host {
                             ticket,
                             request: id,
                             op: Some(op),
+                            scope: None,
                             cancel: Work::Proposal(cancel.clone()),
                         }),
                         None => {
@@ -2130,6 +2327,7 @@ impl Host {
                             ticket,
                             request: id,
                             op: None,
+                            scope: None,
                             cancel: Work::Read(cancel.clone()),
                         }),
                         None => cancel.store(true, Ordering::Relaxed),
@@ -2151,6 +2349,16 @@ impl Host {
             .filter(|d| d.op.is_some_and(|op| !Self::admitted(e, op)))
             .map(|d| d.ticket)
             .collect();
+        let out_of_scope: Vec<u64> = run
+            .deferred
+            .iter()
+            .filter(|d| {
+                d.scope
+                    .as_ref()
+                    .is_some_and(|(source, scope)| !Self::in_scope(e, source, *scope))
+            })
+            .map(|d| d.ticket)
+            .collect();
         if let Some(run) = e.run.as_mut() {
             for ticket in gone {
                 Self::withdraw(
@@ -2162,7 +2370,50 @@ impl Host {
                     ),
                 );
             }
+            for ticket in out_of_scope {
+                Self::withdraw(
+                    run,
+                    ticket,
+                    RemoteError::new(
+                        ErrorCode::NotAdmitted,
+                        "the scope this report belongs to stopped",
+                    ),
+                );
+            }
         }
+    }
+
+    /// Whether `scope` is source `source`'s scope now, in `e`'s current
+    /// session, which still admits requests.
+    fn in_scope(e: &Extension, source: &str, scope: u64) -> bool {
+        e.entry.enabled
+            && e.run.as_ref().is_some_and(|r| {
+                r.ready && !r.stopping && r.scopes.get(source).is_some_and(|(s, _)| *s == scope)
+            })
+    }
+
+    /// The report `ticket`'s files were added, or not, with `result`: the
+    /// program is answered, if the session that asked still runs and hasn't
+    /// been answered already (its scope ended, or it cancelled the report,
+    /// before the write began).
+    pub(in crate::app) fn finish_report(
+        &mut self,
+        ticket: u64,
+        result: Result<Value, RemoteError>,
+    ) {
+        for e in &mut self.extensions {
+            let Some(run) = e.run.as_mut() else { continue };
+            let Some(at) = run.deferred.iter().position(|d| d.ticket == ticket) else {
+                continue;
+            };
+            let deferred = run.deferred.remove(at);
+            #[cfg(test)]
+            self.finished.push((ticket, result.clone()));
+            let _ = run.session.reply(deferred.request, result);
+            return;
+        }
+        #[cfg(test)]
+        self.finished.push((ticket, result));
     }
 
     /// Cancels the work of the proposal `ticket` and answers the program
@@ -2342,6 +2593,7 @@ fn placeholder(id: &str, name: &str) -> Manifest {
         panels: Vec::new(),
         control_adapters: Vec::new(),
         mask_generators: Vec::new(),
+        sources: Vec::new(),
     }
 }
 

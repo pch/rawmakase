@@ -61,6 +61,33 @@ pub struct Choice {
     pub options: Vec<FolderLocation>,
     pub chosen: FolderLocation,
 }
+/// What adding files a source reported did ([`Catalog::import_files`]).
+#[derive(Debug, Default)]
+pub struct FilesAdded {
+    /// Photos added; the other files placed were in the catalog already.
+    pub added: usize,
+    /// Sidecars that could not be read.
+    pub report: super::SidecarReport,
+    /// The files the catalog has now, added or already there, as reported,
+    /// beside the file each resolved to.
+    pub placed: Vec<(PathBuf, PathBuf)>,
+    /// The files not added, as reported, with why.
+    pub refused: Vec<(PathBuf, FileRefusal)>,
+}
+/// Why [`Catalog::import_files`] didn't add a file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileRefusal {
+    /// It isn't there, or isn't a file.
+    NotFound,
+    /// It isn't a file the catalog reads as a photo, or it is hidden.
+    NotAPhoto,
+    /// It isn't inside the folder given.
+    OutsideFolder,
+    /// Its folder's catalog folder is elsewhere on this computer.
+    LinkedElsewhere,
+    /// More than one location claims its folder.
+    Ambiguous,
+}
 /// What added a batch of photos.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::catalog) enum ImportKind {
@@ -243,6 +270,98 @@ impl Catalog {
         }
         (result.added, result.report) =
             self.insert(&folder, files, &placed.places, defaults, ImportKind::Add)?;
+        Ok(result)
+    }
+    /// Adds `files`, found complete in or below `folder` (a watched folder, a
+    /// tethered camera's), as `import_folder` adds that folder's new photos:
+    /// each file's folder placed by this computer's locations, a folder no
+    /// location contains going under a new root, `folder`, and the photos
+    /// added in one transaction, as one import batch, with what their files
+    /// hold. Files already in the catalog are left alone and listed as
+    /// placed, so a file reported twice is added once. A file whose folder
+    /// is ambiguous or linked elsewhere is refused, not asked about: Add
+    /// Folder… asks.
+    pub fn import_files(
+        &mut self,
+        folder: &Path,
+        files: &[PathBuf],
+        defaults: &super::NewPhotoDefaults,
+    ) -> Result<FilesAdded> {
+        let folder = folder.canonicalize()?;
+        let mut result = FilesAdded::default();
+        // Each file as reported, and the file it is.
+        let mut found: Vec<(PathBuf, PathBuf)> = Vec::new();
+        for reported in files {
+            let refusal = match reported.canonicalize() {
+                Err(_) => Some(FileRefusal::NotFound),
+                Ok(file) if !file.is_file() => Some(FileRefusal::NotFound),
+                Ok(file) if !file.starts_with(&folder) => Some(FileRefusal::OutsideFolder),
+                Ok(file)
+                    if !crate::storage::is_photo(&file)
+                        || file.strip_prefix(&folder).is_ok_and(|inside| {
+                            inside
+                                .iter()
+                                .any(|part| crate::storage::is_hidden(Path::new(part)))
+                        }) =>
+                {
+                    Some(FileRefusal::NotAPhoto)
+                }
+                Ok(file) => {
+                    if !found.iter().any(|(_, f)| *f == file) {
+                        found.push((reported.clone(), file));
+                    }
+                    None
+                }
+            };
+            if let Some(refusal) = refusal {
+                result.refused.push((reported.clone(), refusal));
+            }
+        }
+        let resolved: Vec<PathBuf> = found.iter().map(|(_, file)| file.clone()).collect();
+        let placed = self.place(&resolved, &folder, &[])?;
+        let unplaced = |file: &Path| -> Option<FileRefusal> {
+            let directory = file.parent()?;
+            if placed.conflicts.iter().any(|c| c.directory == directory) {
+                Some(FileRefusal::LinkedElsewhere)
+            } else if placed
+                .ambiguous
+                .iter()
+                .any(|a| a.directories.iter().any(|d| d == directory))
+            {
+                Some(FileRefusal::Ambiguous)
+            } else {
+                None
+            }
+        };
+        for (reported, file) in found {
+            match unplaced(&file) {
+                Some(refusal) => result.refused.push((reported, refusal)),
+                None if file.parent().is_some_and(|d| placed.places.contains_key(d)) => {
+                    result.placed.push((reported, file));
+                }
+                // Every directory is placed, in conflict or ambiguous.
+                None => result.refused.push((reported, FileRefusal::NotFound)),
+            }
+        }
+        let to_add: Vec<PathBuf> = result.placed.iter().map(|(_, file)| file.clone()).collect();
+        // A report of files the catalog has already (a source reporting again
+        // after reconnecting) starts no batch, which would empty Previous
+        // Import.
+        let any_new = self.db.snapshot(|s| {
+            for file in &to_add {
+                let place = file.parent().and_then(|d| placed.places.get(d));
+                match place {
+                    Some(Place::Folder(root, logical)) if known(s, *root, logical, file)? => {}
+                    Some(_) => return Ok(true),
+                    None => {}
+                }
+            }
+            Ok(false)
+        })?;
+        if any_new {
+            (result.added, result.report) =
+                self.insert(&folder, to_add, &placed.places, defaults, ImportKind::Add)?;
+        }
         Ok(result)
     }
     /// Where the directories of `files`, found below the `chosen` folder, go

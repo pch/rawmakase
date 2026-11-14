@@ -63,6 +63,8 @@ pub(crate) enum Done {
     Proposed(Box<super::targets::Finished>),
     /// A read's worker finished, or panicked.
     Read(Box<super::targets::ReadDone>),
+    /// A source's report was added to the catalog, or not.
+    Reported(Box<super::ReportDone>),
 }
 
 /// What the editor last told programs, to tell them only of changes.
@@ -181,7 +183,8 @@ impl Editor {
     }
 
     /// Tells programs what changed since the last frame: the selection, the
-    /// photo open in Develop, and the catalog closing or being read again.
+    /// photo open in Develop, the catalog closing or being read again, and
+    /// sources' scopes following the catalog open.
     fn tell_extensions(&mut self) {
         let catalog = self.library.as_ref().map(|l| {
             let crate::catalog::CatalogLocation::File(path) = l.session.catalog().location();
@@ -194,6 +197,13 @@ impl Editor {
             }
             self.extensions_told.catalog = catalog;
         }
+        // After `catalog-closed`, so a program hears the catalog close before
+        // its sources' scopes of it stop.
+        let open = self
+            .library
+            .as_ref()
+            .map(|l| super::sources::OpenCatalog::of(l.session.catalog().location()));
+        self.extensions.set_catalog(open);
         let selection = self
             .library
             .as_ref()
@@ -249,6 +259,7 @@ impl Editor {
                     Err(err) => Answer::Now(Err(err)),
                 }
             }
+            ProgramRequest::SourceReport(report) => self.add_reported(report, title, ticket),
             ProgramRequest::AdapterOperate(operate) => Answer::Now(match devices {
                 None => Err(RemoteError::new(
                     ErrorCode::InvalidRequest,
@@ -522,6 +533,7 @@ impl Editor {
             }
             Done::Proposed(finished) => self.proposal_finished(*finished),
             Done::Read(done) => self.read_finished(*done),
+            Done::Reported(done) => self.report_finished(*done),
             Done::Checked(result) => {
                 self.extension_page.busy = false;
                 match result {

@@ -1267,7 +1267,9 @@ impl Library {
         })
     }
     /// Selects `id`, leaving filters that would hide it so it stays in view.
-    fn show(&mut self, id: PhotoId) {
+    /// Selects photo `id`, showing it: its stack expanded, and the filters
+    /// and folder that hide it cleared.
+    pub(in crate::app) fn show(&mut self, id: PhotoId) {
         // A photo a collapsed stack hides shows once its stack is expanded.
         self.expand_stack_of(id);
         if !self

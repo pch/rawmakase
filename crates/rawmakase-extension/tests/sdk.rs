@@ -1,5 +1,5 @@
 //! The run loop against the mock host: the handshake, requests both ways,
-//! cancellation, panels, adapters and mask generators.
+//! cancellation, panels, adapters, mask generators and sources.
 use rawmakase_extension::mock::{MockHost, Recorded};
 use rawmakase_extension::protocol::buffer::{
     Access, Alpha, Buffer, Meaning, Primaries, Region, Sample, Space, Transfer, White,
@@ -8,12 +8,13 @@ use rawmakase_extension::protocol::controls::{Control, ControlKind};
 use rawmakase_extension::protocol::message::NeedsSetup;
 use rawmakase_extension::protocol::method::{
     AppEvent, AppRequest, CommandRun, DeviceState, Empty, EmptyMask, Hello, MaskGenerate,
-    MaskGenerated, Operation, SettingChanged, SettingsChange,
+    MaskGenerated, Operation, SettingChanged, SettingsChange, SourceReport, SourceStarted,
+    SourceStopped,
 };
 use rawmakase_extension::protocol::viewer::{Bounds, Click, MAX_CLICKS, ViewerInput};
 use rawmakase_extension::{
     Context, ControlAdapter, ErrorCode, Extension, Host, MaskAsk, MaskGenerator, Panel,
-    RemoteError, ServeOptions,
+    RemoteError, ServeOptions, Source,
 };
 use serde_json::{Value, json};
 use std::sync::mpsc;
@@ -349,6 +350,108 @@ fn an_adapter_starts_after_hello_and_reports_from_its_own_thread() {
     // Events reach the handler, and quitting ends the session.
     host.event(AppEvent::SelectionChanged(Empty {}));
     host.finish().unwrap();
+}
+
+/// A source that reports one file from a thread of its own in each scope
+/// started, and records what it was told.
+struct Card {
+    told: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+impl Source for Card {
+    fn start(&mut self, host: Host, started: SourceStarted) -> Result<(), RemoteError> {
+        self.told
+            .lock()
+            .unwrap()
+            .push(format!("start {} {}", started.scope, started.catalog));
+        let told = self.told.clone();
+        self.thread = Some(std::thread::spawn(move || {
+            let folder = std::env::temp_dir();
+            let reported = host.report(SourceReport {
+                source: started.source,
+                scope: started.scope,
+                folder: folder.clone(),
+                files: vec![folder.join("a.cr3")],
+                show: true,
+            });
+            told.lock()
+                .unwrap()
+                .push(format!("reported {:?}", reported.map(|r| r.added)));
+        }));
+        Ok(())
+    }
+    fn stop(&mut self, scope: u64) {
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+        self.told.lock().unwrap().push(format!("stop {scope}"));
+    }
+}
+
+#[test]
+fn a_source_reports_in_its_scope_and_tries_again_while_the_app_is_busy() {
+    let told = std::sync::Arc::default();
+    let card = Card {
+        told: std::sync::Arc::clone(&told),
+        thread: None,
+    };
+    let mut busy = 2;
+    let host = MockHost::start_with_options(
+        Extension::new().source("card", card),
+        ServeOptions { api: 3 },
+        move |method, _| {
+            assert_eq!(method, "source.report");
+            if busy > 0 {
+                busy -= 1;
+                return Err(RemoteError::new(ErrorCode::Busy, "adding a folder"));
+            }
+            Ok(json!({"added": 1, "photos": [], "refused": []}))
+        },
+    );
+    assert_eq!(host.hello().unwrap().implements, ["source/card"]);
+    // A scope of another source, or one stopped that isn't running, is
+    // nobody's.
+    host.event(AppEvent::SourceStopped(SourceStopped {
+        source: "card".into(),
+        scope: 9,
+    }));
+    host.event(AppEvent::SourceStarted(SourceStarted {
+        source: "card".into(),
+        scope: 3,
+        catalog: "Studio".into(),
+    }));
+    let recorded = host.wait_for(|r| r.len() >= 3);
+    let reports: Vec<_> = recorded
+        .iter()
+        .map(|r| match r {
+            Recorded::Request { method, params, .. } => {
+                assert_eq!(method, "source.report");
+                (params["scope"].clone(), params["show"].clone())
+            }
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(reports, vec![(json!(3), json!(true)); 3]);
+    // Another catalog: the scope running stops before the next starts.
+    host.event(AppEvent::SourceStarted(SourceStarted {
+        source: "card".into(),
+        scope: 4,
+        catalog: "Home".into(),
+    }));
+    host.wait_for(|r| r.len() >= 4);
+    // The session ending stops the scope still running.
+    host.finish().unwrap();
+    assert_eq!(
+        *told.lock().unwrap(),
+        [
+            "start 3 Studio",
+            "reported Ok(1)",
+            "stop 3",
+            "start 4 Home",
+            "reported Ok(1)",
+            "stop 4"
+        ]
+    );
 }
 
 #[test]

@@ -492,6 +492,36 @@ impl Editor {
                 });
             }
         }
+        if !m.sources.is_empty() {
+            gap(ui);
+            group(ui, "Photo sources");
+            let catalog = self
+                .library
+                .as_ref()
+                .map(|l| l.session.catalog().location().name());
+            for source in &m.sources {
+                let mut set = None;
+                form_row(ui, source.name(), |ui| {
+                    match (self.extensions.source_on(id, &source.id), &catalog) {
+                        (Some(mut on), Some(catalog)) => {
+                            let label = format!("Add its photos to {catalog}");
+                            if ui
+                                .add_enabled(enabled, egui::Checkbox::new(&mut on, label))
+                                .changed()
+                            {
+                                set = Some(on);
+                            }
+                        }
+                        _ => hint(ui, "Open a catalog to add its photos to"),
+                    }
+                });
+                if let Some(on) = set
+                    && let Err(why) = self.extensions.set_source_on(id, &source.id, on)
+                {
+                    self.messages.fail(why);
+                }
+            }
+        }
         if !errors.is_empty() {
             gap(ui);
             group(ui, "Last errors");

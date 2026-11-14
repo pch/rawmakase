@@ -16,7 +16,7 @@
 //! recovery and takes no handles.
 use crate::host::{Host, Shared};
 use crate::shm::{Handle, Incoming, Mapping, Plain, Receive};
-use crate::{Command, ControlAdapter, MaskAsk, MaskGenerator, Panel};
+use crate::{Command, ControlAdapter, MaskAsk, MaskGenerator, Panel, Source};
 use rawmakase_extension_protocol::framing::{FrameError, LineReader};
 use rawmakase_extension_protocol::manifest::API;
 use rawmakase_extension_protocol::message::Handles;
@@ -40,6 +40,9 @@ pub struct Extension {
     panels: BTreeMap<String, Box<dyn Panel>>,
     adapters: BTreeMap<String, Box<dyn ControlAdapter>>,
     mask_generators: BTreeMap<String, Box<dyn MaskGenerator>>,
+    sources: BTreeMap<String, Box<dyn Source>>,
+    /// The scope each source runs in now, by source id.
+    scopes: BTreeMap<String, u64>,
     on_event: Option<EventHandler>,
 }
 
@@ -52,8 +55,8 @@ pub struct ServeOptions {
     ///
     /// API 1 takes no handles: a message declaring some is answered
     /// `invalid_request`, a malformed request too, an oversized line is
-    /// skipped, and reading goes on. API 2 takes the handles the app passes
-    /// with its requests, and a framing fault ends serving: the program exits
+    /// skipped, and reading goes on. API 2 and 3 take the handles the app
+    /// passes with its requests, and a framing fault ends serving: the program exits
     /// under [`Extension::run`], and [`Extension::serve_with_options`] returns
     /// an error.
     pub api: u32,
@@ -215,6 +218,11 @@ impl Extension {
         self.mask_generators.insert(id.into(), Box::new(generator));
         self
     }
+    /// Implements the `[[source]]` with this id.
+    pub fn source(mut self, id: &str, source: impl Source + 'static) -> Self {
+        self.sources.insert(id.into(), Box::new(source));
+        self
+    }
     /// Called with every event from the app, after the extension's own state
     /// (its settings) has taken it in.
     pub fn on_event(mut self, handler: impl FnMut(&AppEvent, &Host) + Send + 'static) -> Self {
@@ -297,6 +305,11 @@ impl Extension {
         for adapter in self.adapters.values_mut() {
             adapter.stop();
         }
+        for (id, scope) in std::mem::take(&mut self.scopes) {
+            if let Some(source) = self.sources.get_mut(&id) {
+                source.stop(scope);
+            }
+        }
         if let Some(why) = fault.lock().unwrap_or_else(|e| e.into_inner()).take() {
             return Err(io::Error::new(io::ErrorKind::InvalidData, why));
         }
@@ -322,6 +335,7 @@ impl Extension {
                     if let AppEvent::SettingChanged(change) = &event {
                         settings.insert(change.id.clone(), change.value.clone());
                     }
+                    self.source_event(&event, host);
                     if let Some(handler) = &mut self.on_event {
                         handler(&event, host);
                     }
@@ -426,15 +440,52 @@ impl Extension {
             .mask_generators
             .keys()
             .map(|id| format!("mask-generator/{id}"));
+        let sources = self.sources.keys().map(|id| format!("source/{id}"));
         let reply = HelloReply {
             protocol: PROTOCOL,
             implements: commands
                 .chain(panels)
                 .chain(adapters)
                 .chain(generators)
+                .chain(sources)
                 .collect(),
         };
         serde_json::to_value(reply).expect("a reply is JSON")
+    }
+
+    /// Starts or stops a source's scope. A scope started while another of the
+    /// same source runs stops that one first, so a source has one at a time.
+    fn source_event(&mut self, event: &AppEvent, host: &Host) {
+        match event {
+            AppEvent::SourceStarted(started) => {
+                let Some(source) = self.sources.get_mut(&started.source) else {
+                    return;
+                };
+                if let Some(previous) = self.scopes.remove(&started.source) {
+                    source.stop(previous);
+                }
+                match source.start(host.clone(), started.clone()) {
+                    Ok(()) => {
+                        self.scopes.insert(started.source.clone(), started.scope);
+                    }
+                    Err(e) => {
+                        let _ = host.notify(
+                            rawmakase_extension_protocol::method::Level::Error,
+                            &format!("The {} source didn't start: {e}", started.source),
+                        );
+                    }
+                }
+            }
+            AppEvent::SourceStopped(stopped)
+                if self.scopes.get(&stopped.source) == Some(&stopped.scope) =>
+            {
+                self.scopes.remove(&stopped.source);
+                if let Some(source) = self.sources.get_mut(&stopped.source) {
+                    source.stop(stopped.scope);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn start_adapters(&mut self, host: &Host) {

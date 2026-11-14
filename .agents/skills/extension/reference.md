@@ -225,6 +225,107 @@ typed with `host.read_action(spec)`. An adapter with `launch = "external"`
 (MCP) doesn't use this protocol: its program uses the control socket
 ([overview](../../../docs/extensions/overview.md#externally-launched-adapters)).
 
+## Photo source (API 3)
+
+A watched folder: its own manifest, since a source needs `api = 3` and a
+program that starts with the app:
+
+```toml
+api = 3
+
+[program]
+path = "bin/drop"
+start = "with-app"
+
+[[source]]
+id = "drop"
+name = "Drop folder"
+```
+
+`start` runs on the handler thread when a scope starts: once for each catalog
+the user turned the source on for, while it is open. Keep one watcher for the
+program's life and point it at the scope running now. `complete_files`
+stands for your own rule for a finished file (it stopped growing, the camera
+said so):
+
+```rust
+use rawmakase_extension::protocol::method::{Level, SourceReport, SourceStarted};
+use rawmakase_extension::{ErrorCode, Extension, Host, RemoteError, Source};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
+/// Watches one folder for the program's life and reports what arrives in
+/// whichever scope runs: 0 while none does.
+#[derive(Default)]
+struct Drop {
+    scope: Arc<AtomicU64>,
+    watching: bool,
+}
+
+impl Source for Drop {
+    fn start(&mut self, host: Host, started: SourceStarted) -> Result<(), RemoteError> {
+        self.scope.store(started.scope, Ordering::SeqCst);
+        if !self.watching {
+            self.watching = true;
+            let scope = self.scope.clone();
+            std::thread::spawn(move || watch(&host, &scope, Path::new("/srv/drop")));
+        }
+        Ok(())
+    }
+    fn stop(&mut self, scope: u64) {
+        // Only the scope running now; never wait here.
+        let _ = self.scope.compare_exchange(scope, 0, Ordering::SeqCst, Ordering::SeqCst);
+    }
+}
+
+fn watch(host: &Host, scope: &AtomicU64, folder: &Path) {
+    loop {
+        // A file is complete once it has stopped growing, or its writer says so.
+        let files: Vec<PathBuf> = complete_files(folder);
+        let now = scope.load(Ordering::SeqCst);
+        if now != 0 && !files.is_empty() {
+            for chunk in files.chunks(200) {
+                let report = SourceReport {
+                    source: "drop".into(),
+                    scope: now,
+                    folder: folder.into(),
+                    files: chunk.to_vec(),
+                    show: false,
+                };
+                match host.report(report) {
+                    Ok(reported) => {
+                        for refused in reported.refused {
+                            let _ = host.notify(Level::Warning, &format!("{}: {:?}", refused.path.display(), refused.reason));
+                        }
+                    }
+                    // The scope stopped, or the app stayed busy for a minute:
+                    // report the files again in the next scope or pass.
+                    Err(e) if matches!(e.code, ErrorCode::NotAdmitted | ErrorCode::Busy) => break,
+                    Err(_) => return, // The session ended.
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+fn complete_files(_folder: &Path) -> Vec<PathBuf> {
+    Vec::new()
+}
+```
+
+- `host.report` returns once the files are added. `added` counts the new
+  photos, `photos` gives each file's photo id (also for files the catalog
+  already had) and `refused` the rest.
+- A tethering source does the same with `show: true` for each capture.
+  Shutter and camera settings go in commands and a panel, as usual.
+- Test the scopes with `MockHost::start_with_options(.., ServeOptions { api:
+  3 }, ..)` and `host.event(AppEvent::SourceStarted(..))` /
+  `SourceStopped(..)`. The responder answers `source.report`, and an
+  `Err(RemoteError::new(ErrorCode::Busy, ..))` shows the retry.
+
 ## Builder
 
 ```rust

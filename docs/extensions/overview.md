@@ -5,12 +5,13 @@ packages, installation, `extensions.json`, the extension protocol, the SDK and
 `cargo rawmakase` exist, and the app runs extensions: it supervises their
 programs, and has Preferences > Extensions, their commands, settings and
 panels, reads and proposals with target tokens, control adapters, the app's
-own and externally launched ones, and mask generators (`api = 2`). MCP, MIDI
-and AI Masks are bundled extensions.
+own and externally launched ones, mask generators (`api = 2`) and photo
+sources (`api = 3`). MCP, MIDI and AI Masks are bundled extensions.
 
 An **extension** adds to RAWmakase without changing it: commands, settings,
-panels of controls the app draws, and control adapters (a MIDI device, an MCP
-server). It is a package with one manifest, `rawmakase-extension.toml`
+panels of controls the app draws, control adapters (a MIDI device, an MCP
+server), mask generators and photo sources (a watched folder, a tethered
+camera). It is a package with one manifest, `rawmakase-extension.toml`
 ([reference](manifest.md)), and usually a **program**: one native executable
 that runs as its own process and talks to the app over the
 [extension protocol](protocol.md). Extensions are written in Rust with the SDK,
@@ -73,6 +74,57 @@ fit are refused with `channel_full` at once. A disconnection, the program's
 end and disabling the extension end its devices' gestures; disabled, its
 operations are refused.
 
+## Photo sources
+
+A `[[source]]` ([manifest](manifest.md#source)) finds new photos as they
+arrive, a watched folder's or a tethered camera's, and the app adds them to
+the catalog. Watching the folder or talking to the camera is the program's
+work, in any crate it likes; placing, adding and showing the photos is the
+app's, so a photo a source added is an ordinary photo of the catalog, which
+stays when the extension is gone.
+
+- **On per catalog.** A source is off until the user turns it on for the
+  open catalog on its extension's page (**Photo sources**, *Add its photos
+  to …*), and it adds only to catalogs it is on for. `extensions.json`
+  records them, under the extension's entry, as `"sources": {"<source>":
+  ["<catalog file>", …]}`, on this computer only.
+- **Scopes.** While its program runs, its extension is enabled, a catalog is
+  open and the source is on for it, the source has a **scope**: the program
+  hears `source-started` with the scope's number and the catalog's name, and
+  `source-stopped` when the catalog closes or another opens, or the source
+  is turned off. A program started again gets its scopes again. A scope's
+  number is never used again, so a report from a scope that ended is refused
+  (`not_admitted`), however late it arrives.
+- **Reports.** The program reports files once they are complete (a capture
+  fully written, a copy finished), in its scope, with the folder it puts
+  them in ([`source.report`](protocol.md#sourcereport-request)). The app adds
+  them as Add Folder adds a folder's new photos: each file's folder placed by
+  this computer's folder locations, a folder no catalog folder holds going
+  under a new root (the reported folder), with the sidecars', the camera's
+  and the default metadata, and Stack Camera Bursts when Preferences has it.
+  Each report is one import batch, so Previous Import shows the last one;
+  reporting files the catalog has already adds nothing and starts no batch,
+  so a source may report again after reconnecting. A file that isn't there,
+  isn't a photo, is hidden or outside the folder, or whose folder is linked
+  elsewhere or ambiguous, is refused and listed with why; Add Folder… asks
+  about an ambiguous one.
+- **Busy.** While other work holds the catalog (adding or synchronizing a
+  folder, a batch edit, a file operation, another report), a report is
+  answered `busy`; the SDK's `Host::report` tries again for up to a minute.
+  While a report is added, the same work waits for it.
+- **Develop stays.** The Library reads the catalog again in place once the
+  photos are added, so the photo open in Develop, its edit, History and any
+  save pending are as they were. A report that asks to be shown (`show`)
+  makes the last photo added the Library's selected one, or, when Develop
+  shows a photo, opens it there as a click would: the edit left is saved
+  first, and nothing opens when that fails.
+- **Stopping.** A report being added is answered `not_admitted` when its
+  scope ends, `cancelled` when the program cancels it, and `exited` with its
+  session, and then writes nothing, unless its write had begun: then it
+  finishes, the Library shows what it added, and the program, if still
+  there, is answered with it. Disabling the extension, uninstalling it and
+  quitting end its scopes as its program stops.
+
 ## Externally launched adapters
 
 A `[[control-adapter]]` with `launch = "external"` isn't started by the app.
@@ -126,6 +178,8 @@ Under the data folder (`RAWMAKASE_DATA_DIR`, else the platform's, as for
 ```
 
 A bundled extension has an entry only once something about it was changed.
+An entry's `sources` lists the catalogs each of its sources adds photos to
+([Photo sources](#photo-sources)).
 `source.kind` is `bundled`, `file` (with `path`) or `github` (with
 `repository`). The app and `rawmakase extensions` both change the file, each
 change under the lock, reading the file again first, so neither overwrites
@@ -176,8 +230,9 @@ manifest is fixed.
 File, GitHub, Developer folder), its state (Enabled, Disabled, Running, Failed,
 Can't run) and an **Update** badge after Check for Updates found one. An
 extension's page shows its description, author, repository, declared access,
-its commands (each with **Run**), settings, panels, control adapters, its last
-errors and its log file; and **Enable**, **Disable**, **Stop** (while a command
+its commands (each with **Run**), settings, panels, control adapters, photo
+sources (each turned on or off for the open catalog), its last errors and its
+log file; and **Enable**, **Disable**, **Stop** (while a command
 runs), **Retry** (when Failed), **Uninstall** (not for a bundled one) and
 **Update**. **Install from GitHub…** downloads the newest compatible package,
 and **Install from File…** reads a `.rmext`; either shows the package's
