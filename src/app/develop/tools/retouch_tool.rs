@@ -269,6 +269,7 @@ impl Editor {
             feather: t.feather,
             opacity: t.opacity,
             offset,
+            patch: None,
         };
         self.push_op(op);
     }

@@ -189,7 +189,7 @@ fn structure(masks: &[MaskGroup]) -> u64 {
 }
 /// The bounding box (fractions of the photo) of a raster's selected pixels.
 fn raster_extent(id: &str) -> Option<[f32; 4]> {
-    let raster = crate::storage::mask_assets::resolve(id).ok()?;
+    let raster = crate::storage::mask_assets::resolve_coverage(id).ok()?;
     let (w, h) = (raster.width as usize, raster.height as usize);
     let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
     for (i, v) in raster.data.iter().enumerate() {

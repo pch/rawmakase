@@ -91,6 +91,7 @@ fn rendered(im: &CameraImage, ops: &[RedEyeOp]) -> CameraImage {
             retouch: &[],
         },
     )
+    .unwrap()
 }
 fn pixel(im: &CameraImage, x: f32, y: f32) -> [f32; 3] {
     im.pixels[y as usize * im.width as usize + x as usize]

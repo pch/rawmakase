@@ -65,6 +65,13 @@ pub(in crate::catalog) const HDR: i64 = 6;
 /// them by content id: releases before it would read such a recipe as damaged.
 /// Every catalog below it is upgraded to it when it opens
 /// ([`Catalog::open_as`](super::Catalog::open_as)), and new ones are created at it.
+///
+/// It is also the first that may hold generated spots (an edit, a History state or
+/// a snapshot with a generated patch), which releases before it can't render and
+/// would drop when saving. No release opened version 7 before generated spots,
+/// and builds between refuse such a recipe by its schema
+/// ([`saved_format`](crate::model::saved_format)), so it needs no version of its
+/// own.
 pub(in crate::catalog) const PROFILE_ASSETS: i64 = 7;
 /// The newest version this release opens, and the one it creates and upgrades
 /// catalogs to.
