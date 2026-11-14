@@ -828,7 +828,7 @@ fn a_photo_without_its_ai_result_fails_and_the_batch_carries_on() -> Result<()> 
 /// temporary file, one after it counts as exported; a photo whose edit has HDR off
 /// fails with the reason and the next one is still exported; a destination that can't
 /// be made fails every photo and writes nothing; what is published is whole (it decodes
-/// at the export's size with its HDR encoding).
+/// at the export's size with its HDR encoding); a preset watermark marks HDR TIFFs.
 #[test]
 fn hdr_jpeg_xl_exports_cancel_fail_and_publish_as_sdr_ones_do() -> Result<()> {
     use crate::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
@@ -914,6 +914,25 @@ fn hdr_jpeg_xl_exports_cancel_fail_and_publish_as_sdr_ones_do() -> Result<()> {
     }
     exported(&outcomes[1]);
     assert_eq!(listing(&out), ["b.jxl"]);
+    // A preset watermark marks HDR exports as it marks SDR ones.
+    let text = crate::watermark::Watermark {
+        name: "Text".into(),
+        text: "RAWmakase".into(),
+        ..Default::default()
+    };
+    let tiff = |out: &Path| {
+        let mut s = settings(out);
+        s.hdr = Some(pq);
+        s
+    };
+    let marked = run_all(&Batch {
+        watermark: Some(text),
+        ..f.batch(photos.clone(), tiff(&f.out().join("hdr-marked")))
+    });
+    let plain = run_all(&f.batch(photos.clone(), tiff(&f.out().join("hdr-plain"))));
+    for (marked, plain) in marked.iter().zip(&plain) {
+        assert_ne!(pixels(exported(marked)), pixels(exported(plain)));
+    }
     // A destination folder that is a file.
     let blocked = f.out().join("blocked");
     std::fs::create_dir_all(f.out())?;

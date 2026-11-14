@@ -66,7 +66,7 @@ pub fn run(
     } else if let Some(format) = format {
         format.supports(settings.output_space()?)?;
     }
-    let prepared = prepare(&photo, settings, cancel, &progress)?;
+    let prepared = prepare(&photo, None, settings, cancel, &progress)?;
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -96,9 +96,12 @@ pub struct Prepared {
 
 /// Renders `photo` for an export with `settings`, reporting progress up to 0.85.
 /// Stops between stages once `cancel` is set. Settings whose colour space can't be
-/// exported (in their format, or from a later release) are refused first.
+/// exported (in their format, or from a later release) are refused first. `preset`
+/// is a watermark a batch loaded once for all its photos, laid on in place of
+/// `photo.watermark`.
 pub fn prepare(
     photo: &Photo,
+    preset: Option<&crate::watermark::Ready>,
     settings: &ExportSettings,
     cancel: Cancel<'_>,
     progress: &impl Fn(f32),
@@ -110,10 +113,6 @@ pub fn prepare(
         ensure!(
             photo.recipe.hdr.is_active(),
             "This photo's edit has HDR off: turn on High Dynamic Range in Develop, or export it in SDR"
-        );
-        ensure!(
-            photo.watermark.is_none(),
-            "Watermarks are not supported in HDR exports yet"
         );
     }
     let cancelled = || -> Result<()> {
@@ -135,6 +134,7 @@ pub fn prepare(
     // renders.
     let mut notice = None;
     let watermark = match &photo.watermark {
+        _ if preset.is_some() => preset.cloned(),
         Some(_) if simple_copyright => match copyright(&photo.values, file.as_ref()) {
             Some(text) => Some(crate::watermark::Watermark::simple_copyright(&text).ready()?),
             None => {
@@ -160,11 +160,17 @@ pub fn prepare(
     let recipe = photo.recipe.checked()?;
     let rendered = match hdr {
         Some(output) => {
-            let master =
+            let mut master =
                 crate::develop::render_hdr(&image, &recipe, ai.as_ref(), options.max_edge, cancel)?;
+            if let Some(w) = &watermark
+                && !w.apply_hdr(&mut master)
+            {
+                notice = Some("the watermark's text has no characters its font can draw".into());
+            }
             if output.gain_map {
-                // The base is the edit's SDR rendition, rendered as an sRGB export.
-                let base = crate::develop::render_export(
+                // The base is the edit's SDR rendition, rendered as an sRGB export and
+                // marked as it is, so the map between them keeps the mark.
+                let mut base = crate::develop::render_export(
                     &image,
                     &recipe,
                     ai.as_ref(),
@@ -172,6 +178,9 @@ pub fn prepare(
                     crate::color::OutputSpace::Srgb,
                     cancel,
                 )?;
+                if let Some(w) = &watermark {
+                    w.apply(&mut base);
+                }
                 super::Pixels::GainMap(super::GainMapPixels::new(base, &master)?)
             } else {
                 super::Pixels::Hdr(super::HdrPixels::encode(&master, output))
@@ -429,9 +438,15 @@ mod tests {
         let flat = Arc::new(Flat(Default::default(), 0.6));
         let mut photo = with_ai(photo(&source, &dir.path().join("cache")), 1.);
         photo.ai = crate::ai_denoise::AiService(flat.clone());
-        let error = prepare(&photo, &ExportSettings::default(), Cancel::NEVER, &|_| {})
-            .err()
-            .unwrap();
+        let error = prepare(
+            &photo,
+            None,
+            &ExportSettings::default(),
+            Cancel::NEVER,
+            &|_| {},
+        )
+        .err()
+        .unwrap();
         assert!(
             error.to_string().contains("could not be identified"),
             "{error}"
@@ -449,7 +464,15 @@ mod tests {
         std::fs::write(&source, b"synthetic")?;
         let flat = Arc::new(Flat(Default::default(), 0.6));
         let render = |photo: &Photo| -> Result<Vec<[f32; 3]>> {
-            match prepare(photo, &ExportSettings::default(), Cancel::NEVER, &|_| {})?.rendered {
+            match prepare(
+                photo,
+                None,
+                &ExportSettings::default(),
+                Cancel::NEVER,
+                &|_| {},
+            )?
+            .rendered
+            {
                 crate::export::Pixels::Sdr(image) => Ok(image.pixels().to_vec()),
                 crate::export::Pixels::Hdr(_) | crate::export::Pixels::GainMap(_) => {
                     anyhow::bail!("an SDR export rendered HDR")
