@@ -563,8 +563,9 @@ These files qualify:
 - a HEIC whose `nclx` says PQ or HLG in BT.709, BT.2020 or Display P3, with a matrix
   of BT.709, BT.601 or BT.2020's non-constant luminance, and no ICC profile, on macOS
   and where libheif decodes it ([HDR HEIC](#hdr-heic));
-- on macOS, a HEIC with a gain map over an SDR base: an iPhone's own (Apple's
-  auxiliary image) or an ISO 21496-1 `tmap` ([HEIC gain maps](#heic-gain-maps));
+- on macOS, and where libheif decodes it, a HEIC with a gain map over an SDR base:
+  an iPhone's own (Apple's auxiliary image) or an ISO 21496-1 `tmap`
+  ([HEIC gain maps](#heic-gain-maps));
 - a TIFF of 32-bit float samples, through an ICC profile without CICP whose curves
   are the identity (Photoshop's 32-bit documents), or without a profile, read as
   linear sRGB primaries; 1.0 is graphics white. Integer samples with such a profile
@@ -611,8 +612,8 @@ refuses the master by name (`model::hdr::check_hdr_file`); the edit keeps it, an
 SDR rendition renders it.
 
 Still refused, as Develop refused every HDR file before:
-- HEIC gain maps on Windows and Linux, which open as their SDR base, and the HDR
-  HEICs and HEIC gain maps listed under [HDR HEIC](#hdr-heic) and
+- HEIC gain maps on Windows, which open as their SDR base, and the HDR HEICs and
+  HEIC gain maps listed under [HDR HEIC](#hdr-heic) and
   [HEIC gain maps](#heic-gain-maps);
 - HDR in other primaries or a curved profile.
 
@@ -644,11 +645,14 @@ preview is RAWmakase's tone map. Refused for Develop:
 
 ### HEIC gain maps
 
-On macOS, a HEIC with a gain map opens as an HDR edit, its base its SDR rendition and
-its light the map at full weight, as for [gain-map files](#gain-map-files)
-(`raster::heic`). ImageIO decodes the map with the image (its auxiliary data,
-`kCGImageAuxiliaryDataTypeISOGainMap` or `HDRGainMap`); the map is in the image's
-stored frame and turns with its `irot` and `imir`. Two forms are read, the first when
+On macOS, and on Linux and other systems where libheif decodes HEIC, a HEIC with a
+gain map opens as an HDR edit, its base its SDR rendition and its light the map at
+full weight, as for [gain-map files](#gain-map-files) (`raster::heic`). The system
+decoder decodes the map with the image: ImageIO as its auxiliary data
+(`kCGImageAuxiliaryDataTypeISOGainMap` or `HDRGainMap`), libheif by the map's item
+from the same file, its one grey channel as coded or RGB by its own matrix and range,
+at 8 bits. The map is in the image's stored frame and turns with its `irot` and
+`imir`. Two forms are read, the first when
 a file has both:
 
 - **ISO 21496-1:** a `tmap` item whose `dimg` references are the primary image and
@@ -680,8 +684,8 @@ between its samples' centres, as for JPEG. Refused for Develop, by reason:
 - **"damaged gain-map"**: a `tmap` not over the primary image and one other, a map
   that isn't an HEVC picture or grid, larger than the image or not its shape, whose
   data isn't all in the file or whose pictures, as their SPS code them, take the image
-  beyond 150 MP (checked before ImageIO is asked for it), or that ImageIO doesn't
-  decode to its header's size in 8-bit grey or RGB;
+  beyond 150 MP (checked before the decoder is asked for it), or that the decoder
+  doesn't decode to its header's size in 8-bit grey or RGB;
 - **"version N gain-map"**, **"HDR-base gain-map"** and the other refusals of ISO
   21496-1 metadata above, and **"alternate-colour gain-map"** for a `tmap` in the
   alternate's colour space, which its own `colr` describes;
@@ -691,9 +695,18 @@ between its samples' centres, as for JPEG. Refused for Develop, by reason:
 Checked on synthetic files ImageIO writes (scripts/make-heic-gain-map-fixtures.swift):
 an Apple map against the documented formulas written out in the test, a turned one
 against the same file unturned, and an ISO 21496-1 one against ImageIO's own decode at
-full headroom (0.02 stop, 0.032 at the darkest pixel). Windows and Linux don't read
-HEIC gain maps: their decoders' maps aren't reached, so the photo opens as its SDR
-base, as before.
+full headroom (0.02 stop, 0.032 at the darkest pixel). libheif 1.23 (on macOS, and on
+Arch Linux, where the tests run) decodes both fixtures' maps to ImageIO's own
+samples, all 768 of each, and the same checks pass with it; a grey picture coded at
+limited range and at full range decodes the same in both.
+
+Windows doesn't read HEIC gain maps, and the photo opens as its SDR base. Windows
+Imaging Component's HEIF extension gives a gain only as a pixel format of the whole
+image (`GUID_WICPixelFormat8bppGain` through `IWICBitmapSourceTransform::CopyPixels`,
+at the size the image is asked for), which its documentation says only recent iOS
+photos have: Apple's map, resampled by a filter it doesn't name, not the map's own
+samples, and no ISO 21496-1 `tmap`. CI's Windows runners have no HEVC extension, so
+no decode there could be checked either.
 
 ### Gain-map files
 

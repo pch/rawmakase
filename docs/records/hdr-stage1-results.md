@@ -2114,9 +2114,11 @@ Decision, 2026-11-13: these stay refused.
   - A map whose XMP fails a check refuses the file for Develop by reason, as a damaged
     ISO map does, rather than open its SDR base as Android's specification lets a
     viewer: an edit of the base alone would be lost when the map is read correctly.
-- **HEIC gain maps (stage 4)** open as HDR edits on macOS only, where ImageIO decodes
-  the map with the image; libheif and Windows' decoder aren't asked for it here, so
-  those systems keep opening the SDR base. An ISO 21496-1 `tmap` wins over Apple's own
+- **HEIC gain maps (stage 4)** open as HDR edits on macOS, where ImageIO decodes
+  the map with the image, and (#1048) where libheif decodes HEIC, which decodes it by
+  its item to ImageIO's own samples (all 768 of each fixture's map). Windows keeps
+  opening the SDR base: its decoder gives only Apple's map, resampled to the image's
+  size, and no ISO `tmap` ([HEIC gain maps](../hdr.md#heic-gain-maps)). An ISO 21496-1 `tmap` wins over Apple's own
   map. Apple's map follows Apple's documentation (headroom from maker-note tags 33 and
   48, `sdr × (1 + (headroom − 1) × map)`, the map Rec. 709-encoded), not ImageIO's
   rendering of it, which differs. An Apple map without its version XMP, without both
@@ -2301,10 +2303,11 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   JPEGs whose map is described only by Adobe's `hdrgm` XMP open the same way, checked
   against the Ultra HDR 1.0 formula on synthetic files. PQ and HLG HEICs open as HDR
   edits on macOS and with libheif ([HDR HEIC](../hdr.md#hdr-heic)), checked against
-  BT.2100 on synthetic patches. On macOS, HEIC gain maps (Apple's own and ISO
-  21496-1 `tmap` items) open as HDR edits ([HEIC gain maps](../hdr.md#heic-gain-maps)),
-  checked against Apple's documented formula and ImageIO's own ISO decode on
-  synthetic files. Open: HDR HEIC on Windows, HEIC gain maps on Windows and Linux,
+  BT.2100 on synthetic patches. On macOS and with libheif, HEIC gain maps (Apple's own
+  and ISO 21496-1 `tmap` items) open as HDR edits
+  ([HEIC gain maps](../hdr.md#heic-gain-maps)), checked against Apple's documented
+  formula and ImageIO's own ISO decode on synthetic files. Open: HDR HEIC on Windows,
+  HEIC gain maps on Windows,
   other adjustments on HDR files, Transform and Upright.
 - [ ] Stage 5: macOS HDR display: a float surface through RAWmakase's egui fork
   (`surface_format_selector`, offered upstream), extended sRGB with EDR while an HDR

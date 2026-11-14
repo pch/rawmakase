@@ -11,6 +11,11 @@
 //! space the header's profile describes. Alpha is dropped. The library is
 //! opened once and kept for the life of the process.
 //!
+//! A gain map ([`super::Map`]) is decoded from the same context, by its item, as
+//! the system decoder macOS's ImageIO decodes it with the image: its stored samples,
+//! 8-bit grey or RGB, in the image's stored frame, turned as the image is. On the
+//! fixtures, every sample is ImageIO's own.
+//!
 //! The process exiting runs libheif's static destructors, which crash its
 //! threads still decoding (a worker's, quitting mid-decode). So, once libheif
 //! is opened, exiting first waits for the decodes running, and its
@@ -24,8 +29,8 @@
 //! registered before the second registration first. A decode still running then ends the process at once, with status
 //! 1 and without the rest of its teardown, rather than run libheif's
 //! destructors under it: exiting is never held up for longer.
-use super::super::heif;
-use super::{HeicFile, Pixels};
+use super::super::{Unsupported, gain_map, heif};
+use super::{HeicFile, Map, Pixels};
 use anyhow::{Result, anyhow, bail, ensure};
 use std::ffi::{CStr, c_char, c_int, c_void};
 use std::sync::{Condvar, Mutex, OnceLock};
@@ -144,6 +149,11 @@ const INTERLEAVED_RGB: c_int = 10;
 const INTERLEAVED_RRGGBB_LE: c_int = 14;
 /// `heif_channel_interleaved`.
 const INTERLEAVED: c_int = 10;
+/// `heif_colorspace_monochrome`, `heif_chroma_monochrome` and `heif_channel_Y`: a
+/// grey picture's one channel, as coded.
+const MONOCHROME: c_int = 2;
+const CHROMA_MONOCHROME: c_int = 0;
+const Y: c_int = 0;
 /// The offset of `heif_decoding_options.ignore_transformations`, after its
 /// one-byte `version`: the first of its version 1 fields, which later
 /// versions only add to.
@@ -170,6 +180,8 @@ struct Library {
     read_from_memory:
         unsafe extern "C" fn(*mut Context, *const c_void, usize, *const c_void) -> HeifError,
     primary_handle: unsafe extern "C" fn(*mut Context, *mut *mut Handle) -> HeifError,
+    /// An image item's handle by its ID: `heif_item_id` is a `uint32_t`.
+    image_handle: unsafe extern "C" fn(*mut Context, u32, *mut *mut Handle) -> HeifError,
     /// Declared as taking a mutable pointer, as `Owned` releases one; libheif
     /// takes a constant one, the same in the C ABI.
     handle_release: unsafe extern "C" fn(*mut Handle),
@@ -265,6 +277,7 @@ fn open() -> Result<Library, &'static str> {
         context_free: function!(c"heif_context_free"),
         read_from_memory: function!(c"heif_context_read_from_memory_without_copy"),
         primary_handle: function!(c"heif_context_get_primary_image_handle"),
+        image_handle: function!(c"heif_context_get_image_handle"),
         handle_release: function!(c"heif_image_handle_release"),
         options_alloc: function!(c"heif_decoding_options_alloc"),
         options_free: function!(c"heif_decoding_options_free"),
@@ -402,7 +415,91 @@ pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
     } else {
         rows.flatten().copied().collect()
     };
+    // The map, from the same context and options, once the image has decoded.
+    if let Ok(Some(map)) = &file.map {
+        let _ = map.decoded.set(gain_map(
+            lib,
+            context.pointer,
+            options.pointer,
+            map,
+            file.orientation,
+        ));
+    }
     Ok(Pixels { width, height, rgb })
+}
+
+/// The gain map `map`, decoded by its item from `context` with `options`: its one
+/// grey channel, or RGB of its own matrix and range, 8 bits a sample and the size
+/// its header says, then turned by the image's `orientation`. Anything else is
+/// [`gain_map::damaged`].
+fn gain_map(
+    lib: &Library,
+    context: *mut Context,
+    options: *const Options,
+    map: &Map,
+    orientation: image::metadata::Orientation,
+) -> std::result::Result<gain_map::Samples, Unsupported> {
+    let damaged = gain_map::damaged;
+    let mut handle = std::ptr::null_mut();
+    // SAFETY: a live context; `handle` is written on success.
+    check(unsafe { (lib.image_handle)(context, map.id, &mut handle) }).map_err(|_| damaged())?;
+    let handle = Owned {
+        pointer: handle,
+        release: lib.handle_release,
+    };
+    let (space, chroma, channel, samples) = if map.grey {
+        (MONOCHROME, CHROMA_MONOCHROME, Y, 1)
+    } else {
+        (RGB, INTERLEAVED_RGB, INTERLEAVED, 3)
+    };
+    let mut image = std::ptr::null_mut();
+    // SAFETY: a live handle and options; `image` is written on success.
+    check(unsafe { (lib.decode)(handle.pointer, &mut image, space, chroma, options) })
+        .map_err(|_| damaged())?;
+    let image = Owned {
+        pointer: image,
+        release: lib.image_release,
+    };
+    // SAFETY: a decoded image of that channel.
+    let (width, height, bits) = unsafe {
+        (
+            (lib.width)(image.pointer, channel),
+            (lib.height)(image.pointer, channel),
+            (lib.bits)(image.pointer, channel),
+        )
+    };
+    if (u32::try_from(width).ok(), u32::try_from(height).ok())
+        != (Some(map.size.0), Some(map.size.1))
+        || bits != 8
+    {
+        return Err(damaged());
+    }
+    let mut stride = 0;
+    // SAFETY: as above; `stride` is written with the plane.
+    let plane = unsafe { (lib.plane)(image.pointer, channel, &mut stride) };
+    let (w, h) = map.size;
+    let row = w as usize * samples;
+    let stride = usize::try_from(stride).map_err(|_| damaged())?;
+    if plane.is_null() || stride < row || h == 0 {
+        return Err(damaged());
+    }
+    // SAFETY: libheif's plane holds `h` rows of `stride` bytes, alive as long as
+    // `image`.
+    let plane = unsafe { std::slice::from_raw_parts(plane, stride * (h as usize - 1) + row) };
+    let data: Vec<u8> = (0..h as usize)
+        .flat_map(|y| &plane[y * stride..y * stride + row])
+        .copied()
+        .collect();
+    let mut image = match map.grey {
+        true => image::DynamicImage::ImageLuma8(
+            image::GrayImage::from_raw(w, h, data).ok_or_else(damaged)?,
+        ),
+        false => image::DynamicImage::ImageRgb8(
+            image::RgbImage::from_raw(w, h, data).ok_or_else(damaged)?,
+        ),
+    };
+    image.apply_orientation(orientation);
+    Ok(gain_map::Samples::from_image(image))
 }
 
 #[cfg(test)]
