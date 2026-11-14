@@ -62,7 +62,12 @@ first.
 
 ## Sending a change
 
-- Open an issue first for anything large, so the approach can be agreed.
+- If you mean to send a fix yourself, open the pull request directly, without
+  filing an issue first, and describe the problem in it. A new issue is often
+  picked up and fixed straight away, so a pull request that follows it can
+  duplicate work already done.
+- Open an issue first for a large change whose approach is still open, and say
+  there that you plan to work on it.
 - One concern per pull request. Say what changed, why, and how you checked it,
   including what you could not check (no GPU, no private corpus).
 - Commit only the files you changed. Never commit RAW files, Adobe profiles,
