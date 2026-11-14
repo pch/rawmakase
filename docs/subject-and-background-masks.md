@@ -839,6 +839,9 @@ Deliberate differences from the plan above:
   holes in others' bright clouds. The horizon cut the old
   outlines needed is gone: on the new model it only removed real sky behind what stands
   in front of it.
+- The **Upgrade catalog…** prompt described under persistence and compatibility shipped
+  in 0.2.2 and was removed once every catalog of an earlier format came to be upgraded
+  when it opens (format 7, see [catalogs](catalogs.md)): a catalog always keeps rasters.
 - The subject choice is measured on a handful of photographs, not on the plan's
   evaluation corpus; there is no faint-result threshold and no grow/shrink/feather.
   Selections run on the CPU by default; the plan's acceleration option arrived as the

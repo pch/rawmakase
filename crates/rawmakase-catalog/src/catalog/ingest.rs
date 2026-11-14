@@ -310,8 +310,7 @@ impl Catalog {
         // Everything each photo brings is read before the transaction, so
         // that it is written with the photo or not at all.
         let photos = self.read_new_photos(files, defaults);
-        let stores = stores(&photos);
-        self.write_new_photos(stores, |w, writer| {
+        self.write_new_photos(|w, writer| {
             // The newest batch is Previous Import, empty when nothing new
             // was found.
             let batch = new_batch(w, kind)?;
@@ -396,21 +395,16 @@ impl Catalog {
     }
     /// Runs `write` in one transaction, with a [`PhotoWriter`] for the
     /// photos it inserts, then tells the edits it stored that they were
-    /// committed. `stores` (see [`stores`]) raises the catalog to the format
-    /// those edits need in the same transaction.
+    /// committed.
     pub(in crate::catalog) fn write_new_photos<R>(
         &mut self,
-        stores: super::format_upgrade::Stores,
         write: impl FnOnce(&mut Write<'_>, &mut PhotoWriter) -> Result<R>,
     ) -> Result<R> {
         let mut writer = PhotoWriter {
             edited_at: rawmakase_model::time::now_text(),
             edits: Vec::new(),
         };
-        let written = match stores {
-            super::format_upgrade::Stores::Recipes => self.db.write(|w| write(w, &mut writer))?,
-            _ => self.write_recipes(stores, |w| write(w, &mut writer))?,
-        };
+        let written = self.db.write(|w| write(w, &mut writer))?;
         writer.edits.iter().for_each(|change| change.committed());
         Ok(written)
     }
@@ -505,11 +499,7 @@ impl Catalog {
         // The identity the sidecar was checked against as it was read, beside
         // its photo: a RAW replaced since then doesn't get this edit.
         let checked = self.check_new_edit(&sidecar.source, &sidecar.recipe, &sidecar.export)?;
-        Ok(Some(LegacyEdit {
-            bitmaps,
-            checked,
-            stores: super::format_upgrade::Stores::of([&sidecar.recipe]),
-        }))
+        Ok(Some(LegacyEdit { bitmaps, checked }))
     }
 }
 
@@ -814,17 +804,6 @@ impl ImportFacts {
     }
 }
 
-/// The catalog format a write of `photos` needs for the edits they bring.
-pub(in crate::catalog) fn stores<P>(photos: &[NewPhoto<P>]) -> super::format_upgrade::Stores {
-    // An edit naming a Lensfun lens, or with AI Denoise, raises the catalog
-    // to the format for it.
-    photos
-        .iter()
-        .filter_map(|p| p.edit.as_ref().map(|e| e.stores))
-        .max_by_key(|s| s.version())
-        .unwrap_or(super::format_upgrade::Stores::Recipes)
-}
-
 /// Inserts photos read by [`Catalog::read_new_photos`] in the transaction of
 /// [`Catalog::write_new_photos`], keeping the edits it stores to be told of
 /// the commit.
@@ -902,8 +881,6 @@ impl PhotoWriter {
 struct LegacyEdit {
     bitmaps: Vec<(String, Vec<u8>)>,
     checked: super::edit_rows::CheckedNew,
-    /// What its edit stores, for the catalog format it needs (`format_upgrade::Stores`).
-    stores: super::format_upgrade::Stores,
 }
 
 /// This computer's locations, for matching folders found on disk.

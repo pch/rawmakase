@@ -492,8 +492,9 @@ Some features span several owners; each module's docs describe its part:
   can be evicted. Rendering resolves rasters through it and fails, never renders an
   empty mask, when one cannot be provided. `edit_rows` stores a save's unsaved
   rasters in the same transaction as the rows naming them and rejects an edit
-  whose references do not exist; rasters are never collected. Catalogs that keep
-  them are format version 2 or later (see [catalogs](catalogs.md)).
+  whose references do not exist; rasters are never collected. Every catalog keeps
+  them: one of an earlier format is upgraded as it opens (see
+  [catalogs](catalogs.md)).
 - A photo's edit (its recipe, export options, identity and edit time, spots
   and masks, and History) is written only by `catalog::edit_rows`: a checked
   save or clear, an exact copy for a virtual copy, removal with one, and the

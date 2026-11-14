@@ -94,10 +94,9 @@ impl Catalog {
     pub fn add_snapshot(&mut self, photo: PhotoId, name: &str, recipe: &Recipe) -> Result<i64> {
         recipe.validate()?;
         let assets = self.assets_of(recipe.mask_asset_ids())?;
-        let stores = super::format_upgrade::Stores::of([recipe]);
         let (stored, recipe_assets) = crate::model::stored_recipe::to_stored(recipe);
         let (name, recipe) = (snapshot_name(name)?, stored.to_text());
-        let id = self.write_recipes(stores, |w| {
+        let id = self.db.write(|w| {
             assets.write(w)?;
             super::recipe_assets::write(w, &recipe_assets)?;
             w.insert_returning_id(
@@ -116,10 +115,9 @@ impl Catalog {
     pub fn update_snapshot(&mut self, id: i64, recipe: &Recipe) -> Result<()> {
         recipe.validate()?;
         let assets = self.assets_of(recipe.mask_asset_ids())?;
-        let stores = super::format_upgrade::Stores::of([recipe]);
         let (stored, recipe_assets) = crate::model::stored_recipe::to_stored(recipe);
         let recipe = stored.to_text();
-        self.write_recipes(stores, |w| {
+        self.db.write(|w| {
             assets.write(w)?;
             super::recipe_assets::write(w, &recipe_assets)?;
             let n = w.execute(

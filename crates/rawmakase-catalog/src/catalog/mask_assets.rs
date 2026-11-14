@@ -10,7 +10,6 @@ use super::{Catalog, CatalogLocation};
 use crate::storage::bitmaps::Bitmap;
 use crate::storage::mask_assets::{self, AssetError, AssetLoader};
 use anyhow::{Result, ensure};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 /// Largest stored (compressed) raster read back: the largest raster compresses to less,
@@ -82,9 +81,8 @@ impl Assets {
 }
 
 impl Catalog {
-    /// The rasters a write that refers to `ids` has to store or find. Every write
-    /// of them stores a recipe, which upgrades a catalog of the first format in the
-    /// same transaction (`Catalog::write_recipes`), so none reaches one.
+    /// The rasters a write that refers to `ids` has to store or find. A catalog of
+    /// a format without raster masks is upgraded as it opens, so none reaches one.
     pub(super) fn assets_of<'a>(&self, ids: impl IntoIterator<Item = &'a str>) -> Result<Assets> {
         let mut required: Vec<String> = ids.into_iter().map(str::to_string).collect();
         required.sort();
@@ -94,19 +92,6 @@ impl Catalog {
         }
         let unsaved = mask_assets::unsaved(required.iter().map(String::as_str));
         Ok(Assets { unsaved, required })
-    }
-    /// Whether the catalog is of a format that keeps raster masks.
-    pub fn supports_raster_masks(&self) -> Result<bool> {
-        Ok(self.db.version()? >= super::db::RASTER_MASKS)
-    }
-    /// Upgrades a catalog of the first format so it can keep raster masks (to the
-    /// current format, see [`Catalog::upgrade_format`]). Returns the backup's path;
-    /// `None` when it already could.
-    pub fn upgrade_for_raster_masks(&mut self) -> Result<Option<PathBuf>> {
-        if self.supports_raster_masks()? {
-            return Ok(None);
-        }
-        self.upgrade_format()
     }
     /// A reader of this catalog's rasters for the mask asset store. It opens its
     /// own connection the first time one is needed, so it can be called from any

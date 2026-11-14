@@ -79,37 +79,12 @@ impl Catalog {
             .collect::<Result<Vec<_>>>()?;
         // One time for the whole change, as a Sync to many photos is one edit.
         let edited_at = rawmakase_model::time::now_text();
-        let write = |w: &mut super::db::Write<'_>| {
+        self.db.write(|w| {
             for change in &checked {
                 super::edit_rows::write_edit(w, change, &edited_at)?;
             }
             Ok(())
-        };
-        // Saving a recipe upgrades an earlier catalog with the write, to the format
-        // for Lensfun lenses when the edit or any state of its History names one;
-        // clearing stores none.
-        if changes.iter().any(|c| matches!(c, EditChange::Save(_))) {
-            let recipes = changes.iter().flat_map(|c| match c {
-                EditChange::Save(e) => {
-                    let history = match e.history {
-                        super::HistoryUpdate::Replace(h) => Some(h),
-                        super::HistoryUpdate::Keep => None,
-                    };
-                    std::iter::once(e.recipe)
-                        .chain(history.map(|h| &h.origin))
-                        .chain(
-                            history
-                                .into_iter()
-                                .flat_map(|h| h.steps.iter().map(|s| &s.recipe)),
-                        )
-                        .collect::<Vec<_>>()
-                }
-                EditChange::Clear { .. } => Vec::new(),
-            });
-            self.write_recipes(super::format_upgrade::Stores::of(recipes), write)?;
-        } else {
-            self.db.write(write)?;
-        }
+        })?;
         checked.iter().for_each(|change| change.committed());
         Ok(())
     }
