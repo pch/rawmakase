@@ -56,7 +56,7 @@ rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = [
 # Fingerprints of the recorded sRGB exports.
 sha2.workspace = true
 # Reads wide-gamut exports back through their embedded profiles.
-moxcms = "0.8.1"
+moxcms = "0.9.2"
 
 [lints]
 workspace = true

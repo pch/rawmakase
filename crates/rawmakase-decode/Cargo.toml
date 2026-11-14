@@ -34,7 +34,7 @@ yuv = "0.8.19"
 # The errno rav1d's C interface returns.
 libc.workspace = true
 # Colour management of JPEG, PNG and TIFF files, in pure Rust; the version `image` uses.
-moxcms = { version = "0.8.1", features = ["options"] }
+moxcms = { version = "0.9.2", features = ["options"] }
 rayon.workspace = true
 # A TIFF's ICC profile, which `image` drops from a small image (`raster::tiff_icc`);
 # the version `image` decodes TIFFs with, in pure Rust.
