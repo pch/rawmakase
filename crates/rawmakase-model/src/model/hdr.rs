@@ -306,14 +306,7 @@ fn check(r: &super::recipe::Recipe, fold: bool) -> Result<()> {
 fn unmeasured(r: &super::recipe::Recipe) -> Option<&'static str> {
     // The SDR rendition's sliders are not here: they never change the master (Camera
     // Raw 18.7's is bit-identical with each at ±50), so it renders with them set.
-    let unmeasured: [(&'static str, bool); 9] = [
-        // The master's Defringe follows its colour stage, after the black & white mix,
-        // where it would change nothing; SDR's precedes the mix
-        // (docs/records/hdr-stage1-results.md#defringe).
-        (
-            "Defringe with Black & White",
-            r.effects.defringe != [0.; 2] && r.effects.monochrome,
-        ),
+    let unmeasured: [(&'static str, bool); 8] = [
         // Camera Raw's positive Whites follows the photo's level, which twice the 99th
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
@@ -839,15 +832,14 @@ mod tests {
             check_recipe(&masked).is_ok(),
             "a hidden mask renders nothing"
         );
-        // Defringe renders, except with Black & White.
+        // Defringe renders, with Black & White too: the master's follows the gray mix
+        // and changes nothing there, as Camera Raw 18.7's HDR render doesn't.
         let mut defringe = r.clone();
         defringe.effects.defringe = [0.3, 0.2];
         assert!(check_recipe(&defringe).is_ok());
-        let unmeasured: [fn(&mut Recipe); 10] = [
-            |r| {
-                r.effects.defringe = [0.3, 0.];
-                r.effects.monochrome = true;
-            },
+        defringe.effects.monochrome = true;
+        assert!(check_recipe(&defringe).is_ok());
+        let unmeasured: [fn(&mut Recipe); 9] = [
             |r| r.highlights = 0.1,
             |r| r.hsl[1][2] = 0.41,
             |r| r.hsl[5][2] = 0.6,

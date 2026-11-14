@@ -482,8 +482,9 @@ is worse than its SDR score by more than 0.2. On the blocks Camera Raw changes m
 keeps ×0.89 of their chroma where Camera Raw keeps ×0.68. The weights and the band were
 fitted on these photos; no other photos have HDR Defringe captures.
 
-Defringe with Black & White is refused: the master's runs after the gray mix, where it
-would change nothing, while SDR's precedes it. Measurements:
+With Black & White the master's Defringe runs after the gray mix, where it changes
+nothing, as Camera Raw 18.7's HDR Defringe changes nothing under Black & White (SDR's
+precedes the mix and changes fringes' gray). Measurements:
 [record](records/hdr-stage1-results.md#defringe).
 
 ### Masks
@@ -546,7 +547,7 @@ something without a measured HDR rendering: Highlights, Whites above
 channel's) whose last point is left of white and which, continued from it, passes 1.06
 at white in the curve's encoding (`hdr_curve::LEFT_END_MEASURED`), Clarity beyond ±50, Dehaze below −50, the
 colour mixer's Luminance above +40, a darkening vignette's Highlights,
-a mask's Blacks, Hue or Highlights, a mask's Saturation outside 0 to +50, a mask's Clarity outside 0 to +50 with the photo's own, a mask's Dehaze outside 0 to +60, Defringe with Black & White ([Defringe](#defringe)), a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
+a mask's Blacks, Hue or Highlights, a mask's Saturation outside 0 to +50, a mask's Clarity outside 0 to +50 with the photo's own, a mask's Dehaze outside 0 to +60, a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
 which the look sets, …"; Adobe Vivid's Clarity +10 renders), and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
 asked for.
