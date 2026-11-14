@@ -49,6 +49,10 @@ pub struct Recipe {
     pub lens_ca: bool,
     pub effects: crate::model::effects::Effects,
     pub preset_name: String,
+    /// Always empty. Earlier releases kept a copy of an applied XMP preset's settings
+    /// here that nothing read; a saved map is dropped on read, so the next save writes
+    /// `{}`. The key is still written because releases before this one require it.
+    #[serde(deserialize_with = "emptied_preset_settings")]
     pub preset_settings: std::collections::BTreeMap<String, String>,
     /// A saved Embedded profile loads with today's tone curve (`CameraProfile::loaded`),
     /// wherever a recipe is read: sessions, the catalog, History, presets and sidecars.
@@ -1063,6 +1067,14 @@ fn loaded_profile<'de, D: serde::Deserializer<'de>>(
     let profile = Option::<crate::camera_profiles::CameraProfile>::deserialize(deserializer)?;
     Ok(profile.map(|p| std::sync::Arc::new(p.loaded())))
 }
+/// [`Recipe::preset_settings`] as read: still checked to be a map of strings, as
+/// before, then dropped.
+fn emptied_preset_settings<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<std::collections::BTreeMap<String, String>, D::Error> {
+    std::collections::BTreeMap::<String, String>::deserialize(deserializer)?;
+    Ok(Default::default())
+}
 fn is_one(v: &f32) -> bool {
     *v == 1.
 }
@@ -1205,6 +1217,24 @@ mod tests {
             Recipe::default()
         );
         assert_eq!(serde_json::to_string(&LocalEdits::default()).unwrap(), "{}");
+    }
+
+    /// The copy of an applied XMP preset's settings earlier releases kept in every
+    /// recipe is never read: a saved map loads empty, so the next save writes `{}`.
+    /// The key itself is still written, as releases before this one require it.
+    #[test]
+    fn a_legacy_preset_settings_map_loads_empty_and_saves_empty() {
+        let mut stored = serde_json::to_value(Recipe::default()).unwrap();
+        stored["preset_settings"] = serde_json::json!({"Exposure2012": "+1.00", "Look": "x"});
+        let r: Recipe = serde_json::from_value(stored).unwrap();
+        assert!(r.preset_settings.is_empty());
+        assert_eq!(r, Recipe::default());
+        let saved = serde_json::to_value(&r).unwrap();
+        assert_eq!(saved["preset_settings"], serde_json::json!({}));
+        // It is still a map of strings: other values are refused as before.
+        let mut wrong = serde_json::to_value(Recipe::default()).unwrap();
+        wrong["preset_settings"] = serde_json::json!(["x"]);
+        assert!(serde_json::from_value::<Recipe>(wrong).is_err());
     }
 
     /// Settings a recipe was saved without take their defaults, and ones this build
