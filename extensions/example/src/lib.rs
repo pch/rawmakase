@@ -25,9 +25,11 @@
 //! the first event it gets, after its handshake: a start that does nothing
 //! useful.
 //!
-//! [`masks`] is a second test-only extension, of mask generators, and
-//! [`sources`] a third, of a photo source, both built from this crate too.
+//! [`masks`] is a second test-only extension, of mask generators,
+//! [`sources`] a third, of a photo source, and [`remove`] a fourth, of
+//! retouch generators, all built from this crate too.
 pub mod masks;
+pub mod remove;
 pub mod sources;
 use rawmakase_extension::protocol::controls::{Control, ControlKind};
 use rawmakase_extension::protocol::method::{

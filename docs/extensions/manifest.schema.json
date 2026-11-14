@@ -411,6 +411,30 @@
       ],
       "type": "object"
     },
+    "RetouchGenerator": {
+      "additionalProperties": false,
+      "description": "A `[[retouch-generator]]`: the program turns a region of the photo and\nthe area the user painted in it into new pixels for that area, such as\nthe area with an object removed. The app keeps the result as a retouch\npatch, which renders without the extension.",
+      "properties": {
+        "id": {
+          "description": "Unique among the extension's retouch generators; saved patches record\n`<extension>/<id>`.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "What the Remove tool calls it, for example `AI Remove`.",
+          "type": "string"
+        },
+        "uploads": {
+          "description": "Whether it sends the pixels it is given off this computer (to a\nhosted model). The app asks the user once before the first request.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
     "Setting": {
       "additionalProperties": false,
       "description": "A `[[setting]]`.",
@@ -566,6 +590,11 @@
           "const": "folder",
           "description": "A folder chosen in the system's dialog.",
           "type": "string"
+        },
+        {
+          "const": "secret",
+          "description": "Text kept secret, such as an API key, from `api = 3`. The app keeps\nits value in the system's credential store, never in\n`extensions.json`, and never shows it again; the program receives it\nas a string, `\"\"` while none is set. Its default is `\"\"`.",
+          "type": "string"
         }
       ]
     },
@@ -680,6 +709,13 @@
         }
       ],
       "description": "The program behind its commands, panels and control adapters."
+    },
+    "retouch-generator": {
+      "description": "Generators of retouch patches (object removal), from `api = 3`.",
+      "items": {
+        "$ref": "#/$defs/RetouchGenerator"
+      },
+      "type": "array"
     },
     "setting": {
       "description": "Settings, shown on the extension's page in Preferences.",

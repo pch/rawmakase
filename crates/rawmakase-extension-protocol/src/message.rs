@@ -247,12 +247,15 @@ pub enum ErrorCode {
     /// What the contribution runs on isn't available here, such as a runtime
     /// library or a remote worker; the message says why.
     Unavailable,
+    /// The service the contribution runs on declined the request on its
+    /// content (a hosted model's safety policy); the message says why.
+    Refused,
     /// A code this crate doesn't define, kept as sent.
     Other(String),
 }
 impl ErrorCode {
     /// Every code [`ErrorCode::Other`] doesn't stand for, as sent.
-    pub const KNOWN: [(&'static str, ErrorCode); 14] = [
+    pub const KNOWN: [(&'static str, ErrorCode); 15] = [
         ("cancelled", ErrorCode::Cancelled),
         ("deadline", ErrorCode::Deadline),
         ("invalid_request", ErrorCode::InvalidRequest),
@@ -267,6 +270,7 @@ impl ErrorCode {
         ("not_admitted", ErrorCode::NotAdmitted),
         ("needs_setup", ErrorCode::NeedsSetup),
         ("unavailable", ErrorCode::Unavailable),
+        ("refused", ErrorCode::Refused),
     ];
     /// The code as sent.
     pub fn as_str(&self) -> &str {

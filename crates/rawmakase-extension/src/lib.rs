@@ -41,7 +41,7 @@ pub use shm::mapped_buffers;
 
 use rawmakase_extension_protocol::controls::Control;
 use rawmakase_extension_protocol::method::{
-    CommandRun, MaskGenerate, MaskGenerated, SourceStarted,
+    CommandRun, MaskGenerate, MaskGenerated, RetouchGenerate, RetouchGenerated, SourceStarted,
 };
 use serde_json::Value;
 
@@ -129,6 +129,47 @@ pub trait MaskGenerator: Send {
         let _ = (cx, generator);
         Ok(())
     }
+}
+
+/// What a retouch generator is asked: the request, with its buffers mapped
+/// for the call. The SDK unmaps them, and closes their handles, once
+/// [`RetouchGenerator::generate`] has returned, and only then replies.
+pub struct RetouchAsk<'a> {
+    /// The request as the app sent it: the generator, the buffers'
+    /// descriptors and the image's key.
+    pub request: RetouchGenerate,
+    /// The region's pixels, laid out as [`RetouchGenerate::image`]
+    /// describes: 8-bit sRGB, three channels, rows `stride` bytes apart.
+    pub image: &'a [u8],
+    /// How much of each pixel the user painted, 0 to 255, laid out as
+    /// [`RetouchGenerate::coverage`] describes: one channel, rows `stride`
+    /// bytes apart.
+    pub coverage: &'a [u8],
+    /// Where to write the region with the painted area regenerated, laid
+    /// out as [`RetouchGenerate::result`] describes (the image's layout).
+    pub result: &'a mut [u8],
+}
+
+/// A `[[retouch-generator]]`'s implementation.
+///
+/// The SDK checks each request ([`RetouchGenerate::validate`]) and maps its
+/// buffers before calling [`RetouchGenerator::generate`], and refuses one
+/// that doesn't validate or map with [`ErrorCode::InvalidRequest`]. Serving
+/// an `api` below 3 it refuses the request whole, as the app never sends it
+/// one.
+pub trait RetouchGenerator: Send {
+    /// Writes the result and names the model that made it. One that needs
+    /// the user to set something up first (an API key) answers
+    /// [`ErrorCode::NeedsSetup`], one whose service can't be reached or
+    /// declined to work now (offline, quota, rate limit)
+    /// [`ErrorCode::Unavailable`], and one whose service declined the
+    /// request's content [`ErrorCode::Refused`]. One that sees
+    /// [`Context::is_cancelled`] returns [`ErrorCode::Cancelled`].
+    fn generate(
+        &mut self,
+        cx: &Context,
+        ask: RetouchAsk<'_>,
+    ) -> Result<RetouchGenerated, RemoteError>;
 }
 
 /// A `[[control-adapter]]` the app launches: it watches its devices on threads

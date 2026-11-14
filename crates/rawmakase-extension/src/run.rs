@@ -16,9 +16,11 @@
 //! recovery and takes no handles.
 use crate::host::{Host, Shared};
 use crate::shm::{Handle, Incoming, Mapping, Plain, Receive};
-use crate::{Command, ControlAdapter, MaskAsk, MaskGenerator, Panel, Source};
+use crate::{
+    Command, ControlAdapter, MaskAsk, MaskGenerator, Panel, RetouchAsk, RetouchGenerator, Source,
+};
 use rawmakase_extension_protocol::framing::{FrameError, LineReader};
-use rawmakase_extension_protocol::manifest::API;
+use rawmakase_extension_protocol::manifest::{API, RETOUCH_GENERATOR_API};
 use rawmakase_extension_protocol::message::Handles;
 use rawmakase_extension_protocol::method::{
     AppEvent, AppRequest, CommandRun, Controls, HelloReply, MaskGenerate,
@@ -43,6 +45,7 @@ pub struct Extension {
     sources: BTreeMap<String, Box<dyn Source>>,
     /// The scope each source runs in now, by source id.
     scopes: BTreeMap<String, u64>,
+    retouch_generators: BTreeMap<String, Box<dyn RetouchGenerator>>,
     on_event: Option<EventHandler>,
 }
 
@@ -221,6 +224,16 @@ impl Extension {
     /// Implements the `[[source]]` with this id.
     pub fn source(mut self, id: &str, source: impl Source + 'static) -> Self {
         self.sources.insert(id.into(), Box::new(source));
+        self
+    }
+    /// Implements the `[[retouch-generator]]` with this id.
+    pub fn retouch_generator(
+        mut self,
+        id: &str,
+        generator: impl RetouchGenerator + 'static,
+    ) -> Self {
+        self.retouch_generators
+            .insert(id.into(), Box::new(generator));
         self
     }
     /// Called with every event from the app, after the extension's own state
@@ -441,6 +454,10 @@ impl Extension {
             .keys()
             .map(|id| format!("mask-generator/{id}"));
         let sources = self.sources.keys().map(|id| format!("source/{id}"));
+        let retouch = self
+            .retouch_generators
+            .keys()
+            .map(|id| format!("retouch-generator/{id}"));
         let reply = HelloReply {
             protocol: PROTOCOL,
             implements: commands
@@ -448,6 +465,7 @@ impl Extension {
                 .chain(adapters)
                 .chain(generators)
                 .chain(sources)
+                .chain(retouch)
                 .collect(),
         };
         serde_json::to_value(reply).expect("a reply is JSON")
@@ -565,33 +583,67 @@ impl Extension {
                 Some(generator) => generator.setup(cx, &setup.generator).map(|()| Value::Null),
                 None => Err(unknown("mask generator", &setup.generator)),
             },
+            AppRequest::RetouchGenerate(request) => {
+                if api < RETOUCH_GENERATOR_API {
+                    return Err(RemoteError::new(
+                        ErrorCode::InvalidRequest,
+                        format!(
+                            "retouch.generate needs api {RETOUCH_GENERATOR_API}, and this program serves {api}"
+                        ),
+                    ));
+                }
+                request.validate()?;
+                let Some(generator) = self.retouch_generators.get_mut(&request.generator) else {
+                    return Err(unknown("retouch generator", &request.generator));
+                };
+                let image = map(&request.image, "image", &handles)?;
+                let coverage = map(&request.coverage, "coverage", &handles)?;
+                let mut result = map(&request.result, "result", &handles)?;
+                let ask = RetouchAsk {
+                    image: image.bytes(),
+                    coverage: coverage.bytes(),
+                    result: result.bytes_mut().expect("the result is mapped writable"),
+                    request,
+                };
+                let answer = generator.generate(cx, ask);
+                // Unmapped, and then closed, before the reply.
+                drop((image, coverage, result, handles));
+                answer.map(|done| serde_json::to_value(done).expect("a result is JSON"))
+            }
         }
     }
 }
 
+/// Maps a request's buffer as its access says: an input to read, an output
+/// to write.
+fn map(
+    buffer: &rawmakase_extension_protocol::buffer::Buffer,
+    name: &str,
+    handles: &[Handle],
+) -> Result<Mapping, RemoteError> {
+    let handle = handles.get(buffer.handle as usize).ok_or_else(|| {
+        RemoteError::new(
+            ErrorCode::InvalidRequest,
+            format!(
+                "the {name} is in handle {}, and the request carries {}",
+                buffer.handle,
+                handles.len()
+            ),
+        )
+    })?;
+    Mapping::map(handle, buffer).map_err(|e| {
+        RemoteError::new(
+            ErrorCode::InvalidRequest,
+            format!("the {name} doesn't map: {e}"),
+        )
+    })
+}
+
 /// Maps a mask request's image to read and its coverage to write.
 fn map_mask(request: &MaskGenerate, handles: &[Handle]) -> Result<(Mapping, Mapping), RemoteError> {
-    let map = |buffer: &rawmakase_extension_protocol::buffer::Buffer, name: &str| {
-        let handle = handles.get(buffer.handle as usize).ok_or_else(|| {
-            RemoteError::new(
-                ErrorCode::InvalidRequest,
-                format!(
-                    "the {name} is in handle {}, and the request carries {}",
-                    buffer.handle,
-                    handles.len()
-                ),
-            )
-        })?;
-        Mapping::map(handle, buffer).map_err(|e| {
-            RemoteError::new(
-                ErrorCode::InvalidRequest,
-                format!("the {name} doesn't map: {e}"),
-            )
-        })
-    };
     Ok((
-        map(&request.image, "image")?,
-        map(&request.coverage, "coverage")?,
+        map(&request.image, "image", handles)?,
+        map(&request.coverage, "coverage", handles)?,
     ))
 }
 
