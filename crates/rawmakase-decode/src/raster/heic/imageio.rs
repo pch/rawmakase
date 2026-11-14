@@ -6,11 +6,13 @@
 //! from its CICP, or sRGB) at the depth the header says, so the pixels are
 //! what [`HeicFile`]'s colour type and profile promise whatever colour ImageIO
 //! itself makes of the file: CoreGraphics converts them when the two differ.
-//! An HDR file's CICP (PQ or HLG in BT.709, BT.2020 or Display P3) is drawn into
-//! CoreGraphics' own space of that name, the one it knows the transfer of. ImageIO
-//! decodes such a file into that same space, so CoreGraphics leaves the signal as
-//! coded: measured to within a 10-bit code value at every patch of
-//! `hdr-pq.heic`, `hdr-hlg.heic` and `hdr-pq-p3.heic`, the light Develop decodes. A profile is used
+//! An HDR file whose light decodes ([`HeicFile::hdr_decodes`]) is drawn into the
+//! space ImageIO decoded it into, CoreGraphics' own of its CICP (`ITUR_2100_PQ` and
+//! the others) or one of its profile, so CoreGraphics leaves the signal as coded:
+//! measured to within a 10-bit code value at every patch of `hdr-pq.heic`,
+//! `hdr-hlg.heic`, `hdr-pq-p3.heic` and `hdr-pq-dci.heic`, the light Develop decodes.
+//! Drawn into CoreGraphics' BT.2020 PQ space instead, DCI-P3's patches move by up to
+//! 332 codes. A profile is used
 //! only when moxcms, which reads it for the rest of RAWmakase, finds it an RGB
 //! one, and CoreGraphics reads it as RGB too; otherwise the pixels are drawn
 //! as sRGB. That is how RAWmakase takes a profile moxcms can't read; one only
@@ -213,7 +215,15 @@ fn decode(file: &HeicFile, bytes: &[u8]) -> Result<Pixels> {
         file.expects(u32::try_from(width)?, u32::try_from(height)?),
         "The HEIF image is not the size it says"
     );
-    let space = space(file).ok_or_else(|| anyhow!("macOS can't make an sRGB colour space"))?;
+    let space = if file.hdr_decodes() {
+        CGImage::color_space(Some(&image))
+            .filter(|space| CGColorSpace::model(Some(space)) == CGColorSpaceModel::RGB)
+            .ok_or_else(|| {
+                anyhow!("macOS decoded the HDR HEIF image without an RGB colour space")
+            })?
+    } else {
+        space(file).ok_or_else(|| anyhow!("macOS can't make an sRGB colour space"))?
+    };
     // RGB with an unused fourth sample, as CoreGraphics draws no packed RGB:
     // 8-bit, or 16-bit in the Mac's own (little-endian) order.
     let (bits, order) = if file.deep {

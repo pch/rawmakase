@@ -85,12 +85,129 @@ enum HdrDecoding {
     Signal(rawmakase_model::color::hdr_output::HdrOutput),
     /// Linear light through an ICC profile's colorants (D50, as ICC keeps them).
     Colorants([[f32; 3]; 3]),
+    /// A signal of a CICP transfer in other CICP primaries
+    /// ([`CicpPrimaries`](rawmakase_model::color::hdr_output::CicpPrimaries)).
+    Primaries(
+        rawmakase_model::color::hdr_output::HdrTransfer,
+        rawmakase_model::color::hdr_output::CicpPrimaries,
+    ),
+    /// Float samples through an ICC profile's parametric curves, each continued past
+    /// 1 by its own formula and mirrored below 0, then its colorants.
+    Curves([Curve; 3], [[f32; 3]; 3]),
+}
+
+/// An ICC parametric curve (types 0 to 4) in the form of type 4: `(a·x + b)^g + e`
+/// from `d` up, `c·x + f` below it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Curve {
+    g: f32,
+    a: f32,
+    b: f32,
+    c: f32,
+    d: f32,
+    e: f32,
+    f: f32,
+}
+
+impl Curve {
+    /// The curve an ICC tone curve is, when it is parametric or a single gamma
+    /// (a one-entry `curv`, u8.8); `None` for a table, which says nothing past 1.
+    fn of(curve: &ToneReprCurve) -> Option<Self> {
+        let power = |g| Self {
+            g,
+            a: 1.,
+            b: 0.,
+            c: 0.,
+            d: 0.,
+            e: 0.,
+            f: 0.,
+        };
+        let curve = match curve {
+            ToneReprCurve::Lut(table) => match table.as_slice() {
+                [gamma] => power(f32::from(*gamma) / 256.),
+                _ => return None,
+            },
+            ToneReprCurve::Parametric(p) => match *p.as_slice() {
+                [g] => power(g),
+                [g, a, b] if a != 0. => Self {
+                    a,
+                    b,
+                    d: -b / a,
+                    ..power(g)
+                },
+                [g, a, b, c] if a != 0. => Self {
+                    a,
+                    b,
+                    d: -b / a,
+                    e: c,
+                    f: c,
+                    ..power(g)
+                },
+                [g, a, b, c, d] => Self {
+                    a,
+                    b,
+                    c,
+                    d,
+                    ..power(g)
+                },
+                [g, a, b, c, d, e, f] => Self {
+                    g,
+                    a,
+                    b,
+                    c,
+                    d,
+                    e,
+                    f,
+                },
+                _ => return None,
+            },
+        };
+        let finite = [
+            curve.g, curve.a, curve.b, curve.c, curve.d, curve.e, curve.f,
+        ];
+        finite.iter().all(|v| v.is_finite()).then_some(curve)
+    }
+
+    /// The curve of a CICP transfer an ICC curve can be: sRGB's (IEC 61966-2-1, as
+    /// ICC's own sRGB profile writes it) and the gammas 2.2 and 2.8. `None` for the
+    /// others: BT.709's and its kin are camera OETFs, which ICC leaves to the reader.
+    fn of_cicp(transfer: moxcms::TransferCharacteristics) -> Option<Self> {
+        use moxcms::TransferCharacteristics::{Bt470Bg, Bt470M, Srgb};
+        let power = |g| Self::of(&ToneReprCurve::Parametric(vec![g]));
+        match transfer {
+            Srgb => Self::of(&ToneReprCurve::Parametric(vec![
+                2.4,
+                1. / 1.055,
+                0.055 / 1.055,
+                1. / 12.92,
+                0.04045,
+            ])),
+            Bt470M => power(2.2),
+            Bt470Bg => power(2.8),
+            _ => None,
+        }
+    }
+
+    /// The linear value of sample `x`: the curve at `|x|`, its sign kept.
+    fn linear(self, x: f32) -> f32 {
+        let v = x.abs();
+        let y = if v >= self.d {
+            (self.a * v + self.b).max(0.).powf(self.g) + self.e
+        } else {
+            self.c * v + self.f
+        };
+        y.copysign(x)
+    }
 }
 impl HdrDecoding {
     fn transfer(self) -> rawmakase_model::color::hdr_output::HdrTransfer {
         match self {
             Self::Signal(output) => output.transfer,
-            Self::Colorants(_) => rawmakase_model::color::hdr_output::HdrTransfer::Linear,
+            Self::Primaries(transfer, _) => transfer,
+            // Decoded to linear light, as a gain map's light is.
+            Self::Colorants(_) | Self::Curves(..) => {
+                rawmakase_model::color::hdr_output::HdrTransfer::Linear
+            }
         }
     }
     /// The light of one pixel's samples.
@@ -99,6 +216,21 @@ impl HdrDecoding {
         match self {
             Self::Signal(output) => output.decode(rgb),
             Self::Colorants(m) => rawmakase_model::color::mul(m, rgb),
+            Self::Primaries(transfer, primaries) => {
+                use rawmakase_model::color::hdr_output::{
+                    GRAPHICS_WHITE_NITS, HdrTransfer, hlg_decode, pq_decode,
+                };
+                let linear = match transfer {
+                    HdrTransfer::Pq => rgb.map(|v| pq_decode(v) / GRAPHICS_WHITE_NITS),
+                    HdrTransfer::Hlg => hlg_decode(rgb, primaries.luminance),
+                    HdrTransfer::Linear => rgb,
+                };
+                rawmakase_model::color::mul(primaries.to_pro_photo, linear)
+            }
+            Self::Curves(curves, m) => {
+                let linear = [0, 1, 2].map(|c| curves[c].linear(rgb[c]));
+                rawmakase_model::color::mul(m, linear)
+            }
         }
     }
     /// An image's samples as light, row by row.
@@ -125,15 +257,19 @@ impl HdrDecoding {
 
 /// How an HDR file's light decodes exactly, if it does:
 /// - a CICP transfer of PQ, HLG or linear light, at full range, in BT.709,
-///   BT.2020 or Display P3;
+///   BT.2020 or Display P3, or in other primaries H.273 gives chromaticities for
+///   ([`CicpPrimaries`](rawmakase_model::color::hdr_output::CicpPrimaries));
 /// - an ICC profile without CICP whose curves are the identity, through its
 ///   colorants;
+/// - `float` samples through an ICC matrix profile whose curves are parametric or
+///   a gamma, continued past 1 ([`Curve`]), then its colorants;
 /// - `float` samples without a profile, as linear light in sRGB's primaries.
 ///
-/// `None` for anything else, which stays refused.
+/// `None` for anything else, which stays refused: a table curve, which says nothing
+/// past 1, a profile of tables, and XYZ or unspecified CICP primaries.
 fn hdr_decoding(profile: Option<&ColorProfile>, float: bool) -> Option<HdrDecoding> {
     use moxcms::TransferCharacteristics::{Hlg, Linear, Smpte2084};
-    use rawmakase_model::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
+    use rawmakase_model::color::hdr_output::{CicpPrimaries, HdrGamut, HdrOutput, HdrTransfer};
     let signal = |gamut, transfer| {
         HdrDecoding::Signal(HdrOutput {
             gamut,
@@ -144,21 +280,49 @@ fn hdr_decoding(profile: Option<&ColorProfile>, float: bool) -> Option<HdrDecodi
     let Some(profile) = profile else {
         return float.then(|| signal(HdrGamut::Rec709, HdrTransfer::Linear));
     };
-    match profile.cicp {
-        Some(cicp) => {
-            let transfer = match cicp.transfer_characteristics {
-                Smpte2084 => HdrTransfer::Pq,
-                Hlg => HdrTransfer::Hlg,
-                Linear => HdrTransfer::Linear,
-                _ => return None,
-            };
-            let gamut = HdrGamut::from_cicp(cicp.color_primaries as u8)?;
-            cicp.full_range.then(|| signal(gamut, transfer))
+    let transfer = profile
+        .cicp
+        .and_then(|cicp| match cicp.transfer_characteristics {
+            Smpte2084 => Some(HdrTransfer::Pq),
+            Hlg => Some(HdrTransfer::Hlg),
+            Linear => Some(HdrTransfer::Linear),
+            _ => None,
+        });
+    match (profile.cicp, transfer) {
+        (Some(cicp), Some(transfer)) => {
+            if !cicp.full_range {
+                return None;
+            }
+            let code = cicp.color_primaries as u8;
+            match HdrGamut::from_cicp(code) {
+                Some(gamut) => Some(signal(gamut, transfer)),
+                None => CicpPrimaries::from_cicp(code)
+                    .map(|primaries| HdrDecoding::Primaries(transfer, primaries)),
+            }
         }
-        None if linear_curves(profile) => {
+        (None, _) if linear_curves(profile) => {
             Some(HdrDecoding::Colorants(colorants_to_pro_photo(profile)?))
         }
-        None => None,
+        // Float samples through an SDR profile's curves, or through the curve a CICP
+        // of an SDR transfer names, which ICC puts before the profile's own.
+        (cicp, None) if float && profile.is_matrix_shaper() && !has_tables(profile) => {
+            let curves = match cicp {
+                Some(cicp) => [Curve::of_cicp(cicp.transfer_characteristics)?; 3],
+                None => {
+                    let curve = |c: &Option<ToneReprCurve>| c.as_ref().and_then(Curve::of);
+                    [
+                        curve(&profile.red_trc)?,
+                        curve(&profile.green_trc)?,
+                        curve(&profile.blue_trc)?,
+                    ]
+                }
+            };
+            Some(HdrDecoding::Curves(
+                curves,
+                colorants_to_pro_photo(profile)?,
+            ))
+        }
+        _ => None,
     }
 }
 
@@ -216,6 +380,9 @@ struct Decoder {
     heic_hdr: bool,
     /// A HEIC's gain map, or why it is refused.
     heic_map: std::result::Result<Option<heic::Map>, Unsupported>,
+    /// For a JPEG XL, how its HDR samples decode by its own colour encoding
+    /// ([`jxl::JxlFile::hdr_decoding`]), before its profile's.
+    jxl_hdr: Option<HdrDecoding>,
 }
 
 /// The [`Decoder`] for the file at `path`. Applies no size limit.
@@ -249,6 +416,7 @@ fn open_decoder(path: &Path) -> Result<Decoder> {
         turned,
         heic_hdr: false,
         heic_map: Ok(None),
+        jxl_hdr: None,
     };
     Ok(match kind {
         Kind::Webp { animated } => opened(
@@ -258,8 +426,11 @@ fn open_decoder(path: &Path) -> Result<Decoder> {
         ),
         Kind::Jxl => {
             let file = jxl::JxlFile::open(path)?;
-            let (refused, turned) = (file.refusal(), file.turned());
-            opened(Box::new(file), refused, turned)
+            let (refused, turned, jxl_hdr) = (file.refusal(), file.turned(), file.hdr_decoding());
+            Decoder {
+                jxl_hdr,
+                ..opened(Box::new(file), refused, turned)
+            }
         }
         Kind::Avif => {
             let file = avif::AvifFile::open(path)?;
@@ -288,6 +459,7 @@ fn prepare(path: &Path) -> Result<Prepared> {
         turned,
         heic_hdr,
         heic_map,
+        jxl_hdr,
     } = open_decoder(path)?;
     // The `image` crate's decoders, whose float samples are linear light (a 32-bit
     // TIFF); JPEG XL, AVIF and HEIC have readers of their own.
@@ -317,13 +489,16 @@ fn prepare(path: &Path) -> Result<Prepared> {
             decoder.color_type(),
             image::ColorType::Rgb32F | image::ColorType::Rgba32F
         );
-    let hdr_white = hdr_white(profile.as_ref(), float);
+    let hdr_white = match jxl_hdr {
+        Some(decoding) => Some(white_of(decoding.transfer())),
+        None => hdr_white(profile.as_ref(), float),
+    };
     // An HDR file opens as an HDR edit where its light decodes exactly
     // (docs/records/hdr-stage4-design.md); others stay refused. A HEIC's reader
     // says when its system decoder gives the signal back as coded; otherwise it stays
     // refused, whatever its profile says.
     let hdr = hdr_white
-        .and_then(|_| hdr_decoding(profile.as_ref(), float))
+        .and_then(|_| jxl_hdr.or_else(|| hdr_decoding(profile.as_ref(), float)))
         .filter(|_| kind != Kind::Heic || heic_hdr);
     // An APNG is an animation, and narrow-range samples aren't expanded: both are
     // refused whatever else the file is.
@@ -749,14 +924,26 @@ fn read_error(path: &Path) -> impl Fn(image::ImageError) -> anyhow::Error + '_ {
 /// `float` samples (a 32-bit TIFF's). `None` for an SDR file.
 fn hdr_white(profile: Option<&ColorProfile>, float: bool) -> Option<f32> {
     use moxcms::TransferCharacteristics::{Hlg, Linear, Smpte2084};
+    use rawmakase_model::color::hdr_output::HdrTransfer;
     match profile
         .and_then(|p| p.cicp)
         .map(|c| c.transfer_characteristics)
     {
-        Some(Smpte2084) => Some(10_000. / 203.),
-        Some(Hlg) => Some(1_000. / 203.),
-        Some(Linear) => Some(1.),
+        Some(Smpte2084) => Some(white_of(HdrTransfer::Pq)),
+        Some(Hlg) => Some(white_of(HdrTransfer::Hlg)),
+        Some(Linear) => Some(white_of(HdrTransfer::Linear)),
         _ => float.then_some(1.),
+    }
+}
+
+/// How many times HDR reference white the linear 1.0 of `transfer` is
+/// ([`hdr_white`]).
+fn white_of(transfer: rawmakase_model::color::hdr_output::HdrTransfer) -> f32 {
+    use rawmakase_model::color::hdr_output::HdrTransfer;
+    match transfer {
+        HdrTransfer::Pq => 10_000. / 203.,
+        HdrTransfer::Hlg => 1_000. / 203.,
+        HdrTransfer::Linear => 1.,
     }
 }
 
@@ -2282,6 +2469,266 @@ mod tests {
         assert_eq!(alone, beside_bright);
     }
 
+    /// A PNG of 16-bit `signal` with a cICP chunk of `cicp`, written to `path`.
+    fn cicp_png(path: &Path, signal: &[[f32; 3]], cicp: [u8; 4]) {
+        let samples: Vec<u8> = signal
+            .iter()
+            .flatten()
+            .flat_map(|v| ((v.clamp(0., 1.) * 65535. + 0.5) as u16).to_ne_bytes())
+            .collect();
+        png(path, &samples, ExtendedColorType::Rgb16, None);
+        let mut bytes = std::fs::read(path).unwrap();
+        bytes.splice(33..33, png_chunk(b"cICP", &cicp));
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    /// HDR in CICP primaries other than BT.709, BT.2020 and Display P3 opens as an HDR
+    /// edit: PQ in DCI-P3 with its own white (11) and HLG in EBU Tech. 3213 (22)
+    /// decode to the light encoded, within 16-bit quantisation, out-of-gamut and
+    /// negative channels kept. Their whites are neutral. XYZ primaries (10) stay
+    /// refused.
+    #[test]
+    fn hdr_in_other_cicp_primaries_opens_with_its_light() {
+        use rawmakase_model::color::hdr_output::{
+            CicpPrimaries, GRAPHICS_WHITE_NITS, hlg_encode, pq_encode,
+        };
+        use rawmakase_model::color::{inverse, mul};
+        let dir = tempfile::tempdir().unwrap();
+        // Graphics white, 4× it, a dark grey, and a saturated colour beyond the
+        // primaries, in linear ProPhoto.
+        let light = [[1f32; 3], [4.; 3], [0.05; 3], [0.6, 0.1, 0.02]];
+        for (code, hlg) in [(11u8, false), (22, true)] {
+            let primaries = CicpPrimaries::from_cicp(code).unwrap();
+            let to_rgb = inverse(primaries.to_pro_photo);
+            let signal: Vec<[f32; 3]> = light
+                .iter()
+                .map(|p| {
+                    let rgb = mul(to_rgb, *p);
+                    match hlg {
+                        // HLG's signal holds no negative light.
+                        true => hlg_encode(rgb.map(|v| v.max(0.)), primaries.luminance),
+                        false => rgb.map(|v| pq_encode(v.max(0.) * GRAPHICS_WHITE_NITS)),
+                    }
+                })
+                .collect();
+            let path = dir.path().join(format!("{code}.png"));
+            cicp_png(&path, &signal, [code, if hlg { 18 } else { 16 }, 0, 1]);
+            super::probe(&path).unwrap();
+            let opened = super::open(&path, Cancel::NEVER).unwrap();
+            let got = opened.hdr().expect("an HDR edit").pixels();
+            for (i, want) in light.iter().enumerate() {
+                // The colour's channels outside the primaries are clipped at 0 by
+                // the encoding: compare the rest.
+                let back = mul(
+                    primaries.to_pro_photo,
+                    mul(to_rgb, *want).map(|v| v.max(0.)),
+                );
+                for c in 0..3 {
+                    assert!(
+                        (got[i][c] - back[c]).abs() <= 2e-3 * back[c].abs().max(0.05),
+                        "{code} pixel {i}: {:?} against {back:?}",
+                        got[i]
+                    );
+                }
+            }
+        }
+        let path = dir.path().join("xyz.png");
+        cicp_png(&path, &[[0.5; 3]], [10, 16, 0, 1]);
+        assert_eq!(super::probe(&path).unwrap_err().0, "HDR");
+    }
+
+    /// A JPEG XL whose codestream names its colour by enum values decodes by them,
+    /// not by the profile jxl-oxide makes of them, which names Display P3 as DCI-P3:
+    /// each fixture (scripts/make-hdr-jxl-fixtures.py) opens with the light of the
+    /// same signal in a PNG whose cICP names its primaries. That is Display P3 and
+    /// DCI-P3 PQ, and HLG in EBU Tech. 3213's primaries, which JPEG XL gives as custom
+    /// chromaticities.
+    #[test]
+    fn an_hdr_jpeg_xl_decodes_by_its_own_colour_encoding() {
+        const PIXELS: [[u16; 3]; 4] = [
+            [38050, 38050, 38050],
+            [52000, 52000, 52000],
+            [45000, 20000, 9000],
+            [12000, 40000, 30000],
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        for (name, cicp) in [
+            ("hdr-pq-p3.jxl", [12u8, 16, 0, 1]),
+            ("hdr-pq-dci.jxl", [11, 16, 0, 1]),
+            ("hdr-hlg-ebu.jxl", [22, 18, 0, 1]),
+        ] {
+            let signal: Vec<[f32; 3]> = PIXELS
+                .iter()
+                .map(|p| p.map(|v| f32::from(v) / 65535.))
+                .collect();
+            let path = dir.path().join(format!("{name}.png"));
+            cicp_png(&path, &signal, cicp);
+            let want = super::open(&path, Cancel::NEVER).unwrap();
+            let want = want.hdr().expect("the PNG is HDR").pixels().to_vec();
+            super::probe(&fixture(name)).unwrap();
+            let got = super::open(&fixture(name), Cancel::NEVER).unwrap();
+            let got = got.hdr().unwrap_or_else(|| panic!("{name}: not HDR"));
+            for (g, w) in got.pixels().iter().zip(&want) {
+                for c in 0..3 {
+                    // jxl-oxide's float samples of 16-bit codes, and the custom
+                    // chromaticities' millionths.
+                    assert!(
+                        (g[c] - w[c]).abs() <= 1e-4 * w[c].abs().max(0.05),
+                        "{name}: {g:?} against {w:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// PQ in BT.709's or BT.2020's primaries with another white than D65 (DCI's,
+    /// illuminant E), which no CICP code names, decodes by its own white. jxl-oxide's
+    /// profile names these by the primaries' code alone, and before #1048 they decoded
+    /// as BT.709's and BT.2020's with D65's white: their colours were off, a saturated
+    /// red's channels here by more than 2%.
+    #[test]
+    fn an_hdr_jpeg_xl_decodes_with_its_own_white() {
+        use rawmakase_model::color::hdr_output::{
+            CicpPrimaries, GRAPHICS_WHITE_NITS, HdrGamut, pq_decode,
+        };
+        use rawmakase_model::color::{inverse, mul};
+        const PIXELS: [[u16; 3]; 4] = [
+            [38050, 38050, 38050],
+            [52000, 52000, 52000],
+            [45000, 20000, 9000],
+            [12000, 40000, 30000],
+        ];
+        for (name, rgb, white, gamut) in [
+            (
+                "hdr-pq-709-dci.jxl",
+                [[0.64, 0.33], [0.30, 0.60], [0.15, 0.06]],
+                [0.314, 0.351],
+                HdrGamut::Rec709,
+            ),
+            (
+                "hdr-pq-2020-e.jxl",
+                [[0.708, 0.292], [0.170, 0.797], [0.131, 0.046]],
+                [1. / 3., 1. / 3.],
+                HdrGamut::Rec2020,
+            ),
+        ] {
+            let primaries = CicpPrimaries::from_chromaticities(rgb, white).unwrap();
+            let opened = super::open(&fixture(name), Cancel::NEVER).unwrap();
+            let got = opened.hdr().unwrap_or_else(|| panic!("{name}: not HDR"));
+            for (g, p) in got.pixels().iter().zip(PIXELS) {
+                let linear = p.map(|v| pq_decode(f32::from(v) / 65535.) / GRAPHICS_WHITE_NITS);
+                let want = mul(primaries.to_pro_photo, linear);
+                for c in 0..3 {
+                    assert!(
+                        (g[c] - want[c]).abs() <= 1e-4 * want[c].abs().max(0.05),
+                        "{name}: {g:?} against {want:?}"
+                    );
+                }
+            }
+            // The red patch, as D65's white would have it.
+            let d65 = inverse(gamut.prophoto_to_rgb());
+            let red = PIXELS[2].map(|v| pq_decode(f32::from(v) / 65535.) / GRAPHICS_WHITE_NITS);
+            let (ours, theirs) = (got.pixels()[2], mul(d65, red));
+            assert!(
+                (0..3).any(|c| (ours[c] / theirs[c] - 1.).abs() > 0.02),
+                "{name}: {ours:?} against D65's {theirs:?}"
+            );
+        }
+    }
+
+    /// A linear JPEG XL, whose profile jxl-oxide gives no `cicp` (it writes one for PQ
+    /// and HLG alone), has always opened as an SDR file, and still does, in named
+    /// primaries or custom chromaticities: its edits render as they did.
+    #[test]
+    fn a_linear_jpeg_xl_stays_an_sdr_file() {
+        for name in ["linear-srgb.jxl", "linear-ebu.jxl"] {
+            let path = fixture(name);
+            super::probe(&path).unwrap();
+            let opened = super::open(&path, Cancel::NEVER).unwrap();
+            assert!(opened.hdr().is_none(), "{name}");
+        }
+    }
+
+    /// Float samples through a curved profile open as an HDR edit: each curve
+    /// continued past 1 by its own formula, mirrored below 0, then the profile's
+    /// colorants. sRGB's curve (moxcms's sRGB profile, which names it by CICP too) and
+    /// Adobe RGB's gamma; a table curve, which says nothing past 1, stays refused.
+    #[test]
+    fn float_samples_through_a_curved_profile_open_with_their_light() {
+        use rawmakase_model::color::{hdr_output::HdrGamut, mul};
+        let dir = tempfile::tempdir().unwrap();
+        let samples = [[0.5f32, 0.02, 1.], [2., 3., 1.5], [-0.25, 0.1, 0.]];
+        let srgb = |v: f32| {
+            let a = v.abs();
+            let l = if a <= 0.04045 {
+                a / 12.92
+            } else {
+                ((a + 0.055) / 1.055).powf(2.4)
+            };
+            l.copysign(v)
+        };
+        let adobe = |v: f32| v.abs().powf(2.199_218_8).copysign(v);
+        let to_prophoto =
+            |profile: &moxcms::ColorProfile| super::colorants_to_pro_photo(profile).unwrap();
+        for (name, profile, curve) in [
+            (
+                "srgb",
+                moxcms::ColorProfile::new_srgb(),
+                &srgb as &dyn Fn(f32) -> f32,
+            ),
+            ("adobe", moxcms::ColorProfile::new_adobe_rgb(), &adobe),
+        ] {
+            let path = dir.path().join(format!("{name}.tif"));
+            let flat: Vec<f32> = samples.iter().flatten().copied().collect();
+            tiff(
+                &path,
+                bytemuck::cast_slice(&flat),
+                ExtendedColorType::Rgb32F,
+                Some(profile.encode().unwrap()),
+            );
+            super::probe(&path).unwrap();
+            let opened = super::open(&path, Cancel::NEVER).unwrap();
+            let got = opened.hdr().expect("an HDR edit").pixels();
+            let m = to_prophoto(
+                &moxcms::ColorProfile::new_from_slice(&profile.encode().unwrap()).unwrap(),
+            );
+            for (i, s) in samples.iter().enumerate() {
+                let want = mul(m, s.map(curve));
+                for c in 0..3 {
+                    assert!(
+                        (got[i][c] - want[c]).abs() <= 1e-4 * want[c].abs().max(0.05),
+                        "{name} pixel {i}: {:?} against {want:?}",
+                        got[i]
+                    );
+                }
+            }
+            // sRGB 1.0 is graphics white, and light past it is kept.
+            if name == "srgb" {
+                let white = mul(HdrGamut::Rec709.prophoto_to_rgb(), got[1]);
+                assert!(white[1] > 7., "{white:?}");
+            }
+        }
+        let mut table = moxcms::ColorProfile::new_srgb();
+        table.cicp = None;
+        // A square law in 256 samples.
+        let lut = moxcms::ToneReprCurve::Lut(
+            (0..256u32)
+                .map(|i| (i * i * 65535 / (255 * 255)) as u16)
+                .collect(),
+        );
+        table.red_trc = Some(lut.clone());
+        table.green_trc = Some(lut.clone());
+        table.blue_trc = Some(lut);
+        let path = dir.path().join("table.tif");
+        tiff(
+            &path,
+            bytemuck::cast_slice(&[2f32; 3]),
+            ExtendedColorType::Rgb32F,
+            Some(table.encode().unwrap()),
+        );
+        assert_eq!(super::probe(&path).unwrap_err().0, "HDR");
+    }
+
     #[test]
     fn an_odd_sized_420_avif_decodes_every_pixel() {
         let image = decode(&fixture("odd-420.avif")).unwrap();
@@ -2472,21 +2919,52 @@ mod tests {
         scene.map(|e| 1000. * y.powf(0.2) * e / 203.)
     }
 
-    /// An HDR HEIC (PQ or HLG, its CICP in an `nclx`) opens as an HDR edit with the
+    /// An HDR HEIC (PQ or HLG, its CICP in an `nclx` or an ICC profile) opens as an HDR edit with the
     /// light BT.2100 gives its signal, in its primaries, at each patch's centre: to
     /// within 1.5 of its 10-bit code values, the HEVC coding's error on flat patches.
     /// Where the system can't decode a HEIC, or on Windows, whose decoder isn't
     /// checked, it is refused.
     #[test]
     fn an_hdr_heic_opens_with_its_light() {
-        use rawmakase_model::color::{hdr_output::HdrGamut, mul};
+        use rawmakase_model::color::hdr_output::{CicpPrimaries, HdrGamut};
+        use rawmakase_model::color::{inverse, mul};
         // BT.2020's and Display P3's luminance weights, from their published matrices.
         let bt2020 = [0.2627, 0.6780, 0.0593];
         let p3 = [0.228975, 0.691739, 0.079287];
-        for (name, transfer, gamut, weights) in [
-            ("hdr-pq.heic", "pq", HdrGamut::Rec2020, bt2020),
-            ("hdr-hlg.heic", "hlg", HdrGamut::Rec2020, bt2020),
-            ("hdr-pq-p3.heic", "pq", HdrGamut::DisplayP3, p3),
+        let dci = CicpPrimaries::from_cicp(11).unwrap();
+        let dci_weights = dci.luminance.map(f64::from);
+        for (name, transfer, to_file, weights) in [
+            (
+                "hdr-pq.heic",
+                "pq",
+                HdrGamut::Rec2020.prophoto_to_rgb(),
+                bt2020,
+            ),
+            (
+                "hdr-hlg.heic",
+                "hlg",
+                HdrGamut::Rec2020.prophoto_to_rgb(),
+                bt2020,
+            ),
+            (
+                "hdr-pq-p3.heic",
+                "pq",
+                HdrGamut::DisplayP3.prophoto_to_rgb(),
+                p3,
+            ),
+            (
+                "hdr-pq-dci.heic",
+                "pq",
+                inverse(dci.to_pro_photo),
+                dci_weights,
+            ),
+            // PQ in BT.2020 named by an ICC profile's `cicp` beside an `nclx`.
+            (
+                "hdr-pq-nclx-icc.heic",
+                "pq",
+                HdrGamut::Rec2020.prophoto_to_rgb(),
+                bt2020,
+            ),
         ] {
             if cfg!(windows) {
                 assert_eq!(super::probe(&fixture(name)).unwrap_err().0, "HDR");
@@ -2499,7 +2977,6 @@ mod tests {
             let image = super::open(&fixture(name), Cancel::NEVER).unwrap();
             let light = image.hdr().expect("an HDR edit");
             assert_eq!((light.width(), light.height()), (64, 32));
-            let to_file = gamut.prophoto_to_rgb();
             for (i, code) in HEIC_PATCHES.iter().enumerate() {
                 let (x, y) = ((i % 4) * 16 + 8, (i / 4) * 16 + 8);
                 let got = mul(to_file, light.pixels()[y * 64 + x]).map(f64::from);
@@ -2532,52 +3009,63 @@ mod tests {
         }
     }
 
-    /// What the system decoders don't give back as coded stays refused by reason: an
-    /// ICC profile beside an HDR `nclx`, a matrix that isn't one, and primaries
-    /// RAWmakase doesn't decode HDR in.
+    /// What the system decoders don't give back as coded stays refused by reason: a
+    /// profile that doesn't say the HDR its `nclx` says, a matrix that isn't one, and
+    /// primaries RAWmakase doesn't decode HDR in.
     #[test]
     fn hdr_heics_that_dont_decode_exactly_are_refused() {
-        use super::heif::Nclx;
-        let nclx = |primaries, transfer, matrix| Nclx {
-            primaries,
-            transfer,
-            matrix,
-            full_range: true,
+        use super::heif::{Nclx, cicp_profile, hdr_refusal};
+        let nclx = |primaries, transfer, matrix| {
+            Some(Nclx {
+                primaries,
+                transfer,
+                matrix,
+                full_range: true,
+            })
         };
-        let why = |n: Nclx, icc| n.hdr_refusal(icc).map(|u| u.0);
-        assert_eq!(why(nclx(9, 13, 14), false), None, "SDR is the decoder's");
-        // A PQ HEIC whose transfer only its ICC profile's `cicp` names, without an
-        // `nclx`: ImageIO would draw it through the profile, so it stays refused
-        // on every system.
-        let profile = super::prepare(&fixture("hdr-pq-icc.heic")).unwrap().profile;
-        assert!(
-            profile.and_then(|p| p.cicp).is_some(),
-            "the profile names PQ"
-        );
+        let icc =
+            |primaries, transfer| cicp_profile(primaries, transfer).unwrap().encode().unwrap();
+        let (pq, pq_p3, sdr) = (icc(9, 16), icc(12, 16), icc(12, 13));
+        let why = |n: Option<Nclx>, icc: Option<&Vec<u8>>| {
+            hdr_refusal(n, icc.map(|i| i.as_slice())).map(|u| u.0)
+        };
+        assert_eq!(why(nclx(9, 13, 14), None), None, "SDR is the decoder's");
+        assert_eq!(why(None, Some(&sdr)), None, "SDR is the decoder's");
+        if cfg!(windows) {
+            assert_eq!(why(nclx(9, 16, 9), None).as_deref(), Some("HDR"));
+            assert_eq!(why(None, Some(&pq)).as_deref(), Some("HDR"));
+            return;
+        }
+        for matrix in [1, 5, 6, 9] {
+            assert_eq!(why(nclx(9, 16, matrix), None), None);
+            assert_eq!(why(nclx(12, 18, matrix), None), None);
+        }
+        assert_eq!(why(nclx(1, 16, 1), None), None);
+        assert_eq!(why(nclx(2, 16, 9), None).as_deref(), Some("HDR"));
+        // DCI-P3 with its own white opens; XYZ primaries don't.
+        assert_eq!(why(nclx(11, 16, 9), None), None);
+        assert_eq!(why(nclx(10, 16, 9), None).as_deref(), Some("HDR"));
+        assert_eq!(why(nclx(9, 16, 10), None).as_deref(), Some("HDR matrix 10"));
+        assert_eq!(why(nclx(9, 18, 14), None).as_deref(), Some("HDR matrix 14"));
+        // A profile describes the pixels: HDR its `cicp` names opens beside an `nclx`,
+        // which then gives only the matrix. Without one, the matrix is the HEVC
+        // stream's or MIAF's default, unread: refused, as the fixture is. A profile that
+        // doesn't say the HDR an `nclx` says, or says other HDR, is refused.
+        assert_eq!(why(None, Some(&pq)).as_deref(), Some("HDR"));
         assert_eq!(
             super::probe(&fixture("hdr-pq-icc.heic")).unwrap_err().0,
             "HDR"
         );
-        if cfg!(windows) {
-            assert_eq!(why(nclx(9, 16, 9), false).as_deref(), Some("HDR"));
-            return;
-        }
-        for matrix in [1, 5, 6, 9] {
-            assert_eq!(why(nclx(9, 16, matrix), false), None);
-            assert_eq!(why(nclx(12, 18, matrix), false), None);
-        }
-        assert_eq!(why(nclx(1, 16, 1), false), None);
-        assert_eq!(why(nclx(9, 16, 9), true).as_deref(), Some("HDR"));
-        assert_eq!(why(nclx(2, 16, 9), false).as_deref(), Some("HDR"));
-        assert_eq!(why(nclx(11, 16, 9), false).as_deref(), Some("HDR"));
+        assert_eq!(why(nclx(9, 16, 9), Some(&pq)), None);
+        assert_eq!(why(nclx(1, 13, 6), Some(&pq)), None);
         assert_eq!(
-            why(nclx(9, 16, 10), false).as_deref(),
-            Some("HDR matrix 10")
-        );
-        assert_eq!(
-            why(nclx(9, 18, 14), false).as_deref(),
+            why(nclx(9, 16, 14), Some(&pq)).as_deref(),
             Some("HDR matrix 14")
         );
+        assert_eq!(why(nclx(9, 16, 9), Some(&sdr)).as_deref(), Some("HDR"));
+        assert_eq!(why(nclx(9, 16, 9), Some(&pq_p3)).as_deref(), Some("HDR"));
+        assert_eq!(why(nclx(9, 18, 9), Some(&pq)).as_deref(), Some("HDR"));
+        assert_eq!(why(None, Some(&icc(10, 16))).as_deref(), Some("HDR"));
         // libheif's own PQ file, the matrix BT.2020's, opens.
         super::probe(&fixture("pq.heic")).unwrap();
     }

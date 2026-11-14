@@ -18,10 +18,10 @@
 //! an ICC profile, or one built from the CICP code points; a HEIC with neither
 //! is taken as sRGB. The system decoder chooses the matrix and range itself.
 //!
-//! An HDR HEIC (PQ or HLG in its `nclx`) opens as an HDR edit where the system
-//! decoder gives back its signal as coded: ImageIO drawn into CoreGraphics' space
-//! of that name, and libheif, which converts by the `nclx` and nothing else
-//! (docs/hdr.md#hdr-files). [`Nclx::hdr_refusal`] says when it doesn't.
+//! An HDR HEIC (PQ or HLG in its `nclx`, or in its ICC profile's `cicp` tag) opens as
+//! an HDR edit where the system decoder gives back its signal as coded: ImageIO drawn
+//! into the space it decoded into, and libheif, which converts by the matrix and
+//! nothing else (docs/hdr.md#hdr-heic). [`heif::hdr_refusal`] says when it doesn't.
 //! Alpha, depth maps and thumbnails are not shown; an alpha image, which a
 //! system decoder decodes with the image, is held to the image's limits with it.
 //!
@@ -382,7 +382,7 @@ impl HeicFile {
         let animated = [b"msf1", b"hevc", b"hevx", b"hevm", b"hevs"];
         // The system's decoder decides what chroma and depth it reads, and
         // says what to install when there is none.
-        let refused = if let Some(why) = nclx.and_then(|n| n.hdr_refusal(icc.is_some())) {
+        let refused = if let Some(why) = heif::hdr_refusal(nclx, icc.as_deref()) {
             Some(why)
         } else if heif.brands.iter().any(|b| animated.contains(&b)) {
             Some(Unsupported("animated".into()))
@@ -409,12 +409,11 @@ impl HeicFile {
         self.refused.as_ref().map(|r| Unsupported(r.0.clone()))
     }
 
-    /// Whether its light decodes exactly: an `nclx` of PQ or HLG that
-    /// [`Nclx::hdr_refusal`] doesn't refuse. HDR its ICC profile alone names is not:
-    /// the system decoder draws it through the profile.
+    /// Whether its light decodes exactly: PQ or HLG, its `nclx`'s or its ICC
+    /// profile's, that [`heif::hdr_refusal`] doesn't refuse.
     pub(super) fn hdr_decodes(&self) -> bool {
-        self.nclx
-            .is_some_and(|n| n.hdr() && n.hdr_refusal(self.icc.is_some()).is_none())
+        let icc = self.icc.as_deref();
+        heif::names_hdr(self.nclx, icc) && heif::hdr_refusal(self.nclx, icc).is_none()
     }
 
     /// Its gain map, as [`gain_map_of`] reads it; refused or not, the image opens

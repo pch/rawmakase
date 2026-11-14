@@ -559,10 +559,12 @@ These files qualify:
 
 - a TIFF, PNG, JPEG XL or AVIF whose CICP (in the file or its ICC profile) says PQ,
   HLG or linear light, at full range, in BT.709, BT.2020 or Display P3 (RAWmakase's
-  own HDR exports among them);
-- a HEIC whose `nclx` says PQ or HLG in BT.709, BT.2020 or Display P3, with a matrix
-  of BT.709, BT.601 or BT.2020's non-constant luminance, and no ICC profile, on macOS
-  and where libheif decodes it ([HDR HEIC](#hdr-heic));
+  own HDR exports among them), or in [other primaries](#other-primaries-and-curves)
+  ITU-T H.273 gives chromaticities for, and a JPEG XL in custom chromaticities;
+- a HEIC whose `nclx` says PQ or HLG in BT.709, BT.2020, Display P3 or the
+  [other primaries](#other-primaries-and-curves), with a matrix of BT.709, BT.601 or
+  BT.2020's non-constant luminance, and no ICC profile or one whose `cicp` tag says
+  the same, on macOS and where libheif decodes it ([HDR HEIC](#hdr-heic));
 - on macOS, and where libheif decodes it, a HEIC with a gain map over an SDR base:
   an iPhone's own (Apple's auxiliary image) or an ISO 21496-1 `tmap`
   ([HEIC gain maps](#heic-gain-maps));
@@ -570,6 +572,9 @@ These files qualify:
   are the identity (Photoshop's 32-bit documents), or without a profile, read as
   linear sRGB primaries; 1.0 is graphics white. Integer samples with such a profile
   stop at graphics white, so they open as SDR files;
+- a TIFF of 32-bit float samples through an ICC matrix profile with curves, an sRGB
+  or Adobe RGB one say, whose curves are formulas or a gamma
+  ([other primaries and curves](#other-primaries-and-curves));
 - a JPEG or JPEG XL with an ISO 21496-1 gain map over an SDR base, or a JPEG with one
   described by Adobe's earlier `hdrgm` XMP, whose light the map reconstructs and whose
   base stays its SDR rendition ([Gain-map files](#gain-map-files)).
@@ -615,33 +620,86 @@ Still refused, as Develop refused every HDR file before:
 - HEIC gain maps on Windows, which open as their SDR base, and the HDR HEICs and
   HEIC gain maps listed under [HDR HEIC](#hdr-heic) and
   [HEIC gain maps](#heic-gain-maps);
-- HDR in other primaries or a curved profile.
+- HDR in XYZ primaries (CICP 10) or unspecified ones, float samples through a curve
+  given as a table or through a profile of tables, and a CICP's camera transfers
+  (BT.709's and its kin) beside float samples.
 
 The Library shows them with graphics white as white and says why.
+
+### Other primaries and curves
+
+**Other CICP primaries.** HDR in primaries other than BT.709, BT.2020 and Display P3
+decodes as theirs does, its transfer first, then a matrix to linear ProPhoto
+(`hdr_output::CicpPrimaries`): the primaries' and white's chromaticities as ITU-T H.273
+gives them, their white adapted to D65 by Bradford, then ProPhoto as the three gamuts
+go there, unclipped. Those are BT.470 System M (4) and System B and G (5), SMPTE 170M
+and 240M (6, 7), generic film (8), SMPTE RP 431-2's DCI-P3 with its own white (11) and
+EBU Tech. 3213 (22). Their white comes out neutral, and HLG's system gamma works on
+their own luminance. Built from the published chromaticities of BT.709, BT.2020 and
+Display P3, the same construction gives those gamuts' own matrices to 2e-4. A PNG's
+cICP of DCI-P3 PQ and of EBU Tech. 3213 HLG decode to the light encoded, within its
+16-bit steps.
+
+A JPEG XL whose codestream gives its colour as enum values (not an ICC profile)
+decodes by those: its primaries and white, BT.709, BT.2020 and Display P3 as their
+gamuts, and any others, DCI-P3's and custom chromaticities among them, by the same
+construction. The profile jxl-oxide makes of the encoding isn't used for HDR: its
+`cicp` tag names P3 primaries as DCI-P3 whatever their white, so a Display P3 file
+would decode 5% too red. Lossless PQ in Display P3 and DCI-P3 and HLG in custom
+chromaticities (EBU Tech. 3213's) decode to the same light as a PNG of their signal
+whose cICP names those primaries, to 1e-4. BT.709's or BT.2020's primaries with another
+white (DCI's, illuminant E) decode with that white too. Until #1048 they opened as
+BT.709 or BT.2020 with D65's white, their colours off by more than 2%; an edit of one
+renders its corrected colours. Only PQ and HLG are read so: jxl-oxide names no linear
+encoding by `cicp`, and a linear JPEG XL has always opened as an SDR file.
+
+**Float samples through curves.** An ICC profile's curves describe 0 to 1. Float
+samples beyond 1 decode exactly where the curve is a formula: an ICC parametric curve
+(types 0 to 4) or a gamma (a one-entry `curv`), continued past 1 by its own formula
+and mirrored below 0, as extended-range spaces such as Apple's extended sRGB and
+scRGB continue sRGB's. 1.0 through the curve is graphics white. A CICP of sRGB's
+transfer or of the gammas 2.2 and 2.8 names the curve, as ICC puts a `cicp` tag before
+the profile's curves. Then the profile's colorants convert to linear ProPhoto. On
+sRGB and Adobe RGB float TIFFs this gives each sample its formula's light to 1e-4. A
+curve given as a table, which says nothing past 1, and a profile of tables stay
+refused.
 
 ### HDR HEIC
 
 RAWmakase has no HEVC decoder ([dependencies](dependencies.md)), so an HDR HEIC's
 light decodes exactly only where the system's decoder gives its signal back as coded,
-converted to RGB by the file's matrix and range and nothing else:
+converted to RGB by the file's matrix and range and nothing else. Its colour is that
+of its ICC profile when it has one, which then describes the pixels, an `nclx` beside
+it giving only how they convert to RGB (ISO/IEC 23008-12); without a profile, the
+`nclx`'s. So a profile's `cicp` tag names its HDR, an `nclx` beside it gives the
+matrix, and an HDR `nclx` must say the same HDR as the profile.
 
-- **macOS:** ImageIO decodes the file into CoreGraphics' own space of its CICP
-  (`kCGColorSpaceITUR_2100_PQ`, `DisplayP3_HLG` and the others), and RAWmakase draws
-  it into a bitmap of that same space, which CoreGraphics leaves as it is. On
-  `tests/data/formats/hdr-*.heic` (scripts/make-hdr-heic-fixtures.py: flat patches of
-  known 10-bit signal, PQ and HLG in BT.2020, PQ in Display P3) it gives back every
-  patch to within one code value.
-- **Linux and other systems:** libheif converts by the `nclx` itself; the same
-  fixtures are checked where it is installed (CI's Arch job).
+- **macOS:** ImageIO decodes the file into a colour space of its own, CoreGraphics'
+  space of its CICP (`kCGColorSpaceITUR_2100_PQ` and the others) or one of its
+  profile, and RAWmakase draws it into a bitmap of that same space, which
+  CoreGraphics leaves as it is. On `tests/data/formats/hdr-*.heic`
+  (scripts/make-hdr-heic-fixtures.py: flat patches of known 10-bit signal, PQ and HLG
+  in BT.2020, PQ in Display P3 and in DCI-P3, and PQ in BT.2020 named by a profile's
+  `cicp` beside an `nclx` and alone) it gives back every patch to within one code
+  value. Drawn into CoreGraphics' BT.2020 PQ space instead, the DCI-P3 and profiled
+  files' patches move by 280 to 332 codes.
+- **Linux and other systems:** libheif converts by the matrix itself; the same
+  fixtures are checked where it is installed (CI's Arch job). libheif 1.23 gives back
+  every patch of the profiled files to within one code value too.
 
 The signal then decodes as any HDR file's does, by BT.2100, in f32, and its Library
 preview is RAWmakase's tone map. Refused for Develop:
 - **"HDR"** on Windows, whose decoder (Windows Imaging Component with Microsoft's
-  extensions) isn't checked; with an ICC profile beside the `nclx`, which then describes
-  the pixels instead; with HDR named only by an ICC profile's `cicp` tag, without an
-  `nclx`, which ImageIO draws through that profile; and in other primaries;
-- **"HDR matrix N"** for a matrix that isn't one: constant luminance (10, 13) and
-  ICtCp (14).
+  extensions) isn't checked, and CI's Windows runners have no HEVC extension to
+  check it with; with HDR only a profile's `cicp` names, without an `nclx`, whose
+  matrix is then the HEVC stream's own or MIAF's default (BT.601), which RAWmakase
+  doesn't read and the decoders aren't checked to agree on (libheif converts constant
+  luminance as non-constant), though both give the fixture's patches back; with a
+  profile without a `cicp` tag of PQ or HLG at full range beside an HDR `nclx`, which
+  then describes SDR pixels; with a profile whose `cicp` says other primaries or
+  another transfer than the `nclx`; and in XYZ or unspecified primaries;
+- **"HDR matrix N"** for an `nclx` matrix that isn't one: constant luminance (10, 13)
+  and ICtCp (14).
 
 ### HEIC gain maps
 

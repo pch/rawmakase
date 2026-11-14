@@ -7,6 +7,7 @@ use moxcms::{
     CicpColorPrimaries, CicpProfile, ColorProfile, MatrixCoefficients, TransferCharacteristics,
 };
 use rawmakase_interop::isobmff::{Colour, Property};
+use rawmakase_model::color::hdr_output::CicpPrimaries;
 
 /// The CICP code points of an `nclx` box.
 #[derive(Clone, Copy, Debug)]
@@ -22,27 +23,85 @@ impl Nclx {
     pub(super) fn hdr(self) -> bool {
         matches!(self.transfer, 16 | 18)
     }
+}
 
-    /// Why a HEIC of this HDR `nclx` can't open as an HDR edit, if it can't; `None`
-    /// for an SDR one. Its signal decodes exactly only where the system decoder gives
-    /// it back as coded, converted to RGB by a matrix it applies as a matrix:
-    /// - **"HDR"** on Windows, whose decoder isn't checked, and with an ICC profile
-    ///   beside the `nclx`, which then describes the pixels instead, and with
-    ///   primaries other than BT.709, BT.2020 and Display P3 (1, 9 and 12), which
-    ///   RAWmakase doesn't decode HDR in;
-    /// - **"HDR matrix N"** for any matrix but BT.709 (1), BT.601 (5, 6) and BT.2020's
-    ///   non-constant luminance (9): constant luminance and ICtCp aren't matrices.
-    pub(super) fn hdr_refusal(self, icc: bool) -> Option<super::Unsupported> {
-        use super::Unsupported;
-        if !self.hdr() {
-            None
-        } else if cfg!(windows) || icc || ![1, 9, 12].contains(&self.primaries) {
-            Some(Unsupported("HDR".into()))
-        } else if ![1, 5, 6, 9].contains(&self.matrix) {
-            Some(Unsupported(format!("HDR matrix {}", self.matrix)))
-        } else {
-            None
+/// Whether RAWmakase decodes HDR in CICP primaries `code`: BT.709, BT.2020 and Display
+/// P3 (1, 9 and 12), and [`CicpPrimaries`]'. The system decoders give the signal back
+/// as coded in each (ImageIO drawn into its own space, libheif converting by the
+/// matrix alone).
+fn hdr_primaries(code: u16) -> bool {
+    [1, 9, 12].contains(&code)
+        || u8::try_from(code).is_ok_and(|p| CicpPrimaries::from_cicp(p).is_some())
+}
+
+/// The CICP of an ICC profile's `cicp` tag: its primaries, its transfer, and whether
+/// it is full range; `None` without one, or for a profile moxcms can't read.
+fn icc_cicp(icc: &[u8]) -> Option<(u16, u16, bool)> {
+    let cicp = ColorProfile::new_from_slice(icc).ok()?.cicp?;
+    Some((
+        cicp.color_primaries as u16,
+        cicp.transfer_characteristics as u16,
+        cicp.full_range,
+    ))
+}
+
+/// Whether a HEIC of colour `nclx` and ICC profile `icc` is HDR: either says PQ or
+/// HLG.
+pub(super) fn names_hdr(nclx: Option<Nclx>, icc: Option<&[u8]>) -> bool {
+    nclx.is_some_and(Nclx::hdr)
+        || icc
+            .and_then(icc_cicp)
+            .is_some_and(|(_, t, _)| matches!(t, 16 | 18))
+}
+
+/// Why an HDR HEIC of colour `nclx` and ICC profile `icc` can't open as an HDR edit,
+/// if it can't; `None` for an SDR one. Its signal decodes exactly only where the
+/// system decoder gives it back as coded, converted to RGB by a matrix it applies as
+/// a matrix, which its `nclx` names. An ICC profile, when there is one, describes the
+/// pixels, and the `nclx` beside it only how they convert to RGB (ISO/IEC 23008-12);
+/// without a profile, the `nclx` describes them. Refused:
+/// - **"HDR"** on Windows, whose decoder isn't checked; without an `nclx`, HDR a
+///   profile's `cicp` names, as its matrix is then the HEVC stream's own or MIAF's
+///   default, which RAWmakase doesn't read (libheif converts constant luminance as
+///   non-constant); for a profile without a `cicp` tag of PQ or HLG at full range
+///   beside an HDR `nclx`, or one whose `cicp` names other primaries or another
+///   transfer than the `nclx`; and for primaries RAWmakase doesn't decode HDR in
+///   ([`hdr_primaries`]);
+/// - **"HDR matrix N"** for an `nclx` matrix but BT.709 (1), BT.601 (5, 6) and
+///   BT.2020's non-constant luminance (9): constant luminance and ICtCp aren't
+///   matrices.
+pub(super) fn hdr_refusal(nclx: Option<Nclx>, icc: Option<&[u8]>) -> Option<super::Unsupported> {
+    use super::Unsupported;
+    if !names_hdr(nclx, icc) {
+        return None;
+    }
+    let refused = || Some(Unsupported("HDR".into()));
+    if cfg!(windows) {
+        return refused();
+    }
+    let Some(nclx) = nclx else {
+        return refused();
+    };
+    let primaries = match icc {
+        Some(icc) => {
+            let Some((primaries, transfer, true)) =
+                icc_cicp(icc).filter(|(_, t, _)| matches!(t, 16 | 18))
+            else {
+                return refused();
+            };
+            if nclx.hdr() && (nclx.primaries, nclx.transfer) != (primaries, transfer) {
+                return refused();
+            }
+            primaries
         }
+        None => nclx.primaries,
+    };
+    if !hdr_primaries(primaries) {
+        refused()
+    } else if ![1, 5, 6, 9].contains(&nclx.matrix) {
+        Some(Unsupported(format!("HDR matrix {}", nclx.matrix)))
+    } else {
+        None
     }
 }
 

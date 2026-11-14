@@ -9,10 +9,12 @@ Each file is 64x32: eight flat 16x16 patches of known 10-bit signal (`PATCHES`,
 which the decoder test repeats), BT.2020 primaries and matrix, full range, 4:2:0 as
 phones write. The patches cover deep shadow, graphics white, highlights and
 saturated colours; flat patches keep the codec's error at their centres to a code
-value or two. The files are `hdr-pq.heic`, `hdr-hlg.heic`, and `hdr-pq-p3.heic`,
-the PQ signal in Display P3 primaries. `hdr-pq-icc.heic` is the PQ signal with no
+value or two. The files are `hdr-pq.heic`, `hdr-hlg.heic`, `hdr-pq-p3.heic`, the
+PQ signal in Display P3 primaries, and `hdr-pq-dci.heic`, in SMPTE RP 431-2's
+DCI-P3 primaries and white (CICP 11). `hdr-pq-icc.heic` is the PQ signal with no
 `nclx`, its transfer named only by the `cicp` tag of an ICC profile written here (BT.2020
-colorants adapted to D50, linear curves), which Develop refuses.
+colorants adapted to D50, linear curves), and `hdr-pq-nclx-icc.heic` the same with an
+`nclx` of BT.2020 PQ beside the profile.
 """
 import shutil, struct, subprocess, sys, tempfile, zlib
 from pathlib import Path
@@ -78,7 +80,8 @@ def main(out: Path):
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "patches.png"
         png16(src, rows)
-        for name, primaries, transfer in [("hdr-pq.heic", 9, 16), ("hdr-hlg.heic", 9, 18), ("hdr-pq-p3.heic", 12, 16)]:
+        for name, primaries, transfer in [("hdr-pq.heic", 9, 16), ("hdr-hlg.heic", 9, 18), ("hdr-pq-p3.heic", 12, 16),
+                                         ("hdr-pq-dci.heic", 11, 16)]:
             subprocess.run([enc, "-q", "100", "-b", "10", "-p", "chroma=420", "-p", "preset=slow",
                             "--matrix_coefficients", "9", "--colour_primaries", str(primaries),
                             "--transfer_characteristic", str(transfer), "--full_range_flag", "1",
@@ -88,6 +91,12 @@ def main(out: Path):
         png16(profiled, rows, pq_icc())
         subprocess.run([enc, "-q", "100", "-b", "10", "-p", "chroma=420", "-p", "preset=slow",
                         "--no-alpha", "-o", out / "hdr-pq-icc.heic", profiled],
+                       check=True, capture_output=True)
+        subprocess.run([enc, "-q", "100", "-b", "10", "-p", "chroma=420", "-p", "preset=slow",
+                        "--matrix_coefficients", "9", "--colour_primaries", "9",
+                        "--transfer_characteristic", "16", "--full_range_flag", "1",
+                        "--enable-two-colr-boxes", "--no-alpha", "-o", out / "hdr-pq-nclx-icc.heic",
+                        profiled],
                        check=True, capture_output=True)
 
 
