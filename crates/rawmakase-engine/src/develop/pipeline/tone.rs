@@ -123,23 +123,28 @@ impl HdrCurves {
     }
 }
 /// A mask's Hue and Saturation `d` on an HDR master's linear display RGB (1 = graphics
-/// white): positive Saturation keeping the colour's value (`local::saturate_hdr`), then
-/// Hue, or any other Saturation, on Oklab of the light clipped at 0. Without them
+/// white): positive Saturation keeping the colour's value (`local::saturate_hdr`),
+/// negative Saturation toward the colour's HSL lightness (`local::desaturate_hdr`, on
+/// the light clipped at 0), then Hue on Oklab of the light clipped at 0. Without them
 /// nothing is clipped, so a colour outside the display gamut keeps its value and hue.
 fn local_color_hdr(d: &LocalDelta, rgb: [f32; 3]) -> [f32; 3] {
-    let saturated = d[slot::SATURATION] > 0.;
-    let rgb = if saturated {
+    let saturation = d[slot::SATURATION];
+    let rgb = if saturation > 0. {
         mul(
             crate::camera_profiles::PRO_TO_RGB,
             local::saturate_hdr(d, mul(crate::camera_profiles::RGB_TO_PRO, rgb)),
+        )
+    } else if saturation < 0. {
+        let pro = mul(crate::camera_profiles::RGB_TO_PRO, rgb).map(|v| v.max(0.));
+        mul(
+            crate::camera_profiles::PRO_TO_RGB,
+            local::desaturate_hdr(d, pro),
         )
     } else {
         rgb
     };
     let mut rest = *d;
-    if saturated {
-        rest[slot::SATURATION] = 0.;
-    }
+    rest[slot::SATURATION] = 0.;
     if rest[slot::HUE] == 0. && rest[slot::SATURATION] == 0. {
         return rgb;
     }
@@ -295,9 +300,10 @@ impl HdrFinish {
         // Colour grading follows the colour mixer and a look's RGB table, as in SDR.
         let rgb = lut.grade.as_ref().map_or(rgb, |g| g.apply_hdr(rgb));
         // A mask's Hue and Saturation follow grading, as in SDR, on the unclipped light:
-        // positive Saturation keeping the colour's value (`local::saturate_hdr`), as
-        // Camera Raw 18.7's HDR render of it does at every brightness, and Hue on Oklab
-        // (docs/records/hdr-stage1-results.md#masks).
+        // positive Saturation keeping the colour's value (`local::saturate_hdr`) and
+        // negative Saturation toward its HSL lightness (`local::desaturate_hdr`), as
+        // Camera Raw 18.7's HDR render of them does at every brightness, and Hue on
+        // Oklab (docs/records/hdr-stage1-results.md#masks).
         let rgb = local_color.map_or(rgb, |d| local_color_hdr(d, rgb));
         // The gray's luminance, unclipped: SDR renders clip it at white.
         let rgb = lut.gray_grid.as_ref().map_or(rgb, |g| {

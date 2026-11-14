@@ -220,6 +220,24 @@ pub(crate) fn saturate_hdr(d: &LocalDelta, p: [f32; 3]) -> [f32; 3] {
     let scale = to / s;
     p.map(|v| max - (max - v) * scale)
 }
+/// A mask's negative Saturation in the HDR master, on linear ProPhoto RGB `p`, not
+/// negative: Camera Raw 18.7's blends each channel toward the colour's HSL lightness,
+/// the mean of its largest and smallest channels, by 1 + Saturation, at every
+/// brightness (on the synthetic patches at −50 within 0.001 stop median of Camera
+/// Raw's, and on six photos at −25, −50 and −100 within the acceptance rule where
+/// SDR's Oklab operator isn't: docs/records/hdr-stage1-results.md#masks). Other values
+/// are left to [`saturate_hdr`] and [`hue_saturation`].
+pub(crate) fn desaturate_hdr(d: &LocalDelta, p: [f32; 3]) -> [f32; 3] {
+    let k = d[slot::SATURATION];
+    if k >= 0. {
+        return p;
+    }
+    let max = p.into_iter().fold(0f32, f32::max);
+    let min = p.into_iter().fold(f32::INFINITY, f32::min);
+    let lightness = (max + min) / 2.;
+    let keep = (1. + k).max(0.);
+    p.map(|v| lightness + (v - lightness) * keep)
+}
 /// [`saturate_hdr`]'s exponent's scale and power in the Saturation slider (0 to 1).
 const SATURATE_SCALE: f32 = 0.74;
 const SATURATE_POWER: f32 = 1.4;
@@ -258,6 +276,34 @@ mod tests {
         assert_eq!(saturate_hdr(&d, [2.; 3]), [2.; 3]);
         d[slot::SATURATION] = -0.5;
         assert_eq!(saturate_hdr(&d, p), p);
+    }
+    /// The master's negative mask Saturation blends toward the HSL lightness,
+    /// (max + min) / 2, by 1 + Saturation, at any brightness: the lightness stays, the
+    /// channels' spread halves at −50, and −100 leaves the lightness's gray.
+    #[test]
+    fn hdr_desaturation_blends_toward_the_hsl_lightness() {
+        let mut d = [0.; LEN];
+        d[slot::SATURATION] = -0.5;
+        let p = [0.6, 0.45, 0.3];
+        let q = desaturate_hdr(&d, p);
+        let mid = |c: [f32; 3]| {
+            (c.into_iter().fold(0f32, f32::max) + c.into_iter().fold(f32::INFINITY, f32::min)) / 2.
+        };
+        assert!((mid(q) - mid(p)).abs() < 1e-6, "{q:?}");
+        assert!(((q[0] - q[2]) / (p[0] - p[2]) - 0.5).abs() < 1e-6, "{q:?}");
+        let bright = desaturate_hdr(&d, p.map(|v| v * 8.));
+        assert!(
+            (0..3).all(|c| (bright[c] - q[c] * 8.).abs() < 1e-4),
+            "{bright:?}"
+        );
+        d[slot::SATURATION] = -1.;
+        assert!(
+            desaturate_hdr(&d, p)
+                .iter()
+                .all(|v| (v - mid(p)).abs() < 1e-6)
+        );
+        d[slot::SATURATION] = 0.5;
+        assert_eq!(desaturate_hdr(&d, p), p);
     }
     #[test]
     fn deltas_scale_with_amount_and_neutral_color_adds_nothing() {

@@ -254,7 +254,7 @@ fn check(r: &super::recipe::Recipe, fold: bool) -> Result<()> {
         anyhow::bail!("A mask's {name} is not supported in HDR yet");
     }
     if !masked_saturation_measured(&r) {
-        anyhow::bail!("A mask's Saturation outside 0 to +50 is not supported in HDR yet");
+        anyhow::bail!("A mask's Saturation above +50 is not supported in HDR yet");
     }
     if !masked_clarity_measured(&r) {
         anyhow::bail!(
@@ -263,7 +263,7 @@ fn check(r: &super::recipe::Recipe, fold: bool) -> Result<()> {
     }
     if !masked_dehaze_measured(&r) {
         anyhow::bail!(
-            "A mask's Dehaze outside 0 to +60, or above +100 with the photo's own, is not supported in HDR yet"
+            "A mask's Dehaze below 0, or above +100 with the photo's own, is not supported in HDR yet"
         );
     }
     // A look's own settings render as the user's sliders do, added to them, and its
@@ -364,24 +364,25 @@ fn unrendered_mask_slider(a: &crate::model::masks::LocalAdjust) -> Option<&'stat
     .find_map(|(name, v)| (v != 0.).then_some(name))
 }
 
-/// The most Saturation (−1 to 1) the masks add to a pixel in the HDR master, which
+/// The most Saturation (0 to 1) the masks add to a pixel in the HDR master, which
 /// raises a colour's saturation keeping its value, as Camera Raw's HDR mask Saturation
-/// does: at +50 on six photos it is within the acceptance rule; at +100 on the colour
-/// patches, and below 0, it is further from Camera Raw above white than the SDR
-/// rendition is below it (docs/records/hdr-stage1-results.md#masks).
+/// does: at +50 on six photos it is within the acceptance rule; at +75 and +100 on the
+/// same photos it is further from Camera Raw above white than the SDR rendition is below
+/// it. Negative Saturation renders down to −100, toward the colour's HSL lightness, as
+/// Camera Raw's (docs/records/hdr-stage1-results.md#masks).
 const MASK_SATURATION_MEASURED: f32 = 0.5;
 
-/// Whether the masks' Saturation stays in the range measured for the master, 0 to +50,
-/// overlapping masks added. As for Clarity, each active mask's Saturation at its Amount
-/// is taken as reaching every pixel.
+/// Whether the masks' Saturation stays in the range measured for the master: their
+/// positive Saturation up to +50, overlapping masks added. As for Clarity, each active
+/// mask's Saturation at its Amount is taken as reaching every pixel; negative masks
+/// render at any amount.
 fn masked_saturation_measured(r: &super::recipe::Recipe) -> bool {
-    let masks: Vec<f32> = r
-        .masks
+    r.masks
         .iter()
-        .filter(|g| g.is_active() && g.adjust.saturation != 0.)
+        .filter(|g| g.is_active() && g.adjust.saturation > 0.)
         .map(|g| g.adjust.saturation * g.amount)
-        .collect();
-    masks.iter().all(|v| *v >= 0.) && masks.iter().sum::<f32>() <= MASK_SATURATION_MEASURED
+        .sum::<f32>()
+        <= MASK_SATURATION_MEASURED
 }
 
 /// Whether every pixel's Clarity stays in the range the global slider renders in, 0 to
@@ -408,16 +409,13 @@ fn masked_clarity_measured(r: &super::recipe::Recipe) -> bool {
     lo >= 0. && hi <= CLARITY_MEASURED
 }
 
-/// The most Dehaze (−1 to 1) the masks add to a pixel in the HDR master: Camera Raw
-/// 18.7's HDR render of a mask's Dehaze +30 and +60 on six photos is as close to the
-/// master as its SDR render to the SDR rendition; +100's and −30's are further
-/// (docs/records/hdr-stage1-results.md#masks).
-const MASK_DEHAZE_MEASURED: f32 = 0.6;
-
-/// Whether the masks' Dehaze stays in the range measured for them, 0 to +60, and, with
-/// the photo's own, within the global slider's, up to +100. A mask's Dehaze works in
-/// the global slider's stage, so a pixel renders the global slider at the sum. As for
-/// Clarity, each active mask's Dehaze at its Amount is taken as reaching every pixel.
+/// Whether the masks' Dehaze stays in the range measured for them: not negative, and
+/// with the photo's own, within the global slider's, up to +100. A mask's Dehaze works
+/// in the global slider's stage, a little stronger above +60 (Camera Raw 18.7's HDR
+/// render of a mask's Dehaze +30 to +100 on six photos is as close to the master as its
+/// SDR render to the SDR rendition; −30's is further:
+/// docs/records/hdr-stage1-results.md#masks). As for Clarity, each active mask's Dehaze
+/// at its Amount is taken as reaching every pixel.
 fn masked_dehaze_measured(r: &super::recipe::Recipe) -> bool {
     let masks: Vec<f32> = r
         .masks
@@ -429,9 +427,7 @@ fn masked_dehaze_measured(r: &super::recipe::Recipe) -> bool {
         return true;
     }
     let added: f32 = masks.iter().sum();
-    masks.iter().all(|v| *v >= 0.)
-        && added <= MASK_DEHAZE_MEASURED
-        && r.effects.dehaze + added <= 1.
+    masks.iter().all(|v| *v >= 0.) && r.effects.dehaze + added <= 1.
 }
 
 /// Whether `r` renders an HDR master of the photo `m` describes, and if not, why;
@@ -742,7 +738,7 @@ mod tests {
             ("Clarity", |a| a.clarity = -0.2),
             ("Dehaze", |a| a.dehaze = -0.2),
             ("Hue", |a| a.hue = 10.),
-            ("Saturation", |a| a.saturation = -0.2),
+            ("Saturation", |a| a.saturation = 0.6),
         ];
         for (name, set) in refused {
             let mut edit = masked.clone();
@@ -750,17 +746,17 @@ mod tests {
             let error = check_recipe(&edit).unwrap_err().to_string();
             assert!(error.contains(&format!("A mask's {name}")), "{error}");
         }
-        // Saturation renders from 0 to +50, overlapping masks added.
+        // Saturation renders from −100 to +50, positive masks added.
         let mut saturation = masked.clone();
         saturation.masks[0].adjust.saturation = 0.5;
         assert!(check_recipe(&saturation).is_ok());
+        let mut less = saturation.clone();
+        less.masks[0].adjust.saturation = -1.;
+        assert!(check_recipe(&less).is_ok());
         let mut more = saturation.clone();
         more.masks[0].adjust.saturation = 0.6;
         let error = check_recipe(&more).unwrap_err().to_string();
-        assert!(
-            error.contains("A mask's Saturation outside 0 to +50"),
-            "{error}"
-        );
+        assert!(error.contains("A mask's Saturation above +50"), "{error}");
         let mut second = saturation.masks[0].clone();
         second.adjust.saturation = 0.2;
         second.amount = 0.5;
@@ -781,13 +777,16 @@ mod tests {
         clarity.masks.push(second);
         let error = check_recipe(&clarity).unwrap_err().to_string();
         assert!(error.contains("A mask's Clarity"), "{error}");
-        // Dehaze renders from 0 to +60 in masks, overlapping masks added, and up to
-        // +100 with the photo's own.
+        // Dehaze renders in masks from 0 up to +100 with the photo's own, overlapping
+        // masks added.
         let mut dehaze = masked.clone();
         dehaze.masks[0].adjust.dehaze = 0.6;
         dehaze.effects.dehaze = 0.4;
         assert!(check_recipe(&dehaze).is_ok());
-        for (mask, own) in [(0.7, 0.), (0.5, 0.6), (-0.2, 0.)] {
+        let mut full = dehaze.clone();
+        (full.masks[0].adjust.dehaze, full.effects.dehaze) = (1., 0.);
+        assert!(check_recipe(&full).is_ok());
+        for (mask, own) in [(0.7, 0.4), (0.5, 0.6), (-0.2, 0.)] {
             let mut edit = dehaze.clone();
             edit.masks[0].adjust.dehaze = mask;
             edit.effects.dehaze = own;
@@ -798,7 +797,7 @@ mod tests {
         let mut second = overlapping.masks[0].clone();
         second.adjust.dehaze = 0.2;
         second.amount = 0.5;
-        overlapping.effects.dehaze = 0.;
+        overlapping.effects.dehaze = 0.35;
         overlapping.masks.push(second);
         assert!(check_recipe(&overlapping).is_err());
         // A look's Clarity adds to the sum.

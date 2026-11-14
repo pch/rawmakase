@@ -32,6 +32,21 @@ pub(crate) struct SceneTone {
     /// Positive Dehaze's haze model, when the recipe or a mask has positive Dehaze
     /// ([`needs_haze`]); without it positive Dehaze leaves the pixel alone.
     pub(crate) haze: Option<Dehazing>,
+    /// Whether this is an HDR master's stage, whose masks' Dehaze is
+    /// [`hdr_mask_dehaze`]'s.
+    pub(crate) hdr: bool,
+}
+/// How much stronger a mask's Dehaze is in an HDR master at +100 than the global
+/// slider at the same value, growing from none at [`HDR_MASK_DEHAZE_FROM`]. Camera Raw
+/// 18.7's mask Dehaze is stronger than its global Dehaze; at +80 and +100 on six photos
+/// the master is nearest it at 1.05 and 1.1 times, and up to +60 at the global
+/// slider's strength (docs/records/hdr-stage1-results.md#masks).
+const HDR_MASK_DEHAZE_GAIN: f32 = 0.1;
+const HDR_MASK_DEHAZE_FROM: f32 = 0.6;
+/// A pixel's masks' Dehaze `d` (their sum, −1 to 1) as an HDR master renders it.
+pub(crate) fn hdr_mask_dehaze(d: f32) -> f32 {
+    let t = (d - HDR_MASK_DEHAZE_FROM) / (1. - HDR_MASK_DEHAZE_FROM);
+    d * (1. + HDR_MASK_DEHAZE_GAIN * t.clamp(0., 1.))
 }
 /// Whether a render of `r` removes haze somewhere: positive Dehaze, globally or in an
 /// active mask (a mask's Dehaze adds to the recipe's).
@@ -60,6 +75,7 @@ impl SceneTone {
                 dehaze: r.effects.dehaze,
                 dehaze_key: measures.p99 + r.exposure,
                 haze,
+                hdr: true,
             };
         }
         Self {
@@ -79,6 +95,7 @@ impl SceneTone {
             dehaze: r.effects.dehaze,
             dehaze_key: measures.p99 + r.exposure,
             haze,
+            hdr: false,
         }
     }
     /// S3's Dehaze and global curves on one pixel of linear ProPhoto RGB at camera-image
@@ -93,13 +110,24 @@ impl SceneTone {
         tone_gain: f32,
         local: Option<&LocalDelta>,
     ) -> [f32; 3] {
-        let dehaze = self.dehaze + local.map_or(0., |d| d[slot::DEHAZE]);
+        let mask = local.map_or(0., |d| d[slot::DEHAZE]);
+        let dehaze = self.dehaze
+            + if self.hdr {
+                hdr_mask_dehaze(mask)
+            } else {
+                mask
+            };
         let pro = if dehaze > 0. {
             // The photo's haze, removed in proportion to the amount.
+            let omega = if self.hdr {
+                haze::omega_hdr(dehaze)
+            } else {
+                haze::omega(dehaze)
+            };
             self.haze.as_ref().map_or(pro, |haze| {
                 haze.apply(
                     pro,
-                    dehaze,
+                    omega,
                     pos,
                     tone_gain * local.map_or(1., |d| d[slot::EXPOSURE].exp2()),
                 )
@@ -137,6 +165,22 @@ impl SceneTone {
 mod tests {
     use super::*;
 
+    /// An HDR master's mask Dehaze is the global slider's up to +60 and grows to 1.1
+    /// times by +100, past where the global slider's haze fraction ends; SDR renders
+    /// keep the global slider's (docs/records/hdr-stage1-results.md#masks).
+    #[test]
+    fn hdr_mask_dehaze_is_stronger_above_60() {
+        for d in [-0.3, 0., 0.3, 0.6] {
+            assert_eq!(hdr_mask_dehaze(d), d);
+        }
+        assert!((hdr_mask_dehaze(0.8) - 0.84).abs() < 1e-6);
+        assert!((hdr_mask_dehaze(1.) - 1.1).abs() < 1e-6);
+        for s in [0., 0.2, 0.5, 1.] {
+            assert_eq!(haze::omega_hdr(s), haze::omega(s));
+        }
+        assert!((haze::omega_hdr(1.1) - 0.975).abs() < 1e-6);
+        assert_eq!(haze::omega(1.1), haze::omega(1.));
+    }
     /// A mask's Dehaze adds to the recipe's: positive sums remove the photo's haze as
     /// the global slider at the sum does, negative ones use the measured tables, and a
     /// mask cancelling the slider leaves the pixel alone.

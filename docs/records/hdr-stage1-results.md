@@ -1982,6 +1982,56 @@ against 0.459, 0.010 past the tolerance (above white 0.220, ΔE_ITP +30.54 again
 Decision, 2026-11-14: a mask's Dehaze renders from 0 to +60 (overlapping masks added),
 and up to +100 with the photo's own; above +60 and below 0 it stays refused.
 
+**Mask Saturation and Dehaze, round 2 (2026-11-14).** Camera Raw 18.7 rendered the same
+whole-frame mask at Saturation −100, −50, −25, +75 and +100 and Dehaze +80 on the six
+photos (HDR limit 4 and SDR), and Saturation −100 and −25 on the synthetic patches
+(limit 8 and SDR). On the patches Camera Raw's HDR mask Hue, Saturation +100 and
+Saturation −50 are each the same at every level from a sixteenth of white to four
+times it (Oklab hue turn, chroma ratio and luminance change within a degree, 0.01 and
+0.01 stop), as the master's operators are; what differs is the operator. Its negative
+Saturation blends each channel of linear ProPhoto toward the colour's HSL lightness,
+(max + min) / 2, by 1 + Saturation: applied to Camera Raw's own default render it gives
+Camera Raw's −50 within 0.001 / 0.088 stop and 1.75 mean ΔE_ITP (SDR's Oklab chroma
+scale 0.043 and 5.91; value kept, HSV saturation scaled, 0.046 and 6.02; toward the
+colour's luminance 0.043 and 5.91). The master renders it (`masks::local::desaturate_hdr`),
+the SDR rendition keeping SDR's operator. Effect error median / p95 in stops, below
+white HDR / SDR, HDR above white, ΔE_ITP added HDR / SDR, medians over the six photos:
+
+| Mask setting | Rendering | Below white | Above white (allowed) | ΔE_ITP added | |
+| --- | --- | --- | --- | --- | --- |
+| Saturation −25 | SDR's operator | 0.065 / 0.126, 0.057 / 0.120 | 0.044 / 0.066 | +1.01 / +0.98 | passes |
+| | toward the HSL lightness | 0.007 / 0.025 | 0.003 / 0.014 (0.067 / 0.130) | −0.13 | passes |
+| Saturation −50 | SDR's operator | 0.132 / 0.256, 0.116 / 0.249 | 0.088 / 0.135 | +2.85 / +2.72 | misses |
+| | toward the HSL lightness | 0.014 / 0.051 | 0.006 / 0.028 (0.126 / 0.259) | −0.24 | passes |
+| Saturation −100 | SDR's operator | 0.270 / 0.549, 0.233 / 0.546 | 0.177 / 0.278 | +7.53 / +7.09 | misses |
+| | toward the HSL lightness | 0.026 / 0.102 | 0.017 / 0.059 (0.243 / 0.556) | −0.37 | passes |
+| Saturation +75 | value kept, the power operator | 0.023 / 0.161, 0.034 / 0.109 | 0.072 / 0.127 (0.044 / 0.119) | +6.51 / +7.47 | misses |
+| | toward the HSL lightness, 1 + 0.4k to 1 + 0.6k | 0.105–0.140 / 0.155–0.213 | 0.231–0.233 | +8.5 to +10.1 | misses |
+| Saturation +100 | the power operator | 0.041 / 0.424, 0.053 / 0.183 | 0.110 / 0.230 (0.063 / 0.193) | +14.36 / +9.39 | misses |
+| Dehaze +80 | the global slider's | 0.334 / 2.808, 0.315 / 2.810 | 0.204 / 0.601 | +21.45 / +21.01 | misses |
+| | 1.05 times | 0.304 / 2.723 | 0.188 / 0.562 (0.325 / 2.820) | +19.94 | passes |
+| Dehaze +100 | the global slider's | 0.479 / 6.338, 0.459 / 6.333 | 0.220 / 0.694 | +30.54 / +30.47 | misses |
+| | 1.1 times, the haze fraction continued past +100 | 0.449 / 5.684 | 0.233 / 0.831 (0.469 / 6.343) | +31.19 | passes |
+| | 0.8 / 0.9 / 1.15 / 1.3 times | 0.627 / 0.548 / 0.451 / 0.484 | 0.286 / 0.241 / 0.255 / 0.295 | +36.6 / +33.0 / +32.9 / +40.5 | miss |
+| Dehaze +30 | 1.1 times | 0.102 / 0.353, 0.086 / 0.353 | 0.086 / 0.220 | +4.58 / +3.99 | misses |
+
+On the patches the HSL-lightness rule takes negative Saturation's median below white
+from SDR's 0.021 to 0.003 (−50; −25 0.002 against 0.011, −100 0.006 against 0.042) and
+the colour it adds from −2.38 to −6.22 ΔE_ITP, but its p95 there is past SDR's (0.343
+against 0.269 at −50). The tail is in dark, near-neutral patches, where RAWmakase's own
+default render of the patches differs from Camera Raw's (p95 0.346 stop); the rule
+applied to Camera Raw's default render instead stays within 0.088. Camera Raw's mask
+Dehaze is stronger than its global Dehaze (as at ±30 above), and the master is nearest
+it at its own strength up to +60, 1.05 times at +80 and 1.1 times at +100, where the
+strength passes the global slider's range and the haze fraction continues along its last
+segment (0.975 at 1.1). Decision, 2026-11-14: a mask's Saturation renders in the master
+from −100 to +50 (positive masks added, up to +50), negative by the HSL-lightness rule; a
+mask's Dehaze from 0 up to +100 with the photo's own, its strength growing linearly from 1
+at +60 to 1.1 at +100 (`scene_tone::hdr_mask_dehaze`), so everything that rendered
+before renders as it did. Mask Saturation above +50 stays refused. SDR renders don't
+change (the six photos' and the patches' SDR renders and SDR renditions of every mask
+Saturation and Dehaze capture and of global Dehaze, 114 of 114 renders and 114 of 114 renditions, bit-identical to `main`'s).
+
 ### The last refusals on photos (2026-11-13)
 
 Camera Raw 18.7 rendered the remaining refused controls on six CC0 validation photos
@@ -2262,7 +2312,7 @@ Decision, 2026-11-13: these stay refused.
 - The vignette's Highlights in HDR, and Highlight Priority −100 in a frame's darkest
   tiles (p95 1.5 stops on the synthetic tiles) ([Vignette and grain](#vignette-and-grain)).
 - Refine Saturation below 50% in HDR ([Tone curves](#tone-curves)).
-- Masks: a mask's Whites, Blacks, Hue and Saturation outside 0 to +50 (one Camera Raw setting each,
+- Masks: a mask's Whites, Blacks, Hue and Saturation above +50 (one Camera Raw setting each,
   unlike SDR's operators above white), Temp's strength (SDR's), Shadows' HDR error
   (twice SDR's on the patches), and masks on the GPU's HDR preview ([Masks](#masks)).
 - Clarity beyond ±50 and Dehaze below −50 in HDR ([Presence](#presence)).
