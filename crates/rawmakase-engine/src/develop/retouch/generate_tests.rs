@@ -1038,3 +1038,108 @@ fn a_spot_beyond_its_patch_reads_only_what_it_declares() {
         ops[0].opacity = 0.3;
     }
 }
+
+/// A photo with grain of `sigma` in square-root values about `level`.
+fn grainy_photo(w: u32, h: u32, level: f32, sigma: f32, k: u64) -> CameraImage {
+    image(w, h, |x, y| {
+        std::array::from_fn(|c| {
+            (level.sqrt() + sigma * gauss(x, y, k + c as u64))
+                .max(0.)
+                .powi(2)
+        })
+    })
+}
+
+/// The mean of channel 1 and its square-root Laplacian RMS over the pixels of `im`
+/// between `r0` and `r1` of `centre`.
+fn ring_stats(im: &CameraImage, centre: [f32; 2], r0: f32, r1: f32) -> (f32, f32) {
+    let w = im.width as i32;
+    let v = |x: i32, y: i32| im.pixels[(y * w + x) as usize][1].max(0.);
+    let (mut mean, mut sum, mut n) = (0., 0., 0.);
+    for y in 1..im.height as i32 - 1 {
+        for x in 1..w - 1 {
+            let d = (x as f32 - centre[0]).hypot(y as f32 - centre[1]);
+            if d >= r0 && d < r1 {
+                let s = |x, y| v(x, y).sqrt();
+                let l = s(x, y) - (s(x - 1, y) + s(x + 1, y) + s(x, y - 1) + s(x, y + 1)) / 4.;
+                mean += v(x, y);
+                sum += l * l;
+                n += 1.;
+            }
+        }
+    }
+    (mean / n, (sum / n).sqrt())
+}
+
+/// At half opacity a fill a little grainier than the photo still needs grain:
+/// mixed half and half with the photo, the composite would be smoother.
+#[test]
+fn grain_accounts_for_opacity_when_the_fill_has_some() {
+    let photo = grainy_photo(400, 400, 0.1, 0.01, 50);
+    let fill = grainy_photo(400, 400, 0.1, 0.011, 60);
+    let at = |x: f32, y: f32| fill.pixels[(y as u32 * 400 + x as u32) as usize];
+    let mut op = laid_over(
+        &photo,
+        [40., 40., 360., 360.],
+        (320, 320),
+        at,
+        (200., 200., 100.),
+    );
+    op.opacity = 0.5;
+    let (_, grain) = ring_stats(
+        &lay(&photo, &op, GenerateBlend::Membrane),
+        [200., 200.],
+        0.,
+        40.,
+    );
+    let (_, want) = ring_stats(&photo, [200., 200.], 0., 40.);
+    assert!((0.88..1.12).contains(&(grain / want)), "{}", grain / want);
+}
+
+/// A fill too small to measure takes no grain, however grainy the photo.
+#[test]
+fn a_fill_too_small_to_measure_takes_no_grain() {
+    let photo = grainy_photo(200, 200, 0.1, 0.01, 70);
+    let fill = grainy_photo(200, 200, 0.1, 0.01, 80);
+    let at = |x: f32, y: f32| fill.pixels[(y as u32 * 200 + x as u32) as usize];
+    let mut op = laid_over(
+        &photo,
+        [50., 50., 150., 150.],
+        (100, 100),
+        at,
+        (100., 100., 12.),
+    );
+    op.shape = RetouchShape::Spot {
+        center: [100.5 / 200., 100.5 / 200.],
+        radius: 12. / 200.,
+    };
+    op.feather = 1.;
+    assert_eq!(
+        lay(&photo, &op, GenerateBlend::Membrane).pixels,
+        lay(&photo, &op, GenerateBlend::Untextured).pixels
+    );
+}
+
+/// Grain leaves a dark fill's tone as the membrane made it, across the feather too.
+#[test]
+fn grain_keeps_a_dark_fill_s_tone() {
+    let photo = grainy_photo(400, 400, 0.0002, 0.004, 90);
+    let flat = |_: f32, _: f32| [0.0002; 3];
+    let mut op = laid_over(
+        &photo,
+        [40., 40., 360., 360.],
+        (320, 320),
+        flat,
+        (200., 200., 100.),
+    );
+    op.feather = 0.75;
+    let centre = [200., 200.];
+    let textured = lay(&photo, &op, GenerateBlend::Membrane);
+    let smooth = lay(&photo, &op, GenerateBlend::Untextured);
+    for (r0, r1) in [(0., 30.), (45., 80.)] {
+        let (mean, _) = ring_stats(&textured, centre, r0, r1);
+        let (want, _) = ring_stats(&smooth, centre, r0, r1);
+        let e = (mean / want).ln().abs();
+        assert!(e < 0.03, "{r0}..{r1}: {mean} against {want}");
+    }
+}

@@ -15,10 +15,13 @@
 //! - Grain. A generator's fill is smoother than the photo. The noise in a band
 //!   around the shape and in the fill is measured as the median absolute deviation
 //!   of a 4-neighbour Laplacian, in square-root values, where shot noise is about
-//!   constant. What the composite would lack is added as Gaussian noise drawn
+//!   constant. When either is too small to measure, none is added. What the
+//!   composite would lack is added as Gaussian noise drawn
 //!   from the pixel's position and the patch, so every render of it is the same:
 //!   more where the feather or opacity mixes the fill with the photo, since two
-//!   independent noises mixed half and half have half the variance.
+//!   independent noises mixed half and half have half the variance. It is added
+//!   in linear values, symmetric about the pixel's, so it leaves the tone the
+//!   membrane matched.
 //!
 //! Both read the image the patch is laid on, so noise reduction or an earlier spot
 //! changes the detail and grain a patch takes, as it changes the membrane.
@@ -471,34 +474,98 @@ fn grain(
         let i = ((y - grid[1]) * gw + x - grid[0]) as usize;
         (alpha[i] >= 0.99).then(|| out[i])
     });
-    let (photo, fill): ([f32; 3], [f32; 3]) = (
-        std::array::from_fn(|c| photo[c].unwrap_or(0.)),
-        std::array::from_fn(|c| fill[c].unwrap_or(0.)),
-    );
-    if photo.iter().zip(&fill).all(|(p, f)| p <= f) {
+    // Either too small to measure: nothing is known of what the fill lacks.
+    let (Some(photo), Some(fill)) = (
+        photo.into_iter().collect::<Option<Vec<f32>>>(),
+        fill.into_iter().collect::<Option<Vec<f32>>>(),
+    ) else {
+        return;
+    };
+    if photo.iter().all(|p| *p <= 0.) {
         return;
     }
+    let rho = correlation(im, grid, alpha, out);
+    // What the photo under the feather holds (partly the area being removed,
+    // whose noise needn't be the surroundings'); the band's where too few.
+    let width = im.width as usize;
+    let under = residuals(grid, |x, y| {
+        let a = alpha[((y - grid[1]) * gw + x - grid[0]) as usize];
+        (a > 0. && a < 0.99).then(|| im.pixels[y as usize * width + x as usize])
+    });
     let gw = gw as usize;
     out.par_iter_mut().enumerate().for_each(|(i, p)| {
-        // The composite is `(1 - a)` of the photo and `a` of the fill, whose noise
-        // is independent: its variance is σ_p² when the fill's is σ_p² (2 / a - 1).
-        // Kept to coverage of 5% and more, where the factor is at most 39.
-        let a = alpha[i] * op.opacity;
+        // The composite is `(1 - a)` of the photo under it (σ_u) and `a` of the
+        // fill; with their fine detail correlated by ρ, its variance is
+        // (1 - a)² σ_u² + a² σ_f² + 2 a (1 - a) ρ σ_u σ_f, and noise of σ_n added
+        // to the fill adds a² σ_n². The photo's band says what it should be, σ_p².
+        // Kept to coverage of 5% and more, where σ_n is at most 20 σ_p.
+        let a = (alpha[i] * op.opacity).min(1.);
         if a <= 0. {
             return;
         }
-        let gain = 2. / a.max(0.05) - 1.;
         let (x, y) = (grid[0] + (i % gw) as i32, grid[1] + (i / gw) as i32);
         for c in 0..3 {
-            let lacking = (photo[c] * photo[c] * gain - fill[c] * fill[c])
-                .max(0.)
-                .sqrt();
+            let (sp, sf, su) = (photo[c], fill[c], under[c].unwrap_or(photo[c]));
+            let composite =
+                (1. - a).powi(2) * su * su + a * a * sf * sf + 2. * a * (1. - a) * rho[c] * su * sf;
+            let lacking = ((sp * sp - composite).max(0.) / a.max(0.05).powi(2)).sqrt();
             if lacking > 0. {
+                // σ in square-root values is 2 √v σ in linear ones. Added linearly
+                // and clamped to ±v, symmetric noise keeps the mean exactly and
+                // never goes below black; squaring a noisy square root would add
+                // σ² on average, brightening shadows.
+                let v = p[c].max(0.);
                 let n = gaussian(patch.seed, x, y, c);
-                p[c] = (p[c].max(0.).sqrt() + lacking * n).max(0.).powi(2);
+                p[c] = v + (2. * v.sqrt() * lacking * n).clamp(-v, v);
             }
         }
     });
+}
+
+/// How alike the fine detail of the photo and of the fill are, per channel, where
+/// the feather mixes them: the correlation of their 4-neighbour Laplacians in
+/// square-root values, from 0 (independent, as two noises are) to 1 (the fill
+/// reproduces the photo there). 0 with too few pixels to tell.
+fn correlation(im: &CameraImage, grid: PixelRect, alpha: &[f32], out: &[[f32; 3]]) -> [f32; 3] {
+    let gw = (grid[2] - grid[0]) as usize;
+    let gh = (grid[3] - grid[1]) as usize;
+    let width = im.width as usize;
+    let photo = |x: usize, y: usize| {
+        let p = im.pixels[(grid[1] as usize + y) * width + grid[0] as usize + x];
+        p.map(|v| v.max(0.).sqrt())
+    };
+    let fill = |x: usize, y: usize| out[y * gw + x].map(|v| v.max(0.).sqrt());
+    let laplacian = |f: &dyn Fn(usize, usize) -> [f32; 3], x: usize, y: usize| -> [f32; 3] {
+        let (c, l, r, u, d) = (f(x, y), f(x - 1, y), f(x + 1, y), f(x, y - 1), f(x, y + 1));
+        std::array::from_fn(|k| c[k] - (l[k] + r[k] + u[k] + d[k]) / 4.)
+    };
+    let (mut pf, mut pp, mut ff, mut n) = ([0f64; 3], [0f64; 3], [0f64; 3], 0usize);
+    for y in 1..gh.saturating_sub(1) {
+        for x in 1..gw.saturating_sub(1) {
+            let a = alpha[y * gw + x];
+            if !(a > 0. && a < 0.99) {
+                continue;
+            }
+            let (lp, lf) = (laplacian(&photo, x, y), laplacian(&fill, x, y));
+            for c in 0..3 {
+                pf[c] += f64::from(lp[c] * lf[c]);
+                pp[c] += f64::from(lp[c] * lp[c]);
+                ff[c] += f64::from(lf[c] * lf[c]);
+            }
+            n += 1;
+        }
+    }
+    if n < MIN_SAMPLES {
+        return [0.; 3];
+    }
+    std::array::from_fn(|c| {
+        let d = (pp[c] * ff[c]).sqrt();
+        if d > 0. {
+            (pf[c] / d).clamp(0., 1.) as f32
+        } else {
+            0.
+        }
+    })
 }
 
 /// The noise of each channel over `rect`, as a Gaussian's σ in square-root values:

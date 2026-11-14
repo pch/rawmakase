@@ -139,8 +139,11 @@ How it works (`develop::retouch::rendition`, `app::develop::tools::ai_remove`):
   - Grain: the noise of a band 8 pixels around the shape and of the fill is
     measured (in square-root values, where shot noise is about constant), and
     what the result lacks is added as Gaussian noise fixed by the pixel and the
-    patch, so a render is repeatable; more where the feather or opacity mixes the
-    fill with the photo, so the grain holds across the soft edge. A photo without grain gives none, and a
+    patch, so a render is repeatable. Where the feather or opacity mixes the fill
+    with the photo, it adds what the mix lacks, given the noise of the photo under
+    the feather and how alike the fill's fine detail is to it, so the grain holds
+    across the soft edge. It is added in linear values, symmetric about each
+    pixel's and never below black, so it leaves the tone the membrane matched. A photo without grain gives none, and a
     fill as grainy as the photo takes about none. Spots too small to measure (under
     32 pixels of fill or band) take none.
 - A patch that can't be provided fails the render with its reason and protects the
