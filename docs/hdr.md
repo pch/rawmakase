@@ -314,7 +314,7 @@ HDR reference family):
 | Point curve | `color::hdr_curve`, after the parametric curve: the master curve, RGBTone on the look curve's encoding, as in SDR up to white; above it, along the curve's slope at its last point (a natural spline's own derivative there, before clamping), held back above 16 times white toward about 49 times (`hdr_curve::hold`), as Camera Raw holds steep curves. A curve whose last point is left of white continues along that slope from its last point, below white too, where SDR holds its value; it renders when that reaches at most 1.06 at white in the curve's encoding (`hdr_curve::LEFT_END_MEASURED`), and steeper ones are refused. |
 | Refine Saturation | `color::hdr_curve::refine_saturation`, on the master point curve from 50% to 100%: SDR's rule on the same encoded values, the colour keeping its channel differences from before the curve, without SDR's bound at white (with it light above white loses its colour). |
 | Channel curves | `color::hdr_curve::channel`, after the master curve: each channel's own curve on that channel of the look curve's encoding of ProPhoto RGB, by the master curve's rule, its output held at 16. An identity curve leaves its channel alone. |
-| Saturation, Vibrance, the colour mixer | The SDR grids of `develop::color_mixer`, after Contrast, the tone curves and Levels, as in SDR, on unclipped linear values ([The colour stage](#the-colour-stage)): looked up at the colour's value up to 0.2 and at 0.2 above it; Vibrance's value change fades out from 0.5 to white; band Luminance, from −100 to +40, is looked up up to 0.5 and its value change applied per channel, fading out by the channel's scene level from 0.6 to white; negative Luminance is up to 1.2 times stronger as the colour's brightest channel goes from 0.5 to white. |
+| Saturation, Vibrance, the colour mixer | The SDR grids of `develop::color_mixer`, after Contrast, the tone curves and Levels, as in SDR, on unclipped linear values ([The colour stage](#the-colour-stage)): looked up at the colour's value up to 0.2 and at 0.2 above it; Vibrance's value change fades out from 0.5 to white; band Luminance, from −100 to +100, is looked up up to 0.5 and its value change applied per channel, fading out by the channel's scene level from 0.6 to white; negative Luminance is up to 1.2 times stronger as the colour's brightest channel goes from 0.5 to white, and positive Luminance up to 1.5 times where the profile's curve brightens the colour. |
 | Look's RGB table | After the colour mixer, as in SDR (`RgbTable::apply_hdr`): in the table's primaries, each channel is overrange-encoded (0 to 16 times white onto 0 to 1) before the table's own encoding and decoded after it, and what it encodes beyond 1 skips the table and is added back to its output in that encoding. `.cube` looks, Lightroom's creative looks and fitted Camera Looks' tables alike. |
 | Point Color | SDR's swatches (`develop::point_color`), after the colour mixer, on each channel taken into Color Grading's HDR domain (16 times white at 1) and back, clipping at 16 ([Point Color](#point-color)). |
 | Color Grading | The SDR curves (`develop::color_grade_curves`), after the colour mixer and a look's RGB table, on each channel taken into a domain that is the value itself in the deep shadows and 1 at 16 times white, u = x / (1 + 15x/16), and back ([Color grading](#color-grading)); above white each channel's change strengthened by up to a tenth of its log by three stops above white (`color_grade_curves::hdr_boost`). Above 16 the gain at 16. A look's split toning is a pass of its own, as in SDR. |
@@ -358,9 +358,12 @@ to 0.9, 0.125 to 8 times white, a linear and the ACR3 profile curve) show:
   Negative Luminance darkens bright colours just above white more than that: its change
   grows to 1.2 times as the colour's brightest channel goes from 0.5 to white
   (`color_mixer::HDR_LUMINANCE_DARKEN`), and it renders down to −100. Positive Luminance
-  renders up to +40; beyond, Camera Raw's HDR effect strengthens with brightness where
-  its SDR one rolls off, which the SDR grids can't give (every band +100 leaves the Nikon
-  Z6 III 0.20 stop off above white), and the master is refused.
+  is stronger where the profile's curve brightens a colour: Camera Raw's HDR effect
+  through Adobe Standard strengthens toward white where its SDR one rolls off, and
+  through a linear profile it is the SDR one. Its change grows to 1.5 times as the
+  colour's scene luminance goes from 0.35 to 0.6, in proportion to how far the curve
+  brightens the colour's luminance, in full from half a stop
+  (`color_mixer::hdr_luminance_lift`), and it renders up to +100.
 - Black & White's gray is the mix's, unclipped above white.
 - Calibration renders as in SDR: its matrix works on scene colour, and Shadows tint
   fades out below white.
@@ -545,8 +548,7 @@ master renders on the CPU.
 something without a measured HDR rendering: Highlights, Whites above
 +50, Refine Saturation below 50%, a point curve (the master's or a
 channel's) whose last point is left of white and which, continued from it, passes 1.06
-at white in the curve's encoding (`hdr_curve::LEFT_END_MEASURED`), Clarity beyond ±50, Dehaze below −50, the
-colour mixer's Luminance above +40, a darkening vignette's Highlights,
+at white in the curve's encoding (`hdr_curve::LEFT_END_MEASURED`), Clarity beyond ±50, Dehaze below −50, a darkening vignette's Highlights,
 a mask's Blacks, Hue or Highlights, a mask's Saturation outside 0 to +50, a mask's Clarity outside 0 to +50 with the photo's own, a mask's Dehaze outside 0 to +60, a look that sets any of these (Adobe Landscape sets Highlights −12: "Highlights,
 which the look sets, …"; Adobe Vivid's Clarity +10 renders), and ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is

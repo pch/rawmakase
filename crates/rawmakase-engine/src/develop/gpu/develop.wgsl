@@ -514,7 +514,13 @@ fn mixer_hdr(rgb: vec3<f32>, base: i32, fading: i32, luminance: i32, scene: vec3
         // Darkening grows with the colour's brightest channel towards white.
         let top = max(max(level.x, level.y), level.z);
         let t = clamp((top - HDR_LUMINANCE_DARKEN_FROM) / (1.0 - HDR_LUMINANCE_DARKEN_FROM), 0.0, 1.0);
-        let l = select(lum, lum * (1.0 + HDR_LUMINANCE_DARKEN * t), lum < 0.0);
+        // Brightening grows with its luminance where the profile's curve brightens it
+        // (color_mixer::hdr_luminance_lift).
+        let lw = vec3(0.2880402, 0.7118741, 0.0000857);
+        let scene_y = max(dot(level, lw), 1e-6);
+        let lift = clamp((scene_y - HDR_LUMINANCE_LIFT_FROM) / (HDR_LUMINANCE_FADE - HDR_LUMINANCE_LIFT_FROM), 0.0, 1.0)
+            * clamp(log2(max(dot(out, lw) / scene_y, 1e-6)) / HDR_LUMINANCE_LIFT_CURVE, 0.0, 1.0);
+        let l = select(lum * (1.0 + HDR_LUMINANCE_LIFT * lift), lum * (1.0 + HDR_LUMINANCE_DARKEN * t), lum < 0.0);
         out = out * exp2(l * w);
     }
     return PRO_TO_RGB * out;

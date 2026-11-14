@@ -1421,6 +1421,49 @@ past SDR's, as before. Positive Luminance above +40 stays refused. SDR renders d
 change (48 of 48 renders of 24 photos at every band −80, in SDR and as an HDR edit's SDR
 rendition, bit-identical to `main`'s).
 
+**Positive Luminance up to +100 renders (2026-11-14).** On the six photos at every band
++100, Camera Raw's HDR effect against the master's, binned by the default render's
+luminance, splits by colour: near-neutral light is within about 0.05 stop at every level,
+and saturated light is 0.15–0.25 stop short from about 1.5 stops under white to half a
+stop over it (the Z6 III's at half a stop under white: +1.01 against +0.76), where the
+master's channels fade. Camera Raw's own effect there is stronger than its SDR one, and
+the curve is what differs: Camera Raw's patches through a linear profile take the SDR
+grids' change (the master matches them), and those through the ACR3 curve are short as
+the photos are. The master's positive change is therefore made stronger where the
+profile's curve brightens the colour (`color_mixer::hdr_luminance_lift`): by up to half
+again, growing with the colour's scene luminance from 0.35 to 0.6 (the fade's start), in
+proportion to how far the curve brightens its luminance, in full from half a stop. The
+fade by channel stays. Effect error median / p95 in stops, below white HDR / SDR, HDR
+above white, ΔE_ITP added HDR / SDR, medians over the photos or patch frames:
+
+| Edit | Rendering | Below white | Above white (allowed) | ΔE_ITP added | |
+| --- | --- | --- | --- | --- | --- |
+| Every band +100, six photos | faded by channel (before) | 0.031 / 0.119, 0.035 / 0.121 | 0.058 / 0.200 (0.045 / 0.131) | +1.35 / +1.05 | misses |
+| | stronger by the colour's scene luminance alone, 0.3 to 0.6, ×1.5 | 0.031 / 0.114 | 0.043 / 0.127 | +1.39 | passes |
+| | the same by the curve's brightening, from 0.35 | 0.031 / 0.116 | 0.044 / 0.120 | +1.24 | passes |
+| | by the curve's brightening, ×1.6, or from 0.3 or 0.4 | 0.031 / 0.113–0.117 | 0.047–0.056 / 0.123–0.141 | +1.22 to +1.40 | misses |
+| | one gain of the colour by its luminance or brightest channel, fades ending at 1 to 1.5 | 0.031–0.032 / 0.110–0.119 | 0.051–0.075 / 0.129–0.297 | +1.36 to +1.59 | misses |
+| The mixed edit (±40), twelve photos | before | 0.042 / 0.183, 0.039 / 0.132 | 0.054 / 0.110 | +1.81 / +1.32 | |
+| | by the curve's brightening | 0.042 / 0.185 | 0.045 / 0.110 | +1.82 | |
+| Every band +100, linear-profile patches | before, and by the curve's brightening | 0.051 / 0.367, 0.054 / 0.454 | 0.024 / 0.137 | +2.78 / +3.03 | |
+| | by the scene luminance alone | 0.095 / 0.566 | 0.035 / 0.186 | +5.74 | worse |
+| Every band +50, linear-profile patches | before, and by the curve's brightening | 0.029 / 0.238, 0.032 / 0.332 | 0.014 / 0.080 | +0.77 / +2.28 | |
+| | by the scene luminance alone | 0.050 / 0.350 | 0.021 / 0.100 | +2.14 | worse |
+| Every band +100, ACR3 patches | before | 0.090 / 0.418, 0.057 / 0.468 | 0.087 / 0.323 | +3.44 / −0.94 | |
+| | by the curve's brightening | 0.088 / 0.402 | 0.063 / 0.389 | +3.06 | |
+
+The lift by scene luminance alone passes on the photos too, but makes the linear-profile
+patches worse below white than the SDR rendition; by the curve's brightening it leaves
+them as they render (identical scores), and improves the ACR3 patches and the mixed
+edit's error above white. The pass on the photos is narrow (0.001 stop on the median
+above white; the Z6 III goes from 0.167 to 0.041 above white, the S1M2 from 0.276 to
+0.057). Patches at +50 through a curve and photos between +40 and +100 weren't captured;
+the lift is in proportion to the amount, as the grids' change is. **Decision, 2026-11-14:
+positive band Luminance renders in the master up to +100**, on the CPU and the GPU's HDR
+preview (`gpu_develop_matches_cpu_hdr_master` covers +100). SDR renders don't change (30
+of 30 SDR renders of the Luminance edits on the photos and 18 of 18 of the HDR edits' SDR
+renditions, bit-identical to `main`'s).
+
 ### Vignette and grain
 
 Measured with Camera Raw 18.7 on a synthetic DNG through `probe_dng.py` (a linear
@@ -2052,7 +2095,7 @@ added HDR / SDR, medians over the photos):
   strength reshaping near white helps: −70 is at its best unchanged. A mask's negative
   Dehaze misses for the same reason (−30: 0.198 against 0.184). Both wait on the SDR
   operator's parity ([parity gaps](parity-gaps.md), negative Dehaze as added haze).
-- **Band Luminance above +40.** Camera Raw's HDR effect at +100 is 1.3–1.6 times the
+- **Band Luminance above +40** (since rendered: [Band Luminance](#band-luminance)). Camera Raw's HDR effect at +100 is 1.3–1.6 times the
   master's from a stop under white to half a stop over it, and none from 1.5 stops over
   white, where the master's still lifts weak channels by about 0.05 stop. Strengthening
   toward white trims the p95 (0.200 to 0.138) but leaves the median above white at
@@ -2206,9 +2249,7 @@ Decision, 2026-11-13: these stay refused.
 
 - Whites above +50 (not a gain of one photo level: [Whites](#whites)) and Highlights
   in HDR (a rule trained on HDR targets:
-  [Highlights and Shadows](#highlights-and-shadows)); the colour mixer's Luminance above
-  +40, where Camera Raw's HDR effect strengthens with brightness and the SDR grids don't
-  ([Band Luminance](#band-luminance)); Point Color on photos and on the GPU's HDR preview
+  [Highlights and Shadows](#highlights-and-shadows)); Point Color on photos and on the GPU's HDR preview
   ([Point Color](#point-color)).
 - Defringe: RAWmakase's SDR selection (by hue and chroma alone) changes smooth and
   dark colour Camera Raw's leaves alone (1.49 relative error in SDR); the HDR master's
@@ -2270,7 +2311,7 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   ([Looks](#looks)); Contrast ([Contrast](#contrast)); the master point curve, the
   parametric curve, the channels' curves and Levels ([Tone curves](#tone-curves)); Texture ([Presence](#presence)); Saturation, Vibrance, the
   colour mixer's Hue and Saturation, Calibration and Black & White
-  ([Colour stage](#colour-stage)); band Luminance from −100 to +40
+  ([Colour stage](#colour-stage)); band Luminance from −100 to +100
   ([Band Luminance](#band-luminance)); Whites up to +50 ([Whites](#whites)); Shadows
   ([Highlights and Shadows](#highlights-and-shadows)); looks with RGB tables, B&W,
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
