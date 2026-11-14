@@ -38,10 +38,22 @@ pub fn stage(
     dir: &Path,
     write: impl FnOnce(&mut NamedTempFile) -> Result<()>,
 ) -> Result<NamedTempFile> {
-    let mut file = NamedTempFile::new_in(dir)?;
+    let mut file = staging_file(dir)?;
     write(&mut file)?;
     file.as_file().sync_all()?;
     Ok(file)
+}
+/// An empty temporary file in `dir`, for a file to be renamed into place there.
+///
+/// Its name doesn't start with a dot: iCloud Drive sets the hidden flag on dot
+/// files in a synced folder, and the flag stays when the file is renamed, so
+/// the finished file would be hidden in Finder (#1084). The `.partial`
+/// extension keeps it out of imports and watched folders.
+pub fn staging_file(dir: &Path) -> io::Result<NamedTempFile> {
+    tempfile::Builder::new()
+        .prefix("rawmakase-")
+        .suffix(".partial")
+        .tempfile_in(dir)
 }
 /// Renames a file from [`stage`] to `path`, in the same folder, durably.
 pub fn persist(staged: NamedTempFile, path: &Path, replace: Replace) -> Result<()> {
@@ -265,6 +277,14 @@ mod tests {
             .collect();
         names.sort();
         names
+    }
+    /// iCloud Drive marks a dot file in a synced folder hidden, and renaming keeps the
+    /// flag, so a file staged as a dot file can land hidden (#1084).
+    #[test]
+    fn a_staged_file_is_not_a_dot_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = stage(dir.path(), |f| Ok(f.write_all(b"x")?)).unwrap();
+        assert!(!is_hidden(file.path()), "{}", file.path().display());
     }
     #[test]
     #[cfg(unix)]

@@ -76,7 +76,7 @@ impl Catalog {
         ensure!(!path.exists(), "Catalog already exists: {}", path.display());
         let parent = crate::storage::parent_dir(path);
         std::fs::create_dir_all(parent)?;
-        let file = tempfile::NamedTempFile::new_in(parent)?;
+        let file = crate::storage::staging_file(parent)?;
         Db::create(file.path())?;
         crate::storage::persist_noclobber(file, path)?;
         Self::open(path)

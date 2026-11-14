@@ -323,7 +323,7 @@ pub fn stage_gain_map(
             anyhow::anyhow!("A gain-map export is a JPEG or JPEG XL: name it .jpg, .jpeg or .jxl")
         })?;
     let parent = crate::storage::parent_dir(path);
-    let mut temp = NamedTempFile::new_in(parent)?;
+    let mut temp = crate::storage::staging_file(parent)?;
     let unfinished = WRITING.track(temp.path());
     let base = &image.base;
     let directories = metadata::directories(m, embed, base.width(), base.height(), base.space());
@@ -385,7 +385,7 @@ pub fn stage_hdr(
         "HDR export has the wrong size"
     );
     let parent = crate::storage::parent_dir(path);
-    let mut temp = NamedTempFile::new_in(parent)?;
+    let mut temp = crate::storage::staging_file(parent)?;
     let unfinished = WRITING.track(temp.path());
     let directories = metadata::directories_uncalibrated(m, embed, image.width, image.height);
     match format {
@@ -419,7 +419,7 @@ pub fn stage_image(
     })?;
     format.supports(space)?;
     let parent = crate::storage::parent_dir(path);
-    let mut temp = NamedTempFile::new_in(parent)?;
+    let mut temp = crate::storage::staging_file(parent)?;
     let unfinished = WRITING.track(temp.path());
     let profile = crate::color_management::output_profile(space).to_vec();
     let directories = metadata::directories(m, embed, image.width(), image.height(), space);

@@ -1137,3 +1137,32 @@ fn a_temporary_file_cut_off_at_exit_is_removed_and_one_done_with_forgotten() -> 
     assert!(done.path().exists());
     Ok(())
 }
+/// iCloud Drive marks a dot file in a synced folder hidden, and the flag stays on the
+/// file once it is renamed into place, so an export staged as a dot file can end up
+/// invisible in Finder (#1084).
+#[test]
+fn an_export_is_never_staged_as_a_dot_file() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let image = Rendered {
+        width: 2,
+        height: 2,
+        pixels: vec![[0.5; 3]; 4],
+    };
+    for name in ["out.jpg", "out.tif", "out.png", "out.jxl"] {
+        let staged = stage(
+            &dir.path().join(name),
+            &image,
+            &Metadata::default(),
+            &ExportOptions::default(),
+            &Embed::default(),
+        )?;
+        let path = staged.file.path();
+        assert_eq!(path.parent(), Some(dir.path()), "{name}");
+        assert!(
+            !crate::storage::is_hidden(path),
+            "{name}: {}",
+            path.display()
+        );
+    }
+    Ok(())
+}
