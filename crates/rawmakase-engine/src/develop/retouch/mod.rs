@@ -1,5 +1,7 @@
 //! Lightroom's Remove panel in Heal and Clone modes: spots and brushed areas that copy
-//! pixels from another part of the photo. Operations are stored as parameters and
+//! pixels from another part of the photo; and experimental AI Remove, which lays a
+//! generated patch over a brushed area ([`rendition`] is what the generator is
+//! given and how its answer becomes the patch). Operations are stored as parameters and
 //! rendered on the linear camera image before everything else, so they follow every
 //! later edit and export at full quality. The operations themselves are
 //! [`crate::model::retouch`]'s.
@@ -9,6 +11,8 @@
 //! fractions of the photo's long edge.
 mod heal;
 mod layer;
+mod patch;
+pub mod rendition;
 mod search;
 
 use crate::model::retouch::RetouchOp;
@@ -16,8 +20,11 @@ use crate::model::retouch::RetouchOp;
 pub(crate) use heal::FeatherProfile;
 pub(crate) use heal::profile;
 pub(crate) use layer::{RetouchCache, Retouching, apply};
+pub use patch::ensure as ensure_patches;
 pub use search::find_source;
 
+#[cfg(test)]
+mod generate_tests;
 #[cfg(test)]
 mod tests;
 

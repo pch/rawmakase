@@ -455,6 +455,7 @@ impl Fixture {
                         feather: 0.5,
                         opacity: 1.,
                         offset: [0.2, 0.],
+                        patch: None,
                     });
                 e.view.toggle(Tool::Remove);
                 e.view.retouch.selected = Some(0);

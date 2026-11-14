@@ -541,6 +541,11 @@ impl CameraProfile {
             }),
         )
     }
+    /// The stops [`Self::camera_color`] raises its colour by after the matrix and
+    /// tables (the profile's baseline exposure offset).
+    pub fn exposure(&self) -> f32 {
+        self.exposure
+    }
     pub fn camera_color(&self, p: [f32; 3], matrix: Matrix, t: f32) -> [f32; 3] {
         let mut rgb = mul(matrix, p);
         if let Some(table) = &self.hue1 {

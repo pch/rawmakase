@@ -39,6 +39,7 @@ fn spot(mode: RetouchMode, im: &CameraImage, c: [f32; 2], r: f32, off: [f32; 2])
         feather: 0.3,
         opacity: 1.,
         offset: [off[0] / w, off[1] / h],
+        patch: None,
     }
 }
 fn max_error(a: &CameraImage, b: &CameraImage) -> f32 {
@@ -70,7 +71,7 @@ fn heal_of_a_constant_field_is_exact() {
         feather: 0.2,
         ..spot(RetouchMode::Heal, &im, [25., 40.], 8., [55., 0.])
     };
-    let healed = apply(&dusty, heals(&[op]));
+    let healed = apply(&dusty, heals(&[op])).unwrap();
     assert!(
         max_error(&healed, &im) < 1e-4,
         "{}",
@@ -95,7 +96,7 @@ fn heal_reproduces_linear_gradients() {
         feather: 0.2,
         ..spot(RetouchMode::Heal, &im, [80., 60.], 14., [-40., 20.])
     };
-    let healed = apply(&dusty, heals(&[op]));
+    let healed = apply(&dusty, heals(&[op])).unwrap();
     let error = im
         .pixels
         .iter()
@@ -106,7 +107,7 @@ fn heal_reproduces_linear_gradients() {
     assert!(error < 0.01, "{error}");
     // Clone copies the other part of the gradient unchanged.
     let op = spot(RetouchMode::Clone, &im, [80., 60.], 12., [-40., 0.]);
-    let cloned = apply(&dusty, heals(&[op]));
+    let cloned = apply(&dusty, heals(&[op])).unwrap();
     let i = 60 * 160 + 80;
     assert!((cloned.pixels[i][0] - gradient(40., 60.)[0]).abs() < 1e-4);
 }
@@ -230,7 +231,7 @@ fn incremental_tiles_match_a_full_rebuild() {
     let mut cache = RetouchCache::default();
     let check = |cache: &mut RetouchCache, ops: &[RetouchOp]| {
         let incremental = cache.get(&base, heals(ops), Cancel::new(&cancel)).unwrap();
-        let full = apply(&base, heals(ops));
+        let full = apply(&base, heals(ops)).unwrap();
         assert_eq!(incremental.pixels, full.pixels);
     };
     check(&mut cache, &ops);
@@ -276,7 +277,7 @@ fn incremental_tiles_match_a_full_rebuild() {
             retouch: ops,
         };
         let incremental = cache.get(&base, ops, Cancel::new(&cancel)).unwrap();
-        assert_eq!(incremental.pixels, apply(&base, ops).pixels);
+        assert_eq!(incremental.pixels, apply(&base, ops).unwrap().pixels);
     };
     both(&mut cache, &eyes, &heal_ops);
     eyes[0].darken = 1.;
@@ -321,7 +322,7 @@ fn automatic_source_avoids_texture_edges_and_asks_again_for_the_next() {
     let src = [(0.5 + offset[0]) * 400., (0.5 + offset[1]) * 300.];
     assert!((src[0] - 200.).hypot(src[1] - 150.) >= 14.);
     assert!(!(235. ..285.).contains(&src[0]), "{src:?}");
-    let healed = apply(&dusty, heals(&[op.clone()]));
+    let healed = apply(&dusty, heals(&[op.clone()])).unwrap();
     assert!(
         max_error(&healed, &im) < 0.01,
         "{}",
@@ -344,6 +345,7 @@ fn placed_brush_covers_its_path() {
         feather: 0.,
         opacity: 1.,
         offset: [0., 0.2],
+        patch: None,
     };
     let p = Placed::new(&op, &frame, FeatherProfile::Smoothstep);
     assert_eq!(p.radius, 4.);

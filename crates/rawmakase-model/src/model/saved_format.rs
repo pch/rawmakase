@@ -32,12 +32,18 @@ pub const AI_DENOISE_SCHEMA: u32 = 13;
 /// setting when saving). HDR values kept while HDR is off don't need it: those
 /// releases keep them as unknown settings and render the edit as it should.
 pub const HDR_SCHEMA: u32 = 14;
+/// The version a recipe holding an AI Remove spot (a generated patch) is written
+/// as: releases before it read up to [`HDR_SCHEMA`] and refuse it rather than
+/// drop the spot, whose pixels they can't render, when saving.
+pub const GENERATED_SPOTS_SCHEMA: u32 = 15;
 /// The newest version this release reads.
-pub const NEWEST: u32 = HDR_SCHEMA;
+pub const NEWEST: u32 = GENERATED_SPOTS_SCHEMA;
 
 /// The version to save `recipe` as: the newest any of its settings needs.
 pub fn schema_for(recipe: &super::recipe::Recipe) -> u32 {
-    if recipe.uses_hdr() {
+    if recipe.uses_generated() {
+        GENERATED_SPOTS_SCHEMA
+    } else if recipe.uses_hdr() {
         HDR_SCHEMA
     } else if !recipe.ai_denoise.is_default() {
         AI_DENOISE_SCHEMA
@@ -158,11 +164,11 @@ mod tests {
             assert!(v["recipe"].get("engine").is_none(), "{version}");
             assert_eq!(v["recipe"]["exposure"], 0.5);
         }
-        for version in [12, 13, 14] {
+        for version in [12, 13, 14, 15] {
             let mut v = serde_json::json!({"schema": version, "pipeline": version, "recipe": {}});
             assert!(super::migrate_recipe(&mut v).is_ok());
         }
-        let mut v = serde_json::json!({"schema": 15, "pipeline": 15, "recipe": {}});
+        let mut v = serde_json::json!({"schema": 16, "pipeline": 16, "recipe": {}});
         assert!(super::migrate_recipe(&mut v).is_err());
         let mut v = serde_json::json!({"schema": 5, "pipeline": 6, "recipe": {}});
         assert!(super::migrate_recipe(&mut v).is_err());
@@ -351,6 +357,7 @@ mod tests {
             feather: 0.5,
             opacity: 1.,
             offset: [0.05, 0.],
+            patch: None,
         });
         let (saved, local) = r.split_local();
         let json = serde_json::to_value(&saved).unwrap();
@@ -459,5 +466,53 @@ mod tests {
         // This release reads and renders it.
         assert!(read.validate().is_ok());
         const { assert!(super::HDR_SCHEMA > super::AI_DENOISE_SCHEMA) };
+    }
+
+    /// An AI Remove spot needs schema 15, over HDR's 14, and a release that reads
+    /// up to 14 refuses it rather than drop the spot when it saves.
+    #[test]
+    fn a_generated_spot_is_saved_as_its_own_schema() {
+        use super::super::recipe::Recipe;
+        use super::super::retouch::{RetouchMode, RetouchOp, RetouchPatch, RetouchShape};
+        let mut r = Recipe::default();
+        r.hdr.enabled = true;
+        r.retouch.push(RetouchOp {
+            mode: RetouchMode::Heal,
+            shape: RetouchShape::Spot {
+                center: [0.5, 0.5],
+                radius: 0.01,
+            },
+            feather: 0.5,
+            opacity: 1.,
+            offset: [0.05, 0.],
+            patch: None,
+        });
+        assert_eq!(super::schema_for(&r), super::HDR_SCHEMA);
+        r.retouch.push(RetouchOp {
+            mode: RetouchMode::Generate,
+            offset: [0.; 2],
+            patch: Some(RetouchPatch {
+                id: format!("sha256:{}", "b".repeat(64)),
+                width: 8,
+                height: 8,
+                rect: [0.4, 0.4, 0.6, 0.6],
+                generator: "dev.pch.ai-remove/remove".into(),
+                model: "m".into(),
+                ai_denoise: false,
+            }),
+            ..r.retouch[0].clone()
+        });
+        assert_eq!(super::schema_for(&r), super::GENERATED_SPOTS_SCHEMA);
+        let saved = serde_json::json!({
+            "schema": super::schema_for(&r),
+            "pipeline": super::schema_for(&r),
+            "recipe": r,
+        });
+        assert!(!super::reads(&saved, super::HDR_SCHEMA));
+        assert!(super::reads(&saved, super::NEWEST));
+        let read: Recipe = serde_json::from_value(saved["recipe"].clone()).unwrap();
+        assert_eq!(read.retouch, r.retouch);
+        assert!(r.mask_asset_ids().any(|id| id.ends_with(&"b".repeat(64))));
+        const { assert!(super::GENERATED_SPOTS_SCHEMA > super::HDR_SCHEMA) };
     }
 }

@@ -764,6 +764,42 @@ fn releases_before_hdr_refuse_its_format() {
     );
 }
 
+/// Version 7 holds AI Remove spots: releases that open up to 6 refuse it, and
+/// a write holding one asks for it over every other setting's version.
+#[test]
+fn releases_before_ai_remove_refuse_its_format() {
+    use super::db::{GENERATED, HDR, NEWEST};
+    assert!(!opens(GENERATED, HDR));
+    assert!(opens(GENERATED, NEWEST) && opens(HDR, NEWEST));
+    let mut on = with_ai_denoise(true, 0.5);
+    on.hdr.enabled = true;
+    on.retouch.push(crate::model::retouch::RetouchOp {
+        mode: crate::model::retouch::RetouchMode::Generate,
+        shape: crate::model::retouch::RetouchShape::Spot {
+            center: [0.5, 0.5],
+            radius: 0.01,
+        },
+        feather: 0.5,
+        opacity: 1.,
+        offset: [0.; 2],
+        patch: Some(crate::model::retouch::RetouchPatch {
+            id: format!("sha256:{}", "a".repeat(64)),
+            width: 2,
+            height: 2,
+            rect: [0.4, 0.4, 0.6, 0.6],
+            generator: "dev.pch.ai-remove/remove".into(),
+            model: "m".into(),
+            ai_denoise: true,
+        }),
+    });
+    assert_eq!(
+        super::format_upgrade::Stores::of([&on]).version(),
+        GENERATED
+    );
+    on.retouch.clear();
+    assert_eq!(super::format_upgrade::Stores::of([&on]).version(), HDR);
+}
+
 /// HDR values kept while HDR is off save and load back without raising the format;
 /// an edit with HDR on saves, raising the catalog to the HDR version that earlier
 /// releases refuse, and loads back as it was saved.

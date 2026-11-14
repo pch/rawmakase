@@ -108,6 +108,7 @@ fn everything_changed() -> Recipe {
         feather: 0.5,
         opacity: 1.,
         offset: [0.02, 0.],
+        patch: None,
     });
     r.red_eye.push(crate::model::red_eye::RedEyeOp {
         kind: Default::default(),

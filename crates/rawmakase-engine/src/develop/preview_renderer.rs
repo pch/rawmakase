@@ -1725,6 +1725,7 @@ mod tests {
             feather: 0.4,
             opacity: 1.,
             offset,
+            patch: None,
         };
         let mut r = Recipe {
             sharpening: 0.5,
@@ -1861,6 +1862,7 @@ mod tests {
                 feather: 0.4,
                 opacity: 1.,
                 offset: [-0.2, 0.2],
+                patch: None,
             }],
             ..Default::default()
         };

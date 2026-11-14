@@ -6,6 +6,7 @@ mod files;
 mod formats;
 mod identity;
 pub mod mask_assets;
+pub mod patches;
 
 pub use checksum::{
     CHUNK as CHECKSUM_CHUNK, FileChecksum, Outcome as ChecksumRead, VERSION as CHECKSUM_VERSION,

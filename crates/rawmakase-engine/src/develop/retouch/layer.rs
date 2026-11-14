@@ -1,7 +1,11 @@
 //! The retouched camera image: the highlight-recovered image with every red eye
-//! correction, then every Heal and Clone operation, applied in order. Previews keep it
-//! between renders and, when operations change, recompute only the 256-pixel tiles
-//! those changes reach; exports build it at once.
+//! correction, then every Heal, Clone and Generate operation, applied in order.
+//! Previews keep it between renders and, when operations change, recompute only the
+//! 256-pixel tiles those changes reach; exports build it at once.
+//!
+//! A Generate operation's patch is resolved here, for every caller alike (preview,
+//! export, Library previews, measurement): one that can't be provided fails the
+//! render with its reason, and the photo never renders without it.
 use super::{
     RetouchOp,
     heal::{self, PixelRect},
@@ -40,8 +44,9 @@ impl<'a> Retouching<'a> {
         self.red_eye.is_empty() && self.retouch.is_empty()
     }
     /// Every operation placed on one image, in the order they apply: red eye first, so
-    /// a heal copying from an eye copies the corrected pupil.
-    fn steps(&self, frame: &ImageFrame) -> Vec<Step> {
+    /// a heal copying from an eye copies the corrected pupil. Where they write and
+    /// read only: Generate operations' patches are not resolved.
+    fn placed(&self, frame: &ImageFrame) -> Vec<Step> {
         let eyes = self
             .red_eye
             .iter()
@@ -51,6 +56,21 @@ impl<'a> Retouching<'a> {
             .iter()
             .map(|op| Step::Heal(heal::Placed::new(op, frame, FEATHER)));
         eyes.chain(heals).collect()
+    }
+    /// [`Self::placed`], with each Generate operation's patch resolved, ready to
+    /// apply; fails when a patch can't be provided.
+    fn steps(&self, frame: &ImageFrame) -> Result<Vec<Step>> {
+        let mut steps = self.placed(frame);
+        let mut ops = self.retouch.iter();
+        for step in steps.iter_mut().skip(self.red_eye.len()) {
+            let op = ops.next().expect("a step per operation");
+            if let (Step::Heal(placed), Some(patch)) = (step, &op.patch) {
+                let pixels = super::patch::resolve(patch)?;
+                let p = std::mem::replace(placed, heal::Placed::new(op, frame, FEATHER));
+                *placed = p.with_patch(pixels, frame);
+            }
+        }
+        Ok(steps)
     }
     /// Destination rectangles of the operations that differ between `self` and
     /// `other`, compared position by position within each list.
@@ -106,15 +126,17 @@ impl Step {
     }
 }
 
-/// `base` with the operations applied, built from scratch (exports).
-pub(crate) fn apply(base: &CameraImage, ops: Retouching) -> CameraImage {
+/// `base` with the operations applied, built from scratch (exports); fails when a
+/// Generate operation's patch can't be provided.
+pub(crate) fn apply(base: &CameraImage, ops: Retouching) -> Result<CameraImage> {
     let frame = ImageFrame::new(base);
+    let steps = ops.steps(&frame)?;
     let mut out = base.clone();
     out.recovered = Default::default();
-    for step in ops.steps(&frame) {
+    for step in steps {
         step.apply(&mut out);
     }
-    out
+    Ok(out)
 }
 /// Tiles, as (column, row), covering a pixel rectangle.
 fn tiles(rect: &PixelRect) -> impl Iterator<Item = (i32, i32)> + use<> {
@@ -138,7 +160,7 @@ pub(crate) fn dirty_tiles(
     for rect in before.changed(&after, frame) {
         dirty.extend(tiles(&rect));
     }
-    let placed = after.steps(frame);
+    let placed = after.placed(frame);
     loop {
         let size = dirty.len();
         for p in &placed {
@@ -202,6 +224,9 @@ impl RetouchCache {
             return Ok(previous);
         }
         let frame = ImageFrame::new(base);
+        // Resolved before anything changes, so a patch that can't be provided
+        // leaves the cache as it was.
+        let steps = ops.steps(&frame)?;
         let dirty = dirty_tiles(&frame, previous_ops, ops);
         let rects = tile_rects(&dirty, base.width, base.height);
         let image = if ops.is_empty() {
@@ -219,7 +244,7 @@ impl RetouchCache {
                     out.pixels[a..b].copy_from_slice(&base.pixels[a..b]);
                 }
             }
-            for step in ops.steps(&frame) {
+            for step in steps {
                 ensure!(!cancel.is_cancelled(), "Render superseded");
                 if step.reads().iter().any(|r| touches(&dirty, r)) {
                     step.apply(&mut out);

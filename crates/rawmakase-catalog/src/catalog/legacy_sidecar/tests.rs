@@ -142,6 +142,7 @@ fn spots_and_masks_save_beside_a_compatible_sidecar() -> Result<()> {
         feather: 0.5,
         opacity: 1.,
         offset: [0.1, 0.],
+        patch: None,
     });
     r.masks.push(crate::model::masks::MaskGroup {
         components: vec![crate::model::masks::MaskComponent::new(

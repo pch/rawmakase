@@ -35,8 +35,8 @@ fn writing(path: &Path) -> Result<Connection> {
 #[test]
 fn an_unsupported_version_is_refused_with_the_file_unchanged() -> Result<()> {
     let (_dir, path) = ready()?;
-    // One past the newest this release opens (6, which may hold HDR edits).
-    Connection::open(&path)?.execute_batch("PRAGMA user_version=7")?;
+    // One past the newest this release opens (7, which may hold AI Remove spots).
+    Connection::open(&path)?.execute_batch("PRAGMA user_version=8")?;
     let before = std::fs::read(&path)?;
     let error = Catalog::open_as(&path, &computer("linux")).err().unwrap();
     assert!(

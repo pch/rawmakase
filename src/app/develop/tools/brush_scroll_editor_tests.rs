@@ -204,6 +204,7 @@ fn a_wheel_scroll_resizing_a_spot_is_one_history_step() {
             feather: 0.5,
             opacity: 1.,
             offset: [0.1, 0.],
+            patch: None,
         });
     editor.view.retouch.selected = Some(0);
     let radius = editor.document.edit.recipe().retouch[0].radius();

@@ -383,6 +383,7 @@ fn retouch_area(area: &Node, frame: &Frame) -> Result<RetouchOp> {
         .clamp(0., 1.),
         opacity: area.num("Opacity").unwrap_or(1.).clamp(0., 1.),
         offset: [s[0] - a[0], s[1] - a[1]],
+        patch: None,
     };
     op.validate()?;
     Ok(op)
@@ -414,6 +415,7 @@ fn retouch_info(info: &Node, frame: &Frame, skipped: &mut Vec<String>) -> Vec<Re
                 feather: 0.,
                 opacity: spot.num("opacity").unwrap_or(1.).clamp(0., 1.),
                 offset: [s[0] - c[0], s[1] - c[1]],
+                patch: None,
             };
             op.validate()?;
             Ok(op)

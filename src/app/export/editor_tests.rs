@@ -72,6 +72,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
         feather: 0.4,
         opacity: 1.,
         offset: [0.1, 0.],
+        patch: None,
     }];
     save(&mut c, &ids[0], &local)?;
     // b: Lightroom's settings only, with Auto Tone and Auto white balance to compute.

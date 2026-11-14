@@ -251,6 +251,7 @@ mod tests {
             feather: 0.5,
             opacity: 1.,
             offset: [0.2, 0.],
+            patch: None,
         });
         assert!(Panel::SpotRemoval.holds_change(&before, &after));
         // Detail's reset sets the default sharpening.
