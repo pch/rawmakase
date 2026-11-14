@@ -212,14 +212,15 @@ impl Editor {
             .library
             .as_ref()
             .is_some_and(|l| *l.session.catalog().location() == catalog);
-        // Reading the catalog again drops what is being typed in the
-        // Library: it is saved first, and kept when it can't be.
+        // Reading the catalog again drops a Copy Name or metadata field being
+        // typed in the Library: it is saved first, and kept when it can't
+        // be. A keyword being typed stays, as no photo's id changed.
         if same
             && !added.added.is_empty()
             && self.commit_library_drafts()
             && let Some(library) = &mut self.library
         {
-            match library.reread_after(&[]) {
+            match library.reread_after_added() {
                 Ok(()) => library.start_background_reads(),
                 Err(e) => self.messages.fail(format!(
                     "{title}: photos added, but the catalog could not be read again: {e:#}"

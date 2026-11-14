@@ -435,6 +435,20 @@ impl Library {
         }
         reread
     }
+    /// [`Self::reread_after`] when photos were only added, by a photo
+    /// source's report: no id changed, so the metadata fields are read again
+    /// rather than forgotten, and a keyword being typed (never saved until
+    /// Enter) stays with the photos it is typed for. Callers save the other
+    /// drafts first ([`Self::commit_drafts`]).
+    pub(in crate::app) fn reread_after_added(&mut self) -> Result<()> {
+        let fields = std::mem::take(&mut self.fields);
+        let reread = self.reread_after(&[]);
+        if reread.is_ok() {
+            self.fields = fields;
+            self.fields.reload();
+        }
+        reread
+    }
     /// Reads the catalog again into the lists shown.
     fn reload(&mut self) -> Result<()> {
         self.session.reload()?;
@@ -1457,6 +1471,19 @@ impl Library {
             self.filter();
         }
         self.commit_fields()
+    }
+    /// Types `text` into Add Keywords for the photos shown, as the panel
+    /// would, without pressing Enter.
+    #[cfg(test)]
+    pub(in crate::app) fn type_keyword_for_tests(&mut self, text: &str) {
+        self.sync_fields();
+        self.fields.keyword_entry = text.into();
+    }
+    /// What Add Keywords holds once the panel has read the photos shown.
+    #[cfg(test)]
+    pub(in crate::app) fn keyword_entry_for_tests(&mut self) -> String {
+        self.sync_fields();
+        self.fields.keyword_entry.clone()
     }
     #[cfg(test)]
     pub(in crate::app) fn set_copy_name_draft(&mut self, id: PhotoId, name: &str) {

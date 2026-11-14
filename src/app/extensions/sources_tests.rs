@@ -348,6 +348,31 @@ fn a_copy_name_being_typed_is_saved_before_a_report_reads_the_catalog_again() {
 }
 
 #[test]
+fn a_keyword_being_typed_stays_through_a_report() {
+    let mut f = fixture();
+    turn_on(&mut f.editor);
+    hear(&mut f.editor, "started 1 test");
+    let library = f.editor.library.as_mut().unwrap();
+    library.show(f.photo.0);
+    library.type_keyword_for_tests("Studio");
+    let c = f.captures.join("c.png");
+    picture(&c, 120);
+    let reply = report(&mut f, std::slice::from_ref(&c), false, None);
+    assert_eq!(reply["added"], json!(1), "{reply}");
+    assert!(photo_at(&f.editor, &c).is_some(), "the new photo is shown");
+    let library = f.editor.library.as_mut().unwrap();
+    assert_eq!(library.selected_photos(), [f.photo.0]);
+    assert_eq!(library.keyword_entry_for_tests(), "Studio");
+    // Shown, the new photo takes the selection: what was typed for the
+    // photo before never goes to it.
+    let d = f.captures.join("d.png");
+    picture(&d, 180);
+    report(&mut f, std::slice::from_ref(&d), true, None);
+    let library = f.editor.library.as_mut().unwrap();
+    assert_eq!(library.keyword_entry_for_tests(), "");
+}
+
+#[test]
 fn a_scope_stops_when_its_source_is_turned_off_or_its_catalog_closes() {
     let mut f = fixture();
     turn_on(&mut f.editor);

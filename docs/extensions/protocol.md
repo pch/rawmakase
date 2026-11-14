@@ -521,7 +521,8 @@ import batch, and answers once they are added:
 `added` counts the photos added; `photos` lists, in the order reported, every
 file the catalog has now, added or there already, with its photo's id; files
 reported twice are listed once. A Copy Name or metadata field being typed in
-the Library is saved before the Library reads the catalog again; when it
+the Library is saved before the Library reads the catalog again, and a
+keyword being typed stays; when it
 can't be saved, the Library isn't read again, so the typing stays, and the
 photos added are missing from `photos` and show with the next read. `refused` lists the others with a `reason`:
 `not_found`, `not_a_photo` (not a format RAWmakase reads, or hidden),
