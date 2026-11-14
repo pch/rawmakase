@@ -25,10 +25,12 @@
 //! Alpha, depth maps and thumbnails are not shown; an alpha image, which a
 //! system decoder decodes with the image, is held to the image's limits with it.
 //!
-//! On macOS, a gain map ([`Map`]) makes the photo an HDR edit: an ISO 21496-1
-//! `tmap` item over the primary image and its map, or else Apple's own auxiliary
-//! image (`urn:com:apple:photo:2020:aux:hdrgainmap`). ImageIO decodes the map with
-//! the image. Elsewhere it is not read, and the photo opens as its SDR base.
+//! On macOS and with libheif, a gain map ([`Map`]) makes the photo an HDR edit: an
+//! ISO 21496-1 `tmap` item over the primary image and its map, or else Apple's own
+//! auxiliary image (`urn:com:apple:photo:2020:aux:hdrgainmap`). The system decoder
+//! decodes the map with the image. On Windows it is not read, and the photo opens as
+//! its SDR base: Windows Imaging Component gives only Apple's map, resampled to the
+//! image's size (docs/hdr.md#heic-gain-maps).
 // Every unsafe operation here crosses into a C API: each one says why it is
 // sound, and an unsafe function's body is no unsafe block of its own.
 #![deny(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
@@ -137,10 +139,18 @@ pub(super) enum MapKind {
 #[derive(Clone, Debug)]
 pub(super) struct Map {
     pub(super) kind: MapKind,
-    /// Its size, from its header, which the decoded map must have. Only macOS's
-    /// decoder reads maps.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    /// Its size, from its header, which the decoded map must have. Windows'
+    /// decoder reads no maps.
+    #[cfg_attr(windows, allow(dead_code))]
     pub(super) size: (u32, u32),
+    /// Its item: the `tmap`'s second input, or Apple's auxiliary image. libheif
+    /// decodes it by this.
+    #[cfg_attr(not(all(unix, not(target_vendor = "apple"))), allow(dead_code))]
+    pub(super) id: u32,
+    /// Coded as grey (HEVC's monochrome), as Apple's and iPhones' ISO maps are, rather
+    /// than as colour.
+    #[cfg_attr(not(all(unix, not(target_vendor = "apple"))), allow(dead_code))]
+    pub(super) grey: bool,
     /// The decoded map, where the system decoder leaves it while it decodes the
     /// image, from the same bytes.
     pub(super) decoded: Arc<OnceLock<std::result::Result<gain_map::Samples, Unsupported>>>,
@@ -232,6 +242,8 @@ fn gain_map_of(
         Map {
             kind,
             size: (map.width, map.height),
+            id,
+            grey: map.tiles[0].1.chroma == 0,
             decoded: Default::default(),
         },
         map,
@@ -300,10 +312,11 @@ pub(super) struct HeicFile {
     nclx: Option<Nclx>,
     orientation: Orientation,
     refused: Option<Unsupported>,
-    /// Its gain map, read on macOS, or why it is refused.
+    /// Its gain map, read where the system decoder decodes maps (not on Windows),
+    /// or why it is refused.
     map: std::result::Result<Option<Map>, Unsupported>,
-    /// The map's pictures, which ImageIO decodes with the image's when asked for
-    /// the map.
+    /// The map's pictures, which the system decoder decodes with the image's when
+    /// asked for the map.
     map_pictures: Vec<(u32, Arc<hevc::Config>)>,
 }
 
@@ -339,10 +352,10 @@ impl HeicFile {
             .collect();
         let props = heif.properties(heif.primary);
         let crop = crop(&props, layout.width, layout.height)?;
-        // The map's pictures are held to the limits too, as ImageIO decodes them
+        // The map's pictures are held to the limits too, as the decoder decodes them
         // with the image; a map beyond them is damaged, and the image still opens.
         let mut map_pictures = Vec::new();
-        let map = match cfg!(target_os = "macos") {
+        let map = match cfg!(not(windows)) {
             true => gain_map_of(&heif, &mut file, &layout, crop).and_then(|found| match found {
                 Some((map, pictures))
                     if within_limit([&layout, &pictures].into_iter().chain(&alphas)) =>
@@ -724,7 +737,7 @@ impl ImageDecoder for HeicFile {
         let full = (self.layout.width, self.layout.height);
         self.stored().map_err(failed)?;
         self.coded_within().map_err(failed)?;
-        // The map's pictures pass the same checks, with the image's, before ImageIO
+        // The map's pictures pass the same checks, with the image's, before the decoder
         // is asked for them; a map that doesn't is damaged, and the image still
         // decodes without it.
         if let Ok(Some(map)) = &self.map {

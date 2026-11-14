@@ -337,8 +337,8 @@ fn prepare(path: &Path) -> Result<Prepared> {
     .or_else(|| (hdr_white.is_some() && hdr.is_none()).then(|| Unsupported("HDR".into())));
     // An SDR base with a gain map opens as an HDR edit by it
     // (docs/hdr.md#gain-map-files): a JPEG's or JPEG XL's ISO 21496-1 or hdrgm map, or
-    // a HEIC's on macOS. A file whose own samples are HDR opens by them, as above,
-    // whatever map it carries.
+    // a HEIC's where its decoder reads maps (not on Windows). A file whose own samples
+    // are HDR opens by them, as above, whatever map it carries.
     let found = match kind {
         _ if hdr_white.is_some() => Ok(None),
         Kind::Jxl | Kind::Other => {
@@ -2611,20 +2611,17 @@ mod tests {
     /// "Applying Apple HDR effect to your photos" (developer.apple.com, AppKit), its
     /// headroom formula and `sdr × (1 + (headroom − 1) × map)` written out here, the
     /// map Rec. 709-decoded and a quarter of the base, spread over it between its
-    /// samples' centres. On other systems it opens as its SDR base, as before.
+    /// samples' centres. On Windows, which reads no maps, it opens as its SDR base.
     #[test]
     fn an_apple_gain_map_heic_opens_with_the_light_apples_formula_gives() {
         let name = "apple-gain-map.heic";
-        if !cfg!(target_os = "macos") {
-            super::probe(&fixture(name)).unwrap();
-            if heic_decodes() {
-                assert!(
-                    super::open(&fixture(name), Cancel::NEVER)
-                        .unwrap()
-                        .hdr()
-                        .is_none()
-                );
-            }
+        super::probe(&fixture(name)).unwrap();
+        if cfg!(windows) {
+            let file = super::heic::HeicFile::open(&fixture(name)).unwrap();
+            assert!(file.gain_map().unwrap().is_none());
+            return;
+        }
+        if !heic_decodes() {
             return;
         }
         // The fixture's maker-note tags 33 and 48: 1.01 and 0.0089, so the fourth of
@@ -2678,7 +2675,7 @@ mod tests {
     /// isn't applied, and the photo opens as its SDR base.
     #[test]
     fn an_apple_gain_map_turns_with_its_image_and_needs_its_headroom() {
-        if !cfg!(target_os = "macos") {
+        if cfg!(windows) || !heic_decodes() {
             return;
         }
         let (w, h, plain, _) = heic_light("apple-gain-map.heic");
@@ -2703,6 +2700,63 @@ mod tests {
         }
     }
 
+    /// ImageIO's own samples of the fixtures' maps (`CGImageSourceCopyAuxiliaryDataInfoAtIndex`,
+    /// macOS 27.2), 8-bit grey of 32 × 24: their sum, and the sample at some (x, y).
+    /// A map's sample at (x, y), as an 8-bit code.
+    type MapSample = (u32, u32, u8);
+    const IMAGEIO_MAPS: [(&str, u32, [MapSample; 8]); 2] = [
+        (
+            "iso-gain-map.heic",
+            129_817,
+            [
+                (0, 0, 130),
+                (31, 0, 255),
+                (15, 11, 143),
+                (0, 23, 129),
+                (31, 23, 255),
+                (7, 5, 131),
+                (24, 17, 211),
+                (16, 12, 150),
+            ],
+        ),
+        (
+            "apple-gain-map.heic",
+            92_954,
+            [
+                (0, 0, 0),
+                (31, 0, 220),
+                (15, 11, 117),
+                (0, 23, 25),
+                (31, 23, 242),
+                (7, 5, 53),
+                (24, 17, 187),
+                (16, 12, 126),
+            ],
+        ),
+    ];
+
+    /// Every system decoder that reads maps (ImageIO, libheif) gives a HEIC's map as
+    /// ImageIO's own samples, so the light the formulas give is the same everywhere.
+    #[test]
+    fn a_heic_map_decodes_to_imageios_samples() {
+        if cfg!(windows) || !heic_decodes() {
+            return;
+        }
+        for (name, sum, samples) in IMAGEIO_MAPS {
+            let map = heic_map(name);
+            assert_eq!(map.size(), (32, 24), "{name}");
+            let code = |x, y| (map.get(x, y, 0) * 255.).round() as u32;
+            let total: u32 = (0..24)
+                .flat_map(|y| (0..32).map(move |x| (x, y)))
+                .map(|(x, y)| code(x, y))
+                .sum();
+            assert_eq!(total, sum, "{name}");
+            for (x, y, want) in samples {
+                assert_eq!(code(x, y), u32::from(want), "{name} ({x}, {y})");
+            }
+        }
+    }
+
     /// ImageIO's own decode of `iso-gain-map.heic` at its full headroom
     /// (`kCGImageSourceDecodeToHDR`, content headroom 4), drawn as extended linear
     /// Display P3 floats on macOS 27.2: (x, y, light).
@@ -2722,21 +2776,19 @@ mod tests {
     /// 4× SDR white) opens as an HDR edit with the light ImageIO itself decodes at
     /// its full headroom. Measured: 0.02 stop at most, where the half-size map's
     /// sampling differs on the steep ramp, but 0.032 at the darkest pixel, where
-    /// ImageIO's and moxcms's decodes of the 8-bit base's lowest codes differ. On
-    /// other systems it opens as its base.
+    /// ImageIO's and moxcms's decodes of the 8-bit base's lowest codes differ.
+    /// libheif's decode, its base and map, is held to the same. On Windows, which
+    /// reads no maps, it opens as its base.
     #[test]
     fn an_iso_gain_map_heic_opens_as_imageio_decodes_it() {
         let name = "iso-gain-map.heic";
-        if !cfg!(target_os = "macos") {
-            super::probe(&fixture(name)).unwrap();
-            if heic_decodes() {
-                assert!(
-                    super::open(&fixture(name), Cancel::NEVER)
-                        .unwrap()
-                        .hdr()
-                        .is_none()
-                );
-            }
+        super::probe(&fixture(name)).unwrap();
+        if cfg!(windows) {
+            let file = super::heic::HeicFile::open(&fixture(name)).unwrap();
+            assert!(file.gain_map().unwrap().is_none());
+            return;
+        }
+        if !heic_decodes() {
             return;
         }
         let (w, _, light, _) = heic_light(name);
@@ -2754,7 +2806,7 @@ mod tests {
     /// reason, from the header: a `tmap` of another version, or metadata of one.
     #[test]
     fn an_iso_heic_map_of_another_version_is_refused() {
-        if !cfg!(target_os = "macos") {
+        if cfg!(windows) {
             return;
         }
         let bytes = std::fs::read(fixture("iso-gain-map.heic")).unwrap();
@@ -2774,12 +2826,12 @@ mod tests {
         }
     }
 
-    /// A map whose data isn't all in the file is damaged, found before ImageIO is
+    /// A map whose data isn't all in the file is damaged, found before the decoder is
     /// asked for it: Develop refuses the photo by that reason, and the Library still
     /// shows the image, which is whole.
     #[test]
     fn a_heic_map_cut_off_is_damaged_and_its_image_still_shows() {
-        if !cfg!(target_os = "macos") {
+        if cfg!(windows) || !heic_decodes() {
             return;
         }
         let bytes = std::fs::read(fixture("apple-gain-map.heic")).unwrap();
