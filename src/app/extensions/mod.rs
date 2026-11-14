@@ -1092,15 +1092,23 @@ impl Host {
                 (true, None | Some(secrets::State::Unset)) => {
                     e.secrets.insert(id, secrets::State::Unset);
                 }
+                // No longer recorded: a read still on its way is stale.
                 (false, Some(secrets::State::Set(_))) => {
+                    e.secret_reads.remove(&id);
                     e.secrets.insert(id.clone(), secrets::State::Unset);
                     Self::secret_event(e, &id, "");
                 }
                 (false, _) => {
+                    e.secret_reads.remove(&id);
                     e.secrets.insert(id, secrets::State::Unset);
                 }
                 // Read again, kept meanwhile; not while one is being written.
-                (true, Some(_)) if !inert && !e.secret_writes.contains_key(&id) => load.push(id),
+                (true, Some(_))
+                    if !inert
+                        && !matches!(e.secret_writes.get(&id), Some(secrets::Writing::Saving)) =>
+                {
+                    load.push(id)
+                }
                 (true, Some(_)) => {}
             }
         }
@@ -1219,6 +1227,29 @@ impl Host {
             e.secret_writes
                 .insert(setting.to_string(), secrets::Writing::Failed(why.clone()));
             self.notices.push(format!("{}: not saved: {why}", e.name()));
+            // The write dropped the read it overtook: what is kept is read again,
+            // so a setting still being read settles.
+            if e.entry.secrets.contains(setting) {
+                match self.credentials.load(id, setting) {
+                    Ok(ticket) => {
+                        self.extensions[index]
+                            .secret_reads
+                            .insert(setting.to_string(), ticket);
+                    }
+                    Err(why) => {
+                        let e = &mut self.extensions[index];
+                        if e.secrets.get(setting) == Some(&secrets::State::Loading) {
+                            e.secrets
+                                .insert(setting.to_string(), secrets::State::Unreadable(why));
+                        }
+                    }
+                }
+            } else if self.extensions[index].secrets.get(setting) == Some(&secrets::State::Loading)
+            {
+                self.extensions[index]
+                    .secrets
+                    .insert(setting.to_string(), secrets::State::Unset);
+            }
             return;
         }
         let set = value.as_ref().is_some_and(|v| !v.is_empty());

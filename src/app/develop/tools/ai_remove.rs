@@ -232,7 +232,9 @@ impl Editor {
         if let Some(why) = crate::develop::retouch::rendition::refusal(image, recipe) {
             return Some(why.into());
         }
-        if recipe.ai_denoise.renders() && !self.document.ai.is_complete() {
+        // As rendered: Detail switched off bypasses AI Denoise.
+        if recipe.resolved(&image.metadata).ai_denoise.renders() && !self.document.ai.is_complete()
+        {
             return Some("Available once AI Denoise has finished".into());
         }
         None
@@ -243,7 +245,9 @@ impl Editor {
             content: crate::app::develop::tools::subject_mask::content(recipe),
             // As rendered: Detail switched off bypasses its noise reduction.
             denoise: denoise(&recipe.resolved(&image.metadata)),
-            ai: self.document.ai_source(image, &recipe.ai_denoise),
+            ai: self
+                .document
+                .ai_source(image, &recipe.resolved(&image.metadata).ai_denoise),
             image: Arc::as_ptr(image) as usize,
             load: self.document.load_id(),
             file: self.document.file.clone(),
