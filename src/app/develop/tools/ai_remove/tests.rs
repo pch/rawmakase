@@ -734,6 +734,23 @@ fn drafts_and_a_switched_off_panel_count() {
     remove_with(e, "local");
     assert!(settled(e) && e.extensions.retouches_sent().is_empty());
     e.document.set_image(image(0.43));
+    // AI Denoise on waits for its result, unless Detail switched off bypasses it.
+    e.change_edit(None, |r| r.ai_denoise.enabled = true);
+    assert!(e.ai_remove_unavailable().is_some());
+    e.change_edit(None, |r| {
+        r.panels.set(
+            crate::model::panels::Panel::Detail,
+            crate::model::panels::PanelState::Off,
+        )
+    });
+    assert_eq!(e.ai_remove_unavailable(), None);
+    e.change_edit(None, |r| {
+        r.ai_denoise.enabled = false;
+        r.panels.set(
+            crate::model::panels::Panel::Detail,
+            crate::model::panels::PanelState::On,
+        )
+    });
     e.change_edit(None, |r| r.noise_luma = 30.);
     hold(&folder);
     remove_with(e, "gate");
@@ -819,5 +836,111 @@ fn a_secret_is_read_again_and_recorded_before_its_first_write() {
     e.extensions.reload();
     pump(e, "the key to be gone", |e| {
         e.extensions.get(ID).unwrap().secret("key") == Some(&State::Unset)
+    });
+}
+
+/// A store whose reads wait while its gate is closed, and whose writes fail
+/// while `fail` is set: to order the credentials thread's work in a test.
+#[derive(Default)]
+struct Gated {
+    inner: MemoryStore,
+    closed: std::sync::Mutex<bool>,
+    opened: std::sync::Condvar,
+    fail: std::sync::atomic::AtomicBool,
+}
+impl Gated {
+    fn close(&self) {
+        *self.closed.lock().unwrap() = true;
+    }
+    fn open(&self) {
+        *self.closed.lock().unwrap() = false;
+        self.opened.notify_all();
+    }
+}
+impl SecretStore for Gated {
+    fn get(
+        &self,
+        account: &str,
+    ) -> Result<Option<rawmakase_extensions::secrets::Secret>, SecretError> {
+        let mut closed = self.closed.lock().unwrap();
+        while *closed {
+            closed = self.opened.wait(closed).unwrap();
+        }
+        drop(closed);
+        self.inner.get(account)
+    }
+    fn set(
+        &self,
+        account: &str,
+        value: &rawmakase_extensions::secrets::Secret,
+    ) -> Result<(), SecretError> {
+        if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(SecretError::Unavailable("refused".into()));
+        }
+        self.inner.set(account, value)
+    }
+    fn delete(&self, account: &str) -> Result<(), SecretError> {
+        self.inner.delete(account)
+    }
+}
+
+/// A read still on its way when another instance removes the key never
+/// brings it back; a replacement that fails while the key is still being
+/// read settles rather than staying Loading.
+#[test]
+fn stale_reads_never_bring_a_key_back_and_a_failed_write_settles() {
+    use crate::app::extensions::secrets::State;
+    let mut f = fixture(0.49);
+    let e = &mut f.editor;
+    let gated = Arc::new(Gated::default());
+    e.extensions.use_secret_store_for_tests(gated.clone());
+    e.extensions
+        .set_secret(ID, "key", Some(SENTINEL.into()))
+        .unwrap();
+    pump(e, "the key to be saved", |e| {
+        e.extensions.get(ID).unwrap().secret("key") == Some(&secrets_state(SENTINEL))
+    });
+    // A read again, held; then the key is unrecorded elsewhere.
+    gated.close();
+    e.extensions.reload();
+    rawmakase_extensions::state::State::update(&f.data, |s| {
+        s.entry(ID).secrets.remove("key");
+        Ok(())
+    })
+    .unwrap();
+    e.extensions.reload();
+    assert_eq!(
+        e.extensions.get(ID).unwrap().secret("key"),
+        Some(&State::Unset)
+    );
+    gated.open();
+    pump(e, "the stale read to land", |_| true);
+    std::thread::sleep(Duration::from_millis(50));
+    pump(e, "nothing more", |_| true);
+    assert_eq!(
+        e.extensions.get(ID).unwrap().secret("key"),
+        Some(&State::Unset)
+    );
+
+    // Recorded again with the key kept: being read (held), then a replacement
+    // that fails.
+    rawmakase_extensions::state::State::update(&f.data, |s| {
+        s.entry(ID).secrets.insert("key".into());
+        Ok(())
+    })
+    .unwrap();
+    gated.close();
+    e.extensions.reload();
+    assert_eq!(
+        e.extensions.get(ID).unwrap().secret("key"),
+        Some(&State::Loading)
+    );
+    gated.fail.store(true, std::sync::atomic::Ordering::SeqCst);
+    e.extensions
+        .set_secret(ID, "key", Some("sk-SENTINEL-new".into()))
+        .unwrap();
+    gated.open();
+    pump(e, "the key to settle", |e| {
+        e.extensions.get(ID).unwrap().secret("key") == Some(&secrets_state(SENTINEL))
     });
 }

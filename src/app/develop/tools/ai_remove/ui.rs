@@ -25,7 +25,14 @@ impl Editor {
                 ui,
                 &format!("Made by {} · {}", patch.generator, patch.model),
             );
-            let now = self.document.edit.recipe().ai_denoise.renders();
+            // As rendered: Detail switched off bypasses AI Denoise.
+            let recipe = self.document.edit.recipe();
+            let now = self
+                .document
+                .full()
+                .map_or(recipe.ai_denoise.renders(), |im| {
+                    recipe.resolved(&im.metadata).ai_denoise.renders()
+                });
             if patch.ai_denoise != now {
                 hint(
                     ui,
