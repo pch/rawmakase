@@ -90,6 +90,8 @@ pub(crate) struct Opened {
     /// Lightroom's keyword export options could not be read; tried again on
     /// the next open.
     pub keyword_export: Option<anyhow::Error>,
+    /// What upgrading the catalog as it opened did, when it was of an earlier format.
+    pub upgraded: Option<crate::catalog::Upgraded>,
 }
 
 impl CatalogSession {
@@ -217,8 +219,21 @@ impl CatalogSession {
         &mut self.photos
     }
     pub(crate) fn open(location: &CatalogLocation) -> Result<Opened> {
+        Self::open_reporting(location, &mut |_| {})
+    }
+    /// [`Self::open`], telling `progress` how far upgrading a catalog of an earlier
+    /// format has got.
+    pub(crate) fn open_reporting(
+        location: &CatalogLocation,
+        progress: &mut dyn FnMut(crate::catalog::UpgradeProgress),
+    ) -> Result<Opened> {
         crate::platform::network::prepare_filesystem_bridge();
-        let mut catalog = Catalog::open(location)?;
+        let mut catalog = Catalog::open_reporting(
+            location.clone(),
+            &crate::catalog::locations::Computer::this(),
+            progress,
+        )?;
+        let upgraded = catalog.upgraded().cloned();
         // Masks made from a selection are read back from this catalog wherever they
         // are rendered: Develop, the Library's thumbnails, previews and exports.
         crate::storage::mask_assets::add_loader(catalog.mask_asset_loader());
@@ -251,6 +266,7 @@ impl CatalogSession {
         Ok(Opened {
             session,
             keyword_export,
+            upgraded,
         })
     }
     /// The structural generation (see [`Self::reload`]): a plan scanned
@@ -385,6 +401,8 @@ impl CatalogSession {
     }
 }
 
+#[cfg(test)]
+mod upgrade_tests;
 #[cfg(test)]
 mod tests {
     use super::*;

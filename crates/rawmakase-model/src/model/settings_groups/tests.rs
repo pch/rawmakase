@@ -41,7 +41,6 @@ fn everything_changed() -> Recipe {
         lens_manual_distortion: -0.2,
         lens_ca: true,
         preset_name: "Film".into(),
-        preset_settings: [("Exposure2012".to_string(), "1".to_string())].into(),
         sharpening_radius: 1.5,
         sharpening_detail: 0.6,
         sharpening_masking: 0.7,
@@ -294,7 +293,6 @@ fn nothing_selected_changes_nothing_and_the_photos_own_settings_never_move() {
         "flip_x",
         "flip_y",
         "preset_name",
-        "preset_settings",
         // Red eye corrections belong to their photo; Lightroom never copies them.
         "red_eye",
     ] {

@@ -214,7 +214,6 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         // (see `Recipe::as_rendered`).
         panels: _,
         preset_name: _,
-        preset_settings: _,
         unknown: _,
     } = r;
     let Effects {

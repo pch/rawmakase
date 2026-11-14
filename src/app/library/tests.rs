@@ -117,7 +117,7 @@ fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImpo
                 crate::storage::Identity::read(&photo.path).ok().as_ref(),
                 super::PreviewAi::Off,
                 image::RgbImage::from_pixel(4, 4, image::Rgb([30, 140, 250])),
-                serde_json::to_string(&recipe)?,
+                &recipe,
             );
         }
         let current = photos[0].id;
@@ -2054,7 +2054,7 @@ fn an_edited_preview_from_develop_is_kept_for_the_file_it_was_rendered_from() ->
         None,
         super::PreviewAi::Off,
         image::RgbImage::new(4, 4),
-        "{}".into(),
+        &Default::default(),
     );
     assert!(library.has_edited_thumbnail(photo.id));
     assert!(jobs.try_recv().is_none(), "nothing to check it against");
@@ -2066,7 +2066,7 @@ fn an_edited_preview_from_develop_is_kept_for_the_file_it_was_rendered_from() ->
         Some(&rendered),
         super::PreviewAi::Off,
         image::RgbImage::new(4, 4),
-        "{}".into(),
+        &Default::default(),
     );
     match jobs.try_recv() {
         Some(previews::EditJob::Store { stamp, .. }) => assert_eq!(stamp, rendered.stamp()),
@@ -2085,7 +2085,7 @@ fn a_stored_ai_denoise_result_asks_for_the_photos_preview_again() -> Result<()> 
         for photo in [&a, &b] {
             library
                 .cache
-                .request_edited(photo, || Some(EditSource::Recipe("{}".into())));
+                .request_edited(photo, || Some(EditSource::saved(Default::default())));
         }
         std::iter::from_fn(|| sent.try_recv()).count()
     };
@@ -2121,7 +2121,7 @@ fn an_edited_preview_from_develop_outranks_renders_in_flight() -> Result<()> {
         Some(&rendered),
         super::PreviewAi::Off,
         image::RgbImage::new(4, 4),
-        "{}".into(),
+        &Default::default(),
     );
     assert!(library.has_edited_thumbnail(id));
     assert!(matches!(
@@ -5223,7 +5223,7 @@ fn edited_previews_are_asked_ahead_only_at_full_pace_in_order_from_the_view() ->
     let ctx = library.ctx.clone();
     let photos = library.session.photos().to_vec();
     let order: Vec<usize> = (0..photos.len()).collect();
-    let edit = |_| Some(previews::EditSource::Recipe("{}".into()));
+    let edit = |_| Some(previews::EditSource::saved(Default::default()));
     let asked = |jobs: &previews::Sent| {
         std::iter::from_fn(|| jobs.try_recv())
             .map(|job| match job {

@@ -9,7 +9,7 @@ use anyhow::Result;
 impl Catalog {
     /// Photo `id`'s edit as stored.
     pub fn edit_record(&self, id: PhotoId) -> Result<EditRecord> {
-        edit_record(&self.db, id)
+        edit_record(&self.db, id, &self.assets)
     }
     /// The records of `ids`, in order, read in one transaction: one consistent
     /// state of the catalog however many photos there are.
@@ -29,7 +29,7 @@ impl Catalog {
                         &[&id],
                     )?;
                     Ok(PhotoRecord {
-                        edit: edit_record(snapshot, id)?,
+                        edit: edit_record(snapshot, id, &self.assets)?,
                         descriptive: super::descriptive::read(snapshot, id)?,
                         keywords: super::descriptive::keywords(snapshot, id)?,
                         rating: rated.rating,
@@ -42,8 +42,12 @@ impl Catalog {
     }
 }
 
-/// Photo `id`'s edit as stored.
-fn edit_record(db: &impl Reads, id: PhotoId) -> Result<EditRecord> {
+/// Photo `id`'s edit as stored, resolving its references through `assets`.
+fn edit_record(
+    db: &impl Reads,
+    id: PhotoId,
+    assets: &crate::storage::recipe_assets::SharedSource,
+) -> Result<EditRecord> {
     row! {
         struct Columns {
             recipe: Option<String>,
@@ -62,6 +66,7 @@ fn edit_record(db: &impl Reads, id: PhotoId) -> Result<EditRecord> {
         identity: columns.identity,
         local: super::edits::local_text(db, id)?,
         lightroom: columns.lightroom,
+        assets: assets.clone(),
     })
 }
 
@@ -258,9 +263,8 @@ mod tests {
         let mut out_of_bounds = saved.clone();
         out_of_bounds.exposure = 99.;
         assert!(out_of_bounds.validate().is_err());
-        let json = serde_json::to_string(&out_of_bounds)?;
         assert_eq!(
-            Start::RecipeJson(json)
+            Start::Recipe(std::sync::Arc::new(out_of_bounds.clone()))
                 .resolve(&metadata, &profiles)?
                 .recipe,
             out_of_bounds

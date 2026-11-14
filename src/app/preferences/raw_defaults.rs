@@ -72,8 +72,8 @@ impl Editor {
             (Some(l), Some(id)) => l
                 .session
                 .catalog()
-                .edit_texts(id)
-                .map_or(true, |(recipe, _)| recipe.is_some()),
+                .edit_record(id)
+                .map_or(true, |record| record.recipe.is_some()),
             _ => false,
         };
         self.document.origin == EditOrigin::Defaults

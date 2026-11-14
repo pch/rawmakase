@@ -187,9 +187,11 @@ impl Catalog {
             &[&id],
         )
     }
-    /// The saved RAWmakase recipe (JSON, with its spots and masks) and Lightroom
-    /// develop text, if any.
-    pub fn edit_texts(&self, id: PhotoId) -> Result<(Option<String>, Option<String>)> {
+    /// The edit the photo's previews are rendered from: its saved RAWmakase
+    /// recipe with its spots and masks (read, or why it can't be), else its
+    /// Lightroom develop text. Unlike [`Catalog::load_edit`] the recipe is not
+    /// checked against its file.
+    pub fn preview_edit(&self, id: PhotoId) -> Result<PreviewEdit> {
         row! {
             struct Texts {
                 recipe: Option<String>,
@@ -200,16 +202,31 @@ impl Catalog {
             sql!("SELECT recipe, lightroom_develop FROM photos WHERE id=?"),
             &[&id],
         )?;
-        let local = self.local_edits(id)?;
-        let recipe = match texts.recipe {
-            Some(text) if !local.is_empty() => {
-                let recipe: Recipe = serde_json::from_str(&text)?;
-                Some(serde_json::to_string(&recipe.with_local(local))?)
-            }
-            other => other,
-        };
-        Ok((recipe, texts.lightroom))
+        Ok(match (texts.recipe, texts.lightroom) {
+            (Some(text), _) => PreviewEdit::Saved(
+                (|| -> Result<Box<Recipe>> {
+                    let recipe = crate::model::stored_recipe::from_text(
+                        &super::recipe_assets::ReadsSource(&self.db),
+                        &text,
+                    )?;
+                    Ok(Box::new(recipe.with_local(self.local_edits(id)?)))
+                })()
+                .map_err(|e| format!("{e:#}")),
+            ),
+            (None, Some(lightroom)) => PreviewEdit::Lightroom(lightroom),
+            (None, None) => PreviewEdit::None,
+        })
     }
+}
+
+/// What [`Catalog::preview_edit`] finds.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PreviewEdit {
+    /// A saved RAWmakase recipe, with its spots and masks, or why it can't be read.
+    Saved(Result<Box<Recipe>, String>),
+    /// Lightroom develop settings from an imported catalog.
+    Lightroom(String),
+    None,
 }
 
 /// Stores a compressed bitmap under `hash`, in `w`'s transaction, unless

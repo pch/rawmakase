@@ -39,6 +39,10 @@ pub struct EditRecord {
     pub local: Option<String>,
     /// Lightroom's develop settings, from an imported catalog.
     pub lightroom: Option<String>,
+    /// Where the recipe's stored profile and calibration are read from: the
+    /// catalog the record was read from, still readable on another thread or after
+    /// that catalog is closed.
+    pub assets: crate::storage::recipe_assets::SharedSource,
 }
 
 /// Where a photo's edit came from.
@@ -98,7 +102,7 @@ impl EditRecord {
             saved.same_photo(file),
             "Photo changed since this catalog edit was saved; catalog edit protected"
         );
-        let recipe: Recipe = serde_json::from_str(recipe)?;
+        let recipe = crate::model::stored_recipe::from_text(&self.assets, recipe)?;
         let recipe = recipe.with_local(local_edits(self.local.as_deref())?);
         recipe.validate()?;
         let export: ExportOptions =
@@ -155,9 +159,9 @@ pub enum Start {
     Lightroom(String),
     /// No edit: these raw defaults.
     Defaults(Arc<DevelopDefaults>),
-    /// A recipe as JSON, read as it is: what a Library preview's cache entry is
-    /// tagged with. Unlike [`Start::Saved`] it is not checked against its file.
-    RecipeJson(String),
+    /// A recipe as it is: what a Library preview's cache entry is tagged with.
+    /// Unlike [`Start::Saved`] it is not checked against its file.
+    Recipe(Arc<Recipe>),
     /// Adobe Default with the photo's profiles (`Recipe::with_profiles`), whatever
     /// the raw defaults are.
     AdobeDefault,
@@ -187,8 +191,8 @@ impl Start {
             Self::Saved(saved) => of_saved((**saved).clone()),
             Self::Lightroom(text) => of_lightroom(text, m, profiles)?,
             Self::Defaults(defaults) => of_defaults(defaults, m, profiles),
-            Self::RecipeJson(json) => Resolved {
-                recipe: serde_json::from_str(json)?,
+            Self::Recipe(recipe) => Resolved {
+                recipe: (**recipe).clone(),
                 export: ExportOptions::default(),
                 origin: Origin::Saved,
                 warnings: Vec::new(),

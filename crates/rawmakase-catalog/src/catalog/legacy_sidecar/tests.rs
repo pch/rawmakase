@@ -106,6 +106,11 @@ fn sidecars_migrate_to_the_one_engine_and_earlier_releases_refuse_new_ones() -> 
     let v: serde_json::Value = serde_json::from_reader(File::open(&p)?)?;
     assert!(!reads(&v, BEFORE_ONE_ENGINE));
     for key in crate::model::saved_format::OBSOLETE_SETTINGS {
+        // Releases before its removal require an empty `preset_settings`.
+        if *key == "preset_settings" {
+            assert_eq!(v["recipe"][key], serde_json::json!({}));
+            continue;
+        }
         assert!(v["recipe"].get(key).is_none(), "{key}");
     }
     assert_eq!(v["recipe"]["future_slider"], serde_json::json!([1]));
