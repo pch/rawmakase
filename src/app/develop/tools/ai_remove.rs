@@ -344,6 +344,12 @@ impl Editor {
         let Some(stroke) = self.ai_remove.undone_strokes.pop() else {
             return false;
         };
+        // Within what one request takes, as painting is.
+        let total: usize = self.ai_remove.draft.iter().map(Vec::len).sum();
+        if total + stroke.len() > crate::model::retouch::MAX_POINTS {
+            self.ai_remove.undone_strokes.clear();
+            return false;
+        }
         self.ai_remove.draft.push(stroke);
         true
     }
@@ -444,8 +450,10 @@ impl Editor {
     /// something new is painted meanwhile.
     fn restore_ai_draft(&mut self) {
         let sent = std::mem::take(&mut self.ai_remove.sent_draft);
-        if self.ai_remove.draft.is_empty() {
+        if self.ai_remove.draft.is_empty() && !sent.is_empty() {
             self.ai_remove.draft = sent;
+            // What Undo took back meanwhile was of another area, not this one.
+            self.ai_remove.undone_strokes.clear();
         }
     }
     /// Sends `offer`'s panel's values still being typed to its program, as

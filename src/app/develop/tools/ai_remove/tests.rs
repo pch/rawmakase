@@ -1522,3 +1522,27 @@ fn stroke_undo_is_offered_and_never_loses_an_area() {
     e.answer_ai_remove_consent(false);
     assert_eq!(e.ai_remove.draft, [a]);
 }
+
+/// A stroke painted and taken back while a send is asked about belongs to
+/// no area once the area sent comes back: Redo can't add it to that one.
+#[test]
+fn an_area_coming_back_takes_no_stroke_from_another() {
+    use crate::app::develop::state::Tool;
+    let mut f = fixture(0.47);
+    let e = &mut f.editor;
+    e.module = crate::app::Module::Develop;
+    e.view.set_tool(Tool::AiRetouch);
+    let fill = offer(e, "fill");
+    e.choose_ai_generator(&fill);
+    let a = vec![[0.3, 0.3]];
+    e.add_ai_stroke(a.clone());
+    e.send_ai_draft();
+    assert!(e.ai_remove.consent.is_some());
+    e.add_ai_stroke(vec![[0.7, 0.7]]);
+    e.undo();
+    e.answer_ai_remove_consent(false);
+    assert_eq!(e.ai_remove.draft, std::slice::from_ref(&a));
+    assert!(!e.can_redo());
+    e.redo();
+    assert_eq!(e.ai_remove.draft, [a]);
+}
