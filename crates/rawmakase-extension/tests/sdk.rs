@@ -847,6 +847,7 @@ impl RetouchGenerator for Fill {
         Ok(RetouchGenerated {
             model: "mean-fill".into(),
             model_key: "mean-fill/1".into(),
+            summary: None,
         })
     }
 }
@@ -877,7 +878,6 @@ fn retouch_request() -> RetouchGenerate {
         coverage,
         result,
         image_key: "0123456789abcdef".into(),
-        prompt: None,
     }
 }
 

@@ -64,15 +64,13 @@ name = "Unnamed"
 id = "crash"
 name = "Crash"
 
-# Fills as `local`, with what the user wrote, which it needs.
+# Fills as `local` with what its panel holds, which it needs.
 [[retouch-generator]]
-id = "describe"
-name = "Describe"
-prompt = "required"
-prompt-hint = "What to put there"
+id = "ask"
+name = "Ask"
+panel = "ask"
 
-# Fills as `local`, with or without text.
-[[retouch-generator]]
-id = "maybe"
-name = "Maybe"
-prompt = "optional"
+[[panel]]
+id = "ask"
+title = "Ask"
+place = "generator"

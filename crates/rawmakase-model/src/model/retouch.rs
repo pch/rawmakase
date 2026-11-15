@@ -98,14 +98,14 @@ pub struct RetouchPatch {
     /// either; the spot's settings say when the photo's differs.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ai_denoise: bool,
-    /// What the user wrote for the request that made it, as sent: what to
-    /// remove or keep, or what to put there. None when they wrote nothing.
-    /// At most [`MAX_PROMPT`] bytes on one line.
+    /// What its generator said it did, in the user's words, for the spot to
+    /// show (the prompt it was given, say); none when it said nothing. At
+    /// most [`MAX_SUMMARY`] bytes on one line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prompt: Option<String>,
+    pub summary: Option<String>,
 }
-/// The longest text a patch keeps, in bytes: what a request may carry.
-pub const MAX_PROMPT: usize = 1000;
+/// The longest summary a patch keeps, in bytes: what an answer may carry.
+pub const MAX_SUMMARY: usize = 256;
 /// The longest side of a patch, in pixels.
 pub const MAX_PATCH_SIDE: u32 = 2048;
 /// The longest generator or model name a patch keeps, in bytes.
@@ -137,13 +137,13 @@ impl RetouchPatch {
             name(&self.generator) && name(&self.model),
             "Invalid AI Remove patch provenance"
         );
-        if let Some(prompt) = &self.prompt {
+        if let Some(summary) = &self.summary {
             ensure!(
-                !prompt.is_empty()
-                    && prompt.trim() == prompt
-                    && prompt.len() <= MAX_PROMPT
-                    && !prompt.chars().any(char::is_control),
-                "Invalid AI Remove patch prompt"
+                !summary.is_empty()
+                    && summary.trim() == summary
+                    && summary.len() <= MAX_SUMMARY
+                    && !summary.chars().any(char::is_control),
+                "Invalid AI Remove patch summary"
             );
         }
         Ok(())
@@ -362,7 +362,7 @@ mod tests {
             generator: "dev.pch.ai-remove/remove".into(),
             model: "bria/fibo-edit-1.5/eraser".into(),
             ai_denoise: false,
-            prompt: None,
+            summary: None,
         }
     }
 
@@ -456,17 +456,17 @@ mod tests {
         broken(&|op| op.patch.as_mut().unwrap().generator = String::new());
         broken(&|op| op.patch.as_mut().unwrap().model = "m".repeat(MAX_PROVENANCE + 1));
         broken(&|op| op.patch.as_mut().unwrap().model = "a\nb".into());
-        // What the user wrote is kept as sent: trimmed, one line, short.
-        assert!(!json.contains("prompt"), "{json}");
+        // What its generator said it did is kept: trimmed, one line, short.
+        assert!(!json.contains("summary"), "{json}");
         let mut asked = generated.clone();
-        asked.patch.as_mut().unwrap().prompt = Some("remove the dogs, keep the people".into());
+        asked.patch.as_mut().unwrap().summary = Some("remove the dogs, keep the people".into());
         asked.validate().unwrap();
         let json = serde_json::to_string(&asked).unwrap();
         assert_eq!(serde_json::from_str::<RetouchOp>(&json).unwrap(), asked);
-        broken(&|op| op.patch.as_mut().unwrap().prompt = Some(String::new()));
-        broken(&|op| op.patch.as_mut().unwrap().prompt = Some(" a".into()));
-        broken(&|op| op.patch.as_mut().unwrap().prompt = Some("a\tb".into()));
-        broken(&|op| op.patch.as_mut().unwrap().prompt = Some("x".repeat(MAX_PROMPT + 1)));
+        broken(&|op| op.patch.as_mut().unwrap().summary = Some(String::new()));
+        broken(&|op| op.patch.as_mut().unwrap().summary = Some(" a".into()));
+        broken(&|op| op.patch.as_mut().unwrap().summary = Some("a\tb".into()));
+        broken(&|op| op.patch.as_mut().unwrap().summary = Some("x".repeat(MAX_SUMMARY + 1)));
         // Heal and Clone ops saved before AI Remove read as they were.
         let heal: RetouchOp = serde_json::from_str(
             r#"{"mode":"Heal","shape":{"Spot":{"center":[0.5,0.5],"radius":0.01}},"feather":0.0,"opacity":1.0,"offset":[0.1,0.0]}"#,

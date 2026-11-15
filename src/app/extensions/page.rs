@@ -21,7 +21,7 @@ use crate::app::ui::theme;
 use crate::app::ui::widgets::{form_row, menu_item, modal_frame, primary_button};
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use rawmakase_extensions::github;
-use rawmakase_extensions::protocol::manifest::{Files, Setting, SettingControl};
+use rawmakase_extensions::protocol::manifest::{Files, PanelPlace, Setting, SettingControl};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -901,10 +901,11 @@ impl Editor {
             }
             gap(ui);
         }
-        for panel in &m.panels {
+        // A generator's panel is its tool's, in the drawer.
+        for panel in m.panels.iter().filter(|p| p.place != PanelPlace::Generator) {
             group(ui, &panel.title);
             if runs {
-                self.panel_ui(ui, id, &panel.id);
+                self.extension_panel_ui(ui, id, &panel.id);
             } else {
                 hint(
                     ui,
@@ -1273,7 +1274,9 @@ impl Editor {
 
     /// A panel of the extension's page: opened once its extension runs, then
     /// drawn from what its program last sent.
-    fn panel_ui(&mut self, ui: &mut egui::Ui, id: &str, panel: &str) {
+    /// Extension `id`'s panel `panel`, opened when it isn't, its actions
+    /// sent: on its page, and in a generator tool's drawer.
+    pub(in crate::app) fn extension_panel_ui(&mut self, ui: &mut egui::Ui, id: &str, panel: &str) {
         let opened = self.extensions.panel(id, panel).is_some_and(|v| v.opened);
         if !opened && let Err(why) = self.extensions.open_panel(id, panel) {
             hint(ui, &why);

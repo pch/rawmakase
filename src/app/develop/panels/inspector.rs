@@ -1136,7 +1136,7 @@ pub(in crate::app) const DRAWER_TOOLS: [(Tool, &str, &str); 5] = [
     // Last: an extension's, and only while one offers a generator.
     (
         Tool::AiRetouch,
-        "AI Retouch: AI Remove and AI Replace (experimental)",
+        "AI Retouch: an extension's generators (experimental)",
         "AI Retouch",
     ),
 ];

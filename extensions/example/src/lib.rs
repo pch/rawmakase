@@ -60,6 +60,7 @@ impl Note {
                 kind: ControlKind::Text {
                     value: self.text.clone(),
                     multiline: false,
+                    placeholder: None,
                 },
             },
             Control {

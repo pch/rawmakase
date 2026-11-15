@@ -449,6 +449,7 @@ fn text(id: String, label: &str, value: String) -> Control {
         ControlKind::Text {
             value,
             multiline: false,
+            placeholder: None,
         },
     )
 }

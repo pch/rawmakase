@@ -31,8 +31,6 @@ use crate::camera_data::CameraImage;
 use crate::model::recipe::Recipe;
 use crate::model::retouch::{RetouchMode, RetouchOp, RetouchPatch};
 use rawmakase_extensions::protocol::RemoteError;
-use rawmakase_extensions::protocol::manifest::PromptUse;
-use rawmakase_extensions::protocol::method::MAX_PROMPT_LEN;
 use rawmakase_extensions::protocol::method::{RetouchGenerate, RetouchGenerated};
 use rawmakase_extensions::shm::Returned;
 use serde_json::Value;
@@ -60,6 +58,9 @@ pub(crate) enum Failure {
     Unavailable(String),
     /// The service declined the region's content; why.
     Refused(String),
+    /// The generator needs something from the user first (a prompt in its
+    /// panel); what, in its words.
+    NeedsInput(String),
     Failed(String),
 }
 impl Failure {
@@ -70,6 +71,7 @@ impl Failure {
             Self::NeedsSetup(why) => format!("{name} needs setting up: {why}"),
             Self::Unavailable(why) => format!("{name} is unavailable: {why}"),
             Self::Refused(why) => format!("The service declined this area: {why}"),
+            Self::NeedsInput(what) => what.clone(),
             Self::Failed(why) => format!("{name} failed: {why}"),
         }
     }
@@ -168,8 +170,6 @@ struct Sent {
 pub(in crate::app) struct Consent {
     pub(in crate::app) offer: Offer,
     pub(in crate::app) op: RetouchOp,
-    /// What the user wrote for it, as it will be sent.
-    pub(in crate::app) prompt: Option<String>,
 }
 
 pub(in crate::app) struct AiRemove {
@@ -192,6 +192,9 @@ pub(in crate::app) struct AiRemove {
     /// The strokes painted and not sent yet, in image space: one area, sent
     /// only when the user asks ([`Editor::send_ai_draft`]).
     pub(in crate::app) draft: Vec<Vec<[f32; 2]>>,
+    /// The area sent with the request running or asked about, painted again
+    /// if no spot is made of it.
+    sent_draft: Vec<Vec<[f32; 2]>>,
     /// The tint showing the draft's coverage with its feather, by what it
     /// was drawn from ([`crate::app::develop::tools::retouch_tool`]).
     pub(in crate::app) draft_tint: Option<(u64, eframe::egui::TextureHandle)>,
@@ -213,6 +216,7 @@ impl Default for AiRemove {
             setup_needed: None,
             consent: None,
             draft: Vec::new(),
+            sent_draft: Vec::new(),
             draft_tint: None,
             deferred: Vec::new(),
             withdrawn: Vec::new(),
@@ -253,6 +257,7 @@ impl AiRemove {
         self.failure = None;
         self.failed = None;
         self.draft.clear();
+        self.sent_draft.clear();
         self.consent = None;
     }
     /// The thread to wait for when quitting, handed to the shared deadline.
@@ -294,28 +299,6 @@ impl Editor {
     /// New spots go to `offer`'s generator.
     pub(in crate::app) fn choose_ai_generator(&mut self, offer: &Offer) {
         self.view.retouch.generator = Some(offer.provenance.clone());
-    }
-    /// What the user is writing for `offer`'s generator.
-    pub(in crate::app) fn ai_prompt_mut(&mut self, offer: &Offer) -> &mut String {
-        self.view
-            .retouch
-            .prompts
-            .entry(offer.provenance.clone())
-            .or_default()
-    }
-    /// What a request to `offer`'s generator would carry: what the user
-    /// wrote, trimmed, when it takes text and something is written.
-    pub(in crate::app) fn ai_prompt(&self, offer: &Offer) -> Option<String> {
-        if offer.prompt == PromptUse::None {
-            return None;
-        }
-        self.view
-            .retouch
-            .prompts
-            .get(&offer.provenance)
-            .map(|t| t.trim())
-            .filter(|t| !t.is_empty())
-            .map(str::to_string)
     }
     /// Adds a stroke (a click is a stroke of one dab) to the area waiting to
     /// be sent, in image space. Nothing is sent: [`Editor::send_ai_draft`]
@@ -359,9 +342,6 @@ impl Editor {
         if self.ai_setup_needed(&offer) {
             return Some(setup_first(&offer));
         }
-        if self.ai_prompt_missing(&offer) {
-            return Some(format!("{} needs a prompt first", offer.name));
-        }
         None
     }
     /// Sends the area painted to the chosen generator as one spot, with the
@@ -390,9 +370,44 @@ impl Editor {
             offset: [0.; 2],
             patch: None,
         };
+        // What is still being typed in its panel reaches the program first:
+        // its events and the request go to it in order.
+        if let Some((offer, _)) = self.ai_remove_offer() {
+            self.commit_generator_panel(&offer);
+        }
         self.request_ai_remove(op);
+        // Kept until the spot is made, and painted again if it isn't: a
+        // refusal (a prompt missing, a key) or a failure leaves it to fix.
         if self.ai_remove.pending.is_some() || self.ai_remove.consent.is_some() {
-            self.clear_ai_draft();
+            self.ai_remove.sent_draft = std::mem::take(&mut self.ai_remove.draft);
+        }
+    }
+    /// Paints the area sent again, when nothing was made of it: unless
+    /// something new is painted meanwhile.
+    fn restore_ai_draft(&mut self) {
+        let sent = std::mem::take(&mut self.ai_remove.sent_draft);
+        if self.ai_remove.draft.is_empty() {
+            self.ai_remove.draft = sent;
+        }
+    }
+    /// Sends `offer`'s panel's values still being typed to its program, as
+    /// letting go of the field would.
+    fn commit_generator_panel(&mut self, offer: &Offer) {
+        let Some(panel) = &offer.panel else {
+            return;
+        };
+        let unsent = self
+            .extensions
+            .panel(&offer.extension, panel)
+            .map(crate::app::extensions::panels::unsent)
+            .unwrap_or_default();
+        for (control, value) in unsent {
+            if let Err(why) =
+                self.extensions
+                    .panel_changed(&offer.extension, panel, &control, value)
+            {
+                self.messages.fail(why);
+            }
         }
     }
     /// Whether `offer`'s extension said it needs setting up and its settings
@@ -403,11 +418,6 @@ impl Editor {
                 && self.extensions.settings_fingerprint(&s.extension) == Some(s.settings)
                 && self.extensions.mask_lifecycle(&s.extension) == s.lifecycle
         })
-    }
-    /// Whether `offer`'s generator needs text and none is written: painting
-    /// would only be refused.
-    pub(in crate::app) fn ai_prompt_missing(&self, offer: &Offer) -> bool {
-        offer.prompt == PromptUse::Required && self.ai_prompt(offer).is_none()
     }
     /// Why AI Remove can't run on the open photo now, for the tool to say.
     pub(in crate::app) fn ai_remove_unavailable(&self) -> Option<String> {
@@ -506,56 +516,42 @@ impl Editor {
             self.messages.warn(setup_first(&offer));
             return;
         }
-        if self.ai_prompt_missing(&offer) {
-            self.messages.warn(format!(
-                "Describe what {} should do first, in the field under Mode",
-                offer.name
-            ));
-            return;
-        }
-        let prompt = self.ai_prompt(&offer);
-        if let Some(text) = &prompt
-            && (text.len() > MAX_PROMPT_LEN || text.chars().any(char::is_control))
-        {
-            self.messages.warn(format!(
-                "Keep what {} should do to one line of at most {MAX_PROMPT_LEN} bytes",
-                offer.name
-            ));
-            return;
-        }
         op.mode = RetouchMode::Generate;
         op.offset = [0.; 2];
         op.patch = None;
         self.dismiss_ai_failure();
         if offer.uploads && !self.extensions.uploads_allowed(&offer.extension) {
-            self.ai_remove.consent = Some(Consent { offer, op, prompt });
+            self.ai_remove.consent = Some(Consent { offer, op });
             return;
         }
-        self.start_ai_remove(offer, op, prompt);
+        self.start_ai_remove(offer, op);
     }
 
     /// The user's answer to the upload question: go on, or drop the request.
     pub(in crate::app) fn answer_ai_remove_consent(&mut self, allow: bool) {
         self.context.request_repaint();
-        let Some(Consent { offer, op, prompt }) = self.ai_remove.consent.take() else {
+        let Some(Consent { offer, op }) = self.ai_remove.consent.take() else {
             return;
         };
         if !allow {
-            return;
+            return self.restore_ai_draft();
         }
         if let Err(why) = self.extensions.allow_uploads(&offer.extension) {
             self.messages.fail(why);
-            return;
+            return self.restore_ai_draft();
         }
         // Checked again: the photo or the extension may have changed while asked.
         if let Some(why) = self.ai_remove_unavailable() {
             self.messages.warn(why);
-            return;
+            return self.restore_ai_draft();
         }
-        self.start_ai_remove(offer, op, prompt);
+        self.start_ai_remove(offer, op);
+        if self.ai_remove.pending.is_none() {
+            self.restore_ai_draft();
+        }
     }
 
-    fn start_ai_remove(&mut self, offer: Offer, op: RetouchOp, prompt: Option<String>) {
+    fn start_ai_remove(&mut self, offer: Offer, op: RetouchOp) {
         let Some(image) = self.document.full().cloned() else {
             return;
         };
@@ -588,7 +584,6 @@ impl Editor {
             op: op.clone(),
             ledger,
             generator: offer.generator.clone(),
-            prompt,
         };
         let settings = self.extensions.settings_fingerprint(&offer.extension);
         self.ai_remove.pending = Some(Pending {
@@ -801,6 +796,7 @@ impl Editor {
     pub(in crate::app) fn cancel_ai_remove(&mut self) {
         self.context.request_repaint();
         self.ai_remove.cancel();
+        self.restore_ai_draft();
         self.settle_ai_remove();
         self.messages.note("AI Remove cancelled");
     }
@@ -809,6 +805,10 @@ impl Editor {
     /// was made from still holds, else it is dropped.
     pub(in crate::app) fn ai_remove_done(&mut self, done: Done) {
         self.apply_ai_remove(done);
+        // Ended without a spot: its area is painted again.
+        if self.ai_remove.pending.is_none() {
+            self.restore_ai_draft();
+        }
         self.settle_ai_remove();
     }
 
@@ -918,6 +918,7 @@ impl Editor {
         // its next frame can't write over the new spot now selected.
         self.view.retouch.end_spot_drag();
         self.view.retouch.selected = Some(added);
+        self.ai_remove.sent_draft.clear();
         self.messages.done(format!("{name} done"));
     }
 

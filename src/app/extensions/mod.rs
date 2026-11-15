@@ -83,7 +83,7 @@ pub(in crate::app) mod mask_generator;
 #[cfg(test)]
 mod midi_tests;
 mod page;
-mod panels;
+pub(in crate::app) mod panels;
 pub(in crate::app) mod retouch_generator;
 pub(in crate::app) mod secrets;
 mod sources;

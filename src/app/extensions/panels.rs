@@ -293,17 +293,26 @@ fn draw_one(
                 ),
             );
         }),
-        ControlKind::Text { value, multiline } => form_row(ui, label, |ui| {
+        ControlKind::Text {
+            value,
+            multiline,
+            placeholder,
+        } => form_row(ui, label, |ui| {
             let mut text = drafts
                 .get(&id)
                 .and_then(|v| v.as_str().map(str::to_string))
                 .unwrap_or_else(|| value.clone());
-            let edit = if *multiline {
-                egui::TextEdit::multiline(&mut text)
+            let hint = placeholder.as_deref().unwrap_or_default();
+            // Several lines in the app's outlined box, as a prompt is typed.
+            let r = if *multiline {
+                crate::app::ui::widgets::text_box(ui, &mut text, hint, 2, usize::MAX)
             } else {
-                egui::TextEdit::singleline(&mut text)
+                ui.add(
+                    egui::TextEdit::singleline(&mut text)
+                        .hint_text(hint)
+                        .desired_width(f32::INFINITY),
+                )
             };
-            let r = ui.add(edit.desired_width(f32::INFINITY));
             if r.changed() {
                 drafts.insert(id.clone(), Value::from(text.clone()));
             }
@@ -390,6 +399,7 @@ mod tests {
                 kind: ControlKind::Text {
                     value: "a".into(),
                     multiline: false,
+                    placeholder: None,
                 },
             }],
             ..Default::default()

@@ -3,13 +3,11 @@
 //! request running, what went wrong, and what made the selected spot.
 use super::Failure;
 use crate::app::Editor;
-use crate::app::develop::tools::retouch_tool::{control_label_top, hint, hint_at, indented};
+use crate::app::develop::tools::retouch_tool::{hint, indented};
 use crate::app::extensions::retouch_generator::Offer;
 use crate::app::preferences::Tab;
 use crate::app::ui::design::space;
 use eframe::egui::{self, Vec2};
-use rawmakase_extensions::protocol::manifest::PromptUse;
-use rawmakase_extensions::protocol::method::MAX_PROMPT_LEN;
 
 impl Editor {
     /// Below Mode while AI Remove is chosen or a Generate spot is selected.
@@ -27,8 +25,9 @@ impl Editor {
                 ui,
                 &format!("Made by {} · {}", patch.generator, patch.model),
             );
-            if let Some(prompt) = &patch.prompt {
-                hint(ui, &format!("Asked: \u{201c}{prompt}\u{201d}"));
+            // What its generator said it did, in the user's words.
+            if let Some(summary) = &patch.summary {
+                hint(ui, &format!("\u{201c}{summary}\u{201d}"));
             }
             // As rendered: Detail switched off bypasses AI Denoise.
             let recipe = self.document.edit.recipe();
@@ -59,33 +58,10 @@ impl Editor {
         if !self.ai_retouching() {
             return;
         }
-        if offer.prompt != PromptUse::None {
-            let placeholder = offer
-                .prompt_hint
-                .clone()
-                .unwrap_or_else(|| match offer.prompt {
-                    PromptUse::Required => "What to do with the area".into(),
-                    _ => "What to do with the area, if anything".into(),
-                });
-            control_label_top(ui, "Prompt", |ui| {
-                let text = self.ai_prompt_mut(&offer);
-                // Characters, not bytes: four bytes each at most.
-                crate::app::ui::widgets::text_box(ui, text, &placeholder, 2, MAX_PROMPT_LEN / 4);
-            });
-            // Each mode keeps its own prompt; say whether this one needs it,
-            // lined up with the text in the box.
-            let text_left =
-                crate::app::ui::widgets::control_left(ui) + crate::app::ui::widgets::TEXT_BOX_INSET;
-            hint_at(
-                ui,
-                text_left,
-                &match offer.prompt {
-                    PromptUse::Required => {
-                        format!("{} needs a prompt before you paint", offer.name)
-                    }
-                    _ => format!("Optional for {}: say what to remove or keep", offer.name),
-                },
-            );
+        // The generator's own controls (a mode, a prompt), drawn by the app
+        // from its panel; their values are the program's.
+        if let Some(panel) = offer.panel.clone() {
+            self.extension_panel_ui(ui, &offer.extension, &panel);
         }
         // Painting and sending: a section of its own.
         ui.add_space(space::L);

@@ -185,11 +185,12 @@ A panel of host-drawn controls the program fills ([protocol](protocol.md#panels)
 | --- | --- |
 | `id` | Lowercase letters, digits and hyphens, unique among the panels |
 | `title` | The panel's title |
-| `place` | `develop` (Develop's right column), `library` (the Library's right column), `window` (a window of its own) or `preferences` (the extension's page) |
+| `place` | `develop` (Develop's right column), `library` (the Library's right column), `window` (a window of its own), `preferences` (the extension's page) or `generator` (the drawer of the tool of the [`[[retouch-generator]]`](#retouch-generator) that names it) |
 
-This release draws every panel on the extension's page in Preferences >
-Extensions, whatever its `place`; the other places are checked and will be
-drawn once an extension that uses them is built.
+This release draws a `generator` panel in its generator's tool drawer, and every
+other panel on the extension's page in Preferences > Extensions, whatever its
+`place`; the other places are checked and will be drawn once an extension that
+uses them is built.
 
 ## `[[control-adapter]]`
 
@@ -286,20 +287,25 @@ makes one History step of it; the patch renders without the extension.
 
 ```toml
 [[retouch-generator]]
-id = "replace"
-name = "AI Replace"
+id = "retouch"
+name = "AI Retouch"
 uploads = true
-prompt = "required"
-prompt-hint = "What to put there, e.g. a wooden bench"
+panel = "retouch"
+
+[[panel]]
+id = "retouch"
+title = "AI Retouch"
+place = "generator"
 ```
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `id` | — | Lowercase letters, digits and hyphens, unique among the retouch generators. Patches record `<extension>/<id>` as what made them |
-| `name` | — | Its mode's name in the AI Retouch tool |
+| `name` | — | Its name in the tool: its mode when there are several generators, its History step |
 | `uploads` | `false` | It sends what it is given off this computer (a hosted model). The app asks the user once per extension before the first request, and keeps the answer in `extensions.json` |
-| `prompt` | `"none"` | Whether the user writes text for a request: `none`, `optional` (sent when written) or `required` (no request without it). The text goes as `retouch.generate`'s `prompt` |
-| `prompt-hint` | — | What the text field shows while empty, 1 to 120 bytes on one line; only with a `prompt` |
+| `panel` | none | A [`[[panel]]`](#panel) with `place = "generator"` that the tool's drawer shows, for what the program needs besides the area (a mode, a prompt). Its values are the program's, from `panel.changed`; the app sends any still being typed before the request, so they reach the program first |
 
-The AI Retouch tool, on Develop's rail while any is offered, offers each enabled
-extension's generators as modes of their own, named by `name`.
+The generator tool (the magic wand, last of Develop's rail tools while any is
+offered) offers each enabled extension's generators as modes of their own,
+named by `name`. RAWmakase draws the brush, the area painted, Send, Clear and
+what a request is doing; everything else the generator needs is its panel's.

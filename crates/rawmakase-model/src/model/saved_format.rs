@@ -548,7 +548,7 @@ mod tests {
                 generator: "dev.pch.ai-remove/remove".into(),
                 model: "m".into(),
                 ai_denoise: false,
-                prompt: None,
+                summary: None,
             }),
             ..r.retouch[0].clone()
         });

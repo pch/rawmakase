@@ -95,7 +95,7 @@ fn generated(op: &RetouchOp, input: &rendition::Input, samples: &[f32]) -> Retou
             generator: "dev.rawmakase.remove/fill".into(),
             model: "test".into(),
             ai_denoise: false,
-            prompt: None,
+            summary: None,
         }),
         ..op.clone()
     }
@@ -359,7 +359,7 @@ fn generated_spots_interleave_with_heal_and_clone() {
         generator: "dev.rawmakase.remove/fill".into(),
         model: "test".into(),
         ai_denoise: false,
-        prompt: None,
+        summary: None,
     });
     let mut copying = brush(&base, 420., 200., 12.);
     copying.offset = [-120. / 700., 0.];
@@ -442,7 +442,7 @@ fn a_patch_that_cant_be_provided_fails_the_render() {
         generator: "dev.rawmakase.remove/fill".into(),
         model: "test".into(),
         ai_denoise: false,
-        prompt: None,
+        summary: None,
     });
     let ops = [op.clone()];
     let retouching = Retouching {
@@ -510,7 +510,7 @@ fn the_decoded_patch_is_the_placement_asked_for() {
         generator: "dev.rawmakase.remove/fill".into(),
         model: "test".into(),
         ai_denoise: false,
-        prompt: None,
+        summary: None,
     };
     let left = super::patch::resolve(&at([0., 0., 0.5, 0.5], 2)).unwrap();
     let right = super::patch::resolve(&at([0.5, 0.5, 1., 1.], 2)).unwrap();
@@ -645,7 +645,7 @@ fn laid_over(
             generator: "dev.rawmakase.remove/fill".into(),
             model: "test".into(),
             ai_denoise: false,
-            prompt: None,
+            summary: None,
         }),
         ..brush(im, x, y, r)
     }
@@ -1001,7 +1001,7 @@ fn a_spot_beyond_its_patch_reads_only_what_it_declares() {
         generator: "dev.rawmakase.remove/fill".into(),
         model: "test".into(),
         ai_denoise: false,
-        prompt: None,
+        summary: None,
     });
     let template = op.clone();
     let spot = |at: [f32; 2], from: [f32; 2]| {

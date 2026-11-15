@@ -402,7 +402,7 @@ Asks a [retouch generator](manifest.md#retouch-generator) to regenerate the area
 the user painted (experimental AI Remove and AI Replace):
 
 ```json
-{"generator":"replace","image":buffer,"coverage":buffer,"result":buffer,"image_key":"…","prompt":"a wooden bench"}
+{"generator":"retouch","image":buffer,"coverage":buffer,"result":buffer,"image_key":"…"}
 ```
 
 - `image` is the region of the photo around the painted area, upright, as
@@ -422,9 +422,6 @@ the user painted (experimental AI Remove and AI Replace):
 - All three are allocated by the app, in three handles, 256 MiB at most together.
 - `image_key` is the app's digest of the image's and the coverage's sizes and
   pixels and how they were rendered.
-- `prompt`, for a generator that takes text, is what the user wrote, trimmed: one
-  line, 1 to 1000 bytes (`MAX_PROMPT_LEN`). It is missing when they wrote nothing,
-  which a `required` generator never gets. The app saves it with the patch.
 
 The SDK refuses a request whose buffers don't pass their checks, don't fit
 together or don't map, with `invalid_request`, before the handler runs, and
@@ -432,16 +429,24 @@ borrows the image and coverage read-only and the result writable for the call
 (`RetouchAsk`). Reply:
 
 ```json
-{"model":"bria/fibo-edit-1.5/eraser","model_key":"fal|bria/fibo-edit-1.5/eraser|composite|1"}
+{"model":"fal-ai/nano-banana/edit","model_key":"fal|fal-ai/nano-banana/edit|1","summary":"change the shoes to high heels"}
 ```
 
 `model` names the model, saved with the patch as its provenance; `model_key`
 stands for everything besides the pixels the result depends on. Each is 1 to 128
-bytes. Errors: `needs_setup` when the user has to set something up first (an API
-key), with a plain-text message the AI Retouch tool shows with a button to the
-extension's page; `unavailable` when its service can't be reached or won't work
-now (offline, a quota, a rate limit), with the service's message; `refused` when
-the service declined the request's content. Keep keys out of every message.
+bytes. `summary`, optional, says what it did in the user's words (the prompt its
+panel held, say), one line of 1 to 256 bytes; the patch keeps it and the tool
+shows it for the spot. What the request needs besides the area (a mode, a
+prompt) is the program's own, from its generator's panel: the app sends what is
+still being typed there before the request. Errors: `needs_input` when the user
+has to give something first (a prompt), with the message the tool shows as it
+is, the area painted again to try once more; `needs_setup` when the user has to
+set something up first (an API key), with a plain-text message the tool shows
+with a button to the extension's page; `unavailable` when its service can't be
+reached or won't work now (offline, a quota, a rate limit), with the service's
+message; `refused` when the service declined the request's content. Keep keys
+out of every message. `invalid_request` is for a request the program can't read:
+the app then ends the program, as it may hold the request's handles.
 
 The app gives `retouch.generate` 200 seconds, one request at a time. A request
 the user gave up on (Cancel, another photo, disabling the extension, quitting) is
@@ -685,6 +690,7 @@ controls, reuses an id, or has a value outside its range.
 | `unavailable` | What the contribution runs on, such as a runtime library or a remote worker, isn't available; the message says why |
 | `not_added` | A source's report couldn't be written to the catalog; the message says why |
 | `refused` | The service the contribution runs on declined the request on its content (a hosted model's safety policy); the message says why |
+| `needs_input` | The request needs something from the user first, such as a prompt in the contribution's panel; the message says what, and is shown as it is |
 
 The control layer's own codes (`no_document`, `not_editable`, …, [automation](../automation.md))
 pass through unchanged.

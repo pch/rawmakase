@@ -413,6 +413,8 @@ pub enum PanelPlace {
     Window,
     /// The extension's page in Preferences > Extensions.
     Preferences,
+    /// The drawer of the tool of the `[[retouch-generator]]` that names it.
+    Generator,
 }
 
 /// A `[[control-adapter]]`.
@@ -496,35 +498,12 @@ pub struct RetouchGenerator {
     /// hosted model). The app asks the user once before the first request.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub uploads: bool,
-    /// Whether the user writes text for a request, such as what to remove or
-    /// what to put there, sent as `retouch.generate`'s `prompt`.
-    #[serde(default, skip_serializing_if = "PromptUse::is_none")]
-    pub prompt: PromptUse,
-    /// What the text field shows while empty, for example `What to put
-    /// there`. Only with a `prompt`; at most [`MAX_PROMPT_HINT`] bytes.
+    /// The `[[panel]]` (`place = "generator"`) its tool's drawer shows, for
+    /// what the program needs to know beyond the area: a mode, a prompt. The
+    /// program keeps its values (`panel.changed`); the app commits any still
+    /// being typed before it sends a request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prompt_hint: Option<String>,
-}
-
-/// The longest `prompt-hint`, in bytes.
-pub const MAX_PROMPT_HINT: usize = 120;
-
-/// Whether a retouch generator takes text.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum PromptUse {
-    /// It takes none.
-    #[default]
-    None,
-    /// The user may write some; a request without is sent without.
-    Optional,
-    /// The user writes some before painting; no request is sent without.
-    Required,
-}
-impl PromptUse {
-    fn is_none(&self) -> bool {
-        *self == Self::None
-    }
+    pub panel: Option<String>,
 }
 
 impl RetouchGenerator {
@@ -809,7 +788,8 @@ impl Manifest {
     }
 
     /// The `[[retouch-generator]]` rules: the `api` that reads them, a name
-    /// to show, and a `prompt-hint` only for one that takes text.
+    /// to show, and a panel of place `generator`, which only a generator
+    /// shows.
     fn validate_retouch_generators(&self) -> Result<(), Invalid> {
         let e = &self.extension;
         if self.retouch_generators.is_empty() {
@@ -831,18 +811,29 @@ impl Manifest {
             if generator.name.trim().is_empty() {
                 return fail("its name is empty");
             }
-            if let Some(hint) = &generator.prompt_hint {
-                if generator.prompt == PromptUse::None {
-                    return fail("prompt-hint needs a prompt");
-                }
-                if hint.trim().is_empty()
-                    || hint.len() > MAX_PROMPT_HINT
-                    || hint.chars().any(char::is_control)
-                {
+            if let Some(panel) = &generator.panel {
+                let place = self.panels.iter().find(|p| &p.id == panel).map(|p| p.place);
+                if place != Some(PanelPlace::Generator) {
                     return fail(&format!(
-                        "prompt-hint must be 1 to {MAX_PROMPT_HINT} bytes on one line"
+                        "panel {panel:?} isn't a [[panel]] with place = \"generator\""
                     ));
                 }
+            }
+        }
+        for panel in self
+            .panels
+            .iter()
+            .filter(|p| p.place == PanelPlace::Generator)
+        {
+            if !self
+                .retouch_generators
+                .iter()
+                .any(|g| g.panel.as_deref() == Some(&panel.id))
+            {
+                return Err(Invalid(format!(
+                    "panel {}: place \"generator\" needs a [[retouch-generator]] that names it",
+                    panel.id
+                )));
             }
         }
         Ok(())
@@ -1330,36 +1321,33 @@ uploads = true
     }
 
     #[test]
-    fn a_retouch_generator_may_take_text() {
-        // No text unless stated.
-        let plain = Manifest::parse(REMOVER).unwrap();
-        assert_eq!(plain.retouch_generators[0].prompt, PromptUse::None);
-        assert_eq!(plain.retouch_generators[0].prompt_hint, None);
-        for (stated, prompt, hint) in [
-            ("optional", PromptUse::Optional, Some("e.g. a bench")),
-            ("required", PromptUse::Required, Some("e.g. a bench")),
-            ("none", PromptUse::None, None),
-        ] {
-            let hint_line = hint.map_or(String::new(), |h| format!("prompt-hint = \"{h}\"\n"));
-            let manifest = remover(
+    fn a_retouch_generator_may_show_a_panel_in_its_drawer() {
+        let with_panel = |generator_panel: &str, place: &str| {
+            remover(
                 "uploads = true\n",
-                &format!("uploads = true\nprompt = \"{stated}\"\n{hint_line}"),
+                &format!(
+                    "uploads = true\n{generator_panel}\n[[panel]]\nid = \"ask\"\ntitle = \"Ask\"\nplace = \"{place}\"\n"
+                ),
             )
-            .unwrap();
-            let generator = &manifest.retouch_generators[0];
-            assert_eq!(generator.prompt, prompt);
-            assert_eq!(generator.prompt_hint.as_deref(), hint);
-            let written = toml::to_string(&manifest).unwrap();
-            assert_eq!(Manifest::parse(&written).unwrap(), manifest);
-        }
-        assert!(remover("uploads = true\n", "uploads = true\nprompt = \"always\"\n").is_err());
-        // A hint is for a generator that takes text, and fits on a line.
-        assert!(remover("uploads = true\n", "uploads = true\nprompt-hint = \"x\"\n").is_err());
-        let long = "x".repeat(MAX_PROMPT_HINT + 1);
+        };
+        let manifest = with_panel("panel = \"ask\"", "generator").unwrap();
+        assert_eq!(manifest.retouch_generators[0].panel.as_deref(), Some("ask"));
+        assert_eq!(manifest.panels[0].place, PanelPlace::Generator);
+        let written = toml::to_string(&manifest).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+        assert_eq!(
+            Manifest::parse(REMOVER).unwrap().retouch_generators[0].panel,
+            None
+        );
+        // Its panel's place is the drawer, and a drawer's panel has a generator.
+        assert!(with_panel("panel = \"ask\"", "preferences").is_err());
+        assert!(with_panel("panel = \"other\"", "generator").is_err());
+        assert!(with_panel("", "generator").is_err());
+        // What came before panels is gone.
         assert!(
             remover(
                 "uploads = true\n",
-                &format!("uploads = true\nprompt = \"optional\"\nprompt-hint = \"{long}\"\n")
+                "uploads = true\nprompt = \"optional\"\n"
             )
             .is_err()
         );

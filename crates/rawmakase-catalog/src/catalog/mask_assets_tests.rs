@@ -191,7 +191,7 @@ fn generated(seed: f32) -> Recipe {
                 generator: "dev.pch.ai-remove/remove".into(),
                 model: "bria/fibo-edit-1.5/eraser".into(),
                 ai_denoise: false,
-                prompt: None,
+                summary: None,
             }),
         }],
         ..Default::default()

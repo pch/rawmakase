@@ -1007,7 +1007,7 @@ fn spot_removal_leaves_ai_remove_spots_on_their_photo() {
             generator: "dev.pch.ai-remove/remove".into(),
             model: "m".into(),
             ai_denoise: false,
-            prompt: None,
+            summary: None,
         }),
     };
     let mut source = everything_changed();

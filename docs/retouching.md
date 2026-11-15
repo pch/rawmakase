@@ -83,11 +83,13 @@ provider. Below, "AI Remove" stands for any of them.
   resets only its own: AI spots in AI Retouch, Heal and Clone spots in the Remove
   tool. Both share the brush (size, feather, opacity), the keys (`[` `]`, Delete,
   H, A) and Visualize Spots.
-- **Text.** A generator that takes text (its `prompt`) has a field under Mode: AI
-  Remove's is optional ("remove the dogs, keep the people"), AI Replace's is needed
-  ("a wooden bench"). With a needed field empty, the area can't be sent and the
-  drawer says so. What was written is sent with the request, trimmed, kept with the spot and
-  shown when it is selected; each generator keeps its own.
+- **Its controls.** Under Mode, the drawer shows the generator's own panel, drawn by
+  RAWmakase from what the extension declares: AI Retouch's mode (Remove or Replace)
+  and its prompt ("remove the dogs, keep the people", "a wooden bench"). Their
+  values are the extension's; RAWmakase sends any still being typed before a
+  request. A request the extension can't take yet (no prompt for Replace) makes
+  nothing, says why, and paints the area again. What the extension says it did is
+  kept with the spot and shown when it is selected.
 - **Click** adds a dab, a **drag** a stroke: they gather into one area, drawn on
   the photo, and nothing is sent while painting. The drawer's button named after
   the mode (or **Enter**) sends the area as one spot, with the brush's size,

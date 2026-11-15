@@ -138,6 +138,9 @@ pub enum ControlKind {
         /// Several lines.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         multiline: bool,
+        /// What the field shows while empty.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        placeholder: Option<String>,
     },
     /// A file chosen in the system's dialog.
     File {

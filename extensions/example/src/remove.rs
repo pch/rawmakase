@@ -10,12 +10,17 @@
 //! - `setup`: `needs_setup` while the `key` setting is empty, then as `fill`;
 //! - `refuse`: `refused`; `unavailable`: `unavailable`; `unnamed`: a model
 //!   with an empty name;
-//! - `crash`: exits.
+//! - `crash`: exits;
+//! - `ask`: fills as `local` with the text its panel `ask` (in the tool's
+//!   drawer) holds, which it needs, and says it as its summary.
+use rawmakase_extension::protocol::controls::{Control, ControlKind};
 use rawmakase_extension::protocol::method::RetouchGenerated;
 use rawmakase_extension::{
-    Context, ErrorCode, Extension, RemoteError, RetouchAsk, RetouchGenerator,
+    Context, ErrorCode, Extension, Panel, RemoteError, RetouchAsk, RetouchGenerator,
 };
+use serde_json::Value;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// The sRGB value `fill` writes over the painted pixels.
@@ -33,6 +38,7 @@ impl RetouchGenerator for Generator {
         let model = RetouchGenerated {
             model: format!("example-{}@1", self.0),
             model_key: format!("example-{}/1", self.0),
+            summary: None,
         };
         match self.0 {
             "refuse" => Err(RemoteError::new(
@@ -110,8 +116,76 @@ fn fill(ask: &mut RetouchAsk<'_>) {
     }
 }
 
+/// What the `ask` panel's text field holds, shared with the `ask`
+/// generator.
+type Asked = Arc<Mutex<String>>;
+
+/// The `ask` panel: one text field.
+struct AskPanel(Asked);
+
+impl AskPanel {
+    fn controls(&self) -> Vec<Control> {
+        vec![Control {
+            id: Some("text".into()),
+            label: Some("Prompt".into()),
+            help: None,
+            visible_when: None,
+            disabled: false,
+            kind: ControlKind::Text {
+                value: self.0.lock().unwrap().clone(),
+                multiline: true,
+                placeholder: Some("What to put there".into()),
+            },
+        }]
+    }
+}
+
+impl Panel for AskPanel {
+    fn open(&mut self, _cx: &Context) -> Result<Vec<Control>, RemoteError> {
+        Ok(self.controls())
+    }
+    fn changed(
+        &mut self,
+        _cx: &Context,
+        _control: &str,
+        value: Value,
+    ) -> Result<Vec<Control>, RemoteError> {
+        *self.0.lock().unwrap() = value.as_str().unwrap_or_default().to_string();
+        Ok(self.controls())
+    }
+    fn clicked(&mut self, _cx: &Context, _control: &str) -> Result<Vec<Control>, RemoteError> {
+        Ok(self.controls())
+    }
+}
+
+/// The `ask` generator: fills with what the panel holds, which it needs.
+struct Ask(Asked);
+
+impl RetouchGenerator for Ask {
+    fn generate(
+        &mut self,
+        _cx: &Context,
+        mut ask: RetouchAsk<'_>,
+    ) -> Result<RetouchGenerated, RemoteError> {
+        let text = self.0.lock().unwrap().trim().to_string();
+        if text.is_empty() {
+            return Err(RemoteError::new(
+                ErrorCode::NeedsInput,
+                "Say what to put there first",
+            ));
+        }
+        fill(&mut ask);
+        Ok(RetouchGenerated {
+            model: "example-ask@1".into(),
+            model_key: "example-ask/1".into(),
+            summary: Some(text.replace(char::is_control, " ")),
+        })
+    }
+}
+
 /// The extension, ready to run.
 pub fn extension() -> Extension {
+    let asked = Asked::default();
     [
         "fill",
         "local",
@@ -121,11 +195,11 @@ pub fn extension() -> Extension {
         "unavailable",
         "unnamed",
         "crash",
-        "describe",
-        "maybe",
     ]
     .into_iter()
     .fold(Extension::new(), |e, id| {
         e.retouch_generator(id, Generator(id))
     })
+    .retouch_generator("ask", Ask(asked.clone()))
+    .panel("ask", AskPanel(asked))
 }

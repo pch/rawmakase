@@ -466,16 +466,7 @@ pub struct RetouchGenerate {
     /// The app's digest of the image's and the coverage's sizes, pixels and
     /// how they were rendered.
     pub image_key: String,
-    /// What the user wrote for this request, for a generator that takes text
-    /// (`prompt` in its manifest), trimmed: what to remove or keep, or what
-    /// to put there. None when they wrote nothing. One line, 1 to
-    /// [`MAX_PROMPT_LEN`] bytes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prompt: Option<String>,
 }
-
-/// The longest text a retouch request carries, in bytes.
-pub const MAX_PROMPT_LEN: usize = 1000;
 
 impl RetouchGenerate {
     /// What a retouch request's image and result are: 8-bit sRGB.
@@ -490,20 +481,9 @@ impl RetouchGenerate {
     /// - the coverage is 1-channel `u8` [`Meaning::Coverage`] for reading,
     ///   and the result 3-channel `u8` [`RetouchGenerate::IMAGE`] for
     ///   writing, both with the image's width, height and region;
-    /// - they are in three handles, together within [`MAX_REQUEST_BYTES`];
-    /// - a prompt is trimmed, on one line and 1 to [`MAX_PROMPT_LEN`] bytes.
+    /// - they are in three handles, together within [`MAX_REQUEST_BYTES`].
     pub fn validate(&self) -> Result<(), RemoteError> {
         let fail = |why: &str| Err(RemoteError::new(ErrorCode::InvalidRequest, why));
-        if let Some(prompt) = &self.prompt
-            && (prompt.is_empty()
-                || prompt.trim() != prompt
-                || prompt.len() > MAX_PROMPT_LEN
-                || prompt.chars().any(char::is_control))
-        {
-            return fail(&format!(
-                "the prompt must be trimmed, on one line and 1 to {MAX_PROMPT_LEN} bytes"
-            ));
-        }
         self.image.validate()?;
         self.coverage.validate()?;
         self.result.validate()?;
@@ -566,7 +546,14 @@ pub struct RetouchGenerated {
     /// Everything besides the pixels that the result depends on (the
     /// service, the model and its options). At most [`MAX_MODEL_LEN`] bytes.
     pub model_key: String,
+    /// What it did, in the user's words, for the spot to show: the prompt it
+    /// was given, say. One line, 1 to [`MAX_SUMMARY_LEN`] bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
 }
+
+/// The longest summary a retouch answer carries, in bytes.
+pub const MAX_SUMMARY_LEN: usize = 256;
 impl RetouchGenerated {
     /// Checks that `model` and `model_key` are 1 to [`MAX_MODEL_LEN`] bytes,
     /// without control characters, as a saved patch keeps them.
@@ -584,6 +571,19 @@ impl RetouchGenerated {
                     format!("{name} holds a control character"),
                 ));
             }
+        }
+        if let Some(summary) = &self.summary
+            && (summary.is_empty()
+                || summary.trim() != summary
+                || summary.len() > MAX_SUMMARY_LEN
+                || summary.chars().any(char::is_control))
+        {
+            return Err(RemoteError::new(
+                ErrorCode::InvalidRequest,
+                format!(
+                    "the summary must be trimmed, on one line and 1 to {MAX_SUMMARY_LEN} bytes"
+                ),
+            ));
         }
         Ok(())
     }
@@ -1268,29 +1268,19 @@ mod tests {
             r.image.bytes = MAX_REQUEST_BYTES;
             r.result.bytes = MAX_REQUEST_BYTES;
         });
-        // No text unless the user wrote some; then it's on a line, and short.
-        assert_eq!(request.prompt, None);
-        let mut with_text = retouch_request();
-        with_text["prompt"] = json!("remove the dogs, keep the people");
-        let AppRequest::RetouchGenerate(asked) =
-            AppRequest::parse("retouch.generate", with_text).unwrap()
-        else {
-            panic!("a retouch request");
-        };
-        assert_eq!(
-            asked.prompt.as_deref(),
-            Some("remove the dogs, keep the people")
-        );
-        asked.validate().unwrap();
-        broken(&|r| r.prompt = Some("  ".into()));
-        broken(&|r| r.prompt = Some("a\nb".into()));
-        broken(&|r| r.prompt = Some("é".repeat(MAX_PROMPT_LEN / 2 + 1)));
-        let mut longest = request.clone();
-        longest.prompt = Some("x".repeat(MAX_PROMPT_LEN));
-        longest.validate().unwrap();
         let answer: RetouchGenerated =
             serde_json::from_value(json!({"model": "bria/eraser", "model_key": "fal|1"})).unwrap();
         answer.validate().unwrap();
+        assert_eq!(answer.summary, None);
+        // A summary is on one line, and short.
+        let said = |summary: &str| RetouchGenerated {
+            summary: Some(summary.into()),
+            ..answer.clone()
+        };
+        said("remove the dogs, keep the people").validate().unwrap();
+        for bad in ["", " a", "a\nb", &"x".repeat(MAX_SUMMARY_LEN + 1)] {
+            assert!(said(bad).validate().is_err(), "{bad:?}");
+        }
         let empty = RetouchGenerated {
             model: String::new(),
             ..answer
@@ -1302,6 +1292,7 @@ mod tests {
         let two_lines = RetouchGenerated {
             model: "model\nversion".into(),
             model_key: "k".into(),
+            summary: None,
         };
         assert_eq!(
             two_lines.validate().unwrap_err().code,

@@ -41,8 +41,6 @@ pub(in crate::app) struct RetouchTool {
     /// The retouch generator new AI spots go to, by provenance
     /// (`<extension>/<generator>`); the first one offered when none or gone.
     pub(in crate::app) generator: Option<String>,
-    /// What the user wrote for each generator that takes text, by provenance.
-    pub(in crate::app) prompts: std::collections::HashMap<String, String>,
 }
 impl Default for RetouchTool {
     fn default() -> Self {
@@ -58,7 +56,6 @@ impl Default for RetouchTool {
             drag: Drag::None,
             tried: Vec::new(),
             generator: None,
-            prompts: Default::default(),
         }
     }
 }
@@ -959,18 +956,6 @@ fn draw_shape(
         }
     }
 }
-/// [`control_label`] for a box taller than a line: the label beside its
-/// first line, not its middle.
-pub(in crate::app) fn control_label_top(
-    ui: &mut egui::Ui,
-    label: &str,
-    add: impl FnOnce(&mut egui::Ui),
-) {
-    ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-        // As tall as a text box's first line with its margin above and below.
-        label_row(ui, label, 30., add);
-    });
-}
 /// A row with a right-aligned label in the sliders' label column.
 pub(in crate::app) fn control_label(
     ui: &mut egui::Ui,
@@ -1000,21 +985,6 @@ fn label_row(ui: &mut egui::Ui, label: &str, height: f32, add: impl FnOnce(&mut 
     );
     ui.add_space((2. * LABEL_GAP - spacing).max(0.));
     add(ui);
-}
-/// [`hint`] starting `left` from the row's start, to line up with what it
-/// is about.
-pub(in crate::app) fn hint_at(ui: &mut egui::Ui, left: f32, text: &str) {
-    ui.horizontal(|ui| {
-        ui.add_space(left);
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(text)
-                    .size(text::MICRO)
-                    .color(theme::palette(ui.ctx()).tone(Tone::FAINT)),
-            )
-            .wrap(),
-        );
-    });
 }
 pub(in crate::app) fn indented(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {

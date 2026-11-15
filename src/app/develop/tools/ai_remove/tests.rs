@@ -9,7 +9,6 @@ use crate::app::extensions::Host;
 use crate::camera_data::Metadata;
 use crate::model::retouch::RetouchShape;
 use eframe::egui;
-use rawmakase_extensions::protocol::manifest::PromptUse;
 use rawmakase_extensions::secrets::{MemoryStore, SecretError, SecretStore};
 use rawmakase_extensions::session::Launch;
 use rawmakase_extensions::store::Store;
@@ -283,72 +282,49 @@ fn ai_remove_asks_once_before_uploading_then_adds_a_generated_spot() {
     assert_eq!(generated(e).len(), 2);
 }
 
-/// A generator that takes text gets what the user wrote, trimmed, and its
-/// spot keeps it; one that needs text sends nothing without it, and one that
-/// takes none never gets any.
+/// What a generator needs beyond the area comes from its panel, drawn in its
+/// tool's drawer: what is still being typed there reaches the program before
+/// the request, and the answer's summary stays with its spot. A refusal (no
+/// text) makes nothing and paints the area again.
 #[test]
-fn what_the_user_wrote_goes_with_the_request_and_stays_with_its_spot() {
+fn a_generator_s_panel_feeds_its_requests() {
+    use crate::app::develop::state::Tool;
     let mut f = fixture(0.22);
     let e = &mut f.editor;
-    let describe = offer(e, "describe");
-    // Nothing written: nothing is asked or sent, and the tool says why.
-    e.request_ai_remove_with(describe.clone(), None, painted());
-    assert!(e.ai_remove.consent.is_none() && settled(e));
-    assert!(e.extensions.retouches_sent().is_empty());
-    assert!(
-        e.messages.line().contains("Describe what"),
-        "{}",
-        e.messages.line()
-    );
-    assert!(e.ai_prompt_missing(&describe));
-    *e.ai_prompt_mut(&describe) = "   ".into();
-    assert!(e.ai_prompt_missing(&describe));
-    e.request_ai_remove_with(describe.clone(), None, painted());
-    assert!(e.extensions.retouches_sent().is_empty());
-
-    *e.ai_prompt_mut(&describe) = "  a wooden bench \n".into();
-    assert!(!e.ai_prompt_missing(&describe));
-    e.request_ai_remove_with(describe.clone(), None, painted());
+    e.view.set_tool(Tool::AiRetouch);
+    let ask = offer(e, "ask");
+    assert_eq!(ask.panel.as_deref(), Some("ask"));
+    e.choose_ai_generator(&ask);
+    e.extensions.open_panel(ID, "ask").unwrap();
+    pump(e, "the panel", |e| {
+        e.extensions
+            .panel(ID, "ask")
+            .is_some_and(|v| !v.controls.is_empty())
+    });
+    // Nothing typed: refused, and the area painted again to try once more.
+    e.add_ai_stroke(vec![[0.4, 0.5], [0.6, 0.5]]);
+    e.send_ai_draft();
+    assert!(e.ai_remove.draft.is_empty());
+    pump(e, "the refusal", settled);
+    assert!(generated(e).is_empty());
+    let message = e.ai_remove.failure.as_ref().unwrap().message("Ask");
+    assert!(message.contains("Say what to put there first"), "{message}");
+    assert_eq!(e.ai_remove.draft.len(), 1, "painted again");
+    // Typed and not committed (the field still has the keyboard): sent first.
+    e.extensions
+        .panel_mut(ID, "ask")
+        .unwrap()
+        .drafts
+        .insert("text".into(), serde_json::json!("a wooden bench"));
+    e.send_ai_draft();
     pump(e, "the replacement", settled);
-    let sent = e.extensions.retouches_sent().last().unwrap();
-    assert_eq!(sent.prompt.as_deref(), Some("a wooden bench"));
     let ops = generated(e);
     assert_eq!(ops.len(), 1, "{}", e.messages.line());
     let patch = ops[0].patch.as_ref().unwrap();
-    assert_eq!(patch.prompt.as_deref(), Some("a wooden bench"));
-    assert_eq!(patch.generator, "dev.rawmakase.remove/describe");
-    // History names the step after the generator.
-    assert_eq!(last_step(e), "Describe");
-
-    // Optional: sent without when nothing is written, with when something is.
-    let maybe = offer(e, "maybe");
-    assert!(!e.ai_prompt_missing(&maybe));
-    pump(e, "the lease to end", |e| leased(e) == 0);
-    e.request_ai_remove_with(maybe.clone(), None, painted());
-    pump(e, "the removal", settled);
-    assert_eq!(e.extensions.retouches_sent().last().unwrap().prompt, None);
-    *e.ai_prompt_mut(&maybe) = "remove the dogs, keep the people".into();
-    pump(e, "the lease to end", |e| leased(e) == 0);
-    e.request_ai_remove_with(maybe, None, painted());
-    pump(e, "the edit", settled);
-    assert_eq!(
-        e.extensions
-            .retouches_sent()
-            .last()
-            .unwrap()
-            .prompt
-            .as_deref(),
-        Some("remove the dogs, keep the people")
-    );
-
-    // None: what was written for another generator never goes to it.
-    let local = offer(e, "local");
-    *e.ai_prompt_mut(&local) = "ignored".into();
-    pump(e, "the lease to end", |e| leased(e) == 0);
-    e.request_ai_remove_with(local, None, painted());
-    pump(e, "the fill", settled);
-    assert_eq!(e.extensions.retouches_sent().last().unwrap().prompt, None);
-    assert_eq!(generated(e).len(), 4, "{}", e.messages.line());
+    assert_eq!(patch.summary.as_deref(), Some("a wooden bench"));
+    assert_eq!(patch.generator, "dev.rawmakase.remove/ask");
+    assert_eq!(last_step(e), "Ask");
+    assert!(e.ai_remove.draft.is_empty(), "made: not painted again");
 }
 
 /// Each generator is a mode of its own: the one chosen is the one asked,
@@ -360,11 +336,9 @@ fn the_generator_chosen_is_the_one_asked() {
     let offers: Vec<Offer> = e.ai_remove_offers().into_iter().map(|(o, _)| o).collect();
     assert_eq!(offers[0].generator, "fill");
     assert_eq!(e.ai_remove_offer().unwrap().0.generator, "fill");
-    let describe = offer(e, "describe");
-    assert_eq!(describe.prompt, PromptUse::Required);
-    assert_eq!(describe.prompt_hint.as_deref(), Some("What to put there"));
-    e.choose_ai_generator(&describe);
-    assert_eq!(e.ai_remove_offer().unwrap().0, describe);
+    let ask = offer(e, "ask");
+    e.choose_ai_generator(&ask);
+    assert_eq!(e.ai_remove_offer().unwrap().0, ask);
     e.view.retouch.generator = Some("dev.rawmakase.remove/gone".into());
     assert_eq!(e.ai_remove_offer().unwrap().0.generator, "fill");
 }
@@ -451,29 +425,24 @@ fn ai_retouch_is_its_own_tool_with_its_own_spots() {
 
 /// Painting only marks the area: strokes and clicks gather until the user
 /// sends them, as one request for one spot that isn't joined across its
-/// strokes. A send that can't go keeps what was painted.
+/// strokes.
 #[test]
 fn painting_gathers_an_area_that_goes_only_when_sent() {
     use crate::app::develop::state::Tool;
     let mut f = fixture(0.26);
     let e = &mut f.editor;
     e.view.set_tool(Tool::AiRetouch);
-    let describe = offer(e, "describe");
-    e.choose_ai_generator(&describe);
+    let local = offer(e, "local");
+    e.choose_ai_generator(&local);
+    assert!(e.ai_send_blocked().is_some(), "nothing painted");
     e.add_ai_stroke(vec![[0.3, 0.4], [0.35, 0.4]]);
     e.add_ai_stroke(vec![[0.7, 0.6]]);
     assert_eq!(e.ai_remove.draft.len(), 2);
     assert!(e.extensions.retouches_sent().is_empty() && settled(e));
-    // Describe needs text: the send is refused and the area stays.
-    e.send_ai_draft();
-    assert!(e.extensions.retouches_sent().is_empty());
-    assert_eq!(e.ai_remove.draft.len(), 2);
-    assert!(e.ai_send_blocked().is_some());
-    *e.ai_prompt_mut(&describe) = "a wooden bench".into();
     assert_eq!(e.ai_send_blocked(), None);
     e.send_ai_draft();
     assert!(e.ai_remove.draft.is_empty());
-    pump(e, "the replacement", settled);
+    pump(e, "the fill", settled);
     let ops = generated(e);
     assert_eq!(ops.len(), 1, "{}", e.messages.line());
     let RetouchShape::Strokes { strokes, radius } = &ops[0].shape else {
@@ -481,12 +450,11 @@ fn painting_gathers_an_area_that_goes_only_when_sent() {
     };
     assert_eq!(strokes.len(), 2);
     assert_eq!(*radius, e.view.retouch.size);
-    // Nothing painted, nothing to send; Clear forgets what was painted.
-    assert!(e.ai_send_blocked().is_some());
+    assert!(e.ai_remove.draft.is_empty(), "made: not painted again");
+    // Clear forgets what was painted, and so does another photo.
     e.add_ai_stroke(vec![[0.5, 0.5]]);
     e.clear_ai_draft();
     assert!(e.ai_remove.draft.is_empty());
-    // Another photo forgets it too.
     e.add_ai_stroke(vec![[0.5, 0.5]]);
     e.ai_remove.clear_document();
     assert!(e.ai_remove.draft.is_empty());
