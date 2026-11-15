@@ -174,6 +174,9 @@ pub(in crate::app) struct AiRemove {
     setup_needed: Option<(String, u64)>,
     /// A request waiting for the user to agree to its uploads.
     pub(in crate::app) consent: Option<Consent>,
+    /// The strokes painted and not sent yet, in image space: one area, sent
+    /// only when the user asks ([`Editor::send_ai_draft`]).
+    pub(in crate::app) draft: Vec<Vec<[f32; 2]>>,
     /// Patches of results not taken while another request ran, to let go of
     /// once none runs.
     deferred: Vec<String>,
@@ -191,6 +194,7 @@ impl Default for AiRemove {
             failed: None,
             setup_needed: None,
             consent: None,
+            draft: Vec::new(),
             deferred: Vec::new(),
             withdrawn: Vec::new(),
         }
@@ -229,6 +233,7 @@ impl AiRemove {
         self.cancel();
         self.failure = None;
         self.failed = None;
+        self.draft.clear();
         self.consent = None;
     }
     /// The thread to wait for when quitting, handed to the shared deadline.
@@ -290,24 +295,83 @@ impl Editor {
             .filter(|t| !t.is_empty())
             .map(str::to_string)
     }
-    /// Whether painting now would be refused because the chosen generator
-    /// needs text and none is written; says so, as the stroke never starts.
-    pub(in crate::app) fn ai_paint_blocked(&mut self) -> bool {
-        let Some((offer, _)) = self.ai_remove_offer() else {
-            return false;
+    /// Adds a stroke (a click is a stroke of one dab) to the area waiting to
+    /// be sent, in image space. Nothing is sent: [`Editor::send_ai_draft`]
+    /// does that. Past [`MAX_POINTS`] dabs in all, a stroke is left out.
+    ///
+    /// [`MAX_POINTS`]: crate::model::retouch::MAX_POINTS
+    pub(in crate::app) fn add_ai_stroke(&mut self, points: Vec<[f32; 2]>) {
+        let total: usize = self.ai_remove.draft.iter().map(Vec::len).sum();
+        if points.is_empty() {
+            return;
+        }
+        if total + points.len() > crate::model::retouch::MAX_POINTS {
+            self.messages
+                .warn("This area has as many strokes as one request takes; send or clear it");
+            return;
+        }
+        self.ai_remove.draft.push(points);
+    }
+    /// Forgets the area waiting to be sent.
+    pub(in crate::app) fn clear_ai_draft(&mut self) {
+        self.ai_remove.draft.clear();
+    }
+    /// Why the area painted can't be sent now, for the drawer's button and
+    /// what sending says; none when it can.
+    pub(in crate::app) fn ai_send_blocked(&self) -> Option<String> {
+        let Some((offer, why)) = self.ai_remove_offer() else {
+            return Some("Install AI Retouch in Preferences > Extensions to use it".into());
         };
+        if let Some(why) = why.or_else(|| self.ai_remove_unavailable()) {
+            return Some(why);
+        }
+        if self.ai_remove.pending.is_some() {
+            return Some(format!("{} is still working on the last area", offer.name));
+        }
+        if self.ai_remove.consent.is_some() {
+            return Some("Send or cancel the area asked about first".into());
+        }
+        if self.ai_remove.draft.is_empty() {
+            return Some("Paint over an area first".into());
+        }
         if self.ai_setup_needed(&offer) {
-            self.messages.warn(setup_first(&offer));
-            return true;
+            return Some(setup_first(&offer));
         }
-        if !self.ai_prompt_missing(&offer) {
-            return false;
+        if self.ai_prompt_missing(&offer) {
+            return Some(format!("{} needs a prompt first", offer.name));
         }
-        self.messages.warn(format!(
-            "Describe what {} should do first, in the field under Mode",
-            offer.name
-        ));
-        true
+        None
+    }
+    /// Sends the area painted to the chosen generator as one spot, with the
+    /// brush's size, feather and opacity now; the area is forgotten once the
+    /// request starts or asks for consent. A send that can't go says why and
+    /// keeps the area.
+    pub(in crate::app) fn send_ai_draft(&mut self) {
+        if let Some(why) = self.ai_send_blocked() {
+            self.messages.warn(why);
+            return;
+        }
+        let t = &self.view.retouch;
+        let op = RetouchOp {
+            mode: RetouchMode::Generate,
+            shape: crate::model::retouch::RetouchShape::Strokes {
+                strokes: self
+                    .ai_remove
+                    .draft
+                    .iter()
+                    .map(|s| std::sync::Arc::from(s.as_slice()))
+                    .collect(),
+                radius: t.size,
+            },
+            feather: t.feather,
+            opacity: t.opacity,
+            offset: [0.; 2],
+            patch: None,
+        };
+        self.request_ai_remove(op);
+        if self.ai_remove.pending.is_some() || self.ai_remove.consent.is_some() {
+            self.clear_ai_draft();
+        }
     }
     /// Whether `offer`'s extension said it needs setting up and its settings
     /// haven't changed since: a request would fail the same way.

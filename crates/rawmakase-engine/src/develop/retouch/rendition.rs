@@ -37,7 +37,7 @@ use super::heal::{self, FeatherProfile};
 use crate::camera_data::{CameraImage, Metadata};
 use crate::model::image_frame::ImageFrame;
 use crate::model::recipe::Recipe;
-use crate::model::retouch::{RetouchOp, RetouchShape};
+use crate::model::retouch::RetouchOp;
 use anyhow::{Result, bail, ensure};
 use rawmakase_cancel::Cancel;
 use rawmakase_model::camera_profiles::{PRO_TO_RGB, RGB_TO_PRO};
@@ -74,10 +74,7 @@ pub struct Region {
 pub fn region(op: &RetouchOp, frame: &ImageFrame) -> Option<Region> {
     let [w, h] = frame.size();
     let (rx, ry) = crate::model::retouch::radii(op.radius(), frame.aspect());
-    let points: Vec<[f32; 2]> = match &op.shape {
-        RetouchShape::Spot { center, .. } => vec![*center],
-        RetouchShape::Brush { points, .. } => points.to_vec(),
-    };
+    let (points, _) = op.shape.dabs();
     let mut b = [
         f32::INFINITY,
         f32::INFINITY,
@@ -351,13 +348,12 @@ pub fn coverage(op: &RetouchOp, frame: &ImageFrame, region: &Region) -> Vec<u8> 
             (p[1] - y0) / (y1 - y0) * h - 0.5,
         ]
     };
-    let points: Vec<[f32; 2]> = match &op.shape {
-        RetouchShape::Spot { center, .. } => vec![to_region(center)],
-        RetouchShape::Brush { points, .. } => points.iter().map(to_region).collect(),
-    };
+    let (dabs, starts) = op.shape.dabs();
+    let points: Vec<[f32; 2]> = dabs.iter().map(to_region).collect();
     let radius = (op.radius() * frame.long_edge() * region.scale).max(0.5);
     heal::coverage(
         &points,
+        &starts,
         radius,
         op.feather,
         FeatherProfile::Measured,

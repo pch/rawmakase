@@ -28,6 +28,51 @@ pub enum RetouchShape {
         points: Arc<[[f32; 2]]>,
         radius: f32,
     },
+    /// Several brushed paths (and clicks, a path of one dab) with a common
+    /// radius, painted before an AI spot was asked for: one area that isn't
+    /// joined across its strokes. Only AI Retouch's (Generate) spots have one.
+    Strokes {
+        strokes: Arc<[Arc<[[f32; 2]]>]>,
+        radius: f32,
+    },
+}
+impl RetouchShape {
+    /// Its dabs, in order, and where each stroke after the first starts
+    /// among them: a path joins consecutive dabs except across a start.
+    pub fn dabs(&self) -> (Vec<[f32; 2]>, Vec<usize>) {
+        match self {
+            Self::Spot { center, .. } => (vec![*center], Vec::new()),
+            Self::Brush { points, .. } => (points.to_vec(), Vec::new()),
+            Self::Strokes { strokes, .. } => {
+                let mut dabs = Vec::new();
+                let mut starts = Vec::new();
+                for stroke in strokes.iter() {
+                    if !dabs.is_empty() {
+                        starts.push(dabs.len());
+                    }
+                    dabs.extend_from_slice(stroke);
+                }
+                (dabs, starts)
+            }
+        }
+    }
+}
+/// The segments joining `dabs`, one stroke at a time: a stroke of one dab is a
+/// segment from it to itself, and none joins the last dab of a stroke to the
+/// first of the next (`starts`, as [`RetouchShape::dabs`] gives them).
+pub fn segments(dabs: &[[f32; 2]], starts: &[usize]) -> Vec<([f32; 2], [f32; 2])> {
+    let mut out = Vec::new();
+    let mut from = 0;
+    for end in starts.iter().copied().chain([dabs.len()]) {
+        let stroke = &dabs[from.min(end)..end];
+        match stroke {
+            [] => {}
+            [one] => out.push((*one, *one)),
+            _ => out.extend(stroke.windows(2).map(|p| (p[0], p[1]))),
+        }
+        from = end;
+    }
+    out
 }
 
 /// The pixels a generator made for a [`RetouchMode::Generate`] operation, held
@@ -160,25 +205,49 @@ impl RetouchOp {
                     && radius(*r),
                 "Invalid spot removal brush"
             ),
+            RetouchShape::Strokes { strokes, radius: r } => {
+                ensure!(
+                    self.mode == RetouchMode::Generate,
+                    "Only an AI Remove spot is painted in several strokes"
+                );
+                ensure!(
+                    !strokes.is_empty()
+                        && strokes
+                            .iter()
+                            .all(|s| !s.is_empty() && s.iter().all(position))
+                        && strokes.iter().map(|s| s.len()).sum::<usize>() <= MAX_POINTS
+                        && radius(*r),
+                    "Invalid AI Remove strokes"
+                );
+            }
         }
         Ok(())
     }
     /// The destination's radius, as a fraction of the long edge.
     pub fn radius(&self) -> f32 {
         match &self.shape {
-            RetouchShape::Spot { radius, .. } | RetouchShape::Brush { radius, .. } => *radius,
+            RetouchShape::Spot { radius, .. }
+            | RetouchShape::Brush { radius, .. }
+            | RetouchShape::Strokes { radius, .. } => *radius,
         }
     }
     pub fn set_radius(&mut self, r: f32) {
         match &mut self.shape {
-            RetouchShape::Spot { radius, .. } | RetouchShape::Brush { radius, .. } => *radius = r,
+            RetouchShape::Spot { radius, .. }
+            | RetouchShape::Brush { radius, .. }
+            | RetouchShape::Strokes { radius, .. } => *radius = r,
         }
     }
-    /// Where the pin sits: the spot's centre, or the brush path's last dab.
+    /// Where the pin sits: the spot's centre, or the brush path's (the last
+    /// stroke's) last dab.
     pub fn pin(&self) -> [f32; 2] {
         match &self.shape {
             RetouchShape::Spot { center, .. } => *center,
             RetouchShape::Brush { points, .. } => points[points.len() - 1],
+            RetouchShape::Strokes { strokes, .. } => {
+                let last = &strokes[strokes.len() - 1];
+                last[last.len() - 1]
+            }
         }
     }
     /// Whether it lays a generated patch: its shape and source stay where the
@@ -193,6 +262,12 @@ impl RetouchOp {
             RetouchShape::Spot { center, .. } => *center = shift(*center),
             RetouchShape::Brush { points, .. } => {
                 *points = points.iter().map(|p| shift(*p)).collect();
+            }
+            RetouchShape::Strokes { strokes, .. } => {
+                *strokes = strokes
+                    .iter()
+                    .map(|s| s.iter().map(|p| shift(*p)).collect())
+                    .collect();
             }
         }
         self.offset = [self.offset[0] - delta[0], self.offset[1] - delta[1]];
@@ -289,6 +364,56 @@ mod tests {
             ai_denoise: false,
             prompt: None,
         }
+    }
+
+    #[test]
+    fn an_ai_spot_may_be_painted_in_strokes_not_joined_across() {
+        let strokes = RetouchShape::Strokes {
+            strokes: vec![
+                Arc::from(vec![[0.1, 0.1], [0.2, 0.1]]),
+                Arc::from(vec![[0.8, 0.8]]),
+                Arc::from(vec![[0.5, 0.5], [0.5, 0.6], [0.5, 0.7]]),
+            ]
+            .into(),
+            radius: 0.02,
+        };
+        let (dabs, starts) = strokes.dabs();
+        assert_eq!(dabs.len(), 6);
+        assert_eq!(starts, [2, 3]);
+        assert_eq!(
+            segments(&dabs, &starts),
+            [
+                ([0.1, 0.1], [0.2, 0.1]),
+                ([0.8, 0.8], [0.8, 0.8]),
+                ([0.5, 0.5], [0.5, 0.6]),
+                ([0.5, 0.6], [0.5, 0.7]),
+            ]
+        );
+        // One path is joined throughout, as before.
+        assert_eq!(segments(&dabs[..2], &[]).len(), 1);
+        let mut op = RetouchOp {
+            mode: RetouchMode::Generate,
+            shape: strokes,
+            feather: 0.5,
+            opacity: 1.,
+            offset: [0.; 2],
+            patch: Some(patch()),
+        };
+        op.validate().unwrap();
+        assert_eq!(op.pin(), [0.5, 0.7]);
+        let json = serde_json::to_string(&op).unwrap();
+        assert_eq!(serde_json::from_str::<RetouchOp>(&json).unwrap(), op);
+        op.translate([0.; 2]);
+        // Only AI spots, and no empty stroke.
+        let mut heal = op.clone();
+        heal.mode = RetouchMode::Heal;
+        heal.patch = None;
+        assert!(heal.validate().is_err());
+        op.shape = RetouchShape::Strokes {
+            strokes: vec![Arc::from(Vec::<[f32; 2]>::new())].into(),
+            radius: 0.02,
+        };
+        assert!(op.validate().is_err());
     }
 
     #[test]

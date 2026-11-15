@@ -176,6 +176,7 @@ fn log_heal_beats_linear_on_lit_texture() {
     let (gw, gh) = ((grid[2] - grid[0]) as usize, (grid[3] - grid[1]) as usize);
     let alpha = heal::coverage(
         &[[cx as f32, cy as f32]],
+        &[],
         r as f32,
         0.,
         FeatherProfile::Smoothstep,
@@ -350,7 +351,14 @@ fn placed_brush_covers_its_path() {
     let p = Placed::new(&op, &frame, FeatherProfile::Smoothstep);
     assert_eq!(p.radius, 4.);
     let rect = [30, 40, 90, 60];
-    let a = heal::coverage(&p.points, p.radius, 0., FeatherProfile::Smoothstep, rect);
+    let a = heal::coverage(
+        &p.points,
+        &p.starts,
+        p.radius,
+        0.,
+        FeatherProfile::Smoothstep,
+        rect,
+    );
     let at = |x: i32, y: i32| a[((y - rect[1]) * 60 + x - rect[0]) as usize];
     assert_eq!(at(60, 49), 1.);
     assert_eq!(at(60, 55), 0.);
@@ -365,7 +373,7 @@ fn placed_brush_covers_its_path() {
 fn measured_feather_crosses_half_where_camera_raw_does() {
     let half = |profile: FeatherProfile, feather: f32| {
         let radius = 200.;
-        let row = heal::coverage(&[[0., 0.]], radius, feather, profile, [0, 0, 220, 1]);
+        let row = heal::coverage(&[[0., 0.]], &[], radius, feather, profile, [0, 0, 220, 1]);
         row.iter().position(|a| *a < 0.5).unwrap() as f32 / radius
     };
     for (feather, camera_raw) in [(0.25, 0.952), (0.5, 0.89), (0.75, 0.788), (1., 0.648)] {
@@ -381,4 +389,20 @@ fn measured_feather_crosses_half_where_camera_raw_does() {
         half(FeatherProfile::Measured, 0.),
         half(FeatherProfile::Smoothstep, 0.)
     );
+}
+
+/// Strokes painted apart cover each stroke, never the gap between them: a
+/// path joins its dabs only within a stroke.
+#[test]
+fn strokes_cover_themselves_not_the_gap_between() {
+    let rect = [0, 0, 100, 20];
+    let dabs = [[10., 10.], [20., 10.], [80., 10.], [90., 10.]];
+    let at = |a: &[f32], x: usize| a[10 * 100 + x];
+    let joined = heal::coverage(&dabs, &[], 3., 0., FeatherProfile::Smoothstep, rect);
+    let apart = heal::coverage(&dabs, &[2], 3., 0., FeatherProfile::Smoothstep, rect);
+    for x in [15, 85] {
+        assert_eq!((at(&joined, x), at(&apart, x)), (1., 1.), "{x}");
+    }
+    assert_eq!(at(&joined, 50), 1.);
+    assert_eq!(at(&apart, 50), 0.);
 }

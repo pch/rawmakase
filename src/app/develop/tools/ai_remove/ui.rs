@@ -87,13 +87,39 @@ impl Editor {
         hint(
             ui,
             &format!(
-                "Paint over an area: it and its surroundings go to the service set up in {}, \
-                 one paid call each",
+                "Paint over an area, in as many strokes as it takes, then send it: it and its \
+                 surroundings go to the service set up in {}, one paid call",
                 offer.extension_name
             ),
         );
         if let Some(why) = why.or_else(|| self.ai_remove_unavailable()) {
             hint(ui, &why);
+        }
+        // Send: what was painted goes only when asked.
+        let blocked = self.ai_send_blocked();
+        let painted = !self.ai_remove.draft.is_empty();
+        indented(ui, |ui| {
+            let send = ui.add_enabled_ui(blocked.is_none(), |ui| {
+                crate::app::ui::widgets::primary_button(ui, &offer.name)
+            });
+            let send = match &blocked {
+                Some(why) => send.inner.on_disabled_hover_text(why),
+                None => send.inner.on_hover_text("Send the area painted · Enter"),
+            };
+            if send.clicked() {
+                self.send_ai_draft();
+            }
+            if ui
+                .add_enabled(painted, egui::Button::new("Clear"))
+                .on_hover_text("Forget the area painted · Esc")
+                .clicked()
+            {
+                self.clear_ai_draft();
+            }
+        });
+        // Why it can't go, once something is painted: nothing to say before.
+        if painted && let Some(why) = &blocked {
+            hint(ui, why);
         }
         if let Some(consent) = self.ai_remove.consent.clone() {
             // In the text's own colour, not a hint's: this waits for an answer.

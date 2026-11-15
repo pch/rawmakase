@@ -1614,7 +1614,12 @@ impl Editor {
             if !self.view.masking.is_renaming() {
                 if !self.view.is(Tool::Mask) {
                     if self.keys(ctx).take(&b::CLOSE_TOOL).is_some() {
-                        self.view.set_tool(Tool::None);
+                        // AI Retouch's Escape forgets the area painted first.
+                        if self.view.is(Tool::AiRetouch) && !self.ai_remove.draft.is_empty() {
+                            self.clear_ai_draft();
+                        } else {
+                            self.view.set_tool(Tool::None);
+                        }
                     }
                 } else if self.keys(ctx).take(&b::CLOSE_MASKING).is_some() {
                     self.close_masking();

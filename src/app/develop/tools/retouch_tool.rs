@@ -187,10 +187,7 @@ impl Editor {
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
         {
             let at = to_image(origin);
-            let blocked = generating && self.ai_paint_blocked();
             self.view.retouch.drag = match hit(origin) {
-                // Nothing to paint for yet: no stroke, so none vanishes.
-                None if blocked => Drag::None,
                 _ if command && !generating => {
                     self.add_spot(at, [0., 0.]);
                     Drag::Manual
@@ -259,8 +256,9 @@ impl Editor {
         }
         if response.drag_stopped() {
             if let Drag::Stroke(points) = std::mem::take(&mut self.view.retouch.drag) {
+                // AI Retouch gathers strokes; sending is the user's.
                 if generating {
-                    self.request_ai_remove(self.brush_op(points));
+                    self.add_ai_stroke(points);
                 } else {
                     self.add_brush(points);
                 }
@@ -272,11 +270,8 @@ impl Editor {
         {
             match hit(pos) {
                 Some(Hit::Dest(i) | Hit::Source(i)) => self.view.retouch.select(Some(i)),
-                None if generating => {
-                    if !self.ai_paint_blocked() {
-                        self.request_ai_remove(self.spot_op(to_image(pos), [0.; 2]));
-                    }
-                }
+                // A click in AI Retouch is a stroke of one dab.
+                None if generating => self.add_ai_stroke(vec![to_image(pos)]),
                 None => self.add_spot(to_image(pos), [f32::NAN; 2]),
             }
         }
@@ -334,6 +329,20 @@ impl Editor {
             let (answer, _) = consent_card(ui, to_screen(consent.op.pin()), visible, &question);
             if let Some(allow) = answer {
                 self.answer_ai_remove_consent(allow);
+            }
+        }
+        // The area painted and not sent yet, at the brush's size now; Enter
+        // sends it, unless a text field has the keyboard.
+        if generating && !self.ai_remove.draft.is_empty() {
+            let size = self.view.retouch.size;
+            for stroke in &self.ai_remove.draft {
+                let screen: Vec<Pos2> = stroke.iter().map(|p| to_screen(*p)).collect();
+                let r = radius_on_screen(stroke[0], size);
+                overlay::stroke_outline(&painter, &screen, r.x.max(r.y), 1.5);
+            }
+            let typing = ui.memory(|m| m.focused().is_some());
+            if !typing && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                self.send_ai_draft();
             }
         }
         // The area a request failed for, with why and what to do: the photo
@@ -811,6 +820,9 @@ fn covers(
     match &op.shape {
         RetouchShape::Spot { center, .. } => near(*center),
         RetouchShape::Brush { points, .. } => points.iter().any(|p| near(*p)),
+        RetouchShape::Strokes { strokes, .. } => {
+            strokes.iter().flat_map(|s| s.iter()).any(|p| near(*p))
+        }
     }
 }
 fn draw_shape(
@@ -836,9 +848,15 @@ fn draw_shape(
             let r = radius(points[0], op.radius());
             overlay::stroke_outline(painter, &screen, r.x.max(r.y), width);
         }
+        RetouchShape::Strokes { strokes, .. } => {
+            for stroke in strokes.iter() {
+                let screen: Vec<Pos2> = stroke.iter().map(|p| place(*p)).collect();
+                let r = radius(stroke[0], op.radius());
+                overlay::stroke_outline(painter, &screen, r.x.max(r.y), width);
+            }
+        }
     }
 }
-/// A row with a right-aligned label in the sliders' label column.
 /// [`control_label`] for a box taller than a line: the label beside its
 /// first line, not its middle.
 pub(in crate::app) fn control_label_top(
@@ -860,6 +878,7 @@ pub(in crate::app) fn control_label_top(
         add(ui);
     });
 }
+/// A row with a right-aligned label in the sliders' label column.
 pub(in crate::app) fn control_label(
     ui: &mut egui::Ui,
     label: &str,

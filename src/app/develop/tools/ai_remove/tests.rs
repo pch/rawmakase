@@ -449,6 +449,49 @@ fn ai_retouch_is_its_own_tool_with_its_own_spots() {
     assert_eq!(e.view.tool(), Tool::None);
 }
 
+/// Painting only marks the area: strokes and clicks gather until the user
+/// sends them, as one request for one spot that isn't joined across its
+/// strokes. A send that can't go keeps what was painted.
+#[test]
+fn painting_gathers_an_area_that_goes_only_when_sent() {
+    use crate::app::develop::state::Tool;
+    let mut f = fixture(0.26);
+    let e = &mut f.editor;
+    e.view.set_tool(Tool::AiRetouch);
+    let describe = offer(e, "describe");
+    e.choose_ai_generator(&describe);
+    e.add_ai_stroke(vec![[0.3, 0.4], [0.35, 0.4]]);
+    e.add_ai_stroke(vec![[0.7, 0.6]]);
+    assert_eq!(e.ai_remove.draft.len(), 2);
+    assert!(e.extensions.retouches_sent().is_empty() && settled(e));
+    // Describe needs text: the send is refused and the area stays.
+    e.send_ai_draft();
+    assert!(e.extensions.retouches_sent().is_empty());
+    assert_eq!(e.ai_remove.draft.len(), 2);
+    assert!(e.ai_send_blocked().is_some());
+    *e.ai_prompt_mut(&describe) = "a wooden bench".into();
+    assert_eq!(e.ai_send_blocked(), None);
+    e.send_ai_draft();
+    assert!(e.ai_remove.draft.is_empty());
+    pump(e, "the replacement", settled);
+    let ops = generated(e);
+    assert_eq!(ops.len(), 1, "{}", e.messages.line());
+    let RetouchShape::Strokes { strokes, radius } = &ops[0].shape else {
+        panic!("one spot of two strokes: {:?}", ops[0].shape);
+    };
+    assert_eq!(strokes.len(), 2);
+    assert_eq!(*radius, e.view.retouch.size);
+    // Nothing painted, nothing to send; Clear forgets what was painted.
+    assert!(e.ai_send_blocked().is_some());
+    e.add_ai_stroke(vec![[0.5, 0.5]]);
+    e.clear_ai_draft();
+    assert!(e.ai_remove.draft.is_empty());
+    // Another photo forgets it too.
+    e.add_ai_stroke(vec![[0.5, 0.5]]);
+    e.ai_remove.clear_document();
+    assert!(e.ai_remove.draft.is_empty());
+}
+
 /// Painting again while the upload question is open keeps the area asked
 /// about: the question stays with what was painted first, never replaced.
 #[test]
@@ -651,7 +694,12 @@ fn failures_say_why_and_a_secret_setting_sets_the_extension_up() {
     // Until its settings change, painting for that extension again sends
     // nothing: it says to set it up, dismissed or not.
     let sent = e.extensions.retouches_sent().len();
-    assert!(e.ai_paint_blocked());
+    e.view.set_tool(crate::app::develop::state::Tool::AiRetouch);
+    e.choose_ai_generator(&offer(e, "setup"));
+    e.add_ai_stroke(vec![[0.5, 0.5]]);
+    let why = e.ai_send_blocked().unwrap();
+    assert!(why.starts_with("Set up"), "{why}");
+    e.clear_ai_draft();
     remove_with(e, "setup");
     assert!(settled(e));
     assert_eq!(e.extensions.retouches_sent().len(), sent);

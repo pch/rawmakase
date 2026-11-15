@@ -87,6 +87,9 @@ pub(crate) struct Placed {
     pub(crate) opacity: f32,
     /// Path of dab centres (one point for a spot) and radius, in decoded pixels.
     pub(crate) points: Vec<[f32; 2]>,
+    /// Where each stroke after the first starts in `points`
+    /// ([`RetouchShape::dabs`]): none for a spot or a brushed path.
+    pub(crate) starts: Vec<usize>,
     pub(crate) radius: f32,
     pub(crate) feather: f32,
     pub(crate) profile: FeatherProfile,
@@ -110,12 +113,8 @@ impl Placed {
         self
     }
     pub(crate) fn new(op: &RetouchOp, frame: &ImageFrame, profile: FeatherProfile) -> Self {
-        let points: Vec<[f32; 2]> = match &op.shape {
-            RetouchShape::Spot { center, .. } => vec![frame.to_source(*center)],
-            RetouchShape::Brush { points, .. } => {
-                points.iter().map(|p| frame.to_source(*p)).collect()
-            }
-        };
+        let (dabs, starts) = op.shape.dabs();
+        let points: Vec<[f32; 2]> = dabs.iter().map(|p| frame.to_source(*p)).collect();
         let anchor = op.pin();
         let a = frame.to_source(anchor);
         let b = frame.to_source([anchor[0] + op.offset[0], anchor[1] + op.offset[1]]);
@@ -123,6 +122,7 @@ impl Placed {
             mode: op.mode,
             opacity: op.opacity,
             points,
+            starts,
             radius: (op.radius() * frame.long_edge()).max(0.5),
             feather: op.feather,
             profile,
@@ -237,6 +237,7 @@ fn measured(d: f32, feather: f32) -> f32 {
 /// it, over a feathered edge that `profile` shapes.
 pub(crate) fn coverage(
     points: &[[f32; 2]],
+    starts: &[usize],
     radius: f32,
     feather: f32,
     profile: FeatherProfile,
@@ -246,12 +247,7 @@ pub(crate) fn coverage(
     // Squared distance to the path, updated segment by segment within its bounds.
     let mut dist = vec![f32::INFINITY; w * h];
     let reach = radius + 1.;
-    let segments: Vec<([f32; 2], [f32; 2])> = if points.len() == 1 {
-        vec![(points[0], points[0])]
-    } else {
-        points.windows(2).map(|p| (p[0], p[1])).collect()
-    };
-    for (a, b) in segments {
+    for (a, b) in crate::model::retouch::segments(points, starts) {
         let x0 = ((a[0].min(b[0]) - reach).floor() as i32).max(rect[0]);
         let x1 = ((a[0].max(b[0]) + reach).ceil() as i32 + 1).min(rect[2]);
         let y0 = ((a[1].min(b[1]) - reach).floor() as i32).max(rect[1]);
@@ -320,7 +316,9 @@ pub(crate) fn apply_blend(im: &mut CameraImage, op: &Placed, blend: GenerateBlen
         im.height,
     );
     let (w, h) = ((grid[2] - grid[0]) as usize, (grid[3] - grid[1]) as usize);
-    let alpha = coverage(&op.points, op.radius, op.feather, op.profile, grid);
+    let alpha = coverage(
+        &op.points, &op.starts, op.radius, op.feather, op.profile, grid,
+    );
     // Where the shape reaches the photo's edge there is no ring; the solver treats the
     // edge as mirrored.
     let at = |x: usize, y: usize| (grid[1] as usize + y) * im.width as usize + grid[0] as usize + x;

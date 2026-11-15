@@ -88,11 +88,12 @@ struct Shape {
     ring: Vec<(i32, i32)>,
 }
 impl Shape {
-    fn new(points: &[[f32; 2]], radius: f32, patch: &Patch) -> Self {
+    fn new(points: &[[f32; 2]], starts: &[usize], radius: f32, patch: &Patch) -> Self {
         let rect = [0, 0, patch.width as i32, patch.height as i32];
-        let core = heal::coverage(points, radius, 0., FeatherProfile::Smoothstep, rect);
+        let core = heal::coverage(points, starts, radius, 0., FeatherProfile::Smoothstep, rect);
         let outer = heal::coverage(
             points,
+            starts,
             radius * 1.4 + 1.,
             0.,
             FeatherProfile::Smoothstep,
@@ -145,7 +146,7 @@ pub fn find_source(
     let patch = Patch::new(image, rect, scale);
     let points: Vec<[f32; 2]> = placed.points.iter().map(|p| patch.to_patch(*p)).collect();
     let radius = placed.radius / scale;
-    let shape = Shape::new(&points, radius, &patch);
+    let shape = Shape::new(&points, &placed.starts, radius, &patch);
     if shape.inside.is_empty() || shape.ring.is_empty() {
         return None;
     }
@@ -155,9 +156,16 @@ pub fn find_source(
         for other in others.iter().filter(|o| *o != op) {
             let p = heal::Placed::new(other, &frame, FeatherProfile::Smoothstep);
             let pts: Vec<[f32; 2]> = p.points.iter().map(|q| patch.to_patch(*q)).collect();
-            for (i, c) in heal::coverage(&pts, p.radius / scale, 0., FeatherProfile::Smoothstep, r)
-                .iter()
-                .enumerate()
+            for (i, c) in heal::coverage(
+                &pts,
+                &p.starts,
+                p.radius / scale,
+                0.,
+                FeatherProfile::Smoothstep,
+                r,
+            )
+            .iter()
+            .enumerate()
             {
                 o[i] |= *c > 0.;
             }

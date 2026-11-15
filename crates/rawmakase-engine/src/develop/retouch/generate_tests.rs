@@ -115,6 +115,7 @@ fn errors(out: &CameraImage, truth: &CameraImage, op: &RetouchOp) -> (f32, f32) 
     ];
     let alpha = heal::coverage(
         &placed.points,
+        &placed.starts,
         placed.radius,
         placed.feather,
         placed.profile,

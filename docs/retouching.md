@@ -85,12 +85,16 @@ provider. Below, "AI Remove" stands for any of them.
   H, A) and Visualize Spots.
 - **Text.** A generator that takes text (its `prompt`) has a field under Mode: AI
   Remove's is optional ("remove the dogs, keep the people"), AI Replace's is needed
-  ("a wooden bench"). With a needed field empty, painting does nothing and says
-  so. What was written is sent with the request, trimmed, kept with the spot and
+  ("a wooden bench"). With a needed field empty, the area can't be sent and the
+  drawer says so. What was written is sent with the request, trimmed, kept with the spot and
   shown when it is selected; each generator keeps its own.
-- **Click** places a spot, a **drag** paints an area; on release the area is sent,
-  and a card on the photo names the generator (AI Replace…) with Cancel. One
-  request runs at a time.
+- **Click** adds a dab, a **drag** a stroke: they gather into one area, drawn on
+  the photo, and nothing is sent while painting. The drawer's button named after
+  the mode (or **Enter**) sends the area as one spot, with the brush's size,
+  feather and opacity then; **Clear** (or **Esc**) forgets it, as does another
+  photo. The spot's strokes aren't joined across the gaps between them. While a
+  request runs, a card on the photo names the mode (AI Replace…) with Cancel.
+  One request runs at a time.
 - The first time, RAWmakase asks once per extension whether it may send the painted
   area and its surroundings to the service set up in it; the answer is kept in
   `extensions.json`. The question is a card on the photo beside the painted area,

@@ -302,20 +302,14 @@ fn painted(
             y0 * aspect[1] + (y as f32 + 0.5) * cell[1],
         ]
     };
-    let points: Vec<[f32; 2]> = match shape {
-        RetouchShape::Spot { center, .. } => vec![*center],
-        RetouchShape::Brush { points, .. } => points.to_vec(),
-    }
-    .into_iter()
-    .map(|p| [p[0] * aspect[0], p[1] * aspect[1]])
-    .collect();
+    let (dabs, starts) = shape.dabs();
+    let points: Vec<[f32; 2]> = dabs
+        .into_iter()
+        .map(|p| [p[0] * aspect[0], p[1] * aspect[1]])
+        .collect();
     let reach = radius + 1.5 * cell[0].max(cell[1]);
     let mut out = vec![false; w * h];
-    let segments: Vec<([f32; 2], [f32; 2])> = if points.len() == 1 {
-        vec![(points[0], points[0])]
-    } else {
-        points.windows(2).map(|p| (p[0], p[1])).collect()
-    };
+    let segments = crate::model::retouch::segments(&points, &starts);
     let index = |v: f32, origin: f32, size: f32, n: usize| {
         (((v - origin) / size).floor() as i64).clamp(0, n as i64) as usize
     };
@@ -462,9 +456,12 @@ fn grain(
         im.height,
     );
     // The band: within `BAND` pixels of the shape's edge, outside its coverage.
-    let ring = heal::coverage(&op.points, op.radius, op.feather, op.profile, band);
+    let ring = heal::coverage(
+        &op.points, &op.starts, op.radius, op.feather, op.profile, band,
+    );
     let reach = heal::coverage(
         &op.points,
+        &op.starts,
         op.radius + BAND as f32,
         0.,
         heal::FeatherProfile::Smoothstep,
