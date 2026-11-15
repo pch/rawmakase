@@ -1486,3 +1486,39 @@ fn undo_and_redo_take_back_and_repaint_the_area_s_strokes() {
     e.undo();
     assert_eq!(e.ai_remove.draft.len(), 2);
 }
+
+/// Undo and Redo are offered (the toolbar's buttons, the menu's items)
+/// whenever they would act on the area's strokes, History empty or not; an
+/// Undo History refuses keeps the strokes Redo can bring; and a send ends
+/// what Redo can bring, so the area sent comes back whole if nothing is made.
+#[test]
+fn stroke_undo_is_offered_and_never_loses_an_area() {
+    use crate::app::develop::state::Tool;
+    let mut f = fixture(0.46);
+    let e = &mut f.editor;
+    e.module = crate::app::Module::Develop;
+    e.view.set_tool(Tool::AiRetouch);
+    assert!(!e.can_undo() && !e.can_redo());
+    let (a, b) = (vec![[0.3, 0.3]], vec![[0.6, 0.6]]);
+    e.add_ai_stroke(a.clone());
+    assert!(e.can_undo() && !e.can_redo());
+    e.undo();
+    assert!(!e.can_undo() && e.can_redo());
+    // History has nothing: this Undo changes nothing, and A can come back.
+    e.undo();
+    e.redo();
+    assert_eq!(e.ai_remove.draft, std::slice::from_ref(&a));
+    // A and B painted, B taken back, A sent, then the upload question
+    // cancelled: A comes back, and Redo has nothing of B left to repaint
+    // over it.
+    e.add_ai_stroke(b);
+    e.undo();
+    let fill = offer(e, "fill");
+    e.choose_ai_generator(&fill);
+    e.send_ai_draft();
+    assert!(e.ai_remove.consent.is_some());
+    assert!(!e.can_redo());
+    e.redo();
+    e.answer_ai_remove_consent(false);
+    assert_eq!(e.ai_remove.draft, [a]);
+}

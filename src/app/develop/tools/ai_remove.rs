@@ -347,6 +347,14 @@ impl Editor {
         self.ai_remove.draft.push(stroke);
         true
     }
+    /// Whether Undo would take back a stroke of the area painted.
+    pub(in crate::app) fn can_undo_ai_stroke(&self) -> bool {
+        self.ai_drafting() && !self.ai_remove.draft.is_empty()
+    }
+    /// Whether Redo would paint a stroke Undo took back.
+    pub(in crate::app) fn can_redo_ai_stroke(&self) -> bool {
+        self.ai_drafting() && !self.ai_remove.undone_strokes.is_empty()
+    }
     /// Undo went past the area into History: what it took back of the area
     /// can't be redone in History's place.
     pub(in crate::app) fn forget_undone_ai_strokes(&mut self) {
@@ -427,6 +435,9 @@ impl Editor {
         // refusal (a prompt missing, a key) or a failure leaves it to fix.
         if self.ai_remove.pending.is_some() || self.ai_remove.consent.is_some() {
             self.ai_remove.sent_draft = std::mem::take(&mut self.ai_remove.draft);
+            // What Undo took back before the send stays so: repainting it
+            // over a sent area would keep that area from coming back.
+            self.ai_remove.undone_strokes.clear();
         }
     }
     /// Paints the area sent again, when nothing was made of it: unless
