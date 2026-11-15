@@ -56,6 +56,8 @@ pub struct Recipe {
     pub preset_settings: std::collections::BTreeMap<String, String>,
     /// A saved Embedded profile loads with today's tone curve (`CameraProfile::loaded`),
     /// wherever a recipe is read: sessions, the catalog, History, presets and sidecars.
+    /// Written inline; a catalog stores it once and names it by id
+    /// ([`crate::model::stored_recipe`]), and both forms are read.
     #[serde(deserialize_with = "loaded_profile")]
     pub profile: Option<std::sync::Arc<crate::camera_profiles::CameraProfile>>,
     /// Lightroom's Profile Amount (`crs:Look` `Amount`, 0–2, 1 = 100%): the strength of
@@ -1059,13 +1061,43 @@ impl Recipe {
 fn is_zero(v: &f32) -> bool {
     *v == 0.
 }
-/// [`Recipe::profile`] as a saved edit stores it, with a stored Embedded profile given
-/// today's tone curve.
+/// [`Recipe::profile`] as a saved edit stores it: inline, with a stored Embedded
+/// profile given today's tone curve, or as a catalog's reference to its stored copy
+/// (a string, resolved by [`crate::storage::recipe_assets`]), or null. The branch is
+/// on the JSON type, and an inline profile is read as before, strictly.
 fn loaded_profile<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<std::sync::Arc<crate::camera_profiles::CameraProfile>>, D::Error> {
-    let profile = Option::<crate::camera_profiles::CameraProfile>::deserialize(deserializer)?;
-    Ok(profile.map(|p| std::sync::Arc::new(p.loaded())))
+    struct Profile;
+    impl<'de> serde::de::Visitor<'de> for Profile {
+        type Value = Option<std::sync::Arc<crate::camera_profiles::CameraProfile>>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a camera profile, a stored profile's id or null")
+        }
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+        fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+        fn visit_some<D: serde::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+            d.deserialize_any(self)
+        }
+        fn visit_str<E: serde::de::Error>(self, id: &str) -> Result<Self::Value, E> {
+            crate::storage::recipe_assets::profile(id)
+                .map(Some)
+                .map_err(E::custom)
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+            let p = crate::camera_profiles::CameraProfile::deserialize(
+                serde::de::value::MapAccessDeserializer::new(map),
+            )?;
+            Ok(Some(std::sync::Arc::new(
+                crate::camera_profiles::asset::normalized(p),
+            )))
+        }
+    }
+    deserializer.deserialize_any(Profile)
 }
 /// [`Recipe::preset_settings`] as read: still checked to be a map of strings, as
 /// before, then dropped.

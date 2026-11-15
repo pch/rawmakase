@@ -17,6 +17,7 @@ pub mod retouch;
 pub mod saved_format;
 pub mod saved_history;
 pub mod settings_groups;
+pub mod stored_recipe;
 pub mod transform;
 pub mod valid;
 pub mod white_balance;
