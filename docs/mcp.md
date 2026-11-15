@@ -21,8 +21,10 @@ not affected.
 ## Connect
 
 1. Start RAWmakase and open a catalog.
-2. Enable **Preferences > Automation > Scripts and AI > Allow local scripts and applications**.
-3. Open **MCP setup** to read this guide in your default browser. Configure your
+2. Open **Preferences > Extensions > MCP**, and on its **Settings** tab enable
+   **Allow local scripts and applications** (the same setting as Preferences >
+   General > Scripting). Until it is on, MCP's row says **Can't run**.
+3. Open **MCP setup** there to read this guide in your default browser. Configure your
    MCP client to launch the RAWmakase executable with argument `mcp`, using an
    absolute path as shown below. Close Preferences before asking the client to edit.
 

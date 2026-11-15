@@ -96,6 +96,8 @@ pub(in crate::app) use devices::Devices;
 pub(in crate::app) use editor::Told;
 pub(crate) use editor::{Done, PathTarget};
 pub(in crate::app) use page::Page;
+#[cfg(test)]
+pub(in crate::app) use page::Section;
 pub(crate) use sources::ReportDone;
 
 use crate::app::shell::commands::registry::{self, Dynamic};
@@ -1419,6 +1421,9 @@ impl Host {
         let e = &mut self.extensions[index];
         e.entry.enabled = enabled;
         let outcomes = if enabled {
+            // A panel that couldn't open while it was off opens again now,
+            // rather than keep saying it is off.
+            e.panels.clear();
             Vec::new()
         } else {
             Self::end(e, ErrorCode::Disabled)

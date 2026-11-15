@@ -5,8 +5,10 @@ is running. MIDI devices, the control client and the JSON protocol use named
 application operations and the same editor workflows for history, treatment,
 metadata, navigation, saving and rendering.
 
-Enable **Preferences > Automation > Allow local scripts and applications** first.
-External control is **off by default**. MIDI devices are the bundled MIDI
+Enable **Allow local scripts and applications** first, under **Preferences >
+General > Scripting** or on the MCP extension's page (Preferences > Extensions >
+MCP > Settings): it is one setting, shown in both places. External control is
+**off by default**. MIDI devices are the bundled MIDI
 extension's, set up on its page in Preferences > Extensions; they do not
 require external control to be enabled.
 

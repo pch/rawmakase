@@ -1,7 +1,9 @@
-//! Preferences > Extensions: the loaded extensions with their source, state
-//! and available update; one extension's page with what it declares, its
-//! settings and panels, its last errors and its log; and installing from
-//! GitHub, from a file or, in developer mode, from a folder.
+//! Preferences > Extensions: a table of the loaded extensions with their
+//! version, source, state and available update, each turned on or off in its
+//! row; each extension's own page, opened from its row, with its settings and
+//! panels, its commands, and what it declares, its last errors and its log;
+//! and installing from GitHub, from a file or, in developer mode, from a
+//! folder.
 //!
 //! Every change goes through the host, which writes `extensions.json` first
 //! and leaves the session as it was when that fails. Downloads, installs and
@@ -10,8 +12,12 @@
 use super::{Extension, Origin, PathTarget, panels, source_label};
 use crate::app::Editor;
 use crate::app::preferences::{gap, group, hint};
-use crate::app::ui::widgets::form_row;
-use eframe::egui;
+use crate::app::shell::automation::LocalAccess;
+use crate::app::ui::design::{Tone, button, inset, space, text};
+use crate::app::ui::icons::{self, Icon};
+use crate::app::ui::theme;
+use crate::app::ui::widgets::{form_row, menu_item, modal_frame, primary_button};
+use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use rawmakase_extensions::github;
 use rawmakase_extensions::protocol::manifest::{Files, SettingControl};
 use serde_json::Value;
@@ -26,11 +32,22 @@ const WATCH: Duration = Duration::from_secs(1);
 const NOT_REVIEWED: &str = "RAWmakase hasn't reviewed this extension. It runs with your \
      permissions.";
 
+/// The bundled MCP extension: its clients reach the editor through local
+/// access, which its page shows as its settings.
+const MCP: &str = "rawmakase.mcp";
+
+/// A row of the extensions table, in points.
+const ROW: f32 = 48.;
+/// The Version and Status columns' width.
+const COLUMN: f32 = 86.;
+
 /// What the page keeps between frames.
 #[derive(Default)]
 pub(in crate::app) struct Page {
-    /// The extension whose page is shown.
-    selected: Option<String>,
+    /// The extension whose own page shows in place of the list.
+    open: Option<String>,
+    /// The part of that page shown.
+    section: Section,
     /// Background work runs; its buttons wait.
     pub busy: bool,
     /// A package downloaded from GitHub or chosen as a file, inspected and
@@ -40,8 +57,14 @@ pub(in crate::app) struct Page {
     pub updates: Vec<github::Update>,
     /// The repository typed for Install from GitHub….
     repository: String,
-    /// Install from GitHub… is open.
+    /// Install from GitHub…'s sheet is open.
     github: bool,
+    /// Uninstall was clicked for this extension, waiting for the
+    /// confirmation.
+    uninstall: Option<String>,
+    /// What couldn't be loaded when the page opened, such as an installed
+    /// extension whose manifest this version can't read.
+    problems: Vec<String>,
     /// Load from Folder… and the folder watch are offered.
     developer: bool,
     watched: Option<Instant>,
@@ -50,6 +73,43 @@ pub(in crate::app) struct Page {
     /// Number and Angle settings being dragged, by extension and setting
     /// ([`number_control`]).
     numbers: HashMap<(String, String), f64>,
+}
+
+/// The parts of an extension's own page, each a tab. A part the extension
+/// declares nothing for has no tab.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(in crate::app) enum Section {
+    /// Its `[[setting]]`s, its Preferences panels and its photo sources.
+    #[default]
+    Settings,
+    /// Its commands, each with Run.
+    Commands,
+    /// What it is and reaches, its last errors, its log and Uninstall.
+    About,
+}
+
+impl Section {
+    fn title(self) -> &'static str {
+        match self {
+            Section::Settings => "Settings",
+            Section::Commands => "Commands",
+            Section::About => "About",
+        }
+    }
+    /// The parts `m` has something to show in, in tab order. About always
+    /// has.
+    fn of(m: &rawmakase_extensions::Manifest) -> Vec<Section> {
+        let mut out = Vec::new();
+        let app_settings = m.extension.id == MCP;
+        if app_settings || !m.settings.is_empty() || !m.panels.is_empty() || !m.sources.is_empty() {
+            out.push(Section::Settings);
+        }
+        if !m.commands.is_empty() {
+            out.push(Section::Commands);
+        }
+        out.push(Section::About);
+        out
+    }
 }
 
 /// A package inspected for the user to review before it is installed: its
@@ -74,17 +134,76 @@ impl Offered {
 }
 
 impl Page {
-    /// Shows extension `id`'s page the next time the list is drawn.
+    /// Shows extension `id`'s own page, at its first part, the next time the
+    /// page is drawn.
     pub(in crate::app) fn select(&mut self, id: &str) {
-        self.selected = Some(id.to_string());
+        self.open = Some(id.to_string());
+        self.section = Section::default();
+    }
+    /// Shows `section` of the open extension's page.
+    #[cfg(test)]
+    pub(in crate::app) fn show(&mut self, section: Section) {
+        self.section = section;
+    }
+    /// What couldn't be loaded when the page opened.
+    #[cfg(test)]
+    pub(in crate::app) fn problems(&self) -> &[String] {
+        &self.problems
+    }
+    /// Back from an extension's page to the list.
+    pub(in crate::app) fn back(&mut self) {
+        self.open = None;
+    }
+    /// The extension whose own page shows, if one does.
+    pub(in crate::app) fn opened(&self) -> Option<&str> {
+        self.open.as_deref()
     }
 }
 
+/// What a row of the extensions table shows.
+struct Row {
+    id: String,
+    name: String,
+    description: String,
+    version: String,
+    /// The version Check for Updates found.
+    update: Option<String>,
+    /// Where it came from, or that it isn't reviewed.
+    badge: (&'static str, bool),
+    status: Status,
+    /// What the status means for it, shown on hover.
+    why: String,
+    enabled: bool,
+}
+
+/// What a row was clicked for.
+enum RowClick {
+    Open,
+    Switch,
+}
+
 impl Editor {
+    /// Extension `id`'s status as its row says it.
+    #[cfg(test)]
+    pub(in crate::app) fn extension_status(&self, id: &str) -> &'static str {
+        let e = self.extensions.get(id).expect("loaded");
+        Status::of(e, self.local_access()).text()
+    }
+
     /// The page was opened: `extensions.json` is read again, so what the
     /// command line changed meanwhile shows.
     pub(in crate::app) fn extensions_page_opened(&mut self) {
-        self.reload_extensions();
+        self.extensions.reload();
+        self.sync_extension_commands();
+        // Said on the page, in full, rather than cut short in the status line.
+        self.extension_page.problems = self.extensions.take_errors();
+    }
+
+    /// The name of the extension whose own page shows, for the bar over the
+    /// page: "Preferences / Extensions / MIDI".
+    pub(in crate::app) fn extension_crumb(&self) -> Option<&str> {
+        let id = self.extension_page.opened()?;
+        self.extensions.get(id).map(Extension::name)
     }
 
     pub(in crate::app) fn extensions_page(&mut self, ui: &mut egui::Ui) {
@@ -105,123 +224,230 @@ impl Editor {
             }
             ui.ctx().request_repaint_after(WATCH);
         }
-        self.extensions_install(ui);
         if let Some(offer) = self.extension_page.offer.take() {
-            self.extension_offer(ui, offer);
+            self.extension_offer(ui.ctx(), offer);
+        } else if self.extension_page.github {
+            self.github_sheet(ui.ctx());
+        } else if let Some(id) = self.extension_page.uninstall.clone() {
+            self.uninstall_confirmation(ui.ctx(), &id);
         }
-        group(ui, "Extensions");
-        if self.extensions.extensions().is_empty() {
+        // An extension uninstalled, or gone from its folder, leaves the list.
+        let open = self
+            .extension_page
+            .open
+            .clone()
+            .filter(|id| self.extensions.get(id).is_some());
+        self.extension_page.open.clone_from(&open);
+        match open {
+            Some(id) => self.extension_detail(ui, &id),
+            None => self.extension_list(ui),
+        }
+    }
+
+    /// The list: Check for Updates and Add Extension over a table of the
+    /// extensions, and developer mode under it.
+    fn extension_list(&mut self, ui: &mut egui::Ui) {
+        let busy = self.extension_page.busy || self.activity.is_busy();
+        let count = self.extensions.extensions().len();
+        flush(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    self.add_extension_menu(ui, busy);
+                    if ui
+                        .add_enabled(!busy, egui::Button::new("Check for Updates"))
+                        .clicked()
+                    {
+                        self.check_extension_updates();
+                    }
+                    if self.extension_page.busy {
+                        ui.spinner();
+                    }
+                });
+            });
+        });
+        ui.add_space(space::S);
+        group(ui, "Installed");
+        if count == 0 {
             hint(
                 ui,
                 "No extensions yet. Install one from GitHub or from a .rmext file.",
             );
-        }
-        let mut chosen = None;
-        for e in self.extensions.extensions() {
-            let selected = self.extension_page.selected.as_deref() == Some(e.id());
-            ui.horizontal(|ui| {
-                if ui.selectable_label(selected, e.name()).clicked() {
-                    chosen = Some(e.id().to_string());
+        } else {
+            let access = self.local_access();
+            let rows: Vec<Row> = self
+                .extensions
+                .extensions()
+                .iter()
+                .map(|e| Row {
+                    id: e.id().to_string(),
+                    name: e.name().to_string(),
+                    description: e.manifest.extension.description.clone().unwrap_or_default(),
+                    version: e.manifest.extension.version.to_string(),
+                    update: self
+                        .extension_page
+                        .updates
+                        .iter()
+                        .find(|u| u.id == e.id())
+                        .map(|u| u.offer.manifest.extension.version.to_string()),
+                    badge: match e.origin {
+                        Origin::Installed => ("Not reviewed", true),
+                        _ => (source_label(e), false),
+                    },
+                    status: Status::of(e, access),
+                    why: Status::of(e, access).explain(e, access),
+                    enabled: e.enabled(),
+                })
+                .collect();
+            let mut clicked = None;
+            ui.scope(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.;
+                table_header(ui);
+                let last = rows.len() - 1;
+                for (i, row) in rows.iter().enumerate() {
+                    if let Some(click) = table_row(ui, row, i == last) {
+                        clicked = Some((row, click));
+                    }
                 }
-                let reviewed = if e.origin == Origin::Installed {
-                    " · Not reviewed"
-                } else {
-                    ""
-                };
+            });
+            match clicked {
+                Some((row, RowClick::Open)) => self.extension_page.select(&row.id),
+                Some((row, RowClick::Switch)) => {
+                    self.set_extension_enabled(&row.id, !row.enabled);
+                }
+                None => {}
+            }
+        }
+        gap(ui);
+        if !self.extension_page.problems.is_empty() {
+            group(ui, "Couldn't load");
+            for problem in &self.extension_page.problems {
+                hint(ui, &home_as_tilde(problem));
+            }
+            gap(ui);
+        }
+        ui.horizontal(|ui| {
+            let developer = self.extension_page.developer;
+            let toggled = crate::app::ui::widgets::switch(ui, developer, "Developer mode")
+                .clicked()
+                | ui.add(egui::Label::new("Developer mode").sense(Sense::click()))
+                    .clicked();
+            if toggled {
+                self.extension_page.developer = !developer;
+            }
+            hint(ui, "Load extensions from folders, reloaded as they change");
+        });
+    }
+
+    /// Add Extension: from GitHub, from a file and, in developer mode, from
+    /// a folder.
+    fn add_extension_menu(&mut self, ui: &mut egui::Ui, busy: bool) {
+        let palette = theme::palette(ui.ctx());
+        let add =
+            egui::Button::new(egui::RichText::new("Add Extension").color(palette.on_accent()))
+                .fill(palette.accent());
+        ui.add_enabled_ui(!busy, |ui| {
+            egui::containers::menu::MenuButton::from_button(add).ui(ui, |ui| {
+                crate::app::ui::widgets::menu_width(ui, 190.);
+                if menu_item(ui, "From GitHub…", "", true, false) {
+                    self.extension_page.github = true;
+                    ui.close();
+                }
+                if menu_item(ui, "From File…", "", true, false) {
+                    self.extension_dialog(PathTarget::Package);
+                    ui.close();
+                }
+                if self.extension_page.developer && menu_item(ui, "From Folder…", "", true, false)
+                {
+                    self.extension_dialog(PathTarget::Folder);
+                    ui.close();
+                }
+            });
+        });
+    }
+
+    /// Install from GitHub…: the repository to look in.
+    fn github_sheet(&mut self, ctx: &egui::Context) {
+        let palette = theme::palette(ctx);
+        let busy = self.extension_page.busy || self.activity.is_busy();
+        let (mut find, mut cancel) = (false, false);
+        let response = egui::Modal::new(egui::Id::new("extension-github"))
+            .frame(
+                modal_frame(&palette)
+                    .inner_margin(crate::app::ui::design::margin_same(inset::DIALOG)),
+            )
+            .show(ctx, |ui| {
+                ui.set_width(440.);
+                ui.label(
+                    egui::RichText::new("Install from GitHub")
+                        .size(text::TITLE)
+                        .color(palette.tone(Tone::STRONG)),
+                );
+                ui.add_space(space::S);
                 hint(
                     ui,
-                    &format!(
-                        "{} · {}{reviewed} · {}",
-                        e.manifest.extension.version,
-                        source_label(e),
-                        state(e)
-                    ),
+                    "The repository's latest release is downloaded and shown to you before \
+                     anything is installed.",
                 );
-                if self.extension_page.updates.iter().any(|u| u.id == e.id()) {
-                    ui.label(
-                        egui::RichText::new("Update")
-                            .color(crate::app::ui::theme::palette(ui.ctx()).accent()),
-                    );
+                ui.add_space(space::L);
+                let field = ui.add(
+                    egui::TextEdit::singleline(&mut self.extension_page.repository)
+                        .hint_text("https://github.com/owner/repository")
+                        .desired_width(f32::INFINITY),
+                );
+                if !field.has_focus() && self.extension_page.repository.is_empty() {
+                    field.request_focus();
                 }
+                let typed = !self.extension_page.repository.trim().is_empty();
+                find = typed
+                    && !busy
+                    && field.lost_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                ui.add_space(space::XXL);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().button_padding = button::DIALOG;
+                    cancel = ui.button("Cancel").clicked();
+                    ui.add_enabled_ui(typed && !busy, |ui| {
+                        find |= primary_button(ui, "Find").clicked();
+                    });
+                });
             });
-        }
-        if let Some(id) = chosen {
-            self.extension_page.selected = Some(id);
-        }
-        let selected = self
-            .extension_page
-            .selected
-            .clone()
-            .filter(|id| self.extensions.get(id).is_some())
-            .or_else(|| {
-                self.extensions
-                    .extensions()
-                    .first()
-                    .map(|e| e.id().to_string())
-            });
-        self.extension_page.selected.clone_from(&selected);
-        if let Some(id) = selected {
-            gap(ui);
-            self.extension_detail(ui, &id);
+        if find {
+            self.extension_page.github = false;
+            self.inspect_repository();
+        } else if cancel || response.should_close() {
+            self.extension_page.github = false;
         }
     }
 
-    /// Install from GitHub…, Install from File…, Check for Updates and, in
-    /// developer mode, Load from Folder….
-    fn extensions_install(&mut self, ui: &mut egui::Ui) {
-        group(ui, "Add extensions");
-        let busy = self.extension_page.busy || self.activity.is_busy();
-        ui.horizontal_wrapped(|ui| {
-            if ui
-                .add_enabled(!busy, egui::Button::new("Install from GitHub…"))
-                .clicked()
-            {
-                self.extension_page.github = !self.extension_page.github;
-            }
-            if ui
-                .add_enabled(!busy, egui::Button::new("Install from File…"))
-                .clicked()
-            {
-                self.extension_dialog(PathTarget::Package);
-            }
-            if ui
-                .add_enabled(!busy, egui::Button::new("Check for Updates"))
-                .clicked()
-            {
-                self.check_extension_updates();
-            }
-            if self.extension_page.developer
-                && ui
-                    .add_enabled(!busy, egui::Button::new("Load from Folder…"))
-                    .clicked()
-            {
-                self.extension_dialog(PathTarget::Folder);
-            }
-        });
-        if self.extension_page.github {
-            form_row(ui, "Repository", |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.extension_page.repository)
-                        .hint_text("https://github.com/owner/repository")
-                        .desired_width(300.),
-                );
-                if ui.add_enabled(!busy, egui::Button::new("Find")).clicked() {
-                    self.inspect_repository();
+    /// Uninstall…'s question; the extension is uninstalled only once it is
+    /// answered with Uninstall.
+    fn uninstall_confirmation(&mut self, ctx: &egui::Context, id: &str) {
+        let Some(e) = self.extensions.get(id) else {
+            self.extension_page.uninstall = None;
+            return;
+        };
+        let what = match e.origin {
+            Origin::Developer => "RAWmakase forgets its folder, which stays where it is.",
+            _ => "Its program and its settings are removed. Photos it added stay in the catalog.",
+        };
+        let title = format!("Uninstall {}?", e.name());
+        let lines = [what.to_string()];
+        match crate::app::ui::widgets::destructive_choice(
+            ctx,
+            "uninstall-extension",
+            &title,
+            &lines,
+            "Cancel",
+            &["Uninstall"],
+        ) {
+            None => {}
+            Some(choice) => {
+                self.extension_page.uninstall = None;
+                if choice.is_some() {
+                    self.uninstall_extension(id);
                 }
-            });
+            }
         }
-        form_row(ui, "Developer mode", |ui| {
-            ui.checkbox(
-                &mut self.extension_page.developer,
-                "Load extensions from folders, reloaded as they change",
-            );
-        });
-        if busy && self.extension_page.busy {
-            form_row(ui, "", |ui| {
-                ui.spinner();
-            });
-        }
-        gap(ui);
     }
 
     fn inspect_repository(&mut self) {
@@ -261,41 +487,63 @@ impl Editor {
 
     /// A downloaded or chosen package with its manifest and the trust
     /// warning, to install or drop.
-    fn extension_offer(&mut self, ui: &mut egui::Ui, offer: Offered) {
-        let m = offer.manifest();
-        group(
-            ui,
-            &format!("Install {} {}?", m.extension.name, m.extension.version),
-        );
-        if let Some(description) = &m.extension.description {
-            form_row(ui, "", |ui| hint(ui, description));
-        }
-        let from = match &offer {
-            Offered::Github(offer) => format!("{} · {}", offer.repository, offer.release),
-            Offered::File { path, .. } => crate::app::ui::widgets::pretty_path(path),
-        };
-        form_row(ui, "From", |ui| {
-            ui.add(egui::Label::new(from).truncate());
-        });
-        form_row(ui, "Access", |ui| hint(ui, &access(m)));
-        form_row(ui, "Not reviewed", |ui| {
-            hint(
-                ui,
-                &format!("{NOT_REVIEWED} Install it only if you trust its author."),
-            );
-        });
+    fn extension_offer(&mut self, ctx: &egui::Context, offer: Offered) {
+        let palette = theme::palette(ctx);
         let (mut install, mut cancel) = (false, false);
-        ui.horizontal(|ui| {
-            install = ui.button("Install").clicked();
-            cancel = ui.button("Cancel").clicked();
-        });
-        gap(ui);
+        let response = egui::Modal::new(egui::Id::new("extension-offer"))
+            .frame(
+                modal_frame(&palette)
+                    .inner_margin(crate::app::ui::design::margin_same(inset::DIALOG)),
+            )
+            .show(ctx, |ui| {
+                ui.set_width(480.);
+                let m = offer.manifest();
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Install {} {}?",
+                        m.extension.name, m.extension.version
+                    ))
+                    .size(text::TITLE)
+                    .color(palette.tone(Tone::STRONG)),
+                );
+                if let Some(description) = &m.extension.description {
+                    ui.add_space(space::S);
+                    hint(ui, description);
+                }
+                ui.add_space(space::L);
+                let from = match &offer {
+                    Offered::Github(offer) => format!("{} · {}", offer.repository, offer.release),
+                    Offered::File { path, .. } => crate::app::ui::widgets::pretty_path(path),
+                };
+                egui::Grid::new("extension-offer-facts")
+                    .num_columns(2)
+                    .spacing(Vec2::new(space::L, space::M))
+                    .show(ui, |ui| {
+                        fact(ui, "From");
+                        ui.add(egui::Label::new(from).truncate());
+                        ui.end_row();
+                        fact(ui, "Access");
+                        hint(ui, &access(m));
+                        ui.end_row();
+                    });
+                ui.add_space(space::L);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{NOT_REVIEWED} Install it only if you trust its author."
+                    ))
+                    .size(text::LABEL)
+                    .color(palette.warning()),
+                );
+                ui.add_space(space::XXL);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().button_padding = button::DIALOG;
+                    cancel = ui.button("Cancel").clicked();
+                    install = primary_button(ui, "Install").clicked();
+                });
+            });
         if install {
             self.install_offered(offer);
-            return;
-        }
-        let keep = !cancel;
-        if keep {
+        } else if !(cancel || response.should_close()) {
             self.extension_page.offer = Some(offer);
         }
     }
@@ -340,7 +588,8 @@ impl Editor {
         }
     }
 
-    /// One extension's page.
+    /// One extension's own page: who it is, its switch and what it can be
+    /// asked to do now over tabs for its settings, commands and the rest.
     fn extension_detail(&mut self, ui: &mut egui::Ui, id: &str) {
         let Some(e) = self.extensions.get(id) else {
             return;
@@ -349,108 +598,152 @@ impl Editor {
         let origin = e.origin.clone();
         let enabled = e.enabled();
         let failed = e.failed;
-        let errors: Vec<String> = e.errors.iter().cloned().collect();
+        let access = self.local_access();
+        let status = Status::of(e, access);
+        let source = source_label(e);
         let problem = e.problem.clone();
-        let settings = e.settings();
-        let log = self
-            .extensions
-            .store()
-            .map(|s| s.extension_data_dir(id).join("log.txt"));
-        group(ui, &m.extension.name);
-        if let Some(description) = &m.extension.description {
-            form_row(ui, "", |ui| hint(ui, description));
-        }
-        form_row(ui, "Version", |ui| {
-            ui.label(format!("{} · {}", m.extension.version, source_label(e)));
-        });
-        if !m.extension.authors.is_empty() {
-            form_row(ui, "Author", |ui| hint(ui, &m.extension.authors.join(", ")));
-        }
-        if let Some(repository) = &m.extension.repository {
-            form_row(ui, "Repository", |ui| {
-                if ui.link(repository).clicked() {
-                    let _ = crate::platform::web::open(repository);
-                }
-            });
-        }
-        form_row(ui, "Access", |ui| hint(ui, &access(&m)));
-        if origin == Origin::Installed {
-            form_row(ui, "Not reviewed", |ui| hint(ui, NOT_REVIEWED));
-        }
-        form_row(ui, "State", |ui| hint(ui, &state(e)));
-        if let Some(problem) = &problem {
-            form_row(ui, "", |ui| hint(ui, problem));
-        }
+        let palette = theme::palette(ui.ctx());
         let update = self.extension_page.updates.iter().position(|u| u.id == id);
-        ui.horizontal_wrapped(|ui| {
-            if enabled {
-                if ui.button("Disable").clicked() {
-                    self.set_extension_enabled(id, false);
-                }
-            } else if ui.button("Enable").clicked() {
-                self.set_extension_enabled(id, true);
-            }
-            if self.extensions.command_running(id) && ui.button("Stop").clicked() {
-                let outcomes = self.extensions.cancel_commands(id);
-                self.extension_outcomes(outcomes);
-            }
-            if failed && ui.button("Retry").clicked() {
-                self.extensions.retry(id);
-            }
-            if origin != Origin::Bundled && ui.button("Uninstall").clicked() {
-                self.uninstall_extension(id);
-            }
-            if let Some(at) = update
-                && ui
-                    .add_enabled(!self.extension_page.busy, egui::Button::new("Update"))
+        let running = self.extensions.command_running(id);
+
+        let why = status.explain(e, access);
+        flush(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = space::XS;
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(&m.extension.name)
+                        .size(text::HERO)
+                        .color(palette.tone(Tone::STRONG)),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let label = if enabled { "Enabled" } else { "Disabled" };
+                    if crate::app::ui::widgets::switch(
+                        ui,
+                        enabled,
+                        &format!("Enable {}", m.extension.name),
+                    )
                     .clicked()
-            {
-                self.update_extension(at);
-            }
-        });
-        if let Some(at) = update {
-            let u = &self.extension_page.updates[at];
-            let mut text = format!("{} is available.", u.offer.manifest.extension.version);
-            if !u.more_access.is_empty() {
-                text.push_str(&format!(
-                    " It asks for more access: {}.",
-                    u.more_access.join(", ")
-                ));
-            }
-            form_row(ui, "Update", |ui| hint(ui, &text));
-        }
-        if !m.commands.is_empty() {
-            gap(ui);
-            group(ui, "Commands");
-            for c in &m.commands {
-                let full = format!("{id}/{}", c.id);
-                let unsupported = super::command_input::unsupported(c.input);
-                form_row(ui, &c.title, |ui| {
-                    let run = ui.add_enabled(
-                        enabled && !failed && unsupported.is_none(),
-                        egui::Button::new("Run"),
-                    );
-                    let run = match unsupported {
-                        Some(why) => run.on_disabled_hover_text(why),
-                        None => run,
-                    };
-                    if run.clicked() {
-                        // Preferences closes first, as its other buttons that
-                        // act on the window do: the command's change to the
-                        // open photo is then made, not refused as behind a
-                        // dialog, and seen, as is what the status line says.
-                        self.preferences.open = false;
-                        if let Err(e) = self.run_extension_command(&full, super::RunBy::Button) {
-                            self.messages.fail(format!("{}: {}", c.title, e.message));
+                    {
+                        self.set_extension_enabled(id, !enabled);
+                    }
+                    ui.label(egui::RichText::new(label).color(palette.tone(Tone::SECONDARY)));
+                    ui.add_space(space::L);
+                    if let Some(at) = update {
+                        let version = self.extension_page.updates[at]
+                            .offer
+                            .manifest
+                            .extension
+                            .version
+                            .to_string();
+                        let busy = self.extension_page.busy;
+                        if ui
+                            .add_enabled_ui(!busy, |ui| {
+                                primary_button(ui, &format!("Update to {version}"))
+                            })
+                            .inner
+                            .clicked()
+                        {
+                            self.update_extension(at);
                         }
                     }
-                    hint(ui, &full);
+                    if failed && ui.button("Retry").clicked() {
+                        self.extensions.retry(id);
+                    }
+                    if running && ui.button("Stop").clicked() {
+                        let outcomes = self.extensions.cancel_commands(id);
+                        self.extension_outcomes(outcomes);
+                    }
                 });
+            });
+            ui.add_space(space::XS);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = space::S;
+                let mut meta = format!("{} · {source}", m.extension.version);
+                if !m.extension.authors.is_empty() {
+                    meta.push_str(&format!(" · by {}", m.extension.authors.join(", ")));
+                }
+                hint(ui, &meta);
+                status_label(ui, status, &why);
+            });
+            if let Some(description) = &m.extension.description {
+                ui.label(
+                    egui::RichText::new(description)
+                        .size(text::BODY)
+                        .color(palette.tone(Tone::SECONDARY)),
+                );
             }
+            if let Some(problem) = &problem {
+                ui.label(
+                    egui::RichText::new(problem)
+                        .size(text::LABEL)
+                        .color(palette.warning()),
+                );
+            }
+            if let Some(at) = self.extension_page.updates.iter().position(|u| u.id == id) {
+                let u = &self.extension_page.updates[at];
+                if !u.more_access.is_empty() {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} asks for more access: {}.",
+                            u.offer.manifest.extension.version,
+                            u.more_access.join(", ")
+                        ))
+                        .size(text::LABEL)
+                        .color(palette.warning()),
+                    );
+                }
+            }
+
+            let sections = Section::of(&m);
+            if !sections.contains(&self.extension_page.section) {
+                self.extension_page.section = sections[0];
+            }
+            // One part alone needs no tab to choose it.
+            if sections.len() > 1 {
+                ui.add_space(space::S);
+                if let Some(section) = section_tabs(ui, &sections, self.extension_page.section) {
+                    self.extension_page.section = section;
+                }
+            }
+        });
+        ui.add_space(space::L);
+        // Read again: the switch over them may have turned it on or off in
+        // this frame, and a panel must not be opened for it as it was.
+        let Some(e) = self.extensions.get(id) else {
+            return;
+        };
+        let (enabled, failed, problem) = (e.enabled(), e.failed, e.problem.clone());
+        match self.extension_page.section {
+            Section::Settings => {
+                self.extension_settings(ui, id, &m, enabled && !failed && problem.is_none())
+            }
+            Section::Commands => self.extension_commands(ui, id, &m, enabled && !failed),
+            Section::About => self.extension_about(ui, id, &m, &origin),
+        }
+    }
+
+    /// An extension's settings, its Preferences panels while it can run, and
+    /// its photo sources.
+    fn extension_settings(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        m: &rawmakase_extensions::Manifest,
+        runs: bool,
+    ) {
+        let Some(e) = self.extensions.get(id) else {
+            return;
+        };
+        let enabled = e.enabled();
+        let settings = e.settings();
+        if id == MCP {
+            group(ui, "Local access");
+            self.local_access_rows(ui, "Ready for MCP clients");
+            self.mcp_guide_row(ui);
+            gap(ui);
         }
         if !m.settings.is_empty() {
-            gap(ui);
-            group(ui, "Settings");
+            group(ui, "Options");
             for s in &m.settings {
                 let value = settings.get(&s.id).cloned().unwrap_or(Value::Null);
                 let label = s.name.clone().unwrap_or_else(|| s.id.clone());
@@ -467,33 +760,21 @@ impl Editor {
                     self.messages.fail(why);
                 }
             }
-        }
-        if enabled && !failed && problem.is_none() {
-            for panel in &m.panels {
-                gap(ui);
-                group(ui, &panel.title);
-                self.panel_ui(ui, id, &panel.id);
-            }
-        }
-        if !m.control_adapters.is_empty() {
             gap(ui);
-            group(ui, "Control adapters");
-            for a in &m.control_adapters {
-                // An externally launched adapter's program is started by its
-                // client (an MCP client runs `rawmakase mcp`), never here.
-                let started = match a.launch {
-                    rawmakase_extensions::protocol::manifest::Launch::External => {
-                        " · started by its client"
-                    }
-                    rawmakase_extensions::protocol::manifest::Launch::App => "",
-                };
-                form_row(ui, a.name.as_deref().unwrap_or(&a.id), |ui| {
-                    hint(ui, &format!("{id}/{}{started}", a.id));
-                });
+        }
+        for panel in &m.panels {
+            group(ui, &panel.title);
+            if runs {
+                self.panel_ui(ui, id, &panel.id);
+            } else {
+                hint(
+                    ui,
+                    &format!("Shown while {} is on and runs.", m.extension.name),
+                );
             }
+            gap(ui);
         }
         if !m.sources.is_empty() {
-            gap(ui);
             group(ui, "Photo sources");
             let catalog = self
                 .library
@@ -521,18 +802,103 @@ impl Editor {
                     self.messages.fail(why);
                 }
             }
-        }
-        if !errors.is_empty() {
             gap(ui);
-            group(ui, "Last errors");
-            for error in &errors {
-                hint(ui, error);
-            }
         }
-        if let Some(log) = log {
-            gap(ui);
-            group(ui, "Log");
-            form_row(ui, "Log file", |ui| {
+    }
+
+    /// An extension's commands, each with Run.
+    fn extension_commands(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        m: &rawmakase_extensions::Manifest,
+        runs: bool,
+    ) {
+        let palette = theme::palette(ui.ctx());
+        group(ui, "Commands");
+        for c in &m.commands {
+            let full = format!("{id}/{}", c.id);
+            let unsupported = super::command_input::unsupported(c.input);
+            // A row of its own rather than a form row: a title can be
+            // longer than the form's label column.
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(&c.title).color(palette.tone(Tone::TEXT)));
+                hint(ui, &full);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let run =
+                        ui.add_enabled(runs && unsupported.is_none(), egui::Button::new("Run"));
+                    let run = match unsupported {
+                        Some(why) => run.on_disabled_hover_text(why),
+                        None => run,
+                    };
+                    if run.clicked() {
+                        // Preferences closes first, as its other buttons that
+                        // act on the window do: the command's change to the
+                        // open photo is then made, not refused as behind a
+                        // dialog, and seen, as is what the status line says.
+                        self.preferences.open = false;
+                        if let Err(e) = self.run_extension_command(&full, super::RunBy::Button) {
+                            self.messages.fail(format!("{}: {}", c.title, e.message));
+                        }
+                    }
+                });
+            });
+        }
+        gap(ui);
+    }
+
+    /// What an extension is and reaches, what it provides, its last errors,
+    /// its log, and Uninstall.
+    fn extension_about(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        m: &rawmakase_extensions::Manifest,
+        origin: &Origin,
+    ) {
+        let Some(e) = self.extensions.get(id) else {
+            return;
+        };
+        let errors: Vec<String> = e.errors.iter().cloned().collect();
+        let source = source_label(e);
+        let log = self
+            .extensions
+            .store()
+            .map(|s| s.extension_data_dir(id).join("log.txt"));
+        group(ui, "Details");
+        form_row(ui, "Version", |ui| {
+            ui.label(format!("{} · {source}", m.extension.version));
+        });
+        form_row(ui, "Identifier", |ui| hint(ui, id));
+        if !m.extension.authors.is_empty() {
+            form_row(ui, "Author", |ui| hint(ui, &m.extension.authors.join(", ")));
+        }
+        if let Some(repository) = &m.extension.repository {
+            form_row(ui, "Repository", |ui| {
+                if ui.link(repository).clicked() {
+                    let _ = crate::platform::web::open(repository);
+                }
+            });
+        }
+        form_row(ui, "Access", |ui| hint(ui, &access(m)));
+        if *origin == Origin::Installed {
+            form_row(ui, "Not reviewed", |ui| hint(ui, NOT_REVIEWED));
+        }
+        for a in &m.control_adapters {
+            // An externally launched adapter's program is started by its
+            // client (an MCP client runs `rawmakase mcp`), never here.
+            let started = match a.launch {
+                rawmakase_extensions::protocol::manifest::Launch::External => {
+                    " · started by its client"
+                }
+                rawmakase_extensions::protocol::manifest::Launch::App => "",
+            };
+            form_row(ui, a.name.as_deref().unwrap_or(&a.id), |ui| {
+                hint(ui, &format!("Control adapter {id}/{}{started}", a.id));
+            });
+        }
+        if let Some(log) = &log {
+            form_row(ui, "Log", |ui| {
                 if ui
                     .add_enabled(
                         log.exists(),
@@ -540,10 +906,25 @@ impl Editor {
                     )
                     .clicked()
                 {
-                    let _ = crate::platform::reveal::reveal(&log);
+                    let _ = crate::platform::reveal::reveal(log);
                 }
-                ui.add(egui::Label::new(crate::app::ui::widgets::pretty_path(&log)).truncate());
+                ui.add(egui::Label::new(crate::app::ui::widgets::pretty_path(log)).truncate());
             });
+        }
+        if *origin != Origin::Bundled {
+            form_row(ui, "", |ui| {
+                if ui.button("Uninstall…").clicked() {
+                    self.extension_page.uninstall = Some(id.to_string());
+                }
+            });
+        }
+        gap(ui);
+        if !errors.is_empty() {
+            group(ui, "Last errors");
+            for error in &errors {
+                hint(ui, error);
+            }
+            gap(ui);
         }
     }
 
@@ -780,19 +1161,406 @@ fn access(m: &rawmakase_extensions::Manifest) -> String {
     out.join(", ")
 }
 
-/// An extension's state, in words.
-fn state(e: &Extension) -> String {
-    if e.failed {
-        "Failed".into()
-    } else if !e.enabled() {
-        "Disabled".into()
-    } else if e.problem.is_some() {
-        "Can't run".into()
-    } else if e.running() {
-        "Running".into()
-    } else {
-        "Enabled".into()
+/// An extension's state, as its row and page say it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Status {
+    Failed,
+    Disabled,
+    /// On, and missing something to run, such as its program.
+    CantRun,
+    Running,
+    /// On, its program not running now: started when it is needed.
+    Ready,
+}
+
+impl Status {
+    /// `e`'s status, with `access` deciding whether MCP's clients can reach
+    /// the editor.
+    fn of(e: &Extension, access: LocalAccess) -> Self {
+        if e.failed {
+            Self::Failed
+        } else if !e.enabled() {
+            Self::Disabled
+        } else if e.problem.is_some() || (e.id() == MCP && access != LocalAccess::Ready) {
+            Self::CantRun
+        } else if e.running() {
+            Self::Running
+        } else {
+            Self::Ready
+        }
     }
+    fn text(self) -> &'static str {
+        match self {
+            Self::Failed => "Failed",
+            Self::Disabled => "Disabled",
+            Self::CantRun => "Can't run",
+            Self::Running => "Running",
+            Self::Ready => "Ready",
+        }
+    }
+    /// What the status means for `e`, in a sentence.
+    fn explain(self, e: &Extension, access: LocalAccess) -> String {
+        match self {
+            Self::Failed => "Its program stopped working. Retry it from its page.".to_string(),
+            Self::Disabled => "Off: its commands, panels and adapters aren't available.".into(),
+            Self::CantRun => e.problem.clone().unwrap_or_else(|| match access {
+                LocalAccess::Failed => {
+                    "Local access couldn't start, so MCP clients can't connect.".into()
+                }
+                _ => {
+                    "Local access is off, so MCP clients can't connect. Turn it on in its settings."
+                        .into()
+                }
+            }),
+            Self::Running => "On, and its program is running.".into(),
+            Self::Ready if !e.manifest.runs_in_app() => {
+                "On. Its clients start its program when they need it.".into()
+            }
+            Self::Ready => "On. Its program starts when it is needed.".into(),
+        }
+    }
+    fn color(self, palette: &theme::Palette) -> Color32 {
+        match self {
+            Self::Failed => palette.danger(),
+            Self::CantRun => palette.warning(),
+            Self::Running => palette.accent(),
+            Self::Disabled | Self::Ready => palette.tone(Tone::FAINT),
+        }
+    }
+}
+
+/// A status's dot and word, laid out, saying `why` on hover.
+fn status_label(ui: &mut egui::Ui, status: Status, why: &str) {
+    let palette = theme::palette(ui.ctx());
+    let (dot, _) = ui.allocate_exact_size(Vec2::new(8., 16.), Sense::hover());
+    ui.painter()
+        .circle_filled(dot.center(), 3.5, status.color(&palette));
+    ui.label(
+        egui::RichText::new(status.text())
+            .size(text::LABEL)
+            .color(palette.tone(Tone::SECONDARY)),
+    )
+    .on_hover_text(why);
+}
+
+/// `text` with the home folder written `~`, as paths are shown elsewhere.
+fn home_as_tilde(text: &str) -> String {
+    match std::env::var("HOME") {
+        Ok(home) if !home.is_empty() => text.replace(&home, "~"),
+        _ => text.to_string(),
+    }
+}
+
+/// `add` as wide as the cards, its edges in line with theirs rather than with
+/// what they hold. It is laid out in a child the page isn't widened for (a
+/// page wider than its scroll area would scroll sideways), then the height it
+/// took is taken from the page.
+fn flush<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let free = ui.available_rect_before_wrap();
+    let rect = egui::Rect::from_min_max(
+        egui::pos2(free.left() - space::XL, free.top()),
+        egui::pos2(free.right() + space::XL, f32::INFINITY),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    let inner = add(&mut child);
+    let height = child.min_rect().height();
+    ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
+    inner
+}
+
+/// A fact's name in the install sheet, in the form rows' colour.
+fn fact(ui: &mut egui::Ui, name: &str) {
+    ui.label(egui::RichText::new(name).color(theme::palette(ui.ctx()).tone(Tone::SECONDARY)));
+}
+
+/// `text` in one line no wider than `width`, cut with an ellipsis.
+fn one_line(
+    ui: &egui::Ui,
+    text: &str,
+    size: f32,
+    color: Color32,
+    width: f32,
+) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        text.to_string(),
+        egui::FontId::proportional(size),
+        color,
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(0.));
+    ui.fonts_mut(|f| f.layout_job(job))
+}
+
+/// Where a table row's columns are: name, version, status, switch and
+/// chevron, from `row`'s right end.
+struct Columns {
+    name: egui::Rangef,
+    version: f32,
+    status: f32,
+    switch: egui::Rect,
+    chevron: egui::Pos2,
+}
+
+impl Columns {
+    fn of(row: egui::Rect) -> Self {
+        let chevron = egui::pos2(row.right() - 6., row.center().y);
+        let switch = egui::Rect::from_center_size(
+            egui::pos2(chevron.x - 30., row.center().y),
+            Vec2::new(26., 20.),
+        );
+        let status = switch.left() - space::L - COLUMN;
+        let version = status - space::M - COLUMN;
+        Self {
+            name: egui::Rangef::new(row.left(), version - space::L),
+            version,
+            status,
+            switch,
+            chevron,
+        }
+    }
+}
+
+/// The table's column titles.
+fn table_header(ui: &mut egui::Ui) {
+    let palette = theme::palette(ui.ctx());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.), Sense::hover());
+    let columns = Columns::of(rect);
+    let color = palette.tone(Tone::MUTED);
+    let font = egui::FontId::proportional(text::SMALL);
+    for (x, title) in [
+        (columns.name.min, "Name"),
+        (columns.version, "Version"),
+        (columns.status, "Status"),
+    ] {
+        ui.painter().text(
+            egui::pos2(x, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            title,
+            font.clone(),
+            color,
+        );
+    }
+    ui.painter().text(
+        egui::pos2(columns.switch.center().x, rect.center().y),
+        egui::Align2::CENTER_CENTER,
+        "On",
+        font,
+        color,
+    );
+    separator(ui, rect);
+}
+
+/// The line under a table row, across the card.
+fn separator(ui: &egui::Ui, row: egui::Rect) {
+    let palette = theme::palette(ui.ctx());
+    ui.painter().hline(
+        row.x_range().expand(space::XL),
+        row.bottom(),
+        Stroke::new(1., palette.tone(Tone::RAISED)),
+    );
+}
+
+/// One extension's row: its name and source over its description, its
+/// version and any update, its state, its switch and a chevron to its page.
+/// The row opens the page; the switch turns it on or off.
+fn table_row(ui: &mut egui::Ui, row: &Row, last: bool) -> Option<RowClick> {
+    let palette = theme::palette(ui.ctx());
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &row.name));
+    let switch = Columns::of(rect).switch;
+    let hovered = response.hovered() && !ui.rect_contains_pointer(switch);
+    if hovered {
+        ui.painter().rect_filled(
+            rect.expand2(Vec2::new(space::M, -2.)),
+            crate::app::ui::design::radius::CARD,
+            palette.tone(Tone::PANEL),
+        );
+    }
+    let columns = Columns::of(rect);
+    let top = rect.center().y - 9.;
+    let bottom = rect.center().y + 9.;
+    let width = columns.name.span();
+
+    // The badge, then the name in what is left.
+    let badge = one_line(
+        ui,
+        row.badge.0,
+        text::SMALL,
+        if row.badge.1 {
+            palette.warning()
+        } else {
+            palette.tone(Tone::SECONDARY)
+        },
+        width / 2.,
+    );
+    let name = one_line(
+        ui,
+        &row.name,
+        text::BODY,
+        palette.tone(Tone::STRONG),
+        width - badge.size().x - 16.,
+    );
+    let name_rect =
+        egui::Align2::LEFT_CENTER.anchor_size(egui::pos2(columns.name.min, top), name.size());
+    let badge_rect = egui::Rect::from_center_size(
+        egui::pos2(name_rect.right() + 8. + badge.size().x / 2. + 5., top),
+        badge.size() + Vec2::new(10., 4.),
+    );
+    ui.painter()
+        .galley(name_rect.min, name, Color32::PLACEHOLDER);
+    ui.painter().rect_filled(
+        badge_rect,
+        crate::app::ui::design::radius::CONTROL,
+        palette.tone(Tone::RAISED),
+    );
+    ui.painter().galley(
+        badge_rect.center() - badge.size() / 2.,
+        badge,
+        Color32::PLACEHOLDER,
+    );
+    let description = one_line(
+        ui,
+        &row.description,
+        text::LABEL,
+        palette.tone(Tone::MUTED),
+        width,
+    );
+    ui.painter().galley(
+        egui::pos2(columns.name.min, bottom - description.size().y / 2.),
+        description,
+        Color32::PLACEHOLDER,
+    );
+
+    let version_y = if row.update.is_some() {
+        top
+    } else {
+        rect.center().y
+    };
+    ui.painter().text(
+        egui::pos2(columns.version, version_y),
+        egui::Align2::LEFT_CENTER,
+        &row.version,
+        egui::FontId::proportional(text::BODY),
+        palette.tone(Tone::SECONDARY),
+    );
+    if let Some(update) = &row.update {
+        ui.painter().text(
+            egui::pos2(columns.version, bottom),
+            egui::Align2::LEFT_CENTER,
+            format!("{update} available"),
+            egui::FontId::proportional(text::SMALL),
+            palette.accent(),
+        );
+    }
+
+    ui.painter().circle_filled(
+        egui::pos2(columns.status + 3.5, rect.center().y),
+        3.5,
+        row.status.color(&palette),
+    );
+    let status = ui.painter().text(
+        egui::pos2(columns.status + 13., rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        row.status.text(),
+        egui::FontId::proportional(text::LABEL),
+        palette.tone(Tone::SECONDARY),
+    );
+    ui.interact(
+        status.expand(4.),
+        response.id.with("status"),
+        Sense::hover(),
+    )
+    .on_hover_text(&row.why);
+
+    icons::paint_at(
+        ui.painter(),
+        Icon::ChevronRight,
+        columns.chevron,
+        12.,
+        palette.tone(if hovered { Tone::SOFT } else { Tone::DISABLED }),
+    );
+    if !last {
+        separator(ui, rect);
+    }
+    // Over the row, so a click on it is the switch's alone.
+    let switched = crate::app::ui::widgets::switch_in(
+        ui,
+        columns.switch,
+        response.id.with("switch"),
+        row.enabled,
+        &format!("Enable {}", row.name),
+    )
+    .clicked();
+    if switched {
+        Some(RowClick::Switch)
+    } else if response.clicked() {
+        Some(RowClick::Open)
+    } else {
+        None
+    }
+}
+
+/// The tabs of an extension's page, with a line under them; the one
+/// clicked, if another.
+fn section_tabs(ui: &mut egui::Ui, sections: &[Section], current: Section) -> Option<Section> {
+    let palette = theme::palette(ui.ctx());
+    let mut chosen = None;
+    let row = ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = space::XL;
+        for &section in sections {
+            let selected = section == current;
+            let galley = ui.painter().layout_no_wrap(
+                section.title().to_string(),
+                egui::FontId::proportional(text::BODY),
+                palette.tone(if selected { Tone::STRONG } else { Tone::MUTED }),
+            );
+            let (rect, response) =
+                ui.allocate_exact_size(galley.size() + Vec2::new(0., 14.), Sense::click());
+            response.widget_info(|| {
+                egui::WidgetInfo::selected(
+                    egui::WidgetType::SelectableLabel,
+                    true,
+                    selected,
+                    section.title(),
+                )
+            });
+            let at = egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.);
+            if response.hovered() && !selected {
+                ui.painter()
+                    .galley_with_override_text_color(at, galley, palette.tone(Tone::TEXT));
+            } else {
+                ui.painter().galley(at, galley, Color32::PLACEHOLDER);
+            }
+            if selected {
+                ui.painter().rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(rect.left(), rect.bottom() - 2.),
+                        rect.right_bottom(),
+                    ),
+                    1.,
+                    palette.accent(),
+                );
+            }
+            if response
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+                && !selected
+            {
+                chosen = Some(section);
+            }
+        }
+    });
+    let line = row.response.rect;
+    ui.painter().hline(
+        ui.max_rect().x_range(),
+        line.bottom(),
+        Stroke::new(1., palette.tone(Tone::RAISED)),
+    );
+    chosen
 }
 
 #[cfg(test)]

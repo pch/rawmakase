@@ -14,6 +14,7 @@ mod config;
 mod legacy;
 mod mapping;
 mod settings;
+pub(in crate::app) use settings::LocalAccess;
 mod socket;
 use crate::app::Editor;
 use crate::app::Module;

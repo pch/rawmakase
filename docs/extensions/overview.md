@@ -218,8 +218,8 @@ or is interrupted leaves the previous version installed and active.
 unpack under `target/rawmakase-dev/`, and records that folder in
 `extensions.json`'s `developer` table. The app runs developer extensions
 without installing them. In Preferences > Extensions, **Developer mode** adds
-**Load from Folder…**, and while the page is open it looks every second for a
-changed manifest or program of a developer extension and loads it again,
+**From Folder…** to **Add Extension**, and while the page is open it looks
+every second for a changed manifest or program of a developer extension and loads it again,
 stopping its program, which starts again as the new build at its next request.
 A folder whose manifest no longer reads (or names another extension) stays
 listed with what is wrong, without its commands, and is loaded again once its
@@ -227,19 +227,29 @@ manifest is fixed.
 
 ## In the app
 
-**Preferences > Extensions** lists every extension with its source (Bundled,
-File, GitHub, Developer folder), its state (Enabled, Disabled, Running, Failed,
-Can't run) and an **Update** badge after Check for Updates found one. An
-extension's page shows its description, author, repository, declared access,
-its commands (each with **Run**), settings, panels, control adapters, photo
-sources (each turned on or off for the open catalog), its last errors and its
-log file; and **Enable**, **Disable**, **Stop** (while a command
-runs), **Retry** (when Failed), **Uninstall** (not for a bundled one) and
-**Update**. **Install from GitHub…** downloads the newest compatible package,
-and **Install from File…** reads a `.rmext`; either shows the package's
-manifest, its access and the **Not reviewed** warning, and installs it only
-when the user confirms (a file is read again then, and refused if it changed).
-An installed extension's page and its line in the list say **Not reviewed**
+**Preferences > Extensions** is a table of every extension: its name, its
+source (Bundled or Developer folder; one installed from a file or GitHub says
+**Not reviewed**) and description, its version
+and any update Check for Updates found, its state (Running; Ready, on with its program
+not running now; Disabled; Failed; Can't run; each explained on hover) and a
+switch that turns it on or off. An extension that can't be read, such as one
+whose manifest needs a newer RAWmakase, is listed under **Couldn't load** with
+the reason. A row opens the
+extension's own page in place of the table ("Preferences / Extensions /
+MIDI"); the back button, the Extensions crumb or Escape return to the table.
+The page has the extension's description and status, its switch, **Update to
+…**, **Stop** (while a command runs) and **Retry** (when Failed) over tabs,
+each shown only when the extension has something for it: **Settings** (its
+settings, panels and photo sources; for MCP, local access, which its clients
+need, each turned on or off for the open
+catalog), **Commands** (each with **Run**) and **About** (author, repository,
+declared access, control adapters, log file, **Uninstall…**, which asks
+first and which a bundled one doesn't have, and its last errors). **Add Extension** has **From
+GitHub…**, which downloads the newest compatible package, and **From File…**,
+which reads a `.rmext`; either shows the package's manifest, its access and
+the **Not reviewed** warning in a dialog, and installs it only when the user
+confirms (a file is read again then, and refused if it changed).
+An installed extension's page says where it came from and **Not reviewed**
 too. Every change is
 written to `extensions.json` first; when that fails, the page says so and
 nothing changes.

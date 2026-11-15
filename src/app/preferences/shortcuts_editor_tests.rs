@@ -141,7 +141,7 @@ fn cmd_text(key: &str) -> String {
 }
 
 #[test]
-fn shortcuts_sit_between_display_and_automation() {
+fn shortcuts_sit_between_display_and_extensions() {
     let titles: Vec<&str> = super::super::Tab::ALL.iter().map(|t| t.title()).collect();
     assert_eq!(
         titles,
@@ -152,7 +152,6 @@ fn shortcuts_sit_between_display_and_automation() {
             "Performance",
             "Display",
             "Shortcuts",
-            "Automation",
             "Extensions"
         ]
     );

@@ -467,6 +467,47 @@ fn section_header(
     }
     resettable && reset.clicked()
 }
+/// An on/off switch drawn as the panels' is, in a 26 × 20 px slot: what
+/// [`paint_switch`] draws, clickable on its own. Named `label` for screen
+/// readers. Returns whether it was clicked; the caller turns it.
+pub(in crate::app) fn switch(ui: &mut egui::Ui, on: bool, label: &str) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(26., 20.), Sense::click());
+    switch_at(ui, rect, on, label, response)
+}
+/// [`switch`] at `rect`, over what was laid out there: a row it sits on
+/// takes no click on it.
+pub(in crate::app) fn switch_in(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    id: egui::Id,
+    on: bool,
+    label: &str,
+) -> egui::Response {
+    let response = ui.interact(rect, id, Sense::click());
+    switch_at(ui, rect, on, label, response)
+}
+fn switch_at(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    on: bool,
+    label: &str,
+    response: egui::Response,
+) -> egui::Response {
+    let enabled = ui.is_enabled();
+    response
+        .widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, enabled, on, label));
+    paint_switch(
+        ui.painter(),
+        rect.center(),
+        if on { PanelState::On } else { PanelState::Off },
+        response.hovered() && enabled,
+    );
+    if enabled {
+        response.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        response
+    }
+}
 /// Lightroom's panel switch: a small track with its knob to the right when on.
 fn paint_switch(painter: &egui::Painter, c: Pos2, state: PanelState, hovered: bool) {
     let palette = theme::palette(painter.ctx());

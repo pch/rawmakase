@@ -1,24 +1,23 @@
-//! Preferences > Automation: whether local scripts and AI clients may reach
-//! the editor. MIDI devices have their own page, the MIDI extension's, in
-//! Preferences > Extensions; this page points there.
+//! Local access: whether local scripts and MCP clients may reach the editor
+//! through the control socket. Shown twice, as one setting: in Preferences >
+//! General for scripts, and on the MCP extension's page for its clients,
+//! which reach the editor through the same socket.
 use super::*;
 use crate::app::ui::design::{Tone, text};
-use crate::app::{
-    preferences::{Tab, gap, group},
-    ui::theme,
-    ui::widgets::form_row,
-};
+use crate::app::{ui::theme, ui::widgets::form_row};
 
-/// The bundled MIDI extension, whose page holds the devices.
-const MIDI: &str = "rawmakase.midi";
-
-fn small(ui: &mut egui::Ui, text: &str) {
-    ui.label(
-        egui::RichText::new(text)
-            .size(text::LABEL)
-            .color(theme::palette(ui.ctx()).tone(Tone::MUTED)),
-    );
+/// Whether the control socket admits local programs.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::app) enum LocalAccess {
+    Off,
+    /// On, and listening.
+    Ready,
+    /// On, but the socket couldn't start.
+    Failed,
+    /// `automation.json` couldn't be read, so it stays as it was.
+    Unreadable,
 }
+
 fn hint(ui: &mut egui::Ui, text: &str) {
     ui.add(
         egui::Label::new(
@@ -31,38 +30,58 @@ fn hint(ui: &mut egui::Ui, text: &str) {
 }
 
 impl Editor {
-    pub(in crate::app) fn automation_page(&mut self, ui: &mut egui::Ui) {
+    /// Whether local scripts and MCP clients can reach the editor now.
+    pub(in crate::app) fn local_access(&self) -> LocalAccess {
+        if self.controls.load_error.is_some() {
+            LocalAccess::Unreadable
+        } else if self.controls.socket.is_some() {
+            LocalAccess::Ready
+        } else if self.controls.settings.socket {
+            LocalAccess::Failed
+        } else {
+            LocalAccess::Off
+        }
+    }
+
+    /// Local access's switch and status, saved to `automation.json` as it is
+    /// changed. `ready` says what it is ready for where it is shown.
+    pub(in crate::app) fn local_access_rows(&mut self, ui: &mut egui::Ui, ready: &str) {
         if let Some(error) = &self.controls.load_error {
-            hint(ui, error);
-            hint(
-                ui,
-                "Fix the configuration file and restart to edit automation settings. Existing files have been left intact.",
-            );
+            form_row(ui, "Local access", |ui| hint(ui, error));
+            form_row(ui, "", |ui| {
+                hint(
+                    ui,
+                    "Fix the configuration file and restart to change local access. Existing files have been left intact.",
+                );
+            });
             return;
         }
         let mut settings = self.controls.settings.clone();
-        group(ui, "Scripts and AI");
         form_row(ui, "Local access", |ui| {
             ui.checkbox(&mut settings.socket, "Allow local scripts and applications");
         });
-        form_row(ui, "Status", |ui| {
-            small(
-                ui,
-                if self.controls.socket.is_some() {
-                    "Ready for scripts and MCP clients"
-                } else if settings.socket {
-                    "Could not start local access"
-                } else {
-                    "Off"
-                },
-            );
-        });
+        let status = match self.local_access() {
+            LocalAccess::Ready => ready,
+            LocalAccess::Failed => "Could not start local access",
+            LocalAccess::Off | LocalAccess::Unreadable => "Off",
+        };
+        form_row(ui, "Status", |ui| hint(ui, status));
         form_row(ui, "", |ui| {
             hint(
                 ui,
-                "Connect Codex or another MCP client to control the editor. No MIDI device is required. Access is limited to programs running under your local account.",
+                "One setting for scripts (rawmakase control) and MCP clients alike. Only programs running under your account can connect.",
             );
         });
+        if settings != self.controls.settings {
+            match settings.save() {
+                Ok(()) => self.controls.apply(settings),
+                Err(e) => self.messages.fail(format!("Local access not saved: {e:#}")),
+            }
+        }
+    }
+
+    /// The MCP setup guide, opened in the browser.
+    pub(in crate::app) fn mcp_guide_row(&mut self, ui: &mut egui::Ui) {
         form_row(ui, "Setup", |ui| {
             let error_id = egui::Id::new("mcp-guide-error");
             if ui
@@ -85,27 +104,5 @@ impl Editor {
                 hint(ui, &error);
             }
         });
-        gap(ui);
-        group(ui, "MIDI devices");
-        form_row(ui, "", |ui| {
-            hint(
-                ui,
-                "MIDI control surfaces such as the Loupedeck+ are set up on the MIDI extension's page. The extension is off until you enable it there.",
-            );
-        });
-        form_row(ui, "", |ui| {
-            if ui.link("Open MIDI devices in Extensions").clicked() {
-                self.extension_page.select(MIDI);
-                self.open_preferences(Tab::Extensions);
-            }
-        });
-        if settings != self.controls.settings {
-            match settings.save() {
-                Ok(()) => self.controls.apply(settings),
-                Err(e) => self
-                    .messages
-                    .fail(format!("Automation settings not saved: {e:#}")),
-            }
-        }
     }
 }
