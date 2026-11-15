@@ -1274,4 +1274,27 @@ fn uninstalling_takes_the_keys_with_it() {
     });
     let state = std::fs::read_to_string(f.data.join("extensions.json")).unwrap();
     assert!(!state.contains("\"secrets\""), "{state}");
+    pump(e, "the key to leave the list", |_| {
+        Store::new(&f.data).forgotten_keys().unwrap().is_empty()
+    });
+    // One an earlier run couldn't delete (a locked keyring, a quit first)
+    // is deleted when the host starts with a store again.
+    let left = rawmakase_extensions::secrets::account("dev.gone.extension", "token");
+    f.secrets
+        .set(
+            &left,
+            &rawmakase_extensions::secrets::Secret::new("sk-left"),
+        )
+        .unwrap();
+    rawmakase_extensions::state::State::update(&f.data, |state| {
+        state.forget_keys("dev.gone.extension", ["token".to_string()]);
+        Ok(())
+    })
+    .unwrap();
+    let e = &mut f.editor;
+    e.extensions.use_secret_store_for_tests(f.secrets.clone());
+    pump(e, "the left key to be deleted", |_| {
+        f.secrets.get(&left).unwrap().is_none()
+            && Store::new(&f.data).forgotten_keys().unwrap().is_empty()
+    });
 }

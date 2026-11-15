@@ -331,8 +331,8 @@ impl Editor {
                 self.answer_ai_remove_consent(allow);
             }
         }
-        // The area painted and not sent yet, at the brush's size now; Enter
-        // sends it, unless a text field has the keyboard.
+        // The area painted and not sent yet, at the brush's size now. Enter
+        // sends it, through the key map (`retouch_keys`).
         if generating && !self.ai_remove.draft.is_empty() {
             // Its coverage as the request will send it, the feather fading it.
             if let Some(tint) = self.draft_tint(ui.ctx(), &im, &to_screen) {
@@ -343,10 +343,6 @@ impl Editor {
                 let screen: Vec<Pos2> = stroke.iter().map(|p| to_screen(*p)).collect();
                 let r = radius_on_screen(stroke[0], size);
                 overlay::stroke_outline(&painter, &screen, r.x.max(r.y), 1.5);
-            }
-            let typing = ui.memory(|m| m.focused().is_some());
-            if !typing && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                self.send_ai_draft();
             }
         }
         // The area a request failed for, with why and what to do: the photo
@@ -584,6 +580,9 @@ impl Editor {
         }
         if keys.take(&b::REMOVE_VISUALIZE).is_some() {
             self.view.retouch.visualize ^= true;
+        }
+        if keys.take(&b::GENERATE_SEND).is_some() && self.ai_retouching() {
+            self.send_ai_draft();
         }
     }
     /// Mode chosen in Spot Removal's drawer: new spots' mode, and the selected

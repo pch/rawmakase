@@ -12,28 +12,37 @@ use keyring_core::{CredentialStore, Entry, Error};
 use rawmakase_extensions::secrets::{SERVICE, Secret, SecretError, SecretStore};
 use std::sync::Arc;
 
-/// Deletes from `store` every key `extensions.json` (in `data_dir`) records
-/// for extension `id`, for uninstalling it from the command line, where
-/// waiting is fine: none is left behind once its record goes. Stops at the
-/// first that can't be deleted, saying which.
-pub(crate) fn delete_extension_keys(
-    store: &dyn SecretStore,
-    data_dir: &std::path::Path,
+/// Deletes the keys extension `id` left in the system's credential store
+/// when it was uninstalled ([`Store::forgotten_keys`]), for removing it from
+/// the command line, where waiting is fine. The store is opened (`open`) only
+/// when there is a key to delete, so an extension without keys is removed
+/// whether or not one is available. Each key deleted leaves the list; the
+/// first that can't be stops it, the rest kept for the app's next start.
+///
+/// [`Store::forgotten_keys`]: rawmakase_extensions::store::Store::forgotten_keys
+pub(crate) fn delete_forgotten_keys(
+    open: impl FnOnce() -> Result<Arc<dyn SecretStore>, SecretError>,
+    extensions: &rawmakase_extensions::store::Store,
     id: &str,
 ) -> anyhow::Result<()> {
-    let state =
-        rawmakase_extensions::state::State::read(data_dir).map_err(|e| anyhow::anyhow!("{e}"))?;
-    let Some(entry) = state.extensions.get(id) else {
+    let keys: Vec<String> = extensions
+        .forgotten_keys()
+        .map_err(|e| anyhow::anyhow!("{e}"))?
+        .into_iter()
+        .filter(|(of, _)| of == id)
+        .map(|(_, key)| key)
+        .collect();
+    if keys.is_empty() {
         return Ok(());
-    };
-    for setting in &entry.secrets {
+    }
+    let store = open().map_err(|e| anyhow::anyhow!("{e}"))?;
+    for setting in &keys {
         store
             .delete(&rawmakase_extensions::secrets::account(id, setting))
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "its key {setting} couldn't be removed from the system's credential store: {e}"
-                )
-            })?;
+            .map_err(|e| anyhow::anyhow!("its key {setting}: {e}"))?;
+        extensions
+            .key_deleted(id, setting)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
     }
     Ok(())
 }
@@ -152,24 +161,36 @@ mod uninstall_tests {
     use super::*;
     use rawmakase_extensions::secrets::{MemoryStore, account};
     use rawmakase_extensions::state::State;
+    use rawmakase_extensions::store::Store;
 
     #[test]
-    fn removing_from_the_command_line_deletes_the_keys_recorded() {
+    fn removing_from_the_command_line_deletes_the_keys_it_left() {
         let dir = tempfile::tempdir().unwrap();
+        let extensions = Store::new(dir.path());
         State::update(dir.path(), |state| {
-            state.entry("dev.example.keys").secrets.insert("key".into());
+            state.forget_keys("dev.example.keys", ["key".to_string()]);
             Ok(())
         })
         .unwrap();
-        let store = MemoryStore::default();
+        let store: Arc<dyn SecretStore> = Arc::new(MemoryStore::default());
         let kept = account("dev.example.keys", "key");
         let other = account("dev.example.other", "key");
         store.set(&kept, &Secret::new("sk-1")).unwrap();
         store.set(&other, &Secret::new("sk-2")).unwrap();
-        delete_extension_keys(&store, dir.path(), "dev.example.keys").unwrap();
+        delete_forgotten_keys(|| Ok(store.clone()), &extensions, "dev.example.keys").unwrap();
         assert!(store.get(&kept).unwrap().is_none());
         assert!(store.get(&other).unwrap().is_some(), "another's stays");
-        // An extension nothing is recorded for has nothing to delete.
-        delete_extension_keys(&store, dir.path(), "dev.example.none").unwrap();
+        assert!(extensions.forgotten_keys().unwrap().is_empty());
+        // Without keys left, no store is needed, even one that can't open.
+        let unavailable = || Err(SecretError::Unavailable("no Secret Service".into()));
+        delete_forgotten_keys(unavailable, &extensions, "dev.example.none").unwrap();
+        // With one, a store that can't open keeps it for the next start.
+        State::update(dir.path(), |state| {
+            state.forget_keys("dev.example.keys", ["key".to_string()]);
+            Ok(())
+        })
+        .unwrap();
+        assert!(delete_forgotten_keys(unavailable, &extensions, "dev.example.keys").is_err());
+        assert_eq!(extensions.forgotten_keys().unwrap().len(), 1);
     }
 }

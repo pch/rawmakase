@@ -584,6 +584,9 @@ pub(in crate::app) struct Host {
     messages_done: Vec<String>,
     /// Where secret settings are read and written, off the UI thread.
     credentials: secrets::Credentials,
+    /// Forgotten keys whose deletion is queued, by extension and setting
+    /// ([`Host::delete_forgotten_keys`]).
+    deleting: std::collections::BTreeSet<(String, String)>,
     /// Tests start every program that isn't bundled as this instead: their
     /// own test binary, running the example extension.
     #[cfg(test)]
@@ -635,6 +638,7 @@ impl Host {
             notices: Vec::new(),
             catalog: None,
             next_scope: 1,
+            deleting: Default::default(),
             messages_done: Vec::new(),
             credentials: secrets::Credentials::new(
                 Arc::new(|| {
@@ -766,10 +770,12 @@ impl Host {
             ..Self::inert()
         };
         host.reload();
-        // What an earlier run left: staging folders, versions replaced.
+        // What an earlier run left: staging folders, versions replaced, and
+        // keys of uninstalled extensions not yet deleted.
         if let Some(store) = &host.store {
             store.clean(&[]);
         }
+        host.delete_forgotten_keys();
         host
     }
     /// Keeps secret settings in `store` from now on, for tests.
@@ -786,6 +792,7 @@ impl Host {
         for index in 0..self.extensions.len() {
             self.sync_secrets(index);
         }
+        self.delete_forgotten_keys();
     }
     /// Whether this host loads extensions at all.
     pub(in crate::app) fn active(&self) -> bool {
@@ -1212,16 +1219,24 @@ impl Host {
         value: Option<rawmakase_extensions::secrets::Secret>,
         result: Result<(), rawmakase_extensions::secrets::SecretError>,
     ) {
-        let Some(index) = self.index(id) else {
-            // An uninstalled extension's key that the store kept.
-            if value.is_none()
-                && let Err(why) = result
-            {
-                self.notices.push(format!(
-                    "{id}: a key couldn't be removed from the system's credential store: {}",
+        // A forgotten key's delete: dropped from the list once done, kept
+        // there for the next start when not.
+        if self.deleting.remove(&(id.to_string(), setting.to_string())) {
+            match result {
+                Ok(()) => {
+                    if let Some(store) = &self.store {
+                        let _ = store.key_deleted(id, setting);
+                    }
+                }
+                Err(why) => self.notices.push(format!(
+                    "{id}: a key couldn't be removed from the system's credential store, \
+                     tried again at the next start: {}",
                     secrets::advice(&why)
-                ));
+                )),
             }
+            return;
+        }
+        let Some(index) = self.index(id) else {
             return;
         };
         let premarked = self.extensions[index].secret_premarked.remove(setting);
@@ -2069,11 +2084,12 @@ impl Host {
         }
     }
 
-    /// Uninstalls extension `id` (not a bundled one): its keys, then its
-    /// entry, then its folders. A developer folder is only forgotten, with
-    /// its keys. Each key recorded is deleted from the system's credential
-    /// store on the credentials thread, after any write to it still queued;
-    /// one that can't be deleted is said ([`Host::secret_written`]).
+    /// Uninstalls extension `id` (not a bundled one): its entry, then its
+    /// folders. A developer folder is only forgotten. Its keys move to
+    /// [`State::forgotten_keys`] in the same change, and are deleted from the
+    /// system's credential store on the credentials thread
+    /// ([`Host::delete_forgotten_keys`]); one that can't be is kept there and
+    /// tried again at the next start.
     pub(in crate::app) fn uninstall(&mut self, id: &str) -> Result<Vec<Outcome>, String> {
         let store = self
             .store
@@ -2081,27 +2097,17 @@ impl Host {
             .ok_or("Extensions are off in this editor")?;
         let index = self.index(id).ok_or_else(|| format!("No extension {id}"))?;
         let name = self.extensions[index].name().to_string();
-        if self.extensions[index].origin == Origin::Bundled {
-            return Err(format!("{name} comes with RAWmakase"));
-        }
-        // Queued before the entry goes: a key the store can't be told to
-        // delete leaves the extension installed, its record kept.
-        let keys: Vec<String> = self.extensions[index]
-            .entry
-            .secrets
-            .iter()
-            .cloned()
-            .collect();
-        for setting in &keys {
-            self.credentials
-                .write(id, setting, None)
-                .map_err(|why| format!("{name} not uninstalled: {why}"))?;
-        }
         match self.extensions[index].origin {
+            Origin::Bundled => return Err(format!("{name} comes with RAWmakase")),
             Origin::Installed => store.remove(id).map_err(|e| format!("{name}: {e}"))?,
-            _ => State::update(store.data_dir(), |state| {
+            Origin::Developer => State::update(store.data_dir(), |state| {
                 state.developer.remove(id);
-                state.entry(id).secrets.clear();
+                let keys = state
+                    .extensions
+                    .get_mut(id)
+                    .map(|e| std::mem::take(&mut e.secrets))
+                    .unwrap_or_default();
+                state.forget_keys(id, keys);
                 Ok(())
             })
             .map_err(|e| format!("{name}: {e}"))?,
@@ -2112,7 +2118,36 @@ impl Host {
         // Another source of the same id (the bundled one under an installed
         // version) shows again.
         self.reload();
+        self.delete_forgotten_keys();
         Ok(outcomes)
+    }
+
+    /// Queues the deletion of every key an uninstalled extension left in the
+    /// system's credential store ([`State::forgotten_keys`]), once each, on
+    /// the credentials thread; a key an extension of that id records again
+    /// is its own and stays. Each is dropped from the list once deleted
+    /// ([`Host::secret_written`]). Run after an uninstall and at the start.
+    pub(in crate::app) fn delete_forgotten_keys(&mut self) {
+        let Some(store) = self.store.clone() else {
+            return;
+        };
+        let Ok(forgotten) = store.forgotten_keys() else {
+            return;
+        };
+        for (id, setting) in forgotten {
+            let live = self
+                .get(&id)
+                .is_some_and(|e| e.entry.secrets.contains(&setting));
+            if live {
+                let _ = store.key_deleted(&id, &setting);
+                continue;
+            }
+            if self.deleting.insert((id.clone(), setting.clone()))
+                && self.credentials.write(&id, &setting, None).is_err()
+            {
+                self.deleting.remove(&(id, setting));
+            }
+        }
     }
 
     /// Sets setting `setting` of extension `id` to `value`, in

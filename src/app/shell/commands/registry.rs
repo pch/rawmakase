@@ -184,6 +184,7 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     command("remove:new_source", "New source for the selected spot"),
     command("remove:hide_pins", "Hide spot pins"),
     command("remove:visualize", "Visualize spots"),
+    command("generate:send", "Send the area painted to its generator"),
     command(
         "mask:back",
         "Stop aiming, drop the mask not yet drawn, or close Masking",
@@ -706,6 +707,10 @@ pub(in crate::app) mod bindings {
         /// Not a quick Cmd+A, Select All, released within the frame.
         REMOVE_VISUALIZE = b("remove:visualize", Context::Tool(Tool::Remove), &[
             d(&[Key::A], NONE),
+        ]);
+        /// AI Retouch shares Spot Removal's keys; Enter sends what was painted.
+        GENERATE_SEND = b("generate:send", Context::Tool(Tool::Remove), &[
+            d(&[Key::Enter], NONE),
         ]);
         RED_EYE_DELETE = b("tool:delete", Context::Tool(Tool::RedEye), &[
             d(DELETE_KEYS, NONE).off_card(),

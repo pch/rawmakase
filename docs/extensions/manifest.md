@@ -119,7 +119,9 @@ Windows Credential Manager, the Secret Service on Linux), never in
 `extensions.json`, which records only that one is set (`secrets`), and never shows
 it again: its page has a field to type a new one into, Save and Remove, and says
 Set only once the store has it. Uninstalling the extension (in Preferences or with
-`rawmakase extensions remove`) deletes it from the store. The program receives it as a string in `hello` and
+`rawmakase extensions remove`) deletes it from the store; one the store can't
+delete then (a locked keyring) stays listed in `extensions.json`'s
+`forgotten_keys` and is deleted at RAWmakase's next start. The program receives it as a string in `hello` and
 `setting-changed` (`""` while none is set, or while the store is still being read
 when the program starts: a `setting-changed` follows once it is). The app keeps it
 out of its own JSON, errors, logs and diagnostics; what the program does with it is
