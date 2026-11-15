@@ -2713,6 +2713,8 @@ pub(in crate::app) fn panel_caption(ui: &mut egui::Ui, name: &str) -> Rect {
     );
     rect
 }
+/// How far a [`text_box`]'s text starts inside it.
+pub(in crate::app) const TEXT_BOX_INSET: f32 = 8.;
 /// A text box: a rounded, outlined box `rows` lines tall that wraps what is
 /// typed, as [`search_field`]'s box looks, lit while it has the keyboard.
 /// `hint` shows while it is empty; at most `limit` characters. Returns the
@@ -2728,7 +2730,7 @@ pub(in crate::app) fn text_box(
     // The box goes under the text, its look known once the field is drawn.
     let backdrop = ui.painter().add(egui::Shape::Noop);
     let inner = egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(8, 6))
+        .inner_margin(egui::Margin::symmetric(TEXT_BOX_INSET as i8, 6))
         .show(ui, |ui| {
             ui.add(
                 egui::TextEdit::multiline(text)

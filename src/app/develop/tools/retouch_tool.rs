@@ -334,6 +334,10 @@ impl Editor {
         // The area painted and not sent yet, at the brush's size now; Enter
         // sends it, unless a text field has the keyboard.
         if generating && !self.ai_remove.draft.is_empty() {
+            // Its coverage as the request will send it, the feather fading it.
+            if let Some(tint) = self.draft_tint(ui.ctx(), &im, &to_screen) {
+                painter.add(tint);
+            }
             let size = self.view.retouch.size;
             for stroke in &self.ai_remove.draft {
                 let screen: Vec<Pos2> = stroke.iter().map(|p| to_screen(*p)).collect();
@@ -398,6 +402,108 @@ impl Editor {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(100));
         }
+    }
+    /// A tinted quad of the draft's coverage, feather and all, as
+    /// [`rendition::coverage`] makes it for the request, over the draft's
+    /// bounds at about the screen's resolution. The texture is made again
+    /// only when the draft, the brush or that resolution changes.
+    ///
+    /// [`rendition::coverage`]: crate::develop::retouch::rendition::coverage
+    fn draft_tint(
+        &mut self,
+        ctx: &egui::Context,
+        im: &crate::camera_data::CameraImage,
+        to_screen: &impl Fn([f32; 2]) -> Pos2,
+    ) -> Option<egui::Shape> {
+        use std::hash::{Hash, Hasher};
+        let t = &self.view.retouch;
+        let op = RetouchOp {
+            mode: RetouchMode::Generate,
+            shape: RetouchShape::Strokes {
+                strokes: self
+                    .ai_remove
+                    .draft
+                    .iter()
+                    .map(|s| std::sync::Arc::from(s.as_slice()))
+                    .collect(),
+                radius: t.size,
+            },
+            feather: t.feather,
+            opacity: 1.,
+            offset: [0.; 2],
+            patch: None,
+        };
+        let frame = crate::model::image_frame::ImageFrame::new(im);
+        let (rx, ry) = crate::model::retouch::radii(t.size, frame.aspect());
+        let (dabs, _) = op.shape.dabs();
+        let mut b = [
+            f32::INFINITY,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NEG_INFINITY,
+        ];
+        for p in &dabs {
+            b = [
+                b[0].min(p[0] - rx),
+                b[1].min(p[1] - ry),
+                b[2].max(p[0] + rx),
+                b[3].max(p[1] + ry),
+            ];
+        }
+        let rect = [b[0].max(0.), b[1].max(0.), b[2].min(1.), b[3].min(1.)];
+        if rect[0] >= rect[2] || rect[1] >= rect[3] {
+            return None;
+        }
+        let corners = [
+            to_screen([rect[0], rect[1]]),
+            to_screen([rect[2], rect[1]]),
+            to_screen([rect[2], rect[3]]),
+            to_screen([rect[0], rect[3]]),
+        ];
+        // About a texel per screen point, at most 512 a side.
+        let width = (corners[0].distance(corners[1]).ceil() as u32).clamp(1, 512);
+        let height = (corners[0].distance(corners[3]).ceil() as u32).clamp(1, 512);
+        let [fw, _] = frame.size();
+        let region = crate::develop::retouch::rendition::Region {
+            rect,
+            width,
+            height,
+            scale: width as f32 / ((rect[2] - rect[0]) * fw),
+        };
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for p in &dabs {
+            (p[0].to_bits(), p[1].to_bits()).hash(&mut h);
+        }
+        self.ai_remove.draft.len().hash(&mut h);
+        (t.size.to_bits(), t.feather.to_bits(), width, height).hash(&mut h);
+        let key = h.finish();
+        if self
+            .ai_remove
+            .draft_tint
+            .as_ref()
+            .is_none_or(|(k, _)| *k != key)
+        {
+            let coverage = crate::develop::retouch::rendition::coverage(&op, &frame, &region);
+            let pixels = coverage
+                .iter()
+                .map(|c| Color32::from_rgba_unmultiplied(255, 70, 70, (*c as f32 * 0.45) as u8))
+                .collect();
+            let image = egui::ColorImage::new([width as usize, height as usize], pixels);
+            let texture =
+                ctx.load_texture("ai-draft-coverage", image, egui::TextureOptions::LINEAR);
+            self.ai_remove.draft_tint = Some((key, texture));
+        }
+        let texture = self.ai_remove.draft_tint.as_ref()?.1.id();
+        let mut mesh = egui::Mesh::with_texture(texture);
+        for (corner, uv) in corners.iter().zip([[0., 0.], [1., 0.], [1., 1.], [0., 1.]]) {
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos: *corner,
+                uv: Pos2::new(uv[0], uv[1]),
+                color: Color32::WHITE,
+            });
+        }
+        mesh.indices.extend([0, 1, 2, 0, 2, 3]);
+        Some(egui::Shape::mesh(mesh))
     }
     /// A spot at image position `at` with the tool's settings.
     fn spot_op(&self, at: [f32; 2], offset: [f32; 2]) -> RetouchOp {
@@ -862,17 +968,8 @@ pub(in crate::app) fn control_label_top(
     add: impl FnOnce(&mut egui::Ui),
 ) {
     ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-        let width = crate::app::ui::widgets::label_column(ui) - ui.spacing().item_spacing.x;
         // As tall as a text box's first line with its margin above and below.
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 30.), egui::Sense::hover());
-        ui.painter().text(
-            rect.right_center(),
-            egui::Align2::RIGHT_CENTER,
-            label,
-            egui::FontId::proportional(text::SMALL),
-            theme::palette(ui.ctx()).tone(Tone::SOFT),
-        );
-        add(ui);
+        label_row(ui, label, 30., add);
     });
 }
 /// A row with a right-aligned label in the sliders' label column.
@@ -881,21 +978,45 @@ pub(in crate::app) fn control_label(
     label: &str,
     add: impl FnOnce(&mut egui::Ui),
 ) {
+    ui.horizontal(|ui| label_row(ui, label, 22., add));
+}
+/// A label `height` tall, then `add`, spaced as the sliders' rows are: the
+/// caption ends [`LABEL_GAP`] short of the label column and the control
+/// starts as far past it.
+///
+/// [`LABEL_GAP`]: crate::app::ui::widgets::LABEL_GAP
+fn label_row(ui: &mut egui::Ui, label: &str, height: f32, add: impl FnOnce(&mut egui::Ui)) {
+    use crate::app::ui::widgets::{LABEL_GAP, label_column};
+    let spacing = ui.spacing().item_spacing.x;
+    let (rect, _) = ui.allocate_exact_size(
+        Vec2::new(label_column(ui) - LABEL_GAP, height),
+        egui::Sense::hover(),
+    );
+    ui.painter().text(
+        rect.right_center(),
+        egui::Align2::RIGHT_CENTER,
+        label,
+        egui::FontId::proportional(text::SMALL),
+        theme::palette(ui.ctx()).tone(Tone::SOFT),
+    );
+    ui.add_space((2. * LABEL_GAP - spacing).max(0.));
+    add(ui);
+}
+/// [`hint`] starting `left` from the row's start, to line up with what it
+/// is about.
+pub(in crate::app) fn hint_at(ui: &mut egui::Ui, left: f32, text: &str) {
     ui.horizontal(|ui| {
-        // To the label column, less the gap the row puts after it.
-        let width = crate::app::ui::widgets::label_column(ui) - ui.spacing().item_spacing.x;
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 22.), egui::Sense::hover());
-        ui.painter().text(
-            rect.right_center(),
-            egui::Align2::RIGHT_CENTER,
-            label,
-            egui::FontId::proportional(text::SMALL),
-            theme::palette(ui.ctx()).tone(Tone::SOFT),
+        ui.add_space(left);
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(text)
+                    .size(text::MICRO)
+                    .color(theme::palette(ui.ctx()).tone(Tone::FAINT)),
+            )
+            .wrap(),
         );
-        add(ui);
     });
 }
-/// A row starting where slider rails start.
 pub(in crate::app) fn indented(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
         ui.add_space(crate::app::ui::widgets::label_column(ui));

@@ -192,6 +192,9 @@ pub(in crate::app) struct AiRemove {
     /// The strokes painted and not sent yet, in image space: one area, sent
     /// only when the user asks ([`Editor::send_ai_draft`]).
     pub(in crate::app) draft: Vec<Vec<[f32; 2]>>,
+    /// The tint showing the draft's coverage with its feather, by what it
+    /// was drawn from ([`crate::app::develop::tools::retouch_tool`]).
+    pub(in crate::app) draft_tint: Option<(u64, eframe::egui::TextureHandle)>,
     /// Patches of results not taken while another request ran, to let go of
     /// once none runs.
     deferred: Vec<String>,
@@ -210,6 +213,7 @@ impl Default for AiRemove {
             setup_needed: None,
             consent: None,
             draft: Vec::new(),
+            draft_tint: None,
             deferred: Vec::new(),
             withdrawn: Vec::new(),
         }

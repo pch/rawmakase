@@ -3,11 +3,11 @@
 //! request running, what went wrong, and what made the selected spot.
 use super::Failure;
 use crate::app::Editor;
-use crate::app::develop::tools::retouch_tool::{control_label_top, hint, indented};
+use crate::app::develop::tools::retouch_tool::{control_label_top, hint, hint_at, indented};
 use crate::app::extensions::retouch_generator::Offer;
 use crate::app::preferences::Tab;
 use crate::app::ui::design::space;
-use eframe::egui;
+use eframe::egui::{self, Vec2};
 use rawmakase_extensions::protocol::manifest::PromptUse;
 use rawmakase_extensions::protocol::method::MAX_PROMPT_LEN;
 
@@ -72,9 +72,13 @@ impl Editor {
                 // Characters, not bytes: four bytes each at most.
                 crate::app::ui::widgets::text_box(ui, text, &placeholder, 2, MAX_PROMPT_LEN / 4);
             });
-            // Each mode keeps its own prompt; say whether this one needs it.
-            hint(
+            // Each mode keeps its own prompt; say whether this one needs it,
+            // lined up with the text in the box.
+            let text_left =
+                crate::app::ui::widgets::control_left(ui) + crate::app::ui::widgets::TEXT_BOX_INSET;
+            hint_at(
                 ui,
+                text_left,
                 &match offer.prompt {
                     PromptUse::Required => {
                         format!("{} needs a prompt before you paint", offer.name)
@@ -82,8 +86,9 @@ impl Editor {
                     _ => format!("Optional for {}: say what to remove or keep", offer.name),
                 },
             );
-            ui.add_space(space::M);
         }
+        // Painting and sending: a section of its own.
+        ui.add_space(space::L);
         hint(
             ui,
             &format!(
@@ -95,10 +100,25 @@ impl Editor {
         if let Some(why) = why.or_else(|| self.ai_remove_unavailable()) {
             hint(ui, &why);
         }
-        // Send: what was painted goes only when asked.
+        // Send: what was painted goes only when asked. While a request runs,
+        // the same row says so, with Cancel in Send's place.
         let blocked = self.ai_send_blocked();
         let painted = !self.ai_remove.draft.is_empty();
+        let button = Vec2::new(84., 30.);
         indented(ui, |ui| {
+            ui.add_space(crate::app::ui::widgets::LABEL_GAP);
+            if let Some(working) = self.ai_remove.working() {
+                if ui
+                    .add_sized(button, egui::Button::new("Cancel"))
+                    .on_hover_text("Stop; the photo is left as it was")
+                    .clicked()
+                {
+                    self.cancel_ai_remove();
+                }
+                crate::app::ui::widgets::spinner(ui, 14.);
+                ui.label(working);
+                return;
+            }
             let send = ui.add_enabled_ui(blocked.is_none(), |ui| {
                 crate::app::ui::widgets::primary_button(ui, &offer.name)
             });
@@ -110,7 +130,7 @@ impl Editor {
                 self.send_ai_draft();
             }
             if ui
-                .add_enabled(painted, egui::Button::new("Clear"))
+                .add_enabled(painted, egui::Button::new("Clear").min_size(button))
                 .on_hover_text("Forget the area painted · Esc")
                 .clicked()
             {
@@ -125,9 +145,9 @@ impl Editor {
             // In the text's own colour, not a hint's: this waits for an answer.
             ui.add(
                 egui::Label::new(format!(
-                    "AI Remove sends the painted area and its surroundings to the service set up \
-                     in {}. Send it?",
-                    consent.offer.extension_name
+                    "{} sends the painted area and its surroundings to the service set up in {}. \
+                     Send it?",
+                    consent.offer.name, consent.offer.extension_name
                 ))
                 .wrap(),
             );
@@ -137,19 +157,6 @@ impl Editor {
                 }
                 if ui.button("Cancel").clicked() {
                     self.answer_ai_remove_consent(false);
-                }
-            });
-        }
-        if let Some(working) = self.ai_remove.working() {
-            indented(ui, |ui| {
-                crate::app::ui::widgets::spinner(ui, 14.);
-                ui.label(working);
-                if ui
-                    .button("Cancel")
-                    .on_hover_text("Stop; the photo is left as it was")
-                    .clicked()
-                {
-                    self.cancel_ai_remove();
                 }
             });
         }
