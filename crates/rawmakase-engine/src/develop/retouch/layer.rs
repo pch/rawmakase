@@ -229,7 +229,10 @@ impl RetouchCache {
         // rebuilding them all (an AI spot's matching at full size) takes long.
         let same_base = self.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base));
         if ops.is_empty() {
-            // Another photo's retouched image is let go of, as before.
+            // The photo itself isn't what the last change made, so that change
+            // can't be laid over it. Another photo's retouched image is let go
+            // of, as before.
+            self.change = None;
             if !same_base {
                 self.base = None;
                 self.image = None;

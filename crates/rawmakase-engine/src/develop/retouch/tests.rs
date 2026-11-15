@@ -249,6 +249,7 @@ fn incremental_tiles_match_a_full_rebuild() {
         .get(&base, Retouching::default(), Cancel::new(&cancel))
         .unwrap();
     assert!(std::sync::Arc::ptr_eq(&none, &base));
+
     let again = cache.get(&base, heals(&ops), Cancel::new(&cancel)).unwrap();
     assert!(
         std::sync::Arc::ptr_eq(&again, &before),
@@ -416,4 +417,32 @@ fn strokes_cover_themselves_not_the_gap_between() {
     }
     assert_eq!(at(&joined, 50), 1.);
     assert_eq!(at(&apart, 50), 0.);
+}
+
+/// A render without spots is the photo, not what the last change made: the
+/// change (its tiles) isn't offered for it, so a preview that holds the image
+/// before that change can't lay those tiles over the photo and keep a spot
+/// that is gone.
+#[test]
+fn the_photo_without_spots_offers_no_change_to_lay_over_it() {
+    let im = image(700, 500, |x, y| [0.1 + x / 2000., 0.2 + y / 3000., 0.15]);
+    let base = std::sync::Arc::new(im.clone());
+    let a = spot(RetouchMode::Clone, &im, [100., 100.], 20., [60., 10.]);
+    let b = spot(RetouchMode::Clone, &im, [600., 400.], 20., [-60., -10.]);
+    let cancel = AtomicBool::new(false);
+    let mut cache = RetouchCache::default();
+    let just_a = [a.clone()];
+    let with_a = cache
+        .get(&base, heals(&just_a), Cancel::new(&cancel))
+        .unwrap();
+    let both = [a, b];
+    cache
+        .get(&base, heals(&both), Cancel::new(&cancel))
+        .unwrap();
+    assert!(cache.changed_from(&with_a).is_some(), "A to A and B");
+    let none = cache
+        .get(&base, Retouching::default(), Cancel::new(&cancel))
+        .unwrap();
+    assert!(std::sync::Arc::ptr_eq(&none, &base));
+    assert!(cache.changed_from(&with_a).is_none());
 }
