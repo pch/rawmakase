@@ -1,7 +1,11 @@
 //! The retouched camera image: the highlight-recovered image with every red eye
-//! correction, then every Heal and Clone operation, applied in order. Previews keep it
-//! between renders and, when operations change, recompute only the 256-pixel tiles
-//! those changes reach; exports build it at once.
+//! correction, then every Heal, Clone and Generate operation, applied in order.
+//! Previews keep it between renders and, when operations change, recompute only the
+//! 256-pixel tiles those changes reach; exports build it at once.
+//!
+//! A Generate operation's patch is resolved here, for every caller alike (preview,
+//! export, Library previews, measurement): one that can't be provided fails the
+//! render with its reason, and the photo never renders without it.
 use super::{
     RetouchOp,
     heal::{self, PixelRect},
@@ -40,8 +44,9 @@ impl<'a> Retouching<'a> {
         self.red_eye.is_empty() && self.retouch.is_empty()
     }
     /// Every operation placed on one image, in the order they apply: red eye first, so
-    /// a heal copying from an eye copies the corrected pupil.
-    fn steps(&self, frame: &ImageFrame) -> Vec<Step> {
+    /// a heal copying from an eye copies the corrected pupil. Where they write and
+    /// read only: Generate operations' patches are not resolved.
+    fn placed(&self, frame: &ImageFrame) -> Vec<Step> {
         let eyes = self
             .red_eye
             .iter()
@@ -51,6 +56,21 @@ impl<'a> Retouching<'a> {
             .iter()
             .map(|op| Step::Heal(heal::Placed::new(op, frame, FEATHER)));
         eyes.chain(heals).collect()
+    }
+    /// [`Self::placed`], with each Generate operation's patch resolved, ready to
+    /// apply; fails when a patch can't be provided.
+    fn steps(&self, frame: &ImageFrame) -> Result<Vec<Step>> {
+        let mut steps = self.placed(frame);
+        let mut ops = self.retouch.iter();
+        for step in steps.iter_mut().skip(self.red_eye.len()) {
+            let op = ops.next().expect("a step per operation");
+            if let (Step::Heal(placed), Some(patch)) = (step, &op.patch) {
+                let pixels = super::patch::resolve(patch)?;
+                let p = std::mem::replace(placed, heal::Placed::new(op, frame, FEATHER));
+                *placed = p.with_patch(pixels, frame);
+            }
+        }
+        Ok(steps)
     }
     /// Destination rectangles of the operations that differ between `self` and
     /// `other`, compared position by position within each list.
@@ -106,15 +126,17 @@ impl Step {
     }
 }
 
-/// `base` with the operations applied, built from scratch (exports).
-pub(crate) fn apply(base: &CameraImage, ops: Retouching) -> CameraImage {
+/// `base` with the operations applied, built from scratch (exports); fails when a
+/// Generate operation's patch can't be provided.
+pub(crate) fn apply(base: &CameraImage, ops: Retouching) -> Result<CameraImage> {
     let frame = ImageFrame::new(base);
+    let steps = ops.steps(&frame)?;
     let mut out = base.clone();
     out.recovered = Default::default();
-    for step in ops.steps(&frame) {
+    for step in steps {
         step.apply(&mut out);
     }
-    out
+    Ok(out)
 }
 /// Tiles, as (column, row), covering a pixel rectangle.
 fn tiles(rect: &PixelRect) -> impl Iterator<Item = (i32, i32)> + use<> {
@@ -127,8 +149,11 @@ fn touches(dirty: &BTreeSet<(i32, i32)>, rect: &PixelRect) -> bool {
 }
 /// Tiles that must be recomputed when `before` becomes `after`: those of changed
 /// operations, then, until nothing changes, those written by any operation that reads
-/// or writes a dirty tile. Recomputing exactly these tiles, and rerunning the
-/// operations that touch them in order, gives the same image as starting over.
+/// or writes a dirty tile, and those an operation that reruns reads where a later
+/// operation wrote: outside dirty tiles the image holds every operation's result,
+/// and the rerun must read what was there before the later ones. Recomputing
+/// exactly these tiles, and rerunning the operations that touch them in order,
+/// gives the same image as starting over.
 pub(crate) fn dirty_tiles(
     frame: &ImageFrame,
     before: Retouching,
@@ -138,12 +163,23 @@ pub(crate) fn dirty_tiles(
     for rect in before.changed(&after, frame) {
         dirty.extend(tiles(&rect));
     }
-    let placed = after.steps(frame);
+    let placed = after.placed(frame);
+    // The last operation that writes each tile.
+    let mut last = std::collections::BTreeMap::new();
+    for (i, p) in placed.iter().enumerate() {
+        for t in tiles(&p.dest()) {
+            last.insert(t, i);
+        }
+    }
     loop {
         let size = dirty.len();
-        for p in &placed {
-            if p.reads().iter().any(|r| touches(&dirty, r)) {
+        for (i, p) in placed.iter().enumerate() {
+            let reads = p.reads();
+            if reads.iter().any(|r| touches(&dirty, r)) {
                 dirty.extend(tiles(&p.dest()));
+                for r in reads.iter().filter(|r| r[2] > r[0] && r[3] > r[1]) {
+                    dirty.extend(tiles(r).filter(|t| last.get(t).is_some_and(|l| *l > i)));
+                }
             }
         }
         if dirty.len() == size {
@@ -188,7 +224,24 @@ impl RetouchCache {
         ops: Retouching,
         cancel: Cancel<'_>,
     ) -> Result<Arc<CameraImage>> {
+        // No spots (Before, or a recipe without any) is the photo itself, and
+        // leaves what was built: going back to the spots costs nothing, where
+        // rebuilding them all (an AI spot's matching at full size) takes long.
         let same_base = self.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base));
+        if ops.is_empty() {
+            // The photo itself isn't what the last change made, so that change
+            // can't be laid over it. Another photo's retouched image is let go
+            // of, as before.
+            self.change = None;
+            if !same_base {
+                self.base = None;
+                self.image = None;
+                self.change = None;
+                self.ops.clear();
+                self.red_eye.clear();
+            }
+            return Ok(base.clone());
+        }
         let previous = self.image.clone().unwrap_or_else(|| base.clone());
         let previous_ops = if same_base {
             Retouching {
@@ -202,11 +255,12 @@ impl RetouchCache {
             return Ok(previous);
         }
         let frame = ImageFrame::new(base);
+        // Resolved before anything changes, so a patch that can't be provided
+        // leaves the cache as it was.
+        let steps = ops.steps(&frame)?;
         let dirty = dirty_tiles(&frame, previous_ops, ops);
         let rects = tile_rects(&dirty, base.width, base.height);
-        let image = if ops.is_empty() {
-            base.clone()
-        } else {
+        let image = {
             let start = if same_base { &previous } else { base };
             let mut out = CameraImage::clone(start);
             out.recovered = Default::default();
@@ -219,7 +273,7 @@ impl RetouchCache {
                     out.pixels[a..b].copy_from_slice(&base.pixels[a..b]);
                 }
             }
-            for step in ops.steps(&frame) {
+            for step in steps {
                 ensure!(!cancel.is_cancelled(), "Render superseded");
                 if step.reads().iter().any(|r| touches(&dirty, r)) {
                     step.apply(&mut out);

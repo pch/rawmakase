@@ -6,6 +6,7 @@ mod files;
 mod formats;
 mod identity;
 pub mod mask_assets;
+pub mod patches;
 pub mod recipe_assets;
 
 pub use checksum::{

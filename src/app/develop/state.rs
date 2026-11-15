@@ -327,6 +327,10 @@ pub(in crate::app) enum Tool {
     PointColor,
     /// Spot removal: Heal and Clone.
     Remove,
+    /// Experimental AI Retouch: extensions' retouch generators (AI Remove,
+    /// AI Replace) and the spots they made. On the rail only while an enabled
+    /// extension offers one.
+    AiRetouch,
     /// Red Eye Correction.
     RedEye,
     Mask,
@@ -804,6 +808,11 @@ impl ViewState {
     }
     pub(crate) fn is(&self, tool: Tool) -> bool {
         self.tool() == tool
+    }
+    /// A spot tool is open: Spot Removal or AI Retouch, which share the brush,
+    /// the pins and the spot list, each showing only its own spots.
+    pub(crate) fn retouching(&self) -> bool {
+        matches!(self.tool(), Tool::Remove | Tool::AiRetouch)
     }
     /// An eyedropper is active: White Balance, the Fringe Color Selector or Point
     /// Color's dropper.

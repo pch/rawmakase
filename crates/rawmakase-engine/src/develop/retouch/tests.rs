@@ -39,6 +39,7 @@ fn spot(mode: RetouchMode, im: &CameraImage, c: [f32; 2], r: f32, off: [f32; 2])
         feather: 0.3,
         opacity: 1.,
         offset: [off[0] / w, off[1] / h],
+        patch: None,
     }
 }
 fn max_error(a: &CameraImage, b: &CameraImage) -> f32 {
@@ -70,7 +71,7 @@ fn heal_of_a_constant_field_is_exact() {
         feather: 0.2,
         ..spot(RetouchMode::Heal, &im, [25., 40.], 8., [55., 0.])
     };
-    let healed = apply(&dusty, heals(&[op]));
+    let healed = apply(&dusty, heals(&[op])).unwrap();
     assert!(
         max_error(&healed, &im) < 1e-4,
         "{}",
@@ -95,7 +96,7 @@ fn heal_reproduces_linear_gradients() {
         feather: 0.2,
         ..spot(RetouchMode::Heal, &im, [80., 60.], 14., [-40., 20.])
     };
-    let healed = apply(&dusty, heals(&[op]));
+    let healed = apply(&dusty, heals(&[op])).unwrap();
     let error = im
         .pixels
         .iter()
@@ -106,7 +107,7 @@ fn heal_reproduces_linear_gradients() {
     assert!(error < 0.01, "{error}");
     // Clone copies the other part of the gradient unchanged.
     let op = spot(RetouchMode::Clone, &im, [80., 60.], 12., [-40., 0.]);
-    let cloned = apply(&dusty, heals(&[op]));
+    let cloned = apply(&dusty, heals(&[op])).unwrap();
     let i = 60 * 160 + 80;
     assert!((cloned.pixels[i][0] - gradient(40., 60.)[0]).abs() < 1e-4);
 }
@@ -175,6 +176,7 @@ fn log_heal_beats_linear_on_lit_texture() {
     let (gw, gh) = ((grid[2] - grid[0]) as usize, (grid[3] - grid[1]) as usize);
     let alpha = heal::coverage(
         &[[cx as f32, cy as f32]],
+        &[],
         r as f32,
         0.,
         FeatherProfile::Smoothstep,
@@ -230,7 +232,7 @@ fn incremental_tiles_match_a_full_rebuild() {
     let mut cache = RetouchCache::default();
     let check = |cache: &mut RetouchCache, ops: &[RetouchOp]| {
         let incremental = cache.get(&base, heals(ops), Cancel::new(&cancel)).unwrap();
-        let full = apply(&base, heals(ops));
+        let full = apply(&base, heals(ops)).unwrap();
         assert_eq!(incremental.pixels, full.pixels);
     };
     check(&mut cache, &ops);
@@ -241,6 +243,18 @@ fn incremental_tiles_match_a_full_rebuild() {
     ops[2].translate([0.01, 0.02]);
     check(&mut cache, &ops);
     let before = cache.get(&base, heals(&ops), Cancel::new(&cancel)).unwrap();
+    // Before (no spots) is the photo, and leaves what was built: back to the
+    // spots, the same image comes back at once, nothing rebuilt.
+    let none = cache
+        .get(&base, Retouching::default(), Cancel::new(&cancel))
+        .unwrap();
+    assert!(std::sync::Arc::ptr_eq(&none, &base));
+
+    let again = cache.get(&base, heals(&ops), Cancel::new(&cancel)).unwrap();
+    assert!(
+        std::sync::Arc::ptr_eq(&again, &before),
+        "rebuilt after Before"
+    );
     ops.push(spot(RetouchMode::Clone, &im, [650., 60.], 10., [-40., 0.]));
     let after = cache.get(&base, heals(&ops), Cancel::new(&cancel)).unwrap();
     // Only tiles near the new spot changed.
@@ -276,7 +290,7 @@ fn incremental_tiles_match_a_full_rebuild() {
             retouch: ops,
         };
         let incremental = cache.get(&base, ops, Cancel::new(&cancel)).unwrap();
-        assert_eq!(incremental.pixels, apply(&base, ops).pixels);
+        assert_eq!(incremental.pixels, apply(&base, ops).unwrap().pixels);
     };
     both(&mut cache, &eyes, &heal_ops);
     eyes[0].darken = 1.;
@@ -321,7 +335,7 @@ fn automatic_source_avoids_texture_edges_and_asks_again_for_the_next() {
     let src = [(0.5 + offset[0]) * 400., (0.5 + offset[1]) * 300.];
     assert!((src[0] - 200.).hypot(src[1] - 150.) >= 14.);
     assert!(!(235. ..285.).contains(&src[0]), "{src:?}");
-    let healed = apply(&dusty, heals(&[op.clone()]));
+    let healed = apply(&dusty, heals(&[op.clone()])).unwrap();
     assert!(
         max_error(&healed, &im) < 0.01,
         "{}",
@@ -344,11 +358,19 @@ fn placed_brush_covers_its_path() {
         feather: 0.,
         opacity: 1.,
         offset: [0., 0.2],
+        patch: None,
     };
     let p = Placed::new(&op, &frame, FeatherProfile::Smoothstep);
     assert_eq!(p.radius, 4.);
     let rect = [30, 40, 90, 60];
-    let a = heal::coverage(&p.points, p.radius, 0., FeatherProfile::Smoothstep, rect);
+    let a = heal::coverage(
+        &p.points,
+        &p.starts,
+        p.radius,
+        0.,
+        FeatherProfile::Smoothstep,
+        rect,
+    );
     let at = |x: i32, y: i32| a[((y - rect[1]) * 60 + x - rect[0]) as usize];
     assert_eq!(at(60, 49), 1.);
     assert_eq!(at(60, 55), 0.);
@@ -363,7 +385,7 @@ fn placed_brush_covers_its_path() {
 fn measured_feather_crosses_half_where_camera_raw_does() {
     let half = |profile: FeatherProfile, feather: f32| {
         let radius = 200.;
-        let row = heal::coverage(&[[0., 0.]], radius, feather, profile, [0, 0, 220, 1]);
+        let row = heal::coverage(&[[0., 0.]], &[], radius, feather, profile, [0, 0, 220, 1]);
         row.iter().position(|a| *a < 0.5).unwrap() as f32 / radius
     };
     for (feather, camera_raw) in [(0.25, 0.952), (0.5, 0.89), (0.75, 0.788), (1., 0.648)] {
@@ -379,4 +401,48 @@ fn measured_feather_crosses_half_where_camera_raw_does() {
         half(FeatherProfile::Measured, 0.),
         half(FeatherProfile::Smoothstep, 0.)
     );
+}
+
+/// Strokes painted apart cover each stroke, never the gap between them: a
+/// path joins its dabs only within a stroke.
+#[test]
+fn strokes_cover_themselves_not_the_gap_between() {
+    let rect = [0, 0, 100, 20];
+    let dabs = [[10., 10.], [20., 10.], [80., 10.], [90., 10.]];
+    let at = |a: &[f32], x: usize| a[10 * 100 + x];
+    let joined = heal::coverage(&dabs, &[], 3., 0., FeatherProfile::Smoothstep, rect);
+    let apart = heal::coverage(&dabs, &[2], 3., 0., FeatherProfile::Smoothstep, rect);
+    for x in [15, 85] {
+        assert_eq!((at(&joined, x), at(&apart, x)), (1., 1.), "{x}");
+    }
+    assert_eq!(at(&joined, 50), 1.);
+    assert_eq!(at(&apart, 50), 0.);
+}
+
+/// A render without spots is the photo, not what the last change made: the
+/// change (its tiles) isn't offered for it, so a preview that holds the image
+/// before that change can't lay those tiles over the photo and keep a spot
+/// that is gone.
+#[test]
+fn the_photo_without_spots_offers_no_change_to_lay_over_it() {
+    let im = image(700, 500, |x, y| [0.1 + x / 2000., 0.2 + y / 3000., 0.15]);
+    let base = std::sync::Arc::new(im.clone());
+    let a = spot(RetouchMode::Clone, &im, [100., 100.], 20., [60., 10.]);
+    let b = spot(RetouchMode::Clone, &im, [600., 400.], 20., [-60., -10.]);
+    let cancel = AtomicBool::new(false);
+    let mut cache = RetouchCache::default();
+    let just_a = [a.clone()];
+    let with_a = cache
+        .get(&base, heals(&just_a), Cancel::new(&cancel))
+        .unwrap();
+    let both = [a, b];
+    cache
+        .get(&base, heals(&both), Cancel::new(&cancel))
+        .unwrap();
+    assert!(cache.changed_from(&with_a).is_some(), "A to A and B");
+    let none = cache
+        .get(&base, Retouching::default(), Cancel::new(&cancel))
+        .unwrap();
+    assert!(std::sync::Arc::ptr_eq(&none, &base));
+    assert!(cache.changed_from(&with_a).is_none());
 }

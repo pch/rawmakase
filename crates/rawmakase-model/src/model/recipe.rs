@@ -579,9 +579,12 @@ impl Recipe {
         crate::model::masks::validate(&self.masks)?;
         Ok(())
     }
-    /// The content IDs of the mask rasters this recipe refers to.
+    /// The content IDs of the stored rasters this recipe refers to: its masks'
+    /// rasters and its AI Remove patches, which the asset store, edit rows,
+    /// History, snapshots and catalog export keep alike.
     pub fn mask_asset_ids(&self) -> impl Iterator<Item = &str> {
         crate::model::masks::bitmap_ids(&self.masks)
+            .chain(crate::model::retouch::patch_ids(&self.retouch))
     }
     /// The recipe as saved, without spots and masks, and those apart.
     pub fn split_local(&self) -> (Recipe, LocalEdits) {
@@ -640,6 +643,14 @@ impl Recipe {
             return Default::default();
         }
         self.lens_profile_choice.resolve(&m.lens_profiles, m)
+    }
+    /// Whether the edit holds an AI Remove spot (a generated patch): it is saved
+    /// in a format releases before AI Remove refuse (`saved_format::schema_for`,
+    /// the catalog's version 7), rather than dropping the spot.
+    pub fn uses_generated(&self) -> bool {
+        self.retouch
+            .iter()
+            .any(crate::model::retouch::RetouchOp::is_generated)
     }
     /// Whether the edit renders in HDR or uses an HDR camera profile: it is saved in
     /// a format releases before HDR refuse (`saved_format::schema_for`, the catalog's

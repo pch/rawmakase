@@ -14,7 +14,7 @@ impl Editor {
         let ctx = ui.ctx().clone();
         // The buttons follow the shared log, which also holds Library changes.
         self.sync_undo();
-        let (can_undo, can_redo) = (self.undo_log.can_undo(), self.undo_log.can_redo());
+        let (can_undo, can_redo) = (self.can_undo(), self.can_redo());
         // Under the photo, as the Library's view bar is, on its backdrop with
         // no rule: the canvas's own margin spaces them from the photo.
         egui::Panel::bottom("toolbar")

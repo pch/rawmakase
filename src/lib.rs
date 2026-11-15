@@ -56,6 +56,16 @@ pub(crate) mod model_install;
 pub(crate) mod platform;
 /// For headless commands: whether a path's volume is mounted.
 pub use platform::volume::mounted as volume_mounted;
+/// For `rawmakase extensions remove`: deletes the keys extension `id` left
+/// in the system's credential store when it was removed, opening the store
+/// only when there are some.
+pub fn delete_forgotten_keys(data_dir: &std::path::Path, id: &str) -> anyhow::Result<()> {
+    platform::credentials::delete_forgotten_keys(
+        platform::credentials::system_store,
+        &rawmakase_extensions::store::Store::new(data_dir),
+        id,
+    )
+}
 pub mod updates;
 
 #[cfg(test)]

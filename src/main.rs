@@ -1451,6 +1451,14 @@ fn extensions(command: ExtensionsCommand) -> Result<()> {
                 "Removed {id}; its data in {} stays",
                 store.extension_data_dir(&id).display()
             );
+            // Its keys, recorded with the removal: one the store keeps is
+            // deleted at RAWmakase's next start.
+            if let Err(e) = rawmakase::delete_forgotten_keys(store.data_dir(), &id) {
+                eprintln!(
+                    "Its saved keys couldn't be removed from the system's credential store \
+                     ({e}); RAWmakase tries again when it starts"
+                );
+            }
         }
         ExtensionsCommand::Enable { id } => {
             store.set_enabled(&id, true, BUNDLED_EXTENSIONS)?;

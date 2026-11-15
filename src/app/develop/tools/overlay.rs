@@ -37,7 +37,7 @@ impl Editor {
             Tool::None | Tool::Crop | Tool::WhiteBalance | Tool::Defringe | Tool::PointColor => {
                 false
             }
-            Tool::Remove => {
+            Tool::Remove | Tool::AiRetouch => {
                 self.retouch_overlay(ui, response, rect);
                 true
             }

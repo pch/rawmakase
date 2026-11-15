@@ -35,6 +35,8 @@ enum TabClick {
     Edit,
     /// Open or close this tool, its drawer in place of the adjustments.
     Tool(Tool),
+    /// Open or close this generator's tool, by its provenance.
+    Generator(String),
 }
 
 /// A rail button's id, fixed so tests can find it.
@@ -44,6 +46,10 @@ pub(in crate::app) fn rail_id(tab: DevelopTab) -> egui::Id {
 /// The rail's Edit button's id.
 pub(in crate::app) fn edit_id() -> egui::Id {
     egui::Id::new("develop-rail-edit")
+}
+/// A generator's rail button's id, by its provenance.
+pub(in crate::app) fn generator_id(provenance: &str) -> egui::Id {
+    egui::Id::new(("develop-rail-generator", provenance))
 }
 /// A tool's rail button's id.
 pub(in crate::app) fn tool_id(tool: Tool) -> egui::Id {
@@ -106,6 +112,7 @@ impl Editor {
                 }
             }
             Some(TabClick::Tool(tool)) => self.view.toggle(tool),
+            Some(TabClick::Generator(provenance)) => self.toggle_generator(&provenance),
             None => {}
         }
         self.develop_tabs_open()
@@ -212,11 +219,24 @@ impl Editor {
             .exact_size(RAIL_WIDTH)
             .frame(egui::Frame::new().fill(palette.tone(Tone::WINDOW)))
             .show(ui, |ui| {
-                let rail = ui.max_rect();
-                ui.allocate_rect(rail, Sense::hover());
-                // A rail button: its fill, the open one's marker on the
-                // window's edge, and whether it was clicked.
-                let button =
+                // Taller than the window when many generators are offered:
+                // the rail then scrolls, without a bar it is too narrow for.
+                let rows = 1 + DRAWER_TOOLS.len() + self.rail_generators().len() + TABS.len();
+                let height = 24. + 36. * rows as f32 + 32.;
+                egui::ScrollArea::vertical()
+                    .id_salt("develop-rail-scroll")
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .auto_shrink([false; 2])
+                    .show(ui, |ui| {
+                        let top = ui.max_rect();
+                        let rail = Rect::from_min_size(
+                            top.min,
+                            Vec2::new(top.width(), height.max(ui.available_height())),
+                        );
+                        ui.allocate_rect(rail, Sense::hover());
+                        // A rail button: its fill, the open one's marker on the
+                        // window's edge, and whether it was clicked.
+                        let button =
                     |ui: &mut egui::Ui,
                      y: f32,
                      id: egui::Id,
@@ -260,47 +280,82 @@ impl Editor {
                         paint(ui.painter(), center, tint);
                         response.clicked()
                     };
-                // Edit and the tools first, each in the adjustments' place.
-                let mut y = 24.;
-                let edit = |p: &egui::Painter, c: Pos2, tint: egui::Color32| {
-                    icons::paint_at(p, Icon::Edit, c, 16., tint)
-                };
-                let editing = !has_drawer(tool) && self.panel_shown(WorkspacePanel::Adjustments);
-                let tip = if editing { "Hide Edit" } else { "Show Edit" };
-                if button(ui, y, edit_id(), editing, true, tip.into(), &edit) {
-                    click = Some(TabClick::Edit);
-                }
-                y += 36.;
-                for (t, tip, _) in DRAWER_TOOLS {
-                    let paint = |p: &egui::Painter, c: Pos2, tint: egui::Color32| {
-                        icons::paint_at(p, tool_icon(t), c, 16., tint)
-                    };
-                    if button(ui, y, tool_id(t), tool == t, photo, tip.to_string(), &paint) {
-                        click = Some(TabClick::Tool(t));
-                    }
-                    y += 36.;
-                }
-                // The tabs after a gap, in the panel beside the adjustments.
-                y += 32.;
-                for (tab, icon, name) in TABS {
-                    let active = open && self.panels.develop_tab == tab;
-                    let tip = if active {
-                        format!("Hide {name}")
-                    } else {
-                        format!("Show {name}")
-                    };
-                    let paint = |p: &egui::Painter, c: Pos2, tint: egui::Color32| {
-                        icons::paint_at(p, icon, c, 16., tint)
-                    };
-                    if button(ui, y, rail_id(tab), active, true, tip, &paint) {
-                        click = Some(if active {
-                            TabClick::Fold
-                        } else {
-                            TabClick::Open(tab)
-                        });
-                    }
-                    y += 36.;
-                }
+                        // Edit and the tools first, each in the adjustments' place.
+                        let mut y = 24.;
+                        let edit = |p: &egui::Painter, c: Pos2, tint: egui::Color32| {
+                            icons::paint_at(p, Icon::Edit, c, 16., tint)
+                        };
+                        let editing =
+                            !has_drawer(tool) && self.panel_shown(WorkspacePanel::Adjustments);
+                        let tip = if editing { "Hide Edit" } else { "Show Edit" };
+                        if button(ui, y, edit_id(), editing, true, tip.into(), &edit) {
+                            click = Some(TabClick::Edit);
+                        }
+                        y += 36.;
+                        let offered = self.rail_tools();
+                        for (t, tip, _) in DRAWER_TOOLS {
+                            if !offered.contains(&t) {
+                                continue;
+                            }
+                            let paint = |p: &egui::Painter, c: Pos2, tint: egui::Color32| {
+                                icons::paint_at(p, tool_icon(t), c, 16., tint)
+                            };
+                            if button(ui, y, tool_id(t), tool == t, photo, tip.to_string(), &paint)
+                            {
+                                click = Some(TabClick::Tool(t));
+                            }
+                            y += 36.;
+                        }
+                        // Then each extension's generator, a tool it names and draws.
+                        let open_on = (tool == Tool::AiRetouch)
+                            .then(|| self.ai_remove_offer().map(|(o, _)| o.provenance))
+                            .flatten();
+                        for offer in self.rail_generators() {
+                            // Its extension's own icon: the app has none for it,
+                            // only a sign that it can't be shown.
+                            let broken = self.generator_icon_broken(&offer, 16.);
+                            let icon = self.generator_icon(&offer).filter(|_| !broken);
+                            let paint =
+                                |p: &egui::Painter, c: Pos2, tint: egui::Color32| match &icon {
+                                    Some(uri) => icons::paint_uri_at(p, uri, c, 16., tint),
+                                    None => {
+                                        icons::paint_at(p, Icon::Failed, c, 16., palette.warning())
+                                    }
+                                };
+                            let tip = if broken {
+                                format!("{} · its icon can't be shown", offer.name)
+                            } else {
+                                offer.name.clone()
+                            };
+                            let active = open_on.as_deref() == Some(offer.provenance.as_str());
+                            let id = generator_id(&offer.provenance);
+                            if button(ui, y, id, active, photo, tip, &paint) {
+                                click = Some(TabClick::Generator(offer.provenance));
+                            }
+                            y += 36.;
+                        }
+                        // The tabs after a gap, in the panel beside the adjustments.
+                        y += 32.;
+                        for (tab, icon, name) in TABS {
+                            let active = open && self.panels.develop_tab == tab;
+                            let tip = if active {
+                                format!("Hide {name}")
+                            } else {
+                                format!("Show {name}")
+                            };
+                            let paint = |p: &egui::Painter, c: Pos2, tint: egui::Color32| {
+                                icons::paint_at(p, icon, c, 16., tint)
+                            };
+                            if button(ui, y, rail_id(tab), active, true, tip, &paint) {
+                                click = Some(if active {
+                                    TabClick::Fold
+                                } else {
+                                    TabClick::Open(tab)
+                                });
+                            }
+                            y += 36.;
+                        }
+                    });
             });
         click
     }

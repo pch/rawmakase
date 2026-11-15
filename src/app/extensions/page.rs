@@ -2,8 +2,10 @@
 //! version, source, state and available update, each turned on or off in its
 //! row; each extension's own page, opened from its row, with its settings and
 //! panels, its commands, and what it declares, its last errors and its log;
-//! and installing from GitHub, from a file or, in developer mode, from a
-//! folder.
+//! installing from GitHub, from a file or, in developer mode, from a folder;
+//! and the extensions RAWmakase lists but doesn't bundle ([`AVAILABLE`]), each
+//! installed through Install from GitHub with its confirmation and Not
+//! reviewed mark.
 //!
 //! Every change goes through the host, which writes `extensions.json` first
 //! and leaves the session as it was when that fails. Downloads, installs and
@@ -19,7 +21,7 @@ use crate::app::ui::theme;
 use crate::app::ui::widgets::{form_row, menu_item, modal_frame, primary_button};
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use rawmakase_extensions::github;
-use rawmakase_extensions::protocol::manifest::{Files, SettingControl};
+use rawmakase_extensions::protocol::manifest::{Files, PanelPlace, Setting, SettingControl};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -40,6 +42,26 @@ const MCP: &str = "rawmakase.mcp";
 const ROW: f32 = 48.;
 /// The Version and Status columns' width.
 const COLUMN: f32 = 86.;
+
+/// An extension RAWmakase lists for installing, without bundling it.
+pub(in crate::app) struct Available {
+    pub(in crate::app) id: &'static str,
+    pub(in crate::app) name: &'static str,
+    /// One line of what it does.
+    pub(in crate::app) line: &'static str,
+    /// The GitHub repository whose releases it installs from.
+    pub(in crate::app) repository: &'static str,
+}
+
+/// The extensions Preferences > Extensions offers to install, while they
+/// aren't installed.
+pub(in crate::app) const AVAILABLE: &[Available] = &[Available {
+    id: "dev.pch.ai-remove",
+    name: "AI Retouch",
+    line: "Experimental: AI Remove and AI Replace in an AI Retouch tool, with a hosted \
+           model and your own API key (fal.ai or Replicate).",
+    repository: "https://github.com/pch/rawmakase-ai-retouch",
+}];
 
 /// What the page keeps between frames.
 #[derive(Default)]
@@ -73,6 +95,9 @@ pub(in crate::app) struct Page {
     /// Number and Angle settings being dragged, by extension and setting
     /// ([`number_control`]).
     numbers: HashMap<(String, String), f64>,
+    /// Secret settings being typed, by extension and setting: never filled
+    /// from what is kept, and forgotten once saved.
+    secrets: HashMap<(String, String), String>,
 }
 
 /// The parts of an extension's own page, each a tab. A part the extension
@@ -329,6 +354,7 @@ impl Editor {
             });
         });
         ui.add_space(space::S);
+        self.extensions_available(ui);
         group(ui, "Installed");
         if count == 0 {
             hint(
@@ -490,8 +516,13 @@ impl Editor {
             return;
         };
         let what = match e.origin {
-            Origin::Developer => "RAWmakase forgets its folder, which stays where it is.",
-            _ => "Its program and its settings are removed. Photos it added stay in the catalog.",
+            Origin::Developer => {
+                "RAWmakase forgets its folder, which stays where it is, and its saved keys."
+            }
+            _ => {
+                "Its program, its settings and its saved keys are removed. Photos it added \
+                 stay in the catalog."
+            }
         };
         let title = format!("Uninstall {}?", e.name());
         let lines = [what.to_string()];
@@ -511,6 +542,42 @@ impl Editor {
                 }
             }
         }
+    }
+
+    /// The listed extensions not installed yet, each with Install, which
+    /// finds its latest release as Install from GitHub… does and shows it
+    /// for the user to confirm.
+    fn extensions_available(&mut self, ui: &mut egui::Ui) {
+        let missing: Vec<&Available> = AVAILABLE
+            .iter()
+            .filter(|a| self.extensions.get(a.id).is_none())
+            .collect();
+        if missing.is_empty() {
+            return;
+        }
+        group(ui, "Available");
+        let busy = self.extension_page.busy || self.activity.is_busy();
+        for available in missing {
+            form_row(ui, available.name, |ui| {
+                if ui
+                    .add_enabled(!busy, egui::Button::new("Install…"))
+                    .on_hover_text(available.repository)
+                    .clicked()
+                {
+                    self.extension_page.repository = available.repository.to_string();
+                    self.inspect_repository();
+                }
+                hint(ui, available.line);
+            });
+        }
+        form_row(ui, "", |ui| {
+            hint(
+                ui,
+                "Not bundled with RAWmakase: each installs from its GitHub releases, \
+                 marked Not reviewed.",
+            );
+        });
+        gap(ui);
     }
 
     fn inspect_repository(&mut self) {
@@ -809,6 +876,9 @@ impl Editor {
         if !m.settings.is_empty() {
             group(ui, "Options");
             for s in &m.settings {
+                if !setting_shown(&m.settings, &settings, s) {
+                    continue;
+                }
                 let value = settings.get(&s.id).cloned().unwrap_or(Value::Null);
                 let label = s.name.clone().unwrap_or_else(|| s.id.clone());
                 let mut set = None;
@@ -816,7 +886,7 @@ impl Editor {
                     set = self.setting_control(ui, id, s, &value);
                 });
                 if let Some(help) = &s.help {
-                    form_row(ui, "", |ui| hint(ui, help));
+                    form_row(ui, "", |ui| setting_help(ui, help));
                 }
                 if let Some(value) = set {
                     match self.extensions.set_setting(id, &s.id, value) {
@@ -831,10 +901,11 @@ impl Editor {
             }
             gap(ui);
         }
-        for panel in &m.panels {
+        // A generator's panel is its tool's, in the drawer.
+        for panel in m.panels.iter().filter(|p| p.place != PanelPlace::Generator) {
             group(ui, &panel.title);
             if runs {
-                self.panel_ui(ui, id, &panel.id);
+                self.extension_panel_ui(ui, id, &panel.id, panels::Layout::Page);
             } else {
                 hint(
                     ui,
@@ -1109,6 +1180,10 @@ impl Editor {
                 (r.changed() && released)
                     .then(|| Value::from(rgb.iter().map(|c| f64::from(*c)).collect::<Vec<_>>()))
             }
+            SettingControl::Secret => {
+                self.secret_control(ui, id, &s.id);
+                None
+            }
             SettingControl::File | SettingControl::Folder => {
                 let folder = matches!(s.control, SettingControl::Folder);
                 ui.add(egui::Label::new(value.as_str().unwrap_or("None chosen")).truncate());
@@ -1124,9 +1199,90 @@ impl Editor {
         }
     }
 
+    /// A secret setting: whether one is kept, a field to type a new one into
+    /// (shown as dots, never filled with what is kept), Save and Remove. It
+    /// says Set only once the credential store has it.
+    fn secret_control(&mut self, ui: &mut egui::Ui, id: &str, setting: &str) {
+        use super::secrets::{State, Writing};
+        let Some(e) = self.extensions.get(id) else {
+            return;
+        };
+        let writing = e.secret_writes.get(setting).cloned();
+        let state = e.secret(setting).cloned().unwrap_or(State::Unset);
+        let key = (id.to_string(), setting.to_string());
+        let mut text = self
+            .extension_page
+            .secrets
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
+        let saving = writing == Some(Writing::Saving);
+        let mut save = false;
+        let mut remove = false;
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                let field = ui.add_enabled(
+                    !saving,
+                    egui::TextEdit::singleline(&mut text)
+                        .password(true)
+                        .hint_text(match state {
+                            State::Set(_) => "Type a new one to replace it",
+                            _ => "Paste it here",
+                        })
+                        .desired_width(220.),
+                );
+                if field.changed() {
+                    self.extension_page
+                        .secrets
+                        .insert(key.clone(), text.clone());
+                }
+                let typed = !text.trim().is_empty();
+                save = ui
+                    .add_enabled(!saving && typed, egui::Button::new("Save"))
+                    .clicked()
+                    && typed;
+                if matches!(state, State::Set(_) | State::Unreadable(_)) {
+                    remove = ui
+                        .add_enabled(!saving, egui::Button::new("Remove"))
+                        .clicked();
+                }
+            });
+            let status = match (&writing, &state) {
+                (Some(Writing::Saving), _) => {
+                    "Saving to the system's credential store…".to_string()
+                }
+                (Some(Writing::Failed(why)), _) => format!("Not saved: {why}"),
+                (None, State::Loading) => "Reading from the system's credential store…".into(),
+                (None, State::Set(_)) => "Set · kept in the system's credential store".into(),
+                (None, State::Unset) => "Not set".into(),
+                (None, State::Unreadable(why)) => format!("Set, but it can't be read: {why}"),
+            };
+            hint(ui, &status);
+        });
+        let result = if save {
+            self.extension_page.secrets.remove(&key);
+            self.extensions.set_secret(id, setting, Some(text))
+        } else if remove {
+            self.extensions.set_secret(id, setting, None)
+        } else {
+            Ok(())
+        };
+        if let Err(why) = result {
+            self.messages.fail(why);
+        }
+    }
+
     /// A panel of the extension's page: opened once its extension runs, then
     /// drawn from what its program last sent.
-    fn panel_ui(&mut self, ui: &mut egui::Ui, id: &str, panel: &str) {
+    /// Extension `id`'s panel `panel`, opened when it isn't, its actions
+    /// sent: on its page, and in a generator tool's drawer.
+    pub(in crate::app) fn extension_panel_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        panel: &str,
+        layout: panels::Layout,
+    ) {
         let opened = self.extensions.panel(id, panel).is_some_and(|v| v.opened);
         if !opened && let Err(why) = self.extensions.open_panel(id, panel) {
             hint(ui, &why);
@@ -1141,7 +1297,7 @@ impl Editor {
         if view.waiting && view.controls.is_empty() {
             ui.spinner();
         }
-        let actions = panels::draw(ui, &format!("{id}/{panel}"), view);
+        let actions = panels::draw(ui, &format!("{id}/{panel}"), view, layout);
         for action in actions {
             let result = match action {
                 panels::Action::Changed { control, value } => {
@@ -1637,6 +1793,105 @@ fn section_tabs(ui: &mut egui::Ui, sections: &[Section], current: Section) -> Op
     chosen
 }
 
+/// A setting's help line, its `https://` links opening in the browser, so an
+/// extension can point to how to set it up: written `[text](https://…)` they
+/// show their text, written bare their address.
+fn setting_help(ui: &mut egui::Ui, text: &str) {
+    let parts = help_parts(text);
+    if let [(text, None)] = parts[..] {
+        return hint(ui, text);
+    }
+    let muted = crate::app::ui::theme::palette(ui.ctx()).tone(crate::app::ui::design::Tone::MUTED);
+    let size = crate::app::ui::design::text::LABEL;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.;
+        for (part, url) in parts {
+            match url {
+                Some(url) => {
+                    if ui
+                        .link(egui::RichText::new(part).size(size))
+                        .on_hover_text(url)
+                        .clicked()
+                    {
+                        let _ = crate::platform::web::open(url);
+                    }
+                }
+                None => {
+                    ui.label(egui::RichText::new(part).size(size).color(muted));
+                }
+            }
+        }
+    });
+}
+
+/// `text` cut into its runs of plain text (`None`) and its links, each with
+/// what it shows and its `https://` address: `[text](https://…)`, or a bare
+/// address ending before whitespace and any closing punctuation.
+fn help_parts(text: &str) -> Vec<(&str, Option<&str>)> {
+    const SCHEME: &str = "https://";
+    /// The `[label](https://…)` at the start of `s`: its label, address and
+    /// length.
+    fn written(s: &str) -> Option<(&str, &str, usize)> {
+        let rest = s.strip_prefix('[')?;
+        let close = rest.find(']')?;
+        let label = &rest[..close];
+        let after = rest[close + 1..].strip_prefix('(')?;
+        let end = after.find(')')?;
+        let url = &after[..end];
+        let shaped = !label.trim().is_empty()
+            && !label.contains('[')
+            && url.starts_with(SCHEME)
+            && url.len() > SCHEME.len()
+            && !url.contains(char::is_whitespace);
+        shaped.then_some((label, url, 1 + close + 2 + end + 1))
+    }
+    let mut parts = Vec::new();
+    // Where the plain text not yet pushed starts, and where to look next.
+    let (mut plain, mut from) = (0, 0);
+    while let Some(found) = text[from..].find(['[', 'h']) {
+        let start = from + found;
+        let tail = &text[start..];
+        let link = if let Some((label, url, len)) = written(tail) {
+            Some((label, url, len))
+        } else if tail.starts_with(SCHEME) {
+            let end = tail.find(char::is_whitespace).unwrap_or(tail.len());
+            let url = tail[..end].trim_end_matches(['.', ',', ';', ':', '!', '?', ')']);
+            (url.len() > SCHEME.len()).then_some((url, url, url.len()))
+        } else {
+            None
+        };
+        let Some((label, url, len)) = link else {
+            // Not a link here: on past this character.
+            from = start + tail.chars().next().map_or(1, char::len_utf8);
+            continue;
+        };
+        if start > plain {
+            parts.push((&text[plain..start], None));
+        }
+        parts.push((label, Some(url)));
+        plain = start + len;
+        from = plain;
+    }
+    if plain < text.len() || parts.is_empty() {
+        parts.push((&text[plain..], None));
+    }
+    parts
+}
+
+/// Whether setting `s` shows: always, or while the setting its
+/// `visible-when` names has that value (its default while unset).
+fn setting_shown(all: &[Setting], values: &serde_json::Map<String, Value>, s: &Setting) -> bool {
+    let Some(when) = &s.visible_when else {
+        return true;
+    };
+    let value = values.get(&when.setting).or_else(|| {
+        all.iter()
+            .find(|o| o.id == when.setting)
+            .map(|o| &o.default)
+    });
+    value == Some(&when.equals)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1672,6 +1927,104 @@ mod tests {
         );
         output.textures_delta.clear();
         rect.center()
+    }
+
+    #[test]
+    fn a_help_line_s_web_addresses_are_links() {
+        let link = |text, url| (text, Some(url));
+        assert_eq!(
+            help_parts("No account? See https://example.com/key.md, then paste it."),
+            [
+                ("No account? See ", None),
+                link("https://example.com/key.md", "https://example.com/key.md"),
+                (", then paste it.", None),
+            ]
+        );
+        // A link written [text](address) shows its text.
+        assert_eq!(
+            help_parts("From fal.ai. [How to get one](https://example.com/key.md#fal)."),
+            [
+                ("From fal.ai. ", None),
+                link("How to get one", "https://example.com/key.md#fal"),
+                (".", None),
+            ]
+        );
+        // Only https: anything else stays text, written either way.
+        assert_eq!(
+            help_parts("http://example.com file:///etc [x](http://example.com)"),
+            [(
+                "http://example.com file:///etc [x](http://example.com)",
+                None
+            )]
+        );
+        assert_eq!(
+            help_parts("Plain [brackets] (too)."),
+            [("Plain [brackets] (too).", None)]
+        );
+        // With no text, the address in it is a bare one.
+        assert_eq!(
+            help_parts("[](https://example.com)"),
+            [
+                ("[](", None),
+                link("https://example.com", "https://example.com"),
+                (")", None),
+            ]
+        );
+        // A bare prefix is text, and the address after it still a link.
+        assert_eq!(
+            help_parts("Use https:// URLs; see https://example.com/setup"),
+            [
+                ("Use https:// URLs; see ", None),
+                link("https://example.com/setup", "https://example.com/setup"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_setting_shows_while_the_one_it_names_has_its_value() {
+        let manifest = rawmakase_extensions::protocol::manifest::Manifest::parse(
+            r#"[extension]
+id = "dev.example.keys"
+name = "Keys"
+version = "0.1.0"
+rawmakase = ">=0.5"
+api = 3
+
+[program]
+path = "bin/keys"
+
+[[setting]]
+id = "provider"
+control = { segmented = ["fal.ai", "Replicate"] }
+default = "fal.ai"
+
+[[setting]]
+id = "fal-key"
+control = "secret"
+default = ""
+visible-when = { setting = "provider", equals = "fal.ai" }
+
+[[setting]]
+id = "replicate-token"
+control = "secret"
+default = ""
+visible-when = { setting = "provider", equals = "Replicate" }
+"#,
+        )
+        .unwrap();
+        let shown = |values: serde_json::Map<String, Value>| -> Vec<&str> {
+            manifest
+                .settings
+                .iter()
+                .filter(|s| setting_shown(&manifest.settings, &values, s))
+                .map(|s| s.id.as_str())
+                .collect()
+        };
+        // Unset: the other setting's default decides.
+        assert_eq!(shown(Default::default()), ["provider", "fal-key"]);
+        let mut values = serde_json::Map::new();
+        values.insert("provider".into(), Value::String("Replicate".into()));
+        assert_eq!(shown(values), ["provider", "replicate-token"]);
     }
 
     #[test]

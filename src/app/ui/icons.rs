@@ -59,6 +59,9 @@ fastframe_icons::icons! {
         Eye => lucide "eye",
         Search => lucide "search",
         EyeOff => lucide "eye-off",
+        /// In place of something that can't be shown, such as an extension's
+        /// broken icon.
+        Failed => lucide "circle-alert",
     }
 }
 
@@ -71,12 +74,18 @@ pub(in crate::app) fn install(ctx: &egui::Context) {
 /// Paints `icon` into `rect`, tinted. Nothing is drawn until the SVG is
 /// rasterized, which happens on first use at each size.
 pub(in crate::app) fn paint(painter: &egui::Painter, icon: Icon, rect: Rect, tint: Color32) {
+    paint_uri(painter, icon.uri(), rect, tint);
+}
+
+/// Paints the white outline loaded at `uri` (an extension's icon) as
+/// [`paint`] paints the app's own.
+pub(in crate::app) fn paint_uri(painter: &egui::Painter, uri: &str, rect: Rect, tint: Color32) {
     let ctx = painter.ctx();
     let ppp = ctx.pixels_per_point();
     let rect = pixel_aligned(rect, ppp);
     let hint = egui::SizeHint::Height((rect.height() * ppp).round() as u32);
     if let Ok(egui::load::TexturePoll::Ready { texture }) =
-        ctx.try_load_texture(icon.uri(), egui::TextureOptions::LINEAR, hint)
+        ctx.try_load_texture(uri, egui::TextureOptions::LINEAR, hint)
     {
         let uv = Rect::from_min_max(egui::pos2(0., 0.), egui::pos2(1., 1.));
         painter.image(texture.id, rect, uv, tint);
@@ -94,6 +103,31 @@ pub(in crate::app) fn paint_at(
     paint(
         painter,
         icon,
+        Rect::from_center_size(center, egui::Vec2::splat(size)),
+        tint,
+    );
+}
+
+/// Whether the image at `uri` can't be drawn `size` points square: the loader
+/// failed on it. False while it is still loading.
+pub(in crate::app) fn broken(ctx: &egui::Context, uri: &str, size: f32) -> bool {
+    let ppp = ctx.pixels_per_point();
+    let hint = egui::SizeHint::Height((size * ppp).round().max(1.) as u32);
+    ctx.try_load_texture(uri, egui::TextureOptions::LINEAR, hint)
+        .is_err()
+}
+
+/// Paints the outline at `uri` `size` points square, centred on `center`.
+pub(in crate::app) fn paint_uri_at(
+    painter: &egui::Painter,
+    uri: &str,
+    center: egui::Pos2,
+    size: f32,
+    tint: Color32,
+) {
+    paint_uri(
+        painter,
+        uri,
         Rect::from_center_size(center, egui::Vec2::splat(size)),
         tint,
     );

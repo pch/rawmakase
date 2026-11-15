@@ -318,6 +318,7 @@ names where they have one. Fixed commands keep their keys.
 | `remove:new_source` | New source for the selected spot |
 | `remove:hide_pins` | Hide spot pins |
 | `remove:visualize` | Visualize spots |
+| `generate:send` | Send the area painted to its generator |
 | `mask:back` | Stop aiming, drop the mask not yet drawn, or close Masking |
 | `mask:overlay` | Show or hide the mask overlay |
 | `mask:switch_brush` | Switch between brushes A and B |

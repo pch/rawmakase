@@ -23,6 +23,9 @@ pub const MASK_GENERATOR_API: u32 = 2;
 
 /// The first `api` that reads `[[source]]`.
 pub const SOURCE_API: u32 = 3;
+/// The first `api` that reads `[[retouch-generator]]` and the `secret`
+/// setting control. Its framing and handle rules are API 2's.
+pub const RETOUCH_GENERATOR_API: u32 = 3;
 
 /// The bundled extension that may claim the provenance Select Subject and
 /// Select Sky saved before extensions existed.
@@ -72,6 +75,13 @@ pub struct Manifest {
     /// `api = 3`.
     #[serde(default, rename = "source", skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<Source>,
+    /// Generators of retouch patches (object removal), from `api = 3`.
+    #[serde(
+        default,
+        rename = "retouch-generator",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub retouch_generators: Vec<RetouchGenerator>,
 }
 
 /// The `[extension]` table.
@@ -204,6 +214,26 @@ pub struct Setting {
     /// A slider's or a number's unit, for example `%`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
+    /// Shown only while another setting has a value, for example a key only
+    /// while the service it is for is chosen. Hidden, it keeps its value.
+    #[serde(
+        default,
+        rename = "visible-when",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub visible_when: Option<SettingCondition>,
+}
+
+/// A `[[setting]]`'s `visible-when`: another of the extension's settings
+/// (not a secret, whose value the app never shows) and the value it must
+/// have.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SettingCondition {
+    /// The other setting's id.
+    pub setting: String,
+    /// The value it must have, of its control's type.
+    pub equals: Value,
 }
 
 /// How a setting is edited: a host-drawn control
@@ -232,6 +262,11 @@ pub enum SettingControl {
     File,
     /// A folder chosen in the system's dialog.
     Folder,
+    /// Text kept secret, such as an API key, from `api = 3`. The app keeps
+    /// its value in the system's credential store, never in
+    /// `extensions.json`, and never shows it again; the program receives it
+    /// as a string, `""` while none is set. Its default is `""`.
+    Secret,
 }
 impl SettingControl {
     /// Whether `value` is one this control holds.
@@ -244,7 +279,7 @@ impl SettingControl {
             Self::Choice(options) | Self::Segmented(options) => value
                 .as_str()
                 .is_some_and(|v| options.iter().any(|o| o == v)),
-            Self::Text | Self::File | Self::Folder => value.is_string(),
+            Self::Text | Self::File | Self::Folder | Self::Secret => value.is_string(),
             Self::Color => value.as_array().is_some_and(|c| {
                 c.len() == 3
                     && c.iter()
@@ -378,6 +413,8 @@ pub enum PanelPlace {
     Window,
     /// The extension's page in Preferences > Extensions.
     Preferences,
+    /// The drawer of the tool of the `[[retouch-generator]]` that names it.
+    Generator,
 }
 
 /// A `[[control-adapter]]`.
@@ -441,6 +478,43 @@ impl MaskGenerator {
         self.provenance
             .clone()
             .unwrap_or_else(|| format!("{extension}/{}", self.id))
+    }
+}
+
+/// A `[[retouch-generator]]`: the program turns a region of the photo and
+/// the area the user painted in it into new pixels for that area, such as
+/// the area with an object removed. The app keeps the result as a retouch
+/// patch, which renders without the extension.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct RetouchGenerator {
+    /// Unique among the extension's retouch generators; saved patches record
+    /// `<extension>/<id>`.
+    #[schemars(regex(pattern = r"^[a-z0-9][a-z0-9-]*$"))]
+    pub id: String,
+    /// Its mode's name in the AI Retouch tool, for example `AI Remove`.
+    pub name: String,
+    /// Whether it sends the pixels it is given off this computer (to a
+    /// hosted model). The app asks the user once before the first request.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub uploads: bool,
+    /// The `[[panel]]` (`place = "generator"`) its tool's drawer shows, for
+    /// what the program needs to know beyond the area: a mode, a prompt. The
+    /// program keeps its values (`panel.changed`); the app commits any still
+    /// being typed before it sends a request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panel: Option<String>,
+    /// Its tool's icon on Develop's rail: an SVG in the package, relative to
+    /// its root. Drawn as RAWmakase's own icons are: a 24-unit square outline
+    /// in white (or `currentColor`), tinted by the app, which has none of its
+    /// own for it.
+    pub icon: String,
+}
+
+impl RetouchGenerator {
+    /// What saved patches record as the generator that made them.
+    pub fn provenance(&self, extension: &str) -> String {
+        format!("{extension}/{}", self.id)
     }
 }
 
@@ -509,11 +583,16 @@ impl Manifest {
             .iter()
             .map(|g| format!("mask-generator/{}", g.id));
         let sources = self.sources.iter().map(|s| format!("source/{}", s.id));
+        let retouch = self
+            .retouch_generators
+            .iter()
+            .map(|g| format!("retouch-generator/{}", g.id));
         commands
             .chain(panels)
             .chain(adapters)
             .chain(generators)
             .chain(sources)
+            .chain(retouch)
             .collect()
     }
 
@@ -525,6 +604,7 @@ impl Manifest {
                 || !self.panels.is_empty()
                 || !self.mask_generators.is_empty()
                 || !self.sources.is_empty()
+                || !self.retouch_generators.is_empty()
                 || self
                     .control_adapters
                     .iter()
@@ -578,6 +658,10 @@ impl Manifest {
                 self.mask_generators.iter().map(|g| &g.id).collect(),
             ),
             ("source", self.sources.iter().map(|s| &s.id).collect()),
+            (
+                "retouch-generator",
+                self.retouch_generators.iter().map(|g| &g.id).collect(),
+            ),
         ];
         for (table, ids) in tables {
             let mut seen = std::collections::BTreeSet::new();
@@ -605,6 +689,14 @@ impl Manifest {
                 {
                     return fail(format!("setting {id}: it has no options"));
                 }
+                SettingControl::Secret if e.api < RETOUCH_GENERATOR_API => {
+                    return fail(format!(
+                        "setting {id}: control \"secret\" needs extension.api = {RETOUCH_GENERATOR_API} or later"
+                    ));
+                }
+                SettingControl::Secret if setting.default != Value::String(String::new()) => {
+                    return fail(format!("setting {id}: a secret's default is \"\""));
+                }
                 _ => {}
             }
             if !setting.control.accepts(&setting.default) {
@@ -616,6 +708,33 @@ impl Manifest {
             if setting.step.is_some_and(|s| !(s.is_finite() && s > 0.0)) {
                 return fail(format!("setting {id}: its step is not positive"));
             }
+            if let Some(when) = &setting.visible_when {
+                let other = self
+                    .settings
+                    .iter()
+                    .find(|s| s.id == when.setting && s.id != *id);
+                match other {
+                    None => {
+                        return fail(format!(
+                            "setting {id}: visible-when names no other setting {:?}",
+                            when.setting
+                        ));
+                    }
+                    Some(other) if other.control == SettingControl::Secret => {
+                        return fail(format!(
+                            "setting {id}: visible-when can't read secret {:?}",
+                            when.setting
+                        ));
+                    }
+                    Some(other) if !other.control.accepts(&when.equals) => {
+                        return fail(format!(
+                            "setting {id}: {} doesn't fit setting {:?}",
+                            when.equals, when.setting
+                        ));
+                    }
+                    Some(_) => {}
+                }
+            }
         }
         for command in &self.commands {
             if command.title.trim().is_empty() {
@@ -626,14 +745,16 @@ impl Manifest {
             }
         }
         self.validate_mask_generators()?;
+        self.validate_retouch_generators()?;
         let needs_program = !self.commands.is_empty()
             || !self.panels.is_empty()
             || !self.control_adapters.is_empty()
             || !self.mask_generators.is_empty()
-            || !self.sources.is_empty();
+            || !self.sources.is_empty()
+            || !self.retouch_generators.is_empty();
         if needs_program && self.program.is_none() {
             return fail(
-                "commands, panels, control adapters, mask generators and sources need a [program] to run them"
+                "commands, panels, control adapters, mask and retouch generators and sources need a [program] to run them"
                     .into(),
             );
         }
@@ -666,6 +787,62 @@ impl Manifest {
         for source in &self.sources {
             if source.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
                 return Err(Invalid(format!("source {}: its name is empty", source.id)));
+            }
+        }
+        Ok(())
+    }
+
+    /// The `[[retouch-generator]]` rules: the `api` that reads them, a name
+    /// to show, and a panel of place `generator`, which only a generator
+    /// shows.
+    fn validate_retouch_generators(&self) -> Result<(), Invalid> {
+        let e = &self.extension;
+        if self.retouch_generators.is_empty() {
+            return Ok(());
+        }
+        if e.api < RETOUCH_GENERATOR_API {
+            return Err(Invalid(format!(
+                "[[retouch-generator]] needs extension.api = {RETOUCH_GENERATOR_API} or later (this one says {})",
+                e.api
+            )));
+        }
+        for generator in &self.retouch_generators {
+            let fail = |why: &str| {
+                Err(Invalid(format!(
+                    "retouch-generator {}: {why}",
+                    generator.id
+                )))
+            };
+            if generator.name.trim().is_empty() {
+                return fail("its name is empty");
+            }
+            check_path("retouch-generator.icon", &generator.icon)?;
+            if !generator.icon.ends_with(".svg") {
+                return fail(&format!("icon {:?} isn't an .svg file", generator.icon));
+            }
+            if let Some(panel) = &generator.panel {
+                let place = self.panels.iter().find(|p| &p.id == panel).map(|p| p.place);
+                if place != Some(PanelPlace::Generator) {
+                    return fail(&format!(
+                        "panel {panel:?} isn't a [[panel]] with place = \"generator\""
+                    ));
+                }
+            }
+        }
+        for panel in self
+            .panels
+            .iter()
+            .filter(|p| p.place == PanelPlace::Generator)
+        {
+            if !self
+                .retouch_generators
+                .iter()
+                .any(|g| g.panel.as_deref() == Some(&panel.id))
+            {
+                return Err(Invalid(format!(
+                    "panel {}: place \"generator\" needs a [[retouch-generator]] that names it",
+                    panel.id
+                )));
             }
         }
         Ok(())
@@ -1039,6 +1216,177 @@ input = ["prompt"]
         assert!(Manifest::parse(&without_program).is_err());
     }
 
+    const REMOVER: &str = r#"
+[extension]
+id = "dev.pch.ai-remove"
+name = "AI Remove"
+version = "0.1.0"
+rawmakase = ">=0.5"
+api = 3
+
+[access]
+network = true
+
+[program]
+path = "bin/ai-remove"
+
+[[setting]]
+id = "fal-key"
+name = "fal.ai API key"
+control = "secret"
+default = ""
+
+[[retouch-generator]]
+id = "remove"
+name = "AI Remove"
+icon = "icons/remove.svg"
+uploads = true
+"#;
+
+    fn remover(replace: &str, by: &str) -> Result<Manifest, Invalid> {
+        assert!(REMOVER.contains(replace), "{replace}");
+        Manifest::parse(&REMOVER.replacen(replace, by, 1))
+    }
+
+    #[test]
+    fn retouch_generators_and_secrets_read_from_api_3() {
+        let manifest = Manifest::parse(REMOVER).unwrap();
+        let [generator] = &manifest.retouch_generators[..] else {
+            panic!("one generator");
+        };
+        assert_eq!(generator.name, "AI Remove");
+        assert!(generator.uploads);
+        assert_eq!(
+            generator.provenance(&manifest.extension.id),
+            "dev.pch.ai-remove/remove"
+        );
+        assert_eq!(manifest.settings[0].control, SettingControl::Secret);
+        assert_eq!(manifest.contributions(), ["retouch-generator/remove"]);
+        assert!(manifest.runs_in_app());
+        let written = toml::to_string(&manifest).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+        // `uploads` is false unless stated.
+        let local = remover("uploads = true\n", "").unwrap();
+        assert!(!local.retouch_generators[0].uploads);
+
+        // Both need api = 3, a generator a program and a name, and a secret
+        // starts empty.
+        let error = remover("api = 3", "api = 2").unwrap_err();
+        assert!(error.0.contains("api = 3"), "{error}");
+        let only_secret = REMOVER.replace("api = 3", "api = 2").replace(
+            "[[retouch-generator]]\nid = \"remove\"\nname = \"AI Remove\"\nicon = \"icons/remove.svg\"\nuploads = true\n",
+            "",
+        );
+        let error = Manifest::parse(&only_secret).unwrap_err();
+        assert!(error.0.contains("secret"), "{error}");
+        assert!(remover("[program]\npath = \"bin/ai-remove\"", "").is_err());
+        assert!(remover("name = \"AI Remove\"\nicon", "name = \" \"\nicon").is_err());
+        assert!(remover("default = \"\"", "default = \"sk-123\"").is_err());
+        assert!(remover("default = \"\"", "default = 1").is_err());
+        assert!(remover("uploads = true", "uploads = true\nmodel = \"x\"").is_err());
+        assert!(SettingControl::Secret.accepts(&Value::String("k".into())));
+        assert!(!SettingControl::Secret.accepts(&Value::Null));
+    }
+
+    #[test]
+    fn a_setting_may_show_only_while_another_has_a_value() {
+        let provider = "[[setting]]\nid = \"provider\"\ncontrol = { segmented = [\"fal.ai\", \"Replicate\"] }\ndefault = \"fal.ai\"\n\n[[setting]]\nid = \"fal-key\"";
+        let shown = |when: &str| {
+            remover(
+                "[[setting]]\nid = \"fal-key\"",
+                &provider.replace(
+                    "id = \"fal-key\"",
+                    &format!("id = \"fal-key\"\nvisible-when = {when}"),
+                ),
+            )
+        };
+        let manifest = shown("{ setting = \"provider\", equals = \"fal.ai\" }").unwrap();
+        let key = &manifest.settings[1];
+        assert_eq!(
+            key.visible_when,
+            Some(SettingCondition {
+                setting: "provider".into(),
+                equals: Value::String("fal.ai".into()),
+            })
+        );
+        assert_eq!(manifest.settings[0].visible_when, None);
+        let written = toml::to_string(&manifest).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+        // Another setting of this extension, never itself or a secret, with a
+        // value it can hold.
+        for broken in [
+            "{ setting = \"nope\", equals = \"fal.ai\" }",
+            "{ setting = \"fal-key\", equals = \"\" }",
+            "{ setting = \"provider\", equals = \"Elsewhere\" }",
+            "{ setting = \"provider\", equals = 1 }",
+            "{ control = \"provider\", equals = \"fal.ai\" }",
+        ] {
+            assert!(shown(broken).is_err(), "{broken}");
+        }
+        let on_a_secret = REMOVER.replace(
+            "[retouch-generator]]",
+            "[setting]]\nid = \"other\"\ncontrol = \"text\"\ndefault = \"\"\nvisible-when = { setting = \"fal-key\", equals = \"\" }\n\n[[retouch-generator]]",
+        );
+        assert!(Manifest::parse(&on_a_secret).is_err());
+    }
+
+    #[test]
+    fn a_retouch_generator_needs_its_own_icon() {
+        let manifest = Manifest::parse(REMOVER).unwrap();
+        assert_eq!(manifest.retouch_generators[0].icon, "icons/remove.svg");
+        let written = toml::to_string(&manifest).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+        // The app draws none of its own: without one the manifest is refused.
+        assert!(remover("icon = \"icons/remove.svg\"\n", "").is_err());
+        // An SVG inside the package.
+        for broken in [
+            "../wand.svg",
+            "/wand.svg",
+            "icons/wand.png",
+            "icons\\wand.svg",
+            "",
+        ] {
+            let icon = format!("icon = {broken:?}\n");
+            assert!(
+                remover("icon = \"icons/remove.svg\"\n", &icon).is_err(),
+                "{broken}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_retouch_generator_may_show_a_panel_in_its_drawer() {
+        let with_panel = |generator_panel: &str, place: &str| {
+            remover(
+                "uploads = true\n",
+                &format!(
+                    "uploads = true\n{generator_panel}\n[[panel]]\nid = \"ask\"\ntitle = \"Ask\"\nplace = \"{place}\"\n"
+                ),
+            )
+        };
+        let manifest = with_panel("panel = \"ask\"", "generator").unwrap();
+        assert_eq!(manifest.retouch_generators[0].panel.as_deref(), Some("ask"));
+        assert_eq!(manifest.panels[0].place, PanelPlace::Generator);
+        let written = toml::to_string(&manifest).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+        assert_eq!(
+            Manifest::parse(REMOVER).unwrap().retouch_generators[0].panel,
+            None
+        );
+        // Its panel's place is the drawer, and a drawer's panel has a generator.
+        assert!(with_panel("panel = \"ask\"", "preferences").is_err());
+        assert!(with_panel("panel = \"other\"", "generator").is_err());
+        assert!(with_panel("", "generator").is_err());
+        // What came before panels is gone.
+        assert!(
+            remover(
+                "uploads = true\n",
+                "uploads = true\nprompt = \"optional\"\n"
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn a_mask_generator_claims_only_its_own_provenance() {
         // A third party gets <extension>/<id>, stated or not.
@@ -1217,6 +1565,7 @@ id = "folder"
         assert!(schema["properties"]["control-adapter"].is_object());
         assert!(schema["properties"]["mask-generator"].is_object());
         assert!(schema["properties"]["source"].is_object());
+        assert!(schema["properties"]["retouch-generator"].is_object());
         assert!(schema["properties"].get("filter").is_none());
     }
 }

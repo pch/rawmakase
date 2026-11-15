@@ -44,9 +44,27 @@ pub struct State {
     /// Unpacked extensions loaded from a folder in developer mode, by id.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub developer: BTreeMap<String, Developer>,
+    /// Keys of uninstalled extensions still in the system's credential store,
+    /// by extension and secret setting: recorded with the uninstall, in the
+    /// same change, and dropped as each is deleted, so none is left behind
+    /// unrecorded when a delete fails or the app quits first.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub forgotten_keys: BTreeMap<String, std::collections::BTreeSet<String>>,
     /// Fields a later release wrote.
     #[serde(flatten)]
     pub unknown: Map<String, Value>,
+}
+impl State {
+    /// Adds `keys` of extension `id` to [`State::forgotten_keys`].
+    pub fn forget_keys(&mut self, id: &str, keys: impl IntoIterator<Item = String>) {
+        let keys: Vec<String> = keys.into_iter().collect();
+        if !keys.is_empty() {
+            self.forgotten_keys
+                .entry(id.to_string())
+                .or_default()
+                .extend(keys);
+        }
+    }
 }
 impl Default for State {
     fn default() -> Self {
@@ -54,6 +72,7 @@ impl Default for State {
             version: VERSION,
             extensions: BTreeMap::new(),
             developer: BTreeMap::new(),
+            forgotten_keys: BTreeMap::new(),
             unknown: Map::new(),
         }
     }
@@ -84,6 +103,14 @@ pub struct Entry {
     /// is off for every catalog not listed.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sources: BTreeMap<String, Vec<String>>,
+    /// The secret settings (`control = "secret"`) whose value is kept in
+    /// the credential store, by setting id. Their values are never here.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub secrets: std::collections::BTreeSet<String>,
+    /// The user agreed, once, that its retouch generators send the pixels
+    /// they are given off this computer (`uploads = true`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub uploads_allowed: bool,
     /// Fields a later release wrote.
     #[serde(flatten)]
     pub unknown: Map<String, Value>,
@@ -100,6 +127,8 @@ impl Default for Entry {
             source: None,
             settings: Map::new(),
             sources: BTreeMap::new(),
+            secrets: std::collections::BTreeSet::new(),
+            uploads_allowed: false,
             unknown: Map::new(),
         }
     }

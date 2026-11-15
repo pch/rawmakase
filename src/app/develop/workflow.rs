@@ -109,6 +109,7 @@ impl Editor {
         self.presets.clear_document();
         self.view.next_document(another);
         self.selection.clear_document();
+        self.ai_remove.clear_document();
         if let Some(photo) = photo {
             self.request_stand_ins(id, photo, neighbour);
         }
@@ -413,7 +414,7 @@ impl Editor {
     pub(in crate::app) fn overlay(&self) -> crate::app::worker::Overlay {
         use crate::app::{develop::state::Tool, worker::Overlay};
         match self.view.tool() {
-            Tool::Remove if self.view.retouch.visualize => {
+            Tool::Remove | Tool::AiRetouch if self.view.retouch.visualize => {
                 Overlay::Spots(self.view.retouch.threshold)
             }
             Tool::Mask => match self.view.masking.hovered().or(self

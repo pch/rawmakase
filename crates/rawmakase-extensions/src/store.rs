@@ -219,7 +219,9 @@ impl Store {
                 // only while no entry names its id, so it never takes an
                 // install made after this one's files with it.
                 let moved = std::fs::rename(&dir, &aside).ok().map(|()| aside);
-                state.extensions.remove(id);
+                if let Some(entry) = state.extensions.remove(id) {
+                    state.forget_keys(id, entry.secrets);
+                }
                 Ok(moved)
             },
             |moved| {
@@ -228,6 +230,32 @@ impl Store {
                 }
             },
         )
+    }
+
+    /// The keys uninstalled extensions left in the system's credential store,
+    /// by extension and setting, for the caller to delete
+    /// ([`State::forgotten_keys`]).
+    pub fn forgotten_keys(&self) -> Result<Vec<(String, String)>> {
+        let state = State::read(&self.data_dir).map_err(|e| Error::new(e.to_string()))?;
+        Ok(state
+            .forgotten_keys
+            .iter()
+            .flat_map(|(id, keys)| keys.iter().map(move |k| (id.clone(), k.clone())))
+            .collect())
+    }
+
+    /// Records that `id`'s key `setting` is gone from the credential store,
+    /// or in use again by an extension of that id installed since.
+    pub fn key_deleted(&self, id: &str, setting: &str) -> Result<()> {
+        State::update(&self.data_dir, |state| {
+            if let Some(keys) = state.forgotten_keys.get_mut(id) {
+                keys.remove(setting);
+                if keys.is_empty() {
+                    state.forgotten_keys.remove(id);
+                }
+            }
+            Ok(())
+        })
     }
 
     /// Turns an extension on or off: an installed one, a developer folder, or
@@ -444,6 +472,34 @@ mod tests {
         assert!(store.list().unwrap().is_empty());
         assert!(!store.root().join("dev.test.tool").exists());
         assert!(store.remove("dev.test.tool").is_err());
+    }
+
+    #[test]
+    fn removing_records_its_keys_until_each_is_deleted() {
+        let data = tempfile::tempdir().unwrap();
+        let store = Store::new(data.path());
+        let first = package(data.path(), "1.0.0");
+        store.install(&first, &source(&first), &app()).unwrap();
+        State::update(data.path(), |state| {
+            let secrets = &mut state.entry("dev.test.tool").secrets;
+            secrets.insert("key".into());
+            secrets.insert("token".into());
+            Ok(())
+        })
+        .unwrap();
+        assert!(store.forgotten_keys().unwrap().is_empty());
+        store.remove("dev.test.tool").unwrap();
+        let tool = |k: &str| ("dev.test.tool".to_string(), k.to_string());
+        assert_eq!(
+            store.forgotten_keys().unwrap(),
+            [tool("key"), tool("token")]
+        );
+        store.key_deleted("dev.test.tool", "key").unwrap();
+        assert_eq!(store.forgotten_keys().unwrap(), [tool("token")]);
+        store.key_deleted("dev.test.tool", "token").unwrap();
+        assert!(store.forgotten_keys().unwrap().is_empty());
+        let state = std::fs::read_to_string(data.path().join(crate::state::FILE)).unwrap();
+        assert!(!state.contains("forgotten_keys"), "{state}");
     }
 
     #[test]

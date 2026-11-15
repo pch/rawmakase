@@ -64,7 +64,7 @@ launch = "external"
 | `name` | yes | Shown in Preferences |
 | `version` | yes | The extension's version, [semver](https://semver.org) (`1.2.0`) |
 | `rawmakase` | yes | The RAWmakase versions it supports, a semver range (`>=0.5, <0.6`). Outside it the package is refused, and an installed one is listed as incompatible. Before 1.0 no compatibility is promised, so state the minor versions tested |
-| `api` | yes | The manifest format it was written for. This version reads `1` to `3`; a higher one is refused as written for a newer RAWmakase. `2` adds [`[[mask-generator]]`](#mask-generator), `3` adds [`[[source]]`](#source). The app tells the program its manifest's `api` when it starts it ([protocol](protocol.md#api-mode)) |
+| `api` | yes | The manifest format it was written for. This version reads `1` to `3`; a higher one is refused as written for a newer RAWmakase. `2` adds [`[[mask-generator]]`](#mask-generator); `3` adds [`[[source]]`](#source), [`[[retouch-generator]]`](#retouch-generator) and the `secret` setting control, with API 2's framing and handle rules. The app tells the program its manifest's `api` when it starts it ([protocol](protocol.md#api-mode)) |
 | `authors` | no | Names |
 | `license` | no | An SPDX expression |
 | `repository` | no | `https://github.com/<owner>/<repo>` |
@@ -101,15 +101,34 @@ Settings shown on the extension's page in Preferences, stored in
 | --- | --- | --- |
 | `id` | yes | Lowercase letters, digits and hyphens, unique among the settings |
 | `name` | no | The label; the id without one |
-| `help` | no | A line under it |
+| `help` | no | A line under it. A link written `[text](https://…)` shows its text; a bare `https://` address is a link too |
 | `control` | yes | How it is edited (below) |
 | `default` | yes | Its value until changed; must fit the control |
 | `step` | no | A slider's step |
 | `unit` | no | A slider's or a number's unit |
+| `visible-when` | no | `{ setting = "<id>", equals = <value> }`: shown only while another of its settings (not a secret) has that value, for example a key only while its service is chosen. Hidden, it keeps its value and the program still gets it |
 
 `control` is one of: `{ slider = [min, max] }`, `{ number = [min, max] }`,
 `"angle"`, `"toggle"`, `{ choice = ["a", "b"] }`, `{ segmented = ["a", "b"] }`,
-`"text"`, `"color"` (a default of `[r, g, b]`, 0 to 1), `"file"`, `"folder"`.
+`"text"`, `"color"` (a default of `[r, g, b]`, 0 to 1), `"file"`, `"folder"`, and,
+from `api = 3`, `"secret"`.
+
+A **secret** setting holds something like an API key. Its default must be `""`.
+The app keeps its value in the system's credential store (the macOS keychain, the
+Windows Credential Manager, the Secret Service on Linux), never in
+`extensions.json`, which records only that one is set (`secrets`), and never shows
+it again: its page has a field to type a new one into, Save and Remove, and says
+Set only once the store has it. Uninstalling the extension (in Preferences or with
+`rawmakase extensions remove`) deletes it from the store; one the store can't
+delete then (a locked keyring) stays listed in `extensions.json`'s
+`forgotten_keys` and is deleted at RAWmakase's next start. The program receives it as a string in `hello` and
+`setting-changed` (`""` while none is set, or while the store is still being read
+when the program starts: a `setting-changed` follows once it is). The app keeps it
+out of its own JSON, errors, logs and diagnostics; what the program does with it is
+the program's, so never log it and keep it out of the errors you answer with. Where
+there is no store (Linux without a Secret Service) the page says so; an extension
+may read a conventional environment variable then, which an app started from the
+desktop may not inherit.
 
 ## `[[command]]`
 
@@ -166,11 +185,12 @@ A panel of host-drawn controls the program fills ([protocol](protocol.md#panels)
 | --- | --- |
 | `id` | Lowercase letters, digits and hyphens, unique among the panels |
 | `title` | The panel's title |
-| `place` | `develop` (Develop's right column), `library` (the Library's right column), `window` (a window of its own) or `preferences` (the extension's page) |
+| `place` | `develop` (Develop's right column), `library` (the Library's right column), `window` (a window of its own), `preferences` (the extension's page) or `generator` (the drawer of the tool of the [`[[retouch-generator]]`](#retouch-generator) that names it) |
 
-This release draws every panel on the extension's page in Preferences >
-Extensions, whatever its `place`; the other places are checked and will be
-drawn once an extension that uses them is built.
+This release draws a `generator` panel in its generator's tool drawer, and every
+other panel on the extension's page in Preferences > Extensions, whatever its
+`place`; the other places are checked and will be drawn once an extension that
+uses them is built.
 
 ## `[[control-adapter]]`
 
@@ -254,3 +274,42 @@ Extensions, and adds only to the catalogs it is on for, while they are open
 outside the photos the app hands it should say so with `files = "any"` in
 [`[access]`](#access).
 
+## `[[retouch-generator]]`
+
+From `api = 3`; a manifest with an earlier `api` that declares one is refused,
+and the app never sends `retouch.generate` to a program serving an earlier one.
+A retouch generator is a tool of its own on Develop's rail that regenerates
+the area the user painted
+([`retouch.generate`](protocol.md#retouchgenerate-request); AI Retouch's AI
+Remove and AI Replace are one,
+[retouching](../retouching.md#ai-remove-and-ai-replace-experimental)). The app
+renders the region for it, keeps the answer as a patch saved with the edit, and
+makes one History step of it; the patch renders without the extension.
+
+```toml
+[[retouch-generator]]
+id = "retouch"
+name = "AI Retouch"
+uploads = true
+panel = "retouch"
+icon = "icons/retouch.svg"
+
+[[panel]]
+id = "retouch"
+title = "AI Retouch"
+place = "generator"
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `id` | — | Lowercase letters, digits and hyphens, unique among the retouch generators. Patches record `<extension>/<id>` as what made them |
+| `name` | — | Its tool's name: its rail button's tip, its drawer's title, its History step and its messages |
+| `uploads` | `false` | It sends what it is given off this computer (a hosted model). The app asks the user once per extension before the first request, and keeps the answer in `extensions.json` |
+| `icon` | — | Its rail icon: an SVG in the package, which must hold it, at most 256 KB. Drawn as RAWmakase's own icons are, a 24-unit square outline in white (`currentColor` is drawn white), tinted by the app, which has none of its own for a generator. `cargo rawmakase package` refuses one it can't draw; one missing or broken anyway shows on the rail as a warning sign, its tooltip saying the icon can't be shown, and the generator still works |
+| `panel` | none | A [`[[panel]]`](#panel) with `place = "generator"` that the tool's drawer shows, for what the program needs besides the area (a mode, a prompt). Its values are the program's, from `panel.changed`; the app sends any still being typed before the request, so they reach the program first |
+
+Each enabled extension's generators follow the app's tools on Develop's rail,
+each with its `icon` and `name`. RAWmakase draws the brush, the area painted,
+Send, Clear and what a request is doing; everything else, including what the
+tool says of itself (that it is experimental, what a request costs), is its
+panel's.

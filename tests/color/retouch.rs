@@ -70,6 +70,7 @@ fn dust_on_gradient_and_texture_heals_cleanly() {
                 feather: 0.3,
                 opacity: 1.,
                 offset: [0.; 2],
+                patch: None,
             };
             op.offset = find_source(&dusty, &op, &[], &[]).expect("a source");
             op

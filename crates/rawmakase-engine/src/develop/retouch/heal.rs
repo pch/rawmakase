@@ -5,14 +5,22 @@
 //! difference between destination and source on a one-pixel ring outside the shape is
 //! extended inward as a membrane (the solution of Laplace's equation). A constant or
 //! linear difference is therefore reproduced exactly, and the source's texture is kept.
+//!
+//! An AI Remove spot (Generate) is Heal with its patch as the source: the patch
+//! sampled at each destination pixel, then the same membrane, so the residual
+//! error of the patch's 8-bit round trip and the model's own drift meet the
+//! surroundings at the shape's border; then the photo's detail and grain
+//! ([`super::texture`]).
+use super::patch::PatchPixels;
 use crate::model::retouch::{RetouchMode, RetouchOp, RetouchShape};
 use crate::{camera_data::CameraImage, model::image_frame::ImageFrame};
 use rayon::prelude::*;
+use std::sync::Arc;
 
 /// A rectangle of decoded pixels, `[x0, y0, x1, y1)`.
 pub(crate) type PixelRect = [i32; 4];
 
-fn clip(r: PixelRect, w: u32, h: u32) -> PixelRect {
+pub(super) fn clip(r: PixelRect, w: u32, h: u32) -> PixelRect {
     [
         r[0].clamp(0, w as i32),
         r[1].clamp(0, h as i32),
@@ -34,7 +42,7 @@ pub(crate) enum Domain {
     Log1p,
 }
 impl Domain {
-    fn to(self, v: f32) -> f32 {
+    pub(super) fn to(self, v: f32) -> f32 {
         match self {
             #[cfg(test)]
             Domain::Linear => v,
@@ -43,7 +51,7 @@ impl Domain {
             Domain::Log1p => v.max(0.).ln_1p(),
         }
     }
-    fn from(self, v: f32) -> f32 {
+    pub(super) fn from(self, v: f32) -> f32 {
         match self {
             #[cfg(test)]
             Domain::Linear => v,
@@ -54,7 +62,24 @@ impl Domain {
     }
 }
 /// Heal's domain; see `retouch::tests` for the comparison on test data.
-const DOMAIN: Domain = Domain::Log;
+pub(super) const DOMAIN: Domain = Domain::Log;
+
+/// How a Generate operation's patch meets the image. Only `Membrane` renders;
+/// `retouch::tests` compares it with a plain feathered composite of the patch on
+/// saturated, dark, gradient and textured regions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GenerateBlend {
+    /// Heal's membrane over the shape's ring, with the patch as the source, then
+    /// the photo's detail and grain.
+    Membrane,
+    /// The patch composited with the feathered coverage alone.
+    #[cfg(test)]
+    Composite,
+    /// The membrane without the photo's detail and grain.
+    #[cfg(test)]
+    Untextured,
+}
+const GENERATE_BLEND: GenerateBlend = GenerateBlend::Membrane;
 
 /// An operation placed on one image: its shape in decoded pixels.
 pub(crate) struct Placed {
@@ -62,20 +87,34 @@ pub(crate) struct Placed {
     pub(crate) opacity: f32,
     /// Path of dab centres (one point for a spot) and radius, in decoded pixels.
     pub(crate) points: Vec<[f32; 2]>,
+    /// Where each stroke after the first starts in `points`
+    /// ([`RetouchShape::dabs`]): none for a spot or a brushed path.
+    pub(crate) starts: Vec<usize>,
     pub(crate) radius: f32,
     pub(crate) feather: f32,
     pub(crate) profile: FeatherProfile,
     /// Source minus destination, in decoded pixels.
     pub(crate) offset: [f32; 2],
+    /// The shape as the operation stores it, and its radius there (of the long
+    /// edge): what a Generate operation's detail is found for.
+    pub(crate) shape: RetouchShape,
+    pub(crate) shape_radius: f32,
+    /// A Generate operation's pixels, once resolved ([`Placed::with_patch`]),
+    /// and the frame its destination pixels are mapped to it through.
+    pub(crate) patch: Option<(Arc<PatchPixels>, ImageFrame)>,
+    /// What a Generate operation reads for the photo's detail, when its patch is
+    /// coarser than the photo ([`super::texture::detail_reads`]).
+    detail_reads: Option<PixelRect>,
 }
 impl Placed {
+    /// `self` drawing from `patch`, laid over the image `frame` describes.
+    pub(crate) fn with_patch(mut self, patch: Arc<PatchPixels>, frame: &ImageFrame) -> Self {
+        self.patch = Some((patch, *frame));
+        self
+    }
     pub(crate) fn new(op: &RetouchOp, frame: &ImageFrame, profile: FeatherProfile) -> Self {
-        let points: Vec<[f32; 2]> = match &op.shape {
-            RetouchShape::Spot { center, .. } => vec![frame.to_source(*center)],
-            RetouchShape::Brush { points, .. } => {
-                points.iter().map(|p| frame.to_source(*p)).collect()
-            }
-        };
+        let (dabs, starts) = op.shape.dabs();
+        let points: Vec<[f32; 2]> = dabs.iter().map(|p| frame.to_source(*p)).collect();
         let anchor = op.pin();
         let a = frame.to_source(anchor);
         let b = frame.to_source([anchor[0] + op.offset[0], anchor[1] + op.offset[1]]);
@@ -83,10 +122,19 @@ impl Placed {
             mode: op.mode,
             opacity: op.opacity,
             points,
+            starts,
             radius: (op.radius() * frame.long_edge()).max(0.5),
             feather: op.feather,
             profile,
             offset: [b[0] - a[0], b[1] - a[1]],
+            shape: op.shape.clone(),
+            shape_radius: op.radius(),
+            patch: None,
+            detail_reads: op
+                .patch
+                .as_ref()
+                .filter(|_| op.mode == RetouchMode::Generate)
+                .and_then(|p| super::texture::detail_reads(p.rect, p.width, p.height, frame)),
         }
     }
     /// Pixels the operation writes.
@@ -103,9 +151,17 @@ impl Placed {
         }
         b
     }
-    /// Pixels the operation reads: its destination with the heal ring, and its source.
+    /// Pixels the operation reads: its destination with the heal ring, and its
+    /// source. A Generate operation's source is its patch, not the image; it reads
+    /// the band around its shape whose grain it takes, and, when its patch is
+    /// coarser than the photo, the patch's rectangle, for the detail it takes.
     pub(crate) fn reads(&self) -> [PixelRect; 2] {
         let d = self.dest();
+        if self.mode == RetouchMode::Generate {
+            let m = super::texture::BAND + 2;
+            let band = [d[0] - m, d[1] - m, d[2] + m, d[3] + m];
+            return [band, self.detail_reads.unwrap_or(band)];
+        }
         let d = [d[0] - 2, d[1] - 2, d[2] + 2, d[3] + 2];
         let (ox, oy) = (self.offset[0], self.offset[1]);
         let s = [
@@ -181,6 +237,7 @@ fn measured(d: f32, feather: f32) -> f32 {
 /// it, over a feathered edge that `profile` shapes.
 pub(crate) fn coverage(
     points: &[[f32; 2]],
+    starts: &[usize],
     radius: f32,
     feather: f32,
     profile: FeatherProfile,
@@ -190,12 +247,7 @@ pub(crate) fn coverage(
     // Squared distance to the path, updated segment by segment within its bounds.
     let mut dist = vec![f32::INFINITY; w * h];
     let reach = radius + 1.;
-    let segments: Vec<([f32; 2], [f32; 2])> = if points.len() == 1 {
-        vec![(points[0], points[0])]
-    } else {
-        points.windows(2).map(|p| (p[0], p[1])).collect()
-    };
-    for (a, b) in segments {
+    for (a, b) in crate::model::retouch::segments(points, starts) {
         let x0 = ((a[0].min(b[0]) - reach).floor() as i32).max(rect[0]);
         let x1 = ((a[0].max(b[0]) + reach).ceil() as i32 + 1).min(rect[2]);
         let y0 = ((a[1].min(b[1]) - reach).floor() as i32).max(rect[1]);
@@ -235,7 +287,7 @@ pub(crate) fn profile(d: f32, inner: f32, outer: f32) -> f32 {
         t * t * (3. - 2. * t)
     }
 }
-fn bilinear(im: &CameraImage, x: f32, y: f32) -> [f32; 3] {
+pub(super) fn bilinear(im: &CameraImage, x: f32, y: f32) -> [f32; 3] {
     let x = x.clamp(0., (im.width - 1) as f32);
     let y = y.clamp(0., (im.height - 1) as f32);
     let (ix, iy) = (x as u32, y as u32);
@@ -249,6 +301,10 @@ fn bilinear(im: &CameraImage, x: f32, y: f32) -> [f32; 3] {
 }
 /// Renders `op` into `im`; returns the rectangle it changed.
 pub(crate) fn apply(im: &mut CameraImage, op: &Placed) -> PixelRect {
+    apply_blend(im, op, GENERATE_BLEND)
+}
+/// [`apply`], laying a Generate operation's patch as `blend` says.
+pub(crate) fn apply_blend(im: &mut CameraImage, op: &Placed, blend: GenerateBlend) -> PixelRect {
     let rect = clip(op.dest(), im.width, im.height);
     if rect[2] <= rect[0] || rect[3] <= rect[1] {
         return rect;
@@ -260,21 +316,43 @@ pub(crate) fn apply(im: &mut CameraImage, op: &Placed) -> PixelRect {
         im.height,
     );
     let (w, h) = ((grid[2] - grid[0]) as usize, (grid[3] - grid[1]) as usize);
-    let alpha = coverage(&op.points, op.radius, op.feather, op.profile, grid);
+    let alpha = coverage(
+        &op.points, &op.starts, op.radius, op.feather, op.profile, grid,
+    );
     // Where the shape reaches the photo's edge there is no ring; the solver treats the
     // edge as mirrored.
     let at = |x: usize, y: usize| (grid[1] as usize + y) * im.width as usize + grid[0] as usize + x;
     let dest: Vec<[f32; 3]> = (0..w * h).map(|i| im.pixels[at(i % w, i / w)]).collect();
-    let source: Vec<[f32; 3]> = (0..w * h)
-        .map(|i| {
-            let x = (grid[0] + (i % w) as i32) as f32 + op.offset[0];
-            let y = (grid[1] + (i / w) as i32) as f32 + op.offset[1];
-            bilinear(im, x, y)
-        })
-        .collect();
+    let source: Vec<[f32; 3]> = match &op.patch {
+        Some((patch, frame)) => (0..w * h)
+            .map(|i| {
+                let x = (grid[0] + (i % w) as i32) as f32;
+                let y = (grid[1] + (i / w) as i32) as f32;
+                patch.sample(frame.to_image(x, y))
+            })
+            .collect(),
+        None => (0..w * h)
+            .map(|i| {
+                let x = (grid[0] + (i % w) as i32) as f32 + op.offset[0];
+                let y = (grid[1] + (i / w) as i32) as f32 + op.offset[1];
+                bilinear(im, x, y)
+            })
+            .collect(),
+    };
     let patch: Vec<[f32; 3]> = match op.mode {
         RetouchMode::Clone => source,
         RetouchMode::Heal => heal(&dest, &source, &alpha, w, h, DOMAIN),
+        RetouchMode::Generate => match blend {
+            GenerateBlend::Membrane => {
+                let mut healed = heal(&dest, &source, &alpha, w, h, DOMAIN);
+                super::texture::apply(im, op, grid, &alpha, &mut healed);
+                healed
+            }
+            #[cfg(test)]
+            GenerateBlend::Untextured => heal(&dest, &source, &alpha, w, h, DOMAIN),
+            #[cfg(test)]
+            GenerateBlend::Composite => source,
+        },
     };
     for i in 0..w * h {
         let a = alpha[i] * op.opacity;

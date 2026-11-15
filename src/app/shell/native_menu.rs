@@ -124,8 +124,8 @@ impl Editor {
             Action::Cut | Action::Copy | Action::Paste => text && !self.activity.is_busy(),
             Action::Undo | Action::Redo if text => !self.activity.is_busy(),
             Action::SelectAll if text => !self.activity.is_busy(),
-            Action::Undo => free && self.undo_log.can_undo(),
-            Action::Redo => free && self.undo_log.can_redo(),
+            Action::Undo => free && self.can_undo(),
+            Action::Redo => free && self.can_redo(),
             Action::Preferences | Action::NewCatalog | Action::OpenCatalog | Action::Shortcuts => {
                 free
             }

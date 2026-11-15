@@ -13,6 +13,8 @@
 //!   (`rawmakase mcp`), unless its extension is disabled.
 //! - [`session`]: starting a program in a process group or job object, the
 //!   message channel to it, request deadlines and ending it.
+//! - [`secrets`]: where secret settings' values are kept, never in
+//!   `extensions.json`.
 //! - [`shm`]: the shared memory of the app's request buffers, leased against
 //!   the budgets, and passing its handles to the program.
 //!
@@ -24,6 +26,7 @@ pub mod external;
 pub mod github;
 pub mod package;
 mod process;
+pub mod secrets;
 pub mod session;
 pub mod shm;
 pub mod state;
@@ -110,6 +113,40 @@ pub fn check_compatible(manifest: &Manifest, app: &semver::Version) -> Result<()
     }
 }
 
+/// Most bytes a retouch generator's icon may hold.
+pub const MAX_ICON: u64 = 256 * 1024;
+
+/// Checks each retouch generator's icon in the extension at `dir`, as the app
+/// will read it: a file of at most [`MAX_ICON`] bytes of UTF-8 text that parses
+/// as an SVG. The app has no icon of its own for a generator and shows one that
+/// fails as failed, so `cargo rawmakase package` refuses it.
+pub fn check_icons(manifest: &Manifest, dir: &Path) -> Result<()> {
+    for generator in &manifest.retouch_generators {
+        let mut path = dir.to_path_buf();
+        path.extend(generator.icon.split('/'));
+        let len = std::fs::metadata(&path)
+            .map_err(|e| Error::from(e).context(path.display()))?
+            .len();
+        if len > MAX_ICON {
+            return Err(Error::new(format!(
+                "{} is larger than an icon may be ({} KB)",
+                path.display(),
+                MAX_ICON / 1024
+            )));
+        }
+        let bytes = std::fs::read(&path).map_err(|e| Error::from(e).context(path.display()))?;
+        let text = String::from_utf8(bytes).map_err(|_| {
+            Error::new(format!(
+                "{} can't be drawn: it isn't SVG text",
+                path.display()
+            ))
+        })?;
+        usvg::Tree::from_str(&text, &usvg::Options::default())
+            .map_err(|e| Error::new(format!("{} can't be drawn: {e}", path.display())))?;
+    }
+    Ok(())
+}
+
 /// Reads and validates the manifest of an unpacked extension.
 pub fn read_manifest(dir: &Path) -> Result<Manifest> {
     let path = dir.join(protocol::manifest::FILE);
@@ -146,6 +183,52 @@ pub(crate) fn random_suffix() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A generator's icon is the extension's own, checked before it is
+    /// packaged: one missing, too large, not text (a gzipped `.svgz`) or not an
+    /// SVG is refused.
+    #[test]
+    fn a_generators_icon_must_be_an_svg_it_can_draw() {
+        let manifest = Manifest::parse(
+            "[extension]\nid = \"dev.test.fill\"\nname = \"Fill\"\nversion = \"1.0.0\"\n\
+             rawmakase = \">=0.1\"\napi = 3\n[program]\npath = \"bin/fill\"\n\
+             [[retouch-generator]]\nid = \"fill\"\nname = \"Fill\"\nicon = \"icons/fill.svg\"\n",
+        )
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let error = check_icons(&manifest, dir.path()).unwrap_err();
+        assert!(error.0.contains("fill.svg"), "{error}");
+        std::fs::create_dir(dir.path().join("icons")).unwrap();
+        let icon = dir.path().join("icons/fill.svg");
+        for broken in ["<svg", "not an svg"] {
+            std::fs::write(&icon, broken).unwrap();
+            let error = check_icons(&manifest, dir.path()).unwrap_err();
+            assert!(error.0.contains("can't be drawn"), "{error}");
+        }
+        // A valid SVG gzipped: usvg would read it, the app reads text.
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        std::io::Write::write_all(
+            &mut gz,
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M4 4h16\"/></svg>",
+        )
+        .unwrap();
+        std::fs::write(&icon, gz.finish().unwrap()).unwrap();
+        let error = check_icons(&manifest, dir.path()).unwrap_err();
+        assert!(error.0.contains("can't be drawn"), "{error}");
+        let big = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><!--{}--></svg>",
+            "x".repeat(MAX_ICON as usize)
+        );
+        std::fs::write(&icon, big).unwrap();
+        assert!(check_icons(&manifest, dir.path()).is_err());
+        std::fs::write(
+            &icon,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" \
+             stroke=\"currentColor\"><path d=\"M4 4h16\"/></svg>",
+        )
+        .unwrap();
+        check_icons(&manifest, dir.path()).unwrap();
+    }
 
     fn manifest(program: bool) -> Manifest {
         let program = if program {

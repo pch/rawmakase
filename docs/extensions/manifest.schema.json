@@ -344,6 +344,11 @@
           "const": "preferences",
           "description": "The extension's page in Preferences > Extensions.",
           "type": "string"
+        },
+        {
+          "const": "generator",
+          "description": "The drawer of the tool of the `[[retouch-generator]]` that names it.",
+          "type": "string"
         }
       ]
     },
@@ -411,6 +416,42 @@
       ],
       "type": "object"
     },
+    "RetouchGenerator": {
+      "additionalProperties": false,
+      "description": "A `[[retouch-generator]]`: the program turns a region of the photo and\nthe area the user painted in it into new pixels for that area, such as\nthe area with an object removed. The app keeps the result as a retouch\npatch, which renders without the extension.",
+      "properties": {
+        "icon": {
+          "description": "Its tool's icon on Develop's rail: an SVG in the package, relative to\nits root. Drawn as RAWmakase's own icons are: a 24-unit square outline\nin white (or `currentColor`), tinted by the app, which has none of its\nown for it.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Unique among the extension's retouch generators; saved patches record\n`<extension>/<id>`.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its mode's name in the AI Retouch tool, for example `AI Remove`.",
+          "type": "string"
+        },
+        "panel": {
+          "description": "The `[[panel]]` (`place = \"generator\"`) its tool's drawer shows, for\nwhat the program needs to know beyond the area: a mode, a prompt. The\nprogram keeps its values (`panel.changed`); the app commits any still\nbeing typed before it sends a request.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uploads": {
+          "description": "Whether it sends the pixels it is given off this computer (to a\nhosted model). The app asks the user once before the first request.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "icon"
+      ],
+      "type": "object"
+    },
     "Setting": {
       "additionalProperties": false,
       "description": "A `[[setting]]`.",
@@ -455,12 +496,41 @@
             "string",
             "null"
           ]
+        },
+        "visible-when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SettingCondition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Shown only while another setting has a value, for example a key only\nwhile the service it is for is chosen. Hidden, it keeps its value."
         }
       },
       "required": [
         "id",
         "control",
         "default"
+      ],
+      "type": "object"
+    },
+    "SettingCondition": {
+      "additionalProperties": false,
+      "description": "A `[[setting]]`'s `visible-when`: another of the extension's settings\n(not a secret, whose value the app never shows) and the value it must\nhave.",
+      "properties": {
+        "equals": {
+          "description": "The value it must have, of its control's type."
+        },
+        "setting": {
+          "description": "The other setting's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "setting",
+        "equals"
       ],
       "type": "object"
     },
@@ -565,6 +635,11 @@
         {
           "const": "folder",
           "description": "A folder chosen in the system's dialog.",
+          "type": "string"
+        },
+        {
+          "const": "secret",
+          "description": "Text kept secret, such as an API key, from `api = 3`. The app keeps\nits value in the system's credential store, never in\n`extensions.json`, and never shows it again; the program receives it\nas a string, `\"\"` while none is set. Its default is `\"\"`.",
           "type": "string"
         }
       ]
@@ -680,6 +755,13 @@
         }
       ],
       "description": "The program behind its commands, panels and control adapters."
+    },
+    "retouch-generator": {
+      "description": "Generators of retouch patches (object removal), from `api = 3`.",
+      "items": {
+        "$ref": "#/$defs/RetouchGenerator"
+      },
+      "type": "array"
     },
     "setting": {
       "description": "Settings, shown on the extension's page in Preferences.",
