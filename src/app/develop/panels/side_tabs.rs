@@ -330,7 +330,7 @@ impl Editor {
                             let active = open_on.as_deref() == Some(offer.provenance.as_str());
                             let id = generator_id(&offer.provenance);
                             if button(ui, y, id, active, photo, tip, &paint) {
-                                click = Some(TabClick::Generator(offer.provenance.clone()));
+                                click = Some(TabClick::Generator(offer.provenance));
                             }
                             y += 36.;
                         }
