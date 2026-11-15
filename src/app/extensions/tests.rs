@@ -401,6 +401,22 @@ fn a_command_runs_with_its_settings_its_panel_and_what_it_reads() {
                     rawmakase_extensions::protocol::controls::ControlKind::Text { value, .. } if value == "short")
         })
     });
+    // A change the program refuses counts as unsent again, so leaving the
+    // page can send it once more.
+    assert!(e.extensions.panel(ID, "note").unwrap().sent.is_empty());
+    e.extensions
+        .panel_changed(ID, "note", "nothing", json!("x"))
+        .unwrap();
+    assert_eq!(
+        e.extensions.panel(ID, "note").unwrap().sent.get("nothing"),
+        Some(&json!("x"))
+    );
+    pump(e, "the error", |e, _| {
+        e.extensions
+            .panel(ID, "note")
+            .is_some_and(|p| !p.waiting && p.error.is_some())
+    });
+    assert!(e.extensions.panel(ID, "note").unwrap().sent.is_empty());
 }
 
 #[test]
@@ -2223,7 +2239,23 @@ fn text_whose_save_fails_is_kept_as_typed() {
     // A file this RAWmakase won't write.
     std::fs::write(f.data.join("extensions.json"), r#"{"version": 99}"#).unwrap();
     type_into(e, page_fields(&tree)[0], "hello");
+    // Enter commits it as the field lets go: the save fails, and the field
+    // still shows what was typed.
+    let enter = |pressed| egui::Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    window_frame(e, vec![enter(true), enter(false)]);
+    window_frame(e, Vec::new());
     let tree = window_frame(e, Vec::new());
+    let field = page_fields(&tree)[0];
+    let (_, node) = tree.nodes.iter().find(|(id, _)| *id == field).unwrap();
+    assert_eq!(node.value(), Some("hello"));
+    assert_eq!(e.extensions.get(ID).unwrap().settings()["label"], json!(""));
+    // And so does leaving the tab and coming back.
     click_first(e, &tree, "About");
     window_frame(e, Vec::new());
     assert_eq!(e.extensions.get(ID).unwrap().settings()["label"], json!(""));

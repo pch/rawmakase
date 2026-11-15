@@ -54,9 +54,9 @@ pub(super) fn take(view: &mut PanelView, controls: Vec<Control>) {
     }
 }
 
-/// The drafts of `view` that would change their control and haven't been
-/// sent: what to commit when the panel stops being drawn before its fields
-/// commit on their own.
+/// The drafts of `view` that differ from what the program last has: the
+/// value sent and not answered yet, else the control's. What to commit when
+/// the panel stops being drawn before its fields commit on their own.
 pub(in crate::app) fn unsent(view: &PanelView) -> Vec<(String, Value)> {
     let mut all = HashMap::new();
     values(&view.controls, &mut all);
@@ -64,7 +64,7 @@ pub(in crate::app) fn unsent(view: &PanelView) -> Vec<(String, Value)> {
         .drafts
         .iter()
         .filter(|(control, draft)| {
-            all.get(*control) != Some(*draft) && view.sent.get(*control) != Some(*draft)
+            view.sent.get(*control).or_else(|| all.get(*control)) != Some(*draft)
         })
         .map(|(control, draft)| (control.clone(), draft.clone()))
         .collect();
@@ -374,9 +374,10 @@ mod tests {
     use egui::accesskit::{Node, TreeUpdate};
     use serde_json::json;
 
-    /// Committing a panel left unseen sends only what would change a
-    /// control and hasn't been sent already: no repeat of a value its field
-    /// sent as it let go, and none for text typed back to what it was.
+    /// Committing a panel left unseen sends only drafts that differ from what
+    /// the program last has: no repeat of a value its field sent as it let go,
+    /// none for text typed back to what it was, but a return to the old value
+    /// while another is in flight.
     #[test]
     fn only_unsent_changes_are_committed() {
         let mut view = PanelView {
@@ -401,6 +402,10 @@ mod tests {
         assert_eq!(unsent(&view), Vec::new(), "sent as its field let go");
         view.drafts.insert("text".into(), json!("c"));
         assert_eq!(unsent(&view), vec![("text".to_string(), json!("c"))]);
+        // Typed back to the control's value while "b" is in flight: "b"
+        // would otherwise be the last word.
+        view.drafts.insert("text".into(), json!("a"));
+        assert_eq!(unsent(&view), vec![("text".to_string(), json!("a"))]);
     }
 
     /// A frame of `view` given `events`: what it committed, and where its

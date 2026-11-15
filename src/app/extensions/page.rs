@@ -818,10 +818,15 @@ impl Editor {
                 if let Some(help) = &s.help {
                     form_row(ui, "", |ui| hint(ui, help));
                 }
-                if let Some(value) = set
-                    && let Err(why) = self.extensions.set_setting(id, &s.id, value)
-                {
-                    self.messages.fail(why);
+                if let Some(value) = set {
+                    match self.extensions.set_setting(id, &s.id, value) {
+                        Ok(()) => {
+                            self.extension_page
+                                .drafts
+                                .remove(&(id.to_string(), s.id.clone()));
+                        }
+                        Err(why) => self.messages.fail(why),
+                    }
                 }
             }
             gap(ui);
@@ -1073,9 +1078,14 @@ impl Editor {
                 if r.changed() {
                     self.extension_page.drafts.insert(key.clone(), text.clone());
                 }
+                // The draft stays until the caller saves it, so a save that
+                // fails leaves what was typed.
                 if r.lost_focus() {
-                    self.extension_page.drafts.remove(&key);
-                    return (value.as_str() != Some(&text)).then(|| Value::from(text));
+                    if value.as_str() == Some(&text) {
+                        self.extension_page.drafts.remove(&key);
+                        return None;
+                    }
+                    return Some(Value::from(text));
                 }
                 None
             }

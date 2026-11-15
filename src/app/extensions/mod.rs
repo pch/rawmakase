@@ -2148,7 +2148,14 @@ impl Host {
                         panels::take(view, controls.controls);
                         e.crashes = 0;
                     }
-                    Err(err) => view.error = Some(err.to_string()),
+                    Err(err) => {
+                        view.error = Some(err.to_string());
+                        // The request failed, so what it sent counts as unsent
+                        // again. Pending doesn't say which control it was for,
+                        // so every mark goes: the worst case resends a value
+                        // still in flight, never drops one.
+                        view.sent.clear();
+                    }
                 }
             }
         }
