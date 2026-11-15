@@ -315,3 +315,14 @@ fn painting_takes_the_keyboard_from_a_text_field() {
     assert_eq!(ops.len(), 1, "the stroke was painted");
     assert_eq!(ctx.memory(|m| m.focused()), None);
 }
+
+/// The draft's tint keeps its proportions when its texture is capped, so a
+/// round brush stays round.
+#[test]
+fn the_draft_tint_keeps_its_proportions() {
+    use super::tint_size;
+    assert_eq!(tint_size(1000., 100.), (512, 52));
+    assert_eq!(tint_size(100., 1000.), (52, 512));
+    assert_eq!(tint_size(300.4, 20.), (301, 20));
+    assert_eq!(tint_size(0.2, 0.2), (1, 1));
+}

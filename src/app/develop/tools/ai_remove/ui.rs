@@ -21,8 +21,14 @@ impl Editor {
         offer: &Offer,
         why: Option<String>,
     ) {
+        // Held while a request is asked about or under way: the program
+        // reads its values when the request reaches it, after its rendition,
+        // so a change now would change what was sent.
+        let busy = self.ai_remove.running().is_some() || self.ai_remove.consent.is_some();
         if let Some(panel) = offer.panel.clone() {
-            self.extension_panel_ui(ui, &offer.extension, &panel, panels::Layout::Drawer);
+            ui.add_enabled_ui(!busy, |ui| {
+                self.extension_panel_ui(ui, &offer.extension, &panel, panels::Layout::Drawer);
+            });
         }
         if let Some(why) = why.or_else(|| self.ai_remove_unavailable()) {
             hint(ui, &why);

@@ -66,6 +66,9 @@ enum Job {
         extension: String,
         setting: String,
         value: Option<Secret>,
+        /// The delete of a key an uninstalled extension left
+        /// ([`Credentials::forget`]), told apart from the user's own writes.
+        forget: bool,
     },
 }
 
@@ -83,6 +86,8 @@ pub(in crate::app) enum Done {
         extension: String,
         setting: String,
         value: Option<Secret>,
+        /// It deleted a key an uninstalled extension left.
+        forget: bool,
         result: Result<(), SecretError>,
     },
 }
@@ -135,6 +140,18 @@ impl Credentials {
             extension: extension.to_string(),
             setting: setting.to_string(),
             value,
+            forget: false,
+        })
+    }
+    /// Deletes the key `setting` of `extension`, which it left when it was
+    /// uninstalled: its completion says so, whatever the user writes to the
+    /// same setting meanwhile.
+    pub(in crate::app) fn forget(&mut self, extension: &str, setting: &str) -> Result<(), String> {
+        self.send(Job::Write {
+            extension: extension.to_string(),
+            setting: setting.to_string(),
+            value: None,
+            forget: true,
         })
     }
     /// What finished since the last call.
@@ -227,10 +244,12 @@ fn perform(store: Result<Arc<dyn SecretStore>, SecretError>, job: &Job) -> Done 
                         extension,
                         setting,
                         value,
+                        forget,
                     } => Job::Write {
                         extension: extension.clone(),
                         setting: setting.clone(),
                         value: value.clone(),
+                        forget: *forget,
                     },
                 },
                 why,
@@ -252,6 +271,7 @@ fn perform(store: Result<Arc<dyn SecretStore>, SecretError>, job: &Job) -> Done 
             extension,
             setting,
             value,
+            forget,
         } => {
             let account = account(extension, setting);
             let result = match value {
@@ -262,6 +282,7 @@ fn perform(store: Result<Arc<dyn SecretStore>, SecretError>, job: &Job) -> Done 
                 extension: extension.clone(),
                 setting: setting.clone(),
                 value: value.clone(),
+                forget: *forget,
                 result,
             }
         }
@@ -285,10 +306,12 @@ fn failed(job: Job, why: SecretError) -> Done {
             extension,
             setting,
             value,
+            forget,
         } => Done::Written {
             extension,
             setting,
             value,
+            forget,
             result: Err(why),
         },
     }

@@ -372,8 +372,14 @@ impl Editor {
         };
         // What is still being typed in its panel reaches the program first:
         // its events and the request go to it in order.
-        if let Some((offer, _)) = self.ai_remove_offer() {
-            self.commit_generator_panel(&offer);
+        // One that can't be delivered stops the send: the request would go
+        // with what the program had before, not what is shown.
+        if let Some((offer, _)) = self.ai_remove_offer()
+            && let Err(why) = self.commit_generator_panel(&offer)
+        {
+            self.messages
+                .fail(format!("{} not sent: {why}", offer.name));
+            return;
         }
         self.request_ai_remove(op);
         // Kept until the spot is made, and painted again if it isn't: a
@@ -391,10 +397,10 @@ impl Editor {
         }
     }
     /// Sends `offer`'s panel's values still being typed to its program, as
-    /// letting go of the field would.
-    fn commit_generator_panel(&mut self, offer: &Offer) {
+    /// letting go of the field would; why one couldn't be, if one couldn't.
+    fn commit_generator_panel(&mut self, offer: &Offer) -> Result<(), String> {
         let Some(panel) = &offer.panel else {
-            return;
+            return Ok(());
         };
         let unsent = self
             .extensions
@@ -402,13 +408,10 @@ impl Editor {
             .map(crate::app::extensions::panels::unsent)
             .unwrap_or_default();
         for (control, value) in unsent {
-            if let Err(why) =
-                self.extensions
-                    .panel_changed(&offer.extension, panel, &control, value)
-            {
-                self.messages.fail(why);
-            }
+            self.extensions
+                .panel_changed(&offer.extension, panel, &control, value)?;
         }
+        Ok(())
     }
     /// Whether `offer`'s extension said it needs setting up and its settings
     /// haven't changed since: a request would fail the same way.
@@ -769,6 +772,7 @@ impl Editor {
             && !why.contains("credential store")
         {
             self.ai_remove.consent = None;
+            self.restore_ai_draft();
             self.messages.note(why);
         }
         self.settle_ai_remove();
@@ -785,10 +789,14 @@ impl Editor {
         if now == Some(pending.lifecycle) {
             return false;
         }
-        let name = pending.offer.extension_name.clone();
+        let (name, extension) = (
+            pending.offer.name.clone(),
+            pending.offer.extension_name.clone(),
+        );
         self.ai_remove.cancel();
+        self.restore_ai_draft();
         self.messages
-            .note(format!("AI Remove stopped: {name} was stopped"));
+            .note(format!("{name} stopped: {extension} was stopped"));
         self.settle_ai_remove();
         true
     }

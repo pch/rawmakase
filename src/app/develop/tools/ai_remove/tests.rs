@@ -1123,6 +1123,8 @@ struct Gated {
     closed: std::sync::Mutex<bool>,
     opened: std::sync::Condvar,
     fail: std::sync::atomic::AtomicBool,
+    /// Deletes fail too, while set.
+    fail_deletes: std::sync::atomic::AtomicBool,
 }
 impl Gated {
     fn close(&self) {
@@ -1156,6 +1158,9 @@ impl SecretStore for Gated {
         self.inner.set(account, value)
     }
     fn delete(&self, account: &str) -> Result<(), SecretError> {
+        if self.fail_deletes.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(SecretError::Unavailable("locked".into()));
+        }
         self.inner.delete(account)
     }
 }
@@ -1358,4 +1363,79 @@ fn render_the_ai_retouch_drawer() {
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("target/ai-retouch-drawer-refused.png");
     image.save(&out).unwrap();
+}
+
+/// A key saved and its extension uninstalled before the save finished: the
+/// save's completion is the user's write, not the delete, so a delete that
+/// fails leaves the key listed for the next start.
+#[test]
+fn a_save_finishing_never_stands_for_the_delete_after_it() {
+    let mut f = fixture(0.42);
+    let e = &mut f.editor;
+    let store = Arc::new(Gated::default());
+    e.extensions.use_secret_store_for_tests(store.clone());
+    store
+        .fail_deletes
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    e.extensions
+        .set_secret(ID, "key", Some(SENTINEL.into()))
+        .unwrap();
+    e.extensions.uninstall(ID).unwrap();
+    pump(e, "the delete to fail", |e| {
+        e.messages.line().contains("couldn't be removed")
+    });
+    let left = Store::new(&f.data).forgotten_keys().unwrap();
+    assert_eq!(left, [(ID.to_string(), "key".to_string())]);
+}
+
+/// A send whose panel values can't reach the program (too large for a
+/// message) sends nothing: the request would go with what the program had.
+/// The area stays painted.
+#[test]
+fn a_panel_value_that_can_t_be_delivered_stops_the_send() {
+    use crate::app::develop::state::Tool;
+    let mut f = fixture(0.43);
+    let e = &mut f.editor;
+    e.view.set_tool(Tool::AiRetouch);
+    let ask = offer(e, "ask");
+    e.choose_ai_generator(&ask);
+    e.extensions.open_panel(ID, "ask").unwrap();
+    pump(e, "the panel", |e| {
+        e.extensions
+            .panel(ID, "ask")
+            .is_some_and(|v| !v.controls.is_empty())
+    });
+    e.extensions
+        .panel_mut(ID, "ask")
+        .unwrap()
+        .drafts
+        .insert("text".into(), serde_json::json!("x".repeat(2 << 20)));
+    e.add_ai_stroke(vec![[0.4, 0.5]]);
+    e.send_ai_draft();
+    assert!(e.extensions.retouches_sent().is_empty() && settled(e));
+    assert_eq!(e.ai_remove.draft.len(), 1);
+    assert!(
+        e.messages.line().contains("not sent"),
+        "{}",
+        e.messages.line()
+    );
+}
+
+/// The extension stopped (disabled) while its request runs: the request is
+/// void, and the area is painted again.
+#[test]
+fn an_extension_stopping_mid_request_paints_the_area_again() {
+    use crate::app::develop::state::Tool;
+    let mut f = fixture(0.44);
+    let e = &mut f.editor;
+    e.view.set_tool(Tool::AiRetouch);
+    let gate = offer(e, "gate");
+    e.choose_ai_generator(&gate);
+    e.add_ai_stroke(vec![[0.4, 0.5], [0.6, 0.5]]);
+    e.send_ai_draft();
+    assert!(e.ai_remove.draft.is_empty());
+    started(e, &f.folder);
+    e.set_extension_enabled(ID, false);
+    pump(e, "the request to end", settled);
+    assert_eq!(e.ai_remove.draft.len(), 1, "painted again");
 }

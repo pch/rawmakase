@@ -1205,10 +1205,41 @@ impl Host {
                 secrets::Done::Written {
                     extension,
                     setting,
+                    forget: true,
+                    result,
+                    ..
+                } => self.forgotten_key_deleted(&extension, &setting, result),
+                secrets::Done::Written {
+                    extension,
+                    setting,
                     value,
                     result,
+                    ..
                 } => self.secret_written(&extension, &setting, value, result),
             }
+        }
+    }
+
+    /// A forgotten key's delete ended: dropped from the list once done, kept
+    /// there for the next start when not.
+    fn forgotten_key_deleted(
+        &mut self,
+        id: &str,
+        setting: &str,
+        result: Result<(), rawmakase_extensions::secrets::SecretError>,
+    ) {
+        self.deleting.remove(&(id.to_string(), setting.to_string()));
+        match result {
+            Ok(()) => {
+                if let Some(store) = &self.store {
+                    let _ = store.key_deleted(id, setting);
+                }
+            }
+            Err(why) => self.notices.push(format!(
+                "{id}: a key couldn't be removed from the system's credential store, \
+                 tried again at the next start: {}",
+                secrets::advice(&why)
+            )),
         }
     }
 
@@ -1219,23 +1250,6 @@ impl Host {
         value: Option<rawmakase_extensions::secrets::Secret>,
         result: Result<(), rawmakase_extensions::secrets::SecretError>,
     ) {
-        // A forgotten key's delete: dropped from the list once done, kept
-        // there for the next start when not.
-        if self.deleting.remove(&(id.to_string(), setting.to_string())) {
-            match result {
-                Ok(()) => {
-                    if let Some(store) = &self.store {
-                        let _ = store.key_deleted(id, setting);
-                    }
-                }
-                Err(why) => self.notices.push(format!(
-                    "{id}: a key couldn't be removed from the system's credential store, \
-                     tried again at the next start: {}",
-                    secrets::advice(&why)
-                )),
-            }
-            return;
-        }
         let Some(index) = self.index(id) else {
             return;
         };
@@ -2143,7 +2157,7 @@ impl Host {
                 continue;
             }
             if self.deleting.insert((id.clone(), setting.clone()))
-                && self.credentials.write(&id, &setting, None).is_err()
+                && self.credentials.forget(&id, &setting).is_err()
             {
                 self.deleting.remove(&(id, setting));
             }

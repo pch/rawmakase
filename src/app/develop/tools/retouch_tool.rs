@@ -453,9 +453,10 @@ impl Editor {
             to_screen([rect[2], rect[3]]),
             to_screen([rect[0], rect[3]]),
         ];
-        // About a texel per screen point, at most 512 a side.
-        let width = (corners[0].distance(corners[1]).ceil() as u32).clamp(1, 512);
-        let height = (corners[0].distance(corners[3]).ceil() as u32).clamp(1, 512);
+        let (width, height) = tint_size(
+            corners[0].distance(corners[1]),
+            corners[0].distance(corners[3]),
+        );
         let [fw, _] = frame.size();
         let region = crate::develop::retouch::rendition::Region {
             rect,
@@ -1062,6 +1063,18 @@ fn card_rect(pin: Pos2, size: Vec2, visible: Rect) -> Rect {
         at.y.min(visible.max.y - size.y).max(visible.min.y),
     );
     Rect::from_min_size(min, size)
+}
+
+/// The draft tint's texture size for `w` x `h` screen points: about a texel
+/// per point, at most 512 a side, both sides scaled alike, as the coverage is
+/// drawn at one scale.
+fn tint_size(w: f32, h: f32) -> (u32, u32) {
+    const MAX: f32 = 512.;
+    let k = (MAX / w.max(h)).min(1.);
+    (
+        ((w * k).ceil() as u32).max(1),
+        ((h * k).ceil() as u32).max(1),
+    )
 }
 
 #[cfg(test)]
