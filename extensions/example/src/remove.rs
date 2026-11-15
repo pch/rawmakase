@@ -131,6 +131,17 @@ impl AskPanel {
             title: title.into(),
         };
         vec![
+            // What the tool says of itself, as an extension's own words.
+            Control {
+                id: None,
+                label: None,
+                help: None,
+                visible_when: None,
+                disabled: false,
+                kind: ControlKind::Help {
+                    text: "An example: it fills with grey, and sends nothing anywhere.".into(),
+                },
+            },
             // Drawn only, for how a drawer looks: the generator reads none.
             Control {
                 id: Some("mode".into()),
