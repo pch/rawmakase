@@ -971,7 +971,9 @@ pub(in crate::app) fn control_label(
 /// [`LABEL_GAP`]: crate::app::ui::widgets::LABEL_GAP
 fn label_row(ui: &mut egui::Ui, label: &str, height: f32, add: impl FnOnce(&mut egui::Ui)) {
     use crate::app::ui::widgets::{LABEL_GAP, label_column};
-    let spacing = ui.spacing().item_spacing.x;
+    // The control starts as far past the label column as the caption ends
+    // short of it.
+    ui.spacing_mut().item_spacing.x = LABEL_GAP + LABEL_GAP;
     let (rect, _) = ui.allocate_exact_size(
         Vec2::new(label_column(ui) - LABEL_GAP, height),
         egui::Sense::hover(),
@@ -983,7 +985,6 @@ fn label_row(ui: &mut egui::Ui, label: &str, height: f32, add: impl FnOnce(&mut 
         egui::FontId::proportional(text::SMALL),
         theme::palette(ui.ctx()).tone(Tone::SOFT),
     );
-    ui.add_space((2. * LABEL_GAP - spacing).max(0.));
     add(ui);
 }
 pub(in crate::app) fn indented(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
