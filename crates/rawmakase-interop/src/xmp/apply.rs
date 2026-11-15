@@ -178,7 +178,6 @@ impl Preset {
         self.validate_remaining(&mut settings, m)?;
         self.keep_upright_fitting(base, &mut recipe);
         recipe.preset_name = self.name.clone();
-        recipe.preset_settings = self.settings.clone();
         recipe.validate()?;
         Ok(recipe)
     }
@@ -285,7 +284,6 @@ impl Preset {
         warnings.extend(skipped);
         self.keep_upright_fitting(base, &mut recipe);
         recipe.preset_name = self.name.clone();
-        recipe.preset_settings = self.settings.clone();
         recipe.validate()?;
         Ok((recipe, warnings))
     }
