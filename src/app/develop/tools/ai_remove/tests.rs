@@ -1457,7 +1457,7 @@ fn undo_and_redo_take_back_and_repaint_the_area_s_strokes() {
     e.add_ai_stroke(a.clone());
     e.add_ai_stroke(b.clone());
     e.undo();
-    assert_eq!(e.ai_remove.draft, [a.clone()]);
+    assert_eq!(e.ai_remove.draft, std::slice::from_ref(&a));
     assert_eq!(e.document.edit.recipe().exposure, 0.5, "History untouched");
     e.redo();
     assert_eq!(e.ai_remove.draft, [a.clone(), b.clone()]);
@@ -1467,7 +1467,7 @@ fn undo_and_redo_take_back_and_repaint_the_area_s_strokes() {
     assert_eq!(e.document.edit.recipe().exposure, 0.5);
     // Redo brings strokes back only until something new is painted.
     e.redo();
-    assert_eq!(e.ai_remove.draft, [a.clone()]);
+    assert_eq!(e.ai_remove.draft, std::slice::from_ref(&a));
     e.add_ai_stroke(b.clone());
     e.redo();
     assert_eq!(e.ai_remove.draft.len(), 2, "nothing left to redo");
@@ -1479,8 +1479,8 @@ fn undo_and_redo_take_back_and_repaint_the_area_s_strokes() {
     e.redo();
     assert_eq!(e.document.edit.recipe().exposure, 0.5);
     assert!(e.ai_remove.draft.is_empty(), "History's Redo, not a stroke");
-    e.add_ai_stroke(a.clone());
-    e.add_ai_stroke(b.clone());
+    e.add_ai_stroke(a);
+    e.add_ai_stroke(b);
     // Outside AI Retouch, Undo is History's.
     e.view.set_tool(Tool::Remove);
     e.undo();
