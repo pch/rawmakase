@@ -1213,6 +1213,15 @@ impl Host {
         result: Result<(), rawmakase_extensions::secrets::SecretError>,
     ) {
         let Some(index) = self.index(id) else {
+            // An uninstalled extension's key that the store kept.
+            if value.is_none()
+                && let Err(why) = result
+            {
+                self.notices.push(format!(
+                    "{id}: a key couldn't be removed from the system's credential store: {}",
+                    secrets::advice(&why)
+                ));
+            }
             return;
         };
         let premarked = self.extensions[index].secret_premarked.remove(setting);
@@ -2060,8 +2069,11 @@ impl Host {
         }
     }
 
-    /// Uninstalls extension `id` (not a bundled one): its entry, then its
-    /// folders. A developer folder is only forgotten.
+    /// Uninstalls extension `id` (not a bundled one): its keys, then its
+    /// entry, then its folders. A developer folder is only forgotten, with
+    /// its keys. Each key recorded is deleted from the system's credential
+    /// store on the credentials thread, after any write to it still queued;
+    /// one that can't be deleted is said ([`Host::secret_written`]).
     pub(in crate::app) fn uninstall(&mut self, id: &str) -> Result<Vec<Outcome>, String> {
         let store = self
             .store
@@ -2069,11 +2081,27 @@ impl Host {
             .ok_or("Extensions are off in this editor")?;
         let index = self.index(id).ok_or_else(|| format!("No extension {id}"))?;
         let name = self.extensions[index].name().to_string();
+        if self.extensions[index].origin == Origin::Bundled {
+            return Err(format!("{name} comes with RAWmakase"));
+        }
+        // Queued before the entry goes: a key the store can't be told to
+        // delete leaves the extension installed, its record kept.
+        let keys: Vec<String> = self.extensions[index]
+            .entry
+            .secrets
+            .iter()
+            .cloned()
+            .collect();
+        for setting in &keys {
+            self.credentials
+                .write(id, setting, None)
+                .map_err(|why| format!("{name} not uninstalled: {why}"))?;
+        }
         match self.extensions[index].origin {
-            Origin::Bundled => return Err(format!("{name} comes with RAWmakase")),
             Origin::Installed => store.remove(id).map_err(|e| format!("{name}: {e}"))?,
-            Origin::Developer => State::update(store.data_dir(), |state| {
+            _ => State::update(store.data_dir(), |state| {
                 state.developer.remove(id);
+                state.entry(id).secrets.clear();
                 Ok(())
             })
             .map_err(|e| format!("{name}: {e}"))?,

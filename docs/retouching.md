@@ -101,10 +101,13 @@ provider. Below, "AI Remove" stands for any of them.
   which stays drawn until Send or Cancel, and in the drawer; painting again while
   it is open is refused, so the area asked about is never replaced unseen.
 - Success adds one Generate spot as one History step named after the generator
-  ("AI Remove", "AI Replace"). A failure adds
-  nothing and says why: the extension needs setting up (a key; the drawer opens its
-  page), the service is unavailable, or it declined the area. Nothing is ever sent
-  again by itself: each removal is one paid call.
+  ("AI Remove", "AI Replace"). A failure adds nothing and says why, named after
+  its mode, in a card at the area on the photo as well as the drawer: the
+  extension needs setting up (a key; **Set up…** opens that extension's page),
+  the service is unavailable, or it declined the area. Nothing is ever sent again
+  by itself: each request is one paid call. After "needs setting up", sending to
+  that extension waits until one of its settings or keys changes, it starts
+  again, or the failure is dismissed (for a fix made on the service's side).
 - A Generate spot can be selected, have its Feather and Opacity changed, hidden and
   deleted, but not moved, resized or given a source (`/`, the source circle and
   Cmd-drag don't apply), and Mode never turns it into Heal or Clone, nor those into

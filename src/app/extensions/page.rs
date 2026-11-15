@@ -516,8 +516,13 @@ impl Editor {
             return;
         };
         let what = match e.origin {
-            Origin::Developer => "RAWmakase forgets its folder, which stays where it is.",
-            _ => "Its program and its settings are removed. Photos it added stay in the catalog.",
+            Origin::Developer => {
+                "RAWmakase forgets its folder, which stays where it is, and its saved keys."
+            }
+            _ => {
+                "Its program, its settings and its saved keys are removed. Photos it added \
+                 stay in the catalog."
+            }
         };
         let title = format!("Uninstall {}?", e.name());
         let lines = [what.to_string()];

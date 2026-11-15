@@ -12,6 +12,32 @@ use keyring_core::{CredentialStore, Entry, Error};
 use rawmakase_extensions::secrets::{SERVICE, Secret, SecretError, SecretStore};
 use std::sync::Arc;
 
+/// Deletes from `store` every key `extensions.json` (in `data_dir`) records
+/// for extension `id`, for uninstalling it from the command line, where
+/// waiting is fine: none is left behind once its record goes. Stops at the
+/// first that can't be deleted, saying which.
+pub(crate) fn delete_extension_keys(
+    store: &dyn SecretStore,
+    data_dir: &std::path::Path,
+    id: &str,
+) -> anyhow::Result<()> {
+    let state =
+        rawmakase_extensions::state::State::read(data_dir).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let Some(entry) = state.extensions.get(id) else {
+        return Ok(());
+    };
+    for setting in &entry.secrets {
+        store
+            .delete(&rawmakase_extensions::secrets::account(id, setting))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "its key {setting} couldn't be removed from the system's credential store: {e}"
+                )
+            })?;
+    }
+    Ok(())
+}
+
 /// The system's store, or why there is none (Linux without a Secret
 /// Service, say). Opening it may wait (the Secret Service's D-Bus session):
 /// the credentials thread opens it, and tries again at its next call when
@@ -118,5 +144,32 @@ mod tests {
             let error = super::failure(e).to_string();
             assert!(!error.contains("SENTINEL"), "{error}");
         }
+    }
+}
+
+#[cfg(test)]
+mod uninstall_tests {
+    use super::*;
+    use rawmakase_extensions::secrets::{MemoryStore, account};
+    use rawmakase_extensions::state::State;
+
+    #[test]
+    fn removing_from_the_command_line_deletes_the_keys_recorded() {
+        let dir = tempfile::tempdir().unwrap();
+        State::update(dir.path(), |state| {
+            state.entry("dev.example.keys").secrets.insert("key".into());
+            Ok(())
+        })
+        .unwrap();
+        let store = MemoryStore::default();
+        let kept = account("dev.example.keys", "key");
+        let other = account("dev.example.other", "key");
+        store.set(&kept, &Secret::new("sk-1")).unwrap();
+        store.set(&other, &Secret::new("sk-2")).unwrap();
+        delete_extension_keys(&store, dir.path(), "dev.example.keys").unwrap();
+        assert!(store.get(&kept).unwrap().is_none());
+        assert!(store.get(&other).unwrap().is_some(), "another's stays");
+        // An extension nothing is recorded for has nothing to delete.
+        delete_extension_keys(&store, dir.path(), "dev.example.none").unwrap();
     }
 }

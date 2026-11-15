@@ -154,20 +154,21 @@ impl Editor {
             });
         }
         if let Some(failure) = self.ai_remove.failure.clone() {
-            let name = self
+            // The failed request's generator, not the one chosen since.
+            let failed = self
                 .ai_remove
                 .failed
                 .as_ref()
-                .map_or(offer.name.clone(), |(name, _)| name.clone());
+                .map_or(offer.clone(), |(failed, _)| failed.clone());
             // In the text's own colour, not a hint's: the last request failed.
-            ui.add(egui::Label::new(failure.message(&name)).wrap());
+            ui.add(egui::Label::new(failure.message(&failed.name)).wrap());
             indented(ui, |ui| {
                 if matches!(failure, Failure::NeedsSetup(_))
                     && ui
-                        .button(format!("Set up {}…", offer.extension_name))
+                        .button(format!("Set up {}…", failed.extension_name))
                         .clicked()
                 {
-                    self.open_extension_page(&offer.extension);
+                    self.open_extension_page(&failed.extension);
                 }
                 if ui.button("Dismiss").clicked() {
                     self.dismiss_ai_failure();

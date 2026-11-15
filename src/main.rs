@@ -1446,9 +1446,12 @@ fn extensions(command: ExtensionsCommand) -> Result<()> {
             }
         }
         ExtensionsCommand::Remove { id } => {
+            // Its keys first: one the store keeps leaves it installed.
+            rawmakase::delete_extension_keys(store.data_dir(), &id)
+                .map_err(|e| anyhow::anyhow!("{id} not removed: {e}"))?;
             store.remove(&id)?;
             println!(
-                "Removed {id}; its data in {} stays",
+                "Removed {id} and its saved keys; its data in {} stays",
                 store.extension_data_dir(&id).display()
             );
         }

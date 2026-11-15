@@ -124,8 +124,21 @@ fn denoise(r: &Recipe) -> String {
     .unwrap_or_default()
 }
 
+/// What [`AiRemove::setup_needed`] holds.
+struct SetupNeeded {
+    extension: String,
+    settings: u64,
+    lifecycle: Option<u64>,
+}
+
 struct Pending {
     offer: Offer,
+    /// The extension's settings' fingerprint when it was sent
+    /// ([`Host::settings_fingerprint`]): a `needs_setup` answer blocks only
+    /// settings that still hold.
+    ///
+    /// [`Host::settings_fingerprint`]: crate::app::extensions::Host::settings_fingerprint
+    settings: Option<u64>,
     /// The spot to add: the painted shape, with the tool's feather and opacity.
     op: RetouchOp,
     guard: Guard,
@@ -165,13 +178,15 @@ pub(in crate::app) struct AiRemove {
     worker: Worker,
     /// What the last attempt ended in, for the drawer, until the next.
     pub(in crate::app) failure: Option<Failure>,
-    /// The generator a failed request went to, by name, and the area it was
-    /// for: the photo shows the failure there, as it showed it working.
-    pub(in crate::app) failed: Option<(String, RetouchOp)>,
-    /// An extension that said it needs setting up, with its settings'
-    /// fingerprint then: painting for it waits until they change, rather
-    /// than send what would fail the same way.
-    setup_needed: Option<(String, u64)>,
+    /// The generator a failed request went to and the area it was for: the
+    /// photo shows the failure there, as it showed it working, and Set up…
+    /// opens that generator's extension.
+    pub(in crate::app) failed: Option<(Offer, RetouchOp)>,
+    /// An extension that said it needs setting up, with the fingerprint of
+    /// the settings the request was sent with and its lifecycle then:
+    /// sending to it waits until either moves or the failure is dismissed,
+    /// rather than send what would fail the same way.
+    setup_needed: Option<SetupNeeded>,
     /// A request waiting for the user to agree to its uploads.
     pub(in crate::app) consent: Option<Consent>,
     /// The strokes painted and not sent yet, in image space: one area, sent
@@ -245,10 +260,13 @@ impl AiRemove {
 }
 
 impl Editor {
-    /// Forgets the last failure, in the drawer and on the photo.
+    /// Forgets the last failure, in the drawer and on the photo, and that its
+    /// extension needs setting up: set up elsewhere (a permission on the
+    /// service), the user says so by dismissing it.
     pub(in crate::app) fn dismiss_ai_failure(&mut self) {
         self.ai_remove.failure = None;
         self.ai_remove.failed = None;
+        self.ai_remove.setup_needed = None;
     }
     /// Every retouch generator enabled extensions offer, each a mode of the
     /// Remove tool, with why it can't run now.
@@ -376,12 +394,11 @@ impl Editor {
     /// Whether `offer`'s extension said it needs setting up and its settings
     /// haven't changed since: a request would fail the same way.
     pub(in crate::app) fn ai_setup_needed(&self, offer: &Offer) -> bool {
-        self.ai_remove
-            .setup_needed
-            .as_ref()
-            .is_some_and(|(id, then)| {
-                *id == offer.extension && self.extensions.settings_fingerprint(id) == Some(*then)
-            })
+        self.ai_remove.setup_needed.as_ref().is_some_and(|s| {
+            s.extension == offer.extension
+                && self.extensions.settings_fingerprint(&s.extension) == Some(s.settings)
+                && self.extensions.mask_lifecycle(&s.extension) == s.lifecycle
+        })
     }
     /// Whether `offer`'s generator needs text and none is written: painting
     /// would only be refused.
@@ -569,8 +586,10 @@ impl Editor {
             generator: offer.generator.clone(),
             prompt,
         };
+        let settings = self.extensions.settings_fingerprint(&offer.extension);
         self.ai_remove.pending = Some(Pending {
             offer,
+            settings,
             op,
             guard,
             load,
@@ -812,19 +831,25 @@ impl Editor {
             Ok(generated) => generated,
             // Its extension was disabled or stopped it.
             Err(Failure::Cancelled) => {
-                self.messages.note("AI Remove stopped");
+                self.messages
+                    .note(format!("{} stopped", pending.offer.name));
                 return;
             }
             Err(failure) => {
-                if matches!(failure, Failure::NeedsSetup(_)) {
-                    let id = pending.offer.extension.clone();
-                    self.ai_remove.setup_needed =
-                        self.extensions.settings_fingerprint(&id).map(|f| (id, f));
+                let id = &pending.offer.extension;
+                let now = self.extensions.settings_fingerprint(id);
+                if matches!(failure, Failure::NeedsSetup(_))
+                    && let Some(settings) = now.filter(|now| Some(*now) == pending.settings)
+                {
+                    self.ai_remove.setup_needed = Some(SetupNeeded {
+                        extension: id.clone(),
+                        settings,
+                        lifecycle: self.extensions.mask_lifecycle(id),
+                    });
                 }
-                let name = pending.offer.name.clone();
-                self.messages.fail(failure.message(&name));
+                self.messages.fail(failure.message(&pending.offer.name));
                 self.ai_remove.failure = Some(failure);
-                self.ai_remove.failed = Some((name, pending.op));
+                self.ai_remove.failed = Some((pending.offer, pending.op));
                 return;
             }
         };

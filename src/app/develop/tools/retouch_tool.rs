@@ -350,7 +350,7 @@ impl Editor {
         if generating
             && self.ai_remove.running().is_none()
             && self.ai_remove.consent.is_none()
-            && let (Some(failure), Some((name, op))) = (
+            && let (Some(failure), Some((failed, op))) = (
                 self.ai_remove.failure.clone(),
                 self.ai_remove.failed.clone(),
             )
@@ -367,15 +367,12 @@ impl Editor {
                 ui,
                 to_screen(op.pin()),
                 visible,
-                &failure.message(&name),
+                &failure.message(&failed.name),
                 buttons,
             );
             match clicked {
-                Some(0) if setup => {
-                    if let Some((offer, _)) = self.ai_remove_offer() {
-                        self.open_extension_page(&offer.extension);
-                    }
-                }
+                // The failed request's extension, whatever is chosen now.
+                Some(0) if setup => self.open_extension_page(&failed.extension),
                 Some(_) => self.dismiss_ai_failure(),
                 None => {}
             }

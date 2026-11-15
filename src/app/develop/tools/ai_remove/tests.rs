@@ -678,8 +678,8 @@ fn failures_say_why_and_a_secret_setting_sets_the_extension_up() {
     assert!(matches!(e.ai_remove.failure, Some(Failure::NeedsSetup(_))));
     // It names the generator that failed, and keeps the area it failed on,
     // for the card on the photo, until dismissed or asked again.
-    let (name, area) = e.ai_remove.failed.clone().unwrap();
-    assert_eq!(name, "Setup");
+    let (failed, area) = e.ai_remove.failed.clone().unwrap();
+    assert_eq!(failed, offer(e, "setup"));
     assert_eq!(
         area,
         RetouchOp {
@@ -687,15 +687,13 @@ fn failures_say_why_and_a_secret_setting_sets_the_extension_up() {
             ..painted()
         }
     );
-    let message = e.ai_remove.failure.as_ref().unwrap().message(&name);
+    let message = e.ai_remove.failure.as_ref().unwrap().message(&failed.name);
     assert!(message.starts_with("Setup needs setting up: "), "{message}");
-    e.dismiss_ai_failure();
-    assert!(e.ai_remove.failure.is_none() && e.ai_remove.failed.is_none());
     // Until its settings change, painting for that extension again sends
-    // nothing: it says to set it up, dismissed or not.
+    // nothing: it says to set it up.
     let sent = e.extensions.retouches_sent().len();
     e.view.set_tool(crate::app::develop::state::Tool::AiRetouch);
-    e.choose_ai_generator(&offer(e, "setup"));
+    e.choose_ai_generator(&offer(e, "fill"));
     e.add_ai_stroke(vec![[0.5, 0.5]]);
     let why = e.ai_send_blocked().unwrap();
     assert!(why.starts_with("Set up"), "{why}");
@@ -708,6 +706,29 @@ fn failures_say_why_and_a_secret_setting_sets_the_extension_up() {
         "{}",
         e.messages.line()
     );
+    // Set up elsewhere (a permission on the service), the user says so by
+    // dismissing it; and the extension starting again lets go of it too.
+    e.dismiss_ai_failure();
+    assert!(e.ai_remove.failure.is_none() && e.ai_remove.failed.is_none());
+    assert!(!e.ai_setup_needed(&offer(e, "setup")));
+    remove_with(e, "setup");
+    pump(e, "the second refusal", settled);
+    assert!(e.ai_setup_needed(&offer(e, "setup")));
+    e.set_extension_enabled(ID, false);
+    e.set_extension_enabled(ID, true);
+    assert!(!e.ai_setup_needed(&offer(e, "setup")));
+    // A request that fails after the settings changed under it blocks
+    // nothing: what it was sent with is gone.
+    remove_with(e, "setup");
+    e.extensions
+        .set_secret(ID, "key", Some("sk-other".into()))
+        .unwrap();
+    pump(e, "the request to end", settled);
+    assert!(!e.ai_setup_needed(&offer(e, "setup")));
+    e.extensions.set_secret(ID, "key", None).unwrap();
+    pump(e, "the key to be removed", |e| {
+        e.extensions.get(ID).unwrap().secret("key") != Some(&secrets_state("sk-other"))
+    });
     assert!(matches!(
         retouch_generator::failure(RemoteError::new(
             rawmakase_extensions::protocol::ErrorCode::Refused,
@@ -740,9 +761,11 @@ fn failures_say_why_and_a_secret_setting_sets_the_extension_up() {
         e.extensions.get(ID).unwrap().settings()["key"],
         serde_json::json!("")
     );
+    // The request sent while the key changed may have been set up already.
+    let before = generated(e).len();
     remove_with(e, "setup");
     pump(e, "the removal", settled);
-    assert_eq!(generated(e).len(), 1, "{}", e.messages.line());
+    assert_eq!(generated(e).len(), before + 1, "{}", e.messages.line());
     assert!(!e.messages.line().contains("SENTINEL"));
 }
 
@@ -1228,4 +1251,27 @@ fn stale_reads_never_bring_a_key_back_and_a_failed_write_settles() {
     pump(e, "the key to settle", |e| {
         e.extensions.get(ID).unwrap().secret("key") == Some(&secrets_state(SENTINEL))
     });
+}
+
+/// Uninstalling an extension takes its keys with it: from the system's
+/// credential store, off the UI thread, and from `extensions.json`, so none
+/// is left behind unrecorded for a later install to miss.
+#[test]
+fn uninstalling_takes_the_keys_with_it() {
+    let mut f = fixture(0.41);
+    let e = &mut f.editor;
+    e.extensions
+        .set_secret(ID, "key", Some(SENTINEL.into()))
+        .unwrap();
+    pump(e, "the key to be saved", |e| {
+        e.extensions.get(ID).unwrap().secret("key") == Some(&secrets_state(SENTINEL))
+    });
+    let account = rawmakase_extensions::secrets::account(ID, "key");
+    assert!(f.secrets.get(&account).unwrap().is_some());
+    e.extensions.uninstall(ID).unwrap();
+    pump(e, "the key to be deleted", |_| {
+        f.secrets.get(&account).unwrap().is_none()
+    });
+    let state = std::fs::read_to_string(f.data.join("extensions.json")).unwrap();
+    assert!(!state.contains("\"secrets\""), "{state}");
 }

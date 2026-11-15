@@ -255,7 +255,7 @@ each shown only when the extension has something for it: **Settings** (its
 settings, panels and photo sources; for MCP, local access, which its clients
 need, each turned on or off for the open
 catalog), **Commands** (each with **Run**) and **About** (author, repository,
-declared access, control adapters, log file, **Uninstall…**, which asks
+declared access, control adapters, log file, **Uninstall…**, which removes its saved keys from the system's credential store too and asks
 first and which a bundled one doesn't have, and its last errors). **Add Extension** has **From
 GitHub…**, which downloads the newest compatible package, and **From File…**,
 which reads a `.rmext`; either shows the package's manifest, its access and
