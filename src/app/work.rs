@@ -237,11 +237,7 @@ const WORK: &[Row] = &[
         kind: Kind::AiRemove,
         running: None,
         closing: None,
-        status: Some(|e| {
-            e.ai_remove
-                .running()
-                .map(|_| work("ai-remove", "Removing…"))
-        }),
+        status: Some(|e| e.ai_remove.working().map(|text| work("ai-remove", &text))),
         slows_previews: false,
         pauses_checksums: false,
         stop: Some(|e, _| e.ai_remove.stop()),

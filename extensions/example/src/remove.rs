@@ -121,6 +121,8 @@ pub fn extension() -> Extension {
         "unavailable",
         "unnamed",
         "crash",
+        "describe",
+        "maybe",
     ]
     .into_iter()
     .fold(Extension::new(), |e, id| {

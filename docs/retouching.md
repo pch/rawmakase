@@ -5,7 +5,7 @@ Lightroom yet, and details may change.
 
 The Remove tool (Q) works like Lightroom Classic's Remove panel in Heal and Clone
 modes. Its third mode, AI Remove, is experimental and comes from an extension
-([below](#ai-remove-experimental)).
+([below](#ai-remove-and-ai-replace-experimental)).
 
 ## Using it
 
@@ -65,25 +65,33 @@ Paste Settings and presets leave a photo's spots alone, as Lightroom's defaults 
   once. Tests check that the tiles match a full rebuild and that Fit, 100% regions
   and exports agree.
 
-## AI Remove (experimental)
+## AI Remove and AI Replace (experimental)
 
-AI Remove regenerates what you paint over with a hosted model, through an extension
-that holds your own API key. It isn't bundled: install **AI Remove** from
-Preferences > Extensions > Available (`dev.pch.ai-remove`,
-[github.com/pch/rawmakase-ai-remove](https://github.com/pch/rawmakase-ai-remove)),
-set the key on its page, and the Remove tool's Mode offers **AI Remove**. Without
-the extension the drawer says where to get it. Any extension declaring a
-`[[retouch-generator]]` ([manifest](extensions/manifest.md#retouch-generator)) is
-offered the same way; RAWmakase knows no provider.
+AI Remove and AI Replace regenerate what you paint over with a hosted model,
+through an extension that holds your own API key. It isn't bundled: install **AI
+Retouch** from Preferences > Extensions > Available (`dev.pch.ai-remove`,
+[github.com/pch/rawmakase-ai-retouch](https://github.com/pch/rawmakase-ai-retouch)),
+set the key on its page, and the Remove tool's Mode offers **AI Remove** and **AI
+Replace**. Without the extension the drawer says where to get it. Any extension
+declaring a `[[retouch-generator]]` ([manifest](extensions/manifest.md#retouch-generator))
+is offered the same way, each generator a mode of its own; RAWmakase knows no
+provider. Below, "AI Remove" stands for any of them.
 
+- **Text.** A generator that takes text (its `prompt`) has a field under Mode: AI
+  Remove's is optional ("remove the dogs, keep the people"), AI Replace's is needed
+  ("a wooden bench"). With a needed field empty, painting does nothing and says
+  so. What was written is sent with the request, trimmed, kept with the spot and
+  shown when it is selected; each generator keeps its own.
 - **Click** places a spot, a **drag** paints an area; on release the area is sent,
-  and a card on the photo says Removing… with Cancel. One request runs at a time.
+  and a card on the photo names the generator (AI Replace…) with Cancel. One
+  request runs at a time.
 - The first time, RAWmakase asks once per extension whether it may send the painted
   area and its surroundings to the service set up in it; the answer is kept in
   `extensions.json`. The question is a card on the photo beside the painted area,
   which stays drawn until Send or Cancel, and in the drawer; painting again while
   it is open is refused, so the area asked about is never replaced unseen.
-- Success adds one Generate spot as one History step, "AI Remove". A failure adds
+- Success adds one Generate spot as one History step named after the generator
+  ("AI Remove", "AI Replace"). A failure adds
   nothing and says why: the extension needs setting up (a key; the drawer opens its
   page), the service is unavailable, or it declined the area. Nothing is ever sent
   again by itself: each removal is one paid call.

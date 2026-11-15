@@ -9,6 +9,7 @@ use crate::app::extensions::Host;
 use crate::camera_data::Metadata;
 use crate::model::retouch::RetouchShape;
 use eframe::egui;
+use rawmakase_extensions::protocol::manifest::PromptUse;
 use rawmakase_extensions::secrets::{MemoryStore, SecretError, SecretStore};
 use rawmakase_extensions::session::Launch;
 use rawmakase_extensions::store::Store;
@@ -247,7 +248,8 @@ fn ai_remove_asks_once_before_uploading_then_adds_a_generated_spot() {
     assert_eq!(patch.model, "example-fill@1");
     assert!(!patch.ai_denoise);
     assert_eq!(ops[0].offset, [0.; 2]);
-    assert_eq!(last_step(e), "AI Remove");
+    // Named after the generator.
+    assert_eq!(last_step(e), "Fill");
     // What was asked: the region of the painted area, its coverage and a
     // result buffer, all of the region's size.
     let asked = &e.extensions.retouches_sent()[0];
@@ -279,6 +281,93 @@ fn ai_remove_asks_once_before_uploading_then_adds_a_generated_spot() {
     assert!(e.ai_remove.consent.is_none() && e.ai_remove.running().is_some());
     pump(e, "the second removal", settled);
     assert_eq!(generated(e).len(), 2);
+}
+
+/// A generator that takes text gets what the user wrote, trimmed, and its
+/// spot keeps it; one that needs text sends nothing without it, and one that
+/// takes none never gets any.
+#[test]
+fn what_the_user_wrote_goes_with_the_request_and_stays_with_its_spot() {
+    let mut f = fixture(0.22);
+    let e = &mut f.editor;
+    let describe = offer(e, "describe");
+    // Nothing written: nothing is asked or sent, and the tool says why.
+    e.request_ai_remove_with(describe.clone(), None, painted());
+    assert!(e.ai_remove.consent.is_none() && settled(e));
+    assert!(e.extensions.retouches_sent().is_empty());
+    assert!(
+        e.messages.line().contains("Describe what"),
+        "{}",
+        e.messages.line()
+    );
+    assert!(e.ai_prompt_missing(&describe));
+    *e.ai_prompt_mut(&describe) = "   ".into();
+    assert!(e.ai_prompt_missing(&describe));
+    e.request_ai_remove_with(describe.clone(), None, painted());
+    assert!(e.extensions.retouches_sent().is_empty());
+
+    *e.ai_prompt_mut(&describe) = "  a wooden bench \n".into();
+    assert!(!e.ai_prompt_missing(&describe));
+    e.request_ai_remove_with(describe.clone(), None, painted());
+    pump(e, "the replacement", settled);
+    let sent = e.extensions.retouches_sent().last().unwrap();
+    assert_eq!(sent.prompt.as_deref(), Some("a wooden bench"));
+    let ops = generated(e);
+    assert_eq!(ops.len(), 1, "{}", e.messages.line());
+    let patch = ops[0].patch.as_ref().unwrap();
+    assert_eq!(patch.prompt.as_deref(), Some("a wooden bench"));
+    assert_eq!(patch.generator, "dev.rawmakase.remove/describe");
+    // History names the step after the generator.
+    assert_eq!(last_step(e), "Describe");
+
+    // Optional: sent without when nothing is written, with when something is.
+    let maybe = offer(e, "maybe");
+    assert!(!e.ai_prompt_missing(&maybe));
+    pump(e, "the lease to end", |e| leased(e) == 0);
+    e.request_ai_remove_with(maybe.clone(), None, painted());
+    pump(e, "the removal", settled);
+    assert_eq!(e.extensions.retouches_sent().last().unwrap().prompt, None);
+    *e.ai_prompt_mut(&maybe) = "remove the dogs, keep the people".into();
+    pump(e, "the lease to end", |e| leased(e) == 0);
+    e.request_ai_remove_with(maybe, None, painted());
+    pump(e, "the edit", settled);
+    assert_eq!(
+        e.extensions
+            .retouches_sent()
+            .last()
+            .unwrap()
+            .prompt
+            .as_deref(),
+        Some("remove the dogs, keep the people")
+    );
+
+    // None: what was written for another generator never goes to it.
+    let local = offer(e, "local");
+    *e.ai_prompt_mut(&local) = "ignored".into();
+    pump(e, "the lease to end", |e| leased(e) == 0);
+    e.request_ai_remove_with(local, None, painted());
+    pump(e, "the fill", settled);
+    assert_eq!(e.extensions.retouches_sent().last().unwrap().prompt, None);
+    assert_eq!(generated(e).len(), 4, "{}", e.messages.line());
+}
+
+/// Each generator is a mode of its own: the one chosen is the one asked,
+/// and choosing one that is gone falls back to the first.
+#[test]
+fn the_generator_chosen_is_the_one_asked() {
+    let mut f = fixture(0.23);
+    let e = &mut f.editor;
+    let offers: Vec<Offer> = e.ai_remove_offers().into_iter().map(|(o, _)| o).collect();
+    assert_eq!(offers[0].generator, "fill");
+    assert_eq!(e.ai_remove_offer().unwrap().0.generator, "fill");
+    let describe = offer(e, "describe");
+    assert_eq!(describe.prompt, PromptUse::Required);
+    assert_eq!(describe.prompt_hint.as_deref(), Some("What to put there"));
+    e.choose_ai_generator(&describe);
+    assert_eq!(e.view.retouch.mode, RetouchMode::Generate);
+    assert_eq!(e.ai_remove_offer().unwrap().0, describe);
+    e.view.retouch.generator = Some("dev.rawmakase.remove/gone".into());
+    assert_eq!(e.ai_remove_offer().unwrap().0.generator, "fill");
 }
 
 /// Painting again while the upload question is open keeps the area asked
@@ -334,7 +423,8 @@ fn a_result_for_pixels_that_changed_is_dropped_and_other_edits_survive() {
     pump(e, "the removal", settled);
     assert_eq!(generated(e).len(), 1, "{}", e.messages.line());
     assert_eq!(e.document.edit.recipe().exposure, 0.5);
-    assert_eq!(last_step(e), "AI Remove");
+    // Named after the generator.
+    assert_eq!(last_step(e), "Gate");
 
     // A spot added meanwhile changes the pixels it was made from: dropped,
     // never asked again by itself.

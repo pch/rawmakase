@@ -63,3 +63,16 @@ name = "Unnamed"
 [[retouch-generator]]
 id = "crash"
 name = "Crash"
+
+# Fills as `local`, with what the user wrote, which it needs.
+[[retouch-generator]]
+id = "describe"
+name = "Describe"
+prompt = "required"
+prompt-hint = "What to put there"
+
+# Fills as `local`, with or without text.
+[[retouch-generator]]
+id = "maybe"
+name = "Maybe"
+prompt = "optional"

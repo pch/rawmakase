@@ -8,6 +8,8 @@ use crate::app::extensions::retouch_generator::Offer;
 use crate::app::preferences::Tab;
 use crate::app::ui::design::space;
 use eframe::egui;
+use rawmakase_extensions::protocol::manifest::PromptUse;
+use rawmakase_extensions::protocol::method::MAX_PROMPT_LEN;
 
 impl Editor {
     /// Below Mode while AI Remove is chosen or a Generate spot is selected.
@@ -25,6 +27,9 @@ impl Editor {
                 ui,
                 &format!("Made by {} · {}", patch.generator, patch.model),
             );
+            if let Some(prompt) = &patch.prompt {
+                hint(ui, &format!("Asked: \u{201c}{prompt}\u{201d}"));
+            }
             // As rendered: Detail switched off bypasses AI Denoise.
             let recipe = self.document.edit.recipe();
             let now = self
@@ -57,11 +62,32 @@ impl Editor {
         hint(
             ui,
             &format!(
-                "Experimental · paint over what to remove; the area and its surroundings go to \
-                 the service set up in {}, one paid call each",
+                "Experimental · paint over an area; it and its surroundings go to the service \
+                 set up in {}, one paid call each",
                 offer.extension_name
             ),
         );
+        if offer.prompt != PromptUse::None {
+            let hint_text = offer
+                .prompt_hint
+                .clone()
+                .unwrap_or_else(|| match offer.prompt {
+                    PromptUse::Required => "What to do with the area".into(),
+                    _ => "Optional: what to do with the area".into(),
+                });
+            let missing = self.ai_prompt_missing(&offer);
+            let text = self.ai_prompt_mut(&offer);
+            ui.add(
+                egui::TextEdit::singleline(text)
+                    .hint_text(hint_text)
+                    // Characters, not bytes: four bytes each at most.
+                    .char_limit(MAX_PROMPT_LEN / 4)
+                    .desired_width(f32::INFINITY),
+            );
+            if missing {
+                hint(ui, &format!("{} needs this before you paint", offer.name));
+            }
+        }
         if let Some(why) = why.or_else(|| self.ai_remove_unavailable()) {
             hint(ui, &why);
         }
@@ -84,10 +110,10 @@ impl Editor {
                 }
             });
         }
-        if self.ai_remove.running().is_some() {
+        if let Some(working) = self.ai_remove.working() {
             indented(ui, |ui| {
                 crate::app::ui::widgets::spinner(ui, 14.);
-                ui.label("Removing…");
+                ui.label(working);
                 if ui
                     .button("Cancel")
                     .on_hover_text("Stop; the photo is left as it was")

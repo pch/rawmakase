@@ -57,10 +57,10 @@ pub(in crate::app) struct Available {
 /// aren't installed.
 pub(in crate::app) const AVAILABLE: &[Available] = &[Available {
     id: "dev.pch.ai-remove",
-    name: "AI Remove",
-    line: "Experimental: removes what you paint over in the Remove tool with a hosted \
-           model and your own API key (fal.ai or Replicate).",
-    repository: "https://github.com/pch/rawmakase-ai-remove",
+    name: "AI Retouch",
+    line: "Experimental: AI Remove and AI Replace in the Remove tool, with a hosted model \
+           and your own API key (fal.ai or Replicate).",
+    repository: "https://github.com/pch/rawmakase-ai-retouch",
 }];
 
 /// What the page keeps between frames.

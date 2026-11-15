@@ -411,6 +411,26 @@
       ],
       "type": "object"
     },
+    "PromptUse": {
+      "description": "Whether a retouch generator takes text.",
+      "oneOf": [
+        {
+          "const": "none",
+          "description": "It takes none.",
+          "type": "string"
+        },
+        {
+          "const": "optional",
+          "description": "The user may write some; a request without is sent without.",
+          "type": "string"
+        },
+        {
+          "const": "required",
+          "description": "The user writes some before painting; no request is sent without.",
+          "type": "string"
+        }
+      ]
+    },
     "RetouchGenerator": {
       "additionalProperties": false,
       "description": "A `[[retouch-generator]]`: the program turns a region of the photo and\nthe area the user painted in it into new pixels for that area, such as\nthe area with an object removed. The app keeps the result as a retouch\npatch, which renders without the extension.",
@@ -423,6 +443,17 @@
         "name": {
           "description": "What the Remove tool calls it, for example `AI Remove`.",
           "type": "string"
+        },
+        "prompt": {
+          "$ref": "#/$defs/PromptUse",
+          "description": "Whether the user writes text for a request, such as what to remove or\nwhat to put there, sent as `retouch.generate`'s `prompt`."
+        },
+        "prompt-hint": {
+          "description": "What the text field shows while empty, for example `What to put\nthere`. Only with a `prompt`; at most [`MAX_PROMPT_HINT`] bytes.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "uploads": {
           "description": "Whether it sends the pixels it is given off this computer (to a\nhosted model). The app asks the user once before the first request.",

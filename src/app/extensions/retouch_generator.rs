@@ -31,6 +31,7 @@ use crate::model::recipe::Recipe;
 use crate::model::retouch::{RetouchOp, RetouchPatch};
 use crate::storage::{FNV_OFFSET, fnv1a};
 use rawmakase_extensions::protocol::buffer::{Access, Buffer, Meaning, Region, Sample, Space};
+use rawmakase_extensions::protocol::manifest::PromptUse;
 use rawmakase_extensions::protocol::method::{AppRequest, RetouchGenerate, RetouchGenerated};
 use rawmakase_extensions::protocol::{ErrorCode, RemoteError};
 use rawmakase_extensions::shm::{Buffers, Ledger, Returned};
@@ -61,6 +62,10 @@ pub(in crate::app) struct Offer {
     pub(in crate::app) provenance: String,
     /// The extension's name, for what the tool says.
     pub(in crate::app) extension_name: String,
+    /// Whether the user writes text for a request.
+    pub(in crate::app) prompt: PromptUse,
+    /// What the text field shows while empty.
+    pub(in crate::app) prompt_hint: Option<String>,
 }
 
 impl Host {
@@ -79,6 +84,8 @@ impl Host {
                         uploads: g.uploads,
                         provenance: g.provenance(e.id()),
                         extension_name: e.name().to_string(),
+                        prompt: g.prompt,
+                        prompt_hint: g.prompt_hint.clone(),
                     },
                     why.clone(),
                 ));
@@ -233,6 +240,8 @@ pub(in crate::app) struct Prepare {
     pub(in crate::app) op: RetouchOp,
     pub(in crate::app) ledger: Ledger,
     pub(in crate::app) generator: String,
+    /// What the user wrote for it, trimmed; none if nothing.
+    pub(in crate::app) prompt: Option<String>,
 }
 
 /// A request's input, rendered into its buffers, or why it couldn't be.
@@ -330,6 +339,7 @@ pub(in crate::app) fn prepare(job: Prepare) -> Event {
             coverage,
             result,
             image_key,
+            prompt: job.prompt,
         };
         params.validate().map_err(refused)?;
         Ok(Ready {
@@ -403,6 +413,7 @@ pub(in crate::app) fn finish(job: Finish) -> Event {
                 generator: job.provenance,
                 model: job.answer.model,
                 ai_denoise: job.ai_denoise,
+                prompt: job.asked.prompt.clone(),
             },
         })
     })();

@@ -37,6 +37,11 @@ pub(in crate::app) struct RetouchTool {
     drag: Drag,
     /// Sources already offered for the selected spot, so `/` moves on to new ones.
     tried: Vec<[f32; 2]>,
+    /// The retouch generator new AI spots go to, by provenance
+    /// (`<extension>/<generator>`); the first one offered when none or gone.
+    pub(in crate::app) generator: Option<String>,
+    /// What the user wrote for each generator that takes text, by provenance.
+    pub(in crate::app) prompts: std::collections::HashMap<String, String>,
 }
 impl Default for RetouchTool {
     fn default() -> Self {
@@ -51,6 +56,8 @@ impl Default for RetouchTool {
             threshold: 0.5,
             drag: Drag::None,
             tried: Vec::new(),
+            generator: None,
+            prompts: Default::default(),
         }
     }
 }
@@ -162,7 +169,10 @@ impl Editor {
         {
             let at = to_image(origin);
             let generating = self.view.retouch.mode == RetouchMode::Generate;
+            let blocked = generating && self.ai_paint_blocked();
             self.view.retouch.drag = match hit(origin) {
+                // Nothing to paint for yet: no stroke, so none vanishes.
+                None if blocked => Drag::None,
                 _ if command && !generating => {
                     self.add_spot(at, [0., 0.]);
                     Drag::Manual
@@ -244,7 +254,9 @@ impl Editor {
             match hit(pos) {
                 Some(Hit::Dest(i) | Hit::Source(i)) => self.view.retouch.select(Some(i)),
                 None if self.view.retouch.mode == RetouchMode::Generate => {
-                    self.request_ai_remove(self.spot_op(to_image(pos), [0.; 2]));
+                    if !self.ai_paint_blocked() {
+                        self.request_ai_remove(self.spot_op(to_image(pos), [0.; 2]));
+                    }
                 }
                 None => self.add_spot(to_image(pos), [f32::NAN; 2]),
             }
@@ -312,7 +324,8 @@ impl Editor {
             ui.scope_builder(egui::UiBuilder::new().max_rect(card.shrink(3.)), |ui| {
                 ui.horizontal_centered(|ui| {
                     crate::app::ui::widgets::spinner(ui, 12.);
-                    ui.label(egui::RichText::new("Removing…").size(text::SMALL));
+                    let working = self.ai_remove.working().unwrap_or_default();
+                    ui.label(egui::RichText::new(working).size(text::SMALL));
                     cancel = ui.small_button("Cancel").clicked();
                 });
             });
@@ -490,21 +503,46 @@ impl Editor {
         }
         let selected_generated =
             selected.is_some_and(|i| self.document.edit.recipe().retouch[i].is_generated());
+        let offers: Vec<_> = self
+            .ai_remove_offers()
+            .into_iter()
+            .map(|(o, _)| o)
+            .collect();
         control_label(ui, "Mode", |ui| {
-            // What a stroke now makes: AI Remove whenever it is chosen, else a
-            // selected Heal or Clone spot's mode, which Mode changes.
-            let mut mode = match selected {
-                _ if self.view.retouch.mode == RetouchMode::Generate => RetouchMode::Generate,
-                Some(i) if !selected_generated => self.document.edit.recipe().retouch[i].mode,
-                _ => self.view.retouch.mode,
+            // What a stroke now makes: the AI generator chosen whenever one
+            // is, else a selected Heal or Clone spot's mode, which Mode
+            // changes. Each generator is a mode of its own.
+            #[derive(Clone, Copy, PartialEq)]
+            enum Pick {
+                Mode(RetouchMode),
+                Ai(usize),
+            }
+            let chosen_ai = offer
+                .as_ref()
+                .and_then(|(o, _)| offers.iter().position(|x| x.provenance == o.provenance));
+            let mut pick = match (selected, chosen_ai) {
+                (_, Some(i)) if self.view.retouch.mode == RetouchMode::Generate => Pick::Ai(i),
+                (Some(i), _) if !selected_generated => {
+                    Pick::Mode(self.document.edit.recipe().retouch[i].mode)
+                }
+                _ => Pick::Mode(self.view.retouch.mode),
             };
             let w = ui.available_width();
-            let mut modes = vec![(RetouchMode::Heal, "Heal"), (RetouchMode::Clone, "Clone")];
-            if offer.is_some() {
-                modes.push((RetouchMode::Generate, "AI Remove"));
-            }
-            if segmented(ui, &mut mode, &modes, w) {
-                self.choose_retouch_mode(mode);
+            let mut modes = vec![
+                (Pick::Mode(RetouchMode::Heal), "Heal"),
+                (Pick::Mode(RetouchMode::Clone), "Clone"),
+            ];
+            modes.extend(
+                offers
+                    .iter()
+                    .enumerate()
+                    .map(|(i, o)| (Pick::Ai(i), o.name.as_str())),
+            );
+            if segmented(ui, &mut pick, &modes, w) {
+                match pick {
+                    Pick::Mode(mode) => self.choose_retouch_mode(mode),
+                    Pick::Ai(i) => self.choose_ai_generator(&offers[i]),
+                }
             }
         });
         if self.view.retouch.mode == RetouchMode::Generate || selected_generated {

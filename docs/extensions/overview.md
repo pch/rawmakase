@@ -174,7 +174,7 @@ Under the data folder (`RAWMAKASE_DATA_DIR`, else the platform's, as for
     },
     "dev.pch.ai-remove": {
       "active": "0.1.0", "installed": ["0.1.0"], "enabled": true,
-      "source": {"kind": "github", "repository": "https://github.com/pch/rawmakase-ai-remove"},
+      "source": {"kind": "github", "repository": "https://github.com/pch/rawmakase-ai-retouch"},
       "settings": {"provider": "fal.ai"},
       "secrets": ["fal-key"],
       "uploads_allowed": true

@@ -399,10 +399,10 @@ mask with `model` and an input identity computed from `image_key`,
 ### `retouch.generate` (request)
 
 Asks a [retouch generator](manifest.md#retouch-generator) to regenerate the area
-the user painted (experimental AI Remove):
+the user painted (experimental AI Remove and AI Replace):
 
 ```json
-{"generator":"remove","image":buffer,"coverage":buffer,"result":buffer,"image_key":"…"}
+{"generator":"replace","image":buffer,"coverage":buffer,"result":buffer,"image_key":"…","prompt":"a wooden bench"}
 ```
 
 - `image` is the region of the photo around the painted area, upright, as
@@ -422,6 +422,9 @@ the user painted (experimental AI Remove):
 - All three are allocated by the app, in three handles, 256 MiB at most together.
 - `image_key` is the app's digest of the image's and the coverage's sizes and
   pixels and how they were rendered.
+- `prompt`, for a generator that takes text, is what the user wrote, trimmed: one
+  line, 1 to 1000 bytes (`MAX_PROMPT_LEN`). It is missing when they wrote nothing,
+  which a `required` generator never gets. The app saves it with the patch.
 
 The SDK refuses a request whose buffers don't pass their checks, don't fit
 together or don't map, with `invalid_request`, before the handler runs, and

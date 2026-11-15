@@ -476,7 +476,37 @@ pub struct RetouchGenerator {
     /// hosted model). The app asks the user once before the first request.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub uploads: bool,
+    /// Whether the user writes text for a request, such as what to remove or
+    /// what to put there, sent as `retouch.generate`'s `prompt`.
+    #[serde(default, skip_serializing_if = "PromptUse::is_none")]
+    pub prompt: PromptUse,
+    /// What the text field shows while empty, for example `What to put
+    /// there`. Only with a `prompt`; at most [`MAX_PROMPT_HINT`] bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_hint: Option<String>,
 }
+
+/// The longest `prompt-hint`, in bytes.
+pub const MAX_PROMPT_HINT: usize = 120;
+
+/// Whether a retouch generator takes text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum PromptUse {
+    /// It takes none.
+    #[default]
+    None,
+    /// The user may write some; a request without is sent without.
+    Optional,
+    /// The user writes some before painting; no request is sent without.
+    Required,
+}
+impl PromptUse {
+    fn is_none(&self) -> bool {
+        *self == Self::None
+    }
+}
+
 impl RetouchGenerator {
     /// What saved patches record as the generator that made them.
     pub fn provenance(&self, extension: &str) -> String {
@@ -731,8 +761,8 @@ impl Manifest {
         Ok(())
     }
 
-    /// The `[[retouch-generator]]` rules: the `api` that reads them, and a
-    /// name to show.
+    /// The `[[retouch-generator]]` rules: the `api` that reads them, a name
+    /// to show, and a `prompt-hint` only for one that takes text.
     fn validate_retouch_generators(&self) -> Result<(), Invalid> {
         let e = &self.extension;
         if self.retouch_generators.is_empty() {
@@ -745,11 +775,27 @@ impl Manifest {
             )));
         }
         for generator in &self.retouch_generators {
-            if generator.name.trim().is_empty() {
-                return Err(Invalid(format!(
-                    "retouch-generator {}: its name is empty",
+            let fail = |why: &str| {
+                Err(Invalid(format!(
+                    "retouch-generator {}: {why}",
                     generator.id
-                )));
+                )))
+            };
+            if generator.name.trim().is_empty() {
+                return fail("its name is empty");
+            }
+            if let Some(hint) = &generator.prompt_hint {
+                if generator.prompt == PromptUse::None {
+                    return fail("prompt-hint needs a prompt");
+                }
+                if hint.trim().is_empty()
+                    || hint.len() > MAX_PROMPT_HINT
+                    || hint.chars().any(char::is_control)
+                {
+                    return fail(&format!(
+                        "prompt-hint must be 1 to {MAX_PROMPT_HINT} bytes on one line"
+                    ));
+                }
             }
         }
         Ok(())
@@ -1192,6 +1238,42 @@ uploads = true
         assert!(remover("uploads = true", "uploads = true\nmodel = \"x\"").is_err());
         assert!(SettingControl::Secret.accepts(&Value::String("k".into())));
         assert!(!SettingControl::Secret.accepts(&Value::Null));
+    }
+
+    #[test]
+    fn a_retouch_generator_may_take_text() {
+        // No text unless stated.
+        let plain = Manifest::parse(REMOVER).unwrap();
+        assert_eq!(plain.retouch_generators[0].prompt, PromptUse::None);
+        assert_eq!(plain.retouch_generators[0].prompt_hint, None);
+        for (stated, prompt, hint) in [
+            ("optional", PromptUse::Optional, Some("e.g. a bench")),
+            ("required", PromptUse::Required, Some("e.g. a bench")),
+            ("none", PromptUse::None, None),
+        ] {
+            let hint_line = hint.map_or(String::new(), |h| format!("prompt-hint = \"{h}\"\n"));
+            let manifest = remover(
+                "uploads = true\n",
+                &format!("uploads = true\nprompt = \"{stated}\"\n{hint_line}"),
+            )
+            .unwrap();
+            let generator = &manifest.retouch_generators[0];
+            assert_eq!(generator.prompt, prompt);
+            assert_eq!(generator.prompt_hint.as_deref(), hint);
+            let written = toml::to_string(&manifest).unwrap();
+            assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+        }
+        assert!(remover("uploads = true\n", "uploads = true\nprompt = \"always\"\n").is_err());
+        // A hint is for a generator that takes text, and fits on a line.
+        assert!(remover("uploads = true\n", "uploads = true\nprompt-hint = \"x\"\n").is_err());
+        let long = "x".repeat(MAX_PROMPT_HINT + 1);
+        assert!(
+            remover(
+                "uploads = true\n",
+                &format!("uploads = true\nprompt = \"optional\"\nprompt-hint = \"{long}\"\n")
+            )
+            .is_err()
+        );
     }
 
     #[test]
