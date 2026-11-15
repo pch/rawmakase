@@ -2110,3 +2110,93 @@ fn mcps_page_has_local_access_and_its_row_says_when_clients_cant_connect() {
         );
     }
 }
+
+/// The text fields on an extension's page, under its Settings tab, from the
+/// top: Preferences shows over the window's own fields.
+fn page_fields(tree: &egui::accesskit::TreeUpdate) -> Vec<egui::accesskit::NodeId> {
+    let y = |n: &egui::accesskit::Node| n.bounds().map_or(f64::MAX, |b| b.y0);
+    let tabs = tree
+        .nodes
+        .iter()
+        .find(|(_, n)| n.label() == Some("Settings"))
+        .map(|(_, n)| y(n))
+        .expect("the Settings tab");
+    let mut fields: Vec<_> = tree
+        .nodes
+        .iter()
+        .filter(|(_, n)| n.role() == egui::accesskit::Role::TextInput && y(n) > tabs)
+        .map(|(id, n)| (*id, y(n)))
+        .collect();
+    fields.sort_by(|a, b| a.1.total_cmp(&b.1));
+    fields.into_iter().map(|(id, _)| id).collect()
+}
+
+/// Focuses `field` and types `text` into it.
+fn type_into(e: &mut Editor, field: egui::accesskit::NodeId, text: &str) {
+    window_frame(
+        e,
+        vec![egui::Event::AccessKitActionRequest(
+            egui::accesskit::ActionRequest {
+                action: egui::accesskit::Action::Focus,
+                target_tree: egui::accesskit::TreeId::ROOT,
+                target_node: field,
+                data: None,
+            },
+        )],
+    );
+    window_frame(e, vec![egui::Event::Text(text.into())]);
+}
+
+/// A text field commits when it loses focus, which it hears a frame later;
+/// leaving its tab or the page before then commits what was typed rather
+/// than dropping it: a setting's text, and a panel's.
+#[test]
+fn text_typed_then_left_for_another_tab_or_the_list_is_saved() {
+    let mut f = fixture(&["a.png"]);
+    let good = include_str!("../../../extensions/example/rawmakase-extension.toml");
+    rewrite_manifest(
+        &f,
+        &format!(
+            "{good}\n[[setting]]\nid = \"label\"\nname = \"Label\"\ncontrol = \"text\"\n\
+             default = \"\"\n"
+        ),
+        2,
+    );
+    let e = &mut f.editor;
+    e.extensions.reload_changed_folders();
+    e.sync_extension_commands();
+    e.extension_page.select(ID);
+    let tree = extensions_page(e);
+    // The settings are over the panels.
+    type_into(e, page_fields(&tree)[0], "hello");
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, "About");
+    window_frame(e, Vec::new());
+    assert_eq!(
+        e.extensions.get(ID).unwrap().settings()["label"],
+        json!("hello")
+    );
+
+    // The panel's note, left with Escape for the list.
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, "Settings");
+    pump(e, "the note panel", |e, _| {
+        e.extensions
+            .panel(ID, "note")
+            .is_some_and(|p| !p.controls.is_empty())
+    });
+    window_frame(e, Vec::new());
+    let tree = window_frame(e, Vec::new());
+    let fields = page_fields(&tree);
+    assert_eq!(fields.len(), 2, "the setting's and the note's");
+    type_into(e, fields[1], "memo");
+    escape(e);
+    assert_eq!(e.extension_page.opened(), None);
+    pump(e, "the note", |e, _| {
+        e.extensions.panel(ID, "note").is_some_and(|p| {
+            p.controls.iter().any(|c| {
+                matches!(&c.kind, rawmakase_extensions::protocol::controls::ControlKind::Text { value, .. } if value == "memo")
+            })
+        })
+    });
+}

@@ -273,7 +273,7 @@ impl Editor {
                 self.preferences_tabs(&mut side);
                 let (close, back) = self.preferences_bar(ui, rect.with_min_x(sidebar.right()));
                 if back {
-                    self.extension_page.back();
+                    self.leave_extension_page();
                 }
                 let page = egui::Rect::from_min_max(
                     egui::pos2(sidebar.right() + 32., rect.top() + BAR + 20.),
@@ -353,9 +353,10 @@ impl Editor {
             && !response.any_popup_open
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
         if back {
-            self.extension_page.back();
+            self.leave_extension_page();
         }
         if response.inner || response.should_close() {
+            self.commit_extension_drafts();
             self.preferences.open = false;
         }
     }
@@ -479,9 +480,10 @@ impl Editor {
             // Extensions, chosen again from an extension's page, goes back
             // to the list.
             if response.clicked() && selected && tab == Tab::Extensions {
-                self.extension_page.back();
+                self.leave_extension_page();
             }
             if response.clicked() && !selected {
+                self.commit_extension_drafts();
                 self.preferences.tab = tab;
                 self.preferences.shortcuts.stop_capturing();
                 self.measure_usage();

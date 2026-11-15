@@ -190,6 +190,53 @@ impl Editor {
         Status::of(e, self.local_access()).text()
     }
 
+    /// Commits what is being typed on the open extension's page. A text
+    /// field commits when it loses focus, which it hears a frame later, so a
+    /// tab or page left before then (another tab, Back, Escape, another
+    /// Preferences page, closing Preferences) would no longer draw it to hear
+    /// it, and the edit would stay a draft.
+    pub(in crate::app) fn commit_extension_drafts(&mut self) {
+        for ((extension, setting), text) in std::mem::take(&mut self.extension_page.drafts) {
+            let saved = self
+                .extensions
+                .get(&extension)
+                .and_then(|e| e.settings().get(&setting).cloned());
+            let value = Value::from(text);
+            if saved.as_ref() != Some(&value)
+                && let Err(why) = self.extensions.set_setting(&extension, &setting, value)
+            {
+                self.messages.fail(why);
+            }
+        }
+        let Some(id) = self.extension_page.open.clone() else {
+            return;
+        };
+        let panels: Vec<String> = self
+            .extensions
+            .get(&id)
+            .map(|e| e.manifest.panels.iter().map(|p| p.id.clone()).collect())
+            .unwrap_or_default();
+        for panel in panels {
+            let drafts = self
+                .extensions
+                .panel_mut(&id, &panel)
+                .map(|view| std::mem::take(&mut view.drafts))
+                .unwrap_or_default();
+            for (control, value) in drafts {
+                if let Err(why) = self.extensions.panel_changed(&id, &panel, &control, value) {
+                    self.messages.fail(why);
+                }
+            }
+        }
+    }
+
+    /// Back from an extension's page to the list, keeping what was typed
+    /// there.
+    pub(in crate::app) fn leave_extension_page(&mut self) {
+        self.commit_extension_drafts();
+        self.extension_page.back();
+    }
+
     /// The page was opened: `extensions.json` is read again, so what the
     /// command line changed meanwhile shows.
     pub(in crate::app) fn extensions_page_opened(&mut self) {
@@ -702,6 +749,7 @@ impl Editor {
             if sections.len() > 1 {
                 ui.add_space(space::S);
                 if let Some(section) = section_tabs(ui, &sections, self.extension_page.section) {
+                    self.commit_extension_drafts();
                     self.extension_page.section = section;
                 }
             }
