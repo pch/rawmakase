@@ -878,7 +878,7 @@ impl Editor {
                     set = self.setting_control(ui, id, s, &value);
                 });
                 if let Some(help) = &s.help {
-                    form_row(ui, "", |ui| hint(ui, help));
+                    form_row(ui, "", |ui| setting_help(ui, help));
                 }
                 if let Some(value) = set {
                     match self.extensions.set_setting(id, &s.id, value) {
@@ -1776,6 +1776,53 @@ fn section_tabs(ui: &mut egui::Ui, sections: &[Section], current: Section) -> Op
     chosen
 }
 
+/// A setting's help line, its `https://` addresses as links that open in the
+/// browser, so an extension can point to how to set it up.
+fn setting_help(ui: &mut egui::Ui, text: &str) {
+    let parts = help_parts(text);
+    if let [(text, false)] = parts[..] {
+        return hint(ui, text);
+    }
+    let muted = crate::app::ui::theme::palette(ui.ctx()).tone(crate::app::ui::design::Tone::MUTED);
+    let size = crate::app::ui::design::text::LABEL;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.;
+        for (part, link) in parts {
+            if link {
+                if ui.link(egui::RichText::new(part).size(size)).clicked() {
+                    let _ = crate::platform::web::open(part);
+                }
+            } else {
+                ui.label(egui::RichText::new(part).size(size).color(muted));
+            }
+        }
+    });
+}
+
+/// `text` cut into its runs of plain text and its `https://` addresses
+/// (`true`), an address ending before whitespace and any closing punctuation.
+fn help_parts(text: &str) -> Vec<(&str, bool)> {
+    let mut parts = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("https://") {
+        let tail = &rest[start..];
+        let end = tail.find(char::is_whitespace).unwrap_or(tail.len());
+        let url = tail[..end].trim_end_matches(['.', ',', ';', ':', '!', '?', ')']);
+        if url.len() <= "https://".len() {
+            break;
+        }
+        if start > 0 {
+            parts.push((&rest[..start], false));
+        }
+        parts.push((url, true));
+        rest = &tail[url.len()..];
+    }
+    if !rest.is_empty() || parts.is_empty() {
+        parts.push((rest, false));
+    }
+    parts
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1811,6 +1858,24 @@ mod tests {
         );
         output.textures_delta.clear();
         rect.center()
+    }
+
+    #[test]
+    fn a_help_line_s_web_addresses_are_links() {
+        assert_eq!(
+            help_parts("No account? See https://example.com/key.md, then paste it."),
+            [
+                ("No account? See ", false),
+                ("https://example.com/key.md", true),
+                (", then paste it.", false),
+            ]
+        );
+        // Only https: anything else stays text.
+        assert_eq!(
+            help_parts("http://example.com file:///etc"),
+            [("http://example.com file:///etc", false)]
+        );
+        assert_eq!(help_parts("Plain."), [("Plain.", false)]);
     }
 
     #[test]

@@ -289,6 +289,13 @@ impl Editor {
                 .note("AI Remove is still working on the last area");
             return;
         }
+        // The question stays with what was painted first: a new area would
+        // replace it out of sight.
+        if self.ai_remove.consent.is_some() {
+            self.messages
+                .note("Send or cancel the area painted first, then paint again");
+            return;
+        }
         if let Some(why) = self.ai_remove_unavailable() {
             self.messages.warn(why);
             return;

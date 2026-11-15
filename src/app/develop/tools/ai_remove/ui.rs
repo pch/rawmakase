@@ -66,16 +66,17 @@ impl Editor {
             hint(ui, &why);
         }
         if let Some(consent) = self.ai_remove.consent.clone() {
-            hint(
-                ui,
-                &format!(
+            // In the text's own colour, not a hint's: this waits for an answer.
+            ui.add(
+                egui::Label::new(format!(
                     "AI Remove sends the painted area and its surroundings to the service set up \
-                     in {}. Continue?",
+                     in {}. Send it?",
                     consent.offer.extension_name
-                ),
+                ))
+                .wrap(),
             );
             indented(ui, |ui| {
-                if ui.button("Continue").clicked() {
+                if ui.button("Send").clicked() {
                     self.answer_ai_remove_consent(true);
                 }
                 if ui.button("Cancel").clicked() {

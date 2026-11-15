@@ -101,7 +101,7 @@ Settings shown on the extension's page in Preferences, stored in
 | --- | --- | --- |
 | `id` | yes | Lowercase letters, digits and hyphens, unique among the settings |
 | `name` | no | The label; the id without one |
-| `help` | no | A line under it |
+| `help` | no | A line under it; an `https://` address in it is a link |
 | `control` | yes | How it is edited (below) |
 | `default` | yes | Its value until changed; must fit the control |
 | `step` | no | A slider's step |

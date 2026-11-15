@@ -80,7 +80,9 @@ offered the same way; RAWmakase knows no provider.
   and a card on the photo says Removing… with Cancel. One request runs at a time.
 - The first time, RAWmakase asks once per extension whether it may send the painted
   area and its surroundings to the service set up in it; the answer is kept in
-  `extensions.json`.
+  `extensions.json`. The question is a card on the photo beside the painted area,
+  which stays drawn until Send or Cancel, and in the drawer; painting again while
+  it is open is refused, so the area asked about is never replaced unseen.
 - Success adds one Generate spot as one History step, "AI Remove". A failure adds
   nothing and says why: the extension needs setting up (a key; the drawer opens its
   page), the service is unavailable, or it declined the area. Nothing is ever sent

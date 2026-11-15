@@ -288,6 +288,42 @@ impl Editor {
         } else if hovered.is_some() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Move);
         }
+        // The area waiting for the upload question, with the question beside
+        // it, where the user just painted: the drawer alone is easy to miss.
+        if let Some(consent) = self.ai_remove.consent.clone() {
+            draw_shape(&painter, &consent.op, to_screen, &radius_on_screen, true);
+            let size = Vec2::new(250., 66.);
+            let mut at = to_screen(consent.op.pin()) + Vec2::new(14., -10.);
+            at.x = at.x.min(rect.max.x - size.x).max(rect.min.x);
+            at.y = at.y.min(rect.max.y - size.y).max(rect.min.y);
+            let card = Rect::from_min_size(at, size);
+            painter.rect_filled(card, 4., ui.visuals().window_fill);
+            let mut answer = None;
+            ui.scope_builder(egui::UiBuilder::new().max_rect(card.shrink(6.)), |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!(
+                            "Send this area and its surroundings to the service set up in \
+                             {}? Asked once.",
+                            consent.offer.extension_name
+                        ))
+                        .size(text::SMALL),
+                    )
+                    .wrap(),
+                );
+                ui.horizontal(|ui| {
+                    if ui.small_button("Send").clicked() {
+                        answer = Some(true);
+                    }
+                    if ui.small_button("Cancel").clicked() {
+                        answer = Some(false);
+                    }
+                });
+            });
+            if let Some(allow) = answer {
+                self.answer_ai_remove_consent(allow);
+            }
+        }
         // The area being removed, with its card: what it waits for, and Cancel.
         if let Some(op) = self.ai_remove.running().cloned() {
             draw_shape(&painter, &op, to_screen, &radius_on_screen, true);

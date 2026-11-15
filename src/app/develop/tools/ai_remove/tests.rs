@@ -281,6 +281,26 @@ fn ai_remove_asks_once_before_uploading_then_adds_a_generated_spot() {
     assert_eq!(generated(e).len(), 2);
 }
 
+/// Painting again while the upload question is open keeps the area asked
+/// about: the question stays with what was painted first, never replaced.
+#[test]
+fn painting_while_asked_keeps_the_area_asked_about() {
+    let mut f = fixture(0.21);
+    let e = &mut f.editor;
+    remove_with(e, "fill");
+    let asked = e.ai_remove.consent.clone().unwrap().op;
+    let mut other = painted();
+    other.shape = RetouchShape::Spot {
+        center: [0.2, 0.2],
+        radius: 0.03,
+    };
+    let offer = offer(e, "fill");
+    e.request_ai_remove_with(offer, None, other);
+    assert_eq!(e.ai_remove.consent.as_ref().unwrap().op, asked);
+    assert!(e.messages.line().contains("first"), "{}", e.messages.line());
+    assert!(e.extensions.retouches_sent().is_empty() && settled(e));
+}
+
 /// A dark photo is sent exposed up, and its answer is inverted through that
 /// exposure: where nothing was painted the patch is the photo's own level.
 #[test]
