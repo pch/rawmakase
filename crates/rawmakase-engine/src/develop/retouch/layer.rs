@@ -224,7 +224,21 @@ impl RetouchCache {
         ops: Retouching,
         cancel: Cancel<'_>,
     ) -> Result<Arc<CameraImage>> {
+        // No spots (Before, or a recipe without any) is the photo itself, and
+        // leaves what was built: going back to the spots costs nothing, where
+        // rebuilding them all (an AI spot's matching at full size) takes long.
         let same_base = self.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base));
+        if ops.is_empty() {
+            // Another photo's retouched image is let go of, as before.
+            if !same_base {
+                self.base = None;
+                self.image = None;
+                self.change = None;
+                self.ops.clear();
+                self.red_eye.clear();
+            }
+            return Ok(base.clone());
+        }
         let previous = self.image.clone().unwrap_or_else(|| base.clone());
         let previous_ops = if same_base {
             Retouching {
@@ -243,9 +257,7 @@ impl RetouchCache {
         let steps = ops.steps(&frame)?;
         let dirty = dirty_tiles(&frame, previous_ops, ops);
         let rects = tile_rects(&dirty, base.width, base.height);
-        let image = if ops.is_empty() {
-            base.clone()
-        } else {
+        let image = {
             let start = if same_base { &previous } else { base };
             let mut out = CameraImage::clone(start);
             out.recovered = Default::default();

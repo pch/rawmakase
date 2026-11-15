@@ -243,6 +243,17 @@ fn incremental_tiles_match_a_full_rebuild() {
     ops[2].translate([0.01, 0.02]);
     check(&mut cache, &ops);
     let before = cache.get(&base, heals(&ops), Cancel::new(&cancel)).unwrap();
+    // Before (no spots) is the photo, and leaves what was built: back to the
+    // spots, the same image comes back at once, nothing rebuilt.
+    let none = cache
+        .get(&base, Retouching::default(), Cancel::new(&cancel))
+        .unwrap();
+    assert!(std::sync::Arc::ptr_eq(&none, &base));
+    let again = cache.get(&base, heals(&ops), Cancel::new(&cancel)).unwrap();
+    assert!(
+        std::sync::Arc::ptr_eq(&again, &before),
+        "rebuilt after Before"
+    );
     ops.push(spot(RetouchMode::Clone, &im, [650., 60.], 10., [-40., 0.]));
     let after = cache.get(&base, heals(&ops), Cancel::new(&cancel)).unwrap();
     // Only tiles near the new spot changed.

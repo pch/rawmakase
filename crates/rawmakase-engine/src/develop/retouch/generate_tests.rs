@@ -1329,3 +1329,65 @@ fn grain_is_sized_to_what_renders() {
         );
     }
 }
+
+/// Where `row` of `im` crosses half way between `lo` and `hi` in channel 1,
+/// to a fraction of a pixel, between columns `from` and `to`.
+fn crossing(im: &CameraImage, row: usize, from: usize, to: usize, lo: f32, hi: f32) -> f32 {
+    let w = im.width as usize;
+    let mid = (lo + hi) / 2.;
+    for x in from..to {
+        let (a, b) = (im.pixels[row * w + x][1], im.pixels[row * w + x + 1][1]);
+        if (a - mid) * (b - mid) <= 0. && a != b {
+            return x as f32 + (mid - a) / (b - a);
+        }
+    }
+    f32::NAN
+}
+
+/// A remover that gives back the region as sent leaves the photo where it
+/// was: an edge under the painted area stays put, at full size and when the
+/// region is sent scaled down, as a large one is.
+#[test]
+fn a_region_given_back_as_sent_lands_where_it_was_taken() {
+    for (w, h, r) in [(900u32, 600u32, 120f32), (3200, 2000, 700.)] {
+        let (cx, cy) = (w as f32 / 2., h as f32 / 2.);
+        // A vertical step, slightly off the pixel grid, through the area.
+        let edge = cx + 0.3;
+        let im = image(
+            w,
+            h,
+            |x, _| if x + 0.5 < edge { [0.05; 3] } else { [0.4; 3] },
+        );
+        let r_ = plain();
+        let rendition = Rendition::of(&im.metadata, &r_).unwrap();
+        let mut op = brush(&im, cx, cy, r);
+        op.feather = 0.;
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let input =
+            rendition::render(&im, &r_, None, &op, &rendition, Cancel::new(&cancel)).unwrap();
+        let (rw, rh) = (input.region.width, input.region.height);
+        let samples =
+            rendition::patch_samples(&input.rendition, &input.rgb, rw, rh, rw as usize * 3)
+                .unwrap();
+        let laid = generated(&op, &input, &samples);
+        let row = cy as usize;
+        let from = (cx - r / 2.) as usize;
+        let to = (cx + r / 2.) as usize;
+        let before = crossing(&im, row, from, to, 0.05, 0.4);
+        // As laid, and with all the app lays it with (tone, detail, grain).
+        for blend in [GenerateBlend::Composite, GenerateBlend::Membrane] {
+            let out = lay(&im, &laid, blend);
+            let after = crossing(&out, row, from, to, 0.05, 0.4);
+            // And no second edge: the row left of the step stays dark.
+            let ghost = (from..(before as usize).saturating_sub(3))
+                .map(|x| out.pixels[row * w as usize + x][1])
+                .fold(0f32, f32::max);
+            assert!(
+                (after - before).abs() < 0.6 && ghost < 0.1,
+                "{blend:?} {w}x{h}, region {rw}x{rh} at scale {}: the edge moved from \
+                 {before} to {after}, darkest side reaches {ghost}",
+                input.region.scale
+            );
+        }
+    }
+}
