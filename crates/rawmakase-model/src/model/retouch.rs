@@ -119,23 +119,23 @@ impl RetouchPatch {
                 .all(|v| v.is_finite() && (0. ..=1.).contains(v))
                 && x0 < x1
                 && y0 < y1,
-            "Invalid AI Remove patch placement"
+            "Invalid generated patch placement"
         );
         ensure!(
             (1..=MAX_PATCH_SIDE).contains(&self.width)
                 && (1..=MAX_PATCH_SIDE).contains(&self.height),
-            "An AI Remove patch is at most {MAX_PATCH_SIDE} pixels along either side"
+            "A generated patch is at most {MAX_PATCH_SIDE} pixels along either side"
         );
         ensure!(
             crate::storage::bitmaps::Bitmap::is_valid_id(&self.id),
-            "Invalid AI Remove patch id"
+            "Invalid generated patch id"
         );
         let name = |s: &str| {
             !s.is_empty() && s.len() <= MAX_PROVENANCE && !s.chars().any(char::is_control)
         };
         ensure!(
             name(&self.generator) && name(&self.model),
-            "Invalid AI Remove patch provenance"
+            "Invalid generated patch provenance"
         );
         if let Some(summary) = &self.summary {
             ensure!(
@@ -143,7 +143,7 @@ impl RetouchPatch {
                     && summary.trim() == summary
                     && summary.len() <= MAX_SUMMARY
                     && !summary.chars().any(char::is_control),
-                "Invalid AI Remove patch summary"
+                "Invalid generated patch summary"
             );
         }
         Ok(())
@@ -185,12 +185,12 @@ impl RetouchOp {
             (RetouchMode::Generate, Some(patch)) => {
                 ensure!(
                     self.offset == [0.; 2],
-                    "An AI Remove spot copies from nowhere"
+                    "A generated spot copies from nowhere"
                 );
                 patch.validate()?;
             }
-            (RetouchMode::Generate, None) => anyhow::bail!("An AI Remove spot has no patch"),
-            (_, Some(_)) => anyhow::bail!("Only an AI Remove spot has a patch"),
+            (RetouchMode::Generate, None) => anyhow::bail!("A generated spot has no patch"),
+            (_, Some(_)) => anyhow::bail!("Only a generated spot has a patch"),
             (_, None) => {}
         }
         let radius = |r: f32| r.is_finite() && (1e-4..=0.5).contains(&r);
@@ -208,7 +208,7 @@ impl RetouchOp {
             RetouchShape::Strokes { strokes, radius: r } => {
                 ensure!(
                     self.mode == RetouchMode::Generate,
-                    "Only an AI Remove spot is painted in several strokes"
+                    "Only a generated spot is painted in several strokes"
                 );
                 ensure!(
                     !strokes.is_empty()
@@ -217,7 +217,7 @@ impl RetouchOp {
                             .all(|s| !s.is_empty() && s.iter().all(position))
                         && strokes.iter().map(|s| s.len()).sum::<usize>() <= MAX_POINTS
                         && radius(*r),
-                    "Invalid AI Remove strokes"
+                    "Invalid strokes of a generated spot"
                 );
             }
         }

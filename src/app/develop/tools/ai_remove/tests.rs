@@ -999,7 +999,7 @@ fn a_saved_spot_keeps_its_patch_and_a_missing_one_protects_the_edit() {
     e.events(&ctx);
     assert!(e.document.edit.save_state().is_protected());
     assert!(
-        e.document.lightroom_notice.contains("AI Remove"),
+        e.document.lightroom_notice.contains("generated spot"),
         "{}",
         e.document.lightroom_notice
     );

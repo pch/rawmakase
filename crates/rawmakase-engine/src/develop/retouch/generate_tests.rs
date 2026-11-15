@@ -450,7 +450,7 @@ fn a_patch_that_cant_be_provided_fails_the_render() {
         retouch: &ops,
     };
     let error = apply(&base, retouching).err().unwrap();
-    assert!(error.to_string().contains("AI Remove"), "{error}");
+    assert!(error.to_string().contains("generated"), "{error}");
     assert!(ensure_patches(&ops).is_err());
     let cancel = AtomicBool::new(false);
     let mut cache = RetouchCache::default();

@@ -58,11 +58,11 @@ impl std::fmt::Display for AssetError {
             Self::Missing(id) => write!(f, "A mask's data ({}) is missing", short(id)),
             Self::Corrupt(id, why) => write!(f, "A mask's data ({}) is damaged: {why}", short(id)),
             Self::PatchMissing(id) => {
-                write!(f, "An AI Remove spot's pixels ({}) are missing", short(id))
+                write!(f, "A generated spot's pixels ({}) are missing", short(id))
             }
             Self::PatchCorrupt(id, why) => write!(
                 f,
-                "An AI Remove spot's pixels ({}) are damaged: {why}",
+                "A generated spot's pixels ({}) are damaged: {why}",
                 short(id)
             ),
         }
@@ -135,13 +135,13 @@ impl Kind {
 pub fn validate_kind(bitmap: &Bitmap, kind: Kind) -> Result<()> {
     let (channels, depth, side, name) = match kind {
         Kind::Coverage => (1, 1, MAX_SIDE, "A mask raster"),
-        Kind::Patch => (3, 2, MAX_PATCH_SIDE, "An AI Remove patch"),
+        Kind::Patch => (3, 2, MAX_PATCH_SIDE, "A generated patch"),
     };
     ensure!(
         bitmap.channels == channels && bitmap.depth == depth,
         match kind {
             Kind::Coverage => "A mask raster is 8-bit coverage",
-            Kind::Patch => "An AI Remove patch is three channels of half-precision camera RGB",
+            Kind::Patch => "A generated patch is three channels of half-precision camera RGB",
         }
     );
     ensure!(
@@ -161,7 +161,7 @@ pub fn validate_kind(bitmap: &Bitmap, kind: Kind) -> Result<()> {
                 .0
                 .iter()
                 .all(|s| u16::from_le_bytes(*s) & 0x7c00 != 0x7c00),
-            "An AI Remove patch holds a sample that isn't a finite number"
+            "A generated patch holds a sample that isn't a finite number"
         );
     }
     Ok(())
@@ -559,7 +559,7 @@ mod tests {
         assert!(
             AssetError::PatchMissing(patch_id)
                 .to_string()
-                .starts_with("An AI Remove spot's pixels")
+                .starts_with("A generated spot's pixels")
         );
         let mut infinite = patch;
         infinite.data[0..2].copy_from_slice(&0x7c00u16.to_le_bytes());

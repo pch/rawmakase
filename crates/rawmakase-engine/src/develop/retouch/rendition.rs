@@ -54,7 +54,7 @@ const WHITE: f32 = 0.98;
 /// The most a region is exposed up or down, as a linear gain.
 const MAX_EXPOSURE: f32 = 8.;
 /// Why an HDR edit isn't removed from yet.
-pub const HDR_REFUSAL: &str = "AI Remove doesn't work on HDR edits yet";
+pub const HDR_REFUSAL: &str = "Generated spots don't work on HDR edits yet";
 
 /// Where a request's region lies: `rect` in the image frame (`[x0, y0, x1, y1]`),
 /// and its size in pixels, upright.
