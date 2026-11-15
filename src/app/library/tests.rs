@@ -4688,7 +4688,7 @@ fn a_moved_folder_s_selection_follows_the_names_the_catalog_gives_it() -> Result
          WHERE path LIKE 'Cafe_%'",
         [],
     )?;
-    library.reread_after(&[])?;
+    library.reread_after(&[], &[])?;
     assert!(
         library
             .selected_folders
@@ -5483,7 +5483,7 @@ fn a_failed_reread_after_a_change_leaves_nothing_to_change() -> Result<()> {
         .db_for_tests()
         .execute_batch("ALTER TABLE collections RENAME TO collections_gone")?;
 
-    assert!(library.reread_after(&[]).is_err());
+    assert!(library.reread_after(&[], &[]).is_err());
     assert!(library.session.photos().is_empty());
     assert!(library.session.folders().is_empty());
     assert!(library.session.roots().is_empty());
@@ -5496,5 +5496,55 @@ fn a_failed_reread_after_a_change_leaves_nothing_to_change() -> Result<()> {
     assert!(library.selected_folders.is_empty());
     assert!(library.shown().is_empty());
     assert!(library.photo(a).is_none());
+    Ok(())
+}
+
+/// A Loupe on the middle of three photos, `a`, `b` and `c`.
+fn loupe_on_middle() -> Result<(tempfile::TempDir, Library, [PhotoId; 3])> {
+    let directory = tempfile::tempdir()?;
+    let photos = directory.path().join("photos");
+    std::fs::create_dir(&photos)?;
+    for f in ["a.RAF", "b.RAF", "c.RAF"] {
+        std::fs::write(photos.join(f), b"synthetic raw")?;
+    }
+    let db = directory.path().join("photos.rawmakase");
+    Catalog::create(&db)?.add_folder(&photos)?;
+    let mut library = Library::load(&db, egui::Context::default())?;
+    library.wait_for_availability();
+    let id = |l: &Library, name: &str| {
+        l.session
+            .photos()
+            .iter()
+            .find(|p| p.filename == name)
+            .unwrap()
+            .id
+    };
+    let ids = [
+        id(&library, "a.RAF"),
+        id(&library, "b.RAF"),
+        id(&library, "c.RAF"),
+    ];
+    library.select(Some(ids[1]));
+    library.open_loupe();
+    Ok((directory, library, ids))
+}
+
+#[test]
+fn the_loupe_keeps_its_photo_moved_or_renamed() -> Result<()> {
+    let (_d, mut library, [_, b, _]) = loupe_on_middle()?;
+    library.reread_after(&[], &[b])?;
+    assert!(library.loupe_open());
+    assert_eq!(library.selected(), Some(b));
+    Ok(())
+}
+
+#[test]
+fn the_loupe_keeps_its_photo_said_removed_but_still_in_the_catalog() -> Result<()> {
+    // A file operation whose outcome is unknown forgets all its photos as if
+    // they were removed; one still in the catalog stays in the Loupe.
+    let (_d, mut library, [_, b, _]) = loupe_on_middle()?;
+    library.reread_after(&[b], &[])?;
+    assert!(library.loupe_open());
+    assert_eq!(library.selected(), Some(b));
     Ok(())
 }

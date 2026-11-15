@@ -109,7 +109,7 @@ impl Library {
             Mark::None
         }
     }
-    fn position(&self, id: PhotoId) -> Option<usize> {
+    pub(super) fn position(&self, id: PhotoId) -> Option<usize> {
         self.visible
             .iter()
             .position(|i| self.session.photos()[*i].id == id)
@@ -225,6 +225,29 @@ impl Library {
             self.select(Some(id));
         }
         self.scroll_to_active = true;
+    }
+    /// The photo the open Loupe moves to when its photo is among `removed`:
+    /// the next one shown that stays, else the one before it, with the way
+    /// the Loupe moved. Other selected photos don't stand in for it.
+    pub(super) fn loupe_successor(&self, removed: &[PhotoId]) -> Option<(PhotoId, i32)> {
+        let active = self.selection.active.filter(|id| removed.contains(id))?;
+        if !self.loupe.open {
+            return None;
+        }
+        let at = self.position(active)?;
+        let stays = |i: &&usize| !removed.contains(&self.session.photos()[**i].id);
+        let id = |i: &usize| self.session.photos()[*i].id;
+        self.visible[at + 1..]
+            .iter()
+            .find(stays)
+            .map(|i| (id(i), 1))
+            .or_else(|| {
+                self.visible[..at]
+                    .iter()
+                    .rev()
+                    .find(stays)
+                    .map(|i| (id(i), -1))
+            })
     }
     /// After filtering: drops photos no longer shown from the selection.
     pub(super) fn keep_shown_selected(&mut self) {

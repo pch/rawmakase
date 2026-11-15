@@ -981,7 +981,7 @@ impl Editor {
                 let reread = self
                     .library
                     .as_mut()
-                    .map(|l| l.reread_after(&applied.removed));
+                    .map(|l| l.reread_after(&applied.removed, &[]));
                 if let Some(Err(again)) = reread {
                     self.messages.fail(format!(
                         "Synchronized, but the catalog could not be read again: {again:#}. Open it again."

@@ -415,19 +415,39 @@ impl Library {
     }
     /// After a change made through another connection that could not be
     /// shown by opening the catalog again: forgets the previews of the
-    /// photos `removed` (new photos may have their ids) and reads the
+    /// photos `removed` (new photos may have their ids) and of those
+    /// `moved` to another file (renamed included), and reads the
     /// catalog again. If that fails too, no photo is shown, so none can be
     /// changed under an id that now names another; the catalog stays open,
-    /// for an edit still to be saved.
-    pub(in crate::app) fn reread_after(&mut self, removed: &[PhotoId]) -> Result<()> {
-        for id in removed {
+    /// for an edit still to be saved. A Loupe whose photo was removed stays
+    /// open on the photo after it, as Lightroom's does.
+    pub(in crate::app) fn reread_after(
+        &mut self,
+        removed: &[PhotoId],
+        moved: &[PhotoId],
+    ) -> Result<()> {
+        let gone = self.selection.active;
+        let successor = self.loupe_successor(removed);
+        for id in removed.iter().chain(moved) {
             self.cache.forget(*id);
             self.screen.forget(*id);
         }
         let reread = self.reload();
         match &reread {
             // Moved and added photos are looked for where they are now.
-            Ok(()) => self.check_files(),
+            Ok(()) => {
+                self.check_files();
+                // Only when its photo is gone: one a failed operation may
+                // have left is shown still.
+                if let Some((id, direction)) = successor
+                    && gone.is_some_and(|gone| self.photo(gone).is_none())
+                    && self.position(id).is_some()
+                {
+                    self.select(Some(id));
+                    self.loupe_direction = direction;
+                    self.scroll_to_active = true;
+                }
+            }
             Err(_) => {
                 // Neither photos nor folders: a folder removed may have
                 // given its id to a new one.
@@ -446,7 +466,7 @@ impl Library {
     /// drafts first ([`Self::commit_drafts`]).
     pub(in crate::app) fn reread_after_added(&mut self) -> Result<()> {
         let fields = std::mem::take(&mut self.fields);
-        let reread = self.reread_after(&[]);
+        let reread = self.reread_after(&[], &[]);
         if reread.is_ok() {
             self.fields = fields;
             self.fields.reload();
