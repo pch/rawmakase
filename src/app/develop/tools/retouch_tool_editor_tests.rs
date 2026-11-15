@@ -182,3 +182,34 @@ fn the_upload_question_stays_in_view() {
     let card = card_rect(Pos2::new(100., 30.), size, small);
     assert!(small.contains_rect(card), "{card:?}");
 }
+
+/// However narrow the view, the question's card is tall enough for its
+/// wrapped text: Send and Cancel are inside the visible part of the photo.
+#[test]
+fn the_upload_question_s_buttons_stay_in_view() {
+    let ctx = egui::Context::default();
+    let question = "Send this area and its surroundings to the service set up in AI Remove? \
+                    Asked once.";
+    for (width, pin) in [
+        (800., Pos2::new(100., 100.)),
+        (160., Pos2::new(80., 2000.)),
+        (100., Pos2::new(-500., 900.)),
+    ] {
+        let visible = Rect::from_min_size(Pos2::ZERO, egui::Vec2::new(width, 600.));
+        let mut buttons = Rect::NOTHING;
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::Vec2::new(800., 600.))),
+                ..Default::default()
+            },
+            |ui| {
+                buttons = super::consent_card(ui, pin, visible, question).1;
+            },
+        );
+        output.textures_delta.clear();
+        assert!(
+            visible.contains_rect(buttons),
+            "{width}: buttons {buttons:?} outside {visible:?}"
+        );
+    }
+}

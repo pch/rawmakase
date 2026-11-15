@@ -293,30 +293,11 @@ impl Editor {
         if let Some(consent) = self.ai_remove.consent.clone() {
             draw_shape(&painter, &consent.op, to_screen, &radius_on_screen, true);
             let visible = rect.intersect(ui.clip_rect());
-            let card = card_rect(to_screen(consent.op.pin()), Vec2::new(250., 66.), visible);
-            painter.rect_filled(card, 4., ui.visuals().window_fill);
-            let mut answer = None;
-            ui.scope_builder(egui::UiBuilder::new().max_rect(card.shrink(6.)), |ui| {
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(format!(
-                            "Send this area and its surroundings to the service set up in \
-                             {}? Asked once.",
-                            consent.offer.extension_name
-                        ))
-                        .size(text::SMALL),
-                    )
-                    .wrap(),
-                );
-                ui.horizontal(|ui| {
-                    if ui.small_button("Send").clicked() {
-                        answer = Some(true);
-                    }
-                    if ui.small_button("Cancel").clicked() {
-                        answer = Some(false);
-                    }
-                });
-            });
+            let question = format!(
+                "Send this area and its surroundings to the service set up in {}? Asked once.",
+                consent.offer.extension_name
+            );
+            let (answer, _) = consent_card(ui, to_screen(consent.op.pin()), visible, &question);
             if let Some(allow) = answer {
                 self.answer_ai_remove_consent(allow);
             }
@@ -724,6 +705,50 @@ pub(in crate::app) fn hint(ui: &mut egui::Ui, text: &str) {
             .wrap(),
         );
     });
+}
+
+/// The upload question's card beside the area pinned at `pin`, kept inside
+/// `visible` and as tall as its wrapped question needs, so Send and Cancel
+/// stay in view however narrow the view is; the answer, if one was given, and
+/// where the buttons are.
+fn consent_card(
+    ui: &mut egui::Ui,
+    pin: Pos2,
+    visible: Rect,
+    question: &str,
+) -> (Option<bool>, Rect) {
+    const PAD: f32 = 6.;
+    let width = 250f32.min(visible.width());
+    let text = egui::RichText::new(question).size(text::SMALL);
+    let galley = egui::WidgetText::from(text.clone()).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Wrap),
+        (width - 2. * PAD).max(1.),
+        egui::TextStyle::Body,
+    );
+    let spacing = ui.spacing();
+    let height = galley.size().y + spacing.item_spacing.y + spacing.interact_size.y + 2. * PAD;
+    let card = card_rect(pin, Vec2::new(width, height), visible);
+    ui.painter()
+        .with_clip_rect(visible)
+        .rect_filled(card, 4., ui.visuals().window_fill);
+    let mut answer = None;
+    let mut buttons = Rect::NOTHING;
+    ui.scope_builder(egui::UiBuilder::new().max_rect(card.shrink(PAD)), |ui| {
+        ui.add(egui::Label::new(text).wrap());
+        ui.horizontal(|ui| {
+            let send = ui.small_button("Send");
+            let cancel = ui.small_button("Cancel");
+            buttons = send.rect.union(cancel.rect);
+            if send.clicked() {
+                answer = Some(true);
+            }
+            if cancel.clicked() {
+                answer = Some(false);
+            }
+        });
+    });
+    (answer, buttons)
 }
 
 /// Where a card `size` big about the area pinned at `pin` goes: beside it,
