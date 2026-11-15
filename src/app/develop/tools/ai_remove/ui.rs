@@ -10,6 +10,7 @@ use crate::app::extensions::retouch_generator::Offer;
 use crate::app::preferences::Tab;
 use crate::app::ui::design::{size, space, text};
 use crate::app::ui::theme;
+use crate::app::ui::widgets::drawer_help;
 use eframe::egui::{self, Vec2};
 
 impl Editor {
@@ -49,10 +50,11 @@ impl Editor {
             .into_iter()
             .find(|(o, _)| o.provenance == patch.generator)
             .map_or(patch.generator.clone(), |(o, _)| o.name);
-        hint(ui, &format!("Made by {made_by} · {}", patch.model));
+        // Under the panel's controls, where their help lines start.
+        drawer_help(ui, &format!("Made by {made_by} · {}", patch.model));
         // What its generator said it did, in the user's words.
         if let Some(summary) = &patch.summary {
-            hint(ui, &format!("\u{201c}{summary}\u{201d}"));
+            drawer_help(ui, &format!("\u{201c}{summary}\u{201d}"));
         }
         // As rendered: Detail switched off bypasses AI Denoise.
         let recipe = self.document.edit.recipe();
@@ -63,7 +65,7 @@ impl Editor {
                 recipe.resolved(&im.metadata).ai_denoise.renders()
             });
         if patch.ai_denoise != now {
-            hint(
+            drawer_help(
                 ui,
                 if patch.ai_denoise {
                     "Made with AI Denoise on; the photo now has it off"
@@ -72,11 +74,6 @@ impl Editor {
                 },
             );
         }
-        hint(
-            ui,
-            "Fixed where it was made: Feather and Opacity still change",
-        );
-        ui.add_space(space::XS);
     }
 
     /// Painting and sending, below the brush: what to do, Send and Clear (as

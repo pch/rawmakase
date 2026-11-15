@@ -755,9 +755,13 @@ impl Editor {
                 self.ai_remove_install_hint(ui);
             }
         }
-        ui.add_space(space::S);
         if generating {
+            ui.add_space(space::S);
             self.ai_spot_info(ui, selected);
+            // The brush is a section of its own under the generator's.
+            ui.add_space(space::L);
+        } else {
+            ui.add_space(space::S);
         }
         let (mut size, mut feather, mut opacity) = match selected {
             Some(i) => {

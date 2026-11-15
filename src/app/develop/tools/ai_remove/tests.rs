@@ -1423,6 +1423,46 @@ fn render_the_ai_retouch_drawer() {
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("target/ai-retouch-drawer-refused.png");
     image.save(&out).unwrap();
+    // A spot it made, selected: who made it and what it said it did.
+    e.clear_ai_draft();
+    let mut spot = painted();
+    spot.patch = Some(crate::model::retouch::RetouchPatch {
+        id: "0".repeat(32),
+        width: 4,
+        height: 4,
+        rect: [0.3, 0.4, 0.4, 0.2],
+        generator: ask.provenance.clone(),
+        model: "bria/fibo-edit-1.5/eraser".into(),
+        ai_denoise: false,
+        summary: Some("remove the dogs, keep the people".into()),
+    });
+    e.change_edit(None, |r| r.add_retouch(spot));
+    e.view.retouch.selected = Some(0);
+    let image = crate::app::ui::ui_snapshot::render(
+        &ctx,
+        &mut textures,
+        egui::Vec2::new(300., 600.),
+        2.,
+        4,
+        |ui| {
+            let _labels = crate::app::ui::widgets::LabelColumn::enter(
+                ui,
+                crate::app::develop::panels::inspector::DRAWER_LABEL_COLUMN,
+            );
+            let palette = crate::app::ui::theme::palette(ui.ctx());
+            ui.painter().rect_filled(
+                ui.max_rect(),
+                0.,
+                palette.tone(crate::app::ui::design::Tone::CARD),
+            );
+            let frame = e.begin_edit_frame();
+            e.tool_drawer(ui);
+            e.finish_edit_frame(frame, &ctx);
+        },
+    );
+    let out =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/ai-retouch-drawer-spot.png");
+    image.save(&out).unwrap();
 }
 
 /// A key saved and its extension uninstalled before the save finished: the
