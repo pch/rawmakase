@@ -4,8 +4,7 @@ MIDI control surfaces are the **MIDI** extension's, which ships with
 RAWmakase, disabled: enable it on its page to use a control surface, and it
 then starts with the app. Upgrading from 0.4.12 or earlier with MIDI devices
 set up enables it once, so those devices keep working. Its page is in **Preferences >
-Extensions > MIDI**; **Preferences > Automation** keeps **Scripts and AI** and
-links there. MIDI input is currently available on macOS and Windows; on Linux
+Extensions > MIDI**. MIDI input is currently available on macOS and Windows; on Linux
 the page says so and lists no inputs. Scripts and MCP also work on Linux and
 do not need a MIDI device. Disabling the extension stops its devices; its
 settings stay.

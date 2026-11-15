@@ -21,18 +21,16 @@ pub(in crate::app) enum Tab {
     Performance,
     Display,
     Shortcuts,
-    Automation,
     Extensions,
 }
 impl Tab {
-    const ALL: [Tab; 8] = [
+    const ALL: [Tab; 7] = [
         Tab::General,
         Tab::Catalog,
         Tab::Profiles,
         Tab::Performance,
         Tab::Display,
         Tab::Shortcuts,
-        Tab::Automation,
         Tab::Extensions,
     ];
     fn title(self) -> &'static str {
@@ -43,7 +41,6 @@ impl Tab {
             Tab::Performance => "Performance",
             Tab::Display => "Display",
             Tab::Shortcuts => "Shortcuts",
-            Tab::Automation => "Automation",
             Tab::Extensions => "Extensions",
         }
     }
@@ -55,7 +52,6 @@ impl Tab {
             Tab::Performance => Icon::Performance,
             Tab::Display => Icon::Monitor,
             Tab::Shortcuts => Icon::Keyboard,
-            Tab::Automation => Icon::Automation,
             Tab::Extensions => Icon::Extensions,
         }
     }
@@ -239,6 +235,9 @@ impl Editor {
             self.save_defaults();
             self.save_computer_name();
         }
+        if self.preferences.open && closing {
+            self.commit_extension_drafts();
+        }
         if !self.preferences.open {
             return;
         }
@@ -275,7 +274,10 @@ impl Editor {
                     ),
                 );
                 self.preferences_tabs(&mut side);
-                let close = self.preferences_bar(ui, rect.with_min_x(sidebar.right()));
+                let (close, back) = self.preferences_bar(ui, rect.with_min_x(sidebar.right()));
+                if back {
+                    self.leave_extension_page();
+                }
                 let page = egui::Rect::from_min_max(
                     egui::pos2(sidebar.right() + 32., rect.top() + BAR + 20.),
                     egui::pos2(rect.right() - 32., rect.bottom() - 72.),
@@ -309,11 +311,6 @@ impl Editor {
                     }
                     Tab::Display => cards(&mut content, |ui| self.display_page(ui)),
                     Tab::Shortcuts => self.shortcuts_page(&mut content),
-                    Tab::Automation => {
-                        egui::ScrollArea::vertical()
-                            .auto_shrink(false)
-                            .show(&mut content, |ui| cards(ui, |ui| self.automation_page(ui)));
-                    }
                     Tab::Extensions => {
                         egui::ScrollArea::vertical()
                             .auto_shrink(false)
@@ -351,13 +348,26 @@ impl Editor {
                 }
                 done || close
             });
+        // Escape on an extension's own page goes back to the list, as its
+        // back button does; on any other page it closes the window.
+        let back = self.preferences.tab == Tab::Extensions
+            && self.extension_page.opened().is_some()
+            && response.is_top_modal
+            && !response.any_popup_open
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+        if back {
+            self.leave_extension_page();
+        }
         if response.inner || response.should_close() {
+            self.commit_extension_drafts();
             self.preferences.open = false;
         }
     }
     /// The bar over the page: where you are, "Preferences / Catalog", and a
-    /// close button. Returns whether it was clicked.
-    fn preferences_bar(&self, ui: &mut egui::Ui, area: egui::Rect) -> bool {
+    /// close button. On an extension's own page, "Preferences / Extensions /
+    /// MIDI" with a back button, and Extensions takes you back too. Returns
+    /// whether close, then back, was clicked.
+    fn preferences_bar(&self, ui: &mut egui::Ui, area: egui::Rect) -> (bool, bool) {
         let palette = theme::palette(ui.ctx());
         let bar = area.with_max_y(area.top() + BAR);
         ui.painter().hline(
@@ -366,29 +376,76 @@ impl Editor {
             Stroke::new(1., palette.tone(Tone::RAISED)),
         );
         let font = egui::FontId::proportional(text::LARGE);
+        let extension = (self.preferences.tab == Tab::Extensions)
+            .then(|| self.extension_crumb())
+            .flatten();
+        let mut back = false;
         let mut x = bar.left() + 32.;
-        for (text, color) in [
-            ("Preferences", palette.tone(Tone::MUTED)),
-            ("/", palette.tone(Tone::DISABLED)),
-            (self.preferences.tab.title(), palette.tone(Tone::STRONG)),
-        ] {
-            let drawn = ui.painter().text(
-                egui::pos2(x, bar.center().y),
-                egui::Align2::LEFT_CENTER,
-                text,
-                font.clone(),
-                color,
+        if extension.is_some() {
+            let button = egui::Rect::from_min_size(
+                egui::pos2(bar.left() + 20., bar.center().y - 13.),
+                Vec2::splat(26.),
             );
-            x = drawn.right() + 10.;
+            back = ui
+                .scope_builder(egui::UiBuilder::new().max_rect(button), |ui| {
+                    crate::app::shell::shortcuts::icon_button(ui, Icon::ChevronLeft, "Back · Esc")
+                        .clicked()
+                })
+                .inner;
+            x = button.right() + 8.;
+        }
+        let mut crumbs = vec![
+            ("Preferences", Tone::MUTED),
+            ("/", Tone::DISABLED),
+            (
+                self.preferences.tab.title(),
+                if extension.is_some() {
+                    Tone::MUTED
+                } else {
+                    Tone::STRONG
+                },
+            ),
+        ];
+        if let Some(name) = extension {
+            crumbs.extend([("/", Tone::DISABLED), (name, Tone::STRONG)]);
+        }
+        for (i, (text, tone)) in crumbs.into_iter().enumerate() {
+            let galley =
+                ui.painter()
+                    .layout_no_wrap(text.to_string(), font.clone(), palette.tone(tone));
+            let rect =
+                egui::Align2::LEFT_CENTER.anchor_size(egui::pos2(x, bar.center().y), galley.size());
+            // The tab's name leads back from an extension's page.
+            let hovered = if i == 2 && extension.is_some() {
+                let response = ui
+                    .interact(rect, ui.id().with("extensions-crumb"), Sense::click())
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                back |= response.clicked();
+                response.hovered()
+            } else {
+                false
+            };
+            if hovered {
+                ui.painter().galley_with_override_text_color(
+                    rect.min,
+                    galley,
+                    palette.tone(Tone::STRONG),
+                );
+            } else {
+                ui.painter().galley(rect.min, galley, Color32::PLACEHOLDER);
+            }
+            x = rect.right() + 10.;
         }
         let button = egui::Rect::from_center_size(
             egui::pos2(bar.right() - 30., bar.center().y),
             Vec2::splat(26.),
         );
-        ui.scope_builder(egui::UiBuilder::new().max_rect(button), |ui| {
-            crate::app::shell::shortcuts::icon_button(ui, Icon::Close, "Close · Esc").clicked()
-        })
-        .inner
+        let close = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(button), |ui| {
+                crate::app::shell::shortcuts::icon_button(ui, Icon::Close, "Close · Esc").clicked()
+            })
+            .inner;
+        (close, back)
     }
     fn preferences_tabs(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
@@ -423,7 +480,13 @@ impl Editor {
             response.widget_info(|| {
                 egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, tab.title())
             });
+            // Extensions, chosen again from an extension's page, goes back
+            // to the list.
+            if response.clicked() && selected && tab == Tab::Extensions {
+                self.leave_extension_page();
+            }
             if response.clicked() && !selected {
+                self.commit_extension_drafts();
                 self.preferences.tab = tab;
                 self.preferences.shortcuts.stop_capturing();
                 self.measure_usage();
@@ -455,6 +518,11 @@ impl Editor {
         let data = crate::storage::data_dir();
         form_row(ui, "App data", |ui| path_value(ui, &data));
         form_row(ui, "", |ui| reveal_button(ui, &data));
+        gap(ui);
+        // Shown on the MCP extension's page too: MCP clients reach the editor
+        // the same way.
+        group(ui, "Scripting");
+        self.local_access_rows(ui, "Ready for scripts and MCP clients");
         gap(ui);
         group(ui, "Help");
         form_row(ui, "", |ui| {
@@ -1567,6 +1635,16 @@ mod tests {
             e.extensions = crate::app::extensions::Host::with_example_for_tests(dir.path());
         });
         assert_eq!(shown, Vec::<String>::new(), "Extensions with one loaded");
+        // The example's own page, each of its tabs.
+        use crate::app::extensions::Section;
+        for section in [Section::Settings, Section::Commands, Section::About] {
+            let shown = cut_off_in(Tab::Extensions, |e| {
+                e.extensions = crate::app::extensions::Host::with_example_for_tests(dir.path());
+                e.extension_page.select("dev.rawmakase.example");
+                e.extension_page.show(section);
+            });
+            assert_eq!(shown, Vec::<String>::new(), "the example's {section:?}");
+        }
     }
 }
 

@@ -555,7 +555,7 @@ impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("rawmakase", env!("CARGO_PKG_VERSION")))
-            .with_instructions("Controls the running RAWmakase desktop app. Enable local scripts in Preferences > Automation. Read capabilities and state first. Use fresh generation/revision guards for each edit. Preview images to assess changes. Tool success confirms application, not save/export completion unless explicitly stated. Do not retry mutations after connection errors or outcome_unknown: inspect state. The desktop must remain responsive; this is not a headless service.")
+            .with_instructions("Controls the running RAWmakase desktop app. Enable local access on the MCP extension's Settings tab in Preferences > Extensions. Read capabilities and state first. Use fresh generation/revision guards for each edit. Preview images to assess changes. Tool success confirms application, not save/export completion unless explicitly stated. Do not retry mutations after connection errors or outcome_unknown: inspect state. The desktop must remain responsive; this is not a headless service.")
     }
 }
 

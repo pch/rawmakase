@@ -26,6 +26,10 @@ const FIXED: &[(&str, &str, usize)] = &[
     ("develop/panels/snapshots.rs", "key_pressed(", 1),
     ("presets/user_presets.rs", "key_pressed(", 1),
     ("library/metadata_fields.rs", "key_pressed(", 1),
+    ("extensions/page.rs", "key_pressed(", 1),
+    // Preferences' Escape, which an extension's page takes to go back to the
+    // list before the window's own Escape closes it.
+    ("preferences/mod.rs", "consume_key(", 1),
     // A mask's name field keeps the old name on Escape.
     ("develop/tools/mask_tool.rs", "key_pressed(", 1),
     // A popup's own Escape.

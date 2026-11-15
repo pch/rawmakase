@@ -401,6 +401,22 @@ fn a_command_runs_with_its_settings_its_panel_and_what_it_reads() {
                     rawmakase_extensions::protocol::controls::ControlKind::Text { value, .. } if value == "short")
         })
     });
+    // A change the program refuses counts as unsent again, so leaving the
+    // page can send it once more.
+    assert!(e.extensions.panel(ID, "note").unwrap().sent.is_empty());
+    e.extensions
+        .panel_changed(ID, "note", "nothing", json!("x"))
+        .unwrap();
+    assert_eq!(
+        e.extensions.panel(ID, "note").unwrap().sent.get("nothing"),
+        Some(&json!("x"))
+    );
+    pump(e, "the error", |e, _| {
+        e.extensions
+            .panel(ID, "note")
+            .is_some_and(|p| !p.waiting && p.error.is_some())
+    });
+    assert!(e.extensions.panel(ID, "note").unwrap().sent.is_empty());
 }
 
 #[test]
@@ -1598,8 +1614,8 @@ fn window_frame(e: &mut Editor, events: Vec<egui::Event>) -> egui::accesskit::Tr
         .expect("accessibility is on")
 }
 
-/// Preferences open on Extensions, showing the example's page: the only
-/// extension, so the one selected.
+/// Preferences open on Extensions: the list, or the page of the extension
+/// selected.
 fn extensions_page(e: &mut Editor) -> egui::accesskit::TreeUpdate {
     e.context.enable_accesskit();
     e.context.all_styles_mut(|s| s.animation_time = 0.);
@@ -1640,9 +1656,10 @@ fn the_run_button_applies_a_proposal_for_the_open_photo() {
     let a = f.photos[0].clone();
     open(e, &a);
     select(e, &[a.0]);
-    // The example's page, not the first extension's by name (AI Masks).
     e.extension_page.select(ID);
     let tree = extensions_page(e);
+    click_first(e, &tree, "Commands");
+    let tree = window_frame(e, Vec::new());
     // Brighten is the example's first command, so its Run the topmost.
     click_first(e, &tree, "Run");
     let outcomes = pump(e, "Brighten", |_, o| result(o, "Brighten").is_some());
@@ -1917,4 +1934,336 @@ fn a_program_gone_while_a_target_is_read_fails_the_command_once() {
     }
     assert!(brightened(&later).is_empty(), "{later:?}");
     assert!(!e.extensions.get(ID).unwrap().running());
+}
+
+fn escape(e: &mut Editor) {
+    window_frame(
+        e,
+        vec![egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+    );
+    window_frame(e, Vec::new());
+}
+
+/// The list is a table, not tabs: a row opens the extension's own page in
+/// place of the list, and Escape, the back button or the Extensions crumb
+/// return to it. Only Escape on the list closes Preferences.
+#[test]
+fn a_row_opens_its_extensions_page_and_escape_goes_back_to_the_list() {
+    let mut f = fixture(&["a.png"]);
+    let e = &mut f.editor;
+    let tree = extensions_page(e);
+    assert_eq!(e.extension_page.opened(), None, "the list shows first");
+    let name = e.extensions.get(ID).unwrap().name().to_string();
+    click_first(e, &tree, &name);
+    assert_eq!(e.extension_page.opened(), Some(ID));
+    let tree = window_frame(e, Vec::new());
+    // Its page shows its tabs, not the other extensions.
+    assert!(
+        tree.nodes
+            .iter()
+            .any(|(_, n)| n.label() == Some("Commands"))
+    );
+    assert!(!tree.nodes.iter().any(|(_, n)| n.label() == Some("MIDI")));
+    escape(e);
+    assert_eq!(e.extension_page.opened(), None, "Escape goes back");
+    assert!(e.preferences.open, "and doesn't close Preferences");
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, &name);
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, "Back · Esc");
+    assert_eq!(e.extension_page.opened(), None, "the back button goes back");
+    escape(e);
+    assert!(!e.preferences.open, "Escape on the list closes Preferences");
+}
+
+/// A row's switch turns its extension off and on without opening its page.
+#[test]
+fn a_rows_switch_turns_the_extension_off_without_opening_it() {
+    let mut f = fixture(&["a.png"]);
+    let e = &mut f.editor;
+    let tree = extensions_page(e);
+    let name = e.extensions.get(ID).unwrap().name().to_string();
+    let label = format!("Enable {name}");
+    click_first(e, &tree, &label);
+    assert!(!e.extensions.get(ID).unwrap().enabled());
+    assert_eq!(e.extension_page.opened(), None);
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, &label);
+    assert!(e.extensions.get(ID).unwrap().enabled());
+    assert_eq!(e.extension_page.opened(), None);
+}
+
+/// An extension's page closes once the extension is gone.
+#[test]
+fn a_page_whose_extension_is_gone_shows_the_list() {
+    let mut f = fixture(&["a.png"]);
+    let e = &mut f.editor;
+    e.extension_page.select("dev.test.missing");
+    extensions_page(e);
+    assert_eq!(e.extension_page.opened(), None);
+}
+
+/// Uninstall asks first: Cancel keeps the extension, Uninstall removes it
+/// and leaves its page for the list.
+#[test]
+fn uninstall_asks_before_it_removes_the_extension() {
+    let mut f = fixture(&["a.png"]);
+    let e = &mut f.editor;
+    e.extension_page.select(ID);
+    let tree = extensions_page(e);
+    click_first(e, &tree, "About");
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, "Uninstall…");
+    // The dialog's first frame only measures it.
+    window_frame(e, Vec::new());
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, "Cancel");
+    window_frame(e, Vec::new());
+    assert!(e.extensions.get(ID).is_some(), "Cancel keeps it");
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, "Uninstall…");
+    // The dialog's first frame only measures it.
+    window_frame(e, Vec::new());
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, "Uninstall");
+    window_frame(e, Vec::new());
+    assert!(e.extensions.get(ID).is_none(), "Uninstall removes it");
+    assert_eq!(e.extension_page.opened(), None);
+    assert!(e.preferences.open);
+}
+
+/// Turning an extension off and on again from its own page leaves its panel
+/// ready to open, not saying it is off: the page reads the switch's change
+/// before it draws the panel, and turning it on forgets a panel that failed
+/// while it was off.
+#[test]
+fn a_panel_opens_after_its_extension_is_turned_off_and_on_from_its_page() {
+    let mut f = fixture(&["a.png"]);
+    let e = &mut f.editor;
+    e.extension_page.select(ID);
+    let tree = extensions_page(e);
+    let name = e.extensions.get(ID).unwrap().name().to_string();
+    let label = format!("Enable {name}");
+    click_first(e, &tree, &label);
+    assert!(!e.extensions.get(ID).unwrap().enabled());
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, &label);
+    assert!(e.extensions.get(ID).unwrap().enabled());
+    window_frame(e, Vec::new());
+    let error = e.extensions.panel(ID, "note").and_then(|v| v.error.clone());
+    assert!(
+        error
+            .as_deref()
+            .is_none_or(|why| !why.contains("is disabled")),
+        "{error:?}"
+    );
+}
+
+/// What couldn't be loaded is said on the page, in full, not in the status
+/// line.
+#[test]
+fn an_extension_that_cant_be_read_is_listed_on_the_page() {
+    let mut f = fixture(&["a.png"]);
+    let e = &mut f.editor;
+    let store = e.extensions.store().cloned().unwrap();
+    let dir = store.version_dir("dev.test.broken", "1.0.0");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(rawmakase_extensions::protocol::manifest::FILE),
+        "[extension]\nid = \"dev.test.broken\"\nname = \"Broken\"\n\
+         version = \"1.0.0\"\nrawmakase = \">=0.1\"\napi = 1\n\
+         [[retouch-generator]]\nid = \"r\"\n",
+    )
+    .unwrap();
+    State::update(store.data_dir(), |state| {
+        let entry = state
+            .extensions
+            .entry("dev.test.broken".into())
+            .or_default();
+        entry.active = Some("1.0.0".into());
+        entry.installed = vec!["1.0.0".into()];
+        Ok(())
+    })
+    .unwrap();
+    extensions_page(e);
+    assert!(
+        e.extension_page
+            .problems()
+            .iter()
+            .any(|p| p.contains("dev.test.broken") && p.contains("retouch-generator")),
+        "{:?}",
+        e.extension_page.problems()
+    );
+    assert!(
+        e.messages.line().is_empty() || !e.messages.line().contains("retouch-generator"),
+        "not cut short in the status line"
+    );
+}
+
+/// MCP's clients reach the editor through local access, so its page has it
+/// as its settings, and its row says it can't run while local access is off.
+#[test]
+fn mcps_page_has_local_access_and_its_row_says_when_clients_cant_connect() {
+    let mut f = fixture(&["a.png"]);
+    let e = &mut f.editor;
+    assert_eq!(
+        e.local_access(),
+        crate::app::shell::automation::LocalAccess::Off
+    );
+    assert_eq!(e.extension_status("rawmakase.mcp"), "Can't run");
+    e.extension_page.select("rawmakase.mcp");
+    let tree = extensions_page(e);
+    for label in ["Settings", "About", "Allow local scripts and applications"] {
+        assert!(
+            tree.nodes.iter().any(|(_, n)| n.label() == Some(label)),
+            "{label} is shown"
+        );
+    }
+}
+
+/// The text fields on an extension's page, under its Settings tab, from the
+/// top: Preferences shows over the window's own fields.
+fn page_fields(tree: &egui::accesskit::TreeUpdate) -> Vec<egui::accesskit::NodeId> {
+    let y = |n: &egui::accesskit::Node| n.bounds().map_or(f64::MAX, |b| b.y0);
+    let tabs = tree
+        .nodes
+        .iter()
+        .find(|(_, n)| n.label() == Some("Settings"))
+        .map(|(_, n)| y(n))
+        .expect("the Settings tab");
+    let mut fields: Vec<_> = tree
+        .nodes
+        .iter()
+        .filter(|(_, n)| n.role() == egui::accesskit::Role::TextInput && y(n) > tabs)
+        .map(|(id, n)| (*id, y(n)))
+        .collect();
+    fields.sort_by(|a, b| a.1.total_cmp(&b.1));
+    fields.into_iter().map(|(id, _)| id).collect()
+}
+
+/// Focuses `field` and types `text` into it.
+fn type_into(e: &mut Editor, field: egui::accesskit::NodeId, text: &str) {
+    window_frame(
+        e,
+        vec![egui::Event::AccessKitActionRequest(
+            egui::accesskit::ActionRequest {
+                action: egui::accesskit::Action::Focus,
+                target_tree: egui::accesskit::TreeId::ROOT,
+                target_node: field,
+                data: None,
+            },
+        )],
+    );
+    window_frame(e, vec![egui::Event::Text(text.into())]);
+}
+
+/// A text field commits when it loses focus, which it hears a frame later;
+/// leaving its tab or the page before then commits what was typed rather
+/// than dropping it: a setting's text, and a panel's.
+#[test]
+fn text_typed_then_left_for_another_tab_or_the_list_is_saved() {
+    let mut f = fixture(&["a.png"]);
+    let good = include_str!("../../../extensions/example/rawmakase-extension.toml");
+    rewrite_manifest(
+        &f,
+        &format!(
+            "{good}\n[[setting]]\nid = \"label\"\nname = \"Label\"\ncontrol = \"text\"\n\
+             default = \"\"\n"
+        ),
+        2,
+    );
+    let e = &mut f.editor;
+    e.extensions.reload_changed_folders();
+    e.sync_extension_commands();
+    e.extension_page.select(ID);
+    let tree = extensions_page(e);
+    // The settings are over the panels.
+    type_into(e, page_fields(&tree)[0], "hello");
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, "About");
+    window_frame(e, Vec::new());
+    assert_eq!(
+        e.extensions.get(ID).unwrap().settings()["label"],
+        json!("hello")
+    );
+
+    // The panel's note, left with Escape for the list.
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, "Settings");
+    pump(e, "the note panel", |e, _| {
+        e.extensions
+            .panel(ID, "note")
+            .is_some_and(|p| !p.controls.is_empty())
+    });
+    window_frame(e, Vec::new());
+    let tree = window_frame(e, Vec::new());
+    let fields = page_fields(&tree);
+    assert_eq!(fields.len(), 2, "the setting's and the note's");
+    type_into(e, fields[1], "memo");
+    escape(e);
+    assert_eq!(e.extension_page.opened(), None);
+    pump(e, "the note", |e, _| {
+        e.extensions.panel(ID, "note").is_some_and(|p| {
+            p.controls.iter().any(|c| {
+                matches!(&c.kind, rawmakase_extensions::protocol::controls::ControlKind::Text { value, .. } if value == "memo")
+            })
+        })
+    });
+}
+
+/// A setting typed and left whose save fails keeps what was typed: the page
+/// shows it again, and the setting stays as it was.
+#[test]
+fn text_whose_save_fails_is_kept_as_typed() {
+    let mut f = fixture(&["a.png"]);
+    let good = include_str!("../../../extensions/example/rawmakase-extension.toml");
+    rewrite_manifest(
+        &f,
+        &format!(
+            "{good}\n[[setting]]\nid = \"label\"\nname = \"Label\"\ncontrol = \"text\"\n\
+             default = \"\"\n"
+        ),
+        2,
+    );
+    let e = &mut f.editor;
+    e.extensions.reload_changed_folders();
+    e.sync_extension_commands();
+    e.extension_page.select(ID);
+    let tree = extensions_page(e);
+    // A file this RAWmakase won't write.
+    std::fs::write(f.data.join("extensions.json"), r#"{"version": 99}"#).unwrap();
+    type_into(e, page_fields(&tree)[0], "hello");
+    // Enter commits it as the field lets go: the save fails, and the field
+    // still shows what was typed.
+    let enter = |pressed| egui::Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    window_frame(e, vec![enter(true), enter(false)]);
+    window_frame(e, Vec::new());
+    let tree = window_frame(e, Vec::new());
+    let field = page_fields(&tree)[0];
+    let (_, node) = tree.nodes.iter().find(|(id, _)| *id == field).unwrap();
+    assert_eq!(node.value(), Some("hello"));
+    assert_eq!(e.extensions.get(ID).unwrap().settings()["label"], json!(""));
+    // And so does leaving the tab and coming back.
+    click_first(e, &tree, "About");
+    window_frame(e, Vec::new());
+    assert_eq!(e.extensions.get(ID).unwrap().settings()["label"], json!(""));
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, "Settings");
+    window_frame(e, Vec::new());
+    let tree = window_frame(e, Vec::new());
+    let field = page_fields(&tree)[0];
+    let (_, node) = tree.nodes.iter().find(|(id, _)| *id == field).unwrap();
+    assert_eq!(node.value(), Some("hello"));
 }

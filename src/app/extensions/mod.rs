@@ -96,6 +96,8 @@ pub(in crate::app) use devices::Devices;
 pub(in crate::app) use editor::Told;
 pub(crate) use editor::{Done, PathTarget};
 pub(in crate::app) use page::Page;
+#[cfg(test)]
+pub(in crate::app) use page::Section;
 pub(crate) use sources::ReportDone;
 
 use crate::app::shell::commands::registry::{self, Dynamic};
@@ -306,6 +308,9 @@ pub(in crate::app) struct PanelView {
     pub opened: bool,
     /// Values being edited and not yet sent or answered, by control id.
     pub drafts: HashMap<String, Value>,
+    /// Values sent and not answered yet, by control id: a draft equal to
+    /// one is not sent again.
+    pub sent: HashMap<String, Value>,
 }
 
 /// A loaded extension.
@@ -1351,9 +1356,13 @@ impl Host {
             AppRequest::PanelChanged(PanelChanged {
                 panel: panel.to_string(),
                 control: control.to_string(),
-                value,
+                value: value.clone(),
             }),
-        )
+        )?;
+        if let Some(view) = self.panel_mut(id, panel) {
+            view.sent.insert(control.to_string(), value);
+        }
+        Ok(())
     }
     /// The user clicked button `control` of a panel.
     pub(in crate::app) fn panel_clicked(
@@ -1419,6 +1428,9 @@ impl Host {
         let e = &mut self.extensions[index];
         e.entry.enabled = enabled;
         let outcomes = if enabled {
+            // A panel that couldn't open while it was off opens again now,
+            // rather than keep saying it is off.
+            e.panels.clear();
             Vec::new()
         } else {
             Self::end(e, ErrorCode::Disabled)
@@ -2136,7 +2148,14 @@ impl Host {
                         panels::take(view, controls.controls);
                         e.crashes = 0;
                     }
-                    Err(err) => view.error = Some(err.to_string()),
+                    Err(err) => {
+                        view.error = Some(err.to_string());
+                        // The request failed, so what it sent counts as unsent
+                        // again. Pending doesn't say which control it was for,
+                        // so every mark goes: the worst case resends a value
+                        // still in flight, never drops one.
+                        view.sent.clear();
+                    }
                 }
             }
         }
