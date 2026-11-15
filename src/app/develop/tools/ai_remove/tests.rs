@@ -22,6 +22,21 @@ const ID: &str = "dev.rawmakase.remove";
 /// `extensions.json`, an error or a message.
 const SENTINEL: &str = "sk-SENTINEL-0123456789abcdef";
 
+/// `text` for a failure to print, with any test key in it hidden: every key
+/// the tests set holds "SENTINEL".
+fn redacted(text: &str) -> String {
+    text.split_whitespace()
+        .map(|word| {
+            if word.contains("SENTINEL") {
+                "[key]"
+            } else {
+                word
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// The remove extension's program, when this binary is started as it; a
 /// test that does nothing otherwise.
 #[test]
@@ -184,7 +199,7 @@ fn pump(e: &mut Editor, what: &str, done: impl Fn(&Editor) -> bool) {
         assert!(
             Instant::now() < until,
             "timed out waiting for {what}: {}",
-            e.messages.line()
+            redacted(e.messages.line())
         );
         std::thread::sleep(Duration::from_millis(2));
     }
@@ -878,8 +893,16 @@ fn failures_say_why_and_a_secret_setting_sets_the_extension_up() {
     let before = generated(e).len();
     remove_with(e, "setup");
     pump(e, "the removal", settled);
-    assert_eq!(generated(e).len(), before + 1, "{}", e.messages.line());
-    assert!(!e.messages.line().contains("SENTINEL"));
+    assert!(
+        !e.messages.line().contains("SENTINEL"),
+        "a message names the key"
+    );
+    assert_eq!(
+        generated(e).len(),
+        before + 1,
+        "{}",
+        redacted(e.messages.line())
+    );
 }
 
 fn secrets_state(value: &str) -> crate::app::extensions::secrets::State {
