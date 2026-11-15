@@ -323,6 +323,7 @@ impl Editor {
                 let shown = self.chrome.show();
                 self.chrome_view(shown);
             }
+            self.fullscreen_key(&ctx);
             self.metadata_shortcuts(&ctx);
             self.workspace_shortcuts(&ctx);
             if !self.activity.is_busy() {
@@ -593,6 +594,14 @@ impl Editor {
                     self.module = Module::Develop;
                 }
             }
+        }
+    }
+
+    /// F11: the window fills the display, or gives it back. Unlike F's
+    /// whole-window mode, this is the window's own state, kept by the system.
+    fn fullscreen_key(&mut self, ctx: &egui::Context) {
+        if self.keys(ctx).take(&bindings::FULLSCREEN).is_some() {
+            toggle_fullscreen(ctx);
         }
     }
 
@@ -2357,6 +2366,12 @@ mod tests {
         editor.document.edit.save_state_mut().saved();
         assert!(!editor.quitting_would_cut_off_work());
     }
+}
+
+/// Turns the window's full screen on, or off when it is on.
+pub(in crate::app) fn toggle_fullscreen(ctx: &egui::Context) {
+    let on = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!on));
 }
 
 #[cfg(test)]

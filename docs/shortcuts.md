@@ -246,6 +246,7 @@ names where they have one. Fixed commands keep their keys.
 | `chrome` | Hide all but the photo |
 | `messages:dismiss_all` | Dismiss the messages in the top bar |
 | `chrome:show` | Leave the whole-window mode |
+| `fullscreen` | Full screen |
 | `virtual_copy` | Create virtual copy |
 | `preferences` | Preferences |
 | `shortcuts` | Keyboard shortcuts |

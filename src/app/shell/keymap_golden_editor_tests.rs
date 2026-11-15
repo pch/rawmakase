@@ -28,7 +28,7 @@ use eframe::egui::{Key, Modifiers};
 use std::collections::HashMap;
 
 /// Every key the shortcuts use.
-const KEYS: [Key; 68] = [
+const KEYS: [Key; 69] = [
     Key::A,
     Key::B,
     Key::C,
@@ -97,6 +97,7 @@ const KEYS: [Key; 68] = [
     Key::F6,
     Key::F7,
     Key::F8,
+    Key::F11,
 ];
 
 /// The table for this platform. egui-winit reports Ctrl as the command key off

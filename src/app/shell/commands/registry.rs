@@ -104,6 +104,7 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
         "Dismiss the messages in the top bar",
     ),
     command("chrome:show", "Leave the whole-window mode"),
+    command("fullscreen", "Full screen"),
     command("virtual_copy", "Create virtual copy"),
     command("preferences", "Preferences"),
     command("shortcuts", "Keyboard shortcuts"),
@@ -349,6 +350,11 @@ pub(in crate::app) mod bindings {
         SHOW_CHROME = b("chrome:show", Everywhere, &[d(&[Key::Escape], NONE)])
             .consuming()
             .guarded(Guards::MODAL.with(Guards::POPUP));
+        // The window's own full screen (`Editor::fullscreen_key`). A Mac has
+        // the View menu's Enter Full Screen and the system's keys for it.
+        FULLSCREEN = b("fullscreen", Everywhere, &[
+            d(&[Key::F11], NONE).not_macos().once_per_press(),
+        ]).consuming().guarded(Guards::MODAL);
 
         // Rating, flag and label keys (`photo_metadata::shortcut`), in the
         // order they are matched.

@@ -642,3 +642,75 @@ fn the_chrome_hidden_gives_the_loupe_its_toolbar_row() -> anyhow::Result<()> {
     assert_eq!(without.x, with_toolbar.x);
     Ok(())
 }
+
+/// F11 fills the display with the window, or gives it back (#1096). On a Mac
+/// the View menu's Enter Full Screen and the window's green button do it.
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn f11_turns_the_windows_full_screen_on_and_off() {
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    // In the setup view too: it has a window to fill.
+    e.onboarding.visible = true;
+    let frame = |e: &mut Editor, fullscreen: bool, events: Vec<egui::Event>| {
+        let ctx = e.context.clone();
+        let mut input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1200., 800.))),
+            events,
+            ..Default::default()
+        };
+        input
+            .viewports
+            .entry(egui::ViewportId::ROOT)
+            .or_default()
+            .fullscreen = Some(fullscreen);
+        let mut output = ctx.run_ui(input, |ui| e.draw(ui));
+        output.textures_delta.clear();
+        output.viewport_output[&egui::ViewportId::ROOT]
+            .commands
+            .iter()
+            .filter_map(|c| match c {
+                egui::ViewportCommand::Fullscreen(on) => Some(*on),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    frame(&mut e, false, vec![]);
+    assert_eq!(
+        frame(
+            &mut e,
+            false,
+            key_down(egui::Key::F11, egui::Modifiers::NONE)
+        ),
+        [true]
+    );
+    // Held, it changes once.
+    assert_eq!(
+        frame(
+            &mut e,
+            true,
+            vec![egui::Event::Key {
+                key: egui::Key::F11,
+                physical_key: Some(egui::Key::F11),
+                pressed: true,
+                repeat: true,
+                modifiers: egui::Modifiers::NONE,
+            }]
+        ),
+        Vec::<bool>::new()
+    );
+    frame(&mut e, true, key_up(egui::Key::F11));
+    assert_eq!(
+        frame(
+            &mut e,
+            true,
+            key_down(egui::Key::F11, egui::Modifiers::NONE)
+        ),
+        [false]
+    );
+}

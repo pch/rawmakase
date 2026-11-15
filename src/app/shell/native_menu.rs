@@ -246,9 +246,7 @@ impl Editor {
                 };
                 self.request_panels(PanelChange::Toggle(panel));
             }
-            Action::Fullscreen => ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(
-                !self.menu_state(action, ctx).1,
-            )),
+            Action::Fullscreen => crate::app::shell::workspace::toggle_fullscreen(ctx),
             Action::Shortcuts => self.view.shortcuts = true,
             Action::ReportIssue => self.open_report_issue(),
         }

@@ -159,6 +159,7 @@ Useful shortcuts:
 | Shift+R | Reference View: another photo beside the one you edit (drag it from the filmstrip) |
 | Tab / Shift+Tab | Hide or show the side panels / also the filmstrip and status bar |
 | F7 / F8 / F6 | Hide or show the left panel / right panel / filmstrip |
+| F11 | Full screen (on a Mac, View › Enter Full Screen) |
 | Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z | Undo / redo |
 | Cmd/Ctrl+Shift+U | Auto tone |
 
