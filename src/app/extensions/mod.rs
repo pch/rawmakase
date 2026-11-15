@@ -308,6 +308,9 @@ pub(in crate::app) struct PanelView {
     pub opened: bool,
     /// Values being edited and not yet sent or answered, by control id.
     pub drafts: HashMap<String, Value>,
+    /// Values sent and not answered yet, by control id: a draft equal to
+    /// one is not sent again.
+    pub sent: HashMap<String, Value>,
 }
 
 /// A loaded extension.
@@ -1353,9 +1356,13 @@ impl Host {
             AppRequest::PanelChanged(PanelChanged {
                 panel: panel.to_string(),
                 control: control.to_string(),
-                value,
+                value: value.clone(),
             }),
-        )
+        )?;
+        if let Some(view) = self.panel_mut(id, panel) {
+            view.sent.insert(control.to_string(), value);
+        }
+        Ok(())
     }
     /// The user clicked button `control` of a panel.
     pub(in crate::app) fn panel_clicked(

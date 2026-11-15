@@ -196,16 +196,30 @@ impl Editor {
     /// Preferences page, closing Preferences) would no longer draw it to hear
     /// it, and the edit would stay a draft.
     pub(in crate::app) fn commit_extension_drafts(&mut self) {
-        for ((extension, setting), text) in std::mem::take(&mut self.extension_page.drafts) {
+        // A draft stays until it is saved, so one that fails shows again
+        // when its page does.
+        let drafts: Vec<_> = self
+            .extension_page
+            .drafts
+            .iter()
+            .map(|(key, text)| (key.clone(), text.clone()))
+            .collect();
+        for ((extension, setting), text) in drafts {
             let saved = self
                 .extensions
                 .get(&extension)
                 .and_then(|e| e.settings().get(&setting).cloned());
             let value = Value::from(text);
-            if saved.as_ref() != Some(&value)
-                && let Err(why) = self.extensions.set_setting(&extension, &setting, value)
-            {
-                self.messages.fail(why);
+            let result = if saved.as_ref() == Some(&value) {
+                Ok(())
+            } else {
+                self.extensions.set_setting(&extension, &setting, value)
+            };
+            match result {
+                Ok(()) => {
+                    self.extension_page.drafts.remove(&(extension, setting));
+                }
+                Err(why) => self.messages.fail(why),
             }
         }
         let Some(id) = self.extension_page.open.clone() else {
@@ -217,12 +231,14 @@ impl Editor {
             .map(|e| e.manifest.panels.iter().map(|p| p.id.clone()).collect())
             .unwrap_or_default();
         for panel in panels {
-            let drafts = self
+            // Sent drafts stay until the program answers with a new tree, as
+            // they do when a field commits on its own.
+            let unsent = self
                 .extensions
-                .panel_mut(&id, &panel)
-                .map(|view| std::mem::take(&mut view.drafts))
+                .panel(&id, &panel)
+                .map(panels::unsent)
                 .unwrap_or_default();
-            for (control, value) in drafts {
+            for (control, value) in unsent {
                 if let Err(why) = self.extensions.panel_changed(&id, &panel, &control, value) {
                     self.messages.fail(why);
                 }

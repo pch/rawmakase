@@ -44,6 +44,7 @@ pub(super) fn take(view: &mut PanelView, controls: Vec<Control>) {
             view.controls = controls;
             view.error = None;
             view.drafts.clear();
+            view.sent.clear();
         }
         Err(why) => {
             view.error = Some(format!(
@@ -51,6 +52,24 @@ pub(super) fn take(view: &mut PanelView, controls: Vec<Control>) {
             ))
         }
     }
+}
+
+/// The drafts of `view` that would change their control and haven't been
+/// sent: what to commit when the panel stops being drawn before its fields
+/// commit on their own.
+pub(in crate::app) fn unsent(view: &PanelView) -> Vec<(String, Value)> {
+    let mut all = HashMap::new();
+    values(&view.controls, &mut all);
+    let mut out: Vec<(String, Value)> = view
+        .drafts
+        .iter()
+        .filter(|(control, draft)| {
+            all.get(*control) != Some(*draft) && view.sent.get(*control) != Some(*draft)
+        })
+        .map(|(control, draft)| (control.clone(), draft.clone()))
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
 }
 
 /// Every control's value by id, for `visible_when`.
@@ -354,6 +373,35 @@ mod tests {
     use super::*;
     use egui::accesskit::{Node, TreeUpdate};
     use serde_json::json;
+
+    /// Committing a panel left unseen sends only what would change a
+    /// control and hasn't been sent already: no repeat of a value its field
+    /// sent as it let go, and none for text typed back to what it was.
+    #[test]
+    fn only_unsent_changes_are_committed() {
+        let mut view = PanelView {
+            controls: vec![Control {
+                id: Some("text".into()),
+                label: None,
+                help: None,
+                visible_when: None,
+                disabled: false,
+                kind: ControlKind::Text {
+                    value: "a".into(),
+                    multiline: false,
+                },
+            }],
+            ..Default::default()
+        };
+        view.drafts.insert("text".into(), json!("a"));
+        assert_eq!(unsent(&view), Vec::new(), "typed back to what it was");
+        view.drafts.insert("text".into(), json!("b"));
+        assert_eq!(unsent(&view), vec![("text".to_string(), json!("b"))]);
+        view.sent.insert("text".into(), json!("b"));
+        assert_eq!(unsent(&view), Vec::new(), "sent as its field let go");
+        view.drafts.insert("text".into(), json!("c"));
+        assert_eq!(unsent(&view), vec![("text".to_string(), json!("c"))]);
+    }
 
     /// A frame of `view` given `events`: what it committed, and where its
     /// controls are.

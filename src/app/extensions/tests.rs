@@ -2200,3 +2200,38 @@ fn text_typed_then_left_for_another_tab_or_the_list_is_saved() {
         })
     });
 }
+
+/// A setting typed and left whose save fails keeps what was typed: the page
+/// shows it again, and the setting stays as it was.
+#[test]
+fn text_whose_save_fails_is_kept_as_typed() {
+    let mut f = fixture(&["a.png"]);
+    let good = include_str!("../../../extensions/example/rawmakase-extension.toml");
+    rewrite_manifest(
+        &f,
+        &format!(
+            "{good}\n[[setting]]\nid = \"label\"\nname = \"Label\"\ncontrol = \"text\"\n\
+             default = \"\"\n"
+        ),
+        2,
+    );
+    let e = &mut f.editor;
+    e.extensions.reload_changed_folders();
+    e.sync_extension_commands();
+    e.extension_page.select(ID);
+    let tree = extensions_page(e);
+    // A file this RAWmakase won't write.
+    std::fs::write(f.data.join("extensions.json"), r#"{"version": 99}"#).unwrap();
+    type_into(e, page_fields(&tree)[0], "hello");
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, "About");
+    window_frame(e, Vec::new());
+    assert_eq!(e.extensions.get(ID).unwrap().settings()["label"], json!(""));
+    let tree = window_frame(e, Vec::new());
+    click_first(e, &tree, "Settings");
+    window_frame(e, Vec::new());
+    let tree = window_frame(e, Vec::new());
+    let field = page_fields(&tree)[0];
+    let (_, node) = tree.nodes.iter().find(|(id, _)| *id == field).unwrap();
+    assert_eq!(node.value(), Some("hello"));
+}

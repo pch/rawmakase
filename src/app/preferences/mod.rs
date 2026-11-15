@@ -235,6 +235,9 @@ impl Editor {
             self.save_defaults();
             self.save_computer_name();
         }
+        if self.preferences.open && closing {
+            self.commit_extension_drafts();
+        }
         if !self.preferences.open {
             return;
         }
