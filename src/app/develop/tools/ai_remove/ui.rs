@@ -3,7 +3,7 @@
 //! request running, what went wrong, and what made the selected spot.
 use super::Failure;
 use crate::app::Editor;
-use crate::app::develop::tools::retouch_tool::{control_label, hint, indented};
+use crate::app::develop::tools::retouch_tool::{control_label_top, hint, indented};
 use crate::app::extensions::retouch_generator::Offer;
 use crate::app::preferences::Tab;
 use crate::app::ui::design::space;
@@ -60,27 +60,29 @@ impl Editor {
             return;
         }
         if offer.prompt != PromptUse::None {
-            let hint_text = offer
+            let placeholder = offer
                 .prompt_hint
                 .clone()
                 .unwrap_or_else(|| match offer.prompt {
                     PromptUse::Required => "What to do with the area".into(),
-                    _ => "Optional: what to do with the area".into(),
+                    _ => "What to do with the area, if anything".into(),
                 });
-            let missing = self.ai_prompt_missing(&offer);
-            control_label(ui, "Prompt", |ui| {
+            control_label_top(ui, "Prompt", |ui| {
                 let text = self.ai_prompt_mut(&offer);
-                ui.add(
-                    egui::TextEdit::singleline(text)
-                        .hint_text(hint_text)
-                        // Characters, not bytes: four bytes each at most.
-                        .char_limit(MAX_PROMPT_LEN / 4)
-                        .desired_width(f32::INFINITY),
-                );
+                // Characters, not bytes: four bytes each at most.
+                crate::app::ui::widgets::text_box(ui, text, &placeholder, 2, MAX_PROMPT_LEN / 4);
             });
-            if missing {
-                hint(ui, &format!("{} needs this before you paint", offer.name));
-            }
+            // Each mode keeps its own prompt; say whether this one needs it.
+            hint(
+                ui,
+                &match offer.prompt {
+                    PromptUse::Required => {
+                        format!("{} needs a prompt before you paint", offer.name)
+                    }
+                    _ => format!("Optional for {}: say what to remove or keep", offer.name),
+                },
+            );
+            ui.add_space(space::M);
         }
         hint(
             ui,

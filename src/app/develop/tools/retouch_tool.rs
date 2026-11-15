@@ -839,6 +839,27 @@ fn draw_shape(
     }
 }
 /// A row with a right-aligned label in the sliders' label column.
+/// [`control_label`] for a box taller than a line: the label beside its
+/// first line, not its middle.
+pub(in crate::app) fn control_label_top(
+    ui: &mut egui::Ui,
+    label: &str,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+        let width = crate::app::ui::widgets::label_column(ui) - ui.spacing().item_spacing.x;
+        // As tall as a text box's first line with its margin above and below.
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 30.), egui::Sense::hover());
+        ui.painter().text(
+            rect.right_center(),
+            egui::Align2::RIGHT_CENTER,
+            label,
+            egui::FontId::proportional(text::SMALL),
+            theme::palette(ui.ctx()).tone(Tone::SOFT),
+        );
+        add(ui);
+    });
+}
 pub(in crate::app) fn control_label(
     ui: &mut egui::Ui,
     label: &str,

@@ -2713,6 +2713,54 @@ pub(in crate::app) fn panel_caption(ui: &mut egui::Ui, name: &str) -> Rect {
     );
     rect
 }
+/// A text box: a rounded, outlined box `rows` lines tall that wraps what is
+/// typed, as [`search_field`]'s box looks, lit while it has the keyboard.
+/// `hint` shows while it is empty; at most `limit` characters. Returns the
+/// text field's response.
+pub(in crate::app) fn text_box(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    hint: &str,
+    rows: usize,
+    limit: usize,
+) -> egui::Response {
+    let palette = theme::palette(ui.ctx());
+    // The box goes under the text, its look known once the field is drawn.
+    let backdrop = ui.painter().add(egui::Shape::Noop);
+    let inner = egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(8, 6))
+        .show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::multiline(text)
+                    .hint_text(hint)
+                    .frame(egui::Frame::new())
+                    .font(egui::FontId::proportional(text::LABEL))
+                    .desired_rows(rows)
+                    .char_limit(limit)
+                    .desired_width(ui.available_width()),
+            )
+        });
+    let response = inner.inner;
+    let focused = response.has_focus();
+    ui.painter().set(
+        backdrop,
+        egui::epaint::RectShape::new(
+            inner.response.rect,
+            6.,
+            palette.tone(if focused { Tone::BAR } else { Tone::CARD }),
+            Stroke::new(
+                1.,
+                if focused {
+                    palette.accent()
+                } else {
+                    palette.tone(Tone::RAISED)
+                },
+            ),
+            egui::StrokeKind::Inside,
+        ),
+    );
+    response
+}
 /// A search field: a rounded box with a magnifier, the text and a button that
 /// clears it. Returns the text field's response.
 pub(in crate::app) fn search_field(
