@@ -204,10 +204,21 @@ impl Editor {
         self.sync_undo();
     }
     /// Waits while Sync writes edits, which Undo could otherwise race.
+    /// In AI Retouch, the area painted and not sent comes first: its newest
+    /// stroke, until it is empty.
     pub(in crate::app) fn undo(&mut self) {
+        if self.undo_ai_stroke() {
+            return;
+        }
+        // Past the area into History: Redo is History's from here, as Undo
+        // went, so the strokes taken back stay so.
+        self.forget_undone_ai_strokes();
         self.command_history(false);
     }
     pub(in crate::app) fn redo(&mut self) {
+        if self.redo_ai_stroke() {
+            return;
+        }
         self.command_history(true);
     }
     /// Shared by UI shortcuts and external commands; false preserves a failed step.

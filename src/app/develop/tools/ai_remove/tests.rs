@@ -1439,3 +1439,50 @@ fn an_extension_stopping_mid_request_paints_the_area_again() {
     pump(e, "the request to end", settled);
     assert_eq!(e.ai_remove.draft.len(), 1, "painted again");
 }
+
+/// Undo takes back the area's strokes, newest first, before it reaches
+/// History; Redo paints them again; a new stroke ends what Redo can bring.
+#[test]
+fn undo_and_redo_take_back_and_repaint_the_area_s_strokes() {
+    use crate::app::develop::state::Tool;
+    let mut f = fixture(0.45);
+    let e = &mut f.editor;
+    e.module = crate::app::Module::Develop;
+    e.view.set_tool(Tool::AiRetouch);
+    // A step in History, which Undo reaches once the area is empty.
+    e.change_edit(Some(crate::app::history::Step::new("Exposure", "")), |r| {
+        r.exposure = 0.5
+    });
+    let (a, b) = (vec![[0.3, 0.3]], vec![[0.6, 0.6], [0.7, 0.6]]);
+    e.add_ai_stroke(a.clone());
+    e.add_ai_stroke(b.clone());
+    e.undo();
+    assert_eq!(e.ai_remove.draft, [a.clone()]);
+    assert_eq!(e.document.edit.recipe().exposure, 0.5, "History untouched");
+    e.redo();
+    assert_eq!(e.ai_remove.draft, [a.clone(), b.clone()]);
+    e.undo();
+    e.undo();
+    assert!(e.ai_remove.draft.is_empty());
+    assert_eq!(e.document.edit.recipe().exposure, 0.5);
+    // Redo brings strokes back only until something new is painted.
+    e.redo();
+    assert_eq!(e.ai_remove.draft, [a.clone()]);
+    e.add_ai_stroke(b.clone());
+    e.redo();
+    assert_eq!(e.ai_remove.draft.len(), 2, "nothing left to redo");
+    e.undo();
+    e.undo();
+    // Empty: Undo is History's again, and Redo with it, as Undo went.
+    e.undo();
+    assert_eq!(e.document.edit.recipe().exposure, 0.);
+    e.redo();
+    assert_eq!(e.document.edit.recipe().exposure, 0.5);
+    assert!(e.ai_remove.draft.is_empty(), "History's Redo, not a stroke");
+    e.add_ai_stroke(a.clone());
+    e.add_ai_stroke(b.clone());
+    // Outside AI Retouch, Undo is History's.
+    e.view.set_tool(Tool::Remove);
+    e.undo();
+    assert_eq!(e.ai_remove.draft.len(), 2);
+}

@@ -195,6 +195,8 @@ pub(in crate::app) struct AiRemove {
     /// The area sent with the request running or asked about, painted again
     /// if no spot is made of it.
     sent_draft: Vec<Vec<[f32; 2]>>,
+    /// Strokes Undo took back from the draft, newest last, for Redo.
+    undone_strokes: Vec<Vec<[f32; 2]>>,
     /// The tint showing the draft's coverage with its feather, by what it
     /// was drawn from ([`crate::app::develop::tools::retouch_tool`]).
     pub(in crate::app) draft_tint: Option<(u64, eframe::egui::TextureHandle)>,
@@ -217,6 +219,7 @@ impl Default for AiRemove {
             consent: None,
             draft: Vec::new(),
             sent_draft: Vec::new(),
+            undone_strokes: Vec::new(),
             draft_tint: None,
             deferred: Vec::new(),
             withdrawn: Vec::new(),
@@ -258,6 +261,7 @@ impl AiRemove {
         self.failed = None;
         self.draft.clear();
         self.sent_draft.clear();
+        self.undone_strokes.clear();
         self.consent = None;
     }
     /// The thread to wait for when quitting, handed to the shared deadline.
@@ -316,10 +320,47 @@ impl Editor {
             return;
         }
         self.ai_remove.draft.push(points);
+        // Painting anew ends what Redo can bring back.
+        self.ai_remove.undone_strokes.clear();
+    }
+    /// Undo in AI Retouch while an area is painted and not sent: takes back
+    /// its newest stroke, for Redo. False when there is none, for History.
+    pub(in crate::app) fn undo_ai_stroke(&mut self) -> bool {
+        if !self.ai_drafting() {
+            return false;
+        }
+        let Some(stroke) = self.ai_remove.draft.pop() else {
+            return false;
+        };
+        self.ai_remove.undone_strokes.push(stroke);
+        true
+    }
+    /// Redo in AI Retouch: paints again the stroke Undo took back last.
+    /// False when there is none, for History.
+    pub(in crate::app) fn redo_ai_stroke(&mut self) -> bool {
+        if !self.ai_drafting() {
+            return false;
+        }
+        let Some(stroke) = self.ai_remove.undone_strokes.pop() else {
+            return false;
+        };
+        self.ai_remove.draft.push(stroke);
+        true
+    }
+    /// Undo went past the area into History: what it took back of the area
+    /// can't be redone in History's place.
+    pub(in crate::app) fn forget_undone_ai_strokes(&mut self) {
+        self.ai_remove.undone_strokes.clear();
+    }
+    /// Whether AI Retouch is open in Develop, where Undo and Redo reach the
+    /// area painted first.
+    fn ai_drafting(&self) -> bool {
+        self.module == crate::app::Module::Develop && self.ai_retouching()
     }
     /// Forgets the area waiting to be sent.
     pub(in crate::app) fn clear_ai_draft(&mut self) {
         self.ai_remove.draft.clear();
+        self.ai_remove.undone_strokes.clear();
     }
     /// Why the area painted can't be sent now, for the drawer's button and
     /// what sending says; none when it can.
