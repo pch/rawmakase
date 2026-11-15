@@ -315,3 +315,38 @@ fn delete_says_what_each_choice_takes_when_some_files_cant_go() -> anyhow::Resul
     );
     Ok(())
 }
+
+/// Trashes the Loupe's photo with ⌘⌥⇧Delete and confirms.
+fn trash_in_loupe(e: &mut Editor) {
+    tap(e, Key::Delete, TRASH_KEYS);
+    settle(e);
+    tap(e, Key::Tab, Modifiers::NONE);
+    tap(e, Key::Enter, Modifiers::NONE);
+    settle(e);
+}
+
+#[test]
+fn the_loupe_shows_the_next_photo_after_its_photo_is_trashed() -> anyhow::Result<()> {
+    let (_d, mut e, trash) = editor(&["a.RAF", "b.RAF", "c.RAF"])?;
+    let (a, b, c) = (id(&e, "a.RAF"), id(&e, "b.RAF"), id(&e, "c.RAF"));
+    // Several photos selected in the grid, then the Loupe on the middle one:
+    // none of the others stands in for it once it is gone.
+    select(&mut e, &[a, c]);
+    let library = e.library.as_mut().unwrap();
+    library.make_active(b);
+    library.open_loupe();
+    frame(&mut e, Vec::new());
+    trash_in_loupe(&mut e);
+    assert!(trash.join("b.RAF").is_file());
+    let library = e.library.as_ref().unwrap();
+    assert!(library.loupe_open(), "the Loupe stays open");
+    assert_eq!(library.selected(), Some(c));
+    assert_eq!(library.selected_photos(), vec![c]);
+    // The last photo trashed: the one before it.
+    trash_in_loupe(&mut e);
+    assert!(trash.join("c.RAF").is_file());
+    let library = e.library.as_ref().unwrap();
+    assert!(library.loupe_open(), "the Loupe stays open");
+    assert_eq!(library.selected(), Some(a));
+    Ok(())
+}

@@ -1593,8 +1593,7 @@ impl Editor {
         let Some(library) = &mut self.library else {
             return;
         };
-        let changed: Vec<PhotoId> = removed.iter().chain(moved).copied().collect();
-        if let Err(e) = library.reread_after(&changed) {
+        if let Err(e) = library.reread_after(removed, moved) {
             self.messages.fail(format!(
                 "Done, but the catalog could not be read again: {e:#}"
             ));
