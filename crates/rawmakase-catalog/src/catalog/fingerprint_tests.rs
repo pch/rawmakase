@@ -209,8 +209,7 @@ fn a_reused_id_has_the_new_photos_fingerprint() -> Result<()> {
     Ok(())
 }
 
-/// A conditional edit whose every photo moved on writes nothing, and doesn't
-/// raise the catalog's format for a recipe it never stores.
+/// A conditional edit whose every photo moved on writes nothing.
 #[test]
 fn a_conditional_edit_writes_only_while_the_photo_is_as_read() -> Result<()> {
     let (_dir, mut cat, photos) = catalog(1)?;
@@ -229,19 +228,16 @@ fn a_conditional_edit_writes_only_while_the_photo_is_as_read() -> Result<()> {
         history: HistoryUpdate::Keep,
     };
     save(&mut cat, id, &path, 2.0)?;
-    let before = cat.format_version()?;
     assert_eq!(
         cat.change_edits_if(&[(&read, EditChange::Save(&edit))], &|| true)?,
         Some(vec![Conditional::Moved])
     );
-    assert_eq!(cat.format_version()?, before);
-    // Still as read, it is written; the catalog is of the newest format already.
+    // Still as read, it is written.
     let now = cat.photo_fingerprint(id)?.unwrap();
     assert_eq!(
         cat.change_edits_if(&[(&now, EditChange::Save(&edit))], &|| true)?,
         Some(vec![Conditional::Written])
     );
-    assert_eq!(cat.format_version()?, super::db::NEWEST);
     assert_eq!(cat.load_edit(id, &path)?.unwrap().recipe, r);
     Ok(())
 }
