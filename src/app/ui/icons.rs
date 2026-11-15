@@ -71,21 +71,31 @@ pub(in crate::app) fn install(ctx: &egui::Context) {
 /// Paints `icon` into `rect`, tinted. Nothing is drawn until the SVG is
 /// rasterized, which happens on first use at each size.
 pub(in crate::app) fn paint(painter: &egui::Painter, icon: Icon, rect: Rect, tint: Color32) {
-    paint_uri(painter, icon.uri(), rect, tint);
+    // The app's own icons are checked in their tests.
+    let _ = paint_uri(painter, icon.uri(), rect, tint);
 }
 
 /// Paints the white outline loaded at `uri` (an extension's icon) as
-/// [`paint`] paints the app's own.
-pub(in crate::app) fn paint_uri(painter: &egui::Painter, uri: &str, rect: Rect, tint: Color32) {
+/// [`paint`] paints the app's own. False when it can't be decoded, for the
+/// caller to draw something else; true while it is still loading.
+pub(in crate::app) fn paint_uri(
+    painter: &egui::Painter,
+    uri: &str,
+    rect: Rect,
+    tint: Color32,
+) -> bool {
     let ctx = painter.ctx();
     let ppp = ctx.pixels_per_point();
     let rect = pixel_aligned(rect, ppp);
     let hint = egui::SizeHint::Height((rect.height() * ppp).round() as u32);
-    if let Ok(egui::load::TexturePoll::Ready { texture }) =
-        ctx.try_load_texture(uri, egui::TextureOptions::LINEAR, hint)
-    {
-        let uv = Rect::from_min_max(egui::pos2(0., 0.), egui::pos2(1., 1.));
-        painter.image(texture.id, rect, uv, tint);
+    match ctx.try_load_texture(uri, egui::TextureOptions::LINEAR, hint) {
+        Ok(egui::load::TexturePoll::Ready { texture }) => {
+            let uv = Rect::from_min_max(egui::pos2(0., 0.), egui::pos2(1., 1.));
+            painter.image(texture.id, rect, uv, tint);
+            true
+        }
+        Ok(egui::load::TexturePoll::Pending { .. }) => true,
+        Err(_) => false,
     }
 }
 
@@ -112,13 +122,13 @@ pub(in crate::app) fn paint_uri_at(
     center: egui::Pos2,
     size: f32,
     tint: Color32,
-) {
+) -> bool {
     paint_uri(
         painter,
         uri,
         Rect::from_center_size(center, egui::Vec2::splat(size)),
         tint,
-    );
+    )
 }
 
 /// `rect` moved and sized to whole physical pixels, about the same centre.
@@ -136,6 +146,34 @@ fn pixel_aligned(rect: Rect, pixels_per_point: f32) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An extension's SVG that can't be decoded says so, for the rail to
+    /// draw its generic icon instead of nothing; a good one draws.
+    #[test]
+    fn an_icon_that_cant_be_decoded_says_so() {
+        let ctx = egui::Context::default();
+        install(&ctx);
+        let painter =
+            egui::Painter::new(ctx.clone(), egui::LayerId::background(), Rect::EVERYTHING);
+        let rect = Rect::from_min_size(egui::pos2(0., 0.), egui::vec2(16., 16.));
+        ctx.include_bytes("bytes://broken-icon.svg", b"<svg".to_vec());
+        ctx.include_bytes(
+            "bytes://good-icon.svg",
+            br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 4h16" stroke="#ffffff"/></svg>"##.to_vec(),
+        );
+        assert!(!paint_uri(
+            &painter,
+            "bytes://broken-icon.svg",
+            rect,
+            Color32::WHITE
+        ));
+        assert!(paint_uri(
+            &painter,
+            "bytes://good-icon.svg",
+            rect,
+            Color32::WHITE
+        ));
+    }
 
     fn on_pixel_grid(rect: Rect, pixels_per_point: f32) -> bool {
         let physical =

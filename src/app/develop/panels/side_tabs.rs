@@ -297,9 +297,15 @@ impl Editor {
                     .flatten();
                 for offer in self.rail_generators() {
                     let icon = self.generator_icon(&offer);
-                    let paint = |p: &egui::Painter, c: Pos2, tint: egui::Color32| match &icon {
-                        Some(uri) => icons::paint_uri_at(p, uri, c, 16., tint),
-                        None => icons::paint_at(p, Icon::Extensions, c, 16., tint),
+                    // The generic icon without one, or for one that can't be
+                    // decoded.
+                    let paint = |p: &egui::Painter, c: Pos2, tint: egui::Color32| {
+                        let drawn = icon
+                            .as_deref()
+                            .is_some_and(|uri| icons::paint_uri_at(p, uri, c, 16., tint));
+                        if !drawn {
+                            icons::paint_at(p, Icon::Extensions, c, 16., tint);
+                        }
                     };
                     let active = open_on.as_deref() == Some(offer.provenance.as_str());
                     let id = generator_id(&offer.provenance);
