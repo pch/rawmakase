@@ -20,7 +20,7 @@ anyhow.workspace = true
 flate2.workspace = true
 getrandom.workspace = true
 image.workspace = true
-rusqlite = { version = "0.41.0", features = ["bundled"] }
+rusqlite = { version = "0.42.0", features = ["bundled"] }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json.workspace = true
 sha2.workspace = true
@@ -29,7 +29,7 @@ tempfile.workspace = true
 
 [dev-dependencies]
 # Counting commits, for the throughput tests.
-rusqlite = { version = "0.41.0", features = ["bundled", "hooks"] }
+rusqlite = { version = "0.42.0", features = ["bundled", "hooks"] }
 rawmakase-fs = { path = "../rawmakase-fs", version = "0.1.0", features = ["test-support"] }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
