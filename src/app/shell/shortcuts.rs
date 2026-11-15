@@ -266,7 +266,7 @@ static STACKS: [Row; 4] = [
         "Move to the top of the stack",
     ),
 ];
-static GENERAL: [Row; 12] = [
+static GENERAL: [Row; 13] = [
     row(&[Keys(&b::LIBRARY)], "Library"),
     row(&[Keys(&b::DEVELOP)], "Develop"),
     row(&[Keys(&b::PANELS_SIDES)], "Hide / show the side panels"),
@@ -279,6 +279,7 @@ static GENERAL: [Row; 12] = [
         "Hide all but the photo; grid first in the Library",
     ),
     row(&[Keys(&b::SHOW_CHROME)], "Leave the whole-window mode"),
+    row(&[Keys(&b::FULLSCREEN)], "Full screen"),
     row(
         &[Keys(&b::DISMISS_MESSAGES)],
         "Dismiss the messages in the top bar",
@@ -551,9 +552,19 @@ fn yours(map: &Effective) -> Vec<Shortcut> {
 }
 
 /// The card's rows with their keys in `map`.
+/// A row with no key on this platform is left off, unless the user gave its
+/// command keys or took them away: F11's full screen is no key on a Mac.
 fn shortcuts(rows: &[Row], map: &Effective) -> Vec<Shortcut> {
     rows.iter()
-        .map(|row| (row_keys(row, map), row.action))
+        .map(|row| (row, row_keys(row, map)))
+        .filter(|(row, keys)| {
+            !keys.is_empty()
+                || row
+                    .parts
+                    .iter()
+                    .any(|p| matches!(p, Keys(b) | EveryKey(b) if map.overrides(b.command)))
+        })
+        .map(|(row, keys)| (keys, row.action))
         .collect()
 }
 
@@ -1110,8 +1121,12 @@ mod tests {
     #[test]
     fn with_the_defaults_the_card_reads_as_it_was_written() {
         use super::today;
+        // F11 is no key on a Mac, where the View menu has full screen.
         let today = |rows: &[(&str, &'static str)]| -> Vec<Shortcut> {
-            rows.iter().map(|(k, a)| (k.to_string(), *a)).collect()
+            rows.iter()
+                .filter(|(k, _)| !(cfg!(target_os = "macos") && *k == "F11"))
+                .map(|(k, a)| (k.to_string(), *a))
+                .collect()
         };
         for (name, generated, written) in [
             ("library", defaults(&LIBRARY), today(&today::LIBRARY)),

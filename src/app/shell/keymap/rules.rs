@@ -109,11 +109,16 @@ pub(in crate::app) static FIXED_KEYS: &[FixedKey] = &[
 ];
 
 /// The commands that run while a text field has the keys: Preferences, the
-/// shortcuts, the filters and dismissing the messages.
+/// shortcuts, the filters, dismissing the messages and full screen.
 pub(in crate::app) fn runs_while_typing(command: &str) -> bool {
     matches!(
         command,
-        "preferences" | "shortcuts" | "filters" | "messages:dismiss_all" | "shortcuts:clear_search"
+        "preferences"
+            | "shortcuts"
+            | "filters"
+            | "messages:dismiss_all"
+            | "shortcuts:clear_search"
+            | "fullscreen"
     )
 }
 
