@@ -311,20 +311,25 @@ impl Editor {
                             .then(|| self.ai_remove_offer().map(|(o, _)| o.provenance))
                             .flatten();
                         for offer in self.rail_generators() {
-                            let icon = self.generator_icon(&offer);
-                            // The generic icon without one, or for one that can't be
-                            // decoded.
-                            let paint = |p: &egui::Painter, c: Pos2, tint: egui::Color32| {
-                                let drawn = icon
-                                    .as_deref()
-                                    .is_some_and(|uri| icons::paint_uri_at(p, uri, c, 16., tint));
-                                if !drawn {
-                                    icons::paint_at(p, Icon::Extensions, c, 16., tint);
-                                }
+                            // Its extension's own icon: the app has none for it,
+                            // only a sign that it can't be shown.
+                            let broken = self.generator_icon_broken(&offer, 16.);
+                            let icon = self.generator_icon(&offer).filter(|_| !broken);
+                            let paint =
+                                |p: &egui::Painter, c: Pos2, tint: egui::Color32| match &icon {
+                                    Some(uri) => icons::paint_uri_at(p, uri, c, 16., tint),
+                                    None => {
+                                        icons::paint_at(p, Icon::Failed, c, 16., palette.warning())
+                                    }
+                                };
+                            let tip = if broken {
+                                format!("{} · its icon can't be shown", offer.name)
+                            } else {
+                                offer.name.clone()
                             };
                             let active = open_on.as_deref() == Some(offer.provenance.as_str());
                             let id = generator_id(&offer.provenance);
-                            if button(ui, y, id, active, photo, offer.name.clone(), &paint) {
+                            if button(ui, y, id, active, photo, tip, &paint) {
                                 click = Some(TabClick::Generator(offer.provenance.clone()));
                             }
                             y += 36.;

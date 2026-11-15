@@ -278,9 +278,7 @@ fn package_paths(manifest: &Manifest, target: &str) -> Vec<(&'static str, String
         paths.push(("extension.icon", icon.clone()));
     }
     for generator in &manifest.retouch_generators {
-        if let Some(icon) = &generator.icon {
-            paths.push(("retouch-generator.icon", icon.clone()));
-        }
+        paths.push(("retouch-generator.icon", generator.icon.clone()));
     }
     paths
 }

@@ -305,7 +305,7 @@ place = "generator"
 | `id` | — | Lowercase letters, digits and hyphens, unique among the retouch generators. Patches record `<extension>/<id>` as what made them |
 | `name` | — | Its tool's name: its rail button's tip, its drawer's title, its History step and its messages |
 | `uploads` | `false` | It sends what it is given off this computer (a hosted model). The app asks the user once per extension before the first request, and keeps the answer in `extensions.json` |
-| `icon` | a generic extension icon | Its rail icon: an SVG in the package, which must hold it. Drawn as RAWmakase's own icons are, a 24-unit square outline in white (`currentColor` is drawn white), tinted by the app |
+| `icon` | — | Its rail icon: an SVG in the package, which must hold it, at most 256 KB. Drawn as RAWmakase's own icons are, a 24-unit square outline in white (`currentColor` is drawn white), tinted by the app, which has none of its own for a generator. `cargo rawmakase package` refuses one it can't draw; one missing or broken anyway shows on the rail as a warning sign, its tooltip saying the icon can't be shown, and the generator still works |
 | `panel` | none | A [`[[panel]]`](#panel) with `place = "generator"` that the tool's drawer shows, for what the program needs besides the area (a mode, a prompt). Its values are the program's, from `panel.changed`; the app sends any still being typed before the request, so they reach the program first |
 
 Each enabled extension's generators follow the app's tools on Develop's rail,

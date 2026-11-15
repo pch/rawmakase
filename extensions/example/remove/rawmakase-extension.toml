@@ -33,42 +33,50 @@ icon = "icons/fill.svg"
 [[retouch-generator]]
 id = "local"
 name = "Local Fill"
+icon = "icons/fill.svg"
 
 # Answers as `fill` once `release` appears in its working folder, or
 # `cancelled` when cancelled first.
 [[retouch-generator]]
 id = "gate"
 name = "Gate"
+icon = "icons/fill.svg"
 
 # Needs the `key` setting first.
 [[retouch-generator]]
 id = "setup"
 name = "Setup"
+icon = "icons/fill.svg"
 
 # Declined on its content.
 [[retouch-generator]]
 id = "refuse"
 name = "Refuse"
+icon = "icons/fill.svg"
 
 # The service can't be reached.
 [[retouch-generator]]
 id = "unavailable"
 name = "Unavailable"
+icon = "icons/fill.svg"
 
 # Names its model with nothing.
 [[retouch-generator]]
 id = "unnamed"
 name = "Unnamed"
+icon = "icons/fill.svg"
 
 # Exits.
 [[retouch-generator]]
 id = "crash"
 name = "Crash"
+icon = "icons/fill.svg"
 
 # Fills as `local` with what its panel holds, which it needs.
 [[retouch-generator]]
 id = "ask"
 name = "Ask"
+icon = "icons/fill.svg"
 panel = "ask"
 
 [[panel]]

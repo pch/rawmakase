@@ -379,15 +379,11 @@ fn each_generator_is_a_rail_tool_named_and_drawn_by_its_extension() {
     e.view.set_tool(Tool::Remove);
     assert_eq!(e.drawer_caption().as_deref(), Some("Spot Removal"));
 
-    // The icon is the package's SVG, with `currentColor` drawn white; a
-    // generator without one, or whose file can't be read, gets none (the
-    // rail draws a generic one).
+    // The icon is the extension's SVG, with `currentColor` drawn white.
     assert_eq!(
-        fill.icon.as_ref().and_then(|p| p.canonicalize().ok()),
+        fill.icon.canonicalize().ok(),
         f.folder.join("icons/fill.svg").canonicalize().ok()
     );
-    assert_eq!(local.icon, None);
-    assert_eq!(e.generator_icon(&local), None);
     let uri = e.generator_icon(&fill).expect("the fill icon");
     assert!(uri.ends_with(".svg"), "{uri}");
     let Ok(egui::load::BytesPoll::Ready { bytes, .. }) = e.context.try_load_bytes(&uri) else {
@@ -399,8 +395,19 @@ fn each_generator_is_a_rail_tool_named_and_drawn_by_its_extension() {
         "{svg}"
     );
     let mut gone = fill.clone();
-    gone.icon = Some(f.folder.join("icons/gone.svg"));
+    gone.icon = f.folder.join("icons/gone.svg");
     assert_eq!(e.generator_icon(&gone), None);
+
+    // An icon missing or that can't be drawn shows as one that failed; the
+    // generator still runs. (The app installs egui's SVG loader as it starts.)
+    crate::app::ui::icons::install(&e.context);
+    assert!(!e.generator_icon_broken(&fill, 16.));
+    assert!(e.generator_icon_broken(&gone, 16.));
+    std::fs::write(f.folder.join("icons/broken.svg"), "<svg").unwrap();
+    let mut broken = fill.clone();
+    broken.icon = f.folder.join("icons/broken.svg");
+    assert!(e.generator_icon_broken(&broken, 16.));
+    assert_eq!(e.ai_remove_offer().map(|(_, why)| why), Some(None));
 }
 
 /// More generators than the window's height holds scroll the rail: the last
@@ -415,7 +422,12 @@ fn a_rail_of_many_generators_scrolls() {
         include_str!("../../../../../extensions/example/remove/rawmakase-extension.toml");
     let header = &manifest[..manifest.find("[[retouch-generator]]").unwrap()];
     let many: String = (0..20)
-        .map(|i| format!("[[retouch-generator]]\nid = \"g{i}\"\nname = \"Generator {i}\"\n\n"))
+        .map(|i| {
+            format!(
+                "[[retouch-generator]]\nid = \"g{i}\"\nname = \"Generator {i}\"\n\
+                 icon = \"icons/fill.svg\"\n\n"
+            )
+        })
         .collect();
     std::fs::write(
         f.folder

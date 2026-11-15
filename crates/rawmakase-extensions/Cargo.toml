@@ -23,6 +23,9 @@ zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 flate2.workspace = true
 # GitHub releases; rustls with bundled roots needs no system TLS library.
 ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+# Checking a retouch generator's SVG icon parses, as the app's renderer reads
+# it; without text, which an icon has no use for.
+usvg = { version = "0.45", default-features = false }
 
 # The process group a program runs in: setpgid, killpg and waitid, which
 # std doesn't offer; and request buffers in shared memory (memfd_create,

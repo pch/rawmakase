@@ -65,7 +65,7 @@ pub(in crate::app) struct Offer {
     /// The panel of its own its tool's drawer shows (`place = "generator"`).
     pub(in crate::app) panel: Option<String>,
     /// Its rail icon, an SVG in the extension's folder.
-    pub(in crate::app) icon: Option<std::path::PathBuf>,
+    pub(in crate::app) icon: std::path::PathBuf,
 }
 
 impl Host {
@@ -85,7 +85,10 @@ impl Host {
                         provenance: g.provenance(e.id()),
                         extension_name: e.name().to_string(),
                         panel: g.panel.clone(),
-                        icon: g.icon.as_ref().map(|icon| e.dir.join(icon)),
+                        icon: g
+                            .icon
+                            .split('/')
+                            .fold(e.dir.clone(), |p, part| p.join(part)),
                     },
                     why.clone(),
                 ));

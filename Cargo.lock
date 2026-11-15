@@ -4131,6 +4131,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "ureq",
+ "usvg",
  "windows-sys 0.61.2",
  "zip",
 ]

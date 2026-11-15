@@ -67,6 +67,9 @@ people hit:
   store, sent to the program as a string; never log it). The app starts the
   program with `RAWMAKASE_EXTENSION_API`, and the SDK serves that mode. API 2
   and up also make the program's reader strict (step 6).
+- **Retouch generators** need an `icon`: an SVG in the package, a 24-unit
+  outline in white or `currentColor`, which is the tool's rail button.
+  `cargo rawmakase package` refuses one RAWmakase can't draw.
 - **Sources** (watched folders, tethering) need `api = 3` and
   `[program] start = "with-app"`. A source is off until the user turns it on
   for a catalog on the extension's page, so a freshly installed one reports

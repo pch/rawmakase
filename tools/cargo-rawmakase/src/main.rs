@@ -186,6 +186,8 @@ fn package(
     include: &[PathBuf],
 ) -> Result<PathBuf> {
     let manifest = manifest(dir)?;
+    // An icon the app can't draw would stop the extension once installed.
+    rawmakase_extensions::check_icons(&manifest, dir).map_err(|e| e.to_string())?;
     let manifest_bytes = std::fs::read(dir.join(manifest::FILE)).map_err(|e| e.to_string())?;
     let mut files = vec![(manifest::FILE.to_string(), manifest_bytes)];
     let target = match (&manifest.program, target) {
@@ -212,12 +214,7 @@ fn package(
         files.push((path, bytes));
     }
     let mut extra: Vec<String> = manifest.extension.icon.iter().cloned().collect();
-    extra.extend(
-        manifest
-            .retouch_generators
-            .iter()
-            .filter_map(|g| g.icon.clone()),
-    );
+    extra.extend(manifest.retouch_generators.iter().map(|g| g.icon.clone()));
     for path in include {
         let name = path
             .to_str()
@@ -378,5 +375,38 @@ mod tests {
         assert!(windows.ends_with("dev.me.tool-0.1.0-windows-x86_64.rmext"));
         assert!(package(&ext, None, Some(&dir.path().join("missing")), &[]).is_err());
         assert!(package(&ext, None, Some(&built), &[PathBuf::from("../escape")]).is_err());
+    }
+
+    /// A retouch generator's icon goes in the package, and only one the app
+    /// can draw: a broken one would stop the extension once installed.
+    #[test]
+    fn a_package_holds_its_generators_icon_once_it_is_drawable() {
+        let dir = tempfile::tempdir().unwrap();
+        let ext = dir.path().join("tool");
+        new(&ext, Template::Command, "dev.me.tool", ">=0.1").unwrap();
+        let text = std::fs::read_to_string(ext.join(manifest::FILE)).unwrap();
+        let text = text
+            .replace("api = 1", "api = 3")
+            .replace("api = 2", "api = 3")
+            + "\n[[retouch-generator]]\nid = \"fill\"\nname = \"Fill\"\nicon = \"icons/fill.svg\"\n";
+        std::fs::write(ext.join(manifest::FILE), text).unwrap();
+        let built = dir.path().join("built");
+        std::fs::write(&built, b"a program").unwrap();
+        std::fs::create_dir(ext.join("icons")).unwrap();
+        std::fs::write(ext.join("icons/fill.svg"), "<svg").unwrap();
+        let error = package(&ext, None, Some(&built), &[]).unwrap_err();
+        assert!(error.contains("can't be drawn"), "{error}");
+        std::fs::write(
+            ext.join("icons/fill.svg"),
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M4 4h16\" stroke=\"#ffffff\"/></svg>",
+        )
+        .unwrap();
+        let path = package(&ext, None, Some(&built), &[]).unwrap();
+        let store = rawmakase_extensions::store::Store::new(dir.path().join("data"));
+        let source = rawmakase_extensions::state::Source::File { path: path.clone() };
+        let installed = store
+            .install(&path, &source, &semver::Version::new(0, 4, 0))
+            .unwrap();
+        assert!(installed.dir.join("icons/fill.svg").is_file());
     }
 }

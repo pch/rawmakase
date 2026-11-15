@@ -315,6 +315,14 @@ impl Editor {
             .map(|(o, _)| o)
             .collect()
     }
+    /// Whether `offer`'s icon can't be shown `size` points square: missing,
+    /// unreadable or not an SVG the app can draw. The rail then shows
+    /// [`Icon::Failed`](crate::app::ui::icons::Icon::Failed) and says so; the
+    /// app has no icon of its own for a generator.
+    pub(in crate::app) fn generator_icon_broken(&mut self, offer: &Offer, size: f32) -> bool {
+        self.generator_icon(offer)
+            .is_none_or(|uri| crate::app::ui::icons::broken(&self.context, &uri, size))
+    }
     /// A generator's rail button: opens the tool on it, or closes the tool
     /// when it is already open on it.
     pub(in crate::app) fn toggle_generator(&mut self, provenance: &str) {
@@ -336,20 +344,18 @@ impl Editor {
             self.view.toggle(Tool::AiRetouch);
         }
     }
-    /// The address of `offer`'s rail icon, loaded for egui to draw; none
-    /// without one or when its file can't be read (the rail draws a generic
-    /// icon). The file is read once; `currentColor` is drawn white, as the
-    /// app's own icons are, for the rail to tint.
+    /// The address of `offer`'s rail icon, loaded for egui to draw; none when
+    /// its file is missing, too large or can't be read.
+    /// The file is read once; `currentColor` is drawn white, as the app's own
+    /// icons are, for the rail to tint.
     pub(in crate::app) fn generator_icon(&mut self, offer: &Offer) -> Option<String> {
-        /// Past this, a file isn't an icon.
-        const MAX_ICON: u64 = 256 * 1024;
-        let path = offer.icon.as_ref()?;
+        let path = &offer.icon;
         if let Some(uri) = self.ai_remove.icons.get(path) {
             return uri.clone();
         }
         let svg = std::fs::metadata(path)
             .ok()
-            .filter(|m| m.len() <= MAX_ICON)
+            .filter(|m| m.len() <= rawmakase_extensions::MAX_ICON)
             .and_then(|_| std::fs::read_to_string(path).ok());
         let uri = svg.map(|svg| {
             let n = self.ai_remove.icons.len();
