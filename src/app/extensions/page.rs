@@ -21,7 +21,7 @@ use crate::app::ui::theme;
 use crate::app::ui::widgets::{form_row, menu_item, modal_frame, primary_button};
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use rawmakase_extensions::github;
-use rawmakase_extensions::protocol::manifest::{Files, SettingControl};
+use rawmakase_extensions::protocol::manifest::{Files, Setting, SettingControl};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -871,6 +871,9 @@ impl Editor {
         if !m.settings.is_empty() {
             group(ui, "Options");
             for s in &m.settings {
+                if !setting_shown(&m.settings, &settings, s) {
+                    continue;
+                }
                 let value = settings.get(&s.id).cloned().unwrap_or(Value::Null);
                 let label = s.name.clone().unwrap_or_else(|| s.id.clone());
                 let mut set = None;
@@ -1776,57 +1779,103 @@ fn section_tabs(ui: &mut egui::Ui, sections: &[Section], current: Section) -> Op
     chosen
 }
 
-/// A setting's help line, its `https://` addresses as links that open in the
-/// browser, so an extension can point to how to set it up.
+/// A setting's help line, its `https://` links opening in the browser, so an
+/// extension can point to how to set it up: written `[text](https://…)` they
+/// show their text, written bare their address.
 fn setting_help(ui: &mut egui::Ui, text: &str) {
     let parts = help_parts(text);
-    if let [(text, false)] = parts[..] {
+    if let [(text, None)] = parts[..] {
         return hint(ui, text);
     }
     let muted = crate::app::ui::theme::palette(ui.ctx()).tone(crate::app::ui::design::Tone::MUTED);
     let size = crate::app::ui::design::text::LABEL;
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 0.;
-        for (part, link) in parts {
-            if link {
-                if ui.link(egui::RichText::new(part).size(size)).clicked() {
-                    let _ = crate::platform::web::open(part);
+        for (part, url) in parts {
+            match url {
+                Some(url) => {
+                    if ui
+                        .link(egui::RichText::new(part).size(size))
+                        .on_hover_text(url)
+                        .clicked()
+                    {
+                        let _ = crate::platform::web::open(url);
+                    }
                 }
-            } else {
-                ui.label(egui::RichText::new(part).size(size).color(muted));
+                None => {
+                    ui.label(egui::RichText::new(part).size(size).color(muted));
+                }
             }
         }
     });
 }
 
-/// `text` cut into its runs of plain text and its `https://` addresses
-/// (`true`), an address ending before whitespace and any closing punctuation.
-fn help_parts(text: &str) -> Vec<(&str, bool)> {
+/// `text` cut into its runs of plain text (`None`) and its links, each with
+/// what it shows and its `https://` address: `[text](https://…)`, or a bare
+/// address ending before whitespace and any closing punctuation.
+fn help_parts(text: &str) -> Vec<(&str, Option<&str>)> {
     const SCHEME: &str = "https://";
+    /// The `[label](https://…)` at the start of `s`: its label, address and
+    /// length.
+    fn written(s: &str) -> Option<(&str, &str, usize)> {
+        let rest = s.strip_prefix('[')?;
+        let close = rest.find(']')?;
+        let label = &rest[..close];
+        let after = rest[close + 1..].strip_prefix('(')?;
+        let end = after.find(')')?;
+        let url = &after[..end];
+        let shaped = !label.trim().is_empty()
+            && !label.contains('[')
+            && url.starts_with(SCHEME)
+            && url.len() > SCHEME.len()
+            && !url.contains(char::is_whitespace);
+        shaped.then_some((label, url, 1 + close + 2 + end + 1))
+    }
     let mut parts = Vec::new();
     // Where the plain text not yet pushed starts, and where to look next.
     let (mut plain, mut from) = (0, 0);
-    while let Some(found) = text[from..].find(SCHEME) {
+    while let Some(found) = text[from..].find(['[', 'h']) {
         let start = from + found;
         let tail = &text[start..];
-        let end = tail.find(char::is_whitespace).unwrap_or(tail.len());
-        let url = tail[..end].trim_end_matches(['.', ',', ';', ':', '!', '?', ')']);
-        if url.len() <= SCHEME.len() {
-            // A bare prefix stays text; an address may still follow.
-            from = start + SCHEME.len();
+        let link = if let Some((label, url, len)) = written(tail) {
+            Some((label, url, len))
+        } else if tail.starts_with(SCHEME) {
+            let end = tail.find(char::is_whitespace).unwrap_or(tail.len());
+            let url = tail[..end].trim_end_matches(['.', ',', ';', ':', '!', '?', ')']);
+            (url.len() > SCHEME.len()).then_some((url, url, url.len()))
+        } else {
+            None
+        };
+        let Some((label, url, len)) = link else {
+            // Not a link here: on past this character.
+            from = start + tail.chars().next().map_or(1, char::len_utf8);
             continue;
-        }
+        };
         if start > plain {
-            parts.push((&text[plain..start], false));
+            parts.push((&text[plain..start], None));
         }
-        parts.push((url, true));
-        plain = start + url.len();
+        parts.push((label, Some(url)));
+        plain = start + len;
         from = plain;
     }
     if plain < text.len() || parts.is_empty() {
-        parts.push((&text[plain..], false));
+        parts.push((&text[plain..], None));
     }
     parts
+}
+
+/// Whether setting `s` shows: always, or while the setting its
+/// `visible-when` names has that value (its default while unset).
+fn setting_shown(all: &[Setting], values: &serde_json::Map<String, Value>, s: &Setting) -> bool {
+    let Some(when) = &s.visible_when else {
+        return true;
+    };
+    let value = values.get(&when.setting).or_else(|| {
+        all.iter()
+            .find(|o| o.id == when.setting)
+            .map(|o| &o.default)
+    });
+    value == Some(&when.equals)
 }
 
 #[cfg(test)]
@@ -1868,28 +1917,100 @@ mod tests {
 
     #[test]
     fn a_help_line_s_web_addresses_are_links() {
+        let link = |text, url| (text, Some(url));
         assert_eq!(
             help_parts("No account? See https://example.com/key.md, then paste it."),
             [
-                ("No account? See ", false),
-                ("https://example.com/key.md", true),
-                (", then paste it.", false),
+                ("No account? See ", None),
+                link("https://example.com/key.md", "https://example.com/key.md"),
+                (", then paste it.", None),
             ]
         );
-        // Only https: anything else stays text.
+        // A link written [text](address) shows its text.
         assert_eq!(
-            help_parts("http://example.com file:///etc"),
-            [("http://example.com file:///etc", false)]
+            help_parts("From fal.ai. [How to get one](https://example.com/key.md#fal)."),
+            [
+                ("From fal.ai. ", None),
+                link("How to get one", "https://example.com/key.md#fal"),
+                (".", None),
+            ]
         );
-        assert_eq!(help_parts("Plain."), [("Plain.", false)]);
+        // Only https: anything else stays text, written either way.
+        assert_eq!(
+            help_parts("http://example.com file:///etc [x](http://example.com)"),
+            [(
+                "http://example.com file:///etc [x](http://example.com)",
+                None
+            )]
+        );
+        assert_eq!(
+            help_parts("Plain [brackets] (too)."),
+            [("Plain [brackets] (too).", None)]
+        );
+        // With no text, the address in it is a bare one.
+        assert_eq!(
+            help_parts("[](https://example.com)"),
+            [
+                ("[](", None),
+                link("https://example.com", "https://example.com"),
+                (")", None),
+            ]
+        );
         // A bare prefix is text, and the address after it still a link.
         assert_eq!(
             help_parts("Use https:// URLs; see https://example.com/setup"),
             [
-                ("Use https:// URLs; see ", false),
-                ("https://example.com/setup", true),
+                ("Use https:// URLs; see ", None),
+                link("https://example.com/setup", "https://example.com/setup"),
             ]
         );
+    }
+
+    #[test]
+    fn a_setting_shows_while_the_one_it_names_has_its_value() {
+        let manifest = rawmakase_extensions::protocol::manifest::Manifest::parse(
+            r#"[extension]
+id = "dev.example.keys"
+name = "Keys"
+version = "0.1.0"
+rawmakase = ">=0.5"
+api = 3
+
+[program]
+path = "bin/keys"
+
+[[setting]]
+id = "provider"
+control = { segmented = ["fal.ai", "Replicate"] }
+default = "fal.ai"
+
+[[setting]]
+id = "fal-key"
+control = "secret"
+default = ""
+visible-when = { setting = "provider", equals = "fal.ai" }
+
+[[setting]]
+id = "replicate-token"
+control = "secret"
+default = ""
+visible-when = { setting = "provider", equals = "Replicate" }
+"#,
+        )
+        .unwrap();
+        let shown = |values: serde_json::Map<String, Value>| -> Vec<&str> {
+            manifest
+                .settings
+                .iter()
+                .filter(|s| setting_shown(&manifest.settings, &values, s))
+                .map(|s| s.id.as_str())
+                .collect()
+        };
+        // Unset: the other setting's default decides.
+        assert_eq!(shown(Default::default()), ["provider", "fal-key"]);
+        let mut values = serde_json::Map::new();
+        values.insert("provider".into(), Value::String("Replicate".into()));
+        assert_eq!(shown(values), ["provider", "replicate-token"]);
     }
 
     #[test]

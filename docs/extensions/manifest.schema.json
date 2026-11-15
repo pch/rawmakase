@@ -510,12 +510,41 @@
             "string",
             "null"
           ]
+        },
+        "visible-when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SettingCondition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Shown only while another setting has a value, for example a key only\nwhile the service it is for is chosen. Hidden, it keeps its value."
         }
       },
       "required": [
         "id",
         "control",
         "default"
+      ],
+      "type": "object"
+    },
+    "SettingCondition": {
+      "additionalProperties": false,
+      "description": "A `[[setting]]`'s `visible-when`: another of the extension's settings\n(not a secret, whose value the app never shows) and the value it must\nhave.",
+      "properties": {
+        "equals": {
+          "description": "The value it must have, of its control's type."
+        },
+        "setting": {
+          "description": "The other setting's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "setting",
+        "equals"
       ],
       "type": "object"
     },

@@ -214,6 +214,26 @@ pub struct Setting {
     /// A slider's or a number's unit, for example `%`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
+    /// Shown only while another setting has a value, for example a key only
+    /// while the service it is for is chosen. Hidden, it keeps its value.
+    #[serde(
+        default,
+        rename = "visible-when",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub visible_when: Option<SettingCondition>,
+}
+
+/// A `[[setting]]`'s `visible-when`: another of the extension's settings
+/// (not a secret, whose value the app never shows) and the value it must
+/// have.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SettingCondition {
+    /// The other setting's id.
+    pub setting: String,
+    /// The value it must have, of its control's type.
+    pub equals: Value,
 }
 
 /// How a setting is edited: a host-drawn control
@@ -703,6 +723,33 @@ impl Manifest {
             }
             if setting.step.is_some_and(|s| !(s.is_finite() && s > 0.0)) {
                 return fail(format!("setting {id}: its step is not positive"));
+            }
+            if let Some(when) = &setting.visible_when {
+                let other = self
+                    .settings
+                    .iter()
+                    .find(|s| s.id == when.setting && s.id != *id);
+                match other {
+                    None => {
+                        return fail(format!(
+                            "setting {id}: visible-when names no other setting {:?}",
+                            when.setting
+                        ));
+                    }
+                    Some(other) if other.control == SettingControl::Secret => {
+                        return fail(format!(
+                            "setting {id}: visible-when can't read secret {:?}",
+                            when.setting
+                        ));
+                    }
+                    Some(other) if !other.control.accepts(&when.equals) => {
+                        return fail(format!(
+                            "setting {id}: {} doesn't fit setting {:?}",
+                            when.equals, when.setting
+                        ));
+                    }
+                    Some(_) => {}
+                }
             }
         }
         for command in &self.commands {
@@ -1238,6 +1285,48 @@ uploads = true
         assert!(remover("uploads = true", "uploads = true\nmodel = \"x\"").is_err());
         assert!(SettingControl::Secret.accepts(&Value::String("k".into())));
         assert!(!SettingControl::Secret.accepts(&Value::Null));
+    }
+
+    #[test]
+    fn a_setting_may_show_only_while_another_has_a_value() {
+        let provider = "[[setting]]\nid = \"provider\"\ncontrol = { segmented = [\"fal.ai\", \"Replicate\"] }\ndefault = \"fal.ai\"\n\n[[setting]]\nid = \"fal-key\"";
+        let shown = |when: &str| {
+            remover(
+                "[[setting]]\nid = \"fal-key\"",
+                &provider.replace(
+                    "id = \"fal-key\"",
+                    &format!("id = \"fal-key\"\nvisible-when = {when}"),
+                ),
+            )
+        };
+        let manifest = shown("{ setting = \"provider\", equals = \"fal.ai\" }").unwrap();
+        let key = &manifest.settings[1];
+        assert_eq!(
+            key.visible_when,
+            Some(SettingCondition {
+                setting: "provider".into(),
+                equals: Value::String("fal.ai".into()),
+            })
+        );
+        assert_eq!(manifest.settings[0].visible_when, None);
+        let written = toml::to_string(&manifest).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+        // Another setting of this extension, never itself or a secret, with a
+        // value it can hold.
+        for broken in [
+            "{ setting = \"nope\", equals = \"fal.ai\" }",
+            "{ setting = \"fal-key\", equals = \"\" }",
+            "{ setting = \"provider\", equals = \"Elsewhere\" }",
+            "{ setting = \"provider\", equals = 1 }",
+            "{ control = \"provider\", equals = \"fal.ai\" }",
+        ] {
+            assert!(shown(broken).is_err(), "{broken}");
+        }
+        let on_a_secret = REMOVER.replace(
+            "[retouch-generator]]",
+            "[setting]]\nid = \"other\"\ncontrol = \"text\"\ndefault = \"\"\nvisible-when = { setting = \"fal-key\", equals = \"\" }\n\n[[retouch-generator]]",
+        );
+        assert!(Manifest::parse(&on_a_secret).is_err());
     }
 
     #[test]

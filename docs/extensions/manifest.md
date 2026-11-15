@@ -101,11 +101,12 @@ Settings shown on the extension's page in Preferences, stored in
 | --- | --- | --- |
 | `id` | yes | Lowercase letters, digits and hyphens, unique among the settings |
 | `name` | no | The label; the id without one |
-| `help` | no | A line under it; an `https://` address in it is a link |
+| `help` | no | A line under it. A link written `[text](https://…)` shows its text; a bare `https://` address is a link too |
 | `control` | yes | How it is edited (below) |
 | `default` | yes | Its value until changed; must fit the control |
 | `step` | no | A slider's step |
 | `unit` | no | A slider's or a number's unit |
+| `visible-when` | no | `{ setting = "<id>", equals = <value> }`: shown only while another of its settings (not a secret) has that value, for example a key only while its service is chosen. Hidden, it keeps its value and the program still gets it |
 
 `control` is one of: `{ slider = [min, max] }`, `{ number = [min, max] }`,
 `"angle"`, `"toggle"`, `{ choice = ["a", "b"] }`, `{ segmented = ["a", "b"] }`,
