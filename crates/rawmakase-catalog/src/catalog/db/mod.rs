@@ -69,9 +69,10 @@ pub(in crate::catalog) const HDR: i64 = 6;
 /// It is also the first that may hold generated spots (an edit, a History state or
 /// a snapshot with a generated patch), which releases before it can't render and
 /// would drop when saving. No release opened version 7 before generated spots,
-/// and builds between refuse such a recipe by its schema
-/// ([`saved_format`](crate::model::saved_format)), so it needs no version of its
-/// own.
+/// so it needs no version of its own. Builds between can't read such a recipe (a
+/// `Generate` mode and a `patch` field they don't know): one in the edit or its
+/// History protects the edit, and one in a snapshot leaves that snapshot out of
+/// the list; either way its rows stay as stored, the spot never dropped.
 pub(in crate::catalog) const PROFILE_ASSETS: i64 = 7;
 /// The newest version this release opens, and the one it creates and upgrades
 /// catalogs to.
