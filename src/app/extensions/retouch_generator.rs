@@ -1,6 +1,6 @@
 //! Extensions' retouch generators (`[[retouch-generator]]`,
 //! docs/extensions/manifest.md) from the app's side: the generators the
-//! Remove tool offers as AI Remove (experimental), whether one can run, the
+//! AI Retouch tool offers as its modes (experimental), whether one can run, the
 //! user's consent to send pixels to the service behind it, and its
 //! `retouch.generate` requests.
 //!
@@ -48,7 +48,7 @@ pub(in crate::app) const GENERATE_DEADLINE: Duration = Duration::from_secs(200);
 /// [`image_key`].
 const INPUT_VERSION: u32 = 1;
 
-/// One of an extension's retouch generators, as the Remove tool offers it.
+/// One of an extension's retouch generators, as the AI Retouch tool offers it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::app) struct Offer {
     pub(in crate::app) extension: String,

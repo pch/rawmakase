@@ -33,6 +33,7 @@ fastframe_icons::icons! {
         SurveyView => "layout-dashboard",
         Presets => "layers",
         Bandage => "bandage",
+        WandSparkles => "wand-sparkles",
         MaskTool => "circle-dot-dashed",
         History => "history",
         Edit => "sliders-horizontal",

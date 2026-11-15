@@ -164,13 +164,13 @@ impl Editor {
     /// Whether the open tool has a size, which the wheel over the photo and `[` `]`
     /// change.
     pub(in crate::app) fn tool_has_size(&self) -> bool {
-        self.view.is(Tool::Remove) || self.view.is(Tool::Mask) || self.view.is(Tool::RedEye)
+        self.view.retouching() || self.view.is(Tool::Mask) || self.view.is(Tool::RedEye)
     }
     /// Sizes the open tool's brush or circle (or its feather) by `scroll`, with the
     /// limits `[` and `]` keep. The selected spot follows, as it does for the keys; the
     /// mask brush changes only while one is shown.
     pub(in crate::app) fn scroll_tool_size(&mut self, scroll: Scroll) {
-        if self.view.is(Tool::Remove) {
+        if self.view.retouching() {
             // A spot being moved takes its size from where the drag began.
             if self.view.retouch.is_dragging() {
                 return;

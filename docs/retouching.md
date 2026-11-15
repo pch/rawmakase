@@ -4,8 +4,8 @@ Status: experimental and early. It works, but none of it is measured against
 Lightroom yet, and details may change.
 
 The Remove tool (Q) works like Lightroom Classic's Remove panel in Heal and Clone
-modes. Its third mode, AI Remove, is experimental and comes from an extension
-([below](#ai-remove-and-ai-replace-experimental)).
+modes. AI Remove and AI Replace are a tool of their own, AI Retouch, experimental
+and from an extension ([below](#ai-remove-and-ai-replace-experimental)).
 
 ## Using it
 
@@ -71,12 +71,19 @@ AI Remove and AI Replace regenerate what you paint over with a hosted model,
 through an extension that holds your own API key. It isn't bundled: install **AI
 Retouch** from Preferences > Extensions > Available (`dev.pch.ai-remove`,
 [github.com/pch/rawmakase-ai-retouch](https://github.com/pch/rawmakase-ai-retouch)),
-set the key on its page, and the Remove tool's Mode offers **AI Remove** and **AI
-Replace**. Without the extension the drawer says where to get it. Any extension
-declaring a `[[retouch-generator]]` ([manifest](extensions/manifest.md#retouch-generator))
-is offered the same way, each generator a mode of its own; RAWmakase knows no
+set the key on its page, and the rail gains **AI Retouch** (a magic wand, after
+the Remove tool), whose Mode offers **AI Remove** and **AI Replace**. Without the
+extension the Remove drawer says where to get it. Any extension declaring a
+`[[retouch-generator]]` ([manifest](extensions/manifest.md#retouch-generator)) is
+offered the same way, each generator a mode of its own; RAWmakase knows no
 provider. Below, "AI Remove" stands for any of them.
 
+- **Its own tool.** AI Retouch is on the rail only while an enabled extension
+  offers a generator, and closes if the last one goes. Its spots and the Remove
+  tool's are one list, rendered in order, but each tool shows, selects, deletes and
+  resets only its own: AI spots in AI Retouch, Heal and Clone spots in the Remove
+  tool. Both share the brush (size, feather, opacity), the keys (`[` `]`, Delete,
+  H, A) and Visualize Spots.
 - **Text.** A generator that takes text (its `prompt`) has a field under Mode: AI
   Remove's is optional ("remove the dogs, keep the people"), AI Replace's is needed
   ("a wooden bench"). With a needed field empty, painting does nothing and says

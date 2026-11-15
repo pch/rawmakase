@@ -115,7 +115,8 @@ impl Editor {
         }
         match self.view.tool() {
             Tool::Crop => Some(KeyTool::Crop),
-            Tool::Remove => Some(KeyTool::Remove),
+            // The same keys: brush size, Delete, pins and Visualize Spots.
+            Tool::Remove | Tool::AiRetouch => Some(KeyTool::Remove),
             Tool::RedEye => Some(KeyTool::RedEye),
             Tool::Mask => Some(KeyTool::Mask),
             Tool::Guided => Some(KeyTool::Guided),
@@ -1624,7 +1625,7 @@ impl Editor {
             if self.view.is(Tool::Crop) {
                 self.crop_keys(ctx);
             }
-            if self.view.is(Tool::Remove) {
+            if self.view.retouching() {
                 self.retouch_keys(ctx);
             }
             if self.view.is(Tool::RedEye) {

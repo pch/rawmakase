@@ -56,7 +56,7 @@ impl Editor {
         let Some((offer, why)) = offer else {
             return;
         };
-        if self.view.retouch.mode != crate::model::retouch::RetouchMode::Generate {
+        if !self.ai_retouching() {
             return;
         }
         hint(

@@ -364,10 +364,57 @@ fn the_generator_chosen_is_the_one_asked() {
     assert_eq!(describe.prompt, PromptUse::Required);
     assert_eq!(describe.prompt_hint.as_deref(), Some("What to put there"));
     e.choose_ai_generator(&describe);
-    assert_eq!(e.view.retouch.mode, RetouchMode::Generate);
     assert_eq!(e.ai_remove_offer().unwrap().0, describe);
     e.view.retouch.generator = Some("dev.rawmakase.remove/gone".into());
     assert_eq!(e.ai_remove_offer().unwrap().0.generator, "fill");
+}
+
+/// AI Retouch is a rail tool of its own, there only while a generator is
+/// offered; it and Spot Removal each show, select and reset only their own
+/// spots, all kept in one ordered list.
+#[test]
+fn ai_retouch_is_its_own_tool_with_its_own_spots() {
+    use crate::app::develop::state::Tool;
+    let mut f = fixture(0.24);
+    let e = &mut f.editor;
+    assert!(e.rail_tools().contains(&Tool::AiRetouch));
+    assert!(e.rail_tools().contains(&Tool::Remove));
+    e.view.set_tool(Tool::AiRetouch);
+    assert!(e.ai_retouching() && e.view.retouching());
+
+    // A Heal spot, then an AI one.
+    let mut heal = painted();
+    heal.mode = RetouchMode::Heal;
+    heal.offset = [0.1, 0.];
+    e.change_edit(None, |r| r.add_retouch(heal));
+    let local = offer(e, "local");
+    e.request_ai_remove_with(local, None, painted());
+    pump(e, "the fill", settled);
+    assert_eq!(generated(e).len(), 1, "{}", e.messages.line());
+    assert_eq!(e.view.retouch.selected, Some(1));
+    assert!(e.spot_in_tool(1) && !e.spot_in_tool(0));
+
+    // Spot Removal lets go of the AI spot and never takes it.
+    e.view.set_tool(Tool::Remove);
+    assert!(!e.ai_retouching() && e.view.retouching());
+    e.fit_retouch_selection();
+    assert_eq!(e.view.retouch.selected, None);
+    assert!(e.spot_in_tool(0) && !e.spot_in_tool(1));
+    // Its Reset removes its own spots only.
+    let ctx = e.context.clone();
+    let frame = e.begin_edit_frame();
+    e.reset_tool_spots();
+    e.finish_edit_frame(frame, &ctx);
+    let ops = &e.document.edit.recipe().retouch;
+    assert_eq!(ops.len(), 1);
+    assert!(ops[0].is_generated());
+
+    // Without a generator the tool leaves the rail, and closes if open.
+    e.view.set_tool(Tool::AiRetouch);
+    e.set_extension_enabled(ID, false);
+    assert!(!e.rail_tools().contains(&Tool::AiRetouch));
+    e.close_tools_gone();
+    assert_eq!(e.view.tool(), Tool::None);
 }
 
 /// Painting again while the upload question is open keeps the area asked
@@ -721,7 +768,8 @@ fn a_generated_spot_stays_where_its_patch_was_made() {
     // Feather still changes.
     in_frame(e, &|e| e.step_retouch_size(true, true));
     assert!(e.document.edit.recipe().retouch[i].feather > before.feather);
-    // A Heal spot selected stays Heal when AI Remove is chosen for new spots.
+    // A Heal spot selected stays Heal, and Spot Removal's mode never becomes
+    // Generate: that is AI Retouch's.
     e.change_edit(None, |r| {
         r.add_retouch(RetouchOp {
             mode: RetouchMode::Heal,
@@ -737,7 +785,7 @@ fn a_generated_spot_stays_where_its_patch_was_made() {
         e.document.edit.recipe().retouch[heal].mode,
         RetouchMode::Heal
     );
-    assert_eq!(e.view.retouch.mode, RetouchMode::Generate);
+    assert_eq!(e.view.retouch.mode, RetouchMode::Clone);
     in_frame(e, &|e| e.choose_retouch_mode(RetouchMode::Clone));
     assert_eq!(
         e.document.edit.recipe().retouch[heal].mode,

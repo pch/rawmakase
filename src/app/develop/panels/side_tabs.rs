@@ -271,7 +271,11 @@ impl Editor {
                     click = Some(TabClick::Edit);
                 }
                 y += 36.;
+                let offered = self.rail_tools();
                 for (t, tip, _) in DRAWER_TOOLS {
+                    if !offered.contains(&t) {
+                        continue;
+                    }
                     let paint = |p: &egui::Painter, c: Pos2, tint: egui::Color32| {
                         icons::paint_at(p, tool_icon(t), c, 16., tint)
                     };

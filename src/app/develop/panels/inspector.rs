@@ -356,7 +356,7 @@ impl Editor {
             });
         };
         match self.view.tool() {
-            Tool::Remove => {
+            Tool::Remove | Tool::AiRetouch => {
                 return drawer(ui, &mut |ui| {
                     experimental(ui, UNMEASURED);
                     self.retouch_panel(ui)
@@ -1124,12 +1124,17 @@ fn experimental(ui: &mut egui::Ui, note: &str) {
 /// The tools whose drawers open in place of Develop's adjustments, as the
 /// rail lists them, with their tooltips and the drawer's caption. Red Eye
 /// has no shortcut, as in Lightroom.
-pub(in crate::app) const DRAWER_TOOLS: [(Tool, &str, &str); 4] = [
+pub(in crate::app) const DRAWER_TOOLS: [(Tool, &str, &str); 5] = [
     (Tool::Crop, "Crop & Straighten · R", "Crop & Straighten"),
     (
         Tool::Remove,
         "Spot Removal: Heal and Clone · Q",
         "Spot Removal",
+    ),
+    (
+        Tool::AiRetouch,
+        "AI Retouch: AI Remove and AI Replace (experimental)",
+        "AI Retouch",
     ),
     (Tool::RedEye, "Red Eye Correction", "Red Eye"),
     (Tool::Mask, "Masking · Shift+W", "Masking"),
@@ -1187,6 +1192,7 @@ pub(in crate::app) fn tool_icon(tool: Tool) -> Icon {
     match tool {
         Tool::Crop => Icon::Crop,
         Tool::Remove => Icon::Bandage,
+        Tool::AiRetouch => Icon::WandSparkles,
         Tool::RedEye => Icon::Eye,
         _ => Icon::MaskTool,
     }

@@ -296,5 +296,5 @@ prompt-hint = "What to put there, e.g. a wooden bench"
 | `prompt` | `"none"` | Whether the user writes text for a request: `none`, `optional` (sent when written) or `required` (no request without it). The text goes as `retouch.generate`'s `prompt` |
 | `prompt-hint` | — | What the text field shows while empty, 1 to 120 bytes on one line; only with a `prompt` |
 
-The Remove tool offers each enabled extension's generators as modes of their
-own, after Heal and Clone, named by `name`.
+The AI Retouch tool, on Develop's rail while any is offered, offers each enabled
+extension's generators as modes of their own, named by `name`.

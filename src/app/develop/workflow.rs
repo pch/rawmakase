@@ -414,7 +414,7 @@ impl Editor {
     pub(in crate::app) fn overlay(&self) -> crate::app::worker::Overlay {
         use crate::app::{develop::state::Tool, worker::Overlay};
         match self.view.tool() {
-            Tool::Remove if self.view.retouch.visualize => {
+            Tool::Remove | Tool::AiRetouch if self.view.retouch.visualize => {
                 Overlay::Spots(self.view.retouch.threshold)
             }
             Tool::Mask => match self.view.masking.hovered().or(self
