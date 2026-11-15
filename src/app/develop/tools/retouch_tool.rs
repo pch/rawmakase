@@ -336,6 +336,41 @@ impl Editor {
                 self.answer_ai_remove_consent(allow);
             }
         }
+        // The area a request failed for, with why and what to do: the photo
+        // says so where the user painted, not only the drawer.
+        if generating
+            && self.ai_remove.running().is_none()
+            && self.ai_remove.consent.is_none()
+            && let (Some(failure), Some((name, op))) = (
+                self.ai_remove.failure.clone(),
+                self.ai_remove.failed.clone(),
+            )
+        {
+            draw_shape(&painter, &op, to_screen, &radius_on_screen, true);
+            let visible = rect.intersect(ui.clip_rect());
+            let setup = matches!(failure, super::ai_remove::Failure::NeedsSetup(_));
+            let buttons: &[&str] = if setup {
+                &["Set up…", "Dismiss"]
+            } else {
+                &["Dismiss"]
+            };
+            let (clicked, _) = card(
+                ui,
+                to_screen(op.pin()),
+                visible,
+                &failure.message(&name),
+                buttons,
+            );
+            match clicked {
+                Some(0) if setup => {
+                    if let Some((offer, _)) = self.ai_remove_offer() {
+                        self.open_extension_page(&offer.extension);
+                    }
+                }
+                Some(_) => self.dismiss_ai_failure(),
+                None => {}
+            }
+        }
         // The area being removed, with its card: what it waits for, and Cancel.
         if let Some(op) = self.ai_remove.running().cloned() {
             draw_shape(&painter, &op, to_screen, &radius_on_screen, true);
@@ -843,19 +878,33 @@ pub(in crate::app) fn hint(ui: &mut egui::Ui, text: &str) {
     });
 }
 
-/// The upload question's card beside the area pinned at `pin`, kept inside
-/// `visible` and as tall as its wrapped question needs, so Send and Cancel
-/// stay in view however narrow the view is; the answer, if one was given, and
-/// where the buttons are.
+/// The upload question's card beside the area pinned at `pin` ([`card`]),
+/// with Send and Cancel: the answer, if one was given, and where the
+/// buttons are.
 fn consent_card(
     ui: &mut egui::Ui,
     pin: Pos2,
     visible: Rect,
     question: &str,
 ) -> (Option<bool>, Rect) {
+    let (clicked, buttons) = card(ui, pin, visible, question, &["Send", "Cancel"]);
+    (clicked.map(|i| i == 0), buttons)
+}
+
+/// A card beside the area pinned at `pin` with `text` and a row of
+/// `buttons`, kept inside `visible` and as tall as its wrapped text needs, so
+/// the buttons stay in view however narrow the view is: which button was
+/// clicked, if one was, and where the buttons are.
+fn card(
+    ui: &mut egui::Ui,
+    pin: Pos2,
+    visible: Rect,
+    text: &str,
+    buttons: &[&str],
+) -> (Option<usize>, Rect) {
     const PAD: f32 = 6.;
     let width = 250f32.min(visible.width());
-    let text = egui::RichText::new(question).size(text::SMALL);
+    let text = egui::RichText::new(text).size(text::SMALL);
     let galley = egui::WidgetText::from(text.clone()).into_galley(
         ui,
         Some(egui::TextWrapMode::Wrap),
@@ -864,27 +913,25 @@ fn consent_card(
     );
     let spacing = ui.spacing();
     let height = galley.size().y + spacing.item_spacing.y + spacing.interact_size.y + 2. * PAD;
-    let card = card_rect(pin, Vec2::new(width, height), visible);
+    let rect = card_rect(pin, Vec2::new(width, height), visible);
     ui.painter()
         .with_clip_rect(visible)
-        .rect_filled(card, 4., ui.visuals().window_fill);
-    let mut answer = None;
-    let mut buttons = Rect::NOTHING;
-    ui.scope_builder(egui::UiBuilder::new().max_rect(card.shrink(PAD)), |ui| {
+        .rect_filled(rect, 4., ui.visuals().window_fill);
+    let mut clicked = None;
+    let mut row = Rect::NOTHING;
+    ui.scope_builder(egui::UiBuilder::new().max_rect(rect.shrink(PAD)), |ui| {
         ui.add(egui::Label::new(text).wrap());
         ui.horizontal(|ui| {
-            let send = ui.small_button("Send");
-            let cancel = ui.small_button("Cancel");
-            buttons = send.rect.union(cancel.rect);
-            if send.clicked() {
-                answer = Some(true);
-            }
-            if cancel.clicked() {
-                answer = Some(false);
+            for (i, label) in buttons.iter().enumerate() {
+                let button = ui.small_button(*label);
+                row = row.union(button.rect);
+                if button.clicked() {
+                    clicked = Some(i);
+                }
             }
         });
     });
-    (answer, buttons)
+    (clicked, row)
 }
 
 /// Where a card `size` big about the area pinned at `pin` goes: beside it,

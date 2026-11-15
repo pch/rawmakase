@@ -3,7 +3,7 @@
 //! request running, what went wrong, and what made the selected spot.
 use super::Failure;
 use crate::app::Editor;
-use crate::app::develop::tools::retouch_tool::{hint, indented};
+use crate::app::develop::tools::retouch_tool::{control_label, hint, indented};
 use crate::app::extensions::retouch_generator::Offer;
 use crate::app::preferences::Tab;
 use crate::app::ui::design::space;
@@ -59,14 +59,6 @@ impl Editor {
         if !self.ai_retouching() {
             return;
         }
-        hint(
-            ui,
-            &format!(
-                "Experimental · paint over an area; it and its surroundings go to the service \
-                 set up in {}, one paid call each",
-                offer.extension_name
-            ),
-        );
         if offer.prompt != PromptUse::None {
             let hint_text = offer
                 .prompt_hint
@@ -76,18 +68,28 @@ impl Editor {
                     _ => "Optional: what to do with the area".into(),
                 });
             let missing = self.ai_prompt_missing(&offer);
-            let text = self.ai_prompt_mut(&offer);
-            ui.add(
-                egui::TextEdit::singleline(text)
-                    .hint_text(hint_text)
-                    // Characters, not bytes: four bytes each at most.
-                    .char_limit(MAX_PROMPT_LEN / 4)
-                    .desired_width(f32::INFINITY),
-            );
+            control_label(ui, "Prompt", |ui| {
+                let text = self.ai_prompt_mut(&offer);
+                ui.add(
+                    egui::TextEdit::singleline(text)
+                        .hint_text(hint_text)
+                        // Characters, not bytes: four bytes each at most.
+                        .char_limit(MAX_PROMPT_LEN / 4)
+                        .desired_width(f32::INFINITY),
+                );
+            });
             if missing {
                 hint(ui, &format!("{} needs this before you paint", offer.name));
             }
         }
+        hint(
+            ui,
+            &format!(
+                "Paint over an area: it and its surroundings go to the service set up in {}, \
+                 one paid call each",
+                offer.extension_name
+            ),
+        );
         if let Some(why) = why.or_else(|| self.ai_remove_unavailable()) {
             hint(ui, &why);
         }
@@ -124,7 +126,13 @@ impl Editor {
             });
         }
         if let Some(failure) = self.ai_remove.failure.clone() {
-            hint(ui, &failure.message());
+            let name = self
+                .ai_remove
+                .failed
+                .as_ref()
+                .map_or(offer.name.clone(), |(name, _)| name.clone());
+            // In the text's own colour, not a hint's: the last request failed.
+            ui.add(egui::Label::new(failure.message(&name)).wrap());
             indented(ui, |ui| {
                 if matches!(failure, Failure::NeedsSetup(_))
                     && ui
@@ -134,7 +142,23 @@ impl Editor {
                     self.open_extension_page(&offer.extension);
                 }
                 if ui.button("Dismiss").clicked() {
-                    self.ai_remove.failure = None;
+                    self.dismiss_ai_failure();
+                }
+            });
+        } else if self.ai_setup_needed(&offer) {
+            ui.add(
+                egui::Label::new(format!(
+                    "{} needs setting up before you paint",
+                    offer.extension_name
+                ))
+                .wrap(),
+            );
+            indented(ui, |ui| {
+                if ui
+                    .button(format!("Set up {}…", offer.extension_name))
+                    .clicked()
+                {
+                    self.open_extension_page(&offer.extension);
                 }
             });
         }

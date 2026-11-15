@@ -121,6 +121,29 @@ impl Host {
         Ok(())
     }
 
+    /// A digest of `extension`'s settings as they stand: their values and
+    /// each secret's state (and value, as a hash kept in memory only), so a
+    /// change to any of them shows. None when it isn't installed.
+    pub(in crate::app) fn settings_fingerprint(&self, extension: &str) -> Option<u64> {
+        use std::hash::{Hash, Hasher};
+        let e = self.get(extension)?;
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        serde_json::to_string(&e.settings())
+            .unwrap_or_default()
+            .hash(&mut h);
+        for s in &e.manifest.settings {
+            s.id.hash(&mut h);
+            match e.secret(&s.id) {
+                Some(super::secrets::State::Set(secret)) => {
+                    (1u8, secret.expose()).hash(&mut h);
+                }
+                Some(state) => (2u8, format!("{state:?}")).hash(&mut h),
+                None => 0u8.hash(&mut h),
+            }
+        }
+        Some(h.finish())
+    }
+
     /// Whether the user agreed that `extension`'s generators send pixels to
     /// the service behind them.
     pub(in crate::app) fn uploads_allowed(&self, extension: &str) -> bool {

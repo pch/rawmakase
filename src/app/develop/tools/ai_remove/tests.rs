@@ -628,11 +628,38 @@ fn failures_say_why_and_a_secret_setting_sets_the_extension_up() {
     ] {
         remove_with(e, generator);
         pump(e, generator, settled);
-        let message = e.ai_remove.failure.as_ref().unwrap().message();
+        let message = e.ai_remove.failure.as_ref().unwrap().message("AI Remove");
         assert!(message.contains(failure), "{generator}: {message}");
         assert!(generated(e).is_empty());
     }
     assert!(matches!(e.ai_remove.failure, Some(Failure::NeedsSetup(_))));
+    // It names the generator that failed, and keeps the area it failed on,
+    // for the card on the photo, until dismissed or asked again.
+    let (name, area) = e.ai_remove.failed.clone().unwrap();
+    assert_eq!(name, "Setup");
+    assert_eq!(
+        area,
+        RetouchOp {
+            mode: RetouchMode::Generate,
+            ..painted()
+        }
+    );
+    let message = e.ai_remove.failure.as_ref().unwrap().message(&name);
+    assert!(message.starts_with("Setup needs setting up: "), "{message}");
+    e.dismiss_ai_failure();
+    assert!(e.ai_remove.failure.is_none() && e.ai_remove.failed.is_none());
+    // Until its settings change, painting for that extension again sends
+    // nothing: it says to set it up, dismissed or not.
+    let sent = e.extensions.retouches_sent().len();
+    assert!(e.ai_paint_blocked());
+    remove_with(e, "setup");
+    assert!(settled(e));
+    assert_eq!(e.extensions.retouches_sent().len(), sent);
+    assert!(
+        e.messages.line().contains("Set up"),
+        "{}",
+        e.messages.line()
+    );
     assert!(matches!(
         retouch_generator::failure(RemoteError::new(
             rawmakase_extensions::protocol::ErrorCode::Refused,

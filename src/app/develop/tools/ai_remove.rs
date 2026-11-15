@@ -39,6 +39,14 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+/// What painting says while `offer`'s extension waits to be set up.
+fn setup_first(offer: &Offer) -> String {
+    format!(
+        "Set up {} first: Preferences > Extensions > {}",
+        offer.extension_name, offer.extension_name
+    )
+}
+
 /// What a result made from pixels that have since changed says.
 pub(in crate::app) const STALE: &str = "The photo changed while removing; paint again";
 
@@ -55,13 +63,14 @@ pub(crate) enum Failure {
     Failed(String),
 }
 impl Failure {
-    pub(in crate::app) fn message(&self) -> String {
+    /// What the tool says, about the generator called `name` (`AI Replace`).
+    pub(in crate::app) fn message(&self, name: &str) -> String {
         match self {
-            Self::Cancelled => "AI Remove cancelled".into(),
-            Self::NeedsSetup(why) => format!("AI Remove needs setting up: {why}"),
-            Self::Unavailable(why) => format!("AI Remove is unavailable: {why}"),
+            Self::Cancelled => format!("{name} cancelled"),
+            Self::NeedsSetup(why) => format!("{name} needs setting up: {why}"),
+            Self::Unavailable(why) => format!("{name} is unavailable: {why}"),
             Self::Refused(why) => format!("The service declined this area: {why}"),
-            Self::Failed(why) => format!("AI Remove failed: {why}"),
+            Self::Failed(why) => format!("{name} failed: {why}"),
         }
     }
 }
@@ -156,6 +165,13 @@ pub(in crate::app) struct AiRemove {
     worker: Worker,
     /// What the last attempt ended in, for the drawer, until the next.
     pub(in crate::app) failure: Option<Failure>,
+    /// The generator a failed request went to, by name, and the area it was
+    /// for: the photo shows the failure there, as it showed it working.
+    pub(in crate::app) failed: Option<(String, RetouchOp)>,
+    /// An extension that said it needs setting up, with its settings'
+    /// fingerprint then: painting for it waits until they change, rather
+    /// than send what would fail the same way.
+    setup_needed: Option<(String, u64)>,
     /// A request waiting for the user to agree to its uploads.
     pub(in crate::app) consent: Option<Consent>,
     /// Patches of results not taken while another request ran, to let go of
@@ -172,6 +188,8 @@ impl Default for AiRemove {
             pending: None,
             worker: Worker::named("ai-remove"),
             failure: None,
+            failed: None,
+            setup_needed: None,
             consent: None,
             deferred: Vec::new(),
             withdrawn: Vec::new(),
@@ -210,6 +228,7 @@ impl AiRemove {
     pub(in crate::app) fn clear_document(&mut self) {
         self.cancel();
         self.failure = None;
+        self.failed = None;
         self.consent = None;
     }
     /// The thread to wait for when quitting, handed to the shared deadline.
@@ -221,6 +240,11 @@ impl AiRemove {
 }
 
 impl Editor {
+    /// Forgets the last failure, in the drawer and on the photo.
+    pub(in crate::app) fn dismiss_ai_failure(&mut self) {
+        self.ai_remove.failure = None;
+        self.ai_remove.failed = None;
+    }
     /// Every retouch generator enabled extensions offer, each a mode of the
     /// Remove tool, with why it can't run now.
     pub(in crate::app) fn ai_remove_offers(&self) -> Vec<(Offer, Option<String>)> {
@@ -272,6 +296,10 @@ impl Editor {
         let Some((offer, _)) = self.ai_remove_offer() else {
             return false;
         };
+        if self.ai_setup_needed(&offer) {
+            self.messages.warn(setup_first(&offer));
+            return true;
+        }
         if !self.ai_prompt_missing(&offer) {
             return false;
         }
@@ -280,6 +308,16 @@ impl Editor {
             offer.name
         ));
         true
+    }
+    /// Whether `offer`'s extension said it needs setting up and its settings
+    /// haven't changed since: a request would fail the same way.
+    pub(in crate::app) fn ai_setup_needed(&self, offer: &Offer) -> bool {
+        self.ai_remove
+            .setup_needed
+            .as_ref()
+            .is_some_and(|(id, then)| {
+                *id == offer.extension && self.extensions.settings_fingerprint(id) == Some(*then)
+            })
     }
     /// Whether `offer`'s generator needs text and none is written: painting
     /// would only be refused.
@@ -379,6 +417,10 @@ impl Editor {
             self.messages.warn(why);
             return;
         }
+        if self.ai_setup_needed(&offer) {
+            self.messages.warn(setup_first(&offer));
+            return;
+        }
         if self.ai_prompt_missing(&offer) {
             self.messages.warn(format!(
                 "Describe what {} should do first, in the field under Mode",
@@ -399,7 +441,7 @@ impl Editor {
         op.mode = RetouchMode::Generate;
         op.offset = [0.; 2];
         op.patch = None;
-        self.ai_remove.failure = None;
+        self.dismiss_ai_failure();
         if offer.uploads && !self.extensions.uploads_allowed(&offer.extension) {
             self.ai_remove.consent = Some(Consent { offer, op, prompt });
             return;
@@ -710,8 +752,15 @@ impl Editor {
                 return;
             }
             Err(failure) => {
-                self.messages.fail(failure.message());
+                if matches!(failure, Failure::NeedsSetup(_)) {
+                    let id = pending.offer.extension.clone();
+                    self.ai_remove.setup_needed =
+                        self.extensions.settings_fingerprint(&id).map(|f| (id, f));
+                }
+                let name = pending.offer.name.clone();
+                self.messages.fail(failure.message(&name));
                 self.ai_remove.failure = Some(failure);
+                self.ai_remove.failed = Some((name, pending.op));
                 return;
             }
         };
