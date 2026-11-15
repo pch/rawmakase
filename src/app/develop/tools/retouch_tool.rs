@@ -758,7 +758,9 @@ impl Editor {
                     }
                 });
             }
-            self.ai_remove_section(ui, offer, selected);
+            if let Some((offer, why)) = offer {
+                self.ai_controls(ui, &offer, why);
+            }
         } else {
             control_label(ui, "Mode", |ui| {
                 // What a stroke now makes, or the selected spot's mode, which
@@ -777,7 +779,10 @@ impl Editor {
                 self.ai_remove_install_hint(ui);
             }
         }
-        ui.add_space(space::XS);
+        ui.add_space(space::S);
+        if generating {
+            self.ai_spot_info(ui, selected);
+        }
         let (mut size, mut feather, mut opacity) = match selected {
             Some(i) => {
                 let op = &self.document.edit.recipe().retouch[i];
@@ -834,7 +839,12 @@ impl Editor {
             }
             (op.feather, op.opacity) = (feather, opacity);
         }
-        ui.add_space(space::S);
+        // Painting and sending: below the brush that paints.
+        if generating && let Some((offer, _)) = self.ai_remove_offer() {
+            ui.add_space(space::L);
+            self.ai_send(ui, &offer);
+        }
+        ui.add_space(space::L);
         indented(ui, |ui| {
             ui.checkbox(&mut self.view.retouch.visualize, "Visualize Spots")
                 .on_hover_text("A: show fine detail in black and white, so dust stands out");
@@ -857,8 +867,10 @@ impl Editor {
         });
         ui.add_space(space::XS);
         if generating {
-            hint(ui, "Click a spot or drag to paint over an area");
-            hint(ui, "[ ] size · ⇧[ ] feather · Delete removes");
+            hint(
+                ui,
+                "[ ] size · ⇧[ ] feather · Enter sends · Esc clears · Delete removes a spot",
+            );
         } else {
             hint(
                 ui,
@@ -962,30 +974,7 @@ pub(in crate::app) fn control_label(
     label: &str,
     add: impl FnOnce(&mut egui::Ui),
 ) {
-    ui.horizontal(|ui| label_row(ui, label, 22., add));
-}
-/// A label `height` tall, then `add`, spaced as the sliders' rows are: the
-/// caption ends [`LABEL_GAP`] short of the label column and the control
-/// starts as far past it.
-///
-/// [`LABEL_GAP`]: crate::app::ui::widgets::LABEL_GAP
-fn label_row(ui: &mut egui::Ui, label: &str, height: f32, add: impl FnOnce(&mut egui::Ui)) {
-    use crate::app::ui::widgets::{LABEL_GAP, label_column};
-    // The control starts as far past the label column as the caption ends
-    // short of it.
-    ui.spacing_mut().item_spacing.x = LABEL_GAP + LABEL_GAP;
-    let (rect, _) = ui.allocate_exact_size(
-        Vec2::new(label_column(ui) - LABEL_GAP, height),
-        egui::Sense::hover(),
-    );
-    ui.painter().text(
-        rect.right_center(),
-        egui::Align2::RIGHT_CENTER,
-        label,
-        egui::FontId::proportional(text::SMALL),
-        theme::palette(ui.ctx()).tone(Tone::SOFT),
-    );
-    add(ui);
+    crate::app::ui::widgets::drawer_row(ui, label, false, add);
 }
 pub(in crate::app) fn indented(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {

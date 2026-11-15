@@ -905,7 +905,7 @@ impl Editor {
         for panel in m.panels.iter().filter(|p| p.place != PanelPlace::Generator) {
             group(ui, &panel.title);
             if runs {
-                self.extension_panel_ui(ui, id, &panel.id);
+                self.extension_panel_ui(ui, id, &panel.id, panels::Layout::Page);
             } else {
                 hint(
                     ui,
@@ -1276,7 +1276,13 @@ impl Editor {
     /// drawn from what its program last sent.
     /// Extension `id`'s panel `panel`, opened when it isn't, its actions
     /// sent: on its page, and in a generator tool's drawer.
-    pub(in crate::app) fn extension_panel_ui(&mut self, ui: &mut egui::Ui, id: &str, panel: &str) {
+    pub(in crate::app) fn extension_panel_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        panel: &str,
+        layout: panels::Layout,
+    ) {
         let opened = self.extensions.panel(id, panel).is_some_and(|v| v.opened);
         if !opened && let Err(why) = self.extensions.open_panel(id, panel) {
             hint(ui, &why);
@@ -1291,7 +1297,7 @@ impl Editor {
         if view.waiting && view.controls.is_empty() {
             ui.spinner();
         }
-        let actions = panels::draw(ui, &format!("{id}/{panel}"), view);
+        let actions = panels::draw(ui, &format!("{id}/{panel}"), view, layout);
         for action in actions {
             let result = match action {
                 panels::Action::Changed { control, value } => {

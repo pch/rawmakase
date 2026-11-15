@@ -2120,6 +2120,59 @@ pub(in crate::app) fn form_row(
         contents(ui);
     });
 }
+/// A row in a tool drawer, as its sliders are: the label right-aligned,
+/// ending [`LABEL_GAP`] short of the label column, and `add`'s control
+/// starting as far past it. With `top`, the label sits beside a tall
+/// control's first line (a [`text_box`]) instead of its middle.
+pub(in crate::app) fn drawer_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    top: bool,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    let row = |ui: &mut egui::Ui| {
+        ui.spacing_mut().item_spacing.x = LABEL_GAP + LABEL_GAP;
+        // A text box's first line, with its margin above and below.
+        let height = if top {
+            size::CONTROL + space::M
+        } else {
+            size::CONTROL
+        };
+        let (rect, _) = ui.allocate_exact_size(
+            Vec2::new(label_column(ui) - LABEL_GAP, height),
+            Sense::hover(),
+        );
+        ui.painter().text(
+            rect.right_center(),
+            egui::Align2::RIGHT_CENTER,
+            label,
+            egui::FontId::proportional(text::SMALL),
+            theme::palette(ui.ctx()).tone(Tone::SOFT),
+        );
+        add(ui);
+    };
+    // A row as tall as its control, not the room left below it.
+    if top {
+        ui.horizontal_top(row);
+    } else {
+        ui.horizontal(row);
+    }
+}
+/// A tool drawer's line of help under a control, starting where the
+/// control does.
+pub(in crate::app) fn drawer_help(ui: &mut egui::Ui, help: &str) {
+    ui.horizontal(|ui| {
+        ui.add_space(control_left(ui));
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(help)
+                    .size(text::MICRO)
+                    .color(theme::palette(ui.ctx()).tone(Tone::FAINT)),
+            )
+            .wrap(),
+        );
+    });
+}
 /// A path for display, with the home folder as `~`.
 pub(in crate::app) fn pretty_path(path: &std::path::Path) -> String {
     let text = path.display().to_string();

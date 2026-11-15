@@ -102,14 +102,45 @@ fn value_of(kind: &ControlKind) -> Option<Value> {
     })
 }
 
-/// Draws `view`'s controls and returns what the user committed. `scope`
-/// keeps their widget ids apart from other panels' (egui's id salt).
-pub(in crate::app) fn draw(ui: &mut egui::Ui, scope: &str, view: &mut PanelView) -> Vec<Action> {
+/// Where a panel is drawn, which sets how its rows look.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum Layout {
+    /// An extension's page in Preferences: its form rows.
+    Page,
+    /// A tool's drawer: rows as its sliders', help under the control.
+    Drawer,
+}
+
+/// A row of `layout` with `label` and `add`'s control; `top` puts the label
+/// beside a tall control's first line in a drawer.
+fn row(ui: &mut egui::Ui, layout: Layout, label: &str, top: bool, add: impl FnOnce(&mut egui::Ui)) {
+    match layout {
+        Layout::Page => form_row(ui, label, add),
+        Layout::Drawer => crate::app::ui::widgets::drawer_row(ui, label, top, add),
+    }
+}
+
+/// Draws `view`'s controls in `layout` and returns what the user committed.
+/// `scope` keeps their widget ids apart from other panels' (egui's id salt).
+pub(in crate::app) fn draw(
+    ui: &mut egui::Ui,
+    scope: &str,
+    view: &mut PanelView,
+    layout: Layout,
+) -> Vec<Action> {
     let mut actions = Vec::new();
     let mut all = HashMap::new();
     values(&view.controls, &mut all);
     let controls = view.controls.clone();
-    draw_list(ui, scope, &controls, &all, &mut view.drafts, &mut actions);
+    draw_list(
+        ui,
+        scope,
+        layout,
+        &controls,
+        &all,
+        &mut view.drafts,
+        &mut actions,
+    );
     // A field loses focus to the click that ends its editing, so what it
     // commits goes first, whichever is drawn first: the click then acts on
     // the value the user left, and a Reset isn't undone by text sent after it.
@@ -120,6 +151,7 @@ pub(in crate::app) fn draw(ui: &mut egui::Ui, scope: &str, view: &mut PanelView)
 fn draw_list(
     ui: &mut egui::Ui,
     scope: &str,
+    layout: Layout,
     controls: &[Control],
     all: &HashMap<String, Value>,
     drafts: &mut HashMap<String, Value>,
@@ -132,10 +164,13 @@ fn draw_list(
             continue;
         }
         ui.add_enabled_ui(!control.disabled, |ui| {
-            draw_one(ui, scope, control, all, drafts, actions);
+            draw_one(ui, scope, layout, control, all, drafts, actions);
         });
         if let Some(help) = &control.help {
-            form_row(ui, "", |ui| hint(ui, help));
+            match layout {
+                Layout::Page => form_row(ui, "", |ui| hint(ui, help)),
+                Layout::Drawer => crate::app::ui::widgets::drawer_help(ui, help),
+            }
         }
     }
 }
@@ -143,6 +178,7 @@ fn draw_list(
 fn draw_one(
     ui: &mut egui::Ui,
     scope: &str,
+    layout: Layout,
     control: &Control,
     all: &HashMap<String, Value>,
     drafts: &mut HashMap<String, Value>,
@@ -166,7 +202,7 @@ fn draw_one(
                 .id_salt((scope, title, id.as_str()))
                 .default_open(!collapsed)
                 .show(ui, |ui| {
-                    draw_list(ui, scope, controls, all, drafts, actions)
+                    draw_list(ui, scope, layout, controls, all, drafts, actions)
                 });
         }
         ControlKind::Slider {
@@ -176,7 +212,7 @@ fn draw_one(
             step,
             unit,
             ..
-        } => form_row(ui, label, |ui| {
+        } => row(ui, layout, label, false, |ui| {
             let mut v = drafts.get(&id).and_then(Value::as_f64).unwrap_or(*value);
             let mut slider = egui::Slider::new(&mut v, *min..=*max);
             if let Some(step) = step {
@@ -193,7 +229,7 @@ fn draw_one(
                 changed(actions, Value::from(v));
             }
         }),
-        ControlKind::Angle { value } => form_row(ui, label, |ui| {
+        ControlKind::Angle { value } => row(ui, layout, label, false, |ui| {
             let mut v = drafts.get(&id).and_then(Value::as_f64).unwrap_or(*value);
             let r = ui.add(egui::DragValue::new(&mut v).suffix("°").speed(0.1));
             if r.changed() {
@@ -203,7 +239,7 @@ fn draw_one(
                 changed(actions, Value::from(v));
             }
         }),
-        ControlKind::Number { value, min, max } => form_row(ui, label, |ui| {
+        ControlKind::Number { value, min, max } => row(ui, layout, label, false, |ui| {
             let mut v = drafts.get(&id).and_then(Value::as_f64).unwrap_or(*value);
             let mut drag = egui::DragValue::new(&mut v);
             if let (Some(min), Some(max)) = (min, max) {
@@ -217,13 +253,13 @@ fn draw_one(
                 changed(actions, Value::from(v));
             }
         }),
-        ControlKind::Toggle { value } => form_row(ui, label, |ui| {
+        ControlKind::Toggle { value } => row(ui, layout, label, false, |ui| {
             let mut v = *value;
             if ui.checkbox(&mut v, "").changed() {
                 changed(actions, Value::from(v));
             }
         }),
-        ControlKind::Choice { options, value } => form_row(ui, label, |ui| {
+        ControlKind::Choice { options, value } => row(ui, layout, label, false, |ui| {
             let shown = options
                 .iter()
                 .find(|o| &o.id == value)
@@ -242,18 +278,22 @@ fn draw_one(
                     }
                 });
         }),
-        ControlKind::Segmented { options, value } => form_row(ui, label, |ui| {
-            for option in options {
-                if ui
-                    .selectable_label(&option.id == value, &option.title)
-                    .clicked()
-                    && &option.id != value
-                {
-                    changed(actions, Value::from(option.id.clone()));
-                }
+        ControlKind::Segmented { options, value } => row(ui, layout, label, false, |ui| {
+            // The app's segmented control, as Mode in a tool's drawer.
+            let mut pick = options.iter().position(|o| &o.id == value).unwrap_or(0);
+            let segments: Vec<(usize, &str)> = options
+                .iter()
+                .enumerate()
+                .map(|(i, o)| (i, o.title.as_str()))
+                .collect();
+            let width = ui.available_width();
+            if crate::app::ui::widgets::segmented(ui, &mut pick, &segments, width)
+                && let Some(option) = options.get(pick)
+            {
+                changed(actions, Value::from(option.id.clone()));
             }
         }),
-        ControlKind::Color { value, alpha } => form_row(ui, label, |ui| {
+        ControlKind::Color { value, alpha } => row(ui, layout, label, false, |ui| {
             let draft: Vec<f32> = drafts
                 .get(&id)
                 .and_then(|v| serde_json::from_value::<Vec<f32>>(v.clone()).ok())
@@ -284,7 +324,7 @@ fn draw_one(
                 changed(actions, Value::from(now));
             }
         }),
-        ControlKind::Curve { points } => form_row(ui, label, |ui| {
+        ControlKind::Curve { points } => row(ui, layout, label, false, |ui| {
             hint(
                 ui,
                 &format!(
@@ -297,7 +337,7 @@ fn draw_one(
             value,
             multiline,
             placeholder,
-        } => form_row(ui, label, |ui| {
+        } => row(ui, layout, label, *multiline, |ui| {
             let mut text = drafts
                 .get(&id)
                 .and_then(|v| v.as_str().map(str::to_string))
@@ -321,7 +361,7 @@ fn draw_one(
                 changed(actions, Value::from(text));
             }
         }),
-        ControlKind::File { value, extensions } => form_row(ui, label, |ui| {
+        ControlKind::File { value, extensions } => row(ui, layout, label, false, |ui| {
             path_value(ui, value.as_deref());
             if ui.button("Choose…").clicked() {
                 actions.push(Action::Choose {
@@ -331,7 +371,7 @@ fn draw_one(
                 });
             }
         }),
-        ControlKind::Folder { value } => form_row(ui, label, |ui| {
+        ControlKind::Folder { value } => row(ui, layout, label, false, |ui| {
             path_value(ui, value.as_deref());
             if ui.button("Choose…").clicked() {
                 actions.push(Action::Choose {
@@ -341,18 +381,18 @@ fn draw_one(
                 });
             }
         }),
-        ControlKind::Button { title } => form_row(ui, label, |ui| {
+        ControlKind::Button { title } => row(ui, layout, label, false, |ui| {
             if ui.button(title).clicked() {
                 actions.push(Action::Clicked {
                     control: id.clone(),
                 });
             }
         }),
-        ControlKind::Label { text } => form_row(ui, label, |ui| {
+        ControlKind::Label { text } => row(ui, layout, label, false, |ui| {
             ui.add(egui::Label::new(text).wrap());
         }),
-        ControlKind::Help { text } => form_row(ui, label, |ui| hint(ui, text)),
-        ControlKind::Progress { value } => form_row(ui, label, |ui| {
+        ControlKind::Help { text } => row(ui, layout, label, false, |ui| hint(ui, text)),
+        ControlKind::Progress { value } => row(ui, layout, label, false, |ui| {
             let bar = match value {
                 Some(v) => egui::ProgressBar::new(*v as f32).show_percentage(),
                 None => egui::ProgressBar::new(0.).animate(true),
@@ -360,7 +400,7 @@ fn draw_one(
             ui.add(bar.desired_width(ui.available_width().min(240.)));
         }),
         // The thumbnail's file, until panels load images.
-        ControlKind::Image { path } => form_row(ui, label, |ui| {
+        ControlKind::Image { path } => row(ui, layout, label, false, |ui| {
             ui.add(egui::Label::new(path).truncate());
         }),
     }
@@ -435,7 +475,7 @@ mod tests {
                 events,
                 ..Default::default()
             },
-            |ui| actions = draw(ui, "test", view),
+            |ui| actions = draw(ui, "test", view, Layout::Page),
         );
         output.textures_delta.clear();
         let tree = output

@@ -125,18 +125,37 @@ struct AskPanel(Asked);
 
 impl AskPanel {
     fn controls(&self) -> Vec<Control> {
-        vec![Control {
-            id: Some("text".into()),
-            label: Some("Prompt".into()),
-            help: None,
-            visible_when: None,
-            disabled: false,
-            kind: ControlKind::Text {
-                value: self.0.lock().unwrap().clone(),
-                multiline: true,
-                placeholder: Some("What to put there".into()),
+        use rawmakase_extension::protocol::controls::Choice;
+        let choice = |id: &str, title: &str| Choice {
+            id: id.into(),
+            title: title.into(),
+        };
+        vec![
+            // Drawn only, for how a drawer looks: the generator reads none.
+            Control {
+                id: Some("mode".into()),
+                label: Some("Mode".into()),
+                help: None,
+                visible_when: None,
+                disabled: false,
+                kind: ControlKind::Segmented {
+                    options: vec![choice("one", "One"), choice("two", "Two")],
+                    value: "one".into(),
+                },
             },
-        }]
+            Control {
+                id: Some("text".into()),
+                label: Some("Prompt".into()),
+                help: Some("Needed: what to put where you paint".into()),
+                visible_when: None,
+                disabled: false,
+                kind: ControlKind::Text {
+                    value: self.0.lock().unwrap().clone(),
+                    multiline: true,
+                    placeholder: Some("What to put there".into()),
+                },
+            },
+        ]
     }
 }
 
@@ -147,10 +166,12 @@ impl Panel for AskPanel {
     fn changed(
         &mut self,
         _cx: &Context,
-        _control: &str,
+        control: &str,
         value: Value,
     ) -> Result<Vec<Control>, RemoteError> {
-        *self.0.lock().unwrap() = value.as_str().unwrap_or_default().to_string();
+        if control == "text" {
+            *self.0.lock().unwrap() = value.as_str().unwrap_or_default().to_string();
+        }
         Ok(self.controls())
     }
     fn clicked(&mut self, _cx: &Context, _control: &str) -> Result<Vec<Control>, RemoteError> {

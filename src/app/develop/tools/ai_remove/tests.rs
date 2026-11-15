@@ -1266,3 +1266,96 @@ fn uninstalling_takes_the_keys_with_it() {
             && Store::new(&f.data).forgotten_keys().unwrap().is_empty()
     });
 }
+
+/// The AI Retouch drawer as drawn, with a generator's panel, a painted area
+/// and a selected spot, for looking at while designing it.
+#[test]
+#[ignore = "writes an image to look at"]
+fn render_the_ai_retouch_drawer() {
+    use crate::app::develop::state::Tool;
+    let mut f = fixture(0.3);
+    // One generator, as the AI Retouch extension has: its panel, no Mode
+    // over generators.
+    let manifest =
+        include_str!("../../../../../extensions/example/remove/rawmakase-extension.toml");
+    let header = &manifest[..manifest.find("[[retouch-generator]]").unwrap()];
+    let ask = &manifest[manifest
+        .find("[[retouch-generator]]\nid = \"ask\"")
+        .unwrap()..];
+    std::fs::write(
+        f.folder
+            .join(rawmakase_extensions::protocol::manifest::FILE),
+        format!("{header}{ask}"),
+    )
+    .unwrap();
+    let e = &mut f.editor;
+    e.extensions.reload_changed_folders();
+    e.extensions.reload();
+    let ctx = e.context.clone();
+    crate::app::install_fonts(&ctx, &fastframe_text::TextRendering::platform_default());
+    crate::app::ui::icons::install(&ctx);
+    e.module = crate::app::Module::Develop;
+    e.view.set_tool(Tool::AiRetouch);
+    let ask = offer(e, "ask");
+    e.choose_ai_generator(&ask);
+    e.extensions.open_panel(ID, "ask").unwrap();
+    pump(e, "the panel", |e| {
+        e.extensions
+            .panel(ID, "ask")
+            .is_some_and(|v| !v.controls.is_empty())
+    });
+    e.add_ai_stroke(vec![[0.4, 0.5], [0.6, 0.5]]);
+    let mut textures = Default::default();
+    let image = crate::app::ui::ui_snapshot::render(
+        &ctx,
+        &mut textures,
+        egui::Vec2::new(300., 560.),
+        2.,
+        4,
+        |ui| {
+            let _labels = crate::app::ui::widgets::LabelColumn::enter(
+                ui,
+                crate::app::develop::panels::inspector::DRAWER_LABEL_COLUMN,
+            );
+            let palette = crate::app::ui::theme::palette(ui.ctx());
+            ui.painter().rect_filled(
+                ui.max_rect(),
+                0.,
+                palette.tone(crate::app::ui::design::Tone::CARD),
+            );
+            let frame = e.begin_edit_frame();
+            e.tool_drawer(ui);
+            e.finish_edit_frame(frame, &ctx);
+        },
+    );
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/ai-retouch-drawer.png");
+    image.save(&out).unwrap();
+    // Sent with nothing typed: refused, the area painted again.
+    e.send_ai_draft();
+    pump(e, "the refusal", settled);
+    let image = crate::app::ui::ui_snapshot::render(
+        &ctx,
+        &mut textures,
+        egui::Vec2::new(300., 600.),
+        2.,
+        4,
+        |ui| {
+            let _labels = crate::app::ui::widgets::LabelColumn::enter(
+                ui,
+                crate::app::develop::panels::inspector::DRAWER_LABEL_COLUMN,
+            );
+            let palette = crate::app::ui::theme::palette(ui.ctx());
+            ui.painter().rect_filled(
+                ui.max_rect(),
+                0.,
+                palette.tone(crate::app::ui::design::Tone::CARD),
+            );
+            let frame = e.begin_edit_frame();
+            e.tool_drawer(ui);
+            e.finish_edit_frame(frame, &ctx);
+        },
+    );
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/ai-retouch-drawer-refused.png");
+    image.save(&out).unwrap();
+}

@@ -1,132 +1,155 @@
-//! The AI Retouch drawer's side of AI Remove: that it is experimental, why it
-//! can't run, the one-time question before pixels leave the computer, the
-//! request running, what went wrong, and what made the selected spot.
+//! The AI Retouch drawer's own parts: the generator's controls above the
+//! brush, what made the selected spot above the sliders that change it, and
+//! painting and sending below the brush, with the one-time question before
+//! pixels leave the computer, the request running and what went wrong.
 use super::Failure;
 use crate::app::Editor;
 use crate::app::develop::tools::retouch_tool::{hint, indented};
+use crate::app::extensions::panels;
 use crate::app::extensions::retouch_generator::Offer;
 use crate::app::preferences::Tab;
-use crate::app::ui::design::space;
+use crate::app::ui::design::{size, space, text};
+use crate::app::ui::theme;
 use eframe::egui::{self, Vec2};
 
 impl Editor {
-    /// Below Mode while AI Remove is chosen or a Generate spot is selected.
-    pub(in crate::app) fn ai_remove_section(
+    /// AI Retouch's own controls, above the brush: the generator's panel (a
+    /// mode, a prompt), drawn as the drawer's rows, and why it can't run.
+    pub(in crate::app) fn ai_controls(
         &mut self,
         ui: &mut egui::Ui,
-        offer: Option<(Offer, Option<String>)>,
-        selected: Option<usize>,
+        offer: &Offer,
+        why: Option<String>,
     ) {
-        ui.add_space(space::XS);
-        if let Some(op) = selected.and_then(|i| self.document.edit.recipe().retouch.get(i))
-            && let Some(patch) = &op.patch
-        {
-            hint(
-                ui,
-                &format!("Made by {} · {}", patch.generator, patch.model),
-            );
-            // What its generator said it did, in the user's words.
-            if let Some(summary) = &patch.summary {
-                hint(ui, &format!("\u{201c}{summary}\u{201d}"));
-            }
-            // As rendered: Detail switched off bypasses AI Denoise.
-            let recipe = self.document.edit.recipe();
-            let now = self
-                .document
-                .full()
-                .map_or(recipe.ai_denoise.renders(), |im| {
-                    recipe.resolved(&im.metadata).ai_denoise.renders()
-                });
-            if patch.ai_denoise != now {
-                hint(
-                    ui,
-                    if patch.ai_denoise {
-                        "Made with AI Denoise on; the photo now has it off"
-                    } else {
-                        "Made with AI Denoise off; the photo now has it on"
-                    },
-                );
-            }
-            hint(
-                ui,
-                "Fixed where it was made: Feather and Opacity still change",
-            );
-        }
-        let Some((offer, why)) = offer else {
-            return;
-        };
-        if !self.ai_retouching() {
-            return;
-        }
-        // The generator's own controls (a mode, a prompt), drawn by the app
-        // from its panel; their values are the program's.
         if let Some(panel) = offer.panel.clone() {
-            self.extension_panel_ui(ui, &offer.extension, &panel);
+            self.extension_panel_ui(ui, &offer.extension, &panel, panels::Layout::Drawer);
         }
-        // Painting and sending: a section of its own.
-        ui.add_space(space::L);
-        hint(
-            ui,
-            &format!(
-                "Paint over an area, in as many strokes as it takes, then send it: it and its \
-                 surroundings go to the service set up in {}, one paid call",
-                offer.extension_name
-            ),
-        );
         if let Some(why) = why.or_else(|| self.ai_remove_unavailable()) {
             hint(ui, &why);
         }
-        // Send: what was painted goes only when asked. While a request runs,
-        // the same row says so, with Cancel in Send's place.
+    }
+
+    /// What made the selected AI spot, above the sliders that change it.
+    pub(in crate::app) fn ai_spot_info(&mut self, ui: &mut egui::Ui, selected: Option<usize>) {
+        let Some(patch) = selected
+            .and_then(|i| self.document.edit.recipe().retouch.get(i))
+            .and_then(|op| op.patch.clone())
+        else {
+            return;
+        };
+        // The generator by its name when it is still offered.
+        let made_by = self
+            .ai_remove_offers()
+            .into_iter()
+            .find(|(o, _)| o.provenance == patch.generator)
+            .map_or(patch.generator.clone(), |(o, _)| o.name);
+        hint(ui, &format!("Made by {made_by} · {}", patch.model));
+        // What its generator said it did, in the user's words.
+        if let Some(summary) = &patch.summary {
+            hint(ui, &format!("\u{201c}{summary}\u{201d}"));
+        }
+        // As rendered: Detail switched off bypasses AI Denoise.
+        let recipe = self.document.edit.recipe();
+        let now = self
+            .document
+            .full()
+            .map_or(recipe.ai_denoise.renders(), |im| {
+                recipe.resolved(&im.metadata).ai_denoise.renders()
+            });
+        if patch.ai_denoise != now {
+            hint(
+                ui,
+                if patch.ai_denoise {
+                    "Made with AI Denoise on; the photo now has it off"
+                } else {
+                    "Made with AI Denoise off; the photo now has it on"
+                },
+            );
+        }
+        hint(
+            ui,
+            "Fixed where it was made: Feather and Opacity still change",
+        );
+        ui.add_space(space::XS);
+    }
+
+    /// Painting and sending, below the brush: what to do, Send and Clear (as
+    /// Reset and Close are drawn), the request running with Cancel in Send's
+    /// place, the upload question, and what went wrong.
+    pub(in crate::app) fn ai_send(&mut self, ui: &mut egui::Ui, offer: &Offer) {
+        let palette = theme::palette(ui.ctx());
+        hint(
+            ui,
+            &format!(
+                "Paint over what to change, then Send. Each send is one paid call to the \
+                 service set up in {}.",
+                offer.extension_name
+            ),
+        );
         let blocked = self.ai_send_blocked();
         let painted = !self.ai_remove.draft.is_empty();
-        let button = Vec2::new(84., 30.);
+        let working = self.ai_remove.working();
         indented(ui, |ui| {
-            ui.add_space(crate::app::ui::widgets::LABEL_GAP);
-            if let Some(working) = self.ai_remove.working() {
+            let w = (ui.available_width() - space::XS) / 2.;
+            let size = Vec2::new(w, size::CONTROL);
+            if working.is_some() {
                 if ui
-                    .add_sized(button, egui::Button::new("Cancel"))
+                    .add_sized(size, egui::Button::new("Cancel"))
                     .on_hover_text("Stop; the photo is left as it was")
                     .clicked()
                 {
                     self.cancel_ai_remove();
                 }
-                crate::app::ui::widgets::spinner(ui, 14.);
-                ui.label(working);
-                return;
-            }
-            let send = ui.add_enabled_ui(blocked.is_none(), |ui| {
-                crate::app::ui::widgets::primary_button(ui, &offer.name)
-            });
-            let send = match &blocked {
-                Some(why) => send.inner.on_disabled_hover_text(why),
-                None => send.inner.on_hover_text("Send the area painted · Enter"),
-            };
-            if send.clicked() {
-                self.send_ai_draft();
+            } else {
+                let send = ui.add_enabled(
+                    blocked.is_none(),
+                    egui::Button::new(egui::RichText::new("Send").color(palette.on_accent()))
+                        .fill(palette.accent())
+                        .min_size(size),
+                );
+                let send = match &blocked {
+                    Some(why) => send.on_disabled_hover_text(why),
+                    None => send.on_hover_text("Send the area painted · Enter"),
+                };
+                if send.clicked() {
+                    self.send_ai_draft();
+                }
             }
             if ui
-                .add_enabled(painted, egui::Button::new("Clear").min_size(button))
+                .add_enabled(
+                    painted && working.is_none(),
+                    egui::Button::new("Clear").min_size(size),
+                )
                 .on_hover_text("Forget the area painted · Esc")
                 .clicked()
             {
                 self.clear_ai_draft();
             }
         });
-        // Why it can't go, once something is painted: nothing to say before.
-        if painted && let Some(why) = &blocked {
+        if let Some(working) = working {
+            indented(ui, |ui| {
+                crate::app::ui::widgets::spinner(ui, text::SMALL);
+                ui.label(egui::RichText::new(working).size(text::SMALL));
+            });
+        } else if painted && let Some(why) = &blocked {
+            // Why it can't go, once something is painted: nothing to say before.
             hint(ui, why);
         }
         if let Some(consent) = self.ai_remove.consent.clone() {
             // In the text's own colour, not a hint's: this waits for an answer.
-            ui.add(
-                egui::Label::new(format!(
-                    "{} sends the painted area and its surroundings to the service set up in {}. \
-                     Send it?",
-                    consent.offer.name, consent.offer.extension_name
-                ))
-                .wrap(),
-            );
+            indented(ui, |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!(
+                            "{} sends the painted area and its surroundings to the service set \
+                             up in {}. Send it?",
+                            consent.offer.name, consent.offer.extension_name
+                        ))
+                        .size(text::SMALL),
+                    )
+                    .wrap(),
+                );
+            });
             indented(ui, |ui| {
                 if ui.button("Send").clicked() {
                     self.answer_ai_remove_consent(true);
@@ -143,27 +166,41 @@ impl Editor {
                 .failed
                 .as_ref()
                 .map_or(offer.clone(), |(failed, _)| failed.clone());
-            // In the text's own colour, not a hint's: the last request failed.
-            ui.add(egui::Label::new(failure.message(&failed.name)).wrap());
+            // One line in the warning tone; a button only where there is
+            // something to do. A prompt to write goes once the next send does.
             indented(ui, |ui| {
-                if matches!(failure, Failure::NeedsSetup(_))
-                    && ui
-                        .button(format!("Set up {}…", failed.extension_name))
-                        .clicked()
-                {
-                    self.open_extension_page(&failed.extension);
-                }
-                if ui.button("Dismiss").clicked() {
-                    self.dismiss_ai_failure();
-                }
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(failure.message(&failed.name))
+                            .size(text::MICRO)
+                            .color(palette.warning()),
+                    )
+                    .wrap(),
+                );
             });
-        } else if self.ai_setup_needed(&offer) {
-            ui.add(
-                egui::Label::new(format!(
-                    "{} needs setting up before you paint",
-                    offer.extension_name
-                ))
-                .wrap(),
+            match failure {
+                Failure::NeedsInput(_) => {}
+                Failure::NeedsSetup(_) => indented(ui, |ui| {
+                    if ui
+                        .small_button(format!("Set up {}…", failed.extension_name))
+                        .clicked()
+                    {
+                        self.open_extension_page(&failed.extension);
+                    }
+                    if ui.small_button("Dismiss").clicked() {
+                        self.dismiss_ai_failure();
+                    }
+                }),
+                _ => indented(ui, |ui| {
+                    if ui.small_button("Dismiss").clicked() {
+                        self.dismiss_ai_failure();
+                    }
+                }),
+            }
+        } else if self.ai_setup_needed(offer) {
+            hint(
+                ui,
+                &format!("{} needs setting up before you send", offer.extension_name),
             );
             indented(ui, |ui| {
                 if ui
