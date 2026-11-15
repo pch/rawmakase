@@ -419,7 +419,7 @@ impl Editor {
             move |tx| {
                 let event = match change_folders(&catalog, job) {
                     Ok((relinked, report, conflicts)) => {
-                        reopened(&catalog, relinked, &report, &conflicts, &opened)
+                        reopened(&catalog, relinked, &report, &conflicts, tx, &opened)
                     }
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
                 };
@@ -536,38 +536,43 @@ fn entry(
     clicked
 }
 /// The catalog at `location` opened again after a folder change, with what
-/// the change found.
+/// the change found. Upgrading one of an earlier format as it opens says how
+/// far it has got through `tx`.
 pub(in crate::app) fn reopened(
     location: &CatalogLocation,
     relinked: bool,
     report: &crate::catalog::SidecarReport,
     conflicts: &[Conflict],
+    tx: &std::sync::mpsc::Sender<Event>,
     ctx: &egui::Context,
 ) -> Event {
     Event::CatalogReady(
-        crate::catalog_session::CatalogSession::open(location)
-            .map(|opened| crate::app::library::Library::new(opened, ctx.clone()))
-            .map(|mut l| {
-                if relinked {
-                    l.wait_for_availability();
-                    let available = l.available_count();
-                    let said = format!(
-                        "Folder location changed. {available} of {} photos are available.",
-                        l.session.photos().len()
-                    );
-                    if available == 0 {
-                        l.messages.warn(format!(
-                            "{said} No files matched this location; check that the selected \
+        crate::catalog_session::CatalogSession::open_reporting(
+            location,
+            &mut super::upgrade_progress(tx, ctx),
+        )
+        .map(|opened| crate::app::library::Library::new(opened, ctx.clone()))
+        .map(|mut l| {
+            if relinked {
+                l.wait_for_availability();
+                let available = l.available_count();
+                let said = format!(
+                    "Folder location changed. {available} of {} photos are available.",
+                    l.session.photos().len()
+                );
+                if available == 0 {
+                    l.messages.warn(format!(
+                        "{said} No files matched this location; check that the selected \
                              folder contains the expected subfolders."
-                        ));
-                    } else {
-                        l.messages.done(said);
-                    }
+                    ));
+                } else {
+                    l.messages.done(said);
                 }
-                folder_added(&mut l, report, conflicts);
-                Box::new(l)
-            })
-            .map_err(|e| format!("{e:#}")),
+            }
+            folder_added(&mut l, report, conflicts);
+            Box::new(l)
+        })
+        .map_err(|e| format!("{e:#}")),
     )
 }
 /// Reports what adding a folder skipped, if anything, on the Library's

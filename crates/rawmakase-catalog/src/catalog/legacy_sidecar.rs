@@ -21,6 +21,7 @@ pub struct Sidecar {
     pub pipeline: u32,
     pub source: Identity,
     /// The recipe with its spots and masks, which are saved in the companion file.
+    #[serde(serialize_with = "crate::model::saved_format::serialize_envelope_recipe")]
     pub recipe: Recipe,
     pub export: ExportOptions,
     #[serde(flatten)]

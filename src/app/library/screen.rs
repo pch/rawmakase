@@ -346,7 +346,10 @@ fn render(
     edit: Option<&EditSource>,
     cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
-    let edited = matches!(edit, Some(EditSource::Recipe(_) | EditSource::Lightroom(_)));
+    let edited = matches!(
+        edit,
+        Some(EditSource::Recipe(_) | EditSource::Unreadable(_) | EditSource::Lightroom(_))
+    );
     if !edited && !crate::storage::is_raw(path) {
         return Ok(thumbnails::downscale(&crate::raster::decode(path)?, edge));
     }

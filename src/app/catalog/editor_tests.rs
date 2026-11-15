@@ -780,3 +780,42 @@ fn the_open_photo_stays_after_a_sync_only_where_its_file_was_found() -> anyhow::
     assert_eq!(e.document.catalog_photo, None);
     Ok(())
 }
+
+/// A catalog of an earlier format opened again (File → Open Catalog, a folder
+/// change, a Lightroom import) says how far its upgrade has got, and opens.
+#[test]
+fn reopening_an_earlier_catalog_reports_its_upgrade() -> anyhow::Result<()> {
+    let mut earlier = crate::catalog::upgrade_fixtures::Earlier::new(6, 2)?;
+    earlier.set_edit(0, &crate::model::recipe::Recipe::default())?;
+    earlier.close();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let ctx = egui::Context::default();
+    let event = super::folder_locations::reopened(
+        &crate::catalog::CatalogLocation::File(earlier.path.clone()),
+        false,
+        &Default::default(),
+        &[],
+        &tx,
+        &ctx,
+    );
+    let Event::CatalogReady(Ok(library)) = event else {
+        panic!("the catalog opens");
+    };
+    let said: Vec<String> = rx
+        .try_iter()
+        .filter_map(|e| match e {
+            Event::CatalogWorking(text) => Some(text),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        said.first().map(String::as_str),
+        Some("Upgrading catalog: 0 / 1 edits")
+    );
+    assert_eq!(
+        said.last().map(String::as_str),
+        Some("Upgrading catalog: 1 / 1 edits")
+    );
+    assert_eq!(library.session.photos().len(), 2);
+    Ok(())
+}

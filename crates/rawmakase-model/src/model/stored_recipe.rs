@@ -11,6 +11,7 @@
 //! everywhere ([`crate::model::recipe::Recipe`]'s field deserializers).
 use crate::camera_profiles::CameraProfile;
 use crate::lens::choice::LensProfileRef;
+use crate::model::raw_json::{RawObject, raw_of};
 use crate::model::recipe::Recipe;
 use crate::optics::lensfun::Calibration;
 use crate::storage::recipe_assets::{self, Asset, AssetSource};
@@ -31,25 +32,33 @@ impl Storer {
     pub fn new() -> Self {
         Self::default()
     }
-    /// `r` in the stored form.
-    pub fn to_stored(&mut self, r: &Recipe) -> serde_json::Value {
+    /// `r` in the stored form, as an object whose values keep the text the
+    /// recipe serializes them as.
+    pub fn to_stored(&mut self, r: &Recipe) -> RawObject {
         let mut bare = r.clone();
         let profile = bare.profile.take();
         let calibration = match &mut bare.lens_profile_choice.id {
             Some(LensProfileRef::Lensfun(choice)) => choice.calibration.take(),
             _ => None,
         };
-        let mut stored = serde_json::to_value(&bare).expect("a recipe serializes");
+        let text = serde_json::to_string(&bare).expect("a recipe serializes");
+        let mut stored = RawObject::parse(&text).expect("a recipe is an object");
         if let Some(p) = profile {
-            stored["profile"] = self.profile_id(&p).into();
+            stored.set("profile", raw_of(&self.profile_id(&p)));
         }
         if let Some(c) = calibration {
             let id = self.calibration_id(&c);
-            stored
-                .pointer_mut("/lens_profile_choice/id/lensfun")
-                .and_then(serde_json::Value::as_object_mut)
-                .expect("a Lensfun choice is stored under lensfun")
-                .insert("calibration".into(), id.into());
+            let at = |o: &RawObject, key: &str| {
+                RawObject::parse(o.get(key).expect("a Lensfun choice").get())
+                    .expect("a Lensfun choice is an object")
+            };
+            let mut choice = at(&stored, "lens_profile_choice");
+            let mut lens_id = at(&choice, "id");
+            let mut lensfun = at(&lens_id, "lensfun");
+            lensfun.set("calibration", raw_of(&id));
+            lens_id.set("lensfun", lensfun.to_raw());
+            choice.set("id", lens_id.to_raw());
+            stored.set("lens_profile_choice", choice.to_raw());
         }
         stored
     }
@@ -89,7 +98,7 @@ impl Storer {
 }
 
 /// `r` in the stored form, with the assets it names.
-pub fn to_stored(r: &Recipe) -> (serde_json::Value, Vec<Asset>) {
+pub fn to_stored(r: &Recipe) -> (RawObject, Vec<Asset>) {
     let mut storer = Storer::new();
     let stored = storer.to_stored(r);
     (stored, storer.into_assets())
@@ -98,7 +107,7 @@ pub fn to_stored(r: &Recipe) -> (serde_json::Value, Vec<Asset>) {
 /// `r`'s stored form as text: what a catalog keeps, and what identifies the edit
 /// (a preview's tag) whichever form it was read from.
 pub fn to_text(r: &Recipe) -> String {
-    to_stored(r).0.to_string()
+    to_stored(r).0.to_text()
 }
 
 /// The recipe stored as `text`, its references resolved through `source`.

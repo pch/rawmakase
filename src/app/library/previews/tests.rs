@@ -28,7 +28,7 @@ pub(in crate::app::library) fn edited_jpeg(path: &Path) -> anyhow::Result<EditSo
         exposure: 1.,
         ..crate::model::recipe::Recipe::for_rendered(&m)
     };
-    Ok(EditSource::Recipe(serde_json::to_string(&recipe)?))
+    Ok(EditSource::saved(recipe))
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn an_edited_preview_is_rendered_as_develops_fit_draws_it() -> anyhow::Result<()
         ..Recipe::for_rendered(&m)
     };
     recipe.effects.clarity = 0.2;
-    let edit = EditSource::Recipe(serde_json::to_string(&recipe)?);
+    let edit = EditSource::saved(recipe);
     let cancel = AtomicBool::new(false);
     let preview = render_edited(&path, &edit, Cancel::new(&cancel))?;
     let (image, recipe) = open_quickly(&path, Some(&edit), Cancel::new(&cancel))?;
@@ -98,10 +98,8 @@ fn an_edited_preview_is_rendered_as_develops_fit_draws_it() -> anyhow::Result<()
 fn an_edited_render_stops_once_cancelled() -> anyhow::Result<()> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("photo.png");
-    let EditSource::Recipe(json) = edited_jpeg(&path)? else {
-        unreachable!()
-    };
-    let recipe: Recipe = serde_json::from_str(&json)?;
+    let edited = edited_jpeg(&path)?;
+    let recipe: Recipe = edited.saved_recipe().unwrap().clone();
     let crate::photo::Opened::Rendered(image) = crate::photo::open_source(&path, Cancel::NEVER)?
     else {
         unreachable!("a PNG opens rendered")
@@ -190,7 +188,7 @@ fn a_panicking_edited_preview_fails_and_the_next_one_is_rendered() -> anyhow::Re
         egui::Context::default(),
         render,
     );
-    let source = EditSource::Recipe("{}".into());
+    let source = EditSource::saved(Recipe::default());
     let job = |id, path: &PathBuf| EditJob::Render {
         id,
         ticket: 0,
@@ -233,7 +231,7 @@ fn a_stored_render_of_a_file_replaced_since_is_not_kept() -> anyhow::Result<()> 
         id: PhotoId(1),
         ticket: 0,
         path: source.clone(),
-        source: EditSource::Recipe("{}".into()),
+        source: EditSource::saved(Recipe::default()),
         ahead: false,
     })?;
     match rx.recv_timeout(Duration::from_secs(10))? {
@@ -288,7 +286,7 @@ fn with_ai(
 fn with_ai_denoise() -> anyhow::Result<EditSource> {
     let mut recipe = Recipe::default();
     recipe.switch_ai_denoise(true);
-    Ok(EditSource::Recipe(serde_json::to_string(&recipe)?))
+    Ok(EditSource::saved(recipe))
 }
 
 /// Stores a finished AI Denoise result for the file at `path` in `cache`.
@@ -398,7 +396,7 @@ fn a_raw_renders_its_preview_from_a_finished_result() -> anyhow::Result<()> {
     let mut recipe = Recipe::default();
     recipe.switch_ai_denoise(true);
     recipe.ai_denoise.amount = 1.;
-    let source = EditSource::Recipe(serde_json::to_string(&recipe)?);
+    let source = EditSource::saved(recipe.clone());
     let (plain, shows) = develop_for_preview(&path, &source, 256, None, Cancel::new(&cancel))?;
     assert_eq!(shows, PreviewAi::Plain);
     let (denoised, shows) =
@@ -533,7 +531,10 @@ pub(super) fn render_job(id: i64, path: &Path, ahead: bool) -> EditJob {
         id: PhotoId(id),
         ticket: id as u64,
         path: path.into(),
-        source: EditSource::Recipe(format!("{{\"photo\":{id}}}")),
+        source: EditSource::saved(Recipe {
+            unknown: [("photo".to_string(), id.into())].into(),
+            ..Default::default()
+        }),
         ahead,
     }
 }
@@ -742,7 +743,7 @@ fn closing_cancels_the_edited_preview_under_way() -> anyhow::Result<()> {
         id: PhotoId(1),
         ticket,
         path: source.clone(),
-        source: EditSource::Recipe("{}".into()),
+        source: EditSource::saved(Recipe::default()),
         ahead: false,
     };
     tx.send(job(0))?;
@@ -810,5 +811,66 @@ fn thumbnails_no_longer_shown_are_skipped() -> anyhow::Result<()> {
     progress.queued();
     progress.finish(&skipped);
     assert_eq!(progress.failed, 0);
+    Ok(())
+}
+
+/// An edit's preview is kept under one tag whether it comes from Develop or from
+/// the catalog: with spots and masks or without, freshly saved or upgraded from a
+/// catalog that held its profile inline.
+#[test]
+fn an_edit_has_one_preview_tag_from_develop_and_the_catalog() -> anyhow::Result<()> {
+    use crate::catalog::upgrade_fixtures::{Earlier, inline};
+    let profile = std::sync::Arc::new(
+        crate::camera_profiles::CameraProfile::camera_matrix_default(
+            &crate::camera_data::Metadata {
+                cam_xyz: [[0.9, -0.2, 0.3], [-0.4, 1.2, 0.15], [-0.05, 0.1, 0.6]],
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .with_test_srgb_look(),
+    );
+    let plain = Recipe {
+        profile: Some(profile),
+        exposure: 0.4,
+        ..Default::default()
+    };
+    let mut masked = plain.clone();
+    masked.masks.push(crate::model::masks::MaskGroup {
+        components: vec![crate::model::masks::MaskComponent::new(
+            crate::model::masks::MaskShape::Radial {
+                center: [0.5, 0.5],
+                radii: [0.2, 0.1],
+                angle: 0.,
+                feather: 0.5,
+            },
+        )],
+        ..Default::default()
+    });
+    let develop = |r: &Recipe| EditSource::saved(r.clone()).tag();
+    let catalog = |c: &crate::catalog::Catalog, id| -> anyhow::Result<String> {
+        Ok(EditSource::of(c.preview_edit(id)?).unwrap().tag())
+    };
+    // Upgraded: stored inline by an earlier release.
+    let mut f = Earlier::new(6, 2)?;
+    f.set_edit(0, &plain)?;
+    f.set_edit(1, &plain)?;
+    let mut c = f.open()?;
+    let upgraded: Recipe = serde_json::from_value(inline(&plain))?;
+    assert_eq!(catalog(&c, f.photos[0].0)?, develop(&upgraded));
+    // Freshly saved, with masks and without.
+    for r in [&plain, &masked] {
+        let (id, file) = &f.photos[1];
+        c.save_edit(
+            *id,
+            file,
+            &crate::storage::Identity::read(file)?,
+            r,
+            &Default::default(),
+            crate::catalog::HistoryUpdate::Keep,
+        )?;
+        assert_eq!(catalog(&c, *id)?, develop(r));
+    }
+    assert_ne!(develop(&plain), develop(&masked));
     Ok(())
 }
