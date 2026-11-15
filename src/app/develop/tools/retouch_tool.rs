@@ -463,7 +463,9 @@ impl Editor {
             .is_some_and(|op| op.is_generated() == self.ai_retouching())
     }
     /// Lets go of a selected spot the open tool doesn't show, so its keys and
-    /// sliders never reach the other tool's spots.
+    /// sliders never reach the other tool's spots. Every change to the
+    /// selected spot checks it first, as a tool opened by a key in the same
+    /// frame hasn't drawn yet.
     pub(in crate::app) fn fit_retouch_selection(&mut self) {
         if let Some(i) = self.view.retouch.selected
             && !self.spot_in_tool(i)
@@ -505,6 +507,7 @@ impl Editor {
     }
     /// `/`: the next best source for the selected spot.
     pub(in crate::app) fn next_source(&mut self) {
+        self.fit_retouch_selection();
         let Some(i) = self.view.retouch.selected else {
             return;
         };
@@ -525,6 +528,7 @@ impl Editor {
         }
     }
     pub(in crate::app) fn delete_spot(&mut self) {
+        self.fit_retouch_selection();
         if let Some(i) = self.view.retouch.selected.take()
             && i < self.document.edit.recipe().retouch.len()
         {
@@ -533,6 +537,7 @@ impl Editor {
     }
     /// `[` and `]`: brush size, or the selected spot's; with Shift, feather.
     pub(in crate::app) fn step_retouch_size(&mut self, grow: bool, feather: bool) {
+        self.fit_retouch_selection();
         let tool = &mut self.view.retouch;
         let op = tool
             .selected

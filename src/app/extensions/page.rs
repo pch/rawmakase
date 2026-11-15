@@ -58,8 +58,8 @@ pub(in crate::app) struct Available {
 pub(in crate::app) const AVAILABLE: &[Available] = &[Available {
     id: "dev.pch.ai-remove",
     name: "AI Retouch",
-    line: "Experimental: AI Remove and AI Replace in the Remove tool, with a hosted model \
-           and your own API key (fal.ai or Replicate).",
+    line: "Experimental: AI Remove and AI Replace in an AI Retouch tool, with a hosted \
+           model and your own API key (fal.ai or Replicate).",
     repository: "https://github.com/pch/rawmakase-ai-retouch",
 }];
 

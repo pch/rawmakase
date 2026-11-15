@@ -438,7 +438,7 @@ borrows the image and coverage read-only and the result writable for the call
 `model` names the model, saved with the patch as its provenance; `model_key`
 stands for everything besides the pixels the result depends on. Each is 1 to 128
 bytes. Errors: `needs_setup` when the user has to set something up first (an API
-key), with a plain-text message the Remove tool shows with a button to the
+key), with a plain-text message the AI Retouch tool shows with a button to the
 extension's page; `unavailable` when its service can't be reached or won't work
 now (offline, a quota, a rate limit), with the service's message; `refused` when
 the service declined the request's content. Keep keys out of every message.

@@ -1,4 +1,4 @@
-//! The Remove drawer's side of AI Remove: that it is experimental, why it
+//! The AI Retouch drawer's side of AI Remove: that it is experimental, why it
 //! can't run, the one-time question before pixels leave the computer, the
 //! request running, what went wrong, and what made the selected spot.
 use super::Failure;

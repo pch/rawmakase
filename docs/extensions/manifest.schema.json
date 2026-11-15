@@ -441,7 +441,7 @@
           "type": "string"
         },
         "name": {
-          "description": "What the Remove tool calls it, for example `AI Remove`.",
+          "description": "Its mode's name in the AI Retouch tool, for example `AI Remove`.",
           "type": "string"
         },
         "prompt": {

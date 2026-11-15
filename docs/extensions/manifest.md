@@ -273,9 +273,10 @@ outside the photos the app hands it should say so with `files = "any"` in
 
 From `api = 3`; a manifest with an earlier `api` that declares one is refused,
 and the app never sends `retouch.generate` to a program serving an earlier one.
-A retouch generator regenerates the area the user painted in the Remove tool
-([`retouch.generate`](protocol.md#retouchgenerate-request)), as the experimental
-AI Remove mode ([retouching](../retouching.md#ai-remove-and-ai-replace-experimental)). The app
+A retouch generator regenerates the area the user painted in the AI Retouch
+tool ([`retouch.generate`](protocol.md#retouchgenerate-request)), as its
+experimental AI Remove and AI Replace modes
+([retouching](../retouching.md#ai-remove-and-ai-replace-experimental)). The app
 renders the region for it, keeps the answer as a patch saved with the edit, and
 makes one History step of it; the patch renders without the extension.
 
@@ -291,7 +292,7 @@ prompt-hint = "What to put there, e.g. a wooden bench"
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `id` | — | Lowercase letters, digits and hyphens, unique among the retouch generators. Patches record `<extension>/<id>` as what made them |
-| `name` | — | Its name in the Remove tool |
+| `name` | — | Its mode's name in the AI Retouch tool |
 | `uploads` | `false` | It sends what it is given off this computer (a hosted model). The app asks the user once per extension before the first request, and keeps the answer in `extensions.json` |
 | `prompt` | `"none"` | Whether the user writes text for a request: `none`, `optional` (sent when written) or `required` (no request without it). The text goes as `retouch.generate`'s `prompt` |
 | `prompt-hint` | — | What the text field shows while empty, 1 to 120 bytes on one line; only with a `prompt` |

@@ -470,7 +470,7 @@ pub struct RetouchGenerator {
     /// `<extension>/<id>`.
     #[schemars(regex(pattern = r"^[a-z0-9][a-z0-9-]*$"))]
     pub id: String,
-    /// What the Remove tool calls it, for example `AI Remove`.
+    /// Its mode's name in the AI Retouch tool, for example `AI Remove`.
     pub name: String,
     /// Whether it sends the pixels it is given off this computer (to a
     /// hosted model). The app asks the user once before the first request.

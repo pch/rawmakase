@@ -175,6 +175,7 @@ impl Editor {
             if self.view.retouch.is_dragging() {
                 return;
             }
+            self.fit_retouch_selection();
             let tool = &mut self.view.retouch;
             let op = tool
                 .selected

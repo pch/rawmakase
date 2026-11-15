@@ -394,6 +394,31 @@ fn ai_retouch_is_its_own_tool_with_its_own_spots() {
     assert_eq!(e.view.retouch.selected, Some(1));
     assert!(e.spot_in_tool(1) && !e.spot_in_tool(0));
 
+    // Opened in the same frame as its keys, before anything drew: Delete,
+    // [ ] and the wheel still never reach the AI spot it doesn't show.
+    let before = e.document.edit.recipe().retouch[1].clone();
+    e.view.set_tool(Tool::Remove);
+    let ctx = e.context.clone();
+    let frame = e.begin_edit_frame();
+    e.step_retouch_size(true, true);
+    e.next_source();
+    e.delete_spot();
+    {
+        use crate::app::develop::tools::brush_scroll::{Adjust, MaskBrush, Scroll};
+        for adjust in [Adjust::Size, Adjust::Feather] {
+            e.scroll_tool_size(Scroll {
+                lines: 1.,
+                adjust,
+                brush: MaskBrush::Current,
+            });
+        }
+    }
+    e.finish_edit_frame(frame, &ctx);
+    assert_eq!(e.document.edit.recipe().retouch.len(), 2);
+    assert_eq!(e.document.edit.recipe().retouch[1], before);
+    e.view.set_tool(Tool::AiRetouch);
+    e.view.retouch.selected = Some(1);
+
     // Spot Removal lets go of the AI spot and never takes it.
     e.view.set_tool(Tool::Remove);
     assert!(!e.ai_retouching() && e.view.retouching());
@@ -747,6 +772,7 @@ fn a_generated_spot_stays_where_its_patch_was_made() {
     let i = e.document.edit.recipe().retouch.len() - 1;
     let before = e.document.edit.recipe().retouch[i].clone();
     assert!(before.is_generated());
+    e.view.set_tool(crate::app::develop::state::Tool::AiRetouch);
     e.view.retouch.selected = Some(i);
     // As the tool runs them, inside an edit frame.
     let ctx = e.context.clone();
@@ -779,6 +805,7 @@ fn a_generated_spot_stays_where_its_patch_was_made() {
         })
     });
     let heal = e.document.edit.recipe().retouch.len() - 1;
+    e.view.set_tool(crate::app::develop::state::Tool::Remove);
     e.view.retouch.selected = Some(heal);
     in_frame(e, &|e| e.choose_retouch_mode(RetouchMode::Generate));
     assert_eq!(

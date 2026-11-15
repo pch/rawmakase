@@ -54,7 +54,7 @@ pub(in crate::app) struct Offer {
     pub(in crate::app) extension: String,
     /// The generator's id within its extension.
     pub(in crate::app) generator: String,
-    /// Its name in the Remove tool.
+    /// Its mode's name in the AI Retouch tool.
     pub(in crate::app) name: String,
     /// It sends what it is given off this computer.
     pub(in crate::app) uploads: bool,
