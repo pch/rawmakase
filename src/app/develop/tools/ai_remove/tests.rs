@@ -419,6 +419,13 @@ fn ai_retouch_is_its_own_tool_with_its_own_spots() {
     e.view.set_tool(Tool::AiRetouch);
     e.view.retouch.selected = Some(1);
 
+    // An index past the end isn't the other tool's spot: it stays for its
+    // users' bounds checks, as it did, whenever the photo draws.
+    e.view.retouch.selected = Some(9);
+    e.fit_retouch_selection();
+    assert_eq!(e.view.retouch.selected, Some(9));
+    e.view.retouch.selected = Some(1);
+
     // Spot Removal lets go of the AI spot and never takes it.
     e.view.set_tool(Tool::Remove);
     assert!(!e.ai_retouching() && e.view.retouching());

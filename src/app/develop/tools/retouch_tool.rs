@@ -466,8 +466,14 @@ impl Editor {
     /// sliders never reach the other tool's spots. Every change to the
     /// selected spot checks it first, as a tool opened by a key in the same
     /// frame hasn't drawn yet.
+    ///
+    /// Only a spot that is there and the other tool's: an index past the end
+    /// (the list shortened under it) is left for its users' bounds checks, as
+    /// it was, so whether it is let go of never hangs on when the photo drew.
     pub(in crate::app) fn fit_retouch_selection(&mut self) {
+        let ops = &self.document.edit.recipe().retouch;
         if let Some(i) = self.view.retouch.selected
+            && i < ops.len()
             && !self.spot_in_tool(i)
         {
             self.view.retouch.select(None);
