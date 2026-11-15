@@ -847,13 +847,13 @@ fn failures_say_why_and_a_secret_setting_sets_the_extension_up() {
     // nothing: what it was sent with is gone.
     remove_with(e, "setup");
     e.extensions
-        .set_secret(ID, "key", Some("sk-other".into()))
+        .set_secret(ID, "key", Some("sk-SENTINEL-other-key".into()))
         .unwrap();
     pump(e, "the request to end", settled);
     assert!(!e.ai_setup_needed(&offer(e, "setup")));
     e.extensions.set_secret(ID, "key", None).unwrap();
     pump(e, "the key to be removed", |e| {
-        e.extensions.get(ID).unwrap().secret("key") != Some(&secrets_state("sk-other"))
+        e.extensions.get(ID).unwrap().secret("key") != Some(&secrets_state("sk-SENTINEL-other-key"))
     });
     assert!(matches!(
         retouch_generator::failure(RemoteError::new(
@@ -1445,7 +1445,7 @@ fn uninstalling_takes_the_keys_with_it() {
     f.secrets
         .set(
             &left,
-            &rawmakase_extensions::secrets::Secret::new("sk-left"),
+            &rawmakase_extensions::secrets::Secret::new("sk-SENTINEL-left"),
         )
         .unwrap();
     rawmakase_extensions::state::State::update(&f.data, |state| {
