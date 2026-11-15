@@ -278,10 +278,11 @@ outside the photos the app hands it should say so with `files = "any"` in
 
 From `api = 3`; a manifest with an earlier `api` that declares one is refused,
 and the app never sends `retouch.generate` to a program serving an earlier one.
-A retouch generator regenerates the area the user painted in the AI Retouch
-tool ([`retouch.generate`](protocol.md#retouchgenerate-request)), as its
-experimental AI Remove and AI Replace modes
-([retouching](../retouching.md#ai-remove-and-ai-replace-experimental)). The app
+A retouch generator is a tool of its own on Develop's rail that regenerates
+the area the user painted
+([`retouch.generate`](protocol.md#retouchgenerate-request); AI Retouch's AI
+Remove and AI Replace are one,
+[retouching](../retouching.md#ai-remove-and-ai-replace-experimental)). The app
 renders the region for it, keeps the answer as a patch saved with the edit, and
 makes one History step of it; the patch renders without the extension.
 
@@ -291,6 +292,7 @@ id = "retouch"
 name = "AI Retouch"
 uploads = true
 panel = "retouch"
+icon = "icons/retouch.svg"
 
 [[panel]]
 id = "retouch"
@@ -301,11 +303,13 @@ place = "generator"
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `id` | — | Lowercase letters, digits and hyphens, unique among the retouch generators. Patches record `<extension>/<id>` as what made them |
-| `name` | — | Its name in the tool: its mode when there are several generators, its History step |
+| `name` | — | Its tool's name: its rail button's tip, its drawer's title, its History step and its messages |
 | `uploads` | `false` | It sends what it is given off this computer (a hosted model). The app asks the user once per extension before the first request, and keeps the answer in `extensions.json` |
+| `icon` | a generic extension icon | Its rail icon: an SVG in the package, which must hold it. Drawn as RAWmakase's own icons are, a 24-unit square outline in white (`currentColor` is drawn white), tinted by the app |
 | `panel` | none | A [`[[panel]]`](#panel) with `place = "generator"` that the tool's drawer shows, for what the program needs besides the area (a mode, a prompt). Its values are the program's, from `panel.changed`; the app sends any still being typed before the request, so they reach the program first |
 
-The generator tool (the magic wand, last of Develop's rail tools while any is
-offered) offers each enabled extension's generators as modes of their own,
-named by `name`. RAWmakase draws the brush, the area painted, Send, Clear and
-what a request is doing; everything else the generator needs is its panel's.
+Each enabled extension's generators follow the app's tools on Develop's rail,
+each with its `icon` and `name`. RAWmakase draws the brush, the area painted,
+Send, Clear and what a request is doing; everything else, including what the
+tool says of itself (that it is experimental, what a request costs), is its
+panel's.

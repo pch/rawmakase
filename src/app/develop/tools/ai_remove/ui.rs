@@ -84,14 +84,7 @@ impl Editor {
     /// place, the upload question, and what went wrong.
     pub(in crate::app) fn ai_send(&mut self, ui: &mut egui::Ui, offer: &Offer) {
         let palette = theme::palette(ui.ctx());
-        hint(
-            ui,
-            &format!(
-                "Paint over what to change, then Send. Each send is one paid call to the \
-                 service set up in {}.",
-                offer.extension_name
-            ),
-        );
+        hint(ui, "Paint over what to change, then Send.");
         let blocked = self.ai_send_blocked();
         let painted = !self.ai_remove.draft.is_empty();
         let working = self.ai_remove.working();
@@ -223,7 +216,7 @@ impl Editor {
     pub(in crate::app) fn ai_remove_install_hint(&mut self, ui: &mut egui::Ui) {
         hint(
             ui,
-            "AI Remove (experimental) comes as an extension, with your own API key",
+            "AI Retouch (experimental) comes as an extension, with your own API key",
         );
         indented(ui, |ui| {
             if ui.small_button("Preferences > Extensions…").clicked() {

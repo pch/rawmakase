@@ -35,6 +35,8 @@ enum TabClick {
     Edit,
     /// Open or close this tool, its drawer in place of the adjustments.
     Tool(Tool),
+    /// Open or close this generator's tool, by its provenance.
+    Generator(String),
 }
 
 /// A rail button's id, fixed so tests can find it.
@@ -44,6 +46,10 @@ pub(in crate::app) fn rail_id(tab: DevelopTab) -> egui::Id {
 /// The rail's Edit button's id.
 pub(in crate::app) fn edit_id() -> egui::Id {
     egui::Id::new("develop-rail-edit")
+}
+/// A generator's rail button's id, by its provenance.
+pub(in crate::app) fn generator_id(provenance: &str) -> egui::Id {
+    egui::Id::new(("develop-rail-generator", provenance))
 }
 /// A tool's rail button's id.
 pub(in crate::app) fn tool_id(tool: Tool) -> egui::Id {
@@ -106,6 +112,7 @@ impl Editor {
                 }
             }
             Some(TabClick::Tool(tool)) => self.view.toggle(tool),
+            Some(TabClick::Generator(provenance)) => self.toggle_generator(&provenance),
             None => {}
         }
         self.develop_tabs_open()
@@ -281,6 +288,23 @@ impl Editor {
                     };
                     if button(ui, y, tool_id(t), tool == t, photo, tip.to_string(), &paint) {
                         click = Some(TabClick::Tool(t));
+                    }
+                    y += 36.;
+                }
+                // Then each extension's generator, a tool it names and draws.
+                let open_on = (tool == Tool::AiRetouch)
+                    .then(|| self.ai_remove_offer().map(|(o, _)| o.provenance))
+                    .flatten();
+                for offer in self.rail_generators() {
+                    let icon = self.generator_icon(&offer);
+                    let paint = |p: &egui::Painter, c: Pos2, tint: egui::Color32| match &icon {
+                        Some(uri) => icons::paint_uri_at(p, uri, c, 16., tint),
+                        None => icons::paint_at(p, Icon::Extensions, c, 16., tint),
+                    };
+                    let active = open_on.as_deref() == Some(offer.provenance.as_str());
+                    let id = generator_id(&offer.provenance);
+                    if button(ui, y, id, active, photo, offer.name.clone(), &paint) {
+                        click = Some(TabClick::Generator(offer.provenance.clone()));
                     }
                     y += 36.;
                 }

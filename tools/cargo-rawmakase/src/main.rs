@@ -212,6 +212,12 @@ fn package(
         files.push((path, bytes));
     }
     let mut extra: Vec<String> = manifest.extension.icon.iter().cloned().collect();
+    extra.extend(
+        manifest
+            .retouch_generators
+            .iter()
+            .filter_map(|g| g.icon.clone()),
+    );
     for path in include {
         let name = path
             .to_str()

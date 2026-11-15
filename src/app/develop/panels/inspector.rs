@@ -340,15 +340,23 @@ impl Editor {
     /// The open tool's drawer, in place of Develop's adjustments: Crop's
     /// settings, or Remove's, Red Eye's or Masking's. Its tools are on the
     /// rail.
-    pub(in crate::app) fn tool_drawer(&mut self, ui: &mut egui::Ui) {
-        let Some(name) = DRAWER_TOOLS
+    /// The open tool's drawer title: the app's name for its own tools, and
+    /// a generator's own name for its tool. None without a drawer.
+    pub(in crate::app) fn drawer_caption(&self) -> Option<String> {
+        let tool = self.view.tool();
+        if tool == Tool::AiRetouch {
+            return self.ai_remove_offer().map(|(offer, _)| offer.name);
+        }
+        DRAWER_TOOLS
             .iter()
-            .find(|(tool, ..)| *tool == self.view.tool())
-            .map(|(.., name)| *name)
-        else {
+            .find(|(t, ..)| *t == tool)
+            .map(|(.., name)| (*name).to_string())
+    }
+    pub(in crate::app) fn tool_drawer(&mut self, ui: &mut egui::Ui) {
+        let Some(name) = self.drawer_caption() else {
             return;
         };
-        crate::app::ui::widgets::panel_caption(ui, name);
+        crate::app::ui::widgets::panel_caption(ui, &name);
         let drawer = |ui: &mut egui::Ui, add: &mut dyn FnMut(&mut egui::Ui)| {
             drawer_frame().show(ui, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(space::XS, space::S);
@@ -356,12 +364,14 @@ impl Editor {
             });
         };
         match self.view.tool() {
-            Tool::Remove | Tool::AiRetouch => {
+            Tool::Remove => {
                 return drawer(ui, &mut |ui| {
                     experimental(ui, UNMEASURED);
                     self.retouch_panel(ui)
                 });
             }
+            // An extension's tool: what it says of itself is its panel's.
+            Tool::AiRetouch => return drawer(ui, &mut |ui| self.retouch_panel(ui)),
             Tool::RedEye => {
                 return drawer(ui, &mut |ui| {
                     experimental(ui, RED_EYE_NOTE);
@@ -1121,10 +1131,11 @@ fn experimental(ui: &mut egui::Ui, note: &str) {
         .on_hover_text(note);
     });
 }
-/// The tools whose drawers open in place of Develop's adjustments, as the
-/// rail lists them, with their tooltips and the drawer's caption. Red Eye
-/// has no shortcut, as in Lightroom.
-pub(in crate::app) const DRAWER_TOOLS: [(Tool, &str, &str); 5] = [
+/// The app's tools whose drawers open in place of Develop's adjustments, as
+/// the rail lists them, with their tooltips and the drawer's caption. Red
+/// Eye has no shortcut, as in Lightroom. Extensions' generators follow them,
+/// each a tool named and drawn by its extension.
+pub(in crate::app) const DRAWER_TOOLS: [(Tool, &str, &str); 4] = [
     (Tool::Crop, "Crop & Straighten · R", "Crop & Straighten"),
     (
         Tool::Remove,
@@ -1133,12 +1144,6 @@ pub(in crate::app) const DRAWER_TOOLS: [(Tool, &str, &str); 5] = [
     ),
     (Tool::RedEye, "Red Eye Correction", "Red Eye"),
     (Tool::Mask, "Masking · Shift+W", "Masking"),
-    // Last: an extension's, and only while one offers a generator.
-    (
-        Tool::AiRetouch,
-        "AI Retouch: an extension's generators (experimental)",
-        "AI Retouch",
-    ),
 ];
 /// The slider grid's label column in the tool drawers, wide enough for
 /// their longest captions ("Orientation", "Range High").
@@ -1186,14 +1191,13 @@ fn drawer_frame() -> egui::Frame {
 }
 /// Whether `tool` has a drawer in place of the adjustments.
 pub(in crate::app) fn has_drawer(tool: Tool) -> bool {
-    DRAWER_TOOLS.iter().any(|(t, ..)| *t == tool)
+    tool == Tool::AiRetouch || DRAWER_TOOLS.iter().any(|(t, ..)| *t == tool)
 }
 /// A drawer tool's icon on the rail, a Lucide outline as its tabs' are.
 pub(in crate::app) fn tool_icon(tool: Tool) -> Icon {
     match tool {
         Tool::Crop => Icon::Crop,
         Tool::Remove => Icon::Bandage,
-        Tool::AiRetouch => Icon::WandSparkles,
         Tool::RedEye => Icon::Eye,
         _ => Icon::MaskTool,
     }

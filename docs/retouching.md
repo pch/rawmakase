@@ -71,19 +71,21 @@ AI Remove and AI Replace regenerate what you paint over with a hosted model,
 through an extension that holds your own API key. It isn't bundled: install **AI
 Retouch** from Preferences > Extensions > Available (`dev.pch.ai-remove`,
 [github.com/pch/rawmakase-ai-retouch](https://github.com/pch/rawmakase-ai-retouch)),
-set the key on its page, and the rail gains **AI Retouch** (a magic wand, last of the tools), whose Mode offers **AI Remove** and **AI Replace**. Without the
-extension the Remove drawer says where to get it. Any extension declaring a
+set the key on its page, and the rail gains **AI Retouch** after its own tools,
+whose Mode offers **AI Remove** and **AI Replace**. Without the extension the
+Remove drawer says where to get it. Any extension declaring a
 `[[retouch-generator]]` ([manifest](extensions/manifest.md#retouch-generator)) is
-offered the same way, each generator a mode of its own; RAWmakase knows no
-provider. Below, "AI Remove" stands for any of them.
+offered the same way, each generator a rail tool with the name and icon its
+extension gives it; RAWmakase knows no provider. Below, "AI Retouch" stands for
+any of them.
 
-- **Its own tool.** AI Retouch is on the rail only while an enabled extension
-  offers a generator, and closes if the last one goes. Its spots and the Remove
+- **Its own tool.** A generator's tool is on the rail only while its extension is
+  enabled, and closes if it goes. Its spots and the Remove
   tool's are one list, rendered in order, but each tool shows, selects, deletes and
   resets only its own: AI spots in AI Retouch, Heal and Clone spots in the Remove
   tool. Both share the brush (size, feather, opacity), the keys (`[` `]`, Delete,
   H, A) and Visualize Spots.
-- **Its controls.** Under Mode, the drawer shows the generator's own panel, drawn by
+- **Its controls.** At the top, the drawer shows the generator's own panel, drawn by
   RAWmakase from what the extension declares: AI Retouch's mode (Remove or Replace)
   and its prompt ("remove the dogs, keep the people", "a wooden bench"). Their
   values are the extension's; RAWmakase sends any still being typed before a
@@ -91,11 +93,11 @@ provider. Below, "AI Remove" stands for any of them.
   nothing, says why, and paints the area again. What the extension says it did is
   kept with the spot and shown when it is selected.
 - **Click** adds a dab, a **drag** a stroke: they gather into one area, drawn on
-  the photo, and nothing is sent while painting. The drawer's button named after
-  the mode (or **Enter**) sends the area as one spot, with the brush's size,
+  the photo, and nothing is sent while painting. **Send** (or **Enter**) sends
+  the area as one spot, with the brush's size,
   feather and opacity then; **Clear** (or **Esc**) forgets it, as does another
   photo. The spot's strokes aren't joined across the gaps between them. While a
-  request runs, a card on the photo names the mode (AI Replace…) with Cancel.
+  request runs, a card on the photo names the generator with Cancel.
   One request runs at a time.
 - The first time, RAWmakase asks once per extension whether it may send the painted
   area and its surroundings to the service set up in it; the answer is kept in

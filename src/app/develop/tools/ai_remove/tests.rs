@@ -91,6 +91,12 @@ fn fixture(level: f32) -> Fixture {
         include_str!("../../../../../extensions/example/remove/rawmakase-extension.toml"),
     )
     .unwrap();
+    std::fs::create_dir(folder.join("icons")).unwrap();
+    std::fs::write(
+        folder.join("icons/fill.svg"),
+        include_str!("../../../../../extensions/example/remove/icons/fill.svg"),
+    )
+    .unwrap();
     let data = dir.path().join("data");
     Store::new(&data).add_developer(&folder).unwrap();
     editor.extensions = Host::start_for_tests(&data, program(), Duration::from_secs(30));
@@ -327,7 +333,7 @@ fn a_generator_s_panel_feeds_its_requests() {
     assert!(e.ai_remove.draft.is_empty(), "made: not painted again");
 }
 
-/// Each generator is a mode of its own: the one chosen is the one asked,
+/// Each generator is a tool of its own: the one chosen is the one asked,
 /// and choosing one that is gone falls back to the first.
 #[test]
 fn the_generator_chosen_is_the_one_asked() {
@@ -343,6 +349,60 @@ fn the_generator_chosen_is_the_one_asked() {
     assert_eq!(e.ai_remove_offer().unwrap().0.generator, "fill");
 }
 
+/// Each generator is a rail tool of its own, named and drawn by its
+/// extension: its name is the button's tip and the drawer's title, and its
+/// SVG the icon. Its button opens the tool on it, and again closes it.
+#[test]
+fn each_generator_is_a_rail_tool_named_and_drawn_by_its_extension() {
+    use crate::app::develop::state::Tool;
+    let mut f = fixture(0.27);
+    let e = &mut f.editor;
+    let rail: Vec<String> = e.rail_generators().into_iter().map(|o| o.name).collect();
+    assert_eq!(rail[..3], ["Fill", "Local Fill", "Gate"]);
+    assert!(!e.rail_tools().contains(&Tool::AiRetouch));
+    assert_eq!(e.drawer_caption(), None);
+    let local = offer(e, "local");
+    e.toggle_generator(&local.provenance);
+    assert!(e.view.is(Tool::AiRetouch));
+    assert_eq!(e.ai_remove_offer().unwrap().0, local);
+    assert_eq!(e.drawer_caption().as_deref(), Some("Local Fill"));
+    // Another generator's button moves the open tool to it.
+    let fill = offer(e, "fill");
+    e.toggle_generator(&fill.provenance);
+    assert!(e.view.is(Tool::AiRetouch));
+    assert_eq!(e.ai_remove_offer().unwrap().0, fill);
+    assert_eq!(e.drawer_caption().as_deref(), Some("Fill"));
+    e.toggle_generator(&fill.provenance);
+    assert_eq!(e.view.tool(), Tool::None);
+    assert_eq!(e.drawer_caption(), None);
+    // Spot Removal keeps the app's own title.
+    e.view.set_tool(Tool::Remove);
+    assert_eq!(e.drawer_caption().as_deref(), Some("Spot Removal"));
+
+    // The icon is the package's SVG, with `currentColor` drawn white; a
+    // generator without one, or whose file can't be read, gets none (the
+    // rail draws a generic one).
+    assert_eq!(
+        fill.icon.as_ref().and_then(|p| p.canonicalize().ok()),
+        f.folder.join("icons/fill.svg").canonicalize().ok()
+    );
+    assert_eq!(local.icon, None);
+    assert_eq!(e.generator_icon(&local), None);
+    let uri = e.generator_icon(&fill).expect("the fill icon");
+    assert!(uri.ends_with(".svg"), "{uri}");
+    let Ok(egui::load::BytesPoll::Ready { bytes, .. }) = e.context.try_load_bytes(&uri) else {
+        panic!("{uri} isn't loaded");
+    };
+    let svg = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(
+        svg.contains("stroke=\"#ffffff\"") && !svg.contains("currentColor"),
+        "{svg}"
+    );
+    let mut gone = fill.clone();
+    gone.icon = Some(f.folder.join("icons/gone.svg"));
+    assert_eq!(e.generator_icon(&gone), None);
+}
+
 /// AI Retouch is a rail tool of its own, there only while a generator is
 /// offered; it and Spot Removal each show, select and reset only their own
 /// spots, all kept in one ordered list.
@@ -351,7 +411,7 @@ fn ai_retouch_is_its_own_tool_with_its_own_spots() {
     use crate::app::develop::state::Tool;
     let mut f = fixture(0.24);
     let e = &mut f.editor;
-    assert!(e.rail_tools().contains(&Tool::AiRetouch));
+    assert!(!e.rail_generators().is_empty());
     assert!(e.rail_tools().contains(&Tool::Remove));
     e.view.set_tool(Tool::AiRetouch);
     assert!(e.ai_retouching() && e.view.retouching());
@@ -418,7 +478,7 @@ fn ai_retouch_is_its_own_tool_with_its_own_spots() {
     // Without a generator the tool leaves the rail, and closes if open.
     e.view.set_tool(Tool::AiRetouch);
     e.set_extension_enabled(ID, false);
-    assert!(!e.rail_tools().contains(&Tool::AiRetouch));
+    assert!(e.rail_generators().is_empty());
     e.close_tools_gone();
     assert_eq!(e.view.tool(), Tool::None);
 }
@@ -829,7 +889,7 @@ fn ai_remove_runs_only_on_a_catalog_photo_it_can_change() {
     e.document.catalog_photo = None;
     assert_eq!(
         e.ai_remove_unavailable().as_deref(),
-        Some("Add this photo to a catalog to use AI Remove")
+        Some("Add this photo to a catalog to use this tool")
     );
 }
 

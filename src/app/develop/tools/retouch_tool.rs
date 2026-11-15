@@ -647,15 +647,12 @@ impl Editor {
         }
         self.view.retouch.select(None);
     }
-    /// The drawer tools the rail offers now: AI Retouch only while an enabled
-    /// extension offers a retouch generator.
+    /// The app's own drawer tools on the rail; the generators' follow them
+    /// ([`Editor::rail_generators`]).
     pub(in crate::app) fn rail_tools(&self) -> Vec<crate::app::develop::state::Tool> {
-        use crate::app::develop::state::Tool;
-        let ai = !self.ai_remove_offers().is_empty();
         crate::app::develop::panels::inspector::DRAWER_TOOLS
             .iter()
             .map(|(t, ..)| *t)
-            .filter(|t| *t != Tool::AiRetouch || ai)
             .collect()
     }
     /// Closes AI Retouch once no generator is offered (its extension disabled
@@ -735,31 +732,9 @@ impl Editor {
         let selected = selected.filter(|i| self.spot_in_tool(*i));
         let selected_generated = generating && selected.is_some();
         if generating {
-            let offers: Vec<_> = self
-                .ai_remove_offers()
-                .into_iter()
-                .map(|(o, _)| o)
-                .collect();
-            let offer = self.ai_remove_offer();
-            // Each generator is a mode of its own: AI Remove, AI Replace.
-            if offers.len() > 1 {
-                control_label(ui, "Mode", |ui| {
-                    let mut pick = offer
-                        .as_ref()
-                        .and_then(|(o, _)| offers.iter().position(|x| x.provenance == o.provenance))
-                        .unwrap_or(0);
-                    let modes: Vec<(usize, &str)> = offers
-                        .iter()
-                        .enumerate()
-                        .map(|(i, o)| (i, o.name.as_str()))
-                        .collect();
-                    let w = ui.available_width();
-                    if segmented(ui, &mut pick, &modes, w) {
-                        self.choose_ai_generator(&offers[pick]);
-                    }
-                });
-            }
-            if let Some((offer, why)) = offer {
+            // Each generator is a rail tool of its own; its panel holds any
+            // modes it has.
+            if let Some((offer, why)) = self.ai_remove_offer() {
                 self.ai_controls(ui, &offer, why);
             }
         } else {

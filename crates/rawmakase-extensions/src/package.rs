@@ -277,6 +277,11 @@ fn package_paths(manifest: &Manifest, target: &str) -> Vec<(&'static str, String
     if let Some(icon) = &manifest.extension.icon {
         paths.push(("extension.icon", icon.clone()));
     }
+    for generator in &manifest.retouch_generators {
+        if let Some(icon) = &generator.icon {
+            paths.push(("retouch-generator.icon", icon.clone()));
+        }
+    }
     paths
 }
 
@@ -538,6 +543,33 @@ pub(crate) mod tests {
         assert!(refused(&[m, p]).contains("no SHA256SUMS"));
         let only_manifest = write_sums([(m.0, m.1)]);
         assert!(refused(&[m, (SUMS, only_manifest.as_bytes())]).contains("program.path"));
+    }
+
+    #[test]
+    fn a_generators_icon_must_be_in_the_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!(
+            "dev.test.tool-1.0.0-{}.rmext",
+            crate::current_target()
+        ));
+        let mut files = files("1.0.0");
+        let manifest = String::from_utf8(files[0].1.clone())
+            .unwrap()
+            .replace("api = 1", "api = 3")
+            + "[[retouch-generator]]\nid = \"fill\"\nname = \"Fill\"\nicon = \"icons/fill.svg\"\n";
+        files[0].1 = manifest.into_bytes();
+        let program = files[1].0.clone();
+        write(&path, &files, Some(&program)).unwrap();
+        let missing = dir.path().join("missing");
+        std::fs::create_dir(&missing).unwrap();
+        let error = unpack(&path, &missing).unwrap_err();
+        assert!(error.0.contains("retouch-generator.icon"), "{error}");
+        files.push(("icons/fill.svg".into(), b"<svg/>".to_vec()));
+        write(&path, &files, Some(&program)).unwrap();
+        let into = dir.path().join("out");
+        std::fs::create_dir(&into).unwrap();
+        unpack(&path, &into).unwrap();
+        assert!(into.join("icons/fill.svg").is_file());
     }
 
     #[test]

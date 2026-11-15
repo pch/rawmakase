@@ -47,13 +47,14 @@ pub(in crate::app) const GENERATE_DEADLINE: Duration = Duration::from_secs(200);
 /// [`image_key`].
 const INPUT_VERSION: u32 = 1;
 
-/// One of an extension's retouch generators, as the AI Retouch tool offers it.
+/// One of an extension's retouch generators: a tool of its own on Develop's
+/// rail, named and drawn by its extension.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::app) struct Offer {
     pub(in crate::app) extension: String,
     /// The generator's id within its extension.
     pub(in crate::app) generator: String,
-    /// Its mode's name in the AI Retouch tool.
+    /// Its name: its rail button's tip and its drawer's title.
     pub(in crate::app) name: String,
     /// It sends what it is given off this computer.
     pub(in crate::app) uploads: bool,
@@ -63,6 +64,8 @@ pub(in crate::app) struct Offer {
     pub(in crate::app) extension_name: String,
     /// The panel of its own its tool's drawer shows (`place = "generator"`).
     pub(in crate::app) panel: Option<String>,
+    /// Its rail icon, an SVG in the extension's folder.
+    pub(in crate::app) icon: Option<std::path::PathBuf>,
 }
 
 impl Host {
@@ -82,6 +85,7 @@ impl Host {
                         provenance: g.provenance(e.id()),
                         extension_name: e.name().to_string(),
                         panel: g.panel.clone(),
+                        icon: g.icon.as_ref().map(|icon| e.dir.join(icon)),
                     },
                     why.clone(),
                 ));

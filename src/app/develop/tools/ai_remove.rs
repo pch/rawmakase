@@ -206,6 +206,9 @@ pub(in crate::app) struct AiRemove {
     /// Requests given up on, by extension and ticket, for the host to cancel
     /// at its next poll.
     withdrawn: Vec<(String, u64)>,
+    /// Generators' rail icons by file, read once: the image's address, or
+    /// none for a file that can't be read.
+    icons: std::collections::HashMap<std::path::PathBuf, Option<String>>,
 }
 impl Default for AiRemove {
     fn default() -> Self {
@@ -223,6 +226,7 @@ impl Default for AiRemove {
             draft_tint: None,
             deferred: Vec::new(),
             withdrawn: Vec::new(),
+            icons: Default::default(),
         }
     }
 }
@@ -303,6 +307,61 @@ impl Editor {
     /// New spots go to `offer`'s generator.
     pub(in crate::app) fn choose_ai_generator(&mut self, offer: &Offer) {
         self.view.retouch.generator = Some(offer.provenance.clone());
+    }
+    /// The generators the rail offers as tools, in their extensions' order.
+    pub(in crate::app) fn rail_generators(&self) -> Vec<Offer> {
+        self.ai_remove_offers()
+            .into_iter()
+            .map(|(o, _)| o)
+            .collect()
+    }
+    /// A generator's rail button: opens the tool on it, or closes the tool
+    /// when it is already open on it.
+    pub(in crate::app) fn toggle_generator(&mut self, provenance: &str) {
+        use crate::app::develop::state::Tool;
+        let Some(offer) = self
+            .rail_generators()
+            .into_iter()
+            .find(|o| o.provenance == provenance)
+        else {
+            return;
+        };
+        let open_on_it = self.view.is(Tool::AiRetouch)
+            && self
+                .ai_remove_offer()
+                .is_some_and(|(o, _)| o.provenance == provenance);
+        self.choose_ai_generator(&offer);
+        // Open on another generator, the tool stays open, moved to this one.
+        if open_on_it || !self.view.is(Tool::AiRetouch) {
+            self.view.toggle(Tool::AiRetouch);
+        }
+    }
+    /// The address of `offer`'s rail icon, loaded for egui to draw; none
+    /// without one or when its file can't be read (the rail draws a generic
+    /// icon). The file is read once; `currentColor` is drawn white, as the
+    /// app's own icons are, for the rail to tint.
+    pub(in crate::app) fn generator_icon(&mut self, offer: &Offer) -> Option<String> {
+        /// Past this, a file isn't an icon.
+        const MAX_ICON: u64 = 256 * 1024;
+        let path = offer.icon.as_ref()?;
+        if let Some(uri) = self.ai_remove.icons.get(path) {
+            return uri.clone();
+        }
+        let svg = std::fs::metadata(path)
+            .ok()
+            .filter(|m| m.len() <= MAX_ICON)
+            .and_then(|_| std::fs::read_to_string(path).ok());
+        let uri = svg.map(|svg| {
+            let n = self.ai_remove.icons.len();
+            let uri = format!("bytes://rawmakase-generator-icon-{n}.svg");
+            self.context.include_bytes(
+                uri.clone(),
+                svg.replace("currentColor", "#ffffff").into_bytes(),
+            );
+            uri
+        });
+        self.ai_remove.icons.insert(path.clone(), uri.clone());
+        uri
     }
     /// Adds a stroke (a click is a stroke of one dab) to the area waiting to
     /// be sent, in image space. Nothing is sent: [`Editor::send_ai_draft`]
@@ -485,7 +544,7 @@ impl Editor {
     /// Why AI Remove can't run on the open photo now, for the tool to say.
     pub(in crate::app) fn ai_remove_unavailable(&self) -> Option<String> {
         if self.library.is_none() || self.document.catalog_photo.is_none() {
-            return Some("Add this photo to a catalog to use AI Remove".into());
+            return Some("Add this photo to a catalog to use this tool".into());
         }
         // Not on the half-size draft shown while the full size decodes: its
         // answer would be dropped once the full image replaces it.
@@ -538,7 +597,7 @@ impl Editor {
             Some((offer, why)) => self.request_ai_remove_with(offer, why, op),
             None => self
                 .messages
-                .warn("Install AI Remove in Preferences > Extensions to use it"),
+                .warn("Install AI Retouch in Preferences > Extensions to use it"),
         }
     }
 
@@ -553,7 +612,7 @@ impl Editor {
         self.context.request_repaint();
         if self.ai_remove.pending.is_some() {
             self.messages
-                .note("AI Remove is still working on the last area");
+                .note(format!("{} is still working on the last area", offer.name));
             return;
         }
         // The question stays with what was painted first: a new area would
@@ -863,10 +922,16 @@ impl Editor {
 
     pub(in crate::app) fn cancel_ai_remove(&mut self) {
         self.context.request_repaint();
+        let name = self
+            .ai_remove
+            .pending
+            .as_ref()
+            .map(|p| p.offer.name.clone());
         self.ai_remove.cancel();
         self.restore_ai_draft();
         self.settle_ai_remove();
-        self.messages.note("AI Remove cancelled");
+        self.messages
+            .note(Failure::Cancelled.message(name.as_deref().unwrap_or("The request")));
     }
 
     /// A request ended: its spot is added if it is still wanted and what it
@@ -949,8 +1014,9 @@ impl Editor {
             .collect();
         if crate::storage::mask_assets::decoded_bytes(ids) > crate::storage::mask_assets::EDIT_BYTES
         {
-            self.messages
-                .warn("This photo's masks and spots use too much memory for another AI Remove");
+            self.messages.warn(
+                "This photo's masks and spots use too much memory for another generated spot",
+            );
             self.discard_generated_patch(Some(generated));
             return;
         }
@@ -965,7 +1031,8 @@ impl Editor {
         // Checked as a save will check it, so the edit never holds what it can't save.
         if let Err(why) = op.validate() {
             let id = op.patch.as_ref().map(|p| p.id.clone()).unwrap_or_default();
-            self.messages.fail(format!("AI Remove failed: {why:#}"));
+            self.messages
+                .fail(Failure::Failed(format!("{why:#}")).message(&pending.offer.name));
             self.ai_remove.failure = Some(Failure::Failed(format!("{why:#}")));
             self.discard_patch(&id);
             return;
@@ -1033,7 +1100,7 @@ impl Editor {
 
 /// What a request whose worker job panicked, or whose worker is gone, ends in.
 fn stopped() -> Failure {
-    Failure::Failed("AI Remove stopped unexpectedly".into())
+    Failure::Failed("it stopped unexpectedly".into())
 }
 
 mod ui;

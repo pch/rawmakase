@@ -27,6 +27,7 @@ default = ""
 id = "fill"
 name = "Fill"
 uploads = true
+icon = "icons/fill.svg"
 
 # Fills as `fill`, without uploading anything.
 [[retouch-generator]]

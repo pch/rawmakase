@@ -504,6 +504,12 @@ pub struct RetouchGenerator {
     /// being typed before it sends a request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub panel: Option<String>,
+    /// Its tool's icon on Develop's rail: an SVG in the package, relative to
+    /// its root. Drawn as RAWmakase's own icons are: a 24-unit square outline
+    /// in white (or `currentColor`), tinted by the app. Without one, the rail
+    /// shows a generic extension icon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 impl RetouchGenerator {
@@ -810,6 +816,12 @@ impl Manifest {
             };
             if generator.name.trim().is_empty() {
                 return fail("its name is empty");
+            }
+            if let Some(icon) = &generator.icon {
+                check_path("retouch-generator.icon", icon)?;
+                if !icon.ends_with(".svg") {
+                    return fail(&format!("icon {icon:?} isn't an .svg file"));
+                }
             }
             if let Some(panel) = &generator.panel {
                 let place = self.panels.iter().find(|p| &p.id == panel).map(|p| p.place);
@@ -1318,6 +1330,36 @@ uploads = true
             "[setting]]\nid = \"other\"\ncontrol = \"text\"\ndefault = \"\"\nvisible-when = { setting = \"fal-key\", equals = \"\" }\n\n[[retouch-generator]]",
         );
         assert!(Manifest::parse(&on_a_secret).is_err());
+    }
+
+    #[test]
+    fn a_retouch_generator_names_its_own_icon() {
+        let manifest = remover(
+            "uploads = true\n",
+            "uploads = true\nicon = \"icons/wand.svg\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            manifest.retouch_generators[0].icon.as_deref(),
+            Some("icons/wand.svg")
+        );
+        let written = toml::to_string(&manifest).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+        assert_eq!(
+            Manifest::parse(REMOVER).unwrap().retouch_generators[0].icon,
+            None
+        );
+        // An SVG inside the package.
+        for broken in [
+            "../wand.svg",
+            "/wand.svg",
+            "icons/wand.png",
+            "icons\\wand.svg",
+            "",
+        ] {
+            let icon = format!("uploads = true\nicon = {broken:?}\n");
+            assert!(remover("uploads = true\n", &icon).is_err(), "{broken}");
+        }
     }
 
     #[test]
