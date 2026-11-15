@@ -2131,7 +2131,7 @@ pub(in crate::app) fn drawer_row(
     add: impl FnOnce(&mut egui::Ui),
 ) {
     let row = |ui: &mut egui::Ui| {
-        ui.spacing_mut().item_spacing.x = LABEL_GAP + LABEL_GAP;
+        let spacing = ui.spacing().item_spacing.x;
         // A text box's first line, with its margin above and below.
         let height = if top {
             size::CONTROL + space::M
@@ -2149,6 +2149,9 @@ pub(in crate::app) fn drawer_row(
             egui::FontId::proportional(text::SMALL),
             theme::palette(ui.ctx()).tone(Tone::SOFT),
         );
+        // Only the gap after the label widens: the control keeps its own
+        // spacing.
+        ui.add_space((LABEL_GAP + LABEL_GAP - spacing).max(0.));
         add(ui);
     };
     // A row as tall as its control, not the room left below it.
