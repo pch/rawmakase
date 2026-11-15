@@ -773,14 +773,13 @@ fn failures_say_why_and_a_secret_setting_sets_the_extension_up() {
     pump(e, "the key to be saved", |e| {
         e.extensions.get(ID).unwrap().secret("key") == Some(&secrets_state(SENTINEL))
     });
-    assert_eq!(
-        f.secrets
-            .get(&rawmakase_extensions::secrets::account(ID, "key"))
-            .unwrap()
-            .unwrap()
-            .expose(),
-        SENTINEL
-    );
+    // Compared, never printed: a failure must not show the key.
+    let stored = f
+        .secrets
+        .get(&rawmakase_extensions::secrets::account(ID, "key"))
+        .unwrap()
+        .unwrap();
+    assert!(stored.expose() == SENTINEL, "the store holds another key");
     let state = std::fs::read_to_string(f.data.join("extensions.json")).unwrap();
     assert!(state.contains("\"secrets\""), "{state}");
     assert!(!state.contains("SENTINEL"), "{state}");
@@ -870,7 +869,10 @@ fn secret_settings_never_reach_extensions_json_or_an_error() {
     );
     // A secret's state never shows its value.
     let debug = format!("{:?}", secrets_state(SENTINEL));
-    assert!(!debug.contains("SENTINEL"), "{debug}");
+    assert!(
+        !debug.contains("SENTINEL"),
+        "a secret's state shows its value"
+    );
 }
 
 #[test]
