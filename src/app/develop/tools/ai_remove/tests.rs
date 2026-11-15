@@ -865,7 +865,7 @@ fn failures_say_why_and_a_secret_setting_sets_the_extension_up() {
     assert!(stored.expose() == SENTINEL, "the store holds another key");
     let state = std::fs::read_to_string(f.data.join("extensions.json")).unwrap();
     assert!(state.contains("\"secrets\""), "{state}");
-    assert!(!state.contains("SENTINEL"), "{state}");
+    assert!(!state.contains("SENTINEL"), "extensions.json holds the key");
     // What the page and every comparison read is empty.
     assert_eq!(
         e.extensions.get(ID).unwrap().settings()["key"],
@@ -915,10 +915,13 @@ fn secret_settings_never_reach_extensions_json_or_an_error() {
         let Some(Writing::Failed(why)) = x.secret_writes.get("key") else {
             unreachable!()
         };
-        assert!(!why.contains("SENTINEL"), "{why}");
+        // Checked, never printed: a failure must not show a leaked key.
+        assert!(!why.contains("SENTINEL"), "the failure names the key");
         match failure {
-            SecretError::Locked(_) => assert!(why.contains("locked"), "{why}"),
-            SecretError::Unavailable(_) => assert!(why.contains("environment"), "{why}"),
+            SecretError::Locked(_) => assert!(why.contains("locked"), "not said to be locked"),
+            SecretError::Unavailable(_) => {
+                assert!(why.contains("environment"), "not said to be unavailable")
+            }
         }
         assert!(!e.messages.line().contains("SENTINEL"));
     }
@@ -937,7 +940,10 @@ fn secret_settings_never_reach_extensions_json_or_an_error() {
             e.extensions.get(ID).unwrap().secret_writes.is_empty()
                 && e.messages.line().contains(said)
         });
-        assert!(!state().contains("SENTINEL"), "{}", state());
+        assert!(
+            !state().contains("SENTINEL"),
+            "extensions.json holds the key"
+        );
     }
     assert_eq!(
         e.extensions.get(ID).unwrap().secret("key"),
