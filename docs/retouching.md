@@ -71,8 +71,7 @@ AI Remove and AI Replace regenerate what you paint over with a hosted model,
 through an extension that holds your own API key. It isn't bundled: install **AI
 Retouch** from Preferences > Extensions > Available (`dev.pch.ai-remove`,
 [github.com/pch/rawmakase-ai-retouch](https://github.com/pch/rawmakase-ai-retouch)),
-set the key on its page, and the rail gains **AI Retouch** (a magic wand, after
-the Remove tool), whose Mode offers **AI Remove** and **AI Replace**. Without the
+set the key on its page, and the rail gains **AI Retouch** (a magic wand, last of the tools), whose Mode offers **AI Remove** and **AI Replace**. Without the
 extension the Remove drawer says where to get it. Any extension declaring a
 `[[retouch-generator]]` ([manifest](extensions/manifest.md#retouch-generator)) is
 offered the same way, each generator a mode of its own; RAWmakase knows no

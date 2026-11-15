@@ -171,6 +171,17 @@ impl Editor {
         let hovered = pointer.and_then(hit);
         let command = ui.input(|i| i.modifiers.command);
 
+        // A stroke or a click on the photo takes the keyboard from a text
+        // field (AI Retouch's), as a click elsewhere does: egui keeps it
+        // through a drag, and Cmd/Ctrl+Z after painting would undo the text,
+        // not the spot.
+        if response.drag_started() || response.clicked() {
+            ui.memory_mut(|m| {
+                if let Some(id) = m.focused() {
+                    m.surrender_focus(id);
+                }
+            });
+        }
         // Pointer input.
         if response.drag_started()
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())

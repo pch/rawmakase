@@ -1131,13 +1131,14 @@ pub(in crate::app) const DRAWER_TOOLS: [(Tool, &str, &str); 5] = [
         "Spot Removal: Heal and Clone · Q",
         "Spot Removal",
     ),
+    (Tool::RedEye, "Red Eye Correction", "Red Eye"),
+    (Tool::Mask, "Masking · Shift+W", "Masking"),
+    // Last: an extension's, and only while one offers a generator.
     (
         Tool::AiRetouch,
         "AI Retouch: AI Remove and AI Replace (experimental)",
         "AI Retouch",
     ),
-    (Tool::RedEye, "Red Eye Correction", "Red Eye"),
-    (Tool::Mask, "Masking · Shift+W", "Masking"),
 ];
 /// The slider grid's label column in the tool drawers, wide enough for
 /// their longest captions ("Orientation", "Range High").

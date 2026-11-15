@@ -213,3 +213,105 @@ fn the_upload_question_s_buttons_stay_in_view() {
         );
     }
 }
+
+/// Painting on the photo takes the keyboard from a text field, as a click
+/// does, so Cmd/Ctrl+Z after a stroke undoes in History, not in the field.
+#[test]
+fn painting_takes_the_keyboard_from_a_text_field() {
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    let image = Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 400,
+        height: 400,
+        pixels: (0..160000)
+            .map(|i| {
+                let (x, y) = ((i % 400) as f32, (i / 400) as f32);
+                [0.2 + 0.05 * (x * 0.1).sin() * (y * 0.13).cos(); 3]
+            })
+            .collect(),
+        metadata: Metadata {
+            width: 400,
+            height: 400,
+            wb: [1.; 3],
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    });
+    editor.document.set_image(image);
+    editor.preview.texture = Some(
+        ctx.load_texture(
+            "photo",
+            egui::ColorImage::filled([200, 200], egui::Color32::GRAY),
+            egui::TextureOptions::LINEAR,
+        )
+        .into(),
+    );
+    editor
+        .view
+        .set_tool(crate::app::develop::state::Tool::Remove);
+    let mut text = String::new();
+    let mut frame = |events: Vec<egui::Event>| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(200.))),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                let frame = editor.begin_edit_frame();
+                if editor.view.is(crate::app::develop::state::Tool::Remove) {
+                    editor.retouch_keys(ui.ctx())
+                }
+                editor.viewport_ui(ui);
+                // A text field in a corner, as the AI Retouch drawer's.
+                egui::Area::new(egui::Id::new("field area"))
+                    .fixed_pos(Pos2::new(0., 185.))
+                    .show(ui.ctx(), |ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut text)
+                                .id(egui::Id::new("a text field"))
+                                .desired_width(40.),
+                        );
+                    });
+                editor.finish_edit_frame(frame, &ctx);
+            },
+        );
+        output.textures_delta.clear();
+        (
+            editor.document.edit.recipe().retouch.clone(),
+            editor.view.zoom.on,
+            editor.view.retouch.selected,
+        )
+    };
+    let button = |pos, pressed, modifiers| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers,
+    };
+    let none = egui::Modifiers::NONE;
+    frame(vec![]);
+    let field = egui::Id::new("a text field");
+    ctx.memory_mut(|m| m.request_focus(field));
+    frame(vec![]);
+    assert_eq!(ctx.memory(|m| m.focused()), Some(field));
+    let (a, b) = (Pos2::new(150., 40.), Pos2::new(150., 150.));
+    frame(vec![egui::Event::PointerMoved(a), button(a, true, none)]);
+    for k in 1..=10 {
+        frame(vec![egui::Event::PointerMoved(
+            a + (b - a) * k as f32 / 10.,
+        )]);
+    }
+    let (ops, ..) = frame(vec![button(b, false, none)]);
+    assert_eq!(ops.len(), 1, "the stroke was painted");
+    assert_eq!(ctx.memory(|m| m.focused()), None);
+}
