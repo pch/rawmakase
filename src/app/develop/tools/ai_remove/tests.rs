@@ -864,12 +864,15 @@ fn failures_say_why_and_a_secret_setting_sets_the_extension_up() {
         .unwrap();
     assert!(stored.expose() == SENTINEL, "the store holds another key");
     let state = std::fs::read_to_string(f.data.join("extensions.json")).unwrap();
-    assert!(state.contains("\"secrets\""), "{state}");
+    assert!(
+        state.contains("\"secrets\""),
+        "extensions.json doesn't list the key"
+    );
     assert!(!state.contains("SENTINEL"), "extensions.json holds the key");
     // What the page and every comparison read is empty.
-    assert_eq!(
-        e.extensions.get(ID).unwrap().settings()["key"],
-        serde_json::json!("")
+    assert!(
+        e.extensions.get(ID).unwrap().settings()["key"] == serde_json::json!(""),
+        "the settings show the key"
     );
     // The request sent while the key changed may have been set up already.
     let before = generated(e).len();
@@ -893,7 +896,7 @@ fn secret_settings_never_reach_extensions_json_or_an_error() {
         .extensions
         .set_setting(ID, "key", serde_json::json!(SENTINEL))
         .unwrap_err();
-    assert!(!error.contains("SENTINEL"), "{error}");
+    assert!(!error.contains("SENTINEL"), "the error names the key");
     // A store that isn't there: the write fails, nothing says Set, and the
     // reason says what to do; a locked one says so.
     for failure in [
@@ -949,7 +952,10 @@ fn secret_settings_never_reach_extensions_json_or_an_error() {
         e.extensions.get(ID).unwrap().secret("key"),
         Some(&State::Unset)
     );
-    assert!(!state().contains("\"secrets\""), "{}", state());
+    assert!(
+        !state().contains("\"secrets\""),
+        "extensions.json still lists the key"
+    );
     assert_eq!(
         f.secrets
             .get(&rawmakase_extensions::secrets::account(ID, "key"))
@@ -1231,7 +1237,10 @@ fn a_secret_is_read_again_and_recorded_before_its_first_write() {
     e.extensions
         .set_secret(ID, "key", Some(SENTINEL.into()))
         .unwrap();
-    assert!(state().contains("\"secrets\""), "{}", state());
+    assert!(
+        state().contains("\"secrets\""),
+        "extensions.json doesn't list the key"
+    );
     pump(e, "the write to fail", |e| {
         e.extensions
             .get(ID)
@@ -1240,7 +1249,10 @@ fn a_secret_is_read_again_and_recorded_before_its_first_write() {
             .values()
             .any(|w| matches!(w, crate::app::extensions::secrets::Writing::Failed(_)))
     });
-    assert!(!state().contains("\"secrets\""), "{}", state());
+    assert!(
+        !state().contains("\"secrets\""),
+        "extensions.json still lists the key"
+    );
     f.secrets.heal();
     e.extensions
         .set_secret(ID, "key", Some(SENTINEL.into()))
@@ -1397,7 +1409,10 @@ fn uninstalling_takes_the_keys_with_it() {
         f.secrets.get(&account).unwrap().is_none()
     });
     let state = std::fs::read_to_string(f.data.join("extensions.json")).unwrap();
-    assert!(!state.contains("\"secrets\""), "{state}");
+    assert!(
+        !state.contains("\"secrets\""),
+        "extensions.json still lists the key"
+    );
     pump(e, "the key to leave the list", |_| {
         Store::new(&f.data).forgotten_keys().unwrap().is_empty()
     });

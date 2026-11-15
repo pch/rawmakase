@@ -132,17 +132,24 @@ mod tests {
     #[test]
     fn a_secret_never_shows_in_debug_or_errors() {
         let key = Secret::new("sk-sentinel-0123456789");
-        assert_eq!(format!("{key:?}"), "Secret(…)");
+        // Checked, never printed: a failure must not show the key.
+        assert!(format!("{key:?}") == "Secret(…)", "Debug shows the key");
         assert_eq!(format!("{:?}", Secret::default()), "Secret(none)");
         let store = MemoryStore::default();
         let account = account("dev.pch.ai-remove", "fal-key");
         assert_eq!(account, "dev.pch.ai-remove/fal-key");
         assert_eq!(store.get(&account), Ok(None));
         store.set(&account, &key).unwrap();
-        assert_eq!(store.get(&account).unwrap().unwrap().expose(), key.expose());
+        assert!(
+            store.get(&account).unwrap().unwrap().expose() == key.expose(),
+            "the store holds another key"
+        );
         store.unavailable(SecretError::Locked("the keyring is locked".into()));
         let error = store.set(&account, &key).unwrap_err();
-        assert!(!error.to_string().contains("sentinel"), "{error}");
+        assert!(
+            !error.to_string().contains("sentinel"),
+            "the error names the key"
+        );
         store.heal();
         store.delete(&account).unwrap();
         store.delete(&account).unwrap();
