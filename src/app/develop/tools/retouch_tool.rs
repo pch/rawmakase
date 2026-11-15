@@ -292,11 +292,8 @@ impl Editor {
         // it, where the user just painted: the drawer alone is easy to miss.
         if let Some(consent) = self.ai_remove.consent.clone() {
             draw_shape(&painter, &consent.op, to_screen, &radius_on_screen, true);
-            let size = Vec2::new(250., 66.);
-            let mut at = to_screen(consent.op.pin()) + Vec2::new(14., -10.);
-            at.x = at.x.min(rect.max.x - size.x).max(rect.min.x);
-            at.y = at.y.min(rect.max.y - size.y).max(rect.min.y);
-            let card = Rect::from_min_size(at, size);
+            let visible = rect.intersect(ui.clip_rect());
+            let card = card_rect(to_screen(consent.op.pin()), Vec2::new(250., 66.), visible);
             painter.rect_filled(card, 4., ui.visuals().window_fill);
             let mut answer = None;
             ui.scope_builder(egui::UiBuilder::new().max_rect(card.shrink(6.)), |ui| {
@@ -727,6 +724,19 @@ pub(in crate::app) fn hint(ui: &mut egui::Ui, text: &str) {
             .wrap(),
         );
     });
+}
+
+/// Where a card `size` big about the area pinned at `pin` goes: beside it,
+/// moved inside `visible` (the part of the photo in view, which a zoomed-in
+/// area may be outside of) and shrunk to it if it is smaller.
+fn card_rect(pin: Pos2, size: Vec2, visible: Rect) -> Rect {
+    let size = size.min(visible.size());
+    let at = pin + Vec2::new(14., -10.);
+    let min = Pos2::new(
+        at.x.min(visible.max.x - size.x).max(visible.min.x),
+        at.y.min(visible.max.y - size.y).max(visible.min.y),
+    );
+    Rect::from_min_size(min, size)
 }
 
 #[cfg(test)]

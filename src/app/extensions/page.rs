@@ -1802,23 +1802,29 @@ fn setting_help(ui: &mut egui::Ui, text: &str) {
 /// `text` cut into its runs of plain text and its `https://` addresses
 /// (`true`), an address ending before whitespace and any closing punctuation.
 fn help_parts(text: &str) -> Vec<(&str, bool)> {
+    const SCHEME: &str = "https://";
     let mut parts = Vec::new();
-    let mut rest = text;
-    while let Some(start) = rest.find("https://") {
-        let tail = &rest[start..];
+    // Where the plain text not yet pushed starts, and where to look next.
+    let (mut plain, mut from) = (0, 0);
+    while let Some(found) = text[from..].find(SCHEME) {
+        let start = from + found;
+        let tail = &text[start..];
         let end = tail.find(char::is_whitespace).unwrap_or(tail.len());
         let url = tail[..end].trim_end_matches(['.', ',', ';', ':', '!', '?', ')']);
-        if url.len() <= "https://".len() {
-            break;
+        if url.len() <= SCHEME.len() {
+            // A bare prefix stays text; an address may still follow.
+            from = start + SCHEME.len();
+            continue;
         }
-        if start > 0 {
-            parts.push((&rest[..start], false));
+        if start > plain {
+            parts.push((&text[plain..start], false));
         }
         parts.push((url, true));
-        rest = &tail[url.len()..];
+        plain = start + url.len();
+        from = plain;
     }
-    if !rest.is_empty() || parts.is_empty() {
-        parts.push((rest, false));
+    if plain < text.len() || parts.is_empty() {
+        parts.push((&text[plain..], false));
     }
     parts
 }
@@ -1876,6 +1882,14 @@ mod tests {
             [("http://example.com file:///etc", false)]
         );
         assert_eq!(help_parts("Plain."), [("Plain.", false)]);
+        // A bare prefix is text, and the address after it still a link.
+        assert_eq!(
+            help_parts("Use https:// URLs; see https://example.com/setup"),
+            [
+                ("Use https:// URLs; see ", false),
+                ("https://example.com/setup", true),
+            ]
+        );
     }
 
     #[test]

@@ -156,3 +156,29 @@ fn a_quick_cmd_a_in_remove_does_not_toggle_visualize_spots() {
     assert!(!press(egui::Modifiers::COMMAND));
     assert!(press(egui::Modifiers::NONE));
 }
+
+/// The upload question's card is placed where it can be seen: beside the
+/// area when that is in view, else at the edge of the visible part of the
+/// photo, and never larger than it.
+#[test]
+fn the_upload_question_stays_in_view() {
+    use super::card_rect;
+    let visible = Rect::from_min_max(Pos2::ZERO, Pos2::new(800., 600.));
+    let size = egui::Vec2::new(250., 66.);
+    let beside = card_rect(Pos2::new(100., 100.), size, visible);
+    assert_eq!(beside.min, Pos2::new(114., 90.));
+    // Zoomed in: the area is near the right edge, or out of view altogether.
+    for pin in [
+        Pos2::new(790., 300.),
+        Pos2::new(1500., -400.),
+        Pos2::new(-900., 900.),
+    ] {
+        let card = card_rect(pin, size, visible);
+        assert!(visible.contains_rect(card), "{pin:?}: {card:?}");
+        assert_eq!(card.size(), size);
+    }
+    // A viewport smaller than the card: the card fits it.
+    let small = Rect::from_min_max(Pos2::new(10., 10.), Pos2::new(200., 50.));
+    let card = card_rect(Pos2::new(100., 30.), size, small);
+    assert!(small.contains_rect(card), "{card:?}");
+}
