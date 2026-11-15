@@ -116,9 +116,10 @@ pub fn check_compatible(manifest: &Manifest, app: &semver::Version) -> Result<()
 /// Most bytes a retouch generator's icon may hold.
 pub const MAX_ICON: u64 = 256 * 1024;
 
-/// Checks each retouch generator's icon in the extension at `dir`: a file of at
-/// most [`MAX_ICON`] bytes that parses as an SVG. The app draws the icon and
-/// has none of its own to stand in, so an extension whose icon fails can't run.
+/// Checks each retouch generator's icon in the extension at `dir`, as the app
+/// will read it: a file of at most [`MAX_ICON`] bytes of UTF-8 text that parses
+/// as an SVG. The app has no icon of its own for a generator and shows one that
+/// fails as failed, so `cargo rawmakase package` refuses it.
 pub fn check_icons(manifest: &Manifest, dir: &Path) -> Result<()> {
     for generator in &manifest.retouch_generators {
         let mut path = dir.to_path_buf();
@@ -134,7 +135,13 @@ pub fn check_icons(manifest: &Manifest, dir: &Path) -> Result<()> {
             )));
         }
         let bytes = std::fs::read(&path).map_err(|e| Error::from(e).context(path.display()))?;
-        usvg::Tree::from_data(&bytes, &usvg::Options::default())
+        let text = String::from_utf8(bytes).map_err(|_| {
+            Error::new(format!(
+                "{} can't be drawn: it isn't SVG text",
+                path.display()
+            ))
+        })?;
+        usvg::Tree::from_str(&text, &usvg::Options::default())
             .map_err(|e| Error::new(format!("{} can't be drawn: {e}", path.display())))?;
     }
     Ok(())
@@ -177,8 +184,9 @@ pub(crate) fn random_suffix() -> String {
 mod tests {
     use super::*;
 
-    /// A generator's icon is the extension's own and nothing stands in for
-    /// it: one missing, too large or not an SVG stops the extension.
+    /// A generator's icon is the extension's own, checked before it is
+    /// packaged: one missing, too large, not text (a gzipped `.svgz`) or not an
+    /// SVG is refused.
     #[test]
     fn a_generators_icon_must_be_an_svg_it_can_draw() {
         let manifest = Manifest::parse(
@@ -197,6 +205,16 @@ mod tests {
             let error = check_icons(&manifest, dir.path()).unwrap_err();
             assert!(error.0.contains("can't be drawn"), "{error}");
         }
+        // A valid SVG gzipped: usvg would read it, the app reads text.
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        std::io::Write::write_all(
+            &mut gz,
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M4 4h16\"/></svg>",
+        )
+        .unwrap();
+        std::fs::write(&icon, gz.finish().unwrap()).unwrap();
+        let error = check_icons(&manifest, dir.path()).unwrap_err();
+        assert!(error.0.contains("can't be drawn"), "{error}");
         let big = format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><!--{}--></svg>",
             "x".repeat(MAX_ICON as usize)

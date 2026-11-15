@@ -186,7 +186,7 @@ fn package(
     include: &[PathBuf],
 ) -> Result<PathBuf> {
     let manifest = manifest(dir)?;
-    // An icon the app can't draw would stop the extension once installed.
+    // An icon the app can't draw would show as failed once installed.
     rawmakase_extensions::check_icons(&manifest, dir).map_err(|e| e.to_string())?;
     let manifest_bytes = std::fs::read(dir.join(manifest::FILE)).map_err(|e| e.to_string())?;
     let mut files = vec![(manifest::FILE.to_string(), manifest_bytes)];
@@ -378,7 +378,7 @@ mod tests {
     }
 
     /// A retouch generator's icon goes in the package, and only one the app
-    /// can draw: a broken one would stop the extension once installed.
+    /// can draw: a broken one would show as failed once installed.
     #[test]
     fn a_package_holds_its_generators_icon_once_it_is_drawable() {
         let dir = tempfile::tempdir().unwrap();
