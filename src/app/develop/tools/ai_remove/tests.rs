@@ -403,6 +403,77 @@ fn each_generator_is_a_rail_tool_named_and_drawn_by_its_extension() {
     assert_eq!(e.generator_icon(&gone), None);
 }
 
+/// More generators than the window's height holds scroll the rail: the last
+/// of them and the tabs after them stay within reach.
+#[test]
+fn a_rail_of_many_generators_scrolls() {
+    use crate::app::develop::panels::side_tabs::{generator_id, rail_id};
+    use crate::app::shell::panels::DevelopTab;
+    use crate::app::testing::{FocusedButton, panel_frame};
+    let mut f = fixture(0.28);
+    let manifest =
+        include_str!("../../../../../extensions/example/remove/rawmakase-extension.toml");
+    let header = &manifest[..manifest.find("[[retouch-generator]]").unwrap()];
+    let many: String = (0..20)
+        .map(|i| format!("[[retouch-generator]]\nid = \"g{i}\"\nname = \"Generator {i}\"\n\n"))
+        .collect();
+    std::fs::write(
+        f.folder
+            .join(rawmakase_extensions::protocol::manifest::FILE),
+        format!("{header}{many}"),
+    )
+    .unwrap();
+    let e = &mut f.editor;
+    e.extensions.reload_changed_folders();
+    e.extensions.reload();
+    assert_eq!(e.rail_generators().len(), 20);
+    e.module = crate::app::Module::Develop;
+    e.onboarding.visible = false;
+    let ctx = e.context.clone();
+    for _ in 0..3 {
+        panel_frame(e, vec![], FocusedButton::No);
+    }
+    let bottom = ctx.content_rect().bottom();
+    let history = |ctx: &egui::Context| {
+        ctx.read_response(rail_id(DevelopTab::History))
+            .expect("the History button")
+            .rect
+    };
+    assert!(
+        history(&ctx).top() > bottom,
+        "the rail fits: nothing to test"
+    );
+    // The wheel over the rail brings its end into view.
+    let over = ctx
+        .read_response(generator_id(&e.rail_generators()[0].provenance))
+        .expect("the first generator's button")
+        .rect
+        .center();
+    for _ in 0..10 {
+        panel_frame(
+            e,
+            vec![
+                egui::Event::PointerMoved(over),
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0., -200.),
+                    modifiers: egui::Modifiers::NONE,
+                    phase: egui::TouchPhase::Move,
+                },
+            ],
+            FocusedButton::No,
+        );
+    }
+    panel_frame(e, vec![], FocusedButton::No);
+    assert!(history(&ctx).bottom() <= bottom, "{:?}", history(&ctx));
+    let last = &e.rail_generators()[19];
+    let last = ctx
+        .read_response(generator_id(&last.provenance))
+        .unwrap()
+        .rect;
+    assert!(last.bottom() <= bottom, "{last:?}");
+}
+
 /// AI Retouch is a rail tool of its own, there only while a generator is
 /// offered; it and Spot Removal each show, select and reset only their own
 /// spots, all kept in one ordered list.
