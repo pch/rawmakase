@@ -3919,6 +3919,7 @@ dependencies = [
  "rawmakase-catalog",
  "rawmakase-ctl",
  "rawmakase-decode",
+ "rawmakase-denoise",
  "rawmakase-engine",
  "rawmakase-example",
  "rawmakase-export",
@@ -4040,6 +4041,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rawmakase-denoise"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "rawmakase-cancel",
+ "rawmakase-decode",
+ "rawmakase-engine",
+ "rawmakase-inference",
+ "rawmakase-model",
+ "rawmakase-model-install",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "rawmakase-engine"
 version = "0.1.0"
 dependencies = [
@@ -4068,7 +4085,7 @@ name = "rawmakase-export"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "fastframe-fonts",
+ "directories",
  "image",
  "jixel",
  "jxl-oxide",

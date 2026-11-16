@@ -43,9 +43,9 @@ zune-core = { version = "0.5.3", default-features = false, features = ["std"] }
 # leaves out the metric crates and the experimental splines; the SIMD paths are
 # chosen at run time.
 jixel = { version = "=0.5.7", default-features = false, features = ["neon", "sse", "avx"] }
-# Inter and the installed-font directories for text watermarks. It is built for
-# egui and brings egui along, though nothing here draws with it.
-fastframe-fonts.workspace = true
+# The per-user font and home directories, for the installed fonts text
+# watermarks offer (watermark::font_dirs); the version fastframe-fonts uses.
+directories = "6"
 
 [dev-dependencies]
 # An independent decoder for JPEG XL exports.

@@ -7,6 +7,10 @@ use std::sync::{Arc, OnceLock};
 
 /// The default family, shipped with RAWmakase.
 pub const INTER: &str = "Inter";
+/// Inter 4.001 as a variable font: the file fastframe-fonts bundles for the app's
+/// interface (the app's tests check they are the same bytes), under the SIL Open
+/// Font License in `licenses/Inter-OFL.txt`.
+pub const INTER_DATA: &[u8] = include_bytes!("../../fonts/InterVariable.ttf");
 /// Inter's styles, by weight.
 const INTER_FACES: [(&str, f32); 4] = [
     ("Regular", 400.),
@@ -100,7 +104,7 @@ fn installed() -> Vec<Family> {
             }
         }
     }
-    for dir in fastframe_fonts::system::font_directories() {
+    for dir in super::font_dirs::font_directories() {
         walk(&dir, 0, &mut files);
     }
     // Directories in their probing order, files by name within each: the
@@ -185,9 +189,7 @@ pub fn load(family: &str, face: &str) -> Result<Font> {
         // Copied once and shared by every load.
         static DATA: OnceLock<Arc<Vec<u8>>> = OnceLock::new();
         return Ok(Font {
-            data: DATA
-                .get_or_init(|| Arc::new(fastframe_fonts::INTER.to_vec()))
-                .clone(),
+            data: DATA.get_or_init(|| Arc::new(INTER_DATA.to_vec())).clone(),
             index: 0,
             weight: Some(weight),
         });

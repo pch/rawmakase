@@ -5,11 +5,11 @@ use std::sync::mpsc;
 
 /// How the stand-in model behaves.
 #[derive(Default)]
-pub(crate) struct Behaviour {
+pub struct Behaviour {
     /// Tiles run, across all loads.
-    pub(crate) runs: AtomicUsize,
+    pub runs: AtomicUsize,
     /// Loads, per provider.
-    pub(crate) loads: Mutex<Vec<Provider>>,
+    pub loads: Mutex<Vec<Provider>>,
     /// A non-finite value from this run on, on a provider other than the CPU.
     gpu_poison_after: Option<usize>,
     /// Panic on the first run.
@@ -17,7 +17,7 @@ pub(crate) struct Behaviour {
     /// Never return from a run, whatever the cancel flag says.
     hang: bool,
     /// Held before each run.
-    pub(crate) gate: Mutex<()>,
+    pub gate: Mutex<()>,
     /// Panic when a loaded model is dropped, outside any job.
     panic_on_drop: bool,
 }
@@ -77,23 +77,23 @@ impl TileModel for Fake {
     }
 }
 
-pub(crate) struct Fixture {
-    pub(crate) service: Service,
-    pub(crate) behaviour: Arc<Behaviour>,
-    pub(crate) dir: tempfile::TempDir,
+pub struct Fixture {
+    pub service: Service,
+    pub behaviour: Arc<Behaviour>,
+    pub dir: tempfile::TempDir,
 }
 
-pub(crate) const W: usize = 1000;
+pub const W: usize = 1000;
 
-pub(crate) const H: usize = 300;
+pub const H: usize = 300;
 
-pub(crate) fn mosaic() -> Vec<f32> {
+pub fn mosaic() -> Vec<f32> {
     (0..W * H)
         .map(|i| 0.1 + 0.6 * ((i * 7919) % 997) as f32 / 997.)
         .collect()
 }
 
-pub(crate) fn fixture(provider: Provider, behaviour: Behaviour) -> Fixture {
+pub fn fixture(provider: Provider, behaviour: Behaviour) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let behaviour = Arc::new(behaviour);
     let source: Source = Arc::new(|path: &Path, _: Cancel<'_>| {
@@ -129,14 +129,14 @@ pub(crate) fn fixture(provider: Provider, behaviour: Behaviour) -> Fixture {
 }
 
 impl Fixture {
-    pub(crate) fn photo(&self, name: &str) -> PathBuf {
+    pub fn photo(&self, name: &str) -> PathBuf {
         let path = self.dir.path().join(name);
         if !path.exists() {
             std::fs::write(&path, name.as_bytes()).unwrap();
         }
         path
     }
-    pub(crate) fn plain(&self) -> Arc<CameraImage> {
+    pub fn plain(&self) -> Arc<CameraImage> {
         let metadata = crate::camera_data::Metadata {
             wb: [2., 1., 1.5],
             ..Default::default()
@@ -154,7 +154,7 @@ impl Fixture {
         })
     }
     /// A Develop request whose updates arrive on the returned channel.
-    pub(crate) fn request(
+    pub fn request(
         &self,
         path: &Path,
         plain: &Arc<CameraImage>,
@@ -178,6 +178,7 @@ impl Fixture {
 }
 
 /// An export's request for `photo`, as decoded now.
+#[cfg(test)]
 fn export(
     service: &Service,
     photo: &Path,
@@ -193,6 +194,7 @@ fn export(
 }
 
 /// The states until the first final one.
+#[cfg(test)]
 fn until_final(rx: &mpsc::Receiver<State>) -> Vec<State> {
     let mut states = Vec::new();
     loop {
@@ -205,7 +207,7 @@ fn until_final(rx: &mpsc::Receiver<State>) -> Vec<State> {
     }
 }
 
-pub(crate) fn tiles() -> usize {
+pub fn tiles() -> usize {
     Grid::new(W.div_ceil(2), H.div_ceil(2)).tiles().len()
 }
 

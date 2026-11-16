@@ -1,0 +1,33 @@
+[package]
+name = "rawmakase-denoise"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "RAWmakase's AI Denoise service: one queue and one worker over the ONNX Runtime for the desktop app and the command line, its results' cache and its model pack, without the app or the GUI"
+license.workspace = true
+publish = false
+
+[features]
+# The stand-in model and service the app's own tests build on.
+test-support = ["rawmakase-model/test-support", "rawmakase-engine/test-support", "rawmakase-decode/test-support"]
+
+[dependencies]
+rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
+rawmakase-decode = { path = "../rawmakase-decode", version = "0.1.0" }
+rawmakase-engine = { path = "../rawmakase-engine", version = "0.1.0" }
+rawmakase-inference = { path = "../rawmakase-inference", version = "0.1.0" }
+rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
+rawmakase-model-install = { path = "../rawmakase-model-install", version = "0.1.0" }
+anyhow.workspace = true
+# `rawmakase denoise` writes its renders as JPEG or PNG.
+image.workspace = true
+# `rawmakase denoise` reports as JSON.
+serde_json.workspace = true
+# `rawmakase denoise`'s throwaway cache, and the test stand-in's folder.
+tempfile.workspace = true
+
+[dev-dependencies]
+rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
+
+[lints]
+workspace = true

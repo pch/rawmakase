@@ -3,6 +3,7 @@
 //! 16-bit TIFF keeps its precision outside the mark and under a partly
 //! transparent one. Watermarks are saved as presets in the data folder's
 //! `watermarks`, a graphic one with its own copy of the image.
+pub mod font_dirs;
 pub mod fonts;
 mod raster;
 use crate::color::OutputSpace;
