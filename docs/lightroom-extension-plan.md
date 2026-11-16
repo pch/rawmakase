@@ -1,6 +1,6 @@
 # Lightroom extension: plan
 
-Status: planning. Nothing here is built.
+Status: step 1 built; steps 2 to 4 planned.
 
 ## Goal
 
@@ -83,6 +83,11 @@ This step needs no extension and lands first.
   line says the catalog couldn't be made smaller and why, and `meta` keeps
   `compact_pending` so a later open tries again.
 - Export as Catalog stops running backfills; it copies what the catalog holds.
+- *As built:* the removal and compaction are
+  `Catalog::remove_lightroom_archive`, called where a catalog is opened for
+  use (the app's catalog session and the CLI's `open_catalog`), not by every
+  connection, so a background connection never compacts. Opening reports the
+  step through `OpeningProgress::Compacting` (formerly `UpgradeProgress`).
 - `docs/catalogs.md` drops the archive from "Import and preservation" and says
   what an import does not keep.
 

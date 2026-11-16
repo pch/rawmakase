@@ -43,20 +43,27 @@ pub(super) const BATCH: i64 = 128;
 /// of distinct fitted looks don't accumulate.
 const REMEMBERED: usize = 256;
 
-/// How far an upgrade has got.
+/// How far opening a catalog has got, in the steps that can take a while on a
+/// large one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct UpgradeProgress {
-    pub done: usize,
-    pub total: usize,
+pub enum OpeningProgress {
+    /// Upgrading a catalog of an earlier format: edits rewritten of all of them.
+    Upgrading { done: usize, total: usize },
+    /// Compacting the file after the archived Lightroom catalog was removed
+    /// ([`Catalog::remove_lightroom_archive`]).
+    Compacting,
 }
-impl std::fmt::Display for UpgradeProgress {
+impl std::fmt::Display for OpeningProgress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Upgrading catalog: {} / {} edits",
-            thousands(self.done),
-            thousands(self.total)
-        )
+        match self {
+            Self::Upgrading { done, total } => write!(
+                f,
+                "Upgrading catalog: {} / {} edits",
+                thousands(*done),
+                thousands(*total)
+            ),
+            Self::Compacting => write!(f, "Making the catalog smaller…"),
+        }
     }
 }
 fn thousands(n: usize) -> String {
@@ -102,7 +109,7 @@ impl Catalog {
     /// with the reason.
     pub(super) fn upgrade_on_open(
         &mut self,
-        progress: &mut dyn FnMut(UpgradeProgress),
+        progress: &mut dyn FnMut(OpeningProgress),
     ) -> Result<()> {
         let from = self.db.version()?;
         if from >= NEWEST {
@@ -170,7 +177,7 @@ pub(super) struct Upgrade<'p> {
     unreadable: usize,
     done: usize,
     total: usize,
-    progress: &'p mut dyn FnMut(UpgradeProgress),
+    progress: &'p mut dyn FnMut(OpeningProgress),
     #[cfg(test)]
     rewritten: usize,
 }
@@ -185,7 +192,7 @@ pub(super) enum Rewrite<T, O> {
 }
 
 impl<'p> Upgrade<'p> {
-    fn new(w: &Write<'_>, progress: &'p mut dyn FnMut(UpgradeProgress)) -> Result<Self> {
+    fn new(w: &Write<'_>, progress: &'p mut dyn FnMut(OpeningProgress)) -> Result<Self> {
         let total = super::edit_rows::stored_recipes(w)? + super::snapshots::stored_recipes(w)?;
         let u = Self {
             remembered: HashMap::new(),
@@ -199,7 +206,7 @@ impl<'p> Upgrade<'p> {
             #[cfg(test)]
             rewritten: 0,
         };
-        (u.progress)(UpgradeProgress {
+        (u.progress)(OpeningProgress::Upgrading {
             done: 0,
             total: u.total,
         });
@@ -213,7 +220,7 @@ impl<'p> Upgrade<'p> {
         faults::MOST_VERIFIED.with(|m| m.set(m.get().max(self.verified.len())));
         self.verified = Verified::new();
         self.done = (self.done + rows).min(self.total);
-        (self.progress)(UpgradeProgress {
+        (self.progress)(OpeningProgress::Upgrading {
             done: self.done,
             total: self.total,
         });

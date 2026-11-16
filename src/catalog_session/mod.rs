@@ -87,9 +87,9 @@ static GENERATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64:
 /// A catalog just opened, with what opening it could not finish.
 pub(crate) struct Opened {
     pub session: CatalogSession,
-    /// Lightroom's keyword export options could not be read; tried again on
-    /// the next open.
-    pub keyword_export: Option<anyhow::Error>,
+    /// Why the catalog could not be made smaller after its archived
+    /// Lightroom catalog was removed; tried again on the next open.
+    pub not_compacted: Option<String>,
     /// What upgrading the catalog as it opened did, when it was of an earlier format.
     pub upgraded: Option<crate::catalog::Upgraded>,
 }
@@ -225,7 +225,7 @@ impl CatalogSession {
     /// format has got.
     pub(crate) fn open_reporting(
         location: &CatalogLocation,
-        progress: &mut dyn FnMut(crate::catalog::UpgradeProgress),
+        progress: &mut dyn FnMut(crate::catalog::OpeningProgress),
     ) -> Result<Opened> {
         crate::platform::network::prepare_filesystem_bridge();
         let mut catalog = Catalog::open_reporting(
@@ -237,18 +237,10 @@ impl CatalogSession {
         // Masks made from a selection are read back from this catalog wherever they
         // are rendered: Develop, the Library's thumbnails, previews and exports.
         crate::storage::mask_assets::add_loader(catalog.mask_asset_loader());
-        // Catalogs imported before history was kept: recover it from the
-        // stored Lightroom catalog. Best effort; a failure only hides history.
-        let _ = catalog.backfill_lightroom_history();
-        let _ = catalog.backfill_lightroom_snapshots();
-        let _ = catalog.backfill_lightroom_info();
-        let _ = catalog.backfill_lightroom_metadata();
+        let not_compacted = catalog.remove_lightroom_archive(progress);
         // PNGs whose info earlier releases stored without their EXIF; read by
         // the photo info backfill.
         let _ = catalog.reread_png_info_once();
-        // Unlike those, a failure here could export keywords Lightroom keeps
-        // out, so it is said; it is tried again on the next open.
-        let keyword_export = catalog.backfill_keyword_export().err();
         let mut session = Self {
             catalog,
             photos: Vec::new(),
@@ -265,7 +257,7 @@ impl CatalogSession {
         session.reload()?;
         Ok(Opened {
             session,
-            keyword_export,
+            not_compacted,
             upgraded,
         })
     }
@@ -429,6 +421,38 @@ mod tests {
             .db_for_tests()
             .execute_batch("ALTER TABLE collections RENAME TO collections_gone")?;
         Ok((directory, session, copy))
+    }
+
+    /// A catalog an earlier release imported from Lightroom, with its `.lrcat`
+    /// archived inside, opens without the archive and reports nothing failed.
+    #[test]
+    fn opening_removes_an_archived_lightroom_catalog() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("library.rawmakase");
+        Catalog::create(&path)?.db_for_tests().execute(
+            "INSERT INTO sources(path, original_size, original_catalog)
+             VALUES ('Lightroom.lrcat', 1000000, randomblob(1000000))",
+            [],
+        )?;
+        let mut steps = Vec::new();
+        let Opened {
+            session,
+            not_compacted,
+            ..
+        } = CatalogSession::open_reporting(&CatalogLocation::from(&path), &mut |p| {
+            steps.push(p.to_string())
+        })?;
+        assert_eq!(not_compacted, None);
+        assert_eq!(steps, ["Making the catalog smaller…"]);
+        let archive: i64 = session.catalog.db_for_tests().query_row(
+            "SELECT length(original_catalog) FROM sources",
+            [],
+            |r| r.get(0),
+        )?;
+        assert_eq!(archive, 0);
+        drop(session);
+        assert!(std::fs::metadata(&path)?.len() < 500_000);
+        Ok(())
     }
 
     /// Issue 808 (M3, A2): a removed copy's id may be given to the next new photo, so

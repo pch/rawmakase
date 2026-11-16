@@ -2,7 +2,7 @@
 //! keeps them. Each photo and virtual copy has its own, as in Lightroom's catalog,
 //! where snapshots belong to one image. Snapshots imported from Lightroom keep
 //! Lightroom's settings text and are converted when applied.
-use super::db::{LightroomWrite, Reads, SqliteSql, sql, sqlite_sql};
+use super::db::{Reads, SqliteSql, sql, sqlite_sql};
 use super::value::{TextOrBlob, row};
 use super::{Catalog, PhotoId};
 use crate::model::recipe::Recipe;
@@ -35,15 +35,7 @@ pub enum SnapshotSettings {
     Lightroom(String),
 }
 
-/// Set in `meta` once snapshots have been recovered from the stored Lightroom catalog.
-pub(super) const SNAPSHOTS_BACKFILLED: &str = "lightroom_snapshots_backfilled";
-
 impl Catalog {
-    /// Catalogs imported before snapshots were kept still hold the original Lightroom
-    /// catalog; copy its snapshots once. Returns snapshots added.
-    pub fn backfill_lightroom_snapshots(&mut self) -> Result<usize> {
-        self.backfill_once(SNAPSHOTS_BACKFILLED, copy_lightroom_snapshots)
-    }
     /// The photo's snapshots, alphabetically as Lightroom lists them. A snapshot
     /// that cannot be read (from a newer release) is left out.
     pub fn snapshots(&self, photo: PhotoId) -> Result<Vec<Snapshot>> {
@@ -147,14 +139,6 @@ impl Catalog {
             .write(|w| w.execute(sql!("DELETE FROM develop_snapshots WHERE id=?"), &[&id]))?;
         Ok(())
     }
-}
-
-/// Copies snapshots from a Lightroom catalog attached as `lr` that has them.
-fn copy_lightroom_snapshots(lr: &mut LightroomWrite<'_>) -> Result<usize> {
-    if !lr.has_table("Adobe_libraryImageDevelopSnapshot")? {
-        return Ok(0);
-    }
-    lr.execute_sqlite(COPY_LIGHTROOM_SNAPSHOTS, &[])
 }
 
 /// A snapshot's name, trimmed; it may not be empty.

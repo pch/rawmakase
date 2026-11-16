@@ -1564,22 +1564,34 @@ fn confirm(yes: bool) -> Result<bool> {
 }
 
 /// Opens the catalog at `path` for a command, upgrading one of an earlier format
-/// first: its progress, and where its backup is, go to standard error.
+/// first and removing an archived Lightroom catalog: their progress, and where
+/// the upgrade's backup is, go to standard error.
 fn open_catalog(path: impl AsRef<Path>) -> Result<rawmakase::catalog::Catalog> {
+    use rawmakase::catalog::OpeningProgress;
     use std::io::Write as _;
     let mut last = None;
-    let catalog = rawmakase::catalog::Catalog::open_reporting(
+    let mut progress = |progress: OpeningProgress| {
+        // A line per tenth of the way.
+        let step = match progress {
+            OpeningProgress::Upgrading { done, total } => Some(done * 10 / total.max(1)),
+            OpeningProgress::Compacting => None,
+        };
+        if last != Some(step) {
+            last = Some(step);
+            let _ = writeln!(std::io::stderr(), "{progress}");
+        }
+    };
+    let mut catalog = rawmakase::catalog::Catalog::open_reporting(
         path.as_ref(),
         &rawmakase::catalog::locations::Computer::this(),
-        &mut |progress| {
-            // A line per tenth of the way.
-            let tenth = progress.done * 10 / progress.total.max(1);
-            if last != Some(tenth) {
-                last = Some(tenth);
-                let _ = writeln!(std::io::stderr(), "{progress}");
-            }
-        },
+        &mut progress,
     )?;
+    if let Some(error) = catalog.remove_lightroom_archive(&mut progress) {
+        eprintln!(
+            "The catalog couldn't be made smaller: {error}. It is tried again the next time \
+             the catalog opens."
+        );
+    }
     if let Some(upgraded) = catalog.upgraded() {
         eprintln!(
             "Upgraded the catalog from format {} for this release. A copy of it as it was is at {}.",
