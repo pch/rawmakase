@@ -24,7 +24,7 @@ It is a personal project in active development. It develops photos from almost e
 - **Presets and profiles**: 26 built-in presets and your Lightroom XMP presets; RAWmakase's own Standard and Color profiles for every camera with a usable color matrix, plus DCP and XMP camera profiles you import yourself, and `.cube` LUTs imported as looks, as Camera Raw makes them.
 - **Non-destructive**: the contents of your originals are never modified. Edits live in the catalog, and all writes are atomic.
 - **Fast previews**: every change renders at viewport size, with the color and tone stage on the GPU (Metal on macOS, Vulkan on Linux, DirectX 12 on Windows) and a CPU fallback.
-- **Command line**: inspect, render, export thumbnails, import catalogs and profiles, and benchmark without the GUI.
+- **Command line and headless rendering**: inspect, render, export thumbnails, import catalogs and profiles, and benchmark without the GUI; render on a server or in a container with no display or GPU.
 - **Keyboard shortcuts**: Lightroom's, each one changeable in Preferences > Shortcuts or in a `keymap.toml`; see [keyboard shortcuts](docs/shortcuts.md).
 - **External control**: [MIDI controllers](docs/midi.md), [scripts](docs/automation.md), and a built-in [MCP server](docs/mcp.md) for agents to adjust the running editor, inspect previews, save and export.
 - **Updates**: the app checks GitHub for new releases; the Apple Silicon and Windows installer builds update themselves, other installs are pointed at the release page.
@@ -189,6 +189,18 @@ rawmakase help
 ```
 
 `render` starts where the app would. With `--catalog Photos.rawmakase` it uses the photo's edit in that catalog: its saved edit, else its Lightroom edit, else the raw defaults. A path names the master, not a virtual copy, and a photo the catalog doesn't have is an error. Without a catalog it uses an edit a release before 0.1.8 saved as a sidecar (`photo.dng.rawmakase.json` beside the photo, or in the data directory's `sidecars/` folder, whichever is newer), else the raw defaults chosen in Preferences. `--recipe` replaces that starting point with a saved RAWmakase preset; `--xmp` applies an XMP preset on top of it, so settings the XMP leaves out keep the starting point's values. For a render that depends on nothing saved, pass `--recipe`. The catalog's export settings don't apply: the output is what the command line asks for. It needs `--overwrite` to replace an existing file. `--quality 1–100` sets a JPEG's quality, as the Export dialog's slider does (92 without it); a `.jxl` output is lossless unless `--jxl-quality` gives it one. `render-batch --quality` applies to the jobs it writes as JPEG.
+
+### Headless rendering
+
+`render` and `render-batch` open no window and need no display server or GPU, so they run on a server, in a container or from a script. Point `RAWMAKASE_DATA_DIR` at a folder, import the camera profiles your presets use into it with `import-profiles`, and render:
+
+```sh
+export RAWMAKASE_DATA_DIR=/srv/rawmakase
+rawmakase import-profiles /path/to/profiles/
+rawmakase render photo.ARW out.jpg --xmp preset.xmp --max-edge 2400 --quality 85
+```
+
+The Linux build needs glibc 2.39 or newer (Ubuntu 24.04+, Debian 13+, Fedora 43+), so AWS Lambda needs a container image. Output goes to local files; copy them to S3-compatible storage with `rclone` or the AWS CLI. See [Headless rendering](docs/headless.md) for the folders, AI Denoise's model, a container example and the limits.
 
 ### Where data lives
 

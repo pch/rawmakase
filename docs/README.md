@@ -39,6 +39,8 @@ Start with the [code map](code-map.md) to find where a change belongs, the
 | [Lens corrections](lens-corrections.md) | Current | Built-in, DNG, Adobe LCP and Lensfun corrections, CA and Defringe |
 | [Keyboard shortcuts](shortcuts.md) | Current | Changing shortcuts in Preferences, `keymap.toml`, reserved keys, conflicts and keyboard layouts |
 | [Automation](automation.md) | Current | The local control protocol, `rawmakase control` and scripts |
+| [Headless rendering](headless.md) | Current | `render` on a server or in a container: folders, profiles, AI Denoise, S3 via other tools, limits |
+| [Headless plan](headless-plan.md) | Plan (2026-11-16), deferred | A headless binary, server mode and S3 output, and what each must handle |
 | [MCP](mcp.md) | Current | `rawmakase mcp`, the local MCP adapter |
 | [MIDI](midi.md) | Current | MIDI controllers |
 | [Remote inference](remote-inference.md) | Current | Running the selection models on another computer |

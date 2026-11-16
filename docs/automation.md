@@ -269,7 +269,7 @@ but requests, photo loading and saving go on. The pictures of photos opened
 meanwhile stay in memory until the window is drawn again. A suspended app (a closed laptop
 lid, say) doesn't process them; queued requests then expire safely. This is live
 desktop control, not a headless daemon. For unattended rendering without a GUI, use
-`rawmakase render` and its recipe options.
+`rawmakase render` and its recipe options ([Headless rendering](headless.md)).
 
 ## Configuration and compatibility
 
