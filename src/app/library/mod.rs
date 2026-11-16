@@ -1406,8 +1406,9 @@ impl Library {
             return;
         };
         let stamp = rendered.map(crate::storage::Identity::stamp);
-        let tag = EditSource::saved(recipe.clone()).preview_tag(ai);
-        self.cache.store_edited(ctx, id, path, stamp, tag, image);
+        let source = EditSource::saved(recipe.clone());
+        self.cache
+            .store_edited(ctx, id, path, stamp, &source, ai, image);
     }
     /// An AI Denoise result was stored for the file at `path`: its photos' edited
     /// previews are asked for again, so one shown plain shows the result. What is

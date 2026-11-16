@@ -434,16 +434,18 @@ impl PreviewTextures {
         }
     }
     /// Shows Develop's latest render as the photo's thumbnail and caches it
-    /// under `tag`, the preview tag of the edit it was rendered with, for the
-    /// file as `stamp` gives it when it was rendered (none: it is shown, not
-    /// cached). Renders still in flight are older.
+    /// under the edit `source` it was rendered with and what it shows of AI
+    /// Denoise (`ai`), for the file as `stamp` gives it when it was rendered
+    /// (none: it is shown, not cached). Renders still in flight are older.
+    #[expect(clippy::too_many_arguments)]
     pub(super) fn store_edited(
         &mut self,
         ctx: &egui::Context,
         id: PhotoId,
         path: PathBuf,
         stamp: Option<crate::catalog::preview_cache::Stamp>,
-        tag: String,
+        source: &EditSource,
+        ai: previews::PreviewAi,
         image: image::RgbImage,
     ) {
         let ticket = self.ticket();
@@ -452,7 +454,8 @@ impl PreviewTextures {
         if let Some(stamp) = stamp {
             let _ = self.edit_tx.send(EditJob::Store {
                 path,
-                tag,
+                family: source.tag(),
+                tag: source.preview_tag(ai),
                 stamp,
                 image,
             });

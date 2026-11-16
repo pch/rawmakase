@@ -157,7 +157,8 @@ in progress, so an interrupted move, copy or Trash can be finished or undone.
   photos may have changed place, name or master, so a background result read before
   is dropped.
 - The preview cache's renderer generation (`catalog::preview_cache`): bumped when
-  rendering changes, so stored thumbnails made before are made again.
+  rendering changes, so stored thumbnails made before are made again (a RAW's
+  embedded preview only when extracting it changes).
 
 **Latest, Mailbox** (`app::worker::latest`). A single-slot queue: pending work is
 replaced by the latest request. A `Mailbox` submits to a `Latest` worker without
