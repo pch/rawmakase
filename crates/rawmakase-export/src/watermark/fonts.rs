@@ -234,13 +234,13 @@ fn system_face(weight: f32) -> Result<(PathBuf, u32)> {
     #[cfg(target_os = "macos")]
     {
         let _ = weight;
-        return Ok((PathBuf::from("/System/Library/Fonts/SFNS.ttf"), 0));
+        Ok((PathBuf::from("/System/Library/Fonts/SFNS.ttf"), 0))
     }
     #[cfg(target_os = "windows")]
     {
         let root = std::env::var_os("SystemRoot").context("SystemRoot unavailable")?;
         let fonts = PathBuf::from(root).join("Fonts");
-        return Ok((
+        Ok((
             if fonts.join("SegUIVar.ttf").is_file() {
                 fonts.join("SegUIVar.ttf")
             } else {
@@ -253,7 +253,7 @@ fn system_face(weight: f32) -> Result<(PathBuf, u32)> {
                 })
             },
             0,
-        ));
+        ))
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {

@@ -528,8 +528,8 @@ fn controls(ui: &mut egui::Ui, state: &mut WatermarkEditor, ctx: &egui::Context)
             });
             // Installed fonts are still being listed at first: the system default until then.
             let listed = watermark::fonts::families_if_listed();
-            let inter = [watermark::fonts::system()];
-            let families: &[watermark::fonts::Family] = listed.unwrap_or(&inter);
+            let system = [watermark::fonts::system()];
+            let families: &[watermark::fonts::Family] = listed.unwrap_or(&system);
             row(ui, "Font", |ui| {
                 egui::ComboBox::from_id_salt("watermark-font")
                     .width(ui.available_width())
