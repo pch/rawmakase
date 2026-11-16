@@ -337,6 +337,16 @@ impl Editor {
             .filter(|o| o.extension == open.extension)
             .collect()
     }
+    /// What the chosen tab's generator says of itself, below the tabs: only
+    /// while there are tabs, and only when it says something.
+    pub(in crate::app) fn generator_tab_description(&self) -> Option<String> {
+        if self.generator_tabs().len() < 2 {
+            return None;
+        }
+        self.ai_remove_offer()
+            .and_then(|(o, _)| o.description)
+            .filter(|d| !d.trim().is_empty())
+    }
     /// The rail tool the AI Retouch drawer is open on: its extension's
     /// first generator, whichever tab is chosen.
     pub(in crate::app) fn open_rail_generator(&self) -> Option<Offer> {

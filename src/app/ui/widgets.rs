@@ -2181,6 +2181,19 @@ pub(in crate::app) fn drawer_help(ui: &mut egui::Ui, help: &str) {
         );
     });
 }
+/// A drawer's note of its own, as wide as the drawer: under its tabs, or a
+/// panel's Help without a label. [`drawer_help`] is a control's, in the
+/// controls' column.
+pub(in crate::app) fn drawer_note(ui: &mut egui::Ui, note: &str) {
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(note)
+                .size(text::MICRO)
+                .color(theme::palette(ui.ctx()).tone(Tone::FAINT)),
+        )
+        .wrap(),
+    );
+}
 /// A path for display, with the home folder as `~`.
 pub(in crate::app) fn pretty_path(path: &std::path::Path) -> String {
     let text = path.display().to_string();

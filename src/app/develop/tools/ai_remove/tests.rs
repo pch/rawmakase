@@ -389,11 +389,18 @@ fn each_extension_is_one_rail_tool_with_a_tab_per_generator() {
     let tabs: Vec<String> = e.generator_tabs().into_iter().map(|o| o.name).collect();
     assert_eq!(tabs[..3], ["Fill", "Local Fill", "Gate"]);
     assert_eq!(tabs.len(), 9);
+    // Each says what it is, below the tabs while it is chosen, in its own
+    // words; one that says nothing has no line.
+    assert_eq!(e.generator_tab_description(), None);
     // A tab moves new spots to its generator; the tool and its title stay.
     let local = offer(e, "local");
     e.choose_ai_generator(&local);
     assert!(e.view.is(Tool::AiRetouch));
     assert_eq!(e.ai_remove_offer().unwrap().0, local);
+    assert_eq!(
+        e.generator_tab_description().as_deref(),
+        Some("Fills here: nothing leaves this computer.")
+    );
     assert_eq!(e.drawer_caption().as_deref(), Some("Fill"));
     // The rail button closes the tool, whichever tab is chosen, and opens
     // it again on that tab.
@@ -1501,8 +1508,12 @@ fn render_the_ai_retouch_drawer() {
             .join(rawmakase_extensions::protocol::manifest::FILE),
         format!(
             "{header}{}\n[[retouch-generator]]\nid = \"local\"\n\
-             name = \"AI Remove on this computer\"\nicon = \"icons/fill.svg\"\n",
-            ask.replace("name = \"Ask\"", "name = \"AI Retouch\"")
+             name = \"AI Local Remove\"\nicon = \"icons/fill.svg\"\n\
+             description = \"Runs on this computer: nothing is uploaded.\"\n",
+            ask.replace(
+                "name = \"Ask\"",
+                "name = \"AI Retouch\"\ndescription = \"A hosted model, with your own API key.\""
+            )
         ),
     )
     .unwrap();

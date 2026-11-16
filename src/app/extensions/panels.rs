@@ -391,9 +391,10 @@ fn draw_one(
         ControlKind::Label { text } => row(ui, layout, label, false, |ui| {
             ui.add(egui::Label::new(text).wrap());
         }),
-        // A drawer's line of its own, as a control's help under it is drawn.
+        // A drawer's line of its own, as wide as the drawer.
         ControlKind::Help { text } if layout == Layout::Drawer && label.is_empty() => {
-            crate::app::ui::widgets::drawer_help(ui, text);
+            crate::app::ui::widgets::drawer_note(ui, text);
+            ui.add_space(crate::app::ui::design::space::S);
         }
         ControlKind::Help { text } => row(ui, layout, label, false, |ui| hint(ui, text)),
         ControlKind::Progress { value } => row(ui, layout, label, false, |ui| {

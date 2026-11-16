@@ -16,8 +16,8 @@ use eframe::egui::{self, Vec2};
 impl Editor {
     /// A tab for each generator of the extension the drawer is open on, when
     /// it has more than one: the one chosen takes new spots and shows its
-    /// panel. Segments while their names fit the drawer, wrapped tabs
-    /// otherwise. Held while a request is asked about or under way, as the
+    /// panel, with its description below. Segments while their names fit the
+    /// drawer, wrapped tabs otherwise. Held while a request is asked about or under way, as the
     /// panel is.
     pub(in crate::app) fn generator_tab_bar(&mut self, ui: &mut egui::Ui) {
         let tabs = self.generator_tabs();
@@ -53,7 +53,12 @@ impl Editor {
         {
             self.choose_ai_generator(offer);
         }
-        ui.add_space(space::S);
+        // Under the tabs and as wide, not in the controls' column below.
+        if let Some(description) = self.generator_tab_description() {
+            ui.add_space(space::XS);
+            crate::app::ui::widgets::drawer_note(ui, &description);
+        }
+        ui.add_space(space::M);
     }
 
     /// AI Retouch's own controls, above the brush: the generator's panel (a

@@ -66,6 +66,8 @@ pub(in crate::app) struct Offer {
     pub(in crate::app) panel: Option<String>,
     /// Its rail icon, an SVG in the extension's folder.
     pub(in crate::app) icon: std::path::PathBuf,
+    /// The line its tab shows below the tabs while chosen.
+    pub(in crate::app) description: Option<String>,
 }
 
 impl Host {
@@ -85,6 +87,7 @@ impl Host {
                         provenance: g.provenance(e.id()),
                         extension_name: e.name().to_string(),
                         panel: g.panel.clone(),
+                        description: g.description.clone(),
                         icon: g
                             .icon
                             .split('/')
