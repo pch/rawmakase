@@ -219,6 +219,41 @@ whole photos and of single regions), and the airlight Camera Raw reads around cl
 sources. The same band test on Clarity and on positive Dehaze, whose renders are on
 disk, and the default black keyed after Dehaze are separate, smaller steps.
 
+**The same band test on Clarity and positive Dehaze.** Camera Raw against main
+(`f9b574b2`), each from its own default render, on 49 to 52 training photos; gain of
+each octave band of log2 luminance (px of 1024, then the 128 px low-pass):
+
+| Setting | Render | 1 | 2 | 4 | 8 | 16 | 32 | 64 | low-pass |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Clarity +100 | Camera Raw | 1.61 | 1.48 | 1.38 | 1.30 | 1.24 | 1.22 | 1.17 | 1.12 |
+| Clarity +100 | main | 1.31 | 1.54 | 1.63 | 1.62 | 1.54 | 1.43 | 1.36 | 1.14 |
+| Clarity +50 | Camera Raw | 1.31 | 1.25 | 1.19 | 1.16 | 1.13 | 1.11 | 1.08 | 1.06 |
+| Clarity +50 | main | 1.17 | 1.28 | 1.33 | 1.32 | 1.29 | 1.23 | 1.19 | 1.08 |
+| Dehaze +100 | Camera Raw | 1.96 | 1.89 | 1.84 | 1.70 | 1.60 | 1.56 | 1.50 | 0.95 |
+| Dehaze +100 | main | 1.94 | 1.93 | 1.92 | 1.86 | 1.56 | 1.29 | 1.16 | 1.07 |
+| Dehaze +50 | Camera Raw | 1.37 | 1.34 | 1.31 | 1.25 | 1.21 | 1.19 | 1.17 | 0.99 |
+| Dehaze +50 | main | 1.43 | 1.43 | 1.43 | 1.38 | 1.27 | 1.15 | 1.10 | 1.07 |
+
+- *Clarity.* Camera Raw's extra gain falls smoothly with size, about 0.61·px^−0.3 at +100
+  and half of that at +50. Main peaks at 4 to 8 px, is 19% short at 1 px (its finest
+  blur is 4 px of 1024) and 13% to 19% over from 4 to 64 px, and lowers the 32 px level
+  of a photo's dark third by 0.31 stop where Camera Raw lowers it by 0.17. Strength is
+  not the fault: main's own change at +35 to +100, applied to Camera Raw's default
+  render, leaves 0.029 to 0.031 against Camera Raw's +100 at every amount (no change:
+  0.036), and 0.015 against +50 (0.018). Nor is Clarity a filter with one gain per band:
+  the median gains leave 0.0367, a photo's own gains 0.0338, and the median gains finer
+  than 32 px on Camera Raw's own 32 px low-pass 0.0181. Half of Clarity is in its
+  large-scale layer and the rest depends on the detail's size, as the step probes of
+  2026-11-12 showed.
+- *Positive Dehaze.* Main matches Camera Raw up to 16 px and is 16% to 21% short at 32
+  and 64 px: its density follows structures larger than its window, the fault of the
+  negative candidate. Camera Raw lowers the low-pass contrast (0.95; 0.78 in the dark
+  third) where main raises it (1.07), and main darkens the 32 px level by 0.08 to 0.16
+  stop more (the bright third −1.11 stops against −0.95). Main's own change leaves
+  0.0358 at +100 (no change: 0.0941) and 0.0168 at +50 (0.0424); the median band gains
+  finer than 32 px on Camera Raw's own low-pass leave as much (0.0353 and 0.0128), so
+  unlike negative Dehaze its detail is not one filter for every photo.
+
 ### Negative Dehaze as added haze, and the dark key (2026-11-13)
 
 Follow-ups of the round below, on Camera Raw's scene values of the training photos (98
