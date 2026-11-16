@@ -222,6 +222,7 @@ fn a_stored_render_of_a_file_replaced_since_is_not_kept() -> anyhow::Result<()> 
     let (tx, rx, _) = spawn_edited(cache.clone(), Wanted::default(), egui::Context::default());
     tx.send(EditJob::Store {
         path: source.clone(),
+        family: "edit".into(),
         tag: "edit".into(),
         stamp: rendered,
         image: image::RgbImage::new(4, 4),
@@ -427,6 +428,7 @@ fn a_preview_of_another_models_result_is_made_again() -> anyhow::Result<()> {
     let previews = directory.path().join("previews.sqlite3");
     PreviewCache::open(&previews)?.store_tagged(
         &path,
+        &source.tag(),
         &source.preview_tag_of(PreviewAi::Finished, "an-earlier-model"),
         &Stamp::read(&path)?,
         &image::RgbImage::from_pixel(8, 8, image::Rgb([90; 3])),
@@ -458,6 +460,7 @@ fn edited_preview_cache_failures_are_reported() -> anyhow::Result<()> {
     tx.send(EditJob::Store {
         stamp: Stamp::read(&source)?,
         path: source,
+        family: "edit".into(),
         tag: "edit".into(),
         image: image::RgbImage::new(2048, 8),
     })?;
@@ -872,5 +875,74 @@ fn an_edit_has_one_preview_tag_from_develop_and_the_catalog() -> anyhow::Result<
         assert_eq!(catalog(&c, *id)?, develop(r));
     }
     assert_ne!(develop(&plain), develop(&masked));
+    Ok(())
+}
+
+/// Photo `id`'s preview of `path` with `source`, asked with `ticket`.
+fn render_for(
+    tx: &EditQueue,
+    rx: &Receiver<EditResult>,
+    id: PhotoId,
+    path: &Path,
+    source: &EditSource,
+    ticket: u64,
+) -> anyhow::Result<()> {
+    tx.send(EditJob::Render {
+        id,
+        ticket,
+        path: path.into(),
+        source: source.clone(),
+        ahead: false,
+    })?;
+    match rx.recv_timeout(Duration::from_secs(10))? {
+        EditResult::Ready(got, t, _) if got == id && t == ticket => Ok(()),
+        _ => anyhow::bail!("no preview"),
+    }
+}
+
+/// Whether the cache at `previews` still holds `source`'s preview of `path`.
+fn kept(previews: &Path, path: &Path, source: &EditSource) -> anyhow::Result<bool> {
+    Ok(PreviewCache::open(previews)?
+        .load_tagged(path, &source.preview_tag(PreviewAi::Off))?
+        .is_some())
+}
+
+/// Saving edit after edit of one photo, each saved recipe rendering its own
+/// preview, leaves the previews of the eight latest, not one per save.
+#[test]
+fn successive_edits_of_a_photo_keep_eight_previews() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("photo.png");
+    image::RgbImage::new(16, 16).save(&path)?;
+    let previews = directory.path().join("previews.sqlite3");
+    let wanted = Wanted::default();
+    wanted.lock().unwrap().extend([PhotoId(1), PhotoId(2)]);
+    let (tx, rx, _) = spawn_edited_with(previews.clone(), wanted, egui::Context::default(), plain);
+    let edits: Vec<EditSource> = (0..10)
+        .map(|n| {
+            EditSource::saved(Recipe {
+                exposure: n as f32 / 10.,
+                ..Recipe::default()
+            })
+        })
+        .collect();
+    for (n, edit) in edits.iter().enumerate() {
+        render_for(&tx, &rx, PhotoId(1), &path, edit, n as u64)?;
+    }
+    let left = edits
+        .iter()
+        .map(|edit| kept(&previews, &path, edit))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    assert_eq!(left.iter().filter(|k| **k).count(), 8, "{left:?}");
+    assert!(left[9], "the latest edit's preview");
+    // A virtual copy's edit is kept beside the photo's.
+    let copy = EditSource::saved(Recipe {
+        contrast: 0.5,
+        ..Recipe::default()
+    });
+    render_for(&tx, &rx, PhotoId(2), &path, &copy, 10)?;
+    render_for(&tx, &rx, PhotoId(1), &path, &edits[9], 11)?;
+    assert!(kept(&previews, &path, &copy)?);
+    assert!(kept(&previews, &path, &edits[9])?);
     Ok(())
 }

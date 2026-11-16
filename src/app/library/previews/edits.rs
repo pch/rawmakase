@@ -37,6 +37,9 @@ pub(in crate::app::library) enum EditJob {
     /// `stamp` gives it when it was rendered: not kept once the file differs.
     Store {
         path: PathBuf,
+        /// The edit the preview was rendered with (`EditSource::tag`), of
+        /// which `tag` is a variant.
+        family: String,
         tag: String,
         stamp: Stamp,
         image: image::RgbImage,
@@ -262,7 +265,8 @@ fn renders_at(pace: Pace, full_renders: usize) -> usize {
 }
 /// What the worker does next.
 enum Step {
-    Store(PathBuf, String, Stamp, image::RgbImage),
+    /// Keep a preview: of the file, under the edit family and tag.
+    Store(PathBuf, String, String, Stamp, image::RgbImage),
     /// Answer without rendering: the photo is out of view, or was asked for
     /// ahead and the pace dropped.
     Skip(PhotoId, u64),
@@ -326,7 +330,9 @@ pub(super) fn spawn_edited_with_ai(
             match next_step(&renders.results.shared, &renders.wanted, full_renders) {
                 Step::Exit => break,
                 Step::Skip(id, ticket) => renders.results.send(EditResult::Skipped(id, ticket)),
-                Step::Store(path, tag, stamp, image) => renders.store(&path, &tag, &stamp, &image),
+                Step::Store(path, family, tag, stamp, image) => {
+                    renders.store(&path, &family, &tag, &stamp, &image)
+                }
                 Step::Look(index, render) => renders.look(index, render),
                 Step::Render(index) => renders.start(index),
             }
@@ -373,13 +379,13 @@ fn reopen(at: &Mutex<Option<PreviewCache>>, path: &Path) {
 }
 impl Renders {
     /// Keeps `image`, rendered from the file at `path` as `stamp` gives it,
-    /// as its preview under `tag`; a file changed since gets none of it, and
-    /// that is not a cache failure.
-    fn store(&self, path: &Path, tag: &str, stamp: &Stamp, image: &image::RgbImage) {
+    /// as its preview under `tag`, a variant of the edit `family`; a file
+    /// changed since gets none of it, and that is not a cache failure.
+    fn store(&self, path: &Path, family: &str, tag: &str, stamp: &Stamp, image: &image::RgbImage) {
         let stored = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             match &mut *cache(&self.cache) {
                 Some(cache) if Stamp::read(path).ok().as_ref() == Some(stamp) => cache
-                    .store_tagged(path, tag, stamp, image)
+                    .store_tagged(path, family, tag, stamp, image)
                     .err()
                     .map(|error| error.to_string()),
                 _ => None,
@@ -519,8 +525,13 @@ impl Renders {
                     ),
                 };
                 if let Some(cache) = &mut *cache(&cache_at)
-                    && let Err(error) =
-                        cache.store_tagged(&path, &source.preview_tag(shows), &stamp, &image)
+                    && let Err(error) = cache.store_tagged(
+                        &path,
+                        &source.tag(),
+                        &source.preview_tag(shows),
+                        &stamp,
+                        &image,
+                    )
                 {
                     cache_error = Some(error.to_string());
                 }
@@ -602,6 +613,7 @@ fn next_step(shared: &Shared, wanted: &Wanted, full_renders: usize) -> Step {
         {
             let EditJob::Store {
                 path,
+                family,
                 tag,
                 stamp,
                 image,
@@ -609,7 +621,7 @@ fn next_step(shared: &Shared, wanted: &Wanted, full_renders: usize) -> Step {
             else {
                 unreachable!()
             };
-            return Step::Store(path, tag, stamp, image);
+            return Step::Store(path, family, tag, stamp, image);
         }
         let shown = wanted.lock().unwrap().clone();
         let full = state.pace == Pace::Full;

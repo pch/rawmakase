@@ -47,6 +47,18 @@ const GENERATION: i64 = 14;
 // 5: an edited JPEG, PNG or TIFF renders from the scene its rendering is of.
 // 6: Highlights, as `GENERATION` 6.
 const RASTER_GENERATION: i64 = 6;
+/// The oldest generation whose RAW thumbnails without a tag, the file's
+/// embedded preview (the camera's JPEG, or the JPEG XL Lightroom writes into a
+/// DNG), are still made as this build makes them. Such a preview is not an
+/// engine render, so [`GENERATION`]'s later bumps leave it alone. 5 is the
+/// first generation every build of which extracts Lightroom's JPEG XL
+/// previews, which replaced its 256 px JPEG (#525, merged while 4 was
+/// current). When extracting or scaling embedded previews changes, bump
+/// [`GENERATION`] and set this to the new value.
+const EMBEDDED_GENERATION_MIN: i64 = 5;
+/// The most edits of one file whose thumbnails are kept, each with every
+/// variant it was rendered in ([`PreviewCache::store_tagged`]).
+const EDIT_FAMILIES: usize = 8;
 /// Thumbnails a prune deletes in one write.
 const PRUNE_STEP: usize = 256;
 /// The most pages, of 4 KiB, one step of giving space back to the disk gives
@@ -173,6 +185,136 @@ fn generation(path: &Path) -> i64 {
         RASTER_GENERATION
     }
 }
+/// What a `previews` row is a thumbnail of, as its key and the family stored
+/// with it tell: the file, and the edit it was rendered with, if any.
+#[derive(Debug, PartialEq, Eq)]
+struct Row<'a> {
+    /// The file's key ([`key`]).
+    path: &'a str,
+    /// The edit family ([`PreviewCache::store_tagged`]): `None` for a file's
+    /// own thumbnail, or a row whose edit can't be told.
+    family: Option<&'a str>,
+    /// Rendered with an edit, rather than the file's own thumbnail.
+    tagged: bool,
+}
+/// Reads a row's key and its `prefix_hash` column, which holds the family of
+/// an edited thumbnail. Earlier builds left that column empty: their edited
+/// rows are told by a key ending in `#edit-` and 16 hex digits, as
+/// `EditSource::tag` makes them, then one of the variants any build has
+/// written ([`legacy_variant`]). Any other key is a file's own thumbnail,
+/// such as that of a file named `x.ARW#edit-…-copy.ARW`; one with a tag of
+/// another form, which no build has stored outside tests, is taken for one
+/// too.
+fn row_kind<'a>(key: &'a str, family: &'a str) -> Row<'a> {
+    if !family.is_empty()
+        && let Some(at) = key.rfind(&format!("#{family}"))
+    {
+        return Row {
+            path: &key[..at],
+            family: Some(&key[at + 1..at + 1 + family.len()]),
+            tagged: true,
+        };
+    }
+    const EDIT: &str = "#edit-";
+    if let Some(at) = key.rfind(EDIT) {
+        let rest = &key[at + EDIT.len()..];
+        if let Some((hex, variant)) = rest.split_at_checked(16)
+            && hex.bytes().all(|b| b.is_ascii_hexdigit())
+            && legacy_variant(variant)
+        {
+            return Row {
+                path: &key[..at],
+                family: Some(&key[at + 1..at + EDIT.len() + 16]),
+                tagged: true,
+            };
+        }
+    }
+    Row {
+        path: key,
+        family: None,
+        tagged: false,
+    }
+}
+/// Whether `variant` follows an edit family in a tag some build wrote: none
+/// (Develop's renders before the Library told how they were rendered),
+/// `-fit`, `-fit-noai`, or `-fit-ai-` and the AI Denoise model
+/// (`ai_denoise::model_tag`: hex digits, `-a` and its version). A file's name
+/// has an extension, so a `.` or a path separator never belongs to one.
+fn legacy_variant(variant: &str) -> bool {
+    matches!(variant, "" | "-fit" | "-fit-noai")
+        || variant.strip_prefix("-fit-ai-").is_some_and(|model| {
+            !model.is_empty()
+                && model
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        })
+}
+/// Whether a row made in `made` can still be shown. An edited thumbnail, and
+/// any of a JPEG, PNG or TIFF, is the engine's render, made again whenever the
+/// engine renders differently; a RAW's own thumbnail is its embedded preview
+/// (see [`EMBEDDED_GENERATION_MIN`]).
+fn fresh(row: &Row<'_>, made: i64) -> bool {
+    let path = Path::new(row.path);
+    if !row.tagged && crate::storage::is_raw(path) {
+        made >= EMBEDDED_GENERATION_MIN
+    } else {
+        made == generation(path)
+    }
+}
+/// Drops the edited thumbnails of the file keyed `path` beyond those of
+/// `family`, just stored, and the [`EDIT_FAMILIES`]` - 1` other edits used
+/// most recently (ties by family), in the caller's write transaction.
+fn keep_edit_families(db: &Connection, path: &str, family: &str) -> Result<()> {
+    // The file's tagged keys sort between `path#` and `path$`, '$' following
+    // '#' in UTF-8: a range of the primary key, which a LIKE on a path with
+    // '%' or '_' would not be. Other files whose names begin `path#` fall in
+    // it too, and are told apart by `row_kind`.
+    let rows: Vec<(String, String, i64)> = db
+        .prepare(
+            "SELECT source_path,prefix_hash,last_used FROM previews WHERE source_path>=?1 AND source_path<?2",
+        )?
+        .query_map(params![format!("{path}#"), format!("{path}$")], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut used: std::collections::HashMap<&str, i64> = std::collections::HashMap::new();
+    let mut members: Vec<(&str, &str)> = Vec::new();
+    for (key, stored, last_used) in &rows {
+        let row = row_kind(key, stored);
+        let Some(other) = row.family.filter(|_| row.path == path) else {
+            continue;
+        };
+        members.push((key, other));
+        if other != family {
+            let latest = used.entry(other).or_insert(*last_used);
+            *latest = (*latest).max(*last_used);
+        }
+    }
+    if used.len() < EDIT_FAMILIES {
+        return Ok(());
+    }
+    let mut ranked: Vec<(&str, i64)> = used.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+    let dropped: std::collections::HashSet<&str> = ranked[EDIT_FAMILIES - 1..]
+        .iter()
+        .map(|(family, _)| *family)
+        .collect();
+    let mut delete = db.prepare("DELETE FROM previews WHERE source_path=?1")?;
+    for (key, family) in members {
+        if dropped.contains(family) {
+            delete.execute([key])?;
+        }
+    }
+    Ok(())
+}
+/// A row a prune read, which it deletes only if no connection has made it
+/// again since.
+#[derive(Debug)]
+struct Doomed {
+    key: String,
+    generation: i64,
+    last_used: i64,
+}
 /// Whether the file at `path` is no longer the one a row was made from. An
 /// offline original is not stale, so its previews stay usable.
 fn stale(path: &Path, size: i64, modified: &str) -> bool {
@@ -257,7 +399,12 @@ impl PreviewCache {
                 .db
                 .execute("DELETE FROM previews WHERE source_path=?", [&key]);
         };
-        if generation != self::generation(path) || stale {
+        let row = Row {
+            path: &self::key(path),
+            family: None,
+            tagged: !tag.is_empty(),
+        };
+        if !fresh(&row, generation) || stale {
             forget();
             return Ok(None);
         }
@@ -274,12 +421,39 @@ impl PreviewCache {
         );
         Ok(Some(image))
     }
+    /// Keeps `image` as the file's own thumbnail: a RAW's embedded preview, or
+    /// a JPEG, PNG or TIFF as it is.
     pub fn store(&mut self, path: &Path, stamp: &Stamp, image: &image::RgbImage) -> Result<()> {
-        self.store_tagged(path, "", stamp, image)
+        self.put(path, "", "", stamp, image)
     }
+    /// Keeps `image` as the file's thumbnail rendered with an edit: under
+    /// `tag`, a variant of the edit `family` (`EditSource::tag`, of which
+    /// `tag` is an extension, such as with or without AI Denoise's result).
+    ///
+    /// A file keeps the thumbnails of [`EDIT_FAMILIES`] edits, every variant
+    /// of each: this one and those used most recently. It is a cap rather
+    /// than an LRU: a file with more live edits than that, as virtual copies
+    /// and catalogs give it, has the edit used longest ago made again when it
+    /// is shown, and while the file is offline it can't be.
     pub fn store_tagged(
         &mut self,
         path: &Path,
+        family: &str,
+        tag: &str,
+        stamp: &Stamp,
+        image: &image::RgbImage,
+    ) -> Result<()> {
+        debug_assert!(
+            !family.is_empty() && tag.starts_with(family),
+            "{tag} is not a variant of {family}"
+        );
+        ensure!(!family.is_empty(), "An edited preview has no edit family");
+        self.put(path, family, tag, stamp, image)
+    }
+    fn put(
+        &mut self,
+        path: &Path,
+        family: &str,
         tag: &str,
         stamp: &Stamp,
         image: &image::RgbImage,
@@ -299,8 +473,17 @@ impl PreviewCache {
             image.height(),
             image::ExtendedColorType::Rgb8,
         )?;
-        // prefix_hash, which needed the file's first 64 KB, is no longer checked.
-        self.db.execute("INSERT INTO previews VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(source_path) DO UPDATE SET source_size=excluded.source_size,modified_ns=excluded.modified_ns,prefix_hash=excluded.prefix_hash,generation=excluded.generation,width=excluded.width,height=excluded.height,jpeg=excluded.jpeg,last_used=excluded.last_used",params![tagged(path, tag),stamp.size as i64,stamp.modified_ns.to_string(),"",generation(path),image.width(),image.height(),jpeg,now()])?;
+        // prefix_hash held a hash of the file's first 64 KB, which no build
+        // since 0.1.11 reads; it now holds an edited row's family, and is
+        // empty for the file's own thumbnail.
+        let tx = self
+            .db
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        tx.execute("INSERT INTO previews VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(source_path) DO UPDATE SET source_size=excluded.source_size,modified_ns=excluded.modified_ns,prefix_hash=excluded.prefix_hash,generation=excluded.generation,width=excluded.width,height=excluded.height,jpeg=excluded.jpeg,last_used=excluded.last_used",params![tagged(path, tag),stamp.size as i64,stamp.modified_ns.to_string(),family,generation(path),image.width(),image.height(),jpeg,now()])?;
+        if !family.is_empty() {
+            keep_edit_families(&tx, &key(path), family)?;
+        }
+        tx.commit()?;
         self.writes += 1;
         if self.writes.is_multiple_of(32) {
             self.prune(budget())?;
@@ -703,22 +886,57 @@ impl PreviewCache {
         }
         Ok(())
     }
-    /// Deletes the thumbnails beyond the newest that fit `budget` bytes.
+    /// Deletes the thumbnails no lookup can show ([`fresh`]), then those
+    /// beyond the newest that fit `budget` bytes.
     fn drop_beyond(&mut self, budget: i64) -> Result<()> {
-        let over: Vec<String> = self
-            .db
-            .prepare(
-                "SELECT source_path FROM (SELECT source_path, sum(length(jpeg)) OVER (ORDER BY last_used DESC, source_path DESC) AS kept FROM previews) WHERE kept > ?1",
-            )?
-            .query_map([budget], |r| r.get(0))?
-            .collect::<rusqlite::Result<_>>()?;
-        let mut delete = self
-            .db
-            .prepare("DELETE FROM previews WHERE source_path=?1")?;
-        for step in over.chunks(PRUNE_STEP) {
+        let doomed = self.beyond(budget)?;
+        self.delete_rows(&doomed)
+    }
+    /// The rows [`Self::drop_beyond`] deletes, those no lookup can show first.
+    /// Freshness goes by generation alone, never reading the files, so the
+    /// current thumbnails of offline files stay.
+    fn beyond(&self, budget: i64) -> Result<Vec<Doomed>> {
+        let mut rows = self.db.prepare(
+            "SELECT source_path,prefix_hash,generation,last_used,length(jpeg) FROM previews ORDER BY last_used DESC, source_path DESC",
+        )?;
+        let mut rows = rows.query([])?;
+        let (mut unusable, mut older) = (Vec::new(), Vec::new());
+        let mut kept = 0i64;
+        while let Some(r) = rows.next()? {
+            let (key, family): (String, String) = (r.get(0)?, r.get(1)?);
+            let doomed = Doomed {
+                generation: r.get(2)?,
+                last_used: r.get(3)?,
+                key,
+            };
+            if !fresh(&row_kind(&doomed.key, &family), doomed.generation) {
+                unusable.push(doomed);
+                continue;
+            }
+            // Once one doesn't fit, none older is kept, as before rows were
+            // told apart: a prune keeps the newest, not the most.
+            if kept <= budget {
+                kept = kept.saturating_add(r.get(4)?);
+            }
+            if kept > budget {
+                older.push(doomed);
+            }
+        }
+        unusable.append(&mut older);
+        Ok(unusable)
+    }
+    /// Deletes `doomed`, [`PRUNE_STEP`] rows to a write, sparing a row made
+    /// again since it was read: at a new generation or a later second. One
+    /// made again at the same generation within the same second still goes,
+    /// as `last_used` is in whole seconds.
+    fn delete_rows(&self, doomed: &[Doomed]) -> Result<()> {
+        let mut delete = self.db.prepare(
+            "DELETE FROM previews WHERE source_path=?1 AND generation=?2 AND last_used=?3",
+        )?;
+        for step in doomed.chunks(PRUNE_STEP) {
             let tx = self.db.unchecked_transaction()?;
-            for path in step {
-                delete.execute([path])?;
+            for row in step {
+                delete.execute(params![row.key, row.generation, row.last_used])?;
             }
             tx.commit()?;
         }
@@ -775,7 +993,7 @@ mod tests {
         let mut cache = PreviewCache::open(&d.path().join("previews.sqlite3"))?;
         let im = image::RgbImage::new(8, 8);
         cache.store(&raw, &Stamp::read(&raw)?, &im)?;
-        cache.store_tagged(&raw, "edit-1", &Stamp::read(&raw)?, &im)?;
+        cache.store_tagged(&raw, "edit-1", "edit-1", &Stamp::read(&raw)?, &im)?;
         std::fs::set_permissions(&raw, std::fs::Permissions::from_mode(0o000))?;
         // Unless running as root, which ignores permissions.
         if std::fs::File::open(&raw).is_err() {
@@ -821,7 +1039,7 @@ mod tests {
         let plain = image::RgbImage::from_pixel(24, 16, image::Rgb([120, 70, 40]));
         let edited = image::RgbImage::from_pixel(16, 16, image::Rgb([20, 70, 140]));
         cache.store(&raw, &stamp, &plain)?;
-        cache.store_tagged(&raw, "edit-1", &stamp, &edited)?;
+        cache.store_tagged(&raw, "edit-1", "edit-1", &stamp, &edited)?;
         assert_eq!(cache.load(&raw)?.unwrap().dimensions(), (24, 16));
         assert_eq!(
             cache.load_tagged(&raw, "edit-1")?.unwrap().dimensions(),
@@ -882,8 +1100,8 @@ mod tests {
         let mut cache = PreviewCache::open(&d.path().join("previews.sqlite3"))?;
         for n in 0..3000i64 {
             cache.db.execute(
-                "INSERT INTO previews VALUES(?1,0,'0','',0,1,1,zeroblob(100),?2)",
-                params![format!("{n}.ARW"), n],
+                "INSERT INTO previews VALUES(?1,0,'0','',?2,1,1,zeroblob(100),?3)",
+                params![format!("{n}.ARW"), GENERATION, n],
             )?;
         }
         cache.prune(100 * 1000 + 50)?;
@@ -1040,7 +1258,13 @@ mod tests {
         let d = tempfile::tempdir()?;
         let (raw, mut cache) = photo(&d)?;
         let stamp = Stamp::read(&raw)?;
-        cache.store_tagged(&raw, "edit-1", &stamp, &image::RgbImage::new(16, 8))?;
+        cache.store_tagged(
+            &raw,
+            "edit-1",
+            "edit-1",
+            &stamp,
+            &image::RgbImage::new(16, 8),
+        )?;
         let standard = image::RgbImage::from_pixel(64, 32, image::Rgb([200, 100, 50]));
         let one_to_one = image::RgbImage::from_pixel(128, 64, image::Rgb([50, 100, 200]));
         cache.store_sized(
@@ -1386,6 +1610,350 @@ mod tests {
             .execute("UPDATE sized_previews SET last_used=?", [long_ago])?;
         cache.touch_sized(&raw, "new", PreviewKind::OneToOne)?;
         assert_eq!(cache.expire(PreviewKind::OneToOne, month)?, 0);
+        Ok(())
+    }
+    /// An edit family as `EditSource::tag` names one.
+    fn family(n: u64) -> String {
+        format!("edit-{n:016x}")
+    }
+    /// Keeps a tiny preview of `path` under `family`'s variant `suffix`.
+    fn store_variant(
+        cache: &mut PreviewCache,
+        path: &Path,
+        family: &str,
+        suffix: &str,
+    ) -> Result<()> {
+        let im = image::RgbImage::new(4, 4);
+        cache.store_tagged(
+            path,
+            family,
+            &format!("{family}{suffix}"),
+            &Stamp::read(path)?,
+            &im,
+        )
+    }
+    /// The keys of the rows whose key starts with `prefix`, sorted.
+    fn keys(cache: &PreviewCache, prefix: &str) -> Result<Vec<String>> {
+        let mut keys: Vec<String> = cache
+            .db
+            .prepare("SELECT source_path FROM previews")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?
+            .into_iter()
+            .filter(|k| k.starts_with(prefix))
+            .collect();
+        keys.sort();
+        Ok(keys)
+    }
+    /// The edit families kept for `path`'s file.
+    fn families(cache: &PreviewCache, path: &Path) -> Result<Vec<String>> {
+        let rows: Vec<(String, String)> = cache
+            .db
+            .prepare("SELECT source_path,prefix_hash FROM previews")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        let path = key(path);
+        let mut families: Vec<String> = rows
+            .iter()
+            .map(|(k, family)| row_kind(k, family))
+            .filter(|row| row.path == path)
+            .filter_map(|row| row.family.map(str::to_string))
+            .collect();
+        families.sort();
+        families.dedup();
+        Ok(families)
+    }
+    /// A row is told by its stored family, else by a key as earlier builds
+    /// made it; a path that merely holds `#edit-` is a file's own row.
+    #[test]
+    fn rows_are_told_by_family_then_by_key() {
+        let f = family(0xabc);
+        let own = |path| Row {
+            path,
+            family: None,
+            tagged: false,
+        };
+        let edited = |path, family| Row {
+            path,
+            family: Some(family),
+            tagged: true,
+        };
+        assert_eq!(row_kind("/a/x.ARW", ""), own("/a/x.ARW"));
+        let fit = format!("/a/x.ARW#{f}-fit-noai");
+        assert_eq!(row_kind(&fit, &f), edited("/a/x.ARW", &f));
+        assert_eq!(row_kind(&fit, ""), edited("/a/x.ARW", &f));
+        let plain = format!("/a/x.ARW#{f}");
+        assert_eq!(row_kind(&plain, ""), edited("/a/x.ARW", &f));
+        let folder = format!("/a/#{f}/x.ARW");
+        assert_eq!(row_kind(&folder, ""), own(&folder));
+        let ai = format!("/a/x.ARW#{f}-fit-ai-0123456789abcdef-a2");
+        assert_eq!(row_kind(&ai, ""), edited("/a/x.ARW", &f));
+        // Files whose names hold a family, and folders.
+        let paths = [
+            format!("/a/x.ARW#{f}-copy.ARW"),
+            format!("/a/x.ARW#{f}.ARW"),
+            format!("/a/x.ARW#{f}-fit.ARW"),
+            format!("/a/x.ARW#{f}-fit-ai-m/y.ARW"),
+            format!("/a/#{f}-fit/y.ARW"),
+        ];
+        for path in &paths {
+            assert_eq!(row_kind(path, ""), own(path));
+        }
+        assert_eq!(row_kind("/a/x.ARW#edit-1", ""), own("/a/x.ARW#edit-1"));
+        assert_eq!(
+            row_kind("/a/x.ARW#edit-1", "edit-1"),
+            edited("/a/x.ARW", "edit-1")
+        );
+    }
+    /// A RAW's embedded preview is the camera's (or Lightroom's) and not an
+    /// engine render, so it stays usable across engine generations from the
+    /// first one that extracted Lightroom's JPEG XL previews. Edited
+    /// previews and rasters still need their exact generation.
+    #[test]
+    fn embedded_raw_previews_outlive_engine_generations() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let raw = d.path().join("photo.ARW");
+        let dng = d.path().join("photo.dng");
+        let jpeg = d.path().join("photo.jpg");
+        for path in [&raw, &dng, &jpeg] {
+            std::fs::write(path, b"original")?;
+        }
+        let mut cache = PreviewCache::open(&d.path().join("previews.sqlite3"))?;
+        let im = image::RgbImage::new(8, 8);
+        for path in [&raw, &dng, &jpeg] {
+            cache.store(path, &Stamp::read(path)?, &im)?;
+        }
+        store_variant(&mut cache, &raw, &family(1), "-fit")?;
+        let set = |key: String, generation: i64| {
+            cache.db.execute(
+                "UPDATE previews SET generation=?2 WHERE source_path=?1",
+                params![key, generation],
+            )
+        };
+        set(key(&raw), 12)?;
+        set(key(&dng), EMBEDDED_GENERATION_MIN - 1)?;
+        set(key(&jpeg), RASTER_GENERATION - 1)?;
+        set(tagged(&raw, &format!("{}-fit", family(1))), 12)?;
+        assert!(cache.load(&raw)?.is_some(), "an embedded preview at 12");
+        // Before JPEG XL: a Lightroom DNG's preview was its 256 px JPEG.
+        assert!(cache.load(&dng)?.is_none());
+        assert!(cache.load(&jpeg)?.is_none());
+        assert!(
+            cache
+                .load_tagged(&raw, &format!("{}-fit", family(1)))?
+                .is_none()
+        );
+        // Offline, the embedded preview still shows.
+        std::fs::remove_file(&raw)?;
+        assert!(cache.load(&raw)?.is_some());
+        Ok(())
+    }
+    /// Each saved edit leaves its own previews; a file keeps those of the
+    /// eight edits used last, every variant of each.
+    #[test]
+    fn a_file_keeps_eight_edit_families() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let (raw, mut cache) = photo(&d)?;
+        for n in 0..10 {
+            store_variant(&mut cache, &raw, &family(n), "-fit")?;
+            store_variant(&mut cache, &raw, &family(n), "-fit-noai")?;
+        }
+        let kept = families(&cache, &raw)?;
+        assert_eq!(kept.len(), 8, "{kept:?}");
+        assert!(kept.contains(&family(9)));
+        assert_eq!(keys(&cache, &format!("{}#", key(&raw)))?.len(), 16);
+        assert_eq!(
+            keys(&cache, &format!("{}#{}", key(&raw), family(9)))?.len(),
+            2
+        );
+        Ok(())
+    }
+    /// The families used least recently go; the one just stored stays, even
+    /// with every other used later (clocks, or another connection).
+    #[test]
+    fn edit_families_go_least_recently_used_first() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let (raw, mut cache) = photo(&d)?;
+        for n in 0..8 {
+            store_variant(&mut cache, &raw, &family(n), "-fit")?;
+        }
+        // Family 0 used last, family 1 longest ago.
+        for n in 0..8u64 {
+            let used = if n == 0 { 1000 } else { 100 + n as i64 };
+            cache.db.execute(
+                "UPDATE previews SET last_used=?2 WHERE source_path=?1",
+                params![tagged(&raw, &format!("{}-fit", family(n))), used],
+            )?;
+        }
+        store_variant(&mut cache, &raw, &family(8), "-fit")?;
+        let kept = families(&cache, &raw)?;
+        assert!(!kept.contains(&family(1)), "{kept:?}");
+        assert!(kept.contains(&family(0)) && kept.contains(&family(8)));
+        // Every row used after the next store.
+        cache
+            .db
+            .execute("UPDATE previews SET last_used=?", [now() + 1000])?;
+        store_variant(&mut cache, &raw, &family(9), "-fit")?;
+        let kept = families(&cache, &raw)?;
+        assert_eq!(kept.len(), 8);
+        assert!(kept.contains(&family(9)));
+        Ok(())
+    }
+    /// Only the file's own previews count: not those of files whose names
+    /// begin with its name, nor whose names hold LIKE's wildcards.
+    #[test]
+    fn edit_families_are_counted_per_file() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let raw = d.path().join("zdjęcie_%.ARW");
+        std::fs::write(&raw, b"original raw")?;
+        let mut cache = PreviewCache::open(&d.path().join("previews.sqlite3"))?;
+        let base = key(&raw);
+        let neighbours = [
+            format!("{base}2"),
+            format!("{base}#y"),
+            base.replace('_', "x").replace('%', "y"),
+            format!("{base}#z.ARW"),
+        ];
+        // Files of their own, named as an edit of this one would be keyed.
+        let lookalikes = [
+            format!("{base}#{}-copy.ARW", family(0)),
+            format!("{base}#{}-fit.ARW", family(1)),
+        ];
+        for lookalike in &lookalikes {
+            cache.db.execute(
+                "INSERT INTO previews VALUES(?1,0,'0','',?2,1,1,zeroblob(10),0)",
+                params![lookalike, GENERATION],
+            )?;
+        }
+        for neighbour in &neighbours {
+            for n in 0..10 {
+                cache.db.execute(
+                    "INSERT INTO previews VALUES(?1,0,'0',?2,?3,1,1,zeroblob(10),?4)",
+                    params![
+                        format!("{neighbour}#{}-fit", family(n)),
+                        family(n),
+                        GENERATION,
+                        n as i64
+                    ],
+                )?;
+            }
+        }
+        for n in 0..10 {
+            store_variant(&mut cache, &raw, &family(100 + n), "-fit")?;
+        }
+        assert_eq!(families(&cache, &raw)?.len(), 8);
+        assert_eq!(keys(&cache, &format!("{base}#edit-"))?.len(), 8 + 2);
+        for lookalike in &lookalikes {
+            assert_eq!(keys(&cache, lookalike)?, vec![lookalike.clone()]);
+        }
+        for neighbour in &neighbours {
+            assert_eq!(
+                keys(&cache, &format!("{neighbour}#edit-"))?.len(),
+                10,
+                "{neighbour}"
+            );
+        }
+        Ok(())
+    }
+    /// Rows earlier builds left, without their family, count by the family
+    /// their key names.
+    #[test]
+    fn earlier_builds_edit_rows_count_by_their_key() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let (raw, mut cache) = photo(&d)?;
+        for n in 0..10u64 {
+            for suffix in ["-fit", "-fit-noai", ""] {
+                cache.db.execute(
+                    "INSERT INTO previews VALUES(?1,0,'0','',?2,1,1,zeroblob(10),?3)",
+                    params![
+                        tagged(&raw, &format!("{}{suffix}", family(n))),
+                        GENERATION,
+                        n as i64
+                    ],
+                )?;
+            }
+        }
+        store_variant(&mut cache, &raw, &family(100), "-fit")?;
+        let kept = families(&cache, &raw)?;
+        assert_eq!(kept.len(), 8, "{kept:?}");
+        // The seven used last, with every one of their rows.
+        for n in 3..10 {
+            assert!(kept.contains(&family(n)), "{kept:?}");
+        }
+        assert_eq!(keys(&cache, &format!("{}#", key(&raw)))?.len(), 7 * 3 + 1);
+        Ok(())
+    }
+    /// Over the budget, rows no lookup can use go before any that can, even
+    /// those used later; a current preview of an offline file is usable.
+    #[test]
+    fn a_prune_drops_unusable_rows_first() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let mut cache = PreviewCache::open(&d.path().join("previews.sqlite3"))?;
+        let row = |key: String, family: &str, generation: i64, used: i64| {
+            cache.db.execute(
+                "INSERT INTO previews VALUES(?1,0,'0',?2,?3,1,1,zeroblob(100),?4)",
+                params![key, family, generation, used],
+            )
+        };
+        // Live, used long ago, of files that aren't there.
+        for n in 0..10i64 {
+            row(format!("old{n}.ARW"), "", GENERATION, n)?;
+            row(
+                format!("old{n}.ARW#{}-fit", family(n as u64)),
+                &family(n as u64),
+                GENERATION,
+                n,
+            )?;
+            row(format!("old{n}.jpg"), "", RASTER_GENERATION, n)?;
+        }
+        // Unusable, used lately.
+        for n in 0..10i64 {
+            row(
+                format!("new{n}.ARW#{}-fit", family(n as u64)),
+                &family(n as u64),
+                GENERATION - 1,
+                1000 + n,
+            )?;
+            row(format!("new{n}.ARW#{}-fit", family(99)), "", 3, 1000 + n)?;
+            row(format!("new{n}.jpg"), "", RASTER_GENERATION - 1, 1000 + n)?;
+            row(
+                format!("new{n}.dng"),
+                "",
+                EMBEDDED_GENERATION_MIN - 1,
+                1000 + n,
+            )?;
+        }
+        // Under the budget, nothing goes.
+        cache.prune(100 * 70)?;
+        assert_eq!(keys(&cache, "")?.len(), 70);
+        cache.prune(100 * 30)?;
+        let left = keys(&cache, "")?;
+        assert_eq!(left.len(), 30, "{left:?}");
+        assert!(left.iter().all(|k| k.starts_with("old")), "{left:?}");
+        Ok(())
+    }
+    /// A row another connection makes again between a prune's reading and
+    /// its deleting is not deleted.
+    #[test]
+    fn a_prune_spares_rows_made_again_meanwhile() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let path = d.path().join("previews.sqlite3");
+        let cache = PreviewCache::open(&path)?;
+        for n in 0..4i64 {
+            cache.db.execute(
+                "INSERT INTO previews VALUES(?1,0,'0','',?2,1,1,zeroblob(100),?3)",
+                params![format!("{n}.ARW"), GENERATION - 1, n],
+            )?;
+        }
+        let doomed = cache.beyond(0)?;
+        assert_eq!(doomed.len(), 4);
+        let other = Connection::open(&path)?;
+        other.execute(
+            "UPDATE previews SET generation=?1,last_used=?2 WHERE source_path='0.ARW'",
+            params![GENERATION, now()],
+        )?;
+        cache.delete_rows(&doomed)?;
+        assert_eq!(keys(&cache, "")?, vec!["0.ARW".to_string()]);
         Ok(())
     }
 }
