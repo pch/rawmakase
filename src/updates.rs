@@ -118,7 +118,7 @@ mod tests {
     fn the_update_configuration_is_valid() {
         CONFIG.validate().unwrap();
         assert_eq!(CONFIG.current_version, env!("CARGO_PKG_VERSION"));
-        assert!(!CONFIG.appimage);
+        assert!(!config().appimage);
         assert!(updater().source().is_github());
     }
 }
