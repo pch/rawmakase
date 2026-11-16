@@ -17,6 +17,8 @@ use std::time::Duration;
 pub const INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 const CONFIG: UpdateConfig = UpdateConfig {
+    // Keep AppImage installs on the release-page flow across fastframe upgrades.
+    appimage: false,
     macos: MacConfig {
         bundle_ids: &["io.github.pch.rawmakase"],
         executable_names: &[],
@@ -116,6 +118,7 @@ mod tests {
     fn the_update_configuration_is_valid() {
         CONFIG.validate().unwrap();
         assert_eq!(CONFIG.current_version, env!("CARGO_PKG_VERSION"));
+        assert!(!CONFIG.appimage);
         assert!(updater().source().is_github());
     }
 }

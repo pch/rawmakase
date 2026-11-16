@@ -26,7 +26,7 @@ fn white_mark() -> Watermark {
         color: [1.; 3],
         opacity: 1.,
         size: crate::watermark::Size::Fit,
-        ..Default::default()
+        ..crate::watermark::fonts::test_watermark()
     }
 }
 

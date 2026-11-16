@@ -180,39 +180,45 @@ fn face_count(data: &[u8]) -> u32 {
 
 /// Loads an installed face or the platform's default watermark font.
 pub fn load(family: &str, face: &str) -> Result<Font> {
+    #[cfg(test)]
+    if family == "Test fixture" {
+        return Ok(Font {
+            data: Arc::new(include_bytes!("../../tests/fonts/InterVariable.ttf").to_vec()),
+            index: 0,
+            weight: Some(400.),
+        });
+    }
     if family == SYSTEM {
         let slot = SYSTEM_FACES
             .iter()
             .position(|(name, _)| *name == face)
             .context("Unknown system font style")?;
-        static FONTS: [OnceLock<Result<Font, String>>; 4] = [const { OnceLock::new() }; 4];
-        return FONTS[slot]
-            .get_or_init(|| {
-                let weight = SYSTEM_FACES[slot].1;
-                let load = || -> Result<Font> {
-                    let (path, index) = system_face(weight)?;
-                    let font = Font {
-                        data: Arc::new(
-                            std::fs::read(path).context("System watermark font not readable")?,
-                        ),
-                        index,
-                        weight: Some(weight),
-                    };
-                    let face = font.face()?;
-                    let glyph = face
-                        .charmap()
-                        .map('A')
-                        .context("System font has no Latin text")?;
-                    anyhow::ensure!(
-                        face.outline_glyphs().get(glyph).is_some(),
-                        "System font has no outlines"
-                    );
-                    Ok(font)
-                };
-                load().map_err(|error| format!("{error:#}"))
-            })
-            .clone()
-            .map_err(anyhow::Error::msg);
+        static FONTS: [std::sync::Mutex<Option<Font>>; 4] =
+            [const { std::sync::Mutex::new(None) }; 4];
+        let mut cached = FONTS[slot]
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(font) = cached.as_ref() {
+            return Ok(font.clone());
+        }
+        let weight = SYSTEM_FACES[slot].1;
+        let (path, index) = system_face(weight)?;
+        let font = Font {
+            data: Arc::new(std::fs::read(path).context("System watermark font not readable")?),
+            index,
+            weight: Some(weight),
+        };
+        let face = font.face()?;
+        let glyph = face
+            .charmap()
+            .map('A')
+            .context("System font has no Latin text")?;
+        anyhow::ensure!(
+            face.outline_glyphs().get(glyph).is_some(),
+            "System font has no outlines"
+        );
+        *cached = Some(font.clone());
+        return Ok(font);
     }
     let Some(found) = families()
         .iter()
@@ -260,22 +266,7 @@ fn system_face(weight: f32) -> Result<(PathBuf, u32)> {
         use std::process::{Command, Stdio};
         let output = tempfile::tempfile()?;
         let mut child = Command::new("fc-match")
-            .args([
-                "-f",
-                "%{file}\n%{index}",
-                &format!(
-                    "system-ui:weight={}",
-                    if weight >= 650. {
-                        200
-                    } else if weight >= 550. {
-                        180
-                    } else if weight >= 450. {
-                        100
-                    } else {
-                        80
-                    }
-                ),
-            ])
+            .args(["-f", "%{file}\n%{index}", &fontconfig_pattern(weight)])
             .stdout(output.try_clone()?)
             .stderr(Stdio::null())
             .spawn()
@@ -298,11 +289,80 @@ fn system_face(weight: f32) -> Result<(PathBuf, u32)> {
         output.rewind()?;
         let mut text = String::new();
         output.read_to_string(&mut text)?;
-        let mut lines = text.lines();
-        let path = lines
-            .next()
-            .filter(|s| !s.is_empty())
-            .context("No system font available")?;
-        Ok((PathBuf::from(path), lines.next().unwrap_or("0").parse()?))
+        parse_fontconfig(&text)
+    }
+}
+
+/// Keeps rendering fixtures independent of installed fonts and macOS versions.
+#[cfg(test)]
+pub(crate) fn test_watermark() -> super::Watermark {
+    super::Watermark {
+        family: "Test fixture".into(),
+        ..Default::default()
+    }
+}
+
+#[cfg(any(test, not(any(target_os = "macos", target_os = "windows"))))]
+fn fontconfig_pattern(weight: f32) -> String {
+    format!(
+        r"system\-ui:weight={}:slant=0",
+        if weight >= 650. {
+            200
+        } else if weight >= 550. {
+            180
+        } else if weight >= 450. {
+            100
+        } else {
+            80
+        }
+    )
+}
+
+#[cfg(any(test, not(any(target_os = "macos", target_os = "windows"))))]
+fn parse_fontconfig(text: &str) -> Result<(PathBuf, u32)> {
+    let mut lines = text.lines();
+    let path = lines
+        .next()
+        .filter(|s| !s.is_empty())
+        .context("No system font available")?;
+    // Fontconfig stores a variable font's named instance in the upper bits.
+    Ok((
+        PathBuf::from(path),
+        lines.next().unwrap_or("0").parse::<u32>()? & 0xFFFF,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fontconfig_system_family_is_escaped() {
+        assert_eq!(fontconfig_pattern(400.), r"system\-ui:weight=80:slant=0");
+        assert_eq!(fontconfig_pattern(500.), r"system\-ui:weight=100:slant=0");
+        assert_eq!(fontconfig_pattern(600.), r"system\-ui:weight=180:slant=0");
+        assert_eq!(fontconfig_pattern(700.), r"system\-ui:weight=200:slant=0");
+    }
+
+    #[test]
+    fn fontconfig_variable_instances_keep_the_collection_index() {
+        assert_eq!(
+            parse_fontconfig("/fonts/variable.ttf\n589824").unwrap(),
+            (PathBuf::from("/fonts/variable.ttf"), 0)
+        );
+        assert_eq!(
+            parse_fontconfig("/fonts/collection.ttc\n720899").unwrap().1,
+            3
+        );
+        assert!(parse_fontconfig("").is_err());
+    }
+
+    #[test]
+    #[ignore = "requires installed system fonts"]
+    fn system_fonts_render_at_every_weight() {
+        for (style, _) in SYSTEM_FACES {
+            let font = load(SYSTEM, style).unwrap();
+            assert!(super::super::raster::measure(&font, "Ag 0123456789", 32.).is_some());
+        }
     }
 }
