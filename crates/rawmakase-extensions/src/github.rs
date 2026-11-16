@@ -161,6 +161,30 @@ pub fn inspect(
     })
 }
 
+/// The extensions RAWmakase vouches for without bundling them: each id with
+/// the one GitHub repository whose releases are its official ones.
+pub const OFFICIAL: &[(&str, &str)] = &[(
+    "dev.pch.ai-remove",
+    "https://github.com/pch/rawmakase-ai-retouch",
+)];
+
+/// Whether extension `id`, installed from `from`'s releases, is one of
+/// the [`OFFICIAL`] extensions. The id alone proves nothing, since any
+/// package can claim it; the repository it came from must be the listed one.
+pub fn official(id: &str, from: &str) -> bool {
+    let key = |url: &str| {
+        repository(url)
+            .ok()
+            .map(|(o, r)| (o.to_lowercase(), r.to_lowercase()))
+    };
+    let Some(from) = key(from) else {
+        return false;
+    };
+    OFFICIAL
+        .iter()
+        .any(|(listed, at)| *listed == id && key(at).as_ref() == Some(&from))
+}
+
 /// What [`search`] found.
 struct Found {
     repository: String,
@@ -393,6 +417,34 @@ mod tests {
             assert!(body.len() as u64 <= limit);
             Ok(body)
         }
+    }
+
+    #[test]
+    fn only_a_listed_extension_from_its_own_repository_is_official() {
+        let (id, repository) = OFFICIAL[0];
+        assert!(official(id, repository));
+        // However the repository's address is written: GitHub's names
+        // ignore case.
+        assert!(official(id, &format!("{repository}/")));
+        assert!(official(id, &format!("{repository}.git")));
+        assert!(official(
+            id,
+            &repository
+                .to_uppercase()
+                .replace("HTTPS://GITHUB.COM", "https://github.com")
+        ));
+        // Its id from another repository, a fork included, is not.
+        assert!(!official(
+            id,
+            "https://github.com/someone/rawmakase-ai-retouch"
+        ));
+        assert!(!official(
+            id,
+            "https://example.com/pch/rawmakase-ai-retouch"
+        ));
+        assert!(!official(id, ""));
+        // Nor is another id from its repository.
+        assert!(!official("dev.someone.other", repository));
     }
 
     fn package_bytes(dir: &std::path::Path, version: &str, range: &str, network: bool) -> Vec<u8> {

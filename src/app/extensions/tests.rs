@@ -2267,3 +2267,60 @@ fn text_whose_save_fails_is_kept_as_typed() {
     let (_, node) = tree.nodes.iter().find(|(id, _)| *id == field).unwrap();
     assert_eq!(node.value(), Some("hello"));
 }
+
+#[test]
+fn a_listed_extension_from_its_own_repository_is_official_and_any_other_copy_is_not() {
+    use rawmakase_extensions::github;
+    use rawmakase_extensions::state::Source;
+    let mut f = fixture(&["a.png"]);
+    let (id, repository) = github::OFFICIAL[0];
+    // Every extension Preferences offers to install is an official one.
+    for available in super::AVAILABLE {
+        assert!(github::official(available.id, available.repository));
+    }
+    let manifest = format!(
+        "[extension]\nid = \"{id}\"\nname = \"Listed\"\nversion = \"1.0.0\"\n\
+         rawmakase = \">=0.1\"\napi = 1\n"
+    );
+    let parsed = rawmakase_extensions::Manifest::parse(&manifest).unwrap();
+    let package = f
+        .dir
+        .path()
+        .join(rawmakase_extensions::package::file_name(&parsed, "any"));
+    rawmakase_extensions::package::write(
+        &package,
+        &[(
+            rawmakase_extensions::protocol::manifest::FILE.to_string(),
+            manifest.into_bytes(),
+        )],
+        None,
+    )
+    .unwrap();
+    let app = f.editor.extensions.app_version().clone();
+    let store = f.editor.extensions.store().cloned().unwrap();
+    let mut badge_from = |source: Source| {
+        let _ = store.remove(id);
+        store.install(&package, &source, &app).unwrap();
+        f.editor.extensions.reload();
+        super::page::badge(f.editor.extensions.get(id).expect("installed"))
+    };
+    assert_eq!(
+        badge_from(Source::Github {
+            repository: repository.to_string()
+        }),
+        ("Official", false)
+    );
+    // The same id from a fork, or from a file, can't claim it.
+    assert_eq!(
+        badge_from(Source::Github {
+            repository: "https://github.com/someone/fork".into()
+        }),
+        ("Not reviewed", true)
+    );
+    assert_eq!(
+        badge_from(Source::File {
+            path: package.clone()
+        }),
+        ("Not reviewed", true)
+    );
+}

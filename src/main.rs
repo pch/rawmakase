@@ -1417,7 +1417,10 @@ fn extensions(command: ExtensionsCommand) -> Result<()> {
         ExtensionsCommand::Install { from, yes } => {
             if from.starts_with("https://") {
                 let offer = github::inspect(&store, &github::Https, &from, &app)?;
-                describe(&offer.manifest);
+                describe(
+                    &offer.manifest,
+                    github::official(&offer.manifest.extension.id, &offer.repository),
+                );
                 println!(
                     "From {} release {} ({})",
                     offer.repository, offer.release, offer.asset
@@ -1434,7 +1437,8 @@ fn extensions(command: ExtensionsCommand) -> Result<()> {
                 let path =
                     std::fs::canonicalize(&from).map_err(|e| anyhow::anyhow!("{from}: {e}"))?;
                 let inspected = store.inspect(&path, &app)?;
-                describe(&inspected.manifest);
+                // A file is never official, whatever id it claims.
+                describe(&inspected.manifest, false);
                 if !confirm(yes)? {
                     return Ok(());
                 }
@@ -1496,7 +1500,7 @@ fn extensions(command: ExtensionsCommand) -> Result<()> {
 }
 
 /// What an extension is and what it reaches, before it is installed.
-fn describe(manifest: &rawmakase_extensions::Manifest) {
+fn describe(manifest: &rawmakase_extensions::Manifest, official: bool) {
     let e = &manifest.extension;
     println!("{} ({}) {}", e.name, e.id, e.version);
     if let Some(description) = &e.description {
@@ -1524,7 +1528,19 @@ fn describe(manifest: &rawmakase_extensions::Manifest) {
     if !contributions.is_empty() {
         println!("  Adds: {}", contributions.join(", "));
     }
-    println!("Not reviewed: an extension runs with your permissions and can do anything you can.");
+    println!("{}", trust(official));
+}
+
+/// What `extensions install` says of the package's trust: an official one
+/// ([`rawmakase_extensions::github::official`]) comes from the repository
+/// RAWmakase lists for it; anything else is not reviewed.
+fn trust(official: bool) -> &'static str {
+    if official {
+        "Official: RAWmakase lists this extension, and this copy comes from the repository listed \
+         for it. It runs with your permissions."
+    } else {
+        "Not reviewed: an extension runs with your permissions and can do anything you can."
+    }
 }
 
 /// Whether to go on: `--yes`, or the user's answer when there is a terminal.
