@@ -182,10 +182,15 @@ fn face_count(data: &[u8]) -> u32 {
 pub fn load(family: &str, face: &str) -> Result<Font> {
     #[cfg(test)]
     if family == "Test fixture" {
+        let weight = SYSTEM_FACES
+            .iter()
+            .find(|(name, _)| *name == face)
+            .map(|(_, weight)| *weight)
+            .context("Unknown fixture font style")?;
         return Ok(Font {
             data: Arc::new(include_bytes!("../../tests/fonts/InterVariable.ttf").to_vec()),
             index: 0,
-            weight: Some(400.),
+            weight: Some(weight),
         });
     }
     if family == SYSTEM {
