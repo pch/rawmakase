@@ -73,8 +73,8 @@ pub fn import_lightroom(source: &Path, destination: &Path) -> Result<PathBuf> {
         // `original_catalog` stays empty: the schema keeps the column, and
         // releases that read it take an empty one as nothing to read.
         lr.write().execute(
-            sql!("INSERT INTO sources(path,original_size,original_catalog) VALUES(?,?,X'')"),
-            &[&source.to_string_lossy(), &(size as i64)],
+            sql!("INSERT INTO sources(path,original_size,original_catalog) VALUES(?,?,?)"),
+            &[&source.to_string_lossy(), &(size as i64), &Vec::<u8>::new()],
         )?;
         copy_tables(lr)
     })?;

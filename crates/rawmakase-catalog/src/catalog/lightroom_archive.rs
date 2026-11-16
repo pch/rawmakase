@@ -42,8 +42,8 @@ impl Catalog {
         }
         self.db.write(|w| {
             w.execute(
-                sql!("UPDATE sources SET original_catalog=X'' WHERE length(original_catalog) > 0"),
-                &[],
+                sql!("UPDATE sources SET original_catalog=? WHERE length(original_catalog) > 0"),
+                &[&Vec::<u8>::new()],
             )?;
             super::set_meta(w, ARCHIVE_REMOVED, "1")?;
             super::set_meta(w, COMPACT_PENDING, "1")
