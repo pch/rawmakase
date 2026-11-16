@@ -509,6 +509,11 @@ pub struct RetouchGenerator {
     /// in white (or `currentColor`), tinted by the app, which has none of its
     /// own for it.
     pub icon: String,
+    /// One line of what it is, which its tool's drawer shows below the tabs
+    /// while its tab is chosen, when the extension has more than one
+    /// generator: for example that it runs on this computer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 impl RetouchGenerator {
@@ -1352,6 +1357,23 @@ uploads = true
                 "{broken}"
             );
         }
+    }
+
+    #[test]
+    fn a_retouch_generator_may_describe_itself_under_its_tab() {
+        let manifest = Manifest::parse(REMOVER).unwrap();
+        assert_eq!(manifest.retouch_generators[0].description, None);
+        let described = remover(
+            "icon = \"icons/remove.svg\"\n",
+            "icon = \"icons/remove.svg\"\ndescription = \"Runs here; nothing is uploaded.\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            described.retouch_generators[0].description.as_deref(),
+            Some("Runs here; nothing is uploaded.")
+        );
+        let written = toml::to_string(&described).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), described);
     }
 
     #[test]

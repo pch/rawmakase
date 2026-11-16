@@ -345,7 +345,7 @@ impl Editor {
     pub(in crate::app) fn drawer_caption(&self) -> Option<String> {
         let tool = self.view.tool();
         if tool == Tool::AiRetouch {
-            return self.ai_remove_offer().map(|(offer, _)| offer.name);
+            return self.open_rail_generator().map(|offer| offer.name);
         }
         DRAWER_TOOLS
             .iter()

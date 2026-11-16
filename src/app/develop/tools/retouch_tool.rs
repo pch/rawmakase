@@ -732,8 +732,9 @@ impl Editor {
         let selected = selected.filter(|i| self.spot_in_tool(*i));
         let selected_generated = generating && selected.is_some();
         if generating {
-            // Each generator is a rail tool of its own; its panel holds any
-            // modes it has.
+            // An extension's generators share one rail tool, a tab each;
+            // a generator's panel holds any modes it has.
+            self.generator_tab_bar(ui);
             if let Some((offer, why)) = self.ai_remove_offer() {
                 self.ai_controls(ui, &offer, why);
             }

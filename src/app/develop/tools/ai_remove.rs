@@ -308,12 +308,56 @@ impl Editor {
     pub(in crate::app) fn choose_ai_generator(&mut self, offer: &Offer) {
         self.view.retouch.generator = Some(offer.provenance.clone());
     }
-    /// The generators the rail offers as tools, in their extensions' order.
+    /// The rail's generator tools: one for each extension that offers
+    /// generators, named and drawn by its first one, in the extensions' order.
+    /// Its drawer has a tab for each of them ([`Editor::generator_tabs`]).
     pub(in crate::app) fn rail_generators(&self) -> Vec<Offer> {
+        let mut rail: Vec<Offer> = Vec::new();
+        for (offer, _) in self.ai_remove_offers() {
+            if !rail.iter().any(|o| o.extension == offer.extension) {
+                rail.push(offer);
+            }
+        }
+        rail
+    }
+    /// The tabs of the open AI Retouch drawer: every generator of the
+    /// extension it is open on, in its manifest's order. None while it is
+    /// closed.
+    pub(in crate::app) fn generator_tabs(&self) -> Vec<Offer> {
+        use crate::app::develop::state::Tool;
+        if !self.view.is(Tool::AiRetouch) {
+            return Vec::new();
+        }
+        let Some((open, _)) = self.ai_remove_offer() else {
+            return Vec::new();
+        };
         self.ai_remove_offers()
             .into_iter()
             .map(|(o, _)| o)
+            .filter(|o| o.extension == open.extension)
             .collect()
+    }
+    /// What the chosen tab's generator says of itself, below the tabs: only
+    /// while there are tabs, and only when it says something.
+    pub(in crate::app) fn generator_tab_description(&self) -> Option<String> {
+        if self.generator_tabs().len() < 2 {
+            return None;
+        }
+        self.ai_remove_offer()
+            .and_then(|(o, _)| o.description)
+            .filter(|d| !d.trim().is_empty())
+    }
+    /// The rail tool the AI Retouch drawer is open on: its extension's
+    /// first generator, whichever tab is chosen.
+    pub(in crate::app) fn open_rail_generator(&self) -> Option<Offer> {
+        use crate::app::develop::state::Tool;
+        if !self.view.is(Tool::AiRetouch) {
+            return None;
+        }
+        let (open, _) = self.ai_remove_offer()?;
+        self.rail_generators()
+            .into_iter()
+            .find(|o| o.extension == open.extension)
     }
     /// Whether `offer`'s icon can't be shown `size` points square: missing,
     /// unreadable or not an SVG the app can draw. The rail then shows
@@ -323,24 +367,34 @@ impl Editor {
         self.generator_icon(offer)
             .is_none_or(|uri| crate::app::ui::icons::broken(&self.context, &uri, size))
     }
-    /// A generator's rail button: opens the tool on it, or closes the tool
-    /// when it is already open on it.
+    /// An extension's rail button, named by its first generator's
+    /// `provenance`: opens the tool on the extension's chosen tab (its first
+    /// generator until one is chosen), or closes the tool when it is open on
+    /// that extension.
     pub(in crate::app) fn toggle_generator(&mut self, provenance: &str) {
         use crate::app::develop::state::Tool;
-        let Some(offer) = self
-            .rail_generators()
+        let Some(clicked) = self
+            .ai_remove_offers()
             .into_iter()
+            .map(|(o, _)| o)
             .find(|o| o.provenance == provenance)
         else {
             return;
         };
-        let open_on_it = self.view.is(Tool::AiRetouch)
-            && self
-                .ai_remove_offer()
-                .is_some_and(|(o, _)| o.provenance == provenance);
-        self.choose_ai_generator(&offer);
-        // Open on another generator, the tool stays open, moved to this one.
-        if open_on_it || !self.view.is(Tool::AiRetouch) {
+        let chosen = self.ai_remove_offer().map(|(o, _)| o);
+        let on_its_extension = chosen
+            .as_ref()
+            .is_some_and(|o| o.extension == clicked.extension);
+        if self.view.is(Tool::AiRetouch) && on_its_extension {
+            self.view.toggle(Tool::AiRetouch);
+            return;
+        }
+        // The tab chosen last on this extension stays; from another one, its
+        // first generator.
+        if !on_its_extension {
+            self.choose_ai_generator(&clicked);
+        }
+        if !self.view.is(Tool::AiRetouch) {
             self.view.toggle(Tool::AiRetouch);
         }
     }

@@ -420,6 +420,13 @@
       "additionalProperties": false,
       "description": "A `[[retouch-generator]]`: the program turns a region of the photo and\nthe area the user painted in it into new pixels for that area, such as\nthe area with an object removed. The app keeps the result as a retouch\npatch, which renders without the extension.",
       "properties": {
+        "description": {
+          "description": "One line of what it is, which its tool's drawer shows below the tabs\nwhile its tab is chosen, when the extension has more than one\ngenerator: for example that it runs on this computer.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "icon": {
           "description": "Its tool's icon on Develop's rail: an SVG in the package, relative to\nits root. Drawn as RAWmakase's own icons are: a 24-unit square outline\nin white (or `currentColor`), tinted by the app, which has none of its\nown for it.",
           "type": "string"

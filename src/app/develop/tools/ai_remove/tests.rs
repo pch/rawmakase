@@ -368,28 +368,49 @@ fn the_generator_chosen_is_the_one_asked() {
 /// extension: its name is the button's tip and the drawer's title, and its
 /// SVG the icon. Its button opens the tool on it, and again closes it.
 #[test]
-fn each_generator_is_a_rail_tool_named_and_drawn_by_its_extension() {
+fn each_extension_is_one_rail_tool_with_a_tab_per_generator() {
     use crate::app::develop::state::Tool;
     let mut f = fixture(0.27);
     let e = &mut f.editor;
-    let rail: Vec<String> = e.rail_generators().into_iter().map(|o| o.name).collect();
-    assert_eq!(rail[..3], ["Fill", "Local Fill", "Gate"]);
+    // The example extension's nine generators are one rail tool, named and
+    // drawn by the first of them.
+    let rail = e.rail_generators();
+    assert_eq!(rail.len(), 1);
+    let fill = offer(e, "fill");
+    assert_eq!(rail[0], fill);
     assert!(!e.rail_tools().contains(&Tool::AiRetouch));
     assert_eq!(e.drawer_caption(), None);
-    let local = offer(e, "local");
-    e.toggle_generator(&local.provenance);
-    assert!(e.view.is(Tool::AiRetouch));
-    assert_eq!(e.ai_remove_offer().unwrap().0, local);
-    assert_eq!(e.drawer_caption().as_deref(), Some("Local Fill"));
-    // Another generator's button moves the open tool to it.
-    let fill = offer(e, "fill");
+    assert!(e.generator_tabs().is_empty(), "no tabs while it is closed");
     e.toggle_generator(&fill.provenance);
     assert!(e.view.is(Tool::AiRetouch));
     assert_eq!(e.ai_remove_offer().unwrap().0, fill);
     assert_eq!(e.drawer_caption().as_deref(), Some("Fill"));
+    // Its drawer has a tab for each generator, in the manifest's order.
+    let tabs: Vec<String> = e.generator_tabs().into_iter().map(|o| o.name).collect();
+    assert_eq!(tabs[..3], ["Fill", "Local Fill", "Gate"]);
+    assert_eq!(tabs.len(), 9);
+    // Each says what it is, below the tabs while it is chosen, in its own
+    // words; one that says nothing has no line.
+    assert_eq!(e.generator_tab_description(), None);
+    // A tab moves new spots to its generator; the tool and its title stay.
+    let local = offer(e, "local");
+    e.choose_ai_generator(&local);
+    assert!(e.view.is(Tool::AiRetouch));
+    assert_eq!(e.ai_remove_offer().unwrap().0, local);
+    assert_eq!(
+        e.generator_tab_description().as_deref(),
+        Some("Fills here: nothing leaves this computer.")
+    );
+    assert_eq!(e.drawer_caption().as_deref(), Some("Fill"));
+    // The rail button closes the tool, whichever tab is chosen, and opens
+    // it again on that tab.
     e.toggle_generator(&fill.provenance);
     assert_eq!(e.view.tool(), Tool::None);
     assert_eq!(e.drawer_caption(), None);
+    e.toggle_generator(&fill.provenance);
+    assert!(e.view.is(Tool::AiRetouch));
+    assert_eq!(e.ai_remove_offer().unwrap().0, local);
+    e.toggle_generator(&fill.provenance);
     // Spot Removal keeps the app's own title.
     e.view.set_tool(Tool::Remove);
     assert_eq!(e.drawer_caption().as_deref(), Some("Spot Removal"));
@@ -425,10 +446,11 @@ fn each_generator_is_a_rail_tool_named_and_drawn_by_its_extension() {
     assert_eq!(e.ai_remove_offer().map(|(_, why)| why), Some(None));
 }
 
-/// More generators than the window's height holds scroll the rail: the last
-/// of them and the tabs after them stay within reach.
+/// A rail taller than the window scrolls: with an extension's generators
+/// in one tool each, many extensions take it past the window's end, and the
+/// last of them and the tabs after it stay within reach.
 #[test]
-fn a_rail_of_many_generators_scrolls() {
+fn a_rail_taller_than_the_window_scrolls() {
     use crate::app::develop::panels::side_tabs::{generator_id, rail_id};
     use crate::app::shell::panels::DevelopTab;
     use crate::app::testing::{FocusedButton, panel_frame};
@@ -436,24 +458,29 @@ fn a_rail_of_many_generators_scrolls() {
     let manifest =
         include_str!("../../../../../extensions/example/remove/rawmakase-extension.toml");
     let header = &manifest[..manifest.find("[[retouch-generator]]").unwrap()];
-    let many: String = (0..20)
-        .map(|i| {
+    let store = f.editor.extensions.store().cloned().unwrap();
+    for i in 0..20 {
+        let folder = f.folder.with_file_name(format!("more-{i}"));
+        std::fs::create_dir_all(folder.join("icons")).unwrap();
+        std::fs::copy(
+            f.folder.join("icons/fill.svg"),
+            folder.join("icons/fill.svg"),
+        )
+        .unwrap();
+        std::fs::write(
+            folder.join(rawmakase_extensions::protocol::manifest::FILE),
             format!(
-                "[[retouch-generator]]\nid = \"g{i}\"\nname = \"Generator {i}\"\n\
-                 icon = \"icons/fill.svg\"\n\n"
-            )
-        })
-        .collect();
-    std::fs::write(
-        f.folder
-            .join(rawmakase_extensions::protocol::manifest::FILE),
-        format!("{header}{many}"),
-    )
-    .unwrap();
+                "{}[[retouch-generator]]\nid = \"g\"\nname = \"Generator {i}\"\n\
+                 icon = \"icons/fill.svg\"\n",
+                header.replace(&format!("id = \"{ID}\""), &format!("id = \"{ID}-{i}\""))
+            ),
+        )
+        .unwrap();
+        store.add_developer(&folder).unwrap();
+    }
     let e = &mut f.editor;
-    e.extensions.reload_changed_folders();
     e.extensions.reload();
-    assert_eq!(e.rail_generators().len(), 20);
+    assert_eq!(e.rail_generators().len(), 21);
     e.module = crate::app::Module::Develop;
     e.onboarding.visible = false;
     let ctx = e.context.clone();
@@ -493,7 +520,7 @@ fn a_rail_of_many_generators_scrolls() {
     }
     panel_frame(e, vec![], FocusedButton::No);
     assert!(history(&ctx).bottom() <= bottom, "{:?}", history(&ctx));
-    let last = &e.rail_generators()[19];
+    let last = &e.rail_generators()[20];
     let last = ctx
         .read_response(generator_id(&last.provenance))
         .unwrap()
@@ -1468,8 +1495,8 @@ fn uninstalling_takes_the_keys_with_it() {
 fn render_the_ai_retouch_drawer() {
     use crate::app::develop::state::Tool;
     let mut f = fixture(0.3);
-    // One generator, as the AI Retouch extension has: its panel, no Mode
-    // over generators.
+    // Two generators, as the AI Retouch extension has: a hosted one with its
+    // panel, and one that runs locally, a tab each.
     let manifest =
         include_str!("../../../../../extensions/example/remove/rawmakase-extension.toml");
     let header = &manifest[..manifest.find("[[retouch-generator]]").unwrap()];
@@ -1479,7 +1506,15 @@ fn render_the_ai_retouch_drawer() {
     std::fs::write(
         f.folder
             .join(rawmakase_extensions::protocol::manifest::FILE),
-        format!("{header}{ask}"),
+        format!(
+            "{header}{}\n[[retouch-generator]]\nid = \"local\"\n\
+             name = \"AI Local Remove\"\nicon = \"icons/fill.svg\"\n\
+             description = \"Runs on this computer: nothing is uploaded.\"\n",
+            ask.replace(
+                "name = \"Ask\"",
+                "name = \"AI Retouch\"\ndescription = \"A hosted model, with your own API key.\""
+            )
+        ),
     )
     .unwrap();
     let e = &mut f.editor;

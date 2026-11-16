@@ -278,8 +278,8 @@ outside the photos the app hands it should say so with `files = "any"` in
 
 From `api = 3`; a manifest with an earlier `api` that declares one is refused,
 and the app never sends `retouch.generate` to a program serving an earlier one.
-A retouch generator is a tool of its own on Develop's rail that regenerates
-the area the user painted
+A retouch generator regenerates the area the user painted, from an
+extension's tool on Develop's rail
 ([`retouch.generate`](protocol.md#retouchgenerate-request); AI Retouch's AI
 Remove and AI Replace are one,
 [retouching](../retouching.md#ai-remove-and-ai-replace-experimental)). The app
@@ -303,13 +303,19 @@ place = "generator"
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `id` | — | Lowercase letters, digits and hyphens, unique among the retouch generators. Patches record `<extension>/<id>` as what made them |
-| `name` | — | Its tool's name: its rail button's tip, its drawer's title, its History step and its messages |
+| `name` | — | Its name: its tab in the tool's drawer, its History step and its messages. The extension's first generator's name is also the tool's: its rail button's tip and its drawer's title |
 | `uploads` | `false` | It sends what it is given off this computer (a hosted model). The app asks the user once per extension before the first request, and keeps the answer in `extensions.json` |
-| `icon` | — | Its rail icon: an SVG in the package, which must hold it, at most 256 KB. Drawn as RAWmakase's own icons are, a 24-unit square outline in white (`currentColor` is drawn white), tinted by the app, which has none of its own for a generator. `cargo rawmakase package` refuses one it can't draw; one missing or broken anyway shows on the rail as a warning sign, its tooltip saying the icon can't be shown, and the generator still works |
+| `icon` | — | Its rail icon, which the extension's first generator's gives its tool: an SVG in the package, which must hold it, at most 256 KB. Drawn as RAWmakase's own icons are, a 24-unit square outline in white (`currentColor` is drawn white), tinted by the app, which has none of its own for a generator. `cargo rawmakase package` refuses one it can't draw; one missing or broken anyway shows on the rail as a warning sign, its tooltip saying the icon can't be shown, and the generator still works |
+| `description` | none | One line of what it is ("Runs on this computer: nothing is uploaded"), shown below the tabs while its tab is chosen, when the extension has more than one generator |
 | `panel` | none | A [`[[panel]]`](#panel) with `place = "generator"` that the tool's drawer shows, for what the program needs besides the area (a mode, a prompt). Its values are the program's, from `panel.changed`; the app sends any still being typed before the request, so they reach the program first |
 
-Each enabled extension's generators follow the app's tools on Develop's rail,
-each with its `icon` and `name`. RAWmakase draws the brush, the area painted,
+Each enabled extension's generators are one tool on Develop's rail, after the
+app's own, with its first generator's `icon` and `name`. When it has more than
+one, the tool's drawer has a tab for each, in the manifest's order (segments
+while their names fit, wrapped tabs otherwise): the tab chosen takes new spots
+and shows its generator's panel, and the tool opens again on it. Put the
+generator most people want first. RAWmakase draws the brush, the area painted,
 Send, Clear and what a request is doing; everything else, including what the
 tool says of itself (that it is experimental, what a request costs), is its
-panel's.
+panel's. A panel's `help` control without a label is a note as wide as the
+drawer, as a generator's `description` is.

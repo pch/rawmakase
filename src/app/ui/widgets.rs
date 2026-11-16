@@ -1747,6 +1747,11 @@ pub(in crate::app) fn action_button(
         response
     }
 }
+/// Whether a [`segmented`] control of `labels` fits the space left, with
+/// its segments and text at their tightest.
+pub(in crate::app) fn segments_fit(ui: &egui::Ui, labels: &[&str]) -> bool {
+    tightest_segments_width(ui, labels, &COMPACT_SEGMENTS) <= ui.available_width()
+}
 /// Compact segmented control for panels and filters: at least `width` wide
 /// with roomy segments, but never wider than the space left in the panel;
 /// there segments shrink to their labels, then the text a point, so labels
@@ -2175,6 +2180,19 @@ pub(in crate::app) fn drawer_help(ui: &mut egui::Ui, help: &str) {
             .wrap(),
         );
     });
+}
+/// A drawer's note of its own, as wide as the drawer: under its tabs, or a
+/// panel's Help without a label. [`drawer_help`] is a control's, in the
+/// controls' column.
+pub(in crate::app) fn drawer_note(ui: &mut egui::Ui, note: &str) {
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(note)
+                .size(text::MICRO)
+                .color(theme::palette(ui.ctx()).tone(Tone::FAINT)),
+        )
+        .wrap(),
+    );
 }
 /// A path for display, with the home folder as `~`.
 pub(in crate::app) fn pretty_path(path: &std::path::Path) -> String {
