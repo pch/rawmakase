@@ -16,13 +16,146 @@ These controls were fitted to Camera Raw renders and match within the default-re
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the colour curves was not checked; here they set the RGB curve only.
 - **Auto** tone is fitted to Lightroom Classic's own Auto values, from 452 Auto Settings steps on 439 catalog photos with every fifth photo held out; each slider is a linear fit of one or two display-encoded percentiles of luminance, of the brightest channel or of chroma, and the held-out error is a median 1 step on Contrast and 0.21 EV on Exposure. Lightroom changed Auto in mid-2019 and the catalog's history shows both versions, so the slopes are fitted on every photo and the levels, Contrast, Vibrance and Saturation on the current Auto alone. The WB menu's Auto white balance is fitted to Lightroom's Auto values (a median of 2.7 mired off on 133 photos); see [tone controls](../tone-controls.md#auto).
 
+### Negative Dehaze: what was tried, why it failed, and what Camera Raw's renders say (2026-11-16)
+
+The added-haze candidate of 2026-11-13 (next section) is withdrawn: its medians halved
+but its renders are wrong to the eye. This section lists every approach to negative
+Dehaze so far with the reason it failed, and then what Camera Raw's own renders show
+when no model of ours is put between them. Training photos only (the 52 `dehaze-train`
+photos at −10, −25, −50, −75, −100, +50 and +100, scene values through a linear profile);
+nothing fitted on validation, holdout untouched. Errors below are the RMS of the
+difference of cube roots of linear values (a lightness-like measure; 0.01 is about
+1.2 L\*), bright pixels kept, unless a unit is given.
+
+**Why the candidate is withdrawn.** Rendered by the candidate's build and compared in
+display values at −100, 9 of the 50 `dehaze-train` photos are more than 9 ΔE00 from
+Camera Raw (worst 24.4): six by colour (b\* off by 13 to 24: sunsets and sodium-lit
+night scenes, veiled in one airlight colour) and two by lightness (L\* 7 and 14 too
+dark); errors of +5 to +10 L\* in one lightness band are common. A forest in fog comes
+out as a bright, patchy fog where Camera Raw's is even and darker; a moonrise is veiled
+in the moon's orange. The median ΔE00 and the log-exposure error it was fitted with
+(bright pixels masked) showed neither. A candidate is now judged on contact sheets and
+lightness bands of every training photo before any gate run.
+
+**Approaches so far.**
+
+| When | Approach | Result | Why it failed |
+| --- | --- | --- | --- |
+| 2026-10-05 | A spatial model fitted to synthetic scenes | −100 worse (block error 0.0523 → 0.0637), luminance only | Synthetic scenes do not carry a photo's structure |
+| On main | One curve per amount keyed on the 99th percentile, no spatial part | Gate −100 median 5.88, its own error 6.56; the dark half +3.4 to +4.2 L\* too light | A photo's curve is not where the 99th percentile puts it, and a curve cannot lower local contrast |
+| 2026-10-20 | The haze equation J = p·t + A·(1 − t) with a dark-channel t | Far too much haze (shadows +26 L\* at −25) | The strength was never measured against Camera Raw |
+| 2026-10-20 | A veil of the median luminance in the airlight's colour, fading toward black | Training median 8.62 → 6.66, but 11 of 26 photos worse (one 3.24 → 12.79) | One global veil; Camera Raw's contrast change differs by photo (0.34 to 1.33) |
+| 2026-10-20 | The curves keyed on the median | 8.62 → 8.78 | As the curve on main |
+| 2026-11-12 | Flat mosaics in four tints | Main is already within 0.16 to 0.42 EV there | Flat patches have no local contrast, and they were rendered without the automatic black, which the photos have (below) |
+| 2026-11-13 | The best curve of each photo (an oracle) | 0.225 EV left of 1.49 | No curve of the level can do better |
+| 2026-11-13 | That curve's position from statistics, or from the Shadows/Highlights rule's 24 descriptors and network | No better than the 99th percentile (0.510 against 0.475) | 94 photos are too few to learn a rule of the whole photo |
+| 2026-11-13 | A table of the level under the blurred maximum and of the local level | Cross-validated 0.354 EV; gate median stayed 5.88, 9 of 29 worse | As above, and a table of two levels is still a curve |
+| 2026-11-13 | The haze model backwards, t = 1 + k·density | Gate 5.88 → 2.90; withdrawn | See above and the scale test below |
+| 2026-11-13/14 | Repairs of it: a veil fading toward black (four forms), the density capped by the pixel's darkest channel or clipped, a strength per photo from one or two statistics, an airlight from windows of 2% to 10%, an airlight chosen by the brightest 1% or 0.1% of blurred copies, a free airlight per photo (0.0288 → 0.0225), a transmission (1 − d)^g | None changed the failures | The family is the limit, not its constants |
+| 2026-11-16 | The same equation with the density blurred by 1% to 16% of the long edge, from the dark channel, the darkest channel or luminance, with either transmission law | Best 0.029 to 0.031 (the engine's own filter and 1% to 2% blurs); 8% and 16% are worse (0.036 to 0.047) | As above |
+
+What these have in common: each guessed the operator's form and fitted its output
+error, in which the working values, the airlight, the density map and the strength law
+are mixed; each was judged by one median; and every probe was either a flat mosaic or a
+whole photo, never a photo with one thing changed (the photo probes of 2026-11-13 were
+the exception, and were what produced a model).
+
+**What Camera Raw's renders say.** Measured on its renders alone, in 32 px cells of the
+2048 px renders (out = a + b·in per channel) and in octave bands of a 1024 px copy.
+
+- *One contrast factor for the three channels.* The cell slope of red and of blue over
+  green's is 1.000 at the median (10th to 90th percentile 0.94 to 1.05 and 0.9 to
+  1.15). Within a cell the change is affine in linear values (r² 0.943 at −100, 0.990 at
+  +100; a square-root, cube-root or log encoding is no closer).
+- *Positive and negative Dehaze read one map, and the amounts are powers of it.* Across
+  cells, log b at −50 over log b at −100 is 0.17 wherever b at −100 is between 0.02 and
+  0.6 (0.164 to 0.181 over six bins); −75 about 0.39, −25 0.06, −10 0.02, +50 −0.11, +100
+  −0.19. The candidate's 1/(1 + k·d) makes that ratio vary fivefold over the same
+  cells. Cells flattened most at −100 are steepened most at +100 (slope 1.95 where the
+  slope at −100 is 0.02 to 0.05; 1.05 where it is 0.6 to 0.75).
+- *The darkest cells keep a slope above 1.* In the darkest stop of a photo the cell slope
+  is 1.07, 1.16, 1.28, 1.31 and 1.21 at −10 to −100, and falls below 1 only about five
+  stops above the darkest cells; their log gain is linear in the amount (one photo: 0.20,
+  0.51, 1.03, 1.54 and 2.05 stops). Haze added with one transmission per cell cannot
+  raise a slope above 1.
+- *The veil is not the airlight times the lost transmission.* With Camera Raw's own
+  slope, the best single airlight per photo leaves 0.137 (no veil: 0.218), and a
+  constant share of the photo itself blurred by 8% of the long edge leaves 0.037 (46 of
+  52 photos better); at −50, 0.056 against 0.014.
+- *In log luminance it is close to one filter for every photo.* Gain of each octave band
+  of log2 luminance (1, 2, 4, 8, 16, 32 and 64 px of 1024, then the 128 px low-pass about
+  its mean), median of 52 photos:
+
+  | Amount | 1 | 2 | 4 | 8 | 16 | 32 | 64 | low-pass | r² |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | −10 | 0.93 | 0.93 | 0.93 | 0.94 | 0.95 | 0.95 | 0.95 | 0.97 | 1.00 |
+  | −25 | 0.81 | 0.82 | 0.83 | 0.85 | 0.86 | 0.86 | 0.88 | 0.93 | 1.00 |
+  | −50 | 0.63 | 0.65 | 0.66 | 0.69 | 0.71 | 0.72 | 0.75 | 0.85 | 0.98 to 0.99 |
+  | −75 | 0.44 | 0.47 | 0.51 | 0.54 | 0.57 | 0.59 | 0.62 | 0.78 | 0.95 to 0.98 |
+  | −100 | 0.27 | 0.30 | 0.34 | 0.40 | 0.44 | 0.46 | 0.50 | 0.71 | 0.86 to 0.96 |
+  | +50 | 1.35 | 1.32 | 1.29 | 1.23 | 1.20 | 1.19 | 1.16 | 0.99 | 0.95 to 0.99 |
+  | +100 | 1.85 | 1.84 | 1.76 | 1.66 | 1.58 | 1.55 | 1.49 | 0.94 | 0.81 to 0.94 |
+
+  The dark and the bright third of a photo have the same gains in the fine bands (−50:
+  0.61 and 0.61 at 1 px), and photos differ little there (−50, 1 px: 0.55 to 0.68 from
+  the 10th to the 90th percentile); in linear values the same bands give 1.09 to 1.27 in
+  the dark third and 0.85 to 0.94 in the bright one. The finest band's gain is about
+  1 + 0.7·s on both signs. Photos differ in the low-pass (−100: 0.25 to 1.01), and at
+  +100 the bright third is boosted more (2.26 against 1.79).
+- *The candidate against the same test.* Its bands at −100 are 0.27, 0.27, 0.31, 0.41,
+  0.58, 0.66, 0.66 and 0.67, and at −50 0.55, 0.56, 0.58, 0.67, 0.78, 0.84, 0.86 and
+  0.88: it keeps the contrast of everything larger than its window (1.5% of the long
+  edge and up) that Camera Raw goes on lowering, which is the patchy fog, and at −50 it
+  lowers fine contrast too far.
+- *The detail filter alone is nearly exact.* Luminance only, median of 52 photos at
+  −100 (−50): the candidate 0.0267 (0.0137); the median gains of every band with each
+  photo's own mean level 0.0319 (0.0153), and with its own low-pass gain as well 0.0240
+  (0.0104); the median gains of the bands finer than 32 px on top of Camera Raw's own
+  32 px low-pass 0.0073 (0.0036), finer than 128 px on its 128 px low-pass 0.0131
+  (0.0062). The best curve of a photo's 32 px low-pass leaves 0.0187 (0.0096): the
+  large-scale layer is not a curve of its level either. The same detail filter on the
+  candidate's own 32 px low-pass leaves 0.0261 (0.0130): nearly all of the candidate's
+  luminance error is in the large-scale layer.
+- *Colour follows from the luminance.* With Camera Raw's own luminance, scaling the
+  pixel's colour by the luminance's gain leaves 0.0255 at −100. Keeping a share T/gain of
+  the pixel's own colour and giving the rest one veil colour per photo leaves 0.0018 (a
+  constant share: 0.0039). The share kept falls from 0.56 where the luminance is
+  unchanged to 0.03 where it is lifted by more than 3.5 stops. The veil colour is near
+  neutral on most photos and orange on sunsets and sodium-lit scenes (red 1.2 to 1.4
+  and blue 0.2 to 0.6 of the luminance).
+
+**The automatic black is keyed after Dehaze.** Six training photos rendered with and
+without the profile's automatic black (DefaultBlackRender None) at default, −100, −50 and
++100 (24 renders). At each setting the render with the automatic black is a curve of the
+one without (scatter 0.005 to 0.26 EV, as at default), but not the default pair's curve
+(0.09 to 0.52 EV off at −100, 0.17 to 0.54 at +100). At +100 all six photos share one
+curve (−1.3 to −1.9 stops at 2^−13, −0.55 at 2^−10, −0.26 at 2^−8: the darkest key's),
+and the deepest shadows end up 0.2 to 1.5 stops lighter than at default where the
+render without the automatic black leaves them unchanged; at −100 the curve moves up
+with the hazed image's darkest level (one photo: 2^−12.5 to 2^−9.5) and stops growing
+near 2^−8. RAWmakase keys its default black on the photo before Dehaze (positive
+Shadows already moves the key; Dehaze does not). Every photo
+reference has the automatic black and every mosaic probe was rendered without it, a
+difference between probes and photos that had not been controlled. In the same renders
+the level Camera Raw leaves unchanged at −100 is 1 to 3 stops under white and within a
+stop of the photo's brightest large area; above it Camera Raw darkens (−0.25 stop).
+
+**Where this leaves negative Dehaze.** It is not the haze equation with one airlight. It
+is a contrast change in log luminance that is nearly the same at every scale and for
+every photo up to about 3% of the frame, on top of a large-scale layer that differs by
+photo and by region, with a veil of one colour per photo. Next: build the detail filter
+and the colour rule as measured, model the large-scale layer on its own (it is smooth,
+so it can be measured on probes built from photos, as the global rule was on mosaics),
+key the default black after Dehaze, and run the same band test on Clarity and on
+positive Dehaze, whose renders are already on disk.
+
 ### Negative Dehaze as added haze, and the dark key (2026-11-13)
 
 Follow-ups of the round below, on Camera Raw's scene values of the training photos (98
 photos of the three families' `dehaze-train` and `clarity-train` sets, read through a linear
 profile and reduced to 2048 px; nothing fitted on validation).
 
-**Negative Dehaze: the haze model run backwards (branch `t3/dehaze-added-haze`, not merged).**
+**Negative Dehaze: the haze model run backwards (withdrawn 2026-11-14; see the section above).**
 
 - *What does not predict it.* Per photo, Camera Raw's gain at −100 is close to one curve of
   the level (0.225 EV RMS; with a blur of 6% of the long edge 0.145) whose position moves by
