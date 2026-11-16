@@ -13,6 +13,9 @@ test-support = ["rawmakase-fs/test-support", "rawmakase-model/test-support", "ra
 
 [dependencies]
 rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
+# The schema of the plan an extension's importer writes, which the catalog
+# imports (`catalog::plan_import`).
+rawmakase-extension-protocol = { path = "../rawmakase-extension-protocol", version = "0.1.0" }
 rawmakase-fs = { path = "../rawmakase-fs", version = "0.1.0" }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
@@ -20,7 +23,9 @@ anyhow.workspace = true
 flate2.workspace = true
 getrandom.workspace = true
 image.workspace = true
-rusqlite = { version = "0.41.0", features = ["bundled"] }
+# `hooks` and `limits`: an import plan, a file another program wrote, is
+# read on a connection with a cancel check and resource limits.
+rusqlite = { version = "0.41.0", features = ["bundled", "hooks", "limits"] }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json.workspace = true
 sha2.workspace = true
@@ -28,8 +33,9 @@ unicode-normalization.workspace = true
 tempfile.workspace = true
 
 [dev-dependencies]
-# Counting commits, for the throughput tests.
-rusqlite = { version = "0.41.0", features = ["bundled", "hooks"] }
+# SQL functions, for the tests that write an import plan from a Lightroom
+# catalog.
+rusqlite = { version = "0.41.0", features = ["bundled", "hooks", "limits", "functions"] }
 rawmakase-fs = { path = "../rawmakase-fs", version = "0.1.0", features = ["test-support"] }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }

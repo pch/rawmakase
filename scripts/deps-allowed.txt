@@ -1,6 +1,7 @@
 # Allowed dependencies between top-level modules, checked by scripts/deps.py.
 # Delete a line when the code stops needing it. A new line needs a reason that
 # fits the layering in docs/architecture.md.
+app -> catalog_import
 app -> catalog_session
 app -> diagnostics
 app -> edit_session

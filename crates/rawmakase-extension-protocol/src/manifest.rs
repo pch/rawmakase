@@ -2,7 +2,7 @@
 //!
 //! Unknown keys are an error everywhere in the manifest, tables included, so a
 //! typo can't silently disable a feature and a contribution table this version
-//! doesn't know (`[[filter]]`, `[[importer]]`, …) is refused rather than
+//! doesn't know (`[[filter]]`, `[[presets]]`, …) is refused rather than
 //! ignored. [`Manifest::parse`] reads and validates; the JSON Schema
 //! ([`schema`]) is committed as `docs/extensions/manifest.schema.json`.
 use crate::controls::Choice;
@@ -16,7 +16,7 @@ pub const FILE: &str = "rawmakase-extension.toml";
 /// The manifest format this version reads, the `api` key. A manifest with a
 /// later one was written for a later RAWmakase, which knows tables this one
 /// doesn't.
-pub const API: u32 = 3;
+pub const API: u32 = 4;
 
 /// The first `api` that reads `[[mask-generator]]`.
 pub const MASK_GENERATOR_API: u32 = 2;
@@ -26,6 +26,9 @@ pub const SOURCE_API: u32 = 3;
 /// The first `api` that reads `[[retouch-generator]]` and the `secret`
 /// setting control. Its framing and handle rules are API 2's.
 pub const RETOUCH_GENERATOR_API: u32 = 3;
+/// The first `api` that reads `[[importer]]`. Its framing and handle rules
+/// are API 2's.
+pub const IMPORTER_API: u32 = 4;
 
 /// The bundled extension that may claim the provenance Select Subject and
 /// Select Sky saved before extensions existed.
@@ -82,6 +85,10 @@ pub struct Manifest {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub retouch_generators: Vec<RetouchGenerator>,
+    /// Importers of another application's catalog into a new catalog, from
+    /// `api = 4`.
+    #[serde(default, rename = "importer", skip_serializing_if = "Vec::is_empty")]
+    pub importers: Vec<Importer>,
 }
 
 /// The `[extension]` table.
@@ -557,6 +564,25 @@ impl Source {
     }
 }
 
+/// An `[[importer]]`: the program reads another application's catalog (a
+/// file the user chooses) and writes what it holds to a plan, a SQLite file
+/// ([`crate::plan`]), which the app reads, checks and commits as a new
+/// catalog (`import.run`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Importer {
+    /// Unique among the extension's importers.
+    #[schemars(regex(pattern = r"^[a-z0-9][a-z0-9-]*$"))]
+    pub id: String,
+    /// What it imports, as the import menu lists it, for example
+    /// `Lightroom Classic catalog`.
+    pub name: String,
+    /// The file extensions the file chooser offers, lowercase and without
+    /// the dot, for example `lrcat`.
+    #[schemars(length(min = 1), inner(regex(pattern = r"^[a-z0-9]{1,16}$")))]
+    pub extensions: Vec<String>,
+}
+
 /// Why a manifest was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Invalid(pub String);
@@ -592,12 +618,14 @@ impl Manifest {
             .retouch_generators
             .iter()
             .map(|g| format!("retouch-generator/{}", g.id));
+        let importers = self.importers.iter().map(|i| format!("importer/{}", i.id));
         commands
             .chain(panels)
             .chain(adapters)
             .chain(generators)
             .chain(sources)
             .chain(retouch)
+            .chain(importers)
             .collect()
     }
 
@@ -610,6 +638,7 @@ impl Manifest {
                 || !self.mask_generators.is_empty()
                 || !self.sources.is_empty()
                 || !self.retouch_generators.is_empty()
+                || !self.importers.is_empty()
                 || self
                     .control_adapters
                     .iter()
@@ -667,6 +696,7 @@ impl Manifest {
                 "retouch-generator",
                 self.retouch_generators.iter().map(|g| &g.id).collect(),
             ),
+            ("importer", self.importers.iter().map(|i| &i.id).collect()),
         ];
         for (table, ids) in tables {
             let mut seen = std::collections::BTreeSet::new();
@@ -751,19 +781,57 @@ impl Manifest {
         }
         self.validate_mask_generators()?;
         self.validate_retouch_generators()?;
+        self.validate_importers()?;
         let needs_program = !self.commands.is_empty()
             || !self.panels.is_empty()
             || !self.control_adapters.is_empty()
             || !self.mask_generators.is_empty()
             || !self.sources.is_empty()
-            || !self.retouch_generators.is_empty();
+            || !self.retouch_generators.is_empty()
+            || !self.importers.is_empty();
         if needs_program && self.program.is_none() {
             return fail(
-                "commands, panels, control adapters, mask and retouch generators and sources need a [program] to run them"
+                "commands, panels, control adapters, mask and retouch generators, sources and importers need a [program] to run them"
                     .into(),
             );
         }
         self.validate_sources()
+    }
+
+    /// The `[[importer]]` rules: the `api` that reads them, a name to list,
+    /// and file extensions the file chooser can offer.
+    fn validate_importers(&self) -> Result<(), Invalid> {
+        let api = self.extension.api;
+        if !self.importers.is_empty() && api < IMPORTER_API {
+            return Err(Invalid(format!(
+                "[[importer]] needs extension.api = {IMPORTER_API} or later (this one says {api})"
+            )));
+        }
+        for importer in &self.importers {
+            let fail = |why: String| Err(Invalid(format!("importer {}: {why}", importer.id)));
+            if importer.name.trim().is_empty() {
+                return fail("its name is empty".into());
+            }
+            if importer.extensions.is_empty() {
+                return fail("it lists no extensions".into());
+            }
+            for (i, extension) in importer.extensions.iter().enumerate() {
+                let plain = !extension.is_empty()
+                    && extension.len() <= 16
+                    && extension
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+                if !plain {
+                    return fail(format!(
+                        "extension {extension:?} must be lowercase letters and digits, without the dot"
+                    ));
+                }
+                if importer.extensions[..i].contains(extension) {
+                    return fail(format!("extension {extension:?} is listed twice"));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The `[[source]]` rules: the `api` that reads them, and a program that
@@ -1091,7 +1159,7 @@ launch = "external"
         // Contributions this version doesn't build yet.
         for table in [
             "[[filter]]\nid = \"grain\"",
-            "[[importer]]\nid = \"c1\"",
+            "[[exporter]]\nid = \"c1\"",
             "[[presets]]\npath = \"p/\"",
         ] {
             let text = format!("{EXAMPLE}\n{table}\n");
@@ -1106,7 +1174,7 @@ launch = "external"
             ("id = \"dev.jane.analog\"", "id = \"Dev.Jane.Analog\""),
             ("version = \"1.2.0\"", "version = \"1.2\""),
             ("rawmakase = \">=0.6, <0.7\"", "rawmakase = \"sometime\""),
-            ("api = 1", "api = 4"),
+            ("api = 1", "api = 5"),
             ("api = 1", "api = 0"),
             ("path = \"bin/analog\"", "path = \"../analog\""),
             ("path = \"bin/analog\"", "path = \"/usr/bin/analog\""),
@@ -1466,6 +1534,80 @@ uploads = true
         assert!(generators("input = [\"prompt\"]", "").is_err());
     }
 
+    const IMPORTERS: &str = r#"
+[extension]
+id = "dev.jane.lightroom"
+name = "Lightroom"
+version = "1.0.0"
+rawmakase = ">=0.6"
+api = 4
+
+[program]
+path = "bin/lightroom"
+
+[[importer]]
+id = "catalog"
+name = "Lightroom Classic catalog"
+extensions = ["lrcat"]
+"#;
+
+    fn importers(replace: &str, by: &str) -> Result<Manifest, Invalid> {
+        assert!(IMPORTERS.contains(replace), "{replace}");
+        Manifest::parse(&IMPORTERS.replacen(replace, by, 1))
+    }
+
+    #[test]
+    fn importers_read_from_api_4_and_round_trip() {
+        let manifest = Manifest::parse(IMPORTERS).unwrap();
+        let [importer] = &manifest.importers[..] else {
+            panic!("one importer");
+        };
+        assert_eq!(importer.name, "Lightroom Classic catalog");
+        assert_eq!(importer.extensions, ["lrcat"]);
+        assert_eq!(manifest.contributions(), ["importer/catalog"]);
+        assert!(manifest.runs_in_app());
+        // On demand, as `start` is left out.
+        assert_eq!(manifest.program.as_ref().unwrap().start, Start::OnDemand);
+        let written = toml::to_string(&manifest).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+        let two = importers(
+            "extensions = [\"lrcat\"]\n",
+            "extensions = [\"lrcat\"]\n\n[[importer]]\nid = \"cloud\"\nname = \"Lightroom\"\nextensions = [\"zip\", \"json\"]\n",
+        )
+        .unwrap();
+        assert_eq!(two.contributions(), ["importer/catalog", "importer/cloud"]);
+    }
+
+    #[test]
+    fn importers_need_api_4_a_program_a_name_and_plain_extensions() {
+        let error = importers("api = 4", "api = 3").unwrap_err();
+        assert!(error.0.contains("api = 4"), "{error}");
+        let without_program = IMPORTERS.replace("[program]\npath = \"bin/lightroom\"", "");
+        let error = Manifest::parse(&without_program).unwrap_err();
+        assert!(error.0.contains("[program]"), "{error}");
+        for (replace, by) in [
+            ("name = \"Lightroom Classic", "name = \" \"\n#"),
+            ("[\"lrcat\"]", "[]"),
+            ("[\"lrcat\"]", "[\".lrcat\"]"),
+            ("[\"lrcat\"]", "[\"LRCAT\"]"),
+            ("[\"lrcat\"]", "[\"\"]"),
+            ("[\"lrcat\"]", "[\"lr cat\"]"),
+            ("[\"lrcat\"]", "[\"lrcat\", \"lrcat\"]"),
+            ("[\"lrcat\"]", "[\"averyveryverylongextension\"]"),
+            ("id = \"catalog\"", "id = \"Catalog\""),
+            ("extensions =", "kind = \"x\"\nextensions ="),
+            ("extensions = [\"lrcat\"]", ""),
+        ] {
+            assert!(importers(replace, by).is_err(), "{by}");
+        }
+        let twice = importers(
+            "extensions = [\"lrcat\"]\n",
+            "extensions = [\"lrcat\"]\n\n[[importer]]\nid = \"catalog\"\nname = \"Again\"\nextensions = [\"lrcat\"]\n",
+        )
+        .unwrap_err();
+        assert!(twice.0.contains("used twice"), "{twice}");
+    }
+
     const SOURCES: &str = r#"
 [extension]
 id = "dev.jane.tether"
@@ -1588,6 +1730,7 @@ id = "folder"
         assert!(schema["properties"]["mask-generator"].is_object());
         assert!(schema["properties"]["source"].is_object());
         assert!(schema["properties"]["retouch-generator"].is_object());
+        assert!(schema["properties"]["importer"].is_object());
         assert!(schema["properties"].get("filter").is_none());
     }
 }

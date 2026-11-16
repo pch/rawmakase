@@ -3986,6 +3986,7 @@ dependencies = [
  "getrandom 0.4.3",
  "image",
  "rawmakase-cancel",
+ "rawmakase-extension-protocol",
  "rawmakase-fs",
  "rawmakase-interop",
  "rawmakase-model",
@@ -4077,6 +4078,7 @@ name = "rawmakase-example"
 version = "0.1.0"
 dependencies = [
  "rawmakase-extension",
+ "rusqlite",
  "serde_json",
 ]
 

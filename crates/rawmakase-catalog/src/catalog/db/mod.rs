@@ -323,7 +323,7 @@ impl Db {
             Backend::Sqlite(db) => {
                 // SQLite attaches only outside a transaction.
                 db.execute("ATTACH DATABASE ? AS lr", [lightroom.to_string_lossy()])?;
-                let attached = Attached { db };
+                let attached = Attached { db, name: "lr" };
                 let tx = attached.db.transaction()?;
                 let result = f(&mut LightroomWrite {
                     write: Write { db: &tx },
@@ -334,6 +334,93 @@ impl Db {
             }
         }
     }
+
+    /// Runs `f` in one write with the import plan at `plan` attached
+    /// read-only as `plan`, once its schema is found to be exactly the one
+    /// `schema` makes; `f` reads one state of it throughout. It is detached
+    /// again when `f` returns, fails or panics.
+    ///
+    /// The plan is a file another program wrote, so this connection is
+    /// hardened first, for the rest of its life: the import has it to
+    /// itself. Its schema is not trusted to run functions, it is defensive
+    /// (no writing SQLite's own tables), loads no extensions (SQLite's
+    /// default, which nothing here changes) and has limits on what a value
+    /// or statement may hold. `stop` is asked every thousand SQLite steps, in
+    /// any statement, and interrupts it when it says so.
+    pub(in crate::catalog) fn with_plan<R>(
+        &mut self,
+        plan: &Path,
+        schema: &str,
+        stop: impl Fn() -> bool + Send + 'static,
+        f: impl FnOnce(&mut LightroomWrite<'_>) -> Result<R>,
+    ) -> Result<R> {
+        use rusqlite::{config::DbConfig, limits::Limit};
+        let Backend::Sqlite(db) = &mut self.backend;
+        db.execute_batch("PRAGMA trusted_schema=OFF")?;
+        db.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)?;
+        for (limit, value) in [
+            // Above the plan's 16,000,000-byte texts, so their own check
+            // reports them.
+            (Limit::SQLITE_LIMIT_LENGTH, 64 << 20),
+            (Limit::SQLITE_LIMIT_SQL_LENGTH, 1 << 20),
+            (Limit::SQLITE_LIMIT_COLUMN, 200),
+            (Limit::SQLITE_LIMIT_EXPR_DEPTH, 100),
+            (Limit::SQLITE_LIMIT_ATTACHED, 1),
+        ] {
+            db.set_limit(limit, value)?;
+        }
+        db.progress_handler(1000, Some(stop))?;
+        db.execute("ATTACH DATABASE ? AS plan", [read_only_uri(plan)?])?;
+        let attached = Attached { db, name: "plan" };
+        let tx = attached.db.transaction()?;
+        let entries = |db: &Connection, schema: &str| -> Result<Vec<[Option<String>; 4]>> {
+            let mut statement = db.prepare(&format!(
+                "SELECT type, name, tbl_name, sql FROM {schema}.sqlite_master ORDER BY type, name"
+            ))?;
+            let rows =
+                statement.query_map([], |r| Ok([r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?]));
+            Ok(rows?.collect::<rusqlite::Result<_>>()?)
+        };
+        let expected = Connection::open_in_memory()?;
+        expected.execute_batch(schema)?;
+        ensure!(
+            entries(&tx, "plan")? == entries(&expected, "main")?,
+            "The import plan's tables aren't the ones its format has"
+        );
+        let result = f(&mut LightroomWrite {
+            write: Write { db: &tx },
+        })?;
+        tx.commit()?;
+        drop(attached);
+        Ok(result)
+    }
+}
+
+/// `path` as a URI SQLite opens read-only. The bundled SQLite takes URIs on
+/// every connection (`SQLITE_USE_URI`); a test attaches a folder whose name
+/// needs escaping.
+fn read_only_uri(path: &Path) -> Result<String> {
+    // SQLite takes the name as text, as `copy_into` says.
+    let text = path
+        .to_str()
+        .context("The import's folder name can't be given to SQLite")?;
+    // The authority is empty: `file:///C:/folder/plan.sqlite` and, for a
+    // share, `file:////server/share/…` on Windows, `file:///folder/…`
+    // elsewhere.
+    let drive = cfg!(windows) && !text.starts_with(r"\\");
+    let mut uri = String::from(if drive { "file:///" } else { "file://" });
+    for byte in text.bytes() {
+        match byte {
+            b'\\' if cfg!(windows) => uri.push('/'),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
+                uri.push(char::from(byte));
+            }
+            b':' if cfg!(windows) => uri.push(':'),
+            _ => uri.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    uri.push_str("?mode=ro");
+    Ok(uri)
 }
 
 /// The file `db` is, as SQLite names it.
@@ -395,16 +482,21 @@ impl super::Catalog {
     }
 }
 
-/// Detaches the Lightroom catalog when dropped, whatever happened.
+/// Detaches the database attached as `name` when dropped, whatever happened.
 struct Attached<'a> {
     db: &'a mut Connection,
+    name: &'static str,
 }
 
 impl Drop for Attached<'_> {
     fn drop(&mut self) {
+        // Cached statements that read it would keep it open.
+        self.db.flush_prepared_statement_cache();
         // Nothing to do if it fails: the connection is dropped with the
         // catalog, and a later attach would report it.
-        let _ = self.db.execute_batch("DETACH DATABASE lr");
+        let _ = self
+            .db
+            .execute_batch(&format!("DETACH DATABASE {}", self.name));
     }
 }
 
@@ -552,7 +644,8 @@ impl Write<'_> {
 }
 
 /// A write with a Lightroom catalog attached as `lr` (see
-/// [`Db::with_lightroom`]): the only place [`SqliteSql`] runs.
+/// [`Db::with_lightroom`]) or an import plan as `plan` (see
+/// [`Db::with_plan`]): the only place [`SqliteSql`] runs.
 pub(in crate::catalog) struct LightroomWrite<'db> {
     write: Write<'db>,
 }

@@ -71,6 +71,8 @@ The new catalog is canonical: an import reads the `.lrcat` once, and nothing in 
 
 Earlier releases kept a byte-exact copy of the `.lrcat` in `sources.original_catalog` and read it again on later opens to add what newer releases import. The first open by this release empties that copy, in one transaction recorded as `lightroom_archive_removed` in `meta`, and then compacts the file once ("Making the catalog smaller…") to give the space back. Compacting needs free space up to the catalog's size; when it fails, the catalog opens anyway, the status line says why, and `compact_pending` in `meta` has it tried again on the next open. The format doesn't change: an older release reads the empty copy as nothing to read. A catalog imported by an older release keeps everything it already copied, including History and snapshots stored compressed.
 
+**Importers from extensions.** An enabled extension that declares an `[[importer]]` adds an item of its own to the catalog menu ("‹importer name›…", below Import from Lightroom), and `rawmakase import-catalog --importer EXTENSION/IMPORTER source output` runs the same import from the command line. Each import creates a new catalog, never adds to the open one, and never replaces a file. The extension's program writes an import plan, a SQLite file, in a folder beside the destination; RAWmakase checks it and copies it into a working catalog there in one transaction, and only then puts the catalog in place, by a hard link or, on a volume without them (exFAT), by a copy; until then a failure, Stop Import, disabling the extension or quitting leaves nothing behind. The open edit is saved before the import starts and again before the new catalog opens; when that second save fails, the catalog stays where it was imported and the status line says where. A crash or a forced quit during an import leaves its folder (`rawmakase-import-….partial`) beside the destination, to delete by hand, as a crashed Lightroom import leaves its temporary folder; one during a copy to an exFAT volume can leave a partial catalog at the destination, which fails to open as a damaged catalog does. See [the Lightroom extension plan](lightroom-extension-plan.md#the-cores-side).
+
 Smart collections are imported by name, with any stored membership; their rules are not, as RAWmakase does not evaluate Adobe's smart-collection rule language. Collections marked “smart snapshot” may therefore have no stored members.
 
 ## Descriptive metadata and XMP sidecars
@@ -135,6 +137,7 @@ Creation/import publish atomically without clobbering another file. SQLite trans
 
 ```sh
 rawmakase import-catalog input.lrcat Photos.rawmakase
+rawmakase import-catalog --importer EXTENSION/IMPORTER source Photos.rawmakase
 rawmakase catalog-info Photos.rawmakase
 rawmakase relink-catalog Photos.rawmakase ROOT_ID /local/photos
 rawmakase Photos.rawmakase

@@ -203,6 +203,36 @@
         }
       ]
     },
+    "Importer": {
+      "additionalProperties": false,
+      "description": "An `[[importer]]`: the program reads another application's catalog (a\nfile the user chooses) and writes what it holds to a plan, a SQLite file\n([`crate::plan`]), which the app reads, checks and commits as a new\ncatalog (`import.run`).",
+      "properties": {
+        "extensions": {
+          "description": "The file extensions the file chooser offers, lowercase and without\nthe dot, for example `lrcat`.",
+          "items": {
+            "pattern": "^[a-z0-9]{1,16}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "id": {
+          "description": "Unique among the extension's importers.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "What it imports, as the import menu lists it, for example\n`Lightroom Classic catalog`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "extensions"
+      ],
+      "type": "object"
+    },
     "Input": {
       "description": "Viewer input a command collects.",
       "oneOf": [
@@ -737,6 +767,13 @@
     "extension": {
       "$ref": "#/$defs/Extension",
       "description": "What the extension is."
+    },
+    "importer": {
+      "description": "Importers of another application's catalog into a new catalog, from\n`api = 4`.",
+      "items": {
+        "$ref": "#/$defs/Importer"
+      },
+      "type": "array"
     },
     "mask-generator": {
       "description": "Generators of raster masks, from `api = 2`.",

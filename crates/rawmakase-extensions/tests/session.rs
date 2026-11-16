@@ -61,6 +61,7 @@ fn fake_program() {
         "flood" => flood(),
         "api" => api(),
         "masks" => masks(),
+        "importer" => importer(),
         #[cfg(unix)]
         "fds" => send_fds(),
         other => panic!("no script {other}"),
@@ -644,6 +645,101 @@ fn the_program_is_told_its_manifest_api() {
         std::thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(session.exit().and_then(|e| e.code), Some(1));
+}
+
+/// Serves two importers: `steady` reports progress every 50 ms for 2.4 s
+/// and writes an empty plan; `silent` reports once, then works for 120 s
+/// without a word.
+fn importer() -> i32 {
+    use rawmakase_extension::Importer;
+    struct Steady;
+    impl Importer for Steady {
+        fn import(
+            &mut self,
+            cx: &Context,
+            _source: &Path,
+            _plan: &Path,
+        ) -> Result<u64, RemoteError> {
+            for n in 0..48 {
+                cx.progress(None, Some(&format!("step {n}")));
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Ok(0)
+        }
+    }
+    struct Silent;
+    impl Importer for Silent {
+        fn import(
+            &mut self,
+            cx: &Context,
+            _source: &Path,
+            _plan: &Path,
+        ) -> Result<u64, RemoteError> {
+            cx.progress(None, Some("started"));
+            std::thread::sleep(Duration::from_secs(120));
+            Ok(0)
+        }
+    }
+    let result = Extension::new()
+        .importer("steady", Steady)
+        .importer("silent", Silent)
+        .run();
+    i32::from(result.is_err())
+}
+
+/// `import.run` over a real channel with a 1 s inactivity deadline:
+/// progress keeps a 2.4 s import alive to its answer, and an import that
+/// goes silent is cancelled at 1 s and fails after the grace. The window is
+/// wide against a loaded CI machine: it also takes the program's start on
+/// the request before its first progress.
+#[test]
+fn an_import_lives_as_long_as_its_progress() {
+    let _guard = shared();
+    let dir = tempfile::tempdir().unwrap();
+    let mut launch = launch(dir.path(), "importer");
+    launch.set_api(4);
+    let options = SessionOptions {
+        cancel_grace: Duration::from_millis(300),
+        ..SessionOptions::default()
+    };
+    let mut session = Session::spawn(&launch, options).unwrap();
+    let id = session
+        .request("hello", hello(dir.path()), later(10_000))
+        .unwrap();
+    wait_reply(&mut session, id).unwrap();
+    let inactivity = Duration::from_secs(1);
+    let import = |session: &mut Session, importer: &str| {
+        let params = json!({"importer": importer, "source": dir.path().join("a.lrcat"),
+                            "plan": dir.path().join(format!("{importer}.sqlite"))});
+        session
+            .request_with_inactivity("import.run", params, inactivity, Instant::now())
+            .unwrap()
+    };
+    let start = Instant::now();
+    let steady = import(&mut session, "steady");
+    assert_eq!(
+        wait_reply(&mut session, steady).unwrap(),
+        json!({"photos": 0})
+    );
+    assert!(start.elapsed() >= Duration::from_millis(2400));
+
+    let start = Instant::now();
+    let silent = import(&mut session, "silent");
+    let updates = poll_until(
+        &mut session,
+        |u| matches!(u, Update::Reply { id, .. } if *id == silent),
+    );
+    assert!(
+        updates
+            .iter()
+            .any(|u| matches!(u, Update::Progress { id, .. } if *id == silent))
+    );
+    assert_eq!(
+        reply_of(&updates, silent).unwrap().unwrap_err().code,
+        ErrorCode::Deadline
+    );
+    assert!(start.elapsed() >= inactivity + Duration::from_millis(300));
+    session.stop(later(1_000)).unwrap().join();
 }
 
 // Buffers in shared memory: leases, lingering and the Hung transition.

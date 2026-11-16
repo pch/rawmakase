@@ -42,7 +42,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 [dev-dependencies]
 # The scripted fake program the session tests start is this crate's test
 # binary run again, speaking through the SDK.
-rawmakase-extension = { path = "../rawmakase-extension", version = "0.1.0" }
+rawmakase-extension = { path = "../rawmakase-extension", version = "0.1.0", features = ["importer"] }
 tempfile.workspace = true
 
 [lints]

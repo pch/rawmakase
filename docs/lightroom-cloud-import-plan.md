@@ -2,7 +2,8 @@
 
 Status: planning. Nothing here is built. It follows the
 [Lightroom extension plan](lightroom-extension-plan.md), which builds the
-`importer` contribution, the plan file and `files.list`; read that first.
+`importer` contribution, the plan file (a SQLite file of a published schema,
+whose rows this page calls records) and `files.list`; read that first.
 
 ## Goal
 
@@ -70,7 +71,8 @@ master by then. Export as Catalog copies the tables with their photos.
 ### C1. Camera Raw XMP as an edit
 
 Lightroom (cloud) stores each photo's edit as Camera Raw XMP, not Classic's
-Lua table. The plan file's `edit` record gains `format = "camera-raw-xmp"`.
+Lua table. The plan's `edit` table takes `format = 'camera-raw-xmp'` (a new
+schema and `PLAN_VERSION`).
 The core stores it in `photo_lightroom_xmp`, never in `lightroom_develop`, so
 which form a text is is never guessed. `edits::resolve` takes a photo's
 Lightroom edit from whichever is there, and `lr_develop::convert_develop`

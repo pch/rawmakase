@@ -651,6 +651,25 @@ impl Editor {
         let palette = theme::palette(ctx);
         ui.set_width(268.);
         ui.spacing_mut().item_spacing = Vec2::ZERO;
+        // While an extension's import runs, the menu offers only to stop it.
+        if let Some(doing) = self.catalog_importing().map(str::to_string) {
+            ui.add_space(space::XS);
+            egui::Frame::new()
+                .inner_margin(design::margin(space::L, space::S))
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(doing)
+                            .size(text::BODY)
+                            .color(palette.tone(Tone::SOFT)),
+                    );
+                });
+            if menu_row(ui, Icon::Rejected, "Stop Import", true).clicked() {
+                self.cancel_catalog_import();
+                ui.close();
+            }
+            ui.add_space(space::XS);
+            return;
+        }
         let location = self
             .library
             .as_ref()
@@ -763,6 +782,20 @@ impl Editor {
             self.open_onboarding();
             ui.close();
         }
+        // One item per enabled extension's importer: each makes a new
+        // catalog.
+        for offer in self.importer_items() {
+            if menu_row(ui, Icon::Collection, &format!("{}…", offer.name), true)
+                .on_hover_text(format!(
+                    "Import into a new catalog, with {}",
+                    offer.extension_name
+                ))
+                .clicked()
+            {
+                self.import_with(offer, ctx);
+                ui.close();
+            }
+        }
         ui.add_space(space::XS);
     }
     /// Whether the catalog's sidebar shows: in both modules, not the setup view.
@@ -785,7 +818,8 @@ impl Editor {
             egui::FontId::proportional(text::BODY),
             palette.tone(Tone::BRIGHT),
         );
-        let busy = self.activity.is_busy();
+        // An import keeps the menu open to its Stop Import.
+        let busy = self.activity.is_busy() && self.catalog_importing().is_none();
         // In the bar, every element is painted in a 28 px slot so all centers line up.
         let size = match width {
             Some(width) => Vec2::new(width, 40.),

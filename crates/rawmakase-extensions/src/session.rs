@@ -20,8 +20,11 @@
 //! over what arrived and enforces deadlines. A request past its deadline is
 //! cancelled, no longer admitted ([`Session::is_admitted`]), and fails with
 //! `deadline` when the program answers it or after the grace period,
-//! whichever is first. [`Session::cancel`] settles a request at once: a reply
-//! arriving afterwards is dropped, so a request has exactly one outcome.
+//! whichever is first. A request sent with
+//! [`Session::request_with_inactivity`] has an inactivity deadline instead,
+//! which each admitted `progress` for that request moves on. [`Session::cancel`]
+//! settles a request at once: a reply arriving afterwards is dropped, so a
+//! request has exactly one outcome.
 //!
 //! [`Session::stop`] sends `quitting`, closes the channel's sending side and
 //! returns a [`Stopping`] whose thread waits for the program to exit, until
@@ -247,6 +250,9 @@ enum Incoming {
 struct Pending {
     method: String,
     deadline: Instant,
+    /// For a request with an inactivity deadline: how far each admitted
+    /// `progress` for it moves its deadline from the moment it is taken.
+    inactivity: Option<Duration>,
     /// Past its deadline: cancelled, no longer admitted, failing at
     /// `deadline` (now the end of the grace period) or at the program's reply.
     expired: bool,
@@ -502,6 +508,33 @@ impl Session {
         params: Value,
         deadline: Instant,
     ) -> Result<u64, RemoteError> {
+        self.send_request(method, params, deadline, None)
+    }
+
+    /// [`Session::request`] with an inactivity deadline in place of a fixed
+    /// one: the request must be answered by `now + inactivity`, and each
+    /// `progress` the program sends for it while it is admitted moves that
+    /// to `inactivity` after the [`Session::poll`] that takes the progress.
+    /// Progress for another request moves nothing. Past its deadline it is
+    /// cancelled and fails as any request does: with `deadline` at the
+    /// program's reply or after the grace, whatever progress comes then.
+    pub fn request_with_inactivity(
+        &mut self,
+        method: &str,
+        params: Value,
+        inactivity: Duration,
+        now: Instant,
+    ) -> Result<u64, RemoteError> {
+        self.send_request(method, params, now + inactivity, Some(inactivity))
+    }
+
+    fn send_request(
+        &mut self,
+        method: &str,
+        params: Value,
+        deadline: Instant,
+        inactivity: Option<Duration>,
+    ) -> Result<u64, RemoteError> {
         // After `Closed` nothing is answered any more, and poll fails nothing.
         self.check_open()?;
         let id = self.next_id;
@@ -512,6 +545,7 @@ impl Session {
             Pending {
                 method: method.to_string(),
                 deadline,
+                inactivity,
                 expired: false,
                 buffers: None,
             },
@@ -587,6 +621,7 @@ impl Session {
             Pending {
                 method: method.to_string(),
                 deadline,
+                inactivity: None,
                 expired: false,
                 buffers: Some(buffers),
             },
@@ -686,7 +721,7 @@ impl Session {
             loop {
                 match self.incoming.try_recv() {
                     Ok(Incoming::Message(message)) => {
-                        self.take(message, &mut updates, &mut hang);
+                        self.take(message, now, &mut updates, &mut hang);
                     }
                     Ok(Incoming::Malformed(reason)) => updates.push(Update::Malformed { reason }),
                     Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
@@ -848,7 +883,13 @@ impl Session {
         updates.push(Update::Hung { reason });
     }
 
-    fn take(&mut self, message: Message, updates: &mut Vec<Update>, hang: &mut Option<String>) {
+    fn take(
+        &mut self,
+        message: Message,
+        now: Instant,
+        updates: &mut Vec<Update>,
+        hang: &mut Option<String>,
+    ) {
         let mut settle = |id: u64, result: Result<Value, RemoteError>| {
             let outcome = match &result {
                 Ok(_) => Outcome::Ok,
@@ -896,7 +937,16 @@ impl Session {
             Message::Ok { id, v } => settle(id, Ok(v)),
             Message::Err { id, code, message } => settle(id, Err(RemoteError { code, message })),
             Message::Progress { id, done, text } => {
-                if self.is_admitted(id) {
+                // Progress that arrives after a deadline this poll is about to
+                // enforce neither revives the request nor is handed over.
+                if let Some(pending) = self
+                    .pending
+                    .get_mut(&id)
+                    .filter(|p| !p.expired && p.deadline > now)
+                {
+                    if let Some(inactivity) = pending.inactivity {
+                        pending.deadline = now + inactivity;
+                    }
                     updates.push(Update::Progress { id, done, text });
                 }
             }
@@ -1334,6 +1384,7 @@ mod tests {
             Pending {
                 method: "mask.generate".into(),
                 deadline: Instant::now() + Duration::from_secs(60),
+                inactivity: None,
                 expired: false,
                 buffers: Some(buffers),
             },
@@ -1375,7 +1426,12 @@ mod tests {
         // The reply itself, drained after all.
         let mut more = Vec::new();
         let mut hang = None;
-        session.take(Message::reply(7, Err(refused)), &mut more, &mut hang);
+        session.take(
+            Message::reply(7, Err(refused)),
+            Instant::now(),
+            &mut more,
+            &mut hang,
+        );
         assert!(replies(&more, 7).is_empty());
         let start = Instant::now();
         while session.ledger().in_use() > 0 {
@@ -1413,7 +1469,12 @@ mod tests {
         assert!(seen.iter().any(|u| matches!(u, Update::Hung { .. })));
         assert!(session.ledger().in_use() > 0 || session.has_ended());
         let mut hang = None;
-        session.take(Message::reply(9, Err(refused)), &mut seen, &mut hang);
+        session.take(
+            Message::reply(9, Err(refused)),
+            Instant::now(),
+            &mut seen,
+            &mut hang,
+        );
         let start = Instant::now();
         while session.ledger().in_use() > 0 {
             assert!(start.elapsed() < Duration::from_secs(20));
@@ -1422,6 +1483,153 @@ mod tests {
         }
         assert!(session.has_ended(), "released only once the unit ended");
         assert_eq!(replies(&seen, 9).len(), 1, "{seen:?}");
+    }
+
+    /// An inactivity request as `request_with_inactivity` leaves it, without
+    /// sending it to the idle program.
+    fn inactive_request(session: &mut Session, id: u64, now: Instant) {
+        session.pending.insert(
+            id,
+            Pending {
+                method: "import.run".into(),
+                deadline: now + INACTIVITY,
+                inactivity: Some(INACTIVITY),
+                expired: false,
+                buffers: None,
+            },
+        );
+    }
+
+    const INACTIVITY: Duration = Duration::from_secs(60);
+
+    fn progress(session: &mut Session, id: u64, now: Instant) -> Vec<Update> {
+        let mut updates = Vec::new();
+        let mut hang = None;
+        let message = Message::Progress {
+            id,
+            done: None,
+            text: Some("Reading photos…".into()),
+        };
+        session.take(message, now, &mut updates, &mut hang);
+        updates
+    }
+
+    #[test]
+    fn progress_keeps_an_inactivity_request_alive_past_its_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut session = idle(dir.path());
+        let start = Instant::now();
+        inactive_request(&mut session, 1, start);
+        // Progress every 50 s for five minutes: never 60 s without it.
+        for step in 1..=6 {
+            let now = start + Duration::from_secs(50 * step);
+            assert!(replies(&session.poll(now), 1).is_empty(), "{step}");
+            assert!(session.is_admitted(1), "{step}");
+            let updates = progress(&mut session, 1, now);
+            assert!(matches!(updates[..], [Update::Progress { id: 1, .. }]));
+            assert_eq!(session.deadline(1), Some(now + INACTIVITY));
+        }
+        assert_eq!(
+            session.next_deadline(),
+            Some(start + Duration::from_secs(360))
+        );
+    }
+
+    #[test]
+    fn silence_cancels_an_inactivity_request_then_fails_it_after_the_grace() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut session = idle(dir.path());
+        let start = Instant::now();
+        inactive_request(&mut session, 1, start);
+        let before = start + INACTIVITY - Duration::from_millis(1);
+        assert!(session.poll(before).is_empty());
+        assert!(session.is_admitted(1));
+        // At the window's end it is cancelled and no longer admitted...
+        let end = start + INACTIVITY;
+        assert!(replies(&session.poll(end), 1).is_empty());
+        assert!(!session.is_admitted(1));
+        assert_eq!(session.pending[&1].deadline, end + CANCEL_GRACE);
+        // ...and fails with `deadline` once the grace has passed.
+        let failed = session.poll(end + CANCEL_GRACE);
+        let [Err(error)] = &replies(&failed, 1)[..] else {
+            panic!("one failure: {failed:?}");
+        };
+        assert_eq!(error.code, ErrorCode::Deadline);
+        assert_eq!(session.in_flight(), 0);
+    }
+
+    #[test]
+    fn progress_extends_only_the_request_it_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut session = idle(dir.path());
+        let start = Instant::now();
+        inactive_request(&mut session, 1, start);
+        inactive_request(&mut session, 2, start);
+        // A request with a fixed deadline isn't extended by its progress.
+        session.pending.insert(
+            3,
+            Pending {
+                method: "mask.setup".into(),
+                deadline: start + INACTIVITY,
+                inactivity: None,
+                expired: false,
+                buffers: None,
+            },
+        );
+        let now = start + Duration::from_secs(50);
+        progress(&mut session, 1, now);
+        progress(&mut session, 3, now);
+        assert_eq!(session.deadline(1), Some(now + INACTIVITY));
+        assert_eq!(session.deadline(2), Some(start + INACTIVITY));
+        assert_eq!(session.deadline(3), Some(start + INACTIVITY));
+        session.poll(start + INACTIVITY);
+        assert!(session.is_admitted(1));
+        assert!(!session.is_admitted(2));
+        assert!(!session.is_admitted(3));
+    }
+
+    #[test]
+    fn progress_after_expiry_does_not_revive_a_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut session = idle(dir.path());
+        let start = Instant::now();
+        inactive_request(&mut session, 1, start);
+        let end = start + INACTIVITY;
+        session.poll(end);
+        assert!(!session.is_admitted(1));
+        // Progress in the grace is neither handed over nor extends it.
+        assert!(progress(&mut session, 1, end + Duration::from_secs(1)).is_empty());
+        assert!(!session.is_admitted(1));
+        assert_eq!(session.pending[&1].deadline, end + CANCEL_GRACE);
+        let failed = session.poll(end + CANCEL_GRACE);
+        assert_eq!(
+            replies(&failed, 1)[0].as_ref().unwrap_err().code,
+            ErrorCode::Deadline
+        );
+        // Nor after it has failed.
+        assert!(progress(&mut session, 1, end + CANCEL_GRACE).is_empty());
+        assert_eq!(session.in_flight(), 0);
+    }
+
+    /// Progress taken in the same poll as a deadline that has already passed
+    /// (it arrived after the last poll, after the deadline) doesn't revive
+    /// the request: `poll` takes messages before it enforces deadlines.
+    #[test]
+    fn progress_arriving_after_an_unenforced_deadline_does_not_revive_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut session = idle(dir.path());
+        let start = Instant::now();
+        inactive_request(&mut session, 1, start);
+        assert!(
+            session
+                .poll(start + INACTIVITY - Duration::from_secs(1))
+                .is_empty()
+        );
+        let late = start + INACTIVITY + Duration::from_secs(2);
+        assert!(progress(&mut session, 1, late).is_empty());
+        assert_eq!(session.deadline(1), Some(start + INACTIVITY));
+        session.poll(late);
+        assert!(!session.is_admitted(1));
     }
 
     /// A leased reply the full queue drops is marked dropped before it is

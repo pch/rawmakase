@@ -1023,6 +1023,9 @@ mod editor_tests;
 pub(in crate::app) mod export_catalog;
 #[cfg(test)]
 pub(in crate::app) mod export_catalog_tests;
+pub(in crate::app) mod extension_import;
+#[cfg(test)]
+mod extension_import_tests;
 pub(crate) mod folder_locations;
 pub(in crate::app) mod folder_sync;
 pub(in crate::app) mod onboarding;

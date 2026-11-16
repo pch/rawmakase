@@ -8,7 +8,9 @@ panels, reads and proposals with target tokens, control adapters, the app's
 own and externally launched ones, mask generators (`api = 2`), and photo
 sources, retouch generators and secret settings (`api = 3`); experimental AI
 Remove uses the last two. MCP, MIDI and AI Masks are bundled extensions; AI
-Remove is listed for installing but not bundled.
+Remove is listed for installing but not bundled. Importers (`api = 4`) exist
+in the manifest, the protocol and the SDK; the app's import job that runs them
+is being built ([plan](../lightroom-extension-plan.md)).
 
 An **extension** adds to RAWmakase without changing it: commands, settings,
 panels of controls the app draws, control adapters (a MIDI device, an MCP
@@ -129,6 +131,32 @@ stays when the extension is gone.
   finishes, the Library shows what it added, and the program, if still
   there, is answered with it. Disabling the extension, uninstalling it and
   quitting end its scopes as its program stops.
+
+## Importers
+
+An `[[importer]]` ([manifest](manifest.md#importer)) brings another
+application's catalog, such as a Lightroom Classic catalog, into RAWmakase as
+a new catalog. Reading the other application's format is the program's work,
+in any crate it likes; checking what it found and writing the catalog is the
+app's, so a catalog an importer made is an ordinary catalog, which stays as it
+is when the extension is gone.
+
+- **A plan, not a conversation.** The app asks the program to import the
+  file the user chose ([`import.run`](protocol.md#importrun-request)), and
+  the program writes everything it found to a [plan](protocol.md#the-plan),
+  a SQLite file of a published schema, in a folder the app made for the
+  import: folders, photos, their develop
+  settings as the other application's text, History, snapshots,
+  collections, stacks and keywords. Pixels and large records never travel
+  over the channel.
+- **The program never touches the catalog.** Only once the program has
+  answered does the app read the plan, check it whole (its schema is the
+  published one, every reference resolves, every photo the source holds is
+  there) and commit it, in one transaction; a plan that fails a check imports
+  nothing.
+- **Progress, not a deadline.** An import takes as long as the source needs,
+  as long as the program reports progress at least every 10 seconds; one
+  silent for 60 seconds is cancelled.
 
 ## Externally launched adapters
 

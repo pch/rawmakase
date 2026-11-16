@@ -177,6 +177,7 @@ fn quitting_stops_the_workers_in_order() {
             AiDenoise,
             AiLoupe,
             Lensfun,
+            CatalogImport,
             Outputs,
             Controls,
             Extensions,

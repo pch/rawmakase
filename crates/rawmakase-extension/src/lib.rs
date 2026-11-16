@@ -172,6 +172,37 @@ pub trait RetouchGenerator: Send {
     ) -> Result<RetouchGenerated, RemoteError>;
 }
 
+/// An `[[importer]]`'s implementation, with the `importer` feature.
+///
+/// For `import.run` the SDK calls [`Importer::import`] and answers with the
+/// photos it returns. An error, or a cancellation seen after the handler
+/// returned, is answered as it is; the app then deletes the plan. Serving an
+/// `api` below 4 the SDK refuses the request whole, as the app never sends it
+/// one.
+#[cfg(feature = "importer")]
+pub trait Importer: Send {
+    /// Reads `source`, the file the user chose, and writes the plan at
+    /// `plan`: a new SQLite file made with
+    /// [`plan::SCHEMA`](protocol::plan::SCHEMA) as it is
+    /// ([`protocol::plan`] has the rules). Returns the photo rows written,
+    /// once the file is complete and closed.
+    ///
+    /// The request has no fixed deadline: report [`Context::progress`] at
+    /// least every
+    /// [`IMPORT_PROGRESS_INTERVAL`](protocol::method::IMPORT_PROGRESS_INTERVAL),
+    /// since the app cancels an import silent for
+    /// [`IMPORT_INACTIVITY`](protocol::method::IMPORT_INACTIVITY). One that
+    /// sees [`Context::is_cancelled`] stops writing and returns
+    /// [`ErrorCode::Cancelled`]. Never open the catalog the app imports
+    /// into; the plan is the only way the source's data reaches it.
+    fn import(
+        &mut self,
+        cx: &Context,
+        source: &std::path::Path,
+        plan: &std::path::Path,
+    ) -> Result<u64, RemoteError>;
+}
+
 /// A `[[control-adapter]]` the app launches: it watches its devices on threads
 /// of its own and reports them with [`Host::device`] and [`Host::operate`].
 pub trait ControlAdapter: Send {

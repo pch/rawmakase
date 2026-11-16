@@ -79,6 +79,7 @@
 pub(in crate::app) mod command_input;
 mod devices;
 mod editor;
+pub(in crate::app) mod importer;
 pub(in crate::app) mod mask_generator;
 #[cfg(test)]
 mod midi_tests;
@@ -141,7 +142,7 @@ const ERRORS: usize = 5;
 
 /// The bundled extensions' manifests, compiled in; their programs are found
 /// beside the app's executable.
-const BUNDLED: &[&str] = &[
+pub(crate) const BUNDLED: &[&str] = &[
     include_str!("../../../extensions/mcp/rawmakase-extension.toml"),
     include_str!("../../../extensions/midi/rawmakase-extension.toml"),
     include_str!("../../../extensions/ai-masks/rawmakase-extension.toml"),
@@ -210,6 +211,11 @@ enum Pending {
     },
     /// `retouch.generate`, named by the host's ticket, as `Mask` is.
     Retouch {
+        ticket: u64,
+    },
+    /// `import.run`, named by the host's ticket, as `Mask` is. It has an
+    /// inactivity deadline, not a fixed one.
+    Import {
         ticket: u64,
     },
 }
@@ -508,6 +514,20 @@ pub(in crate::app) enum Outcome {
         result: Result<Value, RemoteError>,
         buffers: Option<Returned>,
     },
+    /// An `import.run` request's one outcome: the program's answer, or its
+    /// failure (`exited`, `disabled`, `deadline` once it stopped reporting
+    /// progress).
+    Import {
+        extension: String,
+        ticket: u64,
+        result: Result<Value, RemoteError>,
+    },
+    /// What an `import.run` request's program says it is doing.
+    ImportProgress {
+        extension: String,
+        ticket: u64,
+        text: String,
+    },
 }
 
 /// A request from a program for the editor to answer: everything but the
@@ -574,6 +594,8 @@ pub(in crate::app) struct Host {
     search_dirs: Vec<PathBuf>,
     /// How long an app request may take before it is cancelled.
     request_deadline: Duration,
+    /// How long `import.run` may go without progress before it is cancelled.
+    import_inactivity: Duration,
     /// Problems for the top bar, from the next poll.
     notices: Vec<String>,
     /// The catalog open in the editor, which sources' scopes are for.
@@ -635,6 +657,7 @@ impl Host {
             errors: Vec::new(),
             search_dirs: Vec::new(),
             request_deadline: session::REQUEST_DEADLINE,
+            import_inactivity: rawmakase_extensions::protocol::method::IMPORT_INACTIVITY,
             notices: Vec::new(),
             catalog: None,
             next_scope: 1,
@@ -1504,6 +1527,11 @@ impl Host {
                 result: Err(error("retouch request")),
                 buffers: None,
             }),
+            Pending::Import { ticket } => Some(Outcome::Import {
+                extension,
+                ticket,
+                result: Err(error("import")),
+            }),
             Pending::MaskSetup { generator } => {
                 e.setups.remove(&generator);
                 Some(Outcome::MaskSetup {
@@ -1733,6 +1761,14 @@ impl Host {
             return Ok(());
         }
         let (method, params) = request.into_parts();
+        if let Pending::Import { .. } = pending {
+            let request = run
+                .session
+                .request_with_inactivity(&method, params, self.import_inactivity, Instant::now())
+                .map_err(|err| err.to_string())?;
+            run.requests.insert(request, pending);
+            return Ok(());
+        }
         let deadline = Instant::now()
             + match pending {
                 Pending::Mask { .. } => mask_generator::GENERATE_DEADLINE,
@@ -2530,6 +2566,16 @@ impl Host {
                         Some(Pending::Mask { ticket }) => {
                             e.mask_progress = text.map(|text| (*ticket, text));
                         }
+                        Some(Pending::Import { ticket }) => {
+                            e.last_active = now;
+                            if let Some(text) = text {
+                                outcomes.push(Outcome::ImportProgress {
+                                    extension: e.manifest.extension.id.clone(),
+                                    ticket: *ticket,
+                                    text,
+                                });
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -2602,6 +2648,16 @@ impl Host {
                     ticket,
                     result,
                     buffers,
+                });
+            }
+            Pending::Import { ticket } => {
+                if result.is_ok() {
+                    e.crashes = 0;
+                }
+                outcomes.push(Outcome::Import {
+                    extension: e.manifest.extension.id.clone(),
+                    ticket,
+                    result,
                 });
             }
             Pending::MaskSetup { generator } => {
@@ -2695,7 +2751,10 @@ impl Host {
                 by,
                 result: Err(RemoteError::new(ErrorCode::Exited, why)),
             }),
-            Pending::Mask { .. } | Pending::MaskSetup { .. } | Pending::Retouch { .. } => {
+            Pending::Mask { .. }
+            | Pending::MaskSetup { .. }
+            | Pending::Retouch { .. }
+            | Pending::Import { .. } => {
                 outcomes.extend(Self::stopped(e, pending, &ErrorCode::Exited));
             }
             Pending::Panel { panel } => {
@@ -3133,6 +3192,7 @@ fn placeholder(id: &str, name: &str) -> Manifest {
         mask_generators: Vec::new(),
         sources: Vec::new(),
         retouch_generators: Vec::new(),
+        importers: Vec::new(),
     }
 }
 

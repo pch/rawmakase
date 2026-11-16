@@ -25,8 +25,9 @@ sets the supported range (the current minor version by default). There is no
 mask generator or source template yet: start from `command`, set `api = 2`
 (a mask generator) or `api = 3` and `start = "with-app"` (a source), and
 follow the examples in `extensions/example/src/masks.rs` and
-`extensions/example/src/sources.rs`. The other templates the design names
-(filter, importer) come with their contributions.
+`extensions/example/src/sources.rs`. There is no importer template either:
+see [Importers](#importers). The filter template the design names comes with
+its contribution.
 
 ## Build and try
 
@@ -39,6 +40,31 @@ follow the examples in `extensions/example/src/masks.rs` and
   under `target/rawmakase-dev/` as the package would unpack, and registers
   that folder in `extensions.json` as a developer extension. Run it again after
   a change.
+
+## Importers
+
+An `[[importer]]` (`api = 4`) is written with the SDK's `importer` feature:
+
+```toml
+rawmakase-extension = { git = "https://github.com/pch/rawmakase", features = ["importer"] }
+```
+
+Implement `rawmakase_extension::Importer` and register it with
+`Extension::importer("<id>", …)`. For each `import.run` the SDK calls
+`Importer::import` with the source file and the path the app named for the
+plan. Create the plan there with your own SQLite (`rusqlite` with its `bundled`
+feature, say), run `rawmakase_extension::protocol::plan::SCHEMA` on it as it
+is, write the `plan` row (`PLAN_VERSION` and the photos the source holds,
+counted on their own) and the tables' rows as [the plan](protocol.md#the-plan)
+describes, and close the file. Report `Context::progress` at least every 10
+seconds; stop and return `cancelled` once `Context::is_cancelled` says so;
+and return the photo rows written, which the SDK answers with. Never open the
+catalog the app imports into.
+
+In tests, `MockHost::import` sends `import.run` to an extension serving
+`api = 4` (`MockHost::start_with_options`) and returns its answer.
+`extensions/example/src/importer.rs` is a small importer that writes the plan
+a JSON file describes.
 
 ## Package
 

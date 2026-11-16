@@ -102,6 +102,19 @@ pub(crate) enum Event {
     },
     /// A catalog import or open is under way, as a status line.
     CatalogWorking(String),
+    /// An import from an extension's importer was prepared, or why not
+    /// (`app::catalog::extension_import`).
+    CatalogImportPrepared(Box<crate::app::catalog::extension_import::Prepared>),
+    /// What an import's worker is doing.
+    CatalogImportProgress {
+        generation: u64,
+        text: String,
+    },
+    /// An import's worker finished, however it ended, a panic included.
+    CatalogImported {
+        generation: u64,
+        result: crate::app::catalog::extension_import::Imported,
+    },
     CatalogReady(Result<Box<crate::app::library::Library>, String>),
     /// Source keys resolved by the import worker travel with its result.
     FoldersAdded {

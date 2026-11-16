@@ -186,8 +186,19 @@ impl Editor {
                     result,
                     buffers,
                 } => self.retouch_answered(&extension, ticket, result, buffers),
+                Outcome::Import {
+                    extension,
+                    ticket,
+                    result,
+                } => self.import_answered(&extension, ticket, result),
+                Outcome::ImportProgress {
+                    extension,
+                    ticket,
+                    text,
+                } => self.import_progressed(&extension, ticket, text),
             }
         }
+        self.check_catalog_import();
         self.check_mask_requests();
         self.check_ai_remove();
     }

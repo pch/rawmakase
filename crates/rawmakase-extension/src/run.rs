@@ -20,10 +20,14 @@ use crate::{
     Command, ControlAdapter, MaskAsk, MaskGenerator, Panel, RetouchAsk, RetouchGenerator, Source,
 };
 use rawmakase_extension_protocol::framing::{FrameError, LineReader};
+#[cfg(feature = "importer")]
+use rawmakase_extension_protocol::manifest::IMPORTER_API;
 use rawmakase_extension_protocol::manifest::{API, RETOUCH_GENERATOR_API};
 use rawmakase_extension_protocol::message::Handles;
+#[cfg(feature = "importer")]
+use rawmakase_extension_protocol::method::ImportDone;
 use rawmakase_extension_protocol::method::{
-    AppEvent, AppRequest, CommandRun, Controls, HelloReply, MaskGenerate,
+    AppEvent, AppRequest, CommandRun, Controls, HelloReply, ImportRun, MaskGenerate,
 };
 use rawmakase_extension_protocol::{ENV_API, ErrorCode, Message, PROTOCOL, RemoteError};
 use serde_json::{Map, Value};
@@ -46,6 +50,8 @@ pub struct Extension {
     /// The scope each source runs in now, by source id.
     scopes: BTreeMap<String, u64>,
     retouch_generators: BTreeMap<String, Box<dyn RetouchGenerator>>,
+    #[cfg(feature = "importer")]
+    importers: BTreeMap<String, Box<dyn crate::Importer>>,
     on_event: Option<EventHandler>,
 }
 
@@ -58,7 +64,7 @@ pub struct ServeOptions {
     ///
     /// API 1 takes no handles: a message declaring some is answered
     /// `invalid_request`, a malformed request too, an oversized line is
-    /// skipped, and reading goes on. API 2 and 3 take the handles the app
+    /// skipped, and reading goes on. API 2 and later take the handles the app
     /// passes with its requests, and a framing fault ends serving: the program exits
     /// under [`Extension::run`], and [`Extension::serve_with_options`] returns
     /// an error.
@@ -234,6 +240,12 @@ impl Extension {
     ) -> Self {
         self.retouch_generators
             .insert(id.into(), Box::new(generator));
+        self
+    }
+    /// Implements the `[[importer]]` with this id.
+    #[cfg(feature = "importer")]
+    pub fn importer(mut self, id: &str, importer: impl crate::Importer + 'static) -> Self {
+        self.importers.insert(id.into(), Box::new(importer));
         self
     }
     /// Called with every event from the app, after the extension's own state
@@ -458,6 +470,10 @@ impl Extension {
             .retouch_generators
             .keys()
             .map(|id| format!("retouch-generator/{id}"));
+        #[cfg(feature = "importer")]
+        let importers = self.importers.keys().map(|id| format!("importer/{id}"));
+        #[cfg(not(feature = "importer"))]
+        let importers = std::iter::empty();
         let reply = HelloReply {
             protocol: PROTOCOL,
             implements: commands
@@ -466,6 +482,7 @@ impl Extension {
                 .chain(generators)
                 .chain(sources)
                 .chain(retouch)
+                .chain(importers)
                 .collect(),
         };
         serde_json::to_value(reply).expect("a reply is JSON")
@@ -610,8 +627,44 @@ impl Extension {
                 drop((image, coverage, result, handles));
                 answer.map(|done| serde_json::to_value(done).expect("a result is JSON"))
             }
+            AppRequest::ImportRun(run) => self.import(cx, run, api),
         }
     }
+
+    /// Runs `import.run`: the importer's handler, then its answer.
+    #[cfg(feature = "importer")]
+    fn import(&mut self, cx: &Context, run: ImportRun, api: u32) -> Result<Value, RemoteError> {
+        if api < IMPORTER_API {
+            return Err(RemoteError::new(
+                ErrorCode::InvalidRequest,
+                format!("import.run needs api {IMPORTER_API}, and this program serves {api}"),
+            ));
+        }
+        let Some(importer) = self.importers.get_mut(&run.importer) else {
+            return Err(no_importer(&run.importer));
+        };
+        let photos = importer.import(cx, &run.source, &run.plan)?;
+        if cx.is_cancelled() {
+            return Err(RemoteError::new(
+                ErrorCode::Cancelled,
+                "the import was cancelled",
+            ));
+        }
+        Ok(serde_json::to_value(ImportDone { photos }).expect("a result is JSON"))
+    }
+
+    /// Without the `importer` feature no importer is implemented.
+    #[cfg(not(feature = "importer"))]
+    fn import(&mut self, _cx: &Context, run: ImportRun, _api: u32) -> Result<Value, RemoteError> {
+        Err(no_importer(&run.importer))
+    }
+}
+
+fn no_importer(id: &str) -> RemoteError {
+    RemoteError::new(
+        ErrorCode::InvalidRequest,
+        format!("this program implements no importer {id}"),
+    )
 }
 
 /// Maps a request's buffer as its access says: an input to read, an output

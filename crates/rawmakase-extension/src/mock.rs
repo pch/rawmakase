@@ -25,8 +25,8 @@ use rawmakase_extension_protocol::controls::Control;
 use rawmakase_extension_protocol::framing::LineReader;
 use rawmakase_extension_protocol::message::Handles;
 use rawmakase_extension_protocol::method::{
-    AppEvent, AppRequest, CommandRun, Controls, Empty, Hello, HelloReply, MaskGenerate,
-    MaskGenerated, MaskSetup, PanelChanged, PanelClicked, PanelOpen, RetouchGenerate,
+    AppEvent, AppRequest, CommandRun, Controls, Empty, Hello, HelloReply, ImportDone, ImportRun,
+    MaskGenerate, MaskGenerated, MaskSetup, PanelChanged, PanelClicked, PanelOpen, RetouchGenerate,
     RetouchGenerated, Snapshot,
 };
 use rawmakase_extension_protocol::{ErrorCode, Message, PROTOCOL, RemoteError};
@@ -472,6 +472,46 @@ impl MockHost {
             memory.contents()[..len.min(memory.contents().len())].to_vec()
         });
         Ok((answer, result))
+    }
+
+    /// Asks an importer to import `source`, writing its plan at `plan`, and
+    /// waits for its answer.
+    ///
+    /// The mock waits at most ten seconds, whatever progress arrives, and
+    /// enforces no inactivity deadline: [`MockHost::send_import`] and
+    /// [`MockHost::recorded`] show the progress a test expects. A mock
+    /// serving an `api` below 4 refuses at once with
+    /// [`ErrorCode::InvalidRequest`], as the app never sends this request to
+    /// such a program.
+    pub fn import(
+        &self,
+        importer: &str,
+        source: &std::path::Path,
+        plan: &std::path::Path,
+    ) -> Result<ImportDone, RemoteError> {
+        let id = self.send_import(importer, source, plan)?;
+        decode(self.wait(id)?)
+    }
+
+    /// [`MockHost::import`] without waiting: returns the request's id for
+    /// [`MockHost::cancel`] and [`MockHost::wait`].
+    pub fn send_import(
+        &self,
+        importer: &str,
+        source: &std::path::Path,
+        plan: &std::path::Path,
+    ) -> Result<u64, RemoteError> {
+        if self.api < rawmakase_extension_protocol::manifest::IMPORTER_API {
+            return Err(RemoteError::new(
+                ErrorCode::InvalidRequest,
+                "the app sends import requests to API 4 programs only",
+            ));
+        }
+        Ok(self.send_request(AppRequest::ImportRun(ImportRun {
+            importer: importer.into(),
+            source: source.to_path_buf(),
+            plan: plan.to_path_buf(),
+        })))
     }
 
     /// Asks a mask generator to install what it needs.

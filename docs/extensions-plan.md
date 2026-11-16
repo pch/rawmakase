@@ -429,7 +429,7 @@ What each contribution is, which side owns what, and the invariants it keeps.
 | `filter` | kernels | Computes pixels | Its place in the recipe, validation, scheduling, caches, missing and disabled handling ([Filters](#filters)) |
 | `mask-generator` | program | Returns coverage for the photo (with optional point/box input) | Validating the raster, storing it through `mask_assets`, the mask and its History step |
 | `retouch-generator` | program | Returns RGB pixels for a painted area of a region (object removal); built with `api = 3` | The region and its rendition, storing the patch as an asset, its place among retouches, rendering it ([Retouch patches](#retouch-patches)) |
-| `importer` | program | Reads another application's catalog, once, into an import plan | Validating and committing the plan in one transaction; preserving the source's unsupported data |
+| `importer` | program | Reads another application's catalog, once, into an import plan (a SQLite file of a published schema) | Checking the plan and committing it into a new catalog in one transaction, then publishing it whole; a new catalog every time |
 | `source` | program | Watches for arriving files (a watched folder, a tethered camera) and reports each complete one | Adding them to the catalog, duplicates, conflicts, never moving or deleting originals |
 | `export-destination` | program | Receives each published file and sends it somewhere (upload, gallery, printer) | Rendering, encoding and atomic publication; "exported" and "uploaded" reported separately |
 | `control-adapter` | program | Translates a device or a protocol into commands (MIDI, MCP) | Commands, gesture grouping and History, exactly as automation does today |
@@ -440,21 +440,23 @@ the photo (pixels and settings) and propose settings, which apply as one History
 step per photo. Their result is ordinary settings, so it survives the extension.
 
 **Importer plans** describe photos, folders, collections, keywords, ratings,
-labels, stacks, virtual copies, and edits, History steps and snapshots as
-RAWmakase settings, plus the source's original data (including each edit,
-step and snapshot as the source stored it) and its unsupported data, which the
-app archives as the Lightroom import does today. The
-importer never sees the catalog's database. The edit an importer proposes is
-RAWmakase settings; an importer that converts another application's edit format
-does it in its program.
+labels, stacks, virtual copies, photo info and descriptive metadata, and each
+photo's edit, History steps and snapshots as the source's own develop text
+(Lightroom develop text is the only format now), which the core converts when
+it uses them, as it does for catalogs imported before. The source is not
+archived: what the plan doesn't carry stays in the source. The program writes
+the plan to a file, a SQLite file of the published schema (pixels and large
+records never cross the channel); the core checks it and commits it into a
+new working catalog in one transaction, and publishes that catalog only once
+every check passed ([the Lightroom extension plan](lightroom-extension-plan.md),
+decisions L2, L4 and L7). The importer never sees the catalog's database.
 
 **Imports are one-time.** An import converts what the source holds at that
 moment and keeps no link to it: later changes in Capture One or Lightroom aren't
-followed, and nothing is written back. Today's Lightroom import always creates a
-new catalog; whether an importer may also add to the open catalog, and what a
-second import of the same source does with photos already there, is decided
-when importers are built ([Still open](#still-open)). The plan shape is meant to
-hold:
+followed, and nothing is written back. An import always creates a new catalog;
+adding to the open catalog, and importing the same source twice, are not
+offered (decision L1 of [the Lightroom extension plan](lightroom-extension-plan.md)).
+The plan shape is meant to hold:
 
 - **Lightroom Classic**: today's importer, once it moves out (a follow-up, see
   [Official extensions](#official-extensions)). The plan must be able to carry
@@ -1068,6 +1070,4 @@ Decisions to take when their part is built, not before:
   [Kernels](#kernels).
 - Whether filters may contribute their own parameters to Auto (for example an Auto
   Grain amount), or Auto stays settings-only.
-- Whether an importer may add to the open catalog as well as create a new one,
-  and what a second import of the same source does with photos already there.
 - The catalogue's review rules and who reviews.

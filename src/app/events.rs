@@ -21,6 +21,13 @@ impl Editor {
                 Event::CatalogWorking(message) => {
                     self.catalog_work = Some(message);
                 }
+                Event::CatalogImportPrepared(prepared) => self.catalog_import_prepared(*prepared),
+                Event::CatalogImportProgress { generation, text } => {
+                    self.catalog_import_progress(generation, text)
+                }
+                Event::CatalogImported { generation, result } => {
+                    self.catalog_imported(generation, result)
+                }
                 Event::FoldersAdded { result, source } => {
                     let added = result.is_ok();
                     self.catalog_work = None;

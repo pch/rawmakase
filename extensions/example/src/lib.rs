@@ -26,8 +26,10 @@
 //! useful.
 //!
 //! [`masks`] is a second test-only extension, of mask generators,
-//! [`sources`] a third, of a photo source, and [`remove`] a fourth, of
-//! retouch generators, all built from this crate too.
+//! [`sources`] a third, of a photo source, [`remove`] a fourth, of
+//! retouch generators, and [`importer`] a fifth, of an importer, all built
+//! from this crate too.
+pub mod importer;
 pub mod masks;
 pub mod remove;
 pub mod sources;

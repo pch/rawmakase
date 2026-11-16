@@ -16,7 +16,8 @@
 //!
 //! This crate's own modules compose those APIs: [`app`] is the desktop editor,
 //! `edit_session` keeps an open photo's edits, history and saved state together,
-//! `catalog_session` holds the open catalog, [`comparison`] provides
+//! `catalog_session` holds the open catalog, [`catalog_import`] runs an
+//! extension importer outside the app, [`comparison`] provides
 //! reference-image validation and `platform` isolates OS integration.
 //!
 //! The repository's `docs/code-map.md` maps implementation files and runtime flows,
@@ -52,6 +53,7 @@ pub use rawmakase_model::{
 };
 pub mod app;
 pub mod catalog_command;
+pub mod catalog_import;
 pub(crate) mod catalog_session;
 pub mod comparison;
 pub mod diagnostics;

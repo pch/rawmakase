@@ -1,0 +1,24 @@
+# A test-only extension of an importer: the app's tests run it as a third
+# party's program. Its program is the example crate's library
+# (`rawmakase_example::importer`), never bundled with RAWmakase.
+[extension]
+id = "dev.rawmakase.importer"
+name = "Example Importer"
+version = "0.1.0"
+rawmakase = ">=0.1"
+api = 4
+authors = ["RAWmakase"]
+license = "MIT"
+description = "Writes the plan a small JSON file describes, for tests."
+
+[access]
+files = "any"
+
+[program]
+path = "rawmakase-example-importer"
+start = "on-demand"
+
+[[importer]]
+id = "script"
+name = "Example script"
+extensions = ["json"]

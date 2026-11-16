@@ -5,8 +5,9 @@ and an extension's program say to each other. The SDK
 (`crates/rawmakase-extension`) speaks it for you; this page is for reading logs,
 writing an SDK in another language, and reviewing changes. The types are in
 `message.rs`, `method.rs` and `controls.rs` of the protocol crate; where this
-page and they differ, they are right. Viewer input is in `viewer.rs` and buffer
-descriptors in `buffer.rs`.
+page and they differ, they are right. Viewer input is in `viewer.rs`, buffer
+descriptors in `buffer.rs` and the schema of an importer's [plan](#the-plan)
+in `plan.rs`.
 
 ## Transport
 
@@ -44,7 +45,7 @@ program exits.
   `invalid_request` (the app never sends one: it fails such a request itself),
   a malformed request is answered `invalid_request`, an oversized line is
   skipped, and the session goes on.
-- **API 2** and **API 3** take the [handles](#handles) the app passes with its requests,
+- **API 2** and later take the [handles](#handles) the app passes with its requests,
   and the program's reader gives up the recovery above: a framing fault ends
   the program, which logs why. The app is the only sender of handles and
   serialises every line itself, so a fault means corruption, not input to
@@ -61,14 +62,16 @@ program exits.
 
   Exiting closes every handle the program holds, and the app fails the
   requests it was waiting on with `exited`.
-- **API 3** is API 2 with [`retouch.generate`](#retouchgenerate-request), which the
-  app sends only to a program serving it; the SDK refuses one serving an earlier
-  `api` with `invalid_request`, and an SDK that serves only up to API 2 refuses to
-  start for an `api = 3` manifest.
+- **API 3** is API 2 with [`retouch.generate`](#retouchgenerate-request) and
+  [photo sources](#sourcereport-request): the events `source-started` and
+  `source-stopped`, and `source.report`. A manifest declaring a `[[source]]` or a
+  `[[retouch-generator]]` declares `api = 3`.
+- **API 4** is API 3 with [`import.run`](#importrun-request). A manifest
+  declaring an `[[importer]]` declares `api = 4`.
 
-- **API 3** is API 2, and adds [photo sources](#sourcereport-request): the
-  events `source-started` and `source-stopped`, and `source.report`. A
-  manifest declaring a `[[source]]` declares `api = 3`.
+The app sends a request of a later API only to a program serving it; the SDK
+refuses one serving an earlier `api` with `invalid_request`, and an SDK that
+serves only up to an earlier API refuses to start for a later manifest.
 
 The app's side keeps the recovery rules in every mode: a program's malformed
 line never ends a session.
@@ -274,7 +277,12 @@ readable id, it is answered `invalid_request`.
 3. **Deadlines.** Every app request has one: 30 s by default, 5 s for `hello`.
    At its deadline the app sends `cancel`, stops admitting the request (a
    proposal belonging to it is refused `not_admitted`), and fails it with
-   `deadline` when the program answers, or 2 s later.
+   `deadline` when the program answers, or 2 s later. A request may have an
+   **inactivity deadline** instead (`import.run`): it starts at the request,
+   and each `progress` the program sends for that request, while it is
+   admitted, starts it again; progress for another request doesn't, and
+   progress after the deadline passed revives nothing. At its end the
+   request is cancelled and fails as above.
 4. **Cancellation.** `cancel` asks the other side to stop; the reply is then
    `cancelled`. A request the app cancels is settled at once: a reply arriving
    afterwards is dropped, so a request has one outcome, whichever was recorded
@@ -455,6 +463,42 @@ program answers. The app copies the result out, inverts the rendition it capture
 for the request, and keeps it as the spot's patch only if what the region was made
 from still holds; it never sends the same request again by itself, since each may
 be a paid call.
+
+### `import.run` (request)
+
+Asks an [importer](manifest.md#importer) to read the file the user chose and
+write its plan:
+
+```json
+{"importer":"catalog","source":"/Users/jane/Pictures/Lightroom/Lightroom Catalog.lrcat",
+ "plan":"/Users/jane/Pictures/rawmakase-import-x1y2z3.partial/plan.sqlite"}
+```
+
+- `source` is the file the user chose, with one of the importer's
+  `extensions`.
+- `plan` is a path in a folder the app created for this import. The program
+  creates the [plan](#the-plan) there, a SQLite file; it never writes
+  anywhere else for the import, and never opens the catalog the app creates.
+  The app never reads the plan before the answer.
+
+Reply, once the plan is complete and closed: `{"photos":n}`, the photo rows
+it holds. An error answers as it is (`unavailable` for a source that can't
+be read is usual); whatever the program wrote is deleted with the folder.
+The request is API 4: the app sends it only to a program serving `api = 4`
+or later.
+
+`import.run` has no fixed deadline. It has an inactivity deadline of 60 s
+(`IMPORT_INACTIVITY`): the program sends `progress` for the request at least
+every 10 s (`IMPORT_PROGRESS_INTERVAL`), for example
+`{"t":"progress","id":4,"done":0.25,"text":"Reading photos… 12,000 of 48,000"}`,
+and 60 s without one cancels it, which then fails with `deadline` after the
+usual grace. `cancel` asks the program to stop writing and answer
+`cancelled`. Pixels and large records never travel over the channel: the plan
+carries them.
+
+The SDK (feature `importer`) calls the handler with the source and the plan's
+path and answers with the photos it returns. A handler that returns after a
+cancel is answered `cancelled`.
 
 ### Events
 
@@ -669,6 +713,58 @@ an `id` (required for those that send a value), and optionally `label`,
 
 The app refuses a panel that nests sections deeper than 8, holds more than 1000
 controls, reuses an id, or has a value outside its range.
+
+## The plan
+
+What an importer's program writes for [`import.run`](#importrun-request) and
+the app reads once it has answered: a SQLite file with exactly the tables of
+the published schema, `SCHEMA` in `plan.rs` of the protocol crate, at version
+`PLAN_VERSION` (1). The program writes it with its own SQLite: it creates the
+file, runs `SCHEMA` as it is, writes one `plan` row and fills the tables,
+then closes the file and answers. The format and its rules are the core's;
+`plan.rs` states them, and where this page and it differ, it is right.
+
+The app opens the plan read-only and refuses it unless its schema is
+`SCHEMA`'s statement for statement: another table, index, view, trigger or
+column fails the import, so don't run `ANALYZE` or `VACUUM` on it either. It
+doesn't trust the schema's constraints, and checks every rule below itself in
+one transaction; a plan that breaks one is refused whole, saying which row.
+
+| Table | Columns |
+| --- | --- |
+| `plan` | one row: `version` (`PLAN_VERSION`); `source_photos`, how many photos the source holds, counted on their own (for Lightroom, `COUNT(*) FROM Adobe_images`), not from the rows written |
+| `root` | `id`; `path`, the absolute path it had in the source |
+| `folder` | `id`; `root`; `path`, relative to the root |
+| `photo` | `id`; `folder`; `file_name`; `original_path`; `captured` (text, as the source states it, `''` when unknown); `rating` (0 to 5); `flag` (-1 rejected, 0, 1 picked); `label` (the colour label's name, `''` for none); `format` (`RAW`, `JPG`, …); `orientation` (Lightroom's, such as `AB`, or NULL); `master` (the photo a virtual copy is a copy of, or NULL); `copy_name`; `original_name` (the file's name at its original import, or NULL) |
+| `info` | `photo`; and, each nullable: `camera`; `lens`; `focal` (mm); `aperture` (f-number); `exposure` (seconds); `iso`; `width` and `height` (pixels, already turned for the orientation) |
+| `metadata` | `photo`; `xmp`, an XMP packet. Read for descriptive metadata and applied only to empty fields; its keywords, rating, label and flag are ignored, since the plan has its own |
+| `edit` | `photo`; `format`, `lightroom-develop` (the only one now); `text`, the develop settings |
+| `history` | `photo`; `position` (unique per photo; the steps are shown in its order); `name`; `created` (seconds since 2001-01-01 00:00 UTC, as Lightroom stores it, or NULL); `text`, the settings after the step, plain (not compressed) |
+| `snapshot` | `photo`; `name`; `text`, plain |
+| `collection` | `id`; `name`; `parent` (a collection set, or NULL); `kind`: `set`, `collection`, `smart`, `quick` (Lightroom's Quick Collection: named `quick collection`, no parent) or `system` (Lightroom's own, such as an unsaved print) |
+| `collection_photo` | `collection`; `photo`; `position`, text (Lightroom's `positionInCollection`) |
+| `stack` | `id`; `collapsed` (0 or 1) |
+| `stack_photo` | `stack`; `photo`; `position`, which orders the stack, the top photo first |
+| `keyword` | `id`; `name` (may be empty: Lightroom's nameless root keyword, with no parent, is a keyword like any other); `parent` (or NULL); `include_on_export`; `export_containing` (0 or 1) |
+| `photo_keyword` | `photo`; `keyword` |
+
+The rules:
+
+- Ids are text the importer chooses, unique per table. Every reference names
+  a row its table has; a nullable one may be NULL. Every value has its
+  column's type (the tables are `STRICT`), and row ids are 1 or more.
+- The `photo` rows, `source_photos` and the answer's `photos` are one number:
+  a photo of the source the program couldn't place fails the import
+  ("orphaned image records") instead of being left out.
+- At most one `info`, `metadata` and `edit` row per photo, one History step
+  per position, a photo once in a collection and a keyword once on a photo.
+  A photo is in at most one stack, at a position no other photo of the stack
+  has; a stack's photos share a folder. A virtual copy's master is no copy,
+  in the same folder. A collection set holds no photos.
+- Ratings, flags, kinds and the edit format as the table says. Develop,
+  History and snapshot `text` and XMP packets are shorter than 16,000,000
+  bytes (`MAX_TEXT_BYTES`, the core's limit for develop text and XMP); the
+  app's SQLite reads no value over 64 MiB.
 
 ## Error codes
 

@@ -47,6 +47,7 @@ pub mod locations;
 mod mask_assets;
 mod models;
 mod naming;
+pub mod plan_import;
 mod recipe_assets;
 #[cfg(any(test, feature = "test-support"))]
 pub mod upgrade_fixtures;

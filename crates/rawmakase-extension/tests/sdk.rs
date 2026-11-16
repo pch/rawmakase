@@ -966,3 +966,20 @@ fn a_program_serving_api_2_refuses_a_retouch_request() {
     assert!(error.message.contains("api 3"), "{error}");
     host.finish().unwrap();
 }
+
+/// Built without the `importer` feature, a program implements no importer.
+#[cfg(not(feature = "importer"))]
+#[test]
+fn without_the_importer_feature_an_import_is_refused() {
+    let host = MockHost::start_with_options(Extension::new(), ServeOptions { api: 4 }, |_, _| {
+        Ok(Value::Null)
+    });
+    host.hello().unwrap();
+    let folder = std::env::temp_dir();
+    let error = host
+        .import("catalog", &folder.join("a.lrcat"), &folder.join("plan"))
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    assert!(error.message.contains("no importer"), "{error}");
+    host.finish().unwrap();
+}

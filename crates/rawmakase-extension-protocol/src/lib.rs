@@ -9,6 +9,7 @@
 //! - [`controls`]: the host-drawn controls a panel or a setting is made of.
 //! - [`viewer`]: viewer input, the clicks and boxes a user makes on the photo.
 //! - [`buffer`]: the descriptors of pixel buffers in shared memory.
+//! - [`plan`]: the SQLite schema of the plan an importer writes.
 //!
 //! This crate depends on no other crate of RAWmakase's, so an extension's SDK
 //! builds without the app, as `rawmakase-protocol` does for control clients.
@@ -22,6 +23,7 @@ pub mod framing;
 pub mod manifest;
 pub mod message;
 pub mod method;
+pub mod plan;
 pub mod viewer;
 
 pub use message::{ErrorCode, Message, RemoteError};

@@ -8,7 +8,7 @@ where they differ, the schema and the types are right.
 
 **Unknown keys are an error**, at every level and for whole tables, so a typo
 can't silently turn a feature off. The tables this version reads are below; the
-design's others (`[[filter]]`, `[[importer]]`, `[[presets]]`, …) are refused
+design's others (`[[filter]]`, `[[presets]]`, …) are refused
 until a version that builds them raises `api`.
 
 ```toml
@@ -64,7 +64,7 @@ launch = "external"
 | `name` | yes | Shown in Preferences |
 | `version` | yes | The extension's version, [semver](https://semver.org) (`1.2.0`) |
 | `rawmakase` | yes | The RAWmakase versions it supports, a semver range (`>=0.5, <0.6`). Outside it the package is refused, and an installed one is listed as incompatible. Before 1.0 no compatibility is promised, so state the minor versions tested |
-| `api` | yes | The manifest format it was written for. This version reads `1` to `3`; a higher one is refused as written for a newer RAWmakase. `2` adds [`[[mask-generator]]`](#mask-generator); `3` adds [`[[source]]`](#source), [`[[retouch-generator]]`](#retouch-generator) and the `secret` setting control, with API 2's framing and handle rules. The app tells the program its manifest's `api` when it starts it ([protocol](protocol.md#api-mode)) |
+| `api` | yes | The manifest format it was written for. This version reads `1` to `4`; a higher one is refused as written for a newer RAWmakase. `2` adds [`[[mask-generator]]`](#mask-generator); `3` adds [`[[source]]`](#source), [`[[retouch-generator]]`](#retouch-generator) and the `secret` setting control; `4` adds [`[[importer]]`](#importer); `3` and `4` keep API 2's framing and handle rules. The app tells the program its manifest's `api` when it starts it ([protocol](protocol.md#api-mode)) |
 | `authors` | no | Names |
 | `license` | no | An SPDX expression |
 | `repository` | no | `https://github.com/<owner>/<repo>` |
@@ -85,7 +85,7 @@ update asks for more. Not enforced: an extension runs with your permissions.
 ## `[program]`
 
 Needed by every extension with commands, panels, control adapters, mask
-generators or sources.
+and retouch generators, sources or importers.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -319,3 +319,37 @@ Send, Clear and what a request is doing; everything else, including what the
 tool says of itself (that it is experimental, what a request costs), is its
 panel's. A panel's `help` control without a label is a note as wide as the
 drawer, as a generator's `description` is.
+
+## `[[importer]]`
+
+From `api = 4`; a manifest with an earlier `api` that declares one is refused,
+and the app never sends `import.run` to a program serving an earlier one. An
+importer reads another application's catalog, a file the user chooses, and
+writes what it holds to a plan, a SQLite file of a published schema
+([`import.run`](protocol.md#importrun-request), [the plan](protocol.md#the-plan));
+the app reads the plan, checks it and commits it as a new catalog. The program
+never opens the catalog the app creates, and pixels never travel over the
+channel.
+
+```toml
+[program]
+path = "bin/lightroom"
+
+[[importer]]
+id = "catalog"
+name = "Lightroom Classic catalog"
+extensions = ["lrcat"]
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `id` | — | Lowercase letters, digits and hyphens, unique among the importers |
+| `name` | — | What it imports, as the import menu lists it |
+| `extensions` | — | The file extensions the file chooser offers, at least one: lowercase letters and digits, without the dot (`lrcat`), at most 16 characters, each listed once |
+
+An importer needs a `[program]`; it may start `on-demand`. An import has no
+fixed deadline: the program reports progress at least every 10 seconds and is
+cancelled after 60 without
+([protocol](protocol.md#importrun-request)). The SDK's `importer` feature has
+the handler ([publishing](publishing.md#importers)); the program writes the
+plan with its own SQLite.

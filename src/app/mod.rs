@@ -95,6 +95,10 @@ pub(crate) struct Editor {
     messages: crate::app::shell::messages::Messages,
     /// What a running catalog import or open is doing.
     catalog_work: Option<String>,
+    /// The import from an extension's importer under way.
+    catalog_import: Option<crate::app::catalog::extension_import::Running>,
+    /// Counts the imports from extensions started, to tell their reports apart.
+    next_import: u64,
     /// Progress of a running profile or preset import.
     importing: Option<std::sync::Arc<crate::app::presets::bulk_import::ImportProgress>>,
     profile_download: crate::app::develop::profile_download::Downloads,
@@ -403,6 +407,8 @@ impl Editor {
                 "Pick a photo in the Library to begin",
             ),
             catalog_work: None,
+            catalog_import: None,
+            next_import: 0,
             importing: None,
             profile_download: crate::app::develop::profile_download::Downloads::with_dismissed(
                 session.dismissed_community_profiles.clone(),
@@ -1010,6 +1016,11 @@ fn survive_surface_errors(device: &wgpu::Device) {
 pub use crate::app::develop::ai_denoise::user_ai_denoise_cache;
 pub use crate::app::preferences::raw_defaults::user_raw_defaults;
 pub use crate::app::presets::bulk_import::import_profiles;
+/// The bundled extensions' manifests, as the app loads them, for the command
+/// line's `import-catalog --importer`.
+pub fn bundled_extensions() -> &'static [&'static str] {
+    extensions::BUNDLED
+}
 pub(crate) mod catalog;
 pub(crate) mod develop;
 mod export;

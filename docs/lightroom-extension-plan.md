@@ -1,6 +1,6 @@
 # Lightroom extension: plan
 
-Status: step 1 built; steps 2 to 4 planned.
+Status: steps 1 and 2 built; 3 and 4 planned.
 
 ## Goal
 
@@ -123,144 +123,176 @@ A new `api` version knows the table. An importer needs a program; it may be
 One request, `import.run` (app to program):
 `{"importer":id,"source":"…","plan":"…"}`. `source` is the file the user
 chose; `plan` is a path in a folder the app created for this import, where the
-program writes the plan file. The program answers `{"records":n}` once the plan
-file is complete and closed, or an error.
+program writes the plan. The program answers `{"photos":n}`, the photo rows
+the plan holds, once the plan is complete and closed, or an error.
 
 - **Deadlines.** `import.run` has no fixed deadline. It has an inactivity
   deadline instead: the program sends the protocol's `progress` for the
   request (`{"t":"progress","id":n,"done":…,"text":"Reading photos… 12,000 of
   48,000"}`) at least every 10 seconds, and 60 seconds without one cancels the
   request, which then fails after the usual cancel grace. The session gains
-  this as a per-request deadline kind: `progress` resets it for the request its
-  `id` names, and for no other. `hello` keeps its 5 seconds.
+  this as a per-request deadline kind (`Session::request_with_inactivity`):
+  `progress` resets it for the request its `id` names, and for no other, and
+  progress that arrives after a deadline the poll is about to enforce neither
+  revives the request nor is handed over. `hello` keeps its 5 seconds.
 - **Cancel** is the protocol's `cancel`; the program stops writing and answers
   `cancelled`. Whatever it wrote is deleted with the folder.
 - The program never touches the destination catalog; the app never reads the
-  plan file before the answer.
+  plan before the answer.
 
-### The plan file
+### The plan
 
-JSON lines, written by the SDK's `PlanWriter` (feature `importer`) and read by
-the core, which owns the format and its version. The first line names the
-version, the record count the program states, and `source_photos`: how many
-photos the source holds, counted on their own (for Lightroom,
-`COUNT(*) FROM Adobe_images`), not from the records written. A record per line
-follows,
-each `{"type":…, …}`. The file has no line-length limit of the channel's kind;
-each field has the limit the core already applies to it: develop text and XMP
-packets up to 16,000,000 bytes (`lr_develop.rs`, `descriptive.rs`), and a line
-at most 64 MiB. Records:
+A SQLite file in a fixed, published staging schema: the protocol crate ships
+its DDL as one constant, `plan::SCHEMA`, with `PLAN_VERSION`, and states its
+rules (`crates/rawmakase-extension-protocol/src/plan.rs`,
+[the protocol's page](extensions/protocol.md#the-plan)). The program writes it
+with its own SQLite: it runs `SCHEMA` as it is on the new file, writes the one
+`plan` row and the tables' rows, and closes the file. The SDK's `importer`
+feature hands the handler the source and the plan's path, and has no SQLite of
+its own.
 
-- **`root`**: id, the absolute path it had in the source.
-- **`folder`**: id, root, path relative to the root.
-- **`photo`**: id, folder, file name, original path, capture time, rating,
-  flag, colour label, format, orientation; for a virtual copy, its master and
-  copy name; the file's name at its original import, when known.
-- **`info`**: photo, camera, lens, focal length, aperture, exposure time, ISO,
-  dimensions (already turned for orientation), each optional.
-- **`metadata`**: photo, an XMP packet, read with `descriptive::read` and
-  applied only to empty fields, as today; its keywords, rating, label and flag
-  are ignored, since the plan has its own.
-- **`edit`**: photo, `format` (`lightroom-develop`, the only one now), text.
-- **`history`**: photo, position, name, creation time, text.
-- **`snapshot`**: photo, name, text.
-- **`collection`**: id, name, parent, kind (`set`, `collection`, `smart`,
-  `quick`, `system`); **`collection-photo`**: collection, photo, position.
-- **`stack`**: id, collapsed; **`stack-photo`**: stack, photo, position (top
-  first).
-- **`keyword`**: id, name, parent, include on export, export containing
-  keywords. Lightroom's nameless root keyword is a keyword like any other, with
-  an empty name and no parent; **`photo-keyword`**: photo, keyword.
-
-Ids are strings chosen by the importer, unique per record type. Records may
-come in any order; a reference to a record not yet read is resolved when the
-whole file has been read.
+The tables are ordinary rowid tables with text ids the importer chooses:
+`plan(version, source_photos)`, one row; `root(id, path)`;
+`folder(id, root, path)`; `photo(id, folder, file_name, original_path,
+captured, rating, flag, label, format, orientation, master, copy_name,
+original_name)`; `info(photo, camera, lens, focal, aperture, exposure, iso,
+width, height)`; `metadata(photo, xmp)`; `edit(photo, format, text)` (format
+`lightroom-develop` only); `history(photo, position, name, created, text)`;
+`snapshot(photo, name, text)`; `collection(id, name, parent, kind)` (kind
+`set`, `collection`, `smart`, `quick` or `system`);
+`collection_photo(collection, photo, position)`; `stack(id, collapsed)`;
+`stack_photo(stack, photo, position)`; `keyword(id, name, parent,
+include_on_export, export_containing)`; `photo_keyword(photo, keyword)`.
+`source_photos` is how many photos the source holds, counted on their own
+(for Lightroom, `COUNT(*) FROM Adobe_images`), not from the rows written. The
+DDL has `STRICT` tables, primary keys, `UNIQUE`, `NOT NULL` and `CHECK`s, so an
+importer's mistakes fail as it writes; the core relies on none of them.
 
 ### The core's side
 
-An import is one job in the app (and in the CLI, below), owned by a new
-non-UI module, `catalog_import`, that the app and the CLI share. Its phases:
+The core imports a plan the way `catalog::lightroom::import_lightroom` imports
+a Lightroom catalog, in the catalog crate (`catalog::plan_import`):
 
 1. **Prepare.** The app saves what it must before a catalog changes
-   (`ready_for_catalog()`, as today) and starts the job. The job creates a
-   folder beside the destination holding the plan file and the working
-   catalog, and records it in the import registry (below).
-2. **Program.** The job sends `import.run` and waits for the answer, showing
-   the program's progress. The extension's host owns the session; the job owns
-   the folder. This is the only phase that needs the program: once it has
-   answered, the plan file is complete, and the program stopping (idle stop,
-   a crash) changes nothing for the import. Disabling the extension still
-   cancels the import until the publish gate.
-3. **Read.** The job reads the plan file record by record into the working
-   catalog: catalog ids are assigned there, and each plan id's catalog id is
-   kept in a temporary table of the working catalog, so memory doesn't grow
-   with the catalog. References are resolved in a final pass in SQL. Collection
-   kinds are written as the `creationId` strings stored today (`quick` as
-   Lightroom's Quick Collection is stored). Ids are the core's own; the
-   Lightroom ids are not kept.
-4. **Check.** Every reference resolves; ids are unique per type; the record
-   count matches the stated one; the photos written equal both the photo
-   records read and `source_photos`, so a source photo the program couldn't
-   place (today's orphaned-image check: an image whose file row is missing)
-   fails the import instead of being left out; a collection set holds no photos; a
-   stack's photos share a folder; field limits hold. Then the integrity check.
-5. **Publish.** The gate is one state the job and every canceller change
-   under one lock, as the profile download's is: the job moves it from
-   *running* to *publishing*, or a canceller moves it to *cancelled*, and
-   whichever comes first wins. Before the gate, every failure or cancel (by
-   the user, by disabling the extension, by quitting) deletes the folder and
-   publishes nothing. Publishing is `rename_noclobber`: a hard link, which is
-   atomic; on a volume without hard links (exFAT), a copy into a destination
-   file it creates only if none exists. Only once that exclusive create has
-   succeeded does the registry record the destination as *claimed* by this
-   import (synced), and only then does the copy start. A copy that fails, or
-   is cancelled by quitting, deletes the destination file the job claimed.
-   The import has succeeded once the destination is complete and synced and
-   its registry entry is retired (removed and synced); success is reported
-   only after that, and stands whatever arrives later.
-6. **Open.** The app opens the new catalog through the ordinary catalog-open
+   (`ready_for_catalog()`, as today). `PlanImport::prepare` makes the source
+   and destination absolute, once, refuses a destination that exists, and
+   creates a folder beside the destination (`rawmakase-import-….partial`).
+2. **Program.** The app (or the CLI, below) sends `import.run` with the plan's
+   path in that folder and waits for the answer, showing the program's
+   progress. The extension's host owns the session; the import owns the
+   folder. Once the program has answered, the plan is complete, and the
+   program stopping (idle stop, a crash) changes nothing for the import.
+   Disabling the extension cancels the import until it publishes, in this
+   phase and the next.
+3. **Import**, on a worker: `Catalog::create` makes a working catalog in the
+   folder; the plan is attached to its connection, hardened first; the plan
+   is checked and copied in one transaction, on one snapshot of it; then the
+   integrity check.
+   - **Hardening** (input hardening for a file another program wrote, not a
+     sandbox): `trusted_schema=OFF`, SQLite's defensive mode, no extension
+     loading (SQLite's default, left as it is), limits on a value's length
+     (64 MiB), a statement's, columns, expression depth and attached
+     databases, and the plan attached by a `file:` URI with `mode=ro`. Then
+     the plan's `sqlite_master` must equal what `SCHEMA` makes in an empty
+     database, entry for entry: no other table, index, view or trigger, no
+     column more or less.
+   - **Checks**, each one query for the first row that breaks a rule, which
+     the message names: storage classes and develop text and XMP under
+     16,000,000 bytes by byte length (`length(CAST(x AS BLOB))`); the one plan
+     row and its version; ids unique per table; every reference resolving;
+     at most one info, metadata and edit row per photo, a History position,
+     a collection membership and a keyword link once, a stack position
+     once, a photo in one stack; ratings, flags, collection kinds and edit
+     formats; the Quick Collection named "quick collection" at the top; sets
+     without photos; a stack's photos in one folder; a virtual copy's master
+     a master in its folder. The photo rows must equal both `source_photos`
+     and the answer's `photos`, so a source photo the program couldn't place
+     fails as today's orphaned-image check does ("Catalog has orphaned image
+     records (n/m); import rolled back").
+   - **Copy**: `INSERT … SELECT` from the plan into the catalog's tables, as
+     `copy_tables` does from a `.lrcat`. The catalog is new and empty, so a
+     row's catalog id is its row id in the plan, and a reference is resolved
+     by joining its text id to that row. XMP is read a row at a time with
+     `descriptive::read` and applied with `Merge::FillEmpty`, its keywords,
+     rating, label and flag ignored, as `copy_lightroom_metadata` does;
+     keyword export options as `copy_keyword_export`; stacks numbered from 1
+     in their positions' order, and stacks without photos left out, as
+     today. Collection kinds are stored as the Adobe `creationId` strings
+     today's catalogs hold (`quick` as the plain collection
+     `quick_collection()` finds; `system` as `com.adobe.ag.library.unsaved`).
+     The `sources` row has the source's path and size and an empty
+     `original_catalog`.
+4. **Publish.** The `Gate` is one state, *running*, *cancelled* or
+   *publishing*, moved once by compare-and-swap: the import moves it to
+   *publishing*, a canceller (Stop Import, disabling the extension, quitting)
+   to *cancelled*, and whichever comes first wins. The working catalog is
+   closed (its statements finalized, the plan detached) and synced through a
+   writable handle (Windows syncs only those) before the import moves the
+   gate. Publishing is a hard link, which never replaces a file; on a volume
+   without hard links (exFAT), a copy into a destination created only if
+   none exists, in 1 MiB blocks that check whether the app is quitting, which
+   deletes the file it created when it fails or quits. The folder is deleted
+   on every outcome.
+5. **Open.** The app opens the new catalog through the ordinary catalog-open
    path, which saves the open edit first; when that save fails, the catalog
    stays published but isn't opened, and the app says where it is.
 
-Busy state ends with every outcome of the job, including a panic. Quitting
-cancels the job in any phase before success; its worker stops at the next
-record or copied block and deletes what it made, and quitting waits for it at
-most the quit grace. Phases 3 to 5 run on a worker, never the UI thread.
+Cancelling before the gate is seen everywhere: a progress handler on the
+importing connection reads the gate every thousand SQLite steps of any
+statement (the schema check, the checks, the inserts and the integrity check,
+whose steps call it too), and the import reads it between statements and XMP
+rows. Busy state ends with every outcome, including a panic and a worker
+that couldn't start. Quitting cancels the import in any phase before it
+published and waits for its worker at most the quit grace.
 
-**The import registry** is a file in the app's local data folder listing each
-import under way: its folder, its destination once publishing by copy has
-begun, and a lock the running job holds. On start (app or CLI), an entry whose
-lock no process holds is cleaned up: its folder is deleted, and its
-destination only when the entry says this import *claimed* it, since only then
-is that file this import's unfinished copy. An entry that never claimed its
-destination deletes nothing there, whatever file has that name. A crash
-between the exclusive create and recording the claim leaves an incomplete
-file that no entry names; it is left alone, and opening it fails as a damaged
-catalog does. An entry on a volume that isn't there is kept and tried on a
-later start. An entry whose lock is held belongs to another running import
-and is left alone.
+There is no import registry and no cleanup at start: a crash or a forced
+quit during an import leaves its folder beside the destination, as a crash
+during today's import leaves its temporary folder, and one during a copy to
+an exFAT volume can leave a partial destination, which fails to open as a
+damaged catalog does.
 
 ### The CLI
 
-`rawmakase import-catalog input.lrcat Photos.rawmakase` keeps its explicit
-destination. It runs the same `catalog_import` job: it starts the bundled
-extension's program in a session it polls itself (the host crate's
-`Session`, without the app's frame loop), sends `hello` and `import.run`,
-prints the program's status, and reads, checks and publishes the plan as the
-app does. With the extension disabled it fails with "The Lightroom extension
-is disabled in Preferences > Extensions".
+`rawmakase import-catalog --importer EXTENSION/IMPORTER source output` runs
+the same import (`catalog_import`): it finds the extension as the app does (a
+developer folder over an installed version over a bundled one), starts its
+program in a session it polls itself (the host crate's `Session`, without the
+app's frame loop), sends `hello` and `import.run`, prints the program's
+progress to stderr, stops the program once it answered, and runs
+`PlanImport`. Secret settings are empty, as only the app reads the credential
+store. With the extension disabled it fails with "‹name› is disabled in
+Preferences > Extensions". Without `--importer`, `import-catalog` keeps
+today's core Lightroom import until step 4.
+
+*Tests, as built:* every Lightroom import test variation, written into a plan
+by test SQL from its `.lrcat`, imports to `import_lightroom`'s rows, ids
+compared through the plan's row ids, beside a plan written by hand; each check
+fails with its message, on a schema without its constraints; another schema
+is refused; cancels before, during and after the gate and racing it;
+publishing by copy through a test seam; a 100,000-photo plan. In the app and
+the CLI, with the example importer (`extensions/example/src/importer.rs`):
+the program's crash, failure and silence, steady progress past the idle
+stop, the program stopped after it answered, disabling the extension and
+quitting in each phase, a panic, a failed save before opening, relative
+paths, the disabled extension's message.
 
 ### What the extension does
 
 - Reads the `.lrcat` read-only from a private copy, refusing a catalog with a
   live journal or one that changes while copied, and checks it with
   `PRAGMA quick_check`, as today.
+- Writes the plan with its own SQLite.
 - Counts the source's photos (`Adobe_images`) on their own for
-  `source_photos`, and fails before answering when it wrote fewer photo
-  records, as today's importer does.
+  `source_photos`, independently of the photo rows it writes.
+- Numbers a stack's photos itself (Lightroom's position, then its row id, as
+  today's import orders them), and drops what today's import drops: a second
+  develop settings row of a photo, memberships, keyword links and stack
+  photos naming a photo or collection that isn't imported, and duplicate
+  links, since the plan refuses them where today's import ignores them.
 - Decodes compressed History and snapshot text and maps `creationId` to a
-  collection kind, so the plan holds plain text and kinds.
-- Uses its own SQLite.
+  collection kind, so the plan holds plain text and kinds (an unsaved
+  creation's own `creationId`, such as `…print.unsaved`, isn't kept: it reads
+  back as today's kind).
 
 ## Step 3: Adobe's folders in the extension
 
@@ -341,29 +373,20 @@ Tests:
   Before the gate, nothing is published and the folder is gone; after it, the
   catalog is there.
 - **Publishing by copy.** On a volume without hard links: quitting during the
-  copy deletes the partial destination; a crash during it leaves a registry
-  entry that the next start cleans up, destination included; a crash before
-  the claim, or a destination another import already took, leaves that file
-  untouched; a completed import leaves no entry; another running import's
-  entry is left alone.
-- **Plan checks.** The existing orphaned-image fixture fails the import. A
-  dangling reference, a duplicate id, a short count, a
-  field over its limit and a line over 64 MiB each fail the import; a 2 MB
-  develop text imports.
-- **Large catalogs.** A synthetic plan of 100,000 photos with History imports
-  with memory independent of its size.
+  copy deletes the partial destination; a destination another writer took
+  meanwhile is left untouched.
+- **Plan checks.** The existing orphaned-image fixture fails the import, as
+  each of step 2's checks does.
+- **Large catalogs.** The extension writes a plan of 100,000 photos with
+  History, which imports.
 
-## Documents to update when built
+## Documents to update when steps 3 and 4 are built
 
 - `docs/extensions-plan.md`: the Official extensions paragraph on Lightroom
-  import, the Importer plans paragraph (edits as Lightroom develop text,
-  no archive, the plan file instead of one transaction), the Designed-not-
-  scheduled row and the Still open bullet on importers.
-- `docs/extensions/manifest.md`, `protocol.md`, `overview.md`, `publishing.md`
-  (the SDK's `PlanWriter`).
-- `docs/catalogs.md`, `docs/architecture.md`, `docs/code-map.md` (the
-  `catalog_import` module, the extension), `docs/shutdown.md` (an import
-  during quit), `scripts/deps-crates.txt` if the SDK's feature adds crates.
+  import and the Designed-not-scheduled row.
+- `docs/extensions/protocol.md` (`files.list`), `docs/catalogs.md`,
+  `docs/architecture.md`, `docs/code-map.md` (the extension, the core's
+  import code removed).
 
 ## Open
 

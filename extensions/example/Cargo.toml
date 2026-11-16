@@ -15,7 +15,9 @@ name = "rawmakase-example"
 path = "src/main.rs"
 
 [dependencies]
-rawmakase-extension = { path = "../../crates/rawmakase-extension", version = "0.1.0" }
+rawmakase-extension = { path = "../../crates/rawmakase-extension", version = "0.1.0", features = ["importer"] }
+# The importer writes its plan with its own SQLite, as any importer does.
+rusqlite = { version = "0.41.0", features = ["bundled"] }
 serde_json.workspace = true
 
 [lints]

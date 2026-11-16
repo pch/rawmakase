@@ -40,6 +40,7 @@ pub(in crate::app) enum Kind {
     Lensfun,
     MetadataReread,
     CatalogWork,
+    CatalogImport,
     Import,
     ProfileDownload,
     Outputs,
@@ -360,6 +361,21 @@ const WORK: &[Row] = &[
         slows_previews: false,
         pauses_checksums: false,
         stop: None,
+    },
+    // An import from an extension's importer: quitting cancels it in any
+    // phase before it published, and waits for its worker, which stops at
+    // its next record or copied block and deletes what it made.
+    Row {
+        kind: Kind::CatalogImport,
+        running: None,
+        closing: None,
+        status: Some(|e| {
+            e.catalog_importing()
+                .map(|text| work("catalog import", text))
+        }),
+        slows_previews: false,
+        pauses_checksums: false,
+        stop: Some(|e, _| e.stop_catalog_import()),
     },
     Row {
         kind: Kind::Import,

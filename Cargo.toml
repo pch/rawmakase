@@ -209,6 +209,12 @@ tiff.workspace = true
 [target.'cfg(unix)'.dev-dependencies]
 libc.workspace = true
 
+# `import-catalog --importer` end to end: its own main, as the binary is
+# also the test importer extension's program.
+[[test]]
+name = "import_catalog"
+harness = false
+
 # The icon and version information Windows shows for the executable.
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

@@ -3,7 +3,8 @@
 //! `mask.generate` and `mask.setup` serve `[[mask-generator]]`, which manifests
 //! declare from `api = 2`; `source-started`, `source-stopped` and
 //! `source.report` serve `[[source]]`, and `retouch.generate` serves
-//! `[[retouch-generator]]`, from `api = 3`.
+//! `[[retouch-generator]]`, from `api = 3`; `import.run` serves `[[importer]]`,
+//! from `api = 4`.
 //!
 //! [`AppRequest`] and [`AppEvent`] go from the app to the program,
 //! [`ProgramRequest`] and [`ProgramEvent`] the other way. Each reads from a
@@ -22,6 +23,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::path::PathBuf;
+use std::time::Duration;
 
 /// Requests the app sends a program.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -56,6 +58,12 @@ pub enum AppRequest {
     /// program serving `api = 3` or later.
     #[serde(rename = "retouch.generate")]
     RetouchGenerate(RetouchGenerate),
+    /// Reads the source an importer is given and writes its plan, a SQLite
+    /// file ([`crate::plan`]). Answered with [`ImportDone`] once the plan is
+    /// complete and closed.
+    /// Sent only to a program serving `api = 4` or later.
+    #[serde(rename = "import.run")]
+    ImportRun(ImportRun),
 }
 
 /// Requests a program sends the app.
@@ -174,6 +182,7 @@ impl AppRequest {
         "mask.generate",
         "mask.setup",
         "retouch.generate",
+        "import.run",
     ];
 }
 impl ProgramRequest {
@@ -587,6 +596,37 @@ impl RetouchGenerated {
         }
         Ok(())
     }
+}
+
+/// How often an importer's program reports `progress` for `import.run`, at
+/// least: the request has no fixed deadline, only [`IMPORT_INACTIVITY`].
+pub const IMPORT_PROGRESS_INTERVAL: Duration = Duration::from_secs(10);
+
+/// How long `import.run` may go without `progress` before the app cancels
+/// it; it then fails after the usual cancel grace. Each `progress` for the
+/// request starts this again.
+pub const IMPORT_INACTIVITY: Duration = Duration::from_secs(60);
+
+/// `import.run`'s parameters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportRun {
+    /// The `[[importer]]`'s id within its extension.
+    pub importer: String,
+    /// The file the user chose to import.
+    pub source: PathBuf,
+    /// Where the program writes the plan ([`crate::plan`]): a path in a
+    /// folder the app created for this import. The program creates the
+    /// file; the app reads it only once the request is answered.
+    pub plan: PathBuf,
+}
+
+/// What a program answers `import.run` with, once the plan is complete
+/// and closed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportDone {
+    /// The photo rows the plan holds. The app checks this against the
+    /// plan's own count, so an answer for another plan isn't taken.
+    pub photos: u64,
 }
 
 /// Why a mask generator found nothing, for the message the app shows.
@@ -1385,5 +1425,24 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(reported.refused[0].reason, FileRefusal::NotAPhoto);
+    }
+
+    #[test]
+    fn an_import_reads_and_answers_with_its_photo_count() {
+        let params = json!({"importer": "catalog", "source": "/p/Lightroom.lrcat",
+                            "plan": "/p/import/plan.sqlite"});
+        let AppRequest::ImportRun(run) = AppRequest::parse("import.run", params.clone()).unwrap()
+        else {
+            panic!("an import");
+        };
+        assert_eq!(run.importer, "catalog");
+        assert_eq!(run.plan, PathBuf::from("/p/import/plan.sqlite"));
+        let (name, back) = AppRequest::ImportRun(run).into_parts();
+        assert_eq!((name.as_str(), back), ("import.run", params));
+        let refused = AppRequest::parse("import.run", json!({"importer": "catalog"}));
+        assert_eq!(refused.unwrap_err().code, ErrorCode::InvalidRequest);
+        let done: ImportDone = serde_json::from_value(json!({"photos": 12})).unwrap();
+        assert_eq!(done.photos, 12);
+        assert!(IMPORT_PROGRESS_INTERVAL < IMPORT_INACTIVITY);
     }
 }
