@@ -82,7 +82,7 @@ The parser uses XML namespaces, supports RDF names/groups and both attribute and
 ## CLI and verification
 
 ```sh
-rawmakase render photo.ARW output.jpg --xmp /path/to/preset.xmp --max-edge 2400
+rawmakase render photo.ARW output.jpg --xmp /path/to/preset.xmp --max-edge 2400 --quality 90
 cargo test --test xmp_presets -- --ignored --nocapture
 ```
 

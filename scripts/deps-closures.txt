@@ -9,7 +9,7 @@
 # name a module the app re-exports from those crates: the app crate depends on
 # all of them, so only this check keeps an app module from using one.
 edit_session never raw photo develop decode decode_cache app
-# AI Denoise's service and the model installer are shared by the app and the
-# command line, so neither reaches the app (#808 step 3.10).
-ai_denoise never app
-model_install never app
+# `render` and `render-batch` run without the desktop app: the binary passes in
+# what the session keeps.
+render_command never app platform catalog_session edit_session
+catalog_command never app platform catalog_session edit_session

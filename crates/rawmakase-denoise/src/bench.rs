@@ -6,8 +6,11 @@ use rawmakase_cancel::Cancel;
 /// Options of `rawmakase denoise`, the development command.
 pub struct Command {
     pub input: PathBuf,
-    /// The model's folder; the installed model by default.
-    pub model: Option<PathBuf>,
+    /// The model's folder.
+    pub model: PathBuf,
+    /// The folder of the bundled ONNX Runtime library; the system's is used when it
+    /// isn't there.
+    pub runtime: PathBuf,
     pub provider: Provider,
     /// AI Denoise's Amount for `output` (0–1).
     pub amount: f32,
@@ -113,13 +116,9 @@ pub fn command(c: Command) -> Result<()> {
         cache,
         c.provider,
         Arc::new(open_mosaic),
-        Arc::new(load_model),
+        loader(c.runtime.clone()),
     );
-    let model = c
-        .model
-        .clone()
-        .unwrap_or_else(|| crate::model_install::Pack::Denoise.installed_dir());
-    service.set_model(Some(model));
+    service.set_model(Some(c.model.clone()));
     let t = Instant::now();
     let entry = service.entry(&c.input, &file, Cancel::NEVER)?;
     let inferred = t.elapsed();

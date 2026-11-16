@@ -4,7 +4,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use rawmakase::model::recipe::Recipe;
-use rawmakase::{camera_data, develop, export_settings::ExportOptions, raw};
+use rawmakase::{camera_data, develop, raw};
 use rawmakase_cancel::Cancel;
 use std::{path::Path, path::PathBuf, time::Instant};
 #[derive(Parser)]
@@ -105,76 +105,12 @@ enum Command {
     /// with Camera Raw. `jobs` is a JSON list of {"xmp", "output", "max_edge",
     /// "color_space"}; existing outputs are skipped. A job's `color_space` (srgb,
     /// adobe-rgb or prophoto) replaces --color-space.
-    RenderBatch {
-        input: PathBuf,
-        jobs: PathBuf,
-        /// The colour space of every job without its own: srgb, adobe-rgb or prophoto
-        /// (16-bit TIFF only).
-        #[arg(long, value_parser = parse_color_space, default_value = "srgb")]
-        color_space: rawmakase::color::OutputSpace,
-    },
+    RenderBatch(rawmakase::render_command::RenderBatch),
     Thumbnail {
         input: PathBuf,
         output: PathBuf,
     },
-    Render {
-        input: PathBuf,
-        /// Save the resolved rendering recipe for reproducible comparisons.
-        #[arg(long)]
-        save_recipe: Option<PathBuf>,
-        #[arg(long)]
-        profile: Option<PathBuf>,
-        #[arg(long)]
-        xmp: Option<PathBuf>,
-        output: PathBuf,
-        #[arg(long)]
-        exposure: Option<f32>,
-        #[arg(long, default_value_t = 0)]
-        max_edge: u32,
-        /// The output's colour space: srgb, adobe-rgb or prophoto (16-bit TIFF only).
-        /// An output whose format can't hold it is refused before anything renders.
-        #[arg(long, value_parser = parse_color_space, default_value = "srgb", conflicts_with = "tap")]
-        color_space: rawmakase::color::OutputSpace,
-        #[arg(long)]
-        fast: bool,
-        #[arg(long)]
-        overwrite: bool,
-        #[arg(long)]
-        recipe: Option<PathBuf>,
-        /// Start from the photo's edit in this RAWmakase catalog (a virtual copy's is
-        /// the master's): its saved edit, else its Lightroom edit, else the raw
-        /// defaults. Without it, a legacy sidecar, else the raw defaults chosen in
-        /// Preferences. `--recipe` comes before both.
-        #[arg(long)]
-        catalog: Option<PathBuf>,
-        /// Apply Auto tone, as the Basic panel's Auto button does; white balance is kept.
-        /// Auto sets Exposure itself, so it cannot be combined with --exposure.
-        #[arg(long, conflicts_with = "exposure")]
-        auto: bool,
-        /// Apply Auto white balance, as the WB menu's Auto does (before --auto).
-        #[arg(long)]
-        auto_wb: bool,
-        /// Write the photo at a stage of the pipeline instead, as a 32-bit float TIFF
-        /// of linear ProPhoto RGB at full size (docs/scene-tone-stage.md).
-        #[arg(long, value_enum)]
-        tap: Option<Tap>,
-        /// Write the edit's HDR master (the edit needs HDR on) as a 32-bit float TIFF
-        /// of linear ProPhoto RGB, 1 = graphics white, for comparisons with Camera Raw.
-        #[arg(long, conflicts_with_all = ["tap", "color_space"])]
-        hdr: bool,
-        /// Export the edit's HDR master in this encoding (pq, hlg or linear: TIFF or
-        /// JPEG XL; gain-map: JPEG), as the Export dialog's HDR export writes it (the
-        /// edit needs HDR on).
-        #[arg(long, value_enum, conflicts_with_all = ["tap", "color_space", "hdr"])]
-        hdr_export: Option<HdrTransferArg>,
-        /// The HDR export's gamut: rec2020, display-p3 or rec709.
-        #[arg(long, value_enum, default_value = "rec2020", requires = "hdr_export")]
-        hdr_gamut: HdrGamutArg,
-        /// Write a .jxl output lossy at this quality (1–100, as the Export dialog's;
-        /// 90 is libjxl's distance 1) instead of lossless.
-        #[arg(long, value_parser = clap::value_parser!(u8).range(1..=100), conflicts_with_all = ["tap", "hdr"])]
-        jxl_quality: Option<u8>,
-    },
+    Render(rawmakase::render_command::Render),
     /// Print each file's decode fingerprint as a line of JSON: what opening and
     /// unpacking it yields, for decode regression checks.
     Fingerprint {
@@ -263,18 +199,6 @@ enum Command {
         iterations: usize,
     },
 }
-/// A `--color-space`, by the names the automation socket uses too.
-fn parse_color_space(name: &str) -> Result<rawmakase::color::OutputSpace, String> {
-    rawmakase::color::OutputSpace::from_name(name)
-        .ok_or_else(|| format!("unknown color space {name:?}; use srgb, adobe-rgb or prophoto"))
-}
-/// Refuses an `output` whose format can't hold `space`, before anything renders.
-fn check_output(output: &std::path::Path, space: rawmakase::color::OutputSpace) -> Result<()> {
-    use rawmakase::export_settings::Format;
-    Format::from_path(output)
-        .ok_or_else(|| anyhow::anyhow!("Export extension must be {}", Format::extensions_listed()))?
-        .supports(space)
-}
 /// A half-size check's `--reference`.
 fn parse_reference(json: &str) -> Result<rawmakase::half_check::Reference, String> {
     serde_json::from_str(json).map_err(|e| e.to_string())
@@ -341,28 +265,6 @@ impl From<LutSpace> for rawmakase::camera_profiles::LutSpace {
             LutSpace::Rec2020 => Self::Rec2020,
         }
     }
-}
-/// `render --hdr-export`'s transfer.
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-enum HdrTransferArg {
-    Pq,
-    Hlg,
-    Linear,
-    /// A gain-map JPEG over the SDR rendition (with --hdr-gamut rec709).
-    GainMap,
-}
-/// `render --hdr-gamut`.
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-enum HdrGamutArg {
-    Rec2020,
-    DisplayP3,
-    Rec709,
-}
-/// A stage `render --tap` writes.
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-enum Tap {
-    SceneInput,
-    SceneOutput,
 }
 /// A windows-subsystem program starts without a console, so commands run from
 /// a terminal would print nothing. Writes to that terminal instead, unless the
@@ -535,81 +437,16 @@ fn main() -> Result<()> {
                 serde_json::to_string_pretty(&r.metadata)?
             );
         }
-        Some(Command::RenderBatch {
-            input,
-            jobs,
-            color_space,
-        }) => {
-            #[derive(serde::Deserialize)]
-            struct Job {
-                xmp: PathBuf,
-                output: PathBuf,
-                #[serde(default)]
-                max_edge: u32,
-                #[serde(default)]
-                color_space: Option<String>,
-            }
-            let jobs: Vec<Job> = serde_json::from_str(&std::fs::read_to_string(&jobs)?)?;
-            // Read before decoding: AI Denoise's result must be of the same file.
-            let file = rawmakase::storage::Identity::read(&input)?;
-            let photo = rawmakase::photo::open(&input)?;
-            let im = std::sync::Arc::new(
-                photo.develop(camera_data::Decode::full(Default::default()), Cancel::NEVER)?,
-            );
-            let (profiles, _) = rawmakase::camera_profiles::installed(&im.metadata);
-            let base = Recipe::with_profiles(&im.metadata, &profiles);
-            let camera = Some(
-                rawmakase::photo::camera_exif(&input)
-                    .unwrap_or_else(|| rawmakase::export::job::stand_in(&input, &im.metadata)),
-            );
-            // One AI Denoise service for every job: the model loads once.
-            let ai_denoise =
-                rawmakase::ai_denoise::CommandLine::new(rawmakase::app::user_ai_denoise_cache());
-            for job in jobs.iter().filter(|j| !j.output.exists()) {
-                let rendered = (|| -> Result<()> {
-                    let space = match &job.color_space {
-                        Some(name) => parse_color_space(name).map_err(anyhow::Error::msg)?,
-                        None => color_space,
-                    };
-                    check_output(&job.output, space)?;
-                    let preset =
-                        rawmakase::xmp::parse(&job.xmp, &std::fs::read_to_string(&job.xmp)?)?;
-                    let edit = preset.apply(
-                        &base,
-                        &im.metadata,
-                        &profiles,
-                        Some(&rawmakase::develop::Measures(&im)),
-                    )?;
-                    let ai = ai_denoise.source(&input, &file, &im, &edit)?;
-                    let out = develop::render_export(
-                        &im,
-                        &edit.checked()?,
-                        ai.as_ref(),
-                        job.max_edge,
-                        space,
-                        Cancel::NEVER,
-                    )?;
-                    rawmakase::export::export_image(
-                        &job.output,
-                        &input,
-                        &out,
-                        &im.metadata,
-                        &ExportOptions {
-                            max_edge: job.max_edge,
-                            ..Default::default()
-                        },
-                        &rawmakase::export::Embed {
-                            camera: camera.clone(),
-                            ..Default::default()
-                        },
-                        rawmakase::export::Replace::NoClobber,
-                    )?;
-                    Ok(())
-                })();
-                if let Err(e) = rendered {
-                    eprintln!("{}: {e:#}", job.output.display());
-                }
-            }
+        Some(Command::RenderBatch(options)) => {
+            rawmakase::render_command::render_batch(
+                &options,
+                &user_ai_denoise,
+                Cancel::NEVER,
+                &mut rawmakase::render_command::Console {
+                    out: &mut std::io::stdout(),
+                    err: &mut std::io::stderr(),
+                },
+            )?;
         }
         Some(Command::Thumbnail { input, output }) => {
             use std::io::Write;
@@ -620,291 +457,17 @@ fn main() -> Result<()> {
                 .open(output)?;
             f.write_all(&data)?;
         }
-        Some(Command::Render {
-            input,
-            save_recipe,
-            profile,
-            xmp,
-            output,
-            exposure,
-            max_edge,
-            color_space,
-            fast,
-            overwrite,
-            recipe,
-            catalog,
-            auto,
-            auto_wb,
-            tap,
-            hdr,
-            hdr_export,
-            hdr_gamut,
-            jxl_quality,
-        }) => {
-            anyhow::ensure!(
-                jxl_quality.is_none()
-                    || rawmakase::export_settings::Format::from_path(&output)
-                        == Some(rawmakase::export_settings::Format::Jxl),
-                "--jxl-quality is for a .jxl output"
-            );
-            let export_options = ExportOptions {
-                max_edge,
-                quality: jxl_quality.unwrap_or(ExportOptions::default().quality),
-                jxl_lossy: jxl_quality.is_some(),
-            };
-            use rawmakase::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
-            let hdr_output = hdr_export.map(|transfer| HdrOutput {
-                transfer: match transfer {
-                    HdrTransferArg::Pq => HdrTransfer::Pq,
-                    HdrTransferArg::Hlg => HdrTransfer::Hlg,
-                    HdrTransferArg::Linear => HdrTransfer::Linear,
-                    HdrTransferArg::GainMap => HdrTransfer::default(),
-                },
-                gamut: match hdr_gamut {
-                    HdrGamutArg::Rec2020 => HdrGamut::Rec2020,
-                    HdrGamutArg::DisplayP3 => HdrGamut::DisplayP3,
-                    HdrGamutArg::Rec709 => HdrGamut::Rec709,
-                },
-                gain_map: matches!(transfer, HdrTransferArg::GainMap),
-            });
-            if let Some(encoding) = hdr_output {
-                let format = rawmakase::export_settings::Format::from_path(&output).ok_or_else(
-                    || anyhow::anyhow!("An HDR export is a TIFF, JPEG XL or gain-map JPEG: name the output .tif, .tiff, .jxl or .jpg"),
-                )?;
-                rawmakase::export_settings::Format::check_hdr(format, encoding)?;
-            }
-            if tap.is_none() && !hdr && hdr_output.is_none() {
-                check_output(&output, color_space)?;
-            }
-            let t = Instant::now();
-            // Read before decoding: AI Denoise's result must be of the same file.
-            let file = rawmakase::storage::Identity::read(&input)?;
-            let r = rawmakase::photo::open(&input)?;
-            let mut edit = if let Some(p) = recipe {
-                rawmakase::presets::load_preset(&p)?.recipe
-            } else if let Some(sidecar) = catalog
-                .is_none()
-                .then(|| rawmakase::catalog::legacy_sidecar::load(&input))
-                .transpose()?
-                .flatten()
-            {
-                sidecar.recipe
-            } else {
-                let record = match &catalog {
-                    Some(catalog) => catalog_edit(catalog, &input)?,
-                    None => rawmakase::edits::EditRecord::default(),
-                };
-                // As the app opens it: a photo without colour data starts from its
-                // fitted camera look.
-                let profiles = rawmakase::camera_look::with_default(
-                    &input,
-                    &r.metadata,
-                    rawmakase::camera_profiles::installed(&r.metadata).0,
-                    Cancel::NEVER,
-                );
-                let resolved = rawmakase::edits::resolve(
-                    &record,
-                    &input,
-                    &r.metadata,
-                    &profiles,
-                    &rawmakase::app::user_raw_defaults(),
-                )?;
-                for warning in &resolved.warnings {
-                    eprintln!("{warning}");
-                }
-                resolved.recipe
-            };
-            if let Some(e) = exposure {
-                edit.exposure = e;
-            }
-            if let Some(p) = profile {
-                edit.profile = Some(rawmakase::camera_profiles::load(&p, &r.metadata)?);
-                // A chosen profile starts at 100%, as in the app.
-                edit.profile_amount = 1.;
-                edit.use_camera_baseline(&r.metadata);
-                edit.sync_white_balance_controls(&r.metadata);
-            }
-            edit.validate()?;
-            let decode = if fast {
-                camera_data::Decode::Half
-            } else {
-                camera_data::Decode::full(Default::default())
-            };
-            let im = r.develop(decode, Cancel::NEVER)?;
-            if let Some(path) = xmp {
-                let preset = rawmakase::xmp::parse(&path, &std::fs::read_to_string(&path)?)?;
-                let (profiles, _) = rawmakase::camera_profiles::installed(&im.metadata);
-                edit = preset.apply(
-                    &edit,
-                    &im.metadata,
-                    &profiles,
-                    Some(&rawmakase::develop::Measures(&im)),
-                )?;
-                if let Some(e) = exposure {
-                    edit.exposure = e;
-                }
-            }
-            if auto_wb {
-                let t = Instant::now();
-                edit = develop::auto_white_balance(&im, &edit, Cancel::NEVER)?;
-                eprintln!(
-                    "Auto white balance ({:?}): temperature {:.0} tint {:+.0}",
-                    t.elapsed(),
-                    edit.temperature,
-                    edit.tint
-                );
-            }
-            if auto {
-                let t = Instant::now();
-                edit = develop::auto_tone(&im, &edit, Cancel::NEVER)?;
-                eprintln!(
-                    "Auto ({:?}): exposure {:+.2} contrast {:+.0} highlights {:+.0} shadows {:+.0} whites {:+.0} blacks {:+.0} vibrance {:+.0} saturation {:+.0}",
-                    t.elapsed(),
-                    edit.exposure,
-                    edit.contrast * 100.,
-                    edit.highlights * 100.,
-                    edit.shadows * 100.,
-                    edit.whites * 100.,
-                    edit.blacks * 100.,
-                    edit.vibrance * 100.,
-                    edit.saturation * 100.
-                );
-            }
-            if let Some(path) = save_recipe {
-                anyhow::ensure!(!path.exists(), "Recipe output already exists");
-                rawmakase::presets::save_preset(&path, &edit, &im.metadata)?;
-            }
-            if let Some(tap) = tap {
-                // A stage tap renders without AI Denoise: refused rather than written
-                // as if the recipe had none.
-                anyhow::ensure!(
-                    !edit.as_rendered().ai_denoise.renders(),
-                    "--tap does not render AI Denoise; switch it off in the recipe"
-                );
-                let stage = match tap {
-                    Tap::SceneInput => develop::quality::Stage::SceneInput,
-                    Tap::SceneOutput => develop::quality::Stage::SceneOutput,
-                };
-                let out = develop::quality::render_stage(&im, &edit, stage, Cancel::NEVER)?;
-                save_stage(&output, &input, out, overwrite)?;
-                return Ok(());
-            }
-            let developed = t.elapsed();
-            let im = std::sync::Arc::new(im);
-            let ai =
-                rawmakase::ai_denoise::CommandLine::new(rawmakase::app::user_ai_denoise_cache())
-                    .source(&input, &file, &im, &edit)?;
-            if let Some(encoding) = hdr_output {
-                let master = develop::render_hdr(
-                    &im,
-                    &edit.checked()?,
-                    ai.as_ref(),
-                    max_edge,
-                    Cancel::NEVER,
-                )?;
-                let pixels = if encoding.gain_map {
-                    let base = develop::render_export(
-                        &im,
-                        &edit.checked()?,
-                        ai.as_ref(),
-                        max_edge,
-                        rawmakase::color::OutputSpace::Srgb,
-                        Cancel::NEVER,
-                    )?;
-                    rawmakase::export::Pixels::GainMap(rawmakase::export::GainMapPixels::new(
-                        base, &master,
-                    )?)
-                } else {
-                    rawmakase::export::Pixels::Hdr(rawmakase::export::HdrPixels::encode(
-                        &master, encoding,
-                    ))
-                };
-                rawmakase::export::export_pixels(
-                    &output,
-                    &input,
-                    &pixels,
-                    &im.metadata,
-                    &export_options,
-                    &rawmakase::export::Embed::default(),
-                    if overwrite {
-                        rawmakase::export::Replace::Overwrite
-                    } else {
-                        rawmakase::export::Replace::NoClobber
-                    },
-                )?;
-                println!(
-                    "{}x{} HDR export, peak {} | total {:?}",
-                    master.width,
-                    master.height,
-                    master.peak,
-                    t.elapsed()
-                );
-                return Ok(());
-            }
-            if hdr {
-                let out = develop::render_hdr(
-                    &im,
-                    &edit.checked()?,
-                    ai.as_ref(),
-                    max_edge,
-                    Cancel::NEVER,
-                )?;
-                let rendered = rawmakase::rendered::Rendered {
-                    width: out.width,
-                    height: out.height,
-                    pixels: out.pixels,
-                };
-                save_stage(&output, &input, rendered, overwrite)?;
-                println!(
-                    "{}x{} HDR master, peak {} | total {:?}",
-                    out.width,
-                    out.height,
-                    out.peak,
-                    t.elapsed()
-                );
-                return Ok(());
-            }
-            let out = develop::render_export(
-                &im,
-                &edit.checked()?,
-                ai.as_ref(),
-                max_edge,
-                color_space,
+        Some(Command::Render(options)) => {
+            rawmakase::render_command::render(
+                &options,
+                &rawmakase::app::user_raw_defaults,
+                &user_ai_denoise,
                 Cancel::NEVER,
-            )?;
-            let rendered = t.elapsed() - developed;
-            rawmakase::export::export_image(
-                &output,
-                &input,
-                &out,
-                &im.metadata,
-                &export_options,
-                &rawmakase::export::Embed {
-                    camera: Some(
-                        rawmakase::photo::camera_exif(&input).unwrap_or_else(|| {
-                            rawmakase::export::job::stand_in(&input, &im.metadata)
-                        }),
-                    ),
-                    ..Default::default()
-                },
-                if overwrite {
-                    rawmakase::export::Replace::Overwrite
-                } else {
-                    rawmakase::export::Replace::NoClobber
+                &mut rawmakase::render_command::Console {
+                    out: &mut std::io::stdout(),
+                    err: &mut std::io::stderr(),
                 },
             )?;
-            let max = im.pixels.iter().flatten().copied().fold(0f32, f32::max);
-            println!(
-                "{}x{} | develop {:?} | render {:?} | total {:?} | camera max {:.4} | scale {:.6} | integer clipped {}",
-                out.width(),
-                out.height(),
-                developed,
-                rendered,
-                t.elapsed(),
-                max,
-                im.scale_factor,
-                im.scale_clipped
-            );
         }
         Some(Command::Fingerprint { files }) => {
             for path in &files {
@@ -987,7 +550,8 @@ fn main() -> Result<()> {
             };
             rawmakase::ai_denoise::command(rawmakase::ai_denoise::Command {
                 input,
-                model,
+                model: model.unwrap_or_else(rawmakase::ai_denoise::model_dir),
+                runtime: rawmakase_model_install::runtime_dir(),
                 provider,
                 amount,
                 output,
@@ -1039,41 +603,19 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// `rawmakase sync-folder`: scans, prints the plan, and applies it with
-/// `apply`.
-/// The stored edit of the photo at `input` in `catalog`: of the master, as a path
-/// names it, not of a virtual copy. A photo the catalog doesn't have, or has more
-/// than once (two folders found at the same place), is an error.
-fn catalog_edit(
-    catalog: &std::path::Path,
-    input: &std::path::Path,
-) -> Result<rawmakase::edits::EditRecord> {
-    let c = open_catalog(catalog)?;
-    let input = input.canonicalize()?;
-    let found: Vec<_> = c
-        .photos()?
-        .into_iter()
-        .filter(|p| p.master.is_none() && p.path.canonicalize().is_ok_and(|p| p == input))
-        .map(|p| p.id)
-        .collect();
-    let photo = match found[..] {
-        [photo] => photo,
-        [] => anyhow::bail!("{} is not in the catalog", input.display()),
-        _ => anyhow::bail!(
-            "{} is {} photos in the catalog: two of its folders are found at the same place",
-            input.display(),
-            found.len()
-        ),
-    };
-    // Masks made from a selection are read back from the catalog, as in the app.
-    rawmakase::storage::mask_assets::add_loader(c.mask_asset_loader());
-    // One consistent read: the recipe with the spots and masks saved with it.
-    c.photo_records(&[photo])?
-        .pop()
-        .map(|record| record.edit)
-        .ok_or_else(|| anyhow::anyhow!("{} is not in the catalog", input.display()))
+/// AI Denoise for `render` and `render-batch`, as the app runs it: with the user's
+/// cache where the app keeps it, and the model and the ONNX Runtime installed in this
+/// computer's own data folder.
+fn user_ai_denoise() -> rawmakase::ai_denoise::CommandLine {
+    rawmakase::ai_denoise::CommandLine::new(
+        rawmakase::app::user_ai_denoise_cache(),
+        rawmakase::ai_denoise::model_dir(),
+        rawmakase_model_install::runtime_dir(),
+    )
 }
 
+/// `rawmakase sync-folder`: scans, prints the plan, and applies it with
+/// `apply`.
 fn sync_folder(
     catalog: &std::path::Path,
     folder: Option<&std::path::Path>,
@@ -1224,50 +766,6 @@ fn find_photo(
     }
     println!("Relinked {} photos", applied.moved.len());
     Ok(())
-}
-
-/// Writes a stage tap as a 32-bit float TIFF at `output`, with an export's
-/// protections: never over a RAW file or the `input` it was rendered from, never over
-/// an existing file unless `overwrite`, and encoded beside it before being put in
-/// place, so a failed write leaves the destination as it was.
-fn save_stage(
-    output: &std::path::Path,
-    input: &std::path::Path,
-    out: rawmakase::rendered::Rendered,
-    overwrite: bool,
-) -> Result<()> {
-    use rawmakase::storage::{RasterFormat, Replace, is_raw, write_atomic};
-    anyhow::ensure!(!is_raw(output), "A stage tap cannot overwrite a RAW file");
-    anyhow::ensure!(
-        RasterFormat::of(output) == Some(RasterFormat::Tiff),
-        "A stage tap is a TIFF: name the output .tif or .tiff"
-    );
-    if output.exists() {
-        anyhow::ensure!(
-            std::fs::canonicalize(output)? != std::fs::canonicalize(input)?,
-            "Cannot overwrite the source"
-        );
-        anyhow::ensure!(overwrite, "Output already exists");
-    }
-    let image = image::Rgb32FImage::from_raw(
-        out.width,
-        out.height,
-        out.pixels.into_iter().flatten().collect(),
-    )
-    .ok_or_else(|| anyhow::anyhow!("Stage image has the wrong size"))?;
-    let replace = if overwrite {
-        Replace::Overwrite
-    } else {
-        Replace::NoClobber
-    };
-    write_atomic(output, replace, |file| {
-        // Flushed here, so a failed last write fails the tap instead of being lost when
-        // the writer is dropped.
-        let mut writer = std::io::BufWriter::new(file);
-        image.write_to(&mut writer, image::ImageFormat::Tiff)?;
-        std::io::Write::flush(&mut writer)?;
-        Ok(())
-    })
 }
 
 /// `rawmakase lensfun`.
@@ -1563,96 +1061,19 @@ fn confirm(yes: bool) -> Result<bool> {
     Ok(yes)
 }
 
-/// Opens the catalog at `path` for a command, upgrading one of an earlier format
-/// first and removing an archived Lightroom catalog: their progress, and where
-/// the upgrade's backup is, go to standard error.
+/// [`rawmakase::catalog_command::open_catalog`], reporting on standard error.
 fn open_catalog(path: impl AsRef<Path>) -> Result<rawmakase::catalog::Catalog> {
-    use rawmakase::catalog::OpeningProgress;
-    use std::io::Write as _;
-    let mut last = None;
-    let mut progress = |progress: OpeningProgress| {
-        // A line per tenth of the way.
-        let step = match progress {
-            OpeningProgress::Upgrading { done, total } => Some(done * 10 / total.max(1)),
-            OpeningProgress::Compacting => None,
-        };
-        if last != Some(step) {
-            last = Some(step);
-            let _ = writeln!(std::io::stderr(), "{progress}");
-        }
-    };
-    let mut catalog = rawmakase::catalog::Catalog::open_reporting(
-        path.as_ref(),
-        &rawmakase::catalog::locations::Computer::this(),
-        &mut progress,
-    )?;
-    if let Some(error) = catalog.remove_lightroom_archive(&mut progress) {
-        eprintln!(
-            "The catalog couldn't be made smaller: {error}. It is tried again the next time \
-             the catalog opens."
-        );
-    }
-    if let Some(upgraded) = catalog.upgraded() {
-        eprintln!(
-            "Upgraded the catalog from format {} for this release. A copy of it as it was is at {}.",
-            upgraded.from,
-            upgraded.backup.display()
-        );
-        if upgraded.unreadable > 0 {
-            eprintln!(
-                "{} stored edits could not be read and were left as they were.",
-                upgraded.unreadable
-            );
-        }
-        if let Some(error) = &upgraded.vacuum_error {
-            eprintln!("The disk space it no longer needs could not be given back: {error}");
-        }
-    }
-    Ok(catalog)
+    rawmakase::catalog_command::open_catalog(path.as_ref(), &mut std::io::stderr())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rawmakase::render_command::{Render, RenderBatch};
 
-    fn tap() -> rawmakase::rendered::Rendered {
-        rawmakase::rendered::Rendered {
-            width: 2,
-            height: 1,
-            pixels: vec![[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
-        }
-    }
-
+    /// `--color-space` takes the socket's names.
     #[test]
-    fn stage_taps_never_replace_raws_their_source_or_unasked_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let raw = dir.path().join("photo.dng");
-        std::fs::write(&raw, b"raw bytes").unwrap();
-        // Over the RAW it was rendered from, with or without --overwrite.
-        for overwrite in [false, true] {
-            assert!(save_stage(&raw, &raw, tap(), overwrite).is_err());
-            assert_eq!(std::fs::read(&raw).unwrap(), b"raw bytes");
-        }
-        // Over the source under a non-RAW name.
-        let source = dir.path().join("source.tif");
-        std::fs::write(&source, b"source").unwrap();
-        assert!(save_stage(&source, &source, tap(), true).is_err());
-        assert_eq!(std::fs::read(&source).unwrap(), b"source");
-        // An existing file only with --overwrite.
-        let output = dir.path().join("tap.tif");
-        std::fs::write(&output, b"old").unwrap();
-        assert!(save_stage(&output, &raw, tap(), false).is_err());
-        assert_eq!(std::fs::read(&output).unwrap(), b"old");
-        save_stage(&output, &raw, tap(), true).unwrap();
-        let written = image::open(&output).unwrap().to_rgb32f();
-        assert_eq!(written.dimensions(), (2, 1));
-        assert_eq!(written.get_pixel(1, 0).0, [0.4, 0.5, 0.6]);
-    }
-
-    /// `--color-space` takes the socket's names, and an output whose format can't hold
-    /// the space is refused before anything is read.
-    #[test]
-    fn render_takes_a_color_space_and_refuses_prophoto_outside_tiff() {
+    fn render_takes_a_color_space() {
         use rawmakase::color::OutputSpace;
         let parse = |args: &[&str]| {
             Args::try_parse_from(
@@ -1668,40 +1089,67 @@ mod tests {
         ] {
             let cli = parse(&["--color-space", name]).unwrap();
             assert!(
-                matches!(cli.command, Some(Command::Render { color_space, .. }) if color_space == space),
+                matches!(cli.command, Some(Command::Render(Render { color_space, .. })) if color_space == space),
                 "{name}"
             );
         }
         assert!(matches!(
             parse(&[]).unwrap().command,
-            Some(Command::Render {
+            Some(Command::Render(Render {
                 color_space: OutputSpace::Srgb,
                 ..
-            })
+            }))
         ));
         assert!(parse(&["--color-space", "display-p3"]).is_err());
         assert!(parse(&["--color-space", "prophoto", "--tap", "scene-input"]).is_err());
-        for name in ["a.jpg", "a.png"] {
-            let refused = check_output(std::path::Path::new(name), OutputSpace::ProPhoto);
-            assert!(refused.unwrap_err().to_string().contains("TIFF"), "{name}");
-            check_output(std::path::Path::new(name), OutputSpace::AdobeRgb).unwrap();
-        }
-        check_output(std::path::Path::new("a.tiff"), OutputSpace::ProPhoto).unwrap();
-        assert!(check_output(std::path::Path::new("a.webp"), OutputSpace::Srgb).is_err());
     }
 
+    /// `--quality` takes the Export dialog's range, for `render` and `render-batch`,
+    /// and leaves the default (92) to the export when it isn't given.
     #[test]
-    fn a_stage_tap_is_only_written_under_a_tiff_name() {
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("photo.dng");
-        for name in ["tap.jpg", "tap.png", "tap.exr", "tap"] {
-            let output = dir.path().join(name);
-            let refused = save_stage(&output, &source, tap(), false).unwrap_err();
-            assert!(refused.to_string().contains(".tif"), "{name}: {refused}");
-            assert!(!output.exists(), "{name}");
+    fn render_and_render_batch_take_a_quality() {
+        let render = |args: &[&str]| {
+            Args::try_parse_from(
+                ["rawmakase", "render", "in.dng", "out.jpg"]
+                    .iter()
+                    .chain(args),
+            )
+        };
+        let batch = |args: &[&str]| {
+            Args::try_parse_from(
+                ["rawmakase", "render-batch", "in.dng", "jobs.json"]
+                    .iter()
+                    .chain(args),
+            )
+        };
+        for q in ["1", "80", "100"] {
+            let expected = q.parse::<u8>().ok();
+            assert!(
+                matches!(render(&["--quality", q]).unwrap().command,
+                    Some(Command::Render(Render { quality, .. })) if quality == expected),
+                "{q}"
+            );
+            assert!(
+                matches!(batch(&["--quality", q]).unwrap().command,
+                    Some(Command::RenderBatch(RenderBatch { quality, .. })) if quality == expected),
+                "{q}"
+            );
         }
-        for name in ["tap.tif", "tap.TIFF"] {
-            save_stage(&dir.path().join(name), &source, tap(), false).unwrap();
+        assert!(matches!(
+            render(&[]).unwrap().command,
+            Some(Command::Render(Render { quality: None, .. }))
+        ));
+        assert!(matches!(
+            batch(&[]).unwrap().command,
+            Some(Command::RenderBatch(RenderBatch { quality: None, .. }))
+        ));
+        for q in ["0", "101", "high"] {
+            assert!(render(&["--quality", q]).is_err(), "{q}");
+            assert!(batch(&["--quality", q]).is_err(), "{q}");
         }
+        // One quality flag per format: JPEG XL keeps its own, which also makes it lossy.
+        assert!(render(&["--quality", "80", "--jxl-quality", "80"]).is_err());
+        assert!(render(&["--quality", "80", "--tap", "scene-input"]).is_err());
+        assert!(render(&["--quality", "80", "--hdr"]).is_err());
     }
 }

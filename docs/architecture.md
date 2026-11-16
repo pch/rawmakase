@@ -32,6 +32,7 @@ flowchart TD
     inference[rawmakase-inference]
     selection[rawmakase-selection]
     modelinstall[rawmakase-model-install]
+    denoise[rawmakase-denoise]
     aimasks[rawmakase-ai-masks]
     exthost[rawmakase-extensions]
     extprotocol[rawmakase-extension-protocol]
@@ -39,7 +40,8 @@ flowchart TD
     cargoext[cargo-rawmakase]
 
     app --> export & decode & catalog & engine & interop & model
-    app --> ctl & inference & modelinstall & fs & exthost
+    app --> ctl & denoise & fs & exthost
+    denoise --> decode & inference & modelinstall
     export --> decode & engine & interop
     decode --> engine & raw
     catalog --> interop & fs
@@ -76,9 +78,10 @@ the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
 | `rawmakase-fs` | What moving a user's file needs of the file system, policy-free: exclusive renames, file ids, exact listings, name comparison, containment, volume facts and a copy's steps, one file per system, with the unsafe system calls the model used to hold. The catalog's file operations and the app's Trash use it | Every other workspace crate; the value, file-format, rendering, decoding and export crates never reach it |
 | `rawmakase-cancel` | `Cancel`, the borrowed request to stop long-running work, which its owner's flag sets: every crate that does such work takes one, and owners keep their flags | Everything |
 | `rawmakase-decode` | Opening and decoding photos: the only crate that reaches `rawmakase-raw`; colour management, demosaicing, rendered files (JPEG … HEIF), the full-size decode and its cache, AI Denoise's packing and assembly, Camera Look fitting | C imaging libraries, the catalog, export, the GUI |
-| `rawmakase-export` | Developing and writing exports, with their watermarks | The app, a window or GPU backend |
+| `rawmakase-export` | Developing and writing exports, with their watermarks (Inter bundled, installed fonts listed without egui) | The app, the GUI, a window or GPU backend |
 | `rawmakase-inference` | The lazily loaded ONNX Runtime, the provider choice and the session helpers every model shares, `InferenceError`, the `ModelFile` record, and AI Denoise's model: its contract, tiler and gain fit, packed mosaic in, denoised camera RGB out | Every other workspace crate |
 | `rawmakase-selection` | The selection models (Subject, Background and Sky): their pinned contracts, the image and coverage mappings, automatic selection, edge refinement and their sessions, run through inference's runtime: pixels in, coverage out. The AI masks extension's program runs them; the app never links them | Everything but inference |
+| `rawmakase-denoise` | AI Denoise's service, shared by the app and the command line (re-exported as `rawmakase::ai_denoise`): the queue, the worker and its ONNX session, job keys, the finished-result lookup, `AiBase` for export, `CommandLine` for `render` and `render-batch`, the `rawmakase denoise` development command, and the model pack it runs (`model_install`). Its callers pass the cache, the model's and the runtime's folders and the cancel in | The app, the catalog, export, the selection models and the GUI; it reaches wgpu only through the renderer, whose `AiSource` it hands on |
 | `rawmakase-model-install` | Installing a model pack: a folder and its files, downloaded resumably or copied from a folder, each checked against its size and SHA-256, the receipt that makes a pack installed, the lock across instances, and the models and runtime folders in the local data folder. Which packs exist is its caller's | Everything but inference and the model |
 | `rawmakase-remote` | The optional worker binary that runs the same selection models on another computer, and the AI masks extension's client for it, over a bounded TCP protocol | Everything but the selection models and inference |
 | `rawmakase-protocol` | What the app and its control clients agree on: protocol version, `control.json` endpoint, data folder | Everything |
@@ -236,9 +239,11 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `platform` | OS integration: the system's credential store extensions' secret settings are kept in (`credentials.rs`, through `keyring-core`), the Linux GVFS filesystem bridge, drives, the file manager, the browser, the system Trash file operations get (`trash::SystemTrash`, failing closed, and whether a drive has one; no policy), and the display's color management (macOS surface tagging and EDR, the Windows display profile), and whether a RAW on a network volume is read for its embedded preview alone (`preview_reads`) | `network.rs`, `volume.rs`, `reveal.rs`, `web.rs`, `trash.rs`, `display.rs`, `preview_reads.rs` |
 | `diagnostics` | The system report a bug report asks for (Report an Issue…, `rawmakase system-info`): this build, the system probed once per process and what the window knew, as plain snapshots, with no path, user, file, catalog or profile name | `diagnostics.rs` |
 | `updates` | Release checks and self-update through fastframe-update; the notice itself is in `app` | `updates.rs` |
-| `ai_denoise` | AI Denoise's service, shared by the desktop app and the command line: the queue, the worker and its ONNX session, job keys, the finished-result lookup, `AiBase` for export; `CommandLine` for `render` and `render-batch`, and the `rawmakase denoise` development command. No egui and no `app`: the open photo's result and the Loupe's loader are `app::develop::ai_denoise`'s, and the app passes the user's cache in | `mod.rs`, `command_line.rs`, `bench.rs` |
-| `model_install` | The app's model pack, AI Denoise's: which files it holds and its folder; installing it is `rawmakase-model-install`'s, and the thread and the panel are `app`'s. Select Subject's and Sky's are the AI masks extension's | `mod.rs` |
+| `ai_denoise` | AI Denoise's service (`crates/rawmakase-denoise`), shared by the desktop app and the command line: the queue, the worker and its ONNX session, job keys, the finished-result lookup, `AiBase` for export; `CommandLine` for `render` and `render-batch`, and the `rawmakase denoise` development command. No egui and no `app`: the open photo's result and the Loupe's loader are `app::develop::ai_denoise`'s, and the app passes the user's cache, the model's and the runtime's folders in | `lib.rs`, `command_line.rs`, `bench.rs` |
+| `model_install` | The app's model pack, AI Denoise's (`crates/rawmakase-denoise`): which files it holds and its folder; installing it is `rawmakase-model-install`'s, and the thread and the panel are `app`'s. Select Subject's and Sky's are the AI masks extension's | `model_install.rs` |
 | `lensfun_install` | Downloading, checking, publishing and removing Lensfun's lens database on request (never bundled, never fetched unasked); reading it is `lens::lensfun::installed`'s, the panels and the job thread are `app`'s | `lensfun_install.rs` |
+| `render_command` | `rawmakase render` and `render-batch` as library functions: the edit sources `render` layers, its warnings and refusals, `render-batch`'s jobs. The binary passes in the raw defaults, AI Denoise (with its cache, model and runtime folders), the cancel and where to print; it never reaches `app` | `mod.rs` |
+| `catalog_command` | Opening a catalog for a command-line command (`render --catalog` and the binary's catalog commands): an upgrade's progress and backup, and removing an archived Lightroom catalog, reported to the error writer it is given; never reaches `app` | `catalog_command.rs` |
 | `comparison` | Reproducible reference-image comparisons using the same develop APIs | `comparison.rs` |
 
 `color` holds shared numeric primitives (matrices, sRGB transfer, HSV), the export colour
@@ -365,7 +370,7 @@ full-quality CPU stages check cancellation within pixel, row and column work.
 
 ### AI Denoise
 
-AI Denoise ([rendering quality](rendering-quality.md#ai-denoise)) has one service, `ai_denoise::Service` (a root module, so the command line uses it without the app): one
+AI Denoise ([rendering quality](rendering-quality.md#ai-denoise)) has one service, `ai_denoise::Service` (`crates/rawmakase-denoise`, so the command line uses it without the app): one
 queue and one worker thread for Develop, export and the CLI (one service per
 command, so `render-batch` loads the model once, with the user's cache in the folder
 Preferences chose, as the app keeps it). A job's
@@ -499,7 +504,10 @@ Some features span several owners; each module's docs describe its part:
   SQLite, ring, Wayland's backend on Linux); HEIC pixels come from the operating
   system's decoders, opened at run time ([dependencies](dependencies.md)).
 - Keep `eframe`, `egui` and native chooser code in `app`. The CLI must be able to
-  use domain operations without creating an editor or UI context. The crate still
+  use domain operations without creating an editor or UI context. `render` and
+  `render-batch` are `render_command`, which `scripts/deps-closures.txt` keeps
+  from `app`: what the desktop keeps (the session's raw defaults and AI Denoise
+  cache) is read by the binary and passed in. The crate still
   links its existing GUI dependencies; this is module separation, not a separate
   headless build feature.
 - The catalog owns its connection, and only `catalog::db` sees it (issue #341).
@@ -581,9 +589,10 @@ Some features span several owners; each module's docs describe its part:
   and spot removal (`Toned::unretouched`, the same copy when there are none).
 - AI Denoise keeps the crate direction: `rawmakase-inference` runs the model and
   knows no workspace crate but the cancellation token; `rawmakase-decode` packs the mosaic and assembles the
-  result without knowing the model and defines `AiBase`; the app implements
-  `AiBase` with inference (`ai_denoise::Service`) and owns the queue, the model
-  install (`model_install`) and the cache. **The engine never sees `AiBase`:** it receives a resolved,
+  result without knowing the model and defines `AiBase`; `rawmakase-denoise`
+  implements `AiBase` with inference (`ai_denoise::Service`) and owns the queue,
+  the model pack (`model_install`) and the cache's use; the app and the command
+  line choose the cache's, the model's and the runtime's folders. **The engine never sees `AiBase`:** it receives a resolved,
   immutable `develop::AiSource` (highlights recovered on its own, equal only to
   itself) inside the captured `Denoise`, from the Develop session
   (`PreviewRenderer::set_ai`) or from export (`render_with_ai`). An export of a

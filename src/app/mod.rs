@@ -294,7 +294,8 @@ impl Editor {
         decode_cache.set_folder(session.decoded_cache_folder.as_deref());
         let ai_cache = crate::ai_cache::AiCache::default();
         ai_cache.set_folder(session.decoded_cache_folder.as_deref());
-        let ai_denoise = crate::ai_denoise::Service::new(ai_cache);
+        let ai_denoise =
+            crate::ai_denoise::Service::new(ai_cache, crate::model_install::runtime_dir());
         let ai_loupe = crate::app::develop::ai_denoise::cached_loader(tx.clone(), ctx.clone());
         let (stored_tx, stored_ctx) = (std::sync::Mutex::new(tx.clone()), ctx.clone());
         ai_denoise.on_stored(std::sync::Arc::new(move |path| {

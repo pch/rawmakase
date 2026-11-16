@@ -10,9 +10,9 @@
 # renderer has wgpu for its GPU preview port. RAW files are read by
 # RAWmakase's own decoders (rawmakase-raw) and colour is managed in Rust
 # (moxcms): no crate may bring a C RAW library (LibRaw) or Little CMS back,
-# whether as a crate or linked by a build script. Export reads Inter and
-# the installed-font directories from fastframe-fonts, which brings egui (but
-# no window or GPU backend) along.
+# whether as a crate or linked by a build script. Export bundles Inter and
+# lists the installed-font directories itself, so no GUI crate reaches it;
+# only the app uses fastframe-fonts, for its interface.
 set -euo pipefail
 
 gui='egui.*|eframe|epaint|winit|fastframe-fonts'
@@ -76,11 +76,15 @@ if [ -n "$asm" ]; then
     echo "$asm" | sed 's/^/    /' >&2
     status=1
 fi
-check rawmakase-export "rawmakase|eframe|winit|egui-wgpu|egui-winit|egui_extras|$c_imaging|$inference"
+check rawmakase-export "rawmakase|$gui|$c_imaging|$inference"
 # Inference itself is a leaf: it runs the ONNX Runtime and AI Denoise's model, and
 # knows no workspace crate but the cancellation token (not the selection models or
 # the remote worker built on it), and no window, GPU or imaging library.
 check rawmakase-inference "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-interop|rawmakase-decode|rawmakase-protocol|rawmakase-selection|rawmakase-remote|wgpu.*|naga|$gui|$native"
+# AI Denoise's service sits on inference, decoding and the model installer: no
+# app, catalog, export, selection model, window, GUI or C imaging library. It
+# reaches wgpu only through the renderer, whose decoded-image types it passes on.
+check rawmakase-denoise "rawmakase|rawmakase-catalog|rawmakase-export|rawmakase-selection|rawmakase-remote|$gui|$c_imaging"
 # The selection models take pixels and return coverage: no workspace crate but
 # inference and the cancellation token, and no edit, catalog, renderer, decoder,
 # extension host, window, GPU or imaging library.

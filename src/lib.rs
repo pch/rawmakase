@@ -11,9 +11,10 @@
 //! management ([`raw`], [`photo`], [`color_management`], crates/rawmakase-decode);
 //! and exports ([`export`], crates/rawmakase-export).
 //!
+//! AI Denoise's service, shared by the app and the command line, is [`ai_denoise`]
+//! (crates/rawmakase-denoise), with `model_install`, the model pack it runs.
+//!
 //! This crate's own modules compose those APIs: [`app`] is the desktop editor,
-//! [`ai_denoise`] is AI Denoise's service, shared by the app and the command line,
-//! `model_install` installs the models it and the selection tools run,
 //! `edit_session` keeps an open photo's edits, history and saved state together,
 //! `catalog_session` holds the open catalog, [`comparison`] provides
 //! reference-image validation and `platform` isolates OS integration.
@@ -35,6 +36,10 @@ pub use rawmakase_decode::ai::cache as ai_cache;
 pub use rawmakase_decode::dev::{decode_dump, fingerprint, half_check};
 pub use rawmakase_decode::{camera_look, color_management, decode_cache, photo, raw};
 pub(crate) use rawmakase_decode::{decode, raster};
+// AI Denoise's service, shared by the app and the command line, and the model pack
+// it runs (crates/rawmakase-denoise).
+pub use rawmakase_denoise as ai_denoise;
+pub(crate) use rawmakase_denoise::model_install;
 // File formats and presets over the model, and which edit a photo develops with
 // (crates/rawmakase-interop).
 pub use rawmakase_interop::{
@@ -45,15 +50,15 @@ pub use rawmakase_model::{
     camera_data, camera_profiles, cameras, color, dng, ids, lens, metadata, model, optics,
     rendered, storage, tiff, xml,
 };
-pub mod ai_denoise;
 pub mod app;
+pub mod catalog_command;
 pub(crate) mod catalog_session;
 pub mod comparison;
 pub mod diagnostics;
 pub(crate) mod edit_session;
 pub mod lensfun_install;
-pub(crate) mod model_install;
 pub(crate) mod platform;
+pub mod render_command;
 /// For headless commands: whether a path's volume is mounted.
 pub use platform::volume::mounted as volume_mounted;
 /// For `rawmakase extensions remove`: deletes the keys extension `id` left
@@ -70,6 +75,20 @@ pub mod updates;
 
 #[cfg(test)]
 mod tests {
+    /// Text watermarks find the fonts the app's interface does: the same Inter and
+    /// the same installed-font folders, read without egui by export.
+    #[test]
+    fn watermarks_read_the_fonts_the_interface_does() {
+        assert_eq!(
+            rawmakase_export::watermark::fonts::INTER_DATA,
+            fastframe_fonts::INTER
+        );
+        assert_eq!(
+            rawmakase_export::watermark::font_dirs::font_directories(),
+            fastframe_fonts::system::font_directories()
+        );
+    }
+
     /// Exports name the app's release, though the export crate has its own version.
     #[test]
     fn exports_name_this_release() {

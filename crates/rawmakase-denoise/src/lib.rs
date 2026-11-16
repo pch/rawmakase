@@ -1,7 +1,9 @@
 //! AI Denoise's service: one queue and one worker thread for every caller (Develop,
 //! export and the CLI), the model loaded once, and the results' disk cache
-//! (docs/rendering-quality.md#ai-denoise). The desktop editor's side (the open
-//! photo's result, the Library's Loupe) is `app/ai_denoise.rs`; the command line's
+//! (docs/rendering-quality.md#ai-denoise), with the model pack it runs
+//! ([`model_install`]). The app re-exports it as `rawmakase::ai_denoise`, and knows
+//! nothing of the app: the desktop editor's side (the open photo's result, the
+//! Library's Loupe) is the app's `app/develop/ai_denoise.rs`; the command line's
 //! is [`CommandLine`] and the `rawmakase denoise` development command, [`command`]. Export reaches it as a
 //! [`rawmakase_decode::ai::denoise::AiBase`]; Develop asks for a photo with
 //! [`Service::request`] and receives its progress, a partial result after the tiles
@@ -13,6 +15,13 @@
 //! follows docs/shutdown.md: [`Service::stop`] raises the stop flag and the running
 //! run's cancel flag (ONNX Runtime terminates the run within one poll), and hands back
 //! the thread for the caller's deadline; the thread owns its ONNX session.
+// The paths the service was written with when it was a module of the app, which
+// re-exports these crates' modules at its root.
+use rawmakase_decode::ai::cache as ai_cache;
+use rawmakase_decode::photo;
+use rawmakase_engine::develop;
+use rawmakase_model::{camera_data, model, storage};
+
 use crate::camera_data::CameraImage;
 use crate::develop::AiSource;
 use anyhow::{Result, anyhow, bail};
@@ -30,14 +39,14 @@ use std::sync::{
 use std::time::Duration;
 
 /// What Develop hears about the photo it asked for.
-pub(crate) struct Update {
+pub struct Update {
     /// The plain image the request was made for: an update for another image (the photo
     /// was replaced, or another one opened) is dropped by the receiver.
     pub plain: std::sync::Weak<CameraImage>,
     pub state: State,
 }
 #[derive(Clone)]
-pub(crate) enum State {
+pub enum State {
     /// Waiting for another job.
     Queued,
     /// Running: the share of tiles done.
@@ -61,19 +70,19 @@ impl std::fmt::Debug for State {
 }
 
 /// Where Develop's updates go.
-pub(crate) type Sink = Arc<dyn Fn(Update) + Send + Sync>;
+pub type Sink = Arc<dyn Fn(Update) + Send + Sync>;
 /// Told the path of a photo whose result was just stored.
-pub(crate) type Stored = Arc<dyn Fn(&Path) + Send + Sync>;
+pub type Stored = Arc<dyn Fn(&Path) + Send + Sync>;
 /// Opens a photo's mosaic for the model (the RAW decoders in the app, a stand-in in tests).
-pub(crate) type Source = Arc<dyn Fn(&Path, Cancel<'_>) -> Result<PackedBayer> + Send + Sync>;
+pub type Source = Arc<dyn Fn(&Path, Cancel<'_>) -> Result<PackedBayer> + Send + Sync>;
 /// Loads the model on a provider (ONNX Runtime in the app, a stand-in in tests).
-pub(crate) type Loader =
+pub type Loader =
     Arc<dyn Fn(&Path, Provider) -> Result<Box<dyn TileModel + Send>, String> + Send + Sync>;
 
 /// One Develop request: the photo, its plain image, the 100% region shown (sensor
 /// pixels) and whether Develop still wants it (cleared when the switch goes off or the
 /// photo closes: a queued job is then dropped; a running one finishes and stores).
-pub(crate) struct Request {
+pub struct Request {
     pub path: PathBuf,
     /// The file as it was before `plain` was decoded from it: a file changed since is
     /// refused, never denoised into another file's image.
@@ -86,8 +95,8 @@ pub(crate) struct Request {
 
 /// The cache key of `path` with the model run on `provider`: everything the result
 /// depends on, captured once.
-#[cfg(test)]
-pub(crate) fn key(path: &Path, provider: Provider) -> Result<String> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn key(path: &Path, provider: Provider) -> Result<String> {
     Ok(key_of(&crate::storage::Identity::read(path)?, provider))
 }
 /// The key of a file whose identity is `id`, run on `provider`.
@@ -105,13 +114,13 @@ fn key_of(id: &crate::storage::Identity, provider: Provider) -> String {
 
 /// The installed model, as a Library preview made from its result names it: a result
 /// of another model makes another preview.
-pub(crate) fn model_tag() -> String {
+pub fn model_tag() -> String {
     format!("{}-a{}", &RAWNIND.model.sha256[..16], RAWNIND.version)
 }
 
 /// The key of a finished result of the installed model for the file `file` names, run
 /// on any provider, when `cache` has one: what a Library preview of the photo shows.
-pub(crate) fn finished(cache: &AiCache, file: &crate::storage::Identity) -> Option<String> {
+pub fn finished(cache: &AiCache, file: &crate::storage::Identity) -> Option<String> {
     [Provider::Cpu, Provider::Cuda, Provider::CoreML]
         .into_iter()
         .map(|provider| key_of(file, provider))
@@ -143,7 +152,7 @@ fn deliver(sink: &Sink, update: Update) {
 }
 
 /// Why a photo whose file changed since it was decoded gets no result.
-pub(crate) const CHANGED_SINCE_OPENED: &str =
+pub const CHANGED_SINCE_OPENED: &str =
     "The photo's file changed since it was opened; open it again to use AI Denoise.";
 
 /// A request's inputs, captured once when it is made: the file's identity, the provider
@@ -224,14 +233,21 @@ impl Drop for Working<'_> {
 
 /// The service; clones share it.
 #[derive(Clone)]
-pub(crate) struct Service {
+pub struct Service {
     shared: Arc<Shared>,
     thread: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
 
+/// Where AI Denoise's model pack is kept in this computer's own data folder, whether
+/// or not it is installed: the folder the desktop app installs it in, and the one its
+/// command line passes [`CommandLine::new`] and the `rawmakase denoise` command.
+pub fn model_dir() -> PathBuf {
+    crate::model_install::Pack::Denoise.dir()
+}
+
 /// The provider AI Denoise asks for: CoreML's GPU on Apple Silicon (measured equal to
 /// the CPU, docs/rendering-quality.md#ai-denoise), the CPU elsewhere.
-pub(crate) fn preferred_provider() -> Provider {
+pub fn preferred_provider() -> Provider {
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         Provider::CoreML
     } else {
@@ -257,11 +273,16 @@ fn threads() -> usize {
         .max(2)
 }
 
-fn load_model(dir: &Path, provider: Provider) -> Result<Box<dyn TileModel + Send>, String> {
-    let bundled = crate::model_install::runtime_dir();
+/// Loads the model in `dir` on `provider`, with the ONNX Runtime library bundled in
+/// `runtime` when it is there (the system's otherwise).
+fn load_model(
+    runtime: &Path,
+    dir: &Path,
+    provider: Provider,
+) -> Result<Box<dyn TileModel + Send>, String> {
     let runtime_library = rawmakase_inference::runtime::runtime_file_names()
         .iter()
-        .map(|name| bundled.join(name))
+        .map(|name| runtime.join(name))
         .find(|path| path.is_file());
     rawmakase_inference::Denoiser::load_with(
         dir,
@@ -276,17 +297,23 @@ fn load_model(dir: &Path, provider: Provider) -> Result<Box<dyn TileModel + Send
     .map_err(|e| e.to_string())
 }
 
+/// [`load_model`] with the runtime in `runtime`.
+fn loader(runtime: PathBuf) -> Loader {
+    Arc::new(move |dir: &Path, provider: Provider| load_model(&runtime, dir, provider))
+}
+
 impl Service {
-    /// The app's service: the RAW decoders, ONNX Runtime and `cache`.
-    pub(crate) fn new(cache: AiCache) -> Self {
+    /// The app's service: the RAW decoders, ONNX Runtime (the library bundled in
+    /// `runtime` when it is there) and `cache`.
+    pub fn new(cache: AiCache, runtime: PathBuf) -> Self {
         Self::with(
             cache,
             preferred_provider(),
             Arc::new(open_mosaic),
-            Arc::new(load_model),
+            loader(runtime),
         )
     }
-    pub(crate) fn with(cache: AiCache, provider: Provider, source: Source, loader: Loader) -> Self {
+    pub fn with(cache: AiCache, provider: Provider, source: Source, loader: Loader) -> Self {
         Self {
             shared: Arc::new(Shared {
                 queue: Mutex::default(),
@@ -302,15 +329,15 @@ impl Service {
         }
     }
     /// The installed model's folder, or `None`: jobs then fail with the reason.
-    pub(crate) fn set_model(&self, dir: Option<PathBuf>) {
+    pub fn set_model(&self, dir: Option<PathBuf>) {
         *self.shared.model.lock().unwrap_or_else(|e| e.into_inner()) = dir;
     }
-    pub(crate) fn cache(&self) -> &AiCache {
+    pub fn cache(&self) -> &AiCache {
         &self.shared.cache
     }
     /// Whether a job is queued, running or handing over its result. A running job
     /// finishes even once nobody wants it, so this outlasts the photo it was asked for.
-    pub(crate) fn busy(&self) -> bool {
+    pub fn busy(&self) -> bool {
         let queue = self.queue();
         queue.working || !queue.pending.is_empty()
     }
@@ -446,12 +473,12 @@ impl Service {
     }
     /// Tells `stored` the path of each photo whose result is stored from now on, so
     /// previews shown without one can show it.
-    pub(crate) fn on_stored(&self, stored: Stored) {
+    pub fn on_stored(&self, stored: Stored) {
         *self.shared.stored.lock().unwrap_or_else(|e| e.into_inner()) = Some(stored);
     }
     /// Asks for `request`'s photo in Develop. Its updates follow on its sink; a result
     /// already cached arrives without running anything.
-    pub(crate) fn request(&self, request: Request) {
+    pub fn request(&self, request: Request) {
         let Request {
             path,
             file,
@@ -864,7 +891,7 @@ impl Service {
     /// Lets go of the model before it is removed: no job uses it from now on, the
     /// running one is cancelled, and the worker drops its ONNX sessions between jobs.
     /// Waits for that up to five seconds (a run stops within one cancel poll).
-    pub(crate) fn unload(&self) {
+    pub fn unload(&self) {
         self.set_model(None);
         let alive = self
             .thread
@@ -894,7 +921,7 @@ impl Service {
     /// Stops the worker for good: the stop flag and the running run's cancel flag are
     /// raised, and its thread is handed back for the caller's deadline (the app's
     /// shared one, or [`wait_within`] on the command line). Never joined here.
-    pub(crate) fn stop(&self) -> Option<std::thread::JoinHandle<()>> {
+    pub fn stop(&self) -> Option<std::thread::JoinHandle<()>> {
         {
             let mut queue = self.queue();
             queue.stopped = true;
@@ -1127,8 +1154,11 @@ fn wait_within(thread: Option<std::thread::JoinHandle<()>>, deadline: Duration) 
 
 mod bench;
 mod command_line;
+pub mod model_install;
 pub use bench::{Command, command};
 pub use command_line::CommandLine;
 
-#[cfg(test)]
-pub(crate) mod tests;
+/// The stand-in model and service, for this crate's tests and the app's.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod tests;

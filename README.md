@@ -179,6 +179,7 @@ Every camera with a usable color matrix gets two profiles of RAWmakase's own: **
 rawmakase inspect photo.dng
 rawmakase thumbnail photo.dng embedded.jpg
 rawmakase render photo.dng edited.jpg --exposure 0.7 --max-edge 2400
+rawmakase render photo.dng small.jpg --max-edge 1600 --quality 80
 rawmakase render photo.dng edited.tiff --xmp preset.xmp
 rawmakase render photo.dng edited.jpg --auto
 rawmakase render photo.dng wide.tiff --color-space prophoto
@@ -187,7 +188,7 @@ rawmakase fingerprint *.NEF        # decode facts per file as JSON lines, for re
 rawmakase help
 ```
 
-`render` starts where the app would. With `--catalog Photos.rawmakase` it uses the photo's edit in that catalog: its saved edit, else its Lightroom edit, else the raw defaults. A path names the master, not a virtual copy, and a photo the catalog doesn't have is an error. Without a catalog it uses an edit a release before 0.1.8 saved as a sidecar (`photo.dng.rawmakase.json` beside the photo, or in the data directory's `sidecars/` folder, whichever is newer), else the raw defaults chosen in Preferences. `--recipe` replaces that starting point with a saved RAWmakase preset; `--xmp` applies an XMP preset on top of it, so settings the XMP leaves out keep the starting point's values. For a render that depends on nothing saved, pass `--recipe`. The catalog's export settings don't apply: the output is what the command line asks for. It needs `--overwrite` to replace an existing file.
+`render` starts where the app would. With `--catalog Photos.rawmakase` it uses the photo's edit in that catalog: its saved edit, else its Lightroom edit, else the raw defaults. A path names the master, not a virtual copy, and a photo the catalog doesn't have is an error. Without a catalog it uses an edit a release before 0.1.8 saved as a sidecar (`photo.dng.rawmakase.json` beside the photo, or in the data directory's `sidecars/` folder, whichever is newer), else the raw defaults chosen in Preferences. `--recipe` replaces that starting point with a saved RAWmakase preset; `--xmp` applies an XMP preset on top of it, so settings the XMP leaves out keep the starting point's values. For a render that depends on nothing saved, pass `--recipe`. The catalog's export settings don't apply: the output is what the command line asks for. It needs `--overwrite` to replace an existing file. `--quality 1–100` sets a JPEG's quality, as the Export dialog's slider does (92 without it); a `.jxl` output is lossless unless `--jxl-quality` gives it one. `render-batch --quality` applies to the jobs it writes as JPEG.
 
 ### Where data lives
 
