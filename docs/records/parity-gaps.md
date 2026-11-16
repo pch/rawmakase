@@ -140,14 +140,84 @@ difference between probes and photos that had not been controlled. In the same r
 the level Camera Raw leaves unchanged at −100 is 1 to 3 stops under white and within a
 stop of the photo's brightest large area; above it Camera Raw darkens (−0.25 stop).
 
+**The large-scale layer.** With the detail filter and the colour rule in place, a simulated
+operator on the 52 photos at −100 (all channels) leaves 0.0275 at the median on the
+candidate's own 32 px low-pass (the candidate: 0.0293; six and four photos above 0.05),
+0.0105 on Camera Raw's low-pass with the engine's airlight as the veil colour (two
+photos above 0.05) and 0.0092 with the fitted veil colour (none). What is left is that
+low-pass, the lift of the 32 px mean of log luminance (1.46 stops RMS at −100). Its
+error in stops, RMS and median over photos:
+
+| Large-scale layer | RMS | Median photo | Worst photo |
+| --- | --- | --- | --- |
+| The candidate's (haze model backwards) | 0.365 | 0.250 | 1.39 |
+| Each photo's own best curve of the level (a floor for curves) | 0.197 | 0.157 | 0.55 |
+| out = P·(1 − (1 − in/P)^n), P and n free per photo | 0.251 | 0.198 | 0.70 |
+| The same with one n and P from a statistic of the photo | 0.47 to 0.59 | 0.32 to 0.54 | 1.5 to 1.8 |
+| Scattered light with an airlight, (B + k·M) / (1 + k·M/A), M a mean over 32 px to the frame | 0.47 to 0.85 | 0.32 to 0.64 | 1.8 to 3.0 |
+| Gradient boosting on coarse features, cross-validated by photo (98 photos) | 0.27 | 0.17 to 0.18 | 1.15 |
+| The same on inputs relative to the airlight, no whole-photo statistics | 0.286 | 0.187 | 0.88 |
+
+- *A learned layer closes part of the gap and stops improving.* Under the same detail
+  filter and colour rule it leaves 0.0212 to 0.0230 at −100 (better than the candidate on
+  40 photos, worse on 9) and 0.0104 at −50 (the candidate: 0.0146). Trained on 12, 24,
+  42, 63 and 84 photos its median error on unseen photos is 0.239, 0.204, 0.196, 0.189
+  and 0.180 stops; the dataset has 245 training photos. It fails on saturated scenes (a
+  portrait before a yellow wall: Camera Raw's mean lift 0.6 stop, the learned layer's
+  1.76), on low-key scenes (a moon on black: 0.03 against 0.45) and under-lifts large pale
+  areas. Local dark-channel and density features carry a third of what levels leave
+  (0.253 → 0.167); levels relative to the airlight instead of absolute ones change
+  nothing.
+- *Probes built from photos* (six training photos' scene values as probe DNGs with the
+  automatic black, one change each, 96 renders; the lift at the same pixels against
+  the unchanged photo). Colour removed at equal luminance: the yellow-wall portrait
+  gains 1.10 stops, 1.50 on the wall, which the unchanged photo darkens by 1.28 and
+  the grey one does not; half the saturation does the same as none; a night market
+  +0.72, a sunset +0.15, fog photos 0.01 to 0.19. Saturation raised by half: the sunset
+  −0.51 (−0.97 in its brightest stop), the night market −0.75. A pedestal of 2^−6: −0.08
+  to +0.02 on daylight photos though their levels rose by 0.2 to 1.0 stop, +0.76 on the
+  night market. The left half darkened by two stops: the other half −0.07 to +0.07
+  (−0.16 to −0.31 in its darkest levels), the darkened half +0.2 to +0.9. Detail removed
+  (a 16 px blur): +0.02 to +0.10 on four photos, +0.69 on the night market, −0.28 on a
+  fog photo whose small white bird was the brightest neutral thing in it. Mid-tones
+  darkened: +0.10 to +0.39.
+- *What the probes say.* Saturated colours are kept out of the airlight for the whole
+  photo, and what is brighter than the airlight is pulled down to it. In the portrait
+  and the sunset one transmission fits the three channels at every level once the
+  airlight is right: the engine's dim neutral airlight in the portrait, and in the
+  sunset the sun's own colour from unclipped values (luminance 0.79 where the engine
+  reads 0.31 from the clipped render). A rule trained on the other 92 photos predicts
+  the grey versions of its worst photos well (0.17 stop against 0.60 for the portrait,
+  0.12 against 0.45 for the night market): what the learned layer lacks is colour, not
+  the luminance behaviour.
+- *A law read from those scenes does not hold on the rest.* In the three scenes the
+  transmission follows the luminance over the airlight's as 1/(1 + 1.45·d^0.6), on to
+  five times the airlight. On all 52 photos a luminance density under that law, with
+  blurs of 0 to 8%, exponents of 0.4 to 1 and three choices of airlight, is worse than
+  the candidate's dark-channel density (best 0.0388 at the median against 0.0293; worse
+  on 41 photos).
+- *The veil colour.* Against the scene before the default white and black, unclamped
+  and at full size: where no light source is clipped at the sensor the fitted veil
+  colour is the brightest 1% by luminance within about 0.1 stop per channel (five of
+  six such photos); around clipped sources it is two to three times more saturated
+  than the brightest pixels, which RAWmakase reconstructs to white. A dusk city (blue
+  0.41 of green in the veil, nothing bright that yellow) and two slightly magenta
+  veils are not explained.
+- *The automatic black does not explain the large-scale error.* Against the six photos
+  rendered without it the candidate is no closer (0.0336 against 0.0287, 0.0467 against
+  0.0349, and so on): it still lifts levels 6 to 10 stops under the top 1.2 to 1.8
+  stops too far.
+
 **Where this leaves negative Dehaze.** It is not the haze equation with one airlight. It
 is a contrast change in log luminance that is nearly the same at every scale and for
 every photo up to about 3% of the frame, on top of a large-scale layer that differs by
-photo and by region, with a veil of one colour per photo. Next: build the detail filter
-and the colour rule as measured, model the large-scale layer on its own (it is smooth,
-so it can be measured on probes built from photos, as the global rule was on mosaics),
-key the default black after Dehaze, and run the same band test on Clarity and on
-positive Dehaze, whose renders are already on disk.
+photo and by region, with a veil of one colour per photo. The detail filter and the
+colour rule are measured; the large-scale layer has no closed form yet, and neither
+they nor the automatic black are worth building for negative Dehaze before it has a
+model. Open: how colour enters that layer (probes that change saturation and hue of
+whole photos and of single regions), and the airlight Camera Raw reads around clipped
+sources. The same band test on Clarity and on positive Dehaze, whose renders are on
+disk, and the default black keyed after Dehaze are separate, smaller steps.
 
 ### Negative Dehaze as added haze, and the dark key (2026-11-13)
 
