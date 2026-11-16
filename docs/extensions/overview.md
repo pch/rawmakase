@@ -27,8 +27,10 @@ write anything you can. Its manifest declares what it reaches (`[access]`:
 the network, which files, which devices), and RAWmakase shows that before
 installing it and when an update asks for more, but doesn't enforce it.
 Extensions installed from a file or a GitHub repository are marked **Not
-reviewed**. The official extensions (`rawmakase.*`) ship with the app and can
-be disabled, not uninstalled; no other package may use their ids.
+reviewed**, except the official ones RAWmakase lists, installed from the
+repository listed for them ([In the app](#in-the-app)). The bundled extensions
+(`rawmakase.*`) ship with the app and can be disabled, not uninstalled; no
+other package may use their ids.
 
 Installing never runs an extension's code: its program first starts when one
 of its contributions is used.
