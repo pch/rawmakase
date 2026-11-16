@@ -570,18 +570,6 @@ pub(super) fn copy_lightroom_metadata(lr: &mut LightroomWrite<'_>) -> Result<usi
     Ok(read)
 }
 
-/// Set in `meta` once descriptive metadata has been copied from the stored
-/// Lightroom catalog.
-pub(super) const METADATA_BACKFILLED: &str = "lightroom_metadata_backfilled";
-
-impl Catalog {
-    /// Catalogs imported before descriptive metadata was kept still hold
-    /// the original Lightroom catalog; copy it once, for photos with no row.
-    pub fn backfill_lightroom_metadata(&mut self) -> Result<usize> {
-        self.backfill_once(METADATA_BACKFILLED, copy_lightroom_metadata)
-    }
-}
-
 #[cfg(test)]
 #[path = "sidecar_tests.rs"]
 mod tests;

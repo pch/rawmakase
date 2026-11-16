@@ -183,37 +183,23 @@ fn lightroom_metadata_preserves_all_labels_flags_and_unrated_photos() -> Result<
     Ok(())
 }
 #[test]
-fn a_catalog_too_large_to_archive_imports_without_its_archive() -> Result<()> {
+fn an_import_keeps_no_copy_of_the_lightroom_catalog() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let source = dir.path().join("source.lrcat");
     fixture(&source)?;
     let size = std::fs::metadata(&source)?.len();
-    let archived = dir.path().join("Archived.rawmakase");
-    super::lightroom::import_archiving_up_to(&source, &archived, size)?;
-    let archive: Vec<u8> = Catalog::open(&archived)?.db_for_tests().query_row(
-        "SELECT original_catalog FROM sources",
-        [],
-        |r| r.get(0),
-    )?;
-    assert_eq!(archive, std::fs::read(&source)?);
-    // One byte over the limit: imported in full, but with an empty archive.
     let output = dir.path().join("Photos.rawmakase");
-    super::lightroom::import_archiving_up_to(&source, &output, size - 1)?;
-    let mut cat = Catalog::open(&output)?;
-    let (original_size, archive): (i64, Vec<u8>) = cat.db_for_tests().query_row(
-        "SELECT original_size, original_catalog FROM sources",
+    import_lightroom(&source, &output)?;
+    let cat = Catalog::open(&output)?;
+    let (path, original_size, archive): (String, i64, Vec<u8>) = cat.db_for_tests().query_row(
+        "SELECT path, original_size, original_catalog FROM sources",
         [],
-        |r| Ok((r.get(0)?, r.get(1)?)),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )?;
+    assert_eq!(path, source.to_string_lossy());
     assert_eq!(original_size as u64, size);
     assert!(archive.is_empty());
-    let photos = cat.photos()?;
-    assert_eq!(photos.len(), 2);
-    assert_eq!(photos[0].rating, 4);
-    assert_eq!(photos[0].keywords, ["City"]);
-    // Opening it has nothing to backfill from.
-    assert_eq!(cat.backfill_lightroom_history()?, 0);
-    assert_eq!(cat.backfill_keyword_export()?, 0);
+    assert_eq!(cat.photos()?.len(), 2);
     Ok(())
 }
 #[test]
@@ -228,10 +214,6 @@ fn import_is_lossless_atomic_and_virtual_copies_are_independent() -> Result<()> 
     assert_eq!(identity, Identity::read(&source)?);
     assert_eq!(bytes, std::fs::read(&source)?);
     let mut cat = Catalog::open(&output)?;
-    let archive: Vec<u8> =
-        cat.db_for_tests()
-            .query_row("SELECT original_catalog FROM sources", [], |r| r.get(0))?;
-    assert_eq!(archive, bytes);
     let photos = cat.photos()?;
     assert_eq!(photos.len(), 2);
     assert_eq!(photos[0].rating, 4);
@@ -774,27 +756,6 @@ fn adding_a_folder_imports_sidecar_edits() -> Result<()> {
     Ok(())
 }
 #[test]
-fn lightroom_history_is_backfilled_once() -> Result<()> {
-    let d = tempfile::tempdir()?;
-    let dest = d.path().join("catalog.rawmakase");
-    let mut cat = Catalog::create(&dest)?;
-    // A stored Lightroom catalog from before history steps were kept.
-    let original = d.path().join("original.lrcat");
-    Connection::open(&original)?.execute_batch("CREATE TABLE Adobe_images(id_local INTEGER)")?;
-    cat.db_for_tests().execute(
-        "INSERT INTO sources(path, original_size, original_catalog) VALUES ('x.lrcat', 0, ?)",
-        [std::fs::read(&original)?],
-    )?;
-    assert_eq!(cat.backfill_lightroom_history()?, 0);
-    // Reading it again would now fail: it is not read again, on this or a later open.
-    cat.db_for_tests()
-        .execute("UPDATE sources SET original_catalog=randomblob(4096)", [])?;
-    assert_eq!(cat.backfill_lightroom_history()?, 0);
-    drop(cat);
-    assert_eq!(Catalog::open(&dest)?.backfill_lightroom_history()?, 0);
-    Ok(())
-}
-#[test]
 fn virtual_copies_are_created_promoted_renamed_and_removed() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let folder = dir.path().join("photos");
@@ -1003,7 +964,7 @@ fn edit_times_come_from_rawmakase_or_else_lightroom_history() -> Result<()> {
 
 /// A develop-history snapshot as Lightroom stores it: a 4-byte big-endian
 /// length and a zlib stream.
-fn compressed(text: &str) -> Vec<u8> {
+pub(super) fn compressed(text: &str) -> Vec<u8> {
     use std::io::Write;
     let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
     z.write_all(text.as_bytes()).unwrap();
@@ -1172,7 +1133,7 @@ fn lightroom_import_reads_each_photos_descriptive_metadata() -> Result<()> {
     Ok(())
 }
 #[test]
-fn lightroom_keyword_export_options_are_imported_and_backfilled() -> Result<()> {
+fn lightroom_keyword_export_options_are_imported() -> Result<()> {
     let d = tempfile::tempdir()?;
     let source = d.path().join("keywords.lrcat");
     fixture(&source)?;
@@ -1188,7 +1149,7 @@ fn lightroom_keyword_export_options_are_imported_and_backfilled() -> Result<()> 
     }
     let destination = d.path().join("keywords.rawmakase");
     import_lightroom(&source, &destination)?;
-    let mut cat = Catalog::open(&destination)?;
+    let cat = Catalog::open(&destination)?;
     let exported = |cat: &Catalog| -> Result<Vec<(Vec<String>, Vec<bool>)>> {
         Ok(cat
             .keywords(PhotoId(40))?
@@ -1203,15 +1164,6 @@ fn lightroom_keyword_export_options_are_imported_and_backfilled() -> Result<()> 
             vec![false, false, true],
         ),
     ];
-    assert_eq!(exported(&cat)?, expected);
-    // A catalog imported before the options were kept gets them once.
-    cat.db_for_tests().execute_batch(
-        "DELETE FROM keyword_export;
-         DELETE FROM meta WHERE key='lightroom_keyword_export_backfilled';",
-    )?;
-    assert!(exported(&cat)?.iter().all(|(_, e)| e.iter().all(|x| *x)));
-    assert_eq!(cat.backfill_keyword_export()?, 2);
-    assert_eq!(cat.backfill_keyword_export()?, 0);
     assert_eq!(exported(&cat)?, expected);
     Ok(())
 }
@@ -1539,9 +1491,7 @@ fn lightroom_snapshots_import_with_their_photo() -> Result<()> {
     }
     let destination = d.path().join("snapshots.rawmakase");
     import_lightroom(&source, &destination)?;
-    let mut cat = Catalog::open(&destination)?;
-    // Imported here, so opening the catalog has nothing to recover.
-    assert_eq!(cat.backfill_lightroom_snapshots()?, 0);
+    let cat = Catalog::open(&destination)?;
     let snapshots = cat.snapshots(PhotoId(40))?;
     assert_eq!(snapshots.len(), 1);
     assert_eq!(snapshots[0].name, "Before crop");
@@ -1549,23 +1499,6 @@ fn lightroom_snapshots_import_with_their_photo() -> Result<()> {
         snapshots[0].settings,
         SnapshotSettings::Lightroom("s = { Exposure2012 = 0.5 }".into())
     );
-    // A catalog imported before snapshots were kept recovers them once.
-    cat.db_for_tests()
-        .execute("DELETE FROM develop_snapshots", [])?;
-    cat.db_for_tests().execute(
-        "DELETE FROM meta WHERE key='lightroom_snapshots_backfilled'",
-        [],
-    )?;
-    assert_eq!(cat.backfill_lightroom_snapshots()?, 1);
-    assert_eq!(cat.snapshots(PhotoId(40))?.len(), 1);
-    assert_eq!(cat.backfill_lightroom_snapshots()?, 0);
-    // A copy cut short before its marker was written copies nothing twice.
-    cat.db_for_tests().execute(
-        "DELETE FROM meta WHERE key='lightroom_snapshots_backfilled'",
-        [],
-    )?;
-    assert_eq!(cat.backfill_lightroom_snapshots()?, 0);
-    assert_eq!(cat.snapshots(PhotoId(40))?.len(), 1);
     Ok(())
 }
 #[test]

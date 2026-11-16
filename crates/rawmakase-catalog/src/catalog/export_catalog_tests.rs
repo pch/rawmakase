@@ -294,7 +294,7 @@ fn a_failed_export_writes_nothing() -> Result<()> {
 }
 
 #[test]
-fn an_exported_lightroom_catalog_leaves_the_archived_lrcat_behind() -> Result<()> {
+fn an_exported_lightroom_catalog_leaves_its_source_behind() -> Result<()> {
     let d = tempfile::tempdir()?;
     let source = d.path().join("trip.lrcat");
     super::tests::fixture(&source)?;

@@ -1032,7 +1032,7 @@ pub(in crate::app) mod onboarding;
 pub(in crate::app) fn upgrade_progress<'a>(
     tx: &'a std::sync::mpsc::Sender<Event>,
     ctx: &'a egui::Context,
-) -> impl FnMut(crate::catalog::UpgradeProgress) + 'a {
+) -> impl FnMut(crate::catalog::OpeningProgress) + 'a {
     move |progress| {
         let _ = tx.send(Event::CatalogWorking(progress.to_string()));
         ctx.request_repaint();

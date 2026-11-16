@@ -1,13 +1,11 @@
 //! Lightroom's develop history, imported with the catalog and shown under
 //! "From Lightroom" in the History panel, and the stored Lightroom develop
 //! settings a photo opens with.
-use crate::catalog::db::{LightroomWrite, Reads, SqliteSql, sql, sqlite_sql};
+use crate::catalog::db::{Reads, SqliteSql, sql, sqlite_sql};
 use crate::catalog::value::{TextOrBlob, row};
 use crate::catalog::{Catalog, PhotoId};
 use anyhow::Result;
 
-/// Set in `meta` once Lightroom history has been recovered from the stored catalog.
-const HISTORY_BACKFILLED: &str = "lightroom_history_backfilled";
 /// Copies history steps from an attached Lightroom catalog named `lr`.
 pub(super) const COPY_LIGHTROOM_HISTORY: SqliteSql = sqlite_sql!(
     "INSERT INTO lightroom_history(photo,position,name,created,text)
@@ -77,23 +75,6 @@ impl Catalog {
             })
             .collect())
     }
-    /// Catalogs imported before history was kept still hold the original
-    /// Lightroom catalog; copy its history steps once. Returns steps added.
-    pub fn backfill_lightroom_history(&mut self) -> Result<usize> {
-        // Once is enough: without history to recover, the stored catalog would
-        // otherwise be written out and attached on every open. History that
-        // came with the import leaves nothing to recover, so it is not.
-        if self.meta(HISTORY_BACKFILLED)?.is_none() && self.has_lightroom_history()? {
-            self.set_meta(HISTORY_BACKFILLED, "1")?;
-        }
-        self.backfill_once(HISTORY_BACKFILLED, copy_history)
-    }
-    fn has_lightroom_history(&self) -> Result<bool> {
-        let have: i64 = self
-            .db
-            .read_one(sql!("SELECT count(*) FROM lightroom_history"), &[])?;
-        Ok(have > 0)
-    }
     #[cfg(test)]
     pub fn lightroom_develop(&self, id: PhotoId) -> Result<Option<String>> {
         self.db.read_one(
@@ -101,12 +82,4 @@ impl Catalog {
             &[&id],
         )
     }
-}
-
-/// Copies history steps from a Lightroom catalog attached as `lr` that has them.
-fn copy_history(lr: &mut LightroomWrite<'_>) -> Result<usize> {
-    if !lr.has_table("Adobe_libraryImageDevelopHistoryStep")? {
-        return Ok(0);
-    }
-    lr.execute_sqlite(COPY_LIGHTROOM_HISTORY, &[])
 }

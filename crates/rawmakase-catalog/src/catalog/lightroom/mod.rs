@@ -8,14 +8,6 @@ pub use history::HistoryStep;
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use std::path::{Path, PathBuf};
 
-/// Set in `meta` once keyword export options have been copied from the
-/// stored catalog.
-const KEYWORD_EXPORT_BACKFILLED: &str = "lightroom_keyword_export_backfilled";
-
-/// The largest Lightroom catalog kept byte-exact inside ours: SQLite refuses a
-/// blob over SQLITE_MAX_LENGTH, 1,000,000,000 bytes in the bundled build.
-const MAX_ARCHIVED_CATALOG: u64 = 900_000_000;
-
 /// A photo's filename in a Lightroom catalog, from its `AgLibraryFile` row
 /// named `f`: SQL to `concat!` into a statement.
 macro_rules! lightroom_filename {
@@ -32,47 +24,11 @@ impl Catalog {
         let paths: Vec<String> = self.db.read(sql!("SELECT path FROM sources"), &[])?;
         Ok(paths.into_iter().map(PathBuf::from).collect())
     }
-    /// Catalogs imported before keyword export options were kept still hold
-    /// the original Lightroom catalog; copy them once, so an export leaves
-    /// out the keywords Lightroom would.
-    pub fn backfill_keyword_export(&mut self) -> Result<usize> {
-        self.backfill_once(KEYWORD_EXPORT_BACKFILLED, copy_keyword_export)
-    }
-    /// Runs `copy` once per catalog, as recorded under `key` in `meta`, with
-    /// the Lightroom catalog this one was imported from attached as `lr`.
-    /// Returns what it copied; nothing for a catalog that was not imported.
-    pub(in crate::catalog) fn backfill_once(
-        &mut self,
-        key: &str,
-        copy: fn(&mut LightroomWrite<'_>) -> Result<usize>,
-    ) -> Result<usize> {
-        if self.meta(key)?.is_some() {
-            return Ok(0);
-        }
-        let original: Option<Vec<u8>> = self.db.read_optional(
-            sql!(
-                "SELECT original_catalog FROM sources
-                 WHERE original_catalog IS NOT NULL AND length(original_catalog) > 0 LIMIT 1"
-            ),
-            &[],
-        )?;
-        let copied = match original {
-            Some(original) => {
-                let snapshot = tempfile::NamedTempFile::new()?;
-                std::fs::write(snapshot.path(), original)?;
-                // One transaction: a row at a time would flush the journal for each.
-                self.db.with_lightroom(snapshot.path(), copy)?
-            }
-            None => 0,
-        };
-        self.set_meta(key, "1")?;
-        Ok(copied)
-    }
 }
 
 /// Copies Lightroom's Include on Export and Export Containing Keywords of
 /// the keywords that have either off, from a catalog attached as `lr`.
-pub(super) fn copy_keyword_export(lr: &mut LightroomWrite<'_>) -> Result<usize> {
+fn copy_keyword_export(lr: &mut LightroomWrite<'_>) -> Result<usize> {
     let columns: Vec<String> = lr.read_sqlite(
         sqlite_sql!("SELECT name FROM pragma_table_info('AgLibraryKeyword', 'lr')"),
         &[],
@@ -94,20 +50,10 @@ pub(super) fn copy_keyword_export(lr: &mut LightroomWrite<'_>) -> Result<usize> 
     )
 }
 
-/// Import a closed/exported Lightroom catalog into a new, atomically published file.
-/// Keep a byte-exact archive inside our catalog, including fields we cannot
-/// interpret, unless the catalog is too large for one SQLite blob.
+/// Imports a closed or exported Lightroom catalog into a new, atomically
+/// published file. What the import doesn't read stays in the Lightroom
+/// catalog only: the new catalog doesn't depend on it.
 pub fn import_lightroom(source: &Path, destination: &Path) -> Result<PathBuf> {
-    import_archiving_up_to(source, destination, MAX_ARCHIVED_CATALOG)
-}
-
-/// `import_lightroom`, archiving the source only if it is at most
-/// `max_archived` bytes.
-pub(in crate::catalog) fn import_archiving_up_to(
-    source: &Path,
-    destination: &Path,
-    max_archived: u64,
-) -> Result<PathBuf> {
     ensure!(
         !destination.exists(),
         "Destination exists; choose a new catalog filename"
@@ -123,17 +69,12 @@ pub(in crate::catalog) fn import_archiving_up_to(
     let tmpdir = tempfile::tempdir_in(parent)?;
     let working = tmpdir.path().join("import.rawmakase");
     let mut catalog = Catalog::create(&working)?;
-    // A catalog too large for one SQLite blob is imported without the archive,
-    // left empty so `backfill_once` has nothing to read.
-    let original = if size <= max_archived {
-        std::fs::read(snapshot.path())?
-    } else {
-        Vec::new()
-    };
     catalog.db.with_lightroom(snapshot.path(), |lr| {
+        // `original_catalog` stays empty: the schema keeps the column, and
+        // releases that read it take an empty one as nothing to read.
         lr.write().execute(
             sql!("INSERT INTO sources(path,original_size,original_catalog) VALUES(?,?,?)"),
-            &[&source.to_string_lossy(), &(size as i64), &original],
+            &[&source.to_string_lossy(), &(size as i64), &Vec::<u8>::new()],
         )?;
         copy_tables(lr)
     })?;
@@ -317,15 +258,6 @@ fn copy_tables(lr: &mut LightroomWrite<'_>) -> Result<()> {
     }
     super::info::copy_lightroom_info(lr)?;
     super::sidecar::copy_lightroom_metadata(lr)?;
-    // Copied here, so opening the new catalog has nothing to backfill.
-    for key in [
-        super::info::INFO_BACKFILLED,
-        super::sidecar::METADATA_BACKFILLED,
-        KEYWORD_EXPORT_BACKFILLED,
-        super::snapshots::SNAPSHOTS_BACKFILLED,
-    ] {
-        super::set_meta(lr.write(), key, "1")?;
-    }
     if lr.has_table("AgLibraryKeywordImage")? {
         lr.execute_sqlite(
             sqlite_sql!(

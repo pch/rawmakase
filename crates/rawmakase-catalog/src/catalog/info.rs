@@ -40,8 +40,6 @@ pub(super) fn read(db: &impl Reads, id: PhotoId) -> Result<Option<PhotoInfo>> {
     }))
 }
 
-/// Set in `meta` once photo info has been copied from the stored catalog.
-pub(super) const INFO_BACKFILLED: &str = "lightroom_info_backfilled";
 /// The PNGs whose files are read once more, because their info was stored
 /// before PNGs' EXIF was read: their ids, comma-separated, each removed once
 /// its file is read; empty when none is left.
@@ -228,11 +226,6 @@ impl Catalog {
             }
             Ok(())
         })
-    }
-    /// Catalogs imported before photo info was kept still hold the original
-    /// Lightroom catalog; copy its info once.
-    pub fn backfill_lightroom_info(&mut self) -> Result<usize> {
-        self.backfill_once(INFO_BACKFILLED, copy_lightroom_info)
     }
 }
 

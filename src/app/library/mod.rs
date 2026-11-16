@@ -311,7 +311,7 @@ impl Library {
     pub(crate) fn new(opened: Opened, ctx: egui::Context) -> Self {
         let Opened {
             mut session,
-            keyword_export,
+            not_compacted,
             upgraded,
         } = opened;
         session.wake_with(wake(&ctx));
@@ -384,10 +384,10 @@ impl Library {
         if let Some(upgraded) = upgraded {
             s.messages.note(upgrade_note(&upgraded));
         }
-        if let Some(e) = keyword_export {
+        if let Some(e) = not_compacted {
             s.messages.warn(format!(
-                "Lightroom's keyword export options could not be read: {e:#}. \
-                 Exports include every keyword's parents until they are."
+                "The catalog couldn't be made smaller: {e}. It is tried again the next time \
+                 the catalog opens."
             ));
         }
         // Start with a selection, as Lightroom does, so the side panels are filled.

@@ -173,15 +173,6 @@ impl Catalog {
         let chosen = self.chosen(scope)?;
         ensure!(!chosen.is_empty(), "There are no photos to export");
         let keep = self.families(&chosen)?;
-        // Lightroom data still only in the archived Lightroom catalog goes
-        // with the photos as rows before the archive, which holds every
-        // other photo too, is left out.
-        self.backfill_keyword_export()?;
-        self.backfill_lightroom_metadata()?;
-        self.backfill_lightroom_info()?;
-        self.backfill_lightroom_snapshots()?;
-        self.backfill_lightroom_history()?;
-
         let photos = self.photos()?;
         let offline = photos
             .iter()

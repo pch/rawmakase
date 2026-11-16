@@ -41,6 +41,7 @@ mod info;
 mod ingest;
 pub mod legacy_sidecar;
 pub mod lightroom;
+mod lightroom_archive;
 mod location;
 pub mod locations;
 mod mask_assets;
@@ -67,7 +68,7 @@ pub use edits::PreviewEdit;
 pub use edits::{EditChange, EditToSave};
 pub use export_catalog::{CatalogExport, ExportScope, ExportedFolders};
 pub use fingerprint::Conditional;
-pub use format_upgrade::{UpgradeProgress, Upgraded};
+pub use format_upgrade::{OpeningProgress, Upgraded};
 pub use ingest::{
     Ambiguity, Choice, Conflict, FileRefusal, FilesAdded, IMPORT_BURST_SECONDS, PendingBurstStacks,
 };
@@ -114,7 +115,7 @@ impl Catalog {
     pub fn open_reporting(
         location: impl Into<CatalogLocation>,
         computer: &locations::Computer,
-        progress: &mut dyn FnMut(UpgradeProgress),
+        progress: &mut dyn FnMut(OpeningProgress),
     ) -> Result<Self> {
         let location = location.into();
         let (db, file) = file_ops::opening(&location, || Db::open(&location));
@@ -440,6 +441,8 @@ mod format_upgrade_tests;
 mod import_bursts_tests;
 #[cfg(test)]
 mod ingest_tests;
+#[cfg(test)]
+mod lightroom_archive_tests;
 #[cfg(test)]
 mod locations_tests;
 #[cfg(test)]
