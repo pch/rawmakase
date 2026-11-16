@@ -3221,6 +3221,17 @@ pub(in crate::app) fn app_version() -> semver::Version {
 }
 
 /// The source a loaded extension shows on its page.
+/// Whether `e` is one of the official extensions RAWmakase lists, installed
+/// from the repository listed for it ([`rawmakase_extensions::github::official`]).
+pub(in crate::app) fn official(e: &Extension) -> bool {
+    e.origin == Origin::Installed
+        && matches!(
+            e.entry.source(),
+            Some(Source::Github { repository })
+                if rawmakase_extensions::github::official(e.id(), &repository)
+        )
+}
+
 pub(in crate::app) fn source_label(e: &Extension) -> &'static str {
     match e.origin {
         Origin::Bundled => "Bundled",

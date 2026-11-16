@@ -11,7 +11,7 @@
 //! and leaves the session as it was when that fails. Downloads, installs and
 //! update checks run on a thread of their own ([`Editor::extension_work`]),
 //! and the page says it is busy until they report, however they end.
-use super::{Extension, Origin, PathTarget, panels, source_label};
+use super::{Extension, Origin, PathTarget, official, panels, source_label};
 use crate::app::Editor;
 use crate::app::preferences::{gap, group, hint};
 use crate::app::shell::automation::LocalAccess;
@@ -33,6 +33,9 @@ const WATCH: Duration = Duration::from_secs(1);
 /// What an installed extension's page and an offer say of its trust.
 const NOT_REVIEWED: &str = "RAWmakase hasn't reviewed this extension. It runs with your \
      permissions.";
+/// What an [`official`] extension's page and install dialog say in its place.
+const OFFICIAL: &str = "An official extension: RAWmakase lists it, and this copy comes from \
+     the repository listed for it. It runs with your permissions.";
 
 /// The bundled MCP extension: its clients reach the editor through local
 /// access, which its page shows as its settings.
@@ -51,6 +54,17 @@ pub(in crate::app) struct Available {
     pub(in crate::app) line: &'static str,
     /// The GitHub repository whose releases it installs from.
     pub(in crate::app) repository: &'static str,
+}
+
+/// What the extensions table says of where `e` came from, and whether that
+/// is a warning: an installed extension is Not reviewed unless it is an
+/// [`official`] one.
+pub(in crate::app) fn badge(e: &Extension) -> (&'static str, bool) {
+    match e.origin {
+        Origin::Installed if official(e) => ("Official", false),
+        Origin::Installed => ("Not reviewed", true),
+        _ => (source_label(e), false),
+    }
 }
 
 /// The extensions Preferences > Extensions offers to install, while they
@@ -378,10 +392,7 @@ impl Editor {
                         .iter()
                         .find(|u| u.id == e.id())
                         .map(|u| u.offer.manifest.extension.version.to_string()),
-                    badge: match e.origin {
-                        Origin::Installed => ("Not reviewed", true),
-                        _ => (source_label(e), false),
-                    },
+                    badge: badge(e),
                     status: Status::of(e, access),
                     why: Status::of(e, access).explain(e, access),
                     enabled: e.enabled(),
@@ -573,8 +584,8 @@ impl Editor {
         form_row(ui, "", |ui| {
             hint(
                 ui,
-                "Not bundled with RAWmakase: each installs from its GitHub releases, \
-                 marked Not reviewed.",
+                "Official extensions, not bundled with RAWmakase: each installs from \
+                 its own repository's GitHub releases.",
             );
         });
         gap(ui);
@@ -657,13 +668,19 @@ impl Editor {
                         ui.end_row();
                     });
                 ui.add_space(space::L);
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{NOT_REVIEWED} Install it only if you trust its author."
-                    ))
-                    .size(text::LABEL)
-                    .color(palette.warning()),
-                );
+                // Official only when the package comes from the repository
+                // listed for its id: a file or a fork may claim the id.
+                let listed = matches!(&offer, Offered::Github(offer)
+                    if github::official(&m.extension.id, &offer.repository));
+                let (trust, color) = if listed {
+                    (OFFICIAL.to_string(), palette.tone(Tone::MUTED))
+                } else {
+                    (
+                        format!("{NOT_REVIEWED} Install it only if you trust its author."),
+                        palette.warning(),
+                    )
+                };
+                ui.label(egui::RichText::new(trust).size(text::LABEL).color(color));
                 ui.add_space(space::XXL);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().button_padding = button::DIALOG;
@@ -1021,7 +1038,9 @@ impl Editor {
             });
         }
         form_row(ui, "Access", |ui| hint(ui, &access(m)));
-        if *origin == Origin::Installed {
+        if official(e) {
+            form_row(ui, "Official", |ui| hint(ui, OFFICIAL));
+        } else if *origin == Origin::Installed {
             form_row(ui, "Not reviewed", |ui| hint(ui, NOT_REVIEWED));
         }
         for a in &m.control_adapters {

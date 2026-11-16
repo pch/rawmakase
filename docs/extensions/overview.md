@@ -27,8 +27,10 @@ write anything you can. Its manifest declares what it reaches (`[access]`:
 the network, which files, which devices), and RAWmakase shows that before
 installing it and when an update asks for more, but doesn't enforce it.
 Extensions installed from a file or a GitHub repository are marked **Not
-reviewed**. The official extensions (`rawmakase.*`) ship with the app and can
-be disabled, not uninstalled; no other package may use their ids.
+reviewed**, except the official ones RAWmakase lists, installed from the
+repository listed for them ([In the app](#in-the-app)). The bundled extensions
+(`rawmakase.*`) ship with the app and can be disabled, not uninstalled; no
+other package may use their ids.
 
 Installing never runs an extension's code: its program first starts when one
 of its contributions is used.
@@ -241,7 +243,7 @@ manifest is fixed.
 
 **Preferences > Extensions** is a table of every extension: its name, its
 source (Bundled or Developer folder; one installed from a file or GitHub says
-**Not reviewed**) and description, its version
+**Not reviewed**, unless it is **Official**) and description, its version
 and any update Check for Updates found, its state (Running; Ready, on with its program
 not running now; Disabled; Failed; Can't run; each explained on hover) and a
 switch that turns it on or off. An extension that can't be read, such as one
@@ -262,10 +264,13 @@ which reads a `.rmext`; either shows the package's manifest, its access and
 the **Not reviewed** warning in a dialog, and installs it only when the user
 confirms (a file is read again then, and refused if it changed).
 An installed extension's page says where it came from and **Not reviewed**
-too. **Available**, above the table, lists the extensions RAWmakase knows of but
-doesn't bundle, while they aren't installed (AI Remove, `dev.pch.ai-remove`):
+too. **Available**, above the table, lists the official extensions RAWmakase
+doesn't bundle, while they aren't installed (AI Retouch, `dev.pch.ai-remove`):
 **Install…** finds the latest release of its repository as From GitHub… does,
-with the same confirmation and Not reviewed mark. Every change is
+with the same confirmation. An extension is **Official** in place of Not
+reviewed only when its id is listed (`rawmakase_extensions::github::OFFICIAL`)
+and it was installed from the GitHub repository listed for it; the id alone
+proves nothing, so the same id from a file or a fork stays Not reviewed. Every change is
 written to `extensions.json` first; when that fails, the page says so and
 nothing changes.
 

@@ -83,5 +83,6 @@ Check for Updates reads the same releases, downloading only the packages whose
 name states a newer version than the one installed, and says when a newer
 version's `[access]` asks for more.
 
-Extensions installed this way are marked **Not reviewed**. An official
-catalogue of reviewed extensions comes later.
+Extensions installed this way are marked **Not reviewed**, except the
+official ones RAWmakase lists (`rawmakase_extensions::github::OFFICIAL`),
+installed from the repository listed for them.
