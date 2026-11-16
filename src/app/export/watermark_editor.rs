@@ -321,10 +321,7 @@ fn mark_texture(
         Some((key, ready)) if *key == assets => ready.with(&w),
         // An installed font is found once the fonts are listed, off this
         // thread; drawn after that.
-        _ if w.style == Style::Text
-            && w.family != watermark::fonts::INTER
-            && watermark::fonts::families_if_listed().is_none() =>
-        {
+        _ if w.style == Style::Text && watermark::fonts::families_if_listed().is_none() => {
             state.notice = Notice::LoadingFonts;
             return None;
         }
@@ -529,9 +526,9 @@ fn controls(ui: &mut egui::Ui, state: &mut WatermarkEditor, ctx: &egui::Context)
                     egui::TextEdit::multiline(&mut w.text).desired_rows(2),
                 );
             });
-            // Installed fonts are still being listed at first: Inter until then.
+            // Installed fonts are still being listed at first: the system default until then.
             let listed = watermark::fonts::families_if_listed();
-            let inter = [watermark::fonts::inter()];
+            let inter = [watermark::fonts::system()];
             let families: &[watermark::fonts::Family] = listed.unwrap_or(&inter);
             row(ui, "Font", |ui| {
                 egui::ComboBox::from_id_salt("watermark-font")

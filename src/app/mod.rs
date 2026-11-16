@@ -1055,11 +1055,14 @@ fn follow_text_scale(ctx: &egui::Context) {
     }
 }
 
-/// Inter, with tabular figures so values keep their width as they change,
-/// and an installed face for every script and symbol it lacks (fastframe-fonts),
+/// The system interface font, with installed fallbacks for other scripts,
 /// rendered as the desktop renders text.
 fn install_fonts(ctx: &egui::Context, text: &fastframe_text::TextRendering) {
-    let mut fonts = fastframe_fonts::FontSetup::default().definitions();
+    let mut fonts = fastframe_fonts::FontSetup::default()
+        .primary(fastframe_fonts::Primary::System)
+        // This legacy variant uses the selected interface face for monospace roles too.
+        .monospace(fastframe_fonts::Monospace::Inter)
+        .definitions();
     text.apply_to(&mut fonts);
     ctx.set_fonts(fonts);
 }

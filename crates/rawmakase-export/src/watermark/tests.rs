@@ -356,12 +356,13 @@ fn a_shadow_never_makes_the_mark_larger_than_the_photo() -> Result<()> {
 #[test]
 fn a_missing_font_style_fails_rather_than_drawing_another() {
     let w = Watermark {
-        family: "Inter".into(),
+        family: fonts::SYSTEM.into(),
         face: "Regular".into(),
         ..Default::default()
     };
     assert!(w.ready().is_ok());
     assert!(fonts::load("No Such Family", "Bold").is_err());
+    assert!(fonts::load(fonts::SYSTEM, "No Such Style").is_err());
 }
 
 #[test]
