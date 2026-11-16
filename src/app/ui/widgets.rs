@@ -1747,6 +1747,11 @@ pub(in crate::app) fn action_button(
         response
     }
 }
+/// Whether a [`segmented`] control of `labels` fits the space left, with
+/// its segments and text at their tightest.
+pub(in crate::app) fn segments_fit(ui: &egui::Ui, labels: &[&str]) -> bool {
+    tightest_segments_width(ui, labels, &COMPACT_SEGMENTS) <= ui.available_width()
+}
 /// Compact segmented control for panels and filters: at least `width` wide
 /// with roomy segments, but never wider than the space left in the panel;
 /// there segments shrink to their labels, then the text a point, so labels

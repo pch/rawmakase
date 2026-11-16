@@ -306,10 +306,9 @@ impl Editor {
                             }
                             y += 36.;
                         }
-                        // Then each extension's generator, a tool it names and draws.
-                        let open_on = (tool == Tool::AiRetouch)
-                            .then(|| self.ai_remove_offer().map(|(o, _)| o.provenance))
-                            .flatten();
+                        // Then each extension's generators, one tool it names and
+                        // draws with its first; its drawer has a tab for each.
+                        let open_on = self.open_rail_generator().map(|o| o.provenance);
                         for offer in self.rail_generators() {
                             // Its extension's own icon: the app has none for it,
                             // only a sign that it can't be shown.

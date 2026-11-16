@@ -14,6 +14,48 @@ use crate::app::ui::widgets::drawer_help;
 use eframe::egui::{self, Vec2};
 
 impl Editor {
+    /// A tab for each generator of the extension the drawer is open on, when
+    /// it has more than one: the one chosen takes new spots and shows its
+    /// panel. Segments while their names fit the drawer, wrapped tabs
+    /// otherwise. Held while a request is asked about or under way, as the
+    /// panel is.
+    pub(in crate::app) fn generator_tab_bar(&mut self, ui: &mut egui::Ui) {
+        let tabs = self.generator_tabs();
+        if tabs.len() < 2 {
+            return;
+        }
+        let Some((chosen, _)) = self.ai_remove_offer() else {
+            return;
+        };
+        let busy = self.ai_remove.running().is_some() || self.ai_remove.consent.is_some();
+        let names: Vec<&str> = tabs.iter().map(|o| o.name.as_str()).collect();
+        let mut pick = tabs.iter().position(|o| o.provenance == chosen.provenance);
+        ui.add_enabled_ui(!busy, |ui| {
+            if crate::app::ui::widgets::segments_fit(ui, &names) {
+                let options: Vec<(Option<usize>, &str)> = names
+                    .iter()
+                    .enumerate()
+                    .map(|(i, n)| (Some(i), *n))
+                    .collect();
+                crate::app::ui::widgets::segmented(ui, &mut pick, &options, ui.available_width());
+            } else {
+                ui.horizontal_wrapped(|ui| {
+                    for (i, name) in names.iter().enumerate() {
+                        if ui.selectable_label(pick == Some(i), *name).clicked() {
+                            pick = Some(i);
+                        }
+                    }
+                });
+            }
+        });
+        if let Some(offer) = pick.and_then(|i| tabs.get(i))
+            && offer.provenance != chosen.provenance
+        {
+            self.choose_ai_generator(offer);
+        }
+        ui.add_space(space::S);
+    }
+
     /// AI Retouch's own controls, above the brush: the generator's panel (a
     /// mode, a prompt), drawn as the drawer's rows, and why it can't run.
     pub(in crate::app) fn ai_controls(

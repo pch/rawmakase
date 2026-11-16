@@ -75,12 +75,13 @@ set the key on its page, and the rail gains **AI Retouch** after its own tools,
 whose Mode offers **AI Remove** and **AI Replace**. Without the extension the
 Remove drawer says where to get it. Any extension declaring a
 `[[retouch-generator]]` ([manifest](extensions/manifest.md#retouch-generator)) is
-offered the same way, each generator a rail tool with the name and icon its
-extension gives it; RAWmakase knows no provider. Below, "AI Retouch" stands for
+offered the same way: an extension's generators are one rail tool, named and
+drawn by its first, with a tab for each in its drawer; RAWmakase knows no provider. Below, "AI Retouch" stands for
 any of them.
 
-- **Its own tool.** A generator's tool is on the rail only while its extension is
-  enabled, and closes if it goes. Its spots and the Remove
+- **Its own tool.** An extension's tool is on the rail only while the extension
+  is enabled, and closes if it goes. Its tabs choose the generator new spots go
+  to; each spot keeps the one that made it. Its spots and the Remove
   tool's are one list, rendered in order, but each tool shows, selects, deletes and
   resets only its own: AI spots in AI Retouch, Heal and Clone spots in the Remove
   tool. Both share the brush (size, feather, opacity), the keys (`[` `]`, Delete,
