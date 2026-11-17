@@ -4,6 +4,7 @@ mod backfill;
 pub(crate) mod background;
 mod checksums;
 mod descriptive;
+mod entries;
 mod import_stacks;
 mod stacks;
 
@@ -46,6 +47,7 @@ pub(crate) fn read_file_metadata(
 }
 pub(crate) use background::Wake;
 pub(crate) use descriptive::{Committed, DescriptiveChange, DescriptiveEdit};
+pub(crate) use entries::entry;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 

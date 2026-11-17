@@ -47,8 +47,8 @@ pub use rawmakase_interop::{
 };
 pub(crate) use rawmakase_model::time;
 pub use rawmakase_model::{
-    camera_data, camera_profiles, cameras, color, dng, ids, lens, metadata, model, optics,
-    rendered, storage, tiff, xml,
+    camera_data, camera_profiles, cameras, collection_rules, color, dng, ids, lens, metadata,
+    model, optics, rendered, storage, tiff, xml,
 };
 pub mod app;
 pub mod catalog_command;
