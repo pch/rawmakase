@@ -431,8 +431,8 @@ fn opening_compacts_the_file_when_the_deleted_rasters_were_large() -> Result<()>
 }
 
 /// Looking through the rasters inflates every History, so it is done at most
-/// once a week, whatever the opens in between; a time ahead of the clock doesn't
-/// put it off.
+/// once a week, whatever the opens in between. A last look recorded ahead of the
+/// clock (set back since) or unreadable starts the week again, deleting nothing.
 #[test]
 fn the_rasters_are_looked_through_at_most_once_a_week() -> Result<()> {
     let (dir, mut cat, file, id) = catalog()?;
@@ -446,7 +446,8 @@ fn the_rasters_are_looked_through_at_most_once_a_week() -> Result<()> {
         (Some(now), false),
         (Some(now - week + 60), false),
         (Some(now - week - 60), true),
-        (Some(now + 3600), true),
+        (Some(now + 3600), false),
+        (Some(u64::MAX), false),
     ] {
         let spot = generated(4.0);
         save(&mut cat, id, &file, &spot)?;
@@ -469,7 +470,17 @@ fn the_rasters_are_looked_through_at_most_once_a_week() -> Result<()> {
         cat = Catalog::open(&path)?;
         assert_eq!(cat.remove_unused_data(&mut |_| {}), None);
         assert_eq!(stored(&cat, &spot)? == 0, deleted, "checked at {checked:?}");
+        let at: String = cat.db_for_tests().query_row(
+            "SELECT value FROM meta WHERE key='rasters_checked_at'",
+            [],
+            |r| r.get(0),
+        )?;
+        assert!(at.parse::<u64>()? <= now + 60, "{at}");
     }
+    // Restarted, the week runs from the restart.
+    drop(cat);
+    let cat = reopened(&path)?;
+    assert_eq!(stored(&cat, &generated(4.0))?, 0);
     Ok(())
 }
 

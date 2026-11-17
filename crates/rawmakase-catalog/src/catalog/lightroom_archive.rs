@@ -56,21 +56,12 @@ impl Catalog {
     /// pixels that window may no longer hold either. A catalog with a table a
     /// later release added is left alone, as its rows may name some.
     fn delete_unused_rasters(&mut self) -> Result<()> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        // A time ahead of now (a clock set back) doesn't put the check off.
-        let recent = |checked: Option<String>| {
-            checked
-                .and_then(|at| at.parse::<u64>().ok())
-                .is_some_and(|at| at <= now && now - at < RASTER_CHECK_EVERY)
-        };
         // Read first without the write lock, so most opens don't take it.
         #[cfg(test)]
         let skip_first_read = faults::RACE_RASTER_CHECK.with(|f| f.get());
         #[cfg(not(test))]
         let skip_first_read = false;
-        if !skip_first_read && recent(self.meta(RASTERS_CHECKED)?) {
+        if !skip_first_read && look(self.meta(RASTERS_CHECKED)?, unix_now()) == Look::NotDue {
             return Ok(());
         }
         let any: bool = self
@@ -79,15 +70,17 @@ impl Catalog {
         if !any || self.ensure_known_tables().is_err() {
             return Ok(());
         }
-        // Immediate, and read again under the lock: another window opening the
-        // catalog at the same time may have looked since, and two looks seconds
-        // apart must not count as a week's wait.
+        // Immediate, with the time and the last look read again under the lock:
+        // another window opening the catalog at the same time may have looked
+        // since, and two looks seconds apart must not count as a week's wait.
         self.db.write_immediate(|w| {
+            let now = unix_now();
             let checked: Option<String> = w.read_optional(
                 sql!("SELECT value FROM meta WHERE key=?"),
                 &[&RASTERS_CHECKED],
             )?;
-            if recent(checked) {
+            let look = look(checked, now);
+            if look == Look::NotDue {
                 return Ok(());
             }
             super::set_meta(w, RASTERS_CHECKED, &now.to_string())?;
@@ -95,8 +88,10 @@ impl Catalog {
                 sql!("SELECT value FROM meta WHERE key=?"),
                 &[&RASTERS_UNNAMED],
             )?;
-            let before: std::collections::HashSet<&str> =
-                before.as_deref().unwrap_or("").split(',').collect();
+            let before: std::collections::HashSet<&str> = match look {
+                Look::Due => before.as_deref().unwrap_or("").split(',').collect(),
+                _ => Default::default(),
+            };
             // A History that can't be read keeps every raster, and waits again.
             let unnamed = super::mask_assets::unnamed(w)?.unwrap_or_default();
             let (gone, waiting): (Vec<String>, Vec<String>) = unnamed
@@ -159,6 +154,33 @@ impl Catalog {
             Ok(())
         })
     }
+}
+
+/// Whether the rasters are to be looked through, given when they last were.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Look {
+    /// Within a week of the last look.
+    NotDue,
+    /// A week or more since it, or never: what was unnamed then and still is
+    /// goes.
+    Due,
+    /// The last look is recorded after now (the clock was set back) or can't be
+    /// read: the week can't be told, so it starts again, and nothing goes.
+    Restart,
+}
+fn look(checked: Option<String>, now: u64) -> Look {
+    match checked.map(|at| at.parse::<u64>()) {
+        None => Look::Due,
+        Some(Ok(at)) if at > now => Look::Restart,
+        Some(Ok(at)) if now - at < RASTER_CHECK_EVERY => Look::NotDue,
+        Some(Ok(_)) => Look::Due,
+        Some(Err(_)) => Look::Restart,
+    }
+}
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 #[cfg(test)]
