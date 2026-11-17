@@ -96,6 +96,8 @@ struct KeywordRow {
     parent: Option<i64>,
     /// Include on Export and Export Containing Keywords, where a row has them.
     export: Option<(bool, bool)>,
+    /// When it was last given to a photo, for Recent Keywords.
+    applied: Option<i64>,
 }
 
 /// What a Keyword List change did: the keywords it touched before and
@@ -291,17 +293,30 @@ fn refuse_sibling(
 /// undoing a deletion puts back the keyword deleted, never another made
 /// since in its place.
 pub(super) fn new_keyword(w: &mut Write<'_>, name: &str, parent: Option<i64>) -> Result<i64> {
+    let id = highest_id(w)? + 1;
+    w.execute(
+        sql!("INSERT INTO keywords(id, name, parent) VALUES (?, ?, ?)"),
+        &[&id, &name, &parent],
+    )?;
+    remember_highest_id(w, id)?;
+    Ok(id)
+}
+
+/// The highest keyword id the catalog has given: its counter's, else, for a
+/// catalog this release never gave one in (made by an earlier release or
+/// imported from Lightroom), its highest keyword's.
+fn highest_id(w: &mut Write<'_>) -> Result<i64> {
     let last: Option<i64> = w.read_optional(
         sql!("SELECT value FROM catalog_counters WHERE name='keyword_id'"),
         &[],
     )?;
     let highest: Option<i64> =
         w.read_optional(sql!("SELECT COALESCE(max(id), 0) FROM keywords"), &[])?;
-    let id = last.unwrap_or(0).max(highest.unwrap_or(0)) + 1;
-    w.execute(
-        sql!("INSERT INTO keywords(id, name, parent) VALUES (?, ?, ?)"),
-        &[&id, &name, &parent],
-    )?;
+    Ok(last.unwrap_or(0).max(highest.unwrap_or(0)))
+}
+
+/// Records `id` as the highest keyword id given.
+fn remember_highest_id(w: &mut Write<'_>, id: i64) -> Result<()> {
     w.execute(
         sql!(
             "INSERT INTO catalog_counters(name, value) VALUES ('keyword_id', ?)
@@ -309,7 +324,7 @@ pub(super) fn new_keyword(w: &mut Write<'_>, name: &str, parent: Option<i64>) ->
         ),
         &[&id],
     )?;
-    Ok(id)
+    Ok(())
 }
 
 /// `ids` and every keyword inside them, each once.
@@ -348,6 +363,7 @@ fn rows_of(db: &impl Reads, ids: &[i64]) -> Result<KeywordRows> {
             parent: Option<i64>,
             include: Option<bool>,
             parents: Option<bool>,
+            applied: Option<i64>,
         }
     }
     row! {
@@ -363,8 +379,9 @@ fn rows_of(db: &impl Reads, ids: &[i64]) -> Result<KeywordRows> {
     for id in ids {
         if let Some(k) = db.read_optional::<Stored>(
             sql!(
-                "SELECT k.id, k.name, k.parent, e.include, e.parents
-                 FROM keywords k LEFT JOIN keyword_export e ON e.keyword=k.id WHERE k.id=?"
+                "SELECT k.id, k.name, k.parent, e.include, e.parents, a.applied
+                 FROM keywords k LEFT JOIN keyword_export e ON e.keyword=k.id
+                 LEFT JOIN keyword_applied a ON a.keyword=k.id WHERE k.id=?"
             ),
             &[id],
         )? {
@@ -373,6 +390,7 @@ fn rows_of(db: &impl Reads, ids: &[i64]) -> Result<KeywordRows> {
                 name: k.name,
                 parent: k.parent,
                 export: k.include.zip(k.parents),
+                applied: k.applied,
             });
         }
         let tags: Vec<Tag> = db.read(
@@ -387,9 +405,14 @@ fn rows_of(db: &impl Reads, ids: &[i64]) -> Result<KeywordRows> {
 
 /// Writes `rows` over the keywords they are of.
 fn put(w: &mut Write<'_>, rows: &KeywordRows) -> Result<()> {
+    // Kept before any is deleted: once the highest is gone, its id would be
+    // given again, and undoing the deletion would take the new keyword's place.
+    let highest = highest_id(w)?;
+    remember_highest_id(w, highest)?;
     for id in &rows.ids {
         w.execute(sql!("DELETE FROM photo_keywords WHERE keyword=?"), &[id])?;
         w.execute(sql!("DELETE FROM keyword_export WHERE keyword=?"), &[id])?;
+        w.execute(sql!("DELETE FROM keyword_applied WHERE keyword=?"), &[id])?;
         w.execute(sql!("DELETE FROM keywords WHERE id=?"), &[id])?;
     }
     for k in &rows.keywords {
@@ -401,6 +424,12 @@ fn put(w: &mut Write<'_>, rows: &KeywordRows) -> Result<()> {
             w.execute(
                 sql!("INSERT INTO keyword_export(keyword, include, parents) VALUES (?, ?, ?)"),
                 &[&k.id, &include, &parents],
+            )?;
+        }
+        if let Some(applied) = k.applied {
+            w.execute(
+                sql!("INSERT INTO keyword_applied(keyword, applied) VALUES (?, ?)"),
+                &[&k.id, &applied],
             )?;
         }
     }

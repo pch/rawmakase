@@ -244,3 +244,34 @@ fn recent_keywords_are_the_latest_given_to_a_photo() -> Result<()> {
     assert_eq!(cat.recent_keywords()?, [a, c]);
     Ok(())
 }
+
+#[test]
+fn a_catalog_from_before_never_gives_a_deleted_keyword_s_id_again() -> Result<()> {
+    // As an earlier release or a Lightroom import leaves it: no counter.
+    let (_dir, mut cat, ids) = catalog(1)?;
+    cat.db_for_tests().execute_batch(
+        "INSERT INTO keywords(id, name, parent) VALUES (1, 'Kept', NULL), (2, 'Imported', NULL);",
+    )?;
+    cat.add_keyword(&ids, 2)?;
+    let deleted = cat.delete_keywords(&[2])?;
+    let new = added(&mut cat, &ids, &["New"])?;
+    assert!(new > 2);
+    cat.restore_keywords(&deleted.before)?;
+    assert_eq!(names(&cat)?, ["Kept", "Imported", "New"]);
+    Ok(())
+}
+
+#[test]
+fn undoing_a_rename_or_deletion_keeps_a_keyword_s_place_in_recent_keywords() -> Result<()> {
+    let (_dir, mut cat, ids) = catalog(1)?;
+    let a = added(&mut cat, &ids, &["A"])?;
+    let b = added(&mut cat, &ids, &["B"])?;
+    assert_eq!(cat.recent_keywords()?, [b, a]);
+    let renamed = cat.rename_keyword(b, "Bee")?;
+    cat.restore_keywords(&renamed.before)?;
+    assert_eq!(cat.recent_keywords()?, [b, a]);
+    let deleted = cat.delete_keywords(&[b])?;
+    cat.restore_keywords(&deleted.before)?;
+    assert_eq!(cat.recent_keywords()?, [b, a]);
+    Ok(())
+}

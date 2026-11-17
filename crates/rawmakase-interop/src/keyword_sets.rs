@@ -214,7 +214,6 @@ impl KeywordSets {
     pub fn save(&self, name: &str, keywords: &[String; SLOTS], replace: bool) -> Result<PathBuf> {
         let name = name.trim();
         ensure!(!name.is_empty(), "A keyword set needs a name");
-        let path = self.path(name)?;
         let own = self.own(name);
         ensure!(
             replace || own.is_none(),
@@ -222,19 +221,16 @@ impl KeywordSets {
         );
         std::fs::create_dir_all(&self.dir)?;
         let text = write(name, keywords);
-        let target = own.unwrap_or(path);
-        crate::storage::write_atomic(
-            &target,
-            if replace {
-                Replace::Overwrite
-            } else {
-                Replace::NoClobber
-            },
-            |f| {
-                use std::io::Write;
-                Ok(f.write_all(text.as_bytes())?)
-            },
-        )?;
+        // Only the set's own file is replaced; a new set takes a file no
+        // other set has, as two names can make one file name ("A/B", "A:B").
+        let (target, how) = match own {
+            Some(path) => (path, Replace::Overwrite),
+            None => (self.free_path(name)?, Replace::NoClobber),
+        };
+        crate::storage::write_atomic(&target, how, |f| {
+            use std::io::Write;
+            Ok(f.write_all(text.as_bytes())?)
+        })?;
         Ok(target)
     }
     /// Renames RAWmakase's set `from` to `to`, keeping its keywords.
@@ -251,19 +247,15 @@ impl KeywordSets {
             same || self.own(to).is_none(),
             "A keyword set named \"{to}\" is already saved"
         );
-        let new = self.path(to)?;
-        crate::storage::write_atomic(
-            &new,
-            if same {
-                Replace::Overwrite
-            } else {
-                Replace::NoClobber
-            },
-            |f| {
-                use std::io::Write;
-                Ok(f.write_all(write(to, &keywords).as_bytes())?)
-            },
-        )?;
+        let (new, how) = if same {
+            (old.clone(), Replace::Overwrite)
+        } else {
+            (self.free_path(to)?, Replace::NoClobber)
+        };
+        crate::storage::write_atomic(&new, how, |f| {
+            use std::io::Write;
+            Ok(f.write_all(write(to, &keywords).as_bytes())?)
+        })?;
         if new != old {
             std::fs::remove_file(&old)?;
         }
@@ -277,11 +269,27 @@ impl KeywordSets {
         std::fs::remove_file(path)?;
         Ok(())
     }
-    /// The file a set named `name` is saved in.
-    fn path(&self, name: &str) -> Result<PathBuf> {
+    /// A file for a new set named `name` that no file has yet: its name as
+    /// a file name, else with " 2", " 3" and so on.
+    fn free_path(&self, name: &str) -> Result<PathBuf> {
         let stem = crate::presets::user::file_name(name);
         ensure!(!stem.is_empty(), "That name can't be a file name");
-        Ok(self.dir.join(format!("{stem}.lrtemplate")))
+        // Whatever the case of a name already there, as a Mac's or Windows'
+        // disk compares them.
+        let taken: Vec<String> = std::fs::read_dir(&self.dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_lowercase())
+            .collect();
+        (1..1000)
+            .map(|n| match n {
+                1 => format!("{stem}.lrtemplate"),
+                n => format!("{stem} {n}.lrtemplate"),
+            })
+            .find(|file| !taken.contains(&file.to_lowercase()))
+            .map(|file| self.dir.join(file))
+            .context("Too many keyword sets of that name")
     }
     /// The file of RAWmakase's own set named `name`, ignoring case.
     fn own(&self, name: &str) -> Option<PathBuf> {
@@ -438,9 +446,15 @@ mod tests {
         assert_eq!(list.get("Festival 2026").unwrap().keywords[0], "Crowd");
         sets.delete("festival 2026")?;
         assert!(sets.list().get("Festival 2026").is_none());
-        // A name that is no file name is still a set's name.
+        // A name that is no file name is still a set's name, and another
+        // set making the same file name keeps both.
         sets.save("A/B", &keywords(&["x"]), false)?;
-        assert_eq!(sets.list().get("A/B").unwrap().keywords[0], "x");
+        sets.save("A:B", &keywords(&["y"]), true)?;
+        sets.rename("Concert", "A?B")?;
+        let list = sets.list();
+        assert_eq!(list.get("A/B").unwrap().keywords[0], "x");
+        assert_eq!(list.get("A:B").unwrap().keywords[0], "y");
+        assert!(list.get("A?B").is_some());
         Ok(())
     }
 }
