@@ -353,6 +353,17 @@ fn main() -> Result<()> {
                 c.photos()?.len(),
                 path.display()
             );
+            let unsupported = c
+                .smart_rules()?
+                .values()
+                .filter(|r| r.rules().map_or(true, |g| g.unsupported().is_some()))
+                .count();
+            if unsupported > 0 {
+                println!(
+                    "{unsupported} smart collection(s) have rules RAWmakase can't evaluate; \
+                     they list no photos until those rules are removed"
+                );
+            }
         }
         Some(Command::CatalogInfo { catalog }) => {
             let c = open_catalog(&catalog)?;

@@ -187,9 +187,15 @@ impl Editor {
                     )))
                 })();
                 let event = match result {
-                    Ok(Some(location)) => {
-                        reopened(&location, true, false, &Default::default(), &[], tx, &ctx)
-                    }
+                    Ok(Some(location)) => imported(reopened(
+                        &location,
+                        true,
+                        false,
+                        &Default::default(),
+                        &[],
+                        tx,
+                        &ctx,
+                    )),
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
                 };
@@ -256,6 +262,7 @@ impl Editor {
                 // Create, Open and Import Lightroom open the catalog the user
                 // chose; a folder change reads the open one again.
                 let chosen = !matches!(kind, CatalogDialog::Folder(_));
+                let import = matches!(kind, CatalogDialog::ImportLightroom);
                 let relinks = matches!(
                     kind,
                     CatalogDialog::Folder(
@@ -387,7 +394,9 @@ impl Editor {
                 }
                 let event = match result {
                     Ok(Some(location)) => {
-                        reopened(&location, chosen, relinks, &report, &conflicts, tx, &ctx)
+                        let event =
+                            reopened(&location, chosen, relinks, &report, &conflicts, tx, &ctx);
+                        if import { imported(event) } else { event }
                     }
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
@@ -1054,4 +1063,13 @@ pub(in crate::app) fn upgrade_progress<'a>(
         let _ = tx.send(Event::CatalogWorking(progress.to_string()));
         ctx.request_repaint();
     }
+}
+
+/// A Lightroom catalog just imported and opened: says how many of its smart
+/// collections have rules RAWmakase can't evaluate.
+fn imported(mut event: Event) -> Event {
+    if let Event::CatalogReady(Ok(library)) = &mut event {
+        library.note_unsupported_smart();
+    }
+    event
 }

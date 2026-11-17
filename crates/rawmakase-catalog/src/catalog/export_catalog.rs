@@ -371,8 +371,10 @@ fn known_tables() -> BTreeSet<&'static str> {
         .collect()
 }
 
-/// Deletes what no photo kept refers to: keywords (but a used one's parents),
-/// collections (but a used one's sets), stacks, import batches (and every
+/// Deletes what no photo kept refers to: keywords (but a used one's parents)
+/// with their synonyms, collections (but a used one's sets, and smart
+/// collections with their sets: their rules are kept as text and see what
+/// the exported catalog has), stacks, import batches (and every
 /// batch's bursts still to stack), the Lightroom
 /// catalog it was imported from (every other photo's too), and the journal of
 /// file operations, all finished.
@@ -390,11 +392,20 @@ fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
                  SELECT keyword FROM photo_keywords
                  UNION SELECT k.parent FROM keywords k JOIN used u ON k.id=u.id
                  WHERE k.parent IS NOT NULL)
+             DELETE FROM keyword_synonyms WHERE keyword NOT IN (SELECT id FROM used)"
+        ),
+        sql!(
+            "WITH RECURSIVE used(id) AS (
+                 SELECT keyword FROM photo_keywords
+                 UNION SELECT k.parent FROM keywords k JOIN used u ON k.id=u.id
+                 WHERE k.parent IS NOT NULL)
              DELETE FROM keywords WHERE id NOT IN (SELECT id FROM used)"
         ),
         sql!(
             "WITH RECURSIVE used(id) AS (
                  SELECT collection FROM collection_photos
+                 UNION SELECT id FROM collections
+                 WHERE kind='com.adobe.ag.library.smart_collection'
                  UNION SELECT c.parent FROM collections c JOIN used u ON c.id=u.id
                  WHERE c.parent IS NOT NULL)
              DELETE FROM collection_options WHERE collection NOT IN (SELECT id FROM used)"
@@ -402,9 +413,15 @@ fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
         sql!(
             "WITH RECURSIVE used(id) AS (
                  SELECT collection FROM collection_photos
+                 UNION SELECT id FROM collections
+                 WHERE kind='com.adobe.ag.library.smart_collection'
                  UNION SELECT c.parent FROM collections c JOIN used u ON c.id=u.id
                  WHERE c.parent IS NOT NULL)
              DELETE FROM collections WHERE id NOT IN (SELECT id FROM used)"
+        ),
+        sql!(
+            "DELETE FROM smart_collection_rules
+             WHERE collection NOT IN (SELECT id FROM collections)"
         ),
         sql!("DELETE FROM stacks WHERE id NOT IN (SELECT stack FROM stack_photos)"),
         // Bursts still to stack are this catalog's to stack, not the copy's.

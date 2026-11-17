@@ -50,6 +50,7 @@ mod mask_assets;
 mod models;
 mod naming;
 mod recipe_assets;
+mod rule_inputs;
 #[cfg(any(test, feature = "test-support"))]
 pub mod upgrade_fixtures;
 // XMP metadata sidecars; `legacy_sidecar` is the old `*.rawmakase.json` edits.
@@ -62,7 +63,10 @@ pub use crate::ids::{CollectionId, FolderId, PhotoId, RootId, StackId};
 pub use crate::xmp::descriptive::Read as FileMetadata;
 #[doc(hidden)]
 pub use checksums::ReadChecksum;
-pub use collections::{CollectionOptions, Member, MembershipChange, Position, RemovedCollections};
+pub use collections::{
+    CollectionOptions, Member, MembershipChange, Position, RemovedCollections, SmartRules,
+    SynonymState,
+};
 pub use db::assert_shape as assert_sql_shape;
 pub use defaults::{CameraExifReader, ImportOptions, MetadataDefaults, NewPhotoDefaults};
 pub use descriptive::MetadataSnapshot;
@@ -79,6 +83,7 @@ pub use lightroom::HistoryStep;
 pub use location::CatalogLocation;
 pub use locations::{Override, Overrides, RootLocations};
 pub use models::{Collection, CollectionKind, Folder, Photo, QUICK_COLLECTION};
+pub use rule_inputs::{KeywordNode, RuleTexts};
 pub use sequences::SavedSequence;
 pub use sidecar::{RawXmpReader, SidecarReport, read_file as read_file_metadata, sidecars};
 pub use snapshots::{Snapshot, SnapshotSettings};
@@ -144,6 +149,9 @@ impl Catalog {
         // The schema is idempotent: a catalog from an earlier release gains the
         // tables added since.
         self.db.apply_schema()?;
+        if self.meta("keyword_synonyms")?.is_none() {
+            self.db.write(collections::record_synonym_state)?;
+        }
         locations::prepare(&mut self.db, &self.computer)
     }
     pub fn photos(&self) -> Result<Vec<Photo>> {
@@ -363,6 +371,8 @@ pub mod preview_cache;
 mod private_tests;
 #[cfg(test)]
 mod sequences_tests;
+#[cfg(test)]
+mod smart_rules_tests;
 #[cfg(test)]
 mod sql_scan;
 #[cfg(test)]

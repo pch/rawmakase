@@ -170,6 +170,13 @@ impl Library {
             .map(|i| self.session.photos()[*i].id)
     }
     pub(in crate::app) fn select_all(&mut self) {
+        // Not the photos a smart collection had before a change, which its
+        // rules may no longer match.
+        if !self.source_settled() {
+            self.messages
+                .note("This smart collection is still updating; try again in a moment");
+            return;
+        }
         self.selection.selected = self
             .visible
             .iter()

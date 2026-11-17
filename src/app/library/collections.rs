@@ -1,6 +1,8 @@
-//! The Collections panel: imported Lightroom collection sets and collections,
-//! read-only. Smart collections stay hidden until their rules are evaluated,
-//! and Lightroom's own (the Quick Collection, unsaved creations) never show.
+//! The Collections panel: imported Lightroom collection sets, collections
+//! and smart collections, read-only. A smart collection's count is its
+//! members' once worked out; one whose rules can't be evaluated shows a
+//! warning instead. Lightroom's own (the Quick Collection, unsaved
+//! creations) never show.
 use crate::app::ui::design::{Tone, text};
 use crate::app::ui::icons::{self, Icon};
 use crate::app::ui::theme;
@@ -13,15 +15,27 @@ pub(super) struct CollectionNode {
     pub name: String,
     pub set: bool,
     pub count: usize,
+    /// For a smart collection, what is known of its members.
+    pub smart: Option<SmartCount>,
     pub children: Vec<CollectionNode>,
+}
+
+/// What the panel shows of a smart collection's members.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SmartCount {
+    Pending,
+    Photos(usize),
+    /// Its rules can't be evaluated, or the catalog couldn't be read.
+    Unknown,
 }
 
 /// The panel's tree, ordered as Lightroom orders it: sets first, then
 /// collections, each by name. A set is left out when everything in it is
-/// hidden, such as Lightroom's default "Smart Collections" set.
+/// hidden. `smart` is what is known of smart collections' members.
 pub(super) fn tree(
     collections: &[Collection],
     counts: &HashMap<CollectionId, HashSet<PhotoId>>,
+    smart: &HashMap<CollectionId, SmartCount>,
 ) -> Vec<CollectionNode> {
     let mut children: HashMap<Option<CollectionId>, Vec<&Collection>> = HashMap::new();
     let ids: HashSet<CollectionId> = collections.iter().map(|c| c.id).collect();
@@ -31,13 +45,14 @@ pub(super) fn tree(
         children.entry(parent).or_default().push(c);
     }
     let mut seen = HashSet::new();
-    nodes(None, &children, counts, &mut seen)
+    nodes(None, &children, counts, smart, &mut seen)
 }
 
 fn nodes(
     parent: Option<CollectionId>,
     children: &HashMap<Option<CollectionId>, Vec<&Collection>>,
     counts: &HashMap<CollectionId, HashSet<PhotoId>>,
+    smart: &HashMap<CollectionId, SmartCount>,
     seen: &mut HashSet<CollectionId>,
 ) -> Vec<CollectionNode> {
     let mut out = Vec::new();
@@ -48,7 +63,7 @@ fn nodes(
         }
         match c.kind {
             CollectionKind::Set => {
-                let inner = nodes(Some(c.id), children, counts, seen);
+                let inner = nodes(Some(c.id), children, counts, smart, seen);
                 let had_children = children.get(&Some(c.id)).is_some_and(|v| !v.is_empty());
                 if inner.is_empty() && had_children {
                     continue;
@@ -58,6 +73,7 @@ fn nodes(
                     name: c.name.clone(),
                     set: true,
                     count: 0,
+                    smart: None,
                     children: inner,
                 });
             }
@@ -66,9 +82,24 @@ fn nodes(
                 name: c.name.clone(),
                 set: false,
                 count: counts.get(&c.id).map_or(0, HashSet::len),
+                smart: None,
                 children: Vec::new(),
             }),
-            CollectionKind::Smart | CollectionKind::System => {}
+            CollectionKind::Smart => {
+                let known = smart.get(&c.id).copied().unwrap_or(SmartCount::Pending);
+                out.push(CollectionNode {
+                    id: c.id,
+                    name: c.name.clone(),
+                    set: false,
+                    count: match known {
+                        SmartCount::Photos(n) => n,
+                        _ => 0,
+                    },
+                    smart: Some(known),
+                    children: Vec::new(),
+                });
+            }
+            CollectionKind::System => {}
         }
     }
     out.sort_by_cached_key(|n| (!n.set, n.name.to_lowercase()));
@@ -136,6 +167,8 @@ pub(super) fn collection_row(
         painter,
         if node.set {
             Icon::CollectionSet
+        } else if node.smart.is_some() {
+            Icon::SmartCollection
         } else {
             Icon::Collection
         },
@@ -159,7 +192,23 @@ pub(super) fn collection_row(
         palette.tone(if active { Tone::STRONG } else { Tone::SOFT }),
     );
     // Lightroom counts collections, not sets.
-    if !node.set {
+    if node.smart == Some(SmartCount::Unknown) {
+        icons::paint_at(
+            painter,
+            Icon::Failed,
+            Pos2::new(rect.right() - 14., y),
+            11.,
+            palette.tone(Tone::SECONDARY),
+        );
+    } else if node.smart == Some(SmartCount::Pending) {
+        painter.text(
+            Pos2::new(rect.right() - 10., y),
+            Align2::RIGHT_CENTER,
+            "…",
+            FontId::proportional(text::MICRO),
+            palette.tone(Tone::FAINT),
+        );
+    } else if !node.set {
         painter.text(
             Pos2::new(rect.right() - 10., y),
             Align2::RIGHT_CENTER,

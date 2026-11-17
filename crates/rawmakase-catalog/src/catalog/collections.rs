@@ -1,6 +1,9 @@
 //! Collections, collection sets and their photos, as Lightroom keeps them:
-//! the one owner of the `collections`, `collection_photos` and
-//! `collection_options` rows, the target collection and the Quick Collection.
+//! the one owner of the `collections`, `collection_photos`,
+//! `collection_options` and `smart_collection_rules` rows, the keywords'
+//! Lightroom synonyms (`keyword_synonyms`, which smart collections' keyword
+//! rules match) and whether they are known, the target collection and the
+//! Quick Collection.
 //!
 //! Rows keep Lightroom's `creationId` as their kind, so a catalog changed here
 //! still reads in older releases. Those releases take any plain collection
@@ -15,6 +18,7 @@ use super::value::row;
 use super::{Catalog, Collection, CollectionId, CollectionKind, PhotoId};
 use crate::catalog::models::QUICK_COLLECTION;
 use anyhow::{Context, Result, bail, ensure};
+use rawmakase_model::collection_rules::{Group, JSON_FORMAT, Malformed};
 use std::collections::{HashMap, HashSet};
 
 /// Lightroom's `creationId` of a collection of photos (the Quick Collection
@@ -22,6 +26,8 @@ use std::collections::{HashMap, HashSet};
 pub(super) const COLLECTION_KIND: &str = "com.adobe.ag.library.collection";
 /// Lightroom's `creationId` of a collection set.
 const SET_KIND: &str = "com.adobe.ag.library.group";
+/// Lightroom's `creationId` of a smart collection.
+pub(super) const SMART_KIND: &str = "com.adobe.ag.library.smart_collection";
 /// The `meta` key above which new collection ids are allocated.
 const ID_HIGH: &str = "collection_id_high";
 /// The `meta` key holding the target collection; missing means never chosen.
@@ -83,6 +89,7 @@ pub struct RemovedCollections {
     rows: Vec<StoredCollection>,
     members: Vec<(CollectionId, PhotoId, Option<Position>)>,
     options: Vec<(CollectionId, CollectionOptions)>,
+    rules: Vec<(CollectionId, SmartRules)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -314,6 +321,9 @@ impl Catalog {
                 if let Some(options) = options_of(w, row.id)? {
                     removed.options.push((row.id, options));
                 }
+                if let Some(rules) = rules_of(w, row.id)? {
+                    removed.rules.push((row.id, rules));
+                }
             }
             // Children before their parents.
             for row in removed.rows.iter().rev() {
@@ -323,6 +333,10 @@ impl Catalog {
                 )?;
                 w.execute(
                     sql!("DELETE FROM collection_options WHERE collection=?"),
+                    &[&row.id],
+                )?;
+                w.execute(
+                    sql!("DELETE FROM smart_collection_rules WHERE collection=?"),
                     &[&row.id],
                 )?;
                 w.execute(sql!("DELETE FROM collections WHERE id=?"), &[&row.id])?;
@@ -363,6 +377,9 @@ impl Catalog {
             }
             for (collection, options) in &removed.options {
                 write_options(w, *collection, options)?;
+            }
+            for (collection, rules) in &removed.rules {
+                write_rules(w, *collection, rules)?;
             }
             Ok(())
         })
@@ -521,6 +538,241 @@ impl Catalog {
             super::set_meta(w, TARGET, &value)
         })
     }
+}
+
+/// A smart collection's rules as stored: [`Group::to_json`]'s form, and the
+/// text Lightroom had when they were imported from it, kept verbatim so a
+/// rule this release can't read or evaluate is never lost and a later one
+/// can read it again.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SmartRules {
+    /// None when the rules could not be read (Lightroom text the parser
+    /// refused, or a stored form of a later release).
+    json: Option<String>,
+    format: i64,
+    lightroom: Option<String>,
+}
+impl SmartRules {
+    /// Rules made here: there is no Lightroom text.
+    pub fn new(rules: &Group) -> Self {
+        Self {
+            json: Some(rules.to_json().to_string()),
+            format: JSON_FORMAT,
+            lightroom: None,
+        }
+    }
+    /// Lightroom's text (`AgLibraryCollectionContent.content`), read when it
+    /// can be and kept either way.
+    pub fn from_lightroom(text: &str) -> Self {
+        Self {
+            json: Group::from_lightroom(text)
+                .ok()
+                .map(|g| g.to_json().to_string()),
+            format: JSON_FORMAT,
+            lightroom: Some(text.to_string()),
+        }
+    }
+    /// The rules, or why they can't be read.
+    pub fn rules(&self) -> std::result::Result<Group, Malformed> {
+        if self.format > JSON_FORMAT {
+            return Err(Malformed(
+                "These rules were made by a later release of RAWmakase".into(),
+            ));
+        }
+        match &self.json {
+            Some(json) => serde_json::from_str(json)
+                .map_err(|e| Malformed(e.to_string()))
+                .and_then(|json| Group::from_json(&json)),
+            None => match &self.lightroom {
+                Some(text) => Group::from_lightroom(text),
+                None => Err(Malformed("The rules are missing".into())),
+            },
+        }
+    }
+    /// The Lightroom text they were imported from.
+    pub fn lightroom(&self) -> Option<&str> {
+        self.lightroom.as_deref()
+    }
+}
+
+/// Whether the catalog has its keywords' Lightroom synonyms (`meta`
+/// `keyword_synonyms`). A catalog imported from Lightroom before this
+/// release, or exported from one, may have keywords but not their synonyms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SynonymState {
+    Complete,
+    Missing,
+}
+/// The `meta` key of [`SynonymState`].
+const SYNONYMS: &str = "keyword_synonyms";
+
+impl Catalog {
+    /// Every smart collection's rules, by collection.
+    pub fn smart_rules(&self) -> Result<HashMap<CollectionId, SmartRules>> {
+        row! {
+            struct RulesRow {
+                collection: CollectionId,
+                rules: String,
+                format: i64,
+                lightroom: Option<String>,
+            }
+        }
+        let rows: Vec<RulesRow> = self.db.read(
+            sql!("SELECT collection, rules, format, lightroom FROM smart_collection_rules"),
+            &[],
+        )?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.collection, stored_rules(r.rules, r.format, r.lightroom)))
+            .collect())
+    }
+    /// Keeps smart collection `id`'s rules.
+    pub fn set_smart_rules(&mut self, id: CollectionId, rules: &SmartRules) -> Result<()> {
+        self.db.write(|w| {
+            let kind: Option<String> =
+                w.read_optional(sql!("SELECT kind FROM collections WHERE id=?"), &[&id])?;
+            match kind {
+                Some(kind) if kind == SMART_KIND => write_rules(w, id, rules),
+                Some(_) => bail!("Only a smart collection has rules"),
+                None => bail!("That collection is gone"),
+            }
+        })
+    }
+    /// Every keyword's Lightroom synonyms, by keyword id.
+    pub fn keyword_synonyms(&self) -> Result<HashMap<i64, Vec<String>>> {
+        row! {
+            struct SynonymRow {
+                keyword: i64,
+                name: String,
+            }
+        }
+        let rows: Vec<SynonymRow> = self.db.read(
+            sql!("SELECT keyword, name FROM keyword_synonyms ORDER BY keyword, name"),
+            &[],
+        )?;
+        let mut out: HashMap<i64, Vec<String>> = HashMap::new();
+        for r in rows {
+            out.entry(r.keyword).or_default().push(r.name);
+        }
+        Ok(out)
+    }
+    /// Whether the keywords' Lightroom synonyms are known. A catalog that
+    /// never recorded it was made by an earlier release: missing, unless it
+    /// has no keyword (see [`Catalog::open`]).
+    pub fn synonym_state(&self) -> Result<SynonymState> {
+        Ok(match self.meta(SYNONYMS)?.as_deref() {
+            Some("complete") => SynonymState::Complete,
+            _ => SynonymState::Missing,
+        })
+    }
+    /// Records whether the keywords' Lightroom synonyms are known: complete
+    /// once read from a Lightroom catalog, or when the user says there are
+    /// none.
+    pub fn set_synonym_state(&mut self, state: SynonymState) -> Result<()> {
+        self.db.write(|w| write_synonym_state(w, state))
+    }
+}
+
+/// Records the synonyms' state of a catalog that has none recorded: an
+/// earlier release's. Its keywords can't be told to be Lightroom's or not
+/// (their ids carry no provenance, and an exported catalog has no
+/// `sources`), so any keyword makes it missing.
+pub(super) fn record_synonym_state(w: &mut Write<'_>) -> Result<()> {
+    let recorded: Option<String> =
+        w.read_optional(sql!("SELECT value FROM meta WHERE key=?"), &[&SYNONYMS])?;
+    if recorded.is_some() {
+        return Ok(());
+    }
+    let keyword: Option<i64> = w.read_optional(sql!("SELECT 1 FROM keywords LIMIT 1"), &[])?;
+    write_synonym_state(
+        w,
+        if keyword.is_some() {
+            SynonymState::Missing
+        } else {
+            SynonymState::Complete
+        },
+    )
+}
+
+/// Records that every keyword's Lightroom synonyms are known: a catalog
+/// imported from Lightroom by this release.
+pub(super) fn record_synonyms_complete(w: &mut Write<'_>) -> Result<()> {
+    write_synonym_state(w, SynonymState::Complete)
+}
+
+/// Makes Lightroom's target collection (`Adobe_variablesTable`'s
+/// `targetCollection`: a collection's id, written as a number, or `qc` for
+/// the Quick Collection) the imported catalog's. Anything else, or a
+/// collection that can't take photos, leaves the Quick Collection.
+pub(super) fn import_target(w: &mut Write<'_>, value: &str) -> Result<()> {
+    let value = value.trim();
+    if value == "qc" {
+        return super::set_meta(w, TARGET, TARGET_QUICK);
+    }
+    let Some(id) = value
+        .parse::<f64>()
+        .ok()
+        .filter(|n| n.fract() == 0. && *n > 0. && *n < 9e15)
+        .map(|n| CollectionId(n as i64))
+    else {
+        return Ok(());
+    };
+    let row: Option<KindRow> = w.read_optional(
+        sql!("SELECT name, parent, kind FROM collections WHERE id=?"),
+        &[&id],
+    )?;
+    match row {
+        Some(r) if r.kind == COLLECTION_KIND && !is_quick(&r.name, r.parent, &r.kind) => {
+            super::set_meta(w, TARGET, &id.0.to_string())
+        }
+        Some(r) if is_quick(&r.name, r.parent, &r.kind) => super::set_meta(w, TARGET, TARGET_QUICK),
+        _ => Ok(()),
+    }
+}
+
+fn write_synonym_state(w: &mut Write<'_>, state: SynonymState) -> Result<()> {
+    let value = match state {
+        SynonymState::Complete => "complete",
+        SynonymState::Missing => "missing",
+    };
+    super::set_meta(w, SYNONYMS, value)
+}
+
+fn stored_rules(json: String, format: i64, lightroom: Option<String>) -> SmartRules {
+    SmartRules {
+        json: (json != "null").then_some(json),
+        format,
+        lightroom,
+    }
+}
+
+fn rules_of(w: &Write<'_>, id: CollectionId) -> Result<Option<SmartRules>> {
+    row! {
+        struct RulesRow {
+            rules: String,
+            format: i64,
+            lightroom: Option<String>,
+        }
+    }
+    let row: Option<RulesRow> = w.read_optional(
+        sql!("SELECT rules, format, lightroom FROM smart_collection_rules WHERE collection=?"),
+        &[&id],
+    )?;
+    Ok(row.map(|r| stored_rules(r.rules, r.format, r.lightroom)))
+}
+
+pub(super) fn write_rules(w: &mut Write<'_>, id: CollectionId, rules: &SmartRules) -> Result<()> {
+    let json = rules.json.as_deref().unwrap_or("null");
+    w.execute(
+        sql!(
+            "INSERT INTO smart_collection_rules(collection, rules, format, lightroom)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(collection) DO UPDATE SET
+                 rules=excluded.rules, format=excluded.format, lightroom=excluded.lightroom"
+        ),
+        &[&id, &json, &rules.format, &rules.lightroom],
+    )?;
+    Ok(())
 }
 
 /// Whether a row is the Quick Collection, by the rule every release reads it by.

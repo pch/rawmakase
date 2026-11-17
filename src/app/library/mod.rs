@@ -225,6 +225,8 @@ pub(crate) struct Library {
     facets: facets::Cache,
     /// The Metadata filter's strip and Find fields.
     metadata_bar: metadata_bar::MetadataBar,
+    /// Smart collections' members, as last taken from the session.
+    smart: smart::Smart,
     strip: filmstrip::State,
     /// Counts changes to the photos shown, their order or their metadata,
     /// so the filmstrip notices a change made after it was drawn.
@@ -340,6 +342,7 @@ impl Library {
             cell_info: HashMap::new(),
             facets: Default::default(),
             metadata_bar: Default::default(),
+            smart: Default::default(),
             strip: filmstrip::State::default(),
             shown_version: 0,
             visible: Vec::new(),
@@ -490,12 +493,7 @@ impl Library {
         }
         if let Some(id) = self.filters.collection {
             if self.session.collections().iter().any(|c| c.id == id) {
-                self.filters.members = self
-                    .session
-                    .collection_photos()
-                    .get(&id)
-                    .cloned()
-                    .unwrap_or_default();
+                self.filters.members = self.members_of_collection(id);
             } else {
                 self.filters.collection = None;
                 self.filters.members.clear();
@@ -722,8 +720,18 @@ impl Library {
             .map(|i| self.session.photos()[*i].id)
             .collect()
     }
+    /// Edits of `ids` were written on another connection than the session's
+    /// (autosave, Sync and its Undo, batch presets and Auto, an extension's
+    /// proposal), whether or not each was: the one place the session hears of
+    /// them, so smart collections see them. Autosave calls this alone; the
+    /// others through [`Self::edits_changed`].
+    pub(in crate::app) fn edits_written(&mut self, ids: &[PhotoId]) {
+        self.session.note_external_change(ids.iter().copied());
+    }
     /// Edits written elsewhere (Sync, its Undo): their previews render again.
     pub(in crate::app) fn edits_changed(&mut self, ids: impl IntoIterator<Item = PhotoId>) {
+        let ids: Vec<PhotoId> = ids.into_iter().collect();
+        self.edits_written(&ids);
         for id in ids {
             self.cache.forget(id);
         }
@@ -756,12 +764,7 @@ impl Library {
             self.filters.folder_scope = Some(scope);
         }
         if let Some(id) = self.filters.collection {
-            self.filters.members = self
-                .session
-                .collection_photos()
-                .get(&id)
-                .cloned()
-                .unwrap_or_default();
+            self.filters.members = self.members_of_collection(id);
         }
         self.selection = place.selection.clone();
         self.filter();
@@ -851,6 +854,25 @@ impl Library {
         if !ids.is_empty() {
             self.ask(outbox::Request::File(FileRequest::Trash(ids)));
         }
+    }
+    /// Collection `id`'s photos: a smart collection's as last worked out.
+    pub(super) fn members_of_collection(
+        &self,
+        id: crate::catalog::CollectionId,
+    ) -> HashSet<PhotoId> {
+        if self
+            .session
+            .collections()
+            .iter()
+            .any(|c| c.id == id && c.kind == crate::catalog::CollectionKind::Smart)
+        {
+            return self.smart_members_of(id);
+        }
+        self.session
+            .collection_photos()
+            .get(&id)
+            .cloned()
+            .unwrap_or_default()
     }
     /// The rejected photos of the source shown (its folders, collection,
     /// previous import or offline photos), whatever the filter bar shows:
@@ -1345,6 +1367,7 @@ impl Library {
         if self.availability.poll(false, self.session.photos()) {
             self.availability_known();
         }
+        self.poll_smart();
         self.poll_capture_times();
         self.poll_photo_info();
         self.poll_import_stacks();
@@ -1668,6 +1691,9 @@ mod rows;
 mod screen;
 mod selection;
 mod sidebar;
+pub(in crate::app) mod smart;
+#[cfg(test)]
+mod smart_tests;
 mod sort;
 mod stacks;
 mod stage;
