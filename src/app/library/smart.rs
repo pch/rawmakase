@@ -171,6 +171,34 @@ impl Library {
             self.messages.warn(unsupported_line(count));
         }
     }
+    /// What Read Smart Collections from Lightroom Catalog did, on the
+    /// status line.
+    pub(in crate::app) fn note_smart_read(
+        &mut self,
+        read: &crate::catalog::lightroom::SmartRecovery,
+    ) {
+        let line = smart_read_line(read);
+        if read.collections_apart.is_empty()
+            && read.keywords_apart.is_empty()
+            && read.synonyms_complete
+        {
+            self.messages.done(line);
+        } else {
+            // Every one left, one per line, when the message is opened.
+            let detail = read
+                .collections_apart
+                .iter()
+                .map(|name| format!("Collection: {name}"))
+                .chain(
+                    read.keywords_apart
+                        .iter()
+                        .map(|name| format!("Keyword: {name}")),
+                )
+                .collect::<Vec<_>>()
+                .join("\n");
+            self.messages.warn_with_detail(line, detail);
+        }
+    }
     /// The dismissal of the synonyms notice: the user says this catalog has
     /// no Lightroom synonyms to read.
     pub(in crate::app) fn dismiss_missing_synonyms(&mut self) {
@@ -190,7 +218,8 @@ impl SmartNote {
             }
             Self::Failed(error) => error.clone(),
             Self::SynonymsMissing => {
-                "Keyword rules don't see Lightroom's keyword synonyms yet: this catalog doesn't have them"
+                "Keyword rules don't see Lightroom's keyword synonyms yet: this catalog doesn't \
+                 have them. Catalog › Read Smart Collections from Lightroom Catalog… reads them"
                     .into()
             }
         }
@@ -208,4 +237,66 @@ pub(in crate::app) fn unsupported_line(count: usize) -> String {
     format!(
         "{them} {have} rules RAWmakase can't evaluate; they list no photos until those rules are removed"
     )
+}
+
+/// The summary of Read Smart Collections from Lightroom Catalog.
+pub(in crate::app) fn smart_read_line(read: &crate::catalog::lightroom::SmartRecovery) -> String {
+    let count = |n: usize, one: &str, many: &str| {
+        if n == 1 {
+            format!("1 {one}")
+        } else {
+            format!("{n} {many}")
+        }
+    };
+    let mut filled = Vec::new();
+    if read.rules > 0 {
+        filled.push(count(
+            read.rules,
+            "smart collection's rules",
+            "smart collections' rules",
+        ));
+    }
+    if read.sorts > 0 {
+        filled.push(count(read.sorts, "collection's sort", "collections' sorts"));
+    }
+    if read.target {
+        filled.push("the target collection".into());
+    }
+    if read.synonyms > 0 {
+        filled.push(format!(
+            "the synonyms of {}",
+            count(read.synonyms, "keyword", "keywords")
+        ));
+    }
+    let mut line = if filled.is_empty() && read.synonyms_complete {
+        "Read from Lightroom: nothing was missing".to_string()
+    } else if filled.is_empty() {
+        "Read from Lightroom: nothing filled in".to_string()
+    } else {
+        format!("Read from Lightroom: {}", filled.join(", "))
+    };
+    let names = |names: &[String]| {
+        let shown: Vec<&str> = names.iter().take(3).map(String::as_str).collect();
+        let more = names.len().saturating_sub(3);
+        let mut text = shown.join(", ");
+        if more > 0 {
+            text.push_str(&format!(" and {more} more"));
+        }
+        text
+    };
+    if !read.collections_apart.is_empty() {
+        line.push_str(&format!(
+            ". Left as they are here (renamed, moved or not Lightroom's): {}",
+            names(&read.collections_apart)
+        ));
+    }
+    if !read.keywords_apart.is_empty() {
+        line.push_str(&format!(
+            ". Keywords not in that Lightroom catalog: {}, so synonyms stay incomplete",
+            names(&read.keywords_apart)
+        ));
+    } else if !read.synonyms_complete {
+        line.push_str(". Keyword synonyms stay incomplete");
+    }
+    line
 }

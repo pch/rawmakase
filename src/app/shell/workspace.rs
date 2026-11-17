@@ -757,6 +757,21 @@ impl Editor {
         if menu_row(
             ui,
             Icon::SmartCollection,
+            "Read Smart Collections from Lightroom Catalog…",
+            location.is_some(),
+        )
+        .on_hover_text(
+            "Read the rules, sorts, target collection and keyword synonyms a catalog imported \
+             from Lightroom before this release is missing; nothing here is replaced",
+        )
+        .clicked()
+        {
+            self.catalog_dialog(CatalogDialog::ReadSmartCollections, ctx);
+            ui.close();
+        }
+        if menu_row(
+            ui,
+            Icon::SmartCollection,
             "New Smart Collection…",
             self.library.is_some(),
         )

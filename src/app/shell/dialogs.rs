@@ -24,6 +24,8 @@ pub(in crate::app) enum CatalogDialog {
     Open,
     ImportLightroom,
     Folder(FolderAction),
+    /// Read Smart Collections from Lightroom Catalog… into the open catalog.
+    ReadSmartCollections,
 }
 
 #[derive(Clone)]

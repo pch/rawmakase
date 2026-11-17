@@ -361,3 +361,105 @@ fn smart_collections_are_created_with_their_rules_by_the_naming_rules() -> Resul
     );
     Ok(())
 }
+
+/// A catalog this release imported from `source`, made as an earlier
+/// release left it: no rules, sorts, target or synonyms, and synonyms
+/// missing.
+fn imported_earlier(d: &tempfile::TempDir, source: &Path) -> Result<Catalog> {
+    let destination = d.path().join("earlier.rawmakase");
+    import_lightroom(source, &destination)?;
+    let cat = Catalog::open(&destination)?;
+    cat.db_for_tests().execute_batch(
+        "DELETE FROM smart_collection_rules;
+         DELETE FROM collection_options;
+         DELETE FROM keyword_synonyms;
+         DELETE FROM meta WHERE key IN ('target_collection', 'keyword_synonyms');
+         INSERT INTO meta(key, value) VALUES ('keyword_synonyms', 'missing');",
+    )?;
+    Ok(cat)
+}
+
+#[test]
+fn reading_smart_collections_fills_only_what_is_missing_and_once() -> Result<()> {
+    let d = tempfile::tempdir()?;
+    let source = d.path().join("smart.lrcat");
+    lightroom(&source, "50.0")?;
+    let mut cat = imported_earlier(&d, &source)?;
+    // Chosen here since: kept.
+    let mine = Group::new(
+        Combine::Union,
+        vec![Item::Rule(Rule::new(
+            "rating",
+            "==",
+            Some(Value::Number(2.)),
+        ))],
+    );
+    cat.set_smart_rules(CollectionId(18), &SmartRules::new(&mine))?;
+    cat.set_collection_options(
+        CollectionId(50),
+        &CollectionOptions {
+            sort: "captureTime".into(),
+            direction: "ascending".into(),
+        },
+    )?;
+    let read = cat.read_smart_collections(&source)?;
+    assert_eq!(
+        (read.rules, read.sorts, read.target, read.synonyms),
+        (2, 1, true, 1)
+    );
+    assert!(read.collections_apart.is_empty() && read.keywords_apart.is_empty());
+    assert!(read.synonyms_complete);
+    let rules = cat.smart_rules()?;
+    assert_eq!(rules[&CollectionId(17)].lightroom(), Some(FIVE_STARS));
+    assert_eq!(rules[&CollectionId(18)].rules().unwrap(), mine);
+    assert_eq!(
+        rules[&CollectionId(19)].lightroom(),
+        Some("s = { os.exit() }")
+    );
+    let options = cat.collection_options()?;
+    assert_eq!(options[&CollectionId(17)].sort, "captureTime");
+    assert_eq!(options[&CollectionId(50)].sort, "captureTime");
+    assert_eq!(cat.target_collection()?, Some(CollectionId(50)));
+    assert_eq!(cat.keyword_synonyms()?[&60], ["Metropolis"]);
+    assert_eq!(cat.synonym_state()?, SynonymState::Complete);
+    // Twice: nothing more.
+    let again = cat.read_smart_collections(&source)?;
+    assert_eq!(
+        (again.rules, again.sorts, again.target, again.synonyms),
+        (0, 0, false, 0)
+    );
+    assert!(again.synonyms_complete);
+    Ok(())
+}
+
+#[test]
+fn reading_smart_collections_leaves_what_isnt_lightroom_s() -> Result<()> {
+    let d = tempfile::tempdir()?;
+    let source = d.path().join("smart.lrcat");
+    lightroom(&source, "'qc'")?;
+    let mut cat = imported_earlier(&d, &source)?;
+    // Renamed here, and a keyword renamed: not taken for Lightroom's.
+    cat.rename_collection(CollectionId(17), "Best")?;
+    cat.db_for_tests()
+        .execute("UPDATE keywords SET name = 'Town' WHERE id = 60", [])?;
+    let read = cat.read_smart_collections(&source)?;
+    assert_eq!(read.collections_apart, ["Five Stars"]);
+    assert_eq!(read.keywords_apart, ["Town"]);
+    assert!(!read.synonyms_complete);
+    assert!(!cat.smart_rules()?.contains_key(&CollectionId(17)));
+    assert!(cat.keyword_synonyms()?.is_empty());
+    assert_eq!(cat.synonym_state()?, SynonymState::Missing);
+    // A nameless root keyword that isn't Lightroom's is listed too.
+    cat.db_for_tests()
+        .execute("UPDATE keywords SET name = 'City' WHERE id = 60", [])?;
+    cat.db_for_tests().execute(
+        "INSERT INTO keywords(id, name, parent) VALUES (61, '', NULL)",
+        [],
+    )?;
+    let again = cat.read_smart_collections(&source)?;
+    assert_eq!(again.keywords_apart, ["the hidden root keyword (61)"]);
+    assert!(!again.synonyms_complete);
+    // The Quick Collection target needs no collection matched.
+    assert!(read.target && cat.has_target_collection()?);
+    Ok(())
+}
