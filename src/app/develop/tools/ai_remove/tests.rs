@@ -1669,3 +1669,18 @@ fn an_area_coming_back_takes_no_stroke_from_another() {
     e.redo();
     assert_eq!(e.ai_remove.draft, [a]);
 }
+
+#[test]
+fn an_exited_retouch_extension_points_to_its_log() {
+    use rawmakase_extensions::protocol::{ErrorCode, RemoteError};
+    let failure = retouch_generator::failure(RemoteError::new(
+        ErrorCode::Exited,
+        "the retouch request was stopped",
+    ));
+    let message = failure.message("AI Local Remove");
+    assert!(
+        message.contains("extension stopped unexpectedly"),
+        "{message}"
+    );
+    assert!(message.contains("Details → Log"), "{message}");
+}

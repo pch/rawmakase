@@ -209,13 +209,11 @@ impl Editor {
                 .failed
                 .as_ref()
                 .map_or(offer.clone(), |(failed, _)| failed.clone());
-            // One line in the warning tone; a button only where there is
-            // something to do. A prompt to write goes once the next send does.
             indented(ui, |ui| {
                 ui.add(
                     egui::Label::new(
                         egui::RichText::new(failure.message(&failed.name))
-                            .size(text::MICRO)
+                            .size(text::BODY)
                             .color(palette.warning()),
                     )
                     .wrap(),
@@ -235,6 +233,12 @@ impl Editor {
                     }
                 }),
                 _ => indented(ui, |ui| {
+                    if self.ai_remove.failed.is_some() && ui.button("Extension details…").clicked()
+                    {
+                        self.open_extension_page(&failed.extension);
+                        self.extension_page
+                            .show(crate::app::extensions::Section::About);
+                    }
                     if ui.small_button("Dismiss").clicked() {
                         self.dismiss_ai_failure();
                     }

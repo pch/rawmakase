@@ -253,6 +253,9 @@ pub(in crate::app) fn failure(error: RemoteError) -> Failure {
         ErrorCode::Unavailable => Failure::Unavailable(error.message),
         ErrorCode::Refused => Failure::Refused(error.message),
         ErrorCode::NeedsInput => Failure::NeedsInput(error.message),
+        ErrorCode::Exited => Failure::Failed(
+            "the extension stopped unexpectedly. In Preferences → Extensions, open its About tab and check Details → Log for the cause.".into(),
+        ),
         _ => Failure::Failed(error.message),
     }
 }
