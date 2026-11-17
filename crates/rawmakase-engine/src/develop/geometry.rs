@@ -223,8 +223,9 @@ impl Geometry {
         if r.constrain_crop && (g.transform.is_some() || g.manual.is_some()) {
             g.crop = g.constrained_crop();
         }
-        let w = ow * (g.crop[2] - g.crop[0]);
-        let h = oh * (g.crop[3] - g.crop[1]);
+        // At the photo's own scale, as Camera Raw writes it, not resampled by Straighten's zoom.
+        let w = ow * (g.crop[2] - g.crop[0]) / g.zoom;
+        let h = oh * (g.crop[3] - g.crop[1]) / g.zoom;
         let factor = if max_edge > 0 {
             (max_edge as f32 / w.max(h)).min(1.)
         } else {
@@ -757,8 +758,8 @@ mod constrain_crop_tests {
             );
             assert!(r2 - l >= 0.01 && b - t >= 0.01, "{name}: {:?}", g.crop());
             assert!(constrained.validate().is_ok());
-            // The output size follows the crop as rendered.
-            let w = g.oriented_width * (r2 - l);
+            // The output size follows the crop as rendered, at the photo's own scale.
+            let w = g.oriented_width * (r2 - l) / g.zoom;
             assert_eq!(g.width, w.round() as u32, "{name}");
             // A recipe that stores the constrained crop renders it unchanged.
             let stored = Recipe {
