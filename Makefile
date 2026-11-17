@@ -112,6 +112,7 @@ install:
 	install -Dm644 licenses/Ubuntu-UFL.txt $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/Ubuntu-UFL.txt
 	install -Dm644 licenses/emoji-icon-font-MIT.txt $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/emoji-icon-font-MIT.txt
 ifneq ($(shell uname -s),Darwin)
+	install -Dm644 licenses/Inter-OFL.txt $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/Inter-OFL.txt
 	install -Dm644 packaging/applications/rawmakase.desktop $(DESTDIR)$(PREFIX)/share/applications/rawmakase.desktop
 	install -Dm644 packaging/icons/rawmakase.svg $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/rawmakase.svg
 endif

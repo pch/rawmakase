@@ -159,6 +159,12 @@ wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 
+# Linux draws its interface with the bundled Inter (src/app/mod.rs,
+# INTERFACE_FACE): fontconfig's system-ui is often a soft metric-compatible
+# fallback. macOS and Windows use their own interface face and leave it out.
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+fastframe-fonts = { workspace = true, features = ["inter"] }
+
 [target.'cfg(windows)'.dependencies]
 # Extensions' secret settings (src/platform/credentials.rs): the Credential
 # Manager.
