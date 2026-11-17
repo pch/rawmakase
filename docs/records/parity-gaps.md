@@ -1,6 +1,6 @@
 # Remaining Lightroom parity gaps
 
-Status: Record (2026-10-05, last updated 2026-11-16); tone research updated 2026-10-16 for the [scene tone stage](../scene-tone-stage.md); lens, profile and catalog notes updated 2026-10-03. RAWmakase renders close to Lightroom but not identically. Each item below says what differs and, where measured, by how much. Errors are encoded-sRGB mean absolute error (0–1) against Camera Raw 18.6 or Lightroom Classic 15.5 exports, scored with `scripts/lightroom-scorecard.py`; most of the entries below are mean ΔE00 against Camera Raw 18.7 renders of the synthetic charts. For scale: Lightroom X100F references averaged 0.0090, Sony A7 II Camera Raw references 0.0065. The scene tone stage changed the default render and every tone control, so figures measured before it (dated 2026-10-05 and earlier) may have moved. Details: [tone controls](../tone-controls.md), [color mixer and grading](../color-mixer.md), [lens corrections](../lens-corrections.md), [transform](../transform.md).
+Status: Record (2026-10-05, last updated 2026-11-17); tone research updated 2026-10-16 for the [scene tone stage](../scene-tone-stage.md); lens, profile and catalog notes updated 2026-10-03. RAWmakase renders close to Lightroom but not identically. Each item below says what differs and, where measured, by how much. Errors are encoded-sRGB mean absolute error (0–1) against Camera Raw 18.6 or Lightroom Classic 15.5 exports, scored with `scripts/lightroom-scorecard.py`; most of the entries below are mean ΔE00 against Camera Raw 18.7 renders of the synthetic charts. For scale: Lightroom X100F references averaged 0.0090, Sony A7 II Camera Raw references 0.0065. The scene tone stage changed the default render and every tone control, so figures measured before it (dated 2026-10-05 and earlier) may have moved. Details: [tone controls](../tone-controls.md), [color mixer and grading](../color-mixer.md), [lens corrections](../lens-corrections.md), [transform](../transform.md).
 
 ## Measured and matched (for reference)
 
@@ -253,6 +253,151 @@ each octave band of log2 luminance (px of 1024, then the 128 px low-pass):
   0.0358 at +100 (no change: 0.0941) and 0.0168 at +50 (0.0424); the median band gains
   finer than 32 px on Camera Raw's own low-pass leave as much (0.0353 and 0.0128), so
   unlike negative Dehaze its detail is not one filter for every photo.
+
+### Shadows and Highlights together are not the sum of each alone (2026-11-17)
+
+Every fit and every test of Shadows and Highlights so far used one slider at a time. The
+dataset gate's mixed sets hold one combined case of the two, Shadows +50 with Highlights
+−50; nothing renders negative Shadows or positive Highlights together with another
+control. This experiment renders combined settings in Camera Raw on training photos and
+asks two things: whether Camera Raw's combined render follows from its single-slider
+renders, and how main and the branch of #1128 (the rule for negative Shadows and positive
+Highlights) compare with it. 60 training photos, taken in turn from every family and
+stratum, scene values through a linear profile at 1024 px; nothing fitted on validation,
+holdout untouched. Lifts are of the 32-pixel level, in stops, by stops under the photo's
+top (0–1, 1–2, 2–3, 3–4, 4–5, 5–6, 6–8).
+
+**Camera Raw's own renders.** The lift at a combined setting less the sum of the two
+single-slider lifts, mean over photos (at the two ends the RMS over photos is within 0.1
+of the mean's size, so most photos show the same):
+
+| Setting | 0–1 | 1–2 | 2–3 | 3–4 | 4–5 | 5–6 | 6–8 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Shadows +100, Highlights +100 | +0.25 | +0.36 | +0.43 | +0.45 | +0.47 | +0.48 | +0.47 |
+| Shadows −100, Highlights −100 | −0.44 | −0.47 | −0.48 | −0.49 | −0.53 | −0.52 | −0.45 |
+| Shadows +100, Highlights −100 | +0.23 | +0.13 | +0.04 | −0.03 | −0.10 | −0.16 | −0.21 |
+| Shadows −100, Highlights +100 | −0.13 | −0.09 | −0.02 | +0.05 | +0.13 | +0.19 | +0.22 |
+| Shadows −50, Highlights +50 | −0.09 | −0.05 | −0.01 | +0.02 | +0.06 | +0.09 | +0.14 |
+
+- Moved the same way, the two sliders brighten or darken every level by nearly half a
+  stop more than their sum. Moved opposite ways, each does less at its own end: with
+  Shadows +100 and Highlights −100, the pair most edits use, Camera Raw pulls the top
+  stop 0.23 less and lifts the deepest shadows 0.21 less than the two sliders do alone.
+- At half of both sliders the difference is half to 0.7 of the full one, not a quarter:
+  it scales with the sliders, like the single-slider lifts, and not with their product.
+- Exposure does not enter: Camera Raw's Exposure −1 with Highlights +100 and Exposure +1
+  with Shadows −100 are the sums of the single renders to 0.01–0.05 stop below the top
+  stop (22 photos; in the top stop, where the white curve acts, the first differs by
+  0.17). Highlights +50 with Whites +50 is the sum within 0.08. Blacks reads what Shadows
+  leaves (Shadows −50 with Blacks −50: 0.02–0.43 RMS down to six stops under the top
+  read that way, against 0.03–0.96 for the sum), as the engine already applies it.
+
+**A form that fits it.** With both sliders set, each one's lift is a blend of its own
+curve and a uniform lift at that curve's extreme:
+`combined(L) = (1 − λs)·S(L) + λs·S_ext + (1 − λh)·H(L) + λh·H_ext`, where `S(L)` and
+`H(L)` are the photo's single-slider lifts by level. Each slider protects the other end
+of the tonal range less than it does alone. With the two fractions fitted per photo, the
+RMS over a photo's levels of what the sum of the singles leaves falls (median of 59
+photos) from 0.41 to 0.03 at Shadows +100 with Highlights +100, 0.44 to 0.05 at −100 with
+−100, 0.11 to 0.02 at +100 with −100, 0.10 to 0.02 at −100 with +100 and 0.06 to 0.01 at
+−50 with +50. The fractions are the same at half the sliders and a photo keeps its
+fractions across the four sign combinations (correlation 0.5 to 0.99), but they differ
+between photos: λs is 0.09 to 0.12 at the median of a setting (quartiles about 0.07 and
+0.17), λh 0.19 to 0.33 (0.15 and 0.5). With the median fractions for every photo the
+residuals are 0.17, 0.17, 0.10, 0.09 and 0.06: most of the same-sign difference goes,
+little of the opposite-sign one. Of the descriptors tried, a photo's λh follows the mean
+of its Highlights mask best (rank correlation 0.71); none explains λs.
+
+**Over the two sliders' grid** (16 settings at ±50 and ±100; 7 of the planned 16 photos
+so far): at Shadows +100 with Highlights +50 and at
++50 with +100 the same-sign difference is 0.20 and 0.19 stop, less than the 0.26 of +50
+with +50, so it is largest when the two sliders are equal. In the opposite-sign quadrants
+each slider's own part follows its own amount: the top stop moves 0.22–0.25 at Shadows
+±100 and 0.09–0.13 at ±50 whatever the Highlights amount, the deep shadows 0.25–0.37 at
+Highlights ±100 and 0.12–0.22 at ±50. How the difference sets in between a slider at zero
+and at half the other is not measured yet.
+
+**What did not explain it.**
+
+- *One slider read at the level the other leaves* (either order, Camera Raw's own curves):
+  leaves as much as the plain sum in every case.
+- *One slider's rule reading the photo as the other left it* (the engine's measurement map
+  after the first gain, the rule's statistics taken again; a test build, 24 photos):
+  Highlights after Shadows improves −100 with −100 (0.040 → 0.020 against Camera Raw) and
+  worsens the other three (−100 with +100 0.024 → 0.047); Shadows after Highlights improves
+  +100 with +100 (0.069 → 0.049) and worsens +100 with −100 (0.021 → 0.026). Camera Raw's
+  Highlights −100 alone does depend on the photo (it pulls the top stop 0.42 on the
+  high-key third of 81 photos and 1.68 on the low-key third), but the combined render is
+  not that dependence applied in sequence.
+
+**The engines at combined settings** (RMS of cube-root differences of each engine's change
+against Camera Raw's; median of 60 photos, or of 22 where marked; no change | main | the
+branch of #1128):
+
+| Setting | No change | Main | Branch | Photos better / worse |
+| --- | --- | --- | --- | --- |
+| Shadows −100, Highlights +100 | 0.0476 | 0.0228 | 0.0182 | 44 / 14 |
+| Shadows −50, Highlights +50 | 0.0248 | 0.0124 | 0.0089 | 47 / 8 |
+| Shadows +100, Highlights +100 | 0.1376 | 0.0666 | 0.0430 | 44 / 12 |
+| Shadows −100, Highlights −100 | 0.0992 | 0.0326 | 0.0285 | 47 / 7 |
+| Shadows +100, Highlights −100 (the first ensemble only) | 0.0514 | 0.0198 | 0.0198 | same render |
+| Highlights +40, Shadows −40, Whites +20, Blacks −20 | 0.0465 | 0.0158 | 0.0140 | 36 / 18 |
+| Highlights +50, Whites +50 (22) | 0.0784 | 0.0179 | 0.0188 | 12 / 8 |
+| Shadows −50, Blacks −50 (22) | 0.0908 | 0.0119 | 0.0075 | 20 / 2 |
+| Exposure −1, Highlights +100 (22) | 0.0626 | 0.0165 | 0.0127 | 19 / 2 |
+| Exposure +1, Shadows −100 (22) | 0.0776 | 0.0170 | 0.0114 | 15 / 6 |
+
+The branch is closer than main wherever its curves are used, and level with it beside
+Whites. Both add the two sliders' gains, so both carry the difference above: at Shadows
++100 with Highlights +100 the branch is 0.28 to 0.38 stop too dark at every level (main
+0.41 to 0.54), at −100 with −100 0.28 to 0.52 too bright, and at +100 with −100 the
+render is 0.32 too dark in the top stop and 0.48 too bright six to eight stops down. The
+errors at combined settings are two to six times the single-slider ones (0.007 to 0.011
+on the branch).
+
+**A test build of the form** (not a candidate; a switch on the branch of #1128, no
+retraining): with both sliders set, each scaled rule curve is blended toward its value at
+the photo's 1st (Shadows) or 99th (Highlights) percentile base level, with λs 0.11 and
+λh either 0.25 or read from the photo's mean Highlights mask (1.56 × mean − 0.23, held
+to 0.1–0.9, the line through the 59 photos' fitted fractions), both ramped in over the
+other slider's first half of this one's amount. The constants come from these same 60
+photos. Median error against Camera Raw, main | the branch | λh fixed | λh from the mask:
+
+| Setting | Main | Branch | λh 0.25 | λh from the mask | Better / worse than the branch (mask) |
+| --- | --- | --- | --- | --- | --- |
+| Shadows +100, Highlights −100 | 0.0198 | 0.0198 | 0.0182 | 0.0147 | 47 / 11 |
+| Shadows −100, Highlights +100 | 0.0228 | 0.0182 | 0.0192 | 0.0163 | 31 / 23 |
+| Shadows +100, Highlights +100 | 0.0666 | 0.0430 | 0.0291 | 0.0283 | 42 / 18 |
+| Shadows −100, Highlights −100 | 0.0326 | 0.0285 | 0.0188 | 0.0189 | 41 / 16 |
+| Shadows −50, Highlights +50 | 0.0124 | 0.0089 | 0.0102 | 0.0085 | 27 / 24 |
+| Highlights +40, Shadows −40, Whites +20, Blacks −20 | 0.0158 | 0.0140 | 0.0131 | 0.0128 | 34 / 19 |
+
+With the mask's fraction the level's bias at Shadows +100 with Highlights +100 falls from
+−0.28…−0.38 stop to −0.06…+0.09, at −100 with −100 from +0.28…+0.52 to −0.07…+0.07, and
+at +100 with −100 from −0.32 in the top stop and +0.48 six to eight stops down to −0.13
+and +0.18. The fixed fraction is worse than the branch on 36 of 60 photos at Shadows −100
+with Highlights +100: the fraction has to follow the photo. A first build that blended
+toward the extreme of the curve's table instead of the level the photo reaches overshot
+by half a stop, because the Shadows −100 table runs far below the photo's pixels.
+
+On validation the gate's one combined case of the two, Shadows +50 with Highlights −50,
+is the only case the switch changes (the other 504 of the mixed sets render the same).
+With λh from the mask, against the recorded baseline of main (56 photos of six families,
+median ΔE00 of a photo): median 1.04 → 0.94, mean 1.26 → 1.20, 90th percentile 2.13 →
+2.26; 26 photos closer by more than 0.05 and 14 further. In the three main families
+0.96 → 0.87 (90th percentile 2.27 → 2.09), in the stress families 1.20 → 0.95 (1.90 →
+2.25). Four photos have windows more than 2 ΔE00 worse (355 windows; 81 on three photos
+are that much better), the largest a stress photo at 1.14 → 2.46; clipping does not
+move. The form carries over to photos it was not read from, at half the sliders; the
+fraction per photo does not yet, and the build would not pass the gate's regression
+rule.
+
+**Open.** The 9 remaining photos of the grid and settings near the axes (one slider at a
+tenth or a quarter of the other), to see how the difference sets in; then either the two
+fractions predicted per photo by the rule's networks or the combined curves themselves
+as further outputs of the rule, fitted on combined renders of every training photo. The
+gate's mixed sets need cases with both signs of each slider before such a change can be
+judged on validation.
 
 ### Negative Dehaze as added haze, and the dark key (2026-11-13)
 
