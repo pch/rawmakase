@@ -80,10 +80,10 @@ pub(crate) struct CatalogSession {
     recent_keywords: Vec<i64>,
     /// The name the Library gives each keyword ([`crate::catalog::keyword_labels`]).
     keyword_labels: HashMap<i64, String>,
-    /// Each name a keyword had, to the name it was given next, while this
-    /// catalog is open: a filter chose keywords by name, and the place Undo
-    /// returns to keeps the name it had then.
-    relabeled: HashMap<String, String>,
+    /// Each name a keyword had while this catalog is open, to that keyword:
+    /// a filter chose keywords by name, and the place Undo returns to keeps
+    /// the name it had then.
+    relabeled: HashMap<String, i64>,
     backfill: backfill::Backfill,
     wake: Wake,
     /// Changes whenever photos may have changed place, name or master (see
@@ -129,18 +129,15 @@ impl CatalogSession {
     pub(crate) fn keyword_labels(&self) -> &HashMap<i64, String> {
         &self.keyword_labels
     }
-    /// The name keyword-name `name` has now: itself when a keyword has it,
-    /// else the name it was last given, followed through later renames.
+    /// The name the keyword named `name` has now: `name` while a keyword
+    /// has it, else the name the keyword that had it was given since; none
+    /// when that keyword is gone.
     pub(crate) fn current_keyword_label<'a>(&'a self, name: &'a str) -> Option<&'a str> {
-        let mut name = name;
-        // A rename and its undo map names both ways; a few steps settle it.
-        for _ in 0..16 {
-            if self.keyword_labels.values().any(|l| l == name) {
-                return Some(name);
-            }
-            name = self.relabeled.get(name)?;
+        if self.keyword_labels.values().any(|l| l == name) {
+            return Some(name);
         }
-        None
+        let id = self.relabeled.get(name)?;
+        self.keyword_labels.get(id).map(String::as_str)
     }
     /// Keeps `keywords` as the catalog's, with their names, noting the
     /// names that changed.
@@ -150,7 +147,7 @@ impl CatalogSession {
             if let Some(old) = self.keyword_labels.get(id)
                 && old != new
             {
-                self.relabeled.insert(old.clone(), new.clone());
+                self.relabeled.insert(old.clone(), *id);
             }
         }
         self.keywords = keywords;

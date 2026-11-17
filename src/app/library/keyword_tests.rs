@@ -352,5 +352,14 @@ fn undoing_a_rename_keeps_the_keyword_chosen_in_the_filter() -> Result<()> {
     assert_eq!(e.library.as_ref().unwrap().shown(), [ids[0]]);
     e.redo();
     assert_eq!(e.library.as_ref().unwrap().shown(), [ids[0]]);
+    // Gone, its name chooses no other keyword that takes it later.
+    e.undo();
+    let library = e.library.as_mut().unwrap();
+    library.edit_keyword_list(KeywordListEdit::Delete(vec![sea]), "Delete Keyword");
+    library.edit_descriptive(
+        &ids[1..],
+        DescriptiveEdit::AddKeywords(vec![vec!["Ocean".into()]]),
+    )?;
+    assert!(library.shown().is_empty());
     Ok(())
 }
