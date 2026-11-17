@@ -207,7 +207,13 @@ impl Catalog {
             super::ingest::remove_folders(w, &others)?;
             super::locations::forget_unused(w)?;
             prune_unreferenced(w)?;
-            let kept_every_mask = super::mask_assets::delete_unnamed(w)?.kept_every;
+            let kept_every_mask = match super::mask_assets::unnamed(w)? {
+                Some(unnamed) => {
+                    super::mask_assets::delete(w, &unnamed)?;
+                    false
+                }
+                None => true,
+            };
             prune_recipe_assets(w)?;
             keep_reread(w, &keep)?;
             add_collection(w, collection)?;
@@ -409,7 +415,7 @@ fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
 }
 
 /// Deletes the camera profiles and Lensfun calibrations no edit, History or
-/// snapshot left names, by the rule [`super::mask_assets::delete_unnamed`] follows:
+/// snapshot left names, by the rule rasters follow ([`super::mask_assets::named`]):
 /// one is kept if its id appears anywhere in them, and every one is kept if a
 /// History can't be read.
 fn prune_recipe_assets(w: &mut Write<'_>) -> Result<()> {
@@ -417,13 +423,11 @@ fn prune_recipe_assets(w: &mut Write<'_>) -> Result<()> {
     if ids.is_empty() {
         return Ok(());
     }
-    let Some(texts) = super::mask_assets::naming_texts(w)? else {
+    let Some(named) = super::mask_assets::named(w, &ids)? else {
         return Ok(());
     };
-    for id in ids {
-        if !texts.iter().any(|t| t.contains(id.as_str())) {
-            w.execute(sql!("DELETE FROM recipe_assets WHERE id=?"), &[&id])?;
-        }
+    for id in ids.iter().filter(|id| !named.contains(*id)) {
+        w.execute(sql!("DELETE FROM recipe_assets WHERE id=?"), &[id])?;
     }
     Ok(())
 }

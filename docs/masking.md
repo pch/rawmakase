@@ -63,8 +63,8 @@ left, in order, with the finished ones ticked: download the models.
 - **Not copied:** masks made from a selection belong to their photo. Copy, Paste and
   Sync leave them out (and say so), and presets cannot hold them.
 - **Limits:** one 4096-pixel, 8-bit raster per selection. A raster nothing names
-  any more (not the edit, its History, a snapshot or a virtual copy) stays in the
-  catalog until it is next opened a week or more after the last look
+  any more (not the edit, its History, a snapshot or a virtual copy) is deleted one
+  to two weeks later, as the catalog opens
   ([catalogs](catalogs.md#unused-masks-and-patches)). Grow/shrink and feather are
   not implemented. Fine hair is as sharp as the 256-pixel mask and the edge refinement
   make it, not a matting model's. Subject is limited to what DETR was trained to name (people and animals); clicks

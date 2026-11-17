@@ -17,6 +17,9 @@ const COMPACT_PENDING: &str = "compact_pending";
 const COMPACT_WHEN_FREE: i64 = 32 << 20;
 /// Set in `meta` to when the rasters were last looked through (Unix seconds).
 const RASTERS_CHECKED: &str = "rasters_checked_at";
+/// Set in `meta` to the rasters nothing named when they were last looked
+/// through, joined by commas: the ones still unnamed next time are deleted.
+const RASTERS_UNNAMED: &str = "rasters_unnamed";
 /// How often the rasters are looked through. Doing it means inflating every
 /// History, about half a second for a hundred well-edited photos, so not on every
 /// open; the rasters left meanwhile wait at most this long.
@@ -47,9 +50,11 @@ impl Catalog {
     }
 
     /// Deletes the mask rasters and patches no edit, History, snapshot or
-    /// virtual copy names ([`super::mask_assets::delete_unnamed`]), at most once
-    /// every [`RASTER_CHECK_EVERY`]. A catalog with a table a later release added
-    /// is left alone, as its rows may name some.
+    /// virtual copy has named ([`super::mask_assets::unnamed`]) at two looks
+    /// through at least [`RASTER_CHECK_EVERY`] apart. The wait is for what no
+    /// row records: another window's Undo back to a deleted spot, say, whose
+    /// pixels that window may no longer hold either. A catalog with a table a
+    /// later release added is left alone, as its rows may name some.
     fn delete_unused_rasters(&mut self) -> Result<()> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -69,7 +74,19 @@ impl Catalog {
         }
         self.db.write(|w| {
             super::set_meta(w, RASTERS_CHECKED, &now.to_string())?;
-            if super::mask_assets::delete_unnamed(w)?.bytes == 0 {
+            let before: Option<String> = w.read_optional(
+                sql!("SELECT value FROM meta WHERE key=?"),
+                &[&RASTERS_UNNAMED],
+            )?;
+            let before: std::collections::HashSet<&str> =
+                before.as_deref().unwrap_or("").split(',').collect();
+            // A History that can't be read keeps every raster, and waits again.
+            let unnamed = super::mask_assets::unnamed(w)?.unwrap_or_default();
+            let (gone, waiting): (Vec<String>, Vec<String>) = unnamed
+                .into_iter()
+                .partition(|h| before.contains(h.as_str()));
+            super::set_meta(w, RASTERS_UNNAMED, &waiting.join(","))?;
+            if super::mask_assets::delete(w, &gone)? == 0 {
                 return Ok(());
             }
             // The free pages include what earlier opens deleted, so small

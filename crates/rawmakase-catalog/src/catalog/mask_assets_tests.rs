@@ -244,15 +244,20 @@ fn an_edit_naming_a_patch_nothing_stores_is_not_saved() -> Result<()> {
 fn has(cat: &Catalog, recipe: &Recipe) -> Result<bool> {
     Ok(stored(cat, recipe)? == recipe.mask_asset_ids().count())
 }
-/// The catalog at `path` opened again for use, as the app and the command line
-/// open it, a week after its rasters were last looked through, so its unused
-/// data is removed.
-fn reopened(path: &Path) -> Result<Catalog> {
+/// The catalog at `path` opened for use, as the app and the command line open
+/// it, a week after its rasters were last looked through.
+fn opened_a_week_later(path: &Path) -> Result<Catalog> {
     let mut cat = Catalog::open(path)?;
     cat.db_for_tests()
         .execute("DELETE FROM meta WHERE key='rasters_checked_at'", [])?;
     assert_eq!(cat.remove_unused_data(&mut |_| {}), None);
     Ok(cat)
+}
+/// [`opened_a_week_later`] twice, so what nothing names at either look is
+/// deleted.
+fn reopened(path: &Path) -> Result<Catalog> {
+    drop(opened_a_week_later(path)?);
+    opened_a_week_later(path)
 }
 
 /// #1112: a deleted spot's patch, a replaced generation and a removed photo's
@@ -448,6 +453,12 @@ fn the_rasters_are_looked_through_at_most_once_a_week() -> Result<()> {
         save(&mut cat, id, &file, &Recipe::default())?;
         let db = cat.db_for_tests();
         db.execute("DELETE FROM meta WHERE key='rasters_checked_at'", [])?;
+        // Unnamed at the look before, too.
+        db.execute(
+            "INSERT INTO meta(key, value) VALUES ('rasters_unnamed', ?1)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            [spot.mask_asset_ids().next().unwrap()],
+        )?;
         if let Some(at) = checked {
             db.execute(
                 "INSERT INTO meta(key, value) VALUES ('rasters_checked_at', ?1)",
@@ -459,5 +470,77 @@ fn the_rasters_are_looked_through_at_most_once_a_week() -> Result<()> {
         assert_eq!(cat.remove_unused_data(&mut |_| {}), None);
         assert_eq!(stored(&cat, &spot)? == 0, deleted, "checked at {checked:?}");
     }
+    Ok(())
+}
+
+/// A raster is deleted only when nothing named it at two looks a week apart, so
+/// a window that still holds an edit naming it (an Undo back to a deleted spot)
+/// has that week to save it. Named again between the looks, it waits anew.
+#[test]
+fn a_raster_unnamed_at_one_look_waits_for_the_next() -> Result<()> {
+    let (dir, mut cat, file, id) = catalog()?;
+    let path = dir.path().join("Masks.rawmakase");
+    let spot = generated(5.0);
+    save(&mut cat, id, &file, &spot)?;
+    save(&mut cat, id, &file, &Recipe::default())?;
+    drop(cat);
+    let mut cat = opened_a_week_later(&path)?;
+    assert!(has(&cat, &spot)?);
+    // Saved again before the next look, then unnamed again.
+    save(&mut cat, id, &file, &spot)?;
+    drop(cat);
+    let mut cat = opened_a_week_later(&path)?;
+    save(&mut cat, id, &file, &Recipe::default())?;
+    drop(cat);
+    let cat = opened_a_week_later(&path)?;
+    assert!(has(&cat, &spot)?);
+    drop(cat);
+    let cat = opened_a_week_later(&path)?;
+    assert_eq!(stored(&cat, &spot)?, 0);
+    Ok(())
+}
+
+/// An id of a shape this release doesn't know is kept while a text holds it, as
+/// is a known id written in a longer stretch of hex digits.
+#[test]
+fn ids_of_other_shapes_are_kept_while_a_text_holds_them() -> Result<()> {
+    let (dir, mut cat, file, id) = catalog()?;
+    let path = dir.path().join("Masks.rawmakase");
+    let raster = Bitmap {
+        width: 1,
+        height: 1,
+        channels: 1,
+        depth: 1,
+        data: vec![3],
+    }
+    .compress()?;
+    let later = format!("sha512:{}", "ab".repeat(64));
+    let inside = "cd".repeat(16);
+    let unnamed = format!("sha512:{}", "ef".repeat(64));
+    let db = cat.db_for_tests();
+    for hash in [&later, &inside, &unnamed] {
+        db.execute(
+            "INSERT INTO bitmaps(hash, data) VALUES (?1, ?2)",
+            rusqlite::params![hash, raster],
+        )?;
+    }
+    save(&mut cat, id, &file, &Recipe::default())?;
+    cat.db_for_tests().execute(
+        "UPDATE photos SET lightroom_develop=?1 WHERE id=?2",
+        rusqlite::params![format!("a later release's {later} and 0{inside}0"), id.0],
+    )?;
+    drop(cat);
+    let cat = reopened(&path)?;
+    let count = |hash: &str| -> Result<i64> {
+        Ok(cat.db_for_tests().query_row(
+            "SELECT count(*) FROM bitmaps WHERE hash=?1",
+            [hash],
+            |r| r.get(0),
+        )?)
+    };
+    assert_eq!(
+        (count(&later)?, count(&inside)?, count(&unnamed)?),
+        (1, 1, 0)
+    );
     Ok(())
 }
