@@ -25,7 +25,7 @@ license = "MIT"
 # the state structs (10).
 [workspace.lints.rust]
 # An item marked `pub` is reachable from outside its crate; one that isn't says
-# `pub(crate)` or narrower (#808 step 4.13).
+# `pub(crate)` or narrower.
 unreachable_pub = "warn"
 
 [workspace.lints.clippy]

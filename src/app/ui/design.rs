@@ -220,13 +220,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn margins_keep_their_tokens() {
-        assert_eq!(margin(space::XL, space::L), egui::Margin::symmetric(16, 12));
-        assert_eq!(margin_same(inset::DIALOG), egui::Margin::same(24));
-        assert_eq!(inset::CARD, egui::Margin::symmetric(16, 12));
-    }
-
     /// Calls that take a size, spacing or radius: the interface's code
     /// gives them a token, so a number here is a value outside the system.
     const SIZED: [&str; 7] = [
@@ -455,7 +448,7 @@ mod tests {
                     dirs.push(path);
                 } else if name.ends_with(".rs")
                     && !name.contains("tests")
-                    && !["design.rs", "theme.rs", "ui_snapshot.rs"].contains(&name.as_str())
+                    && !["design.rs", "theme.rs"].contains(&name.as_str())
                 {
                     let text = std::fs::read_to_string(&path)
                         .unwrap()

@@ -1,6 +1,7 @@
-//! Atomic JPEG, 16-bit TIFF and PNG export with the ICC profile of the pixels' colour
-//! space (sRGB, Adobe RGB (1998) or ProPhoto RGB), the camera's EXIF and the edit as
-//! Camera Raw XMP, as Lightroom embeds them.
+//! Atomic JPEG, 16-bit TIFF, PNG and JPEG XL export with the ICC profile of the pixels'
+//! colour space (sRGB, Adobe RGB (1998) or ProPhoto RGB; HDR edits export as HDR TIFF,
+//! JPEG XL or a gain-map JPEG), the camera's EXIF and the edit as Camera Raw XMP, as
+//! Lightroom embeds them.
 pub mod assemble;
 pub mod batch;
 mod encode;

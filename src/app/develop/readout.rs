@@ -9,9 +9,9 @@
 //! primaries with the sRGB tone curve. Renders keep their pixels for it only while
 //! the pointer is over the photo, so dragging sliders costs nothing extra.
 //!
-//! An HDR edit whose master renders reads the master instead (docs/hdr.md#histogram):
-//! the HDR preview's where it shows, otherwise the HDR histogram's, so an SDR display
-//! reads it too. A channel up to graphics white is its Melissa RGB percentage; one
+//! An HDR edit whose master renders reads the master instead
+//! (docs/hdr.md#histogram-and-readout): the HDR preview's where it shows, otherwise
+//! the HDR histogram's, so an SDR display reads it too. A channel up to graphics white is its Melissa RGB percentage; one
 //! above it, its stops above white (`+1.3`), as Lightroom writes them: orange where
 //! the display shows it, red beyond the display's headroom or at the HDR limit.
 use crate::app::Editor;

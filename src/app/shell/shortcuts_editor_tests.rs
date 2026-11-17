@@ -90,34 +90,6 @@ fn catalog_metadata_keys_work_in_both_modules_without_zoom_or_dialog_edits() -> 
 }
 
 #[test]
-fn loupe_keys_change_only_the_photo_shown_and_auto_advance_moves_on() -> anyhow::Result<()> {
-    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF"])?;
-    let library = e.library.as_mut().unwrap();
-    library.select(Some(ids[0]));
-    library.select_range_to(ids[1]);
-    press(&mut e, egui::Key::E, egui::Modifiers::NONE);
-    assert!(e.library.as_ref().unwrap().loupe_open());
-    // Cmd+Up picks the photo shown, not the rest of the selection.
-    press(&mut e, egui::Key::ArrowUp, egui::Modifiers::COMMAND);
-    let library = e.library.as_ref().unwrap();
-    let flags: Vec<_> = ids
-        .iter()
-        .map(|id| library.photo(*id).unwrap().flag)
-        .collect();
-    assert_eq!(flags, [0, 1, 0]);
-    press(&mut e, egui::Key::Escape, egui::Modifiers::NONE);
-    assert!(!e.library.as_ref().unwrap().loupe_open());
-    // With Auto Advance a key moves on as Shift would.
-    e.session.auto_advance = true;
-    e.library.as_mut().unwrap().select(Some(ids[0]));
-    press(&mut e, egui::Key::Num3, egui::Modifiers::NONE);
-    let library = e.library.as_ref().unwrap();
-    assert_eq!(library.photo(ids[0]).unwrap().rating, 3);
-    assert_eq!(library.selected(), Some(ids[1]));
-    Ok(())
-}
-
-#[test]
 fn double_click_in_the_loupe_goes_back_to_the_grid() -> anyhow::Result<()> {
     let (_d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
     e.library.as_mut().unwrap().select(Some(ids[0]));

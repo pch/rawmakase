@@ -51,7 +51,7 @@ impl CommandLine {
             "AI Denoise needs the full-size image; render without --fast"
         );
         anyhow::ensure!(
-            crate::model_install::Pack::Denoise.is_installed_in(&self.model),
+            crate::model_install::is_installed_in(&self.model),
             "AI Denoise is on but its model is not installed"
         );
         self.service.set_model(Some(self.model.clone()));

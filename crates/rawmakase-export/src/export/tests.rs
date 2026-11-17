@@ -143,6 +143,7 @@ fn develop_settings_round_trip_through_the_exported_xmp() -> Result<()> {
     assert_eq!(back.curve.points.len(), 3);
     assert_eq!(back.upright, r.upright);
     assert!(back.lens_ca);
+    assert!(back.unknown.is_empty(), "{:?}", back.unknown);
     // Panel switches: an off panel is written and read back; on ones are left out.
     use crate::model::panels::{Panel, PanelState};
     r.panels.set(Panel::Effects, PanelState::Off);
@@ -1062,62 +1063,6 @@ fn descriptive_fields_are_written_as_lightroom_does() -> Result<()> {
         .collect();
     assert_eq!(paths, ["Places|Kraków"]);
     assert!(packet.contains("xmp:CreateDate=\"2024-05-01T12:30:15.120456+02:00\""));
-    Ok(())
-}
-/// An exported XMP reads back with the settings it was written with, and names no
-/// operators: one engine renders every recipe.
-#[test]
-fn exported_xmp_reads_back_its_settings_without_operator_markers() -> Result<()> {
-    use crate::model::recipe::Recipe;
-    let m = Metadata {
-        wb: [2., 1., 1.5],
-        daylight_wb: [2., 1., 1.5],
-        matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
-        cam_xyz: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
-        ..Default::default()
-    };
-    let photo = crate::xmp::write::Photo {
-        settings: true,
-        format: "image/jpeg".into(),
-        ..Default::default()
-    };
-    let mut r = Recipe::with_profiles(&m, &[]);
-    r.sharpening = 0.4;
-    r.effects.lens_vignette = -0.3;
-    r.effects.grain = 0.4;
-    r.effects.clarity = 0.3;
-    r.effects.texture = 0.3;
-    r.noise_chroma = 0.3;
-    r.saturation = -0.3;
-    r.vibrance = 0.4;
-    // Black & white, so the packet carries the mix.
-    r.effects.monochrome = true;
-    r.effects.gray_mix[2] = 0.3;
-    let packet = crate::xmp::write::packet(&r, &m, &photo);
-    for marker in [
-        "RAWmakaseOriginal",
-        "RAWmakaseMarkers",
-        "RAWmakaseWhiteBalanceModel",
-    ] {
-        assert!(!packet.contains(marker), "{marker}: {packet}");
-    }
-    let back = crate::xmp::parse(Path::new("export.xmp"), &packet)?.apply(
-        &Recipe::default(),
-        &m,
-        &[],
-        None,
-    )?;
-    let near = |a: f32, b: f32| (a - b).abs() < 1e-2;
-    assert!(near(back.sharpening, r.sharpening));
-    assert!(near(back.effects.lens_vignette, r.effects.lens_vignette));
-    assert!(near(back.effects.grain, r.effects.grain));
-    assert!(near(back.effects.clarity, r.effects.clarity));
-    assert!(near(back.effects.texture, r.effects.texture));
-    assert!(near(back.noise_chroma, r.noise_chroma));
-    assert!(near(back.saturation, r.saturation));
-    assert!(near(back.vibrance, r.vibrance));
-    assert!(near(back.effects.gray_mix[2], r.effects.gray_mix[2]));
-    assert!(back.unknown.is_empty(), "{:?}", back.unknown);
     Ok(())
 }
 #[test]

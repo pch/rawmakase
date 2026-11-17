@@ -113,7 +113,7 @@ fn power(base: f32, exponent: f32) -> f32 {
     if base <= 0.0 { return 0.0; }
     return pow(base, exponent);
 }
-// `color_math::srgb_decode` and `srgb_encode`.
+// `rawmakase_model::color::srgb_decode` and `srgb_encode`.
 fn decode(v: f32) -> f32 {
     if v <= 0.04045 { return v / 12.92; }
     return pow((v + 0.055) / 1.055, 2.4);

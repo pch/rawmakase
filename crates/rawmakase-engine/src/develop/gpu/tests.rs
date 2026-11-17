@@ -459,6 +459,69 @@ fn gpu_preview_preserves_regions_spatial_effects_and_falls_back() -> Result<()> 
     Ok(())
 }
 
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn a_region_beyond_the_gpu_limits_renders_on_the_cpu_and_keeps_the_gpu() {
+    use crate::{
+        camera_data::{CameraImage, Metadata},
+        develop::{
+            PreviewRenderer,
+            pipeline::{Samples, pixel_params::PixelParams},
+        },
+    };
+    let mut p = PreviewRenderer::with_gpu();
+    assert!(p.gpu().is_some(), "{:?}", p.fallback_reason());
+    let cancel = AtomicBool::new(false);
+    let params = PixelParams {
+        params: Vec::new(),
+        tables: Vec::new(),
+        weights: Vec::new(),
+        grid: None,
+        color: None,
+    };
+    // Over the develop memory budget, then over the device's buffer limits; their
+    // size alone, as the region is refused before its pixels are read.
+    for edge in [5_000, 40_000] {
+        let samples = std::sync::Arc::new(Samples {
+            width: edge,
+            height: edge,
+            pixels: Vec::new(),
+            positions: Vec::new(),
+        });
+        assert!(
+            p.backend()
+                .develop(&samples, &params, Cancel::new(&cancel))
+                .is_none()
+        );
+        assert!(p.gpu().is_some(), "{edge}: {:?}", p.fallback_reason());
+    }
+    // The next, smaller render still uses the GPU (finishing, at full size).
+    let (width, height) = (400, 300);
+    let image = CameraImage {
+        recovered: Default::default(),
+        width,
+        height,
+        pixels: (0..width * height)
+            .map(|i| [0.2 + (i % 7) as f32 * 0.01, 0.2, 0.1])
+            .collect(),
+        metadata: Metadata {
+            width,
+            height,
+            wb: [1.; 3],
+            daylight_wb: [1.; 3],
+            matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    };
+    p.render(&image, &Recipe::default(), 0, None, Cancel::new(&cancel))
+        .unwrap();
+    assert!(p.used_gpu());
+}
+
 /// The GPU per-pixel stage against the CPU reference, over recipes that exercise every
 /// table and branch of `develop.wgsl`.
 #[test]

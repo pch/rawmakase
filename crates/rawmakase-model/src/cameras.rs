@@ -45,7 +45,7 @@ pub enum ExposureShift {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Camera {
-    /// Make and model as LibRaw reports them.
+    /// Make and model as the decoder names them.
     pub make: String,
     pub model: String,
     /// Other model names for the same body.
@@ -105,7 +105,7 @@ struct Table {
 const TABLE: &str = include_str!("../../../data/cameras.toml");
 
 /// `data/adobe-camera-names.toml`: names Adobe's camera profiles use for cameras
-/// LibRaw names otherwise, beyond what LibRaw's canonical names cover.
+/// the decoder names otherwise, beyond what its canonical names cover.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AdobeNames {
@@ -136,17 +136,18 @@ fn adobe_table() -> &'static AdobeNames {
     NAMES.get_or_init(|| toml::from_str(ADOBE_NAMES).expect("data/adobe-camera-names.toml"))
 }
 
-/// Names, as "Make Model", that Adobe's camera profiles may use for a camera LibRaw
-/// reports as `make` `model`, other than that one: LibRaw's canonical name for a
-/// body sold under several names (`normalized`), the same with Adobe's spelling of
-/// the make, the table's names, and older Google phones' "Model-Google-google".
+/// Names, as "Make Model", that Adobe's camera profiles may use for a camera the
+/// decoder reports as `make` `model`, other than that one: the decoder's canonical
+/// name for a body sold under several names (`normalized`), the same with Adobe's
+/// spelling of the make, the table's names, and older Google phones'
+/// "Model-Google-google".
 pub fn adobe_names<'a>(
     make: &'a str,
     model: &'a str,
     normalized: (&'a str, &'a str),
 ) -> Vec<String> {
     let table = adobe_table();
-    // LibRaw leaves its canonical names empty for makers it doesn't know.
+    // The decoder leaves its canonical names empty for makers it doesn't know.
     let pick = |n: &'a str, own: &'a str| if n.trim().is_empty() { own } else { n };
     let normalized = (pick(normalized.0, make), pick(normalized.1, model));
     let mut names = vec![format!("{} {}", normalized.0, normalized.1)];

@@ -85,8 +85,8 @@ pub struct HdrFrame {
     pub released: Vec<wgpu::Texture>,
 }
 /// The sRGB-to-monitor transform sampled on a lattice of 8-bit values, so the shader
-/// applies it without lcms. Built once per profile, from the transform the caller
-/// supplies (`color_management::display_transform`), so the engine links no colour management.
+/// applies it itself. Built once per profile, from the transform the caller supplies
+/// (`color_management::display_transform`), so the engine links no colour management.
 pub struct MonitorLut {
     size: u32,
     values: Vec<f32>,

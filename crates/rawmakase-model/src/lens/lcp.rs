@@ -1266,7 +1266,7 @@ mod tests {
     #[test]
     fn a_pentax_lens_type_identifies_and_names_the_lens() {
         // Pentax bodies write no lens model (a K-x DNG among them, issue #501), only
-        // the maker note's two-byte LensType, which LibRaw reads as one number and
+        // the maker note's two-byte LensType, which the decoder reads as one number and
         // Adobe's Pentax profiles write as stCamera:LensID "4 252". Profiles of newer
         // lenses are made by Ricoh, which makes Pentax cameras.
         let pentax = |make: &str, lens: &str, id: &str| {

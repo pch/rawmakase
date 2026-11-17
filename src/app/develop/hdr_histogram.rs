@@ -1,6 +1,6 @@
-//! Develop's HDR histogram (docs/hdr.md#histogram): the histogram of an HDR edit's
-//! master, in Lightroom's layout of an SDR section up to graphics white and stops
-//! above it up to the HDR limit.
+//! Develop's HDR histogram (docs/hdr.md#histogram-and-readout): the histogram of an
+//! HDR edit's master, in Lightroom's layout of an SDR section up to graphics white
+//! and stops above it up to the HDR limit.
 //!
 //! It describes the edit, not the display, so it is measured wherever the edit's
 //! master renders, on an SDR display too: from a master of the whole photo

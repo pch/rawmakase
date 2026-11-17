@@ -6,12 +6,7 @@
 //! not part of an edit. Values set while HDR is off are kept, so switching HDR back
 //! on restores them, as Camera Raw does.
 //!
-//! Rendering an active HDR edit is not supported yet. [`HdrSettings::check_renderable`]
-//! is the one guard every entry point uses to refuse one (XMP, Lightroom's Develop
-//! settings, presets, saved edits and automation all validate the recipe), so an active
-//! HDR edit is preserved and reported rather than rendered as SDR.
-//!
-//! Where HDR renders, [`check_recipe`] refuses the HDR master of an edit that uses an
+//! [`check_recipe`] refuses the HDR master of an edit that uses an
 //! adjustment whose HDR rendering has not been measured, rather than rendering it
 //! wrong. The edit stays valid and keeps HDR on: its SDR rendition, which every SDR
 //! view and export shows, renders it whole, and the reason is shown where the HDR
@@ -26,15 +21,6 @@ use serde::{Deserialize, Serialize};
 pub const LIMIT_RANGE: std::ops::RangeInclusive<f32> = 1.0..=8.0;
 /// The HDR limit Camera Raw 18.7 uses when a sidecar has none or an invalid one.
 pub const DEFAULT_LIMIT: f32 = 2.3;
-
-/// Whether this release renders active HDR edits. Raised only when the CPU HDR master
-/// and its SDR rendition reach every caller that renders an edit.
-const RENDERS_HDR: bool = true;
-
-/// Whether this release renders HDR: active HDR edits and HDR camera profiles.
-pub const fn renders() -> bool {
-    RENDERS_HDR
-}
 
 pub use crate::color::hdr_output::roll_off;
 
@@ -164,15 +150,6 @@ impl HdrSettings {
                 .iter()
                 .all(|v| v.is_finite() && (-1. ..=1.).contains(v)),
             "Invalid SDR rendition adjustment"
-        );
-        Ok(())
-    }
-    /// Refuses an active HDR edit while this release cannot render one. The edit is
-    /// kept as it was: callers preserve it and report the error.
-    pub fn check_renderable(&self) -> Result<()> {
-        ensure!(
-            RENDERS_HDR || !self.is_active(),
-            "HDR editing is preserved but not supported yet"
         );
         Ok(())
     }
@@ -635,11 +612,10 @@ mod tests {
         hdr.limit = 3.;
         hdr.sdr.brightness = 0.3;
         assert!(!hdr.is_default() && !hdr.is_active());
-        assert!(hdr.validate().is_ok() && hdr.check_renderable().is_ok());
+        assert!(hdr.validate().is_ok());
         hdr.enabled = true;
         assert!(hdr.is_active());
         assert!(hdr.validate().is_ok());
-        assert!(hdr.check_renderable().is_ok());
     }
 
     /// An HDR master renders with measured adjustments only. The edit itself stays

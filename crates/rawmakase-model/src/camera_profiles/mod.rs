@@ -94,7 +94,7 @@ enum PhoneModule {
 /// Whether a profile made for `camera` (its UniqueCameraModel) fits the photo:
 /// the camera's make and model, the model alone, or one of the names Adobe uses
 /// for it (`Metadata::adobe_names`), compared without case, spaces or underscores
-/// (LibRaw's Nikon "Z 6_2" is Adobe's "Z 6 2"); for a phone, also such a name
+/// (the decoder's Nikon "Z 6_2" is Adobe's "Z 6 2"); for a phone, also such a name
 /// followed by the module that took the photo.
 pub(crate) fn camera_fits(camera: &str, m: &Metadata) -> bool {
     let key = |s: &str| {
@@ -365,10 +365,6 @@ impl CameraProfile {
         if let Some(look) = &self.enhanced {
             look.validate()?;
         }
-        ensure!(
-            !self.is_hdr() || crate::model::hdr::renders(),
-            "HDR profiles are not supported yet"
-        );
         ensure!(
             !self.name.is_empty()
                 && !self.camera.is_empty()
@@ -921,8 +917,8 @@ impl CameraProfile {
         }
         self
     }
-    /// The DNG rendering of a file that carries only a ColorMatrix: LibRaw's XYZ-to-camera
-    /// matrix, no hue/look tables, and the published ACR 3 default tone curve. This is the
+    /// The DNG rendering of a file that carries only a ColorMatrix: the decoder's
+    /// XYZ-to-camera matrix, no hue/look tables, and the published ACR 3 default tone curve. This is the
     /// neutral starting point when the user has imported no camera profile.
     pub fn camera_matrix_default(m: &Metadata) -> Option<Self> {
         let cm = m.cam_xyz;

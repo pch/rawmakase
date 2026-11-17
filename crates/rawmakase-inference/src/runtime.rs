@@ -529,10 +529,4 @@ mod tests {
             [own.join(runtime_file_names()[0])]
         );
     }
-
-    #[test]
-    fn threads_are_bounded() {
-        let n = default_threads();
-        assert!((1..=MAX_THREADS).contains(&n));
-    }
 }

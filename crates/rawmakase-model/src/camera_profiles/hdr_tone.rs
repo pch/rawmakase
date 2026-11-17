@@ -1,5 +1,5 @@
 //! How a camera profile's tone curve renders in HDR, as Camera Raw 18.7 renders it
-//! (docs/records/hdr-stage1-results.md#ordinary-profile-curves).
+//! (docs/records/hdr-stage1-results.md#hdr-rendering, "Ordinary profile curves").
 //!
 //! An HDR profile (DNG 1.7 `ProfileDynamicRange` 1) is the DNG SDK's rule: its curve
 //! maps [`super::overrange`]-encoded values, extended above the encoded 1 along its

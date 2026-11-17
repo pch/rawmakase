@@ -357,9 +357,7 @@ impl Editor {
             loader,
             decode_cache,
             ai_denoise,
-            ai_denoise_model: crate::app::develop::model_installer::Installer::new(
-                crate::model_install::Pack::Denoise,
-            ),
+            ai_denoise_model: crate::app::develop::model_installer::Installer::new(),
             ai_loupe,
             renderer,
             reference: Default::default(),

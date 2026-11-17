@@ -6,7 +6,7 @@
 //! request; the app answers once a frame has handled it. The app's own
 //! `rawmakase control` and MCP server use this crate too.
 // Every public item says what it is for: this crate is a contract other crates
-// and clients build on (#808 step 4.13).
+// and clients build on.
 #![warn(missing_docs)]
 use clap::{Parser, Subcommand};
 use rawmakase_protocol::request::{MAX_TICKS, Module, Press};

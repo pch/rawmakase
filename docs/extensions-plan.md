@@ -1,6 +1,6 @@
 # Extensions: design plan
 
-Status: Accepted (2026-11-09); phases 1 and 2 built. Phase 2 built the
+Status: Plan (2026-11-09); phases 1 to 3 built. Phase 2 built the
 manifest and its schema, `.rmext` packages, installation from a file and from
 GitHub, `extensions.json`, bundled discovery, the extension protocol, the SDK
 with its mock host, the host's process supervision primitives (process group or

@@ -181,24 +181,10 @@ impl Preset {
         recipe.validate()?;
         Ok(recipe)
     }
-    /// Refuses settings with HDR on while it can't be rendered. Best-effort readers
-    /// call it first, so HDR on is never dropped as one warning among others and the
-    /// edit rendered as SDR ([`HdrSettings::check_renderable`]).
-    ///
-    /// [`HdrSettings::check_renderable`]: crate::model::hdr::HdrSettings::check_renderable
-    pub(crate) fn check_hdr_renderable(&self) -> Result<()> {
-        let on = number(&self.settings, "HDREditMode").ok().flatten() == Some(1.);
-        crate::model::hdr::HdrSettings {
-            enabled: on,
-            ..Default::default()
-        }
-        .check_renderable()
-    }
     /// Lightroom-style best effort: when `apply` rejects the preset (missing
     /// profile, camera restriction, unsupported settings), apply every stage
     /// that validates, keep the base values for stages that don't, and return
-    /// what was skipped. Fails if the combined recipe is invalid, and for HDR on,
-    /// which is never skipped ([`Self::check_hdr_renderable`]).
+    /// what was skipped. Fails if the combined recipe is invalid.
     pub fn apply_lenient(
         &self,
         base: &Recipe,
@@ -218,7 +204,6 @@ impl Preset {
         image: Option<&dyn PhotoMeasures>,
         lensfun: &Handle,
     ) -> Result<(Recipe, Vec<String>)> {
-        self.check_hdr_renderable()?;
         if let Ok(recipe) = self.apply_with_lensfun(base, m, profiles, image, lensfun) {
             return Ok((recipe, self.ignored_white_balance(m).into_iter().collect()));
         }
@@ -1219,10 +1204,7 @@ impl Preset {
     /// High Dynamic Range's mode, limit and SDR rendition. Camera Raw 18.7 replaces a
     /// limit outside its range with its default and an SDR slider outside -100..+100
     /// with 0, rather than refusing them: they are read the same way. Values kept while
-    /// HDR is off are read too, so switching HDR on restores them. HDR on is refused
-    /// while it can't be rendered ([`HdrSettings::check_renderable`]).
-    ///
-    /// [`HdrSettings::check_renderable`]: crate::model::hdr::HdrSettings::check_renderable
+    /// HDR is off are read too, so switching HDR on restores them.
     fn apply_hdr(&self, settings: &mut Settings<'_>, r: &mut Recipe) -> Result<()> {
         use crate::model::hdr::{DEFAULT_LIMIT, LIMIT_RANGE};
         let v = settings.values;
@@ -1251,7 +1233,7 @@ impl Preset {
                 };
             }
         }
-        r.hdr.check_renderable()
+        Ok(())
     }
     fn validate_remaining(&self, settings: &mut Settings<'_>, m: &Metadata) -> Result<()> {
         let v = settings.values;

@@ -36,16 +36,16 @@ which preset it divides:
 unit_calibration = { preset = "daylight", reference = [1893, 1024, 1697] }
 ```
 
-| Make | Preset | RAW tag (ExifTool) | LibRaw |
-|---|---|---|---|
-| Sony | `daylight` | `WB_RGBLevelsDaylight` | `WB_Coeffs[Daylight]` |
-| Canon (most bodies) | `daylight` | `WB_RGGBLevelsDaylight` | `WB_Coeffs[Daylight]` |
-| Canon EOS 200D, 5D Mark IV, 5DS R, 6D Mark II | `shade` | `WB_RGGBLevelsShade` | `WB_Coeffs[Shade]` |
-| Fujifilm | `d65` | `WB_GRBLevelsStandard`, the entry for light source 21 | `WB_Coeffs[D65]` |
-| Olympus, OM System | `fine-weather` | `WB_RBLevels5300K` | `WB_Coeffs[FineWeather]` |
+| Make | Preset | RAW tag (ExifTool) |
+|---|---|---|
+| Sony | `daylight` | `WB_RGBLevelsDaylight` |
+| Canon (most bodies) | `daylight` | `WB_RGGBLevelsDaylight` |
+| Canon EOS 200D, 5D Mark IV, 5DS R, 6D Mark II | `shade` | `WB_RGGBLevelsShade` |
+| Fujifilm | `d65` | `WB_GRBLevelsStandard`, the entry for light source 21 |
+| Olympus, OM System | `fine-weather` | `WB_RBLevels5300K` |
 
-The native adapter exports these presets for every native RAW, not a
-matrix-derived `pre_mul` (LibRaw's); `cameras::neutral_calibration` applies the row. A
+RAWmakase's RAW decoders (`rawmakase-raw`) read these presets from the file
+(`WhiteBalancePresets`), not multipliers derived from the colour matrix; `cameras::neutral_calibration` applies the row. A
 missing or invalid preset, or a camera without a row, keeps identity rather than
 borrowing another unit's correction, and there is no make-wide fallback.
 

@@ -3,9 +3,10 @@
 //! A command's id names it to the key map, automation and MIDI: the
 //! [`Action`](super::Action) names are kept as they are, and new ids follow
 //! their style (lower-case snake_case words, `:` before a parameter, never `/`,
-//! which will separate an extension's name from its command). A [`Binding`]
-//! says where a key runs the command and how its press is matched; the handler
-//! that runs it names it (`bindings::CLIPPING`) and takes its press from
+//! which separates an extension's name from its command, as in
+//! `<extension>/<command>`). A [`Binding`] says where a key runs the command
+//! and how its press is matched; the handler that runs it names it
+//! (`bindings::CLIPPING`) and takes its press from
 //! [`FrameKeys`](crate::app::shell::keymap::FrameKeys).
 use crate::app::shell::keymap::{Binding, Context, Default, Guards, Mods, Tool};
 use eframe::egui::Key;
@@ -98,7 +99,8 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     command("panels:filmstrip", "Filmstrip"),
     command("panels:presets", "Fold / open Presets and History"),
     command("chrome", "Hide all but the photo"),
-    // Keys only, for now.
+    // Only its key runs it: the messages bar's cross dismisses the messages
+    // without it.
     command(
         "messages:dismiss_all",
         "Dismiss the messages in the top bar",

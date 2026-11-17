@@ -156,10 +156,11 @@ fn cascaded_membrane_matches_a_converged_dense_solve() {
 }
 /// Texture under an illumination gradient, healed from a darker area: log values keep
 /// the texture's contrast relative to its surroundings, linear values do not. This is
-/// why Heal works on log values. Measured: RMS residual log 0.014, ln(1 + x) 0.028,
-/// linear 0.035.
+/// why Heal works on log values. Measured RMS residual: log 0.0137; solved the same
+/// way in ln(1 + x) 0.028, and in linear values 0.035. The bound is the one the
+/// comparison with those held log to.
 #[test]
-fn log_heal_beats_linear_on_lit_texture() {
+fn log_heal_keeps_lit_texture() {
     let truth = |x: f32, y: f32| {
         let light = 0.05 + x / 200. * 0.8;
         let texture = 1. + 0.25 * (x * 0.9).sin() * (y * 0.7).cos();
@@ -191,28 +192,18 @@ fn log_heal_beats_linear_on_lit_texture() {
     let source: Vec<[f32; 3]> = (0..gw * gh)
         .map(|i| pixel(grid[0] + (i % gw) as i32 + shift, grid[1] + (i / gw) as i32))
         .collect();
-    let residual = |domain: heal::Domain| {
-        let out = heal::heal(&dest, &source, &alpha, gw, gh, domain);
-        let (mut sum, mut n) = (0., 0.);
-        for i in 0..gw * gh {
-            if alpha[i] > 0. {
-                for c in 0..3 {
-                    sum += (out[i][c] - dest[i][c]).powi(2);
-                    n += 1.;
-                }
+    let out = heal::heal(&dest, &source, &alpha, gw, gh);
+    let (mut sum, mut n) = (0., 0.);
+    for i in 0..gw * gh {
+        if alpha[i] > 0. {
+            for c in 0..3 {
+                sum += (out[i][c] - dest[i][c]).powi(2);
+                n += 1.;
             }
         }
-        (sum / n as f32).sqrt()
-    };
-    let (log, linear, log1p) = (
-        residual(heal::Domain::Log),
-        residual(heal::Domain::Linear),
-        residual(heal::Domain::Log1p),
-    );
-    assert!(
-        log < linear * 0.5 && log < log1p * 0.6,
-        "log {log} linear {linear} log1p {log1p}"
-    );
+    }
+    let residual = (sum / n as f32).sqrt();
+    assert!(residual < 0.017, "RMS residual {residual}");
 }
 #[test]
 fn incremental_tiles_match_a_full_rebuild() {

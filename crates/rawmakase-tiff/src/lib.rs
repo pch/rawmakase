@@ -3,7 +3,7 @@
 //! JPEG XL files. Reads only the directories and tags it is asked for.
 #![forbid(unsafe_code)]
 // Every public item says what it is for: this crate is a contract other crates
-// and clients build on (#808 step 4.13).
+// and clients build on.
 #![warn(missing_docs)]
 use std::{
     collections::BTreeMap,

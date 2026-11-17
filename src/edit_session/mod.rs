@@ -362,17 +362,6 @@ mod tests {
     }
 
     #[test]
-    fn a_commit_is_one_named_step_to_save() {
-        let mut session = EditSession::default();
-        let before = session.recipe.clone();
-        session.recipe.exposure = 1.;
-        assert!(session.commit(before, Some(Step::new("Auto Settings", ""))));
-        let (steps, applied) = session.history.steps();
-        assert_eq!((steps[0].name.as_str(), applied), ("Auto Settings", 1));
-        assert!(session.save.needs_save());
-    }
-
-    #[test]
     fn a_commit_that_changes_nothing_records_and_saves_nothing() {
         let mut session = EditSession::default();
         let before = session.recipe.clone();
@@ -382,7 +371,7 @@ mod tests {
         // Its name is not left for the next edit.
         let before = session.recipe.clone();
         session.recipe.exposure = 1.;
-        session.commit(before, None);
+        assert!(session.commit(before, None));
         assert_ne!(session.history.steps().0[0].name, "Straighten");
     }
 

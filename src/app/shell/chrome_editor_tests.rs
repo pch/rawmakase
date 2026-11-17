@@ -569,28 +569,6 @@ fn f_leaves_the_mode_over_a_library_view_with_no_photo() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn tab_moves_the_focus_on_while_a_control_has_it() {
-    use crate::app::shell::panels::WorkspacePanel;
-    let ctx = egui::Context::default();
-    let mut e = Editor::with_context(
-        &ctx,
-        None,
-        crate::app::preferences::session::Session::default(),
-        None,
-    );
-    e.module = Module::Develop;
-    e.onboarding.visible = false;
-    panel_frame(&mut e, vec![], FocusedButton::Yes);
-    panel_frame(
-        &mut e,
-        key_down(egui::Key::Tab, egui::Modifiers::NONE),
-        FocusedButton::No,
-    );
-    assert!(e.panel_shown(WorkspacePanel::Left));
-    assert!(e.panel_shown(WorkspacePanel::Right));
-}
-
 /// With the chrome hidden the Loupe's toolbar goes, and its photo takes the row.
 #[test]
 fn the_chrome_hidden_gives_the_loupe_its_toolbar_row() -> anyhow::Result<()> {

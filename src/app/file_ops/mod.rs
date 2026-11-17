@@ -20,7 +20,7 @@
 //!
 //! The dialogs that come before a plan (Move to Folder…, New Folder
 //! Inside…) and the one for what a crash left unfinished, recovered when a
-//! catalog opens, are in `file_ops_dialogs.rs`.
+//! catalog opens, are in `dialogs.rs`.
 use crate::app::shell::messages::Level;
 use crate::app::ui::design::{Tone, text};
 use crate::app::{Editor, ui::widgets};
