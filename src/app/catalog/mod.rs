@@ -188,7 +188,7 @@ impl Editor {
                 })();
                 let event = match result {
                     Ok(Some(location)) => {
-                        reopened(&location, false, &Default::default(), &[], tx, &ctx)
+                        reopened(&location, true, false, &Default::default(), &[], tx, &ctx)
                     }
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
@@ -253,6 +253,9 @@ impl Editor {
                 // folders it skipped.
                 let mut report = crate::catalog::SidecarReport::default();
                 let mut conflicts = Vec::new();
+                // Create, Open and Import Lightroom open the catalog the user
+                // chose; a folder change reads the open one again.
+                let chosen = !matches!(kind, CatalogDialog::Folder(_));
                 let relinks = matches!(
                     kind,
                     CatalogDialog::Folder(
@@ -384,7 +387,7 @@ impl Editor {
                 }
                 let event = match result {
                     Ok(Some(location)) => {
-                        reopened(&location, relinks, &report, &conflicts, tx, &ctx)
+                        reopened(&location, chosen, relinks, &report, &conflicts, tx, &ctx)
                     }
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),

@@ -792,6 +792,7 @@ fn reopening_an_earlier_catalog_reports_its_upgrade() -> anyhow::Result<()> {
     let ctx = egui::Context::default();
     let event = super::folder_locations::reopened(
         &crate::catalog::CatalogLocation::File(earlier.path.clone()),
+        true,
         false,
         &Default::default(),
         &[],
@@ -820,19 +821,45 @@ fn reopening_an_earlier_catalog_reports_its_upgrade() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Opening a catalog in the Library deletes the backups earlier upgrades left
-/// beside it once it has opened, not in the session that upgraded it.
+/// A catalog the user chose (Open Catalog, New, the one opened last) deletes the
+/// backups earlier upgrades left beside it once it has opened again after an
+/// upgrade; the catalog read again after a folder change deletes none, as the
+/// session that upgraded it may be the one going on.
 #[test]
 fn opening_a_catalog_again_keeps_only_the_newest_backup() -> anyhow::Result<()> {
     let (f, earlier) = crate::catalog_session::upgrade_tests::with_earlier_backup()?;
     let location = crate::catalog::CatalogLocation::from(f.path.as_path());
-    let opened = super::open_for_user(&location, &mut |_| {})?;
-    let upgraded = opened.upgraded.clone().unwrap();
-    drop(opened);
-    assert!(earlier.exists());
-    let opened = super::open_for_user(&location, &mut |_| {})?;
-    assert!(opened.upgraded.is_none());
+    let (tx, _rx) = std::sync::mpsc::channel();
+    let ctx = egui::Context::default();
+    let open = |chosen: bool| {
+        let event = super::folder_locations::reopened(
+            &location,
+            chosen,
+            false,
+            &Default::default(),
+            &[],
+            &tx,
+            &ctx,
+        );
+        let Event::CatalogReady(Ok(_)) = event else {
+            panic!("the catalog opens");
+        };
+    };
+    open(true);
+    assert!(earlier.exists(), "not in the session that upgraded it");
+    open(false);
+    assert!(earlier.exists(), "not after a folder change");
+    open(true);
     assert!(!earlier.exists());
-    assert!(upgraded.backup.exists());
+    assert_eq!(
+        std::fs::read_dir(f.dir.path())?
+            .filter_map(|e| e.ok())
+            .filter(|e| e
+                .file_name()
+                .to_string_lossy()
+                .contains("before-upgrade-backup"))
+            .count(),
+        1
+    );
     Ok(())
 }
