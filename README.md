@@ -18,25 +18,25 @@ It is a personal project in active development. It develops photos from almost e
 
 ## Features
 
-- **Develop**: white balance and picker, one-click Auto tone and Auto white balance, exposure and tone, Shadows/Highlights, Clarity, Dehaze, point curves and levels, HSL color mixer, three-way color grading, detail (denoise and sharpening), crop, straighten and Transform, lens corrections, effects and calibration.
-- **Spot removal and masks (experimental, early)**: Heal and Clone spots and brushed areas with automatic sources, and brush, gradient and range masks with local adjustments, also imported from Lightroom. Not yet measured against Lightroom.
+- **Develop**: white balance and picker, one-click Auto tone and Auto white balance, exposure and tone, Shadows/Highlights, Clarity, Dehaze, point curves and levels, HSL color mixer, three-way color grading, sharpening, crop, straighten and Transform, lens corrections, effects and calibration.
+- **Denoise**: Luminance and Color noise reduction fitted to Camera Raw's, using the noise measured in each photo.
+- **AI Denoise**: a neural model denoises and demosaics the RAW in one pass, on this computer (on the GPU on Apple Silicon), blended in by Amount as in Lightroom's Denoise; see [AI Denoise](docs/rendering-quality.md#ai-denoise).
+- **Spot removal and masks**: Heal and Clone spots and brushed areas with automatic sources, and brush, gradient and range masks with local adjustments, also imported from Lightroom.
+- **AI masks**: one-click Select Subject, Sky and Background, made by models running on this computer or on a [remote worker](docs/remote-inference.md), and refined with brushes, ranges and gradients; see [masking](docs/masking.md#select-subject-sky-and-background).
+- **AI object removal (experimental)**: AI Remove and AI Replace regenerate what you paint over, with a prompt, through the AI Retouch extension and your own API key; see [AI Retouch](docs/retouching.md#ai-remove-and-ai-replace-experimental).
 - **Library**: SQLite catalogs, folders, ratings, flags, color labels, filtering, and non-destructive Lightroom `.lrcat` import with folder relinking.
 - **Presets and profiles**: 26 built-in presets and your Lightroom XMP presets; RAWmakase's own Standard and Color profiles for every camera with a usable color matrix, plus DCP and XMP camera profiles you import yourself, and `.cube` LUTs imported as looks, as Camera Raw makes them.
 - **Non-destructive**: the contents of your originals are never modified. Edits live in the catalog, and all writes are atomic.
 - **Fast previews**: every change renders at viewport size, with the color and tone stage on the GPU (Metal on macOS, Vulkan on Linux, DirectX 12 on Windows) and a CPU fallback.
 - **Command line and headless rendering**: inspect, render, export thumbnails, import catalogs and profiles, and benchmark without the GUI; render on a server or in a container with no display or GPU.
 - **Keyboard shortcuts**: Lightroom's, each one changeable in Preferences > Shortcuts or in a `keymap.toml`; see [keyboard shortcuts](docs/shortcuts.md).
-- **External control**: [MIDI controllers](docs/midi.md), [scripts](docs/automation.md), and a built-in [MCP server](docs/mcp.md) for agents to adjust the running editor, inspect previews, save and export.
+- **Extensions**: add commands, panels, control adapters, mask generators, retouch generators and photo sources (watched folders, tethering), written in Rust with the extension SDK and packaged with `cargo rawmakase`. MIDI, MCP and AI Masks are bundled; others install from Preferences > Extensions. See [extensions](docs/extensions/overview.md).
+- **External control**: [MIDI controllers](docs/midi.md), [scripts](docs/automation.md), and an [MCP server](docs/mcp.md) for agents to adjust the running editor, inspect previews, save and export.
 - **Updates**: the app checks GitHub for new releases; the Apple Silicon and Windows installer builds update themselves, other installs are pointed at the release page.
-
-## Coming soon
-
-- AI object removal
-- Agentic features: e.g. culling assistance
 
 ## Install
 
-Download the package for your system from [GitHub Releases](https://github.com/pch/rawmakase/releases). Older releases may have only the original Arch-built Linux archive; use the requirements in that release's notes.
+Download the package for your system from [GitHub Releases](https://github.com/pch/rawmakase/releases).
 
 ### Let your agent install it
 
@@ -111,7 +111,7 @@ HEIC photos (from phones) are decoded by Windows itself, which needs Microsoft's
 
 RAWmakase checks GitHub for a newer release after launch and once an hour, and shows a notice when one is out (turn the check off in Preferences). The Apple Silicon DMG and the Windows installer download and install the update themselves; Intel Macs, the Linux tarball and AppImage, the Windows archive and package-managed installs (Homebrew, DEB, RPM, Arch) are pointed at the release page or their package manager. Settings and catalogs are kept separately from the installed application, so reinstalling over an old version loses nothing.
 
-Each new packaged release includes `SHA256SUMS`. After downloading it beside your package, verify downloaded files on Linux with `sha256sum --ignore-missing -c SHA256SUMS`. On macOS, use `shasum -a 256 <downloaded-file>` and compare the result with that file's entry in `SHA256SUMS`.
+Each release includes `SHA256SUMS`. After downloading it beside your package, verify downloaded files on Linux with `sha256sum --ignore-missing -c SHA256SUMS`. On macOS, use `shasum -a 256 <downloaded-file>` and compare the result with that file's entry in `SHA256SUMS`.
 
 ### From source (Linux and macOS)
 
@@ -139,7 +139,7 @@ rawmakase Photos.rawmakase    # open a catalog
 rawmakase photo.dng           # add the photo's folder to the last catalog and edit it
 ```
 
-Photos are edited through the Library. The first launch starts a catalog named Photos in RAWmakase's data folder and asks for a folder of photos; to keep your Lightroom Classic folders, ratings and edits, import its catalog instead. Both, and other catalogs, are available later from the **Catalog** menu. Folders dropped onto the window, one or several, are added to the open catalog; right-click a folder in the Library's Folders panel to remove it and its photos from the catalog (its files stay on disk), or select photos and press Delete to move their files to the Trash or just remove them from the catalog. Drag photos onto a folder, or use Move to Folder… in their menu, to move their files there; New Folder Inside… in a folder's menu makes a folder and can move the selection into it. F2 renames a photo, or several by a template in the order they were taken; Rename Folder… renames a folder, and a folder dragged onto another (or Move Folder…) moves there. A photo dropped there or passed on the command line has its folder added, then opens in Develop; edits it got in earlier releases (its `photo.rawmakase.json`) come along. You can also drop a catalog onto the window. The camera's embedded JPEG shows immediately while the RAW develops. A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL opens in Develop like a RAW: untouched it looks as the file does, and its white balance is Lightroom's relative Temp and Tint (−100 to 100) rather than Kelvin. WebP, AVIF, HEIF and JPEG XL are read only for now, and Develop does not edit HDR (PQ or HLG), animated, tiled AVIF or 4:2:2 and monochrome HEIF files; HDR and animated ones still show in the Library.
+Photos are edited through the Library. The first launch starts a catalog named Photos in RAWmakase's data folder and asks for a folder of photos; to keep your Lightroom Classic folders, ratings and edits, import its catalog instead. Both, and other catalogs, are available later from the **Catalog** menu. Folders dropped onto the window, one or several, are added to the open catalog; right-click a folder in the Library's Folders panel to remove it and its photos from the catalog (its files stay on disk), or select photos and press Delete to move their files to the Trash or just remove them from the catalog. Drag photos onto a folder, or use Move to Folder… in their menu, to move their files there; New Folder Inside… in a folder's menu makes a folder and can move the selection into it. F2 renames a photo, or several by a template in the order they were taken; Rename Folder… renames a folder, and a folder dragged onto another (or Move Folder…) moves there. A photo dropped there or passed on the command line has its folder added, then opens in Develop. You can also drop a catalog onto the window. The camera's embedded JPEG shows immediately while the RAW develops. A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL opens in Develop like a RAW: untouched it looks as the file does, and its white balance is Lightroom's relative Temp and Tint (−100 to 100) rather than Kelvin. WebP, AVIF, HEIF and JPEG XL are read only for now, and Develop does not edit HDR (PQ or HLG), animated, tiled AVIF or 4:2:2 and monochrome HEIF files; HDR and animated ones still show in the Library.
 
 Useful shortcuts:
 
@@ -188,7 +188,7 @@ rawmakase fingerprint *.NEF        # decode facts per file as JSON lines, for re
 rawmakase help
 ```
 
-`render` starts where the app would. With `--catalog Photos.rawmakase` it uses the photo's edit in that catalog: its saved edit, else its Lightroom edit, else the raw defaults. A path names the master, not a virtual copy, and a photo the catalog doesn't have is an error. Without a catalog it uses an edit a release before 0.1.8 saved as a sidecar (`photo.dng.rawmakase.json` beside the photo, or in the data directory's `sidecars/` folder, whichever is newer), else the raw defaults chosen in Preferences. `--recipe` replaces that starting point with a saved RAWmakase preset; `--xmp` applies an XMP preset on top of it, so settings the XMP leaves out keep the starting point's values. For a render that depends on nothing saved, pass `--recipe`. The catalog's export settings don't apply: the output is what the command line asks for. It needs `--overwrite` to replace an existing file. `--quality 1–100` sets a JPEG's quality, as the Export dialog's slider does (92 without it); a `.jxl` output is lossless unless `--jxl-quality` gives it one. `render-batch --quality` applies to the jobs it writes as JPEG.
+`render` starts where the app would. With `--catalog Photos.rawmakase` it uses the photo's edit in that catalog: its saved edit, else its Lightroom edit, else the raw defaults. A path names the master, not a virtual copy, and a photo the catalog doesn't have is an error. Without a catalog it uses the raw defaults chosen in Preferences. `--recipe` replaces that starting point with a saved RAWmakase preset; `--xmp` applies an XMP preset on top of it, so settings the XMP leaves out keep the starting point's values. For a render that depends on nothing saved, pass `--recipe`. The catalog's export settings don't apply: the output is what the command line asks for. It needs `--overwrite` to replace an existing file. `--quality 1–100` sets a JPEG's quality, as the Export dialog's slider does (92 without it); a `.jxl` output is lossless unless `--jxl-quality` gives it one. `render-batch --quality` applies to the jobs it writes as JPEG.
 
 ### Headless rendering
 
@@ -205,7 +205,6 @@ The Linux build needs glibc 2.39 or newer (Ubuntu 24.04+, Debian 13+, Fedora 43+
 ### Where data lives
 
 - Catalogs, with every edit: the `.rawmakase` file you choose.
-- Edits saved beside photos by releases before 0.1.8 (`photo.dng.rawmakase.json`, with spots and masks in `photo.dng.rawmakase-local.json`, or in the data directory's `sidecars/` folder for read-only locations) are brought into the catalog when you add their folder, and left as they are.
 - Profiles, presets, previews and session state: `~/Library/Application Support/RAWmakase` on macOS, `$XDG_DATA_HOME/rawmakase` (default `~/.local/share/rawmakase`) on Linux, `%APPDATA%\RAWmakase` on Windows. `RAWMAKASE_DATA_DIR` overrides it.
 
 Exports are sRGB unless the Export dialog's Color Space says Adobe RGB (1998) or ProPhoto RGB (16-bit TIFF only), each with its own embedded profile; `render` and `render-batch` take `--color-space srgb|adobe-rgb|prophoto`. The preview is always sRGB and is not a soft proof of a wider export. The display defaults to sRGB; pick a monitor ICC profile under **More** only if your compositor does not already manage color.
