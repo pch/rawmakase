@@ -1,7 +1,8 @@
-//! Removes the copy of a Lightroom catalog that earlier releases kept inside
-//! ours (`sources.original_catalog`), once, as the catalog opens. Our catalog
-//! is canonical: nothing reads that copy any more, and it can be as large as
-//! the Lightroom catalog itself.
+//! Removes what a catalog holds that nothing reads, as it opens: the copy of a
+//! Lightroom catalog earlier releases kept inside ours
+//! (`sources.original_catalog`), once (our catalog is canonical, and that copy can
+//! be as large as the Lightroom catalog itself), and the mask rasters and AI
+//! Remove patches nothing names any more (#1112).
 use super::db::{Reads, sql};
 use super::{Catalog, OpeningProgress};
 use anyhow::Result;
@@ -11,25 +12,83 @@ const ARCHIVE_REMOVED: &str = "lightroom_archive_removed";
 /// Set in `meta` while the space the archive left is still inside the file:
 /// compacting failed, or hasn't run yet, and is tried on the next open.
 const COMPACT_PENDING: &str = "compact_pending";
+/// Once deleting rasters leaves this many bytes free in the file, or a quarter of
+/// it, the file is compacted; less is left as free pages that later writes reuse.
+const COMPACT_WHEN_FREE: i64 = 32 << 20;
+/// Set in `meta` to when the rasters were last looked through (Unix seconds).
+const RASTERS_CHECKED: &str = "rasters_checked_at";
+/// How often the rasters are looked through. Doing it means inflating every
+/// History, about half a second for a hundred well-edited photos, so not on every
+/// open; the rasters left meanwhile wait at most this long.
+const RASTER_CHECK_EVERY: u64 = 7 * 24 * 60 * 60;
 
 impl Catalog {
-    /// Empties an archived Lightroom catalog, then compacts the file once so
-    /// it gives the space back. Called where a catalog is opened for use (the
-    /// app's catalog session, the command line), not by every connection: a
-    /// compaction that failed is tried again on the next of those opens.
+    /// Empties an archived Lightroom catalog and deletes the rasters nothing
+    /// names, then compacts the file once when that freed a lot, so it gives the
+    /// space back. Called where a catalog is opened for use (the app's catalog
+    /// session, the command line), before anything is edited, not by every
+    /// connection: a compaction that failed is tried again on the next of those
+    /// opens.
     ///
     /// The schema doesn't change, and an older release reads an empty archive
     /// as nothing to read. Failing here doesn't stop the catalog opening:
     /// the reason is returned, to be shown, and the file is left as it was
-    /// (`VACUUM` either completes or leaves it untouched).
-    pub fn remove_lightroom_archive(
+    /// (each deletion is one transaction, and `VACUUM` either completes or
+    /// leaves it untouched).
+    pub fn remove_unused_data(
         &mut self,
         progress: &mut dyn FnMut(OpeningProgress),
     ) -> Option<String> {
         self.empty_archive()
+            .and_then(|()| self.delete_unused_rasters())
             .and_then(|()| self.compact_if_pending(progress))
             .err()
             .map(|e| format!("{e:#}"))
+    }
+
+    /// Deletes the mask rasters and patches no edit, History, snapshot or
+    /// virtual copy names ([`super::mask_assets::delete_unnamed`]), at most once
+    /// every [`RASTER_CHECK_EVERY`]. A catalog with a table a later release added
+    /// is left alone, as its rows may name some.
+    fn delete_unused_rasters(&mut self) -> Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let checked = self
+            .meta(RASTERS_CHECKED)?
+            .and_then(|at| at.parse::<u64>().ok());
+        // A time ahead of now (a clock set back) doesn't put the check off.
+        if checked.is_some_and(|at| at <= now && now - at < RASTER_CHECK_EVERY) {
+            return Ok(());
+        }
+        let any: bool = self
+            .db
+            .read_one(sql!("SELECT EXISTS(SELECT 1 FROM bitmaps)"), &[])?;
+        if !any || self.ensure_known_tables().is_err() {
+            return Ok(());
+        }
+        self.db.write(|w| {
+            super::set_meta(w, RASTERS_CHECKED, &now.to_string())?;
+            if super::mask_assets::delete_unnamed(w)?.bytes == 0 {
+                return Ok(());
+            }
+            // The free pages include what earlier opens deleted, so small
+            // deletions add up to a compaction.
+            let file: i64 = w.read_one(
+                sql!("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()"),
+                &[],
+            )?;
+            let free: i64 = w.read_one(
+                sql!(
+                    "SELECT freelist_count * page_size FROM pragma_freelist_count(), pragma_page_size()"
+                ),
+                &[],
+            )?;
+            if free >= COMPACT_WHEN_FREE || free * 4 >= file {
+                super::set_meta(w, COMPACT_PENDING, "1")?;
+            }
+            Ok(())
+        })
     }
 
     fn empty_archive(&mut self) -> Result<()> {

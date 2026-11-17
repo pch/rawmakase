@@ -87,8 +87,9 @@ static GENERATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64:
 /// A catalog just opened, with what opening it could not finish.
 pub(crate) struct Opened {
     pub session: CatalogSession,
-    /// Why the catalog could not be made smaller after its archived
-    /// Lightroom catalog was removed; tried again on the next open.
+    /// Why the catalog could not be made smaller as it opened (removing its
+    /// archived Lightroom catalog or the rasters nothing names, or compacting
+    /// it after); tried again on the next open.
     pub not_compacted: Option<String>,
     /// What upgrading the catalog as it opened did, when it was of an earlier format.
     pub upgraded: Option<crate::catalog::Upgraded>,
@@ -237,7 +238,7 @@ impl CatalogSession {
         // Masks made from a selection are read back from this catalog wherever they
         // are rendered: Develop, the Library's thumbnails, previews and exports.
         crate::storage::mask_assets::add_loader(catalog.mask_asset_loader());
-        let not_compacted = catalog.remove_lightroom_archive(progress);
+        let not_compacted = catalog.remove_unused_data(progress);
         // PNGs whose info earlier releases stored without their EXIF; read by
         // the photo info backfill.
         let _ = catalog.reread_png_info_once();

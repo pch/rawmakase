@@ -49,8 +49,8 @@ const REMEMBERED: usize = 256;
 pub enum OpeningProgress {
     /// Upgrading a catalog of an earlier format: edits rewritten of all of them.
     Upgrading { done: usize, total: usize },
-    /// Compacting the file after the archived Lightroom catalog was removed
-    /// ([`Catalog::remove_lightroom_archive`]).
+    /// Compacting the file after the archived Lightroom catalog or rasters
+    /// nothing names were removed ([`Catalog::remove_unused_data`]).
     Compacting,
 }
 impl std::fmt::Display for OpeningProgress {

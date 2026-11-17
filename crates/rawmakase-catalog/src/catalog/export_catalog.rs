@@ -207,7 +207,7 @@ impl Catalog {
             super::ingest::remove_folders(w, &others)?;
             super::locations::forget_unused(w)?;
             prune_unreferenced(w)?;
-            let kept_every_mask = prune_bitmaps(w)?;
+            let kept_every_mask = super::mask_assets::delete_unnamed(w)?.kept_every;
             prune_recipe_assets(w)?;
             keep_reread(w, &keep)?;
             add_collection(w, collection)?;
@@ -241,7 +241,7 @@ impl Catalog {
     /// Refuses a catalog with a table this release does not know: a later
     /// release added it, and whether its rows are about photos left out, and
     /// must go, can't be told here.
-    fn ensure_known_tables(&self) -> Result<()> {
+    pub(super) fn ensure_known_tables(&self) -> Result<()> {
         let known = known_tables();
         let unknown: Vec<String> = self
             .db
@@ -408,58 +408,16 @@ fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
     Ok(())
 }
 
-/// Every stored text that may name a mask raster, profile or calibration: edits,
-/// Lightroom settings, spots and masks, snapshots and inflated Histories, whatever
-/// release wrote them. `None` when a History can't be read.
-fn naming_texts(w: &Write<'_>) -> Result<Option<Vec<String>>> {
-    let mut texts: Vec<String> = Vec::new();
-    for statement in [
-        sql!("SELECT recipe FROM photos WHERE recipe IS NOT NULL"),
-        sql!("SELECT lightroom_develop FROM photos WHERE lightroom_develop IS NOT NULL"),
-        sql!("SELECT data FROM local_edits"),
-        sql!("SELECT recipe FROM develop_snapshots WHERE recipe IS NOT NULL"),
-    ] {
-        texts.extend(w.read::<String>(statement, &[])?);
-    }
-    let histories: Vec<Vec<u8>> = w.read(sql!("SELECT data FROM develop_history"), &[])?;
-    for data in histories {
-        match super::develop_history::text(&data) {
-            Ok(text) => texts.push(String::from_utf8_lossy(&text).into_owned()),
-            Err(_) => return Ok(None),
-        }
-    }
-    Ok(Some(texts))
-}
-
-/// Deletes the mask rasters no edit, History or snapshot left names. A
-/// raster is kept if its id appears anywhere in them, whatever release wrote
-/// them; if a History can't be read, every raster is kept. Returns whether
-/// that happened.
-fn prune_bitmaps(w: &mut Write<'_>) -> Result<bool> {
-    let hashes: Vec<String> = w.read(sql!("SELECT hash FROM bitmaps"), &[])?;
-    if hashes.is_empty() {
-        return Ok(false);
-    }
-    let Some(texts) = naming_texts(w)? else {
-        return Ok(true);
-    };
-    for hash in hashes {
-        if !texts.iter().any(|t| t.contains(hash.as_str())) {
-            w.execute(sql!("DELETE FROM bitmaps WHERE hash=?"), &[&hash])?;
-        }
-    }
-    Ok(false)
-}
-
 /// Deletes the camera profiles and Lensfun calibrations no edit, History or
-/// snapshot left names, by the rule [`prune_bitmaps`] follows: one is kept if its id
-/// appears anywhere in them, and every one is kept if a History can't be read.
+/// snapshot left names, by the rule [`super::mask_assets::delete_unnamed`] follows:
+/// one is kept if its id appears anywhere in them, and every one is kept if a
+/// History can't be read.
 fn prune_recipe_assets(w: &mut Write<'_>) -> Result<()> {
     let ids: Vec<String> = w.read(sql!("SELECT id FROM recipe_assets"), &[])?;
     if ids.is_empty() {
         return Ok(());
     }
-    let Some(texts) = naming_texts(w)? else {
+    let Some(texts) = super::mask_assets::naming_texts(w)? else {
         return Ok(());
     };
     for id in ids {
