@@ -280,7 +280,6 @@ fn the_arrow_shows_one_keyword_s_photos_beside_another_of_its_name() -> Result<(
 
 #[test]
 fn a_keyword_kept_chosen_by_its_name_alone_chooses_every_keyword_of_it() -> Result<()> {
-    use super::facets::Attribute;
     let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF"])?;
     let library = e.library.as_mut().unwrap();
     for (id, parent) in [(ids[0], "France"), (ids[1], "Texas")] {
@@ -289,18 +288,69 @@ fn a_keyword_kept_chosen_by_its_name_alone_chooses_every_keyword_of_it() -> Resu
             DescriptiveEdit::AddKeywords(vec![vec![parent.into(), "Paris".into()]]),
         )?;
     }
+    // A top-level Paris too, on the third photo.
+    library
+        .session
+        .catalog_mut_for_tests()
+        .create_keyword("Paris", None)?;
+    let top = library.session.catalog().keyword_list()?;
+    let top = top
+        .iter()
+        .find(|k| k.name == "Paris" && k.parent.is_none())
+        .unwrap()
+        .id;
+    library.edit_descriptive(&ids[2..], DescriptiveEdit::AddKeyword(top))?;
     // As a layout an earlier release kept: the name alone.
     let mut layout = library.layout();
+    layout.keyword_paths = false;
     layout
         .metadata
         .insert("keyword".into(), vec![Some("Paris".into())]);
     library.apply_layout(&layout);
     let mut shown = library.shown();
     shown.sort();
-    let mut both = vec![ids[0], ids[1]];
-    both.sort();
-    assert_eq!(shown, both);
-    let chosen = &library.filters.metadata[&Attribute::Keyword];
-    assert!(chosen.contains(&Some("Paris < France".into())));
+    let mut all = ids.clone();
+    all.sort();
+    assert_eq!(shown, all);
+    // A layout kept since chooses the top-level one alone.
+    let mut layout = library.layout();
+    layout
+        .metadata
+        .insert("keyword".into(), vec![Some("Paris".into())]);
+    library.apply_layout(&layout);
+    assert_eq!(library.shown(), [ids[2]]);
+    Ok(())
+}
+
+#[test]
+fn undoing_a_rename_keeps_the_keyword_chosen_in_the_filter() -> Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    let library = e.library.as_mut().unwrap();
+    library.edit_descriptive(
+        &ids[..1],
+        DescriptiveEdit::AddKeywords(vec![vec!["Sea".into()]]),
+    )?;
+    let sea = library
+        .session
+        .catalog()
+        .find_typed_keyword(&["Sea".into()])?
+        .unwrap();
+    library.show_keyword(sea);
+    assert_eq!(library.shown(), [ids[0]]);
+    e.sync_undo();
+    let library = e.library.as_mut().unwrap();
+    library.edit_keyword_list(
+        KeywordListEdit::Rename {
+            id: sea,
+            name: "Ocean".into(),
+        },
+        "Rename Keyword",
+    );
+    assert_eq!(library.shown(), [ids[0]]);
+    e.sync_undo();
+    e.undo();
+    assert_eq!(e.library.as_ref().unwrap().shown(), [ids[0]]);
+    e.redo();
+    assert_eq!(e.library.as_ref().unwrap().shown(), [ids[0]]);
     Ok(())
 }

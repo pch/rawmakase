@@ -538,18 +538,21 @@ impl Library {
     /// change (`Paris` becoming `Paris < France` once another Paris is made,
     /// and back), so it goes on showing the same keywords' photos.
     pub(super) fn follow_keyword_names(&mut self) {
-        let relabeled = self.session.take_relabeled();
         let Some(chosen) = self.filters.metadata.get_mut(&Attribute::Keyword) else {
             return;
         };
-        let renamed: Vec<(String, String)> = relabeled
-            .into_iter()
-            .filter(|(old, _)| chosen.contains(&Some(old.clone())))
+        let followed: Vec<(String, String)> = chosen
+            .iter()
+            .flatten()
+            .filter_map(|name| {
+                let now = self.session.current_keyword_label(name)?;
+                (now != name).then(|| (name.clone(), now.to_string()))
+            })
             .collect();
-        for (old, _) in &renamed {
-            chosen.remove(&Some(old.clone()));
+        for (old, new) in followed {
+            chosen.remove(&Some(old));
+            chosen.insert(Some(new));
         }
-        chosen.extend(renamed.into_iter().map(|(_, new)| Some(new)));
     }
     /// The keywords a filter kept from an earlier release chose by name
     /// alone (`Paris`) are chosen by the names they now have, which tell
@@ -559,13 +562,9 @@ impl Library {
             return;
         };
         let labels = self.session.keyword_labels();
-        let known: HashSet<&str> = labels.values().map(String::as_str).collect();
         let mut add = Vec::new();
         chosen.retain(|value| {
             let Some(name) = value else { return true };
-            if known.contains(name.as_str()) {
-                return true;
-            }
             let of_name: Vec<String> = self
                 .session
                 .keywords()

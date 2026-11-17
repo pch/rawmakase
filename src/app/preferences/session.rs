@@ -484,6 +484,10 @@ pub(crate) struct LibraryLayout {
     pub metadata_strip: bool,
     /// The attribute keys of the strip's four columns, left to right.
     pub metadata_columns: Vec<String>,
+    /// Whether the Metadata filter's keywords are chosen by path (`Paris <
+    /// France`), as since keywords of one name were told apart; earlier
+    /// layouts chose them by name alone, which chooses every one of it.
+    pub keyword_paths: bool,
     /// The Keywording panel's Keyword Set: the set's name, none for Recent
     /// Keywords.
     pub keyword_set: Option<String>,

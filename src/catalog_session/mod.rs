@@ -80,9 +80,10 @@ pub(crate) struct CatalogSession {
     recent_keywords: Vec<i64>,
     /// The name the Library gives each keyword ([`crate::catalog::keyword_labels`]).
     keyword_labels: HashMap<i64, String>,
-    /// Keywords whose name changed since [`Self::take_relabeled`] was last
-    /// called, old name first, for a filter that chose them to follow.
-    relabeled: Vec<(String, String)>,
+    /// Each name a keyword had, to the name it was given next, while this
+    /// catalog is open: a filter chose keywords by name, and the place Undo
+    /// returns to keeps the name it had then.
+    relabeled: HashMap<String, String>,
     backfill: backfill::Backfill,
     wake: Wake,
     /// Changes whenever photos may have changed place, name or master (see
@@ -128,11 +129,18 @@ impl CatalogSession {
     pub(crate) fn keyword_labels(&self) -> &HashMap<i64, String> {
         &self.keyword_labels
     }
-    /// The keywords whose name changed, old name first, since the last
-    /// call: a keyword made, renamed or deleted can change how another of
-    /// its name is named.
-    pub(crate) fn take_relabeled(&mut self) -> Vec<(String, String)> {
-        std::mem::take(&mut self.relabeled)
+    /// The name keyword-name `name` has now: itself when a keyword has it,
+    /// else the name it was last given, followed through later renames.
+    pub(crate) fn current_keyword_label<'a>(&'a self, name: &'a str) -> Option<&'a str> {
+        let mut name = name;
+        // A rename and its undo map names both ways; a few steps settle it.
+        for _ in 0..16 {
+            if self.keyword_labels.values().any(|l| l == name) {
+                return Some(name);
+            }
+            name = self.relabeled.get(name)?;
+        }
+        None
     }
     /// Keeps `keywords` as the catalog's, with their names, noting the
     /// names that changed.
@@ -142,7 +150,7 @@ impl CatalogSession {
             if let Some(old) = self.keyword_labels.get(id)
                 && old != new
             {
-                self.relabeled.push((old.clone(), new.clone()));
+                self.relabeled.insert(old.clone(), new.clone());
             }
         }
         self.keywords = keywords;
@@ -296,7 +304,7 @@ impl CatalogSession {
             keywords: Vec::new(),
             recent_keywords: Vec::new(),
             keyword_labels: HashMap::new(),
-            relabeled: Vec::new(),
+            relabeled: HashMap::new(),
             backfill: Default::default(),
             wake: std::sync::Arc::new(|| {}),
             generation: 0,
