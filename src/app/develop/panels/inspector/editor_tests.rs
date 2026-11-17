@@ -31,12 +31,15 @@ fn double_clicking_a_defringe_hue_resets_it_to_its_colors_default() {
     };
     // Six rows, Purple then Green: Amount, Hue (low end), Hue (high end).
     frame(&mut effects, vec![], 0.);
-    let row = 24. + ctx.global_style().spacing.item_spacing.y;
+    use crate::app::ui::widgets::{SLIDER_GAP, SLIDER_LABEL, SLIDER_ROW};
+    let row = SLIDER_GAP + SLIDER_ROW + ctx.global_style().spacing.item_spacing.y;
+    // The middle of a row's rail, under its label line.
+    let rail = SLIDER_GAP + SLIDER_LABEL + (SLIDER_ROW - SLIDER_LABEL) / 2.;
     // Either end resets the whole range: Purple's high end, Green's low end.
     for i in [2, 4] {
         let at = Pos2::new(
             40.,
-            ctx.global_style().spacing.window_margin.top as f32 + row * i as f32 + 12.,
+            ctx.global_style().spacing.window_margin.top as f32 + row * i as f32 + rail,
         );
         let click = |pressed| egui::Event::PointerButton {
             pos: at,
@@ -343,4 +346,57 @@ fn clicking_the_crop_padlock_locks_and_unlocks_the_aspect() {
     let tree = click(&mut e, "Aspect locked");
     assert!(labelled(&tree, "Aspect unlocked").is_some());
     assert_eq!(e.crop_constraint(), None);
+}
+
+/// At the adjustments panel's narrowest, the Tone Curve's toolbar in Point mode
+/// fits its column: the channel dots never pass the contents' edge, which keeps
+/// them clear of the scroll bar.
+#[test]
+fn the_tone_curve_toolbar_fits_the_narrowest_panel() {
+    let ctx = egui::Context::default();
+    // The panel at its minimum, less its frame's margins on both sides.
+    let width = crate::app::shell::workspace::ADJUSTMENTS_MIN - 2. * 8.;
+    let mut view = crate::app::develop::state::ViewState {
+        parametric_curve: false,
+        ..Default::default()
+    };
+    let mut recipe = crate::model::recipe::Recipe::default();
+    let mut step = crate::app::develop::step_name::StepName::default();
+    let mut used = Rect::NOTHING;
+    for _ in 0..2 {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800., 1200.))),
+                ..Default::default()
+            },
+            |ui| {
+                // In the adjustments, whose sections have the wider inset.
+                let _side = crate::app::ui::widgets::SectionSide::enter(
+                    ui,
+                    crate::app::ui::widgets::SectionGroup::DevelopRight,
+                );
+                let column = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, 1200.));
+                used = ui
+                    .scope_builder(egui::UiBuilder::new().max_rect(column), |ui| {
+                        super::panels::tone_curve::show(
+                            ui,
+                            &mut step,
+                            &mut recipe,
+                            &mut view,
+                            &[[0; 256]; 3],
+                            None,
+                            &[],
+                        );
+                    })
+                    .response
+                    .rect;
+            },
+        );
+        output.textures_delta.clear();
+    }
+    assert!(
+        used.right() <= width + 0.5,
+        "the toolbar reaches {} in a {width} pt panel",
+        used.right()
+    );
 }

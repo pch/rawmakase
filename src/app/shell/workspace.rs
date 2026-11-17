@@ -1888,7 +1888,8 @@ impl Editor {
                 egui::Frame::new()
                     .fill(palette.tone(Tone::WELL))
                     .corner_radius(design::radius::CARD)
-                    .inner_margin(design::margin_same(space::M))
+                    // Its graph lines up with the sections' contents below.
+                    .inner_margin(design::margin(design::inset::ADJUSTMENT_CONTENT, space::M))
                     .outer_margin(egui::Margin {
                         left: 0,
                         right: 0,

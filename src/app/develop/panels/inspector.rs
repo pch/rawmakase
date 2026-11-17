@@ -1004,30 +1004,53 @@ fn targeted_shortcut(key: &str) -> String {
         format!("Ctrl+Alt+Shift+{key}")
     }
 }
-/// Group caption (Tone, Presence…) starting where the slider rails start.
+/// Group heading with space separating it from the previous adjustments.
 fn subheading(ui: &mut egui::Ui, text: &str) -> Rect {
     crate::app::ui::widgets::set_edit_context(ui, text);
-    ui.add_space(space::M);
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 16.), Sense::hover());
+    ui.add_space(space::XXL);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.), Sense::hover());
     ui.painter().text(
-        rect.left_center() + Vec2::new(control_left(ui), 0.),
+        rect.left_center(),
         egui::Align2::LEFT_CENTER,
         text,
-        egui::FontId::proportional(text::SMALL),
-        theme::palette(ui.ctx()).tone(Tone::LABEL),
+        egui::FontId::proportional(text::LARGE),
+        theme::palette(ui.ctx()).tone(Tone::BRIGHT),
     );
+    ui.add_space(space::M);
     rect
 }
-/// A labelled control row on the slider grid: caption right-aligned in the
-/// label column, controls from the rail start (5 pt past it) to the right edge,
-/// and the same height as a slider row. Text too long for the row, such as a lens
-/// or profile name, is cut short: wider rows push the panel past the window.
+/// A caption above a full-width control, such as a drop-down, on the slider grid.
+fn stacked_control<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.add_space(space::M);
+    let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 50.), Sense::hover());
+    ui.painter().text(
+        row.left_top() + Vec2::new(0., 9.),
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(text::SMALL),
+        theme::palette(ui.ctx()).tone(Tone::SOFT),
+    );
+    let rect = Rect::from_min_max(row.min + Vec2::new(0., 22.), row.max);
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        |ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+            add(ui)
+        },
+    )
+    .inner
+}
+
+/// A labelled control row aligned with the adjustment labels. Long control
+/// text is truncated so profile and lens names cannot widen the panel.
 fn control_row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let column = label_column(ui);
-    let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.), Sense::hover());
+    let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.), Sense::hover());
     ui.painter().text(
-        Pos2::new(row.left() + column - LABEL_GAP, row.center().y),
-        egui::Align2::RIGHT_CENTER,
+        row.left_center(),
+        egui::Align2::LEFT_CENTER,
         label,
         egui::FontId::proportional(text::SMALL),
         theme::palette(ui.ctx()).tone(Tone::SOFT),
