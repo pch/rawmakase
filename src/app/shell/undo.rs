@@ -70,9 +70,15 @@ impl Command {
             Command::Collection(change) => {
                 change.added.retain(|p| p.0 != id);
                 change.removed.retain(|p| p.0 != id);
+                change.renumbered_before.retain(|p| p.0 != id);
+                change.renumbered_after.retain(|p| p.0 != id);
                 change.place_before.forget_photo(id);
                 change.place_after.forget_photo(id);
-                !(change.added.is_empty() && change.removed.is_empty())
+                // Kept while it still numbers other photos: an earlier
+                // command's Undo needs their numbers back.
+                !(change.added.is_empty()
+                    && change.removed.is_empty()
+                    && change.renumbered_before.is_empty())
             }
             Command::CollectionTree(change) => {
                 change.forget_photo(id);
@@ -325,14 +331,24 @@ impl Editor {
                 })
             }
             Command::Collection(change) => {
-                let (add, remove, place) = match direction {
-                    Direction::Undo => (&change.removed, &change.added, &change.place_before),
-                    Direction::Redo => (&change.added, &change.removed, &change.place_after),
+                let (add, remove, positions, place) = match direction {
+                    Direction::Undo => (
+                        &change.removed,
+                        &change.added,
+                        &change.renumbered_before,
+                        &change.place_before,
+                    ),
+                    Direction::Redo => (
+                        &change.added,
+                        &change.removed,
+                        &change.renumbered_after,
+                        &change.place_after,
+                    ),
                 };
                 let remove: Vec<PhotoId> = remove.iter().map(|m| m.0).collect();
                 self.apply_library(verb, &change.summary, place, None, |library| {
                     library
-                        .put_back_members(change.collection, add, &remove)
+                        .put_back_members(change.collection, add, &remove, positions)
                         .map(|_| ())
                 })
             }

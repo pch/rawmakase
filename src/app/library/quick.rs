@@ -19,6 +19,11 @@ pub(crate) struct CollectionCommand {
     /// and Redo put them back where they were.
     pub added: Vec<Member>,
     pub removed: Vec<Member>,
+    /// The other photos the change numbered first (adding after photos
+    /// with no position), before and after, so Undo and Redo keep their
+    /// order exactly.
+    pub renumbered_before: Vec<Member>,
+    pub renumbered_after: Vec<Member>,
     pub place_before: Place,
     pub place_after: Place,
     /// What changed, as the status line said it.
@@ -198,6 +203,8 @@ impl Library {
             collection,
             added: change.added,
             removed: change.removed,
+            renumbered_before: change.renumbered_before,
+            renumbered_after: change.renumbered_after,
             place_before,
             place_after: self.place(),
             summary,
@@ -224,13 +231,16 @@ impl Library {
         collection: crate::catalog::CollectionId,
         add: &[Member],
         remove: &[PhotoId],
+        positions: &[Member],
     ) -> Result<MembershipChange> {
         let add: Vec<Member> = add
             .iter()
             .filter(|(id, _)| self.photo(*id).is_some())
             .cloned()
             .collect();
-        let change = self.session.put_back_members(collection, &add, remove)?;
+        let change = self
+            .session
+            .put_back_members(collection, &add, remove, positions)?;
         self.show_members();
         Ok(change)
     }

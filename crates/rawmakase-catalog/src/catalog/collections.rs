@@ -63,11 +63,15 @@ pub type Member = (PhotoId, Option<Position>);
 
 /// What [`Catalog::change_collection`] did: the photos it added and the ones
 /// it took out, each with its position, so Undo and Redo put them back where
-/// they were.
+/// they were; and, when photos were added after photos without a position,
+/// the other photos it numbered first, with their positions `before` and
+/// `after` ([`Catalog::put_back_members`] sets either back).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MembershipChange {
     pub added: Vec<Member>,
     pub removed: Vec<Member>,
+    pub renumbered_before: Vec<Member>,
+    pub renumbered_after: Vec<Member>,
 }
 
 /// A collection's sort, as Lightroom stores it: `sort` is its `sortType`
@@ -390,16 +394,24 @@ impl Catalog {
         self.db
             .write(|w| change_members(w, collection, Adding::Last(add), remove))
     }
-    /// [`Catalog::change_collection`] for Undo and Redo: puts `add` back each
-    /// at the position it had, none included, and takes `remove` out.
+    /// [`Catalog::change_collection`] for Undo and Redo, in one
+    /// transaction: takes `remove` out, gives the photos of `positions`
+    /// those positions (a change's numbering, before or after), and puts
+    /// `add` back each at the position it had, none included.
     pub fn put_back_members(
         &mut self,
         collection: CollectionId,
         add: &[Member],
         remove: &[PhotoId],
+        positions: &[Member],
     ) -> Result<MembershipChange> {
-        self.db
-            .write(|w| change_members(w, collection, Adding::At(add), remove))
+        self.db.write(|w| {
+            let mut change = change_members(w, collection, Adding::At(&[]), remove)?;
+            set_positions(w, collection, positions)?;
+            let added = change_members(w, collection, Adding::At(add), &[])?;
+            change.added = added.added;
+            Ok(change)
+        })
     }
     /// Every collection's photos, by collection.
     pub fn collection_photos(&self) -> Result<HashMap<CollectionId, HashSet<PhotoId>>> {
@@ -434,6 +446,57 @@ impl Catalog {
             .into_iter()
             .map(|r| (r.photo, r.position.map(Position)))
             .collect())
+    }
+    /// A collection's photos in its custom order (Lightroom's Custom Order):
+    /// by position number, Lightroom's `---N` read as N; photos with no
+    /// position, or one that isn't a number, after the others; photos alike,
+    /// by id.
+    pub fn collection_order(&self, id: CollectionId) -> Result<Vec<PhotoId>> {
+        Ok(ordered(self.collection_members(id)?)
+            .into_iter()
+            .map(|m| m.0)
+            .collect())
+    }
+    /// Custom Order's drag: numbers the collection's photos 1, 2, 3… in
+    /// `order` (photos of the collection it leaves out follow, in their
+    /// present order; others are ignored), in one transaction. Returns every
+    /// photo's position before, for Undo ([`Catalog::restore_positions`]),
+    /// or `None`, writing nothing, when the order stays as it was. Only
+    /// plain collections have a custom order.
+    pub fn arrange_collection(
+        &mut self,
+        collection: CollectionId,
+        order: &[PhotoId],
+    ) -> Result<Option<Vec<Member>>> {
+        self.db.write(|w| {
+            ensure_plain(w, collection)?;
+            let members = members_of(w, collection)?;
+            let current: Vec<PhotoId> = ordered(members.clone()).into_iter().map(|m| m.0).collect();
+            let mut arranged: Vec<PhotoId> = Vec::with_capacity(current.len());
+            for photo in order.iter().chain(&current) {
+                if current.contains(photo) && !arranged.contains(photo) {
+                    arranged.push(*photo);
+                }
+            }
+            if arranged == current {
+                return Ok(None);
+            }
+            number(w, collection, &arranged)?;
+            Ok(Some(members))
+        })
+    }
+    /// Puts positions [`Catalog::arrange_collection`] returned back, each as
+    /// it was (none included), in one transaction. Photos no longer in the
+    /// collection are left out.
+    pub fn restore_positions(
+        &mut self,
+        collection: CollectionId,
+        members: &[Member],
+    ) -> Result<()> {
+        self.db.write(|w| {
+            ensure_plain(w, collection)?;
+            set_positions(w, collection, members)
+        })
     }
     /// Every collection's sort chosen here or imported, by collection.
     pub fn collection_options(&self) -> Result<HashMap<CollectionId, CollectionOptions>> {
@@ -878,18 +941,58 @@ fn movable(w: &Write<'_>, id: CollectionId) -> Result<KindRow> {
     Ok(row)
 }
 
-/// The highest position number in a collection, or 0.
-fn next_position(w: &Write<'_>, collection: CollectionId) -> Result<i64> {
-    let positions: Vec<Option<String>> = w.read(
-        sql!("SELECT position FROM collection_photos WHERE collection=?"),
-        &[&collection],
-    )?;
-    let highest = positions
-        .into_iter()
-        .flatten()
-        .filter_map(|p| Position(p).number())
+/// The highest position number in a collection, or 0: photos added go
+/// after it. When some photos have no number (as Lightroom's B leaves them),
+/// which the custom order puts after the others, every photo is numbered
+/// 1, 2, 3… in that order first, so photos added go after them too; the
+/// positions before and after are returned, for Undo and Redo.
+fn next_position(
+    w: &mut Write<'_>,
+    collection: CollectionId,
+) -> Result<(i64, Vec<Member>, Vec<Member>)> {
+    let members = members_of(w, collection)?;
+    if members
+        .iter()
+        .any(|m| m.1.as_ref().and_then(Position::number).is_none())
+    {
+        let order: Vec<PhotoId> = ordered(members.clone()).into_iter().map(|m| m.0).collect();
+        number(w, collection, &order)?;
+        let after = order
+            .iter()
+            .enumerate()
+            .map(|(n, p)| (*p, Some(Position((n + 1).to_string()))))
+            .collect();
+        return Ok((order.len() as i64, members, after));
+    }
+    let highest = members
+        .iter()
+        .filter_map(|m| m.1.as_ref().and_then(Position::number))
         .fold(0.0_f64, f64::max);
-    Ok(highest.floor() as i64)
+    Ok((highest.floor() as i64, Vec::new(), Vec::new()))
+}
+
+/// Gives each photo of `positions` in a collection its position.
+fn set_positions(w: &mut Write<'_>, collection: CollectionId, positions: &[Member]) -> Result<()> {
+    for (photo, position) in positions {
+        let position = position.as_ref().map(Position::as_str);
+        w.execute(
+            sql!("UPDATE collection_photos SET position=? WHERE collection=? AND photo=?"),
+            &[&position, &collection, photo],
+        )?;
+    }
+    Ok(())
+}
+
+/// Numbers `order`'s photos 1, 2, 3… in a collection.
+fn number(w: &mut Write<'_>, collection: CollectionId, order: &[PhotoId]) -> Result<()> {
+    for (n, photo) in order.iter().enumerate() {
+        let position = (n + 1).to_string();
+        w.execute(
+            sql!("UPDATE collection_photos SET position=? WHERE collection=? AND photo=?"),
+            &[&position, &collection, photo],
+        )?;
+    }
+    Ok(())
 }
 
 fn options_of(w: &Write<'_>, id: CollectionId) -> Result<Option<CollectionOptions>> {
@@ -1036,8 +1139,11 @@ fn change_members(
     }
     let members: Vec<Member> = match add {
         Adding::At(members) => members.to_vec(),
+        Adding::Last([]) => Vec::new(),
         Adding::Last(photos) => {
-            let mut next = next_position(w, collection)?;
+            let (mut next, before, after) = next_position(w, collection)?;
+            change.renumbered_before = before;
+            change.renumbered_after = after;
             photos
                 .iter()
                 .map(|photo| {
@@ -1207,4 +1313,47 @@ fn restore_rows(w: &mut Write<'_>, removed: &RemovedCollections) -> Result<()> {
         write_rules(w, *collection, rules)?;
     }
     Ok(())
+}
+
+/// `members` in custom order: by position number, then those without one,
+/// alike by photo id.
+fn ordered(mut members: Vec<Member>) -> Vec<Member> {
+    members.sort_by(|a, b| {
+        let number = |m: &Member| m.1.as_ref().and_then(Position::number);
+        match (number(a), number(b)) {
+            (Some(x), Some(y)) => x.total_cmp(&y),
+            (x, y) => x.is_none().cmp(&y.is_none()),
+        }
+        .then(a.0.cmp(&b.0))
+    });
+    members
+}
+
+/// A collection's photos with their positions, by photo id, in a write.
+fn members_of(w: &Write<'_>, collection: CollectionId) -> Result<Vec<Member>> {
+    row! {
+        struct MemberRow {
+            photo: PhotoId,
+            position: Option<String>,
+        }
+    }
+    let rows: Vec<MemberRow> = w.read(
+        sql!("SELECT photo, position FROM collection_photos WHERE collection=? ORDER BY photo"),
+        &[&collection],
+    )?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.photo, r.position.map(Position)))
+        .collect())
+}
+
+/// Refuses anything but a plain collection (the Quick Collection too).
+fn ensure_plain(w: &Write<'_>, id: CollectionId) -> Result<()> {
+    let kind: Option<String> =
+        w.read_optional(sql!("SELECT kind FROM collections WHERE id=?"), &[&id])?;
+    match kind {
+        Some(kind) if kind == COLLECTION_KIND => Ok(()),
+        Some(_) => bail!("Only a collection has a custom order"),
+        None => bail!("That collection is gone"),
+    }
 }

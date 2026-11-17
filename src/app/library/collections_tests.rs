@@ -684,3 +684,256 @@ fn go_to_collection_from_the_filmstrip_stops_drawing_the_old_list() -> Result<()
     assert_eq!(l.shown(), [first]);
     Ok(())
 }
+
+/// A collection shows in Capture Time until another sort is chosen for it
+/// (as Lightroom Classic 15.6 starts one), which is kept with the
+/// collection as Lightroom's sortType; the folders keep their own sort,
+/// back when the collection is left.
+#[test]
+fn a_collection_keeps_its_own_sort_apart_from_the_folders() -> Result<()> {
+    use super::sort::Sort;
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF"])?;
+    let ids = sorted(ids);
+    let l = library(&mut e);
+    l.filters.sort = Sort::FileName;
+    l.filter();
+    let picks = l.create_collection(false, "Picks", None, &[ids[2], ids[0], ids[1]], false)?;
+    l.select_collection(picks);
+    assert_eq!(l.filters.sort, Sort::CaptureTime);
+    // Custom Order shows them as added.
+    l.filters.sort = Sort::Custom;
+    l.sort_chosen();
+    l.filter();
+    assert_eq!(l.shown(), [ids[2], ids[0], ids[1]]);
+    assert_eq!(
+        l.session.catalog().collection_options()?[&picks].sort,
+        "positionInCollection"
+    );
+    assert_eq!(l.layout().sort, "file_name");
+    // Another sort chosen here is the collection's.
+    l.filters.sort = Sort::Rating;
+    l.sort_chosen();
+    l.filters.collection = None;
+    l.filter();
+    assert_eq!(l.filters.sort, Sort::FileName);
+    l.select_collection(picks);
+    assert_eq!(l.filters.sort, Sort::Rating);
+    let options = l.session.catalog().collection_options()?;
+    assert_eq!(options[&picks].sort, "rating");
+    assert_eq!(options[&picks].direction, "ascending");
+    Ok(())
+}
+
+#[test]
+fn dragging_in_custom_order_moves_photos_with_undo_either_way_up() -> Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF", "d.RAF"])?;
+    let ids = sorted(ids);
+    let picks = library(&mut e).create_collection(false, "Picks", None, &ids, false)?;
+    library(&mut e).select_collection(picks);
+    library(&mut e).filters.sort = super::sort::Sort::Custom;
+    library(&mut e).filter();
+    assert_eq!(library(&mut e).shown(), ids);
+    // The last two dropped before the second.
+    library(&mut e).reorder_shown(vec![ids[2], ids[3]], 1)?;
+    e.sync_undo();
+    let moved = [ids[0], ids[2], ids[3], ids[1]];
+    assert_eq!(library(&mut e).shown(), moved);
+    e.undo();
+    assert_eq!(library(&mut e).shown(), ids);
+    e.redo();
+    assert_eq!(library(&mut e).shown(), moved);
+    // Shown the other way up, a photo dropped first goes last in the order.
+    let l = library(&mut e);
+    l.filters.reverse = true;
+    l.filter();
+    assert_eq!(l.shown(), [ids[1], ids[3], ids[2], ids[0]]);
+    l.reorder_shown(vec![ids[0]], 0)?;
+    assert_eq!(l.shown(), [ids[0], ids[1], ids[3], ids[2]]);
+    // Dropped where it is: nothing to undo.
+    e.sync_undo();
+    let before = e.undo_log.len();
+    library(&mut e).reorder_shown(vec![ids[0]], 0)?;
+    e.sync_undo();
+    assert_eq!(e.undo_log.len(), before);
+    Ok(())
+}
+
+/// Photos dragged over a grid cell in Custom Order drop before it, or after
+/// it on its right half.
+#[test]
+fn photos_dropped_on_a_cell_go_before_or_after_it() {
+    let ctx = egui::Context::default();
+    let source = egui::Rect::from_min_size(egui::pos2(20., 150.), Vec2::splat(60.));
+    let target = egui::Rect::from_min_size(egui::pos2(200., 10.), Vec2::new(100., 80.));
+    let frame = |events: Vec<egui::Event>| {
+        let mut dropped = None;
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(400., 300.),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                let cell = ui.allocate_rect(target, egui::Sense::click_and_drag());
+                dropped = super::grid::reorder_target(ui, &cell, 5);
+                let from = ui.allocate_rect(source, egui::Sense::click_and_drag());
+                super::grid::drag_payload(&from, || vec![PhotoId(1)]);
+            },
+        );
+        output.textures_delta.clear();
+        dropped
+    };
+    for (x, at) in [(220., 5), (280., 6)] {
+        let start = source.center();
+        let to = egui::pos2(x, 50.);
+        frame(vec![]);
+        frame(vec![egui::Event::PointerMoved(start), press(start, true)]);
+        frame(vec![egui::Event::PointerMoved(start + Vec2::new(0., -20.))]);
+        frame(vec![egui::Event::PointerMoved(to)]);
+        assert_eq!(frame(vec![press(to, false)]), Some((vec![PhotoId(1)], at)));
+    }
+}
+
+/// Undo back into a collection, and out of it again, keeps its sort its own:
+/// the folders' comes back, and the saved layout keeps the folders'.
+#[test]
+fn undo_into_a_collection_keeps_the_folders_sort_apart() -> Result<()> {
+    use super::sort::Sort;
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    let ids = sorted(ids);
+    let l = library(&mut e);
+    l.filters.sort = Sort::FileName;
+    l.filter();
+    let picks = l.create_collection(false, "Picks", None, &ids, false)?;
+    l.select_collection(picks);
+    l.filters.sort = Sort::Custom;
+    l.sort_chosen();
+    l.filter();
+    l.reorder_shown(vec![ids[1]], 0)?;
+    e.sync_undo();
+    // To All Photographs, then Undo goes back to the collection.
+    let l = library(&mut e);
+    l.filters.collection = None;
+    l.filter();
+    assert_eq!(l.filters.sort, Sort::FileName);
+    e.undo();
+    let l = library(&mut e);
+    assert_eq!(l.filters.collection, Some(picks));
+    assert_eq!(l.filters.sort, Sort::Custom);
+    assert_eq!(l.layout().sort, "file_name");
+    l.filters.collection = None;
+    l.filter();
+    assert_eq!(l.filters.sort, Sort::FileName);
+    Ok(())
+}
+
+/// A drop that leaves the photos shown as they were changes nothing, and
+/// photos the filter bar hides keep their places.
+#[test]
+fn hidden_photos_keep_their_places_when_shown_ones_move() -> Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF"])?;
+    let ids = sorted(ids);
+    let l = library(&mut e);
+    let picks = l.create_collection(false, "Picks", None, &ids, false)?;
+    l.select_collection(picks);
+    l.filters.sort = super::sort::Sort::Custom;
+    // The middle one hidden by the filter bar.
+    l.session
+        .set_ratings(&[(ids[0], 3, 0, String::new()), (ids[2], 3, 0, String::new())])?;
+    l.reloaded();
+    l.filters.rating = Some(3);
+    l.filter();
+    assert_eq!(l.shown(), [ids[0], ids[2]]);
+    // Dropped where it is.
+    l.reorder_shown(vec![ids[0]], 1)?;
+    assert_eq!(l.session.catalog().collection_order(picks)?, ids);
+    // Swapped: the hidden one stays in the middle.
+    l.reorder_shown(vec![ids[0]], 2)?;
+    assert_eq!(
+        l.session.catalog().collection_order(picks)?,
+        [ids[2], ids[1], ids[0]]
+    );
+    Ok(())
+}
+
+/// Photos Lightroom left without a position: taking one out, adding
+/// another and undoing both gives back the order as it was, numbering and
+/// all.
+#[test]
+fn undo_keeps_the_order_of_photos_without_a_position() -> Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF", "d.RAF"])?;
+    let ids = sorted(ids);
+    let picks = library(&mut e).create_collection(false, "Picks", None, &ids[..3], false)?;
+    let order = |e: &mut Editor| library(e).session.catalog().collection_order(picks);
+    library(&mut e)
+        .session
+        .catalog()
+        .db_for_tests()
+        .execute("UPDATE collection_photos SET position=NULL", [])?;
+    let before = library(&mut e)
+        .session
+        .catalog()
+        .collection_members(picks)?;
+    assert_eq!(order(&mut e)?, ids[..3]);
+    library(&mut e).select_collection(picks);
+    // Taken out, then undone.
+    library(&mut e).delete_key(vec![ids[0]]);
+    e.sync_undo();
+    e.undo();
+    assert_eq!(order(&mut e)?, ids[..3]);
+    // Taken out, another added, both undone.
+    library(&mut e).delete_key(vec![ids[0]]);
+    e.sync_undo();
+    library(&mut e).add_to_collection(picks, vec![ids[3]])?;
+    e.sync_undo();
+    assert_eq!(order(&mut e)?, [ids[1], ids[2], ids[3]]);
+    e.undo();
+    e.undo();
+    assert_eq!(order(&mut e)?, ids[..3]);
+    assert_eq!(
+        library(&mut e)
+            .session
+            .catalog()
+            .collection_members(picks)?,
+        before
+    );
+    // And redone, in order.
+    e.redo();
+    e.redo();
+    assert_eq!(order(&mut e)?, [ids[1], ids[2], ids[3]]);
+    Ok(())
+}
+
+/// The photo added is removed from the catalog before the Undos: the
+/// numbering its adding did still comes undone, so the earlier removal's
+/// Undo gives the order back as it was.
+#[test]
+fn undo_keeps_the_order_when_the_photo_added_is_gone() -> Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF"])?;
+    let ids = sorted(ids);
+    let picks = library(&mut e).create_collection(false, "Picks", None, &ids, false)?;
+    let copy = library(&mut e).create_virtual_copy(ids[0])?.value;
+    library(&mut e)
+        .session
+        .catalog()
+        .db_for_tests()
+        .execute("UPDATE collection_photos SET position=NULL", [])?;
+    library(&mut e).select_collection(picks);
+    library(&mut e).delete_key(vec![ids[0]]);
+    e.sync_undo();
+    library(&mut e).add_to_collection(picks, vec![copy])?;
+    e.sync_undo();
+    // The copy goes, and with it its own part of the command; the
+    // numbering stays to undo, then the removal.
+    e.remove_virtual_copy(copy);
+    e.undo();
+    e.undo();
+    assert_eq!(
+        library(&mut e).session.catalog().collection_order(picks)?,
+        ids
+    );
+    Ok(())
+}

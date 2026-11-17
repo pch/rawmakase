@@ -278,6 +278,9 @@ pub(crate) struct Library {
     collection_tree_done: Vec<collection_edit::CollectionTreeCommand>,
     /// Create Collection…, Rename… or Delete's question, while open.
     collection_dialog: Option<collection_edit::CollectionDialog>,
+    /// The folders' sort and direction while a collection with its own is
+    /// shown; they come back when it is left. `None` when no collection is.
+    folder_sort: Option<(sort::Sort, bool)>,
     /// Descriptive metadata changes not yet handed to the shared undo log.
     descriptive_done: Vec<DescriptiveCommand>,
     /// Stack changes not yet handed to the shared undo log.
@@ -380,6 +383,7 @@ impl Library {
             collection_done: Vec::new(),
             collection_tree_done: Vec::new(),
             collection_dialog: None,
+            folder_sort: None,
             descriptive_done: Vec::new(),
             stack_done: Vec::new(),
             auto_stack: None,
@@ -628,11 +632,21 @@ impl Library {
         self.availability.count(self.session.photos())
     }
     fn filter(&mut self) {
+        // Leaving the collections: the folders' order again.
+        if self.filters.collection.is_none()
+            && let Some((sort, reverse)) = self.folder_sort.take()
+        {
+            self.filters.sort = sort;
+            self.filters.reverse = reverse;
+        }
         // What the order needs from the catalog, read once until it changes.
         let sort = self.filters.sort;
-        if self.sort_keys.as_ref().is_none_or(|(of, _)| *of != sort) {
-            self.sort_keys = Some((sort, sort.keys(self.session.catalog())));
+        // A custom order is read again each time: a drag or Undo changes it.
+        if sort == sort::Sort::Custom || self.sort_keys.as_ref().is_none_or(|(of, _)| *of != sort) {
+            let collection = self.filters.collection;
+            self.sort_keys = Some((sort, sort.keys(self.session.catalog(), collection)));
         }
+
         if self.filters.needs_facets() {
             self.load_facets();
         }
@@ -782,7 +796,21 @@ impl Library {
     /// Returns to `place`, with the photos it had selected that are still
     /// there, and scrolls to its active photo.
     pub(in crate::app) fn go_to_place(&mut self, place: &Place) {
+        // The folders' order as it is now, whatever the place was shown in.
+        let folders = self
+            .folder_sort
+            .unwrap_or((self.filters.sort, self.filters.reverse));
         self.filters = place.filters.clone();
+        if self
+            .filters
+            .collection
+            .is_some_and(|id| self.has_own_sort(id))
+        {
+            self.folder_sort = Some(folders);
+        } else {
+            self.folder_sort = None;
+            (self.filters.sort, self.filters.reverse) = folders;
+        }
         self.selected_folders = place.folders.clone();
         // The source as the catalog has it now, e.g. after a folder gained
         // subfolders since.
