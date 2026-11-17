@@ -27,6 +27,7 @@ const FIXED: &[(&str, &str, usize)] = &[
     ("presets/user_presets.rs", "key_pressed(", 1),
     ("library/metadata_fields.rs", "key_pressed(", 1),
     ("library/keyword_sets.rs", "key_pressed(", 1),
+    ("library/keyword_list.rs", "key_pressed(", 1),
     ("extensions/page.rs", "key_pressed(", 1),
     // Preferences' Escape, which an extension's page takes to go back to the
     // list before the window's own Escape closes it.

@@ -224,7 +224,11 @@ fn option_digits_apply_a_slot_but_nothing_runs_behind_a_keyword_window() -> Resu
     assert_eq!(names(e.library.as_ref().unwrap(), ids[0]), ["Sea"]);
     // Behind Delete's question, neither the slot's key nor Undo runs.
     let library = e.library.as_mut().unwrap();
-    let sea = library.session.catalog().find_typed_keyword(&["Sea".into()])?.unwrap();
+    let sea = library
+        .session
+        .catalog()
+        .find_typed_keyword(&["Sea".into()])?
+        .unwrap();
     library.ask_to_delete_keyword(sea);
     assert!(e.keyword_dialog_open());
     press(&mut e, Key::Num1, Modifiers::ALT);

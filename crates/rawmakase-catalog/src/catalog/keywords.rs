@@ -490,11 +490,10 @@ pub(super) fn typed_keyword(w: &mut Write<'_>, path: &[String]) -> Result<i64> {
     ensure!(path.iter().all(|n| !n.is_empty()), "A keyword needs a name");
     let all = keyword_list(w)?;
     let (mut found, level) = find_typed(&all, &path);
-    // Only the names made are held to Lightroom's rules: a keyword found
-    // keeps whatever name it has.
-    for name in &path[level..] {
-        check_name(name)?;
-    }
+    // Names come typed, a comma already taken as a separator, or from a
+    // keyword set or a test standing in for a file's XMP, where a name may
+    // have one ("Washington, D.C."). Lightroom's other rules are for the
+    // Keyword List's Create and Rename.
     if found.is_none() {
         found = Some(new_keyword(w, &path[0], root(w)?)?);
     }
