@@ -21,9 +21,6 @@ use anyhow::{Context, Result, bail, ensure};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-/// The kind of an ordinary collection, as Lightroom names it.
-const COLLECTION_KIND: &str = "com.adobe.ag.library.collection";
-
 /// The photos to export.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExportScope {
@@ -199,13 +196,15 @@ impl Catalog {
             .collect();
         let lens_profiles = self.lens_profiles(&keep)?;
 
-        let kept_every_mask = self.db.write(|w| {
+        let (kept_every_mask, collection) = self.db.write(|w| {
             let all: Vec<PhotoId> = w.read(sql!("SELECT id FROM photos"), &[])?;
             for id in all.into_iter().filter(|id| !keep.contains(id)) {
                 super::copies::delete_photo(w, id)?;
             }
             super::ingest::remove_folders(w, &others)?;
             super::locations::forget_unused(w)?;
+            // A pruned collection's id is never given to the one added below.
+            super::collections::reserve_ids(w)?;
             prune_unreferenced(w)?;
             let kept_every_mask = match super::mask_assets::unnamed(w)? {
                 Some(unnamed) => {
@@ -216,8 +215,8 @@ impl Catalog {
             };
             prune_recipe_assets(w)?;
             keep_reread(w, &keep)?;
-            add_collection(w, collection)?;
-            Ok(kept_every_mask)
+            let collection = add_collection(w, collection)?;
+            Ok((kept_every_mask, collection))
         })?;
         self.db.compact()?;
         // Each photo is found where this catalog finds it.
@@ -236,7 +235,7 @@ impl Catalog {
             path: PathBuf::new(),
             photos: keep.len(),
             family: keep.len() - chosen.len(),
-            collection: collection.to_string(),
+            collection,
             offline,
             lens_profiles,
             kept_every_mask,
@@ -405,6 +404,13 @@ fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
                  SELECT collection FROM collection_photos
                  UNION SELECT c.parent FROM collections c JOIN used u ON c.id=u.id
                  WHERE c.parent IS NOT NULL)
+             DELETE FROM collection_options WHERE collection NOT IN (SELECT id FROM used)"
+        ),
+        sql!(
+            "WITH RECURSIVE used(id) AS (
+                 SELECT collection FROM collection_photos
+                 UNION SELECT c.parent FROM collections c JOIN used u ON c.id=u.id
+                 WHERE c.parent IS NOT NULL)
              DELETE FROM collections WHERE id NOT IN (SELECT id FROM used)"
         ),
         sql!("DELETE FROM stacks WHERE id NOT IN (SELECT stack FROM stack_photos)"),
@@ -454,12 +460,24 @@ fn keep_reread(w: &mut Write<'_>, keep: &BTreeSet<PhotoId>) -> Result<()> {
     super::set_meta(w, key, &kept.join(","))
 }
 
-/// Adds collection `name` of every photo.
-fn add_collection(w: &mut Write<'_>, name: &str) -> Result<()> {
-    let id: i64 = w.insert_returning_id(
-        sql!("INSERT INTO collections(name, parent, kind) VALUES (?, NULL, ?) RETURNING id"),
-        &[&name, &COLLECTION_KIND],
-    )?;
+/// Adds a top-level collection of every photo, named `name`, or `name
+/// (export)` when a collection there has that name already or it is the
+/// Quick Collection's (which older releases would take it for). Returns
+/// the name it has.
+fn add_collection(w: &mut Write<'_>, name: &str) -> Result<String> {
+    let taken: BTreeSet<String> = w
+        .read::<String>(
+            sql!("SELECT name FROM collections WHERE parent IS NULL"),
+            &[],
+        )?
+        .into_iter()
+        .collect();
+    let name = std::iter::once(name.to_string())
+        .chain(std::iter::once(format!("{name} (export)")))
+        .chain((2..).map(|n| format!("{name} (export {n})")))
+        .find(|n| n != super::QUICK_COLLECTION && !taken.contains(n))
+        .expect("an unused name");
+    let id = super::collections::insert(w, &name, None, super::collections::COLLECTION_KIND)?;
     w.execute(
         sql!(
             "INSERT INTO collection_photos(collection, photo)
@@ -467,5 +485,5 @@ fn add_collection(w: &mut Write<'_>, name: &str) -> Result<()> {
         ),
         &[&id],
     )?;
-    Ok(())
+    Ok(name)
 }

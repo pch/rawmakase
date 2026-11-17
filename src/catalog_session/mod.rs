@@ -3,7 +3,9 @@
 mod backfill;
 pub(crate) mod background;
 mod checksums;
+mod collections;
 mod descriptive;
+mod entries;
 mod import_stacks;
 mod stacks;
 
@@ -46,6 +48,7 @@ pub(crate) fn read_file_metadata(
 }
 pub(crate) use background::Wake;
 pub(crate) use descriptive::{Committed, DescriptiveChange, DescriptiveEdit, KeywordListEdit};
+pub(crate) use entries::entry;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -605,12 +608,16 @@ mod tests {
         assert_eq!(session.collection_photos[&collection], HashSet::from([a]));
 
         // Changes made through the catalog show once it is read again.
-        session.catalog.create_virtual_copy(a)?;
+        // The copy joins the Quick Collection its photo is in, as Lightroom's does.
+        let copy = session.catalog.create_virtual_copy(a)?;
         session.catalog.change_collection(collection, &[], &[a])?;
         session.reload()?;
         assert_eq!(session.photos.len(), 3);
         assert_eq!(session.folders[0].count, 3);
-        assert!(!session.collection_photos.contains_key(&collection));
+        assert_eq!(
+            session.collection_photos[&collection],
+            HashSet::from([copy])
+        );
         Ok(())
     }
 
@@ -1129,12 +1136,13 @@ mod tests {
         assert_eq!(session.ensure_quick_collection()?, quick);
         assert!(session.collection_photos[&quick].is_empty());
         let members = session.change_collection(quick, &[a], &[])?;
-        assert!(members.contains(&a));
+        assert_eq!(members.added.len(), 1);
+        assert!(session.collection_photos[&quick].contains(&a));
         assert!(session.catalog.collection_photos()?[&quick].contains(&a));
         session.change_collection(quick, &[], &[a])?;
         assert!(session.collection_photos[&quick].is_empty());
 
-        let copy = session.create_virtual_copy(a)?.value;
+        let copy = session.create_virtual_copy(a, None)?.value;
         session.rename_copy(copy, " B&W ")?;
         let named = |photos: &[Photo]| {
             photos
@@ -1174,7 +1182,7 @@ mod tests {
         assert_eq!(session.catalog.photos()?[0].label, "Blue");
         assert_eq!(session.catalog.metadata_snapshot(&[a])?, change.before);
 
-        let copy = session.create_virtual_copy(a)?.value;
+        let copy = session.create_virtual_copy(a, None)?.value;
         assert!(session.photos.iter().any(|p| p.id == copy));
         session.set_copy_as_master(copy)?;
         assert_eq!(

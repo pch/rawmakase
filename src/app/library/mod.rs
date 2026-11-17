@@ -1110,12 +1110,15 @@ impl Library {
         let folder = self.session.folders().iter().find(|f| f.id == id)?;
         Some((folder.root, folder.relative.clone()))
     }
-    /// Creates a virtual copy of `id` and selects it.
+    /// Creates a virtual copy of `id` and selects it. Made while a
+    /// collection is shown, the copy joins it, as in Lightroom.
     pub(in crate::app) fn create_virtual_copy(
         &mut self,
         id: PhotoId,
     ) -> Result<Committed<PhotoId>> {
-        let made = self.session.create_virtual_copy(id)?;
+        let made = self
+            .session
+            .create_virtual_copy(id, self.filters.collection)?;
         if self.listed_after(&made.listed, "Copy made") {
             self.show(made.value);
             if let Some(p) = self.photo(made.value) {

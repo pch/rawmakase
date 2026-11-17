@@ -35,6 +35,9 @@ pub(crate) struct Notes {
     pub wb_info: Vec<i32>,
     /// The white balance setting ShotInfo (0x0004) records.
     pub wb_setting: Option<u32>,
+    /// FileInfo's focus distance in metres: the middle of its upper and lower bounds, infinity
+    /// when the upper one is, 0 when unknown.
+    pub focus_distance: f32,
     /// Highlight Tone Priority as CustomFunctions2 (0x0099) records it.
     pub custom_htp: Option<u32>,
 }
@@ -124,6 +127,10 @@ pub(crate) fn read(t: &TiffFile, note: &Ifd) -> Notes {
         .map(|v| v as i32)
         .collect();
     n.wb_setting = t.ints_upto(note, 0x0004, 8).and_then(|v| v.get(7).copied());
+    // FileInfo (0x0093) words 20 and 21 are the bounds in 0.01 m; 65535 is infinity.
+    if let Some(v) = t.ints_upto(note, 0x0093, 22).filter(|v| v.len() > 21) {
+        n.focus_distance = focus_metres(v[20], v[21]);
+    }
     if let Some(raw) = t.raw_upto(note, 0x0099, MAX_CUSTOM_FUNCTIONS) {
         n.custom_htp = custom_function(&raw, t.little(), 0x0203);
     }
@@ -164,6 +171,7 @@ impl Notes {
             info.cam_mul = as_shot.map(|v| v as f32);
             info.presets.daylight = [daylight[0], daylight[1], daylight[2]].map(|v| v as f32);
         }
+        info.focus_distance = self.focus_distance;
         if info.lens.is_empty()
             && let Some(lens) = &self.lens
         {
@@ -611,6 +619,17 @@ pub(crate) fn custom_function(b: &[u8], little: bool, record: u32) -> Option<u32
     None
 }
 
+/// FileInfo's focus distance bounds (0.01 m; 65535 is infinity) as one distance in metres:
+/// their middle, infinity when the upper one is, 0 when unknown.
+fn focus_metres(hi: u32, lo: u32) -> f32 {
+    match (hi, lo) {
+        (0, _) => 0.,
+        (65535.., _) => f32::INFINITY,
+        (hi, 0) => hi as f32 / 100.,
+        (hi, lo) => (hi as f32 + lo as f32) / 200.,
+    }
+}
+
 /// The crop factor over the sensor's of AspectInfo's ratio `code`: 12 is 3:2 in APS-H
 /// crop, 13 is 3:2 in APS-C crop (as ExifTool names the codes); `None` for the
 /// whole sensor.
@@ -635,6 +654,13 @@ mod tests {
         assert_eq!(spaced_lens("EF50mm f/1.8 II"), "EF 50mm f/1.8 II");
         assert_eq!(spaced_lens("EF 50mm f/1.8"), "EF 50mm f/1.8");
         assert_eq!(spaced_lens("TS-E24mm"), "TS-E24mm");
+    }
+
+    #[test]
+    fn focus_distance_is_the_middle_of_the_bounds() {
+        assert_eq!(focus_metres(55, 53), 0.54);
+        assert_eq!(focus_metres(65535, 1629), f32::INFINITY);
+        assert_eq!((focus_metres(0, 0), focus_metres(120, 0)), (0., 1.2));
     }
 
     /// AspectInfo's crop modes, as ExifTool names them: APS-C (13) and APS-H (12)

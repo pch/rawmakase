@@ -66,8 +66,8 @@ impl Command {
                 !change.before.is_empty()
             }
             Command::Collection(change) => {
-                change.added.retain(|p| *p != id);
-                change.removed.retain(|p| *p != id);
+                change.added.retain(|p| p.0 != id);
+                change.removed.retain(|p| p.0 != id);
                 change.place_before.forget_photo(id);
                 change.place_after.forget_photo(id);
                 !(change.added.is_empty() && change.removed.is_empty())
@@ -313,8 +313,11 @@ impl Editor {
                     Direction::Undo => (&change.removed, &change.added, &change.place_before),
                     Direction::Redo => (&change.added, &change.removed, &change.place_after),
                 };
+                let remove: Vec<PhotoId> = remove.iter().map(|m| m.0).collect();
                 self.apply_library(verb, &change.summary, place, None, |library| {
-                    library.change_collection(change.collection, add, remove)
+                    library
+                        .put_back_members(change.collection, add, &remove)
+                        .map(|_| ())
                 })
             }
             Command::Descriptive(change) => {

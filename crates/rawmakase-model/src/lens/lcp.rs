@@ -166,11 +166,13 @@ fn make_rank(e: &Entry, m: &Metadata) -> Option<u8> {
     )
 }
 
-/// Parameters interpolated in focal length (and APEX aperture for vignetting).
+/// Parameters interpolated in focal length, focus `distance` in metres (0 when
+/// unknown) and, for vignetting, APEX aperture.
 fn interpolate<T: Copy>(
     entries: &[&Entry],
     focal: f32,
     aperture: Option<f32>,
+    distance: f32,
     get: impl Fn(&Entry) -> Option<T>,
     mix: impl Fn(T, T, f32) -> T,
 ) -> Option<(T, f32)> {
@@ -184,36 +186,56 @@ fn interpolate<T: Copy>(
         .find(|f| **f <= focal)
         .or(focals.first())?;
     let hi = focals.iter().find(|f| **f >= focal).or(focals.last())?;
+    let inv = |d: Option<f32>| {
+        d.filter(|d| d.is_finite() && *d > 0.)
+            .map_or(0., |d| 1. / d)
+    };
     let at_focal = |f: f32| -> Option<(T, f32)> {
-        let mut here: Vec<&&&Entry> = with.iter().filter(|e| e.focal == f).collect();
-        // Prefer the farthest focus distance, as Lightroom does without distance data.
-        let far = here
-            .iter()
-            .map(|e| e.distance.unwrap_or(f32::INFINITY))
-            .fold(0f32, f32::max);
-        here.retain(|e| e.distance.unwrap_or(f32::INFINITY) == far);
-        match aperture {
-            Some(av) if here.iter().any(|e| e.aperture.is_some()) => {
-                here.sort_by(|a, b| {
-                    a.aperture
-                        .unwrap_or(0.)
-                        .total_cmp(&b.aperture.unwrap_or(0.))
-                });
-                let below = here
-                    .iter()
-                    .rev()
-                    .find(|e| e.aperture.unwrap_or(0.) <= av)
-                    .or(here.first())?;
-                let above = here
-                    .iter()
-                    .find(|e| e.aperture.unwrap_or(0.) >= av)
-                    .or(here.last())?;
-                let (a0, a1) = (below.aperture.unwrap_or(av), above.aperture.unwrap_or(av));
-                let t = if a1 > a0 { (av - a0) / (a1 - a0) } else { 0. };
-                Some((mix(get(below)?, get(above)?, t), below.focal))
+        let here: Vec<&&&Entry> = with.iter().filter(|e| e.focal == f).collect();
+        // Blend the two entries around the photo's focus distance in 1/distance, which
+        // is 0 at infinity. Past either end the nearest entry applies, so a photo
+        // without a distance takes the farthest, as Lightroom does without distance data.
+        let mut keys: Vec<f32> = here.iter().map(|e| inv(e.distance)).collect();
+        keys.sort_by(f32::total_cmp);
+        keys.dedup();
+        let want = inv(Some(distance));
+        let (k0, k1) = (
+            *keys.iter().rev().find(|k| **k <= want).or(keys.first())?,
+            *keys.iter().find(|k| **k >= want).or(keys.last())?,
+        );
+        let at_distance = |k: f32| {
+            let mut here: Vec<&&&Entry> = here
+                .iter()
+                .filter(|e| inv(e.distance) == k)
+                .copied()
+                .collect();
+            match aperture {
+                Some(av) if here.iter().any(|e| e.aperture.is_some()) => {
+                    here.sort_by(|a, b| {
+                        a.aperture
+                            .unwrap_or(0.)
+                            .total_cmp(&b.aperture.unwrap_or(0.))
+                    });
+                    let below = here
+                        .iter()
+                        .rev()
+                        .find(|e| e.aperture.unwrap_or(0.) <= av)
+                        .or(here.first())?;
+                    let above = here
+                        .iter()
+                        .find(|e| e.aperture.unwrap_or(0.) >= av)
+                        .or(here.last())?;
+                    let (a0, a1) = (below.aperture.unwrap_or(av), above.aperture.unwrap_or(av));
+                    let t = if a1 > a0 { (av - a0) / (a1 - a0) } else { 0. };
+                    Some((mix(get(below)?, get(above)?, t), below.focal))
+                }
+                _ => here.first().and_then(|e| get(e).map(|v| (v, e.focal))),
             }
-            _ => here.first().and_then(|e| get(e).map(|v| (v, e.focal))),
-        }
+        };
+        let t = if k1 > k0 { (want - k0) / (k1 - k0) } else { 0. };
+        let (a, _) = at_distance(k0)?;
+        let (b, _) = at_distance(k1)?;
+        Some((mix(a, b, t), f))
     };
     let (a, _) = at_focal(*lo)?;
     let (b, _) = at_focal(*hi)?;
@@ -279,6 +301,7 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
             &found,
             focal,
             None,
+            m.focus_distance,
             |e| e.centre,
             |a, b, t| std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t),
         )
@@ -325,6 +348,7 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
             &found,
             focal,
             None,
+            m.focus_distance,
             |e| e.distortion.map(|p| normalized(e, p)),
             mix3,
         )
@@ -334,6 +358,7 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
         &found,
         focal,
         av,
+        m.focus_distance,
         |e| e.vignette.map(|p| normalized(e, p)),
         mix3,
     )
@@ -343,6 +368,7 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
             &found,
             focal,
             None,
+            m.focus_distance,
             |e| get(e).map(|(s, p)| (s, normalized(e, p))),
             |a, b, t| (a.0 + (b.0 - a.0) * t, mix3(a.1, b.1, t)),
         )
@@ -837,6 +863,27 @@ mod tests {
             ..Default::default()
         }
     }
+    #[test]
+    fn the_focus_distance_picks_the_entries_around_it() {
+        let text = SAMPLE.replace(
+            r#"FocusDistance="3" stCamera:ApertureValue="2""#,
+            r#"FocusDistance="1" stCamera:ApertureValue="2""#,
+        );
+        let entries = parse(&text).unwrap();
+        let at = |d: f32| {
+            let mut m = a7ii(2.);
+            m.focus_distance = d;
+            let c = correction(&entries, &m).unwrap();
+            c.vignetting_gain(1.)
+        };
+        let (far, near) = (at(0.), at(1.));
+        assert!(far != near);
+        // Past either end the nearest entry applies; between them the gain blends.
+        assert_eq!(at(f32::INFINITY), far);
+        assert_eq!(at(0.5), near);
+        assert!((at(1.5) - far).abs() < (near - far).abs());
+    }
+
     #[test]
     fn parses_and_evaluates_sony_profile() {
         let entries = parse(SAMPLE).unwrap();
