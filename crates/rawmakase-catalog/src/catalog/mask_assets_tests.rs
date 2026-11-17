@@ -544,3 +544,26 @@ fn ids_of_other_shapes_are_kept_while_a_text_holds_them() -> Result<()> {
     );
     Ok(())
 }
+
+/// Two windows opening the catalog at once both find the look due before either
+/// has looked; the second, looking right after the first, deletes nothing the
+/// first just found unnamed.
+#[test]
+fn two_windows_opening_at_once_look_through_once() -> Result<()> {
+    use super::lightroom_archive::faults::RACE_RASTER_CHECK;
+    let (dir, mut cat, file, id) = catalog()?;
+    let path = dir.path().join("Masks.rawmakase");
+    let spot = generated(6.0);
+    save(&mut cat, id, &file, &spot)?;
+    save(&mut cat, id, &file, &Recipe::default())?;
+    drop(cat);
+    let first = opened_a_week_later(&path)?;
+    assert!(has(&first, &spot)?);
+    let mut second = Catalog::open(&path)?;
+    RACE_RASTER_CHECK.with(|f| f.set(true));
+    let result = second.remove_unused_data(&mut |_| {});
+    RACE_RASTER_CHECK.with(|f| f.set(false));
+    assert_eq!(result, None);
+    assert!(has(&second, &spot)?);
+    Ok(())
+}

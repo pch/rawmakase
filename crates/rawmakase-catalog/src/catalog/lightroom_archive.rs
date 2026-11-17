@@ -59,11 +59,18 @@ impl Catalog {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
-        let checked = self
-            .meta(RASTERS_CHECKED)?
-            .and_then(|at| at.parse::<u64>().ok());
         // A time ahead of now (a clock set back) doesn't put the check off.
-        if checked.is_some_and(|at| at <= now && now - at < RASTER_CHECK_EVERY) {
+        let recent = |checked: Option<String>| {
+            checked
+                .and_then(|at| at.parse::<u64>().ok())
+                .is_some_and(|at| at <= now && now - at < RASTER_CHECK_EVERY)
+        };
+        // Read first without the write lock, so most opens don't take it.
+        #[cfg(test)]
+        let skip_first_read = faults::RACE_RASTER_CHECK.with(|f| f.get());
+        #[cfg(not(test))]
+        let skip_first_read = false;
+        if !skip_first_read && recent(self.meta(RASTERS_CHECKED)?) {
             return Ok(());
         }
         let any: bool = self
@@ -72,7 +79,17 @@ impl Catalog {
         if !any || self.ensure_known_tables().is_err() {
             return Ok(());
         }
-        self.db.write(|w| {
+        // Immediate, and read again under the lock: another window opening the
+        // catalog at the same time may have looked since, and two looks seconds
+        // apart must not count as a week's wait.
+        self.db.write_immediate(|w| {
+            let checked: Option<String> = w.read_optional(
+                sql!("SELECT value FROM meta WHERE key=?"),
+                &[&RASTERS_CHECKED],
+            )?;
+            if recent(checked) {
+                return Ok(());
+            }
             super::set_meta(w, RASTERS_CHECKED, &now.to_string())?;
             let before: Option<String> = w.read_optional(
                 sql!("SELECT value FROM meta WHERE key=?"),
@@ -150,5 +167,8 @@ pub(super) mod faults {
     thread_local! {
         /// Compacting fails, as it does without enough free space.
         pub(in crate::catalog) static FAIL_COMPACTION: Cell<bool> = const { Cell::new(false) };
+        /// Looking through the rasters goes ahead as if its first read of when
+        /// they were last looked through came before another window's look.
+        pub(in crate::catalog) static RACE_RASTER_CHECK: Cell<bool> = const { Cell::new(false) };
     }
 }
