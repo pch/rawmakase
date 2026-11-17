@@ -2,8 +2,9 @@
 //!
 //! `Catalog` owns the connection; `schema.sql` owns every table. The catalog's
 //! operations are grouped by what they change: browsing queries and relinking
-//! here, edits in `edits`, virtual copies in `copies`, adding folders in
-//! `ingest`, and everything Lightroom-specific under `lightroom`.
+//! here, collections in `collections`, edits in `edits`, virtual copies in
+//! `copies`, adding folders in `ingest`, and everything Lightroom-specific
+//! under `lightroom`.
 use anyhow::{Result, ensure};
 use db::{Db, Reads, Write, sql};
 use std::path::Path;
@@ -24,6 +25,7 @@ pub struct Catalog {
 }
 
 mod checksums;
+mod collections;
 mod copies;
 mod db;
 mod defaults;
@@ -60,6 +62,7 @@ pub use crate::ids::{CollectionId, FolderId, PhotoId, RootId, StackId};
 pub use crate::xmp::descriptive::Read as FileMetadata;
 #[doc(hidden)]
 pub use checksums::ReadChecksum;
+pub use collections::{CollectionOptions, Member, MembershipChange, Position, RemovedCollections};
 pub use db::assert_shape as assert_sql_shape;
 pub use defaults::{CameraExifReader, ImportOptions, MetadataDefaults, NewPhotoDefaults};
 pub use descriptive::MetadataSnapshot;
@@ -257,106 +260,6 @@ impl Catalog {
             })
             .collect())
     }
-    pub fn collections(&self) -> Result<Vec<Collection>> {
-        row! {
-            struct CollectionRow {
-                id: CollectionId,
-                name: String,
-                parent: Option<CollectionId>,
-                kind: String,
-            }
-        }
-        let rows: Vec<CollectionRow> = self.db.read(
-            sql!("SELECT id, name, parent, kind FROM collections ORDER BY name"),
-            &[],
-        )?;
-        Ok(rows
-            .into_iter()
-            .map(|r| Collection {
-                id: r.id,
-                kind: CollectionKind::from_lightroom(&r.kind, &r.name),
-                name: r.name,
-                parent: r.parent,
-            })
-            .collect())
-    }
-    /// Lightroom's Quick Collection: the one imported with the catalog, or a
-    /// new one made the same way.
-    pub fn quick_collection(&mut self) -> Result<CollectionId> {
-        const KIND: &str = "com.adobe.ag.library.collection";
-        let found = self.db.read_optional(
-            sql!("SELECT id FROM collections WHERE name=?1 AND kind=?2 AND parent IS NULL"),
-            &[&models::QUICK_COLLECTION, &KIND],
-        )?;
-        if let Some(id) = found {
-            return Ok(id);
-        }
-        self.db.write(|w| {
-            w.insert_returning_id(
-                sql!(
-                    "INSERT INTO collections(name, parent, kind) VALUES (?, NULL, ?) RETURNING id"
-                ),
-                &[&models::QUICK_COLLECTION, &KIND],
-            )
-        })
-    }
-    /// Adds `add` to and removes `remove` from a collection, in one transaction.
-    pub fn change_collection(
-        &mut self,
-        collection: CollectionId,
-        add: &[PhotoId],
-        remove: &[PhotoId],
-    ) -> Result<()> {
-        self.db.write(|w| {
-            for photo in add {
-                w.execute(
-                    sql!(
-                        "INSERT INTO collection_photos(collection, photo) VALUES (?, ?)
-                         ON CONFLICT DO NOTHING"
-                    ),
-                    &[&collection, photo],
-                )?;
-            }
-            for photo in remove {
-                w.execute(
-                    sql!("DELETE FROM collection_photos WHERE collection=? AND photo=?"),
-                    &[&collection, photo],
-                )?;
-            }
-            Ok(())
-        })
-    }
-    /// Every collection's photos, by collection.
-    pub fn collection_photos(
-        &self,
-    ) -> Result<std::collections::HashMap<CollectionId, std::collections::HashSet<PhotoId>>> {
-        row! {
-            struct Member {
-                collection: CollectionId,
-                photo: PhotoId,
-            }
-        }
-        let mut members: std::collections::HashMap<_, std::collections::HashSet<_>> =
-            Default::default();
-        let rows: Vec<Member> = self
-            .db
-            .read(sql!("SELECT collection, photo FROM collection_photos"), &[])?;
-        for row in rows {
-            members.entry(row.collection).or_default().insert(row.photo);
-        }
-        Ok(members)
-    }
-    #[cfg(test)]
-    pub(crate) fn collection_members(
-        &self,
-        id: CollectionId,
-    ) -> Result<std::collections::HashSet<PhotoId>> {
-        let members: Vec<PhotoId> = self.db.read(
-            sql!("SELECT photo FROM collection_photos WHERE collection=?"),
-            &[&id],
-        )?;
-        Ok(members.into_iter().collect())
-    }
     /// Every root: where it was added and this computer's location of it.
     pub fn roots(&self) -> Result<Vec<(RootId, String, Option<String>)>> {
         row! {
@@ -427,6 +330,8 @@ pub use sidecar::Merge;
 mod boundary_tests;
 #[cfg(test)]
 mod checksums_tests;
+#[cfg(test)]
+mod collections_tests;
 #[cfg(test)]
 mod descriptive_tests;
 #[cfg(test)]

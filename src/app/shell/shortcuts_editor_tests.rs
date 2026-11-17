@@ -218,6 +218,16 @@ fn quick_collection_toggles_shows_clears_and_undoes() -> anyhow::Result<()> {
         .find(|c| c.name == crate::catalog::QUICK_COLLECTION)
         .unwrap();
     assert_eq!(reopened.collection_photos()?[&quick.id].len(), 2);
+    // Undo put them back where they were in its order, as B placed them.
+    let positions: Vec<_> = reopened
+        .collection_members(quick.id)?
+        .into_iter()
+        .map(|(id, p)| (id, p.map(|p| p.as_str().to_string())))
+        .collect();
+    // Listed by photo id, which needn't be the order B added them in.
+    let mut expected = vec![(ids[0], Some("1".into())), (ids[1], Some("2".into()))];
+    expected.sort();
+    assert_eq!(positions, expected);
     Ok(())
 }
 

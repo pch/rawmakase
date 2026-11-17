@@ -8,8 +8,26 @@ impl Catalog {
     /// Lightroom's Create Virtual Copy: a new photo of the same file with the
     /// edit, rating, flag, label, keywords and descriptive metadata of `id`, named "Copy N" after
     /// its master's other copies, stacked right after `id` (see `stacks`).
-    /// Returns the copy's id.
+    /// As in Lightroom Classic made from a folder, the copy joins the Quick
+    /// Collection when `id` is in it, and none of `id`'s other collections
+    /// (see [`super::collections::copy_memberships`]). Returns the copy's id.
     pub fn create_virtual_copy(&mut self, id: PhotoId) -> Result<PhotoId> {
+        self.make_virtual_copy(id, None)
+    }
+    /// [`Catalog::create_virtual_copy`] while collection `viewing` is shown:
+    /// the copy also joins it when `id` is in it, as Lightroom's does.
+    pub fn create_virtual_copy_viewing(
+        &mut self,
+        id: PhotoId,
+        viewing: super::CollectionId,
+    ) -> Result<PhotoId> {
+        self.make_virtual_copy(id, Some(viewing))
+    }
+    fn make_virtual_copy(
+        &mut self,
+        id: PhotoId,
+        viewing: Option<super::CollectionId>,
+    ) -> Result<PhotoId> {
         let master: PhotoId = self
             .db
             .read_optional(
@@ -40,6 +58,7 @@ impl Catalog {
             )?;
             super::descriptive::copy_rows(w, id, copy)?;
             super::stacks::stack_copy(w, id, copy)?;
+            super::collections::copy_memberships(w, id, copy, viewing)?;
             Ok(copy)
         })
     }

@@ -4,7 +4,7 @@
 //! change is one undoable command.
 use super::{Library, Place};
 use crate::app::ui::widgets::plural;
-use crate::catalog::PhotoId;
+use crate::catalog::{Member, MembershipChange, PhotoId};
 use anyhow::Result;
 
 /// A change to a collection's photos, for the shared undo log.
@@ -13,8 +13,10 @@ pub(crate) struct CollectionCommand {
     /// Orders it among other changes made in the same frame.
     pub sequence: u64,
     pub collection: crate::catalog::CollectionId,
-    pub added: Vec<PhotoId>,
-    pub removed: Vec<PhotoId>,
+    /// The photos it added and took out, each with its position, so Undo
+    /// and Redo put them back where they were.
+    pub added: Vec<Member>,
+    pub removed: Vec<Member>,
     pub place_before: Place,
     pub place_after: Place,
     /// What changed, as the status line said it.
@@ -119,45 +121,65 @@ impl Library {
     pub(super) fn record_collection(
         &mut self,
         collection: crate::catalog::CollectionId,
-        added: Vec<PhotoId>,
-        removed: Vec<PhotoId>,
+        add: Vec<PhotoId>,
+        remove: Vec<PhotoId>,
         summary: String,
     ) -> Result<()> {
         let place_before = self.place();
-        self.change_collection(collection, &added, &removed)?;
+        let change = self.change_collection(collection, &add, &remove)?;
         self.messages.note(summary.clone());
         self.collection_done.push(CollectionCommand {
             sequence: crate::edit_session::sequence(),
             collection,
-            added,
-            removed,
+            added: change.added,
+            removed: change.removed,
             place_before,
             place_after: self.place(),
             summary,
         });
         Ok(())
     }
-    /// Adds and removes photos, in the catalog and as shown; for commands
-    /// and their undo.
+    /// Adds photos after the collection's last and removes others, in the
+    /// catalog and as shown, for commands.
     pub(in crate::app) fn change_collection(
         &mut self,
         collection: crate::catalog::CollectionId,
         add: &[PhotoId],
         remove: &[PhotoId],
-    ) -> Result<()> {
-        // A photo removed since (a virtual copy) is left out.
-        let add: Vec<PhotoId> = add
+    ) -> Result<MembershipChange> {
+        let change = self.session.change_collection(collection, add, remove)?;
+        self.show_members(collection);
+        Ok(change)
+    }
+    /// Puts photos back where they were and removes others, in the catalog
+    /// and as shown, for Undo and Redo. A photo removed since (a virtual
+    /// copy) stays out.
+    pub(in crate::app) fn put_back_members(
+        &mut self,
+        collection: crate::catalog::CollectionId,
+        add: &[Member],
+        remove: &[PhotoId],
+    ) -> Result<MembershipChange> {
+        let add: Vec<Member> = add
             .iter()
-            .copied()
-            .filter(|id| self.photo(*id).is_some())
+            .filter(|(id, _)| self.photo(*id).is_some())
+            .cloned()
             .collect();
-        let add = add.as_slice();
-        let members = self.session.change_collection(collection, add, remove)?;
+        let change = self.session.put_back_members(collection, &add, remove)?;
+        self.show_members(collection);
+        Ok(change)
+    }
+    /// Shows a collection's photos as they now are, when it is shown.
+    fn show_members(&mut self, collection: crate::catalog::CollectionId) {
         if self.filters.collection == Some(collection) {
-            self.filters.members = members.clone();
+            self.filters.members = self
+                .session
+                .collection_photos()
+                .get(&collection)
+                .cloned()
+                .unwrap_or_default();
             self.filter();
         }
-        Ok(())
     }
     /// The collection changes made since the last call, for the undo log.
     pub(in crate::app) fn take_collection_done(&mut self) -> Vec<CollectionCommand> {
