@@ -4020,7 +4020,7 @@ fn a_shift_click_range_skips_a_folded_drive_known_by_its_id() -> Result<()> {
     library
         .expanded
         .insert(super::sidebar::collapsed_key(&disk("1111-1111")));
-    let rows = library.folder_rows(&trees);
+    let rows = library.folder_rows(&trees, None);
     assert_eq!(rows, [wedding.as_str()]);
     library.click_folder(&wedding, Click::Range, &rows);
     assert_eq!(library.selected_folders.keys(), [wedding]);
@@ -4107,7 +4107,211 @@ fn a_folder_located_on_another_drive_shows_under_that_drive() -> Result<()> {
     assert_eq!(root_tree.children["Party"].path, party);
     // Each drive counts the photos on it.
     assert_eq!(trees.drive_photos(), vec![1, 1]);
+    // Filter Folders finds a folder under the drive it shows under, with the
+    // rows above it there, the drive folded away or not (#1004).
+    let other = drive("Other", &directory.path().join("other"));
+    library
+        .expanded
+        .insert(super::sidebar::collapsed_key(&other));
+    library.folder_filter = "card".into();
+    let filter = library.folder_filter(&trees).expect("a filter");
+    let wedding_card = format!("root:{id}/Wedding/RAW/Card 1");
+    assert_eq!(
+        filter.matches,
+        [format!("root:{id}/Party/RAW/Card 1"), wedding_card.clone()]
+    );
+    let rows = library.folder_rows(&trees, Some(&filter));
+    let want = [
+        format!("root:{id}"),
+        format!("root:{id}/Party"),
+        format!("root:{id}/Party/RAW"),
+        format!("root:{id}/Party/RAW/Card 1"),
+        format!("root:{id}/Wedding"),
+        format!("root:{id}/Wedding/RAW"),
+        wedding_card.clone(),
+    ];
+    assert_eq!(rows, want);
+    drop(filter);
+    // Chosen with Enter: its own drive and the rows above it there unfold,
+    // not its root's on the other drive.
+    library.reveal_folder(&trees, &wedding_card);
+    assert!(
+        !library
+            .expanded
+            .contains(&super::sidebar::collapsed_key(&other))
+    );
+    assert!(library.expanded.contains(&format!("root:{id}/Wedding")));
+    assert!(library.expanded.contains(&format!("root:{id}/Wedding/RAW")));
+    assert!(!library.expanded.contains(&format!("root:{id}")));
+    library.folder_filter.clear();
+    assert!(
+        library
+            .folder_rows(&trees, None)
+            .contains(&wedding_card.as_str())
+    );
     Ok(())
+}
+
+/// Filter Folders keeps the folders chosen in view though their names don't
+/// hold the text, as Lightroom does, but Enter never takes one of them.
+#[test]
+fn filter_folders_keeps_the_folders_chosen_but_finds_only_matches() -> Result<()> {
+    use super::folder_selection::Click;
+    let directory = tempfile::tempdir()?;
+    let root = directory.path().join("photos");
+    for folder in ["Aegean/Phase", "Beta", "Pharos"] {
+        let folder = root.join(folder);
+        std::fs::create_dir_all(&folder)?;
+        std::fs::write(folder.join("a.RAF"), b"synthetic raw")?;
+    }
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&root)?;
+    let mut library = Library::load(&path, egui::Context::default())?;
+    let ctx = library.ctx.clone();
+    let mut output = ctx.run_ui(Default::default(), |ui| {
+        egui::Panel::left("sidebar").show(ui, |ui| library.sidebar(ui));
+    });
+    output.textures_delta.clear();
+    let trees = library.sidebar_trees.clone().unwrap();
+    let id = library.session.roots()[0].0;
+    let key = |logical: &str| format!("root:{id}/{logical}");
+    let beta = key("Beta");
+    library.click_folder(&beta, Click::Replace, &[&beta]);
+    library.folder_filter = "pha".into();
+    let filter = library.folder_filter(&trees).unwrap();
+    assert_eq!(filter.matches, [key("Aegean/Phase"), key("Pharos")]);
+    let rows = library.folder_rows(&trees, Some(&filter));
+    assert_eq!(
+        rows,
+        [
+            format!("root:{id}"),
+            key("Aegean"),
+            key("Aegean/Phase"),
+            beta.clone(),
+            key("Pharos")
+        ]
+    );
+    // A Shift-click from Beta spans the rows shown.
+    library.click_folder(&key("Pharos"), Click::Range, &rows);
+    assert_eq!(
+        library.selected_folders.keys(),
+        [beta.clone(), key("Pharos")]
+    );
+    // Nothing found: Beta is still shown, and no match is offered.
+    library.click_folder(&beta, Click::Replace, &[&beta]);
+    library.folder_filter = "zzzz".into();
+    let filter = library.folder_filter(&trees).unwrap();
+    assert!(filter.matches.is_empty());
+    assert_eq!(
+        library.folder_rows(&trees, Some(&filter)),
+        [format!("root:{id}"), beta]
+    );
+    Ok(())
+}
+
+/// While filtering, a click on a chevron chooses the folder and leaves what
+/// the user unfolded as it was.
+#[test]
+fn a_chevron_clicked_while_filtering_leaves_the_folders_unfolded_alone() {
+    use super::tree::{FolderFilter, TreeView, folder_tree_row_in};
+    let ctx = egui::Context::default();
+    let mut root = FolderNode::root(RootId(42), "Photos".into(), "/photos".into());
+    for (relative, id) in [("Aegean/Phase", 1), ("Beta", 2)] {
+        root.insert(
+            &Folder {
+                id: FolderId(id as _),
+                root: RootId(42),
+                relative: relative.into(),
+                path: format!("/photos/{relative}").into(),
+                count: 1,
+            },
+            &HashMap::new(),
+        );
+    }
+    root.finish();
+    let mut filter = FolderFilter::default();
+    root.filter_into("pha", &HashSet::new(), &mut filter);
+    let view = TreeView {
+        filter: Some(&filter),
+        scroll_to: None,
+    };
+    let mut expanded = HashSet::new();
+    let mut frame = |events: Vec<egui::Event>| {
+        let mut action = None;
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(360., 240.),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                action = folder_tree_row_in(
+                    ui,
+                    &root,
+                    0,
+                    &mut expanded,
+                    &Default::default(),
+                    true,
+                    &view,
+                );
+            },
+        );
+        output.textures_delta.clear();
+        action
+    };
+    frame(vec![]);
+    // The root's chevron, in the gutter of its row.
+    let at = egui::pos2(12., 11.);
+    frame(vec![egui::Event::PointerMoved(at)]);
+    for pressed in [true, false] {
+        frame(vec![egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        }]);
+    }
+    assert!(expanded.is_empty());
+}
+
+/// A thousand folders, all chosen, are filtered in one pass over the tree.
+#[test]
+fn filtering_a_thousand_chosen_folders_finds_each_once() {
+    let mut root = FolderNode::root(RootId(1), "Photos".into(), "/photos".into());
+    for i in 0..1000 {
+        let relative = format!("{:03}/Day {i}", i % 100);
+        root.insert(
+            &Folder {
+                id: FolderId(i as _),
+                root: RootId(1),
+                relative: relative.clone(),
+                path: format!("/photos/{relative}").into(),
+                count: 1,
+            },
+            &HashMap::new(),
+        );
+    }
+    root.finish();
+    let mut keys = Vec::new();
+    root.shown_rows(
+        &std::iter::once(root.key.clone())
+            .chain(root.children.values().map(|c| c.key.clone()))
+            .collect(),
+        None,
+        &mut keys,
+    );
+    let selected: HashSet<&str> = keys.iter().copied().collect();
+    let mut filter = super::tree::FolderFilter::default();
+    let started = std::time::Instant::now();
+    root.filter_into("day 99", &selected, &mut filter);
+    // Generous: the pass is linear, a few milliseconds even in a debug build.
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    // Day 99 and Day 990 to Day 999.
+    assert_eq!(filter.matches.len(), 11);
+    assert!(keys.iter().all(|k| filter.shows(k)));
 }
 
 #[test]

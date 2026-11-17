@@ -212,6 +212,10 @@ pub(crate) struct Library {
     /// photos too; see `show_subfolders`.
     subfolders_shown: bool,
     expanded: HashSet<String>,
+    /// The text typed in Filter Folders, kept for this Library only.
+    folder_filter: String,
+    /// A folder row to scroll into view once it is drawn, by key.
+    scroll_to_folder: Option<String>,
     /// A folder renamed or moved: its tree key there as planned, and its
     /// catalog folders by the keys that gave them, until the catalog is
     /// read again and names them as the disk does there.
@@ -357,6 +361,8 @@ impl Library {
             selected_folders: Default::default(),
             subfolders_shown: true,
             expanded: HashSet::new(),
+            folder_filter: String::new(),
+            scroll_to_folder: None,
             following: None,
             new_folder_in: None,
             thumb_size: 190.,
@@ -1783,6 +1789,7 @@ pub(in crate::app) mod smart;
 pub(in crate::app) mod smart_editor;
 #[cfg(test)]
 mod smart_tests;
+pub(crate) use sidebar::take_folder_filter_escape;
 mod sort;
 mod stacks;
 mod stage;

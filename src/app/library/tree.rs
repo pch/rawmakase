@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 pub(super) struct FolderNode {
     pub(super) key: String,
     pub(super) name: String,
+    /// [`Self::name`] in lowercase, which Filter Folders matches against.
+    pub(super) name_lower: String,
     pub(super) path: PathBuf,
     pub(super) root: Option<RootId>,
     /// The root it is in, and its logical path there ("" for the root).
@@ -25,6 +27,7 @@ impl FolderNode {
     pub(super) fn root(id: RootId, name: String, path: PathBuf) -> Self {
         Self {
             key: format!("root:{id}"),
+            name_lower: name.to_lowercase(),
             name,
             path,
             root: Some(id),
@@ -53,6 +56,7 @@ impl FolderNode {
                 .or_insert_with(|| FolderNode {
                     key,
                     name: component.into(),
+                    name_lower: component.to_lowercase(),
                     path,
                     in_root,
                     logical,
@@ -94,13 +98,79 @@ impl FolderNode {
         }
     }
     /// The keys of this row and the rows unfolded below it, in the order
-    /// they are drawn.
-    pub(super) fn shown_rows<'a>(&'a self, expanded: &HashSet<String>, rows: &mut Vec<&'a str>) {
+    /// they are drawn. While the Folders panel is filtered, the rows are those
+    /// `filter` shows, whatever is unfolded.
+    pub(super) fn shown_rows<'a>(
+        &'a self,
+        expanded: &HashSet<String>,
+        filter: Option<&FolderFilter>,
+        rows: &mut Vec<&'a str>,
+    ) {
         rows.push(&self.key);
-        if expanded.contains(&self.key) {
+        if FolderFilter::opens(filter, self, expanded) {
             for child in self.children.values() {
-                child.shown_rows(expanded, rows);
+                if filter.is_none_or(|f| f.shows(&child.key)) {
+                    child.shown_rows(expanded, filter, rows);
+                }
             }
+        }
+    }
+    /// Adds this row and those below it to `filter`: the folders whose names
+    /// hold `needle` (lowercase), the folders in `selected`, and the rows
+    /// above either. Returns whether this row is shown.
+    pub(super) fn filter_into<'a>(
+        &'a self,
+        needle: &str,
+        selected: &HashSet<&str>,
+        filter: &mut FolderFilter<'a>,
+    ) -> bool {
+        let matches = self.name_lower.contains(needle);
+        // Before the rows below, so the matches are in the order drawn.
+        if matches {
+            filter.matches.push(&self.key);
+        }
+        let mut shown = matches || selected.contains(self.key.as_str());
+        for child in self.children.values() {
+            shown |= child.filter_into(needle, selected, filter);
+        }
+        if shown {
+            filter.shown.insert(&self.key);
+        }
+        shown
+    }
+    /// The keys of the rows from this one down to the row with key `key`,
+    /// that row excluded; `None` if it isn't below this one.
+    pub(super) fn path_to<'a>(&'a self, key: &str) -> Option<Vec<&'a str>> {
+        if self.key == key {
+            return Some(Vec::new());
+        }
+        self.children.values().find_map(|child| {
+            let mut path = child.path_to(key)?;
+            path.insert(0, &self.key);
+            Some(path)
+        })
+    }
+}
+/// What Filter Folders shows of the Folders panel's trees: the folders whose
+/// names hold the text typed, the folders chosen (shown as Lightroom keeps the
+/// selection in view), and the rows above them, unfolded.
+#[derive(Default)]
+pub(super) struct FolderFilter<'a> {
+    /// The rows shown.
+    shown: HashSet<&'a str>,
+    /// The rows whose names hold the text, in the order they are drawn.
+    pub(super) matches: Vec<&'a str>,
+}
+impl FolderFilter<'_> {
+    pub(super) fn shows(&self, key: &str) -> bool {
+        self.shown.contains(key)
+    }
+    /// Whether `node`'s rows below it are drawn: while filtering, when one of
+    /// them is shown, whatever the user unfolded; otherwise as unfolded.
+    fn opens(filter: Option<&Self>, node: &FolderNode, expanded: &HashSet<String>) -> bool {
+        match filter {
+            Some(filter) => node.children.values().any(|c| filter.shows(&c.key)),
+            None => expanded.contains(&node.key),
         }
     }
 }
@@ -222,6 +292,8 @@ pub(super) fn dragged_chip(ui: &egui::Ui, name: &str, icon: Icon) {
         palette.tone(Tone::STRONG),
     );
 }
+/// [`folder_tree_row_in`] unfiltered, with nothing to scroll to.
+#[cfg(test)]
 pub(super) fn folder_tree_row(
     ui: &mut egui::Ui,
     node: &FolderNode,
@@ -229,6 +301,29 @@ pub(super) fn folder_tree_row(
     expanded: &mut HashSet<String>,
     selected: &FolderSelection,
     subfolders: bool,
+) -> Option<TreeAction> {
+    let view = TreeView::default();
+    folder_tree_row_in(ui, node, depth, expanded, selected, subfolders, &view)
+}
+/// How the Folders panel draws its rows beyond what is unfolded.
+#[derive(Default)]
+pub(super) struct TreeView<'a> {
+    /// Filter Folders' rows, while it holds text.
+    pub(super) filter: Option<&'a FolderFilter<'a>>,
+    /// The row to scroll into view, by key.
+    pub(super) scroll_to: Option<&'a str>,
+}
+/// One row of the Folders panel and those unfolded below it, filtered and
+/// scrolled as `view` says, with its menu and drops; returns what was asked
+/// of it.
+pub(super) fn folder_tree_row_in(
+    ui: &mut egui::Ui,
+    node: &FolderNode,
+    depth: usize,
+    expanded: &mut HashSet<String>,
+    selected: &FolderSelection,
+    subfolders: bool,
+    view: &TreeView,
 ) -> Option<TreeAction> {
     let palette = theme::palette(ui.ctx());
     use egui::{Align2, FontId, Pos2, Rect, Sense};
@@ -251,8 +346,14 @@ pub(super) fn folder_tree_row(
         dragged_chip(ui, &dragged.name, Icon::Folder);
     }
     let painter = ui.painter();
+    if view.scroll_to == Some(node.key.as_str()) {
+        response.scroll_to_me(Some(egui::Align::Center));
+    }
     let active = selected.contains(&node.key);
-    let open = expanded.contains(&node.key);
+    let open = FolderFilter::opens(view.filter, node, expanded);
+    // While filtering, the rows shown are unfolded whatever the user
+    // unfolded, which a click on a chevron leaves as it was.
+    let folds = view.filter.is_none() && !node.children.is_empty();
     // Not where it is already, nor itself or a folder in it; any folder of
     // another root (whose drive the plan checks). A root, only those.
     let takes = |d: &super::DraggedFolder| {
@@ -301,7 +402,7 @@ pub(super) fn folder_tree_row(
     // under a drive's dot; the folder icon under the drive's name.
     let x = rect.left() + indent + 12.;
     let y = rect.center().y;
-    if !node.children.is_empty() {
+    if folds || open {
         let chevron = if open {
             Icon::ChevronDown
         } else {
@@ -375,7 +476,7 @@ pub(super) fn folder_tree_row(
     }
     if response.clicked() && !crate::app::ui::widgets::context_clicked(&response) {
         let pointer = response.interact_pointer_pos().unwrap_or(rect.center());
-        if !node.children.is_empty() && pointer.x < x + 6. {
+        if folds && pointer.x < x + 6. {
             if open {
                 expanded.remove(&node.key);
             } else {
@@ -486,9 +587,14 @@ pub(super) fn folder_tree_row(
             ui.close();
         }
     });
-    if expanded.contains(&node.key) {
+    if open {
         for child in node.children.values() {
-            if let Some(a) = folder_tree_row(ui, child, depth + 1, expanded, selected, subfolders) {
+            if view.filter.is_some_and(|f| !f.shows(&child.key)) {
+                continue;
+            }
+            if let Some(a) =
+                folder_tree_row_in(ui, child, depth + 1, expanded, selected, subfolders, view)
+            {
                 action = Some(a)
             }
         }

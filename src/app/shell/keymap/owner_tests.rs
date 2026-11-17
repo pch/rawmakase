@@ -33,6 +33,8 @@ const FIXED: &[(&str, &str, usize)] = &[
     ("preferences/mod.rs", "consume_key(", 1),
     // A mask's name field keeps the old name on Escape.
     ("develop/tools/mask_tool.rs", "key_pressed(", 1),
+    // Filter Folders: its Enter, and its Escape taken before the frame's keys.
+    ("library/sidebar.rs", "consume_key(", 2),
     // A popup's own Escape.
     ("library/metadata_bar.rs", "key_pressed(", 1),
     // Widgets: the curve point's Delete, a focused number's arrows, the
