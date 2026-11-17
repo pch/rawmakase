@@ -199,6 +199,45 @@ impl Catalog {
             insert(w, &name, parent, kind)
         })
     }
+    /// Lightroom's Create Smart Collection: a smart collection named `name`,
+    /// trimmed, at the top or in set `parent`, with `rules`, in one
+    /// transaction, by the naming rules of [`Catalog::create_collection`].
+    pub fn create_smart_collection(
+        &mut self,
+        name: &str,
+        parent: Option<CollectionId>,
+        rules: &SmartRules,
+    ) -> Result<CollectionId> {
+        self.db.write(|w| {
+            if let Some(parent) = parent {
+                ensure_set(w, parent)?;
+            }
+            let name = usable_name(w, name, parent, None)?;
+            let id = insert(w, &name, parent, SMART_KIND)?;
+            write_rules(w, id, rules)?;
+            Ok(id)
+        })
+    }
+    /// What New Catalog adds, as Lightroom's does: its default smart
+    /// collections, in a set named "Smart Collections", with Lightroom's own
+    /// text for their rules. Not for a catalog imported from Lightroom, which
+    /// has Lightroom's.
+    pub fn add_default_smart_collections(&mut self) -> Result<()> {
+        use rawmakase_model::collection_rules::{LIGHTROOM_DEFAULTS, LIGHTROOM_DEFAULTS_SET};
+        self.db.write(|w| {
+            let set = insert(
+                w,
+                &usable_name(w, LIGHTROOM_DEFAULTS_SET, None, None)?,
+                None,
+                SET_KIND,
+            )?;
+            for (name, text) in LIGHTROOM_DEFAULTS {
+                let id = insert(w, name, Some(set), SMART_KIND)?;
+                write_rules(w, id, &SmartRules::from_lightroom(text))?;
+            }
+            Ok(())
+        })
+    }
     /// Renames a collection or set to `name`, trimmed, by the rules of
     /// [`Catalog::create_collection`]. The Quick Collection keeps its name.
     pub fn rename_collection(&mut self, id: CollectionId, name: &str) -> Result<()> {
@@ -636,6 +675,16 @@ impl Catalog {
                 Some(_) => bail!("Only a smart collection has rules"),
                 None => bail!("That collection is gone"),
             }
+        })
+    }
+    /// Takes smart collection `id`'s rules row away.
+    pub fn clear_smart_rules(&mut self, id: CollectionId) -> Result<()> {
+        self.db.write(|w| {
+            w.execute(
+                sql!("DELETE FROM smart_collection_rules WHERE collection=?"),
+                &[&id],
+            )?;
+            Ok(())
         })
     }
     /// Every keyword's Lightroom synonyms, by keyword id.

@@ -27,6 +27,7 @@ impl Editor {
             || self.folder_sync.is_reviewing()
             || self.file_ops.dialog_open()
             || self.auto_stack_open()
+            || self.smart_editor_open()
     }
     /// Carries out what the Library asked for this frame, in the order it asked
     /// (`library::outbox`). A request that opens a window (Remove Copy, Remove Folder,
@@ -105,6 +106,10 @@ impl Editor {
     /// Whether the Library's Auto-Stack by Capture Time window is open.
     pub(in crate::app) fn auto_stack_open(&self) -> bool {
         self.library.as_ref().is_some_and(|l| l.auto_stack_open())
+    }
+    /// Whether Create or Edit Smart Collection is open.
+    pub(in crate::app) fn smart_editor_open(&self) -> bool {
+        self.library.as_ref().is_some_and(|l| l.smart_editor_open())
     }
 
     /// The open Develop tool with keys of its own.
@@ -290,6 +295,9 @@ impl Editor {
         // builds keep the computer.
         let pace = self.preview_pace();
         if let Some(library) = &mut self.library {
+            // Over whatever is shown, an empty Library or Develop included:
+            // while it is open it holds the keys (`workspace_modal`).
+            library.smart_editor_window(&ctx);
             library.session.pause_checksums(busy);
             library.set_preview_pace(pace);
             library.publish_shown();
@@ -744,6 +752,21 @@ impl Editor {
         .clicked()
         {
             self.request_rejected_delete();
+            ui.close();
+        }
+        if menu_row(
+            ui,
+            Icon::SmartCollection,
+            "New Smart Collection…",
+            self.library.is_some(),
+        )
+        .on_hover_text("A collection of the photos that match rules, as Lightroom's")
+        .clicked()
+        {
+            self.module = Module::Library;
+            if let Some(library) = &mut self.library {
+                library.new_smart_collection();
+            }
             ui.close();
         }
         menu_separator(ui);

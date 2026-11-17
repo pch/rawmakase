@@ -227,6 +227,10 @@ pub(crate) struct Library {
     metadata_bar: metadata_bar::MetadataBar,
     /// Smart collections' members, as last taken from the session.
     smart: smart::Smart,
+    /// Create or Edit Smart Collection, while open.
+    smart_editor: Option<smart_editor::SmartEditor>,
+    /// Smart collection rule changes not yet handed to the undo log.
+    smart_done: Vec<smart_editor::SmartRulesCommand>,
     strip: filmstrip::State,
     /// Counts changes to the photos shown, their order or their metadata,
     /// so the filmstrip notices a change made after it was drawn.
@@ -343,6 +347,8 @@ impl Library {
             facets: Default::default(),
             metadata_bar: Default::default(),
             smart: Default::default(),
+            smart_editor: None,
+            smart_done: Vec::new(),
             strip: filmstrip::State::default(),
             shown_version: 0,
             visible: Vec::new(),
@@ -1692,6 +1698,7 @@ mod screen;
 mod selection;
 mod sidebar;
 pub(in crate::app) mod smart;
+pub(in crate::app) mod smart_editor;
 #[cfg(test)]
 mod smart_tests;
 mod sort;

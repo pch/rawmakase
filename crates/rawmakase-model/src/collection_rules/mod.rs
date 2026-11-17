@@ -17,6 +17,7 @@ mod attribute;
 mod bar;
 mod entry;
 mod eval;
+pub mod fields;
 pub mod lua;
 mod rules;
 
@@ -24,4 +25,6 @@ pub use attribute::{Attribute, Facets, PhotoFacets};
 pub use bar::{Bar, Kind, LABELS, Label, RatingOp};
 pub use entry::{EditFacts, Entry};
 pub use eval::{CRITERIA, Clock, Date, Matcher, Unsupported, criteria_name};
-pub use rules::{Combine, Group, Item, JSON_FORMAT, Malformed, Rule};
+pub use rules::{
+    Combine, Group, Item, JSON_FORMAT, LIGHTROOM_DEFAULTS, LIGHTROOM_DEFAULTS_SET, Malformed, Rule,
+};

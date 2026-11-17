@@ -222,7 +222,7 @@ impl Editor {
             move |tx| {
                 let result = (|| -> anyhow::Result<_> {
                     if create && !path.exists() {
-                        crate::catalog::Catalog::create(&path)?;
+                        crate::catalog::Catalog::create(&path)?.add_default_smart_collections()?;
                     }
                     open_for_user(
                         &CatalogLocation::File(path),
@@ -278,7 +278,8 @@ impl Editor {
                             else {
                                 return Ok(None);
                             };
-                            crate::catalog::Catalog::create(&path)?;
+                            crate::catalog::Catalog::create(&path)?
+                                .add_default_smart_collections()?;
                             Some(CatalogLocation::File(path))
                         }
                         CatalogDialog::Open => {

@@ -111,15 +111,23 @@ fn collapsed_key(id: CollectionId) -> String {
     format!("collection-set-collapsed:{id}")
 }
 
-/// Draws `node` and, unless it is a collapsed set, its children. Returns a
-/// collection that was clicked.
+/// What a click on a row asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RowAction {
+    Select(CollectionId),
+    /// Edit Smart Collection: a smart collection's double-click or menu.
+    EditSmart(CollectionId),
+}
+
+/// Draws `node` and, unless it is a collapsed set, its children. Returns
+/// what a click on one of them asked for.
 pub(super) fn collection_row(
     ui: &mut egui::Ui,
     node: &CollectionNode,
     depth: usize,
     expanded: &mut HashSet<String>,
     selected: Option<CollectionId>,
-) -> Option<CollectionId> {
+) -> Option<RowAction> {
     let palette = theme::palette(ui.ctx());
     use egui::{Align2, FontId, Pos2, Rect, Sense};
     let (rect, response) =
@@ -227,13 +235,24 @@ pub(super) fn collection_row(
                 expanded.insert(key);
             }
         } else {
-            clicked = Some(node.id);
+            clicked = Some(RowAction::Select(node.id));
         }
+    }
+    if node.smart.is_some() {
+        if response.double_clicked() {
+            clicked = Some(RowAction::EditSmart(node.id));
+        }
+        response.context_menu(|ui| {
+            if ui.button("Edit Smart Collection…").clicked() {
+                clicked = Some(RowAction::EditSmart(node.id));
+                ui.close();
+            }
+        });
     }
     if node.set && !expanded.contains(&collapsed_key(node.id)) {
         for child in &node.children {
-            if let Some(id) = collection_row(ui, child, depth + 1, expanded, selected) {
-                clicked = Some(id);
+            if let Some(action) = collection_row(ui, child, depth + 1, expanded, selected) {
+                clicked = Some(action);
             }
         }
     }

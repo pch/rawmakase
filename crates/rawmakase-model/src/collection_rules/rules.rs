@@ -78,6 +78,37 @@ impl Rule {
     }
 }
 
+/// The smart collections Lightroom Classic 15.6 puts in a new catalog, in a
+/// set named [`LIGHTROOM_DEFAULTS_SET`], with the text it saves for each.
+pub const LIGHTROOM_DEFAULTS: [(&str, &str); 6] = [
+    (
+        "Colored Red",
+        "s = {\n\t{\n\t\tcriteria = \"labelColor\",\n\t\toperation = \"==\",\n\t\tvalue = 1,\n\t},\n\tcombine = \"intersect\",\n}\n",
+    ),
+    (
+        "Five Stars",
+        "s = {\n\t{\n\t\tcriteria = \"rating\",\n\t\toperation = \">=\",\n\t\tvalue = 5,\n\t},\n\tcombine = \"intersect\",\n}\n",
+    ),
+    (
+        "Past Month",
+        "s = {\n\t{\n\t\tcriteria = \"captureTime\",\n\t\toperation = \"inLast\",\n\t\tvalue = 1,\n\t\tvalue_units = \"months\",\n\t},\n\tcombine = \"intersect\",\n}\n",
+    ),
+    (
+        "Recently Modified",
+        "s = {\n\t{\n\t\tcriteria = \"touchTime\",\n\t\toperation = \"inLast\",\n\t\tvalue = 2,\n\t\tvalue_units = \"days\",\n\t},\n\tcombine = \"intersect\",\n}\n",
+    ),
+    (
+        "Video Files",
+        "s = {\n\t{\n\t\tcriteria = \"fileFormat\",\n\t\toperation = \"==\",\n\t\tvalue = \"VIDEO\",\n\t},\n\tcombine = \"intersect\",\n}\n",
+    ),
+    (
+        "Without Keywords",
+        "s = {\n\t{\n\t\tcriteria = \"keywords\",\n\t\toperation = \"empty\",\n\t},\n\tcombine = \"intersect\",\n}\n",
+    ),
+];
+/// The set Lightroom puts its default smart collections in.
+pub const LIGHTROOM_DEFAULTS_SET: &str = "Smart Collections";
+
 /// Why rules were not read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Malformed(pub String);
