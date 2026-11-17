@@ -189,7 +189,7 @@ impl Editor {
         self.document.snapshots.list.iter().find(|s| s.id == id)
     }
     /// Applies a snapshot as one History step, as Lightroom does.
-    fn apply_snapshot(&mut self, id: i64) {
+    pub(in crate::app) fn apply_snapshot(&mut self, id: i64) {
         let Some(name) = self.snapshot(id).map(|s| s.name.clone()) else {
             return;
         };

@@ -100,9 +100,15 @@ impl Editor {
                 self.ensure_analysis();
             }
         }
-        if let Some((i, use_step)) = lightroom
-            && let Some(m) = &self.document.metadata
-        {
+        if let Some((i, use_step)) = lightroom {
+            self.use_lightroom_step(i, use_step);
+        }
+    }
+
+    /// Applies the photo's Lightroom History step `i` as a step, or copies
+    /// it to Before.
+    pub(in crate::app) fn use_lightroom_step(&mut self, i: usize, use_step: LightroomStep) {
+        if let Some(m) = &self.document.metadata {
             let step = &self.document.lightroom_history[i];
             match crate::lr_develop::convert_develop(
                 &step.text,
@@ -142,7 +148,7 @@ impl Editor {
 }
 /// What a click on a Lightroom History step asked for.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum LightroomStep {
+pub(in crate::app) enum LightroomStep {
     /// Apply it to the edit, as a step.
     Apply,
     /// Copy History Step Settings to Before.
