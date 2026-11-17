@@ -1134,3 +1134,69 @@ fn a_recipe_giving_a_key_twice_is_left_as_it_was() -> Result<()> {
     );
     Ok(())
 }
+
+/// A catalog upgraded twice keeps only the newest backup, once it has opened again
+/// after the second upgrade; the session that wrote a backup deletes none, and
+/// what isn't named as an upgrade names its backups, or isn't a catalog, stays.
+#[test]
+fn only_the_newest_backup_is_kept_once_the_catalog_opens_again() -> Result<()> {
+    let mut f = Earlier::new(6, 1)?;
+    f.close();
+    let name = f.path.file_name().unwrap().to_string_lossy().into_owned();
+    let dir = f.dir.path().to_path_buf();
+    let beside = |suffix: &str| dir.join(format!("{name}{suffix}"));
+    // What an earlier release's upgrade left: a copy of the catalog of format 2.
+    let first = beside(".before-upgrade-backup");
+    let older = Earlier::new(2, 1)?;
+    std::fs::copy(&older.path, &first)?;
+    // Renamed by the user, or not a catalog: never deleted.
+    let renamed = beside(".before-upgrade-backup keep");
+    std::fs::copy(&older.path, &renamed)?;
+    let not_a_catalog = beside(".before-upgrade-backup-7");
+    std::fs::write(&not_a_catalog, b"notes")?;
+
+    let cat = f.open()?;
+    let upgraded = cat.upgraded().unwrap().clone();
+    assert_eq!(upgraded.backup, beside(".before-upgrade-backup-1"));
+    assert_eq!(upgraded.earlier_backups, [first.clone()]);
+    assert_eq!(
+        upgraded.earlier_backups_note().as_deref(),
+        Some(
+            "The older copy beside it, from earlier upgrades, will be deleted the next time \
+             the catalog opens; this one is kept."
+        )
+    );
+    drop(cat);
+    assert!(
+        first.exists(),
+        "not deleted in the session that wrote the newest"
+    );
+
+    let cat = Catalog::open(&f.path)?;
+    assert!(cat.upgraded().is_none());
+    drop(cat);
+    assert!(!first.exists());
+    assert!(upgraded.backup.exists());
+    assert_eq!(version(&upgraded.backup)?, 6);
+    assert!(renamed.exists() && not_a_catalog.exists());
+    Ok(())
+}
+
+/// The newest backup is the one of the newest format, whatever its name: an
+/// upgrade fills the first free name, which can come before an older backup's.
+#[test]
+fn the_newest_backup_is_the_newest_format_not_the_highest_number() -> Result<()> {
+    let mut f = Earlier::new(6, 1)?;
+    f.close();
+    let name = f.path.file_name().unwrap().to_string_lossy().into_owned();
+    let older = f.dir.path().join(format!("{name}.before-upgrade-backup-3"));
+    std::fs::copy(&Earlier::new(2, 1)?.path, &older)?;
+    let upgraded = f.open()?.upgraded().unwrap().clone();
+    assert_eq!(
+        upgraded.backup.file_name().unwrap().to_string_lossy(),
+        format!("{name}.before-upgrade-backup")
+    );
+    drop(Catalog::open(&f.path)?);
+    assert_eq!(backups(f.dir.path())?, [upgraded.backup]);
+    Ok(())
+}

@@ -45,6 +45,9 @@ pub fn open_catalog(path: &Path, err: &mut dyn Write) -> Result<crate::catalog::
             upgraded.from,
             upgraded.backup.display()
         )?;
+        if let Some(earlier) = upgraded.earlier_backups_note() {
+            writeln!(err, "{earlier}")?;
+        }
         if upgraded.unreadable > 0 {
             writeln!(
                 err,

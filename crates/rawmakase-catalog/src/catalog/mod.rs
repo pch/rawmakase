@@ -129,6 +129,9 @@ impl Catalog {
         };
         catalog.upgrade_on_open(progress)?;
         catalog.prepare()?;
+        if catalog.upgraded.is_none() {
+            catalog.remove_earlier_backups();
+        }
         Ok(catalog)
     }
     /// Where the catalog is, to name it and open it again.

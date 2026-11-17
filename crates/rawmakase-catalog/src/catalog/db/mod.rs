@@ -35,7 +35,7 @@ pub use sql::assert_shape;
 pub(in crate::catalog) use sql::{Sql, SqliteSql, sql, sqlite_sql};
 
 /// Marks a file as a RAWmakase catalog (`PRAGMA application_id`).
-const APPLICATION_ID: i64 = 0x4f4d4152;
+pub(in crate::catalog) const APPLICATION_ID: i64 = 0x4f4d4152;
 /// The first catalog format version (`PRAGMA user_version`) holding only edits
 /// rendered by the one engine, which releases before it would render with
 /// operators they no longer choose; older releases check the version too. Version 2

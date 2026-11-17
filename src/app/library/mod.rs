@@ -1608,6 +1608,10 @@ fn upgrade_note(upgraded: &crate::catalog::Upgraded) -> String {
          older releases of RAWmakase open that copy, not the catalog.",
         upgraded.backup.display()
     );
+    if let Some(earlier) = upgraded.earlier_backups_note() {
+        note.push(' ');
+        note.push_str(&earlier);
+    }
     if upgraded.unreadable > 0 {
         note.push_str(&format!(
             " {} stored edits could not be read and were left as they were.",

@@ -18,7 +18,7 @@
 //! same transaction to check they still give the same recipes, through the
 //! transaction alone (never the values this process holds). A row this release
 //! cannot read is left as it is and counted.
-use super::db::{NEWEST, Write};
+use super::db::{APPLICATION_ID, NEWEST, Write};
 use super::recipe_assets::ReadsSource;
 use super::{Catalog, CatalogLocation};
 use crate::camera_profiles::CameraProfile;
@@ -85,12 +85,34 @@ pub struct Upgraded {
     pub from: i64,
     /// The verified copy of it as it was, beside it.
     pub backup: PathBuf,
+    /// Backups earlier upgrades left beside it. They are deleted the next time
+    /// the catalog opens ([`Catalog::remove_earlier_backups`]); [`Self::backup`]
+    /// is kept.
+    pub earlier_backups: Vec<PathBuf>,
     /// Stored edits, History and snapshots this release could not read, left as
     /// they were.
     pub unreadable: usize,
     /// Why giving the disk back the space failed, when it did: harmless, the
     /// catalog is upgraded.
     pub vacuum_error: Option<String>,
+}
+
+impl Upgraded {
+    /// What to say about [`Self::earlier_backups`], when there are any.
+    pub fn earlier_backups_note(&self) -> Option<String> {
+        let n = self.earlier_backups.len();
+        (n > 0).then(|| {
+            let copies = if n == 1 {
+                "The older copy".to_string()
+            } else {
+                format!("The {n} older copies")
+            };
+            format!(
+                "{copies} beside it, from earlier upgrades, will be deleted the next time \
+                 the catalog opens; this one is kept."
+            )
+        })
+    }
 }
 
 impl Catalog {
@@ -125,14 +147,96 @@ impl Catalog {
             Ok(())
         })?;
         let vacuum_error = self.db.vacuum().err().map(|e| format!("{e:#}"));
+        let earlier_backups = upgrade_backups(path)
+            .into_iter()
+            .map(|b| b.path)
+            .filter(|p| *p != backup)
+            .collect();
         self.upgraded = Some(Upgraded {
             from,
             backup,
+            earlier_backups,
             unreadable: upgrade.unwrap_or(0),
             vacuum_error,
         });
         Ok(())
     }
+}
+
+impl Catalog {
+    /// Deletes the backups earlier upgrades left beside the catalog, all but the
+    /// newest, which opens in the release that used the catalog before. Called
+    /// once a catalog opened without an upgrade, so a backup is never deleted in
+    /// the session that wrote it. Only files with the names upgrades give them
+    /// that are RAWmakase catalogs are deleted: a renamed backup is left alone. A
+    /// backup that can't be deleted (open elsewhere, say) is tried again next
+    /// time; opening goes on regardless.
+    pub(super) fn remove_earlier_backups(&self) {
+        let CatalogLocation::File(path) = &self.location;
+        let mut backups = upgrade_backups(path);
+        backups.sort_by(|a, b| (a.version, a.modified).cmp(&(b.version, b.modified)));
+        backups.pop();
+        for backup in backups {
+            let _ = std::fs::remove_file(&backup.path);
+        }
+    }
+}
+
+/// A backup an upgrade wrote beside a catalog.
+struct UpgradeBackup {
+    path: PathBuf,
+    /// The format of the catalog it is a copy of: the newest backup is of the
+    /// newest format.
+    version: i64,
+    modified: std::time::SystemTime,
+}
+
+/// The backups upgrades wrote beside the catalog at `path`: the files named as
+/// [`backup_path`] names them that are RAWmakase catalogs.
+fn upgrade_backups(path: &Path) -> Vec<UpgradeBackup> {
+    let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+        return Vec::new();
+    };
+    let prefix = format!("{name}.before-upgrade-backup");
+    let Ok(entries) = std::fs::read_dir(crate::storage::parent_dir(path)) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let file_name = entry.file_name();
+            let suffix = file_name.to_str()?.strip_prefix(&prefix)?;
+            let numbered = suffix
+                .strip_prefix('-')
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+            if !suffix.is_empty() && !numbered {
+                return None;
+            }
+            let metadata = std::fs::symlink_metadata(entry.path()).ok()?;
+            if !metadata.is_file() {
+                return None;
+            }
+            Some(UpgradeBackup {
+                version: catalog_version(&entry.path())?,
+                modified: metadata.modified().unwrap_or(std::time::UNIX_EPOCH),
+                path: entry.path(),
+            })
+        })
+        .collect()
+}
+
+/// The format version of the RAWmakase catalog at `path`, read from its SQLite
+/// header (big-endian `user_version` at byte 60, `application_id` at 68); `None`
+/// when it is not one.
+fn catalog_version(path: &Path) -> Option<i64> {
+    use std::io::Read;
+    let mut header = [0u8; 72];
+    std::fs::File::open(path)
+        .ok()?
+        .read_exact(&mut header)
+        .ok()?;
+    let field = |at: usize| i64::from(i32::from_be_bytes(header[at..at + 4].try_into().unwrap()));
+    (header.starts_with(b"SQLite format 3\0") && field(68) == APPLICATION_ID).then(|| field(60))
 }
 
 /// A free name for the backup of the catalog at `path`.
