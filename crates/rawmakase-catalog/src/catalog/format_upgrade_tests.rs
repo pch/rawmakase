@@ -17,6 +17,16 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// Held for the whole of a test that clears the process-wide asset cache or needs
+/// it warm, so no other test clears it partway through: a clear between two reads
+/// makes the second read build a value of its own instead of sharing the first.
+fn own_cache() -> std::sync::MutexGuard<'static, ()> {
+    static CACHE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    CACHE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn camera(seed: f32) -> Metadata {
     Metadata {
         make: "Test".into(),
@@ -375,6 +385,7 @@ fn a_failed_upgrade_leaves_the_catalog_unchanged() -> Result<()> {
 /// cache and stored in another open catalog, and the catalog stays as it was.
 #[test]
 fn the_upgrade_checks_what_it_stored_past_the_cache() -> Result<()> {
+    let _cache = own_cache();
     let profile = large_profile(0.09);
     // The same profile stored in another open catalog, and warm in the cache.
     let mut other = Earlier::new(6, 1)?;
@@ -399,6 +410,7 @@ fn the_upgrade_checks_what_it_stored_past_the_cache() -> Result<()> {
 /// cached.
 #[test]
 fn an_old_embedded_profile_is_stored_once_under_a_fresh_saves_id() -> Result<()> {
+    let _cache = own_cache();
     let mut f = Earlier::new(6, 1)?;
     f.set_edit(0, &edit(&old_embedded(), 0.5))?;
     drop(f.open()?);
@@ -743,6 +755,7 @@ fn the_upgraded_catalog_is_a_fraction_of_its_size() -> Result<()> {
 /// Edits naming one profile share it in memory, read cold.
 #[test]
 fn edits_naming_one_profile_share_it() -> Result<()> {
+    let _cache = own_cache();
     let mut f = Earlier::new(6, 4)?;
     let profile = large_profile(0.15);
     for n in 0..4 {
@@ -769,6 +782,7 @@ fn edits_naming_one_profile_share_it() -> Result<()> {
 /// with no catalog behind it says so.
 #[test]
 fn stored_references_resolve_through_the_public_reads() -> Result<()> {
+    let _cache = own_cache();
     let mut a = upgradable(6)?;
     let mut b = Earlier::new(6, 1)?;
     let b_profile = large_profile(0.16);
@@ -816,6 +830,7 @@ fn stored_references_resolve_through_the_public_reads() -> Result<()> {
 /// repaired by the next save naming it.
 #[test]
 fn saves_store_each_profile_once_and_repair_a_damaged_one() -> Result<()> {
+    let _cache = own_cache();
     let mut f = Earlier::new(6, 3)?;
     let mut cat = f.open()?;
     let profile = large_profile(0.17);
@@ -876,6 +891,7 @@ fn saves_store_each_profile_once_and_repair_a_damaged_one() -> Result<()> {
 /// it from the catalog, with nothing cached.
 #[test]
 fn an_edit_keeps_its_profile_after_the_file_is_gone() -> Result<()> {
+    let _cache = own_cache();
     let mut f = Earlier::new(6, 1)?;
     let mut cat = f.open()?;
     let dir = tempfile::tempdir()?;
@@ -978,6 +994,7 @@ fn an_empty_catalog_is_upgraded_too() -> Result<()> {
 /// license.
 #[test]
 fn an_exported_lensfun_edit_keeps_its_attribution() -> Result<()> {
+    let _cache = own_cache();
     let mut f = Earlier::new(6, 1)?;
     let mut cat = f.open()?;
     let (id, file) = f.photos[0].clone();
@@ -1019,6 +1036,7 @@ fn an_exported_lensfun_edit_keeps_its_attribution() -> Result<()> {
 /// copy, in a History state only and in a snapshot.
 #[test]
 fn an_hdr_edit_survives_reopening_wherever_it_is_stored() -> Result<()> {
+    let _cache = own_cache();
     use rawmakase_model::model::masks::{LocalAdjust, MaskComponent, MaskGroup, MaskShape};
     let mut hdr = Recipe::default();
     hdr.hdr.enabled = true;
