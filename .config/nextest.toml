@@ -1,0 +1,13 @@
+# cargo-nextest, which CI runs the tests with, runs each test in a process of
+# its own, so a lock a test module holds in a static serializes nothing there.
+# Tests that must not overlap with one another take a group of one thread here.
+
+[test-groups]
+# The real-Trash tests trash one item at a time, as the app does: two at
+# once, on a fresh Windows runner, once had the shell refuse to recycle one of
+# them (src/platform/trash.rs).
+real-trash = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(rawmakase) & test(/^platform::trash::tests::/)'
+test-group = 'real-trash'

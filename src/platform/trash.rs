@@ -114,7 +114,10 @@ mod tests {
 
     /// One real trashing at a time. The app trashes one item after
     /// another; two at once, on a fresh Windows runner, once had the shell
-    /// refuse to recycle one of them.
+    /// refuse to recycle one of them. This lock holds within one test
+    /// process; under cargo-nextest, which runs each test in its own
+    /// process, the `real-trash` test group in `.config/nextest.toml` keeps
+    /// these tests apart.
     fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
         static TRASHING: std::sync::Mutex<()> = std::sync::Mutex::new(());
         TRASHING.lock().unwrap_or_else(|e| e.into_inner())
