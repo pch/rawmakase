@@ -4,6 +4,7 @@
 //! photos differ shows "< mixed >"; typing replaces it on all of them, leaving
 //! it alone changes nothing.
 use super::descriptive::{DescriptiveEdit, parse_keywords};
+use super::keyword_entry;
 use super::rows::{ROW, VALUE_GRAY, caption_at, field_rect, paint_truncated, panel_edit, value_at};
 use super::{Library, Place};
 use crate::app::ui::design::{space, text};
@@ -54,6 +55,8 @@ pub(super) struct Fields {
     /// Text as typed, from the value shown when typing started.
     pub(super) drafts: Drafts,
     pub(super) keyword_entry: String,
+    /// The suggestion chosen with the arrow keys, by its place in the list.
+    pub(super) suggestion: Option<usize>,
     /// Where the Library was when the values were read, for undo to return
     /// to after a draft is saved elsewhere.
     place: Option<Place>,
@@ -87,6 +90,14 @@ pub(super) struct Drafts {
     creators: Vec<String>,
 }
 impl Fields {
+    /// Whether the photos shown have keyword `id`: `Some(true)` all of them,
+    /// `Some(false)` only some, `None` none.
+    pub(super) fn keyword_state(&self, id: i64) -> Option<bool> {
+        self.keywords
+            .iter()
+            .find(|(k, _)| k.id == id)
+            .map(|(_, all)| *all)
+    }
     /// Reads the shown values again before the next frame.
     pub(super) fn reload(&mut self) {
         self.stale = true;
@@ -396,18 +407,84 @@ impl Library {
         ui.add_space(space::XS);
         let (rect, _) =
             ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), egui::Sense::hover());
+        let field_id = egui::Id::new("keyword-entry");
+        let focused = ui.memory(|m| m.has_focus(field_id));
+        let suggestions = if focused {
+            keyword_entry::suggestions(
+                self.session.keywords(),
+                keyword_entry::current_entry(&self.fields.keyword_entry),
+            )
+        } else {
+            Vec::new()
+        };
+        if self
+            .fields
+            .suggestion
+            .is_some_and(|i| i >= suggestions.len())
+        {
+            self.fields.suggestion = None;
+        }
+        // Taken before the field sees them: Tab would move the focus on and
+        // the arrows the cursor.
+        let mut picked = None;
+        if !suggestions.is_empty() {
+            let (down, up, tab) = ui.input_mut(|i| {
+                (
+                    i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown),
+                    i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp),
+                    i.consume_key(egui::Modifiers::NONE, egui::Key::Tab),
+                )
+            });
+            let last = suggestions.len() - 1;
+            if down {
+                self.fields.suggestion =
+                    Some(self.fields.suggestion.map_or(0, |i| (i + 1).min(last)));
+            }
+            if up {
+                self.fields.suggestion = self.fields.suggestion.and_then(|i| i.checked_sub(1));
+            }
+            if tab {
+                picked = Some(self.fields.suggestion.unwrap_or(0));
+            }
+        }
         let response = ui.add_enabled(!targets.is_empty(), |ui: &mut egui::Ui| {
             ui.put(
                 rect.shrink2(Vec2::new(0., 1.)),
                 panel_edit(
                     &palette,
-                    egui::TextEdit::singleline(&mut self.fields.keyword_entry),
+                    egui::TextEdit::singleline(&mut self.fields.keyword_entry).id(field_id),
                 )
                 .hint_text("Add keywords: Child < Parent, …")
                 .vertical_align(egui::Align::Center),
             )
         });
-        if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+        if response.changed() {
+            self.fields.suggestion = None;
+        }
+        let entered = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        if entered && picked.is_none() {
+            picked = self.fields.suggestion;
+        }
+        if !suggestions.is_empty() && picked.is_none() {
+            if let Some(clicked) =
+                suggestion_list(ui, response.rect, &suggestions, self.fields.suggestion)
+            {
+                picked = Some(clicked);
+            }
+        }
+        if let Some(i) = picked.and_then(|i| suggestions.get(i)) {
+            // The keyword chosen, by id: a duplicate name or one with a
+            // comma is the one picked, not one found by its name again.
+            match self.edit_descriptive(&targets, DescriptiveEdit::AddKeyword(i.id)) {
+                Ok(()) => {
+                    self.fields.keyword_entry =
+                        keyword_entry::without_current_entry(&self.fields.keyword_entry);
+                }
+                Err(e) => self.messages.fail(format!("Keyword not added: {e}")),
+            }
+            self.fields.suggestion = None;
+            response.request_focus();
+        } else if entered {
             let added = parse_keywords(&self.fields.keyword_entry).and_then(|paths| {
                 self.edit_descriptive(&targets, DescriptiveEdit::AddKeywords(paths))
             });
@@ -418,6 +495,43 @@ impl Library {
             response.request_focus();
         }
     }
+}
+
+/// The suggestions under the keyword field, `chosen` highlighted; the one
+/// clicked.
+fn suggestion_list(
+    ui: &egui::Ui,
+    field: egui::Rect,
+    suggestions: &[keyword_entry::Suggestion],
+    chosen: Option<usize>,
+) -> Option<usize> {
+    let mut clicked = None;
+    egui::Area::new(egui::Id::new("keyword-suggestions"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(field.left_bottom())
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_width(field.width());
+                for (i, s) in suggestions.iter().enumerate() {
+                    let row = ui.add(
+                        egui::Button::selectable(
+                            chosen == Some(i),
+                            egui::RichText::new(&s.label).size(text::LABEL),
+                        )
+                        .truncate(),
+                    );
+                    if chosen == Some(i) {
+                        row.scroll_to_me(None);
+                    }
+                    // Pressed rather than clicked: the field loses its focus,
+                    // and the list with it, before the button is released.
+                    if row.is_pointer_button_down_on() {
+                        clicked = Some(i);
+                    }
+                }
+            });
+        });
+    clicked
 }
 
 fn edit<'t>(

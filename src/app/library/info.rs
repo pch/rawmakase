@@ -130,6 +130,10 @@ impl Library {
                 });
                 section(ui, "Keywording", |ui| {
                     self.keyword_fields(ui);
+                    self.keyword_set_section(ui);
+                });
+                section(ui, "Keyword List", |ui| {
+                    self.keyword_list(ui);
                 });
             });
         action

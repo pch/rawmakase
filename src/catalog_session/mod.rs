@@ -45,7 +45,7 @@ pub(crate) fn read_file_metadata(
     crate::catalog::read_file_metadata(path, crate::photo::raw_xmp)
 }
 pub(crate) use background::Wake;
-pub(crate) use descriptive::{Committed, DescriptiveChange, DescriptiveEdit};
+pub(crate) use descriptive::{Committed, DescriptiveChange, DescriptiveEdit, KeywordListEdit};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -73,6 +73,11 @@ pub(crate) struct CatalogSession {
     /// Previous Import: the photos the last Add Photo Folder or Synchronize
     /// added.
     previous_import: HashSet<PhotoId>,
+    /// Every keyword of the catalog with its photo count, read again with the
+    /// photos' keywords.
+    keywords: Vec<crate::catalog::ListedKeyword>,
+    /// Recent Keywords, latest first, read with [`Self::keywords`].
+    recent_keywords: Vec<i64>,
     backfill: backfill::Backfill,
     wake: Wake,
     /// Changes whenever photos may have changed place, name or master (see
@@ -105,6 +110,14 @@ impl CatalogSession {
     /// The catalog's photos, without macOS "._" metadata files.
     pub(crate) fn photos(&self) -> &[Photo] {
         &self.photos
+    }
+    /// Every keyword of the catalog, Lightroom's hidden root left out.
+    pub(crate) fn keywords(&self) -> &[crate::catalog::ListedKeyword] {
+        &self.keywords
+    }
+    /// Lightroom's Recent Keywords: the keywords latest given to a photo.
+    pub(crate) fn recent_keywords(&self) -> &[i64] {
+        &self.recent_keywords
     }
     /// Folders, each counting the photos in [`Self::photos`] it holds.
     pub(crate) fn folders(&self) -> &[Folder] {
@@ -251,6 +264,8 @@ impl CatalogSession {
             roots: Vec::new(),
             overrides: HashMap::new(),
             previous_import: HashSet::new(),
+            keywords: Vec::new(),
+            recent_keywords: Vec::new(),
             backfill: Default::default(),
             wake: std::sync::Arc::new(|| {}),
             generation: 0,
@@ -328,11 +343,15 @@ impl CatalogSession {
             keywords.sort();
             names.insert(*id, keywords);
         }
+        let keywords = self.catalog.keyword_list()?;
+        let recent_keywords = self.catalog.recent_keywords()?;
         for p in &mut self.photos {
             if let Some(n) = names.remove(&p.id) {
                 p.keywords = n;
             }
         }
+        self.keywords = keywords;
+        self.recent_keywords = recent_keywords;
         Ok(())
     }
     /// Lightroom's Quick Collection, once there is one.
@@ -382,7 +401,11 @@ impl CatalogSession {
         let roots = self.catalog.roots()?;
         let overrides = self.catalog.overrides()?;
         let previous_import = self.catalog.previous_import()?.into_iter().collect();
+        let keywords = self.catalog.keyword_list()?;
+        let recent_keywords = self.catalog.recent_keywords()?;
         self.photos = photos;
+        self.keywords = keywords;
+        self.recent_keywords = recent_keywords;
         self.previous_import = previous_import;
         self.folders = folders;
         self.collections = collections;

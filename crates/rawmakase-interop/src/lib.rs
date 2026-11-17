@@ -13,6 +13,7 @@ pub mod exif;
 pub mod export_settings;
 pub mod isobmff;
 pub mod jpeg;
+pub mod keyword_sets;
 pub mod lr_develop;
 pub mod lua;
 pub mod presets;

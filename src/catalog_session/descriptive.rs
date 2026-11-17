@@ -17,7 +17,27 @@ pub(crate) enum DescriptiveEdit {
     ClearLocation,
     /// Keywords by path, top first.
     AddKeywords(Vec<Vec<String>>),
+    /// This keyword itself, chosen rather than typed.
+    AddKeyword(i64),
     RemoveKeyword(i64),
+}
+
+/// A change to the Keyword List itself, as its panel makes them.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum KeywordListEdit {
+    /// A new keyword, under the keyword given, else at the top level.
+    Create {
+        name: String,
+        parent: Option<i64>,
+    },
+    Rename {
+        id: i64,
+        name: String,
+    },
+    /// These keywords, with every keyword inside them.
+    Delete(Vec<i64>),
+    /// Every keyword no photo has, nor any keyword inside it.
+    PurgeUnused,
 }
 
 /// A change saved in the catalog, and whether the lists could be read again
@@ -53,6 +73,7 @@ impl CatalogSession {
             DescriptiveEdit::Creators(names) => self.catalog.set_creators(ids, &names),
             DescriptiveEdit::ClearLocation => self.catalog.clear_location(ids),
             DescriptiveEdit::AddKeywords(paths) => self.catalog.add_keywords(ids, &paths),
+            DescriptiveEdit::AddKeyword(keyword) => self.catalog.add_keyword(ids, keyword),
             DescriptiveEdit::RemoveKeyword(keyword) => self.catalog.remove_keyword(ids, keyword),
         }?;
         let after = self.catalog.metadata_snapshot(ids)?;
@@ -77,6 +98,49 @@ impl CatalogSession {
         }
         let ids: Vec<PhotoId> = values.iter().map(|s| s.photo).collect();
         self.refresh_photos(&ids)
+    }
+    /// Makes `edit` to the Keyword List; an error means nothing changed.
+    /// Every photo that had a keyword the change touched is listed again.
+    pub(crate) fn edit_keyword_list(
+        &mut self,
+        edit: KeywordListEdit,
+    ) -> Result<Committed<crate::catalog::KeywordChange>> {
+        let change = match edit {
+            KeywordListEdit::Create { name, parent } => {
+                self.catalog.create_keyword(&name, parent)?.1
+            }
+            KeywordListEdit::Rename { id, name } => self.catalog.rename_keyword(id, &name)?,
+            KeywordListEdit::Delete(ids) => self.catalog.delete_keywords(&ids)?,
+            KeywordListEdit::PurgeUnused => {
+                let unused = self.catalog.unused_keywords()?;
+                self.catalog.delete_keywords(&unused)?
+            }
+        };
+        let listed = self.relist_keywords(&change.before, &change.after);
+        Ok(Committed {
+            value: change,
+            listed,
+        })
+    }
+    /// Puts keywords back as `rows` has them, for undo and redo, then lists
+    /// again every photo that had one either side.
+    pub(crate) fn restore_keywords(
+        &mut self,
+        rows: &crate::catalog::KeywordRows,
+        other: &crate::catalog::KeywordRows,
+    ) -> Result<()> {
+        self.catalog.restore_keywords(rows)?;
+        self.relist_keywords(rows, other)
+    }
+    fn relist_keywords(
+        &mut self,
+        a: &crate::catalog::KeywordRows,
+        b: &crate::catalog::KeywordRows,
+    ) -> Result<()> {
+        let mut ids: Vec<PhotoId> = a.photos().chain(b.photos()).collect();
+        ids.sort();
+        ids.dedup();
+        self.refresh_keywords(&ids)
     }
     /// Writes what was read from the files of `ids` (Read Metadata from
     /// Files), replacing the catalog's values, and lists them again.

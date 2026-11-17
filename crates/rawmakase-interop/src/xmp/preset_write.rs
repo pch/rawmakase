@@ -30,7 +30,7 @@ impl PresetInfo {
 }
 
 /// 128 random bits as Lightroom's UUID text.
-fn new_uuid() -> String {
+pub(crate) fn new_uuid() -> String {
     use std::hash::{BuildHasher, Hasher};
     let half = || {
         let mut h = std::collections::hash_map::RandomState::new().build_hasher();

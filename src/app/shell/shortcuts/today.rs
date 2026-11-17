@@ -3,7 +3,7 @@
 //! exactly so.
 type Shortcut = (&'static str, &'static str);
 
-pub(super) const LIBRARY: [Shortcut; 17] = [
+pub(super) const LIBRARY: [Shortcut; 19] = [
     ("Arrows", "Move the active photo"),
     (
         "Page Up / Page Down",
@@ -30,6 +30,11 @@ pub(super) const LIBRARY: [Shortcut; 17] = [
         "Sync the active photo's settings to the selection",
     ),
     ("Cmd+Shift+U", "Auto Settings on each selected photo"),
+    (
+        "Alt+1 / Alt+9",
+        "Add or remove the keyword of Keyword Set slot 1 to 9",
+    ),
+    ("Alt+0 / Alt+Shift+0", "Next or previous Keyword Set"),
 ];
 pub(super) const LOUPE: [Shortcut; 7] = [
     ("E / Return / double-click", "Open the Loupe"),

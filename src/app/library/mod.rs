@@ -68,6 +68,7 @@ impl Place {
 pub(in crate::app) use cell::copy_suffix;
 pub(crate) use descriptive::DescriptiveCommand;
 pub(crate) use filmstrip::{DraggedPhoto, Module, Pick};
+pub(crate) use keyword_list::KeywordCommand;
 pub(crate) use metadata::{Metadata, MetadataCommand};
 pub(in crate::app) use previews::{EditSource, Pace, PreviewAi};
 pub(crate) use quick::CollectionCommand;
@@ -242,6 +243,8 @@ pub(crate) struct Library {
     copy_names: copy_name::CopyNames,
     /// Title, caption and the other descriptive fields being shown or typed.
     fields: metadata_fields::Fields,
+    keyword_list: keyword_list::KeywordList,
+    keyword_sets: keyword_sets::KeywordSetPanel,
     loupe: loupe::Loupe,
     compare: compare::Compare,
     survey: survey::Survey,
@@ -258,6 +261,8 @@ pub(crate) struct Library {
     descriptive_done: Vec<DescriptiveCommand>,
     /// Stack changes not yet handed to the shared undo log.
     stack_done: Vec<StackCommand>,
+    /// Keyword List changes made since the undo log last took them.
+    keyword_done: Vec<KeywordCommand>,
     /// Auto-Stack by Capture Time's window, while it is open.
     auto_stack: Option<stacks::AutoStack>,
     /// Stack Camera Bursts for photos added: what was read of batches still
@@ -349,10 +354,13 @@ impl Library {
             offer_previous_import: false,
             copy_names: Default::default(),
             fields: Default::default(),
+            keyword_list: Default::default(),
+            keyword_sets: Default::default(),
             done: Vec::new(),
             collection_done: Vec::new(),
             descriptive_done: Vec::new(),
             stack_done: Vec::new(),
+            keyword_done: Vec::new(),
             auto_stack: None,
             import_bursts: None,
             loupe,
@@ -1651,6 +1659,11 @@ mod import_stacks;
 #[cfg(test)]
 mod import_stacks_tests;
 mod info;
+mod keyword_entry;
+mod keyword_list;
+mod keyword_sets;
+#[cfg(test)]
+mod keyword_tests;
 mod kinetic;
 mod layout;
 mod loupe;

@@ -7,7 +7,8 @@ use crate::app::Editor;
 use crate::app::Module;
 use crate::app::history::{Recorded, Step};
 use crate::app::library::{
-    CollectionCommand, DescriptiveCommand, Library, MetadataCommand, Place, StackCommand,
+    CollectionCommand, DescriptiveCommand, KeywordCommand, Library, MetadataCommand, Place,
+    StackCommand,
 };
 use crate::catalog::PhotoId;
 use anyhow::Result;
@@ -44,6 +45,9 @@ pub(in crate::app) enum Command {
     /// Photos grouped into, taken out of or moved in stacks; undone in the
     /// Library.
     Stack(Box<StackCommand>),
+    /// Keywords created, renamed or deleted in the Keyword List; undone in
+    /// the Library.
+    Keywords(Box<KeywordCommand>),
 }
 
 impl Command {
@@ -79,6 +83,11 @@ impl Command {
             }
             Command::Develop { photo, .. } => *photo != Some(id),
             Command::Stack(change) => change.forget_photo(id),
+            // The keywords change whichever photos are left.
+            Command::Keywords(change) => {
+                change.forget_photo(id);
+                true
+            }
             Command::Sync(sync) => {
                 sync.edits.retain(|e| e.id != id);
                 !sync.edits.is_empty()
@@ -179,6 +188,12 @@ impl Editor {
                     .take_stack_done()
                     .into_iter()
                     .map(|change| (change.sequence, Command::Stack(Box::new(change)))),
+            );
+            commands.extend(
+                library
+                    .take_keyword_done()
+                    .into_iter()
+                    .map(|change| (change.sequence, Command::Keywords(Box::new(change)))),
             );
             commands.extend(
                 library
@@ -311,6 +326,15 @@ impl Editor {
                 };
                 self.apply_library(verb, &change.summary, place, None, |library| {
                     library.restore_descriptive(values, ratings)
+                })
+            }
+            Command::Keywords(change) => {
+                let (rows, other) = match direction {
+                    Direction::Undo => (&change.change.before, &change.change.after),
+                    Direction::Redo => (&change.change.after, &change.change.before),
+                };
+                self.apply_library(verb, &change.summary, &change.place, None, |library| {
+                    library.restore_keywords(rows, other)
                 })
             }
             Command::Stack(change) => {

@@ -486,6 +486,7 @@ impl Editor {
             || self.folder_sync.is_reviewing()
             || self.file_ops.dialog_open()
             || self.auto_stack_open()
+            || self.keyword_dialog_open()
     }
     fn check_target(&self, target: &Target) -> Result<()> {
         if target

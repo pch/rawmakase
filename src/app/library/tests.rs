@@ -3545,7 +3545,7 @@ fn the_library_layout_is_kept_and_returned_to() -> Result<()> {
     Ok(())
 }
 #[test]
-fn typed_keywords_follow_lightroom_and_refuse_the_separator() -> Result<()> {
+fn typed_keywords_follow_lightroom_s_separators() -> Result<()> {
     use super::descriptive::parse_keywords;
     assert_eq!(
         parse_keywords("Kraków < Poland < Places, Smith ,")?,
@@ -3554,7 +3554,15 @@ fn typed_keywords_follow_lightroom_and_refuse_the_separator() -> Result<()> {
             vec!["Smith".to_string()],
         ]
     );
-    assert!(parse_keywords("a|b").is_err());
+    // As Lightroom also takes them: parents first after ">", or joined by "|".
+    assert_eq!(
+        parse_keywords("Places > Poland > Kraków, Places|Poland < World")?,
+        [
+            vec!["Places", "Poland", "Kraków"],
+            vec!["World", "Places", "Poland"]
+        ]
+    );
+    assert!(parse_keywords("a||b").is_err());
     assert!(parse_keywords("Child < ").is_err());
     Ok(())
 }

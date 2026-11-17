@@ -199,6 +199,17 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     command("mask:new_radial", "New radial gradient mask"),
     command("mask:new_color_range", "New color range mask"),
     command("basic:next", "Select the next Basic slider"),
+    command("keyword_set:1", "Keyword Set: slot 1"),
+    command("keyword_set:2", "Keyword Set: slot 2"),
+    command("keyword_set:3", "Keyword Set: slot 3"),
+    command("keyword_set:4", "Keyword Set: slot 4"),
+    command("keyword_set:5", "Keyword Set: slot 5"),
+    command("keyword_set:6", "Keyword Set: slot 6"),
+    command("keyword_set:7", "Keyword Set: slot 7"),
+    command("keyword_set:8", "Keyword Set: slot 8"),
+    command("keyword_set:9", "Keyword Set: slot 9"),
+    command("keyword_set:next", "Next Keyword Set"),
+    command("keyword_set:previous", "Previous Keyword Set"),
     command("basic:previous", "Select the previous Basic slider"),
     command(
         "basic:increase",
@@ -564,6 +575,21 @@ pub(in crate::app) mod bindings {
         ]);
         LIBRARY_SYNC = b("sync", Library, &[d(&[Key::S], CMD_SHIFT)]).consuming();
         LIBRARY_AUTO = b("auto_tone", Library, &[d(&[Key::U], CMD_SHIFT)]).consuming();
+        // Lightroom's Keyword Set keys: the number row by its place, as Alt
+        // types other symbols on it.
+        KEYWORD_SET_1 = b("keyword_set:1", Library, &[d(&[Key::Num1], ALT).placed().once_per_press()]);
+        KEYWORD_SET_2 = b("keyword_set:2", Library, &[d(&[Key::Num2], ALT).placed().once_per_press()]);
+        KEYWORD_SET_3 = b("keyword_set:3", Library, &[d(&[Key::Num3], ALT).placed().once_per_press()]);
+        KEYWORD_SET_4 = b("keyword_set:4", Library, &[d(&[Key::Num4], ALT).placed().once_per_press()]);
+        KEYWORD_SET_5 = b("keyword_set:5", Library, &[d(&[Key::Num5], ALT).placed().once_per_press()]);
+        KEYWORD_SET_6 = b("keyword_set:6", Library, &[d(&[Key::Num6], ALT).placed().once_per_press()]);
+        KEYWORD_SET_7 = b("keyword_set:7", Library, &[d(&[Key::Num7], ALT).placed().once_per_press()]);
+        KEYWORD_SET_8 = b("keyword_set:8", Library, &[d(&[Key::Num8], ALT).placed().once_per_press()]);
+        KEYWORD_SET_9 = b("keyword_set:9", Library, &[d(&[Key::Num9], ALT).placed().once_per_press()]);
+        KEYWORD_SET_NEXT = b("keyword_set:next", Library, &[d(&[Key::Num0], ALT).placed().once_per_press()]);
+        KEYWORD_SET_PREVIOUS = b("keyword_set:previous", Library, &[
+            d(&[Key::Num0], ALT_SHIFT).placed().once_per_press(),
+        ]);
 
         // `Editor::zoom_keys`, in the Library's Loupe and in Develop.
         // Cmd+Option+0 is Lightroom's 100%.

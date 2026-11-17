@@ -130,6 +130,8 @@ impl Library {
                 .iter()
                 .map(|a| a.key().into())
                 .collect(),
+            keyword_set: self.keyword_sets.kept().0,
+            keyword_slots: self.keyword_sets.kept().1,
         }
     }
     /// Returns to a layout kept from last time, after the source and
@@ -161,6 +163,8 @@ impl Library {
             .collect();
         self.metadata_bar.open = layout.metadata_strip;
         self.metadata_bar.set_columns(&layout.metadata_columns);
+        self.keyword_sets
+            .restore(layout.keyword_set.clone(), &layout.keyword_slots);
         self.cell_style = Style::from_key(&layout.cell_style);
         if let Some(size) = layout.thumb_size.filter(|s| (110. ..=360.).contains(s)) {
             self.thumb_size = size;

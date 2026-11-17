@@ -285,6 +285,14 @@ CREATE TABLE IF NOT EXISTS keyword_export (
     parents INTEGER NOT NULL
 );
 
+-- When a keyword was last given to a photo by hand, as Lightroom's
+-- `lastApplied`: a number that grows with each, so Recent Keywords lists the
+-- latest. New without a format change; older releases ignore it.
+CREATE TABLE IF NOT EXISTS keyword_applied (
+    keyword INTEGER PRIMARY KEY REFERENCES keywords(id) ON DELETE CASCADE,
+    applied INTEGER NOT NULL
+);
+
 -- Where each computer finds the catalog's folders (see `locations`). The
 -- legacy `roots.mapped_path` and `folder_mappings` stay as releases before
 -- these tables read them, and are still written.

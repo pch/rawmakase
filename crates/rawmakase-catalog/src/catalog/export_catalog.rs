@@ -391,6 +391,13 @@ fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
                  SELECT keyword FROM photo_keywords
                  UNION SELECT k.parent FROM keywords k JOIN used u ON k.id=u.id
                  WHERE k.parent IS NOT NULL)
+             DELETE FROM keyword_applied WHERE keyword NOT IN (SELECT id FROM used)"
+        ),
+        sql!(
+            "WITH RECURSIVE used(id) AS (
+                 SELECT keyword FROM photo_keywords
+                 UNION SELECT k.parent FROM keywords k JOIN used u ON k.id=u.id
+                 WHERE k.parent IS NOT NULL)
              DELETE FROM keywords WHERE id NOT IN (SELECT id FROM used)"
         ),
         sql!(

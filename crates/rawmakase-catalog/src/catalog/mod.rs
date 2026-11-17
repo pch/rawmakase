@@ -39,6 +39,7 @@ pub mod folder_sync;
 mod format_upgrade;
 mod info;
 mod ingest;
+mod keywords;
 pub mod legacy_sidecar;
 pub mod lightroom;
 mod lightroom_archive;
@@ -72,6 +73,7 @@ pub use format_upgrade::{OpeningProgress, Upgraded};
 pub use ingest::{
     Ambiguity, Choice, Conflict, FileRefusal, FilesAdded, IMPORT_BURST_SECONDS, PendingBurstStacks,
 };
+pub use keywords::{KeywordChange, KeywordRows, ListedKeyword, find_typed_keyword};
 pub use lightroom::HistoryStep;
 pub use location::CatalogLocation;
 pub use locations::{Override, Overrides, RootLocations};
@@ -441,6 +443,8 @@ mod format_upgrade_tests;
 mod import_bursts_tests;
 #[cfg(test)]
 mod ingest_tests;
+#[cfg(test)]
+mod keywords_tests;
 #[cfg(test)]
 mod lightroom_archive_tests;
 #[cfg(test)]
