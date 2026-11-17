@@ -237,3 +237,37 @@ fn option_digits_apply_a_slot_but_nothing_runs_behind_a_keyword_window() -> Resu
     assert!(e.keyword_dialog_open());
     Ok(())
 }
+
+#[test]
+fn the_arrow_shows_one_keyword_s_photos_beside_another_of_its_name() -> Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    let library = e.library.as_mut().unwrap();
+    library.edit_descriptive(
+        &ids[..1],
+        DescriptiveEdit::AddKeywords(vec![vec!["France".into(), "Paris".into()]]),
+    )?;
+    library.edit_descriptive(
+        &ids[1..],
+        DescriptiveEdit::AddKeywords(vec![vec!["Texas".into(), "Paris".into()]]),
+    )?;
+    // Named apart on both photos, the first one's renamed since it was tagged.
+    assert_eq!(names(library, ids[0]), ["Paris < France"]);
+    assert_eq!(names(library, ids[1]), ["Paris < Texas"]);
+    let texas_paris = library
+        .session
+        .catalog()
+        .find_typed_keyword(&["Texas".into(), "Paris".into()])?
+        .unwrap();
+    library.show_keyword(texas_paris);
+    let shown: Vec<PhotoId> = library.shown().to_vec();
+    assert_eq!(shown, [ids[1]]);
+    // Deleting the other leaves the first named by its name alone again.
+    let france = library
+        .session
+        .catalog()
+        .find_typed_keyword(&["France".into()])?
+        .unwrap();
+    library.edit_keyword_list(KeywordListEdit::Delete(vec![france]), "Delete Keyword");
+    assert_eq!(names(library, ids[1]), ["Paris"]);
+    Ok(())
+}

@@ -278,3 +278,52 @@ fn undoing_a_rename_or_deletion_keeps_a_keyword_s_place_in_recent_keywords() -> 
     assert_eq!(cat.recent_keywords()?, [b, a]);
     Ok(())
 }
+
+#[test]
+fn keywords_of_one_name_are_named_apart_by_their_parents() -> Result<()> {
+    let list = [
+        ListedKeyword {
+            id: 1,
+            name: "France".into(),
+            parent: None,
+            photos: 0,
+        },
+        ListedKeyword {
+            id: 2,
+            name: "Paris".into(),
+            parent: Some(1),
+            photos: 0,
+        },
+        ListedKeyword {
+            id: 3,
+            name: "Texas".into(),
+            parent: None,
+            photos: 0,
+        },
+        ListedKeyword {
+            id: 4,
+            name: "paris".into(),
+            parent: Some(3),
+            photos: 0,
+        },
+        ListedKeyword {
+            id: 5,
+            name: "Rome".into(),
+            parent: None,
+            photos: 0,
+        },
+        ListedKeyword {
+            id: 6,
+            name: "Paris".into(),
+            parent: None,
+            photos: 0,
+        },
+    ];
+    let labels = keyword_labels(&list);
+    assert_eq!(labels[&2], "Paris < France");
+    assert_eq!(labels[&4], "paris < Texas");
+    assert_eq!(labels[&6], "Paris");
+    assert_eq!(labels[&5], "Rome");
+    assert_eq!(labels_of(&[5, 2], &labels), ["Paris < France", "Rome"]);
+    Ok(())
+}

@@ -565,6 +565,7 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
         master: None,
         stack: None,
         keywords: Vec::new(),
+        keyword_ids: Vec::new(),
         has_lightroom_edits: false,
     };
     for size in [[360, 240], [160, 240], [240, 240], [360, 90]] {
@@ -1594,7 +1595,8 @@ fn the_metadata_filter_follows_info_saved_later_and_keeps_its_choices() -> Resul
     assert!(library.facets_after_info_saved(true));
     library.filter();
     assert_eq!(ids_of(&library), [ids[1]]);
-    // Two keywords of one name, under different parents, count once.
+    // Two keywords of one name, under different parents, are listed apart,
+    // as Lightroom's Keyword column lists them.
     library.filters.metadata.clear();
     library.session.catalog_mut_for_tests().add_keywords(
         &[ids[0]],
@@ -1607,7 +1609,11 @@ fn the_metadata_filter_follows_info_saved_later_and_keeps_its_choices() -> Resul
     library.filter();
     assert_eq!(
         library.metadata_counts(Attribute::Keyword),
-        [(value("Granada"), 1), (None, 1)]
+        [
+            (value("Granada < Events"), 1),
+            (value("Granada < Places"), 1),
+            (None, 1)
+        ]
     );
     // A keyword read from XMP may have a comma in its name: it is one value.
     library.session.catalog_mut_for_tests().add_keywords(
@@ -1619,7 +1625,8 @@ fn the_metadata_filter_follows_info_saved_later_and_keeps_its_choices() -> Resul
     assert_eq!(
         library.metadata_counts(Attribute::Keyword),
         [
-            (value("Granada"), 1),
+            (value("Granada < Events"), 1),
+            (value("Granada < Places"), 1),
             (value("Washington"), 1),
             (value("Washington, D.C."), 1),
         ]
@@ -2866,6 +2873,7 @@ fn flag_steps_up_and_down_and_stops_at_the_ends() {
         master: None,
         stack: None,
         keywords: Vec::new(),
+        keyword_ids: Vec::new(),
         has_lightroom_edits: false,
     };
     assert_eq!(Edit::FlagDelta(1).values(&photo(-1)).1, 0);

@@ -155,7 +155,7 @@ pub(super) fn rows<'k>(
 enum Clicked {
     Toggle(i64),
     Tick { id: i64, all: bool },
-    Show(String),
+    Show(i64),
     Create(Option<(i64, String)>),
     Rename(i64, String),
     Delete(i64),
@@ -316,7 +316,7 @@ impl Library {
                     .on_hover_text("Show the photos with this keyword")
                     .clicked()
             {
-                clicked = Some(Clicked::Show(k.name.clone()));
+                clicked = Some(Clicked::Show(k.id));
             }
         }
         match clicked {
@@ -336,7 +336,7 @@ impl Library {
                         .fail(format!("Keyword could not be changed: {e}"));
                 }
             }
-            Some(Clicked::Show(name)) => self.show_keyword(name),
+            Some(Clicked::Show(id)) => self.show_keyword(id),
             Some(Clicked::Create(parent)) => {
                 self.keyword_list.dialog = Some(ListDialog::Create {
                     parent,
@@ -534,9 +534,13 @@ impl Library {
             None => {}
         }
     }
-    /// Shows every photo in the catalog with keyword `name`, as Lightroom's
-    /// arrow does: All Photographs, filtered by it in the Metadata filter.
-    pub(super) fn show_keyword(&mut self, name: String) {
+    /// Shows every photo in the catalog with keyword `id`, as Lightroom's
+    /// arrow does: All Photographs, filtered by it in the Metadata filter,
+    /// where a keyword another shares a name with is listed apart.
+    pub(super) fn show_keyword(&mut self, id: i64) {
+        let Some(name) = crate::catalog::keyword_labels(self.session.keywords()).remove(&id) else {
+            return;
+        };
         self.filters.folder_scope = None;
         self.selected_folders.clear();
         self.filters.collection = None;

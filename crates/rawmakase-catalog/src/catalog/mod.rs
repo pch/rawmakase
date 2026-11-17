@@ -73,7 +73,9 @@ pub use format_upgrade::{OpeningProgress, Upgraded};
 pub use ingest::{
     Ambiguity, Choice, Conflict, FileRefusal, FilesAdded, IMPORT_BURST_SECONDS, PendingBurstStacks,
 };
-pub use keywords::{KeywordChange, KeywordRows, ListedKeyword, find_typed_keyword};
+pub use keywords::{
+    KeywordChange, KeywordRows, ListedKeyword, find_typed_keyword, keyword_labels, labels_of,
+};
 pub use lightroom::HistoryStep;
 pub use location::CatalogLocation;
 pub use locations::{Override, Overrides, RootLocations};
@@ -164,7 +166,7 @@ impl Catalog {
         row! {
             struct KeywordRow {
                 photo: PhotoId,
-                name: String,
+                keyword: i64,
             }
         }
         let mappings = self.folders()?;
@@ -179,18 +181,19 @@ impl Catalog {
             ),
             &[],
         )?;
-        let mut keywords: std::collections::HashMap<PhotoId, Vec<String>> =
+        let mut keywords: std::collections::HashMap<PhotoId, Vec<i64>> =
             std::collections::HashMap::new();
-        let names: Vec<KeywordRow> = self.db.read(
+        let tags: Vec<KeywordRow> = self.db.read(
             sql!(
-                "SELECT pk.photo, k.name FROM photo_keywords pk JOIN keywords k ON k.id=pk.keyword
-                 WHERE k.name<>'' ORDER BY pk.photo, k.name, k.id"
+                "SELECT pk.photo, pk.keyword FROM photo_keywords pk JOIN keywords k ON k.id=pk.keyword
+                 WHERE k.name<>'' ORDER BY pk.photo, k.id"
             ),
             &[],
         )?;
-        for k in names {
-            keywords.entry(k.photo).or_default().push(k.name);
+        for k in tags {
+            keywords.entry(k.photo).or_default().push(k.keyword);
         }
+        let labels = keywords::keyword_labels(&keywords::keyword_list(&self.db)?);
         Ok(rows
             .into_iter()
             .map(|r| Photo {
@@ -211,7 +214,11 @@ impl Catalog {
                 copy_name: r.copy_name,
                 master: r.master,
                 stack: stacks.get(&r.id).copied(),
-                keywords: keywords.remove(&r.id).unwrap_or_default(),
+                keywords: keywords::labels_of(
+                    keywords.get(&r.id).map_or(&[][..], Vec::as_slice),
+                    &labels,
+                ),
+                keyword_ids: keywords.remove(&r.id).unwrap_or_default(),
                 has_lightroom_edits: r.has_lightroom_edits,
             })
             .collect())

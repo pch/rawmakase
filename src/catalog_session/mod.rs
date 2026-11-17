@@ -330,25 +330,27 @@ impl CatalogSession {
     }
     /// Reads the keywords of `ids` again from the catalog into `photos`.
     pub(crate) fn refresh_keywords(&mut self, ids: &[PhotoId]) -> Result<()> {
-        let mut names = HashMap::new();
+        let mut tagged = HashMap::new();
         for id in ids {
-            let mut keywords: Vec<String> = self
+            let keywords: Vec<i64> = self
                 .catalog
                 .keywords(*id)?
                 .into_iter()
-                .map(|k| k.name)
-                .filter(|name| !name.is_empty())
+                .filter(|k| !k.name.is_empty())
+                .map(|k| k.id)
                 .collect();
-            // In the order the catalog lists them in.
-            keywords.sort();
-            names.insert(*id, keywords);
+            tagged.insert(*id, keywords);
         }
         let keywords = self.catalog.keyword_list()?;
         let recent_keywords = self.catalog.recent_keywords()?;
+        // Every photo's names, not only these photos': a keyword made,
+        // renamed or deleted can change how another of its name is named.
+        let labels = crate::catalog::keyword_labels(&keywords);
         for p in &mut self.photos {
-            if let Some(n) = names.remove(&p.id) {
-                p.keywords = n;
+            if let Some(ids) = tagged.remove(&p.id) {
+                p.keyword_ids = ids;
             }
+            p.keywords = crate::catalog::labels_of(&p.keyword_ids, &labels);
         }
         self.keywords = keywords;
         self.recent_keywords = recent_keywords;

@@ -59,6 +59,63 @@ pub(super) fn keyword_list(db: &impl Reads) -> Result<Vec<ListedKeyword>> {
         .collect())
 }
 
+/// How the Library names each keyword, by id: its name, else, where another
+/// keyword has that name (ignoring case), its shortest path that none other
+/// has, `Name < Parent`, and so on up. Lightroom's Keyword column lists
+/// such keywords apart, as the Metadata filter must, and the Keyword List's
+/// arrow shows one keyword's photos only.
+pub fn keyword_labels(keywords: &[ListedKeyword]) -> HashMap<i64, String> {
+    let by_id: HashMap<i64, &ListedKeyword> = keywords.iter().map(|k| (k.id, k)).collect();
+    let mut by_name: HashMap<String, Vec<i64>> = HashMap::new();
+    for k in keywords {
+        by_name.entry(keyword_key(&k.name)).or_default().push(k.id);
+    }
+    // Its names, its own first.
+    let path_of = |id: i64| {
+        let mut names: Vec<&str> = Vec::new();
+        let mut next = Some(id);
+        while let Some(k) = next.and_then(|n| by_id.get(&n))
+            && names.len() < 64
+        {
+            names.push(&k.name);
+            next = k.parent;
+        }
+        names
+    };
+    let mut labels = HashMap::new();
+    for same in by_name.values() {
+        let paths: Vec<(i64, Vec<&str>, Vec<String>)> = same
+            .iter()
+            .map(|id| {
+                let names = path_of(*id);
+                let keys = names.iter().map(|n| keyword_key(n)).collect();
+                (*id, names, keys)
+            })
+            .collect();
+        for (id, names, keys) in &paths {
+            let depth = (1..=names.len())
+                .find(|&depth| {
+                    !paths.iter().any(|(other, _, o)| {
+                        other != id && o.len() >= depth && o[..depth] == keys[..depth]
+                    })
+                })
+                .unwrap_or(names.len());
+            labels.insert(*id, names[..depth].join(" < "));
+        }
+    }
+    labels
+}
+
+/// The labels of keywords `ids` (see [`keyword_labels`]), sorted.
+pub fn labels_of(ids: &[i64], labels: &HashMap<i64, String>) -> Vec<String> {
+    let mut names: Vec<String> = ids
+        .iter()
+        .filter_map(|id| labels.get(id).cloned())
+        .collect();
+    names.sort();
+    names
+}
+
 /// Lightroom's hidden root: a nameless keyword with no parent, which its
 /// top-level keywords are under.
 pub(super) fn is_root(name: &str, parent: Option<i64>) -> bool {

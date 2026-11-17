@@ -15,9 +15,11 @@ pub struct Photo {
     pub master: Option<super::PhotoId>,
     /// Its place in a folder stack, if it is in one.
     pub stack: Option<super::StackPlace>,
-    /// The names of its keywords, each whole: a name read from XMP may
-    /// hold a comma.
+    /// Its keywords as the Library names them (see [`super::keyword_labels`]),
+    /// each whole: a name read from XMP may hold a comma.
     pub keywords: Vec<String>,
+    /// The keywords themselves, by id.
+    pub keyword_ids: Vec<i64>,
     pub has_lightroom_edits: bool,
 }
 impl Photo {
