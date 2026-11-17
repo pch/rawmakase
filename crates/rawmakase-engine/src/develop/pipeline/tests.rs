@@ -649,6 +649,30 @@ fn temperature_leaves_the_photos_maximum_in_place() -> anyhow::Result<()> {
     assert_eq!(maximum(3000.), maximum(7500.));
     Ok(())
 }
+/// Under a profile without forward matrices, whose matrix follows Tint as well as
+/// Temperature (`CameraProfile::camera_matrix_at`), a Tint change leaves the photo's
+/// maximum in place too.
+#[test]
+fn tint_leaves_the_photos_maximum_in_place_without_forward_matrices() {
+    let mut im = fixture();
+    for p in im.pixels.iter_mut().step_by(3) {
+        *p = [0.9, 0.5, 0.2];
+    }
+    im.metadata.cam_xyz = [[1.2, -0.1, -0.1], [-0.2, 1.1, 0.1], [0.0, 0.2, 0.9]];
+    let profile = crate::camera_profiles::open::standard(&im.metadata).unwrap();
+    let maximum = |tint: f32| {
+        let r = Recipe {
+            profile: Some(std::sync::Arc::new(profile.clone())),
+            tint,
+            ..Recipe::for_metadata(&im.metadata)
+        };
+        let camera = camera_stage(&im.metadata, &r);
+        CurveSet::with_photo_measures((&im).into(), &r, camera)
+            .measures
+            .max
+    };
+    assert_eq!(maximum(-60.), maximum(60.));
+}
 /// The level the default black follows is the photo's 0.1th percentile of luminance:
 /// a few dark pixels (a darkened red-eye pupil) move the minimum, which Blacks reads,
 /// but not it.
