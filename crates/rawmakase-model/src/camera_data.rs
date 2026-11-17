@@ -173,6 +173,10 @@ pub struct Metadata {
     /// Focal length in 35mm equivalent (EXIF FocalLengthIn35mmFilm); 0 when unknown.
     #[serde(default)]
     pub focal_35mm: f32,
+    /// Focus distance in metres from the maker notes: 0 when unknown, infinity at
+    /// infinity; read again on open, not saved.
+    #[serde(skip)]
+    pub focus_distance: f32,
     pub wb: [f32; 3],
     pub daylight_wb: [f32; 3],
     /// White-balance presets the camera stored in a native RAW's maker notes.

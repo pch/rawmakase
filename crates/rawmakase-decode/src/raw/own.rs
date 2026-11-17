@@ -398,6 +398,7 @@ fn header(i: &RawInfo) -> Header {
         aperture: i.aperture,
         focal: i.focal,
         focal_35mm: i.focal_35mm,
+        focus_distance: i.focus_distance,
         wb,
         daylight_wb: daylight,
         presets,

@@ -273,6 +273,8 @@ pub(crate) struct Header {
     pub aperture: f32,
     pub focal: f32,
     pub focal_35mm: f32,
+    /// Focus distance in metres, 0 when unknown.
+    pub focus_distance: f32,
     /// As shot and daylight, relative to green.
     pub wb: [f32; 3],
     pub daylight_wb: [f32; 3],
@@ -350,6 +352,7 @@ impl Raw {
             aperture: h.aperture,
             focal: h.focal,
             focal_35mm: h.focal_35mm,
+            focus_distance: h.focus_distance,
             wb: h.wb,
             daylight_wb: h.daylight_wb,
             wb_presets: WhiteBalancePresets {
