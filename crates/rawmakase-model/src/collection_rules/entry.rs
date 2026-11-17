@@ -1,6 +1,7 @@
 //! A photo as the questions in this module see it.
-use super::Facets;
+use super::{Date, Facets};
 use crate::ids::PhotoId;
+use crate::metadata::PhotoInfo;
 
 /// One photo or virtual copy, borrowed from what the catalog session read:
 /// each copy is its own entry, with its own rating, flag and label.
@@ -28,4 +29,34 @@ pub struct Entry<'a> {
     pub keywords: &'a [String],
     /// Its photo info's camera, lens and settings; None when they aren't read.
     pub facets: Option<&'a Facets>,
+
+    // What smart collection rules read besides; the filter bar leaves them
+    // empty.
+    /// The folder's whole path.
+    pub folder: &'a str,
+    /// The names of the static collections it is in, one per line.
+    pub collections: &'a str,
+    /// Its keywords with their ancestors and synonyms, one per line.
+    pub keyword_terms: &'a str,
+    pub title: &'a str,
+    pub caption: &'a str,
+    pub copyright: &'a str,
+    /// Its creators, one per line.
+    pub creator: &'a str,
+    pub info: Option<&'a PhotoInfo>,
+    /// Whether it has a GPS location; None when that isn't known.
+    pub gps: Option<bool>,
+    /// The local date its edit was last saved; None when it has none.
+    pub edited: Option<Date>,
+    pub edit: EditFacts,
+}
+
+/// What a photo's saved edit does, for the rules that ask.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EditFacts {
+    /// Any setting differs from the photo's defaults.
+    pub adjusted: bool,
+    pub cropped: bool,
+    /// Black & White treatment.
+    pub grayscale: bool,
 }
