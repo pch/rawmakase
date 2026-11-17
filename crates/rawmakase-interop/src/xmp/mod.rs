@@ -71,6 +71,27 @@ pub struct Preset {
     /// isn't imported.
     pub builtin: bool,
 }
+/// Whether a `ProcessVersion` value is from before process version 2012 (6.7), whose
+/// controls and point curve Lightroom keeps apart from the 2012 ones.
+pub(crate) fn before_process_2012(version: &str) -> bool {
+    version.parse::<f32>().is_ok_and(|v| v < 6.7)
+}
+impl Preset {
+    /// The point-curve key prefixes these settings render, first choice first. Before
+    /// process version 2012, Lightroom renders the `ToneCurve` set and ignores the
+    /// `ToneCurvePV2012` set that Lightroom 5 stores beside it (#1079).
+    pub(crate) fn point_curve_keys(&self) -> [&'static str; 2] {
+        let legacy = self
+            .settings
+            .get("ProcessVersion")
+            .is_some_and(|v| before_process_2012(v));
+        if legacy {
+            ["ToneCurve", "ToneCurvePV2012"]
+        } else {
+            ["ToneCurvePV2012", "ToneCurve"]
+        }
+    }
+}
 #[cfg(test)]
 mod key_table_tests;
 #[cfg(test)]

@@ -2315,6 +2315,50 @@ fn lightroom_5_legacy_records_keep_exposure_over_zeroed_2012_keys() -> Result<()
     Ok(())
 }
 
+/// A Lightroom 5 record before process version 2012 carries both tone curves, the 2012
+/// one linear. Lightroom renders its `ToneCurve` set, here Medium Contrast (#1079).
+#[test]
+fn lightroom_5_legacy_records_keep_their_tone_curve_over_the_2012_one() -> Result<()> {
+    let text = r#"s = { ProcessVersion = "5.0", ToneCurveName = "Medium Contrast", ToneCurve = { 0, 0, 32, 22, 64, 56, 128, 128, 192, 196, 255, 255 }, ToneCurveRed = { 0, 0, 128, 150, 255, 255 }, ToneCurveGreen = { 0, 0, 255, 255 }, ToneCurveBlue = { 0, 0, 255, 255 }, ToneCurveName2012 = "Linear", ToneCurvePV2012 = { 0, 0, 255, 255 }, ToneCurvePV2012Red = { 0, 0, 255, 255 }, ToneCurvePV2012Green = { 0, 0, 255, 255 }, ToneCurvePV2012Blue = { 0, 0, 255, 255 } }"#;
+    let (r, _) = crate::lr_develop::convert_develop(text, &Metadata::default(), &[], None)?;
+    assert_eq!(
+        r.curve,
+        crate::presets::curves::BuiltinCurve::MediumContrast.curve()
+    );
+    assert_eq!(r.effects.channels[0].points[1], [128. / 255., 150. / 255.]);
+    // From process version 2012 on, the 2012 curves are the ones Lightroom renders.
+    let current = text.replace(r#""5.0""#, r#""6.7""#);
+    let (r, _) = crate::lr_develop::convert_develop(&current, &Metadata::default(), &[], None)?;
+    assert_eq!(r.curve, ToneCurve::default());
+    assert_eq!(r.effects.channels, Recipe::default().effects.channels);
+    Ok(())
+}
+
+/// The same rule for a sidecar Camera Raw wrote with process version 2010 (#1079).
+#[test]
+fn legacy_sidecars_keep_their_tone_curve_over_the_2012_one() -> Result<()> {
+    let seq = |name: &str, points: &[&str]| {
+        let items: String = points.iter().map(|p| format!("<r:li>{p}</r:li>")).collect();
+        format!("<c:{name}><r:Seq>{items}</r:Seq></c:{name}>")
+    };
+    let body = [
+        seq("ToneCurve", &["0, 0", "128, 100", "255, 255"]),
+        seq("ToneCurvePV2012", &["0, 0", "255, 255"]),
+    ]
+    .concat();
+    let curve = |version: &str| -> Result<ToneCurve> {
+        let attrs = format!(r#"c:ProcessVersion="{version}""#);
+        let preset = parse(Path::new("legacy.xmp"), &xml(&attrs, &body))?;
+        Ok(preset
+            .apply(&Recipe::default(), &Metadata::default(), &[], None)?
+            .curve)
+    };
+    assert_eq!(curve("5.7")?.points[1], [128. / 255., 100. / 255.]);
+    assert_eq!(curve("6.7")?, ToneCurve::default());
+    assert_eq!(curve("11.0")?, ToneCurve::default());
+    Ok(())
+}
+
 /// Raw defaults and imports apply settings without the photo: an Auto Tone preset
 /// then leaves the sliders as they were rather than guess, and asks nothing.
 #[test]
