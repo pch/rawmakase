@@ -372,3 +372,48 @@ fn reading_smart_collections_lists_everything_it_left() -> Result<()> {
     );
     Ok(())
 }
+
+/// A selected set shows its smart collections' photos too (measured in
+/// Lightroom Classic 15.6), and follows them as they are worked out again.
+#[test]
+fn a_set_shows_and_follows_its_smart_collections_photos() -> Result<()> {
+    let (_d, mut library, smart) =
+        library_with(&[("Picks", Ok(rule("pick", "==", Value::Number(1.))))])?;
+    let mut photos: Vec<PhotoId> = library.session.photos().iter().map(|p| p.id).collect();
+    photos.sort();
+    let set = library.create_collection(true, "Set", None, &[], false)?;
+    library.create_collection(false, "Static", Some(set), &photos[..1], false)?;
+    library.move_collection(smart[0], Some(set))?;
+    settle(&mut library);
+    library.select_collection(set);
+    assert_eq!(shown(&library), photos[..1]);
+    library
+        .session
+        .set_ratings(&[(photos[2], 0, 1, String::new())])?;
+    // Until the smart members are worked out again, Select All waits.
+    assert!(!library.source_settled());
+    library.select(None);
+    library.select_all();
+    assert!(library.selected_ids().is_empty());
+    settle(&mut library);
+    assert_eq!(shown(&library), [photos[0], photos[2]]);
+    Ok(())
+}
+
+/// Undo of a deleted smart collection brings its rules back with it, even
+/// when the lists were read again while it was gone.
+#[test]
+fn a_restored_smart_collection_keeps_its_rules_after_a_reload() -> Result<()> {
+    let (_d, mut library, smart) =
+        library_with(&[("Picks", Ok(rule("pick", "==", Value::Number(1.))))])?;
+    let photos: Vec<PhotoId> = library.session.photos().iter().map(|p| p.id).collect();
+    library
+        .session
+        .set_ratings(&[(photos[0], 0, 1, String::new())])?;
+    let gone = library.session.remove_collections(&[smart[0]])?;
+    library.reload()?;
+    library.session.restore_collections(&gone)?;
+    settle(&mut library);
+    assert_eq!(library.smart_counts()[&smart[0]], SmartCount::Photos(1));
+    Ok(())
+}

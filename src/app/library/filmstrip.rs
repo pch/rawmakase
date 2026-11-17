@@ -396,8 +396,17 @@ impl Library {
         let available = self.is_available(&photo.path);
         let single = self.menu_single(photo.id, whole_selection);
         let stacks = self.filters.shows_stacks();
-        let menu = cell::photo_menu(&response, photo, available, single, module, stacks)
-            .or(badge_clicked.then_some(cell::PhotoAction::StackBadge));
+        let collections = self.collection_tree();
+        let menu = cell::photo_menu(
+            &response,
+            photo,
+            available,
+            single,
+            module,
+            stacks,
+            &collections,
+        )
+        .or(badge_clicked.then_some(cell::PhotoAction::StackBadge));
         if let Some(menu) = menu {
             if matches!(menu, cell::PhotoAction::SetReference) {
                 return (Some(Pick::Reference(photo.id)), false);

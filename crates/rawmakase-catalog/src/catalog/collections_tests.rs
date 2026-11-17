@@ -579,3 +579,20 @@ fn export_as_catalog_never_gives_a_pruned_collections_id_to_its_own() -> Result<
     assert_eq!(out.target_collection()?, None);
     Ok(())
 }
+
+/// A collection made with its photos is made with all of them or not at
+/// all, so a failed write never leaves an empty one behind.
+#[test]
+fn a_collection_and_its_photos_are_made_together_or_not_at_all() -> Result<()> {
+    let (_dir, mut c, ids) = catalog()?;
+    let (made, change) = c.create_collection_of(" Picks ", None, &ids[..2])?;
+    assert_eq!(row(&c, made)?.name, "Picks");
+    assert_eq!(change.added.len(), 2);
+    c.db_for_tests().execute_batch(
+        "CREATE TEMP TRIGGER no_members BEFORE INSERT ON collection_photos
+         BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+    )?;
+    assert!(c.create_collection_of("Failed", None, &ids).is_err());
+    assert!(c.collections()?.iter().all(|c| c.name != "Failed"));
+    Ok(())
+}

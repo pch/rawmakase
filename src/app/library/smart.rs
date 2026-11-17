@@ -40,6 +40,31 @@ pub(in crate::app) enum SmartNote {
 }
 
 impl Library {
+    /// Whether the source shown is a smart collection, or a set with one
+    /// inside it: its photos follow smart members.
+    fn shows_smart(&self) -> bool {
+        let Some(id) = self.filters.collection else {
+            return false;
+        };
+        let collections = self.session.collections();
+        match collections.iter().find(|c| c.id == id).map(|c| c.kind) {
+            Some(CollectionKind::Smart) => return true,
+            Some(CollectionKind::Set) => {}
+            _ => return false,
+        }
+        let mut sets = vec![id];
+        let mut seen = std::collections::HashSet::from([id]);
+        while let Some(set) = sets.pop() {
+            for c in collections.iter().filter(|c| c.parent == Some(set)) {
+                match c.kind {
+                    CollectionKind::Smart => return true,
+                    CollectionKind::Set if seen.insert(c.id) => sets.push(c.id),
+                    _ => {}
+                }
+            }
+        }
+        false
+    }
     /// The smart collection shown, if one is.
     pub(super) fn shown_smart(&self) -> Option<CollectionId> {
         let id = self.filters.collection?;
@@ -110,16 +135,20 @@ impl Library {
             .filter_map(|(id, m)| Some((*id, m.as_ref().ok()?.clone())))
             .collect();
         self.sidebar_trees = None;
-        if let Some(id) = self.shown_smart() {
-            // A failed read keeps no members: none is shown rather than stale ones.
-            self.filters.members = self.smart.members.get(&id).cloned().unwrap_or_default();
+        if self.shows_smart()
+            && let Some(id) = self.filters.collection
+        {
+            // A failed read keeps no members: none is shown rather than
+            // stale ones. A set shows its smart collections' photos too.
+            self.filters.members = self.source_members(id);
             self.filter();
         }
     }
     /// Whether the smart collection shown has its members for this revision
-    /// and day; true when no smart collection is shown.
+    /// and day; true when no smart collection is shown, by itself or in the
+    /// set shown.
     pub(in crate::app) fn source_settled(&self) -> bool {
-        self.shown_smart().is_none()
+        !self.shows_smart()
             || self.smart.taken
                 == Some((
                     self.session.query_revision(),

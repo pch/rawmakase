@@ -277,9 +277,15 @@ impl Library {
         let parent = dialog.parent.filter(|_| dialog.inside);
         let rules = SmartRules::new(&dialog.rules);
         let id = match dialog.editing {
-            None => self
-                .session
-                .create_smart_collection(&dialog.name, parent, &rules)?,
+            None => {
+                let place_before = self.place();
+                let id = self
+                    .session
+                    .create_smart_collection(&dialog.name, parent, &rules)?;
+                // One step for Undo, as Create Collection is.
+                self.record_smart_created(id, place_before);
+                id
+            }
             Some(id) => {
                 let before = self.session.smart_rules_of(id).cloned();
                 self.session.set_smart_rules(id, &rules)?;

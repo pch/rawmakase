@@ -206,8 +206,10 @@ fn delete_in_the_quick_collection_takes_photos_out_of_it_only() -> anyhow::Resul
     Ok(())
 }
 
+/// A collection imported from Lightroom is the catalog's own, as any other:
+/// Delete takes photos out of it, asking nothing, as one undoable step.
 #[test]
-fn delete_in_an_imported_collection_changes_nothing_and_says_so() -> anyhow::Result<()> {
+fn delete_in_an_imported_collection_takes_photos_out_of_it_only() -> anyhow::Result<()> {
     let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     let library = e.library.as_mut().unwrap();
     let id = library.session.catalog().db_for_tests().query_row(
@@ -225,18 +227,15 @@ fn delete_in_an_imported_collection_changes_nothing_and_says_so() -> anyhow::Res
     select(&mut e, &ids[..1]);
     tap(&mut e, Key::Delete, Modifiers::NONE);
     settle(&mut e);
-    assert!(!e.file_ops.confirming());
-    assert_eq!(ids_left(&e).len(), 2);
-    assert!(
-        e.library
-            .as_ref()
-            .unwrap()
-            .messages
-            .line()
-            .contains("can't be changed"),
-        "{}",
-        e.library.as_ref().unwrap().messages.line()
-    );
+    assert!(!e.file_ops.confirming(), "no question for a collection");
+    assert_eq!(ids_left(&e).len(), 2, "still in the catalog");
+    let in_trip = |e: &crate::app::Editor| {
+        e.library.as_ref().unwrap().session.collection_photos()[&collection].len()
+    };
+    assert_eq!(in_trip(&e), 1);
+    e.sync_undo();
+    e.undo();
+    assert_eq!(in_trip(&e), 2);
     Ok(())
 }
 

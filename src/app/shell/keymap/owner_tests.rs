@@ -22,6 +22,7 @@ const FIXED: &[(&str, &str, usize)] = &[
     ("file_ops/rename.rs", "consume_key(", 1),
     ("file_ops/rename.rs", "key_pressed(", 2),
     ("file_ops/dialogs.rs", "key_pressed(", 1),
+    ("library/collection_edit.rs", "key_pressed(", 1),
     ("develop/panels/curve_menu.rs", "key_pressed(", 1),
     ("develop/panels/snapshots.rs", "key_pressed(", 1),
     ("presets/user_presets.rs", "key_pressed(", 1),

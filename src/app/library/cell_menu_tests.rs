@@ -27,7 +27,7 @@ fn open_menu(cell: Rect) -> Vec<Texts> {
             },
             |ui| {
                 let response = ui.put(cell, egui::Button::new("photo"));
-                photo_menu(&response, &photo, true, true, Module::Library, true);
+                photo_menu(&response, &photo, true, true, Module::Library, true, &[]);
             },
         );
         output.textures_delta.clear();

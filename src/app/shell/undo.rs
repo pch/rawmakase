@@ -7,7 +7,8 @@ use crate::app::Editor;
 use crate::app::Module;
 use crate::app::history::{Recorded, Step};
 use crate::app::library::{
-    CollectionCommand, DescriptiveCommand, Library, MetadataCommand, Place, StackCommand,
+    CollectionCommand, CollectionTreeCommand, DescriptiveCommand, Library, MetadataCommand, Place,
+    StackCommand,
 };
 use crate::catalog::PhotoId;
 use anyhow::Result;
@@ -27,6 +28,9 @@ pub(in crate::app) enum Command {
     /// Photos added to or taken out of a collection, e.g. the Quick
     /// Collection; undone in the Library.
     Collection(Box<CollectionCommand>),
+    /// Collections or sets made, renamed, moved or deleted; undone in the
+    /// Library.
+    CollectionTree(Box<CollectionTreeCommand>),
     /// Title, caption, creator, copyright, location or keywords of one or
     /// more photos; undone in the Library.
     Descriptive(Box<DescriptiveCommand>),
@@ -69,6 +73,10 @@ impl Command {
                 change.place_before.forget_photo(id);
                 change.place_after.forget_photo(id);
                 !(change.added.is_empty() && change.removed.is_empty())
+            }
+            Command::CollectionTree(change) => {
+                change.forget_photo(id);
+                true
             }
             Command::Descriptive(change) => {
                 change.before.retain(|s| s.photo != id);
@@ -183,6 +191,12 @@ impl Editor {
             );
             commands.extend(
                 library
+                    .take_tree_done()
+                    .into_iter()
+                    .map(|change| (change.sequence, Command::CollectionTree(Box::new(change)))),
+            );
+            commands.extend(
+                library
                     .take_stack_done()
                     .into_iter()
                     .map(|change| (change.sequence, Command::Stack(Box::new(change)))),
@@ -277,10 +291,14 @@ impl Editor {
             Direction::Undo => log.undo.pop_back(),
             Direction::Redo => log.redo.pop(),
         };
-        let Some(command) = command else {
+        let Some(mut command) = command else {
             return false;
         };
-        let applied = self.apply(&command, direction);
+        let applied = match &mut command {
+            // It keeps what the other direction puts back.
+            Command::CollectionTree(change) => self.apply_tree(change, direction),
+            command => self.apply(command, direction),
+        };
         let log = &mut self.undo_log;
         match (direction, applied) {
             (Direction::Undo, true) | (Direction::Redo, false) => log.redo.push(command),
@@ -338,6 +356,8 @@ impl Editor {
                     library.restore_descriptive(values, ratings)
                 })
             }
+            // Applied by `apply_tree`, which can keep what it takes away.
+            Command::CollectionTree(_) => false,
             Command::Stack(change) => {
                 let (state, place) = match direction {
                     Direction::Undo => (&change.before, &change.place_before),
@@ -487,6 +507,19 @@ impl Editor {
     /// Writes a Library command with `write` and returns to where it was
     /// made: `place` in the Library, or `develop`, the photo open in Develop.
     /// False when nothing could be written.
+    /// [`Self::apply`] for a [`Command::CollectionTree`], which keeps what
+    /// Undo deletes for Redo, and the other way round.
+    fn apply_tree(&mut self, change: &mut CollectionTreeCommand, direction: Direction) -> bool {
+        let (verb, place) = match direction {
+            Direction::Undo => ("Undo", change.place_before.clone()),
+            Direction::Redo => ("Redo", change.place_after.clone()),
+        };
+        let summary = change.summary.clone();
+        let tree = &mut change.change;
+        self.apply_library(verb, &summary, &place, None, |library| {
+            library.apply_tree(tree, direction == Direction::Undo)
+        })
+    }
     fn apply_library(
         &mut self,
         verb: &str,
