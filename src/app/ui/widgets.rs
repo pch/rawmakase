@@ -298,6 +298,13 @@ fn section_header(
             .is_some_and(|set| set.contains(key))
     });
     let sidebar = group == Some(SectionGroup::LibraryLeft.key());
+    // Contents, and the header's title and chevron over them, from the panel's
+    // edges.
+    let content_inset = if group == Some(SectionGroup::DevelopRight.key()) {
+        inset::ADJUSTMENT_CONTENT
+    } else {
+        inset::SECTION_CONTENT
+    };
     // Space parts the panels; the catalog's sidebar lists sources closer.
     ui.add_space(if sidebar { space::M } else { inset::SECTION });
     let (rect, _) = ui.allocate_exact_size(
@@ -308,7 +315,8 @@ fn section_header(
     // its buttons before it.
     let chevron_rect = (!sidebar).then(|| {
         Rect::from_center_size(
-            Pos2::new(rect.right() - 14., rect.center().y),
+            // The 12 pt chevron ends where the contents do.
+            Pos2::new(rect.right() - content_inset - 6., rect.center().y),
             Vec2::splat(24.),
         )
     });
@@ -360,10 +368,10 @@ fn section_header(
             .rect_filled(rect, radius::CONTROL, palette.tone(fill));
     }
     ui.painter().text(
-        // Over the sidebar rows' text at their 10 px inset; elsewhere at the
-        // contents' 8 px margin.
+        // Over the sidebar rows' text at their 10 px inset; elsewhere over the
+        // contents' labels.
         Pos2::new(
-            rect.left() + if sidebar { 10. } else { 8. },
+            rect.left() + if sidebar { 10. } else { content_inset },
             rect.center().y,
         ),
         egui::Align2::LEFT_CENTER,
@@ -451,7 +459,7 @@ fn section_header(
         let side = if group == Some(SectionGroup::LibraryLeft.key()) {
             0
         } else {
-            8
+            content_inset as i8
         };
         // Scope ids per section so equal slider labels (e.g. two "Amount"s) never clash.
         ui.push_id(title, |ui| {
@@ -548,12 +556,15 @@ struct CurveInteraction {
     selected: Option<usize>,
     dragging: Option<usize>,
 }
-/// Lightroom's curve backdrop: mid-gray field, the image histogram behind the
-/// curve, a quarter grid and a dark frame. `channel` 0 is RGB, 1–3 are R, G, B.
+/// Corner radius of a curve's well.
+const CURVE_RADIUS: f32 = radius::CONTROL;
+/// A curve's well: a dark field with the photo's histogram behind the curve,
+/// grey for RGB and in the channel's colour for R, G and B, a quarter grid and
+/// the identity diagonal. `channel` 0 is RGB, 1–3 are R, G, B.
 fn curve_backdrop(ui: &egui::Ui, rect: Rect, histogram: &[[u32; 256]; 3], channel: usize) {
     let palette = theme::palette(ui.ctx());
     let painter = ui.painter();
-    painter.rect_filled(rect, 0., palette.tone(Tone::OUTLINE_STRONG));
+    painter.rect_filled(rect, CURVE_RADIUS, palette.tone(Tone::DEEP));
     let bins: Vec<f32> = (0..256)
         .map(|i| match channel {
             1..=3 => histogram[channel - 1][i] as f32,
@@ -563,19 +574,19 @@ fn curve_backdrop(ui: &egui::Ui, rect: Rect, histogram: &[[u32; 256]; 3], channe
     // Ignore the extreme bins when scaling so clipped pixels don't flatten the rest.
     let max = bins[1..255].iter().copied().fold(1., f32::max);
     let fill = match channel {
-        1 => Color32::from_rgb(112, 62, 60),
-        2 => Color32::from_rgb(62, 102, 66),
-        3 => Color32::from_rgb(62, 78, 118),
-        _ => palette.tone(Tone::HOVER),
+        1..=3 => curve_color(&palette, channel).gamma_multiply(0.22),
+        _ => palette.tone(Tone::RAISED),
     };
     if bins.iter().any(|v| *v > 0.) {
+        // Inside the rounded corners, so the fill never pokes past them.
+        let area = rect.shrink2(Vec2::new(CURVE_RADIUS / 2., 1.));
         let mut mesh = egui::Mesh::default();
         for (i, v) in bins.iter().enumerate() {
-            let x = rect.left() + i as f32 / 255. * rect.width();
-            let h = ((v / max).sqrt()).min(1.) * rect.height() * 0.92;
+            let x = area.left() + i as f32 / 255. * area.width();
+            let h = ((v / max).sqrt()).min(1.) * area.height() * 0.85;
             let base = mesh.vertices.len() as u32;
-            mesh.colored_vertex(Pos2::new(x, rect.bottom()), fill);
-            mesh.colored_vertex(Pos2::new(x, rect.bottom() - h), fill);
+            mesh.colored_vertex(Pos2::new(x, area.bottom()), fill);
+            mesh.colored_vertex(Pos2::new(x, area.bottom() - h), fill);
             if i > 0 {
                 mesh.add_triangle(base - 2, base - 1, base);
                 mesh.add_triangle(base - 1, base, base + 1);
@@ -583,11 +594,11 @@ fn curve_backdrop(ui: &egui::Ui, rect: Rect, histogram: &[[u32; 256]; 3], channe
         }
         painter.add(mesh);
     }
+    let grid = Stroke::new(1., Color32::from_white_alpha(14));
     for i in 1..4 {
         let t = i as f32 / 4.;
         let x = rect.left() + t * rect.width();
         let y = rect.bottom() - t * rect.height();
-        let grid = Stroke::new(1., Color32::from_rgba_unmultiplied(160, 160, 160, 60));
         painter.line_segment(
             [Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())],
             grid,
@@ -599,12 +610,12 @@ fn curve_backdrop(ui: &egui::Ui, rect: Rect, histogram: &[[u32; 256]; 3], channe
     }
     painter.line_segment(
         [rect.left_bottom(), rect.right_top()],
-        Stroke::new(1., Color32::from_rgba_unmultiplied(200, 200, 200, 45)),
+        Stroke::new(1., Color32::from_white_alpha(28)),
     );
     painter.rect_stroke(
         rect,
-        0.,
-        Stroke::new(1., palette.tone(Tone::DEEP)),
+        CURVE_RADIUS,
+        Stroke::new(1., palette.tone(Tone::CARD)),
         egui::StrokeKind::Outside,
     );
 }
@@ -616,27 +627,58 @@ fn curve_color(palette: &theme::Palette, channel: usize) -> Color32 {
         _ => palette.tone(Tone::BRIGHT),
     }
 }
-/// Read-out under a curve: the input and output values at the pointer.
-fn curve_readout(ui: &mut egui::Ui, value: Option<[f32; 2]>, hint: &str) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.), Sense::hover());
+/// The width of [`curve_channels`]: four 22 pt dots.
+pub(in crate::app) const CURVE_CHANNELS_WIDTH: f32 = 4. * 22.;
+/// The point curve's channel picker: a dot in each channel's colour, RGB's
+/// white, the selected one ringed. Returns whether the channel changed.
+pub(in crate::app) fn curve_channels(ui: &mut egui::Ui, channel: &mut usize) -> bool {
     let palette = theme::palette(ui.ctx());
-    // The value under the pointer, or else how to use the graph, centred
-    // under it in the same row.
-    let (text, size, color) = match value {
-        Some([x, y]) => (
-            format!("{:.0} / {:.0}", x * 255., y * 255.),
-            11.,
-            palette.tone(Tone::LABEL),
-        ),
-        None => (hint.to_string(), 10.5, palette.tone(Tone::DISABLED)),
-    };
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        text,
-        egui::FontId::proportional(size),
-        color,
+    let mut changed = false;
+    for (index, name) in ["RGB", "Red", "Green", "Blue"].into_iter().enumerate() {
+        let (rect, response) = ui.allocate_exact_size(Vec2::splat(22.), Sense::click());
+        let selected = *channel == index;
+        let enabled = ui.is_enabled();
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(egui::WidgetType::RadioButton, enabled, selected, name)
+        });
+        let response = response
+            .on_hover_text(format!("{name} curve"))
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        let color = curve_color(&palette, index);
+        let center = rect.center();
+        if selected {
+            ui.painter().circle_filled(center, 5., color);
+            ui.painter()
+                .circle_stroke(center, 8.5, Stroke::new(1.5, color.gamma_multiply(0.7)));
+        } else {
+            let strength = if response.hovered() { 0.85 } else { 0.45 };
+            ui.painter()
+                .circle_filled(center, 5., color.gamma_multiply(strength));
+        }
+        if response.clicked() && !selected {
+            *channel = index;
+            changed = true;
+        }
+    }
+    changed
+}
+/// A small read-out in a curve's top-left corner: what is under the pointer.
+fn curve_overlay(ui: &egui::Ui, rect: Rect, text: &str) {
+    let palette = theme::palette(ui.ctx());
+    let galley = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        egui::FontId::monospace(text::MICRO),
+        palette.tone(Tone::SOFT),
     );
+    let pos = rect.left_top() + Vec2::new(space::S, space::S);
+    let back = Rect::from_min_size(pos, galley.size()).expand2(Vec2::new(space::XS, space::XXS));
+    ui.painter().rect_filled(
+        back,
+        radius::SMALL,
+        palette.tone(Tone::DEEP).gamma_multiply(0.85),
+    );
+    ui.painter()
+        .galley_with_override_text_color(pos, galley, palette.tone(Tone::SOFT));
 }
 /// Parametric curve: dragging up or down in the graph changes the region
 /// under the pointer, and the three handles below move the region splits.
@@ -651,7 +693,7 @@ pub(in crate::app) fn parametric_curve_ui(
     let palette = theme::palette(ui.ctx());
     let size = ui.available_width();
     let (outer, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click_and_drag());
-    let rect = outer.shrink(4.);
+    let rect = outer.shrink(5.);
     curve_backdrop(ui, rect, histogram, 0);
     let hover = response.hover_pos().filter(|p| rect.contains(*p));
     let hovered_region =
@@ -696,11 +738,21 @@ pub(in crate::app) fn parametric_curve_ui(
             )
         })
         .collect();
-    ui.painter().add(egui::Shape::line(
-        pts,
-        Stroke::new(2., palette.tone(Tone::BRIGHT)),
-    ));
+    ui.painter()
+        .with_clip_rect(rect.expand(1.))
+        .add(egui::Shape::line(
+            pts,
+            Stroke::new(1.75, palette.tone(Tone::BRIGHT)),
+        ));
     let name = hovered_region.map(|i| ["Shadows", "Darks", "Lights", "Highlights"][i]);
+    if let Some(i) = hovered_region.or(targeted) {
+        let region = ["Shadows", "Darks", "Lights", "Highlights"][i];
+        curve_overlay(
+            ui,
+            rect,
+            &format!("{region} {:+.0}", effects.parametric[i] * 100.),
+        );
+    }
     response
         .on_hover_cursor(egui::CursorIcon::ResizeVertical)
         .on_hover_text(name.map_or(String::new(), |n| {
@@ -766,7 +818,7 @@ pub(in crate::app) fn tone_curve_ui(
     state.selected = state.selected.filter(|i| *i < curve.points.len());
     let (outer, response) =
         ui.allocate_exact_size(Vec2::splat(ui.available_width()), Sense::click_and_drag());
-    let rect = outer.shrink(4.);
+    let rect = outer.shrink(5.);
     let screen = |p: [f32; 2]| {
         Pos2::new(
             rect.left() + p[0] * rect.width(),
@@ -836,39 +888,34 @@ pub(in crate::app) fn tone_curve_ui(
     }
     curve_backdrop(ui, rect, histogram, channel);
     let plot = crate::color::curve::CurveLut::new(curve);
+    let color = curve_color(&palette, channel);
     let pts = (0..=256)
         .map(|i| {
             let x = i as f32 / 256.;
             screen([x, plot.evaluate(x)])
         })
         .collect();
-    ui.painter().add(egui::Shape::line(
-        pts,
-        Stroke::new(2., curve_color(&palette, channel)),
-    ));
+    ui.painter()
+        .with_clip_rect(rect.expand(1.))
+        .add(egui::Shape::line(pts, Stroke::new(1.75, color)));
+    // Hollow handles, filled once selected, haloed while under the pointer.
     for (i, p) in curve.points.iter().enumerate() {
         let p = screen(*p);
-        let active = state.selected == Some(i) || hit == Some(i);
-        ui.painter().circle_filled(
+        let selected = state.selected == Some(i);
+        let hovered = hit == Some(i) || state.dragging == Some(i);
+        if hovered {
+            ui.painter()
+                .circle_filled(p, 9., color.gamma_multiply(0.18));
+        }
+        ui.painter().circle(
             p,
-            if active { 5.5 } else { 4.5 },
-            if state.selected == Some(i) {
-                palette.tone(Tone::BAR)
+            if selected || hovered { 5. } else { 4.5 },
+            if selected {
+                color
             } else {
-                palette.tone(Tone::BRIGHT)
+                palette.tone(Tone::DEEP)
             },
-        );
-        ui.painter().circle_stroke(
-            p,
-            if active { 5.5 } else { 4.5 },
-            Stroke::new(
-                1.5,
-                if state.selected == Some(i) {
-                    palette.tone(Tone::BRIGHT)
-                } else {
-                    palette.tone(Tone::WELL)
-                },
-            ),
+            Stroke::new(1.5, color),
         );
     }
     let readout = state.dragging.map(|i| curve.points[i]).or_else(|| {
@@ -877,52 +924,92 @@ pub(in crate::app) fn tone_curve_ui(
             [x, plot.evaluate(x)]
         })
     });
-    response.on_hover_cursor(if state.dragging.is_some() {
-        egui::CursorIcon::Grabbing
-    } else if hit.is_some() {
-        egui::CursorIcon::Grab
-    } else {
-        egui::CursorIcon::Crosshair
-    });
-    curve_readout(
-        ui,
-        readout,
-        "Click to add · drag to shape · right-click to remove",
-    );
-    if let Some(i) = state.selected {
-        let mut point = curve.points[i].map(|v| v * 255.);
-        let changed = ui
-            .horizontal(|ui| {
-                ui.label("Input");
-                let x = ui
-                    .add(
-                        egui::DragValue::new(&mut point[0])
-                            .range(0. ..=255.)
-                            .update_while_editing(false)
-                            .speed(1.)
-                            .fixed_decimals(0),
-                    )
-                    .changed();
-                ui.label("Output");
-                let y = ui
-                    .add(
-                        egui::DragValue::new(&mut point[1])
-                            .range(0. ..=255.)
-                            .update_while_editing(false)
-                            .speed(1.)
-                            .fixed_decimals(0),
-                    )
-                    .changed();
-                x || y
-            })
-            .inner;
-        if changed {
-            curve.move_point(i, point.map(|v| v / 255.));
-        }
+    if let Some([x, y]) = readout {
+        curve_overlay(ui, rect, &format!("{:.0} → {:.0}", x * 255., y * 255.));
+    }
+    response
+        .on_hover_cursor(if state.dragging.is_some() {
+            egui::CursorIcon::Grabbing
+        } else if hit.is_some() {
+            egui::CursorIcon::Grab
+        } else {
+            egui::CursorIcon::Crosshair
+        })
+        .on_hover_text("Click to add a point, drag to shape it, right-click to remove it");
+    // The selected point's values, typed. The row stays while none is selected,
+    // so selecting one never moves what lies below.
+    ui.add_space(space::S);
+    let mut point = state.selected.map(|i| curve.points[i].map(|v| v * 255.));
+    let changed = ui
+        .horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = space::S;
+            let x = point_field(ui, "Input", point.as_mut().map(|p| &mut p[0]));
+            ui.add_space(space::M);
+            let y = point_field(ui, "Output", point.as_mut().map(|p| &mut p[1]));
+            x || y
+        })
+        .inner;
+    if changed && let (Some(i), Some(point)) = (state.selected, point) {
+        curve.move_point(i, point.map(|v| v / 255.));
     }
     ui.ctx().data_mut(|d| d.insert_temp(id, state));
 }
-/// Width of a slider's number field at the right of its row.
+/// A curve point's Input or Output, 0–255: a quiet caption and a number field,
+/// blank and disabled while no point is selected. Returns whether it changed.
+fn point_field(ui: &mut egui::Ui, label: &str, value: Option<&mut f32>) -> bool {
+    let palette = theme::palette(ui.ctx());
+    ui.label(
+        egui::RichText::new(label)
+            .size(text::SMALL)
+            .color(palette.tone(Tone::MUTED)),
+    );
+    ui.scope(|ui| {
+        let widgets = &mut ui.visuals_mut().widgets;
+        for (visuals, fill) in [
+            (&mut widgets.inactive, Tone::FIELD),
+            (&mut widgets.hovered, Tone::RAISED),
+            (&mut widgets.active, Tone::RAISED),
+            (&mut widgets.noninteractive, Tone::CARD),
+        ] {
+            visuals.weak_bg_fill = palette.tone(fill);
+            visuals.bg_fill = palette.tone(fill);
+            visuals.bg_stroke = Stroke::NONE;
+            visuals.corner_radius = radius::CONTROL.into();
+            visuals.expansion = 0.;
+        }
+        let size = Vec2::new(40., size::CONTROL);
+        match value {
+            Some(value) => ui
+                .add_sized(
+                    size,
+                    egui::DragValue::new(value)
+                        .range(0. ..=255.)
+                        .update_while_editing(false)
+                        .speed(1.)
+                        .fixed_decimals(0),
+                )
+                .changed(),
+            None => {
+                ui.add_enabled_ui(false, |ui| {
+                    ui.add_sized(size, egui::Button::new("–"));
+                });
+                false
+            }
+        }
+    })
+    .inner
+}
+/// The radius of a slider's knob.
+const SLIDER_KNOB: f32 = 7.5;
+/// The knob's radius while hovered or dragged, which its travel leaves room for.
+const SLIDER_KNOB_HOVERED: f32 = SLIDER_KNOB + 1.;
+/// The space above a slider, parting it from the one before.
+pub(in crate::app) const SLIDER_GAP: f32 = space::M;
+/// A slider's height: its label and value line, then its rail.
+pub(in crate::app) const SLIDER_ROW: f32 = 42.;
+/// The height of a slider's label and value line, above its rail.
+pub(in crate::app) const SLIDER_LABEL: f32 = 18.;
+/// Width of a slider's number field above its rail.
 const SLIDER_VALUE_WIDTH: f32 = 52.;
 /// Lightroom-style slider. Normalized ranges within ±1 display as integers
 /// (×100), matching Lightroom's numbers while the recipe keeps its units.
@@ -1184,20 +1271,25 @@ pub(in crate::app) fn slider_styled(
     };
     let before = *value;
     ui.push_id(label, |ui| {
-        let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.), Sense::hover());
+        ui.add_space(SLIDER_GAP);
+        let (row, _) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), SLIDER_ROW), Sense::hover());
         let label_rect = Rect::from_min_max(
             row.min,
-            Pos2::new(row.left() + label_column(ui), row.bottom()),
+            Pos2::new(
+                row.right() - SLIDER_VALUE_WIDTH - space::M,
+                row.top() + SLIDER_LABEL,
+            ),
         );
         let label_response = ui.interact(label_rect, ui.id().with("label"), Sense::click());
-        let label_pos = label_rect.right_center() - Vec2::new(5., 0.);
+        let label_pos = label_rect.left_center();
         let font = egui::FontId::proportional(text::SMALL);
         if selected {
             // A lit label marks the slider the keys step, as in Lightroom.
             let galley =
                 ui.painter()
                     .layout_no_wrap(label.to_string(), font, palette.tone(Tone::BRIGHT));
-            let text = egui::Align2::RIGHT_CENTER.anchor_size(label_pos, galley.size());
+            let text = egui::Align2::LEFT_CENTER.anchor_size(label_pos, galley.size());
             ui.painter().rect_filled(
                 text.expand2(Vec2::new(3., 1.)),
                 2.,
@@ -1208,7 +1300,7 @@ pub(in crate::app) fn slider_styled(
         } else {
             ui.painter().text(
                 label_pos,
-                egui::Align2::RIGHT_CENTER,
+                egui::Align2::LEFT_CENTER,
                 label,
                 font,
                 palette.tone(Tone::SOFT),
@@ -1223,7 +1315,7 @@ pub(in crate::app) fn slider_styled(
         }
         let value_rect = Rect::from_min_max(
             Pos2::new(row.right() - SLIDER_VALUE_WIDTH, row.top()),
-            row.max,
+            Pos2::new(row.right(), row.top() + SLIDER_LABEL),
         );
         let mut displayed = *value * scale;
         // The arrow keys step a focused number; egui's DragValue consumes them while
@@ -1254,32 +1346,63 @@ pub(in crate::app) fn slider_styled(
         // A fixed field that fits the widest value ("50000", "+5.00"): typing or
         // dragging never widens it over the rail.
         let value_response = ui
-            .scope_builder(egui::UiBuilder::new().max_rect(value_rect), |ui| {
-                ui.set_clip_rect(value_rect.intersect(ui.clip_rect()));
-                let spacing = ui.spacing_mut();
-                spacing.interact_size.x = SLIDER_VALUE_WIDTH;
-                spacing.button_padding.x = space::XS;
-                // Set into the dark panels; a disabled field fades further.
-                let widgets = &mut ui.visuals_mut().widgets;
-                for (state, fill) in [
-                    (&mut widgets.inactive, Tone::CARD),
-                    (&mut widgets.hovered, Tone::FIELD),
-                ] {
-                    state.bg_fill = palette.tone(fill);
-                    state.weak_bg_fill = palette.tone(fill);
-                }
-                ui.place(
-                    value_rect,
-                    // An imported value beyond the range shows as it is, rather
-                    // than being clamped by drawing it.
-                    egui::DragValue::new(&mut displayed)
-                        .range(typed_low * scale..=typed_high * scale)
-                        .clamp_existing_to_range(false)
-                        .speed(span * scale / 500.)
-                        .custom_formatter(move |v, _| format_value(v, decimals, signed))
-                        .custom_parser(|s| s.trim().trim_start_matches('+').parse().ok()),
-                )
-            })
+            .scope_builder(
+                egui::UiBuilder::new()
+                    .max_rect(value_rect)
+                    .layout(egui::Layout::right_to_left(egui::Align::Center)),
+                |ui| {
+                    ui.set_clip_rect(value_rect.intersect(ui.clip_rect()));
+                    ui.style_mut().override_font_id = Some(egui::FontId::proportional(text::SMALL));
+                    let spacing = ui.spacing_mut();
+                    spacing.interact_size.x = 0.;
+                    spacing.button_padding.x = 0.;
+                    // Keep the value quiet until it is hovered or edited.
+                    let widgets = &mut ui.visuals_mut().widgets;
+                    for (state, fill) in [
+                        (&mut widgets.inactive, Tone::CARD),
+                        (&mut widgets.hovered, Tone::FIELD),
+                    ] {
+                        state.bg_fill = palette.tone(fill);
+                        state.weak_bg_fill = palette.tone(fill);
+                    }
+                    widgets.inactive.bg_fill = Color32::TRANSPARENT;
+                    widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+                    widgets.inactive.bg_stroke = Stroke::NONE;
+                    // Typed into, the number is a field the width of its slot and
+                    // the height of the label line, so its frame is never clipped.
+                    // DragValue keys its editing on the next automatic id.
+                    let editing = ui.memory(|m| m.has_focus(ui.next_auto_id()));
+                    if editing {
+                        let spacing = ui.spacing_mut();
+                        spacing.interact_size = Vec2::new(SLIDER_VALUE_WIDTH, SLIDER_LABEL);
+                        spacing.button_padding = Vec2::new(space::S, 0.);
+                        let visuals = ui.visuals_mut();
+                        visuals.text_edit_bg_color = Some(palette.tone(Tone::FIELD));
+                        // No outline: the fill marks the field. The stroke's colour is
+                        // also the selected text's, so it stays the theme's.
+                        visuals.selection.stroke.width = 0.;
+                        visuals.text_cursor.stroke.width = 1.5;
+                        for state in [
+                            &mut visuals.widgets.inactive,
+                            &mut visuals.widgets.hovered,
+                            &mut visuals.widgets.active,
+                        ] {
+                            state.corner_radius = radius::CONTROL.into();
+                            state.expansion = 0.;
+                        }
+                    }
+                    ui.add(
+                        // An imported value beyond the range shows as it is, rather
+                        // than being clamped by drawing it.
+                        egui::DragValue::new(&mut displayed)
+                            .range(typed_low * scale..=typed_high * scale)
+                            .clamp_existing_to_range(false)
+                            .speed(span * scale / 500.)
+                            .custom_formatter(move |v, _| format_value(v, decimals, signed))
+                            .custom_parser(|s| s.trim().trim_start_matches('+').parse().ok()),
+                    )
+                },
+            )
             .inner;
         if value_response.changed() {
             // Dragging the number, the arrow keys stepping it while it has focus, or a
@@ -1299,28 +1422,37 @@ pub(in crate::app) fn slider_styled(
                 (typed_low, typed_high),
             );
         }
-        let area = Rect::from_min_max(
-            Pos2::new(label_rect.right(), row.top()),
-            Pos2::new(value_rect.left() - 4., row.bottom()),
-        );
+        let area = Rect::from_min_max(Pos2::new(row.left(), row.top() + SLIDER_LABEL), row.max);
         let response = ui.interact(area, ui.id().with("rail"), Sense::click_and_drag());
         let rail = Rect::from_min_max(
-            Pos2::new(area.left() + 5., area.center().y - 1.),
-            Pos2::new(area.right() - 5., area.center().y + 1.),
+            Pos2::new(area.left(), area.center().y - 1.5),
+            Pos2::new(area.right(), area.center().y + 1.5),
         );
+        // The knob stays on the rail, as in Lightroom: its centre travels a
+        // hovered knob's radius in from either end, so even enlarged it never
+        // passes the rail's ends, the label or the value.
+        let travel = rail.shrink2(Vec2::new(SLIDER_KNOB_HOVERED, 0.));
         if hue_rail {
             let mut mesh = egui::Mesh::default();
+            let color = |h| {
+                let c = crate::develop::color::hue_rgb(h);
+                Color32::from_rgb(
+                    (c[0] * 180.) as u8,
+                    (c[1] * 180.) as u8,
+                    (c[2] * 180.) as u8,
+                )
+            };
+            // The hues lie where the knob's centre picks them; the ends past its
+            // travel continue red, where the circle closes.
+            for cap in [
+                Rect::from_x_y_ranges(rail.left()..=travel.left(), rail.y_range()),
+                Rect::from_x_y_ranges(travel.right()..=rail.right(), rail.y_range()),
+            ] {
+                ui.painter().rect_filled(cap, 0., color(0.));
+            }
             for sector in 0..6 {
-                let left = egui::lerp(rail.left()..=rail.right(), sector as f32 / 6.);
-                let right = egui::lerp(rail.left()..=rail.right(), (sector + 1) as f32 / 6.);
-                let color = |h| {
-                    let c = crate::develop::color::hue_rgb(h);
-                    Color32::from_rgb(
-                        (c[0] * 180.) as u8,
-                        (c[1] * 180.) as u8,
-                        (c[2] * 180.) as u8,
-                    )
-                };
+                let left = egui::lerp(travel.left()..=travel.right(), sector as f32 / 6.);
+                let right = egui::lerp(travel.left()..=travel.right(), (sector + 1) as f32 / 6.);
                 let a = color(sector as f32 / 6.);
                 let b = color((sector + 1) as f32 / 6.);
                 let first = mesh.vertices.len() as u32;
@@ -1347,7 +1479,7 @@ pub(in crate::app) fn slider_styled(
         }
         // A tick where a centred slider rests, or a coloured one's default (Temp's As
         // Shot); a slider from zero up, like Feather, fills from its left end.
-        let neutral = to_rail(origin.value, rail);
+        let neutral = to_rail(origin.value, travel);
         if origin.tick == Tick::Shown {
             ui.painter().line_segment(
                 [
@@ -1363,7 +1495,7 @@ pub(in crate::app) fn slider_styled(
         } else if (response.dragged() || response.clicked())
             && let Some(p) = response.interact_pointer_pos()
         {
-            let v = from_rail(p.x, rail);
+            let v = from_rail(p.x, travel);
             let v = snap.map_or(v, |snap| (v / snap).round() * snap);
             *value = v.clamp(start, end);
         } else if let Some(nudge) = hovered_nudge(ui, row) {
@@ -1372,28 +1504,38 @@ pub(in crate::app) fn slider_styled(
             let unit = snap.unwrap_or(10f32.powi(-(decimals as i32)) / scale);
             *value = crate::model::params::nudged(*value, nudge * unit, start..=end);
         }
-        let x = to_rail(*value, rail);
+        let x = to_rail(*value, travel);
         if gradient.is_none() {
-            ui.painter().line_segment(
-                [
-                    Pos2::new(neutral, area.center().y),
-                    Pos2::new(x, area.center().y),
-                ],
-                Stroke::new(2., palette.tone(Tone::SECONDARY)),
+            // A fill from a range end starts at the rail's end, not where the
+            // knob's travel does, so no gap shows there.
+            let from = if neutral <= travel.left() {
+                rail.left()
+            } else if neutral >= travel.right() {
+                rail.right()
+            } else {
+                neutral
+            };
+            ui.painter().rect_filled(
+                Rect::from_x_y_ranges(from.min(x)..=from.max(x), rail.y_range()),
+                radius::SMALL,
+                palette.tone(Tone::SECONDARY),
             );
         }
         let center = Pos2::new(x, area.center().y);
         ui.painter().circle_filled(
             center,
             if response.hovered() || response.dragged() {
-                4.5
+                SLIDER_KNOB_HOVERED
             } else {
-                3.5
+                SLIDER_KNOB
             },
             palette.tone(Tone::SOFT),
         );
-        ui.painter()
-            .circle_stroke(center, 3.5, Stroke::new(1., palette.tone(Tone::BAR)));
+        ui.painter().circle_stroke(
+            center,
+            SLIDER_KNOB,
+            Stroke::new(1., palette.tone(Tone::BAR)),
+        );
         response.on_hover_text(
             "Drag to adjust · double-click to reset. Drag or type the number for precise edits.",
         );
@@ -1777,6 +1919,40 @@ pub(in crate::app) fn segmented<T: PartialEq + Copy>(
         }
     }
     false
+}
+/// The height of a panel drop-down, a little taller than a button.
+pub(in crate::app) const DROPDOWN_HEIGHT: f32 = size::HEADER;
+/// A drop-down in the panels' style: rounded, outlined, a chevron at its end.
+/// It styles the rest of `ui`'s row too, so call it inside the row's closure.
+pub(in crate::app) fn dropdown(ui: &mut egui::Ui, id_salt: impl egui::AsIdSalt) -> egui::ComboBox {
+    let palette = theme::palette(ui.ctx());
+    let spacing = ui.spacing_mut();
+    spacing.interact_size.y = DROPDOWN_HEIGHT;
+    spacing.button_padding = Vec2::new(space::L, space::XS);
+    spacing.icon_width = 14.;
+    spacing.icon_spacing = space::S;
+    let widgets = &mut ui.visuals_mut().widgets;
+    for (visuals, fill, outline) in [
+        (&mut widgets.inactive, Tone::FIELD, Tone::RAISED),
+        (&mut widgets.hovered, Tone::RAISED, Tone::OUTLINE),
+        (&mut widgets.active, Tone::HOVER, Tone::OUTLINE),
+        (&mut widgets.open, Tone::RAISED, Tone::OUTLINE_STRONG),
+    ] {
+        visuals.corner_radius = (radius::CARD - 2.).into();
+        visuals.weak_bg_fill = palette.tone(fill);
+        visuals.bg_fill = palette.tone(fill);
+        visuals.bg_stroke = Stroke::new(1., palette.tone(outline));
+        visuals.expansion = 0.;
+    }
+    egui::ComboBox::from_id_salt(id_salt).icon(|ui, rect, visuals, _open| {
+        icons::paint_at(
+            ui.painter(),
+            Icon::ChevronDown,
+            rect.center(),
+            14.,
+            visuals.fg_stroke.color,
+        );
+    })
 }
 /// Sets a menu's width: `preferred`, or the width its widest
 /// [`menu_item`] asked for, so that a long label never runs into its

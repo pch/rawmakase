@@ -622,7 +622,11 @@ impl ParameterId {
 /// A number as sliders show it: `decimals` places, and a `+` on positive values
 /// when `signed`.
 pub fn format_value(v: f64, decimals: usize, signed: bool) -> String {
-    let text = format!("{v:.decimals$}");
+    let mut text = format!("{v:.decimals$}");
+    // A small negative value rounds to zero, which has no sign.
+    if text.starts_with('-') && text[1..].chars().all(|c| matches!(c, '0' | '.')) {
+        text.remove(0);
+    }
     if signed && v > 0. && !text.trim_start_matches(['0', '.']).is_empty() {
         format!("+{text}")
     } else {
@@ -773,6 +777,17 @@ impl LocalParameterId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A small negative value, such as a drag that ends just left of zero, shows as
+    /// 0, never as -0.
+    #[test]
+    fn a_value_rounding_to_zero_shows_no_sign() {
+        assert_eq!(format_value(-0.004, 0, true), "0");
+        assert_eq!(format_value(-0.004, 2, true), "0.00");
+        assert_eq!(format_value(-0.4, 0, false), "0");
+        assert_eq!(format_value(-0.6, 0, true), "-1");
+        assert_eq!(format_value(0.6, 0, true), "+1");
+    }
 
     #[test]
     fn a_rendered_photo_moves_temp_and_tint_relatively() {

@@ -1,6 +1,8 @@
 //! The Tone Curve panel: Parametric and Point curves, Refine Saturation and
 //! Levels.
-use super::super::{PanelSwitch, control_row, highlight_targeted, subheading, targeted_shortcut};
+use super::super::{
+    PanelSwitch, highlight_targeted, stacked_control, subheading, targeted_shortcut,
+};
 use super::Action;
 use crate::app::develop::panels::curve_menu::CurveChoice;
 use crate::app::develop::state::{Tool, ViewState};
@@ -8,7 +10,8 @@ use crate::app::develop::step_name::StepName;
 use crate::app::develop::tools::targeted_tool::target_button;
 use crate::app::ui::design::space;
 use crate::app::ui::widgets::{
-    parametric_curve_ui, segmented, setting_slider, slider, switched_section, tone_curve_ui,
+    CURVE_CHANNELS_WIDTH, curve_channels, parametric_curve_ui, segmented, setting_slider, slider,
+    switched_section, tone_curve_ui,
 };
 use crate::develop::targeted::{Target, TargetWeights};
 use crate::model::panels::Panel;
@@ -31,6 +34,8 @@ pub(in crate::app::develop::panels::inspector) fn show(
     let mut actions = Vec::new();
     let mut switch = PanelSwitch::new(r, Panel::ToneCurve);
     if switched_section(ui, step, "Tone Curve", &mut switch.state, |ui, step| {
+        // One toolbar: the targeted tool, the curve's kind and, for the point
+        // curve, its channel as coloured dots at the end.
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = space::S;
             let (button, _) = ui.allocate_exact_size(Vec2::new(22., 22.), Sense::hover());
@@ -42,23 +47,29 @@ pub(in crate::app::develop::panels::inspector) fn show(
             ) {
                 actions.push(Action::Targeted(Target::ToneCurve));
             }
-            segmented(
-                ui,
-                &mut view.parametric_curve,
-                &[(true, "Parametric"), (false, "Point")],
-                112.,
-            );
-            if !view.parametric_curve {
-                let w = ui.available_width();
+            // The channels' room is kept first: in a narrow panel the kind's
+            // segments shrink rather than push the dots past the edge.
+            let room = if view.parametric_curve {
+                ui.available_width()
+            } else {
+                ui.available_width() - CURVE_CHANNELS_WIDTH - space::S
+            };
+            ui.allocate_ui(Vec2::new(room.max(0.), button.height()), |ui| {
                 segmented(
                     ui,
-                    &mut view.selected_curve,
-                    &[(0, "RGB"), (1, "R"), (2, "G"), (3, "B")],
-                    w,
+                    &mut view.parametric_curve,
+                    &[(true, "Parametric"), (false, "Point")],
+                    room.min(132.),
                 );
+            });
+            if !view.parametric_curve {
+                // At the row's end, in RGB, R, G, B order.
+                ui.add_space((ui.available_width() - CURVE_CHANNELS_WIDTH).max(0.));
+                ui.spacing_mut().item_spacing.x = 0.;
+                curve_channels(ui, &mut view.selected_curve);
             }
         });
-        ui.add_space(space::XS);
+        ui.add_space(space::M);
         if view.parametric_curve {
             let moving = targeted.filter(|w| w.target == Target::ToneCurve);
             parametric_curve_ui(
@@ -92,8 +103,8 @@ pub(in crate::app::develop::panels::inspector) fn show(
             use crate::presets::curves::ShownCurve;
             let chosen = ShownCurve::of(r, saved_curves);
             let shown = chosen.name(saved_curves).to_string();
-            control_row(ui, "Point Curve", |ui| {
-                egui::ComboBox::from_id_salt("point-curve")
+            stacked_control(ui, "Point Curve", |ui| {
+                crate::app::ui::widgets::dropdown(ui, "point-curve")
                     .width(ui.available_width())
                     .selected_text(&shown)
                     .show_ui(ui, |ui| {

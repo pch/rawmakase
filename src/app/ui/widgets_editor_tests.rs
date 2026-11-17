@@ -391,3 +391,68 @@ fn an_imported_value_outside_the_slider_survives_being_shown_and_nudged() {
     draw(&mut value, vec![over, key(egui::Key::ArrowDown)], 3.);
     assert!(5. < value && value < 6., "{value}");
 }
+
+/// At either end of its range, a slider's knob stays within the rail's ends, even
+/// while it is hovered and drawn larger.
+#[test]
+fn a_hovered_knob_at_either_end_stays_on_the_rail() {
+    for end in [-1f32, 1.] {
+        let ctx = egui::Context::default();
+        let mut value = end;
+        let row = std::cell::Cell::new(Rect::NOTHING);
+        let mut frame = |events: Vec<egui::Event>| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(360., 600.))),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    let top = ui.cursor().min;
+                    crate::app::ui::widgets::slider(
+                        ui,
+                        &mut Default::default(),
+                        "Contrast",
+                        &mut value,
+                        -1. ..=1.,
+                        0.,
+                    );
+                    row.set(Rect::from_min_max(
+                        top,
+                        Pos2::new(ui.max_rect().right(), ui.cursor().top()),
+                    ));
+                },
+            );
+            output.textures_delta.clear();
+            output.shapes
+        };
+        frame(vec![]);
+        let row = row.get();
+        // Over the rail at the knob's end of it.
+        let x = if end < 0. {
+            row.left() + 4.
+        } else {
+            row.right() - 4.
+        };
+        let over = egui::Event::PointerMoved(Pos2::new(x, row.bottom() - 8.));
+        frame(vec![over.clone()]);
+        let shapes = frame(vec![over]);
+        let circles: Vec<_> = shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Circle(c) => Some(*c),
+                _ => None,
+            })
+            .collect();
+        assert!(!circles.is_empty());
+        for c in circles {
+            let reach = c.radius + c.stroke.width / 2.;
+            assert!(
+                c.center.x - reach >= row.left() - 0.01 && c.center.x + reach <= row.right() + 0.01,
+                "a knob of radius {reach} at {} passes the rail {:?}",
+                c.center.x,
+                row.x_range()
+            );
+        }
+    }
+}
