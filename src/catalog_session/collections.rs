@@ -20,15 +20,18 @@ impl CatalogSession {
         self.follow_members(collection, &change);
         Ok(change)
     }
-    /// Puts `add` back at their positions and takes `remove` out, for Undo
-    /// and Redo, in the catalog and the lists.
+    /// Puts `add` back at their positions, takes `remove` out and gives
+    /// `positions` theirs, for Undo and Redo, in the catalog and the lists.
     pub(crate) fn put_back_members(
         &mut self,
         collection: CollectionId,
         add: &[Member],
         remove: &[PhotoId],
+        positions: &[Member],
     ) -> Result<MembershipChange> {
-        let change = self.catalog.put_back_members(collection, add, remove)?;
+        let change = self
+            .catalog
+            .put_back_members(collection, add, remove, positions)?;
         self.follow_members(collection, &change);
         Ok(change)
     }
@@ -211,7 +214,7 @@ impl CatalogSession {
                 .filter(|m| listed.contains(&m.0))
                 .cloned()
                 .collect(),
-            removed: Vec::new(),
+            ..Default::default()
         };
         self.follow_members(quick, &back);
         self.collections.retain(|c| c.id != id);
@@ -243,6 +246,34 @@ impl CatalogSession {
     /// Makes `id` Lightroom's target collection; `None` the Quick Collection.
     pub(crate) fn set_target_collection(&mut self, id: Option<CollectionId>) -> Result<()> {
         self.catalog.set_target_collection(id)
+    }
+    /// Custom Order's drag, in the catalog: see
+    /// [`crate::catalog::Catalog::arrange_collection`]. Returns every
+    /// photo's position before, for Undo, or `None` when nothing moved.
+    pub(crate) fn arrange_collection(
+        &mut self,
+        collection: CollectionId,
+        order: &[PhotoId],
+    ) -> Result<Option<Vec<Member>>> {
+        self.changed();
+        self.catalog.arrange_collection(collection, order)
+    }
+    /// Undo and Redo of Custom Order's drag: every position as it was.
+    pub(crate) fn restore_positions(
+        &mut self,
+        collection: CollectionId,
+        members: &[Member],
+    ) -> Result<()> {
+        self.changed();
+        self.catalog.restore_positions(collection, members)
+    }
+    /// Keeps a collection's sort, as Lightroom's sortType and sortDirection.
+    pub(crate) fn set_collection_options(
+        &mut self,
+        id: CollectionId,
+        options: &crate::catalog::CollectionOptions,
+    ) -> Result<()> {
+        self.catalog.set_collection_options(id, options)
     }
     /// Makes the lists follow a change the catalog made: removals first, as
     /// the catalog makes them.
@@ -278,7 +309,7 @@ mod tests {
         let a = session.photos()[0].id;
         let quick = session.ensure_quick_collection()?;
         session.change_collection(quick, &[a], &[])?;
-        session.put_back_members(quick, &[(a, Some(Position::new("4")))], &[a])?;
+        session.put_back_members(quick, &[(a, Some(Position::new("4")))], &[a], &[])?;
         session.change_collection(quick, &[a], &[a])?;
         assert!(session.collection_photos()[&quick].contains(&a));
         assert_eq!(
@@ -345,7 +376,7 @@ mod tests {
 
         let removed = session.change_collection(japan, &[], &[ids[0]])?;
         assert_eq!(removed.removed, [(ids[0], Some(Position::new("1")))]);
-        session.put_back_members(japan, &removed.removed, &[])?;
+        session.put_back_members(japan, &removed.removed, &[], &[])?;
         assert_eq!(
             session.catalog.collection_members(japan)?,
             [

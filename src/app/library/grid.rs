@@ -128,6 +128,9 @@ impl Library {
         }
         // For each cell's Add to Collection.
         let collection_tree = self.collection_tree();
+        // Custom Order: photos dropped on a cell go before or after it.
+        let reorders = self.reorders_by_drag();
+        let mut reorder: Option<(Vec<PhotoId>, usize)> = None;
         egui::Frame::new()
             .fill(theme::palette(ui.ctx()).photo_backdrop())
             .inner_margin(design::margin_same(margin))
@@ -184,6 +187,12 @@ impl Library {
                                     let (response, edit) =
                                         photo_cell(ui, &p, self.texture(&p), shown, width);
                                     self.drag_photos(ui, &response, &p);
+                                    if reorders
+                                        && let Some(dropped) =
+                                            reorder_target(ui, &response, row * columns + col)
+                                    {
+                                        reorder = Some(dropped);
+                                    }
                                     let response = if response.hovered() {
                                         let text = self.hover_text(&p);
                                         response.on_hover_text(text)
@@ -219,6 +228,11 @@ impl Library {
                 self.grid_page_rows = (bottom - top).max(1.) as usize;
             });
         ui.spacing_mut().item_spacing = spacing;
+        if let Some((moved, at)) = reorder
+            && let Err(e) = self.reorder_shown(moved, at)
+        {
+            self.messages.fail(format!("Order not changed: {e:#}"));
+        }
         if let Some((photo, menu)) = metadata_edit
             && let Some(id) = self.photo_action(ui.ctx(), &photo, menu, true)
         {
@@ -424,7 +438,9 @@ impl Library {
         ui.menu_button(
             egui::RichText::new(self.filters.sort.name()).size(text::SMALL),
             |ui| {
-                for sort in super::sort::Sort::ALL {
+                // A plain collection's own order first, as Lightroom lists it.
+                let custom = self.has_custom_order().then_some(super::sort::Sort::Custom);
+                for sort in custom.into_iter().chain(super::sort::Sort::ALL) {
                     if ui
                         .selectable_label(self.filters.sort == sort, sort.name())
                         .clicked()
@@ -452,6 +468,7 @@ impl Library {
             changed = true;
         }
         if changed {
+            self.sort_chosen();
             self.filter();
             self.scroll_to_active = true;
         }
@@ -535,4 +552,29 @@ pub(super) fn drag_once<P: std::any::Any + Send + Sync>(
             egui::DragAndDrop::payload::<P>(ctx)
         }
     }
+}
+
+/// A grid cell, shown at `at`, as a place to drop photos in Custom Order:
+/// a bar marks the side they would go to, before the cell or after it, and
+/// the photos and their place are returned once they are dropped.
+pub(super) fn reorder_target(
+    ui: &egui::Ui,
+    response: &egui::Response,
+    at: usize,
+) -> Option<(Vec<PhotoId>, usize)> {
+    let hovered = response.dnd_hover_payload::<super::DraggedPhotos>()?;
+    let rect = response.rect;
+    let after = ui
+        .ctx()
+        .pointer_latest_pos()
+        .is_some_and(|p| p.x > rect.center().x);
+    let x = if after { rect.right() } else { rect.left() };
+    let palette = theme::palette(ui.ctx());
+    ui.painter().line_segment(
+        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+        egui::Stroke::new(3., palette.selected_marker()),
+    );
+    drop(hovered);
+    let dropped = super::tree::released::<super::DraggedPhotos>(response)?;
+    Some((dropped.0.clone(), at + usize::from(after)))
 }

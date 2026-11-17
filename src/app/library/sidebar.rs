@@ -538,6 +538,7 @@ impl Library {
     /// Shows collection `id`'s photos, or for a set the photos of every
     /// collection in it; the filter bar still applies.
     pub(in crate::app) fn select_collection(&mut self, id: crate::catalog::CollectionId) {
+        self.collection_sort(id);
         self.filters.previous_import = false;
         self.filters.collection = Some(id);
         self.filters.members = self.source_members(id);

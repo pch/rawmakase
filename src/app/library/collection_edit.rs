@@ -50,6 +50,12 @@ pub(crate) enum TreeChange {
         before: Option<CollectionId>,
         after: Option<CollectionId>,
     },
+    /// Custom Order's drag: every photo's position `before` and `after`.
+    Reordered {
+        collection: CollectionId,
+        before: Vec<crate::catalog::Member>,
+        after: Vec<crate::catalog::Member>,
+    },
     /// Save Quick Collection: collection `id` made of the Quick Collection's
     /// photos, which were taken out of it (`cleared`, with their positions)
     /// when Clear Quick Collection After Saving was on.
@@ -73,8 +79,13 @@ impl CollectionTreeCommand {
         {
             gone.forget_photo(id);
         }
-        if let TreeChange::SavedQuick { cleared, .. } = &mut self.change {
-            cleared.retain(|m| m.0 != id);
+        match &mut self.change {
+            TreeChange::SavedQuick { cleared, .. } => cleared.retain(|m| m.0 != id),
+            TreeChange::Reordered { before, after, .. } => {
+                before.retain(|m| m.0 != id);
+                after.retain(|m| m.0 != id);
+            }
+            _ => {}
         }
         self.place_before.forget_photo(id);
         self.place_after.forget_photo(id);
@@ -396,6 +407,19 @@ impl Library {
             (TreeChange::Renamed { id, before, after }, undo) => {
                 self.session
                     .rename_collection(*id, if undo { before } else { after })?;
+            }
+            (
+                TreeChange::Reordered {
+                    collection,
+                    before,
+                    after,
+                },
+                undo,
+            ) => {
+                self.session
+                    .restore_positions(*collection, if undo { before } else { after })?;
+                // The order shown follows.
+                self.filter();
             }
             (TreeChange::Moved { id, before, after }, undo) => {
                 self.session
@@ -798,4 +822,160 @@ fn name_field(
         *done = refusal.is_none();
     }
     refusal
+}
+
+impl Library {
+    /// The order collection `id` shows in, as Lightroom keeps one per
+    /// collection: its stored sort, else Capture Time, ascending (what
+    /// Lightroom Classic 15.6 gives a new collection). Custom Order is a
+    /// plain collection's alone, as Lightroom offers it. A set shows in the
+    /// folders' order. The folders' is kept to come back to.
+    pub(super) fn collection_sort(&mut self, id: CollectionId) {
+        use super::sort::Sort;
+        let kind = self.collection(id).map(|c| c.kind);
+        let quick = self.quick() == Some(id);
+        let plain = quick || kind == Some(CollectionKind::Collection);
+        let own = plain || kind == Some(CollectionKind::Smart);
+        if !own {
+            if let Some((sort, reverse)) = self.folder_sort.take() {
+                self.filters.sort = sort;
+                self.filters.reverse = reverse;
+            }
+            return;
+        }
+        let stored = self
+            .session
+            .catalog()
+            .collection_options()
+            .ok()
+            .and_then(|mut all| all.remove(&id));
+        let (sort, reverse) = stored
+            .and_then(|o| {
+                let sort = super::sort::Sort::from_lightroom(&o.sort)?;
+                Some((sort, o.direction == "descending"))
+            })
+            // Custom Order is a plain collection's alone.
+            .filter(|(sort, _)| *sort != Sort::Custom || plain)
+            .unwrap_or((Sort::CaptureTime, false));
+        if self.folder_sort.is_none() {
+            self.folder_sort = Some((self.filters.sort, self.filters.reverse));
+        }
+        self.filters.sort = sort;
+        self.filters.reverse = reverse;
+    }
+    /// Whether collection `id` shows in an order of its own: a collection,
+    /// plain or smart (not a set, which shows in the folders' order).
+    pub(super) fn has_own_sort(&self, id: CollectionId) -> bool {
+        self.quick() == Some(id)
+            || matches!(
+                self.collection(id).map(|c| c.kind),
+                Some(CollectionKind::Collection | CollectionKind::Smart)
+            )
+    }
+    /// Whether the source shown has a custom order: a plain collection.
+    pub(super) fn has_custom_order(&self) -> bool {
+        self.filters.collection.is_some_and(|id| {
+            self.quick() == Some(id)
+                || self.collection(id).map(|c| c.kind) == Some(CollectionKind::Collection)
+        })
+    }
+    /// The sort menu chose `sort`: in a collection, kept as its own, as
+    /// Lightroom keeps it (`collection_options`), whatever it is.
+    pub(super) fn sort_chosen(&mut self) {
+        let Some(id) = self.filters.collection else {
+            return;
+        };
+        if self.folder_sort.is_none() {
+            return;
+        }
+        let options = crate::catalog::CollectionOptions {
+            sort: self.filters.sort.lightroom().into(),
+            direction: super::sort::lightroom_direction(self.filters.reverse).into(),
+        };
+        if let Err(e) = self.session.set_collection_options(id, &options) {
+            self.messages
+                .fail(format!("The collection's sort was not kept: {e:#}"));
+        }
+    }
+}
+
+impl Library {
+    /// Whether photos dragged in the grid reorder it: Custom Order of a
+    /// plain collection.
+    pub(super) fn reorders_by_drag(&self) -> bool {
+        self.filters.sort == super::sort::Sort::Custom && self.has_custom_order()
+    }
+    /// Custom Order's drag: puts `moved` where they were dropped, before the
+    /// photo shown at `at` in the grid (at the end when `at` is past the
+    /// last), as one undoable command. Only the photos shown move among
+    /// themselves: photos the filter bar hides keep their places in the
+    /// order.
+    pub(in crate::app) fn reorder_shown(&mut self, moved: Vec<PhotoId>, at: usize) -> Result<()> {
+        if !self.reorders_by_drag() {
+            return Ok(());
+        }
+        let Some(collection) = self.filters.collection else {
+            return Ok(());
+        };
+        let shown: Vec<PhotoId> = self
+            .visible
+            .iter()
+            .map(|i| self.session.photos()[*i].id)
+            .collect();
+        let at = at.min(shown.len());
+        let moved: Vec<PhotoId> = shown
+            .iter()
+            .copied()
+            .filter(|p| moved.contains(p))
+            .collect();
+        // The shown photos as they will be on screen.
+        let mut arranged: Vec<PhotoId> = shown
+            .iter()
+            .copied()
+            .filter(|p| !moved.contains(p))
+            .collect();
+        let slot = shown[..at].iter().filter(|p| !moved.contains(p)).count();
+        arranged.splice(slot..slot, moved.iter().copied());
+        // In the order's own direction.
+        if self.filters.reverse {
+            arranged.reverse();
+        }
+        // Into the shown photos' places in the whole order.
+        let shown: std::collections::HashSet<PhotoId> = shown.into_iter().collect();
+        let mut arranged = arranged.into_iter();
+        let order: Vec<PhotoId> = self
+            .session
+            .catalog()
+            .collection_order(collection)?
+            .into_iter()
+            .map(|p| {
+                if shown.contains(&p) {
+                    arranged.next().unwrap_or(p)
+                } else {
+                    p
+                }
+            })
+            .collect();
+        let place_before = self.place();
+        let Some(before_positions) = self.session.arrange_collection(collection, &order)? else {
+            return Ok(());
+        };
+        let after = self.session.catalog().collection_members(collection)?;
+        self.filter();
+        let summary = format!(
+            "Reordered “{}” · {}",
+            self.collection_name(collection),
+            plural(moved.len(), "photo", "photos")
+        );
+        self.record_tree(
+            TreeChange::Reordered {
+                collection,
+                before: before_positions,
+                after,
+            },
+            place_before,
+            summary,
+        );
+        Ok(())
+    }
 }
