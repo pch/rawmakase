@@ -104,8 +104,7 @@ impl CurveHistograms {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render(&job)))
                 .unwrap_or_else(|_| Err(anyhow::anyhow!("the renderer stopped unexpectedly")))
                 .map_err(|e| format!("{e:#}"));
-            *out.lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((job.attempt, result));
+            publish(&out, &job, result);
             ctx.request_repaint();
         });
         Self {
@@ -206,6 +205,18 @@ impl CurveHistograms {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
+    }
+}
+
+/// Hands `job`'s result over, unless it was cancelled. [`CurveHistograms::sweep`]
+/// cancels before it empties `done` under the same lock, so a result finished
+/// after a sweep never stays there holding the photo.
+fn publish(done: &Mutex<Option<Outcome>>, job: &Job, result: Result<Measured, String>) {
+    let mut done = done
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !job.cancel.load(Ordering::Relaxed) {
+        *done = Some((job.attempt, result));
     }
 }
 
@@ -377,6 +388,15 @@ mod tests {
         // A late completion is dropped by the next sweep, not kept.
         *h.done.lock().unwrap() = Some((1, Ok(measured(&key, 1))));
         h.sweep();
+        assert!(h.done.lock().unwrap().is_none());
+        // A render that finishes after the sweep cancelled it publishes nothing.
+        let job = Job {
+            key: key.clone(),
+            attempt: 1,
+            image: image.clone(),
+            cancel,
+        };
+        publish(&h.done, &job, Ok(measured(&key, 1)));
         assert!(h.done.lock().unwrap().is_none());
         // Shown again: asked for anew, nothing of the earlier result.
         assert!(h.shown(key, image).is_none());
