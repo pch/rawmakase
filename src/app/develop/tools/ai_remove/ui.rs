@@ -233,7 +233,8 @@ impl Editor {
                     }
                 }),
                 _ => indented(ui, |ui| {
-                    if ui.button("Extension details…").clicked() {
+                    if self.ai_remove.failed.is_some() && ui.button("Extension details…").clicked()
+                    {
                         self.open_extension_page(&failed.extension);
                         self.extension_page
                             .show(crate::app::extensions::Section::About);
