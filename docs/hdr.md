@@ -113,8 +113,13 @@ settings. A backend that presents a float surface only as plain sRGB (wgpu's Ope
 which RAWmakase falls back to where DirectX 12 and Vulkan don't start, or a Vulkan
 driver without extended sRGB) says the graphics backend shows no HDR, on any
 platform but macOS. Windows changes the switch and the SDR content brightness without a
-message winit passes on, so with a float surface the window reads them again every
-two seconds and when it reaches another display (a read costs about a millisecond).
+message winit passes on, so the window reads them again, at most every two seconds,
+whenever it redraws and when it reaches another display (a read costs about a
+millisecond); with a float surface it also wakes itself to do so. DXGI is asked only
+about a display whose advanced color info says it can show HDR (or when that info can't
+be read): creating a DXGI factory and reading every adapter's outputs that often on an
+SDR display is the suspected cause of a whole-screen flicker on an NVIDIA GeForce under
+Windows 10 (#1126).
 Measured in a virtual machine whose display shows no HDR: the interface on the scRGB
 surface matches the 8-bit surface to two code values, and with SDR white and the
 headroom forced, the HDR preview's light above white keeps its ratio to the
