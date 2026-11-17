@@ -394,7 +394,7 @@ impl CatalogSession {
 }
 
 #[cfg(test)]
-mod upgrade_tests;
+pub(crate) mod upgrade_tests;
 #[cfg(test)]
 mod tests {
     use super::*;

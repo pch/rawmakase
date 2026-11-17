@@ -188,7 +188,7 @@ impl Editor {
                 })();
                 let event = match result {
                     Ok(Some(location)) => {
-                        reopened(&location, false, &Default::default(), &[], tx, &ctx)
+                        reopened(&location, true, false, &Default::default(), &[], tx, &ctx)
                     }
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
@@ -218,7 +218,7 @@ impl Editor {
                     if create && !path.exists() {
                         crate::catalog::Catalog::create(&path)?;
                     }
-                    crate::catalog_session::CatalogSession::open_reporting(
+                    open_for_user(
                         &CatalogLocation::File(path),
                         &mut upgrade_progress(tx, &ctx),
                     )
@@ -253,6 +253,9 @@ impl Editor {
                 // folders it skipped.
                 let mut report = crate::catalog::SidecarReport::default();
                 let mut conflicts = Vec::new();
+                // Create, Open and Import Lightroom open the catalog the user
+                // chose; a folder change reads the open one again.
+                let chosen = !matches!(kind, CatalogDialog::Folder(_));
                 let relinks = matches!(
                     kind,
                     CatalogDialog::Folder(
@@ -384,7 +387,7 @@ impl Editor {
                 }
                 let event = match result {
                     Ok(Some(location)) => {
-                        reopened(&location, relinks, &report, &conflicts, tx, &ctx)
+                        reopened(&location, chosen, relinks, &report, &conflicts, tx, &ctx)
                     }
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
@@ -1026,6 +1029,20 @@ pub(in crate::app) mod export_catalog_tests;
 pub(crate) mod folder_locations;
 pub(in crate::app) mod folder_sync;
 pub(in crate::app) mod onboarding;
+
+/// Opens the catalog the user chose (Open, New, the one opened last), then
+/// deletes the backups earlier upgrades left beside it
+/// ([`Catalog::remove_earlier_backups`](crate::catalog::Catalog::remove_earlier_backups)),
+/// once it has opened. Reopening it after a folder change is not a new open:
+/// the session that upgraded it may be the one going on.
+pub(in crate::app) fn open_for_user(
+    location: &CatalogLocation,
+    progress: &mut dyn FnMut(crate::catalog::OpeningProgress),
+) -> anyhow::Result<crate::catalog_session::Opened> {
+    let opened = crate::catalog_session::CatalogSession::open_reporting(location, progress)?;
+    opened.session.catalog().remove_earlier_backups();
+    Ok(opened)
+}
 
 /// Says through `tx` how far upgrading a catalog of an earlier format as it opens
 /// has got: it can take a while on a large catalog.

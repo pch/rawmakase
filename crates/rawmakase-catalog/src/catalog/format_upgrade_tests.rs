@@ -1158,3 +1158,117 @@ fn a_recipe_giving_a_key_twice_is_left_as_it_was() -> Result<()> {
     );
     Ok(())
 }
+
+/// A catalog beside a copy an earlier release's upgrade left, of format 2: a
+/// copy of a catalog of that format, named as the first backup is.
+fn with_earlier_backup() -> Result<(Earlier, PathBuf)> {
+    let mut f = Earlier::new(6, 1)?;
+    f.close();
+    let first = beside(&f, ".before-upgrade-backup");
+    std::fs::copy(&Earlier::new(2, 1)?.path, &first)?;
+    Ok((f, first))
+}
+fn beside(f: &Earlier, suffix: &str) -> PathBuf {
+    let name = f.path.file_name().unwrap().to_string_lossy();
+    f.dir.path().join(format!("{name}{suffix}"))
+}
+/// Opens the catalog as the Library and the command line do.
+fn open_session(path: &Path) -> Result<Catalog> {
+    let cat = Catalog::open(path)?;
+    cat.remove_earlier_backups();
+    Ok(cat)
+}
+
+/// A catalog upgraded again keeps only the newest backup, once it has opened
+/// again; the session that wrote a backup deletes none, and what isn't named as
+/// an upgrade names its backups, or isn't a catalog, stays.
+#[test]
+fn only_the_newest_backup_is_kept_once_the_catalog_opens_again() -> Result<()> {
+    let (f, first) = with_earlier_backup()?;
+    // Renamed by the user, or not a catalog: never deleted.
+    let kept: Vec<PathBuf> = [
+        ".before-upgrade-backup keep",
+        ".before-upgrade-backup-0",
+        ".before-upgrade-backup-01",
+        ".before-upgrade-backup-1000",
+        ".before-upgrade-backup-20261117",
+    ]
+    .iter()
+    .map(|suffix| beside(&f, suffix))
+    .collect();
+    for path in &kept {
+        std::fs::copy(&first, path)?;
+    }
+    let not_a_catalog = beside(&f, ".before-upgrade-backup-7");
+    std::fs::write(&not_a_catalog, b"notes")?;
+
+    let cat = open_session(&f.path)?;
+    let upgraded = cat.upgraded().unwrap().clone();
+    assert_eq!(upgraded.backup, beside(&f, ".before-upgrade-backup-1"));
+    assert_eq!(upgraded.earlier_backups, std::slice::from_ref(&first));
+    assert_eq!(
+        upgraded.earlier_backups_note().as_deref(),
+        Some(
+            "The older copy beside it, from earlier upgrades, will be deleted the next time \
+             the catalog opens; this one is kept."
+        )
+    );
+    // Connections working for the session that upgraded it delete nothing.
+    drop(Catalog::open(&f.path)?);
+    drop(cat);
+    assert!(
+        first.exists(),
+        "not deleted in the session that wrote the newest"
+    );
+
+    let cat = open_session(&f.path)?;
+    assert!(cat.upgraded().is_none());
+    drop(cat);
+    assert!(!first.exists());
+    assert!(upgraded.backup.exists());
+    assert_eq!(version(&upgraded.backup)?, 6);
+    assert!(kept.iter().all(|p| p.exists()) && not_a_catalog.exists());
+    Ok(())
+}
+
+/// The backup kept is the one the last upgrade wrote, whatever its name or
+/// format: an upgrade fills the first free name, and a catalog put back from an
+/// older copy is upgraded from that copy's format.
+#[test]
+fn the_backup_kept_is_the_one_the_last_upgrade_wrote() -> Result<()> {
+    let (f, first) = with_earlier_backup()?;
+    // A later backup of format 6 with a higher number.
+    let later = beside(&f, ".before-upgrade-backup-3");
+    std::fs::copy(&f.path, &later)?;
+    // The catalog put back from a copy of format 2.
+    std::fs::copy(&first, &f.path)?;
+    std::fs::remove_file(&first)?;
+    let upgraded = open_session(&f.path)?.upgraded().unwrap().clone();
+    assert_eq!(upgraded.backup, first);
+    assert_eq!(version(&upgraded.backup)?, 2);
+    drop(open_session(&f.path)?);
+    assert_eq!(backups(f.dir.path())?, [upgraded.backup]);
+    Ok(())
+}
+
+/// Backups upgrades before this release left, which recorded none: the one of
+/// the newest format is kept, whatever its name.
+#[test]
+fn of_unrecorded_backups_the_newest_format_is_kept() -> Result<()> {
+    let (f, first) = with_earlier_backup()?;
+    let six = beside(&f, ".before-upgrade-backup-2");
+    std::fs::copy(&f.path, &six)?;
+    let mut f = f;
+    let upgraded = f.open()?;
+    // As an upgrade before this release left it, recording no backup.
+    upgraded
+        .db_for_tests()
+        .execute("DELETE FROM meta WHERE key='upgrade_backup'", [])?;
+    let written = upgraded.upgraded().unwrap().backup.clone();
+    drop(upgraded);
+    std::fs::remove_file(&written)?;
+    drop(open_session(&f.path)?);
+    assert!(!first.exists());
+    assert_eq!(backups(f.dir.path())?, [six]);
+    Ok(())
+}
