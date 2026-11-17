@@ -414,7 +414,15 @@ fn full_frame_mask_equals_the_global_slider() {
 fn masked_shadows_adapts_black_locally_and_can_cancel_global_shadows() {
     let im = image(120, 80);
     let base = Recipe::with_profiles(&im.metadata, &[]);
-    for (global, local) in [(0., 1.), (0.5, -0.5), (0., 0.37)] {
+    for (global, local) in [
+        (0., 1.),
+        (0.5, -0.5),
+        (0., 0.37),
+        (0., -1.),
+        (-0.5, -0.3),
+        (-0.5, 0.5),
+        (0.3, -0.67),
+    ] {
         let recipe = Recipe {
             shadows: global,
             ..base.clone()

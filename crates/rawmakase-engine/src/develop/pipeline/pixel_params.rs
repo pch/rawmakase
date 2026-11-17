@@ -56,9 +56,10 @@ pub(crate) mod slot {
         // Positive Shadows' detail and region curves (as SHADOWS), and the regional level's
         // grid or -1 (see `local_tone::LocalToneMap::lift`).
         LIFT: 8,
-        // The photo's global rule at full strength: positive Shadows' and negative
-        // Highlights' curves (as SHADOWS), for masks (`local_tone::LocalToneMap::rule`).
-        RULE: 8,
+        // The photo's global rule at full strength: the curves (as SHADOWS) of Shadows
+        // +100, Highlights −100, Shadows −100 and Highlights +100, for masks
+        // (`local_tone::LocalToneMap::rule`).
+        RULE: 16,
         LOCAL_REGION: 1,
         BASIC: 1,
         LEVELS: 3,
@@ -440,11 +441,15 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
         Some([d, r]) => [curve(Some(d)), curve(Some(r))],
         None => [curve(None), curve(None)],
     };
-    let [rule_s, rule_h] = [curve(local.rule[0].as_ref()), curve(local.rule[1].as_ref())];
+    let rule: Vec<f32> = local
+        .rule
+        .iter()
+        .flat_map(|unit| curve(unit.as_ref()))
+        .collect();
     p.set(slot::SHADOWS, &shadows);
     p.set(slot::HIGHLIGHTS, &highlights);
     p.set(slot::LIFT, &[detail, region].concat());
-    p.set(slot::RULE, &[rule_s, rule_h].concat());
+    p.set(slot::RULE, &rule);
 }
 fn set_rgb_table(p: &mut PixelParams, look: Option<&crate::camera_profiles::RgbLook>) {
     use crate::camera_profiles::{Dimensions, Gamut};

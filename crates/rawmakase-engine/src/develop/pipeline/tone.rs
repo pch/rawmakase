@@ -359,41 +359,77 @@ impl CurveSet {
                 local_tone,
             )
         });
-        if (r.shadows > 0. || local_tone)
+        if (r.shadows != 0. || local_tone)
             && let (Some(map), Some(base)) = (&lut.local, &base)
         {
-            // The black response follows the median positive-Shadows gain. Masks
-            // select this response locally; an unmasked pixel keeps the global key.
+            // Camera Raw keys its default black on the photo's levels as Shadows
+            // leaves them, not as it finds them, so the black response follows the
+            // Shadows gain. Masks select this response locally; an unmasked pixel
+            // keeps the global key.
             let levels = base.lum();
-            let shift = |shadows: f32| {
-                if shadows <= 0. {
-                    return 0.;
-                }
-                let mut gains: Vec<f32> = levels
-                    .par_iter()
-                    .enumerate()
-                    .map(|(i, y)| {
-                        let x = (i % small.width as usize) as f32 / map.scale[0];
-                        let yy = (i / small.width as usize) as f32 / map.scale[1];
-                        (map.gain_with(x, yy, *y, *y, [shadows, 0., 0.])
-                            / map.gain_with(x, yy, *y, *y, [0., 0., 0.]))
-                        .log2()
-                    })
-                    .collect();
+            // Shadows' log2 gain at a cell of the map.
+            let gain = |i: usize, shadows: f32| {
+                let y = levels[i];
+                let x = (i % small.width as usize) as f32 / map.scale[0];
+                let yy = (i / small.width as usize) as f32 / map.scale[1];
+                (map.gain_with(x, yy, y, y, [shadows, 0., 0.])
+                    / map.gain_with(x, yy, y, y, [0., 0., 0.]))
+                .log2()
+            };
+            let median = |mut gains: Vec<f32>| {
                 let k = (gains.len() - 1) / 2;
                 gains.select_nth_unstable_by(k, f32::total_cmp);
                 gains[k]
             };
+            // The darkest 0.1% of the map are the levels the dark key reads.
+            let count = (levels.len() / 1000).max(1);
+            let mut darkest: Vec<usize> = (0..levels.len()).collect();
+            darkest.select_nth_unstable_by(count - 1, |a, b| levels[*a].total_cmp(&levels[*b]));
+            darkest.truncate(count);
+            let shift = |shadows: f32| {
+                if shadows > 0. {
+                    // Positive Shadows moves the key by its median gain over the
+                    // whole map, the rule its curve was accepted with.
+                    let cells = (0..levels.len()).into_par_iter();
+                    median(cells.map(|i| gain(i, shadows)).collect())
+                } else if shadows < 0. {
+                    // Negative Shadows moves it by its gain on the darkest levels.
+                    // With the key left alone, Shadows −100 rendered tones four to
+                    // eight stops under the top 0.3 to 0.6 stop too dark on 228
+                    // training photos, and with the median gain 0.2 to 0.5
+                    // (2026-11-16).
+                    median(darkest.iter().map(|&i| gain(i, shadows)).collect())
+                } else {
+                    0.
+                }
+            };
             let mut adjusted = lut.measures;
             adjusted.dark += shift(r.shadows);
+            // One row for each tenth of a mask's total Shadows, −100 to +100.
             let mask_keys = local_tone.then(|| {
-                std::array::from_fn(|i| lut.measures.dark_key(r.exposure) + shift(i as f32 / 10.))
+                std::array::from_fn(|i| {
+                    lut.measures.dark_key(r.exposure) + shift((i as f32 - 10.) / 10.)
+                })
             });
             let haze = lut.scene.haze.take();
             lut.scene = crate::develop::scene_tone::SceneTone::new(r, &adjusted, haze);
             if let Some(keys) = mask_keys {
                 lut.scene.global.set_shadow_black(r.shadows, &keys);
             }
+        }
+        if let Ok(path) = std::env::var("RAWMAKASE_RULE_DUMP") {
+            // Diagnostics, beside the rule's own (`local_tone_rule`): the white curve
+            // the rule's gains go through, as raw f32 pairs of scene value and output
+            // at sixteenth-stops from 2^-6 to 2^5. `scene-tone-rule.py` undoes it in
+            // the second ensemble's targets, also above the photo's top.
+            let bytes: Vec<u8> = (-96..=80)
+                .flat_map(|k| {
+                    let x = (k as f32 / 16.).exp2();
+                    [x, lut.scene.global.white_curve(x)]
+                })
+                .flat_map(f32::to_le_bytes)
+                .collect();
+            let _ = std::fs::write(format!("{path}.white"), bytes);
         }
         lut
     }
