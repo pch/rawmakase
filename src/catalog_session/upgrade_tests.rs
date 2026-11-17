@@ -106,31 +106,40 @@ fn the_upgrade_changes_no_render() -> Result<()> {
     Ok(())
 }
 
-/// The Library and the command line delete the backups earlier upgrades left once
-/// the catalog opens again after an upgrade, keeping the one the upgrade wrote.
+/// A catalog of format 6 beside a backup an earlier upgrade left.
+pub(crate) fn with_earlier_backup() -> Result<(Earlier, std::path::PathBuf)> {
+    let mut f = Earlier::new(6, 1)?;
+    f.close();
+    let name = f.path.file_name().unwrap().to_string_lossy().into_owned();
+    let earlier = f.dir.path().join(format!("{name}.before-upgrade-backup"));
+    std::fs::copy(&f.path, &earlier)?;
+    Ok((f, earlier))
+}
+
+/// The command line deletes the backups earlier upgrades left once the catalog
+/// opens again after an upgrade, keeping the one the upgrade wrote. The session
+/// read again, as after adding or synchronizing a folder, deletes none: the
+/// session that upgraded it may be the one going on.
 #[test]
-fn opening_again_keeps_only_the_newest_backup() -> Result<()> {
-    for library in [true, false] {
-        let mut f = Earlier::new(6, 1)?;
-        f.close();
-        let name = f.path.file_name().unwrap().to_string_lossy().into_owned();
-        let earlier = f.dir.path().join(format!("{name}.before-upgrade-backup"));
-        std::fs::copy(&f.path, &earlier)?;
-        let open = |path: &std::path::Path| -> Result<Option<crate::catalog::Upgraded>> {
-            if library {
-                let location = crate::catalog::CatalogLocation::from(path);
-                Ok(super::CatalogSession::open(&location)?.upgraded)
-            } else {
-                let mut err = Vec::new();
-                let catalog = crate::catalog_command::open_catalog(path, &mut err)?;
-                Ok(catalog.upgraded().cloned())
-            }
-        };
-        let upgraded = open(&f.path)?.unwrap();
-        assert!(earlier.exists(), "{library}");
-        assert!(open(&f.path)?.is_none());
-        assert!(!earlier.exists(), "{library}");
-        assert!(upgraded.backup.exists(), "{library}");
-    }
+fn the_command_line_keeps_only_the_newest_backup_and_a_reread_session_none() -> Result<()> {
+    let (f, earlier) = with_earlier_backup()?;
+    let mut err = Vec::new();
+    let upgraded = crate::catalog_command::open_catalog(&f.path, &mut err)?
+        .upgraded()
+        .cloned()
+        .unwrap();
+    assert!(String::from_utf8(err)?.contains("The older copy beside it"));
+    assert!(earlier.exists());
+    let location = crate::catalog::CatalogLocation::from(f.path.as_path());
+    let reread = super::CatalogSession::open(&location)?;
+    assert!(reread.upgraded.is_none());
+    drop(reread);
+    assert!(earlier.exists());
+    drop(crate::catalog_command::open_catalog(
+        &f.path,
+        &mut Vec::new(),
+    )?);
+    assert!(!earlier.exists());
+    assert!(upgraded.backup.exists());
     Ok(())
 }

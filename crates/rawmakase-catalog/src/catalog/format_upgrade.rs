@@ -184,10 +184,11 @@ impl Catalog {
     /// again next time.
     ///
     /// For what opens a catalog for the user (the Library and the command
-    /// line), after it opened: it does nothing when this open upgraded the
+    /// line), once it has opened: it does nothing when this open upgraded the
     /// catalog, so a backup is never deleted in the session that wrote it.
-    /// Connections that work for an open session (autosave, exports) don't
-    /// call it.
+    /// Connections that work for an open session (autosave, exports, the
+    /// Library read again after a folder change) don't call it. It deletes
+    /// files beside the catalog, never anything in it.
     pub fn remove_earlier_backups(&self) {
         if self.upgraded.is_some() {
             return;

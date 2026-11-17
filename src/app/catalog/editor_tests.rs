@@ -819,3 +819,20 @@ fn reopening_an_earlier_catalog_reports_its_upgrade() -> anyhow::Result<()> {
     assert_eq!(library.session.photos().len(), 2);
     Ok(())
 }
+
+/// Opening a catalog in the Library deletes the backups earlier upgrades left
+/// beside it once it has opened, not in the session that upgraded it.
+#[test]
+fn opening_a_catalog_again_keeps_only_the_newest_backup() -> anyhow::Result<()> {
+    let (f, earlier) = crate::catalog_session::upgrade_tests::with_earlier_backup()?;
+    let location = crate::catalog::CatalogLocation::from(f.path.as_path());
+    let opened = super::open_for_user(&location, &mut |_| {})?;
+    let upgraded = opened.upgraded.clone().unwrap();
+    drop(opened);
+    assert!(earlier.exists());
+    let opened = super::open_for_user(&location, &mut |_| {})?;
+    assert!(opened.upgraded.is_none());
+    assert!(!earlier.exists());
+    assert!(upgraded.backup.exists());
+    Ok(())
+}
