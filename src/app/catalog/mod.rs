@@ -841,7 +841,12 @@ impl Editor {
             return;
         };
         match library.create_collection(false, &asked.name, asked.parent, &asked.photos, true) {
-            Ok(id) => library.select_collection(id),
+            Ok(id) => {
+                if asked.target {
+                    library.set_target(Some(id));
+                }
+                library.select_collection(id);
+            }
             Err(e) => library
                 .messages
                 .fail(format!("Collections not changed: {e:#}")),

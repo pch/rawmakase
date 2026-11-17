@@ -585,6 +585,7 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
                     single: true,
                     stacks: true,
                     collections: Default::default(),
+                    in_collections: Vec::new(),
                 };
                 photo_cell(ui, &photo, Some(&texture), shown, width);
             });
@@ -2206,6 +2207,7 @@ fn collections_panel_shows_imported_collections_and_filters_through_them() -> Re
         library.session.collections(),
         library.session.collection_photos(),
         &Default::default(),
+        None,
     );
     // Sets first, then collections, by name; system ones hidden. A smart
     // collection shows (issue 998), being worked out until its members are

@@ -65,10 +65,12 @@ pub(super) const RATING: [Shortcut; 8] = [
     ("Shift+key", "Apply and go to the next photo"),
     ("Cmd+Z / Cmd+Shift+Z", "Undo / redo, anywhere"),
 ];
-pub(super) const QUICK: [Shortcut; 3] = [
-    ("B", "Add to or take out of it"),
+pub(super) const QUICK: [Shortcut; 5] = [
+    ("B", "Add to or take out of the target collection"),
     ("Cmd+B", "Show it"),
     ("Cmd+Shift+B", "Clear it"),
+    ("Cmd+Alt+B", "Save it as a collection"),
+    ("Cmd+N", "Create a collection"),
 ];
 pub(super) const STACKS: [Shortcut; 4] = [
     ("Cmd+G", "Group into stack"),

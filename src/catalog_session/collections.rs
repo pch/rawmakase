@@ -145,6 +145,11 @@ impl CatalogSession {
     /// and the lists; photos no longer in the catalog stay out.
     pub(crate) fn restore_collections(&mut self, removed: &RemovedCollections) -> Result<()> {
         self.catalog.restore_collections(removed)?;
+        self.list_restored(removed);
+        Ok(())
+    }
+    /// The lists after `removed` was put back in the catalog.
+    fn list_restored(&mut self, removed: &RemovedCollections) {
         // What smart collections see (the Collection rule's names) changed.
         self.changed();
         for collection in removed.collections() {
@@ -162,6 +167,70 @@ impl CatalogSession {
                 members.insert(photo);
             }
         }
+    }
+    /// Save Quick Collection, in the catalog and the lists, in one
+    /// transaction: returns the new collection, the Quick Collection and
+    /// the photos taken out of it, with their positions.
+    pub(crate) fn save_quick_collection(
+        &mut self,
+        name: &str,
+        clear: bool,
+    ) -> Result<(CollectionId, CollectionId, MembershipChange)> {
+        let quick = self
+            .quick_collection()
+            .ok_or_else(|| anyhow::anyhow!("There is no Quick Collection"))?;
+        let (id, cleared) = self.catalog.save_quick_collection(name, clear)?;
+        let members = self
+            .collection_photos
+            .get(&quick)
+            .cloned()
+            .unwrap_or_default();
+        self.list_collection(Collection {
+            id,
+            name: name.trim().to_string(),
+            parent: None,
+            kind: CollectionKind::Collection,
+        });
+        self.collection_photos.insert(id, members);
+        self.follow_members(quick, &cleared);
+        Ok((id, quick, cleared))
+    }
+    /// Undoes [`Self::save_quick_collection`], in the catalog and the lists,
+    /// in one transaction; returns what Redo puts back.
+    pub(crate) fn unsave_quick_collection(
+        &mut self,
+        id: CollectionId,
+        quick: CollectionId,
+        cleared: &[Member],
+    ) -> Result<RemovedCollections> {
+        let removed = self.catalog.unsave_quick_collection(id, quick, cleared)?;
+        let listed: std::collections::HashSet<PhotoId> = self.photos.iter().map(|p| p.id).collect();
+        let back = MembershipChange {
+            added: cleared
+                .iter()
+                .filter(|m| listed.contains(&m.0))
+                .cloned()
+                .collect(),
+            removed: Vec::new(),
+        };
+        self.follow_members(quick, &back);
+        self.collections.retain(|c| c.id != id);
+        self.collection_photos.remove(&id);
+        Ok(removed)
+    }
+    /// Redoes [`Self::save_quick_collection`], in the catalog and the lists,
+    /// in one transaction.
+    pub(crate) fn resave_quick_collection(
+        &mut self,
+        removed: &RemovedCollections,
+        quick: CollectionId,
+        cleared: &[PhotoId],
+    ) -> Result<()> {
+        let change = self
+            .catalog
+            .resave_quick_collection(removed, quick, cleared)?;
+        self.list_restored(removed);
+        self.follow_members(quick, &change);
         Ok(())
     }
     /// Adds `collection` to the list where the catalog lists it, by name and id.
@@ -170,6 +239,10 @@ impl CatalogSession {
             .collections
             .partition_point(|c| (&c.name, c.id) <= (&collection.name, collection.id));
         self.collections.insert(at, collection);
+    }
+    /// Makes `id` Lightroom's target collection; `None` the Quick Collection.
+    pub(crate) fn set_target_collection(&mut self, id: Option<CollectionId>) -> Result<()> {
+        self.catalog.set_target_collection(id)
     }
     /// Makes the lists follow a change the catalog made: removals first, as
     /// the catalog makes them.

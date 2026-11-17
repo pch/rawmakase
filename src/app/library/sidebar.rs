@@ -173,6 +173,7 @@ impl Library {
                 self.session.collections(),
                 self.session.collection_photos(),
                 self.smart_counts(),
+                self.target(),
             )),
         });
         self.sidebar_trees = Some(trees.clone());
@@ -206,18 +207,57 @@ impl Library {
                         self.filters.previous_import = false;
                         self.filter()
                     }
-                    if source_row(
+                    // `+`: the target collection, B's, as Lightroom marks it.
+                    let quick_target = self.target().is_none();
+                    let quick = source_row(
                         ui,
-                        "Quick Collection",
+                        if quick_target {
+                            "Quick Collection +"
+                        } else {
+                            "Quick Collection"
+                        },
                         self.quick_count(),
                         self.showing_quick(),
                     )
-                    .on_hover_text("B adds the selected photos · ⌘B shows them")
-                    .clicked()
+                    .on_hover_text(if quick_target {
+                        "B adds the selected photos · ⌘B shows them"
+                    } else {
+                        "⌘B shows them · B adds to the target collection, marked +"
+                    });
+                    if quick.clicked()
+                        && !crate::app::ui::widgets::context_clicked(&quick)
                         && let Err(e) = self.show_quick()
                     {
                         self.messages
                             .warn(format!("Quick Collection unavailable: {e}"));
+                    }
+                    let mut quick_action = None;
+                    crate::app::ui::widgets::context_menu(&quick, |ui| {
+                        use crate::app::ui::widgets::menu_item;
+                        crate::app::ui::widgets::menu_width(ui, 230.);
+                        ui.spacing_mut().item_spacing.y = 0.;
+                        for (title, key, choice) in [
+                            ("Set as Target Collection", "", QuickMenu::Target),
+                            ("Save Quick Collection…", "⌘⌥B", QuickMenu::Save),
+                            ("Clear Quick Collection", "⌘⇧B", QuickMenu::Clear),
+                        ] {
+                            let checked = choice == QuickMenu::Target && quick_target;
+                            if menu_item(ui, title, key, true, checked) {
+                                quick_action = Some(choice);
+                                ui.close();
+                            }
+                        }
+                    });
+                    match quick_action {
+                        Some(QuickMenu::Target) => self.set_target(None),
+                        Some(QuickMenu::Save) => self.ask_save_quick(),
+                        Some(QuickMenu::Clear) => {
+                            if let Err(e) = self.clear_quick() {
+                                self.messages
+                                    .fail(format!("Quick Collection not changed: {e}"));
+                            }
+                        }
+                        None => {}
                     }
                     let imported = self.session.previous_import().len();
                     if imported > 0
@@ -873,10 +913,22 @@ impl Library {
                 }
                 Ok(())
             }
+            RowAction::SetTarget(id) => {
+                self.set_target(id);
+                Ok(())
+            }
         };
         if let Err(e) = done {
             self.messages
                 .fail(format!("Collections not changed: {e:#}"));
         }
     }
+}
+
+/// The Quick Collection row's menu.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum QuickMenu {
+    Target,
+    Save,
+    Clear,
 }

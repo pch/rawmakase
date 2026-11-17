@@ -404,18 +404,25 @@ impl Library {
             single,
             module,
             stacks,
-            &collections,
+            cell::MenuCollections {
+                tree: &collections,
+                photo: &self.photo_collections(photo.id),
+            },
         )
         .or(badge_clicked.then_some(cell::PhotoAction::StackBadge));
         if let Some(menu) = menu {
             if matches!(menu, cell::PhotoAction::SetReference) {
                 return (Some(Pick::Reference(photo.id)), false);
             }
+            // These can change the photos shown, so the strip stops drawing
+            // the list it started with.
             let edited = matches!(
                 menu,
                 cell::PhotoAction::Edit(_)
                     | cell::PhotoAction::Stack(_)
                     | cell::PhotoAction::StackBadge
+                    | cell::PhotoAction::GoToCollection(_)
+                    | cell::PhotoAction::AddToCollection(_)
             );
             let develop = self.photo_action(ui.ctx(), photo, menu, whole_selection);
             return (develop.map(Pick::Develop), edited);
