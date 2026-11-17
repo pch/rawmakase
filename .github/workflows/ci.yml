@@ -56,11 +56,15 @@ jobs:
       # adds would otherwise break the lint job on an ordinary day. rustup
       # conflicts with the rust package, so it takes its place here. libheif
       # (with its built-in HEVC decoder) lets the HEIC pixel tests run here;
-      # the Ubuntu jobs have none and skip them.
+      # the Ubuntu jobs have none and skip them. cargo-nextest runs the tests of
+      # every test binary in one pool, so a slow test holds one core rather than
+      # every core until its binary ends; it runs no doctests, which
+      # `cargo test --doc` runs after it.
       - name: Install dependencies
         run: >-
           pacman -Syu --noconfirm --needed
           rustup git pkgconf desktop-file-utils perl-image-exiftool libheif
+          cargo-nextest
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source-ref || github.sha }}
@@ -92,9 +96,14 @@ jobs:
       - name: Check the model, file formats, catalog, renderer, control protocol, remote worker, client and extension crates
         run: |
           cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi -- -D warnings
-          cargo test --locked -p rawmakase-model --all-features
-          cargo test --locked -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
-          cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
+          cargo nextest run --locked -p rawmakase-model --all-features
+          cargo test --locked --doc -p rawmakase-model --all-features
+          packages="-p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine"
+          cargo nextest run --locked $packages
+          cargo test --locked --doc $packages
+          packages="-p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi"
+          cargo nextest run --locked $packages
+          cargo test --locked --doc $packages
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # The app's tests run `rawmakase mcp`, which runs this program from
       # beside it in target/debug, and the MIDI and AI masks programs found
@@ -105,7 +114,10 @@ jobs:
       # installs it in vendor_perl, outside PATH.
       # libheif, installed above, decodes the HEIC pixel tests, which fail
       # here rather than skip without it.
-      - run: PATH="/usr/bin/vendor_perl:$PATH" cargo test --locked -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-model-install -p rawmakase-selection -p rawmakase-ai-masks
+      - run: |
+          packages="-p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-model-install -p rawmakase-selection -p rawmakase-ai-masks"
+          PATH="/usr/bin/vendor_perl:$PATH" cargo nextest run --locked $packages
+          cargo test --locked --doc $packages
         env:
           RAWMAKASE_REQUIRE_EXIFTOOL: "1"
           RAWMAKASE_REQUIRE_HEIF: "1"
@@ -128,6 +140,11 @@ jobs:
           sudo apt-get install -y build-essential pkg-config libvulkan1 libxkbcommon-dev libwayland-dev
           rustup toolchain install stable --profile minimal
           rustup default stable
+      # cargo-nextest runs the tests of every test binary in one pool, so a
+      # slow test holds one core rather than every core until its binary ends.
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: cargo-nextest
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
@@ -137,7 +154,8 @@ jobs:
       - name: Test
         run: |
           cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
-          cargo test --locked --workspace
+          cargo nextest run --locked --workspace
+          cargo test --locked --doc --workspace
 
   check-windows:
     name: Test on Windows
@@ -161,6 +179,10 @@ jobs:
           rustup toolchain install stable --profile minimal --component clippy
           rustup default stable
       - if: steps.source.outputs.windows == 'true'
+        uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: cargo-nextest
+      - if: steps.source.outputs.windows == 'true'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
@@ -179,10 +201,14 @@ jobs:
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
       # The app's tests run `rawmakase mcp`, which runs rawmakase-mcp from
       # beside it in target/debug, and the MIDI program found there.
+      # Bash, which stops at the first command that fails; PowerShell would go
+      # on to the doctests and report only their result.
       - if: steps.source.outputs.windows == 'true'
+        shell: bash
         run: |
           cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
-          cargo test --locked --workspace
+          cargo nextest run --locked --workspace
+          cargo test --locked --doc --workspace
 
   # Without this job the macOS-only code is compiled for the first time by
   # release.yml, after the release commit is already on main, so a macOS-only
@@ -201,6 +227,11 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal --component clippy
           rustup default stable
+      # cargo-nextest runs the tests of every test binary in one pool, so a
+      # slow test holds one core rather than every core until its binary ends.
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: cargo-nextest
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
@@ -210,7 +241,8 @@ jobs:
       # beside it in target/debug, and the MIDI program found there.
       - run: |
           cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
-          cargo test --locked --workspace
+          cargo nextest run --locked --workspace
+          cargo test --locked --doc --workspace
 
   package:
     name: Build, install and run Arch package
@@ -355,10 +387,22 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
+      # cargo-nextest runs the tests of every test binary in one pool, so a
+      # slow test holds one core rather than every core until its binary ends.
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: cargo-nextest
       - run: scripts/crate-closures.sh
-      - run: cargo test --locked -p rawmakase-model --all-features
-      - run: cargo test --locked -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol
-      - run: cargo test --locked -p rawmakase-decode
+      - run: |
+          cargo nextest run --locked -p rawmakase-model --all-features
+          cargo test --locked --doc -p rawmakase-model --all-features
+      - run: |
+          packages="-p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol"
+          cargo nextest run --locked $packages
+          cargo test --locked --doc $packages
+      - run: |
+          cargo nextest run --locked -p rawmakase-decode
+          cargo test --locked --doc -p rawmakase-decode
 
   postgres:
     name: Portable catalog SQL
