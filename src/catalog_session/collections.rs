@@ -33,6 +33,7 @@ impl CatalogSession {
     /// Makes the lists follow a change the catalog made: removals first, as
     /// the catalog makes them.
     fn follow_members(&mut self, collection: CollectionId, change: &MembershipChange) {
+        self.changed();
         let members = self.collection_photos.entry(collection).or_default();
         for (id, _) in &change.removed {
             members.remove(id);

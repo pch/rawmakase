@@ -217,3 +217,50 @@ fn select_none_shortcut_clears_the_filmstrip_selection() -> anyhow::Result<()> {
     assert_eq!(library.selected(), None);
     Ok(())
 }
+
+/// Issue 998: a Sync, its Undo and a batch (presets, Auto) write on a
+/// connection of their own; each tells the session, so smart collections see
+/// the edits. A cancelled one wrote nothing.
+#[test]
+fn syncs_their_undo_and_batches_tell_the_session() -> anyhow::Result<()> {
+    use crate::app::library::sync::{BatchChange, EditBefore, SyncResult, Synced};
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    let library = e.library.as_ref().unwrap();
+    let path = library.photo(ids[1]).unwrap().path.clone();
+    let catalog = library.session.catalog().location().clone();
+    let history = || crate::catalog::SavedHistory {
+        origin: Default::default(),
+        steps: Vec::new(),
+        applied: 0,
+    };
+    let result = |change: BatchChange, cancelled: bool| SyncResult {
+        change,
+        catalog: catalog.clone(),
+        synced: vec![Synced {
+            id: ids[1],
+            path: path.clone(),
+            before: EditBefore::Saved(Box::default()),
+            after: Default::default(),
+            history: history(),
+            history_before: history(),
+            identity: crate::storage::Identity::read(&path).unwrap(),
+        }],
+        failed: Vec::new(),
+        notes: Vec::new(),
+        cancelled,
+    };
+    let revision = |e: &Editor| e.library.as_ref().unwrap().session.query_revision();
+    let before = revision(&e);
+    e.synced(result(BatchChange::Settings(Default::default()), false));
+    assert!(revision(&e) > before, "Sync");
+    let before = revision(&e);
+    e.undo();
+    assert!(revision(&e) > before, "its Undo");
+    let before = revision(&e);
+    e.synced(result(BatchChange::AutoSettings, false));
+    assert!(revision(&e) > before, "Auto Settings");
+    let before = revision(&e);
+    e.synced(result(BatchChange::AutoSettings, true));
+    assert_eq!(revision(&e), before, "cancelled");
+    Ok(())
+}

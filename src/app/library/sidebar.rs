@@ -172,6 +172,7 @@ impl Library {
             collections: collections::tree(
                 self.session.collections(),
                 self.session.collection_photos(),
+                self.smart_counts(),
             ),
         });
         self.sidebar_trees = Some(trees.clone());
@@ -456,12 +457,7 @@ impl Library {
     pub(in crate::app) fn select_collection(&mut self, id: crate::catalog::CollectionId) {
         self.filters.previous_import = false;
         self.filters.collection = Some(id);
-        self.filters.members = self
-            .session
-            .collection_photos()
-            .get(&id)
-            .cloned()
-            .unwrap_or_default();
+        self.filters.members = self.members_of_collection(id);
         self.filters.folder_scope = None;
         self.filters.only_missing = false;
         self.selected_folders.clear();
@@ -629,7 +625,9 @@ impl Library {
             .and_then(|id| id.parse::<i64>().ok())
             .map(crate::catalog::CollectionId)
             && self.session.collections().iter().any(|c| {
-                c.id == id && (c.kind == CollectionKind::Collection || self.quick() == Some(id))
+                c.id == id
+                    && (matches!(c.kind, CollectionKind::Collection | CollectionKind::Smart)
+                        || self.quick() == Some(id))
             })
         {
             self.select_collection(id);

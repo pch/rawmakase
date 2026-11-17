@@ -17,6 +17,7 @@ pub(crate) fn entry<'a>(p: &'a Photo, facets: Option<&'a PhotoFacets>) -> Entry<
         captured: &p.captured,
         keywords: &p.keywords,
         facets: facets.and_then(|f| facets_of(f, p)),
+        ..Entry::default()
     }
 }
 

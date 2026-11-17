@@ -73,3 +73,42 @@ fn autosave_writes_the_catalog_in_the_background() -> anyhow::Result<()> {
     assert_eq!(saved(&editor)?, 1.4);
     Ok(())
 }
+
+/// Issue 998: an autosave writes on a connection of its own; its completion
+/// tells the session, so smart collections see the edit, even when the
+/// document no longer takes the completion (it was saved some other way
+/// while the save ran).
+#[test]
+fn an_autosave_tells_the_session_whether_or_not_the_document_takes_it() -> anyhow::Result<()> {
+    let (_d, mut editor, ids) = crate::app::testing::editor_with_catalog(&["a.RAF"])?;
+    let ctx = editor.context.clone();
+    let path = editor
+        .library
+        .as_ref()
+        .unwrap()
+        .photo(ids[0])
+        .unwrap()
+        .path
+        .clone();
+    editor.document.catalog_photo = Some(ids[0]);
+    editor.document.opened_at(path);
+    let revision = |editor: &Editor| editor.library.as_ref().unwrap().session.query_revision();
+    for taken in [true, false] {
+        editor.document.edit.setup_mut().exposure += 0.2;
+        *editor.document.edit.save_state_mut() = save_state::SaveState::Pending(
+            std::time::Instant::now() - std::time::Duration::from_secs(1),
+        );
+        editor.autosave(&ctx);
+        assert!(editor.autosave.busy());
+        if !taken {
+            editor.document.edit.save_state_mut().saved();
+        }
+        let before = revision(&editor);
+        while editor.autosave.busy() {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            editor.autosave(&ctx);
+        }
+        assert!(revision(&editor) > before, "taken: {taken}");
+    }
+    Ok(())
+}

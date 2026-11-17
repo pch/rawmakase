@@ -26,6 +26,7 @@ fastframe_icons::icons! {
         PanelBottomOpen => "panel-bottom-open",
         Collection => "images",
         CollectionSet => "box",
+        SmartCollection => "list-filter",
         Keyboard => "keyboard",
         Bug => "bug",
         GridView => "layout-grid",

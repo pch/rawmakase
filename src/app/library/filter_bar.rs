@@ -61,8 +61,38 @@ impl Library {
                 });
             });
         changed |= self.metadata_strip(ui);
+        self.smart_note_line(ui);
         if changed {
             self.filter()
+        }
+    }
+    /// The line under the bar that says why the smart collection shown
+    /// lists what it lists, if anything needs saying.
+    fn smart_note_line(&mut self, ui: &mut egui::Ui) {
+        let Some(note) = self.smart_note() else {
+            return;
+        };
+        let mut dismiss = false;
+        egui::Frame::new()
+            .fill(theme::palette(ui.ctx()).tone(Tone::FIELD))
+            .inner_margin(inset::BAR)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        egui::RichText::new(note.text())
+                            .small()
+                            .color(theme::palette(ui.ctx()).tone(Tone::SECONDARY)),
+                    );
+                    if note == super::smart::SmartNote::SynonymsMissing {
+                        dismiss = ui
+                            .small_button("Dismiss — this catalog has no Lightroom synonyms")
+                            .clicked();
+                    }
+                });
+            });
+        if dismiss {
+            self.dismiss_missing_synonyms();
         }
     }
     /// Cmd+L: turns the filter bar off or back on, keeping what is set.

@@ -2204,12 +2204,21 @@ fn collections_panel_shows_imported_collections_and_filters_through_them() -> Re
     let tree = collections::tree(
         library.session.collections(),
         library.session.collection_photos(),
+        &Default::default(),
     );
-    // Sets first, then collections, by name; smart and system ones hidden,
-    // and a set left empty by hiding them is dropped too.
+    // Sets first, then collections, by name; system ones hidden. A smart
+    // collection shows (issue 998), being worked out until its members are
+    // known.
     let names: Vec<_> = tree.iter().map(|n| n.name.as_str()).collect();
-    assert_eq!(names, ["Empty set", "Trips", "Archive"]);
-    let trips: Vec<_> = tree[1]
+    assert_eq!(
+        names,
+        ["Empty set", "Smart Collections", "Trips", "Archive"]
+    );
+    assert_eq!(
+        tree[1].children[0].smart,
+        Some(collections::SmartCount::Pending)
+    );
+    let trips: Vec<_> = tree[2]
         .children
         .iter()
         .map(|n| (n.name.as_str(), n.count))
@@ -2238,7 +2247,7 @@ fn collections_panel_shows_imported_collections_and_filters_through_them() -> Re
     assert_eq!(restored.visible.len(), 2);
     assert_eq!(restored.selected(), Some(ids[1]));
     let mut other = Library::load(&path, egui::Context::default())?;
-    other.restore_source("collection:4", None);
+    other.restore_source("collection:5", None);
     assert_eq!(other.filters.collection, None);
     assert_eq!(other.visible.len(), 3);
 
