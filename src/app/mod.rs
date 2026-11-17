@@ -610,6 +610,8 @@ impl eframe::App for Editor {
         self.draw(ui);
         // HDR previews the frame didn't draw are of views that are gone.
         self.hdr_preview.sweep(self.render_state.as_ref());
+        // The Tone Curve's histogram, when no panel showed it.
+        self.curve_histogram.sweep();
         self.follow_hdr_display();
         if self.view.monitor.follows_system() {
             if self.view.system_display.update(frame) {

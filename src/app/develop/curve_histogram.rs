@@ -5,7 +5,8 @@
 //! ([`crate::develop::quality::curve_input_histogram`]), on a latest-only worker of
 //! its own, keyed by the photo and the edit with its tone curves left out
 //! ([`Key::new`]): moving a curve never renders it again, and another slider (or
-//! Levels, which the curves follow) does. It renders only while the panel shows it.
+//! Levels, which the curves follow) does. It renders only while the panel shows it;
+//! a frame without it cancels the render and lets go of the photo ([`CurveHistograms::sweep`]).
 //! A result for anything but the latest request is dropped. While the edit's next
 //! histogram renders, the last one of the same photo stays; another photo's never
 //! shows. Until one of this photo arrives, or when its render fails, the panel
@@ -86,6 +87,8 @@ pub(in crate::app) struct CurveHistograms {
     attempt: u64,
     cancel: Option<Arc<AtomicBool>>,
     measured: Option<Measured>,
+    /// Whether the frame being drawn asked for a histogram ([`Self::sweep`]).
+    asked: bool,
 }
 
 impl CurveHistograms {
@@ -112,6 +115,7 @@ impl CurveHistograms {
             attempt: 0,
             cancel: None,
             measured: None,
+            asked: false,
         }
     }
     /// Stops the worker; a render under way is cancelled and dropped.
@@ -171,12 +175,37 @@ impl CurveHistograms {
         key: Key,
         image: Arc<CameraImage>,
     ) -> Option<&Histogram> {
+        self.asked = true;
         self.collect();
-        self.request(key.clone(), image);
-        self.measured
+        // Another photo's is never shown, so it isn't kept either.
+        if self
+            .measured
             .as_ref()
-            .filter(|m| m.key.same_photo(&key))
-            .map(|m| &m.histogram)
+            .is_some_and(|m| !m.key.same_photo(&key))
+        {
+            self.measured = None;
+        }
+        self.request(key, image);
+        self.measured.as_ref().map(|m| &m.histogram)
+    }
+    /// After each frame: when it asked for no histogram (the panel closed, Develop
+    /// left, the photo closed or still opening), cancels the render under way and
+    /// lets go of what was asked for and measured, and of a result that arrives
+    /// late, so no photo or AI Denoise source outlives its use here. Attempts keep
+    /// counting, so a late result is never taken for a later request's.
+    pub(in crate::app) fn sweep(&mut self) {
+        if std::mem::take(&mut self.asked) {
+            return;
+        }
+        if let Some(cancel) = self.cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        self.requested = None;
+        self.measured = None;
+        self.done
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
     }
 }
 
@@ -324,6 +353,34 @@ mod tests {
         let replaced = photo(&ctx);
         let other = Key::new(&replaced, &Recipe::default(), None);
         assert!(h.shown(other, replaced).is_none());
+    }
+
+    /// A frame that asks for no histogram cancels the render and lets go of the
+    /// photo's key, result and a late completion; the next ask renders again.
+    #[test]
+    fn a_frame_without_the_panel_lets_go_of_the_histogram() {
+        let ctx = egui::Context::default();
+        let image = photo(&ctx);
+        let mut h = CurveHistograms::new(ctx);
+        let _ = h.worker.stop();
+        let key = Key::new(&image, &Recipe::default(), None);
+        h.shown(key.clone(), image.clone());
+        *h.done.lock().unwrap() = Some((1, Ok(measured(&key, 1))));
+        assert!(h.shown(key.clone(), image.clone()).is_some());
+        h.sweep();
+        assert!(h.measured.is_some(), "kept while the frame asked for it");
+        let cancel = h.cancel.clone().unwrap();
+        // A frame without the panel.
+        h.sweep();
+        assert!(cancel.load(Ordering::Relaxed), "the render is cancelled");
+        assert!(h.requested.is_none() && h.measured.is_none());
+        // A late completion is dropped by the next sweep, not kept.
+        *h.done.lock().unwrap() = Some((1, Ok(measured(&key, 1))));
+        h.sweep();
+        assert!(h.done.lock().unwrap().is_none());
+        // Shown again: asked for anew, nothing of the earlier result.
+        assert!(h.shown(key, image).is_none());
+        assert!(h.requested.is_some());
     }
 
     /// A render that fails or panics shows nothing of it, and the worker takes the
