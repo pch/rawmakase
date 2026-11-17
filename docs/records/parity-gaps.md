@@ -409,11 +409,63 @@ move. The form carries over to photos it was not read from, at half the sliders;
 fraction per photo does not yet, and the build would not pass the gate's regression
 rule.
 
-**Open.** The two fractions per photo: predicted by the rule's networks, or the
-combined curves themselves as further outputs of the rule, fitted on combined renders of
-every training photo (the four ±100 pairs are being rendered on the other 168). The
-gate's mixed sets need cases with both signs of each slider before such a change can be
-judged on validation.
+**The candidate (#1153, stacked on #1128).** The blend with the fractions predicted
+per photo and sign combination from the photo's own two curves: how much of the photo
+each reaches (the mean over the map of its gain as a fraction of the extreme's), the
+extremes' sizes and their reciprocals, the extremes read at the 1st and 99th percentile
+of the base levels. A linear map, fitted on the four ±100 pairs of 212 training photos
+on what the blend leaves of Camera Raw's combined gain in the engine's own terms (its
+curves from its dump, its white curve undone). Histogram descriptors added to those six
+numbers gained nothing on held-out photos. A slider's fraction ramps in as the ratio's
+power 1.7 for sliders of one sign and as 1 − e^(−2.4 × ratio), scaled to 1 at equal
+sliders, for opposite signs. Held out by photo in five folds, the gain's error at each
+pair (RMS over a photo's pixels in stops, median; the sum of the two curves, then the
+blend): Shadows +100 with Highlights +100 0.318 → 0.205 (166 photos closer by 0.02, 20
+further), −100 with −100 0.359 → 0.231 (173 / 19), +100 with −100 0.197 → 0.174
+(104 / 8), −100 with +100 0.220 → 0.192 (129 / 7); the fractions fitted to each photo
+would leave 0.154, 0.184, 0.157 and 0.173, about the two single curves' own error (0.15
+to 0.16 for Shadows, 0.09 to 0.10 for Highlights).
+
+Rendered (median error against Camera Raw on the 60 photos; #1128, then the candidate):
+
+| Setting | #1128 | Candidate | Photos closer / further |
+| --- | --- | --- | --- |
+| Shadows +100, Highlights −100 | 0.0198 | 0.0148 | 50 / 5 |
+| Shadows −100, Highlights +100 | 0.0182 | 0.0145 | 41 / 16 |
+| Shadows +100, Highlights +100 | 0.0430 | 0.0262 | 45 / 14 |
+| Shadows −100, Highlights −100 | 0.0285 | 0.0151 | 47 / 10 |
+| Shadows −50, Highlights +50 | 0.0089 | 0.0078 | 36 / 21 |
+| Highlights +40, Shadows −40, Whites +20, Blacks −20 | 0.0140 | 0.0122 | 33 / 22 |
+
+The last one's 90th percentile grows (0.0246 → 0.0275): with Blacks lowered too the deep
+shadows end 0.3 to 0.4 stop too bright, 0.1 more than before. Over the grid on 16 photos
+the candidate is closer at all twelve other settings of ±50 and ±100 (Shadows +50 with
+Highlights −50 0.0101 → 0.0075, 14 closer and 1 further; +50 with +50 0.0287 → 0.0114)
+and level where one slider is a tenth or a quarter of the other (0.0095–0.0151 →
+0.0098–0.0132). One slider alone renders as before.
+
+On validation, Shadows +50 with Highlights −50 against the recorded baseline of main (56
+photos of six families, median ΔE00 of a photo): median 1.04 → 0.85, mean 1.26 → 1.12,
+90th percentile 2.13 → 2.03; 39 photos closer by more than 0.05 and 3 further (1.14 →
+1.59, a backlit hut whose shadows the blend leaves a little dark; 1.86 → 2.19; 0.68 →
+0.79). 210 windows on seven photos are more than 2 ΔE00 closer and 4 windows on one
+photo further; that photo, itself closer (0.39 → 0.31), fails the gate's regression rule
+for its stratum: 129 of the mixed sets' 180 setting and stratum pairs pass, 1 fails, 50
+have too few photos. The other 504 cases render as before. The synthetic chart's three
+cases with both sliders get closer (mean ΔE00 0.85 → 0.68, 2.58 → 2.00, 2.51 → 2.45).
+
+**Found in its review, and older than it:** the sum of the two curves is not always
+monotone in the base level. Each curve is made monotone on its own; their sum never was.
+On a synthetic scene of a deep-shadow block in a textured surround, Shadows +80 with
+Highlights −60 renders five pairs of neighbouring table levels in reversed order, by up
+to 0.051 stop, and +100 with −100 nine, by up to 0.128; +50 with −50 none. The blend
+halves it (one pair and 0.015; six and 0.070) and cannot add to it. Not fixed: a
+projection of the summed table cannot be applied per pixel in a mask, and the two paths
+have to stay identical.
+
+**Open.** Combined cases with both signs of each slider in the gate's mixed sets:
+validation rests on one case at half the sliders. The reversal above. HDR masters, which
+keep the sum. The deep shadows under the pair with Blacks lowered.
 
 ### Negative Dehaze as added haze, and the dark key (2026-11-13)
 
