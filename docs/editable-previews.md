@@ -86,21 +86,39 @@ copy with no record, or a damaged one, is treated the same way. There is no
 migration code.
 
 The catalog gains one table, added the way `photo_checksums` was, with no
-format change:
+format change. In `schema.sql`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS editable_previews (
-    photo_id INTEGER PRIMARY KEY,  -- the master photo
+    photo INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE, -- the master
     file TEXT NOT NULL,            -- file name in the catalog's copies folder
     format TEXT NOT NULL,          -- 'rawmakase-dng-1'; an importer adds its own
-    original TEXT NOT NULL,        -- the original's identity, as recorded
+    original TEXT NOT NULL,        -- the original's Identity JSON, as recorded
     out_of_date INTEGER NOT NULL DEFAULT 0,
     built_at TEXT NOT NULL
 );
 ```
 
-Copies live beside the catalog, in `<catalog name>.rawmakase-editable-previews/`.
-For a catalog that isn't a file, they live in the data folder.
+`schema.postgres.sql` has the same table, with `BIGINT` where photo ids and
+integers are `BIGINT` there, as in `photo_checksums`.
+
+The row is the master's, so virtual copies share it:
+
+- **Set Copy as Master** moves the row to the new master in its own
+  transaction, as it moves the checksum.
+- **An older release** may promote a copy without knowing the table, and the
+  row then sits on what is now a virtual copy. When the catalog opens, any
+  such row is moved to its photo's master, idempotently, as the schema is
+  applied.
+- **Removing a photo** removes its row through the cascade, whichever release
+  removes it. Removing a virtual copy leaves the master's row alone.
+
+Copies live beside the catalog, in `<catalog name>.rawmakase-editable-previews/`,
+named `<photo id>-<identity key>.dng`. For a catalog that isn't a file, they
+live in the data folder. A file is deleted after the transaction that drops its
+row commits. A file no row names, such as one left when an older release
+removed its photo, is deleted the next time Build or Discard runs on that
+catalog.
 
 ### 2. Caches
 
@@ -109,11 +127,19 @@ it:
 
 - **Decode cache.** It is keyed by the identity of the file decoded. A copy's
   decode is keyed by the copy file, so it is never the original's.
-- **Edited thumbnails.** These are tagged with the file's stamp
-  (`DevelopSource::tag`). A thumbnail rendered from a copy is tagged with the
-  copy's identity instead, so the Library shows the offline edit. When the
-  original is back, its own stamp misses that tag and the thumbnail is rendered
-  again from the original.
+- **Edited thumbnails.** The preview cache keeps these by source file path,
+  with the edit's tag (`EditSource::preview_tag`). A write is checked against
+  the file's stamp (`PreviewCache::store_tagged`), which is why Develop's
+  thumbnail of an offline photo isn't cached today. A thumbnail rendered from a
+  copy is stored under the **copy's** path and stamp, and the same check holds
+  for it.
+  - The Library looks under the copy's path only for a photo that is offline
+    and has an up-to-date copy, so it shows the offline edit.
+  - Online, it looks under the original's path alone, so it never finds a
+    thumbnail rendered from a copy.
+  - Once the original is back, the thumbnail stored there carries the older
+    edit's tag. It misses, and the thumbnail is rendered again from the
+    original.
 - **Standard and 1:1 previews, AI Denoise results and Camera Look fits** are
   never made from a copy.
 - **Export** of an offline photo stays refused (`availability_refusal`), and
@@ -169,9 +195,27 @@ alone, and the save reads the file as it does now. So:
   same way. Sync from Develop to other photos takes the Library's path above,
   so offline targets are refused.
 
-Tests: Sync, Paste Settings and a preset over a selection that includes an
-offline photo with a copy each leave its edit unchanged and report it, and the
-same calls through the save path with no recorded identity are refused.
+**Clears go through the same check.** Today `EditChange::Clear` reads no file.
+Undo of a Sync or preset therefore clears a photo that had no edit before it,
+even while the photo is offline. If it stayed that way, Undo of an earlier Sync
+could clear an edit made offline. So a clear will carry the photo's `Original`
+and the identity it is meant for, as a save does, and will be checked the same
+way:
+
+- It is refused while the file can't be read, unless the caller passes the
+  recorded identity, and the Library's Undo doesn't pass one.
+- Undo of a Sync over an offline photo is then refused whether or not the photo
+  had an edit before. Today only an edited one is refused. It fails with the
+  reason, as a save there does.
+
+Tests:
+
+- Sync, Paste Settings and a preset over a selection that includes an offline
+  photo with a copy each leave its edit unchanged and report it.
+- Undo and Redo of such a Sync, for a target edited before it and one that
+  wasn't, each leave an offline photo's edit unchanged.
+- The same saves and clears through the save path with no recorded identity
+  are refused.
 
 ### 5. Tests
 
@@ -181,6 +225,12 @@ same calls through the save path with no recorded identity are refused.
   the same transaction, and the file after commit. A failed removal keeps both.
 - Removing a virtual copy keeps the master's copy.
 - Virtual copies open from their master's copy.
+- Set Copy as Master moves the row. After that, the family opens offline from
+  the copy, and removing the former master (now a virtual copy) keeps it.
+- A row left on a virtual copy, as an older release's promotion leaves it, is
+  moved to the master when the catalog opens.
+- Removing a photo with SQL alone, as an older release would, drops the row
+  through the cascade. The next Build deletes the file left behind.
 - Replacing the file, Find on Disk and relinking a folder:
   - to the same file, the copy stays up to date;
   - to a different file, the copy is out of date and is never opened.
