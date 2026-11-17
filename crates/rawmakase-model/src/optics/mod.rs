@@ -224,6 +224,9 @@ impl LensCorrection {
     /// The `source` of the correction read from a Sony file's own tables (a DNG's
     /// opcodes are another source, with Lightroom's framing).
     pub const SONY_BUILTIN: &'static str = "Sony built-in";
+    /// The start of the `source` of a correction read from an imported Adobe lens
+    /// profile, which Camera Raw frames differently ([`Self::fill_scale`]).
+    pub const ADOBE_PROFILE: &'static str = "Adobe profile";
     pub fn is_empty(&self) -> bool {
         self.vignetting.is_none()
             && self.distortion.is_none()
@@ -278,7 +281,9 @@ impl LensCorrection {
     /// every point of the photo's edge, the rectangle `frame` (`[left, top, right,
     /// bottom]`, in pixels) of the decoded image of `size`, lies inside the decoded
     /// image, with Lightroom's Distortion amount (1 = 100%): as Lightroom frames the
-    /// corrected photo, never zooming out. Only green frames it, as in Adobe's warps,
+    /// corrected photo, never zooming out. An imported Adobe profile is framed as
+    /// Camera Raw 19 and Lightroom frame it instead: zoomed in or out until green's
+    /// samples for the edge touch `frame`'s own edge. Only green frames it, as in Adobe's warps,
     /// whose red and blue planes may reach a little past the image's edge; samplers clamp
     /// them there. Where the corrected radius grows with the output radius, as it does
     /// for any real lens, the interior samples nearer the centre than the edge along the
@@ -313,14 +318,23 @@ impl LensCorrection {
         let [left, top, right, bottom] = frame;
         let (x0, x1) = (left.max(0.) - cx, right.min(w) - cx);
         let (y0, y1) = (top.max(0.) - cy, bottom.min(h) - cy);
+        // Camera Raw keeps an Adobe profile's samples inside the frame, not the decoded image.
+        let adobe = self.source.starts_with(Self::ADOBE_PROFILE);
+        let (bx, by) = if adobe {
+            ((left.max(0.), right.min(w)), (top.max(0.), bottom.min(h)))
+        } else {
+            ((0., w), (0., h))
+        };
         let inside = |dx: f32, dy: f32, fill: f32| {
             let s = fill * green(dx.hypot(dy) * fill / half);
-            (0. ..=w).contains(&(cx + dx * s)) && (0. ..=h).contains(&(cy + dy * s))
+            (bx.0..=bx.1).contains(&(cx + dx * s)) && (by.0..=by.1).contains(&(cy + dy * s))
         };
         // About one sample per pixel along the edge, so no extremum between samples
         // leaves the image by more than a fraction of a pixel.
         let steps = (w.max(h).ceil() as usize).clamp(64, 8192);
-        let mut fill = 1f32;
+        // Camera Raw also zooms an Adobe profile out until the frame's edge touches that bound.
+        // The search starts at 1.5, so a correction that would need more stays at 1.5.
+        let mut fill = if adobe { 1.5f32 } else { 1. };
         for i in 0..=steps {
             let t = i as f32 / steps as f32;
             let (x, y) = (x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
@@ -462,6 +476,25 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(fill(&barrel, [6000., 4000.]), 1.);
+    }
+    /// An Adobe profile's barrel correction zooms out until the edge touches the frame's
+    /// edge, as in Camera Raw 19 and Lightroom (Canon EF 24-105mm f/4L at 24mm: 3.1%).
+    #[test]
+    fn adobe_profile_zooms_out_until_the_edge_touches() {
+        let adobe = LensCorrection {
+            source: format!("{}: x", LensCorrection::ADOBE_PROFILE),
+            distortion: Radial::new(vec![0., 1.], vec![1., 0.97]),
+            ..Default::default()
+        };
+        let size = [300., 200.];
+        let s = fill(&adobe, size);
+        assert!(s > 1.01, "{s}");
+        assert!(worst_outside(&adobe, size, s).abs() < 0.01);
+        let other = LensCorrection {
+            source: "x".into(),
+            ..adobe
+        };
+        assert_eq!(fill(&other, size), 1.);
     }
     /// An off-centre optical centre: the corner farthest from it sets the zoom, and every
     /// edge sample stays inside without zooming more than that needs.

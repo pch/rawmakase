@@ -352,7 +352,7 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
         .zip(chroma(|e| e.blue))
         .map(|(r, b)| [r, b]);
     let c = LensCorrection {
-        source: format!("Adobe profile: {}", first.name),
+        source: format!("{}: {}", LensCorrection::ADOBE_PROFILE, first.name),
         default_on: false,
         vignetting,
         distortion,
