@@ -140,9 +140,14 @@ impl Catalog {
         let CatalogLocation::File(path) = &self.location;
         let backup = backup_path(path)?;
         let mut upgrade = None;
+        let backup_name = backup
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         self.db.upgrade(NEWEST, &backup, |w, _| {
             let mut u = Upgrade::new(w, progress)?;
             migrate(w, &mut u)?;
+            super::set_meta(w, NEWEST_BACKUP, &backup_name)?;
             upgrade = Some(u.unreadable);
             Ok(())
         })?;
@@ -163,18 +168,42 @@ impl Catalog {
     }
 }
 
+/// The `meta` key naming the backup the last upgrade wrote, by file name. It
+/// is kept when earlier ones are deleted.
+const NEWEST_BACKUP: &str = "upgrade_backup";
+
 impl Catalog {
-    /// Deletes the backups earlier upgrades left beside the catalog, all but the
-    /// newest, which opens in the release that used the catalog before. Called
-    /// once a catalog opened without an upgrade, so a backup is never deleted in
-    /// the session that wrote it. Only files with the names upgrades give them
-    /// that are RAWmakase catalogs are deleted: a renamed backup is left alone. A
-    /// backup that can't be deleted (open elsewhere, say) is tried again next
-    /// time; opening goes on regardless.
-    pub(super) fn remove_earlier_backups(&self) {
+    /// Deletes the backups earlier upgrades left beside the catalog, keeping
+    /// the newest, which opens in the release that used the catalog before.
+    ///
+    /// The newest is the one the last upgrade recorded writing; for backups of
+    /// upgrades that recorded none (releases before this), the one of the newest
+    /// format, then the latest written. Only files named as upgrades name them
+    /// that are RAWmakase catalogs are deleted, so a renamed backup is left
+    /// alone. A backup that can't be deleted (open elsewhere, say) is tried
+    /// again next time.
+    ///
+    /// For what opens a catalog for the user (the Library and the command
+    /// line), after it opened: it does nothing when this open upgraded the
+    /// catalog, so a backup is never deleted in the session that wrote it.
+    /// Connections that work for an open session (autosave, exports) don't
+    /// call it.
+    pub fn remove_earlier_backups(&self) {
+        if self.upgraded.is_some() {
+            return;
+        }
         let CatalogLocation::File(path) = &self.location;
         let mut backups = upgrade_backups(path);
-        backups.sort_by(|a, b| (a.version, a.modified).cmp(&(b.version, b.modified)));
+        if backups.len() < 2 {
+            return;
+        }
+        let recorded = self.meta(NEWEST_BACKUP).ok().flatten();
+        backups.sort_by_key(|b| {
+            let named = recorded
+                .as_deref()
+                .is_some_and(|name| b.path.file_name().is_some_and(|n| n == name));
+            (named, b.version, b.modified)
+        });
         backups.pop();
         for backup in backups {
             let _ = std::fs::remove_file(&backup.path);
@@ -206,9 +235,11 @@ fn upgrade_backups(path: &Path) -> Vec<UpgradeBackup> {
             let entry = entry.ok()?;
             let file_name = entry.file_name();
             let suffix = file_name.to_str()?.strip_prefix(&prefix)?;
-            let numbered = suffix
-                .strip_prefix('-')
-                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+            let numbered = suffix.strip_prefix('-').is_some_and(|digits| {
+                digits
+                    .parse::<u32>()
+                    .is_ok_and(|n| BACKUP_NUMBERS.contains(&n) && n.to_string() == digits)
+            });
             if !suffix.is_empty() && !numbered {
                 return None;
             }
@@ -239,13 +270,17 @@ fn catalog_version(path: &Path) -> Option<i64> {
     (header.starts_with(b"SQLite format 3\0") && field(68) == APPLICATION_ID).then(|| field(60))
 }
 
+/// The numbers a backup's name ends with when the plain name is taken.
+const BACKUP_NUMBERS: std::ops::Range<u32> = 1..1000;
+
 /// A free name for the backup of the catalog at `path`.
 fn backup_path(path: &Path) -> Result<PathBuf> {
     let name = path.file_name().map_or_else(
         || "catalog".to_string(),
         |name| name.to_string_lossy().into_owned(),
     );
-    (0..1000)
+    std::iter::once(0)
+        .chain(BACKUP_NUMBERS)
         .map(|n| {
             let suffix = if n == 0 {
                 String::new()

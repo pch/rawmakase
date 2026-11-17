@@ -105,3 +105,32 @@ fn the_upgrade_changes_no_render() -> Result<()> {
     );
     Ok(())
 }
+
+/// The Library and the command line delete the backups earlier upgrades left once
+/// the catalog opens again after an upgrade, keeping the one the upgrade wrote.
+#[test]
+fn opening_again_keeps_only_the_newest_backup() -> Result<()> {
+    for library in [true, false] {
+        let mut f = Earlier::new(6, 1)?;
+        f.close();
+        let name = f.path.file_name().unwrap().to_string_lossy().into_owned();
+        let earlier = f.dir.path().join(format!("{name}.before-upgrade-backup"));
+        std::fs::copy(&f.path, &earlier)?;
+        let open = |path: &std::path::Path| -> Result<Option<crate::catalog::Upgraded>> {
+            if library {
+                let location = crate::catalog::CatalogLocation::from(path);
+                Ok(super::CatalogSession::open(&location)?.upgraded)
+            } else {
+                let mut err = Vec::new();
+                let catalog = crate::catalog_command::open_catalog(path, &mut err)?;
+                Ok(catalog.upgraded().cloned())
+            }
+        };
+        let upgraded = open(&f.path)?.unwrap();
+        assert!(earlier.exists(), "{library}");
+        assert!(open(&f.path)?.is_none());
+        assert!(!earlier.exists(), "{library}");
+        assert!(upgraded.backup.exists(), "{library}");
+    }
+    Ok(())
+}

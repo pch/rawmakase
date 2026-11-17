@@ -234,6 +234,7 @@ impl CatalogSession {
             progress,
         )?;
         let upgraded = catalog.upgraded().cloned();
+        catalog.remove_earlier_backups();
         // Masks made from a selection are read back from this catalog wherever they
         // are rendered: Develop, the Library's thumbnails, previews and exports.
         crate::storage::mask_assets::add_loader(catalog.mask_asset_loader());
