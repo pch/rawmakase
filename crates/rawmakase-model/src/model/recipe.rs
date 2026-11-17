@@ -547,7 +547,9 @@ impl Recipe {
         ensure!(self.ai_denoise.is_valid(), "Invalid AI Denoise Amount");
         self.hdr.validate()?;
         ensure!(
-            self.crop.iter().all(|v| (0. ..=1.).contains(v))
+            // shortcut: a Lightroom crop on the photo can reach past the enlarged frame; the bound
+            // is loose because the photo's size is not known here, tighten with it
+            self.crop.iter().all(|v| (-1. ..=2.).contains(v))
                 && self.crop[2] - self.crop[0] >= 0.01
                 && self.crop[3] - self.crop[1] >= 0.01,
             "Invalid crop"

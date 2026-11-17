@@ -122,16 +122,20 @@ pub(in crate::app) fn drag_sides(start: [f32; 4], handle: Option<Handle>, d: Vec
             }
         }
         None => {
-            let dx = d.x.clamp(-c[0], 1. - c[2]);
-            let dy = d.y.clamp(-c[1], 1. - c[3]);
+            // A crop read from Lightroom can reach past 0–1 (`xmp/crop.rs`), even on both
+            // sides, where these bounds would cross and `clamp` would panic.
+            let dx = d.x.clamp((-c[0]).min(0.), (1. - c[2]).max(0.));
+            let dy = d.y.clamp((-c[1]).min(0.), (1. - c[3]).max(0.));
             c[0] += dx;
             c[2] += dx;
             c[1] += dy;
             c[3] += dy;
+            // A move keeps the crop's size, so the sides' limits below don't apply.
+            return c;
         }
     }
-    c[0] = c[0].clamp(0., start[2] - 0.01);
-    c[1] = c[1].clamp(0., start[3] - 0.01);
+    c[0] = c[0].clamp(0., start[2].clamp(0.01, 1.) - 0.01);
+    c[1] = c[1].clamp(0., start[3].clamp(0.01, 1.) - 0.01);
     c[2] = c[2].clamp(c[0] + 0.01, 1.);
     c[3] = c[3].clamp(c[1] + 0.01, 1.);
     c
@@ -234,6 +238,27 @@ mod tests {
 
     fn assert_near(a: f32, b: f32, what: &str) {
         assert!((a - b).abs() < 1e-5, "{what}: {a} is not {b}");
+    }
+
+    /// Lightroom's whole frame at 5° comes back wider than the enlarged frame on both
+    /// sides. Dragging a side brings that crop inside 0–1 instead of panicking, and moving
+    /// it keeps its size.
+    #[test]
+    fn a_crop_past_both_sides_drags_back_inside() {
+        let start = [-0.03, 0.1, 1.03, 0.9];
+        let handles = [Some(Handle { x: -1, y: 0 }), Some(Handle { x: 1, y: 0 })];
+        for d in [Vec2::new(-2., 0.), Vec2::new(0.2, 0.), Vec2::new(2., 0.)] {
+            for handle in handles {
+                let c = drag_sides(start, handle, d);
+                assert!(
+                    c.iter().all(|v| (0. ..=1.).contains(v)) && c[2] - c[0] >= 0.0099,
+                    "{handle:?} {d:?}: {c:?}"
+                );
+            }
+            assert_eq!(drag_sides(start, None, d), start, "{d:?}");
+        }
+        let moved = drag_sides([0.1, 0.1, 0.3, 0.3], None, Vec2::new(0.5, 0.));
+        assert!((moved[2] - moved[0] - 0.2).abs() < 1e-6, "{moved:?}");
     }
 
     #[test]
