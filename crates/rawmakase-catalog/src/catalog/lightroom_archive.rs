@@ -73,7 +73,7 @@ impl Catalog {
         // Immediate, with the time and the last look read again under the lock:
         // another window opening the catalog at the same time may have looked
         // since, and two looks seconds apart must not count as a week's wait.
-        let deleted = self.db.write_immediate(|w| {
+        self.db.write_immediate(|w| {
             let now = unix_now();
             let checked: Option<String> = w.read_optional(
                 sql!("SELECT value FROM meta WHERE key=?"),
@@ -81,7 +81,7 @@ impl Catalog {
             )?;
             let look = look(checked, now);
             if look == Look::NotDue {
-                return Ok(0);
+                return Ok(());
             }
             super::set_meta(w, RASTERS_CHECKED, &now.to_string())?;
             let before: Option<String> = w.read_optional(
@@ -98,19 +98,18 @@ impl Catalog {
                 .into_iter()
                 .partition(|h| before.contains(h.as_str()));
             super::set_meta(w, RASTERS_UNNAMED, &waiting.join(","))?;
-            super::mask_assets::delete(w, &gone)
-        })?;
-        if deleted == 0 {
-            return Ok(());
-        }
-        // The free space includes what earlier opens deleted, so small deletions
-        // add up to a compaction. Decided once the deletion is committed: a
-        // failure in between leaves the space for later writes, as before.
-        let (file, free) = self.db.space()?;
-        if free >= COMPACT_WHEN_FREE || free * 4 >= file {
-            self.set_meta(COMPACT_PENDING, "1")?;
-        }
-        Ok(())
+            if super::mask_assets::delete(w, &gone)? == 0 {
+                return Ok(());
+            }
+            // The free space includes what earlier opens deleted, so small
+            // deletions add up to a compaction. Recorded with the deletion, so
+            // the space is given back even if this open stops before compacting.
+            let (file, free) = w.space()?;
+            if free >= COMPACT_WHEN_FREE || free * 4 >= file {
+                super::set_meta(w, COMPACT_PENDING, "1")?;
+            }
+            Ok(())
+        })
     }
 
     fn empty_archive(&mut self) -> Result<()> {

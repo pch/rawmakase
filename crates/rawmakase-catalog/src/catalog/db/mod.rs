@@ -198,20 +198,6 @@ impl Db {
         Ok(())
     }
 
-    /// The file's size and the bytes inside it that deleted rows left free,
-    /// which [`vacuum`](Self::vacuum) would give back.
-    pub(in crate::catalog) fn space(&self) -> Result<(i64, i64)> {
-        let db = self.connection();
-        let pragma = |name: &str| -> Result<i64> {
-            Ok(db.query_row(&format!("PRAGMA {name}"), [], |r| r.get(0))?)
-        };
-        let page = pragma("page_size")?;
-        Ok((
-            pragma("page_count")? * page,
-            pragma("freelist_count")? * page,
-        ))
-    }
-
     /// Gives the disk back the space deleted and rewritten rows leave in the file.
     pub(in crate::catalog) fn vacuum(&mut self) -> Result<()> {
         self.connection().execute_batch("VACUUM")?;
@@ -517,6 +503,21 @@ pub(in crate::catalog) struct Write<'db> {
 impl Write<'_> {
     fn connection(&self) -> &Connection {
         self.db
+    }
+
+    /// The file's size and the bytes inside it that deleted rows left free
+    /// (including this transaction's), which [`Db::vacuum`] would give back.
+    pub(in crate::catalog) fn space(&self) -> Result<(i64, i64)> {
+        let pragma = |name: &str| -> Result<i64> {
+            Ok(self
+                .db
+                .query_row(&format!("PRAGMA {name}"), [], |r| r.get(0))?)
+        };
+        let page = pragma("page_size")?;
+        Ok((
+            pragma("page_count")? * page,
+            pragma("freelist_count")? * page,
+        ))
     }
 
     /// Runs `sql`; returns how many rows it changed.
