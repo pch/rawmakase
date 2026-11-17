@@ -494,7 +494,12 @@ impl CameraProfile {
         }
         let gains: [f32; 3] =
             std::array::from_fn(|c| 1. / (calibration[c] * neutral[c] * m.wb[c].max(1e-6)));
-        Some(gains.map(|v| (v / gains[1]).clamp(0.01, 100.)))
+        // The DNG SDK scales the camera white to a largest channel of 1, so no raw channel is
+        // darkened. That is green for most whites, and the scale stays as it was there.
+        let least = (0..3)
+            .map(|c| gains[c] * m.wb[c].max(1e-6))
+            .fold(f32::MAX, f32::min);
+        Some(gains.map(|v| (v / least).clamp(0.01, 100.)))
     }
     pub fn as_shot_white_balance(&self, m: &Metadata) -> Option<[f32; 2]> {
         self.as_shot_calibrated(m, self.neutral_calibration(m))
@@ -528,6 +533,25 @@ impl CameraProfile {
     fn weight(&self, t: f32) -> f32 {
         weight(t, self.kelvin1, self.kelvin2)
     }
+    /// [`Self::camera_matrix`] at the white `temperature` and `tint`. The ColorMatrix alone
+    /// ([`Self::camera_matrix_default`], and RAWmakase Standard and Color built on it) adapts
+    /// that white to D50 by Bradford, as the DNG SDK does for a profile without forward
+    /// matrices, rather than adapting D65 for every white.
+    pub fn camera_matrix_at(&self, temperature: f32, tint: f32) -> Matrix {
+        let own = [CAMERA_MATRIX, open::STANDARD, open::COLOR].contains(&self.name.as_str());
+        let Some(cm) = self.color1.filter(|_| own) else {
+            return self.camera_matrix(temperature);
+        };
+        let xyz = |[x, y]: [f32; 2]| [x / y, 1., (1. - x - y) / y];
+        let white = xyz(crate::camera_profiles::temperature::xy(temperature, tint));
+        let neutral = mul(cm, white);
+        let inv = crate::color::inverse(cm);
+        let scaled: Matrix =
+            std::array::from_fn(|i| std::array::from_fn(|j| inv[i][j] * neutral[j]));
+        let adapt = crate::model::white_balance::map_white(white, xyz([0.3457, 0.3585]));
+        matmul(XYZ_TO_PRO, matmul(adapt, scaled))
+    }
+
     pub fn camera_matrix(&self, t: f32) -> Matrix {
         let w = self.weight(t);
         matmul(
@@ -865,6 +889,7 @@ const D65_TO_D50: Matrix = [
 const D65: [f32; 3] = [0.95047, 1., 1.08883];
 /// Lightroom's profile for rendered files.
 pub const EMBEDDED: &str = "Embedded";
+const CAMERA_MATRIX: &str = "Camera Matrix";
 impl CameraProfile {
     /// Lightroom's "Embedded" profile for rendered files: it renders a rendered file's
     /// pseudo-scene (`develop::rendered`) with Camera Raw's default tone curve; its
@@ -938,7 +963,7 @@ impl CameraProfile {
             std::array::from_fn(|i| std::array::from_fn(|j| inv[i][j] * neutral[j]));
         let forward = matmul(D65_TO_D50, scaled);
         let p = Self {
-            name: "Camera Matrix".into(),
+            name: CAMERA_MATRIX.into(),
             camera: format!("{} {}", m.make, m.model),
             copyright: String::new(),
             enhanced: None,

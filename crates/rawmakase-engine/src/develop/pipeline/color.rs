@@ -103,5 +103,5 @@ pub(crate) fn camera_stage(m: &Metadata, r: &Recipe) -> Camera {
 fn profile_matrix(m: &Metadata, r: &Recipe) -> [[f32; 3]; 3] {
     r.profile
         .as_ref()
-        .map_or(m.matrix, |p| p.camera_matrix(r.temperature))
+        .map_or(m.matrix, |p| p.camera_matrix_at(r.temperature, r.tint))
 }

@@ -237,6 +237,41 @@ fn camera_matrix_default_keeps_neutrals_and_uses_dng_tone() {
 }
 
 #[test]
+fn white_balance_darkens_no_raw_channel() {
+    // At 2000 K red is the camera white's largest channel, at 50000 K blue.
+    let m = x100f();
+    let p = CameraProfile::camera_matrix_default(&m).unwrap();
+    for t in [2000., 5000., 50000.] {
+        let wb = p.white_balance(t, 0., &m).unwrap();
+        let least = (0..3).map(|c| wb[c] * m.wb[c]).fold(f32::MAX, f32::min);
+        assert!((least - 1.).abs() < 1e-4, "{t} K: {wb:?}");
+    }
+}
+
+#[test]
+fn camera_matrix_adapts_the_chosen_white_to_d50_by_bradford() {
+    // A colour lit by the chosen white, white balanced, comes out as its XYZ adapted from
+    // that white to D50, as the DNG SDK renders a profile without forward matrices.
+    let m = x100f();
+    let p = CameraProfile::camera_matrix_default(&m).unwrap();
+    let cm = p.color1.unwrap();
+    let xyz = |[x, y]: [f32; 2]| [x / y, 1., (1. - x - y) / y];
+    let patch = [0.3, 0.2, 0.1];
+    for (t, tint) in [(3000., 0.), (6500., 20.), (12000., -50.)] {
+        let white = xyz(temperature::xy(t, tint));
+        let (camera, neutral) = (mul(cm, patch), mul(cm, white));
+        let balanced: [f32; 3] = std::array::from_fn(|c| camera[c] / neutral[c]);
+        let got = mul(p.camera_matrix_at(t, tint), balanced);
+        let adapt = crate::model::white_balance::map_white(white, xyz([0.3457, 0.3585]));
+        let want = mul(XYZ_TO_PRO, mul(adapt, patch));
+        assert!(
+            (0..3).all(|c| (got[c] - want[c]).abs() < 1e-3),
+            "{t} K: {got:?} {want:?}"
+        );
+    }
+}
+
+#[test]
 fn a7cr_native_units_use_their_own_daylight_metadata() {
     for (daylight, expected) in [
         ([2569., 1024., 1800.], [0.9432, 1., 0.9994]),
