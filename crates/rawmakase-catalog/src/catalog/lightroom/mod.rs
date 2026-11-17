@@ -50,6 +50,57 @@ fn copy_keyword_export(lr: &mut LightroomWrite<'_>) -> Result<usize> {
     )
 }
 
+/// Copies what `AgLibraryCollectionContent` keeps of each collection
+/// imported: a smart collection's rules (kept verbatim, also when they can't
+/// be read) and a collection's sort, from a catalog attached as `lr`.
+fn copy_collection_content(lr: &mut LightroomWrite<'_>) -> Result<()> {
+    super::value::row! {
+        struct Content {
+            collection: crate::catalog::CollectionId,
+            content: String,
+        }
+    }
+    let rules: Vec<Content> = lr.read_sqlite(
+        sqlite_sql!(
+            "SELECT k.collection, k.content FROM lr.AgLibraryCollectionContent k
+             JOIN collections c ON c.id = k.collection
+             WHERE k.owningModule = 'ag.library.smart_collection'
+               AND c.kind = 'com.adobe.ag.library.smart_collection'
+               AND k.content IS NOT NULL
+             ORDER BY k.id_local"
+        ),
+        &[],
+    )?;
+    let mut seen = std::collections::HashSet::new();
+    for r in rules {
+        // A collection with two rule rows keeps the first.
+        if seen.insert(r.collection) {
+            let rules = super::collections::SmartRules::from_lightroom(&r.content);
+            super::collections::write_rules(lr.write(), r.collection, &rules)?;
+        }
+    }
+    lr.execute_sqlite(
+        sqlite_sql!(
+            "INSERT INTO collection_options(collection, sort, direction)
+             SELECT t.collection, t.content,
+                    COALESCE((SELECT d.content FROM lr.AgLibraryCollectionContent d
+                              WHERE d.collection = t.collection
+                                AND d.owningModule = 'com.adobe.ag.library.sortDirection'
+                                AND d.content IS NOT NULL
+                              ORDER BY d.id_local LIMIT 1), 'ascending')
+             FROM lr.AgLibraryCollectionContent t
+             JOIN collections c ON c.id = t.collection
+             WHERE t.owningModule = 'com.adobe.ag.library.sortType'
+               AND t.content IS NOT NULL
+               AND c.kind <> 'com.adobe.ag.library.group'
+             ORDER BY t.id_local
+             ON CONFLICT DO NOTHING"
+        ),
+        &[],
+    )?;
+    Ok(())
+}
+
 /// Imports a closed or exported Lightroom catalog into a new, atomically
 /// published file. What the import doesn't read stays in the Lightroom
 /// catalog only: the new catalog doesn't depend on it.
@@ -224,6 +275,21 @@ fn copy_tables(lr: &mut LightroomWrite<'_>) -> Result<()> {
             &[],
         )?;
     }
+    if lr.has_table("AgLibraryCollectionContent")? {
+        copy_collection_content(lr)?;
+    }
+    if lr.has_table("Adobe_variablesTable")? {
+        let target: Vec<String> = lr.read_sqlite(
+            sqlite_sql!(
+                "SELECT CAST(value AS TEXT) FROM lr.Adobe_variablesTable
+                 WHERE name='targetCollection' AND value IS NOT NULL LIMIT 1"
+            ),
+            &[],
+        )?;
+        if let Some(target) = target.first() {
+            super::collections::import_target(lr.write(), target)?;
+        }
+    }
     // Folder stacks: Lightroom's top is position 1, and it keeps whether a
     // stack is collapsed on the stack.
     if lr.has_table("AgLibraryFolderStack")? && lr.has_table("AgLibraryFolderStackImage")? {
@@ -255,7 +321,20 @@ fn copy_tables(lr: &mut LightroomWrite<'_>) -> Result<()> {
             &[],
         )?;
         copy_keyword_export(lr)?;
+        if lr.has_table("AgLibraryKeywordSynonym")? {
+            lr.execute_sqlite(
+                sqlite_sql!(
+                    "INSERT INTO keyword_synonyms(keyword, name)
+                     SELECT keyword, name FROM lr.AgLibraryKeywordSynonym
+                     WHERE keyword IN (SELECT id FROM keywords) AND trim(COALESCE(name, '')) <> ''
+                     ON CONFLICT DO NOTHING"
+                ),
+                &[],
+            )?;
+        }
     }
+    // Every synonym Lightroom had came with its keyword.
+    super::collections::record_synonyms_complete(lr.write())?;
     super::info::copy_lightroom_info(lr)?;
     super::sidecar::copy_lightroom_metadata(lr)?;
     if lr.has_table("AgLibraryKeywordImage")? {
