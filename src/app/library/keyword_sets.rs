@@ -79,46 +79,52 @@ pub(super) enum Slot {
 }
 
 /// The shortest path naming keyword `id` alone, as Recent Keywords shows
-/// it: its name, else `Name < Parent`, and so on up.
+/// it: its name, else `Name < Parent`, and so on up; longer still where a
+/// keyword typed so would be found as another, so a set saved from it keeps
+/// it. A top-level keyword whose name an older one in the same case has
+/// can't be typed apart from it, as in Lightroom.
 pub(super) fn shortest_label(keywords: &[ListedKeyword], id: i64) -> String {
     let by_id: HashMap<i64, &ListedKeyword> = keywords.iter().map(|k| (k.id, k)).collect();
+    // Each keyword's names, its own first, ignoring case.
     let path_of = |id: i64| {
         let mut names = Vec::new();
         let mut next = Some(id);
         while let Some(k) = next.and_then(|n| by_id.get(&n))
             && names.len() < 64
         {
-            names.push(keyword_key(&k.name));
+            names.push(&k.name);
             next = k.parent;
         }
         names
     };
     let own = path_of(id);
-    let Some(k) = by_id.get(&id) else {
+    if own.is_empty() {
         return String::new();
-    };
+    }
+    let key = |names: &[&String]| -> Vec<String> { names.iter().map(|n| keyword_key(n)).collect() };
     let others: Vec<Vec<String>> = keywords
         .iter()
-        .filter(|o| o.id != id && keyword_key(&o.name) == own[0])
-        .map(|o| path_of(o.id))
+        .filter(|o| o.id != id && keyword_key(&o.name) == keyword_key(own[0]))
+        .map(|o| key(&path_of(o.id)))
         .collect();
-    let mut depth = 1;
-    while depth < own.len()
-        && others
-            .iter()
-            .any(|o| o.len() >= depth && o[..depth] == own[..depth])
-    {
-        depth += 1;
-    }
-    let mut names = vec![k.name.clone()];
-    let mut next = k.parent;
-    while names.len() < depth
-        && let Some(p) = next.and_then(|n| by_id.get(&n))
-    {
-        names.push(p.name.clone());
-        next = p.parent;
-    }
-    names.join(" < ")
+    let own_key = key(&own);
+    let unique = (1..=own.len())
+        .find(|&depth| {
+            !others
+                .iter()
+                .any(|o| o.len() >= depth && o[..depth] == own_key[..depth])
+        })
+        .unwrap_or(own.len());
+    let found = (unique..=own.len()).find(|&depth| {
+        let typed: Vec<String> = own[..depth].iter().rev().map(|n| n.to_string()).collect();
+        crate::catalog::find_typed_keyword(keywords, &typed) == Some(id)
+    });
+    let depth = found.unwrap_or(own.len());
+    own[..depth]
+        .iter()
+        .map(|n| n.as_str())
+        .collect::<Vec<_>>()
+        .join(" < ")
 }
 
 impl KeywordSetPanel {
@@ -607,6 +613,28 @@ mod tests {
             parent,
             photos: 0,
         }
+    }
+
+    #[test]
+    fn a_recent_keyword_s_label_finds_it_again_when_typed() {
+        // "Dup" typed finds the older, nested one, in the same case.
+        let list = [
+            keyword(1, "A", None),
+            keyword(2, "Dup", Some(1)),
+            keyword(3, "dup", None),
+            keyword(4, "B", None),
+            keyword(5, "Dup", Some(4)),
+        ];
+        for id in [2, 3, 5] {
+            let label = shortest_label(&list, id);
+            let path = crate::app::library::descriptive::parse_keyword(&label).unwrap();
+            assert_eq!(
+                crate::catalog::find_typed_keyword(&list, &path),
+                Some(id),
+                "{label}"
+            );
+        }
+        assert_eq!(shortest_label(&list, 3), "dup");
     }
 
     #[test]

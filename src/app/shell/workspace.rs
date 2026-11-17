@@ -27,6 +27,7 @@ impl Editor {
             || self.folder_sync.is_reviewing()
             || self.file_ops.dialog_open()
             || self.auto_stack_open()
+            || self.keyword_dialog_open()
     }
     /// Carries out what the Library asked for this frame, in the order it asked
     /// (`library::outbox`). A request that opens a window (Remove Copy, Remove Folder,

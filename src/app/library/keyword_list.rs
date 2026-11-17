@@ -360,7 +360,7 @@ impl Library {
     }
     /// Deletes keyword `id` at once when no photo has it and it has no
     /// keywords inside; else asks first, as Lightroom does.
-    fn ask_to_delete_keyword(&mut self, id: i64) {
+    pub(super) fn ask_to_delete_keyword(&mut self, id: i64) {
         let keywords = self.session.keywords();
         let Some(k) = keywords.iter().find(|k| k.id == id) else {
             return;

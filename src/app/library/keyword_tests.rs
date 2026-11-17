@@ -207,3 +207,29 @@ fn recent_keywords_fill_the_top_row_first_and_toggle_by_id() -> Result<()> {
     assert_eq!(names(library, ids[0]), ["One"]);
     Ok(())
 }
+
+#[test]
+fn option_digits_apply_a_slot_but_nothing_runs_behind_a_keyword_window() -> Result<()> {
+    use eframe::egui::{Key, Modifiers};
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
+    let library = e.library.as_mut().unwrap();
+    library.select(Some(ids[0]));
+    let mut slots: [String; 9] = Default::default();
+    slots[0] = "Sea".into();
+    library.keyword_sets.shown = Shown::Edited {
+        from: None,
+        slots: Box::new(slots),
+    };
+    press(&mut e, Key::Num1, Modifiers::ALT);
+    assert_eq!(names(e.library.as_ref().unwrap(), ids[0]), ["Sea"]);
+    // Behind Delete's question, neither the slot's key nor Undo runs.
+    let library = e.library.as_mut().unwrap();
+    let sea = library.session.catalog().find_typed_keyword(&["Sea".into()])?.unwrap();
+    library.ask_to_delete_keyword(sea);
+    assert!(e.keyword_dialog_open());
+    press(&mut e, Key::Num1, Modifiers::ALT);
+    press(&mut e, Key::Z, Modifiers::COMMAND);
+    assert_eq!(names(e.library.as_ref().unwrap(), ids[0]), ["Sea"]);
+    assert!(e.keyword_dialog_open());
+    Ok(())
+}
