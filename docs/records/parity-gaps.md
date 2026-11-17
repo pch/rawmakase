@@ -308,14 +308,31 @@ residuals are 0.17, 0.17, 0.10, 0.09 and 0.06: most of the same-sign difference 
 little of the opposite-sign one. Of the descriptors tried, a photo's λh follows the mean
 of its Highlights mask best (rank correlation 0.71); none explains λs.
 
-**Over the two sliders' grid** (16 settings at ±50 and ±100; 7 of the planned 16 photos
-so far): at Shadows +100 with Highlights +50 and at
-+50 with +100 the same-sign difference is 0.20 and 0.19 stop, less than the 0.26 of +50
-with +50, so it is largest when the two sliders are equal. In the opposite-sign quadrants
-each slider's own part follows its own amount: the top stop moves 0.22–0.25 at Shadows
-±100 and 0.09–0.13 at ±50 whatever the Highlights amount, the deep shadows 0.25–0.37 at
-Highlights ±100 and 0.12–0.22 at ±50. How the difference sets in between a slider at zero
-and at half the other is not measured yet.
+**Over the two sliders' grid** (16 settings at ±50 and ±100, 16 photos): the same-sign
+difference is 0.47 stop below the top stop at +100 with +100, 0.20–0.28 at +50 with +50,
+0.12–0.23 at +100 with +50 and 0.14–0.18 at +50 with +100 (the negative quadrant mirrors
+it: −0.5, −0.22…−0.30, −0.14…−0.22, −0.18…−0.22), so it is largest when the two sliders
+are equal. In the opposite-sign quadrants each slider's own part follows its own amount:
+the top stop moves 0.16–0.22 at Shadows ±100 and 0.05–0.11 at ±50 whatever the
+Highlights amount, the deep shadows 0.22–0.28 at Highlights ±100 and 0.08–0.17 at ±50.
+
+**How it sets in** (one slider at +100 and the other at a tenth, a quarter and a half of
+it, same 16 photos; the form's two fractions fitted per photo, which leaves 0.003–0.035
+stop RMS at every setting). A slider's fraction grows with the other slider up to where
+the two are equal and stays there beyond; there is no jump at zero. Median fraction by
+the ratio of the other slider to this one, 0.1 | 0.25 | 0.5 | 1 | 2 | 4 | 10:
+
+| Fraction | 0.1 | 0.25 | 0.5 | 1 | 2 | 4 | 10 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| λs, same sign | 0.00 | 0.01 | 0.04 | 0.13 | 0.13 | 0.13 | 0.11 |
+| λs, opposite signs | 0.02 | 0.05 | 0.09 | 0.12 | 0.11 | 0.10 | 0.11 |
+| λh, same sign | 0.01 | 0.04 | 0.11 | 0.36 | 0.32 | 0.33 | 0.47 |
+| λh, opposite signs | 0.06 | 0.15 | 0.25 | 0.30 | 0.25 | 0.22 | 0.21 |
+
+With the same sign the fraction rises as the square of the ratio; with opposite signs
+it rises faster, half of it by a quarter of the ratio. (The last λh of the same sign is
+read from a 0.05 stop effect.) The test build below ramps both linearly to half the
+ratio, which is neither.
 
 **What did not explain it.**
 
@@ -392,10 +409,9 @@ move. The form carries over to photos it was not read from, at half the sliders;
 fraction per photo does not yet, and the build would not pass the gate's regression
 rule.
 
-**Open.** The 9 remaining photos of the grid and settings near the axes (one slider at a
-tenth or a quarter of the other), to see how the difference sets in; then either the two
-fractions predicted per photo by the rule's networks or the combined curves themselves
-as further outputs of the rule, fitted on combined renders of every training photo. The
+**Open.** The two fractions per photo: predicted by the rule's networks, or the
+combined curves themselves as further outputs of the rule, fitted on combined renders of
+every training photo (the four ±100 pairs are being rendered on the other 168). The
 gate's mixed sets need cases with both signs of each slider before such a change can be
 judged on validation.
 
