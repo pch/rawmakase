@@ -963,6 +963,15 @@ fn gamma22(v: f32) -> f32 {
 fn from_gamma22(w: f32) -> f32 {
     return srgb_encode(powf(clamp(w, 0.0, 1.0), 2.2));
 }
+// `local_tone_rule::ramp`: how much of a slider's fraction applies when the other
+// slider is `ratio` of it.
+fn pair_ramp(ratio: f32, same: bool) -> f32 {
+    let r = clamp(ratio, 0.0, 1.0);
+    if same {
+        return powf(r, PAIR_SAME_POWER);
+    }
+    return (1.0 - exp(-PAIR_OPPOSITE_RATE * r)) / (1.0 - exp(-PAIR_OPPOSITE_RATE));
+}
 fn local_gain(pos: vec2<f32>, lum: f32, clarity_lum: f32) -> f32 {
     let w = u32(p(P_LOCAL_SIZE));
     let h = u32(p(P_LOCAL_SIZE + 1u));
@@ -1027,17 +1036,37 @@ fn local_gain(pos: vec2<f32>, lum: f32, clarity_lum: f32) -> f32 {
         // Shadows and Highlights follow the photo's global rule (`local_tone_rule`),
         // scaled by the slider: the curves of Shadows +100, Highlights −100, Shadows
         // −100 and Highlights +100. Their families only where a map carries no rule.
+        // With both set, each curve is blended toward a uniform gain at its extreme
+        // (`local_tone_rule::Pair::at`): its fraction for the sliders' signs, ramped in
+        // over the other slider's share of it.
+        var blend = vec4(0.0);
+        if s != 0.0 && h != 0.0 {
+            let same = (s > 0.0) == (h > 0.0);
+            let c = select(select(3u, 1u, h < 0.0), select(2u, 0u, h > 0.0), s > 0.0);
+            let a = min(abs(s), 1.0);
+            let b = min(abs(h), 1.0);
+            blend = vec4(
+                p(P_PAIR + 4u + 2u * c) * pair_ramp(b / a, same),
+                p(P_PAIR + select(2u, 0u, s > 0.0)),
+                p(P_PAIR + 5u + 2u * c) * pair_ramp(a / b, same),
+                p(P_PAIR + select(1u, 3u, h > 0.0)),
+            );
+        }
         var sg = family(0u, s, p(P_LOCAL_KEYS), base, base);
         if s > 0.0 && offset(P_RULE) >= 0 {
-            sg = local_curve(P_RULE, base, base) * min(s, 1.0);
+            let g = local_curve(P_RULE, base, base);
+            sg = (g + blend.x * (blend.y - g)) * min(s, 1.0);
         } else if s < 0.0 && offset(P_RULE + 8u) >= 0 {
-            sg = local_curve(P_RULE + 8u, base, base) * min(-s, 1.0);
+            let g = local_curve(P_RULE + 8u, base, base);
+            sg = (g + blend.x * (blend.y - g)) * min(-s, 1.0);
         }
         var hg = family(1u, h, p(P_LOCAL_KEYS + 1u), base, tail_base);
         if h < 0.0 && offset(P_RULE + 4u) >= 0 {
-            hg = local_curve(P_RULE + 4u, base, base) * min(-h, 1.0);
+            let g = local_curve(P_RULE + 4u, base, base);
+            hg = (g + blend.z * (blend.w - g)) * min(-h, 1.0);
         } else if h > 0.0 && offset(P_RULE + 12u) >= 0 {
-            hg = local_curve(P_RULE + 12u, base, base) * min(h, 1.0);
+            let g = local_curve(P_RULE + 12u, base, base);
+            hg = (g + blend.z * (blend.w - g)) * min(h, 1.0);
         }
         return exp2(sg + hg + lift + clarity);
     }

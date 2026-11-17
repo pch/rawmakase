@@ -118,6 +118,10 @@ pub(crate) struct LocalToneMap {
     /// Highlights +100, for masks that evaluate them at their own slider values. Built
     /// when either slider or a mask may need them.
     pub(crate) rule: [Option<Curve>; 4],
+    /// How Shadows and Highlights act together on this photo (`local_tone_rule::Pair`),
+    /// when both sliders are set or masks may set them; `shadows` and `highlights`
+    /// already carry it for the recipe's own values.
+    pub(crate) pair: Option<super::local_tone_rule::Pair>,
 }
 pub(crate) struct Curve {
     pub(crate) key: f32,
@@ -172,7 +176,7 @@ impl Curve {
             tail,
         })
     }
-    fn eval(&self, base: f32) -> f32 {
+    pub(super) fn eval(&self, base: f32) -> f32 {
         self.eval_t(base, base)
     }
     fn eval_t(&self, base: f32, tb: f32) -> f32 {
@@ -477,6 +481,30 @@ impl LocalToneMap {
             RuleCurve::HighlightsDown,
             sliders.highlights,
         );
+        // Both together: each curve gives up a fraction of its shape for a uniform gain
+        // at its extreme. An HDR master keeps the sum, which is what its renders were
+        // judged with.
+        let pair = match &rule {
+            [Some(a), Some(b), Some(c), Some(d)]
+                if !sliders.hdr
+                    && (local || (sliders.shadows != 0. && sliders.highlights != 0.)) =>
+            {
+                Some(base.rule().pair([a, b, c, d]).clone())
+            }
+            _ => None,
+        };
+        let blend = pair
+            .as_ref()
+            .and_then(|p| p.at(sliders.shadows, sliders.highlights));
+        let (shadows, highlights) = match (blend, shadows, highlights) {
+            (Some([[fs, es], [fh, eh]]), Some(mut s), Some(mut h)) => {
+                let (a, b) = (sliders.shadows.abs(), sliders.highlights.abs());
+                s.table = s.table.map(|v| v + fs * (a * es - v));
+                h.table = h.table.map(|v| v + fh * (b * eh - v));
+                (Some(s), Some(h))
+            }
+            (_, s, h) => (s, h),
+        };
         Self {
             width: w,
             height: h,
@@ -495,6 +523,7 @@ impl LocalToneMap {
                     None => d.clone(),
                 }),
             rule,
+            pair,
         }
     }
     /// Luminance gain for a pixel of scene luminance `lum` at camera-image sample
@@ -531,21 +560,34 @@ impl LocalToneMap {
             family(&SHADOWS_DETAIL, sliders[0], 0., base - k)
                 + family(&SHADOWS_REGION, sliders[0], self.keys[2], k)
         });
-        // The rule's curve of each sign, scaled by the slider; the fitted families only
-        // where a map carries no rule.
-        let ruled = |up: RuleCurve, down: RuleCurve, slider: f32| {
+        // The rule's curve of each sign, blended toward its extreme where both sliders
+        // are set (`local_tone_rule::Pair`) and scaled by the slider; the fitted
+        // families only where a map carries no rule.
+        let blend = self
+            .pair
+            .as_ref()
+            .and_then(|p| p.at(sliders[0], sliders[1]));
+        let ruled = |up: RuleCurve, down: RuleCurve, slider: f32, which: usize| {
             let kind = if slider > 0. { up } else { down };
             self.rule[kind as usize]
                 .as_ref()
                 .filter(|_| slider != 0.)
-                .map(|unit| unit.eval(base) * slider.abs().min(1.))
+                .map(|unit| {
+                    let gain = unit.eval(base);
+                    let gain = match blend {
+                        Some(b) => gain + b[which][0] * (b[which][1] - gain),
+                        None => gain,
+                    };
+                    gain * slider.abs().min(1.)
+                })
         };
-        let shadows = ruled(RuleCurve::ShadowsUp, RuleCurve::ShadowsDown, sliders[0])
+        let shadows = ruled(RuleCurve::ShadowsUp, RuleCurve::ShadowsDown, sliders[0], 0)
             .unwrap_or_else(|| family(&SHADOWS, sliders[0], self.keys[0], base));
         let highlights = ruled(
             RuleCurve::HighlightsUp,
             RuleCurve::HighlightsDown,
             sliders[1],
+            1,
         );
         let highlights = highlights.unwrap_or_else(|| {
             family_t(
@@ -1143,6 +1185,93 @@ mod tests {
         let (full, half) = (m.shadows.as_ref().unwrap(), half.shadows.as_ref().unwrap());
         for (f, h) in full.table.iter().zip(&half.table) {
             assert!((h - 0.5 * f).abs() < 1e-6, "{h} against half of {f}");
+        }
+    }
+
+    fn both(lum: &[f32], shadows: f32, highlights: f32, local: bool, hdr: bool) -> LocalToneMap {
+        let sliders = Sliders {
+            shadows,
+            highlights,
+            hdr,
+            ..Default::default()
+        };
+        LocalToneMap::from_luminance(lum.to_vec(), [240, 160], [240, 160], sliders, local)
+    }
+
+    #[test]
+    fn shadows_and_highlights_together_blend_each_curve_toward_its_extreme() {
+        // With both sliders set, each one's table is its rule curve blended toward a
+        // uniform gain at the curve's extreme by the pair's fraction, then scaled by
+        // the slider; with one slider at 0 the other's table is the rule's alone.
+        let lum = scene(&[[20, 30, 100, 100], [190, 75, 8, 8]]);
+        for (s, h) in [(0.8, -0.6), (-0.5, 1.), (1., 1.), (-0.3, -0.9)] {
+            let m = both(&lum, s, h, false, false);
+            let pair = m.pair.as_ref().expect("both sliders are set");
+            let [[fs, es], [fh, eh]] = pair.at(s, h).unwrap();
+            assert!((0. ..=1.).contains(&fs) && (0. ..=1.).contains(&fh));
+            let unit = |kind: RuleCurve| m.rule[kind as usize].as_ref().unwrap();
+            let (us, uh) = (
+                unit(if s > 0. {
+                    RuleCurve::ShadowsUp
+                } else {
+                    RuleCurve::ShadowsDown
+                }),
+                unit(if h > 0. {
+                    RuleCurve::HighlightsUp
+                } else {
+                    RuleCurve::HighlightsDown
+                }),
+            );
+            let (ts, th) = (m.shadows.as_ref().unwrap(), m.highlights.as_ref().unwrap());
+            for i in 0..48 {
+                let want = s.abs() * (us.table[i] + fs * (es - us.table[i]));
+                assert!((ts.table[i] - want).abs() < 1e-5, "Shadows {s}, {h}: {i}");
+                let want = h.abs() * (uh.table[i] + fh * (eh - uh.table[i]));
+                assert!(
+                    (th.table[i] - want).abs() < 1e-5,
+                    "Highlights {s}, {h}: {i}"
+                );
+            }
+            // One slider alone renders as before.
+            let alone = both(&lum, s, 0., false, false);
+            assert!(alone.pair.is_none());
+            let alone = alone.shadows.unwrap();
+            for (got, unit) in alone.table.iter().zip(&us.table) {
+                assert_eq!(*got, unit * s.abs());
+            }
+        }
+    }
+
+    #[test]
+    fn a_mask_that_sets_the_other_slider_renders_as_the_two_sliders_do() {
+        // Shadows from the recipe and Highlights from a mask (or both from a mask) give
+        // the gain the same two global values give, at every sign combination.
+        let lum = scene(&[[20, 30, 100, 100], [190, 75, 8, 8]]);
+        let masks = both(&lum, 0., 0., true, false);
+        for (s, h) in [(0.8, -0.6), (-0.5, 1.), (1., 0.25), (-0.3, -0.9), (0.7, 0.)] {
+            let global = both(&lum, s, h, false, false);
+            for (x, y) in [(70, 80), (194, 79), (200, 20), (10, 150)] {
+                let l = lum[y * 240 + x];
+                let (x, y) = (x as f32, y as f32);
+                let want = global.gain(x, y, l, l).log2();
+                let got = masks.gain_with(x, y, l, l, [s, h, 0.]).log2();
+                assert!(
+                    (got - want).abs() < 2e-5,
+                    "{s}, {h} at {x}, {y}: {got} against {want}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_hdr_master_keeps_the_sum_of_shadows_and_highlights() {
+        let lum = scene(&[[20, 30, 100, 100]]);
+        let m = both(&lum, 0.8, -0.6, false, true);
+        assert!(m.pair.is_none());
+        let unit = |kind: RuleCurve| m.rule[kind as usize].as_ref().unwrap();
+        let shadows = m.shadows.as_ref().unwrap();
+        for (got, unit) in shadows.table.iter().zip(&unit(RuleCurve::ShadowsUp).table) {
+            assert_eq!(*got, unit * 0.8);
         }
     }
 }

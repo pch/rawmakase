@@ -26,6 +26,7 @@ mod local_tone_data;
 mod local_tone_rule;
 mod local_tone_rule_data;
 mod local_tone_rule_ext_data;
+mod local_tone_rule_pair_data;
 mod luminance_noise;
 pub mod masks;
 mod orientation;

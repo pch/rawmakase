@@ -20,12 +20,15 @@ with the four more; Shadows −100 0.216 and 0.215, its worst tenth 0.54 and 0.4
                               $RAWMAKASE_DATASET) with a linear profile
                               (linear_profile.py) into ROOT/photos/dng and renders them
                               in Camera Raw with that profile into ROOT/photos/crlin
-                              (default, S+100, H−100, S−100, H+100, and S−50 and H+50 for
-                              the second ensemble's clipped targets); numbering continues
+                              (default, S+100, H−100, S−100, H+100, S−50 and H+50 for
+                              the second ensemble's clipped targets, and the four pairs
+                              of Shadows ±100 with Highlights ±100); numbering continues
                               ROOT/photos
   taps ROOT RAWMAKASE         dumps the engine's measurement map of every probe and photo
                               into ROOT/maps (RAWMAKASE_RULE_DUMP; needs RAWMAKASE_DATA_DIR),
-                              with its white curve there
+                              with its white curve there, and each photo's four rule
+                              curves into ROOT/curves (a build of the ensembles `pair` is
+                              for: run it again after `train`)
   train ROOT [--cv] [--out] [--first]
                               builds the samples, optionally cross-validates by photo, fits
                               the second ensemble on everything and writes the JSON and
@@ -33,6 +36,9 @@ with the four more; Shadows −100 0.216 and 0.215, its worst tenth 0.54 and 0.4
                               with --first it refits the first ensemble too and writes
                               local_tone_rule_data.rs (shipped from the fit of 2026-10-30,
                               on 496 mosaics and 283 photos, and left alone otherwise)
+  pair ROOT [--cv]            fits how Shadows and Highlights act together (`Pair` in
+                              local_tone_rule.rs) on the photos' renders of the four
+                              pairs and writes local_tone_rule_pair_data.rs
 
 Every step takes --histograms DIR when the photo mosaics came from another photo set
 than ROOT/maps' first 26.
@@ -149,6 +155,7 @@ import probe_scenes  # noqa: E402
 ROOT = HERE.resolve().parents[1]
 DATA = ROOT / 'crates/rawmakase-engine/src/develop/local_tone_rule_data.rs'
 DATA_EXT = ROOT / 'crates/rawmakase-engine/src/develop/local_tone_rule_ext_data.rs'
+DATA_PAIR = ROOT / 'crates/rawmakase-engine/src/develop/local_tone_rule_pair_data.rs'
 YW = np.array([0.2880402, 0.7118741, 0.0000857])    # ProPhoto luminance
 N = 1024
 SETTINGS = {'default': {}, 'S+100': {'Shadows2012': '100'}, 'H-100': {'Highlights2012': '-100'},
@@ -157,6 +164,14 @@ OUTPUTS = [s for s in SETTINGS if s != 'default']    # the targets' columns
 EXT_OUTPUTS = ['S-100', 'H+100']                     # those the second ensemble keeps
 # The photos' renders at half of the second ensemble's sliders, by output (`samples_ext`).
 HALVES = {'S-100': ('S-50', {'Shadows2012': '-50'}), 'H+100': ('H+50', {'Highlights2012': '50'})}
+# Shadows with Highlights, in the order of `Pair::KINDS`: each pair's two single settings
+# and its render (`pair`).
+PAIRS = {'S+100_H+100': ('S+100', 'H+100'), 'S-100_H-100': ('S-100', 'H-100'),
+         'S+100_H-100': ('S+100', 'H-100'), 'S-100_H+100': ('S-100', 'H+100')}
+# `local_tone_rule.rs`: where a curve is read for its extreme, and the least extreme the
+# fractions' inputs divide by.
+PAIR_LOW, PAIR_HIGH, PAIR_EXTREME_MIN = 0.01, 0.99, 0.05
+PAIR_RIDGE = 3.0    # on the standardized weights, per hundred photos
 # The second ensemble's targets count up to WHITE at default. A Highlights +100 result
 # from CLIP_HIGH up sits in Camera Raw's clipping and a Shadows −100 result from
 # CLIP_LOW down at its floor: such a render shows only a bound on the gain.
@@ -575,7 +590,8 @@ def photos(args):
             tmp.mkdir(exist_ok=True)
             subprocess.run([sys.executable, '-I', str(HERE / 'linear_profile.py'), str(tmp), str(raw)], check=True)
             next(tmp.glob('*.dng')).rename(dng)
-        for n, s in {**SETTINGS, **dict(HALVES.values())}.items():
+        pairs = {n: {**SETTINGS[a], **SETTINGS[b]} for n, (a, b) in PAIRS.items()}
+        for n, s in {**SETTINGS, **dict(HALVES.values()), **pairs}.items():
             jobs.append(dict(source=str(dng), settings={'CameraProfile': linear_profile.NAME, **s},
                              out=str(cr_dir / f'{i:02d}-{n}.tif'), edge=2048))
     failures = camera_raw.render(jobs, work=args.root / 'photos' / 'work')
@@ -605,14 +621,36 @@ def engine_map(rawmakase, dng, out, settings):
     np.savez(out, logs=raw[2:2 + n].reshape(h, w), base=raw[2 + n:2 + 2 * n].reshape(h, w), white=white)
 
 
+def engine_curves(rawmakase, dng, out, settings):
+    """The rule's four curves of `dng` as the engine built them (`RuleCurve::ALL`'s order:
+    Shadows +100, Highlights −100, Shadows −100, Highlights +100): their 48-column
+    tables and the levels they span, from the JSON lines of its dump, as `out` (npz)."""
+    tmp = Path(f'/tmp/rule-curves-{os.getpid()}')
+    for p in (tmp, tmp.with_suffix('.map'), tmp.with_suffix('.white')):
+        p.unlink(missing_ok=True)
+    tmp.with_suffix('.xmp').write_text(camera_raw.xmp({**settings, 'Shadows2012': '100'}))
+    env = dict(os.environ, RAWMAKASE_RULE_DUMP=str(tmp))
+    subprocess.run([str(rawmakase), 'render', str(dng), str(tmp.with_suffix('.tif')), '--tap', 'scene-input',
+                    '--overwrite', '--xmp', str(tmp.with_suffix('.xmp'))], env=env, capture_output=True)
+    lines = [json.loads(line) for line in tmp.read_text().splitlines() if line.strip()][-4:]
+    if len(lines) != 4 or not lines[0]['shadows'] or any(line['shadows'] for line in lines[1:]):
+        raise SystemExit(f'{dng}: the dump does not end with the four curves of one map')
+    np.savez(out, tables=np.array([line['table'] for line in lines], np.float32),
+             lo=np.float32(lines[0]['lo']), hi=np.float32(lines[0]['hi']))
+
+
 def taps(args):
-    """The engine's measurement map and white curve of every probe and photo."""
+    """The engine's measurement map and white curve of every probe and photo, and each
+    photo's four rule curves."""
     out = args.root / 'maps'
     out.mkdir(parents=True, exist_ok=True)
+    (args.root / 'curves').mkdir(exist_ok=True)
     for name, _, _, _ in probe_jobs(args.root, args.histograms, images=False):
         engine_map(args.rawmakase, args.root / 'probes' / f'{name}.dng', out / f'{name}.npz', {})
     for dng in sorted((args.root / 'photos' / 'dng').glob('*.dng')):
-        engine_map(args.rawmakase, dng, out / f'photo{dng.stem}.npz', {'CameraProfile': linear_profile.NAME})
+        settings = {'CameraProfile': linear_profile.NAME}
+        engine_map(args.rawmakase, dng, out / f'photo{dng.stem}.npz', settings)
+        engine_curves(args.rawmakase, dng, args.root / 'curves' / f'photo{dng.stem}.npz', settings)
 
 
 # --- training ------------------------------------------------------------------------
@@ -938,6 +976,145 @@ def rust(g, ext=False):
         arr('W3', stack('l3.w'), '[[[f32; HIDDEN]; 2]; MEMBERS]') + arr('B3', stack('l3.b'), '[[f32; 2]; MEMBERS]')
 
 
+# --- Shadows and Highlights together -----------------------------------------------------
+
+def curve_at(curves, k, base):
+    """Curve `k` of a photo's `curves` (engine_curves) at base levels, as `Curve::eval` reads it."""
+    table, lo, hi = curves['tables'][k].astype(np.float64), float(curves['lo']), float(curves['hi'])
+    f = np.clip((np.asarray(base, np.float64) - lo) / (hi - lo) * 48 - 0.5, 0, 47)
+    i = np.minimum(f.astype(int), 46)
+    return table[i] + (table[i + 1] - table[i]) * (f - i)
+
+
+def pair_sample(job):
+    """One photo for `pair`: per pair of `PAIRS`, at up to 6000 map pixels where none of
+    the renders is clipped, what blending each curve toward its extreme adds per unit
+    of its fraction (`X`, Shadows' then Highlights'), what the sum of the engine's two
+    curves is off Camera Raw's combined gain (`E`, the engine's white curve undone as in
+    `samples_ext`), Camera Raw's own difference from the sum of its single gains (`I`)
+    and each curve's own error at its single setting (`S`); and the inputs the engine
+    predicts the fractions from (`F`, `RuleStats::pair`)."""
+    key, root = job
+    cr = root / 'photos' / 'crlin'
+    m, curves = np.load(root / 'maps' / f'{key}.npz'), np.load(root / 'curves' / f'{key}.npz')
+    ph = Photo(logs=m['logs'], base=m['base'])
+    names = list(SETTINGS) + list(PAIRS)
+    lum = [cr_linear(cr / f'{key[5:]}-{n}.tif') for n in names]
+    peak = [cr_linear(cr / f'{key[5:]}-{n}.tif', peak=True) for n in names]
+    images = aligned(ph, lum + peak, coarse=True)
+    if images is None:
+        print('misaligned', key)
+        return None
+    lum, peak = images[:len(names)], images[len(names):]
+    x, y = m['white']
+    rising = np.r_[True, np.diff(y) > 0]
+    x, y = x[rising], y[rising]
+    level = lambda a: np.log2(np.maximum(on_map(ph, np.where(a > y[0], np.interp(a, y, x), a)), FLOOR))
+    valid = np.ones(ph.base.shape, bool)
+    for a, b in zip(lum, peak):
+        valid &= (on_map(ph, a) > CLIP_LOW) & (on_map(ph, b) < CLIP_HIGH)
+    idx = np.flatnonzero(valid.ravel())
+    if idx.size < 2000:
+        print('too few unclipped pixels', key)
+        return None
+    idx = np.random.default_rng(int(key[5:])).choice(idx, min(6000, idx.size), replace=False)
+    default = level(lum[0])
+    gain = {n: (level(a) - default).ravel()[idx] for n, a in zip(names[1:], lum[1:])}
+    base = ph.base.ravel()
+    ordered = np.sort(base.astype(np.float32))
+    at = lambda q: ordered[int(np.float32(base.size - 1) * np.float32(q))]
+    kinds = list(OUTPUTS)    # RuleCurve::ALL's order
+    extreme = {n: float(curve_at(curves, k, at(PAIR_LOW if n[0] == 'S' else PAIR_HIGH))) for k, n in enumerate(kinds)}
+    reach = {n: float(np.clip(curve_at(curves, k, base) / extreme[n], 0, 1).mean()) if extreme[n] else 0.
+             for k, n in enumerate(kinds)}
+    out = dict(key=key, X=[], E=[], I=[], S=[], F=[])
+    for name, (sn, hn) in PAIRS.items():
+        a, b = curve_at(curves, kinds.index(sn), base[idx]), curve_at(curves, kinds.index(hn), base[idx])
+        out['X'].append(np.stack([extreme[sn] - a, extreme[hn] - b], 1))
+        out['E'].append(a + b - gain[name])
+        out['I'].append(gain[name] - gain[sn] - gain[hn])
+        out['S'].append(np.stack([a - gain[sn], b - gain[hn]], 1))
+        es, eh = abs(extreme[sn]), abs(extreme[hn])
+        out['F'].append(np.array([reach[sn], reach[hn], es, eh, 1 / max(es, PAIR_EXTREME_MIN), 1 / max(eh, PAIR_EXTREME_MIN)]))
+    return out
+
+
+def pair_fit(data, c):
+    """For pair `c`, the inputs' means and deviations and each slider's intercept and
+    weights: the linear map from a photo's inputs to its two fractions that leaves the
+    least of `E` over the photos (each photo's pixels weighing as one photo)."""
+    F = np.array([d['F'][c] for d in data])
+    mu, sd = F.mean(0), F.std(0) + 1e-9
+    rows, target = [], []
+    for d, z in zip(data, (F - mu) / sd):
+        p = np.r_[1., z]
+        w = 1 / np.sqrt(len(d['E'][c]))
+        rows.append(np.concatenate([d['X'][c][:, :1] * p, d['X'][c][:, 1:] * p], 1) * w)
+        target.append(-d['E'][c] * w)
+    A, t = np.concatenate(rows), np.concatenate(target)
+    n = F.shape[1] + 1
+    ridge = PAIR_RIDGE * len(data) / 100 * np.eye(2 * n)
+    ridge[0, 0] = ridge[n, n] = 0
+    beta = np.linalg.solve(A.T @ A + ridge, A.T @ t)
+    return mu, sd, beta.reshape(2, n)
+
+
+def pair_fractions(model, d, c):
+    mu, sd, beta = model
+    return np.clip(beta @ np.r_[1., (d['F'][c] - mu) / sd], 0, 1)
+
+
+def pair(args):
+    """Fits `Pair`'s fractions and writes local_tone_rule_pair_data.rs."""
+    keys = [p.stem for p in sorted((args.root / 'maps').glob('photo[0-9]*.npz'))
+            if (args.root / 'curves' / p.name).exists()
+            and all(rendered(args.root / 'photos' / 'crlin' / f'{p.stem[5:]}-{n}.tif') for n in list(SETTINGS) + list(PAIRS))]
+    import multiprocessing
+    with multiprocessing.get_context('fork').Pool(6) as pool:
+        data = [d for d in pool.imap(pair_sample, [(k, args.root) for k in keys], chunksize=4) if d]
+    print(f'{len(data)} of {len(keys)} photos')
+    rms = lambda v: float(np.sqrt(np.mean(v ** 2)))
+    line = lambda label, v: print(f'  {label:48s}' + '  '.join(f'{np.median(v[:, c]):.3f} ({v[:, c].mean():.3f})' for c in range(4)))
+    print('gain error at each pair, RMS over a photo\'s pixels (EV), median (mean) over photos: ' + ', '.join(PAIRS))
+    line('Camera Raw\'s gain less the sum of its singles', np.array([[rms(d['I'][c]) for c in range(4)] for d in data]))
+    for k, label in enumerate(('Shadows', 'Highlights')):
+        line(f'the engine\'s {label} curve alone', np.array([[rms(d['S'][c][:, k]) for c in range(4)] for d in data]))
+    plain = np.array([[rms(d['E'][c]) for c in range(4)] for d in data])
+    line('the sum of the engine\'s two curves', plain)
+    own = lambda d, c: np.clip(np.linalg.lstsq(d['X'][c], -d['E'][c], rcond=None)[0], 0, 1)
+    line('fractions fitted to each photo', np.array([[rms(d['E'][c] + d['X'][c] @ own(d, c)) for c in range(4)] for d in data]))
+    if args.cv:
+        fold = np.random.default_rng(0).permutation(len(data)) % 5
+        held = np.zeros((len(data), 4))
+        for k in range(5):
+            train = [d for d, f in zip(data, fold) if f != k]
+            for c in range(4):
+                model = pair_fit(train, c)
+                for i in np.flatnonzero(fold == k):
+                    held[i, c] = rms(data[i]['E'][c] + data[i]['X'][c] @ pair_fractions(model, data[i], c))
+        line('fractions predicted, photo held out', held)
+        print('  photos closer / further by 0.02 EV than the sum: ' + '  '.join(
+            f'{int((held[:, c] < plain[:, c] - 0.02).sum())} / {int((held[:, c] > plain[:, c] + 0.02).sum())}' for c in range(4)))
+    models = [pair_fit(data, c) for c in range(4)]
+    fitted = np.array([[rms(d['E'][c] + d['X'][c] @ pair_fractions(models[c], d, c)) for c in range(4)] for d in data])
+    line('fractions predicted, fitted on all', fitted)
+    fractions = np.array([[pair_fractions(models[c], d, c) for c in range(4)] for d in data])
+    print('  median fractions (Shadows, Highlights): ' + '  '.join(
+        f'{np.median(fractions[:, c, 0]):.2f}, {np.median(fractions[:, c, 1]):.2f}' for c in range(4)))
+    arr = lambda v: '[' + ', '.join(repr(float(np.float32(x))) for x in v) + ']'
+    DATA_PAIR.write_text(
+        "//! How Shadows' and Highlights' fractions follow the photo (`local_tone_rule::Pair`):\n"
+        "//! per sign combination, the inputs' means and deviations and, for each slider, the\n"
+        "//! intercept and weights. Written by `scripts/corpus/scene-tone-rule.py pair`.\n"
+        '#![allow(clippy::excessive_precision, clippy::unreadable_literal)]\n'
+        # One row of numbers per line: rustfmt would put each number on a line of its own.
+        + '#[rustfmt::skip]\npub(super) const MU: [[f32; 6]; 4] = [\n' + ''.join(f'    {arr(m[0])},\n' for m in models) + '];\n'
+        + '#[rustfmt::skip]\npub(super) const SD: [[f32; 6]; 4] = [\n' + ''.join(f'    {arr(m[1])},\n' for m in models) + '];\n'
+        + '#[rustfmt::skip]\npub(super) const BETA: [[[f32; 7]; 2]; 4] = [\n'
+        + ''.join(f'    [\n        {arr(m[2][0])},\n        {arr(m[2][1])},\n    ],\n' for m in models) + '];\n')
+    print('wrote', DATA_PAIR)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest='step', required=True)
@@ -961,11 +1138,14 @@ def main():
     s.add_argument('--out', type=Path)
     s.add_argument('--first', action='store_true', help='refit the first ensemble (S+100, H-100) too')
     s.add_argument('--histograms', **photo_set)
+    s = sub.add_parser('pair')
+    s.add_argument('root', type=Path)
+    s.add_argument('--cv', action='store_true')
     args = p.parse_args()
     args.root = args.root.expanduser().resolve()
     if getattr(args, 'histograms', None):
         args.histograms = args.histograms.expanduser().resolve()
-    {'probes': probes, 'photos': photos, 'taps': taps, 'train': train}[args.step](args)
+    {'probes': probes, 'photos': photos, 'taps': taps, 'train': train, 'pair': pair}[args.step](args)
 
 
 if __name__ == '__main__':

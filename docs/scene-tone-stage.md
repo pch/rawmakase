@@ -449,6 +449,115 @@ The fitted tables of both controls (`local_tone_data.rs`) remain as what a map
 without the rule's curves evaluates; a render with either slider or a mask builds the
 curves, so they are no longer read in practice.
 
+**Shadows and Highlights together (2026-11-17).** Camera Raw's render of the two
+sliders is not the product of their single gains, which is what the stage rendered until
+then. On 60 training photos (scene values through a linear profile), the lift of the
+32-pixel level at a combined setting less the sum of the two single-slider lifts, by
+stops under the photo's top:
+
+| Setting | 0–1 | 1–2 | 2–3 | 3–4 | 4–5 | 5–6 | 6–8 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Shadows +100, Highlights +100 | +0.25 | +0.36 | +0.43 | +0.45 | +0.47 | +0.48 | +0.47 |
+| Shadows −100, Highlights −100 | −0.44 | −0.47 | −0.48 | −0.49 | −0.53 | −0.52 | −0.45 |
+| Shadows +100, Highlights −100 | +0.23 | +0.13 | +0.04 | −0.03 | −0.10 | −0.16 | −0.21 |
+| Shadows −100, Highlights +100 | −0.13 | −0.09 | −0.02 | +0.05 | +0.13 | +0.19 | +0.22 |
+
+Moved the same way the two brighten or darken every level by nearly half a stop more
+than their sum; moved opposite ways each does less at its own end. Exposure does not
+enter (Exposure ±1 with either slider is the sum of the single renders below the top
+stop), Whites with Highlights is the sum within 0.08 stop, and Blacks reads what
+Shadows leaves, as the stage already applies it.
+
+What fits Camera Raw's combined renders to 0.01–0.05 stop per photo is a blend: with
+both sliders set, each one's curve gives up a fraction of its shape for a uniform gain
+at the curve's extreme,
+
+`gain(level) = s · ((1 − fs) · S(level) + fs · S_ext) + h · ((1 − fh) · H(level) + fh · H_ext)`,
+
+with `S` and `H` the photo's unit curves of the sliders' signs (the global rule's) and
+`S_ext`, `H_ext` their gains at the 1st and the 99th percentile of the photo's base
+levels: the level its pixels reach, not the end of the curve's table, which runs a stop
+past them (a build that read the table's end overshot by half a stop). Each slider
+then protects the other end of the tonal range less than it does alone
+(`local_tone_rule::Pair`). Two other readings were tried on the same renders and
+rejected: one slider's curve read at the level the other leaves, and one slider's rule
+reading the photo as the other left it; each helps one sign combination and worsens
+others ([the record](records/parity-gaps.md#shadows-and-highlights-together-are-not-the-sum-of-each-alone-2026-11-17)).
+
+The fractions do not depend on the sliders' size, only on their ratio and signs. At
+half of both sliders they are what they are at ±100, and a slider's fraction grows with
+the other slider up to equal amounts and stays there beyond, with no jump at zero (16
+training photos, one slider at +100 and the other at a tenth, a quarter and a half of
+it; median fraction as a share of that at equal sliders): 0.00–0.03, 0.08–0.11 and 0.31
+for two sliders of one sign, and 0.17–0.20, 0.42–0.50 and 0.75–0.83 for opposite signs.
+The stage ramps a fraction in as the ratio's power 1.7 for one sign and as
+1 − e^(−2.4 × ratio), scaled to reach 1 at equal sliders, for opposite signs
+(`local_tone_rule::ramp`).
+
+The fractions at equal sliders differ by photo (Highlights' between 0.15 and 0.5 on
+half of the photos) and by the sliders' signs, and a photo's own agree from one sign
+combination to another (correlation 0.5 to 0.99). They are predicted from the photo's own curves, per sign combination, by a
+linear map of six numbers: how much of the photo each of the two curves reaches (the
+mean over the map of its gain as a fraction of the extreme's), the two extremes' sizes
+and their reciprocals (`local_tone_rule_pair_data.rs`, fitted by
+`scene-tone-rule.py pair`). It is fitted on what the blend then leaves of Camera Raw's
+combined gain, the stage's white curve undone as for the second ensemble, at the
+unclipped pixels of 212 training photos (of 228 that align; 16 more had too few
+unclipped pixels or did not align at one of the nine renders). The gain's error at each
+pair, RMS over a photo's pixels in stops, median (mean) over the photos, held out by
+photo in five folds:
+
+| | Shadows +100, Highlights +100 | −100, −100 | +100, −100 | −100, +100 |
+| --- | --- | --- | --- | --- |
+| Camera Raw's gain less the sum of its singles | 0.260 (0.361) | 0.294 (0.420) | 0.096 (0.121) | 0.110 (0.126) |
+| The sum of the stage's two curves | 0.318 (0.410) | 0.359 (0.479) | 0.197 (0.226) | 0.220 (0.249) |
+| Fractions fitted to each photo | 0.154 (0.163) | 0.184 (0.209) | 0.157 (0.181) | 0.173 (0.193) |
+| Fractions predicted, photo held out | 0.205 (0.234) | 0.231 (0.279) | 0.174 (0.197) | 0.192 (0.213) |
+| Photos closer / further by 0.02 than the sum | 166 / 20 | 173 / 19 | 104 / 8 | 129 / 7 |
+
+What stays is mostly the two single curves' own error (0.15 to 0.16 stop for Shadows and
+0.09 to 0.10 for Highlights on these pixels).
+
+Rendered by the stage on 60 of those training photos (the RMS of cube-root differences
+of each build's change against Camera Raw's, median; the sum of the two curves, then
+with the blend):
+
+| Setting | Sum | Blend | Photos closer / further |
+| --- | --- | --- | --- |
+| Shadows +100, Highlights −100 | 0.0198 | 0.0148 | 50 / 5 |
+| Shadows −100, Highlights +100 | 0.0182 | 0.0145 | 41 / 16 |
+| Shadows +100, Highlights +100 | 0.0430 | 0.0262 | 45 / 14 |
+| Shadows −100, Highlights −100 | 0.0285 | 0.0151 | 47 / 10 |
+| Shadows −50, Highlights +50 | 0.0089 | 0.0078 | 36 / 21 |
+| Highlights +40, Shadows −40, Whites +20, Blacks −20 | 0.0140 | 0.0122 | 33 / 22 |
+
+The last one's 90th percentile grows (0.0246 → 0.0275): with Blacks lowered too, the
+deep shadows end 0.3 to 0.4 stop too bright, 0.1 more than before. Over the sliders'
+grid on 16 of the photos, at settings the fit did not see, the blend is closer at all
+twelve other settings of ±50 and ±100 (Shadows +50 with Highlights −50 0.0101 → 0.0075,
+14 photos closer and 1 further; +50 with +50 0.0287 → 0.0114; +100 with −50 0.0171 →
+0.0135) and level where one slider is a tenth or a quarter of the other (eight
+settings: 0.0095–0.0151 with the sum, 0.0098–0.0132 with the blend, none more than
+0.0003 further).
+
+On validation the dataset gate has one combined case of the two, Shadows +50 with
+Highlights −50 (56 photos of six families, against the recorded baseline of main,
+median ΔE00 of a photo): median 1.04 → 0.85, mean 1.26 → 1.12, 90th percentile 2.13 →
+2.03; 39 photos closer by more than 0.05 and 3 further, the largest 1.14 → 1.59 (a
+backlit hut whose shadows the blend leaves a little dark). 210 windows on seven photos
+are more than 2 ΔE00 closer and 4 windows on one photo further; that photo, itself
+closer in the median (0.39 → 0.31), fails the gate's regression rule for its stratum
+(129 of the mixed sets' 180 setting and stratum pairs pass, 1 fails, 50 have too few
+photos). The mixed sets' other 504 cases render as before. On the synthetic chart the
+three cases that set both sliders get closer to Camera Raw's (mean ΔE00): a look with
+Shadows +40 and Highlights −40 at half and at twice its amount 0.85 → 0.68 and 2.58 →
+2.00, and the combined look with Highlights −40 and Shadows +30 2.51 → 2.45.
+
+One slider alone renders as before: nothing is blended with either at zero. Masks carry
+the same blend at the total of the recipe's and the mask's values, on the CPU and the
+GPU. An HDR master keeps the sum of the two curves, which is what its renders were
+judged with. The default black's key still follows Shadows alone.
+
 ### Local operators
 
 Shadows, Highlights and Clarity are luminance gains from a smooth, edge-aware base

@@ -24,12 +24,15 @@
 //! clipped, they come from its render at half the slider
 //! (docs/scene-tone-stage.md#the-global-rule). Each is evaluated once per photo at
 //! 48 base levels, which gives a [`Curve`] the per-pixel code and the GPU read like any
-//! other. With `RAWMAKASE_RULE_DUMP=<path>` set, each curve built appends its statistics
-//! and table to `<path>` as a JSON line and writes the map it read to `<path>.map`
-//! (diagnostics; `scene-tone-rule.py taps` trains on those maps).
+//! other. With both sliders set, each curve is blended toward a uniform gain at its
+//! extreme ([`Pair`], 2026-11-17): Camera Raw's two sliders together are not the product
+//! of their single gains. With `RAWMAKASE_RULE_DUMP=<path>` set, each curve built appends
+//! its statistics and table to `<path>` as a JSON line and writes the map it read to
+//! `<path>.map` (diagnostics; `scene-tone-rule.py taps` trains on those maps and curves).
 use super::local_tone::{Curve, blur};
 use super::local_tone_rule_data::{B1, B2, B3, FEATURES, MU, SD, W1, W2, W3};
 use super::local_tone_rule_ext_data as ext;
+use super::local_tone_rule_pair_data as pair;
 
 /// The controls the rule has a curve for, in the order of [`RuleStats`]' gains.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,6 +56,10 @@ impl RuleCurve {
     /// Whether the control brightens: its gains are never negative (else never positive).
     fn lifts(self) -> bool {
         matches!(self, Self::ShadowsUp | Self::HighlightsUp)
+    }
+    /// Whether the curve is one of Shadows' (else of Highlights').
+    fn shadows(self) -> bool {
+        matches!(self, Self::ShadowsUp | Self::ShadowsDown)
     }
 }
 
@@ -104,6 +111,8 @@ pub(super) struct RuleStats {
     lo: f32,
     hi: f32,
     gains: [[f32; 4]; LEVELS],
+    /// How Shadows and Highlights act together on this photo ([`Self::pair`]).
+    pair: std::sync::OnceLock<Pair>,
 }
 /// Levels at which the curves sample the rule.
 const LEVELS: usize = 48;
@@ -185,6 +194,7 @@ impl RuleStats {
             lo: 0.,
             hi: 0.,
             gains: [[0.; 4]; LEVELS],
+            pair: Default::default(),
         };
         stats.lo = stats.bot - 1.;
         stats.hi = stats.top + 1.;
@@ -327,6 +337,141 @@ impl RuleStats {
             tail: 0.,
         }
     }
+    /// How Shadows and Highlights act together on this photo, from its four unit
+    /// curves `units` ([`RuleCurve::ALL`]'s order; [`Self::curve`]'s). Kept with the
+    /// statistics: the curves are the photo's alone.
+    pub(super) fn pair(&self, units: [&Curve; 4]) -> &Pair {
+        self.pair.get_or_init(|| {
+            let n = self.sorted.len();
+            let level = |q: f32| self.sorted[((n - 1) as f32 * q) as usize];
+            let (low, high) = (level(PAIR_LOW), level(PAIR_HIGH));
+            let extremes: [f32; 4] = std::array::from_fn(|k| {
+                units[k].eval(if RuleCurve::ALL[k].shadows() {
+                    low
+                } else {
+                    high
+                })
+            });
+            // How much of the photo each curve reaches: the mean over the map of its
+            // gain as a fraction of the extreme's.
+            let reach: [f32; 4] = std::array::from_fn(|k| {
+                if extremes[k] == 0. {
+                    return 0.;
+                }
+                let sum: f64 = self
+                    .sorted
+                    .iter()
+                    .map(|b| f64::from((units[k].eval(*b) / extremes[k]).clamp(0., 1.)))
+                    .sum();
+                (sum / n as f64) as f32
+            });
+            let fractions = std::array::from_fn(|c| {
+                let [s, h] = Pair::KINDS[c].map(|kind| kind as usize);
+                let size = |k: usize| extremes[k].abs();
+                let x = [
+                    reach[s],
+                    reach[h],
+                    size(s),
+                    size(h),
+                    1. / size(s).max(PAIR_EXTREME_MIN),
+                    1. / size(h).max(PAIR_EXTREME_MIN),
+                ];
+                std::array::from_fn(|slider| {
+                    let w = &pair::BETA[c][slider];
+                    let z = x.iter().zip(&pair::MU[c]).zip(&pair::SD[c]);
+                    z.zip(&w[1..])
+                        .fold(w[0], |sum, (((x, mu), sd), w)| sum + w * (x - mu) / sd)
+                        .clamp(0., 1.)
+                })
+            });
+            Pair {
+                extremes,
+                fractions,
+            }
+        })
+    }
+}
+/// The quantiles of the map's base levels at which a Shadows curve and a Highlights
+/// curve are read for their extreme ([`Pair::extremes`]): the level the photo's pixels
+/// reach, not the end of the curve's table, which runs a stop past them.
+const PAIR_LOW: f32 = 0.01;
+const PAIR_HIGH: f32 = 0.99;
+/// The smallest extreme (stops) the fractions' fit divides by.
+const PAIR_EXTREME_MIN: f32 = 0.05;
+/// How a slider's fraction sets in with the other slider's share of it
+/// ([`Pair::at`]): as this power of the ratio for two sliders of one sign.
+pub(crate) const PAIR_SAME_POWER: f32 = 1.7;
+/// And for sliders of opposite signs, as 1 − e^(−rate × ratio), scaled to reach 1 at
+/// equal sliders.
+pub(crate) const PAIR_OPPOSITE_RATE: f32 = 2.4;
+/// Shadows and Highlights together. Camera Raw's render of the two is not the product
+/// of their single gains (60 training photos, 2026-11-17): moved the same way they
+/// brighten or darken every level by nearly half a stop more, moved opposite ways each
+/// does less at its own end. What fits its combined renders to 0.01–0.05 stop per photo:
+/// with both set, each slider's curve is blended toward a uniform gain at the curve's
+/// extreme, `(1 − f) · curve(level) + f · extreme`, so each protects the other end of
+/// the tonal range less. The two fractions differ by photo and by the sliders' signs,
+/// and are predicted here from the photo's own curves (`local_tone_rule_pair_data.rs`,
+/// `scene-tone-rule.py pair`). They do not depend on the sliders' size, only on their
+/// ratio: a slider's fraction grows with the other slider up to equal amounts and stays
+/// there beyond (16 photos, one slider at a tenth, a quarter and a half of the other;
+/// docs/scene-tone-stage.md).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Pair {
+    /// Each unit curve's gain at the photo's extreme for its control, in
+    /// [`RuleCurve::ALL`]'s order: Shadows' at the 1st percentile of the base levels,
+    /// Highlights' at the 99th.
+    pub(crate) extremes: [f32; 4],
+    /// Per sign combination ([`Self::combination`]): Shadows' and Highlights' fraction
+    /// at equal sliders.
+    pub(crate) fractions: [[f32; 2]; 4],
+}
+impl Pair {
+    /// The curves of each sign combination, Shadows' then Highlights': both up, both
+    /// down, Shadows up with Highlights down, Shadows down with Highlights up.
+    const KINDS: [[RuleCurve; 2]; 4] = [
+        [RuleCurve::ShadowsUp, RuleCurve::HighlightsUp],
+        [RuleCurve::ShadowsDown, RuleCurve::HighlightsDown],
+        [RuleCurve::ShadowsUp, RuleCurve::HighlightsDown],
+        [RuleCurve::ShadowsDown, RuleCurve::HighlightsUp],
+    ];
+    /// The sign combination of two sliders, neither 0: an index into [`Self::KINDS`].
+    pub(crate) fn combination(shadows: f32, highlights: f32) -> usize {
+        match (shadows > 0., highlights > 0.) {
+            (true, true) => 0,
+            (false, false) => 1,
+            (true, false) => 2,
+            (false, true) => 3,
+        }
+    }
+    /// For Shadows and for Highlights at these slider values: the fraction of its unit
+    /// curve that turns into a uniform gain, and that curve's extreme. None with either
+    /// slider at 0, where each renders as it does alone.
+    pub(crate) fn at(&self, shadows: f32, highlights: f32) -> Option<[[f32; 2]; 2]> {
+        if shadows == 0. || highlights == 0. {
+            return None;
+        }
+        let c = Self::combination(shadows, highlights);
+        let same = c < 2;
+        let (s, h) = (shadows.abs().min(1.), highlights.abs().min(1.));
+        let extreme = |slider: usize| self.extremes[Self::KINDS[c][slider] as usize];
+        Some([
+            [self.fractions[c][0] * ramp(h / s, same), extreme(0)],
+            [self.fractions[c][1] * ramp(s / h, same), extreme(1)],
+        ])
+    }
+}
+/// How much of a slider's fraction applies when the other slider is `ratio` of it
+/// (magnitudes): all of it from equal sliders on. On 16 training photos the median
+/// fraction at a ratio of 0.1, 0.25 and 0.5 was 0.00–0.03, 0.08–0.11 and 0.31 of that at
+/// 1 for sliders of one sign, and 0.17–0.20, 0.42–0.50 and 0.75–0.83 for opposite signs.
+fn ramp(ratio: f32, same: bool) -> f32 {
+    let r = ratio.clamp(0., 1.);
+    if same {
+        r.powf(PAIR_SAME_POWER)
+    } else {
+        (1. - (-PAIR_OPPOSITE_RATE * r).exp()) / (1. - (-PAIR_OPPOSITE_RATE).exp())
+    }
 }
 /// Projects the output log luminance (level + gain) of a 48-column table with columns
 /// `step` apart onto nondecreasing values, by pooled adjacent violators: the
@@ -418,6 +563,82 @@ pub(super) fn at(unit: &Curve, s: f32) -> Curve {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pair() -> Pair {
+        Pair {
+            extremes: [2., -1., -3., 1.5],
+            fractions: [[0.1, 0.4], [0.2, 0.3], [0.12, 0.25], [0.08, 0.35]],
+        }
+    }
+
+    #[test]
+    fn a_pair_leaves_a_single_slider_alone() {
+        assert_eq!(pair().at(0.7, 0.), None);
+        assert_eq!(pair().at(0., -1.), None);
+    }
+
+    #[test]
+    fn a_pair_reads_its_sign_combinations_curves() {
+        // Each combination has its own fractions and blends toward the extremes of the
+        // two curves it uses, at equal sliders in full.
+        let p = pair();
+        assert_eq!(p.at(1., 1.), Some([[0.1, 2.], [0.4, 1.5]]));
+        assert_eq!(p.at(-0.5, -0.5), Some([[0.2, -3.], [0.3, -1.]]));
+        assert_eq!(p.at(0.3, -0.3), Some([[0.12, 2.], [0.25, -1.]]));
+        assert_eq!(p.at(-1., 1.), Some([[0.08, -3.], [0.35, 1.5]]));
+    }
+
+    #[test]
+    fn a_pairs_fraction_sets_in_with_the_other_slider() {
+        // A slider's fraction grows with the other slider's share of it and is whole
+        // from equal sliders on; the larger slider's stays whole. There is no jump at 0.
+        let p = pair();
+        let shadows = |h: f32| p.at(1., h).unwrap()[0][0];
+        assert!(shadows(1e-4) < 1e-6 && p.at(1., -1e-4).unwrap()[0][0] < 1e-4);
+        let mut last = 0.;
+        for h in [0.1, 0.25, 0.5, 0.75, 1.] {
+            assert!(shadows(h) > last, "{h}");
+            last = shadows(h);
+        }
+        assert_eq!(shadows(1.), 0.1);
+        assert_eq!(p.at(0.25, 1.).unwrap()[0][0], 0.1);
+        // The measured shapes: the power 1.7 of the ratio for one sign, faster for
+        // opposite signs.
+        assert!((shadows(0.25) / 0.1 - 0.25f32.powf(1.7)).abs() < 1e-5);
+        let opposite = p.at(1., -0.25).unwrap()[0][0] / 0.12;
+        assert!((opposite - 0.4962).abs() < 1e-3, "{opposite}");
+        assert_eq!(p.at(1., -0.25).unwrap()[1][0], 0.25);
+    }
+
+    #[test]
+    fn a_photos_pair_reads_each_curve_where_its_pixels_reach() {
+        // The extremes are the curves' gains at the 1st and 99th percentile of the map's
+        // base levels, not the ends of the tables, and the fractions stay fractions.
+        let (w, h) = (128usize, 128);
+        let logs: Vec<f32> = (0..w * h)
+            .map(|i| -8. + 7. * ((i % w) as f32 / w as f32) + 0.2 * ((i * 37 % 11) as f32 / 11.))
+            .collect();
+        let stats = RuleStats::new(&logs, &logs, w, h);
+        let units = RuleCurve::ALL.map(|kind| stats.curve(kind));
+        let pair = stats.pair([&units[0], &units[1], &units[2], &units[3]]);
+        let level = |q: f32| stats.sorted[((stats.sorted.len() - 1) as f32 * q) as usize];
+        for (k, kind) in RuleCurve::ALL.into_iter().enumerate() {
+            let at = if kind.shadows() {
+                level(0.01)
+            } else {
+                level(0.99)
+            };
+            assert_eq!(pair.extremes[k], units[k].eval(at));
+        }
+        assert!(
+            pair.extremes[0] > 0.5 && pair.extremes[2] < -0.5,
+            "{:?}",
+            pair.extremes
+        );
+        for [s, h] in pair.fractions {
+            assert!((0. ..=1.).contains(&s) && (0. ..=1.).contains(&h));
+        }
+    }
 
     #[test]
     fn median_averages_the_middle_pair_like_numpy() {
