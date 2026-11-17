@@ -3975,6 +3975,59 @@ fn two_disks_given_one_drive_letter_show_as_two_drives() -> Result<()> {
 }
 
 #[test]
+fn a_shift_click_range_skips_a_folded_drive_known_by_its_id() -> Result<()> {
+    // Folding a drive the system gives an id (#891) kept its folders in the
+    // rows a Shift-click spans: the range from a folder chosen on it before
+    // it was folded took in the drive's hidden rows.
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("library.rawmakase");
+    let mut catalog = Catalog::create(&path)?;
+    for folder in ["Holiday", "Wedding"] {
+        let folder = directory.path().join(folder);
+        std::fs::create_dir(&folder)?;
+        std::fs::write(folder.join("a.RAF"), b"synthetic raw")?;
+        catalog.add_folder(&folder)?;
+    }
+    drop(catalog);
+    let mut library = Library::load(&path, egui::Context::default())?;
+    let ctx = library.ctx.clone();
+    let frame = |library: &mut Library| {
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            egui::Panel::left("sidebar").show(ui, |ui| library.sidebar(ui));
+        });
+        output.textures_delta.clear();
+        library.sidebar_trees.clone().expect("the sidebar's trees")
+    };
+    frame(&mut library);
+    library.volumes.wait();
+    let disk = |id: &str| crate::platform::volume::Volume {
+        name: "F:".into(),
+        mount: Some(directory.path().into()),
+        id: Some(id.into()),
+    };
+    let roots: Vec<PathBuf> = library.anchors().into_iter().map(|a| a.2).collect();
+    library.volumes.set_seen(volumes::Seen::from([
+        (roots[0].clone(), disk("1111-1111")),
+        (roots[1].clone(), disk("2222-2222")),
+    ]));
+    let trees = frame(&mut library);
+    let (holiday, wedding) = (
+        trees.drive_trees()[0].1[0].key.clone(),
+        trees.drive_trees()[1].1[0].key.clone(),
+    );
+    use super::folder_selection::Click;
+    library.click_folder(&holiday, Click::Replace, &[&holiday]);
+    library
+        .expanded
+        .insert(super::sidebar::collapsed_key(&disk("1111-1111")));
+    let rows = library.folder_rows(&trees);
+    assert_eq!(rows, [wedding.as_str()]);
+    library.click_folder(&wedding, Click::Range, &rows);
+    assert_eq!(library.selected_folders.keys(), [wedding]);
+    Ok(())
+}
+
+#[test]
 fn a_folder_located_on_another_drive_shows_under_that_drive() -> Result<()> {
     // #678: a folder holding only folders, located on another drive, showed
     // under its root's drive, at the path below its root.

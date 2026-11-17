@@ -32,6 +32,15 @@ struct Drive {
 /// failed, the Quick Collection made).
 type ListsKey = (u64, usize, usize, usize, usize);
 
+/// The key in [`Library::expanded`] that says drive `volume` is folded away
+/// in the Folders panel. A drive the system gives an id (#891) is told apart
+/// from another of the same name by it.
+pub(super) fn collapsed_key(volume: &crate::platform::volume::Volume) -> String {
+    match &volume.id {
+        Some(id) => format!("volume-collapsed:{}:{id}", volume.name),
+        None => format!("volume-collapsed:{}", volume.name),
+    }
+}
 impl Trees {
     /// The drives the Folders panel shows, in order.
     #[cfg(test)]
@@ -306,10 +315,7 @@ impl Library {
                         };
                         let space = state.and_then(|s| s.1);
                         let photos = drive.photos;
-                        let key = match &volume.id {
-                            Some(id) => format!("volume-collapsed:{}:{id}", volume.name),
-                            None => format!("volume-collapsed:{}", volume.name),
-                        };
+                        let key = collapsed_key(volume);
                         let collapsed = self.expanded.contains(&key);
                         if volumes::volume_row(ui, volume, attached, space, photos, !collapsed)
                             .clicked()
@@ -442,15 +448,7 @@ impl Library {
                         }
                     }
                     if let Some((key, click)) = clicked {
-                        let mut rows = Vec::new();
-                        for drive in &trees.volumes {
-                            let collapsed = format!("volume-collapsed:{}", drive.volume.name);
-                            if !self.expanded.contains(&collapsed) {
-                                for tree in &drive.trees {
-                                    tree.shown_rows(&self.expanded, &mut rows);
-                                }
-                            }
-                        }
+                        let rows = self.folder_rows(&trees);
                         self.click_folder(&key, click, &rows);
                     }
                     if self.session.roots().is_empty() {
@@ -523,6 +521,19 @@ impl Library {
                 });
             });
         action
+    }
+    /// The folder rows the Folders panel shows, in the order it draws them:
+    /// a Shift-click's range is taken from these.
+    pub(super) fn folder_rows<'a>(&self, trees: &'a Trees) -> Vec<&'a str> {
+        let mut rows = Vec::new();
+        for drive in &trees.volumes {
+            if !self.expanded.contains(&collapsed_key(&drive.volume)) {
+                for tree in &drive.trees {
+                    tree.shown_rows(&self.expanded, &mut rows);
+                }
+            }
+        }
+        rows
     }
     /// Shows Previous Import: the photos the last import added.
     pub(in crate::app) fn show_previous_import(&mut self) {
