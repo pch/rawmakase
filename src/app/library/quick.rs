@@ -148,7 +148,7 @@ impl Library {
         remove: &[PhotoId],
     ) -> Result<MembershipChange> {
         let change = self.session.change_collection(collection, add, remove)?;
-        self.show_members(collection);
+        self.show_members();
         Ok(change)
     }
     /// Puts photos back where they were and removes others, in the catalog
@@ -166,18 +166,16 @@ impl Library {
             .cloned()
             .collect();
         let change = self.session.put_back_members(collection, &add, remove)?;
-        self.show_members(collection);
+        self.show_members();
         Ok(change)
     }
-    /// Shows a collection's photos as they now are, when it is shown.
-    fn show_members(&mut self, collection: crate::catalog::CollectionId) {
-        if self.filters.collection == Some(collection) {
-            self.filters.members = self
-                .session
-                .collection_photos()
-                .get(&collection)
-                .cloned()
-                .unwrap_or_default();
+    /// Shows the source's photos as they now are.
+    fn show_members(&mut self) {
+        // Shown by itself, or in a set being shown.
+        if let Some(shown) = self.filters.collection
+            && self.source_members(shown) != self.filters.members
+        {
+            self.filters.members = self.source_members(shown);
             self.filter();
         }
     }

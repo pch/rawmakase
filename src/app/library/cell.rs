@@ -57,6 +57,8 @@ pub(super) struct Shown {
     pub single: bool,
     /// The source shows stacks (see `Filters::shows_stacks`).
     pub stacks: bool,
+    /// The Collections panel's tree, for Add to Collection.
+    pub collections: std::sync::Arc<Vec<super::collections::CollectionNode>>,
 }
 pub(super) fn photo_cell(
     ui: &mut egui::Ui,
@@ -75,6 +77,7 @@ pub(super) fn photo_cell(
         details,
         single,
         stacks,
+        collections,
     } = shown;
     let stack = photo.stack.filter(|_| stacks);
     use crate::app::library::photo_metadata::label_color;
@@ -257,6 +260,7 @@ pub(super) fn photo_cell(
         single,
         super::Module::Library,
         stacks,
+        &collections,
     );
     let action = action.or(badge_clicked.then_some(PhotoAction::StackBadge));
     (response, action)
@@ -445,6 +449,8 @@ pub(in crate::app) enum PhotoAction {
     Stack(super::StackAction),
     /// The stack badge was clicked: that stack collapses or expands.
     StackBadge,
+    /// Add to Collection: the photos go into this collection.
+    AddToCollection(crate::catalog::CollectionId),
 }
 /// Remove from Catalog's shortcut, as Lightroom shows it.
 const REMOVE_SHORTCUT: &str = if cfg!(target_os = "macos") {
@@ -525,6 +531,33 @@ fn stacking_menu(
 pub(in crate::app) fn find_on_disk_enabled(available: bool, single: bool) -> bool {
     !available && single
 }
+/// Add to Collection's submenu: each set a submenu of its own, each
+/// collection an item. Returns the collection chosen.
+fn collection_menu(
+    ui: &mut egui::Ui,
+    nodes: &[super::collections::CollectionNode],
+) -> Option<crate::catalog::CollectionId> {
+    use crate::app::ui::widgets::{menu_item, submenu_style};
+    crate::app::ui::widgets::menu_width(ui, 210.);
+    ui.spacing_mut().item_spacing.y = 0.;
+    let mut chosen = None;
+    for node in nodes {
+        if node.set {
+            submenu_style(ui);
+            ui.add_enabled_ui(!node.children.is_empty(), |ui| {
+                ui.menu_button(&node.name, |ui| {
+                    if let Some(id) = collection_menu(ui, &node.children) {
+                        chosen = Some(id);
+                    }
+                })
+            });
+        } else if node.smart.is_none() && menu_item(ui, &node.name, "", true, false) {
+            // Smart collections take no photos by hand.
+            chosen = Some(node.id);
+        }
+    }
+    chosen
+}
 /// The right-click menu shared by grid cells and the Develop filmstrip.
 /// Open in Develop is greyed out for a photo Develop cannot open, e.g. one
 /// not `available`, with the reason in place of its shortcut. In Develop's
@@ -539,6 +572,7 @@ pub(in crate::app) fn photo_menu(
     single: bool,
     module: super::Module,
     stacks: bool,
+    collections: &[super::collections::CollectionNode],
 ) -> Option<PhotoAction> {
     use crate::app::library::photo_metadata::{Edit, LABELS};
     use crate::app::ui::widgets::{menu_item, menu_separator, submenu_style};
@@ -623,6 +657,16 @@ pub(in crate::app) fn photo_menu(
                 ui.spacing_mut().item_spacing.y = 0.;
                 if let Some(choice) = stacking_menu(ui, photo, module) {
                     action = Some(PhotoAction::Stack(choice));
+                    ui.close();
+                }
+            })
+        });
+        menu_separator(ui);
+        submenu_style(ui);
+        ui.add_enabled_ui(!collections.is_empty(), |ui| {
+            ui.menu_button("Add to Collection", |ui| {
+                if let Some(id) = collection_menu(ui, collections) {
+                    action = Some(PhotoAction::AddToCollection(id));
                     ui.close();
                 }
             })

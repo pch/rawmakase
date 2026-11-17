@@ -126,6 +126,8 @@ impl Library {
             self.grid_kinetic.stop();
             scroll = scroll.vertical_scroll_offset((self.grid_offset + rows * height).max(0.));
         }
+        // For each cell's Add to Collection.
+        let collection_tree = self.collection_tree();
         egui::Frame::new()
             .fill(theme::palette(ui.ctx()).photo_backdrop())
             .inner_margin(design::margin_same(margin))
@@ -176,6 +178,7 @@ impl Library {
                                         },
                                         single: self.menu_single(p.id, true),
                                         stacks: self.filters.shows_stacks(),
+                                        collections: collection_tree.clone(),
                                     };
                                     let (response, edit) =
                                         photo_cell(ui, &p, self.texture(&p), shown, width);
@@ -325,6 +328,16 @@ impl Library {
                 self.ask(super::outbox::Request::File(
                     super::FileRequest::ChooseFolder(ids),
                 ));
+            }
+            PhotoAction::AddToCollection(id) => {
+                let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
+                    self.selected_ids()
+                } else {
+                    vec![photo.id]
+                };
+                if let Err(e) = self.add_to_collection(id, ids) {
+                    self.messages.fail(format!("Collection not changed: {e:#}"));
+                }
             }
             PhotoAction::ExportCatalog => {
                 let ids = if whole_selection && self.selection.selected.contains(&photo.id) {

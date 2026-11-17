@@ -123,6 +123,10 @@ impl RemovedCollections {
             })
             .collect()
     }
+    /// The smart collections' rules that would be restored.
+    pub fn smart_rules(&self) -> impl Iterator<Item = (CollectionId, &SmartRules)> + '_ {
+        self.rules.iter().map(|(id, rules)| (*id, rules))
+    }
     /// The photos that would be restored, with their collections.
     pub fn members(&self) -> impl Iterator<Item = (CollectionId, PhotoId)> + '_ {
         self.members.iter().map(|m| (m.0, m.1))
@@ -236,6 +240,24 @@ impl Catalog {
                 write_rules(w, id, &SmartRules::from_lightroom(text))?;
             }
             Ok(())
+        })
+    }
+    /// [`Catalog::create_collection`] of a collection holding `photos`, in
+    /// one transaction: made with them all, or not at all.
+    pub fn create_collection_of(
+        &mut self,
+        name: &str,
+        parent: Option<CollectionId>,
+        photos: &[PhotoId],
+    ) -> Result<(CollectionId, MembershipChange)> {
+        self.db.write(|w| {
+            if let Some(parent) = parent {
+                ensure_set(w, parent)?;
+            }
+            let name = usable_name(w, name, parent, None)?;
+            let id = insert(w, &name, parent, COLLECTION_KIND)?;
+            let change = change_members(w, id, Adding::Last(photos), &[])?;
+            Ok((id, change))
         })
     }
     /// Renames a collection or set to `name`, trimmed, by the rules of

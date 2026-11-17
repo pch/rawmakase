@@ -819,6 +819,35 @@ impl Editor {
             Err(e) => self.messages.fail(format!("Virtual copy failed: {e:#}")),
         }
     }
+    /// Create Collection with Make new virtual copies: the open edit is
+    /// saved first, as for Create Virtual Copy, so each copy starts from what
+    /// is on screen; nothing is made when that save fails.
+    pub(in crate::app) fn create_collection_of_copies(
+        &mut self,
+        asked: crate::app::library::NewCollection,
+    ) {
+        if self.activity.is_busy() {
+            self.messages
+                .warn("Collection not made: wait for the work in progress to finish.");
+            return;
+        }
+        // Flushing says why the edit was not saved.
+        if !self.flush() {
+            self.messages
+                .fail("Collection not made: unsaved changes could not be saved first.");
+            return;
+        }
+        let Some(library) = &mut self.library else {
+            return;
+        };
+        match library.create_collection(false, &asked.name, asked.parent, &asked.photos, true) {
+            Ok(id) => library.select_collection(id),
+            Err(e) => library
+                .messages
+                .fail(format!("Collections not changed: {e:#}")),
+        }
+        self.messages.absorb(&mut library.messages);
+    }
     /// Asks before removing a virtual copy, as Lightroom does; a copy shown
     /// in Develop gives way to its master.
     pub(in crate::app) fn remove_copy_window(&mut self, ctx: &egui::Context) {

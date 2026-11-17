@@ -584,6 +584,7 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
                     details: String::new(),
                     single: true,
                     stacks: true,
+                    collections: Default::default(),
                 };
                 photo_cell(ui, &photo, Some(&texture), shown, width);
             });

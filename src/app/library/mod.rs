@@ -66,6 +66,8 @@ impl Place {
     }
 }
 pub(in crate::app) use cell::copy_suffix;
+pub(crate) use collection_edit::CollectionTreeCommand;
+pub(in crate::app) use collection_edit::NewCollection;
 pub(crate) use descriptive::DescriptiveCommand;
 pub(crate) use filmstrip::{DraggedPhoto, Module, Pick};
 pub(crate) use metadata::{Metadata, MetadataCommand};
@@ -158,6 +160,17 @@ pub(crate) struct DraggedFolder {
     pub root: crate::catalog::RootId,
     pub from: String,
     pub name: String,
+}
+/// A collection or set being dragged in the Collections panel, with the
+/// set it is in and every collection and set inside it, which it can't be
+/// dropped into.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DraggedCollection {
+    pub id: crate::catalog::CollectionId,
+    pub parent: Option<crate::catalog::CollectionId>,
+    pub inside: std::collections::HashSet<crate::catalog::CollectionId>,
+    pub name: String,
+    pub set: bool,
 }
 /// Photos being dragged from the grid: the selection, or the photo dragged
 /// when it isn't in it.
@@ -260,6 +273,11 @@ pub(crate) struct Library {
     done: Vec<MetadataCommand>,
     /// Collection changes not yet handed to the shared undo log.
     collection_done: Vec<quick::CollectionCommand>,
+    /// Collections and sets made, renamed, moved or deleted since the undo
+    /// log last took them.
+    collection_tree_done: Vec<collection_edit::CollectionTreeCommand>,
+    /// Create Collection…, Rename… or Delete's question, while open.
+    collection_dialog: Option<collection_edit::CollectionDialog>,
     /// Descriptive metadata changes not yet handed to the shared undo log.
     descriptive_done: Vec<DescriptiveCommand>,
     /// Stack changes not yet handed to the shared undo log.
@@ -360,6 +378,8 @@ impl Library {
             fields: Default::default(),
             done: Vec::new(),
             collection_done: Vec::new(),
+            collection_tree_done: Vec::new(),
+            collection_dialog: None,
             descriptive_done: Vec::new(),
             stack_done: Vec::new(),
             auto_stack: None,
@@ -499,7 +519,7 @@ impl Library {
         }
         if let Some(id) = self.filters.collection {
             if self.session.collections().iter().any(|c| c.id == id) {
-                self.filters.members = self.members_of_collection(id);
+                self.filters.members = self.source_members(id);
             } else {
                 self.filters.collection = None;
                 self.filters.members.clear();
@@ -770,7 +790,13 @@ impl Library {
             self.filters.folder_scope = Some(scope);
         }
         if let Some(id) = self.filters.collection {
-            self.filters.members = self.members_of_collection(id);
+            // Deleted since: All Photographs, as when it is deleted.
+            if self.session.collections().iter().any(|c| c.id == id) {
+                self.filters.members = self.source_members(id);
+            } else {
+                self.filters.collection = None;
+                self.filters.members.clear();
+            }
         }
         self.selection = place.selection.clone();
         self.filter();
@@ -807,10 +833,10 @@ impl Library {
         }
         None
     }
-    /// Delete and Backspace (with Option too): in the Quick Collection, takes
-    /// `ids` out of it, as one undoable step; in an imported collection, which
-    /// can't be changed, nothing; elsewhere, asks to remove them from the
-    /// catalog.
+    /// Delete and Backspace (with Option too): in a collection (the Quick
+    /// Collection too), takes `ids` out of it, as one undoable step, as
+    /// Lightroom does; in a collection set, nothing; elsewhere, asks to
+    /// remove them from the catalog.
     pub(in crate::app) fn delete_key(&mut self, ids: Vec<PhotoId>) {
         if ids.is_empty() {
             return;
@@ -827,8 +853,35 @@ impl Library {
                 self.messages
                     .fail(format!("Quick Collection not changed: {e}"));
             }
-        } else if self.filters.collection.is_some() {
-            self.messages.warn("Imported collections can't be changed");
+        } else if let Some(id) = self.filters.collection {
+            if self.is_set(id) {
+                self.messages
+                    .warn("Select a collection to take photos out of it");
+                return;
+            }
+            if self
+                .session
+                .collections()
+                .iter()
+                .any(|c| c.id == id && c.kind == crate::catalog::CollectionKind::Smart)
+            {
+                self.messages
+                    .warn("A smart collection's photos are the ones its rules match");
+                return;
+            }
+            let name = self
+                .session
+                .collections()
+                .iter()
+                .find(|c| c.id == id)
+                .map_or_else(String::new, |c| c.name.clone());
+            let summary = format!(
+                "Removed from “{name}” · {}",
+                plural(ids.len(), "photo", "photos")
+            );
+            if let Err(e) = self.record_collection(id, Vec::new(), ids, summary) {
+                self.messages.fail(format!("Collection not changed: {e}"));
+            }
         } else {
             self.ask(outbox::Request::File(FileRequest::Delete(ids)));
         }
@@ -1669,6 +1722,7 @@ mod capture;
 /// a lighter surround instead of the app's blue button fill.
 mod cell;
 mod checksums;
+mod collection_edit;
 mod collections;
 mod compare;
 mod copy_name;
@@ -1728,6 +1782,8 @@ fn wake(ctx: &egui::Context) -> crate::catalog_session::Wake {
 mod editor_tests;
 
 pub(in crate::app) mod batch;
+#[cfg(test)]
+mod collections_tests;
 pub(in crate::app) mod photo_metadata;
 pub(in crate::app) mod preview_build;
 #[cfg(test)]
