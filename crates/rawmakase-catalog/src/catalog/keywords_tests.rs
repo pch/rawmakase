@@ -219,7 +219,7 @@ fn a_typed_path_finds_its_top_anywhere_and_the_rest_under_it() -> Result<()> {
     assert_eq!(added(&mut cat, &ids, &["France", "PARIS"])?, paris);
     // A missing top is made at the top level, with everything below it.
     let new = added(&mut cat, &ids, &["Spain", "Madrid"])?;
-    assert_eq!(cat.find_typed_keyword(&path(&["Spain"]))?.is_some(), true);
+    assert!(cat.find_typed_keyword(&path(&["Spain"]))?.is_some());
     assert!(new > paris);
     assert_eq!(cat.find_typed_keyword(&path(&["Nowhere"]))?, None);
     Ok(())

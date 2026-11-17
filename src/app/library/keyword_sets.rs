@@ -30,7 +30,7 @@ pub(super) enum Shown {
     /// Slots changed in Edit Set, from the set named if there was one.
     Edited {
         from: Option<String>,
-        slots: [String; SLOTS],
+        slots: Box<[String; SLOTS]>,
     },
 }
 
@@ -138,7 +138,10 @@ impl KeywordSetPanel {
     /// Shows what a layout kept.
     pub(super) fn restore(&mut self, set: Option<String>, slots: &[String]) {
         self.shown = match (set, <[String; SLOTS]>::try_from(slots.to_vec())) {
-            (from, Ok(slots)) => Shown::Edited { from, slots },
+            (from, Ok(slots)) => Shown::Edited {
+                from,
+                slots: Box::new(slots),
+            },
             (Some(name), Err(_)) => Shown::Set(name),
             (None, Err(_)) => Shown::Recent,
         };
@@ -159,7 +162,7 @@ impl KeywordSetPanel {
         match self.shown.clone() {
             Shown::Recent => None,
             Shown::Set(_) => Some(self.set().map(|s| s.keywords).unwrap_or_default()),
-            Shown::Edited { slots, .. } => Some(slots),
+            Shown::Edited { slots, .. } => Some(*slots),
         }
     }
     /// The name the menu shows.
@@ -575,7 +578,7 @@ impl Library {
                     Some(set) if set.keywords == slots => Shown::Set(set.name),
                     set => Shown::Edited {
                         from: set.map(|s| s.name),
-                        slots,
+                        slots: Box::new(slots),
                     },
                 };
             }
@@ -645,7 +648,7 @@ mod tests {
     #[test]
     fn a_kept_layout_comes_back() {
         let mut panel = KeywordSetPanel::default();
-        let slots: [String; SLOTS] = std::array::from_fn(|i| format!("k{i}"));
+        let slots: Box<[String; SLOTS]> = Box::new(std::array::from_fn(|i| format!("k{i}")));
         for shown in [
             Shown::Recent,
             Shown::Set("Festival".into()),
@@ -653,10 +656,7 @@ mod tests {
                 from: Some("Festival".into()),
                 slots: slots.clone(),
             },
-            Shown::Edited {
-                from: None,
-                slots: slots.clone(),
-            },
+            Shown::Edited { from: None, slots },
         ] {
             panel.shown = shown.clone();
             let (set, kept) = panel.kept();

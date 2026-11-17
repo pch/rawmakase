@@ -465,12 +465,12 @@ impl Library {
         if entered && picked.is_none() {
             picked = self.fields.suggestion;
         }
-        if !suggestions.is_empty() && picked.is_none() {
-            if let Some(clicked) =
+        if !suggestions.is_empty()
+            && picked.is_none()
+            && let Some(clicked) =
                 suggestion_list(ui, response.rect, &suggestions, self.fields.suggestion)
-            {
-                picked = Some(clicked);
-            }
+        {
+            picked = Some(clicked);
         }
         if let Some(i) = picked.and_then(|i| suggestions.get(i)) {
             // The keyword chosen, by id: a duplicate name or one with a

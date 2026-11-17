@@ -158,7 +158,10 @@ fn a_set_button_finds_its_keyword_as_typed_and_toggles_it() -> Result<()> {
     let mut slots: [String; 9] = Default::default();
     slots[0] = "paris".into();
     slots[1] = "New One".into();
-    library.keyword_sets.shown = Shown::Edited { from: None, slots };
+    library.keyword_sets.shown = Shown::Edited {
+        from: None,
+        slots: Box::new(slots),
+    };
     library.select(Some(ids[0]));
     library.select_range_to(ids[1]);
     library.sync_fields();

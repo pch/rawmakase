@@ -174,7 +174,7 @@ impl Catalog {
             let all = with_descendants(w, ids)?;
             let before = rows_of(w, &all)?;
             let after = KeywordRows {
-                ids: all.clone(),
+                ids: all,
                 ..Default::default()
             };
             put(w, &after)?;

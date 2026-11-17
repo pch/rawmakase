@@ -164,13 +164,12 @@ enum Clicked {
 
 /// The menu of a keyword's row, or of the panel's own button without one.
 fn keyword_menu(ui: &mut egui::Ui, keyword: Option<&ListedKeyword>, clicked: &mut Option<Clicked>) {
-    if let Some(k) = keyword {
-        if ui
+    if let Some(k) = keyword
+        && ui
             .button(format!("Create Keyword Tag inside “{}”…", k.name))
             .clicked()
-        {
-            *clicked = Some(Clicked::Create(Some((k.id, k.name.clone()))));
-        }
+    {
+        *clicked = Some(Clicked::Create(Some((k.id, k.name.clone()))));
     }
     if ui.button("Create Keyword Tag…").clicked() {
         *clicked = Some(Clicked::Create(None));
