@@ -19,7 +19,8 @@
 //!
 //! Both work in the unrotated frame. A camera's quarter turn turns the photo and the
 //! crop together, so it leaves the angle as it is.
-use crate::model::image_frame::straighten_zoom;
+use crate::model::image_frame::{crop_as_rendered, straighten_zoom};
+use crate::model::recipe::Recipe;
 
 /// The whole frame, as Lightroom's corners and as RAWmakase's crop.
 pub(super) const WHOLE: [f32; 4] = [0., 0., 1., 1.];
@@ -31,8 +32,12 @@ const MINIMUM: f32 = 0.01;
 /// Lightroom's corners and angle for RAWmakase's `crop` (in the unrotated frame) and
 /// `straighten` (degrees), on a photo of `size` (unrotated, any unit).
 pub(super) fn to_lightroom(crop: [f32; 4], straighten: f32, size: [f32; 2]) -> ([f32; 4], f32) {
+    // A crop that no longer lies on the photo writes the crop that renders, since its
+    // corners would lie past the photo, where Lightroom's can't.
+    let crop = crop_as_rendered(crop, straighten, size);
     if straighten == 0. {
-        return (crop, 0.);
+        // Within the six decimals' margin of the photo's edge.
+        return (crop.map(|v| v.clamp(0., 1.)), 0.);
     }
     let [width, height] = size;
     let zoom = straighten_zoom(straighten, size);
@@ -85,7 +90,14 @@ pub(super) fn from_lightroom(
 pub(super) fn at_least_minimum(mut crop: [f32; 4]) -> [f32; 4] {
     for (lo, hi) in [(0, 2), (1, 3)] {
         if (MINIMUM - 1e-4..MINIMUM).contains(&(crop[hi] - crop[lo])) {
-            crop[hi] = (crop[lo] + MINIMUM + 1e-6).min(1.);
+            // A crop at the frame's edge widens inwards; one past it, which a turned
+            // crop can be, stays where it is.
+            let end = if crop[hi] > 1. {
+                *Recipe::CROP_RANGE.end()
+            } else {
+                1.
+            };
+            crop[hi] = (crop[lo] + MINIMUM + 1e-6).min(end);
             crop[lo] = crop[lo].min(crop[hi] - MINIMUM - 1e-6);
         }
     }
@@ -125,6 +137,28 @@ fn turned(corners: [f32; 4], angle: f32, size: [f32; 2]) -> Option<([f32; 4], f3
         centre[1] - half[1],
         centre[0] + half[0],
         centre[1] + half[1],
+    ];
+    if crop.iter().all(|v| Recipe::CROP_RANGE.contains(v)) {
+        return Some((crop, straighten));
+    }
+    // Only a long panorama turned far reaches past what the recipe holds. Such a crop
+    // shrinks about its centre until it fits the enlarged frame, as every crop past
+    // that frame did before.
+    let centre = centre.map(|v| v.clamp(0., 1.));
+    let fit = [
+        centre[0] / half[0],
+        (1. - centre[0]) / half[0],
+        centre[1] / half[1],
+        (1. - centre[1]) / half[1],
+    ]
+    .into_iter()
+    .fold(1f32, f32::min);
+    let half = half.map(|v| v * fit);
+    let crop = [
+        (centre[0] - half[0]).max(0.),
+        (centre[1] - half[1]).max(0.),
+        (centre[0] + half[0]).min(1.),
+        (centre[1] + half[1]).min(1.),
     ];
     Some((crop, straighten))
 }
@@ -250,5 +284,48 @@ mod tests {
         assert_eq!(angle, 5.);
         assert_ne!(corners, WHOLE);
         assert!(corners.iter().all(|v| (0. ..=1.).contains(v)));
+    }
+
+    /// A crop at the smallest size past the enlarged frame, which a turned crop can be,
+    /// keeps its place when six decimals leave it just under that size.
+    #[test]
+    fn the_smallest_crop_past_the_frame_keeps_its_place() {
+        let six = |v: f32| (v * 1e6).round() / 1e6;
+        let (size, crop) = ([3000., 2000.], [1.01, 0.3, 1.020001, 0.4]);
+        let (corners, angle) = to_lightroom(crop, -30., size);
+        let (back, _) = from_lightroom(corners.map(six), angle, size).unwrap();
+        let back = at_least_minimum(back);
+        assert!(back[2] - back[0] >= MINIMUM, "{back:?}");
+        for (a, b) in back.iter().zip(crop) {
+            assert!((a - b).abs() < 1e-4, "{back:?}");
+        }
+    }
+
+    /// On a long panorama turned far, a crop on the photo can reach further past the
+    /// enlarged frame than the recipe holds (here to 2.01); it shrinks about its centre
+    /// into that frame, rather than the edit being refused.
+    #[test]
+    fn a_panorama_crop_fits_the_recipe() {
+        let (crop, straighten) =
+            from_lightroom([0.375, 0., 0.425, 1.], 15., [6000., 1000.]).unwrap();
+        assert_eq!(straighten, -15.);
+        let recipe = Recipe {
+            crop,
+            straighten,
+            ..Default::default()
+        };
+        assert!(recipe.validate().is_ok(), "{crop:?}");
+        assert!(crop.iter().all(|v| (0. ..=1.).contains(v)), "{crop:?}");
+    }
+
+    /// Unturned, a crop past 0–1 (left there by Straighten reset to 0) writes the part
+    /// that renders, since Lightroom's corners lie inside 0–1 and are refused outside it.
+    #[test]
+    fn an_unturned_crop_past_the_frame_writes_what_renders() {
+        assert_eq!(
+            to_lightroom([-0.02, 0.1, 1.02, 0.9], 0., CHART),
+            ([0., 0.1, 1., 0.9], 0.)
+        );
+        assert_eq!(to_lightroom([1.2, 0.1, 1.5, 0.9], 0., CHART), (WHOLE, 0.));
     }
 }

@@ -513,6 +513,61 @@ fn lightroom_crops_of_a_photo_held_upright_are_of_the_unrotated_frame() -> Resul
     near(back.crop, drawn.crop);
     Ok(())
 }
+/// A crop past 0–1 writes a preset that reads back: kept where it lies on the turned
+/// photo, and as rendered where it no longer does (Straighten changed after a Lightroom
+/// crop was read).
+#[test]
+fn presets_of_crops_past_the_frame_read_back() -> Result<()> {
+    let m = Metadata {
+        width: 3000,
+        height: 2000,
+        wb: [2., 1., 1.5],
+        daylight_wb: [2., 1., 1.5],
+        ..Default::default()
+    };
+    let base = Recipe::with_profiles(&m, &[]);
+    for (rotation, crop, straighten, want) in [
+        // On the photo turned by 3°.
+        (0, [-0.02, 0.1, 1.02, 0.9], 3., [-0.02, 0.1, 1.02, 0.9]),
+        (0, [-0.02, 0.1, 1.02, 0.9], 0., [0., 0.1, 1., 0.9]),
+        // XMP leaves Rotate out, so a crop is converted on the photo before Rotate
+        // (3000 × 2000 here, though it renders on the 2000 × 3000 one). This crop
+        // reaches past that photo, so it writes its part inside 0–1, which reads back
+        // as written.
+        (1, [0.1, -0.02, 0.9, 1.02], 3., [0.1, 0., 0.9, 1.]),
+        // Wholly past the photo once nearly level.
+        (0, [1.01, 0.3, 1.02, 0.4], 0.01, [0., 0., 1., 1.]),
+        (0, [1.01, 0.3, 1.02, 0.4], 0., [0., 0., 1., 1.]),
+    ] {
+        // Rotate stays out of XMP, so the preset is applied to the photo as rotated.
+        let base = Recipe {
+            rotation,
+            ..base.clone()
+        };
+        let drawn = Recipe {
+            crop,
+            straighten,
+            ..base.clone()
+        };
+        let preset = crate::xmp::preset_write::preset(
+            &drawn,
+            &m,
+            &crate::xmp::preset_write::PresetInfo::new("Crop", "Mine"),
+            &crate::model::settings_groups::GroupSelection::all(),
+        );
+        let back = parse(Path::new("crop.xmp"), &preset)?.apply(&base, &m, &[], None)?;
+        assert!(
+            back.crop
+                .iter()
+                .zip(want)
+                .all(|(g, w)| (g - w).abs() < 1e-3),
+            "{crop:?} at {straighten}: {:?}",
+            back.crop
+        );
+        assert!((back.straighten - straighten).abs() < 1e-3, "{crop:?}");
+    }
+    Ok(())
+}
 /// Lightroom's `CropAngle` turns the photo the other way from Straighten, and its
 /// corners are opposite corners of the turned crop (#1059). Sizes are Camera Raw's
 /// renders of a synthetic 970 × 742 chart (docs/transform.md).
