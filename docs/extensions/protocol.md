@@ -66,8 +66,9 @@ program exits.
   [photo sources](#sourcereport-request): the events `source-started` and
   `source-stopped`, and `source.report`. A manifest declaring a `[[source]]` or a
   `[[retouch-generator]]` declares `api = 3`.
-- **API 4** is API 3 with [`import.run`](#importrun-request). A manifest
-  declaring an `[[importer]]` declares `api = 4`.
+- **API 4** is API 3 with [`import.run`](#importrun-request) and
+  [`files.list`](#fileslist-request). A manifest declaring an `[[importer]]`
+  declares `api = 4`.
 
 The app sends a request of a later API only to a program serving it; the SDK
 refuses one serving an earlier `api` with `invalid_request`, and an SDK that
@@ -499,6 +500,49 @@ carries them.
 The SDK (feature `importer`) calls the handler with the source and the plan's
 path and answers with the photos it returns. A handler that returns after a
 cancel is answered `cancelled`.
+
+### `files.list` (request)
+
+Asks the bundled Lightroom extension (`rawmakase.lightroom`, the only program
+the app sends it to) what Adobe's folders on this computer hold: where
+Lightroom and Camera Raw keep catalogs, profiles and presets, and what each
+file is by where it lies. The program lists folders and reads no file; the app
+decides what fits a photo or a catalog, and imports it with its own importers.
+
+The request has no parameters (`{}`). The answer groups the files by folder,
+and says where the program looked:
+
+```json
+{"folders":[
+  {"kind":"camera-profile","origin":"shared",
+   "path":"/Library/Application Support/Adobe/CameraRaw/CameraProfiles/Adobe Standard",
+   "files":[{"name":"Sony ILCE-7M2 Adobe Standard.dcp","camera":"Sony ILCE-7M2"}]},
+  {"kind":"camera-profile","origin":"shared","camera":"Sony ILCE-7M2",
+   "path":"/Library/Application Support/Adobe/CameraRaw/CameraProfiles/Camera/Sony ILCE-7M2",
+   "files":[{"name":"Sony ILCE-7M2 Camera Standard.dcp"}]},
+  {"kind":"presets","origin":"user","path":"/Users/jane/Library/Application Support/Adobe/CameraRaw/Settings"},
+  {"kind":"catalog","origin":"user","path":"/Users/jane/Pictures/Lightroom",
+   "files":[{"name":"Lightroom Catalog.lrcat","used":1763300000000}]}],
+ "searched":[{"kind":"catalog","origin":"user","path":"/Users/jane/Pictures/Lightroom"}]}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `camera-profile` (DCPs), `look` (XMP look profiles), `lens-profile` (LCPs), `presets` or `catalog` (`.lrcat`) |
+| `origin` | `shared` (Camera Raw's folder for all users: Adobe's own files) or `user` |
+| `path` | The folder; for `presets` a folder to import as a folder, with no `files` |
+| `camera` | For a Camera Matching folder: the camera its profiles are for. On a file in the Adobe Standard folder: the camera its name says |
+| `group` | For lens profiles: the maker folder |
+| `files` | The files in the folder and its subfolders, by `name` (`/` between subfolders) |
+| `used` | On a catalog: when it was last changed, in milliseconds since the Unix epoch |
+| `searched` | The folders looked in for profiles and catalogs, whether or not they hold any, for the app to say where it looked |
+
+One line holds the answer: a Camera Raw install's thousands of names fill
+about half of one. An answer longer than a line is answered `too_large`;
+there are no pages. A file or folder whose path isn't UTF-8 is left out, never
+sent changed. A listing belongs to the program's session: one whose
+session ends before it answers fails. The request is API 4. The SDK's
+`Extension::files` takes a function returning the listing.
 
 ### Events
 

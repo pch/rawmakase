@@ -98,7 +98,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
             control_row(ui, "", |ui| {
                 if ui
                 .small_button("Import Lens Profiles…")
-                .on_hover_text("Import Adobe .lcp lens profiles, e.g. from /Library/Application Support/Adobe/CameraRaw/LensProfiles")
+                .on_hover_text("Import Adobe .lcp lens profiles, such as those Lightroom and Camera Raw install")
                 .clicked()
             {
                 actions.push(Action::ImportLens);

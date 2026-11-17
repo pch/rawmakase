@@ -2,24 +2,6 @@
 use crate::app::testing::*;
 use crate::app::*;
 
-/// Opens the Profile menu; returns the frame showing it.
-fn open_profile_menu(ctx: &egui::Context, editor: &mut Editor) -> egui::accesskit::TreeUpdate {
-    let tree = controls_frame(ctx, editor, vec![]);
-    let profile = tree
-        .nodes
-        .iter()
-        .map(|(_, n)| n)
-        .find(|n| {
-            n.role() == egui::accesskit::Role::ComboBox
-                && n.value() == Some("Default (camera matrix)")
-        })
-        .expect("Profile menu");
-    let [down, up] = press_and_release(centre(profile));
-    controls_frame(ctx, editor, down);
-    controls_frame(ctx, editor, up);
-    controls_frame(ctx, editor, vec![])
-}
-
 #[test]
 fn the_profile_menu_offers_community_profiles_only_for_covered_raw_cameras() {
     for (model, rendered, expected) in [

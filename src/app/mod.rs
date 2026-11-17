@@ -75,6 +75,8 @@ pub(crate) struct Editor {
     /// What the last Tab or Shift+Tab hid, and in which module.
     tabbed: Option<(Module, crate::app::shell::panels::Tabbed)>,
     onboarding: crate::app::catalog::onboarding::Onboarding,
+    /// What Adobe's folders hold, as the Lightroom extension lists them.
+    adobe_files: crate::app::extensions::adobe_files::AdobeFiles,
     preferences: preferences::Preferences,
     updates: crate::app::shell::updates::Updates,
     /// Report an Issue…: its dialog and the system probe.
@@ -266,13 +268,10 @@ impl Editor {
         });
         // Only a real session (not an isolated test) shows first-run setup.
         // Shown on a first launch only to bring over Lightroom's catalog,
-        // profiles and presets, when there are some; otherwise first-run
-        // setup is done, and the empty Library says how to add photos.
-        let show_onboarding = !session.onboarding_done
-            && session_file.is_some()
-            && crate::app::catalog::onboarding::lightroom_here();
-        let onboarding_done =
-            session.onboarding_done || (session_file.is_some() && !show_onboarding);
+        // profiles and presets, once the Lightroom extension lists some;
+        // otherwise first-run setup is done, and the empty Library says how
+        // to add photos.
+        let first_launch = !session.onboarding_done && session_file.is_some();
         let place = CatalogPlace::of(&session);
         // Only a real session checks GitHub, not an isolated test.
         let updates = crate::app::shell::updates::Updates::new(
@@ -324,7 +323,7 @@ impl Editor {
             &session,
             session_file,
             place.clone(),
-            onboarding_done,
+            session.onboarding_done,
             copy_groups.unwrap_or_default(),
         );
         let mut app = Self {
@@ -383,7 +382,8 @@ impl Editor {
             },
             panels: session.panels,
             tabbed: None,
-            onboarding: crate::app::catalog::onboarding::Onboarding::new(show_onboarding),
+            onboarding: Default::default(),
+            adobe_files: crate::app::extensions::adobe_files::AdobeFiles::new(first_launch),
             preferences: Default::default(),
             updates,
             report_issue,

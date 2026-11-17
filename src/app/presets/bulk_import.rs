@@ -101,7 +101,7 @@ struct Found {
 }
 
 /// The folder of an Adobe account's presets in Lightroom's library.
-pub(in crate::app) const LIGHTROOM_PRESETS: &str = "cr_settings";
+const LIGHTROOM_PRESETS: &str = "cr_settings";
 
 /// Where Lightroom's presets in `dir` are imported, if `dir` is an account's
 /// [`LIGHTROOM_PRESETS`]: Lightroom (not Classic) shows those without a group
@@ -839,6 +839,74 @@ mod tests {
                 groups,
                 ["Travel".into(), "User Presets".into()].into(),
                 "{pick:?}"
+            );
+        }
+    }
+
+    /// Setup imports the preset folders the Lightroom extension lists as it
+    /// imported the ones it found itself (`user/Settings`, then each Adobe
+    /// account's `cr_settings`), into the same layout.
+    #[test]
+    fn listed_preset_folders_import_in_their_layout() {
+        use rawmakase_extensions::protocol::method::FileKind;
+        use rawmakase_lightroom::fake::{Layout, install};
+        for layout in [Layout::MacOs, Layout::Windows] {
+            let temp = tempfile::tempdir().unwrap();
+            let roots = install(temp.path(), layout).unwrap();
+            let (user, pictures) = (roots.user.clone().unwrap(), roots.pictures.clone().unwrap());
+            let library = pictures.join("Lightroom Library.lrlibrary");
+            let presets = [
+                user.join("Settings/Mine.xmp"),
+                user.join("Settings/My Presets/Warm.xmp"),
+                user.join("Settings/Defaults/Default.xmp"),
+                library.join("b67b/cr_settings/Synced.xmp"),
+                library.join("0a1c/cr_settings/Other.xmp"),
+                library.join("9f3e/cr_defaults/Default.xmp"),
+            ];
+            for (i, preset) in presets.iter().enumerate() {
+                std::fs::write(preset, PRESET.replace("0.50", &format!("0.{i}1"))).unwrap();
+            }
+            let listed: Vec<PathBuf> = rawmakase_lightroom::list(&roots)
+                .folders
+                .into_iter()
+                .filter(|f| f.kind == FileKind::Presets)
+                .map(|f| f.path)
+                .collect();
+            assert_eq!(
+                listed,
+                [
+                    user.join("Settings"),
+                    library.join("0a1c/cr_settings"),
+                    library.join("b67b/cr_settings"),
+                ]
+            );
+            let root = temp.path().join("presets");
+            let summary = import_presets(
+                &gather(ImportKind::Presets, &listed),
+                &ImportProgress::default(),
+                &root,
+                std::slice::from_ref(&root),
+                &temp.path().join("profiles"),
+            );
+            assert_eq!(summary.imported, 4, "{layout:?}: {summary:?}");
+            let imported: Vec<String> = find_files(&root, &["xmp"], &[])
+                .iter()
+                .map(|p| {
+                    p.strip_prefix(&root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                })
+                .collect();
+            assert_eq!(
+                imported,
+                [
+                    "Imported/Settings/Mine.xmp",
+                    "Imported/Settings/My Presets/Warm.xmp",
+                    "Imported/User Presets/Other.xmp",
+                    "Imported/User Presets/Synced.xmp",
+                ],
+                "{layout:?}"
             );
         }
     }

@@ -4,7 +4,7 @@
 //! declare from `api = 2`; `source-started`, `source-stopped` and
 //! `source.report` serve `[[source]]`, and `retouch.generate` serves
 //! `[[retouch-generator]]`, from `api = 3`; `import.run` serves `[[importer]]`,
-//! from `api = 4`.
+//! and `files.list` the bundled Lightroom extension, from `api = 4`.
 //!
 //! [`AppRequest`] and [`AppEvent`] go from the app to the program,
 //! [`ProgramRequest`] and [`ProgramEvent`] the other way. Each reads from a
@@ -64,6 +64,11 @@ pub enum AppRequest {
     /// Sent only to a program serving `api = 4` or later.
     #[serde(rename = "import.run")]
     ImportRun(ImportRun),
+    /// Lists what Adobe's folders hold. Answered with
+    /// [`FilesListed`]. Sent only to the bundled Lightroom extension
+    /// ([`LIGHTROOM`](crate::manifest::LIGHTROOM)), serving `api = 4`.
+    #[serde(rename = "files.list")]
+    FilesList(Empty),
 }
 
 /// Requests a program sends the app.
@@ -183,6 +188,7 @@ impl AppRequest {
         "mask.setup",
         "retouch.generate",
         "import.run",
+        "files.list",
     ];
 }
 impl ProgramRequest {
@@ -627,6 +633,91 @@ pub struct ImportDone {
     /// The photo rows the plan holds. The app checks this against the
     /// plan's own count, so an answer for another plan isn't taken.
     pub photos: u64,
+}
+
+/// What a program answers `files.list` with: what Adobe's folders hold, a
+/// folder at a time, and where it looked. The program lists folders and reads
+/// no file. One line holds it all: a Camera Raw install's names fill about
+/// half of one.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FilesListed {
+    /// The folders with something in them, and each preset folder.
+    pub folders: Vec<FileFolder>,
+    /// The folders looked in for each kind, found or not, for the app to
+    /// say where it looked.
+    pub searched: Vec<Searched>,
+}
+
+/// A folder of [`FilesListed`], and what its layout says its files are.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileFolder {
+    /// What its files are.
+    pub kind: FileKind,
+    /// Whose folder it is.
+    pub origin: FileOrigin,
+    /// The folder; for [`FileKind::Presets`] one to import as a folder.
+    pub path: PathBuf,
+    /// For a Camera Matching folder: the camera its profiles are for, its
+    /// name ("Sony ILCE-7M2").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera: Option<String>,
+    /// For lens profiles: the maker folder it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+    /// Its files, none for presets.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<FileName>,
+}
+
+/// A file of a [`FileFolder`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileName {
+    /// Its path in the folder, `/` between subfolders.
+    pub name: String,
+    /// For an Adobe Standard profile: the camera its name says it is for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera: Option<String>,
+    /// For a catalog: when it was last changed, in milliseconds since the
+    /// Unix epoch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used: Option<u64>,
+}
+
+/// A folder the program looked in for files of `kind`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Searched {
+    /// What it looked for.
+    pub kind: FileKind,
+    /// Whose folder it is.
+    pub origin: FileOrigin,
+    /// The folder.
+    pub path: PathBuf,
+}
+
+/// What a [`FileFolder`]'s files are.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FileKind {
+    /// A DCP.
+    CameraProfile,
+    /// An XMP look profile.
+    Look,
+    /// An LCP.
+    LensProfile,
+    /// A folder of develop presets.
+    Presets,
+    /// A Lightroom Classic catalog (`.lrcat`).
+    Catalog,
+}
+
+/// Whose folder a [`FileFolder`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FileOrigin {
+    /// Camera Raw's folder for all users: Adobe's own files.
+    Shared,
+    /// The user's: their presets, catalogs and third-party profiles.
+    User,
 }
 
 /// Why a mask generator found nothing, for the message the app shows.
@@ -1444,5 +1535,27 @@ mod tests {
         let done: ImportDone = serde_json::from_value(json!({"photos": 12})).unwrap();
         assert_eq!(done.photos, 12);
         assert!(IMPORT_PROGRESS_INTERVAL < IMPORT_INACTIVITY);
+    }
+
+    #[test]
+    fn a_listing_reads_as_folders_of_files() {
+        let request = AppRequest::FilesList(Empty {}).into_parts();
+        assert_eq!(request, ("files.list".to_string(), json!({})));
+        let listed: FilesListed = serde_json::from_value(json!({"folders": [
+            {"kind": "camera-profile", "origin": "shared", "path": "/a/Adobe Standard",
+             "files": [{"name": "Sony ILCE-7M2 Adobe Standard.dcp", "camera": "Sony ILCE-7M2"}]},
+            {"kind": "presets", "origin": "user", "path": "/u/Settings"},
+        ], "searched": [{"kind": "catalog", "origin": "user", "path": "/p/Lightroom"}]}))
+        .unwrap();
+        assert_eq!(
+            listed.folders[0].files[0].camera.as_deref(),
+            Some("Sony ILCE-7M2")
+        );
+        assert!(listed.folders[1].files.is_empty());
+        assert_eq!(listed.searched[0].kind, FileKind::Catalog);
+        let refused = serde_json::from_value::<FileFolder>(
+            json!({"kind": "brush", "path": "/a", "origin": "user"}),
+        );
+        assert!(refused.is_err());
     }
 }

@@ -821,6 +821,7 @@ other features don't depend on the extension.
 | --- | --- | --- | --- |
 | **MIDI** (`rawmakase.midi`, built) | Device discovery and connection, device profiles, mapping (`extensions/midi`) | Commands, gesture grouping, History | `control-adapter`, `with-app` programs, settings |
 | **MCP** (`rawmakase.mcp`) | The MCP server (`src/mcp.rs`), already a client of the control protocol | The command layer, and `rawmakase mcp` as the entry point clients already launch | An externally launched adapter (below) |
+| **Lightroom** (`rawmakase.lightroom`, its first part built) | Where Lightroom and Camera Raw keep catalogs, profiles and presets, and what Adobe's layout says each file is (`files.list`); the catalog import later ([plan](lightroom-extension-plan.md)) | What fits a photo or a catalog, the offers and the importers; the Lightroom catalog import until it moves | A bundled extension the core asks for facts it then decides on |
 | **AI masks** (`rawmakase.ai-masks`) | Select Subject, Sky and Background: the models, their install (`model_install` for those packs), local and remote inference (`rawmakase-remote` as the extension's own worker) | Masks, rasters and their storage; rendering saved masks | `mask-generator`, viewer input, shared memory, heavy native dependencies |
 
 **Lightroom import stays in the core for now.** Moving it out

@@ -1,0 +1,19 @@
+# Bundled with RAWmakase: the app compiles this manifest in and finds the
+# program beside its executable. The version follows the app's, as the
+# program's own does (a test compares them).
+[extension]
+id = "rawmakase.lightroom"
+name = "Lightroom"
+version = "0.6.0"
+rawmakase = "*"
+api = 4
+authors = ["RAWmakase"]
+license = "MIT"
+repository = "https://github.com/pch/rawmakase"
+description = "Finds what Lightroom and Camera Raw keep on this computer (catalogs, camera and lens profiles, presets) for RAWmakase to offer to import. Disabled, nothing is offered from Adobe's folders; what was imported keeps working."
+
+[access]
+files = "any"
+
+[program]
+path = "rawmakase-lightroom"

@@ -34,6 +34,7 @@ flowchart TD
     modelinstall[rawmakase-model-install]
     denoise[rawmakase-denoise]
     aimasks[rawmakase-ai-masks]
+    lightroom[rawmakase-lightroom]
     exthost[rawmakase-extensions]
     extprotocol[rawmakase-extension-protocol]
     sdk[rawmakase-extension]
@@ -55,6 +56,7 @@ flowchart TD
     selection --> inference
     modelinstall --> inference & model
     aimasks --> sdk & remote & modelinstall & protocol
+    lightroom --> sdk
     exthost --> extprotocol & fs
     sdk --> extprotocol
     cargoext --> exthost & protocol
@@ -65,7 +67,9 @@ on it directly. The app doesn't link `rawmakase-mcp`: `rawmakase mcp` runs its
 program, installed beside the app, and `scripts/crate-closures.sh` keeps it
 out of the app's tree. Nor does it link `rawmakase-ai-masks`, the selection
 models or the remote client: the AI masks extension's program, installed beside
-the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
+the app, runs them, and `scripts/deps-crates.txt` keeps them out. Nor does it
+link `rawmakase-lightroom`, the only code that knows where Lightroom and Camera
+Raw keep things.)
 
 | Crate | Owns | Builds without |
 | --- | --- | --- |
@@ -87,6 +91,7 @@ the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
 | `rawmakase-protocol` | What the app and its control clients agree on: protocol version, `control.json` endpoint, data folder | Everything |
 | `rawmakase-ctl` (`tools/`) | The control client, used by `rawmakase control`, the MCP program and the standalone `rawmakase-ctl` | The app |
 | `rawmakase-ai-masks` (`extensions/ai-masks`) | The bundled AI masks extension: its manifest (the `subject` and `sky` mask generators, which claim the provenance masks saved before it record, and `remove-models`) and its program `rawmakase-ai-masks`, which runs the selection models here (through the ONNX Runtime the app bundles) or on the remote worker, and installs their packs in the local data folder's `models`, where the app always installed them, beside AI Denoise's | Every photo, edit, catalog, renderer, decoder or GUI crate, and the extension host |
+| `rawmakase-lightroom` (`extensions/lightroom`) | The bundled Lightroom extension: its manifest and its program `rawmakase-lightroom`, which answers `files.list` with what Adobe's folders hold (catalogs, camera and lens profiles, looks, preset folders) and what Adobe's layout says each is. The app decides what fits a photo or a catalog and imports it with its own importers ([plan](lightroom-extension-plan.md), L5) | Every workspace crate but the SDK |
 | `rawmakase-mcp` (`extensions/mcp`) | The bundled MCP extension: its manifest and its program `rawmakase-mcp`, an MCP server that is a client of the control protocol, which `rawmakase mcp` runs | Every workspace crate but `rawmakase-protocol` and `rawmakase-ctl` |
 | `rawmakase-extension-protocol` | What the app and extensions agree on ([extensions](extensions/overview.md)): the manifest and its schema, the protocol's messages, error codes and bounded line framing, host-drawn controls, and the SQLite schema of the plan an importer writes for the core (`plan::SCHEMA`, its version and its rules) | Every other workspace crate |
 | `rawmakase-extension` | The SDK extension programs are written with: the channel, the run loop, handler traits, receiving and mapping the buffers the app passes (`shm`), a mock host for tests that passes them as the app does, and with the `importer` feature the importer's handler (it writes the plan with its own SQLite) | Everything but the extension protocol |

@@ -2,7 +2,7 @@
 # programs and the licenses. The C runtime is linked in, so no Visual C++
 # Redistributable is needed.
 #
-#   pwsh packaging/windows/stage.ps1 target\release\rawmakase.exe dist\windows -Programs target\release\rawmakase-mcp.exe, target\release\rawmakase-midi.exe, target\release\rawmakase-ai-masks.exe
+#   pwsh packaging/windows/stage.ps1 target\release\rawmakase.exe dist\windows -Programs target\release\rawmakase-mcp.exe, target\release\rawmakase-midi.exe, target\release\rawmakase-ai-masks.exe, target\release\rawmakase-lightroom.exe
 #
 # Fails the build if the executable or a program imports any DLL that is not
 # part of Windows. Stages natively for this Windows' architecture: x64 or ARM64.
@@ -10,8 +10,8 @@ param(
     [Parameter(Mandatory)][string]$Executable,
     [Parameter(Mandatory)][string]$Output,
     # Bundled extensions' programs (rawmakase-mcp.exe, rawmakase-midi.exe,
-    # rawmakase-ai-masks.exe), installed beside the executable, where the app
-    # looks for them.
+    # rawmakase-ai-masks.exe, rawmakase-lightroom.exe), installed beside the
+    # executable, where the app looks for them.
     [string[]]$Programs = @()
 )
 $ErrorActionPreference = 'Stop'

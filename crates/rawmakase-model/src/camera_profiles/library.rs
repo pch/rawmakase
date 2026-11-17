@@ -750,57 +750,28 @@ fn module_of_camera(name: &str, m: &Metadata) -> bool {
     })
 }
 
-/// Adobe's own profiles for this camera from a local Lightroom / Camera Raw
-/// installation (Adobe Standard plus Camera Matching), skipping ones already
-/// in the library, so the app can offer to import them. Nothing is read from
-/// those folders otherwise; rendering only sees imported profiles.
-pub fn adobe_installed(m: &Metadata) -> Vec<std::path::PathBuf> {
-    let root = Path::new(if cfg!(target_os = "macos") {
-        "/Library/Application Support/Adobe/CameraRaw/CameraProfiles"
-    } else if cfg!(windows) {
-        "C:\\ProgramData\\Adobe\\CameraRaw\\CameraProfiles"
-    } else {
-        return Vec::new();
-    });
-    // Every Adobe Standard whose camera fits the photo, under the names Adobe
-    // uses for it (see `CameraProfile::ensure_camera`), every module's for a phone
-    // so photos from its other cameras fit too, and its Camera Matching folder.
-    let fits = |name: &str| super::camera_fits(name, m) || module_of_camera(name, m);
-    let mut paths = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(root.join("Adobe Standard")) {
-        paths.extend(entries.flatten().map(|e| e.path()).filter(|p| {
-            p.file_stem()
-                .and_then(|s| s.to_str())
-                .and_then(|s| {
-                    let lower = s.to_ascii_lowercase();
-                    let end = lower
-                        .rfind(" adobe standard")
-                        .or_else(|| lower.rfind(" adobe_standard"))?;
-                    Some(s[..end].to_string())
-                })
-                .is_some_and(|camera| fits(&camera))
-        }));
-    }
-    if let Ok(entries) = std::fs::read_dir(root.join("Camera")) {
-        for dir in entries.flatten().map(|e| e.path()) {
-            if dir
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| super::camera_fits(n, m))
-                && let Ok(files) = std::fs::read_dir(&dir)
-            {
-                paths.extend(files.flatten().map(|e| e.path()));
-            }
-        }
-    }
-    let installed = crate::storage::data_dir().join("camera-profiles");
-    paths
+/// Of Adobe's camera profiles, each with the camera Adobe's folders say it is
+/// for (`listed`), those that fit this photo's camera and aren't in `library`
+/// yet, for the app to offer to import: every Adobe Standard and Camera
+/// Matching profile whose camera fits, under the names Adobe uses for it (see
+/// `CameraProfile::ensure_camera`), and every module's for a phone, so
+/// photos from its other cameras fit too. Nothing is read from Adobe's
+/// folders; rendering only sees imported profiles.
+pub fn adobe_offered<'a>(
+    listed: impl IntoIterator<Item = (&'a str, &'a Path)>,
+    m: &Metadata,
+    library: &Path,
+) -> Vec<std::path::PathBuf> {
+    listed
         .into_iter()
-        .filter(|p| {
-            p.is_file()
-                && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("dcp"))
-                && p.file_name().is_some_and(|n| !installed.join(n).exists())
+        .filter(|(camera, path)| {
+            (super::camera_fits(camera, m) || module_of_camera(camera, m))
+                && path
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("dcp"))
+                && path.file_name().is_some_and(|n| !library.join(n).exists())
         })
+        .map(|(_, path)| path.to_path_buf())
         .collect()
 }
 #[cfg(test)]

@@ -3928,6 +3928,7 @@ dependencies = [
  "rawmakase-fs",
  "rawmakase-inference",
  "rawmakase-interop",
+ "rawmakase-lightroom",
  "rawmakase-midi",
  "rawmakase-model",
  "rawmakase-model-install",
@@ -4187,6 +4188,15 @@ dependencies = [
  "rawmakase-model",
  "roxmltree 0.21.2",
  "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "rawmakase-lightroom"
+version = "0.6.0"
+dependencies = [
+ "rawmakase-extension",
  "serde_json",
  "tempfile",
 ]

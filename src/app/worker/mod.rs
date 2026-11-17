@@ -250,7 +250,7 @@ pub(crate) enum Event {
         analysed: Box<Recipe>,
         result: Result<Option<f32>, String>,
     },
-    /// The setup assistant's scan for cameras, profiles and presets.
+    /// The setup view's scan of the Lightroom extension's listing.
     OnboardingScanned {
         generation: u64,
         found: Box<crate::app::catalog::onboarding::Found>,

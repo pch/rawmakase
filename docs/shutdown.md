@@ -115,7 +115,7 @@ proposals of photos not open in Develop.
 
 One-shot jobs stay detached: Auto, Upright, Auto straighten, Profile → Fit Camera
 Look, the Point Color and
-Targeted Adjustment samples, the onboarding scan, catalog open and import, file
+Targeted Adjustment samples, catalog open and import, file
 dialogs, bulk import, the preset scan, batch edits (Sync Settings, Auto Settings or a
 preset on the Library's selection; their Cancel is taken between photos and right
 before saving, discards the whole batch, and the batch ends only when its worker

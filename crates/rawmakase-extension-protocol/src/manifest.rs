@@ -29,10 +29,16 @@ pub const RETOUCH_GENERATOR_API: u32 = 3;
 /// The first `api` that reads `[[importer]]`. Its framing and handle rules
 /// are API 2's.
 pub const IMPORTER_API: u32 = 4;
+/// The first `api` whose programs may be sent `files.list`.
+pub const FILES_API: u32 = 4;
 
 /// The bundled extension that may claim the provenance Select Subject and
 /// Select Sky saved before extensions existed.
 pub const AI_MASKS: &str = "rawmakase.ai-masks";
+
+/// The bundled extension that lists Adobe's folders (`files.list`): where
+/// Lightroom and Camera Raw keep catalogs, profiles and presets.
+pub const LIGHTROOM: &str = "rawmakase.lightroom";
 
 /// The provenance values saved masks already carry, which only [`AI_MASKS`]
 /// may claim.

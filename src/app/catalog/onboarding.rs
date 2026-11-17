@@ -1,9 +1,13 @@
 //! Bringing over a Lightroom library: its catalog, camera and lens profiles
 //! and presets, offered on a first launch where Lightroom's are found; and the
-//! Library's start while it has no photos.
+//! Library's start while it has no photos. What Adobe's folders hold comes
+//! from the Lightroom extension's listing (`app::extensions::adobe_files`);
+//! this view picks what fits the catalog's cameras and imports it with the
+//! app's importers.
 use crate::app::Editor;
 use crate::app::Module;
-use crate::app::presets::bulk_import::{ImportKind, LIGHTROOM_PRESETS, Summary, find_files};
+use crate::app::extensions::adobe_files::entries;
+use crate::app::presets::bulk_import::{ImportKind, Summary, find_files};
 use crate::app::shell::dialogs::{CatalogDialog, FileDialog, FolderAction};
 use crate::app::task::Task;
 use crate::app::ui::design::{self, Tone, radius, space, text};
@@ -12,45 +16,24 @@ use crate::app::ui::widgets::pretty_path;
 use crate::app::worker::Event;
 use crate::catalog::CatalogLocation;
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
-use rawmakase_cancel::Cancel;
+use rawmakase_extensions::protocol::method::{FileKind, FileOrigin, FilesListed, Searched};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 
-/// Camera Raw's shared folder, installed with Lightroom for all users. It
-/// holds Adobe's camera profiles and the Adobe looks (Adobe Color…).
-fn shared_camera_raw() -> Option<PathBuf> {
-    let path = if cfg!(target_os = "macos") {
-        PathBuf::from("/Library/Application Support/Adobe/CameraRaw")
-    } else if cfg!(windows) {
-        PathBuf::from("C:\\ProgramData\\Adobe\\CameraRaw")
-    } else {
-        return None;
-    };
-    path.is_dir().then_some(path)
-}
-/// Camera Raw's per-user folder: your presets and third-party profiles.
-fn user_camera_raw() -> Option<PathBuf> {
-    let path = if cfg!(target_os = "macos") {
-        PathBuf::from(std::env::var_os("HOME")?).join("Library/Application Support/Adobe/CameraRaw")
-    } else if cfg!(windows) {
-        PathBuf::from(std::env::var_os("APPDATA")?).join("Adobe\\CameraRaw")
-    } else {
-        return None;
-    };
-    path.is_dir().then_some(path)
-}
-/// What the setup view shows and the scan it runs when it opens.
+/// What the setup view shows and what it found when it opened.
 #[derive(Default)]
 pub(in crate::app) struct Onboarding {
     pub(in crate::app) visible: bool,
     scanned: bool,
     scanned_for: Option<CatalogLocation>,
+    /// The listing of Adobe's folders it last scanned
+    /// ([`AdobeFiles::generation`](crate::app::extensions::adobe_files::AdobeFiles::generation)).
+    scanned_listing: u64,
     /// How many times the catalog had saved photo info read from files when
     /// it last scanned; a later save may add cameras.
     info_saves: u64,
-    /// The scan under way; it walks Camera Raw's folders, thousands of files,
-    /// so it runs off the UI thread and arrives as [`Event::OnboardingScanned`].
+    /// The scan under way: counting the presets reads their folders, so it
+    /// runs off the UI thread and arrives as [`Event::OnboardingScanned`].
     scan: Task,
     found: Found,
     /// The last import of each kind started here, shown in its row.
@@ -63,7 +46,7 @@ pub(in crate::app) struct Onboarding {
     /// the view scans.
     imported_from: Vec<PathBuf>,
 }
-/// What the setup view found on disk, refreshed when it opens.
+/// What the setup view found in Adobe's folders, refreshed when it opens.
 #[derive(Default)]
 pub(crate) struct Found {
     /// The catalog's cameras as Adobe names them ("Sony ILCE-7CR").
@@ -76,25 +59,19 @@ pub(crate) struct Found {
     /// Adobe lens profiles for the catalog's camera makers and common
     /// third-party lens brands, plus your own lens profiles.
     lens_profiles: Vec<PathBuf>,
-    /// Models the catalog records that Adobe has no profiles for, to match
-    /// your own profiles by.
-    models: Vec<String>,
     /// Makers of the catalog's cameras, e.g. "Sony".
     makers: BTreeSet<String>,
     /// The folders presets are imported from: Camera Raw's, where Lightroom
     /// Classic keeps them, then each Adobe account's in Lightroom's library.
     preset_folders: Vec<PathBuf>,
-    user_presets: Vec<PathBuf>,
+    /// How many presets they hold.
+    user_presets: usize,
     /// Lightroom catalogs where Lightroom keeps them, the latest used first.
     catalogs: Vec<PathBuf>,
+    /// Where the Lightroom extension looked, for each row to say.
+    searched: Vec<Searched>,
 }
 impl Onboarding {
-    pub(in crate::app) fn new(visible: bool) -> Self {
-        Self {
-            visible,
-            ..Default::default()
-        }
-    }
     fn scanning(&self) -> bool {
         self.scan.is_running()
     }
@@ -109,73 +86,6 @@ impl Onboarding {
     fn result(&self, kind: ImportKind) -> Option<&Summary> {
         self.results.iter().find(|r| r.kind == kind)
     }
-}
-fn pictures() -> Option<PathBuf> {
-    let home = if cfg!(windows) {
-        std::env::var_os("USERPROFILE")?
-    } else {
-        std::env::var_os("HOME")?
-    };
-    Some(PathBuf::from(home).join("Pictures"))
-}
-/// The folder Lightroom Classic keeps its catalog in unless told otherwise.
-fn lightroom_folder() -> Option<PathBuf> {
-    Some(pictures()?.join("Lightroom"))
-}
-/// The library Lightroom (not Classic) keeps unless it was moved in
-/// Lightroom's preferences. Lightroom doesn't say where it was moved to.
-fn lightroom_library() -> Option<PathBuf> {
-    Some(pictures()?.join("Lightroom Library.lrlibrary"))
-}
-/// The presets Lightroom syncs, one folder for each Adobe account's folder
-/// in `library`.
-fn lightroom_presets(library: &std::path::Path) -> Vec<PathBuf> {
-    let mut found: Vec<PathBuf> = std::fs::read_dir(library)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.path().join(LIGHTROOM_PRESETS))
-        .filter(|p| p.is_dir())
-        .collect();
-    found.sort();
-    found
-}
-/// Where presets are imported from: Camera Raw's folder, then Lightroom's.
-fn preset_folders() -> Vec<PathBuf> {
-    let classic = user_camera_raw().map(|user| user.join("Settings"));
-    let synced = lightroom_library().map(|l| lightroom_presets(&l));
-    classic
-        .into_iter()
-        .chain(synced.into_iter().flatten())
-        .collect()
-}
-/// The Lightroom catalogs in Lightroom's folder, the latest used first.
-fn lightroom_catalogs() -> Vec<PathBuf> {
-    let Some(folder) = lightroom_folder() else {
-        return Vec::new();
-    };
-    let mut found: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(folder)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e == "lrcat") && p.is_file())
-        .map(|p| {
-            let used = p.metadata().and_then(|m| m.modified());
-            (used.unwrap_or(std::time::UNIX_EPOCH), p)
-        })
-        .collect();
-    found.sort_by_key(|(used, _)| std::cmp::Reverse(*used));
-    found.into_iter().map(|(_, p)| p).collect()
-}
-/// Whether this computer has something of Lightroom's to bring over: its
-/// catalog, Camera Raw's profiles and presets or Lightroom's synced presets.
-/// A first launch opens the setup view only then.
-pub(in crate::app) fn lightroom_here() -> bool {
-    shared_camera_raw().is_some()
-        || user_camera_raw().is_some()
-        || !lightroom_catalogs().is_empty()
-        || lightroom_library().is_some_and(|l| !lightroom_presets(&l).is_empty())
 }
 /// The full name `model` goes by among `names`, which spell out the maker:
 /// Lightroom records "ILCE-7M2" where Adobe's profiles say "Sony ILCE-7M2", but
@@ -198,33 +108,24 @@ fn shares_model(model: &str, names: &[String]) -> bool {
     let suffix = format!(" {}", model.to_lowercase());
     names.iter().any(|n| n.to_lowercase().ends_with(&suffix))
 }
-/// The cameras Adobe has profiles for, as its folders and files name them.
-fn adobe_cameras(profiles: &std::path::Path) -> Vec<String> {
-    let names = |dir: PathBuf| {
-        std::fs::read_dir(dir)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.file_name().to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-    };
-    let mut cameras = names(profiles.join("Camera"));
-    cameras.extend(
-        names(profiles.join("Adobe Standard"))
-            .into_iter()
-            .filter_map(|n| n.strip_suffix(" Adobe Standard.dcp").map(str::to_string)),
-    );
-    cameras
-}
 impl Found {
-    /// What there is for `models`, the cameras the catalog records.
-    fn scan(models: &[String], cancel: Cancel<'_>) -> Self {
-        let mut found = Self::default();
-        let shared = shared_camera_raw();
-        let known = shared
-            .as_ref()
-            .map(|s| adobe_cameras(&s.join("CameraProfiles")))
-            .unwrap_or_default();
+    /// What `listed` holds for `models`, the cameras the catalog records.
+    /// It counts the presets in the preset folders, which reads them: off
+    /// the UI thread.
+    fn scan(models: &[String], listed: &FilesListed) -> Self {
+        let mut found = Self {
+            searched: listed.searched.clone(),
+            ..Self::default()
+        };
+        let of = |kind, origin| {
+            entries(listed).filter(move |e| e.folder.kind == kind && e.folder.origin == origin)
+        };
+        let adobe = || of(FileKind::CameraProfile, FileOrigin::Shared);
+        let known: Vec<String> = adobe()
+            .filter_map(|e| e.camera.map(str::to_string))
+            .collect();
+        // Models Adobe has no profiles for, to match your own profiles by.
+        let mut others = Vec::new();
         for model in models {
             match full_name(model, &known) {
                 Some(name) => {
@@ -232,115 +133,81 @@ impl Found {
                 }
                 // Without Adobe's profiles to name the maker, the model is all
                 // there is.
-                None if shared.is_none() => {
+                None if known.is_empty() => {
                     found.cameras.insert(model.clone());
                 }
                 // A camera Adobe lacks may still have profiles of yours; one
                 // several makers share ("M10") is left out rather than guessed.
-                None if !shares_model(model, &known) => found.models.push(model.clone()),
+                None if !shares_model(model, &known) => others.push(model),
                 None => {}
             }
         }
-        found.find_on_disk(cancel);
-        found.catalogs = lightroom_catalogs();
-        found
-    }
-    /// Camera Raw's profiles and presets, narrowed to the cameras found.
-    /// Stops early once `cancel` is set, as the result is then dropped.
-    fn find_on_disk(&mut self, cancel: Cancel<'_>) {
-        let cancelled = || cancel.is_cancelled();
-        if let Some(shared) = shared_camera_raw() {
-            let profiles = shared.join("CameraProfiles");
-            for camera in &self.cameras {
-                let base = profiles
-                    .join("Adobe Standard")
-                    .join(format!("{camera} Adobe Standard.dcp"));
-                if base.is_file() {
-                    self.adobe_profiles.push(base);
-                }
-                self.adobe_profiles.extend(find_files(
-                    &profiles.join("Camera").join(camera),
-                    &["dcp"],
-                    &[],
-                ));
-            }
-            if !self.adobe_profiles.is_empty() {
-                // Looks last: they need their base profile in the same import.
-                self.adobe_profiles.extend(find_files(
-                    &shared.join("Settings/Adobe/Profiles/Adobe Raw"),
-                    &["xmp"],
-                    &[],
-                ));
-            }
+        // Adobe Standard, then Camera Matching, for each camera.
+        for camera in &found.cameras {
+            let fits = adobe().filter(|e| e.camera == Some(camera.as_str()));
+            found.adobe_profiles.extend(fits.map(|e| e.path));
         }
-        if cancelled() {
-            return;
+        if !found.adobe_profiles.is_empty() {
+            // Looks last: they need their base profile in the same import.
+            let looks = of(FileKind::Look, FileOrigin::Shared);
+            found.adobe_profiles.extend(looks.map(|e| e.path));
         }
-        self.makers = self
+        found.makers = found
             .cameras
             .iter()
             .filter_map(|c| c.split_whitespace().next())
             .map(str::to_string)
             .collect();
-        if let Some(shared) = shared_camera_raw()
-            && !self.makers.is_empty()
-            && let Ok(entries) = std::fs::read_dir(shared.join("LensProfiles/1.0"))
-        {
-            // Adobe groups lens profiles by maker; the camera maker's own
-            // lenses plus the usual third-party brands cover most kits
-            // without importing thousands of profiles.
-            const THIRD_PARTY: [&str; 12] = [
-                "Sigma",
-                "Tamron",
-                "Samyang",
-                "Rokinon",
-                "Zeiss",
-                "Tokina",
-                "Viltrox",
-                "Voigtlander",
-                "Laowa",
-                "TTArtisan",
-                "7Artisans",
-                "Sirui",
-            ];
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_lowercase();
-                if self.makers.iter().any(|m| m.to_lowercase() == name)
-                    || THIRD_PARTY.iter().any(|b| b.to_lowercase() == name)
-                {
-                    self.lens_profiles
-                        .extend(find_files(&entry.path(), &["lcp"], &[]));
-                }
-            }
-        }
-        if cancelled() {
-            return;
-        }
-        let user = user_camera_raw();
-        if let Some(user) = &user {
-            self.lens_profiles
-                .extend(find_files(&user.join("LensProfiles"), &["lcp"], &[]));
-        }
+        // Adobe groups lens profiles by maker; the camera maker's own lenses
+        // plus the usual third-party brands cover most kits without importing
+        // thousands of profiles.
+        const THIRD_PARTY: [&str; 12] = [
+            "Sigma",
+            "Tamron",
+            "Samyang",
+            "Rokinon",
+            "Zeiss",
+            "Tokina",
+            "Viltrox",
+            "Voigtlander",
+            "Laowa",
+            "TTArtisan",
+            "7Artisans",
+            "Sirui",
+        ];
+        let wanted = |group: &str| {
+            let group = group.to_lowercase();
+            found.makers.iter().any(|m| m.to_lowercase() == group)
+                || THIRD_PARTY.iter().any(|b| b.to_lowercase() == group)
+        };
+        found.lens_profiles = of(FileKind::LensProfile, FileOrigin::Shared)
+            .filter(|e| !found.makers.is_empty() && e.folder.group.as_deref().is_some_and(wanted))
+            .chain(of(FileKind::LensProfile, FileOrigin::User))
+            .map(|e| e.path)
+            .collect();
         // Third-party packs ship a DCP per camera model, often thousands in all;
         // only those for the catalog's cameras are useful. Without a catalog,
         // take them all.
-        let cameras: Vec<String> = self.cameras.iter().chain(&self.models).cloned().collect();
-        self.user_profiles = user
-            .as_ref()
-            .map(|d| find_files(&d.join("CameraProfiles"), &["dcp"], &[]))
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|p| {
-                let name = p.file_name().unwrap_or_default().to_string_lossy();
+        let cameras: Vec<&String> = found.cameras.iter().chain(others).collect();
+        found.user_profiles = of(FileKind::CameraProfile, FileOrigin::User)
+            .filter(|e| {
+                let name = e.path.file_name().unwrap_or_default().to_string_lossy();
                 cameras.is_empty() || cameras.iter().any(|c| names_camera(&name, c))
             })
+            .map(|e| e.path)
             .collect();
-        self.preset_folders = preset_folders();
-        self.user_presets = self
+        found.preset_folders = of(FileKind::Presets, FileOrigin::User)
+            .map(|e| e.path)
+            .collect();
+        found.user_presets = found
             .preset_folders
             .iter()
-            .flat_map(|d| find_files(d, &["xmp"], &["Defaults", "GPU"]))
-            .collect();
+            .map(|d| find_files(d, &["xmp"], &["Defaults", "GPU"]).len())
+            .sum();
+        let mut catalogs: Vec<_> = of(FileKind::Catalog, FileOrigin::User).collect();
+        catalogs.sort_by_key(|e| std::cmp::Reverse(e.used.unwrap_or(0)));
+        found.catalogs = catalogs.into_iter().map(|e| e.path).collect();
+        found
     }
 }
 
@@ -352,12 +219,19 @@ impl Editor {
             .as_ref()
             .map(|l| l.session.catalog().location().clone());
         // And once the catalog has read cameras from new photos' files, when
-        // the reader is done rather than at each of its saves.
+        // the reader is done rather than at each of its saves; and for each
+        // new listing of Adobe's folders.
         let read = self.library.as_ref().is_some_and(|l| {
             !l.reading_photo_info() && l.photo_info_saves() != self.onboarding.info_saves
         }) && !self.onboarding.scanning();
-        if !self.onboarding.scanned || self.onboarding.scanned_for != catalog || read {
-            self.start_onboarding_scan(catalog);
+        self.adobe_files();
+        if !self.adobe_files.asking()
+            && (!self.onboarding.scanned
+                || self.onboarding.scanned_for != catalog
+                || self.onboarding.scanned_listing != self.adobe_files.generation()
+                || read)
+        {
+            self.onboarding_scan(catalog);
         }
         let ctx = ui.ctx().clone();
         let area = egui::CentralPanel::default()
@@ -404,14 +278,13 @@ impl Editor {
         ui.add_space(space::XXXL);
 
         let enabled = !self.activity.is_busy() && self.importing.is_none();
-        let scanning = self.onboarding.scanning();
         let mut catalog_action = None;
         let mut chosen = None;
         let rows = [
             self.catalog_row(),
-            self.import_row(ImportKind::CameraProfiles, scanning),
-            self.import_row(ImportKind::LensProfiles, scanning),
-            self.import_row(ImportKind::Presets, scanning),
+            self.import_row(ImportKind::CameraProfiles),
+            self.import_row(ImportKind::LensProfiles),
+            self.import_row(ImportKind::Presets),
         ];
         let palette = theme::palette(ui.ctx());
         egui::Frame::new()
@@ -552,9 +425,13 @@ impl Editor {
             );
             row.import = Some("Import".into());
         } else {
-            row.status = match lightroom_folder() {
-                Some(folder) => format!("None in {}", pretty_path(&folder)),
-                None => "None found".into(),
+            row.status = match (
+                self.adobe_files.failure(),
+                self.onboarding.found.looked_in(FileKind::Catalog).first(),
+            ) {
+                (Some(why), _) => format!("Couldn't look in Lightroom's folders: {why}"),
+                (None, Some(folder)) => format!("None in {folder}"),
+                (None, None) => "None found".into(),
             };
         }
         if let Some(error) = &self.onboarding.catalog_error
@@ -568,27 +445,25 @@ impl Editor {
 
     /// The row of profiles or presets of `kind`: what the scan found, the
     /// import under way, or the last one's result.
-    fn import_row(&self, kind: ImportKind, scanning: bool) -> Row {
+    fn import_row(&self, kind: ImportKind) -> Row {
         let found = &self.onboarding.found;
-        let shared = shared_camera_raw();
-        let user = user_camera_raw();
         let (title, detail, n, hover) = match kind {
             ImportKind::CameraProfiles | ImportKind::Luts(_) => (
                 "Camera profiles",
                 "Starting looks such as Adobe Color, for your cameras.",
                 found.adobe_profiles.len() + found.user_profiles.len(),
-                folders(&[&shared, &user], "CameraProfiles"),
+                looks_in(found.looked_in(FileKind::CameraProfile)),
             ),
             ImportKind::LensProfiles => (
                 "Lens profiles",
                 "Distortion and vignetting corrections for your lenses.",
                 found.lens_profiles.len(),
-                folders(&[&shared, &user], "LensProfiles"),
+                looks_in(found.looked_in(FileKind::LensProfile)),
             ),
             ImportKind::Presets => (
                 "Presets",
                 "Your develop presets, in their groups.",
-                found.user_presets.len(),
+                found.user_presets,
                 looks_in(
                     found
                         .preset_folders
@@ -627,9 +502,13 @@ impl Editor {
             if result.has_details() {
                 row.hover = Some(result.details(8));
             }
-        } else if scanning && n == 0 {
+        } else if (self.adobe_files.asking() || self.onboarding.scanning()) && n == 0 {
             row.mark = Mark::Working;
             row.status = "Looking…".into();
+        } else if !self.extensions.lightroom_enabled() {
+            row.status = "The Lightroom extension, which finds these, is off".into();
+        } else if let Some(why) = self.adobe_files.failure() {
+            row.status = format!("Couldn't look in Lightroom's folders: {why}");
         } else if row.hover.is_none() {
             row.status = "Lightroom's folders aren't on this computer".into();
         } else if n == 0 && kind == ImportKind::LensProfiles && found.makers.is_empty() {
@@ -784,6 +663,7 @@ impl Editor {
     /// Hides the view; `done` records that setup is complete so it stays hidden.
     fn finish_onboarding(&mut self, done: bool) {
         self.onboarding.visible = false;
+        self.adobe_files.first_launch = false;
         self.session.onboarding_done = done;
         self.module = if self.library.is_some() {
             Module::Library
@@ -792,8 +672,8 @@ impl Editor {
         };
         let _ = self.save_session();
     }
-    /// Scans in the background; until the result arrives the steps say so.
-    fn start_onboarding_scan(&mut self, catalog: Option<CatalogLocation>) {
+    /// Works out what the listing holds for the open catalog.
+    fn onboarding_scan(&mut self, catalog: Option<CatalogLocation>) {
         // The catalog already records each photo's camera; no RAW is opened.
         let models = self
             .library
@@ -809,16 +689,15 @@ impl Editor {
         let (generation, cancel) = self.onboarding.scan.start();
         self.onboarding.scanned = true;
         self.onboarding.scanned_for = catalog;
+        self.onboarding.scanned_listing = self.adobe_files.generation();
         self.onboarding.found = Found::default();
-        let tx = self.tx.clone();
-        let ctx = self.context.clone();
+        let listed = self.adobe_files.listed().cloned().unwrap_or_default();
+        let (tx, ctx) = (self.tx.clone(), self.context.clone());
         std::thread::spawn(move || {
-            let found = Found::scan(&models, Cancel::new(&cancel));
-            if !cancel.load(Ordering::Relaxed) {
-                let _ = tx.send(Event::OnboardingScanned {
-                    generation,
-                    found: Box::new(found),
-                });
+            let found = Found::scan(&models, &listed);
+            if !cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                let found = Box::new(found);
+                let _ = tx.send(Event::OnboardingScanned { generation, found });
                 ctx.request_repaint();
             }
         });
@@ -830,10 +709,14 @@ impl Editor {
             self.onboarding.found = found;
         }
     }
+    /// Opens the view, which lists Adobe's folders again. A first launch's
+    /// listing no longer decides whether it opens.
     pub(in crate::app) fn open_onboarding(&mut self) {
         self.onboarding.visible = true;
         self.onboarding.scanned = false;
         self.onboarding.results.clear();
+        self.adobe_files.first_launch = false;
+        self.adobe_files.relist();
     }
 }
 
@@ -1033,15 +916,12 @@ fn mark(ui: &mut egui::Ui, center: egui::Pos2, mark: Mark) {
         }
     }
 }
-/// The folders of `subfolder` under each of `dirs` that exist, one a line,
-/// for a row's hover; None when there are none.
-fn folders(dirs: &[&Option<PathBuf>], subfolder: &str) -> Option<String> {
-    looks_in(
-        dirs.iter()
-            .filter_map(|dir| dir.as_ref())
-            .map(|dir| pretty_path(&dir.join(subfolder)))
-            .collect(),
-    )
+impl Found {
+    /// The folders the Lightroom extension looked in for `kind`, as shown.
+    fn looked_in(&self, kind: FileKind) -> Vec<String> {
+        let paths = self.searched.iter().filter(|s| s.kind == kind);
+        paths.map(|s| pretty_path(&s.path)).collect()
+    }
 }
 /// A row's hover listing `lines`, the folders it looks in; None without any.
 fn looks_in(lines: Vec<String>) -> Option<String> {
@@ -1138,59 +1018,320 @@ fn secondary(ui: &mut egui::Ui, label: &str) -> egui::Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rawmakase_extensions::protocol::manifest::LIGHTROOM;
+
+    /// For the fake install, what setup found before the listing came from
+    /// the extension, by the catalog's cameras, relative to the roots: frozen
+    /// from that code run on the same install.
+    #[test]
+    fn setup_finds_what_it_found_on_disk_before() {
+        use rawmakase_lightroom::fake::{Layout, install};
+        let v = |paths: &[&str]| paths.iter().map(|p| p.to_string()).collect::<Vec<_>>();
+        let set = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<BTreeSet<_>>();
+        let sony = v(&[
+            "shared/CameraProfiles/Adobe Standard/Sony ILCE-7M2 Adobe Standard.dcp",
+            "shared/CameraProfiles/Camera/Sony ILCE-7M2/Sony ILCE-7M2 Camera Standard.dcp",
+            "shared/CameraProfiles/Camera/Sony ILCE-7M2/Sony ILCE-7M2 Camera Vivid.dcp",
+            "shared/Settings/Adobe/Profiles/Adobe Raw/Adobe Color.xmp",
+            "shared/Settings/Adobe/Profiles/Adobe Raw/Adobe Portrait.xmp",
+        ]);
+        let sony_lenses = v(&[
+            "shared/LensProfiles/1.0/Sigma/SIGMA 35mm F1.4 DG DN A.lcp",
+            "shared/LensProfiles/1.0/Sony/Sony FE 24-70mm F2.8 GM.lcp",
+            "user/LensProfiles/1.0/My Lens.lcp",
+        ]);
+        let portra = "user/CameraProfiles/Sony ILCE-7M2 Portra 400 SO.dcp";
+        let velvia = "user/CameraProfiles/Fujifilm X-T5 Velvia.dcp";
+        // Cameras, makers, Adobe's profiles, yours and lens profiles.
+        type Expected = (
+            BTreeSet<String>,
+            BTreeSet<String>,
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+        );
+        let cases: [(&[&str], Expected); 4] = [
+            (
+                &[],
+                (
+                    set(&[]),
+                    set(&[]),
+                    v(&[]),
+                    v(&[velvia, portra]),
+                    v(&["user/LensProfiles/1.0/My Lens.lcp"]),
+                ),
+            ),
+            (
+                &["ILCE-7M2"],
+                (
+                    set(&["Sony ILCE-7M2"]),
+                    set(&["Sony"]),
+                    sony.clone(),
+                    v(&[portra]),
+                    sony_lenses.clone(),
+                ),
+            ),
+            (
+                &["ILCE-7M2", "M10", "X-T5", "EOS R5"],
+                (
+                    set(&["Sony ILCE-7M2"]),
+                    set(&["Sony"]),
+                    sony,
+                    v(&[velvia, portra]),
+                    sony_lenses,
+                ),
+            ),
+            (
+                &["Pixel 7 Pro", "LEICA M10"],
+                (
+                    set(&["Google Pixel 7 Pro", "LEICA M10"]),
+                    set(&["Google", "LEICA"]),
+                    v(&[
+                        "shared/CameraProfiles/Adobe Standard/Google Pixel 7 Pro Adobe Standard.dcp",
+                        "shared/CameraProfiles/Adobe Standard/LEICA M10 Adobe Standard.dcp",
+                        "shared/Settings/Adobe/Profiles/Adobe Raw/Adobe Color.xmp",
+                        "shared/Settings/Adobe/Profiles/Adobe Raw/Adobe Portrait.xmp",
+                    ]),
+                    v(&[]),
+                    v(&[
+                        "shared/LensProfiles/1.0/Sigma/SIGMA 35mm F1.4 DG DN A.lcp",
+                        "user/LensProfiles/1.0/My Lens.lcp",
+                    ]),
+                ),
+            ),
+        ];
+        // Every case finds the same presets and catalogs.
+        let preset_folders = v(&[
+            "user/Settings",
+            "pictures/Lightroom Library.lrlibrary/0a1c/cr_settings",
+            "pictures/Lightroom Library.lrlibrary/b67b/cr_settings",
+        ]);
+        let user_presets = v(&[
+            "user/Settings/Mine.xmp",
+            "user/Settings/My Presets/Warm.xmp",
+            "pictures/Lightroom Library.lrlibrary/0a1c/cr_settings/Other.xmp",
+            "pictures/Lightroom Library.lrlibrary/b67b/cr_settings/Synced.xmp",
+        ]);
+        let catalogs = v(&[
+            "pictures/Lightroom/New.lrcat",
+            "pictures/Lightroom/Old.lrcat",
+        ]);
+        for layout in [Layout::MacOs, Layout::Windows] {
+            let dir = tempfile::tempdir().unwrap();
+            let roots = install(dir.path(), layout).unwrap();
+            let listed = rawmakase_lightroom::list(&roots);
+            let rel = |paths: &[PathBuf]| -> Vec<String> {
+                let under = [
+                    ("shared", &roots.shared),
+                    ("user", &roots.user),
+                    ("pictures", &roots.pictures),
+                ];
+                paths
+                    .iter()
+                    .map(|p| {
+                        under
+                            .iter()
+                            .find_map(|(name, root)| {
+                                let relative = p.strip_prefix(root.as_ref()?).ok()?;
+                                Some(format!(
+                                    "{name}/{}",
+                                    relative.to_string_lossy().replace('\\', "/")
+                                ))
+                            })
+                            .unwrap()
+                    })
+                    .collect()
+            };
+            for (models, expected) in &cases {
+                let models: Vec<String> = models.iter().map(|m| m.to_string()).collect();
+                let found = Found::scan(&models, &listed);
+                let seen = (
+                    found.cameras.clone(),
+                    found.makers.clone(),
+                    rel(&found.adobe_profiles),
+                    rel(&found.user_profiles),
+                    rel(&found.lens_profiles),
+                );
+                assert_eq!(&seen, expected, "{layout:?} {models:?}");
+                assert_eq!(rel(&found.preset_folders), preset_folders, "{layout:?}");
+                assert_eq!(found.user_presets, user_presets.len(), "{layout:?}");
+                assert_eq!(rel(&found.catalogs), catalogs, "{layout:?}");
+            }
+        }
+    }
 
     #[test]
-    fn opening_the_assistant_scans_in_the_background() -> anyhow::Result<()> {
-        let dir = tempfile::tempdir()?;
-        let photos = dir.path().join("photos");
-        std::fs::create_dir(&photos)?;
-        std::fs::write(photos.join("image.ARW"), b"not a raw")?;
-        let catalog = dir.path().join("test.rawmakase");
-        let mut c = crate::catalog::Catalog::create(&catalog)?;
-        c.add_folder(&photos)?;
-        drop(c);
+    fn opening_setup_lists_adobe_s_folders_again_and_follows_the_extension() {
+        use crate::app::extensions::adobe_files::tests::{host, poll_until};
+        let dir = tempfile::tempdir().unwrap();
+        rawmakase_lightroom::fake::install(dir.path(), rawmakase_lightroom::fake::Layout::MacOs)
+            .unwrap();
         let ctx = egui::Context::default();
-        let library = crate::app::library::Library::load(&catalog, ctx.clone())?;
         let mut editor = Editor::with_context(
             &ctx,
             None,
             crate::app::preferences::session::Session::default(),
             None,
         );
-        editor.library = Some(Box::new(library));
-        editor.open_onboarding();
+        editor.extensions = host(dir.path());
+        // A frame, then frames until the scan is done.
         let frame = |editor: &mut Editor| {
-            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-                editor.events(ui.ctx());
-                editor.onboarding_ui(ui);
-            });
-            output.textures_delta.clear();
+            let started = std::time::Instant::now();
+            loop {
+                let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    editor.events(ui.ctx());
+                    editor.onboarding_ui(ui);
+                });
+                output.textures_delta.clear();
+                if !editor.onboarding.scanning() {
+                    break;
+                }
+                assert!(started.elapsed().as_secs() < 30, "the scan never finished");
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
         };
-        // The first frame draws the view and leaves the RAWs to the scan.
+        editor.open_onboarding();
         frame(&mut editor);
-        assert!(editor.onboarding.scanning());
+        assert!(editor.adobe_files.asking());
+        let row = editor.import_row(ImportKind::Presets);
+        assert_eq!(row.status, "Looking…");
+        poll_until(&mut editor, |e| e.adobe_files.listed().is_some());
+        frame(&mut editor);
+        let catalogs = &editor.onboarding.found.catalogs;
+        assert_eq!(catalogs.len(), 2);
+        assert!(catalogs[0].ends_with("New.lrcat"), "the latest used first");
+        assert_eq!(editor.onboarding.found.preset_folders.len(), 3);
+
+        // Opened again, it lists again.
+        let listing = editor.adobe_files.generation();
+        editor.open_onboarding();
+        frame(&mut editor);
+        poll_until(&mut editor, |e| e.adobe_files.listed().is_some());
+        frame(&mut editor);
+        assert!(editor.onboarding.scanned_listing > listing);
+        assert_eq!(
+            editor.onboarding.scanned_listing,
+            editor.adobe_files.generation()
+        );
+        // The rows say where it looked.
+        let hover = editor.import_row(ImportKind::CameraProfiles).hover.unwrap();
+        assert!(hover.starts_with("Looks in\n"), "{hover}");
+        assert_eq!(hover.matches("CameraProfiles").count(), 2, "{hover}");
+
+        // Without Camera Raw's folders or a catalog, they say so.
+        std::fs::remove_dir_all(dir.path().join("Library")).unwrap();
+        std::fs::remove_dir_all(dir.path().join("home")).unwrap();
+        editor.open_onboarding();
+        frame(&mut editor);
+        poll_until(&mut editor, |e| e.adobe_files.listed().is_some());
+        frame(&mut editor);
+        let row = editor.import_row(ImportKind::LensProfiles);
+        assert_eq!(row.status, "Lightroom's folders aren't on this computer");
+        let status = editor.catalog_row().status;
+        assert!(
+            status.starts_with("None in ") && status.ends_with("Lightroom"),
+            "{status}"
+        );
+
+        // With the extension off, nothing is offered from Adobe's folders.
+        editor.extensions.set_enabled(LIGHTROOM, false).unwrap();
+        frame(&mut editor);
+        assert!(editor.onboarding.found.catalogs.is_empty());
+        assert!(editor.onboarding.found.preset_folders.is_empty());
+        let row = editor.import_row(ImportKind::Presets);
+        assert_eq!(row.import, None);
+        assert_eq!(
+            row.status,
+            "The Lightroom extension, which finds these, is off"
+        );
+    }
+
+    /// An editor whose Lightroom extension lists a fake install in `dir`.
+    fn listing_editor(dir: &std::path::Path) -> Editor {
+        rawmakase_lightroom::fake::install(dir, rawmakase_lightroom::fake::Layout::MacOs).unwrap();
+        let ctx = egui::Context::default();
+        let mut editor = Editor::with_context(
+            &ctx,
+            None,
+            crate::app::preferences::session::Session::default(),
+            None,
+        );
+        editor.extensions = crate::app::extensions::adobe_files::tests::host(dir);
+        editor
+    }
+
+    fn draw(editor: &mut Editor) {
+        let ctx = editor.context.clone();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| editor.onboarding_ui(ui));
+        output.textures_delta.clear();
+    }
+
+    /// Takes the scan's result once it is done.
+    fn scanned(editor: &mut Editor) {
+        let ctx = editor.context.clone();
         let started = std::time::Instant::now();
         while editor.onboarding.scanning() {
             assert!(started.elapsed().as_secs() < 30, "the scan never finished");
             std::thread::sleep(std::time::Duration::from_millis(5));
-            frame(&mut editor);
+            editor.events(&ctx);
         }
-        let catalog = CatalogLocation::File(catalog);
-        assert_eq!(editor.onboarding.scanned_for.as_ref(), Some(&catalog));
-        assert!(editor.onboarding.found.cameras.is_empty());
+    }
 
-        // A scan superseded by a later one is ignored.
-        editor.start_onboarding_scan(Some(catalog.clone()));
-        let stale = editor.onboarding.scan.id();
-        editor.start_onboarding_scan(Some(catalog));
-        let found = Found {
-            cameras: BTreeSet::from(["Sony ILCE-7M2".to_string()]),
-            ..Default::default()
-        };
-        editor.onboarding_scanned(stale, found);
+    /// Counting the presets reads their folders, which may be large or on a
+    /// slow disk: the view draws meanwhile, and takes the result later.
+    #[test]
+    fn setup_scans_the_listing_off_the_ui_thread() {
+        use crate::app::extensions::adobe_files::tests::poll_until;
+        let dir = tempfile::tempdir().unwrap();
+        let mut editor = listing_editor(dir.path());
+        editor.open_onboarding();
+        draw(&mut editor);
+        poll_until(&mut editor, |e| e.adobe_files.listed().is_some());
+        draw(&mut editor);
         assert!(editor.onboarding.scanning());
-        assert!(editor.onboarding.found.cameras.is_empty());
-        Ok(())
+        assert_eq!(editor.onboarding.found.user_presets, 0);
+        scanned(&mut editor);
+        assert_eq!(editor.onboarding.found.user_presets, 4);
+    }
+
+    /// Setup opened and finished before a first launch's listing arrives:
+    /// the listing decides nothing any more.
+    #[test]
+    fn finishing_setup_settles_a_first_launch() {
+        use crate::app::extensions::adobe_files::tests::poll_until;
+        let dir = tempfile::tempdir().unwrap();
+        let mut editor = listing_editor(dir.path());
+        editor.session.onboarding_done = false;
+        editor.adobe_files.first_launch = true;
+        assert!(editor.adobe_files().is_none());
+        editor.open_onboarding();
+        editor.finish_onboarding(true);
+        poll_until(&mut editor, |e| e.adobe_files().is_some());
+        assert!(!editor.onboarding.visible);
+        assert!(editor.session.onboarding_done);
+    }
+
+    /// A listing that failed isn't an empty one: the rows say why, and
+    /// opening setup again lists again.
+    #[test]
+    fn a_failed_listing_says_so_and_setup_lists_again() {
+        use crate::app::extensions::adobe_files::tests::poll_until;
+        let dir = tempfile::tempdir().unwrap();
+        let mut editor = listing_editor(dir.path());
+        editor.open_onboarding();
+        draw(&mut editor);
+        editor.extensions.kill_program_for_tests(LIGHTROOM);
+        poll_until(&mut editor, |e| e.adobe_files.failure().is_some());
+        draw(&mut editor);
+        scanned(&mut editor);
+        let failed = "Couldn't look in Lightroom's folders: ";
+        let row = editor.import_row(ImportKind::LensProfiles);
+        assert!(row.status.starts_with(failed), "{}", row.status);
+        assert!(editor.catalog_row().status.starts_with(failed));
+        editor.open_onboarding();
+        draw(&mut editor);
+        poll_until(&mut editor, |e| e.adobe_files.listed().is_some());
+        assert!(editor.adobe_files.failure().is_none());
     }
 
     #[test]
@@ -1219,26 +1360,6 @@ mod tests {
         let row = editor.catalog_row();
         assert!(row.mark == Mark::Done);
         assert_eq!(row.import, None);
-        Ok(())
-    }
-
-    #[test]
-    fn lightroom_s_presets_are_found_for_each_account() -> anyhow::Result<()> {
-        let library = tempfile::tempdir()?;
-        for account in ["b67b", "0a1c"] {
-            std::fs::create_dir_all(library.path().join(account).join("cr_settings"))?;
-        }
-        // An account folder without synced presets, and the library's own files.
-        std::fs::create_dir_all(library.path().join("9f3e/cr_defaults"))?;
-        std::fs::write(library.path().join("previews.db"), "")?;
-        assert_eq!(
-            lightroom_presets(library.path()),
-            [
-                library.path().join("0a1c/cr_settings"),
-                library.path().join("b67b/cr_settings"),
-            ]
-        );
-        assert!(lightroom_presets(&library.path().join("missing")).is_empty());
         Ok(())
     }
 

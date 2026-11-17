@@ -225,6 +225,27 @@ pub(in crate::app) fn controls_frame(
         .expect("accessibility is on")
 }
 
+/// Opens the Profile menu; returns the frame showing it.
+pub(in crate::app) fn open_profile_menu(
+    ctx: &egui::Context,
+    editor: &mut Editor,
+) -> egui::accesskit::TreeUpdate {
+    let tree = controls_frame(ctx, editor, vec![]);
+    let profile = tree
+        .nodes
+        .iter()
+        .map(|(_, n)| n)
+        .find(|n| {
+            n.role() == egui::accesskit::Role::ComboBox
+                && n.value() == Some("Default (camera matrix)")
+        })
+        .expect("Profile menu");
+    let [down, up] = press_and_release(centre(profile));
+    controls_frame(ctx, editor, down);
+    controls_frame(ctx, editor, up);
+    controls_frame(ctx, editor, vec![])
+}
+
 pub(in crate::app) fn press_and_release(at: Pos2) -> [Vec<egui::Event>; 2] {
     [true, false].map(|pressed| {
         vec![
@@ -244,8 +265,8 @@ pub(in crate::app) fn centre(node: &egui::accesskit::Node) -> Pos2 {
     Pos2::new(((b.x0 + b.x1) / 2.) as f32, ((b.y0 + b.y1) / 2.) as f32)
 }
 
-/// A Develop panel for a photo of `model`, with Adobe's installation scanned as
-/// holding nothing, so the panel never depends on what this machine has installed.
+/// A Develop panel for a photo of `model`. A test editor has no Lightroom
+/// extension, so the panel never depends on what this machine has installed.
 pub(in crate::app) fn community_editor(ctx: &egui::Context, model: &str, rendered: bool) -> Editor {
     ctx.enable_accesskit();
     ctx.all_styles_mut(|s| s.animation_time = 0.);
@@ -259,12 +280,6 @@ pub(in crate::app) fn community_editor(ctx: &egui::Context, model: &str, rendere
             Default::default()
         },
         ..Default::default()
-    });
-    ctx.data_mut(|d| {
-        d.insert_temp(
-            egui::Id::new(("adobe-profiles", "Fujifilm", model)),
-            Vec::<std::path::PathBuf>::new(),
-        );
     });
     // Nor on the profile library's files.
     editor.assume_catalogue_profiles_available();

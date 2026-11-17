@@ -606,18 +606,20 @@ impl Editor {
             megabytes: crate::model_install::Pack::Denoise.megabytes(),
             status: self.document.ai.status().cloned(),
         };
-        // Cached per camera: this scans Adobe's profile folders.
-        let adobe_key = self
-            .document
-            .metadata
-            .as_ref()
-            .map(|m| egui::Id::new(("adobe-profiles", &m.make, &m.model)));
-        let adobe: Vec<std::path::PathBuf> = match (adobe_key, &self.document.metadata) {
+        // Asked for once, and dropped while the Lightroom extension is off.
+        let listed = self.adobe_files().is_some();
+        // Cached per camera and listing: this matches thousands of files'
+        // cameras and looks for each in the library.
+        let generation = self.adobe_files.generation();
+        let adobe: Vec<std::path::PathBuf> = match &self.document.metadata {
             // A JPEG, TIFF or PNG has its Embedded profile only.
-            (Some(key), Some(m)) if !m.is_rendered() => ui.ctx().data_mut(|d| {
-                d.get_temp_mut_or_insert_with(key, || crate::camera_profiles::adobe_installed(m))
-                    .clone()
-            }),
+            Some(m) if listed && !m.is_rendered() => {
+                let key = egui::Id::new(("adobe-profiles", &m.make, &m.model, generation));
+                ui.ctx().data_mut(|d| {
+                    d.get_temp_mut_or_insert_with(key, || self.adobe_profiles_for(m))
+                        .clone()
+                })
+            }
             _ => Vec::new(),
         };
         // Community profiles from the catalogue: matched here, measured once per camera.
@@ -709,7 +711,7 @@ impl Editor {
         ));
         panels::effects::show(ui, step, r, metadata);
         panels::calibration::show(ui, step, r, metadata);
-        self.carry_out(requests, ui, &adobe, adobe_key);
+        self.carry_out(requests, ui, &adobe);
     }
     /// Carries out what the Develop panels asked for this frame, still during the
     /// edit frame they were drawn in.
@@ -718,7 +720,6 @@ impl Editor {
         requests: panels::Requests,
         ui: &egui::Ui,
         adobe: &[std::path::PathBuf],
-        adobe_key: Option<egui::Id>,
     ) {
         let panels::Requests {
             auto: auto_request,
@@ -820,16 +821,11 @@ impl Editor {
         }
         if import_adobe && let Some(m) = self.document.metadata.clone() {
             let result = crate::camera_profiles::import_readable(adobe);
-            if let Some(key) = adobe_key {
-                // Imported or unreadable, none of them is worth offering again.
-                ui.ctx().data_mut(|d| {
-                    if result.is_ok() {
-                        d.insert_temp(key, Vec::<std::path::PathBuf>::new());
-                    } else {
-                        d.remove::<Vec<std::path::PathBuf>>(key);
-                    }
-                });
+            // Imported or unreadable, none of them is worth offering again.
+            if result.is_ok() {
+                self.adobe_files.taken.extend(adobe.iter().cloned());
             }
+            self.adobe_files.relist();
             match result {
                 Ok(done) => {
                     if !done.imported.is_empty() {

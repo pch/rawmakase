@@ -1,6 +1,6 @@
 # Lightroom extension: plan
 
-Status: steps 1 and 2 built; 3 and 4 planned.
+Status: steps 1 to 3 built; 4 planned.
 
 ## Goal
 
@@ -298,22 +298,62 @@ paths, the disabled extension's message.
 
 ### `files.list` (app to program)
 
-The app asks the program what is installed. The answer comes in pages
-(`{"cursor":…}` in, `{"entries":[…],"next":…}` out), each within the channel's
-line limit. An entry is:
+The app asks the program what is installed. The answer is one line, its
+files grouped by folder (`{"folders":[{kind, origin, path, camera?, group?,
+files:[{name, camera?, used?}]}], "searched":[{kind, origin, path}]}`). A
+folder's or file's fields are:
 
 | Field | Meaning |
 | --- | --- |
 | `kind` | `camera-profile`, `look`, `lens-profile`, `presets` or `catalog` |
-| `path` | A file, or for `presets` a folder to import as a folder |
+| `path` | A folder; for `presets` one to import as a folder |
 | `origin` | `shared` (Camera Raw's folder for all users) or `user` |
-| `camera` | For a camera profile: the camera it is for, as Adobe's layout says (the Adobe Standard file name, or the Camera Matching folder name) |
-| `group` | For a lens profile: the maker folder it is in, when it is in one |
-| `used` | For a catalog: when it was last changed |
+| `camera` | For a camera profile: the camera it is for, as Adobe's layout says (the Adobe Standard file name, on the file, or the Camera Matching folder name, on the folder) |
+| `group` | For lens profiles: the maker folder |
+| `used` | On a catalog: when it was last changed |
+| `searched` | Where it looked for profiles and catalogs, for setup to say |
 
 The program lists folders and reads no file. It knows Adobe's layout; the core
 never parses an Adobe path. A listing belongs to the program's session: a
 listing from a session that ended is dropped.
+
+*As built:*
+
+- **The extension.** `extensions/lightroom` (`rawmakase-lightroom`) is
+  bundled and on by default as MIDI and MCP are, and in step 3 only answers
+  `files.list`. Its manifest declares `api = 4` and no contribution; the app
+  sends `files.list` to it alone (`manifest::LIGHTROOM`). Its `Roots` are
+  macOS's and Windows's folders as the core knew them (Camera Raw's shared
+  and per-user folders, and Pictures for Lightroom Classic's catalogs and
+  Lightroom's synced presets); on Linux only Pictures. The walk is the
+  importers' (hidden names, `__MACOSX` and links past 12 levels skipped).
+- **No pages.** A real Camera Raw install holds thousands of DCPs and LCPs.
+  One entry per file with its whole path would be about 150 bytes, over the
+  1 MiB line in all; grouped by folder, the names are 30 to 60 bytes, about
+  half a line for ten thousand. So the answer is one line, and the SDK's
+  usual `too_large` answers one longer than that; a path that isn't UTF-8
+  is left out rather than sent changed. The core walks the folders' files
+  (`adobe_files::entries`) and matches those.
+- **In the core.** `app::extensions::adobe_files` keeps the listing
+  (`AdobeFiles`): asked for at the first use, dropped when the extension is
+  turned off or on, asked again after **Import Adobe profiles for this
+  camera** and when setup opens, and taken only for the request the editor
+  waits for. A listing that failed keeps why, which setup says; opening setup
+  again lists again. The Profile menu matches its shared camera profiles
+  with `camera_profiles::adobe_offered` (the matching `adobe_installed` did:
+  `camera_fits` or a phone's every module, and not in the library), cached
+  per camera and listing, and leaves out what an import took this session,
+  skipped files included, as the old empty cache did. Setup's rules are
+  today's, applied to the entries on the scan's worker as before
+  (`Found::scan`, which counts the presets). A first launch opens setup when
+  the listing finds Lightroom's, as `lightroom_here` decided before; with the
+  extension off it stays undecided, and opening or finishing setup settles
+  it. Catalog entries are sorted by `used`, newest first;
+  onboarding's catalog rows still use today's core import until step 4.
+- **What changed for users.** Setup says where it looked as before
+  ("None in ~/Pictures/Lightroom", "Looks in …" on the profile rows), from
+  the listing's `searched`; with the extension off its rows say so. The Lens
+  Corrections import button's tooltip names no folder.
 
 ### Matching and offering, in the core
 
@@ -346,10 +386,23 @@ Tests: for the existing fixtures, the Profile menu offers the same files as
 library as today's (preset folder layout included); the item appears and
 disappears with the extension; a listing from an ended session is dropped.
 
+*Tests, as built:* neither function had a test on a Camera Raw tree, so the
+extension ships one (`rawmakase_lightroom::fake`, either platform's layout)
+and the old code was run on it once: its results are frozen as the expected
+offers, by camera, of the Profile menu (`adobe_files_tests.rs`) and of setup
+(`onboarding.rs`), for both layouts. The listed preset folders import into
+the layout they did (`bulk_import.rs`). With the program run as the test
+binary: the item appears when a late listing arrives, goes while the
+extension is off, and comes back when it is on; a listing whose program
+ended fails and an answer the editor no longer waits for is dropped; setup
+lists again when opened; a first launch opens setup only when something is
+found; the rows say where it looked. The lister's own tests cover both
+layouts and where it looked; the SDK's, that ten thousand files fit a line
+and a longer answer is `too_large`.
+
 ## Step 4: move the Lightroom import into the extension
 
-- `extensions/lightroom` with the SDK, bundled as MIDI and MCP are (D1), on by
-  default.
+- `extensions/lightroom` (step 3) gains its `[[importer]]`.
 - **Catalog › Import › Lightroom Classic catalog…** (one item per enabled
   importer), the onboarding rows and `rawmakase import-catalog` go through the
   importer. With the extension off, the item and rows are gone.
@@ -380,14 +433,19 @@ Tests:
 - **Large catalogs.** The extension writes a plan of 100,000 photos with
   History, which imports.
 
-## Documents to update when steps 3 and 4 are built
+## Documents to update when step 4 is built
+
+Step 3 updated `docs/extensions/protocol.md` (`files.list`), the extensions
+overview, `docs/architecture.md`, `docs/code-map.md` and the Official
+extensions table of `docs/extensions-plan.md`. Step 4:
 
 - `docs/extensions-plan.md`: the Official extensions paragraph on Lightroom
   import and the Designed-not-scheduled row.
-- `docs/extensions/protocol.md` (`files.list`), `docs/catalogs.md`,
-  `docs/architecture.md`, `docs/code-map.md` (the extension, the core's
+- `docs/catalogs.md`, `docs/architecture.md`, `docs/code-map.md` (the core's
   import code removed).
 
 ## Open
 
-- Whether `files.list` belongs to the `importer` API version or one of its own.
+Nothing. *Settled:* `files.list` is in API 4, beside `import.run`: API 4 has
+not shipped, and only the bundled Lightroom extension serves it
+(`manifest::FILES_API`).

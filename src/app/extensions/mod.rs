@@ -76,6 +76,7 @@
 //! ([`Host::close_channels`]), each program is stopped by the shared deadline
 //! ([`Host::stop`]), and the exit hook ends every unit left
 //! ([`Host::kill_remaining`]).
+pub(in crate::app) mod adobe_files;
 pub(in crate::app) mod command_input;
 mod devices;
 mod editor;
@@ -146,6 +147,7 @@ pub(crate) const BUNDLED: &[&str] = &[
     include_str!("../../../extensions/mcp/rawmakase-extension.toml"),
     include_str!("../../../extensions/midi/rawmakase-extension.toml"),
     include_str!("../../../extensions/ai-masks/rawmakase-extension.toml"),
+    include_str!("../../../extensions/lightroom/rawmakase-extension.toml"),
 ];
 
 /// Tells a bundled program the folders the app searches for ONNX Runtime
@@ -216,6 +218,10 @@ enum Pending {
     /// `import.run`, named by the host's ticket, as `Mask` is. It has an
     /// inactivity deadline, not a fixed one.
     Import {
+        ticket: u64,
+    },
+    /// `files.list`, named by the host's ticket.
+    Files {
         ticket: u64,
     },
 }
@@ -527,6 +533,12 @@ pub(in crate::app) enum Outcome {
         extension: String,
         ticket: u64,
         text: String,
+    },
+    /// A listing of Adobe's folders, or why it failed (`exited` and
+    /// `disabled` when its session ended first).
+    Files {
+        ticket: u64,
+        result: Result<rawmakase_extensions::protocol::method::FilesListed, RemoteError>,
     },
 }
 
@@ -1531,6 +1543,10 @@ impl Host {
                 extension,
                 ticket,
                 result: Err(error("import")),
+            }),
+            Pending::Files { ticket } => Some(Outcome::Files {
+                ticket,
+                result: Err(error("listing")),
             }),
             Pending::MaskSetup { generator } => {
                 e.setups.remove(&generator);
@@ -2660,6 +2676,7 @@ impl Host {
                     result,
                 });
             }
+            Pending::Files { ticket } => outcomes.push(adobe_files::files_listed(ticket, result)),
             Pending::MaskSetup { generator } => {
                 match &result {
                     Err(err) if err.code != ErrorCode::Cancelled => {
@@ -2754,7 +2771,8 @@ impl Host {
             Pending::Mask { .. }
             | Pending::MaskSetup { .. }
             | Pending::Retouch { .. }
-            | Pending::Import { .. } => {
+            | Pending::Import { .. }
+            | Pending::Files { .. } => {
                 outcomes.extend(Self::stopped(e, pending, &ErrorCode::Exited));
             }
             Pending::Panel { panel } => {

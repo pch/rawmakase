@@ -22,12 +22,12 @@ use crate::{
 use rawmakase_extension_protocol::framing::{FrameError, LineReader};
 #[cfg(feature = "importer")]
 use rawmakase_extension_protocol::manifest::IMPORTER_API;
-use rawmakase_extension_protocol::manifest::{API, RETOUCH_GENERATOR_API};
+use rawmakase_extension_protocol::manifest::{API, FILES_API, RETOUCH_GENERATOR_API};
 use rawmakase_extension_protocol::message::Handles;
 #[cfg(feature = "importer")]
 use rawmakase_extension_protocol::method::ImportDone;
 use rawmakase_extension_protocol::method::{
-    AppEvent, AppRequest, CommandRun, Controls, HelloReply, ImportRun, MaskGenerate,
+    AppEvent, AppRequest, CommandRun, Controls, FilesListed, HelloReply, ImportRun, MaskGenerate,
 };
 use rawmakase_extension_protocol::{ENV_API, ErrorCode, Message, PROTOCOL, RemoteError};
 use serde_json::{Map, Value};
@@ -38,6 +38,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 
 type EventHandler = Box<dyn FnMut(&AppEvent, &Host) + Send>;
+type FilesHandler = Box<dyn FnMut(&Context) -> Result<FilesListed, RemoteError> + Send>;
 
 /// An extension's program: its handlers, by contribution id.
 #[derive(Default)]
@@ -53,6 +54,7 @@ pub struct Extension {
     #[cfg(feature = "importer")]
     importers: BTreeMap<String, Box<dyn crate::Importer>>,
     on_event: Option<EventHandler>,
+    files: Option<FilesHandler>,
 }
 
 /// How [`Extension::serve_with_options`] serves.
@@ -246,6 +248,15 @@ impl Extension {
     #[cfg(feature = "importer")]
     pub fn importer(mut self, id: &str, importer: impl crate::Importer + 'static) -> Self {
         self.importers.insert(id.into(), Box::new(importer));
+        self
+    }
+    /// Answers `files.list` (API 4) with what `list` returns. An answer
+    /// longer than a line is answered [`ErrorCode::TooLarge`].
+    pub fn files(
+        mut self,
+        list: impl FnMut(&Context) -> Result<FilesListed, RemoteError> + Send + 'static,
+    ) -> Self {
+        self.files = Some(Box::new(list));
         self
     }
     /// Called with every event from the app, after the extension's own state
@@ -628,7 +639,27 @@ impl Extension {
                 answer.map(|done| serde_json::to_value(done).expect("a result is JSON"))
             }
             AppRequest::ImportRun(run) => self.import(cx, run, api),
+            AppRequest::FilesList(_) => self.list_files(cx, api),
         }
+    }
+
+    /// Answers `files.list` with the program's listing.
+    fn list_files(&mut self, cx: &Context, api: u32) -> Result<Value, RemoteError> {
+        if api < FILES_API {
+            return Err(RemoteError::new(
+                ErrorCode::InvalidRequest,
+                format!("files.list needs api {FILES_API}, and this program serves {api}"),
+            ));
+        }
+        let Some(list) = &mut self.files else {
+            return Err(RemoteError::new(
+                ErrorCode::InvalidRequest,
+                "this program lists no files",
+            ));
+        };
+        // A path that isn't UTF-8 can't be sent.
+        serde_json::to_value(list(cx)?)
+            .map_err(|e| RemoteError::new(ErrorCode::Unavailable, format!("the listing: {e}")))
     }
 
     /// Runs `import.run`: the importer's handler, then its answer.

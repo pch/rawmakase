@@ -108,6 +108,9 @@ impl Editor {
         }
         let (outcomes, next) = self.extensions_poll(Instant::now());
         self.extension_outcomes(outcomes);
+        if self.adobe_files.first_launch {
+            self.adobe_files();
+        }
         if let Some(next) = next {
             ctx.request_repaint_after(next.saturating_duration_since(Instant::now()));
         }
@@ -196,6 +199,7 @@ impl Editor {
                     ticket,
                     text,
                 } => self.import_progressed(&extension, ticket, text),
+                Outcome::Files { ticket, result } => self.files_listed(ticket, result),
             }
         }
         self.check_catalog_import();
@@ -641,6 +645,9 @@ impl Editor {
         match self.extensions.set_enabled(id, enabled) {
             Ok(outcomes) => self.extension_outcomes(outcomes),
             Err(why) => self.messages.fail(why),
+        }
+        if id == rawmakase_extensions::protocol::manifest::LIGHTROOM {
+            self.adobe_files.relist();
         }
         self.sync_extension_commands();
     }

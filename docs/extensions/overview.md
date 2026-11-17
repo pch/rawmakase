@@ -47,7 +47,7 @@ the packages and `make install` put it. A bundled extension is enabled unless
 `extensions.json` says it is disabled, except MIDI, which is off until it is
 enabled (or was set up before it became an extension); it updates with the
 app and can't be uninstalled. When its program is missing (an incomplete install), its page says
-so. This release bundles three:
+so. This release bundles four:
 
 - **MCP** (`rawmakase.mcp`, program `rawmakase-mcp`): the MCP server
   ([MCP setup](../mcp.md)), an externally launched control adapter, `mcp`.
@@ -62,6 +62,12 @@ so. This release bundles three:
   ([Subject and Background masks](../subject-and-background-masks.md)). It
   keeps the models in the local data folder's `models`, where the app always
   installed them.
+- **Lightroom** (`rawmakase.lightroom`, program `rawmakase-lightroom`): where
+  Lightroom and Camera Raw keep catalogs, camera and lens profiles and presets,
+  listed for the app with [`files.list`](protocol.md#fileslist-request), which
+  the first-run setup and the Profile menu's **Import Adobe profiles for this
+  camera** offer from. Disabled, nothing is offered from Adobe's folders, and
+  everything already imported keeps working.
 
 ## Control adapters
 

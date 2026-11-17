@@ -10,7 +10,7 @@ repository = "https://github.com/pch/rawmakase"
 # The control protocol and its command-line client build on their own, without
 # the app's GUI, GPU or native libraries.
 [workspace]
-members = ["crates/rawmakase-cancel", "crates/rawmakase-catalog", "crates/rawmakase-decode", "crates/rawmakase-denoise", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-extension", "crates/rawmakase-extension-protocol", "crates/rawmakase-extensions", "crates/rawmakase-fs", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-model-install", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-selection", "crates/rawmakase-tiff", "extensions/ai-masks", "extensions/example", "extensions/mcp", "extensions/midi", "tools/cargo-rawmakase", "tools/rawmakase-ctl"]
+members = ["crates/rawmakase-cancel", "crates/rawmakase-catalog", "crates/rawmakase-decode", "crates/rawmakase-denoise", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-extension", "crates/rawmakase-extension-protocol", "crates/rawmakase-extensions", "crates/rawmakase-fs", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-model-install", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-selection", "crates/rawmakase-tiff", "extensions/ai-masks", "extensions/example", "extensions/lightroom", "extensions/mcp", "extensions/midi", "tools/cargo-rawmakase", "tools/rawmakase-ctl"]
 
 # What every crate of the workspace shares. CI and `make check` read the minimum
 # Rust version from the `rust-version` line here.
@@ -195,6 +195,9 @@ rawmakase-midi = { path = "extensions/midi", version = "0.6.0" }
 # way, its models a stand-in; the app itself never links the selection models
 # or the remote worker's client.
 rawmakase-ai-masks = { path = "extensions/ai-masks", version = "0.6.0" }
+# The Lightroom tests list a fake Adobe install with the bundled Lightroom
+# extension's lister, and run its program the same way.
+rawmakase-lightroom = { path = "extensions/lightroom", version = "0.6.0", features = ["test-support"] }
 rawmakase-extension = { path = "crates/rawmakase-extension", version = "0.1.0" }
 # Tests set up and inspect catalog files directly; the app itself reaches
 # the catalog's database only through rawmakase-catalog.

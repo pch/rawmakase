@@ -1,0 +1,31 @@
+[package]
+name = "rawmakase-lightroom"
+# The bundled extension's manifest carries the app's version, and so does this
+# program (a test compares them).
+version = "0.6.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Where Lightroom and Camera Raw keep catalogs, profiles and presets, as a bundled RAWmakase extension"
+license.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rawmakase-lightroom"
+path = "src/main.rs"
+
+[dependencies]
+rawmakase-extension = { path = "../../crates/rawmakase-extension", version = "0.1.0" }
+
+[features]
+# `fake`, the small Adobe install the app's tests list.
+test-support = []
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

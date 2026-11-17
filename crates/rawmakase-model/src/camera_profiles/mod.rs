@@ -1026,7 +1026,7 @@ pub fn table_bytes(text: &str) -> Result<Vec<u8>> {
 #[cfg(any(test, feature = "test-support"))]
 pub use library::listed_from;
 pub use library::{
-    CubeImport, Groups, Imported, ImportedProfile, Listed, MenuEntry, adobe_installed, builtin,
+    CubeImport, Groups, Imported, ImportedProfile, Listed, MenuEntry, adobe_offered, builtin,
     compose_look, fingerprint as library_fingerprint, import_files, import_into_dir,
     import_readable, installed, library_dirs, listed, load, read_cube,
 };
