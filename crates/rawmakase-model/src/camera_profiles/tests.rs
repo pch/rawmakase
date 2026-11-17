@@ -272,6 +272,92 @@ fn camera_matrix_adapts_the_chosen_white_to_d50_by_bradford() {
 }
 
 #[test]
+fn looks_and_saved_edits_keep_their_bases_white_adaptation() {
+    // A look composed on RAWmakase Standard (a .cube or Creative look takes the look's
+    // name), RAWmakase Color, a fitted Camera Look and a profile read back from a saved
+    // edit adapt the chosen white as their base does; a fitted look's grey tint stays
+    // in front of the adaptation.
+    let m = x100f();
+    let standard = open::standard(&m).unwrap();
+    let cube = "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n0.9 0.95 1\n";
+    let look = standard.with_cube_for_test(cube).unwrap();
+    assert_ne!(look.name, standard.name);
+    let fitted = fitted::with_look(&standard, &fitted::FittedLook::identity()).unwrap();
+    let saved: CameraProfile =
+        serde_json::from_str(&serde_json::to_string(&look).unwrap()).unwrap();
+    let gains = [1.02, 0.97, 1.01];
+    let tinted = fitted::with_grey_gains(&fitted, gains);
+    for (t, tint) in [(2800., 0.), (12000., -40.)] {
+        let base = standard.camera_matrix_at(t, tint);
+        assert_ne!(
+            base,
+            standard.camera_matrix(t),
+            "{t} K adapts its own white"
+        );
+        for p in [&look, &open::color(&m).unwrap(), &fitted, &saved] {
+            assert_eq!(p.camera_matrix_at(t, tint), base, "{} at {t} K", p.name);
+        }
+        // Linear ProPhoto grey from camera neutral, tinted by the grey gains.
+        let grey = |m: Matrix| mul(m, [1.; 3]);
+        let (want, got) = (grey(base), grey(tinted.camera_matrix_at(t, tint)));
+        for c in 0..3 {
+            assert!(
+                (got[c] / want[c] - gains[c]).abs() < 1e-4,
+                "{t} K: {got:?} {want:?}"
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::approx_constant)] // Exact matrix coefficients, not mathematical constants.
+fn profiles_with_forward_matrices_keep_them_at_every_white() {
+    // A single-illuminant DCP's ForwardMatrix, from a published profile, beside the
+    // ColorMatrix it was made with.
+    let mut p = CameraProfile::camera_matrix_default(&x100f()).unwrap();
+    p.name = "RAWmakase Standard".into();
+    let forward = [
+        [0.7978, 0.1352, 0.0313],
+        [0.288, 0.7119, 0.0001],
+        [0., 0., 0.8251],
+    ];
+    (p.forward1, p.forward2) = (forward, forward);
+    for (t, tint) in [(2800., 0.), (6504., 0.), (12000., -40.)] {
+        assert_eq!(p.camera_matrix_at(t, tint), p.camera_matrix(t));
+    }
+}
+
+#[test]
+fn fitted_matrix_bases_and_their_looks_keep_their_forward_matrix() {
+    // A fitted matrix base derives its ColorMatrix from its forward matrix, so the
+    // ColorMatrix at D65 gives back that forward matrix: still a forward matrix of its
+    // own, kept at every white, under a look and from a saved edit.
+    let m = Metadata {
+        wb: [2., 1., 1.5],
+        ..x100f()
+    };
+    let forward = [
+        [0.7978, 0.1352, 0.0313],
+        [0.288, 0.7119, 0.0001],
+        [0., 0., 0.8251],
+    ];
+    let base = fitted::matrix_base(&m, forward).unwrap();
+    let look = fitted::with_look(&base, &fitted::FittedLook::identity()).unwrap();
+    let saved: CameraProfile =
+        serde_json::from_str(&serde_json::to_string(&look).unwrap()).unwrap();
+    for p in [&base, &look, &saved] {
+        for (t, tint) in [(3000., 0.), (12000., -40.)] {
+            assert_eq!(
+                p.camera_matrix_at(t, tint),
+                p.camera_matrix(t),
+                "{}",
+                p.name
+            );
+        }
+    }
+}
+
+#[test]
 fn a7cr_native_units_use_their_own_daylight_metadata() {
     for (daylight, expected) in [
         ([2569., 1024., 1800.], [0.9432, 1., 0.9994]),
