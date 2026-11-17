@@ -816,7 +816,7 @@ fn stored_references_resolve_through_the_public_reads() -> Result<()> {
 /// repaired by the next save naming it.
 #[test]
 fn saves_store_each_profile_once_and_repair_a_damaged_one() -> Result<()> {
-    let mut f = Earlier::new(6, 2)?;
+    let mut f = Earlier::new(6, 3)?;
     let mut cat = f.open()?;
     let profile = large_profile(0.17);
     let save = |cat: &mut Catalog, (id, file): &(PhotoId, PathBuf), r: &Recipe| {
@@ -847,12 +847,18 @@ fn saves_store_each_profile_once_and_repair_a_damaged_one() -> Result<()> {
     );
     save(&mut cat, &f.photos[1], &edit(&profile, 0.2))?;
     assert_eq!(asset_ids(&f.path)?.len(), 1);
-    // Damaged on disk: the next save naming it stores it again.
+    // Damaged on disk: the next save naming it stores it again. The cache is
+    // cleared first, as a new process starts, so the save can't depend on what
+    // this process (or a test running beside it) happens to hold. The save is to
+    // a photo with no edit yet: one whose saved edit names the damaged profile
+    // can't be read without the cache, so it is protected from being replaced
+    // ([`crate::edits::EditRecord::saved`]).
     cat.db_for_tests().execute(
         "UPDATE recipe_assets SET data=?1 WHERE id=?2",
         rusqlite::params![recipe_assets::compress(b"{}"), id],
     )?;
-    save(&mut cat, &f.photos[1], &edit(&profile, 0.3))?;
+    recipe_assets::clear_cache();
+    save(&mut cat, &f.photos[2], &edit(&profile, 0.3))?;
     recipe_assets::clear_cache();
     let (photo, file) = &f.photos[0];
     assert_eq!(
