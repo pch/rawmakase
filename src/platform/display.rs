@@ -75,10 +75,46 @@ pub(crate) struct WindowsHdr {
     pub(crate) peak_nits: f32,
 }
 
+/// DXGI's description of the output showing a display.
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(not(windows), allow(dead_code))]
+struct OutputColor {
+    /// The output's colour space is BT.2100 PQ: Microsoft's guidance for HDR on.
+    hdr: bool,
+    /// The display's peak luminance, in cd/m²; 0 when its EDID gives none.
+    peak_nits: f32,
+}
+
 #[cfg_attr(not(windows), allow(dead_code))]
 impl WindowsHdr {
     /// scRGB's 1.0, in cd/m².
     const SCRGB_ONE_NITS: f32 = 80.;
+
+    /// What Windows reports, from its display configuration's `hdr_supported`
+    /// (`None` when it couldn't be asked) and `sdr_white_nits`, and from DXGI's
+    /// `output`. The window reads this every few seconds while it redraws, so
+    /// `output`, which creates a DXGI factory and reads every adapter's outputs,
+    /// is asked only for a display that may show HDR. Doing that every few
+    /// seconds on an SDR display is the suspected cause of a whole-screen
+    /// flicker on an NVIDIA GeForce under Windows 10 (#1126).
+    fn from_parts(
+        hdr_supported: Option<bool>,
+        sdr_white_nits: f32,
+        output: impl FnOnce() -> Option<OutputColor>,
+    ) -> Self {
+        let output = if hdr_supported == Some(false) {
+            None
+        } else {
+            output()
+        };
+        let on = output.is_some_and(|o| o.hdr);
+        Self {
+            on,
+            supported: on || hdr_supported == Some(true),
+            sdr_white_nits,
+            peak_nits: output.map_or(0., |o| o.peak_nits),
+        }
+    }
     /// How far above SDR white the display shows light, as a linear factor (1 with
     /// HDR off, or when the display gives no usable peak).
     pub(crate) fn headroom(&self) -> f32 {
@@ -150,17 +186,13 @@ mod windows {
     pub(super) fn hdr(monitor: isize) -> Option<WindowsHdr> {
         let device = gdi_device(monitor)?;
         let target = target(&device)?;
-        let color = advanced_color(target);
+        let hdr_supported = advanced_color(target).map(|c| c.hdr_supported);
         let sdr_white_nits = sdr_white_nits(target).unwrap_or(80.);
-        // Microsoft's guidance: the output's colour space says whether HDR is on.
-        let output = dxgi::output(monitor);
-        let on = output.is_some_and(|o| o.hdr);
-        Some(WindowsHdr {
-            on,
-            supported: on || color.is_some_and(|c| c.hdr_supported),
+        Some(WindowsHdr::from_parts(
+            hdr_supported,
             sdr_white_nits,
-            peak_nits: output.map_or(0., |o| o.peak_nits),
-        })
+            || dxgi::output(monitor),
+        ))
     }
 
     pub(super) fn any_display_supports_hdr() -> bool {
@@ -358,18 +390,13 @@ mod windows {
     /// DXGI's description of a display, through the COM interfaces windows-sys
     /// has no vtables for.
     mod dxgi {
+        use super::super::OutputColor;
         use windows::Win32::Graphics::Dxgi::Common::DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
         use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1, IDXGIOutput6};
         use windows::core::Interface;
 
-        #[derive(Clone, Copy)]
-        pub(super) struct Output {
-            pub(super) hdr: bool,
-            pub(super) peak_nits: f32,
-        }
-
         /// The output showing `monitor`, among every adapter's.
-        pub(super) fn output(monitor: isize) -> Option<Output> {
+        pub(super) fn output(monitor: isize) -> Option<OutputColor> {
             // SAFETY: plain COM calls on interfaces this function owns.
             unsafe {
                 let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
@@ -386,7 +413,7 @@ mod windows {
                             continue;
                         };
                         if desc.Monitor.0 as isize == monitor {
-                            return Some(Output {
+                            return Some(OutputColor {
                                 hdr: desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020,
                                 peak_nits: desc.MaxLuminance,
                             });
@@ -1164,7 +1191,58 @@ mod tests {
 
 #[cfg(test)]
 mod windows_hdr_tests {
-    use super::WindowsHdr;
+    use super::{OutputColor, WindowsHdr};
+
+    /// A display Windows says can't show HDR is never asked about through DXGI,
+    /// which the window would otherwise do every few seconds (#1126).
+    #[test]
+    fn an_sdr_display_is_not_asked_about_through_dxgi() {
+        let sdr = WindowsHdr::from_parts(Some(false), 80., || {
+            panic!("DXGI asked about a display that can't show HDR")
+        });
+        assert_eq!(
+            sdr,
+            WindowsHdr {
+                on: false,
+                supported: false,
+                sdr_white_nits: 80.,
+                peak_nits: 0.,
+            }
+        );
+    }
+
+    /// A display that can show HDR, or one the display configuration couldn't
+    /// describe, takes whether HDR is on and its peak from DXGI.
+    #[test]
+    fn an_hdr_display_or_an_unknown_one_is_asked_through_dxgi() {
+        let pq = || {
+            Some(OutputColor {
+                hdr: true,
+                peak_nits: 600.,
+            })
+        };
+        for hdr_supported in [Some(true), None] {
+            let hdr = WindowsHdr::from_parts(hdr_supported, 200., pq);
+            assert_eq!(
+                hdr,
+                WindowsHdr {
+                    on: true,
+                    supported: true,
+                    sdr_white_nits: 200.,
+                    peak_nits: 600.,
+                },
+                "{hdr_supported:?}"
+            );
+        }
+        let off = WindowsHdr::from_parts(Some(true), 80., || {
+            Some(OutputColor {
+                hdr: false,
+                peak_nits: 600.,
+            })
+        });
+        assert!(off.supported && !off.on);
+        assert_eq!(off.headroom(), 1.);
+    }
 
     const OFF: WindowsHdr = WindowsHdr {
         on: false,
