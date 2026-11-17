@@ -924,6 +924,10 @@ and some of its pixels as NaN, as they do from libjxl's own lossy HLG files; lib
 decoder doesn't clip them.
 
 Gamuts: Rec. 2020, Display P3 and Rec. 709, all D65 (Bradford from the master's D50).
+BT.2100 defines PQ and HLG with Rec. 2020's primaries only, so the Export dialog offers
+Rec. 2020 and Display P3 with them, and Rec. 709 with linear float and gain maps
+(`HdrTransfer::gamuts`). Rec. 709 with PQ or HLG saved earlier, or asked for with
+`render --hdr-gamut rec709`, still exports as chosen; the dialog marks it "not BT.2100".
 Out-of-gamut channels clip at 0, and each channel is held to the HDR limit again in
 the output gamut. The ICC profile (`color_management::hdr_profile`) is ICC v4 with
 the gamut's colorants and a `cicp` tag naming primaries and transfer; EXIF's

@@ -743,15 +743,34 @@ fn hdr_rows(ui: &mut egui::Ui, s: &mut crate::export_settings::ExportSettings) {
         }
         return;
     }
+    // A gamut the transfer doesn't offer (Rec. 709 saved with PQ or HLG before it
+    // was left out) stays listed while it is chosen, so the menu shows what exports.
+    let offered = output.transfer.gamuts();
+    let label = |gamut: HdrGamut| {
+        if offered.contains(&gamut) {
+            gamut.label().to_owned()
+        } else {
+            format!("{} (not BT.2100)", gamut.label())
+        }
+    };
+    let chosen = output.gamut;
     form_row(ui, "HDR Gamut", |ui| {
         egui::ComboBox::from_id_salt("export-hdr-gamut")
             .width(220.)
-            .selected_text(output.gamut.label())
+            .selected_text(label(output.gamut))
             .show_ui(ui, |ui| {
-                for gamut in HdrGamut::ALL {
-                    ui.selectable_value(&mut output.gamut, gamut, gamut.label());
+                for &gamut in HdrGamut::ALL
+                    .iter()
+                    .filter(|g| offered.contains(g) || **g == chosen)
+                {
+                    ui.selectable_value(&mut output.gamut, gamut, label(gamut));
                 }
-            });
+            })
+            .response
+            .on_hover_text(
+                "Rec. 2020 is BT.2100's gamut for PQ and HLG. Display P3 is what most \
+                 HDR displays reach. Rec. 709 is offered for linear float only.",
+            );
     });
     form_row(ui, "HDR Encoding", |ui| {
         egui::ComboBox::from_id_salt("export-hdr-transfer")

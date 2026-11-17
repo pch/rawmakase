@@ -230,6 +230,18 @@ impl HdrTransfer {
             Self::Linear => 8,
         }
     }
+    /// The gamuts the Export dialog offers with this transfer. BT.2100 defines PQ and
+    /// HLG with Rec. 2020's primaries only; Display P3 is offered as well because HDR
+    /// displays and Apple's HDR photos use it. Rec. 709 with PQ or HLG is valid CICP
+    /// but no BT.2100 signal, and only clips colours Rec. 2020 keeps, so it is left
+    /// to linear float (Photoshop's 32-bit documents) and to gain maps. An encoding
+    /// saved with it still exports as saved.
+    pub fn gamuts(self) -> &'static [HdrGamut] {
+        match self {
+            Self::Pq | Self::Hlg => &[HdrGamut::Rec2020, HdrGamut::DisplayP3],
+            Self::Linear => &HdrGamut::ALL,
+        }
+    }
 }
 
 impl HdrOutput {
@@ -374,6 +386,16 @@ pub fn hlg_inverse_oetf(signal: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// PQ and HLG offer BT.2100's Rec. 2020 and the widely used Display P3, not
+    /// Rec. 709; linear float, as Photoshop's 32-bit documents, offers all three.
+    #[test]
+    fn pq_and_hlg_offer_no_rec_709() {
+        use HdrGamut::*;
+        assert_eq!(HdrTransfer::Pq.gamuts(), [Rec2020, DisplayP3]);
+        assert_eq!(HdrTransfer::Hlg.gamuts(), [Rec2020, DisplayP3]);
+        assert_eq!(HdrTransfer::Linear.gamuts(), HdrGamut::ALL);
+    }
 
     /// The construction from chromaticities gives the gamuts' own published
     /// matrices for their chromaticities, and every other primaries' white comes out
