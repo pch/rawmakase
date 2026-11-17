@@ -71,10 +71,11 @@ pub(super) enum Slot {
         path: Vec<String>,
         found: Option<i64>,
     },
-    /// One of Recent Keywords.
+    /// One of Recent Keywords; `typeable` when its label, typed, finds it.
     Keyword {
         label: String,
         id: i64,
+        typeable: bool,
     },
 }
 
@@ -82,8 +83,10 @@ pub(super) enum Slot {
 /// it: its name, else `Name < Parent`, and so on up; longer still where a
 /// keyword typed so would be found as another, so a set saved from it keeps
 /// it. A top-level keyword whose name an older one in the same case has
-/// can't be typed apart from it, as in Lightroom.
-pub(super) fn shortest_label(keywords: &[ListedKeyword], id: i64) -> String {
+/// can't be typed apart from it, as in Lightroom, nor can one whose name
+/// has "<", ">" or "|": for those, the whole path and false, as a set can't
+/// keep them.
+pub(super) fn shortest_label(keywords: &[ListedKeyword], id: i64) -> (String, bool) {
     let by_id: HashMap<i64, &ListedKeyword> = keywords.iter().map(|k| (k.id, k)).collect();
     // Each keyword's names, its own first, ignoring case.
     let path_of = |id: i64| {
@@ -99,7 +102,7 @@ pub(super) fn shortest_label(keywords: &[ListedKeyword], id: i64) -> String {
     };
     let own = path_of(id);
     if own.is_empty() {
-        return String::new();
+        return (String::new(), false);
     }
     let key = |names: &[&String]| -> Vec<String> { names.iter().map(|n| keyword_key(n)).collect() };
     let others: Vec<Vec<String>> = keywords
@@ -115,16 +118,23 @@ pub(super) fn shortest_label(keywords: &[ListedKeyword], id: i64) -> String {
                 .any(|o| o.len() >= depth && o[..depth] == own_key[..depth])
         })
         .unwrap_or(own.len());
+    let label = |depth: usize| {
+        own[..depth]
+            .iter()
+            .map(|n| n.as_str())
+            .collect::<Vec<_>>()
+            .join(" < ")
+    };
+    // Read back as a set's slot is: a name with "<", ">" or "|" (from
+    // Lightroom or a file) reads as a hierarchy, and finds another keyword.
     let found = (unique..=own.len()).find(|&depth| {
-        let typed: Vec<String> = own[..depth].iter().rev().map(|n| n.to_string()).collect();
-        crate::catalog::find_typed_keyword(keywords, &typed) == Some(id)
+        parse_keyword(&label(depth))
+            .is_ok_and(|typed| crate::catalog::find_typed_keyword(keywords, &typed) == Some(id))
     });
-    let depth = found.unwrap_or(own.len());
-    own[..depth]
-        .iter()
-        .map(|n| n.as_str())
-        .collect::<Vec<_>>()
-        .join(" < ")
+    match found {
+        Some(depth) => (label(depth), true),
+        None => (label(own.len()), false),
+    }
 }
 
 impl KeywordSetPanel {
@@ -217,9 +227,11 @@ impl Library {
                 // The latest three on the top row, as Lightroom lays them.
                 for (i, id) in self.session.recent_keywords().iter().enumerate() {
                     if let Some(&slot) = KEYPAD.get(i) {
+                        let (label, typeable) = shortest_label(keywords, *id);
                         slots[slot] = Slot::Keyword {
-                            label: shortest_label(keywords, *id),
+                            label,
                             id: *id,
+                            typeable,
                         };
                     }
                 }
@@ -258,7 +270,7 @@ impl Library {
         let (label, id) = match &chosen {
             Slot::Empty => return,
             Slot::Typed { label, found, .. } => (label.clone(), *found),
-            Slot::Keyword { label, id } => (label.clone(), Some(*id)),
+            Slot::Keyword { label, id, .. } => (label.clone(), Some(*id)),
         };
         let all = id.and_then(|id| self.fields.keyword_state(id)) == Some(true);
         let edit = match (all, chosen) {
@@ -308,7 +320,7 @@ impl Library {
                     let (label, id) = match &slots[slot] {
                         Slot::Empty => (String::new(), None),
                         Slot::Typed { label, found, .. } => (label.clone(), *found),
-                        Slot::Keyword { label, id } => (label.clone(), Some(*id)),
+                        Slot::Keyword { label, id, .. } => (label.clone(), Some(*id)),
                     };
                     let state = id.and_then(|id| self.fields.keyword_state(id));
                     let mut button = egui::Button::selectable(
@@ -594,10 +606,13 @@ impl Library {
 }
 
 /// The slots as text, as a set saves them: Recent Keywords' as their
-/// shortest paths.
+/// shortest paths, and empty for one no text finds again.
 fn slot_texts(slots: &[Slot; SLOTS]) -> [String; SLOTS] {
     std::array::from_fn(|i| match &slots[i] {
-        Slot::Empty => String::new(),
+        Slot::Empty
+        | Slot::Keyword {
+            typeable: false, ..
+        } => String::new(),
         Slot::Typed { label, .. } | Slot::Keyword { label, .. } => label.clone(),
     })
 }
@@ -626,7 +641,8 @@ mod tests {
             keyword(5, "Dup", Some(4)),
         ];
         for id in [2, 3, 5] {
-            let label = shortest_label(&list, id);
+            let (label, typeable) = shortest_label(&list, id);
+            assert!(typeable, "{label}");
             let path = crate::app::library::descriptive::parse_keyword(&label).unwrap();
             assert_eq!(
                 crate::catalog::find_typed_keyword(&list, &path),
@@ -634,7 +650,24 @@ mod tests {
                 "{label}"
             );
         }
-        assert_eq!(shortest_label(&list, 3), "dup");
+        assert_eq!(shortest_label(&list, 3).0, "dup");
+        // A name that reads as a hierarchy is never saved as one that finds
+        // another keyword.
+        let list = [
+            keyword(1, "A > B", None),
+            keyword(2, "A", None),
+            keyword(3, "B", Some(2)),
+        ];
+        assert_eq!(shortest_label(&list, 1), ("A > B".to_string(), false));
+        let slots: [Slot; SLOTS] = std::array::from_fn(|i| match i {
+            0 => Slot::Keyword {
+                label: "A > B".into(),
+                id: 1,
+                typeable: false,
+            },
+            _ => Slot::Empty,
+        });
+        assert_eq!(slot_texts(&slots)[0], "");
     }
 
     #[test]
@@ -646,10 +679,10 @@ mod tests {
             keyword(4, "Paris", Some(3)),
             keyword(5, "Rome", None),
         ];
-        assert_eq!(shortest_label(&list, 2), "Paris < France");
-        assert_eq!(shortest_label(&list, 4), "Paris < Texas");
-        assert_eq!(shortest_label(&list, 5), "Rome");
-        assert_eq!(shortest_label(&list, 1), "France");
+        assert_eq!(shortest_label(&list, 2).0, "Paris < France");
+        assert_eq!(shortest_label(&list, 4).0, "Paris < Texas");
+        assert_eq!(shortest_label(&list, 5).0, "Rome");
+        assert_eq!(shortest_label(&list, 1).0, "France");
     }
 
     #[test]

@@ -78,6 +78,9 @@ fn a_name_its_parent_has_is_refused_ignoring_case() -> Result<()> {
             })?;
     assert_eq!(parent, Some(1));
     assert!(cat.rename_keyword(1, "Root").is_err());
+    // Names that would read as a hierarchy when typed.
+    assert!(cat.create_keyword("A > B", None).is_err());
+    assert!(cat.rename_keyword(4, "Rome < Italy").is_err());
     assert!(cat.delete_keywords(&[1]).is_err());
     Ok(())
 }

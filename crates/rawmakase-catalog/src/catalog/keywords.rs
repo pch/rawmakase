@@ -221,6 +221,12 @@ fn check_name(name: &str) -> Result<()> {
             "Keyword tags are not allowed to contain {what}."
         );
     }
+    // Typed, they say where a keyword's parents are: a name with one couldn't
+    // be typed, nor kept in a keyword set.
+    ensure!(
+        !name.contains(['<', '>']),
+        "Keyword tags are not allowed to contain < or >, which separate a keyword from its parents when typed."
+    );
     ensure!(
         !name.contains('|'),
         "Keyword tags and synonyms are not allowed to contain vertical bars (|)."
