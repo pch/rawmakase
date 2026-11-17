@@ -103,8 +103,7 @@ pub fn convert_develop(
     // keys in these too, all 0, and ignores them (#1060).
     let legacy = fields
         .get("ProcessVersion")
-        .and_then(|v| v.trim_matches('"').parse::<f32>().ok())
-        .is_some_and(|v| v < 6.7);
+        .is_some_and(|v| crate::xmp::before_process_2012(v.trim_matches('"')));
     for (key, value) in &fields {
         if value.starts_with('{') {
             if key == "Look" && !value[1..value.len() - 1].trim().is_empty() {

@@ -565,7 +565,7 @@ fn a_preset_watermark_is_read_once_for_the_whole_batch() -> Result<()> {
         name: "Gone".into(),
         style: crate::watermark::Style::Graphic,
         image: Some("rawmakase-test-missing-watermark.png".into()),
-        ..Default::default()
+        ..crate::watermark::fonts::test_watermark()
     };
     let batch = Batch {
         watermark: Some(gone),
@@ -583,7 +583,7 @@ fn a_preset_watermark_is_read_once_for_the_whole_batch() -> Result<()> {
     let text = crate::watermark::Watermark {
         name: "Text".into(),
         text: "RAWmakase".into(),
-        ..Default::default()
+        ..crate::watermark::fonts::test_watermark()
     };
     let marked = run_all(&Batch {
         watermark: Some(text),
@@ -918,7 +918,7 @@ fn hdr_jpeg_xl_exports_cancel_fail_and_publish_as_sdr_ones_do() -> Result<()> {
     let text = crate::watermark::Watermark {
         name: "Text".into(),
         text: "RAWmakase".into(),
-        ..Default::default()
+        ..crate::watermark::fonts::test_watermark()
     };
     let tiff = |out: &Path| {
         let mut s = settings(out);

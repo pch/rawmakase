@@ -75,14 +75,9 @@ pub mod updates;
 
 #[cfg(test)]
 mod tests {
-    /// Text watermarks find the fonts the app's interface does: the same Inter and
-    /// the same installed-font folders, read without egui by export.
+    /// Export finds the same installed-font folders as the interface without egui.
     #[test]
     fn watermarks_read_the_fonts_the_interface_does() {
-        assert_eq!(
-            rawmakase_export::watermark::fonts::INTER_DATA,
-            fastframe_fonts::INTER
-        );
         assert_eq!(
             rawmakase_export::watermark::font_dirs::font_directories(),
             fastframe_fonts::system::font_directories()

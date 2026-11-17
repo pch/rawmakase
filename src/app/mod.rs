@@ -1053,11 +1053,25 @@ fn follow_text_scale(ctx: &egui::Context) {
     }
 }
 
-/// Inter, with tabular figures so values keep their width as they change,
-/// and an installed face for every script and symbol it lacks (fastframe-fonts),
-/// rendered as the desktop renders text.
+/// The face the interface draws with. macOS and Windows use their own
+/// interface face (San Francisco, Segoe UI). Linux keeps the bundled Inter:
+/// fontconfig's `system-ui` is often a metric-compatible fallback, such as
+/// Omarchy's Liberation Sans, which looks soft under the desktop's slight
+/// hinting where Inter stays sharp.
+#[cfg(all(unix, not(target_os = "macos")))]
+const INTERFACE_FACE: fastframe_fonts::Primary = fastframe_fonts::Primary::Inter;
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+const INTERFACE_FACE: fastframe_fonts::Primary = fastframe_fonts::Primary::System;
+
+/// The interface face ([`INTERFACE_FACE`]), with installed fallbacks for other
+/// scripts, rendered as the desktop renders text.
 fn install_fonts(ctx: &egui::Context, text: &fastframe_text::TextRendering) {
-    let mut fonts = fastframe_fonts::FontSetup::default().definitions();
+    let mut fonts = fastframe_fonts::FontSetup::default()
+        .primary(INTERFACE_FACE)
+        // Monospace roles draw with the interface face at regular weight. With
+        // Inter its figures are tabular, so changing values keep their width.
+        .monospace(fastframe_fonts::Monospace::Inter)
+        .definitions();
     text.apply_to(&mut fonts);
     ctx.set_fonts(fonts);
 }

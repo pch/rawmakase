@@ -31,7 +31,7 @@ fn graphic(w: u32, h: u32, sixteen: bool) -> Result<(tempfile::TempDir, Watermar
             name: "Logo".into(),
             style: Style::Graphic,
             inset: [0., 0.],
-            ..Default::default()
+            ..crate::watermark::fonts::test_watermark()
         },
         None,
         Some(&source),
@@ -124,7 +124,7 @@ fn a_missing_image_fails_before_anything_is_drawn() {
     let w = Watermark {
         style: Style::Graphic,
         image: Some("gone.png".into()),
-        ..Default::default()
+        ..crate::watermark::fonts::test_watermark()
     };
     let error = w.ready_in(Path::new("/nonexistent")).err().unwrap();
     assert_eq!(error.to_string(), "Watermark image not found: gone.png");
@@ -152,7 +152,7 @@ fn text_is_drawn_with_smooth_edges_and_a_shadow() -> Result<()> {
         text: "Ag © 2026".into(),
         size: Size::Proportional(0.5),
         color: [1., 1., 1.],
-        ..Default::default()
+        ..crate::watermark::fonts::test_watermark()
     };
     let plain = w.ready()?.place(400, 200).unwrap();
     assert!((plain.width as f32 - 200.).abs() < 12.);
@@ -183,7 +183,7 @@ fn the_weight_follows_the_style() -> Result<()> {
             text: "Heavy".into(),
             face: face.into(),
             size: Size::Proportional(0.5),
-            ..Default::default()
+            ..crate::watermark::fonts::test_watermark()
         };
         let placed = w.ready()?.place(400, 200).unwrap();
         Ok(placed.rgba.iter().map(|p| p[3]).sum::<f32>() / (placed.width * placed.height) as f32)
@@ -279,7 +279,7 @@ fn transparent_pixels_dont_darken_scaled_edges() -> Result<()> {
             name: "Edge".into(),
             style: Style::Graphic,
             size: Size::Proportional(0.13),
-            ..Default::default()
+            ..crate::watermark::fonts::test_watermark()
         },
         None,
         Some(&source),
@@ -297,7 +297,7 @@ fn a_wide_shadow_on_large_text_stays_cheap() -> Result<()> {
     let mut w = Watermark {
         text: "Wide".into(),
         size: Size::Proportional(1.),
-        ..Default::default()
+        ..crate::watermark::fonts::test_watermark()
     };
     w.shadow = Shadow {
         enabled: true,
@@ -332,7 +332,7 @@ fn a_shadow_never_makes_the_mark_larger_than_the_photo() -> Result<()> {
         text: "Big".into(),
         size: Size::Fit,
         inset: [0., 0.],
-        ..Default::default()
+        ..crate::watermark::fonts::test_watermark()
     };
     w.shadow = Shadow {
         enabled: true,
@@ -356,12 +356,13 @@ fn a_shadow_never_makes_the_mark_larger_than_the_photo() -> Result<()> {
 #[test]
 fn a_missing_font_style_fails_rather_than_drawing_another() {
     let w = Watermark {
-        family: "Inter".into(),
+        family: "Test fixture".into(),
         face: "Regular".into(),
-        ..Default::default()
+        ..crate::watermark::fonts::test_watermark()
     };
     assert!(w.ready().is_ok());
     assert!(fonts::load("No Such Family", "Bold").is_err());
+    assert!(fonts::load(fonts::SYSTEM, "No Such Style").is_err());
 }
 
 #[test]

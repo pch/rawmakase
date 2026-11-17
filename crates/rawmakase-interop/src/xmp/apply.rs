@@ -673,11 +673,8 @@ impl Preset {
         for (slider, value) in crs::PARAMETRIC_SPLITS.iter().zip(&mut r.effects.splits) {
             settings.assign(*slider, value, 0.01, 0.99)?;
         }
-        if let Some(c) = self
-            .curves
-            .get("ToneCurvePV2012")
-            .or_else(|| self.curves.get("ToneCurve"))
-        {
+        let [first, second] = self.point_curve_keys();
+        if let Some(c) = self.curves.get(first).or_else(|| self.curves.get(second)) {
             r.curve = c.clone();
         }
         // Camera Raw reads the Red, Green and Blue curves only as the full set, with
@@ -688,7 +685,7 @@ impl Preset {
                 ["Red", "Green", "Blue"].map(|name| self.curves.get(&format!("{prefix}{name}")));
             Some([red?, green?, blue?])
         };
-        if let Some(set) = channel_set("ToneCurvePV2012").or_else(|| channel_set("ToneCurve")) {
+        if let Some(set) = channel_set(first).or_else(|| channel_set(second)) {
             r.effects.channels = set.map(Clone::clone);
         }
         settings.seen.insert("ConvertToGrayscale".into());
