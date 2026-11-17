@@ -107,9 +107,15 @@ The row is the master's, so virtual copies share it:
 - **Set Copy as Master** moves the row to the new master in its own
   transaction, as it moves the checksum.
 - **An older release** may promote a copy without knowing the table, and the
-  row then sits on what is now a virtual copy. When the catalog opens, any
-  such row is moved to its photo's master, idempotently, as the schema is
-  applied.
+  row then sits on what is now a virtual copy. When the catalog opens, a read
+  looks for such rows. Only if it finds one does a write transaction check
+  again and move the row to its photo's master. A catalog with nothing to
+  repair opens without taking a write lock, as it does today (`open_tests`).
+  - **One sequence it can't repair.** If an older release promotes a copy *and
+    then removes the former master* before this release opens the catalog,
+    the cascade removes the family's row with that photo. The copy is then
+    rebuilt like any missing one while the original is online. Offline, the
+    photo can't be edited until its original is back. A test covers this.
 - **Removing a photo** removes its row through the cascade, whichever release
   removes it. Removing a virtual copy leaves the master's row alone.
 
@@ -229,6 +235,11 @@ Tests:
   the copy, and removing the former master (now a virtual copy) keeps it.
 - A row left on a virtual copy, as an older release's promotion leaves it, is
   moved to the master when the catalog opens.
+- A catalog with no such row opens while another connection holds a write
+  lock.
+- An older release's promotion followed by removal of the former master
+  leaves no row. Build makes a new copy, and offline the photo is refused with
+  the reason.
 - Removing a photo with SQL alone, as an older release would, drops the row
   through the cascade. The next Build deletes the file left behind.
 - Replacing the file, Find on Disk and relinking a folder:
