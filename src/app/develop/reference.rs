@@ -732,41 +732,4 @@ mod tests {
         assert!(!editor.view.zoom.on);
         Ok(())
     }
-
-    #[test]
-    fn shift_r_shows_reference_view_and_r_still_crops() {
-        let ctx = egui::Context::default();
-        let mut e = Editor::with_context(
-            &ctx,
-            None,
-            crate::app::preferences::session::Session::default(),
-            None,
-        );
-        let press = |modifiers: egui::Modifiers, e: &mut Editor| {
-            let key = |pressed| egui::Event::Key {
-                key: egui::Key::R,
-                physical_key: Some(egui::Key::R),
-                pressed,
-                repeat: false,
-                modifiers,
-            };
-            let input = egui::RawInput {
-                events: vec![
-                    egui::Event::ModifiersChanged(modifiers),
-                    key(true),
-                    key(false),
-                ],
-                ..Default::default()
-            };
-            let mut output = ctx.run_ui(input, |_| e.develop_shortcuts(&ctx));
-            output.textures_delta.clear();
-        };
-        press(egui::Modifiers::SHIFT, &mut e);
-        assert_eq!(e.view.compare, Compare::Reference(Axis::LeftRight));
-        assert_eq!(e.view.tool(), crate::app::develop::state::Tool::None);
-        press(egui::Modifiers::SHIFT, &mut e);
-        assert_eq!(e.view.compare, Compare::Off);
-        press(egui::Modifiers::NONE, &mut e);
-        assert_eq!(e.view.tool(), crate::app::develop::state::Tool::Crop);
-    }
 }

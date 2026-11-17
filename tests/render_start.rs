@@ -1,6 +1,5 @@
-//! What `rawmakase render` starts from (#808 step 1.12, Piotr's decision 1): the
-//! raw defaults chosen in Preferences, as the app opens a photo with no edit, and,
-//! given a catalog, the photo's edit there.
+//! What `rawmakase render` starts from: the raw defaults chosen in Preferences, as
+//! the app opens a photo with no edit, and, given a catalog, the photo's edit there.
 use rawmakase::catalog::{Catalog, HistoryUpdate};
 use rawmakase::export_settings::ExportOptions;
 use rawmakase::model::recipe::Recipe;

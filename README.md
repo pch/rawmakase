@@ -2,7 +2,7 @@
 
 */raw·muh·KAH·say/, RAW + omakase*
 
-RAWmakase is a fast, non-destructive RAW photo developer for Linux, macOS and Windows, written in Rust. It develops RAW, JPEG, PNG, TIFF, WebP, AVIF, HEIF/HEIC and JPEG XL files with a Lightroom-style set of controls and exports JPEG, 16-bit TIFF or PNG (exporting to WebP, AVIF, HEIF and JPEG XL is not available yet). It can also import a Lightroom Classic catalog with its ratings, flags, labels, keywords and compatible develop settings, without ever writing to the original catalog or your photos.
+RAWmakase is a fast, non-destructive RAW photo developer for Linux, macOS and Windows, written in Rust. It develops RAW, JPEG, PNG, TIFF, WebP, AVIF, HEIF/HEIC and JPEG XL files with a Lightroom-style set of controls and exports JPEG, 16-bit TIFF, PNG or JPEG XL, with HDR edits exported as HDR TIFF or JPEG XL or as JPEG with a gain map (exporting to WebP, AVIF and HEIF is not available yet). It can also import a Lightroom Classic catalog with its ratings, flags, labels, keywords and compatible develop settings, without ever writing to the original catalog or your photos.
 
 ![RAWmakase Develop view with presets, the photo, and the Basic and Tone Curve panels](docs/images/screenshot-2026-10-13-1111.png)
 
@@ -19,6 +19,7 @@ It is a personal project in active development. It develops photos from almost e
 ## Features
 
 - **Develop**: white balance and picker, one-click Auto tone and Auto white balance, exposure and tone, Shadows/Highlights, Clarity, Dehaze, point curves and levels, HSL color mixer, three-way color grading, detail (denoise and sharpening), crop, straighten and Transform, lens corrections, effects and calibration.
+- **HDR**: edit a RAW or HDR file in High Dynamic Range, as Lightroom's HDR does, see light above SDR white on an HDR display (seen on macOS; the Windows and Wayland paths are not yet checked on a real HDR display), and export PQ or HLG TIFF and JPEG XL or gain-map JPEG; see [HDR](docs/hdr.md).
 - **Spot removal and masks (experimental, early)**: Heal and Clone spots and brushed areas with automatic sources, and brush, gradient and range masks with local adjustments, also imported from Lightroom. Not yet measured against Lightroom.
 - **Library**: SQLite catalogs, folders, ratings, flags, color labels, filtering, and non-destructive Lightroom `.lrcat` import with folder relinking.
 - **Presets and profiles**: 26 built-in presets and your Lightroom XMP presets; RAWmakase's own Standard and Color profiles for every camera with a usable color matrix, plus DCP and XMP camera profiles you import yourself, and `.cube` LUTs imported as looks, as Camera Raw makes them.
@@ -27,6 +28,7 @@ It is a personal project in active development. It develops photos from almost e
 - **Command line and headless rendering**: inspect, render, export thumbnails, import catalogs and profiles, and benchmark without the GUI; render on a server or in a container with no display or GPU.
 - **Keyboard shortcuts**: Lightroom's, each one changeable in Preferences > Shortcuts or in a `keymap.toml`; see [keyboard shortcuts](docs/shortcuts.md).
 - **External control**: [MIDI controllers](docs/midi.md), [scripts](docs/automation.md), and a built-in [MCP server](docs/mcp.md) for agents to adjust the running editor, inspect previews, save and export.
+- **Extensions**: add commands, panels, control adapters, mask generators and photo sources with the Rust SDK; MCP, MIDI and AI masks ship as bundled extensions; see [extensions](docs/extensions/overview.md).
 - **Updates**: the app checks GitHub for new releases; the Apple Silicon and Windows installer builds update themselves, other installs are pointed at the release page.
 
 ## Coming soon
@@ -139,7 +141,7 @@ rawmakase Photos.rawmakase    # open a catalog
 rawmakase photo.dng           # add the photo's folder to the last catalog and edit it
 ```
 
-Photos are edited through the Library. The first launch starts a catalog named Photos in RAWmakase's data folder and asks for a folder of photos; to keep your Lightroom Classic folders, ratings and edits, import its catalog instead. Both, and other catalogs, are available later from the **Catalog** menu. Folders dropped onto the window, one or several, are added to the open catalog; right-click a folder in the Library's Folders panel to remove it and its photos from the catalog (its files stay on disk), or select photos and press Delete to move their files to the Trash or just remove them from the catalog. Drag photos onto a folder, or use Move to Folder… in their menu, to move their files there; New Folder Inside… in a folder's menu makes a folder and can move the selection into it. F2 renames a photo, or several by a template in the order they were taken; Rename Folder… renames a folder, and a folder dragged onto another (or Move Folder…) moves there. A photo dropped there or passed on the command line has its folder added, then opens in Develop; edits it got in earlier releases (its `photo.rawmakase.json`) come along. You can also drop a catalog onto the window. The camera's embedded JPEG shows immediately while the RAW develops. A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL opens in Develop like a RAW: untouched it looks as the file does, and its white balance is Lightroom's relative Temp and Tint (−100 to 100) rather than Kelvin. WebP, AVIF, HEIF and JPEG XL are read only for now, and Develop does not edit HDR (PQ or HLG), animated, tiled AVIF or 4:2:2 and monochrome HEIF files; HDR and animated ones still show in the Library.
+Photos are edited through the Library. The first launch starts a catalog named Photos in RAWmakase's data folder and asks for a folder of photos; to keep your Lightroom Classic folders, ratings and edits, import its catalog instead. Both, and other catalogs, are available later from the **Catalog** menu. Folders dropped onto the window, one or several, are added to the open catalog; right-click a folder in the Library's Folders panel to remove it and its photos from the catalog (its files stay on disk), or select photos and press Delete to move their files to the Trash or just remove them from the catalog. Drag photos onto a folder, or use Move to Folder… in their menu, to move their files there; New Folder Inside… in a folder's menu makes a folder and can move the selection into it. F2 renames a photo, or several by a template in the order they were taken; Rename Folder… renames a folder, and a folder dragged onto another (or Move Folder…) moves there. A photo dropped there or passed on the command line has its folder added, then opens in Develop; edits it got in earlier releases (its `photo.rawmakase.json`) come along. You can also drop a catalog onto the window. The camera's embedded JPEG shows immediately while the RAW develops. A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL opens in Develop like a RAW: untouched it looks as the file does, and its white balance is Lightroom's relative Temp and Tint (−100 to 100) rather than Kelvin. WebP, AVIF and HEIF are read only for now. An HDR file (PQ, HLG, linear light or a gain map) opens as an HDR edit; see [HDR files](docs/hdr.md#hdr-files). Develop does not edit animated, tiled AVIF or 4:2:2 and monochrome HEIF files; animated ones still show in the Library.
 
 Useful shortcuts:
 
@@ -208,7 +210,7 @@ The Linux build needs glibc 2.39 or newer (Ubuntu 24.04+, Debian 13+, Fedora 43+
 - Edits saved beside photos by releases before 0.1.8 (`photo.dng.rawmakase.json`, with spots and masks in `photo.dng.rawmakase-local.json`, or in the data directory's `sidecars/` folder for read-only locations) are brought into the catalog when you add their folder, and left as they are.
 - Profiles, presets, previews and session state: `~/Library/Application Support/RAWmakase` on macOS, `$XDG_DATA_HOME/rawmakase` (default `~/.local/share/rawmakase`) on Linux, `%APPDATA%\RAWmakase` on Windows. `RAWMAKASE_DATA_DIR` overrides it.
 
-Exports are sRGB unless the Export dialog's Color Space says Adobe RGB (1998) or ProPhoto RGB (16-bit TIFF only), each with its own embedded profile; `render` and `render-batch` take `--color-space srgb|adobe-rgb|prophoto`. The preview is always sRGB and is not a soft proof of a wider export. The display defaults to sRGB; pick a monitor ICC profile under **More** only if your compositor does not already manage color.
+Exports are sRGB unless the Export dialog's Color Space says Adobe RGB (1998) or ProPhoto RGB (16-bit TIFF only), each with its own embedded profile; `render` and `render-batch` take `--color-space srgb|adobe-rgb|prophoto`. An HDR export is in Rec. 2020, Display P3 or Rec. 709 instead ([HDR export](docs/hdr.md#hdr-export)). The preview of an SDR edit is sRGB and is not a soft proof of a wider export; an HDR edit on an HDR display shows light above SDR white. The display defaults to sRGB; pick a monitor ICC profile under **More** only if your compositor does not already manage color.
 
 ## Development
 
@@ -216,7 +218,7 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md), the [documentation index](docs/RE
 The [website source and deployment guide](website/README.md) live in `website/`.
 
 ```sh
-make check    # every CI check that runs locally: fmt, clippy, tests, MSRV build, scripts
+make check    # every CI check that runs locally: fmt, clippy, tests, cargo doc, MSRV build, scripts
 ```
 
 The repository contains no RAW photos, Lightroom catalogs or camera profiles, so tests that need them are ignored by default. Run them with your own files:
@@ -234,6 +236,18 @@ RAWMAKASE_FIXTURES=~/raw-fixtures cargo test --release --test raw_fixtures -- --
 ```
 
 The public part of the color corpus runs with every `cargo test`: synthetic chart DNGs rendered on the CPU and compared with committed snapshots and with Camera Raw's renders of the same charts, so a color change beyond its tolerances (ΔE00 0.5 per patch, 0.1 on a case's mean) is noticed. The GPU preview path is covered by the hardware tests below, not by this suite. When a change is intended, `RAWMAKASE_BLESS=1 cargo test --test color` rewrites the snapshots, and also the charts and the Camera Raw baseline (`tests/corpus/camera-raw/baseline.json`). Read the baseline diff on its own before committing: it records how far renders are from Camera Raw, and accepting a larger distance should be a decision, not a side effect. Commit the files with the reason.
+
+Tests that need a real file system other than the one the repository is on are ignored too. They are the main checks that the fake disk the file-operation tests use behaves like real volumes. Point each variable at a writable folder on such a volume and run the test by name with `-- --ignored`, for example `RAWMAKASE_TEST_OTHER_VOLUME=/Volumes/Card cargo test -p rawmakase-catalog real_volumes -- --ignored`:
+
+| Environment variable | Tests | Needs |
+| --- | --- | --- |
+| `RAWMAKASE_TEST_OTHER_VOLUME` | `-p rawmakase-catalog`: `a_move_between_two_real_volumes`, `a_folder_moves_between_two_real_volumes`, `a_root_moves_between_two_real_volumes`; `-p rawmakase`: `another_volume_says_what_its_trash_does` (with `RAWMAKASE_TRASH_TESTS=1` it also trashes a synthetic folder there) | A writable folder on a second drive, card or disk image |
+| `RAWMAKASE_TEST_FAT_VOLUMES` | `-p rawmakase-fs`: `fat_and_exfat_volumes_are_told_and_have_no_stable_ids` | Folders on FAT or exFAT volumes, separated as `PATH` is |
+| `RAWMAKASE_TEST_NTFS_VOLUMES` | `-p rawmakase-fs`: `ntfs_volumes_rename_without_replacing_and_keep_the_file_object` | Folders on NTFS volumes, separated as `PATH` is |
+| `RAWMAKASE_TEST_NTFS_VOLUME` | `-p rawmakase-catalog`: `photos_on_an_ntfs_volume_rename` | A writable folder on an NTFS volume |
+| `RAWMAKASE_TEST_NETWORK_SHARE` | `-p rawmakase-fs`: `an_smb_share_is_told_and_makes_files_only_where_none_is`; `-p rawmakase`: `a_file_on_an_smb_share_is_kept_as_its_volume_has_no_trash` | A writable folder on an SMB share |
+| `RAWMAKASE_TEST_MOUNT`, `RAWMAKASE_TEST_MOUNT_NAME` | `-p rawmakase`: `a_drive_mounted_anywhere_is_found` | A drive's mount point and its label |
+| `RAWMAKASE_TEST_VHDS`, `RAWMAKASE_TEST_LETTER` | `-p rawmakase` (Windows only): `two_disks_swapped_at_one_letter_are_two_drives` | Two `.vhdx` files, each a volume holding a folder named as its label, and a drive letter; run as an administrator |
 
 GPU tests are ignored as well; run them with `cargo test -p rawmakase-engine --lib gpu -- --ignored` on a machine with a compute adapter. The GPU parity workflow runs them on a macOS runner for pull requests that touch the renderer, the model's colour, profile, optics or preview-overlay maths, or wgpu, and weekly on main.
 

@@ -731,7 +731,7 @@ fn a_region_overtaken_by_a_pan_still_shows_where_it_was_rendered() {
 /// masks extension's, which installs them itself.)
 #[test]
 fn ai_denoise_model_events_reach_its_own_installer() {
-    use crate::model_install::{InstallError, Pack};
+    use crate::model_install::InstallError;
     let ctx = egui::Context::default();
     let mut e = Editor::with_context(
         &ctx,
@@ -739,15 +739,13 @@ fn ai_denoise_model_events_reach_its_own_installer() {
         crate::app::preferences::session::Session::default(),
         None,
     );
-    e.tx.send(Event::ModelInstalled(
-        Pack::Denoise,
-        Err(InstallError::Failed("timed out".into())),
-    ))
+    e.tx.send(Event::ModelInstalled(Err(InstallError::Failed(
+        "timed out".into(),
+    ))))
     .unwrap();
     e.events(&ctx);
     assert_eq!(e.ai_denoise_model.failure(), Some("timed out"));
-    e.tx.send(Event::ModelRemoved(Pack::Denoise, Ok(())))
-        .unwrap();
+    e.tx.send(Event::ModelRemoved(Ok(()))).unwrap();
     e.events(&ctx);
     assert_eq!(e.messages.line(), "AI Denoise model removed");
 }

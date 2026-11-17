@@ -141,8 +141,7 @@ profile's table differs by up to 6.5 code values (Little CMS's own 8-bit result 
 to 7 from its floating-point one there). Synthetic DisplayCAL-style profiles (XYZ
 lut16 tables with a matrix or a CLUT, matrix/TRC tags, raised blacks) agree with
 Little CMS's 8-bit result within one code value everywhere. `color_management`'s tests hold the
-committed fixtures (`crates/rawmakase-decode/tests/data/monitor`) to this; an
-ignored test runs the dense grid over a folder of profiles and Little CMS results.
+committed fixtures (`crates/rawmakase-decode/tests/data/monitor`) to this.
 Choosing this manual override, or sRGB, on macOS leaves the Metal surface
 unmanaged to avoid applying a second conversion; choosing the system profile
 restores system color management. Failure of the manual transform still shows the sRGB bytes with a

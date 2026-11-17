@@ -23,8 +23,9 @@ disagree, the docs and the types win:
 [reference.md](reference.md) has the code sketches, all compiled and tested
 against the SDK, and the repo-internal checklist.
 
-**Released versions.** No tagged release has extensions yet: v0.4.12 predates
-them. Until one does, try an extension with an app built from `main`.
+**Released versions.** Extensions run in v0.5.0 and later. v0.5.0 supports
+`api = 2`; v0.6.0 added `api = 3` (photo sources, retouch generators and secret
+settings), so an extension that needs those needs v0.6.0 or newer.
 
 ## 1. Start
 

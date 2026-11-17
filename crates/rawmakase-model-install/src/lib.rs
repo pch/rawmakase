@@ -6,7 +6,7 @@
 //! one, and one install at a time runs across the app's running instances.
 //!
 //! Which packs exist, and which folder each has, is the caller's: the app's
-//! `model_install::Pack` for its own models, and an extension for its own.
+//! `model_install` for AI Denoise's model, and an extension for its own.
 use rawmakase_inference::ModelFile;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};

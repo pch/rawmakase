@@ -180,7 +180,7 @@ pub struct Metadata {
     #[serde(default, skip_serializing_if = "WhiteBalancePresets::is_empty")]
     pub wb_presets: WhiteBalancePresets,
     pub matrix: [[f32; 3]; 3],
-    /// LibRaw's XYZ(D65)-to-camera matrix, equivalent to a DNG ColorMatrix. Zero when unknown.
+    /// The decoder's XYZ(D65)-to-camera matrix, equivalent to a DNG ColorMatrix. Zero when unknown.
     #[serde(default)]
     pub cam_xyz: [[f32; 3]; 3],
     /// Where `cam_xyz` comes from; read again on open, not saved.
@@ -220,7 +220,7 @@ pub struct Metadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lens_info: Option<[f32; 4]>,
     /// Other names, as "Make Model", that Adobe's camera profiles may use for this
-    /// camera: LibRaw's canonical name for a body sold under several names, and
+    /// camera: the decoder's canonical name for a body sold under several names, and
     /// `crate::cameras::adobe_names`' table. See `CameraProfile::ensure_camera`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adobe_names: Vec<String>,
@@ -347,7 +347,8 @@ pub enum HighlightTonePriority {
     Enhanced,
 }
 impl HighlightTonePriority {
-    /// From LibRaw's `makernotes.canon.HighlightTonePriority`.
+    /// From the decoder's Canon maker note value: 0 off, 1 on, 2 enhanced (LibRaw's
+    /// `makernotes.canon.HighlightTonePriority` convention).
     pub fn from_libraw(v: i32) -> Self {
         match v {
             1 => Self::On,

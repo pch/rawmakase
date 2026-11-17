@@ -775,58 +775,6 @@ mod tests {
         }
     }
 
-    /// The same over the dense 52-level grid (0, 5 … 255) for every profile
-    /// in `$RAWMAKASE_ICC_GATE` (`<name>.icc`, Little CMS's `<name>.lcms.bin`
-    /// and its floating-point `<name>.lcms.bin.f32`), such as a machine's
-    /// own monitor profiles; prints the result per profile.
-    #[test]
-    #[ignore]
-    fn dense_gate_against_little_cms() {
-        let Some(dir) = std::env::var_os("RAWMAKASE_ICC_GATE") else {
-            return;
-        };
-        let levels: Vec<u8> = (0..52).map(|i| i * 5).collect();
-        let mut grid = Vec::new();
-        for &r in &levels {
-            for &g in &levels {
-                for &b in &levels {
-                    grid.extend([r, g, b]);
-                }
-            }
-        }
-        let mut entries: Vec<_> = std::fs::read_dir(&dir)
-            .unwrap()
-            .flatten()
-            .map(|e| e.path())
-            .collect();
-        entries.sort();
-        for icc in entries
-            .iter()
-            .filter(|p| p.extension().is_some_and(|e| e == "icc"))
-        {
-            let bin = icc.with_extension("lcms.bin");
-            let Ok(eight) = std::fs::read(&bin) else {
-                continue;
-            };
-            let float: Vec<f64> = std::fs::read(bin.with_extension("bin.f32"))
-                .unwrap()
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .map(|b| f64::from(f32::from_le_bytes(*b).clamp(0., 1.)) * 255.)
-                .collect();
-            let mut rgb = grid.clone();
-            super::display_transform(icc, &mut rgb).unwrap();
-            let (misses, worst) = compare(&rgb, &eight, &float);
-            eprintln!(
-                "{}: {misses} of {} miss ({:.4}%), worst {worst:.2} from Little CMS's float result",
-                icc.file_name().unwrap().to_string_lossy(),
-                rgb.len(),
-                misses as f64 * 100. / rgb.len() as f64
-            );
-        }
-    }
-
     #[test]
     fn srgb_to_srgb_changes_nothing() {
         let dir = tempfile::tempdir().unwrap();

@@ -9,7 +9,7 @@
 //! This crate depends on nothing of the app's, so a client builds without its
 //! GUI, GPU or native decoding libraries.
 // Every public item says what it is for: this crate is a contract other crates
-// and clients build on (#808 step 4.13).
+// and clients build on.
 #![warn(missing_docs)]
 pub mod paths;
 pub mod request;

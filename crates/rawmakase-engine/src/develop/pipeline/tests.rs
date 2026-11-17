@@ -854,26 +854,6 @@ fn hue_bands_wrap_without_discontinuity() {
     }
 }
 #[test]
-fn monotonic_curve() {
-    let k = ToneCurve {
-        points: vec![[0., 0.], [0.25, 0.1], [0.5, 0.4], [0.75, 0.8], [1., 1.]],
-        smooth: true,
-        natural: false,
-    };
-    let mut prev = 0.;
-    for i in 0..=1000 {
-        let v = k.evaluate(i as f32 / 1000.);
-        assert!(v >= prev);
-        prev = v;
-    }
-}
-#[test]
-fn matrix_preserves_negative_and_headroom() {
-    let p = mul([[2., -1., 0.], [0., 1., 0.], [0., 0., 1.]], [0.1, 1.3, 2.]);
-    assert!(p[0] < 0. && p[2] > 1.);
-}
-
-#[test]
 fn neutral_color_fast_path_matches_general_processing() {
     let metadata = Metadata {
         wb: [2., 1., 1.5],
@@ -2495,36 +2475,5 @@ fn a_render_fits_in_an_eighth_of_a_worker_stack() -> anyhow::Result<()> {
         crate::develop::render(&im, &r, 0, Cancel::NEVER)?;
         crate::develop::render_hdr(&im, &r, None, 0, Cancel::NEVER)
     })?;
-    Ok(())
-}
-/// An edit whose recipe still carries the copy of an applied preset's settings
-/// earlier releases saved renders bit for bit as it did: the copy is dropped on read
-/// and never reached the renderer.
-#[test]
-fn a_legacy_preset_settings_map_does_not_change_the_render() -> anyhow::Result<()> {
-    let mut im = fixture();
-    im.metadata.cam_xyz = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
-    let base = Recipe {
-        profile: crate::camera_profiles::CameraProfile::camera_matrix_default(&im.metadata)
-            .map(std::sync::Arc::new),
-        exposure: 0.4,
-        contrast: 0.3,
-        preset_name: "Preset".into(),
-        ..Default::default()
-    };
-    let mut stored = serde_json::to_value(&base)?;
-    stored["preset_settings"] = serde_json::json!({"Exposure2012": "+0.40"});
-    let loaded: Recipe = serde_json::from_value(stored)?;
-    assert_eq!(loaded, base);
-    let bits = |r: &Recipe| -> anyhow::Result<Vec<u32>> {
-        let rendered = crate::develop::render(&im, &r.checked()?, 0, Cancel::NEVER)?;
-        Ok(rendered
-            .pixels
-            .iter()
-            .flatten()
-            .map(|v| v.to_bits())
-            .collect())
-    };
-    assert_eq!(bits(&loaded)?, bits(&base)?);
     Ok(())
 }

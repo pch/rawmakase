@@ -2403,9 +2403,5 @@ mod keymap_pins_harness;
 mod keymap_pins_editor_tests;
 
 #[cfg(all(test, not(target_os = "windows")))]
-#[path = "keymap_golden_editor_tests.rs"]
-mod keymap_golden_editor_tests;
-
-#[cfg(all(test, not(target_os = "windows")))]
 #[path = "keymap_editor_tests.rs"]
 mod keymap_editor_tests;

@@ -37,8 +37,6 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::model_install::Pack;
-
 /// The selections that came before extensions, as their saved masks name them:
 /// Subject, Sky, and Background, the same coverage as Subject with the
 /// component inverted, so adding a brush to it still adds coverage.
@@ -1079,23 +1077,22 @@ impl Editor {
     /// AI Denoise's installer finished: the photo shown asks for its result.
     pub(in crate::app) fn model_installed(
         &mut self,
-        pack: Pack,
         result: Result<(), crate::model_install::InstallError>,
     ) {
-        match (pack, result) {
-            (Pack::Denoise, Ok(())) => {
+        match result {
+            Ok(()) => {
                 self.messages.done("AI Denoise model installed");
                 self.document.ai = Default::default();
                 self.schedule();
             }
-            (_, Err(why)) => self.messages.fail(format!("Model not installed: {why}")),
+            Err(why) => self.messages.fail(format!("Model not installed: {why}")),
         }
     }
     /// Asks the installer to download AI Denoise's model.
-    pub(in crate::app) fn install_model(&mut self, pack: Pack) {
+    pub(in crate::app) fn install_model(&mut self) {
         self.context.request_repaint();
         let (tx, ctx) = (self.tx.clone(), self.context.clone());
-        self.installer_mut(pack).install(None, tx, ctx);
+        self.ai_denoise_model.install(None, tx, ctx);
     }
 }
 

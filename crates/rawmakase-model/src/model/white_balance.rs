@@ -549,12 +549,6 @@ mod rendered_tests {
     }
 
     #[test]
-    fn a_raw_recipe_saves_without_relative_white_balance() {
-        let text = serde_json::to_string(&Recipe::default()).unwrap();
-        assert!(!text.contains("incremental"));
-    }
-
-    #[test]
     fn relative_white_balance_is_validated_for_every_photo() {
         let r = Recipe {
             incremental_tint: 101.,

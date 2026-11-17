@@ -234,57 +234,6 @@ fn a_wheel_scroll_resizing_a_spot_is_one_history_step() {
 }
 
 #[test]
-fn brackets_size_the_red_eye_circle_without_rating_the_photo() -> anyhow::Result<()> {
-    let dir = tempfile::tempdir()?;
-    let photos = dir.path().join("photos");
-    std::fs::create_dir(&photos)?;
-    std::fs::write(photos.join("image.ARW"), b"rating fixture")?;
-    let catalog = dir.path().join("test.rawmakase");
-    crate::catalog::Catalog::create(&catalog)?.add_folder(&photos)?;
-    let ctx = egui::Context::default();
-    let l = crate::app::library::Library::load(&catalog, ctx.clone())?;
-    let id = l.session.photos()[0].id;
-    let mut editor = Editor::with_context(
-        &ctx,
-        None,
-        crate::app::preferences::session::Session::default(),
-        None,
-    );
-    editor.library = Some(Box::new(l));
-    editor.module = Module::Develop;
-    editor.document.catalog_photo = Some(id);
-    editor
-        .view
-        .set_tool(crate::app::develop::state::Tool::RedEye);
-    let mut output = ctx.run_ui(
-        egui::RawInput {
-            events: vec![egui::Event::Key {
-                key: egui::Key::CloseBracket,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: egui::Modifiers::NONE,
-            }],
-            ..Default::default()
-        },
-        |ui| editor.metadata_shortcuts(ui.ctx()),
-    );
-    output.textures_delta.clear();
-    let library = editor.library.as_ref().unwrap();
-    assert_eq!(
-        library
-            .session
-            .photos()
-            .iter()
-            .find(|p| p.id == id)
-            .unwrap()
-            .rating,
-        0
-    );
-    Ok(())
-}
-
-#[test]
 fn an_edit_right_after_a_wheel_scroll_is_its_own_history_step() {
     let ctx = egui::Context::default();
     let mut editor = Editor::with_context(

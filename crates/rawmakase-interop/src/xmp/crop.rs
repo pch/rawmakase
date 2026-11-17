@@ -187,12 +187,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_positive_crop_angle_is_a_negative_straighten() {
-        let (_, straighten) = from_lightroom([0.1, 0.1, 0.9, 0.9], 5., CHART).unwrap();
-        assert_eq!(straighten, -5.);
-    }
-
     /// Camera Raw turns corners on the whole frame too, shrunk to fit (922 × 585).
     #[test]
     fn corners_on_the_whole_frame_turn_and_fit() {

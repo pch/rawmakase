@@ -531,7 +531,7 @@ fn commit(w: &mut Write<'_>, cx: &Cx<'_>, item: &Item) -> Result<Option<String>>
     Ok(None)
 }
 
-fn name(path: &Path) -> String {
+pub(super) fn name(path: &Path) -> String {
     path.file_name()
         .unwrap_or_default()
         .to_string_lossy()
@@ -669,16 +669,24 @@ fn originals(disk: &dyn Disk, item: &Item, rule: Originals) -> bool {
 /// decided first (`restoring`), then each member's copies discarded; it
 /// ends `no_change`, or stays being put back when a copy can't be.
 pub(super) fn undo(cx: &Cx<'_>, catalog: &mut Catalog, id: OperationId, why: &str) -> Result<()> {
-    undo_as(cx, catalog, id, why, Originals::AsCopied)
+    undo_as(cx, catalog, id, why, Originals::AsCopied, discard)
 }
 
-/// [`undo`], the originals held to `rule`.
-fn undo_as(
+/// Removes an item's copies, the originals held to the given rule, and
+/// returns why not, unless every one is gone: [`discard`] for a photo's copy,
+/// [`tree_copy`](super::tree_copy)'s for a folder's.
+pub(super) type Discard =
+    fn(&Cx<'_>, &mut Catalog, &Item, Originals) -> Result<Option<&'static str>>;
+
+/// [`undo`], the originals held to `rule` and the copies removed by
+/// `discard`. A photo's copy and a folder's are undone alike.
+pub(super) fn undo_as(
     cx: &Cx<'_>,
     catalog: &mut Catalog,
     id: OperationId,
     why: &str,
     rule: Originals,
+    discard: Discard,
 ) -> Result<()> {
     catalog
         .db
@@ -1019,5 +1027,5 @@ pub(super) fn decide(
             .write(|w| journal::set_state(w, id, left, Some(why)));
     }
     let why = item.error.as_deref().unwrap_or("it was interrupted");
-    undo_as(cx, catalog, id, why, rule)
+    undo_as(cx, catalog, id, why, rule, discard)
 }

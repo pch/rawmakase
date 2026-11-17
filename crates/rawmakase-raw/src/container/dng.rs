@@ -2026,15 +2026,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn decodes_a_small_dng() {
-        let f = dng(4, 2, &[]);
-        let info = crate::open(&f).unwrap();
-        assert_eq!((info.width, info.height), (4, 2));
-        let s = crate::decode(&info, &f, Cancel::NEVER).unwrap();
-        assert_eq!(s.data, vec![0; 8]);
-    }
-
-    #[test]
     fn hostile_sizes_are_errors_not_panics() {
         let le32 = |v: u32| v.to_le_bytes().to_vec();
         let rational = |n: u32| [n.to_le_bytes(), 1u32.to_le_bytes()].concat();

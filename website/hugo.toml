@@ -5,7 +5,7 @@ disableKinds = ["taxonomy", "term", "section", "page", "RSS", "sitemap"]
 
 [params]
   # Fallback only: builds read the latest release from GitHub and use that version.
-  version = "0.1.9"
+  version = "0.6.0"
   repo = "https://github.com/pch/rawmakase"
   x = "https://x.com/p_ch"
   description = "A fast, non-destructive RAW photo editor for macOS, Linux and Windows. Open source, written in Rust."

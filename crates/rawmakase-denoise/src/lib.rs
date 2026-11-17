@@ -242,7 +242,7 @@ pub struct Service {
 /// or not it is installed: the folder the desktop app installs it in, and the one its
 /// command line passes [`CommandLine::new`] and the `rawmakase denoise` command.
 pub fn model_dir() -> PathBuf {
-    crate::model_install::Pack::Denoise.dir()
+    crate::model_install::dir()
 }
 
 /// The provider AI Denoise asks for: CoreML's GPU on Apple Silicon (measured equal to

@@ -179,7 +179,7 @@ pub struct SkySpec {
 }
 
 /// UperNet with a ConvNeXt base backbone, trained on ADE20K, exported to ONNX by
-/// `scripts/export_upernet_sky.py` from `openmmlab/upernet-convnext-base` with half-precision
+/// `scripts/models/export_upernet_sky.py` from `openmmlab/upernet-convnext-base` with half-precision
 /// weights and its adaptive pooling written so the graph takes any size. There is no upstream
 /// export to fall back on, so both sources are the mirror.
 pub const SKY: SkySpec = SkySpec {

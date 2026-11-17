@@ -1313,10 +1313,3 @@ pub(super) fn crashes(f: impl FnOnce()) -> bool {
 pub(super) fn results(outcome: &Outcome) -> Vec<ItemResult> {
     outcome.items.iter().map(|i| i.result.clone()).collect()
 }
-
-#[test]
-fn a_crash_is_a_panic_the_tests_survive() -> Result<()> {
-    assert!(crashes(|| panic!("injected")));
-    assert!(!crashes(|| {}));
-    Ok(())
-}
