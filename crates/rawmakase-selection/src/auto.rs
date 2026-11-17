@@ -562,7 +562,7 @@ mod tests {
             }
         });
         let leaves = kinds(|_, y| match y {
-            ..0.125 => Some(Kind::Vegetation),
+            ..0.125 => Some(Kind::Trees),
             ..0.5833 => None,
             _ => Some(Kind::Terrain),
         });

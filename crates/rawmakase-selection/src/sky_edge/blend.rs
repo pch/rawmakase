@@ -7,7 +7,8 @@
 //! model's answer snapped to the photo's edges as it always was: a facade, a hillside, a
 //! sea horizon, the open sky and its clouds. Water vetoes both modes, with priority: a
 //! crown or reeds at a shore get the model's edge where they meet the water, since a
-//! reflection or the water between reeds has the sky's own colours.
+//! reflection or the water between reeds has the sky's own colours. Under a night sky
+//! ([`NIGHT`]) neither mode runs: the sky is as dark as what stands below it.
 //!
 //! The kinds come on the model's quarter grid. A cell counts for a kind only where the
 //! model sees something other than sky there ([`OWNED`]); a crown's or a lattice's weight
@@ -25,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use super::dense::dense_with;
 use super::sparse::sparse_with;
-use super::{GATE, cancelled, step};
+use super::{GATE, SURE_SKY, cancelled, step};
 use crate::kinds::Kinds;
 use crate::process::{Rect, resample};
 use crate::refine::{guided, mean, smooth};
@@ -34,7 +35,7 @@ use rawmakase_inference::InferenceError;
 /// Share of a cell the model must see as something other than sky for the cell to
 /// count for the kinds it sees there.
 const OWNED: f32 = 0.3;
-/// Vegetation's share of what the model sees in a cell, from which the sparse mode
+/// Trees' share of what the model sees in a cell, from which the sparse mode
 /// starts to take over, to where it has taken over entirely.
 const CROWN: (f32, f32) = (0.15, 0.5);
 /// Lattice's share of what the model sees in a cell over which the dense mode takes
@@ -46,6 +47,10 @@ const VETO: (f32, f32) = (0.05, 0.25);
 const EASE: f32 = 0.006;
 /// Below this weight anywhere in the photo the modes are not run.
 const LEAST: f32 = 0.01;
+/// The median luma (sRGB / 255) of the sky the model is sure of, over which the modes
+/// fade in: a night sky is as dark as the trees, bushes and water below it, and the
+/// colours cannot tell them apart, so the model's answer stands there.
+const NIGHT: (f32, f32) = (0.08, 0.14);
 
 /// Which edge modes [`blend`] ran for a photo, and how long they took with their
 /// weighing and mixing: the time the sky's edge costs beyond the model's answer
@@ -76,7 +81,11 @@ pub(crate) fn blend(
     let (w, h) = (width, height);
     let snapped = snapped(luma, p, w, h);
     let started = Instant::now();
-    let (crowns, lattices) = weights(kinds, w, h);
+    let lit = step(NIGHT.0, NIGHT.1, sky_luma(luma, p));
+    let (mut crowns, mut lattices) = weights(kinds, w, h);
+    for weight in crowns.iter_mut().chain(lattices.iter_mut()) {
+        *weight *= lit;
+    }
     let busy = |weights: &[f32]| weights.iter().any(|v| *v > LEAST);
     let (by_crown, by_lattice) = (busy(&crowns), busy(&lattices));
     if !by_crown && !by_lattice {
@@ -129,6 +138,22 @@ pub(crate) fn blend(
     Ok((out, modes))
 }
 
+/// The median of `luma` where the model is sure of sky, `p` above [`SURE_SKY`]; 0 where
+/// it is sure of none.
+fn sky_luma(luma: &[f32], p: &[f32]) -> f32 {
+    let mut sky: Vec<f32> = luma
+        .iter()
+        .zip(p)
+        .filter(|(_, p)| **p > SURE_SKY)
+        .map(|(l, _)| *l)
+        .collect();
+    if sky.is_empty() {
+        return 0.;
+    }
+    let middle = sky.len() / 2;
+    *sky.select_nth_unstable_by(middle, f32::total_cmp).1
+}
+
 /// The model's answer, `p`, snapped to the edges of the photo's `luma` by a guided
 /// filter whose radius is a two-hundredth of the long side and settled by its curve: the
 /// sky's edge where no mode is called for.
@@ -159,7 +184,7 @@ fn weights(kinds: &Kinds, width: usize, height: usize) -> (Vec<f32>, Vec<f32>) {
         .map(|i| {
             kinds.built[i]
                 + kinds.lattice[i]
-                + kinds.vegetation[i]
+                + kinds.trees[i]
                 + kinds.terrain[i]
                 + kinds.water[i]
                 + kinds.unclear[i]
@@ -168,7 +193,7 @@ fn weights(kinds: &Kinds, width: usize, height: usize) -> (Vec<f32>, Vec<f32>) {
     let owned = |i: usize| seen[i] >= OWNED;
     let share = |kind: &[f32], i: usize| if owned(i) { kind[i] / seen[i] } else { 0. };
     let crown: Vec<f32> = (0..cells)
-        .map(|i| step(CROWN.0, CROWN.1, share(&kinds.vegetation, i)))
+        .map(|i| step(CROWN.0, CROWN.1, share(&kinds.trees, i)))
         .collect();
     let lattice: Vec<f32> = (0..cells)
         .map(|i| step(SURE_LATTICE.0, SURE_LATTICE.1, share(&kinds.lattice, i)))
@@ -301,7 +326,7 @@ mod tests {
     }
 
     /// The white facade with dark windows of [`building`], behind a bare tree whose
-    /// upper half stands against the sky: the facade is built, the tree vegetation.
+    /// upper half stands against the sky: the facade is built, the tree a tree.
     #[test]
     fn a_facade_behind_twigs_gets_no_sky_and_the_gaps_between_the_twigs_do() {
         let window = |x: usize, y: usize| (x - 150) % 40 >= 28 && (y - 300) % 50 >= 16;
@@ -317,7 +342,7 @@ mod tests {
         );
         let kinds = painted(|x, y| {
             if (200.0..420.).contains(&x) && (200.0..300.).contains(&y) {
-                Some(Kind::Vegetation)
+                Some(Kind::Trees)
             } else if y >= 300. && (150.0..870.).contains(&x) {
                 Some(Kind::Built)
             } else if y >= 500. {
@@ -354,7 +379,7 @@ mod tests {
             && (y - 260) % 12 >= 3
     }
 
-    /// [`crown`] with a church under its spire: the crown is vegetation, the church
+    /// [`crown`] with a church under its spire: the crown is a tree, the church
     /// built.
     #[test]
     fn a_church_beside_a_crown_gets_no_added_sky_and_the_crowns_gaps_do() {
@@ -375,7 +400,7 @@ mod tests {
             if y >= 400. {
                 Some(Kind::Terrain)
             } else if (300.0..700.).contains(&x) && y >= 150. {
-                Some(Kind::Vegetation)
+                Some(Kind::Trees)
             } else if (770.0..930.).contains(&x) && y >= 90. {
                 Some(Kind::Built)
             } else {
@@ -483,7 +508,7 @@ mod tests {
     }
 
     /// A white column standing right beside a dark conifer, solid but for small gaps of
-    /// sky, the model calling both not sky: the column is built, the crown vegetation.
+    /// sky, the model calling both not sky: the column is built, the crown a tree.
     #[test]
     fn a_white_column_beside_a_crown_gets_no_sky_and_the_crowns_gaps_do() {
         let in_crown = |x: usize, y: usize| (300..600).contains(&x) && (150..400).contains(&y);
@@ -514,7 +539,7 @@ mod tests {
             } else if in_column(x, y) {
                 Some(Kind::Built)
             } else if in_crown(x, y) {
-                Some(Kind::Vegetation)
+                Some(Kind::Trees)
             } else {
                 None
             }
@@ -631,7 +656,7 @@ mod tests {
     }
 
     /// A bare tree's few twigs, 2 pixels wide and far apart, across a large sky the
-    /// model doubts (0.4) behind them: vegetation. The gaps are the sparse mode's,
+    /// model doubts (0.4) behind them: a tree. The gaps are the sparse mode's,
     /// though the dense mode's size gate would leave the large sky out.
     #[test]
     fn far_apart_twigs_over_a_large_sky_get_the_sparse_modes_gaps() {
@@ -660,7 +685,7 @@ mod tests {
             if y >= 400. {
                 Some(Kind::Terrain)
             } else if in_crown(x as usize, y as usize) {
-                Some(Kind::Vegetation)
+                Some(Kind::Trees)
             } else {
                 None
             }
@@ -693,7 +718,7 @@ mod tests {
     }
 
     /// Budding twigs across the sky that the model, doubting (0.25), mostly takes for a
-    /// waterfall: half water, a quarter vegetation. Water vetoes the modes, whatever the
+    /// waterfall: half water, a quarter tree. Water vetoes the modes, whatever the
     /// water turns out to be: the edge is the model's answer, as main's.
     #[test]
     fn sky_between_twigs_the_model_doubts_as_water_gets_the_models_answer() {
@@ -734,7 +759,7 @@ mod tests {
         };
         let kinds = Kinds {
             water: share(true),
-            vegetation: share(false),
+            trees: share(false),
             ..painted
         };
         let (out, main) = blended(&kinds, &img, &probability, 1024, 683);
@@ -784,7 +809,7 @@ mod tests {
 
     /// The small grey cloud of the test above and a dark wire, 3 pixels wide, in an
     /// open blue sky the model is sure of (0.99), where it gives a faint share (0.001)
-    /// of what it does not see as sky to vegetation or to water, as it does beside a
+    /// of what it does not see as sky to trees or to water, as it does beside a
     /// tree: so faint a share is no kind, and the coverage is the model's answer, as
     /// main's, at 1024 and at 2560 pixels.
     #[test]
@@ -811,7 +836,7 @@ mod tests {
                 }
             });
             let p = answer(w, h, |_, fy| if fy * 683. >= 500. { 0.0003 } else { 0.99 });
-            for faint in [Kind::Vegetation, Kind::Water] {
+            for faint in [Kind::Trees, Kind::Water] {
                 let mut kinds = Kinds::painted(w / 4, h / 4, |_, y| {
                     Some(if y * 683. >= 500. {
                         Kind::Terrain
@@ -820,7 +845,7 @@ mod tests {
                     })
                 });
                 let share = match faint {
-                    Kind::Vegetation => &mut kinds.vegetation,
+                    Kind::Trees => &mut kinds.trees,
                     _ => &mut kinds.water,
                 };
                 for v in share.iter_mut() {
@@ -833,7 +858,7 @@ mod tests {
     }
 
     /// Reeds standing in a lake whose water between them is as pale as the sky above,
-    /// the model doubting the water (0.45) and seeing the reeds as half vegetation, half
+    /// the model doubting the water (0.45) and seeing the reeds as half tree, half
     /// water: water's veto leaves it all the model's answer, as main's.
     #[test]
     fn water_between_reeds_stays_out_of_the_sky() {
@@ -858,7 +883,7 @@ mod tests {
             let x = ((i % GRID.0) as f32 + 0.5) / GRID.0 as f32 * 1024.;
             let y = ((i / GRID.0) as f32 + 0.5) / GRID.1 as f32 * 683.;
             if in_reeds(x, y) {
-                (kinds.vegetation[i], kinds.water[i]) = (0.35, 0.35);
+                (kinds.trees[i], kinds.water[i]) = (0.35, 0.35);
             }
         }
         let water: Vec<(usize, usize)> = (340..680)
@@ -880,7 +905,7 @@ mod tests {
             if y >= 420. {
                 Some(Kind::Water)
             } else if (300.0..700.).contains(&x) && y >= 150. {
-                Some(Kind::Vegetation)
+                Some(Kind::Trees)
             } else {
                 None
             }
@@ -935,9 +960,32 @@ mod tests {
         }
     }
 
+    /// [`crown_of`] at night: a sky about as dark as the crown and the bushes and river
+    /// below, which the model sees as trees and water. The colours cannot tell them
+    /// apart, so the coverage is the model's answer snapped as main snaps it; the same
+    /// photo by day gets the sparse mode.
+    #[test]
+    fn a_night_sky_over_dark_trees_and_water_is_mains() {
+        let kinds = painted(|x, y| {
+            if y >= 400. && x < 512. {
+                Some(Kind::Water)
+            } else if y >= 150. {
+                Some(Kind::Trees)
+            } else {
+                None
+            }
+        });
+        let (night, p) = crown_of(1024, 683, |_| [14, 16, 26], [10, 13, 10]);
+        let (out, main) = blended(&kinds, &night, &p, 1024, 683);
+        assert_eq!(differs(&out, &main), None);
+        let (day, p) = crown();
+        let (out, main) = blended(&kinds, &day, &p, 1024, 683);
+        assert!(differs(&out, &main).is_some());
+    }
+
     /// The church of `a_church_beside_a_crown_gets_no_added_sky_and_the_crowns_gaps_do`
     /// beside [`crown`]'s crown, along row 330: from the crown's edge (x 700) across the
-    /// open sky where the kinds change, from vegetation to none at x 700 and to built at
+    /// open sky where the kinds change, from tree to none at x 700 and to built at
     /// x 770, and the crown's weight fades out, into the church's panels (x 780 to 920).
     /// Pixels within 8 of the model's own edges, at x 700 (the crown's side) and x 780 and
     /// 920 (the church's), are skipped: there the coverage rightly steps from foreground
@@ -962,7 +1010,7 @@ mod tests {
             if y >= 400. {
                 Some(Kind::Terrain)
             } else if (300.0..700.).contains(&x) && y >= 150. {
-                Some(Kind::Vegetation)
+                Some(Kind::Trees)
             } else if (770.0..930.).contains(&x) && y >= 90. {
                 Some(Kind::Built)
             } else {
@@ -985,7 +1033,7 @@ mod tests {
     }
 
     /// [`crown`]'s crown at 2560 pixels wide (twice the app's input), the crown
-    /// vegetation: the sky between its branches is found and the branches are not, as at
+    /// a tree: the sky between its branches is found and the branches are not, as at
     /// 1024.
     #[test]
     fn sky_between_branches_is_found_at_the_skys_input_size() {
@@ -1001,7 +1049,7 @@ mod tests {
             if y >= 400. {
                 Some(Kind::Terrain)
             } else if (300.0..700.).contains(&x) && y >= 150. {
-                Some(Kind::Vegetation)
+                Some(Kind::Trees)
             } else {
                 None
             }
@@ -1028,7 +1076,7 @@ mod tests {
         let (img, p) = crown();
         let (rgb, soft, w, h) = inputs(&img, &p, 1024, 683);
         let grey = luma(&img, w, h);
-        let kinds = painted(|_, y| (y >= 150.).then_some(Kind::Vegetation));
+        let kinds = painted(|_, y| (y >= 150.).then_some(Kind::Trees));
         let result = blend(
             &rgb,
             &grey,

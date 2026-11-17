@@ -139,6 +139,8 @@ under the new version.
   nothing there: the extension's program remembers the last answer while it runs,
   and the photo travels again for another. With `--sky-model` the worker holds that model in memory too, as
   long as the worker runs (plus a copy of the model file while it loads, and more
-  during a run).
+  during a run). Sky's edge refinement needs about 150 to 200 bytes per pixel while it
+  runs: about 240 MB for the app's 1280-pixel photo, but roughly 1.5 to 2 GB for the
+  largest image the worker accepts from another client.
 - Local inference remains the default and the reference: without the
   configuration file nothing in this page is in play.

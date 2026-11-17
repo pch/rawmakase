@@ -13,10 +13,11 @@ const BUILT: &[usize] = &[
 ];
 /// Fences, railings, bridges, poles, lights and other open frameworks the sky shows through.
 const LATTICE: &[usize] = &[32, 38, 61, 82, 87, 93, 95, 136, 140];
-/// Trees, grass, plants, palms and flowers.
-const VEGETATION: &[usize] = &[4, 9, 17, 66, 72];
-/// Ground, mountains, rocks, sand and other land.
-const TERRAIN: &[usize] = &[6, 11, 13, 16, 29, 34, 46, 52, 68, 91, 94];
+/// Trees and palms: crowns, whose gaps show the sky. Grass, plants and flowers are
+/// ground cover and count as terrain.
+const TREES: &[usize] = &[4, 72];
+/// Ground, mountains, rocks, sand, grass, plants, flowers and other land.
+const TERRAIN: &[usize] = &[6, 9, 11, 13, 16, 17, 29, 34, 46, 52, 66, 68, 91, 94];
 /// Sea, rivers, lakes and other water.
 const WATER: &[usize] = &[21, 26, 60, 76, 103, 109, 113, 128];
 
@@ -28,7 +29,7 @@ pub(crate) struct Kinds {
     pub height: usize,
     pub built: Vec<f32>,
     pub lattice: Vec<f32>,
-    pub vegetation: Vec<f32>,
+    pub trees: Vec<f32>,
     pub terrain: Vec<f32>,
     pub water: Vec<f32>,
     /// Every class that is neither sky nor in one of the other kinds.
@@ -41,7 +42,7 @@ pub(crate) struct Kinds {
 pub(crate) enum Kind {
     Built,
     Lattice,
-    Vegetation,
+    Trees,
     Terrain,
     Water,
     Unclear,
@@ -70,7 +71,7 @@ impl Kinds {
             height,
             built: cell(Kind::Built),
             lattice: cell(Kind::Lattice),
-            vegetation: cell(Kind::Vegetation),
+            trees: cell(Kind::Trees),
             terrain: cell(Kind::Terrain),
             water: cell(Kind::Water),
             unclear: cell(Kind::Unclear),
@@ -97,7 +98,7 @@ pub(crate) fn kinds(
     }
     let pixels = width * height;
     let kind_of = kind_table();
-    // built, lattice, vegetation, terrain, water, unclear; the sky's share is dropped.
+    // built, lattice, trees, terrain, water, unclear; the sky's share is dropped.
     let mut kinds: [Vec<f32>; 6] = std::array::from_fn(|_| vec![0.0; pixels]);
     let mut shares = [0f32; 6];
     for p in 0..pixels {
@@ -116,13 +117,13 @@ pub(crate) fn kinds(
             kind[p] = share / total;
         }
     }
-    let [built, lattice, vegetation, terrain, water, unclear] = kinds;
+    let [built, lattice, trees, terrain, water, unclear] = kinds;
     Ok(Kinds {
         width,
         height,
         built,
         lattice,
-        vegetation,
+        trees,
         terrain,
         water,
         unclear,
@@ -134,7 +135,7 @@ fn kind_table() -> [Option<usize>; CLASSES] {
     const UNCLEAR: usize = 5;
     let mut table = [Some(UNCLEAR); CLASSES];
     table[SKY_CLASS] = None;
-    for (kind, group) in [BUILT, LATTICE, VEGETATION, TERRAIN, WATER]
+    for (kind, group) in [BUILT, LATTICE, TREES, TERRAIN, WATER]
         .into_iter()
         .enumerate()
     {
@@ -167,7 +168,7 @@ mod tests {
         [
             ("built", &kinds.built),
             ("lattice", &kinds.lattice),
-            ("vegetation", &kinds.vegetation),
+            ("trees", &kinds.trees),
             ("terrain", &kinds.terrain),
             ("water", &kinds.water),
             ("unclear", &kinds.unclear),
@@ -179,7 +180,11 @@ mod tests {
         for (class, expected) in [
             (1, Some("built")),
             (61, Some("lattice")),
-            (4, Some("vegetation")),
+            (4, Some("trees")),
+            (72, Some("trees")),
+            (9, Some("terrain")),
+            (17, Some("terrain")),
+            (66, Some("terrain")),
             (16, Some("terrain")),
             (21, Some("water")),
             (12, Some("unclear")),
@@ -220,7 +225,7 @@ mod tests {
     #[test]
     fn every_class_but_sky_is_in_exactly_one_kind() {
         let mut seen = [0; CLASSES];
-        for group in [BUILT, LATTICE, VEGETATION, TERRAIN, WATER] {
+        for group in [BUILT, LATTICE, TREES, TERRAIN, WATER] {
             for c in group {
                 seen[*c] += 1;
             }

@@ -31,6 +31,8 @@ neutral sliders and its overlay shown.
   (buildings, land, open sky and its clouds, and whatever it cannot name) the model's
   answer stands. Over and beside water neither applies, so a lake reflecting
   the sky or the water between reeds is left out by the model and not by its colours.
+  Under a night sky neither applies either: the sky is as dark as the trees and water
+  below it, and the colours cannot tell them apart.
   The colours ease in and out over tens of pixels where the kinds meet, so there is no
   seam. "No sky found" when less than 1% of the frame is sky.
 - **Background** is the subject inverted as a component, so adding a brush to it still
@@ -80,7 +82,8 @@ models.
   cover the rest. Sky is as sharp as the model's answer and the edge
   refinement make it: thin wires are not separated from the sky; dark rock or ceilings
   can be taken for a night sky, a sea lost in haze for sky, and a thin blown-out gap of
-  sky can be missed.
+  sky can be missed. Near a crown or a lattice, a pale fence, a wet rail in fog or the
+  lower part of a trunk can take some of the sky's coverage.
 
 ## Using it
 
