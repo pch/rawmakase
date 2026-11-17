@@ -320,3 +320,55 @@ fn the_editor_refuses_values_that_dont_read() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn reading_smart_collections_says_what_it_filled_in_and_left() {
+    use crate::catalog::lightroom::SmartRecovery;
+    let nothing = SmartRecovery {
+        synonyms_complete: true,
+        ..Default::default()
+    };
+    assert_eq!(
+        super::smart::smart_read_line(&nothing),
+        "Read from Lightroom: nothing was missing"
+    );
+    let some = SmartRecovery {
+        rules: 2,
+        sorts: 1,
+        target: true,
+        synonyms: 1,
+        collections_apart: vec!["Best".into()],
+        keywords_apart: (1..=5).map(|n| format!("k{n}")).collect(),
+        synonyms_complete: false,
+    };
+    assert_eq!(
+        super::smart::smart_read_line(&some),
+        "Read from Lightroom: 2 smart collections' rules, 1 collection's sort, the target \
+         collection, the synonyms of 1 keyword. Left as they are here (renamed, moved or not \
+         Lightroom's): Best. Keywords not in that Lightroom catalog: k1, k2, k3 and 2 more, so \
+         synonyms stay incomplete"
+    );
+}
+
+/// Review, round 1: every keyword or collection left is in the message's
+/// detail, not only the first three, and an incomplete read is no success.
+#[test]
+fn reading_smart_collections_lists_everything_it_left() -> Result<()> {
+    use crate::catalog::lightroom::SmartRecovery;
+    let (_d, mut library, _) = library_with(&[])?;
+    let read = SmartRecovery {
+        keywords_apart: (1..=5).map(|n| format!("k{n}")).collect(),
+        ..Default::default()
+    };
+    library.note_smart_read(&read);
+    let detail = library.messages.detail().unwrap_or_default().to_string();
+    for n in 1..=5 {
+        assert!(detail.contains(&format!("Keyword: k{n}")), "{detail}");
+    }
+    let incomplete = SmartRecovery::default();
+    assert_eq!(
+        super::smart::smart_read_line(&incomplete),
+        "Read from Lightroom: nothing filled in. Keyword synonyms stay incomplete"
+    );
+    Ok(())
+}

@@ -1,10 +1,12 @@
 //! Read-only Lightroom catalog import. Its Develop settings are converted by
 //! `lr_develop`.
 pub(super) mod history;
+mod recover;
 use super::Catalog;
 use crate::catalog::db::{LightroomWrite, Reads, sql, sqlite_sql};
 use anyhow::{Context, Result, ensure};
 pub use history::HistoryStep;
+pub use recover::SmartRecovery;
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use std::path::{Path, PathBuf};
 

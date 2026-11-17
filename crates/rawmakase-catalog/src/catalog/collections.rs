@@ -957,7 +957,11 @@ fn options_of(w: &Write<'_>, id: CollectionId) -> Result<Option<CollectionOption
     }))
 }
 
-fn write_options(w: &mut Write<'_>, id: CollectionId, options: &CollectionOptions) -> Result<()> {
+pub(super) fn write_options(
+    w: &mut Write<'_>,
+    id: CollectionId,
+    options: &CollectionOptions,
+) -> Result<()> {
     w.execute(
         sql!(
             "INSERT INTO collection_options(collection, sort, direction) VALUES (?, ?, ?)
