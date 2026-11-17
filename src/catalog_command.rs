@@ -30,7 +30,7 @@ pub fn open_catalog(path: &Path, err: &mut dyn Write) -> Result<crate::catalog::
         &crate::catalog::locations::Computer::this(),
         &mut progress,
     )?;
-    let archive = catalog.remove_lightroom_archive(&mut progress);
+    let archive = catalog.remove_unused_data(&mut progress);
     if let Some(error) = archive {
         writeln!(
             err,

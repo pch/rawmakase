@@ -62,8 +62,10 @@ left, in order, with the finished ones ticked: download the models.
   change to the masks' structure (adding, removing, Undo).
 - **Not copied:** masks made from a selection belong to their photo. Copy, Paste and
   Sync leave them out (and say so), and presets cannot hold them.
-- **Limits:** one 4096-pixel, 8-bit raster per selection; rasters are never
-  garbage-collected, so a catalog only grows with them. Grow/shrink and feather are
+- **Limits:** one 4096-pixel, 8-bit raster per selection. A raster nothing names
+  any more (not the edit, its History, a snapshot or a virtual copy) is deleted one
+  to two weeks later, as the catalog opens
+  ([catalogs](catalogs.md#unused-masks-and-patches)). Grow/shrink and feather are
   not implemented. Fine hair is as sharp as the 256-pixel mask and the edge refinement
   make it, not a matting model's. Subject is limited to what DETR was trained to name (people and animals); clicks
   cover the rest. Sky is as sharp as the model's answer and the edge refinement make it: thin wires are not separated from it; dark rock or ceilings can be taken for a night sky, a sea lost in haze for sky, and a thin blown-out gap of sky can be missed.

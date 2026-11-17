@@ -505,6 +505,21 @@ impl Write<'_> {
         self.db
     }
 
+    /// The file's size and the bytes inside it that deleted rows left free
+    /// (including this transaction's), which [`Db::vacuum`] would give back.
+    pub(in crate::catalog) fn space(&self) -> Result<(i64, i64)> {
+        let pragma = |name: &str| -> Result<i64> {
+            Ok(self
+                .db
+                .query_row(&format!("PRAGMA {name}"), [], |r| r.get(0))?)
+        };
+        let page = pragma("page_size")?;
+        Ok((
+            pragma("page_count")? * page,
+            pragma("freelist_count")? * page,
+        ))
+    }
+
     /// Runs `sql`; returns how many rows it changed.
     pub(in crate::catalog) fn execute(
         &mut self,
