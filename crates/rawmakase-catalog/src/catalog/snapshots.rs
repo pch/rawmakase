@@ -2,21 +2,11 @@
 //! keeps them. Each photo and virtual copy has its own, as in Lightroom's catalog,
 //! where snapshots belong to one image. Snapshots imported from Lightroom keep
 //! Lightroom's settings text and are converted when applied.
-use super::db::{Reads, SqliteSql, sql, sqlite_sql};
+use super::db::{Reads, sql};
 use super::value::{TextOrBlob, row};
 use super::{Catalog, PhotoId};
 use crate::model::recipe::Recipe;
 use anyhow::{Context, Result, ensure};
-
-/// Copies snapshots from a Lightroom catalog attached as `lr`.
-pub(super) const COPY_LIGHTROOM_SNAPSHOTS: SqliteSql = sqlite_sql!(
-    "INSERT INTO develop_snapshots(photo, name, recipe, lightroom)
-    SELECT image, COALESCE(name, ''), NULL, text
-    FROM lr.Adobe_libraryImageDevelopSnapshot
-    WHERE text IS NOT NULL AND image IN (SELECT id FROM photos)
-      AND NOT EXISTS (SELECT 1 FROM develop_snapshots s
-                      WHERE s.photo = image AND s.name = COALESCE(name, '') AND s.lightroom = text)"
-);
 
 /// A snapshot, by name.
 #[derive(Clone, Debug, PartialEq)]

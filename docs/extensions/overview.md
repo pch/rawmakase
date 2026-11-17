@@ -66,8 +66,11 @@ so. This release bundles four:
   Lightroom and Camera Raw keep catalogs, camera and lens profiles and presets,
   listed for the app with [`files.list`](protocol.md#fileslist-request), which
   the first-run setup and the Profile menu's **Import Adobe profiles for this
-  camera** offer from. Disabled, nothing is offered from Adobe's folders, and
-  everything already imported keeps working.
+  camera** offer from; and Lightroom Classic catalog import, its `catalog`
+  [importer](#importers), which the catalog menu, setup's catalog row and
+  `rawmakase import-catalog` use. Disabled, there is no Lightroom import and
+  nothing is offered from Adobe's folders, and everything already imported
+  keeps working.
 
 ## Control adapters
 

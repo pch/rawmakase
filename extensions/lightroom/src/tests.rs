@@ -206,3 +206,142 @@ fn names_that_aren_t_utf8_are_left_out() -> std::io::Result<()> {
     assert!(!listed.searched.iter().any(|s| s.kind == FileKind::Catalog));
     Ok(())
 }
+
+/// The plan of the test catalog with `change` made to it, and its photos.
+fn plan_of(dir: &Path, change: &str) -> Result<(rusqlite::Connection, u64), catalog::Error> {
+    let source = dir.join("Catalog.lrcat");
+    let _ = std::fs::remove_file(&source);
+    crate::fake::catalog(&source)?;
+    rusqlite::Connection::open(&source)?.execute_batch(change)?;
+    let plan = dir.join("plan.sqlite");
+    match std::fs::remove_file(&plan) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+        _ => {}
+    }
+    let photos = catalog::write_plan(&source, &plan, &Default::default(), &|_| {})?;
+    assert!(!dir.join("source.lrcat").exists(), "the copy is deleted");
+    Ok((rusqlite::Connection::open(plan)?, photos))
+}
+
+/// Compressed History steps and snapshots arrive as plain text, a step
+/// that can't be read leaves the others' positions as they were, and a
+/// photo whose file isn't in the catalog fails the plan.
+#[test]
+fn the_plan_holds_plain_text_and_every_photo_or_fails() -> Result<(), catalog::Error> {
+    use std::io::Write;
+    let dir = tempfile::tempdir()?;
+    let text = "s = { Exposure2012 = 0.5 }";
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    z.write_all(text.as_bytes())?;
+    let mut blob = (text.len() as u32).to_be_bytes().to_vec();
+    blob.extend(z.finish()?);
+    let hex: String = blob.iter().map(|b| format!("{b:02X}")).collect();
+    let (plan, photos) = plan_of(
+        dir.path(),
+        &format!(
+            "INSERT INTO Adobe_libraryImageDevelopHistoryStep VALUES
+                 (40, 1, 100., 'zlib', X'{hex}'), (40, 2, 200., 'broken', X'000000FF78FFFF'),
+                 (40, 3, 300., 'plain', 's = {{}}');
+             CREATE TABLE Adobe_libraryImageDevelopSnapshot(image INTEGER, name TEXT, text BLOB);
+             INSERT INTO Adobe_libraryImageDevelopSnapshot VALUES (41, 'Before', X'{hex}');"
+        ),
+    )?;
+    assert_eq!(photos, 2);
+    let rows = |sql: &str| -> rusqlite::Result<Vec<(String, i64, String)>> {
+        plan.prepare(sql)?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect()
+    };
+    assert_eq!(
+        rows("SELECT photo, position, text FROM history ORDER BY position")?,
+        [
+            ("40".into(), 1, text.into()),
+            ("40".into(), 3, "s = {}".into())
+        ]
+    );
+    assert_eq!(
+        rows("SELECT photo, rowid, text FROM snapshot")?,
+        [("41".into(), 1, text.into())]
+    );
+    // Closed before the next plan is made in its place: Windows can't
+    // delete a file that is open.
+    drop(plan);
+    let orphan = plan_of(
+        dir.path(),
+        "INSERT INTO Adobe_images(id_local, rootFile) VALUES (99, 999)",
+    );
+    let error = orphan.expect_err("an orphaned image fails").to_string();
+    assert!(error.contains("orphaned image records (2/3)"), "{error}");
+    Ok(())
+}
+
+/// A cancelled import stops, before or while it reads the catalog, and
+/// leaves no copy of it.
+#[test]
+fn a_stopped_plan_fails_and_leaves_no_copy() -> Result<(), catalog::Error> {
+    let dir = tempfile::tempdir()?;
+    let source = dir.path().join("Catalog.lrcat");
+    crate::fake::catalog(&source)?;
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stopping = stop.clone();
+    let plan = dir.path().join("plan.sqlite");
+    // Stopped once it checks the copy: SQLite's statement is interrupted.
+    let phase = move |p: &str| {
+        if p == "Checking the catalog…" {
+            stopping.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    };
+    assert!(catalog::write_plan(&source, &plan, &stop, &phase).is_err());
+    // Stopped before: the copy stops.
+    std::fs::remove_file(&plan)?;
+    assert!(catalog::write_plan(&source, &plan, &stop, &|_| {}).is_err());
+    assert!(!dir.path().join("source.lrcat").exists());
+    Ok(())
+}
+
+/// What the plan refuses and Lightroom import ignored is left out: a second
+/// develop settings row, and links made twice or to nothing. Tied stack
+/// positions go by row id, as Lightroom import numbered them; the import
+/// gave the same catalog for this catalog before it moved here.
+#[test]
+fn duplicates_and_stale_links_are_left_out_and_ties_go_by_row_id() -> Result<(), catalog::Error> {
+    let dir = tempfile::tempdir()?;
+    let (plan, photos) = plan_of(
+        dir.path(),
+        "CREATE TABLE AgLibraryFolderStack(id_local INTEGER PRIMARY KEY, collapsed INTEGER);
+         CREATE TABLE AgLibraryFolderStackImage(id_local INTEGER PRIMARY KEY, image INTEGER,
+             position, stack INTEGER);
+         INSERT INTO AgLibraryFile VALUES (31, 20, 'other.ARW', 'other', 'ARW');
+         INSERT INTO Adobe_images VALUES (42, 31, '', 0, 0, '', 'RAW', '', NULL, 'AB');
+         INSERT INTO AgLibraryFolderStack VALUES (70, 0), (71, 1);
+         INSERT INTO AgLibraryFolderStackImage VALUES (3, 42, '1', 70), (1, 40, '1', 70),
+             (2, 41, 1.0, 70), (4, 40, '0', 71), (5, 999, '1', 70);
+         INSERT INTO Adobe_imageDevelopSettings VALUES (40, 's = { Exposure2012 = 9 }');
+         INSERT INTO AgLibraryCollectionImage VALUES (50, 40, 'z'), (51, 40, 'z');
+         INSERT INTO AgLibraryKeywordImage VALUES (40, 60), (40, 999), (999, 60);",
+    )?;
+    assert_eq!(photos, 3);
+    let texts = |sql: &str| -> rusqlite::Result<Vec<String>> {
+        plan.prepare(sql)?.query_map([], |r| r.get(0))?.collect()
+    };
+    assert_eq!(
+        texts("SELECT photo || ' ' || text FROM edit ORDER BY photo")?,
+        [
+            "40 s = { Exposure2012 = 1.5 }",
+            "41 s = { ConvertToGrayscale = true }"
+        ]
+    );
+    assert_eq!(
+        texts("SELECT collection || photo || position FROM collection_photo ORDER BY photo")?,
+        ["5040a", "5041b"]
+    );
+    assert_eq!(
+        texts("SELECT photo || keyword FROM photo_keyword")?,
+        ["4060"]
+    );
+    assert_eq!(
+        texts("SELECT stack || photo || position FROM stack_photo ORDER BY stack, position")?,
+        ["70401", "70412", "70423"]
+    );
+    Ok(())
+}

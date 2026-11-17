@@ -10,10 +10,15 @@ api = 4
 authors = ["RAWmakase"]
 license = "MIT"
 repository = "https://github.com/pch/rawmakase"
-description = "Finds what Lightroom and Camera Raw keep on this computer (catalogs, camera and lens profiles, presets) for RAWmakase to offer to import. Disabled, nothing is offered from Adobe's folders; what was imported keeps working."
+description = "Imports Lightroom Classic catalogs, and finds what Lightroom and Camera Raw keep on this computer (catalogs, camera and lens profiles, presets) for RAWmakase to offer to import. Disabled, there is no Lightroom import and nothing is offered from Adobe's folders; what was imported keeps working."
 
 [access]
 files = "any"
 
 [program]
 path = "rawmakase-lightroom"
+
+[[importer]]
+id = "catalog"
+name = "Lightroom Classic catalog"
+extensions = ["lrcat"]

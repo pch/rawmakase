@@ -6,7 +6,8 @@
 #
 #     scripts/crate-closures.sh
 #
-# The catalog's bundled SQLite (libsqlite3-sys) is intended and allowed. The
+# The bundled SQLite (libsqlite3-sys) of the catalog and of the Lightroom
+# extension, which reads Lightroom catalogs, is intended and allowed. The
 # renderer has wgpu for its GPU preview port. RAW files are read by
 # RAWmakase's own decoders (rawmakase-raw) and colour is managed in Rust
 # (moxcms): no crate may bring a C RAW library (LibRaw) or Little CMS back,

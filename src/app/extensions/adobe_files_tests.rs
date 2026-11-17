@@ -314,3 +314,39 @@ fn a_first_launch_opens_setup_once_the_listing_finds_lightroom_s() {
         assert_eq!(editor.session.onboarding_done, !opens, "found {found}");
     }
 }
+
+/// The program answers one request at a time, so while it imports a catalog
+/// the listing isn't asked for: it waits, as looking, and is asked for once
+/// the import has ended, instead of failing past its deadline.
+#[test]
+fn a_listing_waits_for_an_import_with_the_lightroom_extension() {
+    let (dir, ctx, mut editor) = fixture();
+    let source = dir.path().join("Lightroom.lrcat");
+    rawmakase_lightroom::fake::catalog(&source).unwrap();
+    let offer = editor
+        .importer_items()
+        .into_iter()
+        .find(|o| o.extension == LIGHTROOM)
+        .unwrap();
+    assert!(editor.ready_for_catalog() && editor.activity.begin_dialog());
+    let job = crate::catalog::plan_import::PlanImport::prepare(
+        &source,
+        &dir.path().join("Photos.rawmakase"),
+    )
+    .unwrap();
+    editor.start_catalog_import(offer, job);
+    assert!(editor.adobe_files().is_none());
+    assert!(
+        !matches!(editor.adobe_files.state, Listing::Asked(_)),
+        "not asked during the import"
+    );
+    assert!(editor.adobe_files.asking(), "setup says it is looking");
+    let started = Instant::now();
+    while editor.catalog_importing().is_some() || editor.adobe_files.listed().is_none() {
+        assert!(started.elapsed() < Duration::from_secs(30), "never listed");
+        editor.events(&ctx);
+        editor.extensions_frame(&ctx);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(editor.adobe_files.failure().is_none());
+}

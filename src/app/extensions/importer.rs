@@ -23,11 +23,12 @@ pub(in crate::app) struct Offer {
 }
 
 impl Host {
-    /// The enabled extensions' importers. Disabled extensions offer none.
+    /// The importers of the extensions that can run: enabled, their program
+    /// there and not failed (started on demand). Others offer none.
     pub(in crate::app) fn importers(&self) -> Vec<Offer> {
         self.extensions
             .iter()
-            .filter(|e| e.enabled())
+            .filter(|e| e.can_run().is_ok())
             .flat_map(|e| {
                 e.manifest.importers.iter().map(|i| Offer {
                     extension: e.id().to_string(),

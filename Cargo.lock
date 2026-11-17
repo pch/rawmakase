@@ -3990,6 +3990,7 @@ dependencies = [
  "rawmakase-extension-protocol",
  "rawmakase-fs",
  "rawmakase-interop",
+ "rawmakase-lightroom",
  "rawmakase-model",
  "rusqlite",
  "serde",
@@ -4196,7 +4197,9 @@ dependencies = [
 name = "rawmakase-lightroom"
 version = "0.6.0"
 dependencies = [
+ "flate2",
  "rawmakase-extension",
+ "rusqlite",
  "serde_json",
  "tempfile",
 ]

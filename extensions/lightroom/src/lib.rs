@@ -1,8 +1,9 @@
-//! The bundled Lightroom extension (`rawmakase.lightroom`): where Lightroom
-//! and Camera Raw keep catalogs, profiles and presets, and what Adobe's
-//! folder layout says each file is. It answers `files.list` by listing those
-//! folders; it reads no file and writes nothing. The app decides what fits a
-//! photo or a catalog and imports it with its own importers.
+//! The bundled Lightroom extension (`rawmakase.lightroom`): Lightroom
+//! Classic catalog import ([`catalog`]), and where Lightroom and Camera Raw
+//! keep catalogs, profiles and presets, and what Adobe's folder layout says
+//! each file is. It answers `files.list` by listing those folders, reading
+//! no file; the app decides what fits a photo or a catalog and imports it
+//! with its own importers.
 //!
 //! A file or folder whose path isn't UTF-8 is left out: the protocol's paths
 //! are text, and Lightroom runs on macOS and Windows, whose names are.
@@ -12,6 +13,7 @@ use rawmakase_extension::protocol::method::{
 };
 use std::path::{Path, PathBuf};
 
+pub mod catalog;
 #[cfg(any(test, feature = "test-support"))]
 pub mod fake;
 
@@ -78,7 +80,9 @@ impl Roots {
 
 /// The extension's program, listing `roots`.
 pub fn extension(roots: Roots) -> Extension {
-    Extension::new().files(move |_| Ok(list(&roots)))
+    Extension::new()
+        .files(move |_| Ok(list(&roots)))
+        .importer("catalog", catalog::Catalog)
 }
 
 /// What `roots` hold, a folder at a time: Adobe's camera profiles (Adobe

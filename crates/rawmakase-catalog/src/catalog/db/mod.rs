@@ -311,30 +311,6 @@ impl Db {
         }
     }
 
-    /// Runs `f` in one write with the Lightroom catalog at `lightroom`
-    /// attached as `lr`, for importing from it. It is detached again when
-    /// `f` returns, fails or panics.
-    pub(in crate::catalog) fn with_lightroom<R>(
-        &mut self,
-        lightroom: &Path,
-        f: impl FnOnce(&mut LightroomWrite<'_>) -> Result<R>,
-    ) -> Result<R> {
-        match &mut self.backend {
-            Backend::Sqlite(db) => {
-                // SQLite attaches only outside a transaction.
-                db.execute("ATTACH DATABASE ? AS lr", [lightroom.to_string_lossy()])?;
-                let attached = Attached { db, name: "lr" };
-                let tx = attached.db.transaction()?;
-                let result = f(&mut LightroomWrite {
-                    write: Write { db: &tx },
-                })?;
-                tx.commit()?;
-                drop(attached);
-                Ok(result)
-            }
-        }
-    }
-
     /// Runs `f` in one write with the import plan at `plan` attached
     /// read-only as `plan`, once its schema is found to be exactly the one
     /// `schema` makes; `f` reads one state of it throughout. It is detached
@@ -352,7 +328,7 @@ impl Db {
         plan: &Path,
         schema: &str,
         stop: impl Fn() -> bool + Send + 'static,
-        f: impl FnOnce(&mut LightroomWrite<'_>) -> Result<R>,
+        f: impl FnOnce(&mut PlanWrite<'_>) -> Result<R>,
     ) -> Result<R> {
         use rusqlite::{config::DbConfig, limits::Limit};
         let Backend::Sqlite(db) = &mut self.backend;
@@ -387,7 +363,7 @@ impl Db {
             entries(&tx, "plan")? == entries(&expected, "main")?,
             "The import plan's tables aren't the ones its format has"
         );
-        let result = f(&mut LightroomWrite {
+        let result = f(&mut PlanWrite {
             write: Write { db: &tx },
         })?;
         tx.commit()?;
@@ -643,14 +619,13 @@ impl Write<'_> {
     }
 }
 
-/// A write with a Lightroom catalog attached as `lr` (see
-/// [`Db::with_lightroom`]) or an import plan as `plan` (see
-/// [`Db::with_plan`]): the only place [`SqliteSql`] runs.
-pub(in crate::catalog) struct LightroomWrite<'db> {
+/// A write with an import plan attached as `plan` (see [`Db::with_plan`]):
+/// the only place [`SqliteSql`] runs.
+pub(in crate::catalog) struct PlanWrite<'db> {
     write: Write<'db>,
 }
 
-impl<'db> LightroomWrite<'db> {
+impl<'db> PlanWrite<'db> {
     /// The ordinary write underneath, for statements on the catalog alone.
     pub(in crate::catalog) fn write(&mut self) -> &mut Write<'db> {
         &mut self.write
@@ -676,26 +651,6 @@ impl<'db> LightroomWrite<'db> {
         params: &[&dyn ToValue],
     ) -> Result<Vec<T>> {
         query(self.write.db, sql.text(), params, None)
-    }
-
-    /// Whether table `table` of the attached Lightroom catalog has column
-    /// `column`.
-    pub(in crate::catalog) fn has_column(&self, table: &str, column: &str) -> Result<bool> {
-        Ok(!self
-            .read_sqlite::<i64>(
-                sqlite_sql!("SELECT 1 FROM pragma_table_info(?, 'lr') WHERE name=?"),
-                &[&table, &column],
-            )?
-            .is_empty())
-    }
-    /// Whether the attached Lightroom catalog has table `name`.
-    pub(in crate::catalog) fn has_table(&self, name: &str) -> Result<bool> {
-        Ok(!self
-            .read_sqlite::<i64>(
-                sqlite_sql!("SELECT 1 FROM lr.sqlite_master WHERE type='table' AND name=?"),
-                &[&name],
-            )?
-            .is_empty())
     }
 }
 

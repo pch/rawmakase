@@ -1,8 +1,9 @@
-//! `rawmakase import-catalog --importer`, end to end: the command starts the
-//! test-only importer extension's program (`rawmakase_example::importer`)
-//! from a developer folder, polls its session itself, then imports and
-//! publishes its plan. This binary is that program too: a copy of it, started
-//! with [`PROGRAM`] in its environment, which the command passes on. It has
+//! `rawmakase import-catalog`, end to end: the command starts an importer's
+//! program from a developer folder (the test-only importer extension's,
+//! `rawmakase_example::importer`, or the bundled Lightroom extension's),
+//! polls its session itself, then imports and publishes its plan. This
+//! binary is that program too: a copy of it, started with [`PROGRAM`] (or
+//! [`LIGHTROOM`]) in its environment, which the command passes on. It has
 //! its own `main` (no test harness), so it runs as nothing else then.
 use rawmakase_extensions::store::Store;
 use std::path::{Path, PathBuf};
@@ -11,16 +12,24 @@ use std::process::{Command, Output};
 const PROGRAM: &str = "RAWMAKASE_EXAMPLE_IMPORTER";
 const ID: &str = "dev.rawmakase.importer";
 const IMPORTER: &str = "dev.rawmakase.importer/script";
+const LIGHTROOM: &str = "RAWMAKASE_LIGHTROOM_PROGRAM";
 
 fn main() {
     if std::env::var_os(PROGRAM).is_some() {
         let code = i32::from(rawmakase_example::importer::extension().run().is_err());
         std::process::exit(code);
     }
+    if std::env::var_os(LIGHTROOM).is_some() {
+        let roots = rawmakase_lightroom::Roots::default();
+        let code = i32::from(rawmakase_lightroom::extension(roots).run().is_err());
+        std::process::exit(code);
+    }
     imports_with_an_extensions_importer();
     a_disabled_extension_is_named_as_disabled();
     an_importer_without_its_extension_is_refused();
-    println!("import_catalog: 3 tests passed");
+    imports_a_lightroom_catalog_with_the_lightroom_extension();
+    a_disabled_extension_without_its_program_is_named_as_disabled();
+    println!("import_catalog: 5 tests passed");
 }
 
 struct Fixture {
@@ -31,18 +40,23 @@ struct Fixture {
 /// A data folder with the importer extension loaded from a developer
 /// folder, whose program is a copy of this binary.
 fn fixture() -> Fixture {
+    developer(
+        include_str!("../extensions/example/importer/rawmakase-extension.toml"),
+        "rawmakase-example-importer",
+    )
+}
+
+/// A data folder with the extension of `manifest` loaded from a developer
+/// folder, whose program `name` is a copy of this binary.
+fn developer(manifest: &str, name: &str) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path().join("importer");
     std::fs::create_dir(&folder).unwrap();
-    std::fs::write(
-        folder.join("rawmakase-extension.toml"),
-        include_str!("../extensions/example/importer/rawmakase-extension.toml"),
-    )
-    .unwrap();
+    std::fs::write(folder.join("rawmakase-extension.toml"), manifest).unwrap();
     let program = folder.join(if cfg!(windows) {
-        "rawmakase-example-importer.exe"
+        format!("{name}.exe")
     } else {
-        "rawmakase-example-importer"
+        name.to_string()
     });
     std::fs::copy(std::env::current_exe().unwrap(), &program).unwrap();
     let data = dir.path().join("data");
@@ -58,16 +72,22 @@ impl Fixture {
     /// `rawmakase import-catalog --importer importer source output`, run in
     /// this fixture's folder, so relative paths name files there.
     fn run(&self, importer: &str, source: &Path, output: &Path) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_rawmakase"))
-            .arg("import-catalog")
+        self.command(source, output)
             .args(["--importer", importer])
-            .arg(source)
-            .arg(output)
-            .current_dir(self.dir.path())
-            .env("RAWMAKASE_DATA_DIR", &self.data)
             .env(PROGRAM, "1")
             .output()
             .unwrap()
+    }
+
+    fn command(&self, source: &Path, output: &Path) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_rawmakase"));
+        command
+            .arg("import-catalog")
+            .arg(source)
+            .arg(output)
+            .current_dir(self.dir.path())
+            .env("RAWMAKASE_DATA_DIR", &self.data);
+        command
     }
 }
 
@@ -118,7 +138,7 @@ fn a_disabled_extension_is_named_as_disabled() {
     assert!(!run.status.success());
     let stderr = text(&run.stderr);
     assert!(
-        stderr.contains("Example Importer is disabled in Preferences > Extensions"),
+        stderr.contains("The Example Importer extension is disabled in Preferences > Extensions"),
         "{stderr}"
     );
     assert!(!output.exists());
@@ -134,4 +154,74 @@ fn an_importer_without_its_extension_is_refused() {
         assert!(!run.status.success(), "{importer}");
     }
     assert!(!output.exists());
+}
+
+/// Without `--importer` a Lightroom Classic catalog is imported with the
+/// Lightroom extension's importer, and not at all with the extension off.
+fn imports_a_lightroom_catalog_with_the_lightroom_extension() {
+    let f = developer(
+        include_str!("../extensions/lightroom/rawmakase-extension.toml"),
+        "rawmakase-lightroom",
+    );
+    let source = f.path("Lightroom.lrcat");
+    rawmakase_lightroom::fake::catalog(&source).unwrap();
+    let output = f.path("Photos.rawmakase");
+    let run = |output: &Path| {
+        f.command(&source, output)
+            .env(LIGHTROOM, "1")
+            .output()
+            .unwrap()
+    };
+    let imported = run(&output);
+    let (stdout, stderr) = (text(&imported.stdout), text(&imported.stderr));
+    assert!(imported.status.success(), "{stdout}\n{stderr}");
+    assert!(stdout.contains("Imported 2 photographs into"), "{stdout}");
+    let db = rusqlite::Connection::open(&output).unwrap();
+    let ids: Vec<i64> = db
+        .prepare("SELECT id FROM photos ORDER BY id")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(ids, [40, 41], "Lightroom's ids");
+    // Into a folder that doesn't exist yet: it is made.
+    let nested = f.path("new-dir").join("Photos.rawmakase");
+    let made = run(&nested);
+    assert!(made.status.success(), "{}", text(&made.stderr));
+    assert!(nested.exists());
+
+    Store::new(&f.data)
+        .set_enabled("rawmakase.lightroom", false, &[])
+        .unwrap();
+    let again = f.path("Again.rawmakase");
+    let refused = run(&again);
+    assert!(!refused.status.success());
+    let stderr = text(&refused.stderr);
+    assert!(
+        stderr.contains("The Lightroom extension is disabled in Preferences > Extensions"),
+        "{stderr}"
+    );
+    assert!(!again.exists());
+}
+
+/// A disabled extension is named as disabled even when its program isn't
+/// installed either.
+fn a_disabled_extension_without_its_program_is_named_as_disabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    let bundled = rawmakase::app::bundled_extensions();
+    Store::new(&data)
+        .set_enabled("rawmakase.lightroom", false, &["rawmakase.lightroom"])
+        .unwrap();
+    let app = rawmakase_extensions::semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+    let nowhere = [dir.path().join("no-programs")];
+    let error =
+        rawmakase::catalog_import::locate(&data, "rawmakase.lightroom", bundled, &nowhere, &app)
+            .unwrap_err()
+            .to_string();
+    assert_eq!(
+        error,
+        "The Lightroom extension is disabled in Preferences > Extensions"
+    );
 }

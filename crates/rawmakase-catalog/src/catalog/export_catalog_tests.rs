@@ -299,7 +299,7 @@ fn an_exported_lightroom_catalog_leaves_its_source_behind() -> Result<()> {
     let source = d.path().join("trip.lrcat");
     super::tests::fixture(&source)?;
     let imported = d.path().join("trip.rawmakase");
-    super::lightroom::import_lightroom(&source, &imported)?;
+    super::tests::import_lightroom(&source, &imported)?;
     let catalog = Catalog::open(&imported)?;
     assert_eq!(count(&catalog, "SELECT count(*) FROM sources")?, 1);
     let destination = d.path().join("one.rawmakase");

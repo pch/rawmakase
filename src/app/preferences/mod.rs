@@ -778,7 +778,6 @@ impl Editor {
             for (kind, label) in [
                 (CatalogDialog::Open, "Open…"),
                 (CatalogDialog::Create, "New…"),
-                (CatalogDialog::ImportLightroom, "Import Lightroom Catalog…"),
             ] {
                 if ui.button(label).clicked() {
                     self.catalog_dialog(kind, &ctx);

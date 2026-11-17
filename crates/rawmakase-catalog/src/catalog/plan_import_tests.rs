@@ -1,13 +1,11 @@
-//! A plan written from a Lightroom catalog imports to the rows Lightroom
-//! import writes, each rule of the plan fails a plan that breaks it, and the
-//! gate and publishing keep or delete what they should.
+//! A plan written by hand imports to the rows the Lightroom extension's plan
+//! of the same catalog imports to, each rule of the plan fails a plan that
+//! breaks it, and the gate and publishing keep or delete what they should.
 use super::*;
 use crate::catalog::lightroom::history::decode_history_text;
-use crate::catalog::lightroom::import_lightroom;
-use crate::catalog::tests::fixture;
+use crate::catalog::tests::{fixture, import_lightroom};
 use crate::catalog::{CollectionKind, QUICK_COLLECTION};
-use rusqlite::functions::FunctionFlags;
-use rusqlite::{Connection, params, types::Value};
+use rusqlite::{Connection, types::Value};
 use std::collections::{BTreeMap, HashMap};
 
 const SOURCE: &str = "/Volumes/Photos/Catalog.lrcat";
@@ -30,127 +28,9 @@ const FIXTURE_PLAN: &str = "
     INSERT INTO keyword VALUES ('60', 'City', '59', 1, 1), ('59', '', NULL, 1, 1);
     INSERT INTO photo_keyword VALUES ('40', '60');";
 
-/// Writes the plan an importer would write for the Lightroom catalog
-/// `source` into `plan`, which has the plan's tables: what Lightroom import
-/// reads, read as it reads it, its ids Lightroom's. Rows go in in reverse,
-/// so their row ids aren't those ids.
-fn plan_from_lightroom(plan: &Connection, source: &Path) -> Result<()> {
-    plan.create_scalar_function("decoded", 1, FunctionFlags::SQLITE_DETERMINISTIC, |f| {
-        let bytes = match f.get::<Value>(0)? {
-            Value::Text(t) => t.into_bytes(),
-            Value::Blob(b) => b,
-            _ => return Ok(None),
-        };
-        Ok(decode_history_text(&bytes))
-    })?;
-    // APEX values, as `info::copy_lightroom_info` turns them.
-    plan.create_scalar_function("f_number", 1, FunctionFlags::SQLITE_DETERMINISTIC, |f| {
-        Ok(f.get::<Option<f64>>(0)?.map(|av| 2f64.powf(av / 2.)))
-    })?;
-    plan.create_scalar_function("seconds", 1, FunctionFlags::SQLITE_DETERMINISTIC, |f| {
-        Ok(f.get::<Option<f64>>(0)?.map(|tv| 2f64.powf(-tv)))
-    })?;
-    plan.execute("ATTACH DATABASE ? AS lr", [source.to_string_lossy()])?;
-    let has = |table: &str, column: &str| -> Result<bool> {
-        Ok(plan.query_row(
-            "SELECT count(*) FROM lr.sqlite_master m JOIN pragma_table_info(m.name, 'lr') c
-             WHERE m.name = ? AND (c.name = ? OR ? = '')",
-            params![table, column, column],
-            |r| r.get::<_, i64>(0),
-        )? > 0)
-    };
-    let file_name = super::super::lightroom::lightroom_filename!();
-    let original = if has("AgLibraryFile", "originalFilename")? {
-        "f.originalFilename"
-    } else {
-        "NULL"
-    };
-    plan.execute_batch(&format!(
-        "INSERT INTO plan SELECT 1, count(*) FROM lr.Adobe_images;
-         INSERT INTO root SELECT id_local, absolutePath FROM lr.AgLibraryRootFolder
-             ORDER BY id_local DESC;
-         INSERT INTO folder SELECT id_local, rootFolder, pathFromRoot FROM lr.AgLibraryFolder
-             ORDER BY id_local DESC;
-         INSERT INTO photo SELECT i.id_local, f.folder, {file_name},
-             r.absolutePath || d.pathFromRoot || {file_name}, COALESCE(i.captureTime, ''),
-             COALESCE(i.rating, 0), COALESCE(i.pick, 0), COALESCE(i.colorLabels, ''),
-             COALESCE(i.fileFormat, ''), i.orientation, i.masterImage, COALESCE(i.copyName, ''),
-             {original}
-             FROM lr.Adobe_images i JOIN lr.AgLibraryFile f ON f.id_local = i.rootFile
-             JOIN lr.AgLibraryFolder d ON d.id_local = f.folder
-             JOIN lr.AgLibraryRootFolder r ON r.id_local = d.rootFolder
-             ORDER BY i.id_local DESC;
-         INSERT INTO edit SELECT image, 'lightroom-develop', text FROM lr.Adobe_imageDevelopSettings
-             WHERE text IS NOT NULL AND image IN (SELECT id FROM photo)
-             AND rowid IN (SELECT min(rowid) FROM lr.Adobe_imageDevelopSettings GROUP BY image);
-         INSERT INTO history SELECT image, row_number() OVER (PARTITION BY image
-                 ORDER BY dateCreated, id_local), COALESCE(name, ''), dateCreated, decoded(text)
-             FROM lr.Adobe_libraryImageDevelopHistoryStep
-             WHERE text IS NOT NULL AND image IN (SELECT id FROM photo);
-         INSERT INTO collection SELECT id_local, name, parent, CASE
-                 WHEN creationId = 'com.adobe.ag.library.group' THEN 'set'
-                 WHEN creationId = 'com.adobe.ag.library.smart_collection' THEN 'smart'
-                 WHEN creationId = 'com.adobe.ag.library.collection' AND name = '{QUICK_COLLECTION}'
-                     THEN 'quick'
-                 WHEN creationId LIKE '%.unsaved' THEN 'system'
-                 ELSE 'collection' END
-             FROM lr.AgLibraryCollection ORDER BY id_local DESC;
-         INSERT INTO collection_photo SELECT collection, image, positionInCollection
-             FROM lr.AgLibraryCollectionImage
-             WHERE collection IN (SELECT id FROM collection) AND image IN (SELECT id FROM photo);
-         INSERT INTO keyword SELECT id_local, COALESCE(name, ''), parent, {export}
-             FROM lr.AgLibraryKeyword ORDER BY id_local DESC;
-         INSERT INTO photo_keyword SELECT image, tag FROM lr.AgLibraryKeywordImage
-             WHERE image IN (SELECT id FROM photo) AND tag IN (SELECT id FROM keyword);",
-        export = if has("AgLibraryKeyword", "includeOnExport")? {
-            "COALESCE(includeOnExport, 1) <> 0, COALESCE(includeParents, 1) <> 0"
-        } else {
-            "1, 1"
-        }
-    ))?;
-    if has("Adobe_libraryImageDevelopSnapshot", "")? {
-        plan.execute_batch(
-            "INSERT INTO snapshot SELECT image, COALESCE(name, ''), decoded(text)
-             FROM lr.Adobe_libraryImageDevelopSnapshot
-             WHERE text IS NOT NULL AND image IN (SELECT id FROM photo)",
-        )?;
-    }
-    if has("AgLibraryFolderStackImage", "")? {
-        plan.execute_batch(
-            "INSERT INTO stack SELECT id_local, collapsed <> 0 FROM lr.AgLibraryFolderStack;
-             INSERT INTO stack_photo SELECT stack, image, row_number() OVER (PARTITION BY stack
-                 ORDER BY CAST(position AS REAL), id_local)
-             FROM lr.AgLibraryFolderStackImage
-             WHERE image IN (SELECT id FROM photo) AND stack IN (SELECT id FROM stack);",
-        )?;
-    }
-    if has("AgHarvestedExifMetadata", "")? {
-        plan.execute_batch(
-            "INSERT INTO info SELECT i.id_local, c.value, l.value, e.focalLength,
-                 f_number(e.aperture), seconds(e.shutterSpeed), e.isoSpeedRating,
-                 CAST(CASE WHEN i.orientation IN ('BC', 'DA', 'AD', 'CB') THEN i.fileHeight
-                      ELSE i.fileWidth END AS INTEGER),
-                 CAST(CASE WHEN i.orientation IN ('BC', 'DA', 'AD', 'CB') THEN i.fileWidth
-                      ELSE i.fileHeight END AS INTEGER)
-             FROM lr.Adobe_images i
-             LEFT JOIN lr.AgHarvestedExifMetadata e ON e.image = i.id_local
-             LEFT JOIN lr.AgInternedExifCameraModel c ON c.id_local = e.cameraModelRef
-             LEFT JOIN lr.AgInternedExifLens l ON l.id_local = e.lensRef
-             WHERE i.id_local IN (SELECT id FROM photo)",
-        )?;
-    }
-    if has("Adobe_AdditionalMetadata", "")? {
-        plan.execute_batch(
-            "INSERT INTO metadata SELECT image, COALESCE(CAST(xmp AS TEXT), '')
-             FROM lr.Adobe_AdditionalMetadata WHERE image IN (SELECT id FROM photo)",
-        )?;
-    }
-    plan.execute_batch("DETACH DATABASE lr")?;
-    Ok(())
-}
-
 /// What each catalog id of a record kind stands for, `None` when it is the
-/// id itself (a catalog Lightroom import wrote).
+/// id itself (a catalog imported with the Lightroom extension's plan, whose
+/// row ids are Lightroom's).
 type IdMap = Option<HashMap<(&'static str, i64), String>>;
 
 /// The ids of the plan at `plan`: each kind's row id and the id it has.
@@ -292,39 +172,6 @@ fn prepared(
     Ok((dir, import, photos as u64, ids))
 }
 
-/// The base fixture, changed by `change` before it is read.
-fn variation(dir: &Path, name: &str, change: &str) -> Result<PathBuf> {
-    let source = dir.join(format!("{name}.lrcat"));
-    fixture(&source)?;
-    Connection::open(&source)?.execute_batch(change)?;
-    Ok(source)
-}
-
-/// Imports the Lightroom catalog `source` with Lightroom import and as a
-/// plan, and compares the two catalogs.
-fn assert_parity(source: &Path) -> Result<()> {
-    let d = tempfile::tempdir()?;
-    let expected = d.path().join("expected.rawmakase");
-    import_lightroom(source, &expected)?;
-    let (_dir, import, photos, ids) = prepared(source, SCHEMA, |p| plan_from_lightroom(p, source))?;
-    let actual = import.run(photos, &mut |_| {})?;
-    let (expected, actual) = (rows(&expected, &None)?, rows(&actual, &ids)?);
-    for (table, rows) in &expected {
-        assert_eq!(rows, &actual[table], "{}: {table}", source.display());
-    }
-    assert_eq!(expected.len(), actual.len());
-    Ok(())
-}
-
-fn compressed(text: &str) -> Vec<u8> {
-    use std::io::Write;
-    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    z.write_all(text.as_bytes()).unwrap();
-    let mut blob = (text.len() as u32).to_be_bytes().to_vec();
-    blob.extend(z.finish().unwrap());
-    blob
-}
-
 /// Every row of every plan table, sorted, without row ids.
 fn plan_rows(plan: &Connection) -> Result<Vec<String>> {
     let tables: Vec<String> = plan
@@ -348,145 +195,28 @@ fn plan_rows(plan: &Connection) -> Result<Vec<String>> {
     Ok(all)
 }
 
+/// The plan written by hand is the one the Lightroom extension writes for
+/// the fixture, and imports to the same catalog.
 #[test]
-fn the_fixture_written_by_hand_imports_as_lightroom_import_does() -> Result<()> {
+fn the_fixture_written_by_hand_is_the_lightroom_extension_s_plan() -> Result<()> {
     let d = tempfile::tempdir()?;
     let source = d.path().join("fixture.lrcat");
     fixture(&source)?;
-    // The tests' reader of Lightroom catalogs reads the plan written by hand.
     let by_hand = plan_file(&d.path().join("by-hand.sqlite"), SCHEMA)?;
     by_hand.execute_batch(FIXTURE_PLAN)?;
-    let read = plan_file(&d.path().join("read.sqlite"), SCHEMA)?;
-    plan_from_lightroom(&read, &source)?;
-    assert_eq!(plan_rows(&by_hand)?, plan_rows(&read)?);
+    let written = d.path().join("written.sqlite");
+    rawmakase_lightroom::catalog::write_plan(&source, &written, &Default::default(), &|_| {})
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    assert_eq!(
+        plan_rows(&by_hand)?,
+        plan_rows(&Connection::open(&written)?)?
+    );
 
-    let expected = d.path().join("expected.rawmakase");
-    import_lightroom(&source, &expected)?;
+    let expected = import_lightroom(&source, &d.path().join("expected.rawmakase"))?;
     let (_dir, import, photos, ids) =
         prepared(&source, SCHEMA, |p| Ok(p.execute_batch(FIXTURE_PLAN)?))?;
     let actual = import.run(photos, &mut |_| {})?;
     assert_eq!(rows(&expected, &None)?, rows(&actual, &ids)?);
-    Ok(())
-}
-
-#[test]
-fn every_lightroom_import_variation_imports_the_same_from_a_plan() -> Result<()> {
-    let d = tempfile::tempdir()?;
-    let dir = d.path();
-    let packet = |title: &str| {
-        format!(
-            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-            <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/"
-              xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:exif="http://ns.adobe.com/exif/1.0/"
-              exif:DateTimeOriginal="2021-06-06T10:00:00.25+01:00" xmp:Rating="1">
-              <dc:title><rdf:Alt><rdf:li xml:lang="x-default">{title}</rdf:li></rdf:Alt></dc:title>
-              <dc:creator><rdf:Seq><rdf:li>Example</rdf:li></rdf:Seq></dc:creator>
-            </rdf:Description></rdf:RDF></x:xmpmeta>"#
-        )
-    };
-    let hex = |b: &[u8]| b.iter().map(|b| format!("{b:02X}")).collect::<String>();
-    let sources = [
-        variation(dir, "base", "")?,
-        variation(
-            dir,
-            "stacks",
-            "CREATE TABLE AgLibraryFolderStack(id_local INTEGER PRIMARY KEY,id_global UNIQUE NOT NULL,collapsed INTEGER NOT NULL DEFAULT 0,text NOT NULL DEFAULT '');
-             CREATE TABLE AgLibraryFolderStackImage(id_local INTEGER PRIMARY KEY,collapsed INTEGER NOT NULL DEFAULT 0,image INTEGER NOT NULL DEFAULT 0,position NOT NULL DEFAULT '',stack INTEGER NOT NULL DEFAULT 0);
-             INSERT INTO AgLibraryFile VALUES(31,20,'other.ARW','other','ARW'),(32,20,'third.ARW','third','ARW');
-             INSERT INTO Adobe_images VALUES(42,31,'2021-06-06T10:00:01',0,0,'','RAW','',NULL,'AB'),(43,32,'2021-06-06T10:00:02',0,0,'','RAW','',NULL,'AB');
-             INSERT INTO AgLibraryFolderStack VALUES(70,'A',1,''),(71,'B',0,''),(72,'C',0,'');
-             INSERT INTO AgLibraryFolderStackImage VALUES(1,1,40,'2',70),(2,1,42,'1',70),(3,1,41,'3',70),
-                 (4,0,43,1,71),(5,0,999,2,71);",
-        )?,
-        variation(
-            dir,
-            "original-names",
-            "ALTER TABLE AgLibraryFile ADD COLUMN originalFilename TEXT;
-             UPDATE AgLibraryFile SET originalFilename='DSCF0001.RAF' WHERE id_local=30;
-             INSERT INTO AgLibraryFile VALUES(31,20,'other.ARW','other','ARW',NULL),(32,20,'third.ARW','third','ARW','');
-             INSERT INTO Adobe_images VALUES(42,31,'',0,0,'','RAW','',NULL,'AB'),(43,32,'',0,0,'','RAW','',NULL,'AB');",
-        )?,
-        variation(
-            dir,
-            "labels",
-            "UPDATE Adobe_images SET rating=NULL,pick=NULL,colorLabels=NULL WHERE id_local=40;
-             INSERT INTO Adobe_images VALUES(100,30,'2021-06-06T10:00:00',0.0,-1.0,'Red','RAW','Virtual',40,'AB'),
-                 (101,30,'2021-06-06T10:00:00',1.0,0.0,'Yellow','RAW','Virtual',40,'AB'),
-                 (102,30,'2021-06-06T10:00:00',2.0,1.0,'Client approved','RAW','Virtual',40,'AB'),
-                 (103,30,'2021-06-06T10:00:00',3.0,-1.0,'Czerwony','RAW','Virtual',40,'AB');",
-        )?,
-        variation(
-            dir,
-            "info",
-            "ALTER TABLE Adobe_images ADD COLUMN fileWidth;
-             ALTER TABLE Adobe_images ADD COLUMN fileHeight;
-             UPDATE Adobe_images SET fileWidth=6000, fileHeight=4000;
-             UPDATE Adobe_images SET orientation='BC' WHERE id_local=40;
-             CREATE TABLE AgHarvestedExifMetadata(image, aperture, shutterSpeed, isoSpeedRating,
-                 focalLength, cameraModelRef, lensRef);
-             CREATE TABLE AgInternedExifCameraModel(id_local, value);
-             CREATE TABLE AgInternedExifLens(id_local, value);
-             INSERT INTO AgInternedExifCameraModel VALUES(1,'ILCE-7M2');
-             INSERT INTO AgInternedExifLens VALUES(2,'FE 55mm F1.8 ZA');
-             INSERT INTO AgHarvestedExifMetadata VALUES(40, 2.0, 4.643856, 1000, 55, 1, 2);",
-        )?,
-        variation(
-            dir,
-            "history",
-            &format!(
-                "INSERT INTO Adobe_libraryImageDevelopHistoryStep VALUES
-                     (40, 1, 400., 'zlib', X'{}'), (40, 2, 100., 'plain', 's = {{ Contrast = 25 }}'),
-                     (40, 3, 300., 'no text', NULL), (41, 4, 200., 'other photo', 's = {{ Highlights = 10 }}');",
-                hex(&compressed("s = { Exposure2012 = 0.5 }"))
-            ),
-        )?,
-        variation(
-            dir,
-            "descriptive",
-            &format!(
-                "CREATE TABLE Adobe_AdditionalMetadata(id_local INTEGER, image INTEGER, xmp TEXT);
-                 INSERT INTO Adobe_AdditionalMetadata VALUES(1, 40, '{}'), (2, 41, 'not XMP');",
-                packet("Master")
-            ),
-        )?,
-        variation(
-            dir,
-            "keyword-export",
-            "ALTER TABLE AgLibraryKeyword ADD COLUMN includeOnExport INTEGER NOT NULL DEFAULT 1;
-             ALTER TABLE AgLibraryKeyword ADD COLUMN includeParents INTEGER NOT NULL DEFAULT 1;
-             UPDATE AgLibraryKeyword SET includeOnExport=0 WHERE id_local=60;
-             INSERT INTO AgLibraryKeyword VALUES(61,'Old Town',60,1,1),(62,'Square',61,1,0);
-             INSERT INTO AgLibraryKeywordImage VALUES(40,62);",
-        )?,
-        variation(
-            dir,
-            "snapshots",
-            &format!(
-                "CREATE TABLE Adobe_libraryImageDevelopSnapshot(id_local INTEGER, image INTEGER, name TEXT, text BLOB);
-                 INSERT INTO Adobe_libraryImageDevelopSnapshot VALUES
-                    (1, 40, 'Before crop', 's = {{ Exposure2012 = 0.5 }}'),
-                    (2, 40, 'Before crop', 's = {{ Exposure2012 = 0.5 }}'),
-                    (3, 41, NULL, 's = {{ Exposure2012 = 1 }}'),
-                    (4, 99, 'Other catalog photo', 's = {{ Exposure2012 = 1 }}'),
-                    (5, 40, 'Compressed', X'{}');",
-                hex(&compressed("s = { Contrast = 5 }"))
-            ),
-        )?,
-        variation(
-            dir,
-            "collections",
-            "INSERT INTO AgLibraryCollection VALUES
-                 (51,'Trips',NULL,'com.adobe.ag.library.group'),
-                 (52,'Summer',51,'com.adobe.ag.library.collection'),
-                 (53,'Five stars',51,'com.adobe.ag.library.smart_collection'),
-                 (54,'quick collection',NULL,'com.adobe.ag.library.collection'),
-                 (55,'Unsaved Print',NULL,'com.adobe.ag.print.unsaved');
-             INSERT INTO AgLibraryCollectionImage VALUES(52,41,'x'),(54,40,'y'),(52,999,'z');",
-        )?,
-    ];
-    for source in sources {
-        assert_parity(&source)?;
-    }
     Ok(())
 }
 
@@ -987,6 +717,41 @@ fn a_100000_photo_plan_imports() -> Result<()> {
     assert_eq!(
         (count("photos")?, count("lightroom_history")?),
         (100_000, 100_000)
+    );
+    eprintln!("imported in {:?}", started.elapsed());
+    Ok(())
+}
+
+/// A Lightroom catalog of 100,000 more photos, each with develop settings
+/// and a History step, imports through the Lightroom extension's plan.
+#[test]
+fn a_100000_photo_lightroom_catalog_imports() -> Result<()> {
+    let d = tempfile::tempdir()?;
+    let source = d.path().join("large.lrcat");
+    fixture(&source)?;
+    Connection::open(&source)?.execute_batch(
+        "WITH RECURSIVE n(i) AS (SELECT 1000 UNION ALL SELECT i + 1 FROM n WHERE i < 100999)
+         INSERT INTO AgLibraryFile SELECT i, 21, 'p' || i || '.cr3', 'p' || i, 'cr3' FROM n;
+         INSERT INTO Adobe_images SELECT id_local, id_local, '', 0, 0, '', 'RAW', '', NULL, 'AB'
+             FROM AgLibraryFile WHERE id_local >= 1000;
+         INSERT INTO Adobe_imageDevelopSettings SELECT id_local, 's = { Exposure2012 = 0.5 }'
+             FROM Adobe_images WHERE id_local >= 1000;
+         INSERT INTO Adobe_libraryImageDevelopHistoryStep SELECT id_local, id_local, 1., 'Import',
+             's = {}' FROM Adobe_images WHERE id_local >= 1000;",
+    )?;
+    let started = std::time::Instant::now();
+    let cat = Catalog::open(import_lightroom(
+        &source,
+        &d.path().join("large.rawmakase"),
+    )?)?;
+    let count = |table: &str| -> Result<i64> {
+        Ok(cat
+            .db_for_tests()
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))?)
+    };
+    assert_eq!(
+        (count("photos")?, count("lightroom_history")?),
+        (100_002, 100_000)
     );
     eprintln!("imported in {:?}", started.elapsed());
     Ok(())

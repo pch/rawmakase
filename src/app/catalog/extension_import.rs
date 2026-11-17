@@ -82,14 +82,29 @@ impl Editor {
         self.extensions.importers()
     }
 
+    /// Whether `extension`'s program is working on an import's request.
+    pub(in crate::app) fn catalog_import_by(&self, extension: &str) -> bool {
+        self.catalog_import.as_ref().is_some_and(|r| {
+            r.offer.extension == extension && matches!(r.phase, Phase::Program { .. })
+        })
+    }
+
     /// What the import under way is doing, if one is.
     pub(in crate::app) fn catalog_importing(&self) -> Option<&str> {
         self.catalog_import.as_ref().map(|r| r.text.as_str())
     }
 
     /// Catalog › Import › ‹importer›…: saves the open edit, asks for the
-    /// source and where the new catalog goes, and starts the import.
-    pub(in crate::app) fn import_with(&mut self, offer: Offer, ctx: &egui::Context) {
+    /// source unless it is given and where the new catalog goes, and starts
+    /// the import. Setup gives `beside`, a catalog the new one is named
+    /// beside without asking ("Catalog.rawmakase", "Catalog 2.rawmakase"…).
+    pub(in crate::app) fn import_with(
+        &mut self,
+        offer: Offer,
+        source: Option<PathBuf>,
+        beside: Option<PathBuf>,
+        ctx: &egui::Context,
+    ) {
         if self.catalog_import.is_some()
             || !self.ready_for_catalog()
             || !self.activity.begin_dialog()
@@ -102,20 +117,27 @@ impl Editor {
             ctx.clone(),
             move |tx| {
                 let extensions: Vec<&str> = offer.extensions.iter().map(String::as_str).collect();
-                let Some(source) = rfd::FileDialog::new()
-                    .add_filter(&offer.name, &extensions)
-                    .pick_file()
-                else {
+                let Some(source) = source.or_else(|| {
+                    rfd::FileDialog::new()
+                        .add_filter(&offer.name, &extensions)
+                        .pick_file()
+                }) else {
                     let _ = tx.send(Event::DialogClosed);
                     return;
                 };
-                let Some(destination) = super::catalog_file_dialog()
-                    .set_file_name(format!(
-                        "{}.rawmakase",
-                        source.file_stem().unwrap_or_default().to_string_lossy()
-                    ))
-                    .save_file()
-                else {
+                let stem = source.file_stem().unwrap_or_default().to_string_lossy();
+                let destination = match beside {
+                    Some(place) => (1..)
+                        .map(|n| match n {
+                            1 => place.with_file_name(format!("{stem}.rawmakase")),
+                            n => place.with_file_name(format!("{stem} {n}.rawmakase")),
+                        })
+                        .find(|p| !p.exists()),
+                    None => super::catalog_file_dialog()
+                        .set_file_name(format!("{stem}.rawmakase"))
+                        .save_file(),
+                };
+                let Some(destination) = destination else {
                     let _ = tx.send(Event::DialogClosed);
                     return;
                 };
@@ -379,7 +401,10 @@ impl Editor {
                 }
             }
             Err(None) => self.messages.note(format!("{name}: import stopped")),
-            Err(Some(why)) => self.messages.fail(format!("{name} not imported: {why}")),
+            Err(Some(why)) => {
+                self.messages.fail(format!("{name} not imported: {why}"));
+                self.onboarding.catalog_error = Some(why);
+            }
         }
     }
 

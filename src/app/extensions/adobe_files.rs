@@ -92,6 +92,9 @@ pub(in crate::app) struct AdobeFiles {
 enum Listing {
     #[default]
     Unlisted,
+    /// Wanted while the program imports a catalog, which it does before
+    /// answering anything else: asked for once the import ends.
+    Waiting,
     Asked(u64),
     Listed(FilesListed),
     /// Why the listing failed, until it is asked for again.
@@ -115,9 +118,13 @@ impl AdobeFiles {
             _ => None,
         }
     }
-    /// Whether a listing was asked for and hasn't come.
+    /// Whether a listing was asked for, or waits to be, and hasn't come.
     pub(in crate::app) fn asking(&self) -> bool {
-        matches!(self.state, Listing::Asked(_))
+        matches!(self.state, Listing::Asked(_) | Listing::Waiting)
+    }
+    /// Whether a listing waits for an import to end.
+    pub(in crate::app) fn waiting(&self) -> bool {
+        matches!(self.state, Listing::Waiting)
     }
     /// Why the last listing failed.
     pub(in crate::app) fn failure(&self) -> Option<&str> {
@@ -138,6 +145,7 @@ impl Editor {
     /// extension is off (which drops the listing), until it answers, and when
     /// it failed.
     pub(in crate::app) fn adobe_files(&mut self) -> Option<&FilesListed> {
+        let importing = self.catalog_import_by(LIGHTROOM);
         let files = &mut self.adobe_files;
         if !self.extensions.lightroom_enabled() {
             if !matches!(files.state, Listing::Unlisted) {
@@ -145,10 +153,14 @@ impl Editor {
             }
             return None;
         }
-        if matches!(files.state, Listing::Unlisted) {
-            files.state = match self.extensions.list_files() {
-                Ok(ticket) => Listing::Asked(ticket),
-                Err(why) => Listing::Failed(why),
+        if matches!(files.state, Listing::Unlisted | Listing::Waiting) {
+            files.state = if importing {
+                Listing::Waiting
+            } else {
+                match self.extensions.list_files() {
+                    Ok(ticket) => Listing::Asked(ticket),
+                    Err(why) => Listing::Failed(why),
+                }
             };
         }
         files.listed()

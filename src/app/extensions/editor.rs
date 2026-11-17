@@ -108,7 +108,7 @@ impl Editor {
         }
         let (outcomes, next) = self.extensions_poll(Instant::now());
         self.extension_outcomes(outcomes);
-        if self.adobe_files.first_launch {
+        if self.adobe_files.first_launch || self.adobe_files.waiting() {
             self.adobe_files();
         }
         if let Some(next) = next {

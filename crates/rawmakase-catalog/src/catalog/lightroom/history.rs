@@ -1,26 +1,19 @@
 //! Lightroom's develop history, imported with the catalog and shown under
 //! "From Lightroom" in the History panel, and the stored Lightroom develop
 //! settings a photo opens with.
-use crate::catalog::db::{Reads, SqliteSql, sql, sqlite_sql};
+use crate::catalog::db::{Reads, sql};
 use crate::catalog::value::{TextOrBlob, row};
 use crate::catalog::{Catalog, PhotoId};
 use anyhow::Result;
 
-/// Copies history steps from an attached Lightroom catalog named `lr`.
-pub(super) const COPY_LIGHTROOM_HISTORY: SqliteSql = sqlite_sql!(
-    "INSERT INTO lightroom_history(photo,position,name,created,text)
-    SELECT image, row_number() OVER (PARTITION BY image ORDER BY dateCreated, id_local),
-           COALESCE(name,''), dateCreated, text
-    FROM lr.Adobe_libraryImageDevelopHistoryStep
-    WHERE text IS NOT NULL AND image IN (SELECT id FROM photos)
-    ON CONFLICT DO NOTHING"
-);
 /// Largest history snapshot accepted. A step's text is a develop-settings string
 /// of a few kilobytes; the cap is far above that and only exists so a corrupt
 /// catalog cannot name a length the allocation would follow.
 const MAX_TEXT_BYTES: usize = 1 << 20;
 /// Lightroom stores history snapshots either as text or as a 4-byte
-/// big-endian length followed by a zlib stream.
+/// big-endian length followed by a zlib stream. Catalogs imported by earlier
+/// releases kept some compressed; the Lightroom extension imports them as
+/// text.
 pub(in crate::catalog) fn decode_history_text(bytes: &[u8]) -> Option<String> {
     if bytes.len() > 6 && bytes[4] == 0x78 {
         use std::io::Read;

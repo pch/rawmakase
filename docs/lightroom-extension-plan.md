@@ -1,6 +1,6 @@
 # Lightroom extension: plan
 
-Status: steps 1 to 3 built; 4 planned.
+Status: built (steps 1 to 4).
 
 ## Goal
 
@@ -433,16 +433,86 @@ Tests:
 - **Large catalogs.** The extension writes a plan of 100,000 photos with
   History, which imports.
 
-## Documents to update when step 4 is built
+*As built:*
+
+- **The importer.** `extensions/lightroom/src/catalog.rs` (`Catalog`, and
+  `write_plan`, which the catalog's tests call too). The handler runs
+  `write_plan` on a thread of its own and, on its own thread, reports what
+  it is doing every two seconds and passes a cancel on; a cancel also stops
+  a statement under way (SQLite's progress handler) and the copy between
+  1 MiB blocks. The private copy is `source.lrcat` beside the plan, in the
+  import's folder, deleted before the answer; the plan's connection
+  attaches it as `lr`, and the plan's rows are fixed `INSERT … SELECT`
+  statements, each run when the tables it reads exist, as `copy_tables`'s
+  were. The plan is closed before the answer.
+- **Ids.** Each root, folder, photo, collection, stack and keyword keeps
+  Lightroom's `id_local` as its text id and as its row id, so the new
+  catalog's ids are Lightroom's, as `import_lightroom`'s were, and the
+  import tests kept their assertions.
+- **What it leaves out**, as the plan requires: a photo's develop settings
+  rows after its first by row id, as `LIMIT 1` read them; memberships, keyword
+  links and stack photos naming what isn't imported, or made twice (the first
+  by row id stays; a photo in two stacks stays in the first by stack, then
+  position). A History step that can't be decoded is left out and the others
+  keep their positions (numbered over every step with text, as before); a
+  snapshot that can't be decoded is left out. Duplicate snapshots stay, as
+  the old import's `NOT EXISTS` didn't see rows of its own statement. XMP that
+  isn't UTF-8 is left out, as before. The old metadata copy's join on the
+  original path is `image IN (SELECT id FROM photo)`: in one snapshot the two
+  name the same photos. A virtual-copy master, collection set or keyword
+  parent Lightroom no longer has, which the old import kept dangling, is
+  NULL: the copy is a master, the collection or keyword at the top, its data
+  kept; the core's checks stay strict. A stale folder root fails, as it did
+  (`folders.root` has a foreign key).
+- **Collection kinds.** `quick` is the plain collection named
+  `quick collection` at the top; one of that name in a set is a `collection`,
+  which reads back the same.
+- **Entry points.** The catalog menu's item is the importer's
+  (`import_with`); setup's catalog row exists while the importer does and
+  imports with it into a new catalog beside the default one, without asking
+  where, as before. `rawmakase import-catalog` defaults `--importer` to
+  `rawmakase.lightroom/catalog`. A disabled extension's message is "The ‹name›
+  extension is disabled in Preferences > Extensions", for every importer,
+  as `rawmakase mcp` words it. The Preferences button and
+  `CatalogDialog::ImportLightroom` went, and a dropped `.lrcat` points to the
+  catalog menu. An importer is offered only while its extension can run
+  (enabled, its program there, not failed; started on demand). The import
+  makes the destination's folder, as the old one did. The command says a
+  disabled extension is disabled before it says its program is missing.
+- **`files.list` during an import.** The SDK answers one request at a time,
+  so while the Lightroom extension's program works on `import.run` the app
+  doesn't send `files.list`: the listing waits (setup says it is looking) and
+  is asked for once the import's request has ended, however it ended.
+- **The core.** `catalog::lightroom` keeps `lightroom_sources` and the
+  History reader; `LightroomWrite` is `PlanWrite`, `with_plan` its only
+  user. The SQLite exemption of `catalog/lightroom/mod.rs` in the boundary
+  test went with its last `rusqlite`.
+
+*Tests, as built:* before the old import went, every variation of step 2's
+harness, one more with duplicates, stale links and tied stack positions,
+every import test of the catalog crate and the private catalog (8,112
+photos) imported through the extension's plan to `import_lightroom`'s rows,
+ids compared through the plan. After it, the catalog's import tests run
+through the extension with their assertions unchanged; the fixture's plan
+written by hand equals the extension's; the extension's tests freeze the
+duplicates and ties, plain-text History and snapshots, the orphaned image
+and a cancel. In the app, a Lightroom catalog imports with the extension's
+program (the test binary), and with the extension off its photo opens with
+its Lightroom edit as the catalog resolves it, its History step applies and
+copies to Before, and its snapshot applies, also for a copy with compressed
+text as earlier releases imported it. The command imports with the
+extension and names it when disabled. A 100,000-photo Lightroom catalog
+imports in about a second. Step 2's lifecycle tests, with the example
+importer, cover the import's phases.
+
+## Documents updated
 
 Step 3 updated `docs/extensions/protocol.md` (`files.list`), the extensions
 overview, `docs/architecture.md`, `docs/code-map.md` and the Official
-extensions table of `docs/extensions-plan.md`. Step 4:
-
-- `docs/extensions-plan.md`: the Official extensions paragraph on Lightroom
-  import and the Designed-not-scheduled row.
-- `docs/catalogs.md`, `docs/architecture.md`, `docs/code-map.md` (the core's
-  import code removed).
+extensions table of `docs/extensions-plan.md`. Step 4 updated the Official
+extensions paragraph and the Designed-not-scheduled row of
+`docs/extensions-plan.md`, `docs/catalogs.md`, the extensions overview,
+`docs/architecture.md` and `docs/code-map.md`.
 
 ## Open
 

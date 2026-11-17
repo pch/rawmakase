@@ -87,6 +87,7 @@ rawmakase-midi never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-mode
 # folder's policy (rawmakase-protocol). It knows no edit, catalog, renderer,
 # decoder or extension host, as a third party's program wouldn't.
 rawmakase-ai-masks never rawmakase-fs rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-ctl rawmakase-mcp rawmakase-extensions cargo-rawmakase rawmakase-example rawmakase-midi rawmakase-denoise rawmakase-lightroom
-# The Lightroom extension lists Adobe's folders with the SDK alone, as a third
-# party's program would.
+# The Lightroom extension imports Lightroom catalogs and lists Adobe's folders
+# with the SDK and its own SQLite, as a third party's program would: it never
+# reaches the catalog it imports into.
 rawmakase-lightroom never rawmakase-cancel rawmakase-fs rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-selection rawmakase-remote rawmakase-ctl rawmakase-extensions cargo-rawmakase rawmakase-mcp rawmakase-example rawmakase-model-install rawmakase-midi rawmakase-ai-masks rawmakase-denoise

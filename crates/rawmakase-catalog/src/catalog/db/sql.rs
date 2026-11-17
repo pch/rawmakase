@@ -56,9 +56,9 @@ pub const fn assert_shape(sql: &str) {
     );
 }
 
-/// A statement that only SQLite runs: one reading a Lightroom catalog
-/// attached to the catalog, or SQLite's own tables. Same shape as [`Sql`];
-/// only `LightroomWrite` runs it, and the portability check skips it.
+/// A statement that only SQLite runs: one reading an import plan attached
+/// to the catalog, or SQLite's own tables. Same shape as [`Sql`]; only
+/// `PlanWrite` runs it, and the portability check skips it.
 /// Write it with [`sqlite_sql!`](crate::catalog::db::sqlite_sql).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(in crate::catalog) struct SqliteSql(&'static str);

@@ -821,26 +821,18 @@ other features don't depend on the extension.
 | --- | --- | --- | --- |
 | **MIDI** (`rawmakase.midi`, built) | Device discovery and connection, device profiles, mapping (`extensions/midi`) | Commands, gesture grouping, History | `control-adapter`, `with-app` programs, settings |
 | **MCP** (`rawmakase.mcp`) | The MCP server (`src/mcp.rs`), already a client of the control protocol | The command layer, and `rawmakase mcp` as the entry point clients already launch | An externally launched adapter (below) |
-| **Lightroom** (`rawmakase.lightroom`, its first part built) | Where Lightroom and Camera Raw keep catalogs, profiles and presets, and what Adobe's layout says each file is (`files.list`); the catalog import later ([plan](lightroom-extension-plan.md)) | What fits a photo or a catalog, the offers and the importers; the Lightroom catalog import until it moves | A bundled extension the core asks for facts it then decides on |
+| **Lightroom** (`rawmakase.lightroom`, built) | Where Lightroom and Camera Raw keep catalogs, profiles and presets, and what Adobe's layout says each file is (`files.list`); reading a Lightroom Classic catalog into an import plan (its `catalog` importer) ([plan](lightroom-extension-plan.md)) | What fits a photo or a catalog, the offers and the importers; checking and committing the plan; converting Lightroom develop text, History and snapshots when they are used | A bundled extension the core asks for facts it then decides on, and an `importer` |
 | **AI masks** (`rawmakase.ai-masks`) | Select Subject, Sky and Background: the models, their install (`model_install` for those packs), local and remote inference (`rawmakase-remote` as the extension's own worker) | Masks, rasters and their storage; rendering saved masks | `mask-generator`, viewer input, shared memory, heavy native dependencies |
 
-**Lightroom import stays in the core for now.** Moving it out
-(`rawmakase.lightroom`) is a follow-up, built with the `importer` contribution.
-It would move reading a Lightroom catalog into an import plan
-(`catalog::lightroom`'s reading side) and converting its Develop settings
-(`lr_develop`), and keep committing the plan and archiving unsupported data,
-including the original Lightroom settings, in the core. It depends on a separate
-change that is planned on its own and must land first. Today a Lightroom edit is
-stored as Lightroom's text and converted each time the photo's edit is resolved
-(`edits::resolve`), and imported History steps and snapshots are converted the
-same way when they are selected or applied
-(`app::develop::panels::history_panel`, `snapshots`), so disabling the importer
-would change imported photos. That change converts edits, History steps and
-snapshots once at import and migrates existing catalogs, keeping the originals
-archived. When the importer moves, tests apply an imported step and snapshot,
-and Copy to Before, with the extension disabled. Until then, nothing built here
-may make that move harder: the import-plan shape must be able to carry
-everything today's importer produces ([Importer plans](#contributions)).
+**Lightroom import is the Lightroom extension's.** Its `catalog` importer
+reads a `.lrcat` into an import plan, which the core checks and commits
+(`catalog::plan_import`); the core imports nothing from a `.lrcat` itself. Its
+Develop settings, History steps and snapshots are stored as Lightroom's
+develop text and converted when they are used (`lr_develop`, `edits::resolve`,
+the History and Snapshots panels), as before, so disabling the extension
+changes nothing for imported photos; tests apply an imported step and
+snapshot, and Copy to Before, with the extension disabled
+([plan](lightroom-extension-plan.md)).
 
 Lens corrections data and community profiles stay in the core as they are.
 
@@ -989,7 +981,7 @@ test extension in the SDK proves it here as well.
 | --- | --- | --- |
 | `files` content: presets, LUTs, profiles, key maps | Phase 2 | Preset and LUT packs |
 | Brush input | Phase 3 | A tool beyond the Remove tool's own brush (AI Remove paints with it) |
-| `importer` | Phase 2 | One-time Capture One and Lightroom CC imports; then moving the Lightroom importer out, after Lightroom edits are converted at import |
+| `importer` (built, for the Lightroom extension's catalog import) | Phase 2 | One-time Capture One and Lightroom CC imports |
 | Filters | Phase 2 | Film grain, custom filters |
 | `export-destination` | Phase 2 | Uploads, galleries |
 | The official catalogue | Third-party extensions to list | — |

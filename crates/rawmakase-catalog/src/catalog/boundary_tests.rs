@@ -4,15 +4,11 @@
 use std::path::{Path, PathBuf};
 
 /// Modules that may use SQLite directly, and why.
-const SQLITE_ONLY: [(&str, &str); 4] = [
+const SQLITE_ONLY: [(&str, &str); 3] = [
     ("catalog/db", "the boundary itself"),
     (
         "catalog/preview_cache.rs",
         "a per-machine cache file shared by all catalogs",
-    ),
-    (
-        "catalog/lightroom/mod.rs",
-        "Lightroom catalogs are SQLite files, checked before import",
     ),
     (
         "catalog/upgrade_fixtures.rs",

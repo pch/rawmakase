@@ -280,12 +280,7 @@ impl Editor {
         let enabled = !self.activity.is_busy() && self.importing.is_none();
         let mut catalog_action = None;
         let mut chosen = None;
-        let rows = [
-            self.catalog_row(),
-            self.import_row(ImportKind::CameraProfiles),
-            self.import_row(ImportKind::LensProfiles),
-            self.import_row(ImportKind::Presets),
-        ];
+        let rows = self.lightroom_rows();
         let palette = theme::palette(ui.ctx());
         egui::Frame::new()
             .fill(palette.tone(Tone::CARD))
@@ -298,11 +293,10 @@ impl Editor {
                     if i > 0 {
                         divider(ui);
                     }
-                    let action = row_ui(ui, row, enabled);
-                    match (i, action) {
+                    match (row.kind, row_ui(ui, row, enabled)) {
                         (_, None) => {}
-                        (0, Some(action)) => catalog_action = Some(action),
-                        (_, Some(action)) => chosen = Some((row.kind, action)),
+                        (None, Some(action)) => catalog_action = Some(action),
+                        (kind, Some(action)) => chosen = Some((kind, action)),
                     }
                 }
             });
@@ -332,13 +326,13 @@ impl Editor {
             },
         );
 
-        match catalog_action {
-            Some(RowAction::Import) => {
-                let source = self.onboarding.found.catalogs.first().cloned();
-                self.import_lightroom_here(source, ctx);
-            }
-            Some(RowAction::Choose(_)) => self.import_lightroom_here(None, ctx),
-            None => {}
+        // Into a new catalog beside the default one, without asking where.
+        if let (Some(action), Some(offer)) = (catalog_action, self.lightroom_importer()) {
+            let source = match action {
+                RowAction::Import => self.onboarding.found.catalogs.first().cloned(),
+                RowAction::Choose(_) => None,
+            };
+            self.import_with(offer, source, Some(self.default_catalog()), ctx);
         }
         let Some((Some(kind), action)) = chosen else {
             return;
@@ -380,6 +374,28 @@ impl Editor {
         }
     }
 
+    /// The Lightroom extension's catalog importer, while it is enabled.
+    fn lightroom_importer(&self) -> Option<crate::app::extensions::importer::Offer> {
+        self.importer_items().into_iter().find(|o| {
+            o.extension == rawmakase_extensions::protocol::manifest::LIGHTROOM
+                && o.importer == "catalog"
+        })
+    }
+
+    /// The view's rows: the catalog's, while the Lightroom extension imports
+    /// catalogs, then the profiles' and presets'.
+    fn lightroom_rows(&self) -> Vec<Row> {
+        let catalog = self.lightroom_importer().map(|_| self.catalog_row());
+        catalog
+            .into_iter()
+            .chain([
+                self.import_row(ImportKind::CameraProfiles),
+                self.import_row(ImportKind::LensProfiles),
+                self.import_row(ImportKind::Presets),
+            ])
+            .collect()
+    }
+
     /// The Lightroom catalog's row: the one found where Lightroom keeps it,
     /// imported already or not.
     fn catalog_row(&self) -> Row {
@@ -407,7 +423,7 @@ impl Editor {
             import: None,
             choose: ChooseWith::File,
         };
-        if let Some(work) = &self.catalog_work {
+        if let Some(work) = self.catalog_importing() {
             row.mark = Mark::Working;
             row.status = format!("{work} A large catalog takes a few minutes.");
         } else if imported.is_some()
@@ -1233,9 +1249,16 @@ mod tests {
             "{status}"
         );
 
-        // With the extension off, nothing is offered from Adobe's folders.
+        assert!(
+            editor.lightroom_rows()[0].kind.is_none(),
+            "the catalog's row"
+        );
+
+        // With the extension off, nothing is offered from Adobe's folders,
+        // and no catalog is imported.
         editor.extensions.set_enabled(LIGHTROOM, false).unwrap();
         frame(&mut editor);
+        assert!(editor.lightroom_rows().iter().all(|r| r.kind.is_some()));
         assert!(editor.onboarding.found.catalogs.is_empty());
         assert!(editor.onboarding.found.preset_folders.is_empty());
         let row = editor.import_row(ImportKind::Presets);

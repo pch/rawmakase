@@ -120,45 +120,43 @@ fn new_rows_return_their_ids() -> Result<()> {
     Ok(())
 }
 
-/// Whether a database is attached as `lr`.
+/// Whether a database is attached as `plan`.
 fn attached(db: &Db) -> Result<bool> {
     Ok(db.connection().query_row(
-        "SELECT count(*) FROM pragma_database_list WHERE name='lr'",
+        "SELECT count(*) FROM pragma_database_list WHERE name='plan'",
         [],
         |r| r.get::<_, i64>(0),
     )? > 0)
 }
 
 #[test]
-fn a_lightroom_catalog_is_detached_whatever_its_import_does() -> Result<()> {
+fn an_import_plan_is_detached_whatever_its_import_does() -> Result<()> {
     let (dir, _, mut db) = catalog()?;
-    let lightroom = dir.path().join("Lightroom.lrcat");
-    Connection::open(&lightroom)?.execute_batch("CREATE TABLE Adobe_images(id_local INTEGER)")?;
-
-    let tables = db.with_lightroom(&lightroom, |lr| {
-        lr.write()
-            .execute(sql!("UPDATE photos SET rating=2 WHERE id=1"), &[])?;
-        Ok((lr.has_table("Adobe_images")?, lr.has_table("Missing")?))
-    })?;
-    assert_eq!(tables, (true, false));
+    let plan = dir.path().join("plan.sqlite");
+    let schema = "CREATE TABLE photo (id TEXT)";
+    Connection::open(&plan)?.execute_batch(schema)?;
+    let with_plan = |db: &mut Db, rating: i64, then: fn() -> Result<()>| {
+        db.with_plan(
+            &plan,
+            schema,
+            || false,
+            |p| {
+                p.write()
+                    .execute(sql!("UPDATE photos SET rating=? WHERE id=1"), &[&rating])?;
+                then()
+            },
+        )
+    };
+    with_plan(&mut db, 2, || Ok(()))?;
     assert!(!attached(&db)?);
     assert_eq!(rating(&db)?, 2);
 
-    let failed: Result<()> = db.with_lightroom(&lightroom, |lr| {
-        lr.write()
-            .execute(sql!("UPDATE photos SET rating=3 WHERE id=1"), &[])?;
-        anyhow::bail!("refused")
-    });
-    assert!(failed.is_err());
+    assert!(with_plan(&mut db, 3, || anyhow::bail!("refused")).is_err());
     assert!(!attached(&db)?);
     assert_eq!(rating(&db)?, 2);
 
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        db.with_lightroom(&lightroom, |lr| -> Result<()> {
-            lr.write()
-                .execute(sql!("UPDATE photos SET rating=4 WHERE id=1"), &[])?;
-            panic!("import failed")
-        })
+        with_plan(&mut db, 4, || panic!("import failed"))
     }));
     assert!(panicked.is_err());
     assert!(!attached(&db)?);

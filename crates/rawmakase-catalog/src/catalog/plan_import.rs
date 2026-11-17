@@ -1,9 +1,9 @@
 //! Importing the plan an extension's `[[importer]]` wrote into a new catalog
-//! (`docs/lightroom-extension-plan.md`, "The core's side"), as
-//! [`import_lightroom`](super::lightroom::import_lightroom) imports a
-//! Lightroom catalog: a folder beside the destination, a working catalog in
-//! it, the plan attached and checked, every row copied in one transaction,
-//! then the integrity check and an atomic publish.
+//! (`docs/lightroom-extension-plan.md`, "The core's side"), as a Lightroom
+//! Classic catalog is imported, with the bundled Lightroom extension's plan:
+//! a folder beside the destination, a working catalog in it, the plan
+//! attached and checked, every row copied in one transaction, then the
+//! integrity check and an atomic publish.
 //!
 //! The plan is a SQLite file in the published format
 //! ([`rawmakase_extension_protocol::plan`]), written by the extension's
@@ -14,12 +14,9 @@
 //!
 //! [`Gate`] decides between cancelling and publishing. Until publishing
 //! begins every failure or cancel deletes the folder and publishes nothing.
-//! A crash leaves the folder behind, as [`import_lightroom`]'s does; a
-//! crash during a copy on a volume without hard links leaves the partial
-//! destination.
-//!
-//! [`import_lightroom`]: super::lightroom::import_lightroom
-use super::db::{LightroomWrite, Reads, SqliteSql, sql, sqlite_sql};
+//! A crash leaves the folder behind; a crash during a copy on a volume
+//! without hard links leaves the partial destination.
+use super::db::{PlanWrite, Reads, SqliteSql, sql, sqlite_sql};
 use super::sidecar::{Merge, apply};
 use super::value::row;
 use super::{Catalog, PhotoId};
@@ -142,11 +139,15 @@ impl PlanImport {
             "{} already exists; choose a new catalog filename",
             destination.display()
         );
+        // The destination's folder is made, as Lightroom import always did.
+        let parent = crate::storage::parent_dir(&destination);
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Couldn't make {}", parent.display()))?;
         // Not a dot-name, as `storage::staging_file` explains.
         let folder = tempfile::Builder::new()
             .prefix("rawmakase-import-")
             .suffix(".partial")
-            .tempdir_in(crate::storage::parent_dir(&destination))
+            .tempdir_in(parent)
             .with_context(|| format!("Couldn't make a folder beside {}", destination.display()))?;
         Ok(Self {
             folder,
@@ -428,7 +429,7 @@ const RULES: [SqliteSql; 4] = [
 /// Fails, saying why, unless the plan keeps every rule of its format and
 /// holds the `answered` photos the program said it did, which its source
 /// holds too.
-fn check(plan: &mut LightroomWrite<'_>, answered: u64, gate: &Gate) -> Result<()> {
+fn check(plan: &mut PlanWrite<'_>, answered: u64, gate: &Gate) -> Result<()> {
     row! {
         struct Malformed {
             table: String,
@@ -584,9 +585,10 @@ const COPY: [SqliteSql; 14] = [
 
 /// Copies the checked plan into the catalog, with a `sources` row for
 /// `source` and its `size`.
-fn copy(plan: &mut LightroomWrite<'_>, source: &Path, size: u64, gate: &Gate) -> Result<()> {
-    // `original_catalog` stays empty, as Lightroom import leaves it, bound as
-    // an empty blob so the statement prepares on every backend.
+fn copy(plan: &mut PlanWrite<'_>, source: &Path, size: u64, gate: &Gate) -> Result<()> {
+    // `original_catalog` stays empty, as releases since the archive's removal
+    // leave it, bound as an empty blob so the statement prepares on every
+    // backend.
     plan.write().execute(
         sql!("INSERT INTO sources(path,original_size,original_catalog) VALUES(?,?,?)"),
         &[
@@ -600,7 +602,7 @@ fn copy(plan: &mut LightroomWrite<'_>, source: &Path, size: u64, gate: &Gate) ->
         plan.execute_sqlite(statement, &[])?;
     }
     // Descriptive metadata from XMP, a row at a time, for photos that have
-    // none yet, as Lightroom import reads it; the plan has its own keywords,
+    // none yet, as Lightroom import always read it; the plan has its own keywords,
     // rating, label and flag. A packet that can't be read is left out.
     row! {
         struct Packet {

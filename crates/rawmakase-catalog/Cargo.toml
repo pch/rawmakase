@@ -3,7 +3,7 @@ name = "rawmakase-catalog"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "RAWmakase's catalog: photos, folders, collections and edits in SQLite, and Lightroom import, without the RAW decoders, the renderer or the GUI"
+description = "RAWmakase's catalog: photos, folders, collections and edits in SQLite, and importing an importer's plan, without the RAW decoders, the renderer or the GUI"
 license.workspace = true
 publish = false
 
@@ -33,10 +33,10 @@ unicode-normalization.workspace = true
 tempfile.workspace = true
 
 [dev-dependencies]
-# SQL functions, for the tests that write an import plan from a Lightroom
-# catalog.
-rusqlite = { version = "0.41.0", features = ["bundled", "hooks", "limits", "functions"] }
 rawmakase-fs = { path = "../rawmakase-fs", version = "0.1.0", features = ["test-support"] }
+# Lightroom catalogs are imported in tests with the bundled Lightroom
+# extension's plan, as the app imports them.
+rawmakase-lightroom = { path = "../../extensions/lightroom", version = "0.6.0", features = ["test-support"] }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
 

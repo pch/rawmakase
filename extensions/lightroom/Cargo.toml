@@ -5,7 +5,7 @@ name = "rawmakase-lightroom"
 version = "0.6.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "Where Lightroom and Camera Raw keep catalogs, profiles and presets, as a bundled RAWmakase extension"
+description = "Lightroom Classic catalog import, and where Lightroom and Camera Raw keep catalogs, profiles and presets, as a bundled RAWmakase extension"
 license.workspace = true
 publish = false
 
@@ -17,10 +17,15 @@ name = "rawmakase-lightroom"
 path = "src/main.rs"
 
 [dependencies]
-rawmakase-extension = { path = "../../crates/rawmakase-extension", version = "0.1.0" }
+rawmakase-extension = { path = "../../crates/rawmakase-extension", version = "0.1.0", features = ["importer"] }
+flate2.workspace = true
+# Reads the catalog and writes the import plan: `functions` for decoding
+# History text in SQL, `hooks` to stop a statement when the import is
+# cancelled.
+rusqlite = { version = "0.41.0", features = ["bundled", "functions", "hooks"] }
 
 [features]
-# `fake`, the small Adobe install the app's tests list.
+# `fake`, the small Adobe install and Lightroom catalog the app's tests use.
 test-support = []
 
 [dev-dependencies]

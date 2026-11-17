@@ -3,8 +3,7 @@
 //! reader the app passes in): when a folder is added, for its
 //! new photos, and on Read Metadata from Files, for photos already in the
 //! catalog. Never at render time; the catalog stays the source of truth.
-use super::db::{LightroomWrite, Write, sql, sqlite_sql};
-use super::value::{TextOrBlob, row};
+use super::db::{Write, sql};
 use super::{Catalog, PhotoId};
 use crate::jpeg::{APP1, Segments};
 use crate::storage::RasterFormat;
@@ -515,59 +514,6 @@ impl Catalog {
             Ok(report)
         })
     }
-}
-
-/// Title, caption, creator, copyright, capture time and location from the XMP
-/// a Lightroom catalog keeps per photo (attached as `lr`), for the photos
-/// that have no row yet. Keywords, rating, label and flag come from
-/// Lightroom's own tables. Returns the photos read.
-pub(super) fn copy_lightroom_metadata(lr: &mut LightroomWrite<'_>) -> Result<usize> {
-    if !lr.has_table("Adobe_AdditionalMetadata")? {
-        return Ok(0);
-    }
-    row! {
-        struct Packet {
-            id: PhotoId,
-            xmp: TextOrBlob,
-        }
-    }
-    let rows: Vec<Packet> = lr.read_sqlite(
-        sqlite_sql!(concat!(
-            // Only photos that are still that Lightroom image: a photo
-            // added since may have taken a removed copy's id.
-            "SELECT m.image, m.xmp FROM lr.Adobe_AdditionalMetadata m
-             JOIN photos p ON p.id = m.image
-             JOIN lr.Adobe_images i ON i.id_local = m.image
-             JOIN lr.AgLibraryFile f ON f.id_local = i.rootFile
-             JOIN lr.AgLibraryFolder d ON d.id_local = f.folder
-             JOIN lr.AgLibraryRootFolder r ON r.id_local = d.rootFolder
-             WHERE p.original_path = r.absolutePath || d.pathFromRoot || ",
-            super::lightroom::lightroom_filename!()
-        )),
-        &[],
-    )?;
-    let mut read = 0;
-    for Packet { id, xmp } in rows {
-        // Invalid text is left out rather than imported mangled.
-        let xmp = xmp
-            .0
-            .and_then(|t| String::from_utf8(t).ok())
-            .unwrap_or_default();
-        // A packet that can't be read is left out, as Lightroom's own data.
-        let Ok(found) = descriptive::read(&xmp) else {
-            continue;
-        };
-        let descriptive_only = Read {
-            keywords: None,
-            rating: None,
-            label: None,
-            flag: None,
-            ..found
-        };
-        apply(lr.write(), id, &descriptive_only, Merge::FillEmpty)?;
-        read += 1;
-    }
-    Ok(read)
 }
 
 #[cfg(test)]

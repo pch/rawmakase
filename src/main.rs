@@ -53,14 +53,18 @@ enum Command {
     #[command(subcommand)]
     Extensions(ExtensionsCommand),
     /// Import a catalog into a new one at OUTPUT: a Lightroom Classic
-    /// catalog, or with --importer, any source an extension's importer reads.
+    /// catalog, with the bundled Lightroom extension, or with --importer, any
+    /// source an extension's importer reads.
     ImportCatalog {
         source: PathBuf,
         output: PathBuf,
-        /// The extension's importer to use, as EXTENSION/IMPORTER (for
-        /// example dev.rawmakase.importer/script).
-        #[arg(long, value_name = "EXTENSION/IMPORTER")]
-        importer: Option<String>,
+        /// The extension's importer to use, as EXTENSION/IMPORTER.
+        #[arg(
+            long,
+            value_name = "EXTENSION/IMPORTER",
+            default_value = "rawmakase.lightroom/catalog"
+        )]
+        importer: String,
     },
     CatalogInfo {
         catalog: PathBuf,
@@ -354,21 +358,8 @@ fn main() -> Result<()> {
         Some(Command::ImportCatalog {
             source,
             output,
-            importer: Some(importer),
+            importer,
         }) => import_with_extension(&importer, &source, &output)?,
-        Some(Command::ImportCatalog {
-            source,
-            output,
-            importer: None,
-        }) => {
-            let path = rawmakase::catalog::lightroom::import_lightroom(&source, &output)?;
-            let c = open_catalog(&path)?;
-            println!(
-                "Imported {} photographs into {}",
-                c.photos()?.len(),
-                path.display()
-            );
-        }
         Some(Command::CatalogInfo { catalog }) => {
             let c = open_catalog(&catalog)?;
             let photos = c.photos()?;
@@ -886,7 +877,7 @@ fn mcp(data_dir: Option<PathBuf>) -> Result<()> {
     std::process::exit(code)
 }
 
-/// `rawmakase import-catalog --importer EXTENSION/IMPORTER`: the
+/// `rawmakase import-catalog [--importer EXTENSION/IMPORTER]`: the
 /// extension's program started and polled here, without the app, then the
 /// same import as the app's. The program's progress goes to stderr. Ctrl-C
 /// ends this process as any signal does, and leaves the import's folder

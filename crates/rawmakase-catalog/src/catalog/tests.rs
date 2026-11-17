@@ -1,33 +1,21 @@
-use super::lightroom::import_lightroom;
 use super::*;
 use crate::lr_develop::{convert_develop, develop_fields};
 use crate::metadata::{LangAlt, PhotoInfo, Value};
 use crate::{export_settings::ExportOptions, model::recipe::Recipe, storage::Identity};
 use rusqlite::{Connection, params};
+/// Imports the Lightroom catalog `source` into a new catalog at
+/// `destination` as the app does: the bundled Lightroom extension writes
+/// the plan, which [`PlanImport`](super::plan_import::PlanImport) imports.
+pub(super) fn import_lightroom(source: &Path, destination: &Path) -> Result<std::path::PathBuf> {
+    let import = super::plan_import::PlanImport::prepare(source, destination)?;
+    let stop = Default::default();
+    let photos = rawmakase_lightroom::catalog::write_plan(source, &import.plan(), &stop, &|_| {})
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    import.run(photos, &mut |_| {})
+}
+/// The Lightroom extension's test catalog.
 pub(super) fn fixture(path: &Path) -> Result<()> {
-    let db = Connection::open(path)?;
-    db.execute_batch("CREATE TABLE AgLibraryRootFolder(id_local INTEGER, absolutePath TEXT);
-        CREATE TABLE AgLibraryFolder(id_local INTEGER,rootFolder INTEGER,pathFromRoot TEXT);
-        CREATE TABLE AgLibraryFile(id_local INTEGER,folder INTEGER,idx_filename TEXT,baseName TEXT,extension TEXT);
-        CREATE TABLE Adobe_images(id_local INTEGER,rootFile INTEGER,captureTime TEXT,rating INTEGER,pick INTEGER,colorLabels TEXT,fileFormat TEXT,copyName TEXT,masterImage INTEGER,orientation TEXT);
-        CREATE TABLE Adobe_imageDevelopSettings(image INTEGER,text TEXT);
-        CREATE TABLE AgLibraryCollection(id_local INTEGER,name TEXT,parent INTEGER,creationId TEXT);
-        CREATE TABLE AgLibraryCollectionImage(collection INTEGER,image INTEGER,positionInCollection TEXT);
-        CREATE TABLE AgLibraryKeyword(id_local INTEGER,name TEXT,parent INTEGER);
-        CREATE TABLE AgLibraryKeywordImage(image INTEGER,tag INTEGER);
-        CREATE TABLE Adobe_libraryImageDevelopHistoryStep(image INTEGER,id_local INTEGER,dateCreated REAL,name TEXT,text BLOB);
-        CREATE TABLE ProprietaryData(blob BLOB);
-        INSERT INTO ProprietaryData VALUES(X'001122FF');
-        INSERT INTO AgLibraryRootFolder VALUES(10,'/Volumes/Photos/');
-        INSERT INTO AgLibraryFolder VALUES(20,10,'Trip/'),(21,10,'Trip/Day2/');
-        INSERT INTO AgLibraryFile VALUES(30,20,'image.ARW','image','ARW');
-        INSERT INTO Adobe_images VALUES(40,30,'2021-06-06T10:00:00',4,1,'Red','RAW','',NULL,'AB'),(41,30,'2021-06-06T10:00:00',2,-1,'Blue','RAW','B&W',40,'AB');
-        INSERT INTO Adobe_imageDevelopSettings VALUES(40,'s = { Exposure2012 = 1.5 }'),(41,'s = { ConvertToGrayscale = true }');
-        INSERT INTO AgLibraryCollection VALUES(50,'Travel',NULL,'com.adobe.ag.library.collection');
-        INSERT INTO AgLibraryCollectionImage VALUES(50,40,'a'),(50,41,'b');
-        INSERT INTO AgLibraryKeyword VALUES(59,NULL,NULL),(60,'City',59);
-        INSERT INTO AgLibraryKeywordImage VALUES(40,60);")?;
-    Ok(())
+    Ok(rawmakase_lightroom::fake::catalog(path)?)
 }
 #[test]
 fn lightroom_folder_stacks_are_imported_with_their_top_and_collapse() -> Result<()> {
@@ -268,6 +256,43 @@ fn import_is_lossless_atomic_and_virtual_copies_are_independent() -> Result<()> 
     assert!(import_lightroom(&source, &output).is_err());
     assert_eq!(size, output.metadata()?.len());
     assert_eq!(bytes, std::fs::read(&source)?);
+    Ok(())
+}
+/// A virtual copy's master, a collection's set or a keyword's parent that
+/// Lightroom no longer has imports as none: the copy is a master, the
+/// collection and keyword are at the top, and they keep everything else.
+#[test]
+fn stale_optional_references_import_as_none() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let source = dir.path().join("stale.lrcat");
+    fixture(&source)?;
+    Connection::open(&source)?.execute_batch(
+        "UPDATE Adobe_images SET masterImage=999 WHERE id_local=41;
+         UPDATE AgLibraryCollection SET parent=999 WHERE id_local=50;
+         UPDATE AgLibraryKeyword SET parent=999 WHERE id_local=60;",
+    )?;
+    let cat = Catalog::open(import_lightroom(
+        &source,
+        &dir.path().join("stale.rawmakase"),
+    )?)?;
+    let copy = cat
+        .photos()?
+        .into_iter()
+        .find(|p| p.id == PhotoId(41))
+        .unwrap();
+    assert_eq!((copy.master, copy.copy_name.as_str()), (None, "B&W"));
+    let travel = cat
+        .collections()?
+        .into_iter()
+        .find(|c| c.id == CollectionId(50))
+        .unwrap();
+    assert_eq!((travel.parent, travel.name.as_str()), (None, "Travel"));
+    let parent: Option<i64> = cat.db_for_tests().query_row(
+        "SELECT parent FROM keywords WHERE id = 60 AND name = 'City'",
+        [],
+        |r| r.get(0),
+    )?;
+    assert_eq!(parent, None);
     Ok(())
 }
 #[test]

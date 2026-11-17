@@ -143,63 +143,6 @@ impl Editor {
     pub(in crate::app) fn open_default_catalog(&mut self, ctx: &egui::Context) {
         self.open_catalog_file(self.default_catalog(), true, ctx);
     }
-    /// Imports Lightroom catalog `source`, or one the user picks, into a new
-    /// catalog beside the default one without asking where, and opens it.
-    pub(in crate::app) fn import_lightroom_here(
-        &mut self,
-        source: Option<PathBuf>,
-        ctx: &egui::Context,
-    ) {
-        if !self.ready_for_catalog() || !self.activity.begin_dialog() {
-            return;
-        }
-        let place = self.default_catalog();
-        let tx = self.tx.clone();
-        let ctx = ctx.clone();
-        crate::app::task::spawn(
-            tx,
-            ctx.clone(),
-            move |tx| {
-                let result = (|| -> anyhow::Result<Option<CatalogLocation>> {
-                    let Some(source) = source.or_else(|| {
-                        rfd::FileDialog::new()
-                            .add_filter("Lightroom catalog", &["lrcat"])
-                            .pick_file()
-                    }) else {
-                        return Ok(None);
-                    };
-                    let stem = source.file_stem().unwrap_or_default().to_string_lossy();
-                    // A name not taken yet: "Catalog", "Catalog 2"…
-                    let destination = (1..)
-                        .map(|n| match n {
-                            1 => place.with_file_name(format!("{stem}.rawmakase")),
-                            n => place.with_file_name(format!("{stem} {n}.rawmakase")),
-                        })
-                        .find(|p| !p.exists())
-                        .expect("a free name");
-                    let _ = tx.send(Event::CatalogWorking(format!(
-                        "Importing {}…",
-                        source.file_name().unwrap_or_default().to_string_lossy()
-                    )));
-                    ctx.request_repaint();
-                    Ok(Some(CatalogLocation::File(
-                        crate::catalog::lightroom::import_lightroom(&source, &destination)?,
-                    )))
-                })();
-                let event = match result {
-                    Ok(Some(location)) => {
-                        reopened(&location, false, &Default::default(), &[], tx, &ctx)
-                    }
-                    Ok(None) => Event::DialogClosed,
-                    Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
-                };
-                let _ = tx.send(event);
-            },
-            |tx, error| {
-                let _ = tx.send(Event::CatalogReady(Err(error)));
-            },
-        );
-    }
     fn open_catalog_file(&mut self, path: PathBuf, create: bool, ctx: &egui::Context) {
         if !self.ready_for_catalog() {
             return;
@@ -273,31 +216,6 @@ impl Editor {
                         }
                         CatalogDialog::Open => {
                             catalog_file_dialog().pick_file().map(CatalogLocation::File)
-                        }
-                        CatalogDialog::ImportLightroom => {
-                            let Some(source) = rfd::FileDialog::new()
-                                .add_filter("Lightroom catalog", &["lrcat"])
-                                .pick_file()
-                            else {
-                                return Ok(None);
-                            };
-                            let Some(destination) = catalog_file_dialog()
-                                .set_file_name(format!(
-                                    "{}.rawmakase",
-                                    source.file_stem().unwrap_or_default().to_string_lossy()
-                                ))
-                                .save_file()
-                            else {
-                                return Ok(None);
-                            };
-                            let _ = tx.send(Event::CatalogWorking(format!(
-                                "Importing {}…",
-                                source.file_name().unwrap_or_default().to_string_lossy()
-                            )));
-                            ctx.request_repaint();
-                            Some(CatalogLocation::File(
-                                crate::catalog::lightroom::import_lightroom(&source, &destination)?,
-                            ))
                         }
                         CatalogDialog::Folder(action) => {
                             crate::platform::network::prepare_filesystem_bridge();

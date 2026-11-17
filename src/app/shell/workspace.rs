@@ -792,7 +792,7 @@ impl Editor {
                 ))
                 .clicked()
             {
-                self.import_with(offer, ctx);
+                self.import_with(offer, None, None, ctx);
                 ui.close();
             }
         }

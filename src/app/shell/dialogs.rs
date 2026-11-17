@@ -22,7 +22,6 @@ pub(in crate::app) enum FileDialog {
 pub(in crate::app) enum CatalogDialog {
     Create,
     Open,
-    ImportLightroom,
     Folder(FolderAction),
 }
 

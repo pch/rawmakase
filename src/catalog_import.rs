@@ -1,5 +1,5 @@
 //! An import with an extension's `[[importer]]` outside the app, for
-//! `rawmakase import-catalog --importer`: the extension's program started in
+//! `rawmakase import-catalog`: the extension's program started in
 //! a [`Session`] this module polls itself, `hello` and `import.run` sent and
 //! the program's progress reported, then the same
 //! [`PlanImport`] as the app's. What a failed `import.run` means for the
@@ -55,8 +55,8 @@ pub struct Located {
 
 /// Extension `id` as `data_dir`'s `extensions.json` and `bundled` (the
 /// compiled-in manifests, their programs looked for in `search_dirs`) have
-/// it. Fails when it is disabled ("‹name› is disabled in Preferences >
-/// Extensions"), unknown, incompatible with `app`, or its program is
+/// it. Fails when it is disabled ("The ‹name› extension is disabled in
+/// Preferences > Extensions"), unknown, incompatible with `app`, or its program is
 /// missing.
 pub fn locate(
     data_dir: &Path,
@@ -93,7 +93,8 @@ pub fn locate(
             .filter_map(Result::ok)
             .find(|b| b.manifest.extension.id == id)
             .ok_or_else(|| anyhow!("No extension {id} is installed"))?;
-        if let Some(problem) = found.problem() {
+        // Disabled is said before a missing program.
+        if let Some(problem) = found.problem().filter(|_| state.enabled(id)) {
             bail!(problem);
         }
         let dir = found
@@ -104,7 +105,10 @@ pub fn locate(
         (found.manifest, dir, found.program, state.enabled(id))
     };
     let name = &manifest.extension.name;
-    ensure!(enabled, "{name} is disabled in Preferences > Extensions");
+    ensure!(
+        enabled,
+        "The {name} extension is disabled in Preferences > Extensions"
+    );
     rawmakase_extensions::check_compatible(&manifest, app)?;
     let program = program
         .filter(|p| p.is_file())

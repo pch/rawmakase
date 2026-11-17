@@ -87,3 +87,33 @@ pub fn install(root: &Path, layout: Layout) -> std::io::Result<Roots> {
         .set_modified(old)?;
     Ok(roots)
 }
+
+/// Writes a small Lightroom Classic catalog at `path`, with only the tables
+/// and columns an import reads: a root, two folders, a photo with a virtual
+/// copy, each with its develop settings, a collection holding both and a
+/// keyword under Lightroom's nameless root keyword. Tests add to it.
+pub fn catalog(path: &Path) -> rusqlite::Result<()> {
+    rusqlite::Connection::open(path)?.execute_batch(
+        "CREATE TABLE AgLibraryRootFolder(id_local INTEGER, absolutePath TEXT);
+        CREATE TABLE AgLibraryFolder(id_local INTEGER,rootFolder INTEGER,pathFromRoot TEXT);
+        CREATE TABLE AgLibraryFile(id_local INTEGER,folder INTEGER,idx_filename TEXT,baseName TEXT,extension TEXT);
+        CREATE TABLE Adobe_images(id_local INTEGER,rootFile INTEGER,captureTime TEXT,rating INTEGER,pick INTEGER,colorLabels TEXT,fileFormat TEXT,copyName TEXT,masterImage INTEGER,orientation TEXT);
+        CREATE TABLE Adobe_imageDevelopSettings(image INTEGER,text TEXT);
+        CREATE TABLE AgLibraryCollection(id_local INTEGER,name TEXT,parent INTEGER,creationId TEXT);
+        CREATE TABLE AgLibraryCollectionImage(collection INTEGER,image INTEGER,positionInCollection TEXT);
+        CREATE TABLE AgLibraryKeyword(id_local INTEGER,name TEXT,parent INTEGER);
+        CREATE TABLE AgLibraryKeywordImage(image INTEGER,tag INTEGER);
+        CREATE TABLE Adobe_libraryImageDevelopHistoryStep(image INTEGER,id_local INTEGER,dateCreated REAL,name TEXT,text BLOB);
+        CREATE TABLE ProprietaryData(blob BLOB);
+        INSERT INTO ProprietaryData VALUES(X'001122FF');
+        INSERT INTO AgLibraryRootFolder VALUES(10,'/Volumes/Photos/');
+        INSERT INTO AgLibraryFolder VALUES(20,10,'Trip/'),(21,10,'Trip/Day2/');
+        INSERT INTO AgLibraryFile VALUES(30,20,'image.ARW','image','ARW');
+        INSERT INTO Adobe_images VALUES(40,30,'2021-06-06T10:00:00',4,1,'Red','RAW','',NULL,'AB'),(41,30,'2021-06-06T10:00:00',2,-1,'Blue','RAW','B&W',40,'AB');
+        INSERT INTO Adobe_imageDevelopSettings VALUES(40,'s = { Exposure2012 = 1.5 }'),(41,'s = { ConvertToGrayscale = true }');
+        INSERT INTO AgLibraryCollection VALUES(50,'Travel',NULL,'com.adobe.ag.library.collection');
+        INSERT INTO AgLibraryCollectionImage VALUES(50,40,'a'),(50,41,'b');
+        INSERT INTO AgLibraryKeyword VALUES(59,NULL,NULL),(60,'City',59);
+        INSERT INTO AgLibraryKeywordImage VALUES(40,60);",
+    )
+}

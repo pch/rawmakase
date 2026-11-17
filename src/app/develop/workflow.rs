@@ -52,7 +52,7 @@ impl Editor {
             self.load_catalog(path, &self.context.clone());
         } else if path.extension().is_some_and(|e| e == "lrcat") {
             self.messages.warn(
-                "Use Library → Import Lightroom catalog to select a new RAWmakase catalog destination",
+                "Import a Lightroom catalog from the catalog menu, into a new RAWmakase catalog",
             );
             self.module = Module::Library;
         }

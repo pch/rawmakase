@@ -1,6 +1,6 @@
 //! Removing the Lightroom catalog earlier releases archived inside ours.
-use super::lightroom::import_lightroom;
 use super::lightroom_archive::faults::FAIL_COMPACTION;
+use super::tests::import_lightroom;
 use super::tests::{compressed, fixture};
 use super::*;
 use crate::model::recipe::Recipe;

@@ -1,7 +1,7 @@
 //! Photo info: camera settings and size, copied from the Lightroom catalog a
 //! photo was imported from, or read from the file for photos added from
 //! folders (`fill_photo_info`).
-use super::db::{LightroomWrite, Reads, Write, sql, sqlite_sql};
+use super::db::{Reads, Write, sql};
 use super::value::row;
 use super::{Catalog, PhotoId};
 use crate::metadata::PhotoInfo;
@@ -261,61 +261,4 @@ fn insert(w: &mut Write<'_>, id: PhotoId, info: &PhotoInfo) -> Result<()> {
         ],
     )?;
     Ok(())
-}
-
-/// Copies photo info from a Lightroom catalog attached as `lr`. Lightroom
-/// stores aperture and shutter speed as APEX values: aperture 2.0 is f/2,
-/// shutter speed 4.64 is 1/25 s. Returns the photos copied.
-pub(super) fn copy_lightroom_info(lr: &mut LightroomWrite<'_>) -> Result<usize> {
-    let interned =
-        lr.has_table("AgInternedExifCameraModel")? && lr.has_table("AgInternedExifLens")?;
-    if !lr.has_table("AgHarvestedExifMetadata")? || !interned {
-        return Ok(0);
-    }
-    row! {
-        struct Harvested {
-            id: PhotoId,
-            camera: Option<String>,
-            lens: Option<String>,
-            focal: Option<f64>,
-            aperture: Option<f64>,
-            shutter: Option<f64>,
-            iso: Option<f64>,
-            width: Option<f64>,
-            height: Option<f64>,
-            orientation: Option<String>,
-        }
-    }
-    let rows: Vec<Harvested> = lr.read_sqlite(
-        sqlite_sql!(
-            "SELECT i.id_local, c.value, l.value, e.focalLength, e.aperture, e.shutterSpeed,
-                    e.isoSpeedRating, i.fileWidth, i.fileHeight, i.orientation
-             FROM lr.Adobe_images i
-             LEFT JOIN lr.AgHarvestedExifMetadata e ON e.image = i.id_local
-             LEFT JOIN lr.AgInternedExifCameraModel c ON c.id_local = e.cameraModelRef
-             LEFT JOIN lr.AgInternedExifLens l ON l.id_local = e.lensRef
-             WHERE i.id_local IN (SELECT id FROM photos)"
-        ),
-        &[],
-    )?;
-    let count = rows.len();
-    for r in rows {
-        // Quarter turns, mirrored or not: the photo shows taller than stored.
-        let turned = matches!(r.orientation.as_deref(), Some("BC" | "DA" | "AD" | "CB"));
-        let dimensions = r.width.zip(r.height).map(|(w, h)| {
-            let (w, h) = (w as u32, h as u32);
-            if turned { (h, w) } else { (w, h) }
-        });
-        let info = PhotoInfo {
-            camera: r.camera,
-            lens: r.lens,
-            focal: r.focal,
-            aperture: r.aperture.map(|av| 2f64.powf(av / 2.)),
-            exposure: r.shutter.map(|tv| 2f64.powf(-tv)),
-            iso: r.iso,
-            dimensions,
-        };
-        insert(lr.write(), r.id, &info)?;
-    }
-    Ok(count)
 }

@@ -201,6 +201,8 @@ fn not_busy(f: &Fixture) {
 fn the_import_menu_lists_enabled_importers_only() {
     let mut f = fixture();
     let items = f.editor.importer_items();
+    // The bundled Lightroom extension's program isn't beside the tests: it
+    // offers nothing.
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].name, "Example script");
     assert_eq!(items[0].extensions, ["json"]);
@@ -510,4 +512,171 @@ fn a_failed_save_before_opening_leaves_the_catalog_published_and_says_where() {
     let shown = crate::app::ui::widgets::pretty_path(&f.destination);
     assert!(f.said(&shown), "{}", f.editor.messages.line());
     assert!(!f.editor.activity.is_busy());
+}
+
+/// Runs frames until `done` holds, or fails after 60 s.
+fn until(editor: &mut Editor, what: &str, done: impl Fn(&Editor) -> bool) {
+    let ctx = editor.context.clone();
+    let until = Instant::now() + Duration::from_secs(60);
+    while !done(editor) {
+        frame(editor, &ctx);
+        assert!(Instant::now() < until, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// `text` as Lightroom compresses History steps and snapshots.
+fn compressed(text: &str) -> Vec<u8> {
+    use std::io::Write;
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    z.write_all(text.as_bytes()).unwrap();
+    let mut blob = (text.len() as u32).to_be_bytes().to_vec();
+    blob.extend(z.finish().unwrap());
+    blob
+}
+
+/// A Lightroom Classic catalog imports with the bundled Lightroom
+/// extension's importer, and with the extension off its photo opens with
+/// its Lightroom edit as the catalog resolves it (what the renderer gets),
+/// its History step applies and copies to Before, and its snapshot applies.
+/// The same holds for the catalog as an earlier release imported it, with
+/// its History and snapshot text compressed.
+#[test]
+fn a_lightroom_catalog_imports_and_its_edits_work_with_the_extension_off() -> anyhow::Result<()> {
+    use crate::app::develop::panels::history_panel::LightroomStep;
+    use crate::catalog::PhotoId;
+    use rawmakase_extensions::protocol::manifest::LIGHTROOM;
+    let dir = tempfile::tempdir()?;
+    let trip = dir.path().join("photos").join("Trip");
+    std::fs::create_dir_all(&trip)?;
+    let chart = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/corpus/charts/synthetic-d65.dng");
+    std::fs::copy(chart, trip.join("image.dng"))?;
+    let source = dir.path().join("Lightroom.lrcat");
+    rawmakase_lightroom::fake::catalog(&source)?;
+    let lr = rusqlite::Connection::open(&source)?;
+    let root = format!("{}/", dir.path().join("photos").display());
+    lr.execute("UPDATE AgLibraryRootFolder SET absolutePath = ?", [root])?;
+    lr.execute_batch(
+        "UPDATE AgLibraryFile SET idx_filename = 'image.dng', extension = 'dng';
+         CREATE TABLE Adobe_libraryImageDevelopSnapshot(image INTEGER, name TEXT, text BLOB);",
+    )?;
+    let (step, snapshot) = ("s = { Exposure2012 = 0.75 }", "s = { Exposure2012 = -0.5 }");
+    lr.execute(
+        "INSERT INTO Adobe_libraryImageDevelopHistoryStep VALUES (40, 1, 100., 'Brighter', ?)",
+        [compressed(step)],
+    )?;
+    lr.execute(
+        "INSERT INTO Adobe_libraryImageDevelopSnapshot VALUES (40, 'Darker', ?)",
+        [compressed(snapshot)],
+    )?;
+    drop(lr);
+
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    editor.extensions = crate::app::extensions::adobe_files::tests::host(dir.path());
+    let offer = editor
+        .importer_items()
+        .into_iter()
+        .find(|o| o.extension == LIGHTROOM)
+        .expect("the Lightroom extension's importer");
+    assert_eq!(offer.name, "Lightroom Classic catalog");
+    let destination = dir.path().join("Photos.rawmakase");
+    assert!(editor.ready_for_catalog() && editor.activity.begin_dialog());
+    editor.start_catalog_import(offer, PlanImport::prepare(&source, &destination)?);
+    until(&mut editor, "the import to open", |e| {
+        e.library.is_some() && !e.activity.is_busy()
+    });
+    assert_eq!(editor.library.as_ref().unwrap().session.photos().len(), 2);
+    editor.set_extension_enabled(LIGHTROOM, false);
+    assert!(editor.importer_items().is_empty());
+
+    // As an earlier release imported it: History and snapshots compressed.
+    let earlier = dir.path().join("Earlier.rawmakase");
+    std::fs::copy(&destination, &earlier)?;
+    let db = rusqlite::Connection::open(&earlier)?;
+    db.execute("UPDATE lightroom_history SET text = ?", [compressed(step)])?;
+    db.execute(
+        "UPDATE develop_snapshots SET lightroom = ?",
+        [compressed(snapshot)],
+    )?;
+    drop(db);
+
+    for catalog in [destination, earlier] {
+        editor.load_catalog(catalog.clone(), &ctx);
+        until(&mut editor, "the catalog to open", |e| {
+            e.library.as_ref().is_some_and(|l| {
+                l.session.catalog().location()
+                    == &crate::catalog::CatalogLocation::File(catalog.clone())
+            }) && !e.activity.is_busy()
+        });
+        let id = PhotoId(40);
+        let library = editor.library.as_ref().unwrap();
+        let path = library
+            .session
+            .photos()
+            .iter()
+            .find(|p| p.id == id)
+            .unwrap()
+            .path
+            .clone();
+        editor.open_raw(path.clone(), Some(id));
+        until(&mut editor, "the photo to open", |e| {
+            e.document.full().is_some()
+        });
+        let record = editor
+            .library
+            .as_ref()
+            .unwrap()
+            .session
+            .catalog()
+            .edit_record(id)?;
+        let resolved = crate::edits::resolve(
+            &record,
+            &path,
+            editor.document.metadata.as_ref().unwrap(),
+            &editor.document.profiles,
+            &editor.raw_defaults,
+        )?;
+        assert_eq!(resolved.origin, crate::edits::Origin::Lightroom);
+        assert_eq!(*editor.document.edit.recipe(), resolved.recipe);
+        assert_eq!(editor.document.edit.recipe().exposure, 1.5);
+
+        assert_eq!(editor.document.lightroom_history.len(), 1, "{catalog:?}");
+        assert_eq!(editor.document.lightroom_history[0].text, step);
+        editor.use_lightroom_step(0, LightroomStep::ToBefore);
+        assert_eq!(
+            editor.document.before.as_ref().map(|r| r.exposure),
+            Some(0.75)
+        );
+        editor.use_lightroom_step(0, LightroomStep::Apply);
+        assert_eq!(editor.document.edit.recipe().exposure, 0.75);
+        let snapshots = editor.document.snapshots.list.clone();
+        assert_eq!(snapshots.len(), 1, "{catalog:?}");
+        editor.apply_snapshot(snapshots[0].id);
+        assert_eq!(editor.document.edit.recipe().exposure, -0.5);
+    }
+    Ok(())
+}
+
+/// An importer whose program can't run (not installed beside the app here)
+/// isn't offered, in the menu or setup.
+#[test]
+fn an_importer_whose_program_is_missing_is_not_offered() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    editor.extensions =
+        Host::with_search_dirs_for_tests(&dir.path().join("data"), vec![dir.path().join("none")]);
+    assert_eq!(editor.importer_items(), Vec::new());
 }
