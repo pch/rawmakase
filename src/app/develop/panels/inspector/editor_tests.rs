@@ -383,7 +383,7 @@ fn the_tone_curve_toolbar_fits_the_narrowest_panel() {
                             &mut step,
                             &mut recipe,
                             &mut view,
-                            &[[0; 256]; 3],
+                            || [[0; 256]; 3],
                             None,
                             &[],
                         );

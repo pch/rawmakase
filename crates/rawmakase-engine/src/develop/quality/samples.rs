@@ -123,8 +123,11 @@ pub fn targeted_sample(
         ],
         cancel,
     )?;
+    // The luma of the three channels the curves take in (Rec. 601 weights, as
+    // Refine Saturation's): the mean's luma is the pixels' mean luma.
+    let [red, green, blue] = tone;
     Ok(develop::targeted::TargetSample {
-        tone: tone[0],
+        tone: 0.299 * red + 0.587 * green + 0.114 * blue,
         mixer,
         color,
     })
@@ -196,6 +199,41 @@ pub fn render_stage_sized(
         output,
         cancel,
     )
+}
+/// The histogram of what the tone curves take in ([`PixelOutput::CurveInput`]), for
+/// the Tone Curve panel: the whole photo within `max_edge`, reduced to twice that
+/// edge first as [`render_hdr_preview`] reduces it, with lens corrections, retouching
+/// and masks as the render applies them. An HDR edit's is its SDR rendition's, whose
+/// curves work on the same encoded values. The tone curves themselves change
+/// nothing here, so their settings may be left out of a cache's key.
+///
+/// [`PixelOutput::CurveInput`]: develop::pipeline::PixelOutput::CurveInput
+/// [`render_hdr_preview`]: super::render_hdr_preview
+pub fn curve_input_histogram(
+    im: &CameraImage,
+    r: &ValidRecipe,
+    ai: Option<&develop::AiSource>,
+    max_edge: u32,
+    cancel: Cancel<'_>,
+) -> Result<crate::rendered::Histogram> {
+    let reduce = max_edge.saturating_mul(2);
+    let reduced = crate::develop::preview(im, reduce);
+    let ai = ai.filter(|a| a.fits(im)).map(|a| a.reduced(reduce));
+    let resolved = resolve(&reduced, r);
+    let source = resolved.source(&reduced, ai.as_ref(), cancel, None)?;
+    let r = resolved.recipe.as_ref();
+    let g = Geometry::new(&source.image, r, max_edge);
+    let scale = reduced.photo_scale();
+    let (toned, tonal) = local_stage(&source.image, &source, r, scale, cancel, None)?;
+    let out = develop::pipeline::stage_samples(
+        &toned,
+        &tonal,
+        &g,
+        [0, 0, g.width, g.height],
+        develop::pipeline::PixelOutput::CurveInput,
+        cancel,
+    )?;
+    Ok(out.histogram())
 }
 /// The mean of 5×5 output pixels around (`u`, `v`) at each of `outputs`' stages.
 fn stage_means<const N: usize>(

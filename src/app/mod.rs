@@ -57,6 +57,8 @@ pub(crate) struct Editor {
     /// Develop's HDR preview and its worker.
     hdr_preview: crate::app::develop::hdr_preview::HdrPreview,
     hdr_histogram: crate::app::develop::hdr_histogram::HdrHistograms,
+    /// The Tone Curve panel's histogram of what the curves take in, and its worker.
+    curve_histogram: crate::app::develop::curve_histogram::CurveHistograms,
     /// The window's wgpu state this frame, for the HDR preview's texture.
     render_state: Option<eframe::egui_wgpu::RenderState>,
     /// Reads the window's display's HDR headroom.
@@ -364,6 +366,9 @@ impl Editor {
             reference_loader,
             hdr_preview: crate::app::develop::hdr_preview::HdrPreview::new(ctx.clone()),
             hdr_histogram: crate::app::develop::hdr_histogram::HdrHistograms::new(ctx.clone()),
+            curve_histogram: crate::app::develop::curve_histogram::CurveHistograms::new(
+                ctx.clone(),
+            ),
             render_state: None,
             headroom: Default::default(),
             clipboard: None,
