@@ -677,6 +677,16 @@ impl Catalog {
             }
         })
     }
+    /// Takes smart collection `id`'s rules row away.
+    pub fn clear_smart_rules(&mut self, id: CollectionId) -> Result<()> {
+        self.db.write(|w| {
+            w.execute(
+                sql!("DELETE FROM smart_collection_rules WHERE collection=?"),
+                &[&id],
+            )?;
+            Ok(())
+        })
+    }
     /// Every keyword's Lightroom synonyms, by keyword id.
     pub fn keyword_synonyms(&self) -> Result<HashMap<i64, Vec<String>>> {
         row! {

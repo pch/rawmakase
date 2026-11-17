@@ -425,14 +425,19 @@ impl Library {
                 section(ui, "Collections", |ui| {
                     let tree = &trees.collections;
                     for node in tree {
-                        if let Some(id) = collections::collection_row(
+                        match collections::collection_row(
                             ui,
                             node,
                             0,
                             &mut self.expanded,
                             self.filters.collection,
                         ) {
-                            self.select_collection(id);
+                            Some(collections::RowAction::Select(id)) => self.select_collection(id),
+                            Some(collections::RowAction::EditSmart(id)) => {
+                                self.select_collection(id);
+                                self.edit_smart_collection(id);
+                            }
+                            None => {}
                         }
                     }
                     if tree.is_empty() {

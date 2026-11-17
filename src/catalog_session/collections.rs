@@ -30,6 +30,43 @@ impl CatalogSession {
         self.follow_members(collection, &change);
         Ok(change)
     }
+    /// Create Smart Collection: `name` in set `parent` (or at the top) with
+    /// `rules`, in the catalog and the lists. Returns its id.
+    pub(crate) fn create_smart_collection(
+        &mut self,
+        name: &str,
+        parent: Option<CollectionId>,
+        rules: &crate::catalog::SmartRules,
+    ) -> Result<CollectionId> {
+        self.changed();
+        let id = self.catalog.create_smart_collection(name, parent, rules)?;
+        self.collections = self.catalog.collections()?;
+        self.smart_rules.insert(id, rules.clone());
+        Ok(id)
+    }
+    /// Gives smart collection `id` `rules`, in the catalog and the lists.
+    pub(crate) fn set_smart_rules(
+        &mut self,
+        id: CollectionId,
+        rules: &crate::catalog::SmartRules,
+    ) -> Result<()> {
+        self.changed();
+        self.catalog.set_smart_rules(id, rules)?;
+        self.smart_rules.insert(id, rules.clone());
+        Ok(())
+    }
+    /// Takes smart collection `id`'s rules away, as an older release's import
+    /// left it: Undo of the first rules saved for it.
+    pub(crate) fn clear_smart_rules(&mut self, id: CollectionId) -> Result<()> {
+        self.changed();
+        self.catalog.clear_smart_rules(id)?;
+        self.smart_rules.remove(&id);
+        Ok(())
+    }
+    /// Smart collection `id`'s rules as stored.
+    pub(crate) fn smart_rules_of(&self, id: CollectionId) -> Option<&crate::catalog::SmartRules> {
+        self.smart_rules.get(&id)
+    }
     /// Makes the lists follow a change the catalog made: removals first, as
     /// the catalog makes them.
     fn follow_members(&mut self, collection: CollectionId, change: &MembershipChange) {

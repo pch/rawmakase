@@ -264,3 +264,135 @@ fn syncs_their_undo_and_batches_tell_the_session() -> anyhow::Result<()> {
     assert_eq!(revision(&e), before, "cancelled");
     Ok(())
 }
+
+/// Issue 998: editing a smart collection's rules is one step Undo and Redo
+/// take back and forth.
+#[test]
+fn smart_collection_rule_edits_undo_and_redo() -> anyhow::Result<()> {
+    use crate::collection_rules::{Combine, Group, Item, Rule, lua::Value};
+    let (_d, mut e, _) = editor_with_catalog(&["a.RAF"])?;
+    let rules = |n: f64| {
+        Group::new(
+            Combine::Intersect,
+            vec![Item::Rule(Rule::new(
+                "rating",
+                ">=",
+                Some(Value::Number(n)),
+            ))],
+        )
+    };
+    let library = e.library.as_mut().unwrap();
+    let id = library.session.create_smart_collection(
+        "Rated",
+        None,
+        &crate::catalog::SmartRules::new(&rules(1.)),
+    )?;
+    library.edit_smart_collection(id);
+    let mut dialog = library.smart_editor.take().unwrap();
+    dialog.rules = rules(3.);
+    library.save_smart_editor(&dialog)?;
+    e.sync_undo();
+    let stored = |e: &Editor| {
+        e.library
+            .as_ref()
+            .unwrap()
+            .session
+            .catalog()
+            .smart_rules()
+            .unwrap()[&id]
+            .rules()
+            .unwrap()
+    };
+    assert_eq!(stored(&e), rules(3.));
+    e.undo();
+    assert_eq!(stored(&e), rules(1.));
+    e.redo();
+    assert_eq!(stored(&e), rules(3.));
+    Ok(())
+}
+
+/// Review, round 1: the smart collection editor is drawn wherever it is
+/// opened, an empty catalog's Library and Develop included, so the keys it
+/// holds always have a window to go to (Escape closes it).
+#[test]
+fn the_smart_collection_editor_shows_in_an_empty_library_and_in_develop() -> anyhow::Result<()> {
+    for module in [Module::Library, Module::Develop] {
+        let (_d, mut e, _) = editor_with_catalog(&[])?;
+        e.module = module;
+        e.library.as_mut().unwrap().new_smart_collection();
+        assert!(e.smart_editor_open());
+        let ctx = e.context.clone();
+        let escape = egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: Some(egui::Key::Escape),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for events in [Vec::new(), vec![escape]] {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1200., 800.),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| e.draw(ui),
+            );
+            output.textures_delta.clear();
+        }
+        assert!(!e.smart_editor_open(), "{module:?}");
+    }
+    Ok(())
+}
+
+/// Review, round 1: the first rules saved for a smart collection an older
+/// release imported without rules are undone back to none.
+#[test]
+fn undoing_the_first_rules_of_a_smart_collection_leaves_it_without() -> anyhow::Result<()> {
+    use crate::collection_rules::{Combine, Group, Item, Rule, lua::Value};
+    let (_d, mut e, _) = editor_with_catalog(&["a.RAF"])?;
+    let library = e.library.as_mut().unwrap();
+    let id: i64 = library
+        .session
+        .catalog_mut_for_tests()
+        .db_for_tests()
+        .query_row(
+            "INSERT INTO collections(name, parent, kind)
+             VALUES ('Old', NULL, 'com.adobe.ag.library.smart_collection') RETURNING id",
+            [],
+            |r| r.get(0),
+        )?;
+    let id = crate::catalog::CollectionId(id);
+    library.session.reload()?;
+    library.edit_smart_collection(id);
+    let mut dialog = library.smart_editor.take().unwrap();
+    dialog.rules = Group::new(
+        Combine::Intersect,
+        vec![Item::Rule(Rule::new(
+            "rating",
+            ">=",
+            Some(Value::Number(2.)),
+        ))],
+    );
+    library.save_smart_editor(&dialog)?;
+    e.sync_undo();
+    let has_rules = |e: &Editor| {
+        e.library
+            .as_ref()
+            .unwrap()
+            .session
+            .catalog()
+            .smart_rules()
+            .unwrap()
+            .contains_key(&id)
+    };
+    assert!(has_rules(&e));
+    e.undo();
+    assert!(!has_rules(&e));
+    e.redo();
+    assert!(has_rules(&e));
+    Ok(())
+}

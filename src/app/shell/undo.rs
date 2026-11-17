@@ -44,6 +44,8 @@ pub(in crate::app) enum Command {
     /// Photos grouped into, taken out of or moved in stacks; undone in the
     /// Library.
     Stack(Box<StackCommand>),
+    /// A smart collection's rules changed; undone in the Library.
+    SmartRules(Box<crate::app::library::smart_editor::SmartRulesCommand>),
 }
 
 impl Command {
@@ -79,6 +81,11 @@ impl Command {
             }
             Command::Develop { photo, .. } => *photo != Some(id),
             Command::Stack(change) => change.forget_photo(id),
+            // Rules name no photo; only where it was made does.
+            Command::SmartRules(change) => {
+                change.place.forget_photo(id);
+                true
+            }
             Command::Sync(sync) => {
                 sync.edits.retain(|e| e.id != id);
                 !sync.edits.is_empty()
@@ -179,6 +186,12 @@ impl Editor {
                     .take_stack_done()
                     .into_iter()
                     .map(|change| (change.sequence, Command::Stack(Box::new(change)))),
+            );
+            commands.extend(
+                library
+                    .take_smart_done()
+                    .into_iter()
+                    .map(|change| (change.sequence, Command::SmartRules(Box::new(change)))),
             );
             commands.extend(
                 library
@@ -303,6 +316,15 @@ impl Editor {
                     library
                         .put_back_members(change.collection, add, &remove)
                         .map(|_| ())
+                })
+            }
+            Command::SmartRules(change) => {
+                let rules = match direction {
+                    Direction::Undo => change.before.as_ref(),
+                    Direction::Redo => Some(&change.after),
+                };
+                self.apply_library(verb, &change.summary, &change.place, None, |library| {
+                    library.put_back_smart_rules(change.collection, rules)
                 })
             }
             Command::Descriptive(change) => {
