@@ -280,7 +280,7 @@ fn undoing_a_rename_or_deletion_keeps_a_keyword_s_place_in_recent_keywords() -> 
 }
 
 #[test]
-fn keywords_of_one_name_are_named_apart_by_their_parents() -> Result<()> {
+fn keywords_are_named_by_their_paths() -> Result<()> {
     let list = [
         ListedKeyword {
             id: 1,
@@ -324,6 +324,7 @@ fn keywords_of_one_name_are_named_apart_by_their_parents() -> Result<()> {
     assert_eq!(labels[&4], "paris < Texas");
     assert_eq!(labels[&6], "Paris");
     assert_eq!(labels[&5], "Rome");
+    assert_eq!(labels[&1], "France");
     assert_eq!(labels_of(&[5, 2], &labels), ["Paris < France", "Rome"]);
     Ok(())
 }

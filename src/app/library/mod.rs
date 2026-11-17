@@ -612,6 +612,7 @@ impl Library {
         self.availability.count(self.session.photos())
     }
     fn filter(&mut self) {
+        self.follow_keyword_names();
         // What the order needs from the catalog, read once until it changes.
         let sort = self.filters.sort;
         if self.sort_keys.as_ref().is_none_or(|(of, _)| *of != sort) {

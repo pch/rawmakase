@@ -163,6 +163,7 @@ impl Library {
             .collect();
         self.metadata_bar.open = layout.metadata_strip;
         self.metadata_bar.set_columns(&layout.metadata_columns);
+        self.translate_kept_keyword_names();
         self.keyword_sets
             .restore(layout.keyword_set.clone(), &layout.keyword_slots);
         self.cell_style = Style::from_key(&layout.cell_style);

@@ -81,7 +81,7 @@ fn deleting_a_keyword_and_its_children_is_one_step_undo_puts_back() -> Result<()
     e.undo();
     let library = e.library.as_ref().unwrap();
     assert_eq!(listed(library), ["Places", "Paris"]);
-    assert_eq!(names(library, ids[1]), ["Paris"]);
+    assert_eq!(names(library, ids[1]), ["Paris < Places"]);
     assert!(e.messages.line().starts_with("Undo Delete Keyword"));
     e.redo();
     let library = e.library.as_ref().unwrap();
@@ -171,7 +171,7 @@ fn a_set_button_finds_its_keyword_as_typed_and_toggles_it() -> Result<()> {
     ));
     // Only one photo has it: added to both, no new keyword made.
     library.click_keyword_slot(0);
-    assert_eq!(names(library, ids[1]), ["Paris"]);
+    assert_eq!(names(library, ids[1]), ["Paris < Places"]);
     assert_eq!(listed(library), ["Places", "Paris"]);
     // All have it: removed from both.
     library.sync_fields();
@@ -250,7 +250,7 @@ fn the_arrow_shows_one_keyword_s_photos_beside_another_of_its_name() -> Result<(
         &ids[1..],
         DescriptiveEdit::AddKeywords(vec![vec!["Texas".into(), "Paris".into()]]),
     )?;
-    // Named apart on both photos, the first one's renamed since it was tagged.
+    // Named apart on both photos.
     assert_eq!(names(library, ids[0]), ["Paris < France"]);
     assert_eq!(names(library, ids[1]), ["Paris < Texas"]);
     let texas_paris = library
@@ -259,15 +259,48 @@ fn the_arrow_shows_one_keyword_s_photos_beside_another_of_its_name() -> Result<(
         .find_typed_keyword(&["Texas".into(), "Paris".into()])?
         .unwrap();
     library.show_keyword(texas_paris);
-    let shown: Vec<PhotoId> = library.shown().to_vec();
-    assert_eq!(shown, [ids[1]]);
-    // Deleting the other leaves the first named by its name alone again.
+    assert_eq!(library.shown(), [ids[1]]);
+    // Deleting the other leaves this one's name, and the filter, as they were.
     let france = library
         .session
         .catalog()
         .find_typed_keyword(&["France".into()])?
         .unwrap();
     library.edit_keyword_list(KeywordListEdit::Delete(vec![france]), "Delete Keyword");
-    assert_eq!(names(library, ids[1]), ["Paris"]);
+    assert_eq!(names(library, ids[1]), ["Paris < Texas"]);
+    assert_eq!(library.shown(), [ids[1]]);
+    // And back, with Undo.
+    e.sync_undo();
+    e.undo();
+    let library = e.library.as_ref().unwrap();
+    assert_eq!(names(library, ids[1]), ["Paris < Texas"]);
+    assert_eq!(library.shown(), [ids[1]]);
+    Ok(())
+}
+
+#[test]
+fn a_keyword_kept_chosen_by_its_name_alone_chooses_every_keyword_of_it() -> Result<()> {
+    use super::facets::Attribute;
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF"])?;
+    let library = e.library.as_mut().unwrap();
+    for (id, parent) in [(ids[0], "France"), (ids[1], "Texas")] {
+        library.edit_descriptive(
+            &[id],
+            DescriptiveEdit::AddKeywords(vec![vec![parent.into(), "Paris".into()]]),
+        )?;
+    }
+    // As a layout an earlier release kept: the name alone.
+    let mut layout = library.layout();
+    layout
+        .metadata
+        .insert("keyword".into(), vec![Some("Paris".into())]);
+    library.apply_layout(&layout);
+    let mut shown = library.shown();
+    shown.sort();
+    let mut both = vec![ids[0], ids[1]];
+    both.sort();
+    assert_eq!(shown, both);
+    let chosen = &library.filters.metadata[&Attribute::Keyword];
+    assert!(chosen.contains(&Some("Paris < France".into())));
     Ok(())
 }

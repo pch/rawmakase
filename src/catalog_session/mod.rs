@@ -78,6 +78,11 @@ pub(crate) struct CatalogSession {
     keywords: Vec<crate::catalog::ListedKeyword>,
     /// Recent Keywords, latest first, read with [`Self::keywords`].
     recent_keywords: Vec<i64>,
+    /// The name the Library gives each keyword ([`crate::catalog::keyword_labels`]).
+    keyword_labels: HashMap<i64, String>,
+    /// Keywords whose name changed since [`Self::take_relabeled`] was last
+    /// called, old name first, for a filter that chose them to follow.
+    relabeled: Vec<(String, String)>,
     backfill: backfill::Backfill,
     wake: Wake,
     /// Changes whenever photos may have changed place, name or master (see
@@ -118,6 +123,30 @@ impl CatalogSession {
     /// Lightroom's Recent Keywords: the keywords latest given to a photo.
     pub(crate) fn recent_keywords(&self) -> &[i64] {
         &self.recent_keywords
+    }
+    /// The name the Library gives each keyword, by id.
+    pub(crate) fn keyword_labels(&self) -> &HashMap<i64, String> {
+        &self.keyword_labels
+    }
+    /// The keywords whose name changed, old name first, since the last
+    /// call: a keyword made, renamed or deleted can change how another of
+    /// its name is named.
+    pub(crate) fn take_relabeled(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.relabeled)
+    }
+    /// Keeps `keywords` as the catalog's, with their names, noting the
+    /// names that changed.
+    fn set_keywords(&mut self, keywords: Vec<crate::catalog::ListedKeyword>) {
+        let labels = crate::catalog::keyword_labels(&keywords);
+        for (id, new) in &labels {
+            if let Some(old) = self.keyword_labels.get(id)
+                && old != new
+            {
+                self.relabeled.push((old.clone(), new.clone()));
+            }
+        }
+        self.keywords = keywords;
+        self.keyword_labels = labels;
     }
     /// Folders, each counting the photos in [`Self::photos`] it holds.
     pub(crate) fn folders(&self) -> &[Folder] {
@@ -266,6 +295,8 @@ impl CatalogSession {
             previous_import: HashSet::new(),
             keywords: Vec::new(),
             recent_keywords: Vec::new(),
+            keyword_labels: HashMap::new(),
+            relabeled: Vec::new(),
             backfill: Default::default(),
             wake: std::sync::Arc::new(|| {}),
             generation: 0,
@@ -343,17 +374,16 @@ impl CatalogSession {
         }
         let keywords = self.catalog.keyword_list()?;
         let recent_keywords = self.catalog.recent_keywords()?;
+        self.set_keywords(keywords);
+        self.recent_keywords = recent_keywords;
         // Every photo's names, not only these photos': a keyword made,
         // renamed or deleted can change how another of its name is named.
-        let labels = crate::catalog::keyword_labels(&keywords);
         for p in &mut self.photos {
             if let Some(ids) = tagged.remove(&p.id) {
                 p.keyword_ids = ids;
             }
-            p.keywords = crate::catalog::labels_of(&p.keyword_ids, &labels);
+            p.keywords = crate::catalog::labels_of(&p.keyword_ids, &self.keyword_labels);
         }
-        self.keywords = keywords;
-        self.recent_keywords = recent_keywords;
         Ok(())
     }
     /// Lightroom's Quick Collection, once there is one.
@@ -406,7 +436,7 @@ impl CatalogSession {
         let keywords = self.catalog.keyword_list()?;
         let recent_keywords = self.catalog.recent_keywords()?;
         self.photos = photos;
-        self.keywords = keywords;
+        self.set_keywords(keywords);
         self.recent_keywords = recent_keywords;
         self.previous_import = previous_import;
         self.folders = folders;
@@ -1131,7 +1161,7 @@ mod tests {
         )?;
         assert!(change.listed.is_ok());
         assert_ne!(change.before, change.after);
-        assert_eq!(session.photos[0].keywords, ["Kraków"]);
+        assert_eq!(session.photos[0].keywords, ["Kraków < Places"]);
         // Undone: the lists follow the catalog back.
         session.restore_descriptive(&change.before, &[(a, 3, -1, "Blue".into())])?;
         assert!(session.photos[0].keywords.is_empty());

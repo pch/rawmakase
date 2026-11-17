@@ -3632,7 +3632,7 @@ fn a_descriptive_edit_is_one_command_that_restores_each_photo() -> Result<()> {
             .session
             .photos()
             .iter()
-            .all(|p| p.keywords == ["City"])
+            .all(|p| p.keywords == ["City < Places"])
     );
     for command in done.iter().rev() {
         library.restore_descriptive(&command.before, &command.ratings_before)?;

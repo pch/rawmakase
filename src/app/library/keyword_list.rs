@@ -534,11 +534,58 @@ impl Library {
             None => {}
         }
     }
+    /// Keeps the keywords chosen in the Metadata filter when their names
+    /// change (`Paris` becoming `Paris < France` once another Paris is made,
+    /// and back), so it goes on showing the same keywords' photos.
+    pub(super) fn follow_keyword_names(&mut self) {
+        let relabeled = self.session.take_relabeled();
+        let Some(chosen) = self.filters.metadata.get_mut(&Attribute::Keyword) else {
+            return;
+        };
+        let renamed: Vec<(String, String)> = relabeled
+            .into_iter()
+            .filter(|(old, _)| chosen.contains(&Some(old.clone())))
+            .collect();
+        for (old, _) in &renamed {
+            chosen.remove(&Some(old.clone()));
+        }
+        chosen.extend(renamed.into_iter().map(|(_, new)| Some(new)));
+    }
+    /// The keywords a filter kept from an earlier release chose by name
+    /// alone (`Paris`) are chosen by the names they now have, which tell
+    /// keywords of one name apart (`Paris < France`, `Paris < Texas`).
+    pub(super) fn translate_kept_keyword_names(&mut self) {
+        let Some(chosen) = self.filters.metadata.get_mut(&Attribute::Keyword) else {
+            return;
+        };
+        let labels = self.session.keyword_labels();
+        let known: HashSet<&str> = labels.values().map(String::as_str).collect();
+        let mut add = Vec::new();
+        chosen.retain(|value| {
+            let Some(name) = value else { return true };
+            if known.contains(name.as_str()) {
+                return true;
+            }
+            let of_name: Vec<String> = self
+                .session
+                .keywords()
+                .iter()
+                .filter(|k| k.name == *name)
+                .filter_map(|k| labels.get(&k.id).cloned())
+                .collect();
+            if of_name.is_empty() {
+                return true;
+            }
+            add.extend(of_name.into_iter().map(Some));
+            false
+        });
+        chosen.extend(add);
+    }
     /// Shows every photo in the catalog with keyword `id`, as Lightroom's
     /// arrow does: All Photographs, filtered by it in the Metadata filter,
     /// where a keyword another shares a name with is listed apart.
     pub(super) fn show_keyword(&mut self, id: i64) {
-        let Some(name) = crate::catalog::keyword_labels(self.session.keywords()).remove(&id) else {
+        let Some(name) = self.session.keyword_labels().get(&id).cloned() else {
             return;
         };
         self.filters.folder_scope = None;
