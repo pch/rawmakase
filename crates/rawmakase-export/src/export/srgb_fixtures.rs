@@ -238,7 +238,7 @@ pub(super) fn text_watermark() -> crate::watermark::Watermark {
             ..Default::default()
         },
         size: crate::watermark::Size::Proportional(0.6),
-        ..Default::default()
+        ..crate::watermark::fonts::test_watermark()
     }
 }
 
@@ -435,7 +435,7 @@ fn a_graphic_watermark_over_an_srgb_export_matches_its_fixture() -> Result<()> {
         style: crate::watermark::Style::Graphic,
         image: Some("logo.png".into()),
         opacity: 0.7,
-        ..Default::default()
+        ..crate::watermark::fonts::test_watermark()
     };
     let ready = mark.ready_in(&images)?;
     let image = synthetic(96, 64);

@@ -10,8 +10,8 @@
 # renderer has wgpu for its GPU preview port. RAW files are read by
 # RAWmakase's own decoders (rawmakase-raw) and colour is managed in Rust
 # (moxcms): no crate may bring a C RAW library (LibRaw) or Little CMS back,
-# whether as a crate or linked by a build script. Export bundles Inter and
-# lists the installed-font directories itself, so no GUI crate reaches it;
+# whether as a crate or linked by a build script. Export resolves system fonts and
+# lists installed-font directories itself, so no GUI crate reaches it;
 # only the app uses fastframe-fonts, for its interface.
 set -euo pipefail
 
