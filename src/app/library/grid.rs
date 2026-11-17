@@ -179,6 +179,7 @@ impl Library {
                                         single: self.menu_single(p.id, true),
                                         stacks: self.filters.shows_stacks(),
                                         collections: collection_tree.clone(),
+                                        in_collections: self.photo_collections(p.id),
                                     };
                                     let (response, edit) =
                                         photo_cell(ui, &p, self.texture(&p), shown, width);
@@ -329,6 +330,7 @@ impl Library {
                     super::FileRequest::ChooseFolder(ids),
                 ));
             }
+            PhotoAction::GoToCollection(id) => self.select_collection(id),
             PhotoAction::AddToCollection(id) => {
                 let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
                     self.selected_ids()

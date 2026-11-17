@@ -21,6 +21,8 @@ pub(in crate::app) struct CollectionNode {
     pub count: usize,
     /// For a smart collection, what is known of its members.
     pub smart: Option<SmartCount>,
+    /// The target collection, B's, marked `+` as Lightroom marks it.
+    pub target: bool,
     pub children: Vec<CollectionNode>,
 }
 impl CollectionNode {
@@ -53,6 +55,8 @@ pub(super) enum RowAction {
     EditSmart(CollectionId),
     /// Create Smart Collection… in a set (`None`: at the top).
     CreateSmart(Option<CollectionId>),
+    /// Set as Target Collection (`None`: the Quick Collection).
+    SetTarget(Option<CollectionId>),
 }
 
 /// What the panel shows of a smart collection's members.
@@ -71,6 +75,7 @@ pub(super) fn tree(
     collections: &[Collection],
     counts: &HashMap<CollectionId, HashSet<PhotoId>>,
     smart: &HashMap<CollectionId, SmartCount>,
+    target: Option<CollectionId>,
 ) -> Vec<CollectionNode> {
     let mut children: HashMap<Option<CollectionId>, Vec<&Collection>> = HashMap::new();
     let ids: HashSet<CollectionId> = collections.iter().map(|c| c.id).collect();
@@ -80,7 +85,7 @@ pub(super) fn tree(
         children.entry(parent).or_default().push(c);
     }
     let mut seen = HashSet::new();
-    nodes(None, &children, counts, smart, &mut seen)
+    nodes(None, &children, counts, smart, target, &mut seen)
 }
 
 fn nodes(
@@ -88,6 +93,7 @@ fn nodes(
     children: &HashMap<Option<CollectionId>, Vec<&Collection>>,
     counts: &HashMap<CollectionId, HashSet<PhotoId>>,
     smart: &HashMap<CollectionId, SmartCount>,
+    target: Option<CollectionId>,
     seen: &mut HashSet<CollectionId>,
 ) -> Vec<CollectionNode> {
     let mut out = Vec::new();
@@ -98,7 +104,7 @@ fn nodes(
         }
         match c.kind {
             CollectionKind::Set => {
-                let inner = nodes(Some(c.id), children, counts, smart, seen);
+                let inner = nodes(Some(c.id), children, counts, smart, target, seen);
                 let had_children = children.get(&Some(c.id)).is_some_and(|v| !v.is_empty());
                 if inner.is_empty() && had_children {
                     continue;
@@ -110,6 +116,7 @@ fn nodes(
                     set: true,
                     count: 0,
                     smart: None,
+                    target: false,
                     children: inner,
                 });
             }
@@ -120,6 +127,7 @@ fn nodes(
                 set: false,
                 count: counts.get(&c.id).map_or(0, HashSet::len),
                 smart: None,
+                target: target == Some(c.id),
                 children: Vec::new(),
             }),
             CollectionKind::Smart => {
@@ -134,6 +142,7 @@ fn nodes(
                         _ => 0,
                     },
                     smart: Some(known),
+                    target: false,
                     children: Vec::new(),
                 });
             }
@@ -261,7 +270,12 @@ pub(super) fn collection_row(
         Pos2::new(x + 26., rect.top()),
         Pos2::new(rect.right() - 40., rect.bottom()),
     );
-    let text = egui::WidgetText::from(node.name.clone()).into_galley(
+    let label = if node.target {
+        format!("{} +", node.name)
+    } else {
+        node.name.clone()
+    };
+    let text = egui::WidgetText::from(label).into_galley(
         ui,
         Some(egui::TextWrapMode::Truncate),
         label_rect.width().max(1.),
@@ -347,6 +361,13 @@ pub(super) fn collection_row(
         menu_separator(ui);
         if node.smart.is_some() && menu_item(ui, "Edit Smart Collection…", "", true, false) {
             action = Some(RowAction::EditSmart(node.id));
+            ui.close();
+        }
+        if !node.set
+            && node.smart.is_none()
+            && menu_item(ui, "Set as Target Collection", "", true, node.target)
+        {
+            action = Some(RowAction::SetTarget((!node.target).then_some(node.id)));
             ui.close();
         }
         if menu_item(ui, "Rename…", "", true, false) {

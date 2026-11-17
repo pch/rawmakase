@@ -50,6 +50,15 @@ pub(crate) enum TreeChange {
         before: Option<CollectionId>,
         after: Option<CollectionId>,
     },
+    /// Save Quick Collection: collection `id` made of the Quick Collection's
+    /// photos, which were taken out of it (`cleared`, with their positions)
+    /// when Clear Quick Collection After Saving was on.
+    SavedQuick {
+        id: CollectionId,
+        quick: CollectionId,
+        gone: Option<RemovedCollections>,
+        cleared: Vec<crate::catalog::Member>,
+    },
 }
 
 impl CollectionTreeCommand {
@@ -57,11 +66,15 @@ impl CollectionTreeCommand {
     /// its id may be given to another photo. The command stays, as it still
     /// changes the collections.
     pub(in crate::app) fn forget_photo(&mut self, id: PhotoId) {
-        if let TreeChange::Created { gone, .. } | TreeChange::Deleted { gone, .. } =
-            &mut self.change
+        if let TreeChange::Created { gone, .. }
+        | TreeChange::Deleted { gone, .. }
+        | TreeChange::SavedQuick { gone, .. } = &mut self.change
             && let Some(gone) = gone
         {
             gone.forget_photo(id);
+        }
+        if let TreeChange::SavedQuick { cleared, .. } = &mut self.change {
+            cleared.retain(|m| m.0 != id);
         }
         self.place_before.forget_photo(id);
         self.place_after.forget_photo(id);
@@ -75,6 +88,8 @@ pub(in crate::app) struct NewCollection {
     pub name: String,
     pub parent: Option<CollectionId>,
     pub photos: Vec<PhotoId>,
+    /// Set as target collection.
+    pub target: bool,
 }
 
 /// The collection window open, if any.
@@ -90,6 +105,14 @@ pub(super) enum CollectionDialog {
         include: bool,
         /// Make new virtual copies: the copies go in, not the photos.
         copies: bool,
+        /// Set as target collection.
+        target: bool,
+        focused: bool,
+    },
+    /// Save Quick Collection…: a name, and whether to empty it after.
+    SaveQuick {
+        name: String,
+        clear: bool,
         focused: bool,
     },
     Rename {
@@ -121,8 +144,50 @@ impl Library {
             include: !photos.is_empty(),
             photos,
             copies: false,
+            target: false,
             focused: false,
         });
+    }
+    /// Save Quick Collection… (Cmd+Option+B), with Clear Quick Collection
+    /// After Saving on, as in Lightroom.
+    pub(in crate::app) fn ask_save_quick(&mut self) {
+        if self.quick_count() == 0 {
+            self.messages.warn("The Quick Collection is empty");
+            return;
+        }
+        self.collection_dialog = Some(CollectionDialog::SaveQuick {
+            name: String::new(),
+            clear: true,
+            focused: false,
+        });
+    }
+    /// Saves the Quick Collection as top-level collection `name`, emptying
+    /// it when `clear`: one transaction, one command.
+    pub(in crate::app) fn save_quick(&mut self, name: &str, clear: bool) -> Result<CollectionId> {
+        let place_before = self.place();
+        let (id, quick, cleared) = self.session.save_quick_collection(name, clear)?;
+        self.tree_changed();
+        let count = self
+            .session
+            .collection_photos()
+            .get(&id)
+            .map_or(0, |m| m.len());
+        let summary = format!(
+            "Saved the Quick Collection as “{}” · {}",
+            self.collection_name(id),
+            plural(count, "photo", "photos")
+        );
+        self.record_tree(
+            TreeChange::SavedQuick {
+                id,
+                quick,
+                gone: None,
+                cleared: cleared.removed,
+            },
+            place_before,
+            summary,
+        );
+        Ok(id)
     }
     pub(in crate::app) fn ask_rename_collection(&mut self, id: CollectionId) {
         if let Some(c) = self.session.collections().iter().find(|c| c.id == id) {
@@ -336,6 +401,33 @@ impl Library {
                 self.session
                     .move_collection(*id, if undo { *before } else { *after })?;
             }
+            (
+                TreeChange::SavedQuick {
+                    id,
+                    quick,
+                    gone,
+                    cleared,
+                },
+                true,
+            ) => {
+                *gone = Some(self.session.unsave_quick_collection(*id, *quick, cleared)?);
+            }
+            (
+                TreeChange::SavedQuick {
+                    quick,
+                    gone,
+                    cleared,
+                    ..
+                },
+                false,
+            ) => {
+                let removed = gone.as_ref().context("Nothing to put back")?;
+                let photos: Vec<PhotoId> = cleared.iter().map(|m| m.0).collect();
+                self.session
+                    .resave_quick_collection(removed, *quick, &photos)?;
+                // Only once it is all saved.
+                *gone = None;
+            }
         }
         self.tree_changed();
         Ok(())
@@ -442,6 +534,7 @@ impl Library {
                 let title = match &dialog {
                     CollectionDialog::Create { set: false, .. } => "Create Collection".into(),
                     CollectionDialog::Create { set: true, .. } => "Create Collection Set".into(),
+                    CollectionDialog::SaveQuick { .. } => "Save Quick Collection".into(),
                     CollectionDialog::Rename { .. } => "Rename".into(),
                     CollectionDialog::Delete { id } => self.delete_title(*id),
                 };
@@ -460,6 +553,7 @@ impl Library {
                         photos,
                         include,
                         copies,
+                        target,
                         focused,
                     } => {
                         refusal = name_field(ui, name, focused, &names, &mut done);
@@ -491,6 +585,20 @@ impl Library {
                                 ui.checkbox(copies, "Make new virtual copies");
                             });
                         }
+                        if !*set {
+                            ui.add_space(space::S);
+                            ui.checkbox(target, "Set as target collection");
+                        }
+                        ready = refusal.is_none();
+                    }
+                    CollectionDialog::SaveQuick {
+                        name,
+                        clear,
+                        focused,
+                    } => {
+                        refusal = name_field(ui, name, focused, &names, &mut done);
+                        ui.add_space(space::S);
+                        ui.checkbox(clear, "Clear Quick Collection After Saving");
                         ready = refusal.is_none();
                     }
                     CollectionDialog::Rename { name, focused, .. } => {
@@ -521,6 +629,7 @@ impl Library {
                     }
                     let label = match &dialog {
                         CollectionDialog::Create { .. } => "Create",
+                        CollectionDialog::SaveQuick { .. } => "Save",
                         CollectionDialog::Rename { .. } => "Rename",
                         CollectionDialog::Delete { .. } => "Delete",
                     };
@@ -546,6 +655,7 @@ impl Library {
                 photos,
                 include,
                 copies,
+                target,
                 ..
             } => {
                 let photos = if include { photos } else { Vec::new() };
@@ -554,14 +664,21 @@ impl Library {
                         name,
                         parent,
                         photos,
+                        target,
                     });
                 }
                 self.create_collection(set, &name, parent, &photos, false)
                     .map(|id| {
                         if !set {
+                            if target {
+                                self.set_target(Some(id));
+                            }
                             self.select_collection(id);
                         }
                     })
+            }
+            CollectionDialog::SaveQuick { name, clear, .. } => {
+                self.save_quick(&name, clear).map(|_| ())
             }
             CollectionDialog::Rename { id, name, .. } => self.rename_collection(id, &name),
             CollectionDialog::Delete { id } => self.delete_collection(id),
@@ -605,6 +722,7 @@ impl Library {
     fn sibling_names(&self, dialog: &CollectionDialog) -> Vec<String> {
         let (parent, except) = match dialog {
             CollectionDialog::Create { parent, .. } => (*parent, None),
+            CollectionDialog::SaveQuick { .. } => (None, None),
             CollectionDialog::Rename { id, .. } => {
                 (self.collection(*id).and_then(|c| c.parent), Some(*id))
             }

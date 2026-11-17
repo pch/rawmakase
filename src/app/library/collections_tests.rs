@@ -245,6 +245,7 @@ fn node(id: i64, set: bool, parent: Option<i64>, children: Vec<CollectionNode>) 
         set,
         count: 0,
         smart: None,
+        target: false,
         children,
     }
 }
@@ -389,6 +390,7 @@ fn a_collection_of_new_copies_saves_the_open_edit_first() -> Result<()> {
         name: "Copies".into(),
         parent: None,
         photos: vec![ids[0]],
+        target: false,
     };
     let made = |e: &mut Editor| {
         library(e)
@@ -452,5 +454,233 @@ fn creating_a_smart_collection_is_undone_and_redone() -> Result<()> {
     e.redo();
     assert_eq!(made(&mut e), Some(id));
     assert!(library(&mut e).session.smart_rules_of(id).is_some());
+    Ok(())
+}
+
+/// B adds to the target collection, as Lightroom's does; a deleted target
+/// gives B back to the Quick Collection.
+#[test]
+fn b_adds_to_the_target_collection_and_falls_back_to_quick() -> Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    let ids = sorted(ids);
+    let picks = library(&mut e).create_collection(false, "Picks", None, &[], false)?;
+    library(&mut e).collection_row_action(RowAction::SetTarget(Some(picks)));
+    assert_eq!(library(&mut e).target(), Some(picks));
+    library(&mut e).toggle_quick(&ids)?;
+    assert_eq!(members(&mut e, picks), ids);
+    assert_eq!(library(&mut e).quick_count(), 0);
+    // All in it already: B takes them out.
+    library(&mut e).toggle_quick(&ids[..1])?;
+    assert_eq!(members(&mut e, picks), ids[1..]);
+    // The panel marks the target.
+    let tree = library(&mut e).collection_tree();
+    assert!(tree.iter().any(|n| n.id == picks && n.target));
+    library(&mut e).delete_collection(picks)?;
+    assert_eq!(library(&mut e).target(), None);
+    library(&mut e).toggle_quick(&ids[..1])?;
+    assert_eq!(library(&mut e).quick_count(), 1);
+    Ok(())
+}
+
+#[test]
+fn save_quick_collection_makes_a_collection_and_clears_it_in_one_step() -> Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    let ids = sorted(ids);
+    library(&mut e).toggle_quick(&ids)?;
+    e.sync_undo();
+    let quick = library(&mut e).quick().unwrap();
+    let positions = library(&mut e)
+        .session
+        .catalog()
+        .collection_members(quick)?;
+    let saved = library(&mut e).save_quick("Keepers", true)?;
+    e.sync_undo();
+    assert_eq!(members(&mut e, saved), ids);
+    assert_eq!(library(&mut e).quick_count(), 0);
+    // One step back: the Quick Collection as it was, and no collection.
+    e.undo();
+    assert!(!exists(&mut e, saved));
+    assert_eq!(
+        library(&mut e)
+            .session
+            .catalog()
+            .collection_members(quick)?,
+        positions
+    );
+    e.redo();
+    assert!(exists(&mut e, saved));
+    assert_eq!(library(&mut e).quick_count(), 0);
+    // Not cleared when asked not to.
+    library(&mut e).toggle_quick(&ids[..1])?;
+    let kept = library(&mut e).save_quick("Again", false)?;
+    assert_eq!(members(&mut e, kept), ids[..1]);
+    assert_eq!(library(&mut e).quick_count(), 1);
+    // The Quick Collection's name is not for a collection.
+    assert!(
+        library(&mut e)
+            .save_quick("quick collection", false)
+            .is_err()
+    );
+    Ok(())
+}
+
+/// The collection badge and Go to Collection list the photo's collections,
+/// the Quick Collection too, and choosing one shows it.
+#[test]
+fn go_to_collection_lists_the_photos_collections_and_shows_one() -> Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    let ids = sorted(ids);
+    let l = library(&mut e);
+    let picks = l.create_collection(false, "Picks", None, &ids[..1], false)?;
+    l.create_collection(false, "Others", None, &ids[1..], false)?;
+    l.toggle_quick(&ids[..1])?;
+    let quick = l.quick().unwrap();
+    assert_eq!(
+        l.photo_collections(ids[0]),
+        [(picks, "Picks".into()), (quick, "Quick Collection".into())]
+    );
+    let photo = l.photo(ids[0]).unwrap().clone();
+    l.photo_action(
+        &l_ctx(),
+        &photo,
+        super::cell::PhotoAction::GoToCollection(picks),
+        true,
+    );
+    assert_eq!(l.filters.collection, Some(picks));
+    Ok(())
+}
+
+fn l_ctx() -> egui::Context {
+    egui::Context::default()
+}
+
+/// ⌘N opens Create Collection and ⌘⌥B Save Quick Collection, in the grid.
+#[test]
+fn command_n_and_command_option_b_open_their_windows() -> Result<()> {
+    use crate::app::testing::press;
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
+    press(&mut e, egui::Key::N, egui::Modifiers::COMMAND);
+    assert!(e.collection_dialog_open());
+    library(&mut e).collection_dialog = None;
+    // An empty Quick Collection has nothing to save.
+    let save = egui::Modifiers::COMMAND | egui::Modifiers::ALT;
+    press(&mut e, egui::Key::B, save);
+    assert!(!e.collection_dialog_open());
+    library(&mut e).toggle_quick(&ids)?;
+    press(&mut e, egui::Key::B, save);
+    assert!(e.collection_dialog_open());
+    Ok(())
+}
+
+/// A Redo of Save Quick Collection that fails changes nothing and can be
+/// tried again.
+#[test]
+fn a_failed_redo_of_save_quick_collection_can_be_tried_again() -> Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    library(&mut e).toggle_quick(&ids)?;
+    e.sync_undo();
+    let saved = library(&mut e).save_quick("Keepers", true)?;
+    e.sync_undo();
+    e.undo();
+    let db = |e: &mut Editor, sql: &str| -> Result<()> {
+        library(e)
+            .session
+            .catalog()
+            .db_for_tests()
+            .execute_batch(sql)?;
+        Ok(())
+    };
+    db(
+        &mut e,
+        "CREATE TEMP TRIGGER fail_clear BEFORE DELETE ON collection_photos
+         BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+    )?;
+    e.redo();
+    assert!(!exists(&mut e, saved));
+    assert_eq!(library(&mut e).quick_count(), 2);
+    db(&mut e, "DROP TRIGGER fail_clear")?;
+    e.redo();
+    assert!(exists(&mut e, saved));
+    assert_eq!(library(&mut e).quick_count(), 0);
+    Ok(())
+}
+
+/// Go to Collection from a filmstrip cell shrinks the photos shown while
+/// the strip is drawn: the strip stops there instead of reading past them.
+#[test]
+fn go_to_collection_from_the_filmstrip_stops_drawing_the_old_list() -> Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF"])?;
+    let ctx = e.context.clone();
+    let l = library(&mut e);
+    let first = l.session.photos()[l.visible[0]].id;
+    l.create_collection(false, "Only", None, &[first], false)?;
+    assert_eq!(l.shown().len(), ids.len());
+    let frame = |l: &mut Library, events: Vec<egui::Event>| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(1200., 800.),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                let active = l.selected();
+                l.filmstrip_panel(ui, active, super::Module::Library);
+            },
+        );
+        output.textures_delta.clear();
+        output
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(t) => {
+                    Some((t.galley.text().to_owned(), t.visual_bounding_rect()))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let button = |at: egui::Pos2, button, pressed| egui::Event::PointerButton {
+        pos: at,
+        button,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    let find = |texts: &[(String, egui::Rect)], text: &str| {
+        texts
+            .iter()
+            .find(|(t, _)| t == text)
+            .map(|(_, r)| r.center())
+    };
+    let l = library(&mut e);
+    frame(l, vec![]);
+    // The first cell, at the strip's left, below its header at the
+    // screen's foot.
+    let cell = egui::pos2(40., 760.);
+    let secondary = egui::PointerButton::Secondary;
+    frame(
+        l,
+        vec![
+            egui::Event::PointerMoved(cell),
+            button(cell, secondary, true),
+            button(cell, secondary, false),
+        ],
+    );
+    let mut texts = frame(l, vec![]);
+    let submenu = find(&texts, "Go to Collection").expect("Go to Collection");
+    for _ in 0..4 {
+        texts = frame(l, vec![egui::Event::PointerMoved(submenu)]);
+    }
+    let item = find(&texts, "Only").expect("the collection in the submenu");
+    let primary = egui::PointerButton::Primary;
+    frame(l, vec![egui::Event::PointerMoved(item)]);
+    frame(
+        l,
+        vec![button(item, primary, true), button(item, primary, false)],
+    );
+    frame(l, vec![]);
+    assert_eq!(l.shown(), [first]);
     Ok(())
 }

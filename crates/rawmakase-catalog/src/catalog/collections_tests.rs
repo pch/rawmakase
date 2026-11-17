@@ -596,3 +596,47 @@ fn a_collection_and_its_photos_are_made_together_or_not_at_all() -> Result<()> {
     assert!(c.collections()?.iter().all(|c| c.name != "Failed"));
     Ok(())
 }
+
+/// Save Quick Collection, its Undo and its Redo are each one transaction:
+/// a failure of the second write leaves the first undone too.
+#[test]
+fn save_quick_collection_and_its_undo_and_redo_are_all_or_nothing() -> Result<()> {
+    let (_dir, mut c, ids) = catalog()?;
+    let quick = c.quick_collection()?;
+    c.change_collection(quick, &ids[..2], &[])?;
+    let fail_clear = "CREATE TEMP TRIGGER fail_clear BEFORE DELETE ON collection_photos
+                      BEGIN SELECT RAISE(ABORT, 'disk full'); END";
+    c.db_for_tests().execute_batch(fail_clear)?;
+    assert!(c.save_quick_collection("Keepers", true).is_err());
+    assert!(c.collections()?.iter().all(|c| c.name != "Keepers"));
+    c.db_for_tests().execute_batch("DROP TRIGGER fail_clear")?;
+
+    let (id, cleared) = c.save_quick_collection("Keepers", true)?;
+    assert_eq!(members(&c, id)?.len(), 2);
+    assert!(members(&c, quick)?.is_empty());
+    assert_eq!(cleared.removed.len(), 2);
+    // Undo: the photos back in the Quick Collection, the collection gone.
+    let fail_delete = "CREATE TEMP TRIGGER fail_delete BEFORE DELETE ON collections
+                       BEGIN SELECT RAISE(ABORT, 'disk full'); END";
+    c.db_for_tests().execute_batch(fail_delete)?;
+    assert!(
+        c.unsave_quick_collection(id, quick, &cleared.removed)
+            .is_err()
+    );
+    assert!(members(&c, quick)?.is_empty());
+    c.db_for_tests().execute_batch("DROP TRIGGER fail_delete")?;
+    let removed = c.unsave_quick_collection(id, quick, &cleared.removed)?;
+    assert_eq!(members(&c, quick)?.len(), 2);
+    assert!(c.collections()?.iter().all(|c| c.id != id));
+    // Redo: the collection back and the Quick Collection cleared, or neither.
+    let photos: Vec<PhotoId> = cleared.removed.iter().map(|m| m.0).collect();
+    c.db_for_tests().execute_batch(fail_clear)?;
+    assert!(c.resave_quick_collection(&removed, quick, &photos).is_err());
+    assert!(c.collections()?.iter().all(|c| c.id != id));
+    assert_eq!(members(&c, quick)?.len(), 2);
+    c.db_for_tests().execute_batch("DROP TRIGGER fail_clear")?;
+    c.resave_quick_collection(&removed, quick, &photos)?;
+    assert_eq!(members(&c, id)?.len(), 2);
+    assert!(members(&c, quick)?.is_empty());
+    Ok(())
+}

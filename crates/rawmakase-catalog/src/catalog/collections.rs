@@ -308,141 +308,71 @@ impl Catalog {
     /// Photos stay in the catalog. Returns what [`Catalog::restore_collections`]
     /// needs to put them back. The Quick Collection can't be deleted.
     pub fn remove_collections(&mut self, ids: &[CollectionId]) -> Result<RemovedCollections> {
-        self.db.write(|w| {
-            row! {
-                struct TreeRow {
-                    id: CollectionId,
-                    name: String,
-                    parent: Option<CollectionId>,
-                    kind: String,
-                }
-            }
-            let all: Vec<TreeRow> = w.read(
-                sql!("SELECT id, name, parent, kind FROM collections ORDER BY id"),
-                &[],
-            )?;
-            let mut children: HashMap<Option<CollectionId>, Vec<&TreeRow>> = HashMap::new();
-            let by_id: HashMap<CollectionId, &TreeRow> = all.iter().map(|r| (r.id, r)).collect();
-            for row in &all {
-                children.entry(row.parent).or_default().push(row);
-            }
-            let mut removed = RemovedCollections::default();
-            let mut seen = HashSet::new();
-            for id in ids {
-                let row = by_id.get(id).context("That collection is gone")?;
-                ensure!(
-                    !is_quick(&row.name, row.parent, &row.kind),
-                    "The Quick Collection can't be deleted"
-                );
-                // A set and something inside it, both chosen: the set takes it.
-                let mut above = row.parent;
-                let mut inside_chosen = false;
-                while let Some(parent) = above {
-                    inside_chosen |= ids.contains(&parent);
-                    above = by_id.get(&parent).and_then(|r| r.parent);
-                }
-                if inside_chosen || !seen.insert(*id) {
-                    continue;
-                }
-                // Parents before their children.
-                let mut queue = std::collections::VecDeque::from([*row]);
-                while let Some(row) = queue.pop_front() {
-                    removed.rows.push(StoredCollection {
-                        id: row.id,
-                        name: row.name.clone(),
-                        parent: row.parent,
-                        kind: row.kind.clone(),
-                    });
-                    queue.extend(children.get(&Some(row.id)).into_iter().flatten().copied());
-                }
-            }
-            // Ids stay taken: Undo restores them.
-            if let Some(highest) = all.iter().map(|r| r.id.0).max() {
-                raise_high(w, highest)?;
-            }
-            row! {
-                struct MemberRow {
-                    photo: PhotoId,
-                    position: Option<String>,
-                }
-            }
-            for row in &removed.rows {
-                let members: Vec<MemberRow> = w.read(
-                    sql!(
-                        "SELECT photo, position FROM collection_photos WHERE collection=?
-                         ORDER BY photo"
-                    ),
-                    &[&row.id],
-                )?;
-                removed.members.extend(
-                    members
-                        .into_iter()
-                        .map(|m| (row.id, m.photo, m.position.map(Position))),
-                );
-                if let Some(options) = options_of(w, row.id)? {
-                    removed.options.push((row.id, options));
-                }
-                if let Some(rules) = rules_of(w, row.id)? {
-                    removed.rules.push((row.id, rules));
-                }
-            }
-            // Children before their parents.
-            for row in removed.rows.iter().rev() {
-                w.execute(
-                    sql!("DELETE FROM collection_photos WHERE collection=?"),
-                    &[&row.id],
-                )?;
-                w.execute(
-                    sql!("DELETE FROM collection_options WHERE collection=?"),
-                    &[&row.id],
-                )?;
-                w.execute(
-                    sql!("DELETE FROM smart_collection_rules WHERE collection=?"),
-                    &[&row.id],
-                )?;
-                w.execute(sql!("DELETE FROM collections WHERE id=?"), &[&row.id])?;
-            }
-            Ok(removed)
-        })
+        self.db.write(|w| remove_rows(w, ids))
     }
     /// Puts back collections [`Catalog::remove_collections`] deleted, under
     /// their ids, with their photos (those still in the catalog), positions
     /// and options. Refused, changing nothing, when one of the ids is in use,
     /// its set is gone or its name is now taken there.
     pub fn restore_collections(&mut self, removed: &RemovedCollections) -> Result<()> {
+        self.db.write(|w| restore_rows(w, removed))
+    }
+    /// Lightroom's Save Quick Collection: a top-level collection `name` of
+    /// the Quick Collection's photos, which are taken out of it when
+    /// `clear`, all in one transaction. Returns the collection and the
+    /// photos taken out, with their positions.
+    pub fn save_quick_collection(
+        &mut self,
+        name: &str,
+        clear: bool,
+    ) -> Result<(CollectionId, MembershipChange)> {
         self.db.write(|w| {
-            for row in &removed.rows {
-                let taken: Option<i64> =
-                    w.read_optional(sql!("SELECT 1 FROM collections WHERE id=?"), &[&row.id])?;
-                ensure!(taken.is_none(), "That collection is already there");
-                if let Some(parent) = row.parent {
-                    ensure_set(w, parent).context("The collection set it was in is gone")?;
-                }
-                // Restored as it was, even a set's `quick collection` an
-                // imported Lightroom catalog had; a name taken since refuses it.
-                ensure_unused(w, &row.name, row.parent, None)?;
-                w.execute(
-                    sql!("INSERT INTO collections(id, name, parent, kind) VALUES (?, ?, ?, ?)"),
-                    &[&row.id, &row.name, &row.parent, &row.kind],
-                )?;
-            }
-            for (collection, photo, position) in &removed.members {
-                let position = position.as_ref().map(Position::as_str);
-                w.execute(
-                    sql!(
-                        "INSERT INTO collection_photos(collection, photo, position)
-                         SELECT ?, id, ? FROM photos WHERE id=?"
-                    ),
-                    &[collection, &position, photo],
-                )?;
-            }
-            for (collection, options) in &removed.options {
-                write_options(w, *collection, options)?;
-            }
-            for (collection, rules) in &removed.rules {
-                write_rules(w, *collection, rules)?;
-            }
-            Ok(())
+            let quick: CollectionId = w
+                .read_optional(
+                    sql!("SELECT id FROM collections WHERE name=?1 AND kind=?2 AND parent IS NULL"),
+                    &[&QUICK_COLLECTION, &COLLECTION_KIND],
+                )?
+                .context("There is no Quick Collection")?;
+            let photos: Vec<PhotoId> = w.read(
+                sql!("SELECT photo FROM collection_photos WHERE collection=? ORDER BY photo"),
+                &[&quick],
+            )?;
+            let name = usable_name(w, name, None, None)?;
+            let id = insert(w, &name, None, COLLECTION_KIND)?;
+            change_members(w, id, Adding::Last(&photos), &[])?;
+            let cleared = if clear {
+                change_members(w, quick, Adding::At(&[]), &photos)?
+            } else {
+                MembershipChange::default()
+            };
+            Ok((id, cleared))
+        })
+    }
+    /// Undoes [`Catalog::save_quick_collection`] in one transaction: puts
+    /// `cleared` back in the Quick Collection at their positions and deletes
+    /// collection `id`, returning what Redo puts back.
+    pub fn unsave_quick_collection(
+        &mut self,
+        id: CollectionId,
+        quick: CollectionId,
+        cleared: &[Member],
+    ) -> Result<RemovedCollections> {
+        self.db.write(|w| {
+            change_members(w, quick, Adding::At(cleared), &[])?;
+            remove_rows(w, &[id])
+        })
+    }
+    /// Redoes [`Catalog::save_quick_collection`] in one transaction: puts the
+    /// collection back and takes `cleared` out of the Quick Collection again.
+    pub fn resave_quick_collection(
+        &mut self,
+        removed: &RemovedCollections,
+        quick: CollectionId,
+        cleared: &[PhotoId],
+    ) -> Result<MembershipChange> {
+        self.db.write(|w| {
+            restore_rows(w, removed)?;
+            change_members(w, quick, Adding::At(&[]), cleared)
         })
     }
     /// Adds `add` to and takes `remove` out of a collection, in one
@@ -1143,4 +1073,138 @@ pub(super) fn reserve_ids(w: &mut Write<'_>) -> Result<()> {
         Some(used) => raise_high(w, used),
         None => Ok(()),
     }
+}
+
+/// [`Catalog::remove_collections`] in a transaction already open.
+fn remove_rows(w: &mut Write<'_>, ids: &[CollectionId]) -> Result<RemovedCollections> {
+    row! {
+        struct TreeRow {
+            id: CollectionId,
+            name: String,
+            parent: Option<CollectionId>,
+            kind: String,
+        }
+    }
+    let all: Vec<TreeRow> = w.read(
+        sql!("SELECT id, name, parent, kind FROM collections ORDER BY id"),
+        &[],
+    )?;
+    let mut children: HashMap<Option<CollectionId>, Vec<&TreeRow>> = HashMap::new();
+    let by_id: HashMap<CollectionId, &TreeRow> = all.iter().map(|r| (r.id, r)).collect();
+    for row in &all {
+        children.entry(row.parent).or_default().push(row);
+    }
+    let mut removed = RemovedCollections::default();
+    let mut seen = HashSet::new();
+    for id in ids {
+        let row = by_id.get(id).context("That collection is gone")?;
+        ensure!(
+            !is_quick(&row.name, row.parent, &row.kind),
+            "The Quick Collection can't be deleted"
+        );
+        // A set and something inside it, both chosen: the set takes it.
+        let mut above = row.parent;
+        let mut inside_chosen = false;
+        while let Some(parent) = above {
+            inside_chosen |= ids.contains(&parent);
+            above = by_id.get(&parent).and_then(|r| r.parent);
+        }
+        if inside_chosen || !seen.insert(*id) {
+            continue;
+        }
+        // Parents before their children.
+        let mut queue = std::collections::VecDeque::from([*row]);
+        while let Some(row) = queue.pop_front() {
+            removed.rows.push(StoredCollection {
+                id: row.id,
+                name: row.name.clone(),
+                parent: row.parent,
+                kind: row.kind.clone(),
+            });
+            queue.extend(children.get(&Some(row.id)).into_iter().flatten().copied());
+        }
+    }
+    // Ids stay taken: Undo restores them.
+    if let Some(highest) = all.iter().map(|r| r.id.0).max() {
+        raise_high(w, highest)?;
+    }
+    row! {
+        struct MemberRow {
+            photo: PhotoId,
+            position: Option<String>,
+        }
+    }
+    for row in &removed.rows {
+        let members: Vec<MemberRow> = w.read(
+            sql!(
+                "SELECT photo, position FROM collection_photos WHERE collection=?
+                     ORDER BY photo"
+            ),
+            &[&row.id],
+        )?;
+        removed.members.extend(
+            members
+                .into_iter()
+                .map(|m| (row.id, m.photo, m.position.map(Position))),
+        );
+        if let Some(options) = options_of(w, row.id)? {
+            removed.options.push((row.id, options));
+        }
+        if let Some(rules) = rules_of(w, row.id)? {
+            removed.rules.push((row.id, rules));
+        }
+    }
+    // Children before their parents.
+    for row in removed.rows.iter().rev() {
+        w.execute(
+            sql!("DELETE FROM collection_photos WHERE collection=?"),
+            &[&row.id],
+        )?;
+        w.execute(
+            sql!("DELETE FROM collection_options WHERE collection=?"),
+            &[&row.id],
+        )?;
+        w.execute(
+            sql!("DELETE FROM smart_collection_rules WHERE collection=?"),
+            &[&row.id],
+        )?;
+        w.execute(sql!("DELETE FROM collections WHERE id=?"), &[&row.id])?;
+    }
+    Ok(removed)
+}
+
+/// [`Catalog::restore_collections`] in a transaction already open.
+fn restore_rows(w: &mut Write<'_>, removed: &RemovedCollections) -> Result<()> {
+    for row in &removed.rows {
+        let taken: Option<i64> =
+            w.read_optional(sql!("SELECT 1 FROM collections WHERE id=?"), &[&row.id])?;
+        ensure!(taken.is_none(), "That collection is already there");
+        if let Some(parent) = row.parent {
+            ensure_set(w, parent).context("The collection set it was in is gone")?;
+        }
+        // Restored as it was, even a set's `quick collection` an
+        // imported Lightroom catalog had; a name taken since refuses it.
+        ensure_unused(w, &row.name, row.parent, None)?;
+        w.execute(
+            sql!("INSERT INTO collections(id, name, parent, kind) VALUES (?, ?, ?, ?)"),
+            &[&row.id, &row.name, &row.parent, &row.kind],
+        )?;
+    }
+    for (collection, photo, position) in &removed.members {
+        let position = position.as_ref().map(Position::as_str);
+        w.execute(
+            sql!(
+                "INSERT INTO collection_photos(collection, photo, position)
+                     SELECT ?, id, ? FROM photos WHERE id=?"
+            ),
+            &[collection, &position, photo],
+        )?;
+    }
+    for (collection, options) in &removed.options {
+        write_options(w, *collection, options)?;
+    }
+    for (collection, rules) in &removed.rules {
+        write_rules(w, *collection, rules)?;
+    }
+    Ok(())
 }

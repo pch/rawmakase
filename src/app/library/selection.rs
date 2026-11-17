@@ -293,6 +293,10 @@ impl Library {
                 keys.take_press(press);
                 self.toggle_filters()
             }
+            if keys.is(press, &b::NEW_COLLECTION) {
+                keys.take_press(press);
+                self.ask_create_collection(false, None);
+            }
         }
         if ctx.text_edit_focused() {
             return;
@@ -408,26 +412,30 @@ impl Library {
 }
 
 /// Each view's Quick Collection bindings, with what they do.
-pub(super) type QuickBindings = [(&'static Binding, QuickKey); 3];
+pub(super) type QuickBindings = [(&'static Binding, QuickKey); 4];
 pub(super) static QUICK_GRID: QuickBindings = [
     (&b::GRID_QUICK_TOGGLE, QuickKey::Toggle),
     (&b::GRID_QUICK_SHOW, QuickKey::Show),
     (&b::GRID_QUICK_CLEAR, QuickKey::Clear),
+    (&b::GRID_QUICK_SAVE, QuickKey::Save),
 ];
 static QUICK_LOUPE: QuickBindings = [
     (&b::LOUPE_QUICK_TOGGLE, QuickKey::Toggle),
     (&b::LOUPE_QUICK_SHOW, QuickKey::Show),
     (&b::LOUPE_QUICK_CLEAR, QuickKey::Clear),
+    (&b::LOUPE_QUICK_SAVE, QuickKey::Save),
 ];
 pub(super) static QUICK_COMPARE: QuickBindings = [
     (&b::COMPARE_QUICK_TOGGLE, QuickKey::Toggle),
     (&b::COMPARE_QUICK_SHOW, QuickKey::Show),
     (&b::COMPARE_QUICK_CLEAR, QuickKey::Clear),
+    (&b::COMPARE_QUICK_SAVE, QuickKey::Save),
 ];
 pub(super) static QUICK_SURVEY: QuickBindings = [
     (&b::SURVEY_QUICK_TOGGLE, QuickKey::Toggle),
     (&b::SURVEY_QUICK_SHOW, QuickKey::Show),
     (&b::SURVEY_QUICK_CLEAR, QuickKey::Clear),
+    (&b::SURVEY_QUICK_SAVE, QuickKey::Save),
 ];
 /// The Quick Collection command of the first of `bindings` `press` runs.
 pub(super) fn quick_command(

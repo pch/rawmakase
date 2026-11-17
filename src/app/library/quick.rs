@@ -1,7 +1,9 @@
-//! Lightroom's Quick Collection: B adds the selected photos or takes them
-//! out, Cmd+B shows it and Cmd+Shift+B clears it. It is a collection like
-//! any other, the one imported from Lightroom or made on first use, and each
-//! change is one undoable command.
+//! Lightroom's Quick Collection and target collection: B adds the selected
+//! photos to the target collection (the Quick Collection unless another is
+//! set) or takes them out, Cmd+B shows the Quick Collection, Cmd+Shift+B
+//! clears it and Cmd+Option+B saves it as a collection. The Quick
+//! Collection is a collection like any other, the one imported from
+//! Lightroom or made on first use, and each change is one undoable command.
 use super::{Library, Place};
 use crate::app::ui::widgets::plural;
 use crate::catalog::{Member, MembershipChange, PhotoId};
@@ -52,30 +54,89 @@ impl Library {
     pub(super) fn showing_quick(&self) -> bool {
         self.quick().is_some() && self.filters.collection == self.quick()
     }
-    /// B: adds `ids` to the Quick Collection, or takes them out when they are
-    /// all in it already.
+    /// The collections photo `id` is in, the Quick Collection too, by name:
+    /// what its collection badge and Go to Collection list. Smart
+    /// collections aren't listed, as in Lightroom.
+    pub(super) fn photo_collections(
+        &self,
+        id: PhotoId,
+    ) -> Vec<(crate::catalog::CollectionId, String)> {
+        let quick = self.quick();
+        let members = self.session.collection_photos();
+        let mut found: Vec<(crate::catalog::CollectionId, String)> = self
+            .session
+            .collections()
+            .iter()
+            .filter(|c| {
+                (c.kind == crate::catalog::CollectionKind::Collection || Some(c.id) == quick)
+                    && members.get(&c.id).is_some_and(|m| m.contains(&id))
+            })
+            .map(|c| {
+                let name = if Some(c.id) == quick {
+                    "Quick Collection".to_string()
+                } else {
+                    c.name.clone()
+                };
+                (c.id, name)
+            })
+            .collect();
+        found.sort_by_key(|(_, name)| name.to_lowercase());
+        found
+    }
+    /// Lightroom's target collection, which B adds to: `None` is the
+    /// Quick Collection, also when the one set is gone.
+    pub(in crate::app) fn target(&self) -> Option<crate::catalog::CollectionId> {
+        self.session.catalog().target_collection().ok().flatten()
+    }
+    /// Set as Target Collection: `None` makes it the Quick Collection.
+    pub(in crate::app) fn set_target(&mut self, id: Option<crate::catalog::CollectionId>) {
+        match self.session.set_target_collection(id) {
+            Ok(()) => {
+                self.sidebar_trees = None;
+                let name = id
+                    .and_then(|id| self.session.collections().iter().find(|c| c.id == id))
+                    .map_or_else(
+                        || "The Quick Collection".to_string(),
+                        |c| format!("“{}”", c.name),
+                    );
+                self.messages
+                    .note(format!("{name} is the target collection"));
+            }
+            Err(e) => self
+                .messages
+                .fail(format!("Target collection not changed: {e:#}")),
+        }
+    }
+    /// B: adds `ids` to the target collection, or takes them out when they
+    /// are all in it already, as Lightroom's B does.
     pub(in crate::app) fn toggle_quick(&mut self, ids: &[PhotoId]) -> Result<()> {
         if ids.is_empty() {
             return Ok(());
         }
-        let quick = self.ensure_quick()?;
-        let all_in = ids.iter().all(|id| self.in_quick(*id));
+        let (target, name) = match self.target() {
+            Some(id) => {
+                let name = self
+                    .session
+                    .collections()
+                    .iter()
+                    .find(|c| c.id == id)
+                    .map_or_else(String::new, |c| format!("“{}”", c.name));
+                (id, name)
+            }
+            None => (self.ensure_quick()?, "Quick Collection".to_string()),
+        };
+        let members = self.session.collection_photos().get(&target);
+        let inside = |id: &PhotoId| members.is_some_and(|m| m.contains(id));
+        let all_in = ids.iter().all(inside);
         let (added, removed, verb) = if all_in {
             (Vec::new(), ids.to_vec(), "Removed from")
         } else {
-            let added: Vec<PhotoId> = ids
-                .iter()
-                .copied()
-                .filter(|id| !self.in_quick(*id))
-                .collect();
+            let added: Vec<PhotoId> = ids.iter().copied().filter(|id| !inside(id)).collect();
             (added, Vec::new(), "Added to")
         };
         let count = added.len() + removed.len();
-        let summary = format!(
-            "{verb} Quick Collection · {}",
-            plural(count, "photo", "photos")
-        );
-        self.record_collection(quick, added, removed, summary)
+        let summary = format!("{verb} {name} · {}", plural(count, "photo", "photos"));
+        self.record_collection(target, added, removed, summary)
     }
     /// Cmd+Shift+B: empties the Quick Collection.
     pub(in crate::app) fn clear_quick(&mut self) -> Result<()> {
@@ -111,6 +172,10 @@ impl Library {
             QuickKey::Toggle => self.toggle_quick(&ids),
             QuickKey::Show => self.show_quick(),
             QuickKey::Clear => self.clear_quick(),
+            QuickKey::Save => {
+                self.ask_save_quick();
+                Ok(())
+            }
         };
         if let Err(e) = done {
             self.messages
@@ -188,8 +253,10 @@ impl Library {
 /// What a Quick Collection key does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum QuickKey {
-    /// Adds the photos to it, or takes them out.
+    /// Adds the photos to the target collection, or takes them out.
     Toggle,
     Show,
     Clear,
+    /// Save Quick Collection….
+    Save,
 }
