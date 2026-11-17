@@ -283,3 +283,81 @@ fn edit_facts_read_recipes_that_name_their_profile() -> Result<()> {
     );
     Ok(())
 }
+
+/// New Catalog's defaults, as Lightroom Classic 15.6 makes them: six smart
+/// collections in a "Smart Collections" set, with Lightroom's text.
+#[test]
+fn new_catalogs_get_lightroom_default_smart_collections() -> Result<()> {
+    let (_d, mut cat, _) = catalog_with_photo()?;
+    cat.add_default_smart_collections()?;
+    let collections = cat.collections()?;
+    let set = collections
+        .iter()
+        .find(|c| c.name == "Smart Collections" && c.kind == CollectionKind::Set)
+        .unwrap();
+    let smart: Vec<&Collection> = collections
+        .iter()
+        .filter(|c| c.kind == CollectionKind::Smart)
+        .collect();
+    let names: Vec<&str> = smart.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "Colored Red",
+            "Five Stars",
+            "Past Month",
+            "Recently Modified",
+            "Video Files",
+            "Without Keywords"
+        ]
+    );
+    let rules = cat.smart_rules()?;
+    for (c, (_, text)) in smart
+        .iter()
+        .zip(rawmakase_model::collection_rules::LIGHTROOM_DEFAULTS)
+    {
+        assert_eq!(c.parent, Some(set.id));
+        assert_eq!(rules[&c.id].lightroom(), Some(text));
+        assert_eq!(
+            rules[&c.id].rules().unwrap().unsupported(),
+            None,
+            "{}",
+            c.name
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn smart_collections_are_created_with_their_rules_by_the_naming_rules() -> Result<()> {
+    let (_d, mut cat, _) = catalog_with_photo()?;
+    let set = cat.create_collection(CollectionKind::Set, "Trips", None)?;
+    let group = Group::new(
+        Combine::Intersect,
+        vec![Item::Rule(Rule::new(
+            "rating",
+            ">=",
+            Some(Value::Number(3.)),
+        ))],
+    );
+    let id = cat.create_smart_collection("  Good  ", Some(set), &SmartRules::new(&group))?;
+    let made = cat.collections()?.into_iter().find(|c| c.id == id).unwrap();
+    assert_eq!(
+        (made.name.as_str(), made.parent, made.kind),
+        ("Good", Some(set), CollectionKind::Smart)
+    );
+    assert_eq!(cat.smart_rules()?[&id].rules().unwrap(), group);
+    for (name, parent) in [("Good", Some(set)), ("", None), (QUICK_COLLECTION, None)] {
+        assert!(
+            cat.create_smart_collection(name, parent, &SmartRules::new(&group))
+                .is_err(),
+            "{name}"
+        );
+    }
+    let plain = cat.create_collection(CollectionKind::Collection, "Plain", None)?;
+    assert!(
+        cat.create_smart_collection("Inside", Some(plain), &SmartRules::new(&group))
+            .is_err()
+    );
+    Ok(())
+}
