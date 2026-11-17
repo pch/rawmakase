@@ -64,6 +64,15 @@ CREATE TABLE IF NOT EXISTS collection_photos (
     PRIMARY KEY(collection,photo)
 );
 
+-- A collection's sort, as Lightroom's sortType and sortDirection strings.
+-- A row is only written when a sort is chosen (or imported), so a missing
+-- one means "never chosen".
+CREATE TABLE IF NOT EXISTS collection_options (
+    collection INTEGER PRIMARY KEY REFERENCES collections(id),
+    sort TEXT NOT NULL,
+    direction TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS keywords (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,

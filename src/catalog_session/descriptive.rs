@@ -1,5 +1,5 @@
-//! Title, caption, creator, copyright, location and keywords, collection
-//! membership and virtual copies with their Copy Names: changes to the catalog
+//! Title, caption, creator, copyright, location and keywords, and virtual
+//! copies with their Copy Names: changes to the catalog
 //! that the session's lists must follow.
 use super::CatalogSession;
 use crate::catalog::{FileMetadata, Merge, MetadataSnapshot, PhotoId, SidecarReport};
@@ -97,26 +97,19 @@ impl CatalogSession {
         }
         Ok(())
     }
-    /// Adds `add` to `collection` and takes `remove` out of it, in the catalog
-    /// and the lists. Returns the collection's photos as they now are.
-    pub(crate) fn change_collection(
+    /// Makes a virtual copy of `id` while collection `viewing` (or a folder,
+    /// `None`) is shown, and reads the lists again. The copy joins the
+    /// collections Lightroom's would ([`crate::catalog::Catalog::create_virtual_copy`]).
+    /// An error means no copy was made.
+    pub(crate) fn create_virtual_copy(
         &mut self,
-        collection: crate::catalog::CollectionId,
-        add: &[PhotoId],
-        remove: &[PhotoId],
-    ) -> Result<&std::collections::HashSet<PhotoId>> {
-        self.catalog.change_collection(collection, add, remove)?;
-        let members = self.collection_photos.entry(collection).or_default();
-        members.extend(add);
-        for id in remove {
-            members.remove(id);
-        }
-        Ok(members)
-    }
-    /// Makes a virtual copy of `id` and reads the lists again. An error means
-    /// no copy was made.
-    pub(crate) fn create_virtual_copy(&mut self, id: PhotoId) -> Result<Committed<PhotoId>> {
-        let copy = self.catalog.create_virtual_copy(id)?;
+        id: PhotoId,
+        viewing: Option<crate::catalog::CollectionId>,
+    ) -> Result<Committed<PhotoId>> {
+        let copy = match viewing {
+            Some(viewing) => self.catalog.create_virtual_copy_viewing(id, viewing)?,
+            None => self.catalog.create_virtual_copy(id)?,
+        };
         Ok(Committed {
             value: copy,
             listed: self.reload(),

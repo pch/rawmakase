@@ -1336,6 +1336,32 @@ fn library_of(names: &[&str]) -> Result<(tempfile::TempDir, Library)> {
     let library = Library::load(&path, egui::Context::default())?;
     Ok((directory, library))
 }
+/// As in Lightroom Classic, a copy made while a collection is shown joins
+/// it, and shows there right after its source.
+#[test]
+fn a_copy_made_in_a_collection_shows_in_it() -> Result<()> {
+    let (_d, mut library) = library_of(&["a.ARW", "b.ARW"])?;
+    let [a, b] = [
+        library.session.photos()[0].id,
+        library.session.photos()[1].id,
+    ];
+    let picks = library.session.catalog_mut_for_tests().create_collection(
+        crate::catalog::CollectionKind::Collection,
+        "Picks",
+        None,
+    )?;
+    library.session.reload()?;
+    library.change_collection(picks, &[a, b], &[])?;
+    library.select_collection(picks);
+    let copy = library.create_virtual_copy(a)?.value;
+    let mut shown = library.shown();
+    shown.sort();
+    let mut expected = vec![a, b, copy];
+    expected.sort();
+    assert_eq!(shown, expected);
+    assert_eq!(library.selected(), Some(copy));
+    Ok(())
+}
 fn visible_names(library: &Library) -> Vec<&str> {
     library
         .visible

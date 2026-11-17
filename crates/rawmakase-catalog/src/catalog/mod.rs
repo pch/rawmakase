@@ -62,6 +62,7 @@ pub use crate::ids::{CollectionId, FolderId, PhotoId, RootId, StackId};
 pub use crate::xmp::descriptive::Read as FileMetadata;
 #[doc(hidden)]
 pub use checksums::ReadChecksum;
+pub use collections::{CollectionOptions, Member, MembershipChange, Position, RemovedCollections};
 pub use db::assert_shape as assert_sql_shape;
 pub use defaults::{CameraExifReader, ImportOptions, MetadataDefaults, NewPhotoDefaults};
 pub use descriptive::MetadataSnapshot;
@@ -329,6 +330,8 @@ pub use sidecar::Merge;
 mod boundary_tests;
 #[cfg(test)]
 mod checksums_tests;
+#[cfg(test)]
+mod collections_tests;
 #[cfg(test)]
 mod descriptive_tests;
 #[cfg(test)]
