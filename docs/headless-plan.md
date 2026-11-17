@@ -6,9 +6,10 @@ for someone who needs it. What can be done today is in
 
 ## Goal
 
-A binary without the desktop app's GUI code that renders photos from the command
-line and as a server, reads imported camera and lens profiles, and writes to local
-files or S3-compatible storage; later, S3 as an Export dialog destination.
+A binary without the desktop app's GUI code, `rawmakase-cli`, that renders photos
+from the command line and as a server, reads imported camera and lens profiles, and
+writes to local files or S3-compatible storage; later, S3 as an Export dialog
+destination. It works on files: a photo and its edit in, rendered files out.
 
 ## Built
 
@@ -30,11 +31,26 @@ The order is the order they build on each other. A design review (Codex,
 
 ### 1. A headless binary
 
-`render_command` and `catalog_command` are modules of the root crate, so anything
-linking them still links eframe, winit and rfd.
+`render_command` is a module of the root crate, so anything linking it still links
+eframe, winit and rfd.
 
-- Move both into a crate, mechanically, with closure rules that keep it from the
-  app, the GUI crates and wgpu.
+- **Named `rawmakase-cli`**, after `darktable-cli` and `rawtherapee-cli`. Server
+  mode, when it comes, is a subcommand (`rawmakase-cli serve`), not a third
+  binary. The desktop `rawmakase` keeps every command it has.
+- **Files only, no catalogs.** A photo and its edit (`--recipe`, an XMP preset or
+  a sidecar) go in, rendered files come out. A catalog is the desktop app's
+  database: opening one can migrate and write it, a newer one may not open in an
+  older CLI, it may be in use by a running app, its folders are where the desktop
+  found them, and a lookup in it is state that can change between queueing a job
+  and running it. `render --catalog` and the catalog commands stay in the desktop
+  binary, which renders a catalog's photos as they are. What a catalog alone
+  carries is the pixels of selection masks: the CLI refuses a recipe that needs
+  them until recipes can carry mask assets (see server mode).
+- Move `render_command` into a crate, mechanically, with closure rules that keep
+  it from the app, the GUI crates, `rawmakase-catalog` and wgpu. Its catalog
+  lookup (`catalog_edit`, through `catalog_command::open_catalog`) becomes
+  something the desktop binary passes in, as it passes raw defaults and AI
+  Denoise; `catalog_command` stays in the root crate.
 - A small binary over it (`render`, `render-batch`, `import-profiles`,
   `import-lens-profiles`, `lensfun`, `inspect`, and an `install-model` that
   installs AI Denoise's pack through `rawmakase-model-install`, receipts checked).
