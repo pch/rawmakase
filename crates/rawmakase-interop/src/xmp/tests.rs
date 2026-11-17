@@ -2305,13 +2305,76 @@ fn lightroom_catalog_crops_without_default_corners_still_turn() -> Result<()> {
 }
 
 /// A Lightroom 5 record before process version 2012 carries the 2012 tone keys at 0, which
-/// Lightroom ignores: its Exposure still converts, and the rest is reported (#1060).
+/// Lightroom ignores (#1060). Its basic controls convert as Lightroom's process update
+/// writes them.
 #[test]
-fn lightroom_5_legacy_records_keep_exposure_over_zeroed_2012_keys() -> Result<()> {
-    let text = r#"s = { ProcessVersion = "5.0", Exposure = 1.7, Exposure2012 = 0, Contrast = 17, Contrast2012 = 0, Brightness = 3, FillLight = 100, Clarity2012 = 0 }"#;
+fn lightroom_5_legacy_records_convert_over_zeroed_2012_keys() -> Result<()> {
+    let text = r#"s = { ProcessVersion = "5.0", Exposure = 1.7, Exposure2012 = 0, Contrast = 17, Contrast2012 = 0, Brightness = 3, FillLight = 100, Shadows = 0, HighlightRecovery = 20, Clarity = 100, Clarity2012 = 0 }"#;
     let (r, warnings) = crate::lr_develop::convert_develop(text, &Metadata::default(), &[], None)?;
-    assert_eq!(r.exposure, 1.7);
-    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    let got = [
+        r.exposure,
+        r.contrast,
+        r.highlights,
+        r.shadows,
+        r.whites,
+        r.blacks,
+        r.effects.clarity,
+    ];
+    let want = [1.76, -0.11, -0.5, 0.5, -0.2, 0.25, 0.2];
+    assert!(
+        got.iter().zip(want).all(|(g, w)| (g - w).abs() < 1e-6),
+        "{got:?}"
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
+    Ok(())
+}
+
+/// Older records may quote their numbers. An explicit Exposure, even 0, means Auto Tone was
+/// already applied, while Lightroom's placeholder or a missing Exposure leaves it to be measured.
+#[test]
+fn lightroom_legacy_records_read_quoted_numbers_and_keep_auto_tone_state() -> Result<()> {
+    let convert = |text: &str| {
+        let photo = FakeMeasures::default();
+        crate::lr_develop::convert_develop(text, &Metadata::default(), &[], Some(&photo))
+    };
+    let (r, w) =
+        convert(r#"s = { ProcessVersion = "5.7", Exposure = "0.75", Brightness = "100" }"#)?;
+    assert_eq!(r.exposure, 1.75);
+    assert!(w.is_empty(), "{w:?}");
+    let (r, _) =
+        convert(r#"s = { ProcessVersion = "5.0", AutoTone = true, Exposure = 0, Contrast = 40 }"#)?;
+    assert_eq!(r.exposure, 0.);
+    assert!((r.contrast - 0.2).abs() < 1e-6, "{}", r.contrast);
+    let auto = [
+        r#"s = { ProcessVersion = "5.0", AutoTone = true, Exposure = -999999, Contrast = -999999, Clarity = 100 }"#,
+        r#"s = { ProcessVersion = "5.0", AutoTone = true, Clarity = 100 }"#,
+        r#"s = { ProcessVersion = "5.0", AutoTone = true, Brightness = 100, FillLight = 25, Clarity = 100 }"#,
+        r#"s = { ProcessVersion = "5.0", AutoTone = "1", Brightness = 100, Clarity = 100 }"#,
+    ];
+    // A placeholder on Contrast alone leaves a measured Exposure in place.
+    let (r, _) = convert(
+        r#"s = { ProcessVersion = "5.0", AutoTone = true, Exposure = 0.5, Contrast = -999999 }"#,
+    )?;
+    assert_eq!((r.exposure, r.contrast), (0.5, 0.));
+    for text in auto {
+        let (r, _) = convert(text)?;
+        assert_eq!(
+            (r.exposure, r.contrast),
+            (FakeMeasures::TONE[0], FakeMeasures::TONE[1])
+        );
+        assert!(
+            (r.effects.clarity - 0.2).abs() < 1e-6,
+            "{}",
+            r.effects.clarity
+        );
+    }
+    // PV2010 keeps its old Clarity conversion.
+    let (r, _) = convert(r#"s = { ProcessVersion = "5.7", Clarity = 100 }"#)?;
+    assert!(
+        (r.effects.clarity - 0.5).abs() < 1e-6,
+        "{}",
+        r.effects.clarity
+    );
     Ok(())
 }
 

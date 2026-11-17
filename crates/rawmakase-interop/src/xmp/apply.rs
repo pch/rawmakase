@@ -21,7 +21,7 @@ fn number(values: &BTreeMap<String, String>, key: &str) -> Result<Option<f32>> {
         })
         .transpose()
 }
-fn boolean(values: &BTreeMap<String, String>, key: &str) -> Result<Option<bool>> {
+pub(crate) fn boolean(values: &BTreeMap<String, String>, key: &str) -> Result<Option<bool>> {
     values
         .get(key)
         // Lightroom writes some flags empty (e.g. ConvertToGrayscale=""),
