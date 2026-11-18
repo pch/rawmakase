@@ -189,14 +189,17 @@ jobs:
       # The app's tests run `rawmakase mcp`, which runs rawmakase-mcp from
       # beside it in target/debug, and the MIDI program found there.
       # Every target but the examples, as in the lint job, then the doctests.
-      # Bash stops at the first command that fails; PowerShell would go on to
-      # the doctests and report only their result.
+      # PowerShell goes on after a program fails, so each exit code is checked.
+      # Not Git's bash: the extension programs the app's tests start (the test
+      # binary itself) exited at once when the tests ran from it.
       - if: steps.source.outputs.windows == 'true'
-        shell: bash
         run: |
           cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo test --locked --workspace --lib --bins --tests
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo test --locked --workspace --doc
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
   # Without this job the macOS-only code is compiled for the first time by
   # release.yml, after the release commit is already on main, so a macOS-only
