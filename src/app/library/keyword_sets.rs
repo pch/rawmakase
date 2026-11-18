@@ -7,7 +7,7 @@
 //! Recent Keywords' are the keywords themselves.
 use super::Library;
 use super::descriptive::{DescriptiveEdit, parse_keyword};
-use crate::app::ui::design::{self, Tone, button, inset, space, text};
+use crate::app::ui::design::{self, Tone, button, inset, size, space, text};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::{modal_frame, primary_button};
 use crate::catalog::ListedKeyword;
@@ -296,65 +296,42 @@ impl Library {
     pub(in crate::app) fn keyword_set_dialog_open(&self) -> bool {
         self.keyword_sets.dialog.is_some()
     }
-    /// The Keyword Set section, under the keyword field.
+    /// The Keyword Set section, under the keyword field: the set's menu,
+    /// then its nine keywords as a keypad of even tiles.
     pub(super) fn keyword_set_section(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
-        ui.add_space(space::S);
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("Keyword Set")
-                    .size(text::SMALL)
-                    .color(palette.tone(Tone::MUTED)),
-            );
-            self.keyword_set_menu(ui);
-        });
+        ui.add_space(space::M);
+        ui.label(
+            egui::RichText::new("Keyword Set")
+                .size(text::SMALL)
+                .color(palette.tone(Tone::SOFT)),
+        );
         ui.add_space(space::XS);
+        ui.horizontal(|ui| self.keyword_set_menu(ui));
+        ui.add_space(space::S);
         let slots = self.keyword_slots();
         let enabled = !self.fields.targets.is_empty();
-        let width = (ui.available_width() - 2. * space::XS) / 3.;
+        let (grid, _) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), 3. * TILE_HEIGHT + 2. * TILE_GAP),
+            egui::Sense::hover(),
+        );
+        let width = (grid.width() - 2. * TILE_GAP) / 3.;
         let mut clicked = None;
-        for row in KEYPAD.chunks(3) {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = space::XS;
-                for &slot in row {
-                    let (label, id) = match &slots[slot] {
-                        Slot::Empty => (String::new(), None),
-                        Slot::Typed { label, found, .. } => (label.clone(), *found),
-                        Slot::Keyword { label, id, .. } => (label.clone(), Some(*id)),
-                    };
-                    let state = id.and_then(|id| self.fields.keyword_state(id));
-                    let mut button = egui::Button::selectable(
-                        state.is_some(),
-                        egui::RichText::new(if state == Some(false) {
-                            format!("{label} *")
-                        } else {
-                            label.clone()
-                        })
-                        .size(text::SMALL),
-                    )
-                    .truncate();
-                    if label.is_empty() {
-                        button = button.frame(false);
-                    }
-                    let response = ui
-                        .add_enabled_ui(enabled && !label.is_empty(), |ui| {
-                            ui.add_sized(Vec2::new(width, 20.), button)
-                        })
-                        .inner
-                        .on_hover_text(format!(
-                            "{label}{} · ⌥{}",
-                            match state {
-                                Some(true) => ": remove it from the selected photos",
-                                Some(false) => ": some selected photos have it; add it to all",
-                                None => "",
-                            },
-                            slot + 1
-                        ));
-                    if response.clicked() {
-                        clicked = Some(slot);
-                    }
-                }
-            });
+        for (i, &slot) in KEYPAD.iter().enumerate() {
+            let (row, column) = ((i / 3) as f32, (i % 3) as f32);
+            let rect = egui::Rect::from_min_size(
+                grid.min + Vec2::new(column * (width + TILE_GAP), row * (TILE_HEIGHT + TILE_GAP)),
+                Vec2::new(width, TILE_HEIGHT),
+            );
+            let (label, id) = match &slots[slot] {
+                Slot::Empty => (String::new(), None),
+                Slot::Typed { label, found, .. } => (label.clone(), *found),
+                Slot::Keyword { label, id, .. } => (label.clone(), Some(*id)),
+            };
+            let state = id.and_then(|id| self.fields.keyword_state(id));
+            if keyword_tile(ui, rect, slot, &label, state, enabled).is_some_and(|r| r.clicked()) {
+                clicked = Some(slot);
+            }
         }
         if let Some(slot) = clicked {
             self.click_keyword_slot(slot);
@@ -368,9 +345,10 @@ impl Library {
         let current = self.keyword_sets.set();
         let edited = matches!(self.keyword_sets.shown, Shown::Edited { .. });
         let slots = self.keyword_slots();
-        egui::ComboBox::from_id_salt("keyword-set")
-            .selected_text(egui::RichText::new(&title).size(text::SMALL))
+        crate::app::ui::widgets::dropdown(ui, "keyword-set")
             .width(ui.available_width())
+            .height(size::MENU * 16.)
+            .selected_text(&title)
             .show_ui(ui, |ui| {
                 if ui
                     .selectable_label(self.keyword_sets.shown == Shown::Recent, "Recent Keywords")
@@ -615,6 +593,86 @@ fn slot_texts(slots: &[Slot; SLOTS]) -> [String; SLOTS] {
         } => String::new(),
         Slot::Typed { label, .. } | Slot::Keyword { label, .. } => label.clone(),
     })
+}
+
+/// The height of a keyword tile.
+const TILE_HEIGHT: f32 = size::CONTROL;
+/// The space between keyword tiles.
+const TILE_GAP: f32 = space::XS;
+
+/// Keyword `slot`'s tile at `rect`: filled with the accent when the photos
+/// edited all have its keyword, outlined in it when only some do. An empty
+/// slot is only a faint outline, with no response.
+fn keyword_tile(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    slot: usize,
+    label: &str,
+    state: Option<bool>,
+    enabled: bool,
+) -> Option<egui::Response> {
+    let palette = theme::palette(ui.ctx());
+    let radius = crate::app::ui::design::radius::CONTROL;
+    if label.is_empty() {
+        ui.painter().rect_stroke(
+            rect.shrink(0.5),
+            radius,
+            egui::Stroke::new(1., palette.tone(Tone::RAISED)),
+            egui::StrokeKind::Inside,
+        );
+        return None;
+    }
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let response = ui.interact(rect, ui.id().with(("keyword-tile", slot)), sense);
+    let hovered = enabled && response.hovered();
+    let (fill, stroke, color) = match state {
+        Some(true) => (
+            if hovered {
+                palette.accent_hover()
+            } else {
+                palette.accent()
+            },
+            egui::Stroke::NONE,
+            palette.on_accent_text(Tone::BRIGHT),
+        ),
+        Some(false) => (
+            palette.tone(if hovered { Tone::HOVER } else { Tone::FIELD }),
+            egui::Stroke::new(1., palette.accent()),
+            palette.tone(Tone::TEXT),
+        ),
+        None => (
+            palette.tone(if hovered { Tone::HOVER } else { Tone::FIELD }),
+            egui::Stroke::NONE,
+            palette.tone(if enabled { Tone::SOFT } else { Tone::DISABLED }),
+        ),
+    };
+    ui.painter().rect_filled(rect, radius, fill);
+    if stroke != egui::Stroke::NONE {
+        ui.painter()
+            .rect_stroke(rect.shrink(0.5), radius, stroke, egui::StrokeKind::Inside);
+    }
+    let galley = egui::WidgetText::from(label).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Truncate),
+        rect.width() - 2. * space::S,
+        egui::FontId::proportional(text::SMALL),
+    );
+    ui.painter()
+        .galley(rect.center() - galley.size() / 2., galley, color);
+    Some(response.on_hover_text(format!(
+        "{label}{} · ⌥{}",
+        match state {
+            Some(true) => ": remove it from the selected photos",
+            Some(false) => ": some selected photos have it; add it to all",
+            None if enabled => "",
+            None => " (select photos to add it)",
+        },
+        slot + 1
+    )))
 }
 
 #[cfg(test)]

@@ -8,8 +8,7 @@ use crate::app::Module;
 use crate::app::history::{Recorded, Step};
 use crate::app::library::{
     CollectionCommand, CollectionTreeCommand, DescriptiveCommand, KeywordCommand, Library,
-    MetadataCommand, Place,
-    StackCommand,
+    MetadataCommand, Place, StackCommand,
 };
 use crate::catalog::PhotoId;
 use anyhow::Result;

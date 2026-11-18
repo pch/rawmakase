@@ -22,6 +22,8 @@ use std::collections::{HashMap, HashSet};
 
 /// How far each level is indented.
 const INDENT: f32 = 12.;
+/// The width of the → that shows a keyword's photos, at a row's right end.
+const ARROW: f32 = 16.;
 
 /// The panel's own state, kept while RAWmakase runs.
 #[derive(Default)]
@@ -197,10 +199,9 @@ impl Library {
         let targets = self.fields.targets.clone();
         let (rect, _) =
             ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), egui::Sense::hover());
-        let menu = egui::Rect::from_min_max(egui::pos2(rect.right() - 20., rect.top()), rect.max);
-        ui.put(
-            egui::Rect::from_min_max(rect.min, egui::pos2(menu.left() - 2., rect.bottom()))
-                .shrink2(Vec2::new(0., 1.)),
+        let mut clicked = None;
+        let filter = ui.put(
+            rect.shrink2(Vec2::new(0., 1.)),
             panel_edit(
                 &palette,
                 egui::TextEdit::singleline(&mut self.keyword_list.filter),
@@ -208,14 +209,10 @@ impl Library {
             .hint_text("Filter Keywords")
             .vertical_align(egui::Align::Center),
         );
-        let mut clicked = None;
-        let mut menu_ui = ui.new_child(egui::UiBuilder::new().max_rect(menu));
-        menu_ui
-            .menu_button(egui::RichText::new("⋯").size(text::LABEL), |ui| {
-                keyword_menu(ui, None, &mut clicked);
-            })
-            .response
-            .on_hover_text("Create a keyword or purge the unused ones");
+        crate::app::ui::widgets::context_menu(&filter, |ui| {
+            keyword_menu(ui, None, &mut clicked);
+        });
+        ui.add_space(space::XS);
         let keywords = self.session.keywords();
         let rows = rows(
             keywords,
@@ -285,29 +282,32 @@ impl Library {
                     all: state == Some(true),
                 });
             }
-            let count = k.photos.to_string();
+            // As Lightroom's, the arrow shows while the pointer is on the row,
+            // the count moving aside for it.
+            let hovered = response.hovered() || ui.rect_contains_pointer(rect);
             let arrow = egui::Rect::from_min_max(
-                egui::pos2(rect.right() - 16., rect.top()),
+                egui::pos2(rect.right() - ARROW, rect.top()),
                 rect.right_bottom(),
             );
-            let count_width = 8. * count.len() as f32 + 6.;
-            let name_left = tick.right() + 4.;
+            let count = ui.painter().text(
+                egui::pos2(
+                    if hovered { arrow.left() } else { rect.right() },
+                    rect.center().y,
+                ),
+                egui::Align2::RIGHT_CENTER,
+                k.photos.to_string(),
+                super::rows::font(),
+                palette.tone(Tone::MUTED),
+            );
+            let name_left = tick.right() + space::S;
             paint_truncated(
                 ui,
                 egui::pos2(name_left, rect.center().y),
-                arrow.left() - count_width - name_left,
+                count.left() - space::M - name_left,
                 &k.name,
                 palette.tone(VALUE_GRAY),
             );
-            ui.painter().text(
-                egui::pos2(arrow.left() - 4., rect.center().y),
-                egui::Align2::RIGHT_CENTER,
-                &count,
-                super::rows::font(),
-                palette.tone(VALUE_GRAY),
-            );
-            // As Lightroom's, the arrow shows while the pointer is on the row.
-            if (response.hovered() || ui.rect_contains_pointer(rect))
+            if hovered
                 && ui
                     .put(
                         arrow,
@@ -337,13 +337,7 @@ impl Library {
                 }
             }
             Some(Clicked::Show(id)) => self.show_keyword(id),
-            Some(Clicked::Create(parent)) => {
-                self.keyword_list.dialog = Some(ListDialog::Create {
-                    parent,
-                    name: String::new(),
-                    focused: false,
-                });
-            }
+            Some(Clicked::Create(parent)) => self.ask_to_create_keyword(parent),
             Some(Clicked::Rename(id, name)) => {
                 self.keyword_list.dialog = Some(ListDialog::Rename {
                     id,
@@ -357,6 +351,14 @@ impl Library {
             }
             None => {}
         }
+    }
+    /// Opens Create Keyword Tag, inside `parent` when given.
+    pub(super) fn ask_to_create_keyword(&mut self, parent: Option<(i64, String)>) {
+        self.keyword_list.dialog = Some(ListDialog::Create {
+            parent,
+            name: String::new(),
+            focused: false,
+        });
     }
     /// Deletes keyword `id` at once when no photo has it and it has no
     /// keywords inside; else asks first, as Lightroom does.

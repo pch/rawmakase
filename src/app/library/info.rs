@@ -3,7 +3,7 @@ use super::rows::{ROW, caption_at, paint_truncated, value_at};
 use super::{Action, Library};
 use crate::app::ui::design::{Tone, space};
 use crate::app::ui::theme;
-use crate::app::ui::widgets::section;
+use crate::app::ui::widgets::{HeaderButton, section, section_with};
 use crate::catalog::{Photo, PhotoId};
 use crate::metadata::PhotoInfo;
 use eframe::egui::{self, Vec2};
@@ -132,9 +132,15 @@ impl Library {
                     self.keyword_fields(ui);
                     self.keyword_set_section(ui);
                 });
-                section(ui, "Keyword List", |ui| {
-                    self.keyword_list(ui);
-                });
+                let create = section_with(
+                    ui,
+                    "Keyword List",
+                    HeaderButton::Add("Create Keyword Tag…"),
+                    |ui| self.keyword_list(ui),
+                );
+                if create {
+                    self.ask_to_create_keyword(None);
+                }
             });
         action
     }
