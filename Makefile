@@ -52,6 +52,9 @@ CHECK_VENV ?= target/check-venv
 # in target/debug, and the MIDI and AI masks programs found there.
 TEST_DATA = $(CURDIR)/target/test-data
 TEST_ENV = RAWMAKASE_DATA_DIR="$(TEST_DATA)" XDG_DATA_HOME="$(TEST_DATA)"
+# The tests build every target but the examples, which only link the app again
+# (clippy --all-targets checks them), and the doctests run after them, as in CI.
+TEST_TARGETS = --lib --bins --tests
 
 check: check-python check-tools check-msrv
 	rm -rf -- "$(TEST_DATA)" && mkdir -p -- "$(TEST_DATA)"
@@ -60,11 +63,15 @@ check: check-python check-tools check-msrv
 	cargo fmt --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
 	cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
-	$(TEST_ENV) cargo test --locked -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export
+	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export
+	$(TEST_ENV) cargo test --locked --doc -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export
 	cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi -- -D warnings
-	$(TEST_ENV) cargo test --locked -p rawmakase-model --all-features
-	$(TEST_ENV) cargo test --locked -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
-	$(TEST_ENV) cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-inference -p rawmakase-selection -p rawmakase-model-install -p rawmakase-ai-masks -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
+	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase-model --all-features
+	$(TEST_ENV) cargo test --locked --doc -p rawmakase-model --all-features
+	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
+	$(TEST_ENV) cargo test --locked --doc -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
+	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-inference -p rawmakase-selection -p rawmakase-model-install -p rawmakase-ai-masks -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
+	$(TEST_ENV) cargo test --locked --doc -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-inference -p rawmakase-selection -p rawmakase-model-install -p rawmakase-ai-masks -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
 	RUSTDOCFLAGS="-D warnings -A rustdoc::private_intra_doc_links" cargo doc --workspace --all-features --no-deps --locked --document-private-items
 
 check-msrv:

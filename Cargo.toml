@@ -188,7 +188,7 @@ windows-core = "0.62"
 
 # The model's fixtures, for the app's tests.
 [dev-dependencies]
-rawmakase-catalog = { path = "crates/rawmakase-catalog", version = "0.1.0", features = ["test-support"] }
+rawmakase-catalog = { path = "crates/rawmakase-catalog", version = "0.1.0", features = ["test-support", "unsynced-commits"] }
 rawmakase-decode = { path = "crates/rawmakase-decode", version = "0.1.0", features = ["test-support"] }
 rawmakase-denoise = { path = "crates/rawmakase-denoise", version = "0.1.0", features = ["test-support"] }
 rawmakase-engine = { path = "crates/rawmakase-engine", version = "0.1.0", features = ["test-support"] }

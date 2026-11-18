@@ -69,12 +69,21 @@ fn adobe_profile_parity_does_not_regress() {
         })
         .collect();
     assert!(!references.is_empty(), "No references in {}", dir.display());
+    let (layout, cases) = (Layout::new(), cases());
     check_parity(
         "Adobe Standard",
         &references,
         &dir.join("baseline.json"),
-        &[("CameraProfile", "Adobe Standard")],
-        imported_profiles,
+        |chart, only| {
+            render_chart(
+                chart,
+                &layout,
+                &cases,
+                &[("CameraProfile", "Adobe Standard")],
+                imported_profiles,
+                Some(only),
+            )
+        },
     );
 }
 

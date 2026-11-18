@@ -105,10 +105,11 @@ impl Db {
         // fault is an in-process panic, so a commit only has to reach the
         // operating system. `synchronous=FULL` (SQLite's default, and what a
         // shipping catalog uses below) flushes every statement; on NTFS that
-        // flush is most of the Windows fault-matrix time. `cfg(test)` is off
-        // when this crate is compiled as a dependency, so the app's tests
-        // and the shipping binary stay `FULL`.
-        #[cfg(test)]
+        // flush is most of the Windows fault-matrix time, and of the app's
+        // tests that build catalogs, which turn on `unsynced-commits` as a
+        // dev-dependency feature. A shipping build has neither and stays
+        // `FULL`.
+        #[cfg(any(test, feature = "unsynced-commits"))]
         db.execute_batch("PRAGMA synchronous=OFF;")?;
         db.execute_batch(&format!(
             "PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={NEWEST};"
@@ -134,11 +135,11 @@ impl Db {
             "Unsupported RAWmakase catalog version; file left unchanged"
         );
         db.busy_timeout(Duration::from_secs(5))?;
-        // See `create`: this crate's unit tests skip the durability flush.
-        // Split so a shipping open cannot compile the OFF pragma.
-        #[cfg(test)]
+        // See `create`: tests skip the durability flush. Split so a shipping
+        // open cannot compile the OFF pragma.
+        #[cfg(any(test, feature = "unsynced-commits"))]
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=OFF;")?;
-        #[cfg(not(test))]
+        #[cfg(not(any(test, feature = "unsynced-commits")))]
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")?;
         Ok(Self {
             backend: Backend::Sqlite(db),

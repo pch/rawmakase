@@ -50,7 +50,7 @@ directories = "6"
 [dev-dependencies]
 # An independent decoder for JPEG XL exports.
 jxl-oxide = { version = "0.12.6", default-features = false }
-rawmakase-catalog = { path = "../rawmakase-catalog", version = "0.1.0", features = ["test-support"] }
+rawmakase-catalog = { path = "../rawmakase-catalog", version = "0.1.0", features = ["test-support", "unsynced-commits"] }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
 # Fingerprints of the recorded sRGB exports.
