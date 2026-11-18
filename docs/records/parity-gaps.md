@@ -16,6 +16,118 @@ These controls were fitted to Camera Raw renders and match within the default-re
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the colour curves was not checked; here they set the RGB curve only.
 - **Auto** tone is fitted to Lightroom Classic's own Auto values, from 452 Auto Settings steps on 439 catalog photos with every fifth photo held out; each slider is a linear fit of one or two display-encoded percentiles of luminance, of the brightest channel or of chroma, and the held-out error is a median 1 step on Contrast and 0.21 EV on Exposure. Lightroom changed Auto in mid-2019 and the catalog's history shows both versions, so the slopes are fitted on every photo and the levels, Contrast, Vibrance and Saturation on the current Auto alone. The WB menu's Auto white balance is fitted to Lightroom's Auto values (a median of 2.7 mired off on 133 photos); see [tone controls](../tone-controls.md#auto).
 
+### What is left of Shadows, Highlights and Whites, and what more training photos buy (2026-11-18)
+
+After #1128 and #1153 the open tone items were gone through again in the order of
+their error, with five bounded measurements on the training photos. None of the cheap
+causes holds: the errors left at full sliders are scatter between photos, not a bias,
+and the one thing that reduces it is more photos to fit on. Camera Raw 18.7 through a
+linear profile at 1024 px, 122 to 228 training photos; nothing fitted on validation,
+holdout untouched.
+
+**The error by setting**, from the stored validation runs (the builds of #1153 and
+#1128 for the sets they change, the 2026-11-12 baseline for the rest, so the Blacks rows
+predate #1068). The control's own ΔE00 (the default render's error carried over),
+median over photos, with the 90th percentile and the share of photos over 2:
+
+| Setting | Own | p90 | Over 2 |
+| --- | --- | --- | --- |
+| Dehaze −100 / −50 / +100 | 6.56 / 2.92 / 2.23 | 13.6 / 5.3 / 4.8 | 96% / 72% / 57% |
+| Clarity +100 | 1.94 | 3.1 | 48% |
+| Exposure −1 with Whites +100 | 1.55 | 3.8 | 43% |
+| Shadows +100 | 1.32 | 3.4 | 23% |
+| Whites +100 | 1.01 | 3.1 | 25% |
+| Shadows +50 | 0.54 | 1.2 | 2% |
+| Shadows +50 with Highlights −50 | 0.54 | 1.0 | 2% |
+| Shadows −100 | 0.49 | 1.2 | 0% |
+| Highlights +100 | 0.46 | 1.1 | 2% |
+| Highlights −100 | 0.42 | 0.9 | 2% |
+| Whites +50 | 0.15 | 0.6 | 2% |
+
+Among Shadows, Highlights, Whites and Blacks that leaves positive Shadows and Whites
++100. Shadows +100's own error is spread over every tone under L\* 70 (2.3 to 2.5 ΔE00
+pooled in each band from 10 to 60); its lightness bias is +1.1 L\* under 20, +0.5 from
+20 to 40 and −0.1 to −0.9 from 40 to 70, a small part of it.
+
+**The default black's key under positive Shadows: half of the deep-shadow bias, a
+twentieth of the error.** The key follows positive Shadows by the gain's median over
+the map and negative Shadows by the gain on the darkest levels. On six photos the first
+is 0.16 to 1.2 stop at +100 and the second 2.0 to 2.8. A test build moved the key by a
+share of the difference (228 photos, Shadows +100; the RMS of cube-root differences
+against Camera Raw, and the lift of the 32-pixel level less Camera Raw's, by stops under
+the top):
+
+| Key follows | Median | Mean | p90 | Bias 4–5 / 6–8 / 8–10 stops down | Photos closer / further |
+| --- | --- | --- | --- | --- | --- |
+| The median gain (main) | 0.0109 | 0.0135 | 0.0236 | +0.12 / +0.33 / +0.51 | |
+| A quarter of the way | 0.0106 | 0.0132 | 0.0231 | +0.11 / +0.30 / +0.47 | 72 / 7 |
+| Half way | 0.0103 | 0.0130 | 0.0227 | +0.09 / +0.26 / +0.41 | 98 / 14 |
+| The darkest levels' gain | 0.0105 | 0.0130 | 0.0223 | +0.05 / +0.17 / +0.24 | 98 / 35 |
+
+The spread between photos at those depths (0.2 to 0.7 stop RMS) hardly moves. Not a
+change on its own; it belongs to a refit of the first ensemble, whose deep targets would
+have to be taken through the same key.
+
+**The level positive Whites stretches toward: right for most photos.** Whites +100 was
+rendered with the level (twice the luminance's 99th percentile, at most the sensor's
+white) moved by −1, −0.5, +0.5 and +1 stop (122 photos). The error is steep in it:
+0.128, 0.063, 0.0115, 0.055 and 0.103 at the five levels (median). Each photo's best
+offset is +0.01 at the median, with quartiles −0.04 and +0.09 and tenths −0.33 and
++0.25, and the best level less each percentile has its smallest spread at the 99th
+(0.42 stop; 0.49 at the 98th, 0.81 at the 99.5th, 1.41 at the maximum). The misses are
+photos with a steep top:
+
+| 99th less 98th percentile | Photos | Best offset, median | Main, mean | Best of the five, mean |
+| --- | --- | --- | --- | --- |
+| under 0.6 stop | 97 | −0.02 to +0.05 | 0.0147–0.0188 | 0.0142–0.0178 |
+| 0.6 to 1.2 | 15 | 0.00 (lower quartile −0.43) | 0.0229 | 0.0126 |
+| over 1.2 | 10 | −0.69 | 0.0496 | 0.0218 |
+
+Of the twelve photos that need the level a third of a stop or more lower, five have
+0.3 to 1.6% of their pixels on a clipped plateau at the sensor's white. Taking the
+percentile over the pixels under the sensor's white moves four photos by more than a
+quarter stop, three closer and one further (mean 0.0209 → 0.0193, 90th percentile
+0.0507 → 0.0479, read off the five rendered levels). Lower percentiles with a larger
+offset (the 98th, 97th or 95th, alone or as a limit on the 99th) make the bulk worse
+(6 to 12 photos closer, 6 to 67 further). The other seven have no plateau in the
+engine's luminance. Not changed: the gain is under a tenth and a rule for the tail
+needs more photos than 25.
+
+**Whites with Exposure: the level moves with Exposure as Camera Raw's does.** Camera Raw
+at Exposure −1 and +1, alone and with Whites +100 (122 photos). The gain of Whites +100
+in the mid-tones, two to five stops under the top, is 1.30 stop in Camera Raw and 1.38
+in RAWmakase at Exposure 0, 2.11 and 2.18 at −1, 0.59 and 0.60 at +1. Its change with
+Exposure is +0.855 stop in Camera Raw and +0.843 in RAWmakase at −1, −0.716 and −0.720
+at +1. What grows at Exposure −1 is the scatter between photos (the gain's difference
+is 0.31 stop RMS at 0, 0.42 at −1 and 0.18 at +1), which is why Exposure −1 with Whites
++100 is the worst of the Whites cases on validation: the same per-photo error of the
+level under a larger stretch.
+
+**The curve's shape near the top: no difference at the median.** The output of Whites
++100 by the default render's luminance, in quarter stops from five stops under white:
+RAWmakase less Camera Raw is within 0.03 stop at the median of the photos at every
+level, and −0.04 to −0.06 at the mean between 3.5 and 1.75 stops under white, the same
+tail of photos. Camera Raw has a channel at white on 19.6% of the pixels at Whites +100
+and RAWmakase on 15.4%.
+
+**More photos.** The second ensemble's method, fitted on a share of the training folds'
+photos and scored on the held-out fold (four folds of 213 photos; the 436 mosaics
+always in; RMS of the gain over a photo's pixels in stops, median and mean over photos):
+
+| Photos | Shadows +100 | Highlights −100 | Shadows −100 | Highlights +100 |
+| --- | --- | --- | --- | --- |
+| 0 | 0.288 (0.499) | 0.170 (0.840) | 0.342 (0.533) | 0.178 (0.241) |
+| 40 | 0.229 (0.310) | 0.161 (0.215) | 0.267 (0.347) | 0.156 (0.189) |
+| 80 | 0.208 (0.265) | 0.146 (0.198) | 0.239 (0.306) | 0.148 (0.178) |
+| 120 | 0.195 (0.256) | 0.140 (0.183) | 0.223 (0.292) | 0.138 (0.170) |
+| 160 | 0.184 (0.244) | 0.144 (0.181) | 0.215 (0.279) | 0.136 (0.168) |
+
+Shadows of both signs still improves by a tenth for each doubling at 160 photos;
+Highlights by 1 to 8%. The dataset holds about 790 more in-scope photos of
+the train split that the rule has not seen (421 from raw.pixls.us, 342 from Signature
+Edits, 26 others). They are being rendered in Camera Raw at the rule's settings and at
+Whites +100; a refit of both ensembles on them is the next candidate.
+
 ### Negative Shadows and positive Highlights by the global rule (2026-11-17)
 
 Shadows, Highlights, Whites and Blacks come before Dehaze and Clarity. This section
