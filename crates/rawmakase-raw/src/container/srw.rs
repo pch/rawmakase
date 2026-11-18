@@ -224,7 +224,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [left, top, info.width, info.height],
         black: plan.black,
         black_pattern: (0, 0, Vec::new()),
@@ -322,7 +322,7 @@ mod tests {
             (info.make.as_str(), info.model.as_str()),
             ("Samsung", "NX-TEST")
         );
-        assert_eq!(s.data, [0x123, 0x456, 0x789, 0xabc]);
+        assert_eq!(s.data.u16s(), [0x123, 0x456, 0x789, 0xabc]);
         assert_eq!(info.cam_mul, [8192., 4096., 6144., 4096.]);
         // A D65 preset of red and blue below a quarter of green is on a
         // scale of 256.
@@ -331,7 +331,7 @@ mod tests {
         // Three samples a pixel: little-endian 3-byte words, pairs swapped.
         let file = srw([2, 2], [32770, 12, 3], &strip, vec![], &note(0));
         let (_, s) = decode(&file).unwrap();
-        assert_eq!(s.data, [0x412, 0x563, 0xa78, 0xbc9]);
+        assert_eq!(s.data.u16s(), [0x412, 0x563, 0xa78, 0xbc9]);
     }
 
     #[test]
@@ -340,11 +340,11 @@ mod tests {
         let words = longs(Order::Little, &[0x0004_0002, 0x0008_0006]);
         let (info, s) = decode(&srw([2, 2], [32769, 12, 1], &words, vec![], &note(0))).unwrap();
         assert_eq!(info.variant, Variant::SrwUnpacked);
-        assert_eq!(s.data, [1, 2, 3, 4]);
+        assert_eq!(s.data.u16s(), [1, 2, 3, 4]);
         // Huffman: "1111" (2 bits) then "11": +3 for every sample.
         let (info, s) = decode(&srw([4, 1], [32772, 12, 1], &[0xff; 8], vec![], &note(0))).unwrap();
         assert_eq!(info.variant, Variant::SrwHuffman);
-        assert_eq!(s.data, [3, 3, 6, 6]);
+        assert_eq!(s.data.u16s(), [3, 3, 6, 6]);
         // Tiles: options 7, all codes zero: mode 7, widths 7 (the first
         // rows), differences 0: the initial value everywhere.
         let mut tiles = vec![0u8; 16];
@@ -353,7 +353,7 @@ mod tests {
         tiles.extend([0; 64]);
         let (info, s) = decode(&srw([16, 1], [32773, 12, 1], &tiles, vec![], &note(0))).unwrap();
         assert_eq!(info.variant, Variant::SrwTiles);
-        assert!(s.data.iter().all(|&v| v == 1000));
+        assert!(s.data.u16s().iter().all(|&v| v == 1000));
     }
 
     #[test]
@@ -368,7 +368,7 @@ mod tests {
         let file = srw([64, 2], [32770, 12, 1], &strip, more, &note(0));
         let (info, s) = decode(&file).unwrap();
         assert_eq!(info.variant, Variant::SrwBlocks);
-        assert!(s.data.iter().all(|&v| v == 128));
+        assert!(s.data.u16s().iter().all(|&v| v == 128));
     }
 
     #[test]
@@ -408,7 +408,7 @@ mod tests {
         let file = srw([800, 1], [32773, 14, 1], &data, vec![], &note(0));
         let (info, s) = decode(&file).unwrap();
         assert_eq!(info.variant, Variant::SrwTiles);
-        assert!(s.data.iter().all(|&v| v <= 16383));
+        assert!(s.data.u16s().iter().all(|&v| v <= 16383));
     }
 
     #[test]

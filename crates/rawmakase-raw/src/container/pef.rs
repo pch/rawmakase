@@ -218,7 +218,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [left, top, info.width, info.height],
         black: plan.black,
         black_pattern: (0, 0, Vec::new()),
@@ -326,7 +326,7 @@ pub(crate) mod tests {
             (info.make.as_str(), info.model.as_str()),
             ("Pentax", "K-TEST")
         );
-        assert_eq!(&s.data[..4], &[3, 1, 3, 1]);
+        assert_eq!(&s.data.u16s()[..4], &[3, 1, 3, 1]);
         assert_eq!(info.lens_id, 7 * 256 + 222);
         // EXIF's 400 over the note's ISO code 13 (500), as Adobe takes it.
         assert_eq!(info.iso, 400.);
@@ -379,7 +379,7 @@ pub(crate) mod tests {
         ))
         .unwrap();
         assert_eq!(info.variant, Variant::PefPacked);
-        assert_eq!(s.data, [0x123, 0x456, 0x789, 0xabc]);
+        assert_eq!(s.data.u16s(), [0x123, 0x456, 0x789, 0xabc]);
         // A Samsung body's note is read, but not its crop.
         assert_eq!(info.cam_mul, [2., 1., 3., 1.]);
         assert_eq!(info.frame[2], 0);
@@ -394,7 +394,7 @@ pub(crate) mod tests {
         ))
         .unwrap();
         assert_eq!(info.variant, Variant::PefUnpacked);
-        assert_eq!(s.data, [1, 2, 3, 4]);
+        assert_eq!(s.data.u16s(), [1, 2, 3, 4]);
     }
 
     #[test]

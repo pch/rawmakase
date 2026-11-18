@@ -426,7 +426,7 @@ mod tests {
         let height = samples.len() as u32 / width;
         let short = |v: u16| v.to_le_bytes().to_vec();
         let long = |v: u32| v.to_le_bytes().to_vec();
-        let mut entries: Vec<(u16, u16, u32, Vec<u8>)> = vec![
+        let entries: Vec<(u16, u16, u32, Vec<u8>)> = vec![
             (254, 4, 1, long(0)),
             (256, 4, 1, long(width)),
             (257, 4, 1, long(height)),
@@ -443,13 +443,25 @@ mod tests {
             (50714, 3, 1, short(220)),
             (50717, 3, 1, short(16383)),
         ];
+        let data: Vec<u8> = samples.iter().flat_map(|v| v.to_le_bytes()).collect();
+        dng_file(entries, data, "monochrome.dng")
+    }
+
+    /// A little-endian DNG of IFD0's `entries` (tag, type, count, value;
+    /// sorted by tag) and the one strip `data`, its offset written into
+    /// entry 273, in a closed file named `name`.
+    fn dng_file(
+        mut entries: Vec<(u16, u16, u32, Vec<u8>)>,
+        data: Vec<u8>,
+        name: &str,
+    ) -> (tempfile::TempDir, std::path::PathBuf) {
+        let short = |v: u16| v.to_le_bytes().to_vec();
+        let long = |v: u32| v.to_le_bytes().to_vec();
         let ifd_len = 2 + 12 * entries.len() + 4;
         let mut data_at = 8 + ifd_len;
-        let mut data = Vec::new();
         for (tag, _, _, value) in &mut entries {
             if *tag == 273 {
-                *value = long((data_at + data.len()) as u32);
-                data.extend(samples.iter().flat_map(|v| v.to_le_bytes()));
+                *value = long(data_at as u32);
             }
         }
         let mut bytes = b"II*\0".to_vec();
@@ -472,9 +484,77 @@ mod tests {
         bytes.extend(data);
         bytes.extend(values);
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("monochrome.dng");
+        let path = dir.path().join(name);
         std::fs::write(&path, bytes).unwrap();
         (dir, path)
+    }
+
+    /// An HDR merge's floating-point linear raw (camera RGB under a
+    /// WhiteLevel of 32768, as Lightroom writes it) develops with its 24
+    /// stops intact: each pixel its samples over white, white balanced,
+    /// however far below white, where 16-bit levels ended 16 stops down.
+    #[test]
+    fn floating_point_linear_raw_develops_24_stops() {
+        let short = |v: u16| v.to_le_bytes().to_vec();
+        let shorts = |v: &[u16]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+        let long = |v: u32| v.to_le_bytes().to_vec();
+        let srationals = |v: &[i32]| {
+            v.iter()
+                .flat_map(|n| [n.to_le_bytes(), 10000i32.to_le_bytes()].concat())
+                .collect::<Vec<u8>>()
+        };
+        let width = 25u32;
+        let samples: Vec<f32> = (0..width as i32)
+            .flat_map(|i| {
+                let v = 2f32.powi(15 - i) * (1. + (i * 37 % 1024) as f32 / 1024.);
+                [v, v * 0.25, v * 0.5]
+            })
+            .collect();
+        let entries = vec![
+            (254, 4, 1, long(0)),
+            (256, 4, 1, long(width)),
+            (257, 4, 1, long(1)),
+            (258, 3, 3, shorts(&[32; 3])),
+            (259, 3, 1, short(1)),
+            (262, 3, 1, short(34892)),
+            (271, 2, 6, b"Maker\0".to_vec()),
+            (272, 2, 6, b"Model\0".to_vec()),
+            (273, 4, 1, Vec::new()),
+            (277, 3, 1, short(3)),
+            (278, 4, 1, long(1)),
+            (279, 4, 1, long(width * 12)),
+            (339, 3, 3, shorts(&[3; 3])),
+            (50706, 1, 4, vec![1, 4, 0, 0]),
+            (50717, 3, 3, shorts(&[32768; 3])),
+            (
+                50721,
+                10,
+                9,
+                srationals(&[10000, 0, 0, 0, 10000, 0, 0, 0, 10000]),
+            ),
+            (50778, 3, 1, short(21)),
+        ];
+        let data: Vec<u8> = samples.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let (_dir, path) = dng_file(entries, data, "merged.dng");
+        let raw = super::open(&path).unwrap();
+        let wb = raw.metadata.wb;
+        let im = raw
+            .develop(
+                rawmakase_model::camera_data::Decode::Full(Default::default()),
+                Cancel::NEVER,
+            )
+            .unwrap();
+        assert_eq!((im.width, im.height), (width, 1));
+        for (i, (p, s)) in im.pixels.iter().zip(samples.chunks(3)).enumerate() {
+            for c in 0..3 {
+                let want = s[c] / 32768. * wb[c];
+                assert!(
+                    (p[c] - want).abs() <= want * 1e-6,
+                    "pixel {i}, channel {c}: {} for {want}",
+                    p[c]
+                );
+            }
+        }
     }
 
     /// A monochrome DNG develops as grey, its one sample every channel's (a

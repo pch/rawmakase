@@ -5,7 +5,7 @@
 use super::{Cfa, Header, Sensor};
 use anyhow::{Result, ensure};
 use rawmakase_cancel::Cancel;
-use rawmakase_raw::RawInfo;
+use rawmakase_raw::{RawInfo, SensorData};
 use rayon::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
@@ -92,7 +92,9 @@ impl Own {
         );
         Ok(s)
     }
-    /// The sensor data as fingerprints describe it.
+    /// The sensor data as fingerprints describe it: the visible area's
+    /// samples hashed as little-endian bytes (two a sample, four for
+    /// floating-point ones).
     pub(super) fn sensor(&self) -> Result<Sensor> {
         use sha2::Digest;
         let s = self.decode(Cancel::NEVER)?;
@@ -100,11 +102,14 @@ impl Own {
         let [left, top, w, h] = s.area.map(|v| v as usize);
         let pitch = s.width as usize * channels;
         let mut hash = sha2::Sha256::new();
-        let mut bytes = Vec::with_capacity(w * channels * 2);
+        let mut bytes = Vec::with_capacity(w * channels * 4);
+        let row = |y: usize| y * pitch + left * channels..y * pitch + (left + w) * channels;
         for y in top..top + h {
-            let row = &s.data[y * pitch + left * channels..y * pitch + (left + w) * channels];
             bytes.clear();
-            bytes.extend(row.iter().flat_map(|v| v.to_le_bytes()));
+            match &s.data {
+                SensorData::U16(d) => bytes.extend(d[row(y)].iter().flat_map(|v| v.to_le_bytes())),
+                SensorData::F32(d) => bytes.extend(d[row(y)].iter().flat_map(|v| v.to_le_bytes())),
+            }
             hash.update(&bytes);
         }
         let pattern = match &self.info.cfa {
@@ -155,14 +160,18 @@ impl Own {
             "Sensor data that is neither a mosaic nor RGB"
         );
         let [left, top, w, h] = s.area.map(|v| v as usize);
-        let rows: Vec<&[u16]> = (top..top + h)
-            .map(|y| {
-                let start = (y * s.width as usize + left) * s.channels as usize;
-                &s.data[start..start + w * s.channels as usize]
-            })
-            .collect();
         let wb = if self.info.balanced { [1.; 3] } else { wb };
-        let pixels = super::develop_rgb(&rows, s.channels as usize, s.black, s.white, wb);
+        let channels = s.channels as usize;
+        let pixels = match &s.data {
+            SensorData::U16(d) => {
+                let rows = visible_rows(d, &s, [left, top, w, h]);
+                super::develop_rgb(&rows, channels, s.black, s.white, wb)
+            }
+            SensorData::F32(d) => {
+                let rows = visible_rows(d, &s, [left, top, w, h]);
+                super::develop_rgb(&rows, channels, s.black, s.white, wb)
+            }
+        };
         Ok(Some((w as u32, h as u32, pixels)))
     }
     /// Where red sits in the visible mosaic's 2 × 2 period (`[x, y]`), when AI Denoise's
@@ -239,6 +248,19 @@ impl Own {
     }
 }
 
+/// The rows of the visible area `[left, top, width, height]` of `data`, the
+/// samples of `s`.
+fn visible_rows<'a, T>(data: &'a [T], s: &rawmakase_raw::Sensor, area: [usize; 4]) -> Vec<&'a [T]> {
+    let [left, top, w, h] = area;
+    let channels = s.channels as usize;
+    (top..top + h)
+        .map(|y| {
+            let start = (y * s.width as usize + left) * channels;
+            &data[start..start + w * channels]
+        })
+        .collect()
+}
+
 /// The visible area of one-sample sensor data `s` as development reads it:
 /// (raw − black) / (white − black), negative below black (noise is clipped only
 /// after demosaicing, where interpolated samples carry less of it), each sample's black that of
@@ -258,14 +280,26 @@ fn visible(s: &rawmakase_raw::Sensor, channel: impl Fn(usize, usize) -> usize + 
     };
     let white = s.white as f32;
     let mut data = vec![0f32; w * h];
+    let level = |y: usize, x: usize, v: f32| {
+        let mut black = s.black[channel(y, x)] as f32;
+        black += pattern_black(y, x) as f32;
+        (v - black) / (white - black).max(1.)
+    };
     data.par_chunks_mut(w.max(1))
         .enumerate()
         .for_each(|(y, row)| {
-            let src = &s.data[(y + top) * s.width as usize + left..][..w];
-            for (x, (dst, &v)) in row.iter_mut().zip(src).enumerate() {
-                let mut black = s.black[channel(y, x)] as f32;
-                black += pattern_black(y, x) as f32;
-                *dst = (f32::from(v) - black) / (white - black).max(1.);
+            let at = (y + top) * s.width as usize + left;
+            match &s.data {
+                SensorData::U16(d) => {
+                    for (x, (dst, &v)) in row.iter_mut().zip(&d[at..at + w]).enumerate() {
+                        *dst = level(y, x, f32::from(v));
+                    }
+                }
+                SensorData::F32(d) => {
+                    for (x, (dst, &v)) in row.iter_mut().zip(&d[at..at + w]).enumerate() {
+                        *dst = level(y, x, v);
+                    }
+                }
             }
         });
     data

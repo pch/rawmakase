@@ -184,7 +184,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [0, 0, info.width, info.height],
         black: [0; 4],
         black_pattern: (0, 0, Vec::new()),
@@ -250,7 +250,7 @@ mod tests {
         assert_eq!(info.cam_mul, [2., 1., 1.5, 1.]);
         assert_eq!(info.presets.daylight, [98304., 65536., 131072.]);
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
-        assert!(s.data.chunks(2).all(|p| p == [0x123, 0x456]));
+        assert!(s.data.u16s().chunks(2).all(|p| p == [0x123, 0x456]));
         // Another setting: the as-shot levels.
         assert_eq!(crate::open(&kdc(&data, 9)).unwrap().cam_mul, [1.; 4]);
         assert_eq!(

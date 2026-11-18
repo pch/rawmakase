@@ -141,7 +141,7 @@ pub(crate) fn decode(
         width,
         height,
         channels: 1,
-        data,
+        data: data.into(),
         area,
         black,
         black_pattern: (0, 0, Vec::new()),
@@ -173,7 +173,7 @@ mod tests {
         assert_eq!((info.raw_width, info.raw_height), (2672, 1968));
         assert_eq!(info.margins, [12, 8]);
         let sensor = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
-        assert!(sensor.data.iter().all(|&v| v == 0x155));
+        assert!(sensor.data.u16s().iter().all(|&v| v == 0x155));
         assert_eq!(sensor.black, [0x155; 4]);
         assert_eq!(sensor.white, 1023);
         // One byte more or less is no known file.
@@ -198,14 +198,14 @@ mod tests {
         );
         assert_eq!((info.width, info.height), (2324, 1737));
         let s = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
-        assert_eq!(&s.data[..4], &[0x123, 0x456, 0x123, 0x456]);
-        assert_eq!(s.data[2346], 0x123);
+        assert_eq!(&s.data.u16s()[..4], &[0x123, 0x456, 0x123, 0x456]);
+        assert_eq!(s.data.u16s()[2346], 0x123);
         assert_eq!((s.black, s.white), ([0; 4], 3968));
         // 10-bit samples in the top bits of 16-bit little-endian words.
         let bytes = [0xc0u8, 0xff].repeat(12_000_000);
         let info = crate::open(&bytes).unwrap();
         let s = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
-        assert!(s.data.iter().all(|&v| v == 1023));
+        assert!(s.data.u16s().iter().all(|&v| v == 1023));
         assert_eq!(s.white, 992);
         assert_eq!(
             crate::decode(&info, &bytes, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
@@ -221,7 +221,7 @@ mod tests {
         let info = crate::open(&bytes).unwrap();
         assert_eq!((info.make.as_str(), info.model.as_str()), ("Kodak", "C603"));
         let s = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
-        assert!(s.data.iter().all(|&v| v == 198));
+        assert!(s.data.u16s().iter().all(|&v| v == 198));
         assert_eq!((s.black, s.white), ([0; 4], 65535));
         // A "CFAI" file: a 3160-byte header whose curve at byte 168 is the
         // code times 4, top 1020.
@@ -233,7 +233,7 @@ mod tests {
         bytes.extend((0..2864 * 2152).map(|i| (i % 256) as u8));
         let info = crate::open(&bytes).unwrap();
         let s = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
-        assert_eq!(&s.data[..3], &[0, 4, 8]);
+        assert_eq!(&s.data.u16s()[..3], &[0, 4, 8]);
         assert_eq!(s.white, 1020);
         assert_eq!(
             crate::decode(&info, &bytes, Cancel::new(&AtomicBool::new(true))).unwrap_err(),

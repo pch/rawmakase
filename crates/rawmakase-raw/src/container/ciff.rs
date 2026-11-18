@@ -384,7 +384,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area,
         black,
         black_pattern: (0, 0, Vec::new()),
@@ -495,7 +495,7 @@ mod tests {
         let sensor = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
         // The 10-bit values, then their low bits, four to a byte.
         assert_eq!(
-            &sensor.data[..4],
+            &sensor.data.u16s()[..4],
             &[517 << 2, 513 << 2 | 1, 510 << 2 | 2, 513 << 2 | 3]
         );
         assert_eq!(sensor.white, 4095);

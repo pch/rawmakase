@@ -42,7 +42,7 @@ pub use partial::{
     PartialHeader, PartialPreview, header_from_file, largest_preview_from_file, preview_from_file,
 };
 pub use preview::{NoPreview, is_jpeg_xl};
-pub use sensor::Sensor;
+pub use sensor::{Sensor, SensorData};
 pub use variant::Variant;
 
 /// Synthetic High Efficiency codestreams, for other crates' tests.

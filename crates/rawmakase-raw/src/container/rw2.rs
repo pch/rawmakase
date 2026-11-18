@@ -267,7 +267,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [left, top, info.width, info.height],
         black: plan.black,
         black_pattern: (0, 0, Vec::new()),
@@ -417,14 +417,14 @@ pub(crate) mod tests {
         let file = rw2(&header(4, 12, [28, 2]), &rotated(&logical));
         let info = crate::open(&file).unwrap();
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
-        assert_eq!(&s.data[..4], &[0x123, 0x124, 0x123, 0x124]);
-        assert_eq!(s.data[14..16], [0x456, 0x457]);
-        assert_eq!(s.data[55], 0x9ac);
+        assert_eq!(&s.data.u16s()[..4], &[0x123, 0x124, 0x123, 0x124]);
+        assert_eq!(s.data.u16s()[14..16], [0x456, 0x457]);
+        assert_eq!(s.data.u16s()[55], 0x9ac);
         // Format 3 is not rotated.
         let file = rw2(&header(3, 12, [28, 2]), &logical);
         let info = crate::open(&file).unwrap();
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
-        assert_eq!(s.data[28..30], [0x789, 0x78a]);
+        assert_eq!(s.data.u16s()[28..30], [0x789, 0x78a]);
         assert_eq!(s.black[0], 115);
         // White is the range over the green level (0x25) by 256: 4095 ·
         // 256 / 264 = 3970.9.
@@ -451,7 +451,7 @@ pub(crate) mod tests {
         assert_eq!(info.variant, crate::Variant::Rw2PackedRotated);
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         let want: [u16; 10] = std::array::from_fn(|i| 0x800 + i as u16);
-        assert_eq!(s.data[..10], want);
+        assert_eq!(s.data.u16s()[..10], want);
         // Raw format 5 records black as it is.
         assert_eq!(s.black, [100, 101, 102, 101]);
     }
@@ -465,7 +465,7 @@ pub(crate) mod tests {
         let info = crate::open(&file).unwrap();
         assert_eq!(info.variant, crate::Variant::Rw2Seeded);
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
-        assert_eq!(s.data, [985, 1985].repeat(6)[..11]);
+        assert_eq!(s.data.u16s(), &[985, 1985].repeat(6)[..11]);
         // Black as the tags say; white 1/256 of the range below it.
         assert_eq!(s.black, [100, 101, 102, 101]);
         assert_eq!(s.white, 16383 - 64);
@@ -487,9 +487,9 @@ pub(crate) mod tests {
         assert_eq!(info.variant, crate::Variant::Rw2Packed);
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         let row: [u16; 9] = std::array::from_fn(|i| 0x2000 + i as u16);
-        assert_eq!(s.data[..36], row.repeat(4));
+        assert_eq!(s.data.u16s()[..36], row.repeat(4));
         // Read in whole groups of four rows: the fifth is 0.
-        assert_eq!(s.data[36..], [0; 9]);
+        assert_eq!(s.data.u16s()[36..], [0; 9]);
     }
 
     /// A tag of 16-bit words: the count, then the values (low and high
@@ -557,7 +557,7 @@ pub(crate) mod tests {
         assert_eq!(info.variant, crate::Variant::Rw2Huffman);
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         // Top left 1, bottom left 2, top right 0, bottom right −1 (0).
-        assert_eq!(s.data, [1, 0, 1, 0, 2, 0, 2, 0]);
+        assert_eq!(s.data.u16s(), [1, 0, 1, 0, 2, 0, 2, 0]);
         assert_eq!(s.white, 65535);
         // Strips stacked in two rows are not decoded.
         let file = format8(2, &[2, 2], &[0, 1], &stream);
@@ -592,7 +592,7 @@ pub(crate) mod tests {
         assert_eq!(info.cam_mul, [2., 1., 1.5, 1.]);
         assert_eq!(info.presets.fine_weather, [423., 256., 363.]);
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
-        assert_eq!(s.data, [0x123, 0x456, 0x789, 0xfff]);
+        assert_eq!(s.data.u16s(), [0x123, 0x456, 0x789, 0xfff]);
         assert_eq!(s.white, 4095);
         // Raw format 2: packed 12-bit blocks, not rotated, black as tagged.
         let mut word = 0u128;
@@ -604,7 +604,7 @@ pub(crate) mod tests {
         assert_eq!(info.variant, crate::Variant::Rw2Packed);
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         let want: [u16; 10] = std::array::from_fn(|i| 0x100 + i as u16);
-        assert_eq!(s.data, want);
+        assert_eq!(s.data.u16s(), want);
         assert_eq!(s.black, [100, 101, 102, 101]);
     }
 

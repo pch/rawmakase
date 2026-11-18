@@ -376,7 +376,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels,
-        data,
+        data: data.into(),
         area: [left, top, info.width, info.height],
         black: plan.black,
         black_pattern: (0, 0, Vec::new()),
@@ -687,7 +687,7 @@ pub(crate) mod tests {
         assert_eq!(info.flip, 6);
         assert_eq!(info.frame, [2, 0, 4, 4]);
         assert_eq!(info.cam_mul, [2048., 1024., 1536., 1024.]);
-        assert_eq!(s.data, samples);
+        assert_eq!(s.data.u16s(), samples);
         // Red, green, green, blue as red, green, blue, second green.
         assert_eq!(s.black, [510, 511, 513, 512]);
         assert_eq!(s.white, 16300);
@@ -777,11 +777,11 @@ pub(crate) mod tests {
                 2000 + 4 * (c - 1000)
             }
         };
-        assert_eq!(u32::from(s.data[0]), point(1100));
-        assert_eq!(u32::from(s.data[2]), point(1000));
-        assert_eq!(u32::from(s.data[4]), point(1003));
-        assert_eq!(u32::from(s.data[1]), point(1050));
-        assert_eq!(u32::from(s.data[3]), point(1001));
+        assert_eq!(u32::from(s.data.u16s()[0]), point(1100));
+        assert_eq!(u32::from(s.data.u16s()[2]), point(1000));
+        assert_eq!(u32::from(s.data.u16s()[4]), point(1003));
+        assert_eq!(u32::from(s.data.u16s()[1]), point(1050));
+        assert_eq!(u32::from(s.data.u16s()[3]), point(1001));
         // Adobe's white for the NEX-5N.
         assert_eq!((s.black, s.white), ([512; 4], 16300));
     }
@@ -872,7 +872,7 @@ pub(crate) mod tests {
         );
         let (info, s) = decode(&file).unwrap();
         assert_eq!(info.variant, Variant::ArwLosslessJpeg);
-        assert_eq!(s.data, image);
+        assert_eq!(s.data.u16s(), image);
     }
 
     #[test]
@@ -910,7 +910,7 @@ pub(crate) mod tests {
         assert_eq!(info.variant, Variant::ArwYcbcr);
         assert!(info.sraw && info.balanced && info.cfa.is_none());
         assert_eq!((s.channels, s.black, s.white), (4, [1024; 4], 16383));
-        let pixel = |x: usize, y: usize| &s.data[(y * 4 + x) * 4..][..4];
+        let pixel = |x: usize, y: usize| &s.data.u16s()[(y * 4 + x) * 4..][..4];
         let [r, g, b] = crate::codec::sony::ycbcr_rgb(1050, 16393, 16363);
         assert_eq!(pixel(1, 1), [r, g, b, 0]);
         assert_eq!(pixel(2, 0), [1020, 1020, 1020, 0]);

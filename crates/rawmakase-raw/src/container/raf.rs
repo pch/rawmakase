@@ -531,7 +531,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [left, top, info.width, info.height],
         black: plan.black,
         black_pattern,
@@ -722,7 +722,7 @@ mod tests {
         assert_eq!(info.presets.d65, [610., 300., 420.]);
         assert_eq!(info.cfa.as_ref().unwrap().colors, vec![0, 1, 3, 2]);
         assert_eq!(info.previews[0].len, 4);
-        assert_eq!(s.data, samples);
+        assert_eq!(s.data.u16s(), samples);
         assert_eq!(s.white, 16383);
         // The black pattern (64, 64 over 65, 65) starts at the crop's row 3:
         // from the visible area's row 0, its second row comes first.
@@ -744,7 +744,7 @@ mod tests {
         let file = raf("FinePix S1000", &r, &data, 0);
         let (info, s) = decode(&file);
         assert_eq!(info.model, "S1000");
-        assert_eq!(s.data, samples);
+        assert_eq!(s.data.u16s(), samples);
         assert_eq!(s.black, [20; 4]);
         assert_eq!(info.cam_mul, [2., 1., 1.5, 1.]);
         // Vertical tiles of 2 columns (the pointer at byte 112: 4 bytes),
@@ -757,7 +757,7 @@ mod tests {
         file[112..116].copy_from_slice(&4u32.to_be_bytes());
         let (info, s) = decode(&file);
         assert_eq!(info.variant, crate::Variant::RafTiled);
-        assert_eq!(s.data, samples);
+        assert_eq!(s.data.u16s(), samples);
         // A tall Super CCD SR: rows of S then R pixels, twice the data
         // declared.
         let mut sr: Vec<u8> = Vec::new();
@@ -774,7 +774,7 @@ mod tests {
         file[112..116].copy_from_slice(&8u32.to_be_bytes());
         let (info, s) = decode(&file);
         assert_eq!(info.variant, crate::Variant::RafSuperCcdSr);
-        assert_eq!(s.data, samples);
+        assert_eq!(s.data.u16s(), samples);
         // Stored area: half the image's columns from half its offset; the
         // image turned by 45°: 2 + 3 / 2 square, less a row.
         assert_eq!(s.area, [1, 0, 3, 2]);
@@ -830,7 +830,7 @@ mod tests {
         );
         let (info, s) = decode(&file);
         assert_eq!(info.variant, crate::Variant::RafPacked);
-        assert_eq!(s.data, [0x123, 0x456, 0x789, 0xabc]);
+        assert_eq!(s.data.u16s(), [0x123, 0x456, 0x789, 0xabc]);
         // 14-bit samples most significant first in little-endian words.
         let mut e = entries(2, 1, 14);
         e.push((0xf006, vec![1]));
@@ -838,14 +838,14 @@ mod tests {
         let file = raf("X-A9", &records(false), &block(&e, &word.to_le_bytes()), 0);
         let (info, s) = decode(&file);
         assert_eq!(info.variant, crate::Variant::RafPackedWords);
-        assert_eq!(s.data, [0x1234, 0x2abc]);
+        assert_eq!(s.data.u16s(), [0x1234, 0x2abc]);
         // A row stride of 4 GB on a one-row image: no scratch row of it.
         let mut e = entries(2, 1, 14);
         e.push((0xf006, vec![1]));
         e.push((0xf005, vec![0x3fff_ffff]));
         let file = raf("X-A9", &records(false), &block(&e, &word.to_le_bytes()), 0);
         let (_, s) = decode(&file);
-        assert_eq!(s.data, [0x1234, 0x2abc]);
+        assert_eq!(s.data.u16s(), [0x1234, 0x2abc]);
         // 40000 × 40000 packed samples in 8 bytes: refused before allocating.
         let cancel = AtomicBool::new(false);
         for packing in [0, 1] {
@@ -875,7 +875,7 @@ mod tests {
         assert!(info.cfa.as_ref().unwrap().is_xtrans());
         // X-Trans: crops start on whole periods of 6.
         assert_eq!(info.frame, [6, 6, 2, 1]);
-        assert_eq!(s.data, vec![0; 780 * 6]);
+        assert_eq!(s.data.u16s(), vec![0; 780 * 6]);
         assert_eq!(s.black_pattern.0, 6);
         // 40000 × 40000 compressed samples in 16 bytes: refused before the
         // image is allocated.

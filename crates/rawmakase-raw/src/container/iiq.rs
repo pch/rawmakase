@@ -179,7 +179,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [left, top, info.width, info.height],
         black: [plan.black; 4],
         black_pattern: (0, 0, Vec::new()),
@@ -249,7 +249,7 @@ mod tests {
             ("Phase One", "IQ3 100MP")
         );
         // IIQ L of 14 bits: values times 4.
-        assert_eq!(s.data, [4, 8, 12, 16, 0xfffc, 20, 24, 28]);
+        assert_eq!(s.data.u16s(), [4, 8, 12, 16, 0xfffc, 20, 24, 28]);
         // The image area's odd left edge moves in by one.
         assert_eq!((info.margins, info.width, info.height), ([2, 0], 1, 2));
         assert_eq!(s.area, [2, 0, 1, 2]);
@@ -257,11 +257,11 @@ mod tests {
         assert_eq!((s.black, s.white), ([0; 4], 0xffff));
         // L16 keeps its values, the first IIQ S curves those below 256.
         let (_, s) = decode(&iiq("IQ3 100MP", 8, rows)).unwrap();
-        assert_eq!(s.data[..4], [1, 2, 3, 4]);
+        assert_eq!(s.data.u16s()[..4], [1, 2, 3, 4]);
         let (info, s) = decode(&iiq("IQ3 100MP", 5, rows)).unwrap();
         assert_eq!(info.variant, Variant::IiqS);
-        assert_eq!(s.data[4], 0xfffc);
-        assert_eq!(s.data[0], 0);
+        assert_eq!(s.data.u16s()[4], 0xfffc);
+        assert_eq!(s.data.u16s()[0], 0);
         // An older back's filter comes from the camera table: GRBG at the
         // sensor's corner, seen from column 2.
         let (info, _) = decode(&iiq("P45+", 3, rows)).unwrap();

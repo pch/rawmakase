@@ -213,7 +213,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [0, 0, info.width, info.height],
         black: [0; 4],
         black_pattern: (0, 0, Vec::new()),
@@ -279,7 +279,7 @@ mod tests {
         let words: Vec<u8> = samples.iter().flat_map(|v| v.to_le_bytes()).collect();
         let (info, s) = decode(&mos(1, &words, 0)).unwrap();
         assert_eq!(info.variant, Variant::MosUncompressed);
-        assert_eq!(s.data, samples);
+        assert_eq!(s.data.u16s(), samples);
         // The back type names the body, whose white the camera table gives.
         assert_eq!(
             (info.make.as_str(), info.model.as_str()),
@@ -300,15 +300,15 @@ mod tests {
         );
         // Rows_data 1: even rows first, then the odd ones bottom up.
         let (_, s) = decode(&mos(1, &words, 1)).unwrap();
-        assert_eq!(&s.data[..4], &samples[..4]);
-        assert_eq!(&s.data[4..8], &samples[8..12]);
-        assert_eq!(&s.data[8..12], &samples[12..]);
-        assert_eq!(&s.data[12..], &samples[4..8]);
+        assert_eq!(&s.data.u16s()[..4], &samples[..4]);
+        assert_eq!(&s.data.u16s()[4..8], &samples[8..12]);
+        assert_eq!(&s.data.u16s()[8..12], &samples[12..]);
+        assert_eq!(&s.data.u16s()[12..], &samples[4..8]);
         // A lossless JPEG tile of the image's rows.
         let jpeg = crate::codec::ljpeg::tests::encode(&samples, 4, 16, 1);
         let (info, s) = decode(&mos(99, &jpeg, 0)).unwrap();
         assert_eq!(info.variant, Variant::MosLosslessJpeg);
-        assert_eq!(s.data, samples);
+        assert_eq!(s.data.u16s(), samples);
     }
 
     #[test]

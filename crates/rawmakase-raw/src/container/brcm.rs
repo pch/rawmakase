@@ -233,7 +233,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [0, 0, info.width, info.height],
         black: [plan.black; 4],
         black_pattern: (0, 0, Vec::new()),
@@ -289,7 +289,7 @@ mod tests {
             ("Broadcom", "RPi IMX219")
         );
         let s = crate::decode(&info, &f, Cancel::NEVER).unwrap();
-        assert_eq!(&s.data[..8], &[4, 5, 6, 7, 4, 5, 6, 7]);
+        assert_eq!(&s.data.u16s()[..8], &[4, 5, 6, 7, 4, 5, 6, 7]);
         assert_eq!((s.black, s.white), ([66; 4], 1023));
         assert_eq!(&crate::preview(&info, &f).unwrap()[..], &f[..4]);
         assert_eq!(
@@ -346,7 +346,7 @@ mod tests {
         let info = crate::open(&f).unwrap();
         assert_eq!(info.variant, Variant::BrcmPacked);
         let s = crate::decode(&info, &f, Cancel::NEVER).unwrap();
-        assert_eq!(&s.data[..4], &[4, 5, 6, 7]);
+        assert_eq!(&s.data.u16s()[..4], &[4, 5, 6, 7]);
         assert_eq!(&crate::preview(&info, &f).unwrap()[..], &jpeg[..]);
         // A block whose rows are not in the file is none.
         assert!(!is_brcm(&f[..f.len() - 1]));

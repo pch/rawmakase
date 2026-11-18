@@ -142,7 +142,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [left, top, info.width, info.height],
         black: plan.black,
         black_pattern: (0, 0, Vec::new()),
@@ -239,7 +239,7 @@ mod tests {
         assert_eq!(info.variant, Variant::ErfPacked);
         assert_eq!(info.make, "Epson");
         assert_eq!(
-            &s.data[..],
+            s.data.u16s(),
             &[[0x123; 10].as_slice(), &[0x456, 0x456]].concat()
         );
         assert_eq!(s.black, [61, 64, 60, 63]);
@@ -257,7 +257,7 @@ mod tests {
         let file = erf("Mamiya-OP Co.,Ltd.", [2, 2], 1, &strip, vec![]);
         let (info, s) = decode(&file).unwrap();
         assert_eq!(info.variant, Variant::MefPacked);
-        assert_eq!(s.data, [0x123, 0x456, 0x789, 0xabc]);
+        assert_eq!(s.data.u16s(), [0x123, 0x456, 0x789, 0xabc]);
         let files = [
             file,
             erf("SEIKO EPSON CORP.", [12, 1], 32769, &[0x5a; 20], vec![]),
