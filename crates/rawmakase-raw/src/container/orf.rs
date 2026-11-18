@@ -304,7 +304,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [left, top, info.width, info.height],
         black: plan.black,
         black_pattern: (0, 0, Vec::new()),
@@ -414,7 +414,7 @@ mod tests {
         assert_eq!(s.white, 16383);
         assert_eq!(s.area, [0, 0, 4, 4]);
         // (The later rows decode what follows the data, the note.)
-        assert_eq!(s.data[..4], [21, 65527, 97, 65525]);
+        assert_eq!(s.data.u16s()[..4], [21, 65527, 97, 65525]);
     }
 
     #[test]
@@ -475,7 +475,7 @@ mod tests {
         let strip = crate::codec::olympus::tests::row_of_four();
         let (info, s) = decode(&orf([4, 4], 16, &strip, vec![], None)).unwrap();
         assert_eq!(info.variant, Variant::OrfCompressed);
-        assert_eq!(&s.data[..4], &[21, 65527, 97, 65525]);
+        assert_eq!(&s.data.u16s()[..4], &[21, 65527, 97, 65525]);
         assert_eq!((s.black, s.white), ([0; 4], 4095));
     }
 
@@ -502,7 +502,7 @@ mod tests {
         let file = orf([10, 2], 16, &[block.clone(), block].concat(), vec![], None);
         let (info, s) = decode(&file).unwrap();
         assert_eq!(info.variant, Variant::OrfPacked);
-        assert_eq!(&s.data[..4], &[0x200, 0x100, 0x201, 0x101]);
+        assert_eq!(&s.data.u16s()[..4], &[0x200, 0x100, 0x201, 0x101]);
         // 12-bit samples in 32-bit little-endian words, 1.5 bytes a sample.
         let words: Vec<u8> = [0x1234_5678u32, 0x9abc_def0, 0x1357_9bdf]
             .iter()
@@ -512,7 +512,7 @@ mod tests {
         let (info, s) = decode(&file).unwrap();
         assert_eq!(info.variant, Variant::OrfPacked);
         assert_eq!(
-            &s.data[..8],
+            &s.data.u16s()[..8],
             &[0x123, 0x456, 0x789, 0xabc, 0xdef, 0x013, 0x579, 0xbdf]
         );
     }
@@ -528,7 +528,10 @@ mod tests {
         let file = orf([4, 3], 12, &strip, vec![short(LE, 262, &[2])], None);
         let (info, s) = decode(&file).unwrap();
         assert_eq!(info.variant, Variant::OrfPacked);
-        assert_eq!(s.data, [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4]);
+        assert_eq!(
+            s.data.u16s(),
+            [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4]
+        );
     }
 
     #[test]
@@ -563,7 +566,7 @@ mod tests {
         let (info, s) = decode(&file).unwrap();
         assert_eq!(info.variant, Variant::OrfUnpacked);
         assert_eq!(info.normalized_model, "E-20");
-        assert_eq!(s.data, [100, 200, 300, 400]);
+        assert_eq!(s.data.u16s(), [100, 200, 300, 400]);
         assert_eq!((s.black, s.white), ([32, 33, 35, 34], 1023));
         assert_eq!(info.cam_mul, [396., 256., 368., 256.]);
     }

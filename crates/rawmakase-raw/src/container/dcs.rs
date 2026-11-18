@@ -341,7 +341,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [info.margins[0], info.margins[1], info.width, info.height],
         black: [plan.black; 4],
         black_pattern: (0, 0, Vec::new()),
@@ -420,7 +420,10 @@ mod tests {
         let info = crate::open(&file).unwrap();
         assert_eq!(info.variant, Variant::DcsLosslessJpeg);
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
-        assert_eq!(s.data, samples.iter().map(|v| v * 2).collect::<Vec<_>>());
+        assert_eq!(
+            s.data.u16s(),
+            samples.iter().map(|v| v * 2).collect::<Vec<_>>()
+        );
         // Black: the mean of the top and bottom levels, rounding up.
         assert_eq!((s.black, s.white), ([12; 4], 4095));
         // WhiteBalance 0: the Daylight levels, green over each.
@@ -443,7 +446,7 @@ mod tests {
         assert_eq!(info.variant, Variant::DcsKodak);
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         // The codes through the 1024-entry curve (doubling).
-        assert_eq!(s.data, [20, 24, 36, 42, 20, 24, 36, 42]);
+        assert_eq!(s.data.u16s(), [20, 24, 36, 42, 20, 24, 36, 42]);
         assert_eq!(
             crate::decode(&info, &file, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
             Error::Cancelled
@@ -492,7 +495,7 @@ mod tests {
             ("Kodak", "DCS460D")
         );
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
-        assert_eq!(s.data[..4], [0, 3, 6, 9]);
+        assert_eq!(s.data.u16s()[..4], [0, 3, 6, 9]);
         assert_eq!(s.white, 765);
         for end in 0..file.len() {
             if let Ok(info) = crate::open(&file[..end]) {

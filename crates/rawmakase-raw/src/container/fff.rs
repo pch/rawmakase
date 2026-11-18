@@ -186,7 +186,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [left, top, info.width, info.height],
         black: [plan.black; 4],
         black_pattern: (0, 0, Vec::new()),
@@ -260,7 +260,7 @@ mod tests {
         let words: Vec<u8> = (1u16..=8).flat_map(|v| v.to_le_bytes()).collect();
         let (info, s) = decode(&fff("Hasselblad X1D", 1, &words, false)).unwrap();
         assert_eq!(info.variant, Variant::FffUncompressed);
-        assert_eq!(s.data, [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(s.data.u16s(), [1, 2, 3, 4, 5, 6, 7, 8]);
         // Black as the file says, white as Adobe DNG Converter takes it.
         assert_eq!((s.black, s.white), ([256; 4], 62914));
         // The body's name, and its colour's from the maker note (none here).
@@ -270,7 +270,7 @@ mod tests {
         );
         let (info, s) = decode(&fff("Hasselblad X2D 100C", 7, &coded(), true)).unwrap();
         assert_eq!(info.variant, Variant::FffCompressed);
-        assert_eq!(s.data, [0x8000; 8]);
+        assert_eq!(s.data.u16s(), [0x8000; 8]);
         assert_eq!(adobe_white(32767), 31456);
     }
 

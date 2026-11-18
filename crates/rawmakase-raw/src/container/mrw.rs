@@ -250,7 +250,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [0, 0, info.width, info.height],
         black: [0; 4],
         black_pattern: (0, 0, Vec::new()),
@@ -329,7 +329,7 @@ mod tests {
         let (info, s) = decode(&mrw(0x59, 1, &packed)).unwrap();
         assert_eq!(info.variant, Variant::MrwPacked);
         assert_eq!(
-            s.data,
+            s.data.u16s(),
             [0x123, 0x456, 0x789, 0xabc, 0x111, 0x111, 0x111, 0x111]
         );
         assert_eq!((s.black, s.white), ([0; 4], 4095));
@@ -340,7 +340,7 @@ mod tests {
         let words: Vec<u8> = (1u16..=8).flat_map(|v| v.to_be_bytes()).collect();
         let (info, s) = decode(&mrw(0x52, 4, &words)).unwrap();
         assert_eq!(info.variant, Variant::MrwUnpacked);
-        assert_eq!(s.data, [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(s.data.u16s(), [1, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!(info.cam_mul, [256., 400., 256., 300.]);
     }
 

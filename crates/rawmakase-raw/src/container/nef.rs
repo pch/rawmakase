@@ -413,7 +413,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels,
-        data: samples,
+        data: samples.into(),
         area: [left, top, info.width, info.height],
         black: plan.black,
         black_pattern: (0, 0, Vec::new()),
@@ -699,7 +699,10 @@ pub(crate) mod tests {
         // The crop starts on an even column, keeping its far edge.
         assert_eq!(info.frame, [2, 0, 2, 2]);
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
-        assert_eq!(s.data, [2017, 2079, 2017, 3102, 2048, 2048, 2018, 2048]);
+        assert_eq!(
+            s.data.u16s(),
+            [2017, 2079, 2017, 3102, 2048, 2048, 2018, 2048]
+        );
         // BlackLevel is at 14 bits; the data at 12. White is Adobe's for
         // the Z 7's 12-bit files.
         assert_eq!((s.black, s.white), ([150; 4], 3880));
@@ -784,7 +787,7 @@ pub(crate) mod tests {
             assert_eq!(info.variant, Variant::NefHighEfficiency, "{model}");
             let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
             let value = crate::codec::nikon_he::tests::blank_value();
-            assert!(s.data.iter().all(|&v| v == value), "{model}");
+            assert!(s.data.u16s().iter().all(|&v| v == value), "{model}");
             // Adobe's white for both bodies' 14-bit files.
             assert_eq!((s.black, s.white), ([1008; 4], 15892));
         }
@@ -864,7 +867,7 @@ pub(crate) mod tests {
         );
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!((s.channels, s.white, s.black), (4, 16383, [0; 4]));
-        assert_eq!(s.data[..4], [3214, 3214, 3214, 0]);
+        assert_eq!(s.data.u16s()[..4], [3214, 3214, 3214, 0]);
     }
 
     #[test]

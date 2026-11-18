@@ -516,7 +516,7 @@ pub(crate) fn decode(
             width: plan.width,
             height: plan.height,
             channels: 4,
-            data,
+            data: data.into(),
             area: [info.margins[0], info.margins[1], info.width, info.height],
             black: [0; 4],
             black_pattern: (0, 0, Vec::new()),
@@ -535,7 +535,7 @@ pub(crate) fn decode(
             width: plan.width,
             height: plan.height,
             channels: 1,
-            data,
+            data: data.into(),
             area,
             black: [0; 4],
             black_pattern: (0, 0, Vec::new()),
@@ -583,7 +583,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area,
         black,
         black_pattern: (0, 0, Vec::new()),
@@ -687,7 +687,7 @@ pub(crate) mod tests {
         let bytes = cr2(&jpeg, &[(0xc640, 3, 3, shorts(&[64, 1, 2]))], &[]);
         let info = crate::open(&bytes).unwrap();
         let sensor = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
-        assert_eq!(sensor.data, image);
+        assert_eq!(sensor.data.u16s(), image);
     }
 
     #[test]
@@ -747,7 +747,7 @@ pub(crate) mod tests {
         assert_eq!((info.raw_width, info.raw_height), (8, 8));
         assert_eq!(info.lens.len(), 256);
         let sensor = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
-        assert_eq!(sensor.data, image);
+        assert_eq!(sensor.data.u16s(), image);
     }
 
     #[test]
@@ -780,7 +780,7 @@ pub(crate) mod tests {
         // GBRG seen from row 1, column 4: R G / G B.
         assert_eq!(info.cfa.as_ref().unwrap().colors, [0, 1, 3, 2]);
         let sensor = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
-        assert_eq!(sensor.data, image);
+        assert_eq!(sensor.data.u16s(), image);
         assert_eq!(sensor.white, 4095);
     }
 
@@ -975,7 +975,7 @@ pub(crate) mod tests {
         assert_eq!(info.cam_mul, [829., 512., 700., 512.]);
         let s = crate::decode(&info, &f, Cancel::NEVER).unwrap();
         // Each line's samples, in order, are two rows of four.
-        assert_eq!(s.data, order);
+        assert_eq!(s.data.u16s(), order);
         assert_eq!((s.black, s.white), ([0; 4], 3500));
         assert_eq!(
             crate::decode(&info, &f, Cancel::new(&AtomicBool::new(true))).unwrap_err(),

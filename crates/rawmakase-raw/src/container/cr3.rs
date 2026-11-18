@@ -565,7 +565,7 @@ pub(crate) fn decode(
         width: plan.header.width,
         height: plan.header.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [left, top, info.width, info.height],
         black,
         black_pattern: (0, 0, Vec::new()),
@@ -940,7 +940,7 @@ mod tests {
             [0xff, 0xd8, 0xff, 0xd9]
         );
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
-        assert_eq!(s.data, vec![8193; 16]);
+        assert_eq!(s.data.u16s(), vec![8193; 16]);
         assert_eq!(s.area, [0, 0, 4, 4]);
         // The notes' levels red, green, green, blue as red, green, blue,
         // second green.
@@ -963,7 +963,7 @@ mod tests {
         assert_eq!(info.variant, crate::Variant::Cr3Craw);
         assert_eq!([info.width, info.height], [16, 16]);
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
-        assert_eq!(s.data, vec![8198; 256]);
+        assert_eq!(s.data.u16s(), vec![8198; 256]);
         for n in (4096..file.len()).step_by(5) {
             if let Ok(info) = crate::open(&file[..n]) {
                 let _ = crate::decode(&info, &file[..n], Cancel::NEVER);

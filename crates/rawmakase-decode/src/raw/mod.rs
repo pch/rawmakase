@@ -544,11 +544,11 @@ impl Raw {
     }
 }
 /// Sensor data that is not a mosaic developed: `rows` of `channels` samples
-/// per pixel (red, green, blue first), each channel (raw − black) / (white −
-/// black), white balanced by `wb`; what LibRaw's development made of small
-/// RAWs, to within its 16-bit rounding.
-pub(crate) fn develop_rgb(
-    rows: &[&[u16]],
+/// per pixel (red, green, blue first; whole numbers or floats), each channel
+/// (raw − black) / (white − black), white balanced by `wb`; what LibRaw's
+/// development made of small RAWs, to within its 16-bit rounding.
+pub(crate) fn develop_rgb<T: Copy + Into<f32> + Sync>(
+    rows: &[&[T]],
     channels: usize,
     black: [u32; 4],
     white: u32,
@@ -558,7 +558,7 @@ pub(crate) fn develop_rgb(
     rows.par_iter()
         .flat_map_iter(|row| {
             row.chunks_exact(channels).map(move |p| {
-                std::array::from_fn(|c| ((f32::from(p[c]) - black[c] as f32) * scale[c]).max(0.))
+                std::array::from_fn(|c| ((p[c].into() - black[c] as f32) * scale[c]).max(0.))
             })
         })
         .collect()

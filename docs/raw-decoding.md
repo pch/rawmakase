@@ -123,7 +123,7 @@ A file of a recognised container in a variant this crate does not decode is
 | --- | --- | --- |
 | `DngUncompressed` | DNG, uncompressed 8 to 16-bit samples | DNG 1.7, TIFF 6 |
 | `DngLosslessJpeg` | DNG, lossless JPEG tiles or strips; DCT JPEG ones some writers store under the same code | DNG 1.7, ITU T.81 |
-| `DngDeflate` | DNG, Deflate tiles, integer (horizontal differences) or floating point (byte planes) | DNG 1.7, Adobe TIFF Technical Note 3 |
+| `DngDeflate` | DNG, Deflate tiles, integer (horizontal differences) or floating point (byte planes; predictors 3, 34894 and 34895 on mosaics and linear raw) | DNG 1.7, Adobe TIFF Technical Note 3 |
 | `DngUncompressedFloat` | DNG, uncompressed 16, 24 or 32-bit floating point | DNG 1.7, IEEE 754 |
 | `DngJpegXl` | DNG, JPEG XL tiles (compression 52546), integer or floating point, lossless or lossy: Lightroom's HDR and panorama merges | DNG 1.7, ISO/IEC 18181, jxl-oxide, checked against libjxl's djxl |
 | `DngVc5` | DNG of VC5-coded tiles (compression 9, GoPro's GPR): opened for its header facts, its sensor data `Unsupported` | DNG 1.7 |
@@ -193,9 +193,18 @@ Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
 hold the difference. A stream that fails to decode as T.81 says is decoded
 again reading them, and that reading is kept only when it consumes the stream
-exactly. Floating-point DNGs hold their levels on the integer scale; RAWmakase
-keeps a mosaic's sample's integer part. HDRMerge's floating-point mosaics (predictor
-34894) difference bytes two apart, the same colour's in a Bayer row. Blackmagic's
+exactly. Floating-point DNGs (SampleFormat 3: HDR merges) stay floating point
+through decoding (`SensorData::F32`): every sample becomes a linear reference value,
+(sample − black) / (white − black) clipped to 0–1 as the levels below describe,
+in floating point, whatever the levels' form, so a merge keeps its precision
+however many stops below white its shadows lie (16-bit levels ended about 16
+stops down). WhiteLevel defaults to 1.0 for them; a LinearizationTable, which maps
+16-bit stored values, does not apply to them, and OpcodeList1 and 2 work on the
+floats themselves. Adobe's floating-point predictor differences a pixel's bytes
+from the same bytes 1, 2 or 4 pixels before (predictors 3, 34894 FloatingPointX2
+and 34895 FloatingPointX4), whatever the samples a pixel: HDRMerge's mosaics
+(34894) difference bytes two apart, the same colour's in a Bayer row, and linear
+raw's three samples six apart. Blackmagic's
 DCT-coded tiles decode with an exact inverse DCT; they differ from LibRaw's
 (libjpeg-turbo's) by one 12-bit level in under 0.03% of samples.
 
@@ -242,8 +251,8 @@ the gains at 1, masks' Temp and Tint do nothing, rendering ignores gains a
 preset or another photo's edit brought, and Develop disables White
 Balance), as Lightroom does. Like small RAWs they develop at full size in
 both modes. Linear raw of floating-point samples (Lightroom's HDR merges,
-under a WhiteLevel of 32768) is scaled to 16 bits under its white, its
-levels with it, and rounded, so samples below one keep their precision.
+under a WhiteLevel of 32768) keeps its floats, as linear values under its
+white (see above).
 
 JPEG XL tiles (compression 52546, Lightroom's HDR and panorama merges) are
 decoded by jxl-oxide (`codec::jxl`), with two departures from its defaults
@@ -272,8 +281,7 @@ less than half covered, as Lightroom does and as for an area a transform leaves
 uncovered (see [Transform](transform.md)): the empty corners hold whatever the
 writer filled them with, smeared edge pixels in Lightroom's.
 
-Linear raw in separate planes or of floating-point samples under Adobe's
-predictor (measured on HDRMerge's mosaics only), DNGs of interleaved rows or
+Linear raw in separate planes, DNGs of interleaved rows or
 columns (RowInterleaveFactor or ColumnInterleaveFactor over 1) and Adobe's lossy linear DNGs
 (compression 34892, baseline JPEG of three components) are `Unsupported`;
 Apple's and Samsung's

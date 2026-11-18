@@ -141,7 +141,7 @@ pub(crate) fn decode(
         width: plan.width,
         height: plan.height,
         channels: 1,
-        data,
+        data: data.into(),
         area: [0, 0, info.width, info.height],
         black: [0; 4],
         black_pattern: (0, 0, Vec::new()),
@@ -202,7 +202,7 @@ mod tests {
         assert_eq!(info.flip, 3);
         assert_eq!(info.cam_mul, [1.5, 1., 1.25, 1.]);
         let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
-        assert_eq!(s.data, [1, 2, 3, 4]);
+        assert_eq!(s.data.u16s(), [1, 2, 3, 4]);
         assert_eq!(s.white, 16383);
         // No Neutral line: no white balance.
         let info = crate::open(&sti(&words, "Tint 1 1 1")).unwrap();

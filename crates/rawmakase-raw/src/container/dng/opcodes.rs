@@ -5,12 +5,15 @@
 //! per opcode its ID, the DNG version that defined it, flags (bit 0
 //! optional) and the size of its parameters.
 //!
-//! Both lists work here on 16-bit samples: OpcodeList1's logical range is
-//! 0–65535, OpcodeList2's 0.0–1.0 stored as 0–65535. Opcodes computing in
-//! floating point read a sample as its fraction of 65535 and write it back
-//! rounded, clipped to the range after each opcode as the specification
-//! says. Pixel positions are the modified image's: the stored image for
-//! OpcodeList1, the active area for OpcodeList2.
+//! Both lists work on 16-bit samples or on floating-point ones ([`Sample`]).
+//! For 16-bit samples OpcodeList1's logical range is 0–65535, OpcodeList2's
+//! 0.0–1.0 stored as 0–65535: opcodes computing in floating point read a
+//! sample as its fraction of 65535 and write it back rounded, clipped to the
+//! range after each opcode as the specification says. Floating-point samples
+//! are computed on as they are: OpcodeList1's in the file's own scale,
+//! unclipped, OpcodeList2's linear values clipped to 0.0–1.0 after each
+//! opcode ([`Image::linear`]). Pixel positions are the modified image's: the
+//! stored image for OpcodeList1, the active area for OpcodeList2.
 //!
 //! Applied: FixVignetteRadial, FixBadPixelsConstant, FixBadPixelsList,
 //! MapTable, MapPolynomial, GainMap, DeltaPerRow/Column and
@@ -283,29 +286,99 @@ fn opcode(id: u32, data: &[u8]) -> Option<Option<Opcode>> {
     Some(Some(op))
 }
 
+/// A sample the opcodes work on: a 16-bit level, or a floating-point
+/// sample (DNG's SampleFormat 3) kept as it is.
+pub(crate) trait Sample: Copy + PartialEq + Default {
+    /// The sample as opcodes compute with it: a 16-bit level as a fraction
+    /// of 65535, a float as itself (DNG's processing model works on floats
+    /// in the samples' own scale, 0–1 once linear).
+    fn unit(self) -> f64;
+    /// A computed value as a sample: a 16-bit level rounded and clipped to
+    /// 0–65535, a float as it is (NaN as 0).
+    fn from_unit(v: f64) -> Self;
+    /// MapTable's entry for the sample: a 16-bit level's own, a float's
+    /// nearest on the 16-bit scale of 0–1.
+    fn mapped(self, table: &[u16]) -> Self;
+    /// Whether the sample is FixBadPixelsConstant's constant.
+    fn is(self, constant: u32) -> bool;
+    /// The mean of `values` (at least one), rounded for 16-bit levels.
+    fn mean(values: &[Self]) -> Self;
+    /// A linear value clipped to 0.0–1.0 (16-bit levels always are).
+    fn clip(self) -> Self;
+}
+
+impl Sample for u16 {
+    fn unit(self) -> f64 {
+        f64::from(self) / 65535.
+    }
+    fn from_unit(v: f64) -> Self {
+        level(v)
+    }
+    fn mapped(self, table: &[u16]) -> Self {
+        table[usize::from(self).min(table.len() - 1)]
+    }
+    fn is(self, constant: u32) -> bool {
+        u32::from(self) == constant
+    }
+    fn mean(values: &[Self]) -> Self {
+        let n = values.len() as u32;
+        let sum: u32 = values.iter().map(|&v| u32::from(v)).sum();
+        ((sum + n / 2) / n) as u16
+    }
+    fn clip(self) -> Self {
+        self
+    }
+}
+
+impl Sample for f32 {
+    fn unit(self) -> f64 {
+        f64::from(self)
+    }
+    fn from_unit(v: f64) -> Self {
+        if v.is_nan() { 0. } else { v as f32 }
+    }
+    fn mapped(self, table: &[u16]) -> Self {
+        let at = (f64::from(self) * 65535.).round().clamp(0., 65535.) as usize;
+        f32::from(table[at.min(table.len() - 1)]) / 65535.
+    }
+    fn is(self, constant: u32) -> bool {
+        f64::from(self) == f64::from(constant)
+    }
+    fn mean(values: &[Self]) -> Self {
+        let sum: f64 = values.iter().map(|&v| f64::from(v)).sum();
+        (sum / values.len() as f64) as f32
+    }
+    fn clip(self) -> Self {
+        self.clamp(0., 1.)
+    }
+}
+
 /// The image a list modifies: `width × height` pixels of `planes` samples
 /// each (interleaved), from `origin` (column, row) in `data`, rows `stride`
 /// pixels apart.
-pub(crate) struct Image<'a> {
-    pub data: &'a mut [u16],
+pub(crate) struct Image<'a, T> {
+    pub data: &'a mut [T],
     pub stride: usize,
     pub origin: [usize; 2],
     pub width: usize,
     pub height: usize,
     pub planes: usize,
+    /// Whether the samples are linear reference values (OpcodeList2's),
+    /// which each opcode leaves within 0.0–1.0.
+    pub linear: bool,
 }
 
-impl Image<'_> {
+impl<T: Sample> Image<'_, T> {
     fn index(&self, row: usize, col: usize, plane: usize) -> usize {
         ((self.origin[1] + row) * self.stride + self.origin[0] + col) * self.planes + plane
     }
-    fn get(&self, row: usize, col: usize, plane: usize) -> u16 {
+    fn get(&self, row: usize, col: usize, plane: usize) -> T {
         self.data
             .get(self.index(row, col, plane))
             .copied()
-            .unwrap_or(0)
+            .unwrap_or_default()
     }
-    fn set(&mut self, row: usize, col: usize, plane: usize, v: u16) {
+    fn set(&mut self, row: usize, col: usize, plane: usize, v: T) {
         let i = self.index(row, col, plane);
         if let Some(d) = self.data.get_mut(i) {
             *d = v;
@@ -322,7 +395,11 @@ impl Image<'_> {
 }
 
 /// Applies `ops` to `image`, in order.
-pub(crate) fn apply(ops: &[Opcode], image: &mut Image, cancel: Cancel<'_>) -> Result<()> {
+pub(crate) fn apply<T: Sample>(
+    ops: &[Opcode],
+    image: &mut Image<T>,
+    cancel: Cancel<'_>,
+) -> Result<()> {
     if !image.fits() || image.width == 0 || image.height == 0 || image.planes == 0 {
         return Ok(());
     }
@@ -338,7 +415,7 @@ pub(crate) fn apply(ops: &[Opcode], image: &mut Image, cancel: Cancel<'_>) -> Re
                         return Err(Error::Cancelled);
                     }
                     for col in 0..image.width {
-                        if u32::from(image.get(row, col, 0)) == *constant {
+                        if image.get(row, col, 0).is(*constant) {
                             bad.set(row, col);
                         }
                     }
@@ -358,23 +435,20 @@ pub(crate) fn apply(ops: &[Opcode], image: &mut Image, cancel: Cancel<'_>) -> Re
                 patch(image, &bad, *phase, cancel)?;
             }
             Opcode::MapTable { area, table } => {
-                let last = table.len() - 1;
-                map(image, area, cancel, |_, _, _, v| {
-                    table[usize::from(v).min(last)]
-                })?;
+                map(image, area, cancel, |_, _, _, v| v.mapped(table))?;
             }
             Opcode::MapPolynomial { area, coefficients } => {
                 map(image, area, cancel, |_, _, _, v| {
-                    let x = f64::from(v) / 65535.;
+                    let x = v.unit();
                     let y = coefficients.iter().rev().fold(0., |acc, c| acc * x + c);
-                    level(y)
+                    T::from_unit(y)
                 })?;
             }
             Opcode::GainMap { area, map: gains } => {
                 let (w, h) = (image.width as f64, image.height as f64);
                 map(image, area, cancel, |row, col, plane, v| {
                     let g = gains.gain(row as f64 / h, col as f64 / w, plane);
-                    level(f64::from(v) / 65535. * f64::from(g))
+                    T::from_unit(v.unit() * f64::from(g))
                 })?;
             }
             Opcode::PerLine {
@@ -394,8 +468,8 @@ pub(crate) fn apply(ops: &[Opcode], image: &mut Image, cancel: Cancel<'_>) -> Re
                     let Some(&d) = values.get(i) else {
                         return v;
                     };
-                    let x = f64::from(v) / 65535.;
-                    level(if *scale {
+                    let x = v.unit();
+                    T::from_unit(if *scale {
                         x * f64::from(d)
                     } else {
                         x + f64::from(d)
@@ -445,11 +519,11 @@ impl GainMap {
 
 /// Maps every sample of `area` (clipped to the image and its planes) by
 /// `f(row, column, plane, value)`, `plane` counted from the area's first.
-fn map(
-    image: &mut Image,
+fn map<T: Sample>(
+    image: &mut Image<T>,
     area: &Area,
     cancel: Cancel<'_>,
-    f: impl Fn(usize, usize, usize, u16) -> u16,
+    f: impl Fn(usize, usize, usize, T) -> T,
 ) -> Result<()> {
     let first = area.plane as usize;
     let planes = first..(first + area.planes as usize).min(image.planes);
@@ -462,8 +536,8 @@ fn map(
         }
         for col in (area.left as usize..right).step_by(area.col_pitch as usize) {
             for plane in planes.clone() {
-                let v = image.get(row, col, plane);
-                image.set(row, col, plane, f(row, col, plane - first, v));
+                let v = f(row, col, plane - first, image.get(row, col, plane));
+                image.set(row, col, plane, if image.linear { v.clip() } else { v });
             }
         }
     }
@@ -471,7 +545,12 @@ fn map(
 }
 
 /// FixVignetteRadial over the whole image.
-fn vignette(image: &mut Image, k: &[f64; 5], centre: [f64; 2], cancel: Cancel<'_>) -> Result<()> {
+fn vignette<T: Sample>(
+    image: &mut Image<T>,
+    k: &[f64; 5],
+    centre: [f64; 2],
+    cancel: Cancel<'_>,
+) -> Result<()> {
     let (x1, y1) = ((image.width - 1) as f64, (image.height - 1) as f64);
     let (cx, cy) = (centre[0] * x1, centre[1] * y1);
     let mx = cx.abs().max((x1 - cx).abs());
@@ -494,7 +573,7 @@ fn vignette(image: &mut Image, k: &[f64; 5], centre: [f64; 2], cancel: Cancel<'_
         let (dx, dy) = (col as f64 - cx, row as f64 - cy);
         let r2 = (dx * dx + dy * dy) / m2;
         let g = 1. + r2 * (k[0] + r2 * (k[1] + r2 * (k[2] + r2 * (k[3] + r2 * k[4]))));
-        level(f64::from(v) / 65535. * g)
+        T::from_unit(v.unit() * g)
     })
 }
 
@@ -607,16 +686,21 @@ impl Mask {
 /// has any (a green's diagonal neighbours first, then two pixels away
 /// along the row and column and diagonally), else the first good pixel of
 /// the colour along each of the four directions, within 16 two-pixel steps.
-fn patch(image: &mut Image, bad: &Mask, phase: u32, cancel: Cancel<'_>) -> Result<()> {
+fn patch<T: Sample>(
+    image: &mut Image<T>,
+    bad: &Mask,
+    phase: u32,
+    cancel: Cancel<'_>,
+) -> Result<()> {
     if !bad.any {
         return Ok(());
     }
     // Greens are where (row + column) has this parity.
     let green_parity = usize::from(matches!(phase, 0 | 3));
     let (w, h) = (image.width as isize, image.height as isize);
-    let good = |image: &Image, r: isize, c: isize| -> Option<u32> {
+    let good = |image: &Image<T>, r: isize, c: isize| -> Option<T> {
         (r >= 0 && c >= 0 && r < h && c < w && !bad.get(r as usize, c as usize))
-            .then(|| u32::from(image.get(r as usize, c as usize, 0)))
+            .then(|| image.get(r as usize, c as usize, 0))
     };
     const DIAGONAL: [(isize, isize); 4] = [(-1, -1), (-1, 1), (1, -1), (1, 1)];
     const NEAR: [(isize, isize); 4] = [(-2, 0), (2, 0), (0, -2), (0, 2)];
@@ -648,7 +732,7 @@ fn patch(image: &mut Image, bad: &Mask, phase: u32, cancel: Cancel<'_>) -> Resul
             };
             let mut found = None;
             for ring in rings {
-                let values: Vec<u32> = ring
+                let values: Vec<T> = ring
                     .iter()
                     .filter_map(|&(dr, dc)| good(image, r + dr, c + dc))
                     .collect();
@@ -666,9 +750,7 @@ fn patch(image: &mut Image, bad: &Mask, phase: u32, cancel: Cancel<'_>) -> Resul
                     .collect()
             });
             if !values.is_empty() {
-                let n = values.len() as u32;
-                let sum: u32 = values.iter().sum();
-                image.set(row, col, 0, ((sum + n / 2) / n) as u16);
+                image.set(row, col, 0, T::mean(&values));
             }
         }
     }
@@ -723,6 +805,7 @@ pub(crate) mod tests {
             width,
             height,
             planes: 1,
+            linear: false,
         };
         apply(&ops, &mut image, Cancel::NEVER).unwrap();
     }
@@ -885,6 +968,7 @@ pub(crate) mod tests {
             width: 1024,
             height: 1024,
             planes: 1,
+            linear: false,
         };
         let cancelled = AtomicBool::new(true);
         assert_eq!(
@@ -963,6 +1047,7 @@ pub(crate) mod tests {
             width: 4,
             height: 4,
             planes: 1,
+            linear: false,
         };
         let cancelled = AtomicBool::new(true);
         assert_eq!(
