@@ -128,33 +128,9 @@ impl ChromaDenoise {
     }
     /// `im` with its colour noise reduced; stops with an error when `cancel` is set.
     pub(crate) fn apply(&self, im: &CameraImage, cancel: Cancel<'_>) -> Result<CameraImage> {
-        let (w, h) = (im.width as usize, im.height as usize);
         let offset = super::laplacian::photo_level_offset(im);
-        let wb = im.metadata.wb.map(|v| v.max(0.001));
-        let (luma, data): (Vec<f32>, Vec<[f32; 2]>) = im
-            .pixels
-            .par_iter()
-            .map(|p| {
-                let [r, g, b] = p.map(|v| v.max(0.).sqrt());
-                ((r + 2. * g + b) * 0.25, [r - g, b - g])
-            })
-            .unzip();
-        // Where the noise can be measured: below the sensor's clipping, and above
-        // black (see `noise`).
-        let measurable = Mask {
-            w,
-            h,
-            data: im
-                .pixels
-                .par_iter()
-                .map(|p| MaskPixel {
-                    unclipped: (0..3).all(|c| p[c] / wb[c] < MEASURABLE_PEAK),
-                    black: if p.iter().any(|v| *v <= 0.) { 1. } else { 0. },
-                })
-                .collect(),
-        };
-        let chroma = Plane { w, h, data };
-        let chroma = self.filter(chroma, measurable, 0., 0., 0, offset, cancel)?;
+        let (luma, chroma) = planes(im);
+        let chroma = self.filter(chroma, Measurable::Photo(im), 0., 0., 0, offset, cancel)?;
         let mut out = im.clone();
         out.recovered = Default::default();
         out.pixels
@@ -170,11 +146,21 @@ impl ChromaDenoise {
     /// `measurable` is where its noise can be measured, `finer_noise` and
     /// `finest_noise` the noise measured at the level above and at the finest level,
     /// and `offset` the photo's level that this image's finest shows.
+    ///
+    /// The finest level's planes are as large as the image, so as few as possible
+    /// are alive at once: the level's detail is written over `plane`, its blur is
+    /// freed before the mask of where noise can be measured is made, the mask
+    /// before the coarser levels are filtered, and the result is written over
+    /// the detail. With the luminance [`Self::apply`] keeps beside them, that is
+    /// 26 bytes a pixel at most (1.5 GB of a 61-megapixel photo): two planes of
+    /// the image's size, the blur's half-wide pass and the next level. With the
+    /// plane, its mask, its blur, the coarser levels' result and the output side
+    /// by side, as it was written first, it was 44 (2.6 GB).
     #[allow(clippy::too_many_arguments)]
     fn filter(
         &self,
-        plane: Plane,
-        measurable: Mask,
+        mut plane: Plane,
+        measurable: Measurable<'_>,
         finer_noise: f32,
         finest_noise: f32,
         level: usize,
@@ -192,19 +178,31 @@ impl ChromaDenoise {
         }
         ensure!(!cancel.is_cancelled(), "Render superseded");
         let coarse = plane.down();
-        let up = coarse.up(plane.w, plane.h);
-        // A level too small or too clipped to measure has the finer level's noise, as
-        // much smaller as coarser levels usually are. Demosaiced noise is never larger
-        // at a coarser level, so more than the finer level's is colour detail.
-        let noise = match noise(&plane, &up, &measurable) {
-            Some(n) if level == 0 => n,
-            Some(n) => n.min(finer_noise),
-            None => finer_noise * COARSER_NOISE,
+        {
+            // From here on `plane` is the level's detail: what it has beyond its blur.
+            let up = coarse.up(plane.w, plane.h);
+            plane
+                .data
+                .par_iter_mut()
+                .zip(up.data.par_iter())
+                .for_each(|(v, u)| *v = [v[0] - u[0], v[1] - u[1]]);
+        }
+        let (noise, coarser_measurable) = {
+            let measurable = measurable.mask();
+            // A level too small or too clipped to measure has the finer level's noise, as
+            // much smaller as coarser levels usually are. Demosaiced noise is never larger
+            // at a coarser level, so more than the finer level's is colour detail.
+            let noise = match noise(&plane, &measurable) {
+                Some(n) if level == 0 => n,
+                Some(n) => n.min(finer_noise),
+                None => finer_noise * COARSER_NOISE,
+            };
+            (noise, Measurable::Level(measurable.down()))
         };
         let finest_noise = if level == 0 { noise } else { finest_noise };
         let coarse = self.filter(
             coarse,
-            measurable.down(),
+            coarser_measurable,
             noise,
             finest_noise,
             level + 1,
@@ -213,6 +211,7 @@ impl ChromaDenoise {
         )?;
         ensure!(!cancel.is_cancelled(), "Render superseded");
         let coarse_up = coarse.up(plane.w, plane.h);
+        drop(coarse);
         // Between two of the photo's levels, the thresholds' ratio is shared out
         // geometrically and the exponents' difference linearly.
         let geometric = |a: f32, b: f32, f: f32| a * (b / a).powf(f);
@@ -220,12 +219,11 @@ impl ChromaDenoise {
         let threshold = at_level(&self.thresholds, photo_level, geometric)
             * noise
             * (finest_noise / REFERENCE_NOISE).powf(at_level(&NOISE_EXPONENT, photo_level, linear));
-        let data = plane
+        plane
             .data
-            .par_iter()
-            .zip(up.data.par_iter().zip(coarse_up.data.par_iter()))
-            .map(|(v, (u, c))| {
-                let d = [v[0] - u[0], v[1] - u[1]];
+            .par_iter_mut()
+            .zip(coarse_up.data.par_iter())
+            .for_each(|(d, c)| {
                 let size = d[0] * d[0] + d[1] * d[1];
                 let gain = if threshold <= 0. {
                     1.
@@ -235,17 +233,26 @@ impl ChromaDenoise {
                     1. / (1. + (threshold * threshold / size).powi(ADAPTIVE_STEEPNESS))
                 };
                 let gain = super::laplacian::partial_gain(gain, share);
-                [c[0] + d[0] * gain, c[1] + d[1] * gain]
-            })
-            .collect();
-        Ok(Plane {
-            w: plane.w,
-            h: plane.h,
-            data,
-        })
+                *d = [c[0] + d[0] * gain, c[1] + d[1] * gain];
+            });
+        Ok(plane)
     }
 }
 
+/// `im` in square-root values: its luminance, and its chroma as the plane the
+/// filter works on.
+fn planes(im: &CameraImage) -> (Vec<f32>, Plane) {
+    let (luma, data): (Vec<f32>, Vec<[f32; 2]>) = im
+        .pixels
+        .par_iter()
+        .map(|p| {
+            let [r, g, b] = p.map(|v| v.max(0.).sqrt());
+            ((r + 2. * g + b) * 0.25, [r - g, b - g])
+        })
+        .unzip();
+    let (w, h) = (im.width as usize, im.height as usize);
+    (luma, Plane { w, h, data })
+}
 /// Above this share of the sensor's range a channel may clip, and clipped pixels have
 /// no noise to measure.
 const MEASURABLE_PEAK: f32 = 0.95;
@@ -259,11 +266,11 @@ const BLOCK: usize = 8;
 const BLOCK_PERCENTILE: f32 = 0.1;
 /// The fewest measurable blocks a level's noise is measured from.
 const MIN_BLOCKS: usize = 16;
-/// The colour noise of a level's detail (`plane` − `up`): the RMS of the detail in its
-/// smoothest measurable blocks, those with no black when there are enough of them;
-/// `None` with fewer than [`MIN_BLOCKS`] either way.
-fn noise(plane: &Plane, up: &Plane, measurable: &Mask) -> Option<f32> {
-    let (bw, bh) = (plane.w / BLOCK, plane.h / BLOCK);
+/// The colour noise of a level's `detail` (the level less its blur): the RMS of the
+/// detail in its smoothest measurable blocks, those with no black when there are
+/// enough of them; `None` with fewer than [`MIN_BLOCKS`] either way.
+fn noise(detail: &Plane, measurable: &Mask) -> Option<f32> {
+    let (bw, bh) = (detail.w / BLOCK, detail.h / BLOCK);
     let blocks: Vec<(f32, f32)> = (0..bw * bh)
         .into_par_iter()
         .filter_map(|b| {
@@ -271,19 +278,24 @@ fn noise(plane: &Plane, up: &Plane, measurable: &Mask) -> Option<f32> {
             let (mut sum, mut black) = (0., 0.);
             for y in y0..y0 + BLOCK {
                 for x in x0..x0 + BLOCK {
-                    let i = y * plane.w + x;
+                    let i = y * detail.w + x;
                     if !measurable.data[i].unclipped {
                         return None;
                     }
                     black += measurable.data[i].black;
-                    let (v, u) = (plane.data[i], up.data[i]);
-                    sum += (v[0] - u[0]).powi(2) + (v[1] - u[1]).powi(2);
+                    let d = detail.data[i];
+                    sum += d[0].powi(2) + d[1].powi(2);
                 }
             }
             let n = (BLOCK * BLOCK) as f32;
             Some((sum / n, black / n))
         })
         .collect();
+    smoothest(blocks)
+}
+/// The noise `blocks` give, each its mean squared detail and its share of black
+/// pixels: see [`noise`].
+fn smoothest(blocks: Vec<(f32, f32)>) -> Option<f32> {
     let within = |most: f32| -> Vec<f32> {
         blocks
             .iter()
@@ -312,6 +324,21 @@ struct Mask {
     h: usize,
     data: Vec<MaskPixel>,
 }
+/// A level's [`Mask`], or the photo the finest level's is made from when the
+/// filter comes to measure its noise: made up front, it would lie beside the
+/// planes of the level's blur, each as large as the image.
+enum Measurable<'a> {
+    Photo(&'a CameraImage),
+    Level(Mask),
+}
+impl Measurable<'_> {
+    fn mask(self) -> Mask {
+        match self {
+            Self::Photo(im) => Mask::of(im),
+            Self::Level(mask) => mask,
+        }
+    }
+}
 #[derive(Clone, Copy)]
 struct MaskPixel {
     /// No channel near the sensor's clipping.
@@ -320,6 +347,23 @@ struct MaskPixel {
     black: f32,
 }
 impl Mask {
+    /// Where `im`'s noise can be measured: below the sensor's clipping, and above
+    /// black (see [`noise`]).
+    fn of(im: &CameraImage) -> Self {
+        let wb = im.metadata.wb.map(|v| v.max(0.001));
+        Self {
+            w: im.width as usize,
+            h: im.height as usize,
+            data: im
+                .pixels
+                .par_iter()
+                .map(|p| MaskPixel {
+                    unclipped: (0..3).all(|c| p[c] / wb[c] < MEASURABLE_PEAK),
+                    black: if p.iter().any(|v| *v <= 0.) { 1. } else { 0. },
+                })
+                .collect(),
+        }
+    }
     /// Halved as [`Plane::down`] halves: unclipped where every pixel its filter reads
     /// is, with their share of black.
     fn down(&self) -> Self {
@@ -683,5 +727,140 @@ mod tests {
                 .apply(&im, Cancel::new(&cancel))
                 .is_err()
         );
+    }
+
+    /// [`ChromaDenoise::filter`] with each level's plane, its mask, its blur, the
+    /// coarser levels' result and the output side by side, as it was written
+    /// before it worked in place: what the filter must still compute, value for
+    /// value.
+    fn filter_side_by_side(
+        d: &ChromaDenoise,
+        plane: Plane,
+        measurable: Mask,
+        finer_noise: f32,
+        finest_noise: f32,
+        level: usize,
+        offset: f32,
+    ) -> Plane {
+        let photo_level = level as f32 + offset;
+        let share = crate::develop::laplacian::filtered_share(photo_level, LEVELS + 1);
+        if share <= 0. || plane.w < 4 || plane.h < 4 {
+            return plane;
+        }
+        let coarse = plane.down();
+        let up = coarse.up(plane.w, plane.h);
+        let noise = match noise_side_by_side(&plane, &up, &measurable) {
+            Some(n) if level == 0 => n,
+            Some(n) => n.min(finer_noise),
+            None => finer_noise * COARSER_NOISE,
+        };
+        let finest_noise = if level == 0 { noise } else { finest_noise };
+        let coarse = filter_side_by_side(
+            d,
+            coarse,
+            measurable.down(),
+            noise,
+            finest_noise,
+            level + 1,
+            offset,
+        );
+        let coarse_up = coarse.up(plane.w, plane.h);
+        let geometric = |a: f32, b: f32, f: f32| a * (b / a).powf(f);
+        let linear = |a: f32, b: f32, f: f32| a + (b - a) * f;
+        let threshold = at_level(&d.thresholds, photo_level, geometric)
+            * noise
+            * (finest_noise / REFERENCE_NOISE).powf(at_level(&NOISE_EXPONENT, photo_level, linear));
+        let data = plane
+            .data
+            .iter()
+            .zip(up.data.iter().zip(coarse_up.data.iter()))
+            .map(|(v, (u, c))| {
+                let detail = [v[0] - u[0], v[1] - u[1]];
+                let size = detail[0] * detail[0] + detail[1] * detail[1];
+                let gain = if threshold <= 0. {
+                    1.
+                } else {
+                    1. / (1. + (threshold * threshold / size).powi(ADAPTIVE_STEEPNESS))
+                };
+                let gain = crate::develop::laplacian::partial_gain(gain, share);
+                [c[0] + detail[0] * gain, c[1] + detail[1] * gain]
+            })
+            .collect();
+        Plane {
+            w: plane.w,
+            h: plane.h,
+            data,
+        }
+    }
+    /// [`noise`] from a level and its blur, as [`filter_side_by_side`] has them.
+    fn noise_side_by_side(plane: &Plane, up: &Plane, measurable: &Mask) -> Option<f32> {
+        let (bw, bh) = (plane.w / BLOCK, plane.h / BLOCK);
+        let blocks = (0..bw * bh)
+            .filter_map(|b| {
+                let (x0, y0) = ((b % bw) * BLOCK, (b / bw) * BLOCK);
+                let (mut sum, mut black) = (0., 0.);
+                for y in y0..y0 + BLOCK {
+                    for x in x0..x0 + BLOCK {
+                        let i = y * plane.w + x;
+                        if !measurable.data[i].unclipped {
+                            return None;
+                        }
+                        black += measurable.data[i].black;
+                        let (v, u) = (plane.data[i], up.data[i]);
+                        sum += (v[0] - u[0]).powi(2) + (v[1] - u[1]).powi(2);
+                    }
+                }
+                let n = (BLOCK * BLOCK) as f32;
+                Some((sum / n, black / n))
+            })
+            .collect();
+        smoothest(blocks)
+    }
+
+    /// Working in place is a matter of memory alone: every value (odd sides, a
+    /// reduced decode's levels, clipped and black areas) is the one the
+    /// side-by-side filter gives.
+    #[test]
+    fn filtering_in_place_changes_no_value() {
+        // The last of each is the photo's level the image's finest shows: a
+        // half-size draft's is about one.
+        for (w, h, offset) in [(160, 120, 0.), (131, 77, 0.), (97, 203, 1.), (64, 64, 1.4)] {
+            let im = noisy(w, h, 0.03, |x, y| {
+                if x < w / 3 {
+                    // Clipped in a channel.
+                    [1.2, 0.4, 0.3]
+                } else if y < h / 4 {
+                    // Noise that reaches black.
+                    [0.004, 0.003, 0.005]
+                } else {
+                    [0.2 + 0.1 * (x as f32 / 9.).sin(), 0.18, 0.1]
+                }
+            });
+            for (amount, detail, smoothness) in [(0.25, 0.5, 0.5), (1., 0., 1.), (0.1, 1., 0.)] {
+                let d = ChromaDenoise::new(amount, detail, smoothness).unwrap();
+                let (_, plane) = planes(&im);
+                let in_place = d
+                    .filter(
+                        plane,
+                        Measurable::Photo(&im),
+                        0.,
+                        0.,
+                        0,
+                        offset,
+                        Cancel::NEVER,
+                    )
+                    .unwrap();
+                let (_, plane) = planes(&im);
+                let side_by_side = filter_side_by_side(&d, plane, Mask::of(&im), 0., 0., 0, offset);
+                let bits = |p: &Plane| -> Vec<[u32; 2]> {
+                    p.data.iter().map(|v| v.map(f32::to_bits)).collect()
+                };
+                assert_eq!(
+                    bits(&in_place),
+                    bits(&side_by_side),
+                    "{w} × {h} at {amount}, {detail}, {smoothness}"
+                );
+            }
+        }
     }
 }
