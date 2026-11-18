@@ -348,6 +348,15 @@ Library result; the UI applies them after restoring layout and filters, so the
 result's source cannot be replaced by the old view. Filesystem resolution stays
 on the worker.
 
+What workers free is not the system's again until the allocator gives it back:
+macOS's keeps large freed blocks, and the app then shows gigabytes while using
+tens of megabytes (measurements in `platform::memory::release_freed`). The
+UI thread's `background` step has them given back once the process's CPU time
+shows work has gone quiet for four seconds (`platform::memory::Release`), so no
+worker reports in and a worker added later is covered. It releases nothing the
+app still holds: the open photo's decode stays while it is the document, in the
+Library too.
+
 ### Previews
 
 How preview renders are scheduled; what runs on the GPU, its backends, budgets and
