@@ -89,12 +89,17 @@ jobs:
       # client and the extension protocol, SDK, host and cargo-rawmakase build
       # without the RAW decoders, wgpu or GUI, and the renderer without the RAW
       # decoders or GUI; fmt above covers the whole workspace.
+      # The tests build every target but the examples, which only link the app
+      # again (clippy --all-targets checks them); the doctests run after them.
       - name: Check the model, file formats, catalog, renderer, control protocol, remote worker, client and extension crates
         run: |
           cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi -- -D warnings
-          cargo test --locked -p rawmakase-model --all-features
-          cargo test --locked -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
-          cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
+          cargo test --locked --lib --bins --tests -p rawmakase-model --all-features
+          cargo test --locked --doc -p rawmakase-model --all-features
+          cargo test --locked --lib --bins --tests -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
+          cargo test --locked --doc -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
+          cargo test --locked --lib --bins --tests -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
+          cargo test --locked --doc -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # The app's tests run `rawmakase mcp`, which runs this program from
       # beside it in target/debug, and the MIDI and AI masks programs found
@@ -105,7 +110,9 @@ jobs:
       # installs it in vendor_perl, outside PATH.
       # libheif, installed above, decodes the HEIC pixel tests, which fail
       # here rather than skip without it.
-      - run: PATH="/usr/bin/vendor_perl:$PATH" cargo test --locked -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-model-install -p rawmakase-selection -p rawmakase-ai-masks
+      - run: |
+          PATH="/usr/bin/vendor_perl:$PATH" cargo test --locked --lib --bins --tests -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-model-install -p rawmakase-selection -p rawmakase-ai-masks
+          cargo test --locked --doc -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-model-install -p rawmakase-selection -p rawmakase-ai-masks
         env:
           RAWMAKASE_REQUIRE_EXIFTOOL: "1"
           RAWMAKASE_REQUIRE_HEIF: "1"
@@ -134,10 +141,12 @@ jobs:
       # The app's tests run `rawmakase mcp`, which runs this program from
       # beside it in target/debug, and the MIDI and AI masks programs found
       # there.
+      # Every target but the examples, as in the lint job, then the doctests.
       - name: Test
         run: |
           cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
-          cargo test --locked --workspace
+          cargo test --locked --workspace --lib --bins --tests
+          cargo test --locked --workspace --doc
 
   check-windows:
     name: Test on Windows
@@ -179,10 +188,15 @@ jobs:
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
       # The app's tests run `rawmakase mcp`, which runs rawmakase-mcp from
       # beside it in target/debug, and the MIDI program found there.
+      # Every target but the examples, as in the lint job, then the doctests.
+      # Bash stops at the first command that fails; PowerShell would go on to
+      # the doctests and report only their result.
       - if: steps.source.outputs.windows == 'true'
+        shell: bash
         run: |
           cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
-          cargo test --locked --workspace
+          cargo test --locked --workspace --lib --bins --tests
+          cargo test --locked --workspace --doc
 
   # Without this job the macOS-only code is compiled for the first time by
   # release.yml, after the release commit is already on main, so a macOS-only
@@ -208,9 +222,11 @@ jobs:
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
       # The app's tests run `rawmakase mcp`, which runs rawmakase-mcp from
       # beside it in target/debug, and the MIDI program found there.
+      # Every target but the examples, as in the lint job, then the doctests.
       - run: |
           cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
-          cargo test --locked --workspace
+          cargo test --locked --workspace --lib --bins --tests
+          cargo test --locked --workspace --doc
 
   package:
     name: Build, install and run Arch package
@@ -355,10 +371,22 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
+      # Only pushes to main save caches, as in the other jobs. The cached
+      # dependencies are built here, where LibRaw and Little CMS are missing.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
       - run: scripts/crate-closures.sh
-      - run: cargo test --locked -p rawmakase-model --all-features
-      - run: cargo test --locked -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol
-      - run: cargo test --locked -p rawmakase-decode
+      # Every target but the examples, as in the lint job, then the doctests.
+      - run: |
+          cargo test --locked --lib --bins --tests -p rawmakase-model --all-features
+          cargo test --locked --doc -p rawmakase-model --all-features
+      - run: |
+          cargo test --locked --lib --bins --tests -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol
+          cargo test --locked --doc -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol
+      - run: |
+          cargo test --locked --lib --bins --tests -p rawmakase-decode
+          cargo test --locked --doc -p rawmakase-decode
 
   postgres:
     name: Portable catalog SQL
