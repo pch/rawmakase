@@ -45,10 +45,39 @@ fn draft_edge(width: u32, height: u32) -> Option<u32> {
     (halved > 0).then_some(edge.round() as u32)
 }
 
+/// Which image a kept frame or histogram was rendered from, without keeping it
+/// alive: its address, which stays its own while this exists (the allocation
+/// outlives the last strong reference), though its pixels are freed with the
+/// document. Held strongly, each pane's last Fit and 100% frame kept the photo
+/// it showed (its decode and recovered copy, 1.4 GB of a 61-megapixel photo)
+/// until that pane rendered that view again, whatever was opened since.
+#[derive(Clone)]
+struct Origin(std::sync::Weak<crate::camera_data::CameraImage>);
+impl Origin {
+    fn of(image: &Arc<crate::camera_data::CameraImage>) -> Self {
+        Self(Arc::downgrade(image))
+    }
+    fn is(&self, image: &Arc<crate::camera_data::CameraImage>) -> bool {
+        std::ptr::eq(self.0.as_ptr(), Arc::as_ptr(image))
+    }
+    /// A photo's AI Denoise source, if it renders with one.
+    fn of_ai(ai: &Option<develop::AiSource>) -> Option<Self> {
+        ai.as_ref().map(|ai| Self::of(ai.image()))
+    }
+    /// Whether `kept` names `ai`: the same source, or none either way.
+    fn is_ai(kept: &Option<Self>, ai: &Option<develop::AiSource>) -> bool {
+        match (kept, ai) {
+            (Some(kept), Some(ai)) => kept.is(ai.image()),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
 /// A finished render and the view it shows.
 struct Shown {
-    image: Arc<crate::camera_data::CameraImage>,
-    ai: Option<develop::AiSource>,
+    image: Origin,
+    ai: Option<Origin>,
     recipe: Recipe,
     max_edge: u32,
     region: Option<[u32; 4]>,
@@ -79,8 +108,8 @@ type HdrRender<'a> = &'a dyn Fn(
 impl Shown {
     fn new(job: &RenderJob, out: Shot) -> Self {
         Self {
-            image: job.image.clone(),
-            ai: job.ai.clone(),
+            image: Origin::of(&job.image),
+            ai: Origin::of_ai(&job.ai),
             recipe: job.recipe.clone(),
             max_edge: job.max_edge,
             region: job.region,
@@ -93,8 +122,8 @@ impl Shown {
     }
     /// The same photo, view and edit, with pixels that are still there.
     fn matches(&self, job: &RenderJob, gpu: Option<&gpu::Processor>) -> bool {
-        let same = Arc::ptr_eq(&self.image, &job.image)
-            && self.ai == job.ai
+        let same = self.image.is(&job.image)
+            && Origin::is_ai(&self.ai, &job.ai)
             && self.max_edge == job.max_edge
             && self.region == job.region
             && self.recipe == job.recipe
@@ -602,7 +631,8 @@ fn render(
                     // So does a change of AI Denoise: its reduced preview would need the
                     // same full-size blend as the region, adding only a blurry frame.
                     let ai_changed = zoomed.as_ref().is_some_and(|s| {
-                        s.ai != job.ai || s.recipe.ai_denoise != job.recipe.ai_denoise
+                        !Origin::is_ai(&s.ai, &job.ai)
+                            || s.recipe.ai_denoise != job.recipe.ai_denoise
                     });
                     if *showing_region && !*quick_region && !ai_changed {
                         let out = processor.render_region_preview_to(
@@ -672,9 +702,9 @@ fn render(
             // responsive on a GPU slower than they change; the full render follows.
             // Opening a photo or changing the view goes straight to the full render.
             let editing = !*showing_region
-                && fit.as_ref().is_some_and(|s| {
-                    Arc::ptr_eq(&s.image, &job.image) && s.max_edge == job.max_edge
-                });
+                && fit
+                    .as_ref()
+                    .is_some_and(|s| s.image.is(&job.image) && s.max_edge == job.max_edge);
             let draft = || {
                 let g = develop::Geometry::new(&job.image, &job.recipe, job.max_edge);
                 draft_edge(g.width, g.height)
@@ -755,12 +785,7 @@ fn render(
 type Histogram = Box<crate::rendered::Histogram>;
 /// A whole photo's histogram and what it was rendered from: the image, its AI Denoise
 /// source and the edit.
-type WholeHistogram = (
-    Arc<crate::camera_data::CameraImage>,
-    Option<develop::AiSource>,
-    Recipe,
-    Histogram,
-);
+type WholeHistogram = (Origin, Option<Origin>, Recipe, Histogram);
 
 /// At 100% the view shows a region, but the histogram describes the whole
 /// photo, as Lightroom's does: from the Fit render of the same edit when there
@@ -774,10 +799,8 @@ fn whole_histogram(
     tx: &Sender<Event>,
     ctx: &egui::Context,
 ) -> anyhow::Result<()> {
-    let same = |image: &Arc<crate::camera_data::CameraImage>,
-                ai: &Option<develop::AiSource>,
-                recipe: &Recipe| {
-        Arc::ptr_eq(image, &job.image) && *ai == job.ai && *recipe == job.recipe
+    let same = |image: &Origin, ai: &Option<Origin>, recipe: &Recipe| {
+        image.is(&job.image) && Origin::is_ai(ai, &job.ai) && *recipe == job.recipe
     };
     let histogram =
         if let Some((.., histogram)) = whole.as_ref().filter(|(i, a, r, _)| same(i, a, r)) {
@@ -799,8 +822,8 @@ fn whole_histogram(
             Box::new(out.pixels().histogram())
         };
     *whole = Some((
-        job.image.clone(),
-        job.ai.clone(),
+        Origin::of(&job.image),
+        Origin::of_ai(&job.ai),
         job.recipe.clone(),
         histogram.clone(),
     ));
@@ -923,6 +946,35 @@ mod tests {
                 _ => {}
             }
         }
+    }
+    /// A pane's kept frames name the photo they show without keeping it. Once the
+    /// document has let go of a photo its pixels are freed, though the edit's pane
+    /// last showed it at 100%, the Before pane showed it too, and the photo opened
+    /// next has only been shown at Fit. Held by those frames, a 61-megapixel photo's
+    /// 1.4 GB stayed until each pane rendered that view of another photo.
+    #[test]
+    fn a_photo_left_is_freed_though_panes_last_showed_it() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = renderer(tx, egui::Context::default());
+        let recipe = Recipe::default();
+        let region = Some([10, 10, 80, 60]);
+        let first = image();
+        run(&worker, &rx, 1, &first, &recipe, None);
+        run(&worker, &rx, 2, &first, &recipe, region);
+        run_in(&worker, &rx, Pane::Before, 3, &first, &recipe, None);
+        // The frames kept still answer for the photo while it is open: the 100%
+        // view again is the one kept, shown at once with no reduced preview.
+        assert_eq!(run(&worker, &rx, 4, &first, &recipe, region).len(), 1);
+        let left = Arc::downgrade(&first);
+        drop(first);
+        let second = image_of(200, 120);
+        run(&worker, &rx, 5, &second, &recipe, None);
+        // The worker lets go of a job once it has reported it.
+        let deadline = Instant::now() + std::time::Duration::from_secs(20);
+        while left.strong_count() > 0 && Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(left.strong_count(), 0, "the photo left is still held");
     }
     /// At 100%, a change of AI Denoise (its Amount, or a new result) renders the full
     /// region at once: a reduced preview would need the same full-size blend first, so

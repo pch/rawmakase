@@ -1497,6 +1497,96 @@ fn previews_submit_only_once_the_window_surface_is_reconfigured() {
     preview.join().unwrap();
 }
 
+/// The device lets go of a photo that was left even when the next render uploads
+/// nothing: one with no display, as the whole photo's histogram at 100% is rendered,
+/// takes the CPU path, and the photo before it stayed on the device, its image and
+/// every cached stage keyed by it alive.
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+#[allow(clippy::approx_constant)] // Exact camera matrix coefficients.
+fn the_device_lets_go_of_a_photo_left_when_the_next_render_uploads_none() -> Result<()> {
+    use crate::{
+        camera_data::{CameraImage, Metadata},
+        camera_profiles::CameraProfile,
+        develop::{PreviewRenderer, quality::Output},
+    };
+    use std::sync::Arc;
+    let (w, h) = (157, 103);
+    let metadata = Metadata {
+        width: w,
+        height: h,
+        wb: [2.02, 1., 1.89],
+        cam_xyz: [
+            [1.1434, -0.4948, -0.121],
+            [-0.3746, 1.2042, 0.1903],
+            [-0.0666, 0.1479, 0.5235],
+        ],
+        ..Default::default()
+    };
+    let photo = |gain: f32| CameraImage {
+        width: w,
+        height: h,
+        pixels: (0..w * h)
+            .map(|i| {
+                let (x, y) = ((i % w) as f32, (i / w) as f32);
+                let v = gain * (0.2 + 0.25 * (x * 0.17).sin() * (y * 0.11).cos());
+                [v * 1.3, v, v * 0.8]
+            })
+            .collect(),
+        metadata: metadata.clone(),
+        recovered: Default::default(),
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    };
+    let profile = CameraProfile::camera_matrix_default(&metadata)
+        .unwrap()
+        .with_test_tables();
+    let recipe = Recipe {
+        profile: Some(Arc::new(profile)),
+        contrast: 0.3,
+        ..Default::default()
+    };
+    let display = super::Display {
+        slot: super::Slot::Whole,
+        clipping: crate::rendered::ClipOverlay::NONE,
+        monitor: None,
+        navigator: None,
+        thumbnail: None,
+        samples: false,
+        drawn: Vec::new(),
+    };
+    let cancel = AtomicBool::new(false);
+    let mut renderer = PreviewRenderer::with_gpu();
+    let first = photo(1.);
+    let Output::Frame(_) = renderer.render_to(
+        &first,
+        &recipe,
+        90,
+        None,
+        Cancel::new(&cancel),
+        Some(&display),
+    )?
+    else {
+        panic!("{:?}", renderer.fallback_reason());
+    };
+    // The photo's level is on the device while it is the photo shown.
+    let on_device = |renderer: &PreviewRenderer| {
+        let resident = renderer.gpu().unwrap().resident.as_ref().unwrap();
+        (resident.photo.is_some(), resident.samples.len())
+    };
+    assert_eq!(on_device(&renderer), (true, 1));
+    let left = Arc::downgrade(first.recovered.get().unwrap());
+    drop(first);
+    // The next photo, rendered with no display: nothing is uploaded.
+    let second = photo(0.7);
+    renderer.render(&second, &recipe, 90, None, Cancel::new(&cancel))?;
+    assert_eq!(on_device(&renderer), (false, 0));
+    assert_eq!(left.strong_count(), 0, "the photo left is still held");
+    Ok(())
+}
+
 /// While the Basic sliders move, the Contrast pivot and the Shadows/Highlights map's
 /// base are kept with the photo's measures, the map's grids on the device, and the
 /// develop pass keeps its camera colour: every frame is the one a renderer that

@@ -257,8 +257,37 @@ impl PreviewRenderer {
             Some(headroom),
         ))
     }
+    /// Lets go of what the caches and the device keep of images that are gone, after
+    /// each render: by then the photo rendered has replaced the one before it in the
+    /// pyramid and the noise reduction, so what was made from the earlier photo can
+    /// be told and goes ([`StageCache::forget_gone`]), with what the device still
+    /// holds of it, whether or not this render uploaded anything.
+    fn forget_gone(&mut self) {
+        self.cache.forget_gone();
+        if let Some(gpu) = &mut self.backend.gpu {
+            // An image the device held may be one a cache entry just let go of, and
+            // the image an entry is keyed by one only the device still held.
+            gpu.forget_gone();
+            self.cache.forget_gone();
+        }
+    }
     #[allow(clippy::too_many_arguments)]
     fn render_in(
+        &mut self,
+        image: &CameraImage,
+        recipe: &Recipe,
+        max_edge: u32,
+        region: Option<[u32; 4]>,
+        cancel: Cancel<'_>,
+        display: Option<&gpu::Display>,
+        hdr: Option<f32>,
+    ) -> Result<Output> {
+        let out = self.render_view(image, recipe, max_edge, region, cancel, display, hdr);
+        self.forget_gone();
+        out
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn render_view(
         &mut self,
         image: &CameraImage,
         recipe: &Recipe,
@@ -390,6 +419,19 @@ impl PreviewRenderer {
         ))
     }
     fn region_preview_in(
+        &mut self,
+        image: &CameraImage,
+        recipe: &Recipe,
+        region: [u32; 4],
+        cancel: Cancel<'_>,
+        display: Option<&gpu::Display>,
+        hdr: Option<f32>,
+    ) -> Result<Output> {
+        let out = self.region_preview_view(image, recipe, region, cancel, display, hdr);
+        self.forget_gone();
+        out
+    }
+    fn region_preview_view(
         &mut self,
         image: &CameraImage,
         recipe: &Recipe,
@@ -812,6 +854,64 @@ mod tests {
             Some(&mut p.stages(None)),
         );
         assert!(srgb.is_ok());
+    }
+    /// What the caches keep of a photo goes when the next photo is rendered, whichever
+    /// stages that one uses. Entries left only when newer ones of their own stage
+    /// pushed them out, so a photo with Texture left its detail behind (526 MB of a
+    /// 61-megapixel photo's) for as long as the photos after it had none.
+    #[test]
+    fn a_photo_left_takes_its_cached_stages_with_it() {
+        let cancel = AtomicBool::new(false);
+        let mut p = PreviewRenderer::default();
+        let mut textured = Recipe::default();
+        textured.effects.texture = 0.4;
+        textured.shadows = 0.3;
+        let a = image(400, 300, 0.2);
+        p.render(&a, &textured, 60, None, Cancel::new(&cancel))
+            .unwrap();
+        p.render(
+            &a,
+            &textured,
+            0,
+            Some([0, 0, 100, 80]),
+            Cancel::new(&cancel),
+        )
+        .unwrap();
+        assert!(p.cache.texture_detail.len() > 0 && p.cache.textured.len() > 0);
+        let left = Arc::downgrade(a.recovered.get().unwrap());
+        drop(a);
+        // The next photo, with no Texture: rendered once, as a photo only looked at is.
+        let plain = Recipe::default();
+        let b = image(400, 300, 0.6);
+        p.render(&b, &plain, 60, None, Cancel::new(&cancel))
+            .unwrap();
+        assert_eq!(left.strong_count(), 0, "the photo left is still held");
+        // What is kept is what a renderer that never saw the first photo keeps.
+        let mut fresh = PreviewRenderer::default();
+        fresh
+            .render(&b, &plain, 60, None, Cancel::new(&cancel))
+            .unwrap();
+        let kept = |p: &PreviewRenderer| {
+            [
+                p.cache.measured.len(),
+                p.cache.texture_detail.len(),
+                p.cache.textured.len(),
+                p.cache.samples.len(),
+                p.cache.masks.len(),
+                p.cache.measures.lock().unwrap().len(),
+            ]
+        };
+        assert_eq!(kept(&p), kept(&fresh));
+        assert_eq!(p.cache.texture_detail.len(), 0);
+        // The photo shown keeps its own: the same view again is what it was.
+        let again = p
+            .render(&b, &plain, 60, None, Cancel::new(&cancel))
+            .unwrap();
+        let first = fresh
+            .render(&b, &plain, 60, None, Cancel::new(&cancel))
+            .unwrap();
+        assert_eq!(again.pixels, first.pixels);
+        assert_eq!(kept(&p), kept(&fresh));
     }
     #[test]
     fn fit_uses_a_pyramid_level_and_never_reuses_another_photo() {

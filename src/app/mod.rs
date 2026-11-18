@@ -82,6 +82,8 @@ pub(crate) struct Editor {
     /// Report an Issue…: its dialog and the system probe.
     report_issue: crate::app::shell::report_issue::ReportIssue,
     themes: crate::app::ui::theme::Themes,
+    /// Gives back to the system what the app's work freed, once it goes quiet.
+    freed: crate::platform::memory::Release,
     exports: export::Exports,
     /// Build Standard-Sized Previews, in the background.
     preview_builds: crate::app::library::preview_build::PreviewBuilds,
@@ -386,6 +388,7 @@ impl Editor {
             preferences: Default::default(),
             updates,
             report_issue,
+            freed: Default::default(),
             themes: crate::app::ui::theme::Themes::new(
                 ctx,
                 // Sessions from before `theme_chosen` saved only a palette.

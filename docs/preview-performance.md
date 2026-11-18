@@ -115,6 +115,14 @@ kept per stage (Fit and a 100% view) within 512 MB per stage; larger results are
 computed and not kept. Export uses no cache. A unit test checks that cached renders
 equal uncached ones after each kind of edit.
 
+An entry is keyed by the image it was made from, so once that image is gone (the
+photo was left, or an edit replaced it) nothing can ask for the entry again. Such
+entries are dropped after the next render, with what the device keeps of the image.
+Before 2026-11-18 they stayed until newer entries of their own stage pushed them
+out: a 61-megapixel photo's Texture detail (526 MB) outlived it for as long as the
+photos opened next had no Texture, and each pane's last frame held the photo it
+showed (1.4 GB of that photo, its decode and recovered copy).
+
 Measured as above, but as the best of three interleaved runs of the before and after
 builds, because other work was loading the machine (load average about 30 on 10
 cores; unchanged export timings varied by up to 2×). "Clarity" changes Clarity on

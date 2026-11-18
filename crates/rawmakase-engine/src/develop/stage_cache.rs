@@ -38,6 +38,37 @@ pub(crate) struct StageCache {
     /// that read them (`Toned::measures`).
     pub(crate) measures: Arc<MeasuresCache>,
 }
+impl StageCache {
+    /// Lets go of every entry made from an image that is gone: a photo the document
+    /// has left, a pyramid level of one, an image an edit replaced. Such an entry can
+    /// never be asked for again (its key names an image by identity), yet it stayed
+    /// until newer entries of its stage pushed it out, which a photo that doesn't use
+    /// the stage never makes: a 61-megapixel photo's Texture detail (526 MB) outlived
+    /// it for as long as the photos opened next had no Texture.
+    ///
+    /// An entry's value can be the image another entry is keyed by (the textured
+    /// image its samples are made from), so this goes round until nothing more goes.
+    pub(crate) fn forget_gone(&mut self) {
+        loop {
+            let mut gone = self.measured.forget_gone()
+                + self.texture_detail.forget_gone()
+                + self.textured.forget_gone()
+                + self.samples.forget_gone()
+                + self.masks.forget_gone();
+            if let Ok(mut measures) = self.measures.lock() {
+                gone += measures.forget_gone();
+            }
+            if gone == 0 {
+                break;
+            }
+        }
+    }
+}
+/// A cache key that names the image its entry was made from.
+pub(crate) trait Keyed {
+    /// Whether that image is gone, so the entry can never be asked for again.
+    fn gone(&self) -> bool;
+}
 /// The scene tone stage's measures (`pipeline::tone::photo_measures`) and, once a render
 /// needs it, the photo's haze (`pipeline::tone::photo_haze`), per measurement copy and
 /// the settings they read: both read the same scene values.
@@ -97,6 +128,15 @@ impl<K: PartialEq, V> Lru<K, V> {
             }
         }
     }
+    /// Removes the entries whose image is gone; how many went.
+    fn forget_gone(&mut self) -> usize
+    where
+        K: Keyed,
+    {
+        let before = self.entries.len();
+        self.entries.retain(|(key, ..)| !key.gone());
+        before - self.entries.len()
+    }
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
@@ -116,6 +156,11 @@ pub(crate) struct Same<T>(std::sync::Weak<T>);
 impl<T> Same<T> {
     pub(crate) fn of(value: &Arc<T>) -> Self {
         Self(Arc::downgrade(value))
+    }
+}
+impl<T> Keyed for Same<T> {
+    fn gone(&self) -> bool {
+        self.0.strong_count() == 0
     }
 }
 impl<T> Clone for Same<T> {
@@ -319,6 +364,11 @@ pub(crate) struct MeasuresKey {
     clip: [u32; 3],
     recipe: Recipe,
 }
+impl Keyed for MeasuresKey {
+    fn gone(&self) -> bool {
+        self.copy.gone()
+    }
+}
 impl MeasuresKey {
     pub(crate) fn new(
         copy: &Arc<CameraImage>,
@@ -344,6 +394,11 @@ pub(crate) struct TextureKey {
     scale: u32,
     amount: u32,
 }
+impl Keyed for TextureKey {
+    fn gone(&self) -> bool {
+        self.image.gone()
+    }
+}
 impl TextureKey {
     pub(crate) fn new(image: &Arc<CameraImage>, scale: f32, amount: f32) -> Self {
         Self {
@@ -361,6 +416,11 @@ pub(crate) struct SampleKey {
     region: [u32; 4],
     spread: u32,
     recipe: Recipe,
+}
+impl Keyed for SampleKey {
+    fn gone(&self) -> bool {
+        self.image.gone()
+    }
 }
 impl SampleKey {
     pub(crate) fn new(
@@ -388,6 +448,11 @@ pub(crate) struct MaskKey {
     samples: SampleKey,
     masks: Vec<(Vec<crate::model::masks::MaskComponent>, bool)>,
     recipe: Option<Recipe>,
+}
+impl Keyed for MaskKey {
+    fn gone(&self) -> bool {
+        self.samples.gone()
+    }
 }
 impl MaskKey {
     pub(crate) fn new(

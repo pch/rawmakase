@@ -276,6 +276,10 @@ impl Editor {
         self.end_command_input_when_stale();
         self.finish_paused_turn(ctx);
         self.save_when_due(ctx);
+        // Once work has gone quiet, what it freed goes back to the system.
+        if let Some(after) = self.freed.poll() {
+            ctx.request_repaint_after(after);
+        }
     }
     pub(in crate::app) fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();

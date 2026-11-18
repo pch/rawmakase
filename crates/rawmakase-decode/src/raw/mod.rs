@@ -12,6 +12,8 @@ mod priority;
 use crate::camera_data::{
     CameraImage, Decode, HighlightTonePriority, Metadata, Source, WhiteBalancePresets,
 };
+#[doc(hidden)]
+pub use own::whole_file_reads;
 /// The version of the decoder photos open with.
 pub fn version() -> String {
     rawmakase_raw::VERSION.to_string()

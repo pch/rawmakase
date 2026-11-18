@@ -18,7 +18,7 @@ const SAMPLES: usize = 4;
 pub(super) struct Resident {
     /// sample_region, with its layout.
     pipelines: Vec<(wgpu::BindGroupLayout, wgpu::ComputePipeline)>,
-    photo: Option<(Arc<CameraImage>, wgpu::Buffer)>,
+    pub(super) photo: Option<(Arc<CameraImage>, wgpu::Buffer)>,
     /// The photo's transparency mask, four values to a `u32`, kept by the mask
     /// it was made of: a pyramid level shares the photo's.
     coverage: Option<(Arc<Coverage>, wgpu::Buffer)>,
@@ -347,6 +347,41 @@ impl Processor {
             {
                 r.parked = None;
             }
+        }
+    }
+    /// Lets go of what the device keeps of images that are gone: the current and
+    /// the parked image when nothing else holds them (the photo left, whose pyramid
+    /// went with it), with their buffers, a transparency mask only this holds, and
+    /// the samples made from an image that is gone. Nothing else can name such an
+    /// image again, so none of it could be reused.
+    ///
+    /// The current image goes here and not only when the next one is uploaded: a
+    /// render that doesn't take this path (one for the histogram, with no display; a
+    /// recipe the device doesn't render; any after this path failed) uploads none,
+    /// and the photo before it would stay, its cached stages with it.
+    pub(crate) fn forget_gone(&mut self) {
+        use crate::develop::stage_cache::Keyed as _;
+        if let Some(r) = &mut self.resident {
+            if r.photo
+                .as_ref()
+                .is_some_and(|(kept, _)| Arc::strong_count(kept) == 1)
+            {
+                r.photo = None;
+                r.samples.clear();
+            }
+            if r.parked
+                .as_ref()
+                .is_some_and(|p| Arc::strong_count(&p.photo.0) == 1)
+            {
+                r.parked = None;
+            }
+            if r.coverage
+                .as_ref()
+                .is_some_and(|(kept, _)| Arc::strong_count(kept) == 1)
+            {
+                r.coverage = None;
+            }
+            r.samples.retain(|(key, _)| !key.gone());
         }
     }
     /// Drops everything kept on the device for the resident path.

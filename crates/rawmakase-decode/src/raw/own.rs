@@ -17,13 +17,35 @@ pub(super) type Developed = (u32, u32, Vec<[f32; 3]>);
 /// (`Raw::packed_bayer`).
 pub(super) const XTRANS: &str = "X-Trans";
 pub(super) struct Own {
-    bytes: Arc<[u8]>,
+    bytes: Arc<Vec<u8>>,
     info: RawInfo,
+}
+
+std::thread_local! {
+    /// How many files this thread has read whole ([`whole_file_reads`]).
+    static WHOLE_FILE_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+/// How many RAW files the calling thread has read whole so far: for tests of
+/// the callers that want a file's header or embedded preview alone, which
+/// read it in pieces and must leave this as it was.
+#[doc(hidden)]
+pub fn whole_file_reads() -> u64 {
+    WHOLE_FILE_READS.get()
+}
+
+/// The file at `path`, read whole, as [`std::fs::read`] reads it (its errors
+/// too: a file too large for memory is an error, not an abort), and kept in
+/// the buffer it was read into. Copied into an `Arc<[u8]>` instead, a 130 MB
+/// RAW took 260 MB while it opened.
+fn read_whole(path: &Path) -> std::io::Result<Arc<Vec<u8>>> {
+    let bytes = std::fs::read(path)?;
+    WHOLE_FILE_READS.set(WHOLE_FILE_READS.get() + 1);
+    Ok(Arc::new(bytes))
 }
 
 impl Own {
     pub(super) fn open(path: &Path) -> Result<(Self, Header)> {
-        let bytes: Arc<[u8]> = std::fs::read(path)?.into();
+        let bytes = read_whole(path)?;
         let info = rawmakase_raw::open(&bytes)?;
         let header = header(&info);
         Ok((Self { bytes, info }, header))
@@ -39,7 +61,7 @@ impl Own {
         let header = header(&partial.info);
         Ok((
             Self {
-                bytes: Arc::from(Vec::new()),
+                bytes: Arc::default(),
                 info: partial.info,
             },
             header,
@@ -469,6 +491,27 @@ fn matrix_source(s: rawmakase_raw::MatrixSource) -> rawmakase_model::camera_data
 mod tests {
     use rawmakase_cancel::Cancel;
     use std::sync::atomic::AtomicBool;
+
+    /// A file read whole is the file's bytes, whatever its size (an empty one
+    /// too), and counts as one whole read on the thread that read it; a file
+    /// that can't be read is an error and counts as none.
+    #[test]
+    fn a_file_read_whole_is_its_bytes_and_is_counted() -> std::io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        for len in [0usize, 1, 4096, (1 << 20) + 3] {
+            let path = dir.path().join(format!("{len}.bin"));
+            let bytes: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
+            std::fs::write(&path, &bytes)?;
+            let before = super::whole_file_reads();
+            let read = super::read_whole(&path)?;
+            assert_eq!(&read[..], &bytes[..], "{len} bytes");
+            assert_eq!(super::whole_file_reads(), before + 1);
+        }
+        let before = super::whole_file_reads();
+        assert!(super::read_whole(&dir.path().join("missing.bin")).is_err());
+        assert_eq!(super::whole_file_reads(), before);
+        Ok(())
+    }
 
     /// A tall Super CCD's 2 × 4 stored samples develop as a 4 × 3 diamond:
     /// each sample where the turn places it, 0 elsewhere, a Bayer period.
