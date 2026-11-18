@@ -178,7 +178,7 @@ windows-native-keyring-store = "1"
 # windows.rs); rawmakase-fs builds both already.
 # Win32_System_SystemInformation: the computer's memory (src/platform/memory.rs).
 # Win32_System_Time: smart collections' local dates (src/platform/clock.rs).
-windows-sys = { version = "0.61", features = ["Win32_Devices_Display", "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Time", "Win32_System_WindowsProgramming", "Win32_UI_ColorSystem", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Devices_Display", "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_Time", "Win32_System_WindowsProgramming", "Win32_UI_ColorSystem", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 # The Recycle Bin (src/platform/trash/windows.rs): IFileOperation and its
 # progress sink, COM interfaces windows-sys has no vtables for; the sink's
 # #[implement] names windows-core. DXGI (src/platform/display.rs): the HDR

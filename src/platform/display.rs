@@ -21,6 +21,75 @@ pub(crate) enum SystemDisplay {
 pub(crate) struct Monitor(isize);
 
 #[cfg(windows)]
+pub(crate) mod changes;
+
+/// How often the window reads its display again where the system announces no
+/// change to it: everywhere but Windows, and there while [`changes_announced`]
+/// is false.
+pub(crate) const RECHECK: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// When the system's description of a window's display was read, to tell
+/// whether to read it again.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Reading {
+    monitor: Monitor,
+    /// How many changes the system had announced then.
+    changes: u64,
+    at: std::time::Instant,
+}
+
+impl Reading {
+    /// A reading of `monitor` now.
+    pub(crate) fn of(monitor: Monitor) -> Self {
+        Self {
+            monitor,
+            changes: change_count(),
+            at: std::time::Instant::now(),
+        }
+    }
+    pub(crate) fn monitor(&self) -> Monitor {
+        self.monitor
+    }
+    /// Whether what was read at `self` may be out of date by `now`: the window
+    /// reached another display, the system announced a change, or [`RECHECK`]
+    /// passed where the system announces none or the read `failed`, which
+    /// may have been passing (a display connected while it was asked).
+    pub(crate) fn outdated_by(&self, now: &Self, failed: bool) -> bool {
+        self.outdated_with(now, changes_announced() && !failed)
+    }
+    fn outdated_with(&self, now: &Self, announced: bool) -> bool {
+        self.monitor != now.monitor
+            || self.changes != now.changes
+            || (!announced && now.at.duration_since(self.at) >= RECHECK)
+    }
+}
+
+/// Whether the system announces every change to how its displays show colour
+/// (Windows, once `changes::watch` watches them all), so that nothing reads
+/// them on a timer.
+pub(crate) fn changes_announced() -> bool {
+    #[cfg(windows)]
+    {
+        changes::announced()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+fn change_count() -> u64 {
+    #[cfg(windows)]
+    {
+        changes::count()
+    }
+    #[cfg(not(windows))]
+    {
+        0
+    }
+}
+
+#[cfg(windows)]
 pub(crate) fn monitor(window: &impl winit::raw_window_handle::HasWindowHandle) -> Monitor {
     use windows_sys::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromWindow};
     use winit::raw_window_handle::RawWindowHandle;
@@ -92,11 +161,11 @@ impl WindowsHdr {
 
     /// What Windows reports, from its display configuration's `hdr_supported`
     /// (`None` when it couldn't be asked) and `sdr_white_nits`, and from DXGI's
-    /// `output`. The window reads this every few seconds while it redraws, so
-    /// `output`, which creates a DXGI factory and reads every adapter's outputs,
-    /// is asked only for a display that may show HDR. Doing that every few
-    /// seconds on an SDR display is the suspected cause of a whole-screen
-    /// flicker on an NVIDIA GeForce under Windows 10 (#1126).
+    /// `output`. `output`, which creates a DXGI factory and reads every adapter's
+    /// outputs, is asked only for a display that may show HDR. Doing that every
+    /// few seconds on an SDR display is the suspected cause of a whole-screen
+    /// flicker on an NVIDIA GeForce under Windows 10 (#1126); the window now
+    /// reads this only when Windows announces a change (`changes`).
     fn from_parts(
         hdr_supported: Option<bool>,
         sdr_white_nits: f32,
@@ -361,30 +430,42 @@ mod windows {
     }
 
     fn active_paths() -> Option<Vec<DISPLAYCONFIG_PATH_INFO>> {
-        let (mut path_count, mut mode_count) = (0, 0);
-        // SAFETY: the counts are written; then the buffers have those lengths.
-        unsafe {
-            if GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut path_count, &mut mode_count)
-                != 0
-            {
-                return None;
+        // A display connected between the two calls needs bigger buffers, which
+        // QueryDisplayConfig says with ERROR_INSUFFICIENT_BUFFER; ask again then,
+        // as Microsoft's remarks on it suggest.
+        const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
+        for _ in 0..3 {
+            let (mut path_count, mut mode_count) = (0, 0);
+            // SAFETY: the counts are written; then the buffers have those lengths.
+            unsafe {
+                if GetDisplayConfigBufferSizes(
+                    QDC_ONLY_ACTIVE_PATHS,
+                    &mut path_count,
+                    &mut mode_count,
+                ) != 0
+                {
+                    return None;
+                }
+                let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); path_count as usize];
+                let mut modes = vec![DISPLAYCONFIG_MODE_INFO::default(); mode_count as usize];
+                match QueryDisplayConfig(
+                    QDC_ONLY_ACTIVE_PATHS,
+                    &mut path_count,
+                    paths.as_mut_ptr(),
+                    &mut mode_count,
+                    modes.as_mut_ptr(),
+                    std::ptr::null_mut(),
+                ) {
+                    0 => {
+                        paths.truncate(path_count as usize);
+                        return Some(paths);
+                    }
+                    ERROR_INSUFFICIENT_BUFFER => continue,
+                    _ => return None,
+                }
             }
-            let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); path_count as usize];
-            let mut modes = vec![DISPLAYCONFIG_MODE_INFO::default(); mode_count as usize];
-            if QueryDisplayConfig(
-                QDC_ONLY_ACTIVE_PATHS,
-                &mut path_count,
-                paths.as_mut_ptr(),
-                &mut mode_count,
-                modes.as_mut_ptr(),
-                std::ptr::null_mut(),
-            ) != 0
-            {
-                return None;
-            }
-            paths.truncate(path_count as usize);
-            Some(paths)
         }
+        None
     }
 
     /// DXGI's description of a display, through the COM interfaces windows-sys
@@ -1302,5 +1383,38 @@ mod windows_hdr_tests {
             .scrgb_white(),
             1.
         );
+    }
+}
+
+#[cfg(test)]
+mod reading_tests {
+    use super::{Monitor, RECHECK, Reading};
+
+    fn reading(monitor: isize, changes: u64, at: std::time::Instant) -> Reading {
+        Reading {
+            monitor: Monitor(monitor),
+            changes,
+            at,
+        }
+    }
+
+    /// Where changes are announced (#1126), time alone never reads the display
+    /// again: only another display or an announced change does.
+    #[test]
+    fn an_announced_display_is_read_again_only_after_a_change() {
+        let then = std::time::Instant::now();
+        let read = reading(1, 4, then);
+        assert!(!read.outdated_with(&reading(1, 4, then + RECHECK * 30), true));
+        assert!(read.outdated_with(&reading(1, 5, then), true));
+        assert!(read.outdated_with(&reading(2, 4, then), true));
+    }
+
+    #[test]
+    fn otherwise_the_display_is_read_again_every_recheck() {
+        let then = std::time::Instant::now();
+        let read = reading(1, 0, then);
+        assert!(!read.outdated_with(&reading(1, 0, then + RECHECK / 2), false));
+        assert!(read.outdated_with(&reading(1, 0, then + RECHECK), false));
+        assert!(read.outdated_with(&reading(2, 0, then), false));
     }
 }

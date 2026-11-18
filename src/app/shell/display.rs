@@ -131,34 +131,57 @@ pub(in crate::app) struct HeadroomReader {
     /// The display Windows was last asked about, when, and what it said.
     #[cfg(windows)]
     windows: Option<(
-        crate::platform::display::Monitor,
-        std::time::Instant,
+        crate::platform::display::Reading,
         Option<crate::platform::display::WindowsHdr>,
     )>,
+    /// The window had the focus at the last frame.
+    #[cfg(windows)]
+    focused: bool,
+    /// The window gained the focus since the last read.
+    #[cfg(windows)]
+    refocused: bool,
+}
+
+impl HeadroomReader {
+    /// Whether the window has the focus this frame.
+    pub(in crate::app) fn focus(&mut self, focused: bool) {
+        #[cfg(windows)]
+        {
+            self.refocused |= focused && !self.focused;
+            self.focused = focused;
+        }
+        #[cfg(not(windows))]
+        let _ = focused;
+    }
 }
 
 #[cfg(windows)]
 impl HeadroomReader {
     /// What Windows says about the window's display, asked again when the window
-    /// reaches another display and every [`RECHECK`]: the HDR switch and the SDR
-    /// content brightness change without a message winit passes on. Each read
-    /// presents SDR white where Windows shows it (`WindowsHdr::scrgb_white`).
+    /// reaches another display or Windows announces a change to the HDR switch or
+    /// the SDR content brightness, which winit passes on no message for
+    /// ([`Reading::outdated_by`]). A display that can show HDR is also asked
+    /// again when the window gains the focus, as Chromium does: those settings
+    /// are changed in another window, and Windows documents no notification of
+    /// them. An SDR display isn't, since asking it is the suspected cause of a
+    /// flicker on focus (#1126). Each read presents SDR white where Windows
+    /// shows it (`WindowsHdr::scrgb_white`).
     ///
-    /// [`RECHECK`]: crate::app::preferences::monitor::RECHECK
+    /// [`Reading::outdated_by`]: crate::platform::display::Reading::outdated_by
     fn read(&mut self, frame: &eframe::Frame) -> Option<crate::platform::display::WindowsHdr> {
         use crate::platform::display;
-        let monitor = display::monitor(frame);
-        let now = std::time::Instant::now();
+        let now = display::Reading::of(display::monitor(frame));
+        let refocused = std::mem::take(&mut self.refocused);
         let hdr = match self.windows {
-            Some((m, at, hdr))
-                if m == monitor
-                    && now.duration_since(at) < crate::app::preferences::monitor::RECHECK =>
+            Some((last, hdr))
+                if !last.outdated_by(&now, hdr.is_none())
+                    && !(refocused && hdr.is_some_and(|h| h.supported)) =>
             {
                 hdr
             }
             _ => {
-                let hdr = display::windows_hdr(monitor);
-                self.windows = Some((monitor, now, hdr));
+                let hdr = display::windows_hdr(now.monitor());
+                self.windows = Some((now, hdr));
                 hdr
             }
         };

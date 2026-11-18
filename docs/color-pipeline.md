@@ -100,7 +100,8 @@ On macOS that explicitly tags the Metal surface as sRGB so
 Core Animation matches it to the current monitor, including wide-gamut displays.
 On Windows it converts to the ICC profile Windows assigns to the display the
 window is on (`GetICMProfileW` on that display, checked again when the window
-reaches another display and every two seconds), unless the display is in
+reaches another display and when Windows announces a change, such as a profile
+being assigned, [HDR](hdr.md)), unless the display is in
 advanced color (automatic color management or HDR), where Windows converts sRGB
 itself. Without that conversion, Windows shows sRGB pixels as device RGB, which
 looks oversaturated on a wide-gamut display (issue 550). Linux has no system
