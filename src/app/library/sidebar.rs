@@ -213,290 +213,319 @@ impl Library {
         egui::ScrollArea::vertical()
             .id_salt("library-sources")
             .show(ui, |ui| {
-                section(ui, "Catalog", |ui| {
-                    let offline = self.session.photos().len() - self.available_count();
-                    let all = self.filters.folder_scope.is_none()
-                        && self.filters.collection.is_none()
-                        && !self.filters.only_missing
-                        && !self.filters.previous_import;
-                    if source_row(ui, "All Photographs", self.session.photos().len(), all).clicked()
-                    {
-                        self.filters.folder_scope = None;
-                        self.selected_folders.clear();
-                        self.filters.collection = None;
-                        self.filters.only_missing = false;
-                        self.filters.previous_import = false;
-                        self.filter()
-                    }
-                    // `+`: the target collection, B's, as Lightroom marks it.
-                    let quick_target = self.target().is_none();
-                    let quick = source_row(
-                        ui,
-                        if quick_target {
-                            "Quick Collection +"
-                        } else {
-                            "Quick Collection"
-                        },
-                        self.quick_count(),
-                        self.showing_quick(),
-                    )
-                    .on_hover_text(if quick_target {
-                        "B adds the selected photos · ⌘B shows them"
-                    } else {
-                        "⌘B shows them · B adds to the target collection, marked +"
-                    });
-                    if quick.clicked()
-                        && !crate::app::ui::widgets::context_clicked(&quick)
-                        && let Err(e) = self.show_quick()
-                    {
-                        self.messages
-                            .warn(format!("Quick Collection unavailable: {e}"));
-                    }
-                    let mut quick_action = None;
-                    crate::app::ui::widgets::context_menu(&quick, |ui| {
-                        use crate::app::ui::widgets::menu_item;
-                        crate::app::ui::widgets::menu_width(ui, 230.);
-                        ui.spacing_mut().item_spacing.y = 0.;
-                        for (title, key, choice) in [
-                            ("Set as Target Collection", "", QuickMenu::Target),
-                            ("Save Quick Collection…", "⌘⌥B", QuickMenu::Save),
-                            ("Clear Quick Collection", "⌘⇧B", QuickMenu::Clear),
-                        ] {
-                            let checked = choice == QuickMenu::Target && quick_target;
-                            if menu_item(ui, title, key, true, checked) {
-                                quick_action = Some(choice);
-                                ui.close();
+                egui::Frame::new()
+                    .inner_margin(crate::app::ui::design::margin(
+                        crate::app::ui::design::inset::SIDEBAR_ROWS,
+                        0.,
+                    ))
+                    .show(ui, |ui| {
+                        section(ui, "Catalog", |ui| {
+                            let offline = self.session.photos().len() - self.available_count();
+                            let all = self.filters.folder_scope.is_none()
+                                && self.filters.collection.is_none()
+                                && !self.filters.only_missing
+                                && !self.filters.previous_import;
+                            if source_row(ui, "All Photographs", self.session.photos().len(), all)
+                                .clicked()
+                            {
+                                self.filters.folder_scope = None;
+                                self.selected_folders.clear();
+                                self.filters.collection = None;
+                                self.filters.only_missing = false;
+                                self.filters.previous_import = false;
+                                self.filter()
                             }
-                        }
-                    });
-                    match quick_action {
-                        Some(QuickMenu::Target) => self.set_target(None),
-                        Some(QuickMenu::Save) => self.ask_save_quick(),
-                        Some(QuickMenu::Clear) => {
-                            if let Err(e) = self.clear_quick() {
-                                self.messages
-                                    .fail(format!("Quick Collection not changed: {e}"));
-                            }
-                        }
-                        None => {}
-                    }
-                    let imported = self.session.previous_import().len();
-                    if imported > 0
-                        && source_row(
-                            ui,
-                            "Previous Import",
-                            imported,
-                            self.filters.previous_import,
-                        )
-                        .on_hover_text("The photos the last Add Photo Folder or Synchronize added")
-                        .clicked()
-                    {
-                        self.show_previous_import();
-                    }
-                    if offline > 0
-                        && source_row(
-                            ui,
-                            "Offline Photographs",
-                            offline,
-                            self.filters.only_missing,
-                        )
-                        .clicked()
-                    {
-                        self.filters.only_missing = !self.filters.only_missing;
-                        self.filter()
-                    }
-                });
-                section(ui, "Folders", |ui| {
-                    // Lightroom-style volume headers with an attached light.
-                    let anchors = self.anchors().into_iter().map(|(.., path)| path).collect();
-                    self.volumes.check(ui.ctx(), anchors);
-                    let online = self.volumes.snapshot().online;
-                    self.volumes_checked(&online);
-                    let entered = !self.session.roots().is_empty() && self.folder_filter_field(ui);
-                    let filter = self.folder_filter(&trees);
-                    if entered && let Some(first) = filter.as_ref().and_then(|f| f.matches.first())
-                    {
-                        self.reveal_folder(&trees, first);
-                        self.click_folder(first, Click::Replace, &[first]);
-                    }
-                    let scroll_to = self.scroll_to_folder.take();
-                    let view = TreeView {
-                        filter: filter.as_ref(),
-                        scroll_to: scroll_to.as_deref(),
-                    };
-                    // Applied once every row is drawn, for a Shift-click range.
-                    let mut clicked = None;
-                    let mut drawn = 0;
-                    for drive in &trees.volumes {
-                        let volume = &drive.volume;
-                        // While filtering, only the drives with a row shown.
-                        if let Some(filter) = &filter
-                            && !drive.trees.iter().any(|t| filter.shows(&t.key))
-                        {
-                            continue;
-                        }
-                        // Room between drives, so each reads as its own group.
-                        if drawn > 0 {
-                            ui.add_space(space::L);
-                        }
-                        drawn += 1;
-                        let state = online.get(volume).copied();
-                        let attached = match &volume.mount {
-                            None => Some(true),
-                            Some(_) => state.map(|s| s.0),
-                        };
-                        let space = state.and_then(|s| s.1);
-                        let photos = drive.photos;
-                        let key = collapsed_key(volume);
-                        // A drive folded away still shows the rows filtering
-                        // finds on it, and stays folded once the text is gone.
-                        let collapsed = filter.is_none() && self.expanded.contains(&key);
-                        if volumes::volume_row(ui, volume, attached, space, photos, !collapsed)
-                            .clicked()
-                            && filter.is_none()
-                        {
-                            if collapsed {
-                                self.expanded.remove(&key);
-                            } else {
-                                self.expanded.insert(key);
-                            }
-                        }
-                        if collapsed {
-                            continue;
-                        }
-                        ui.add_space(space::XXS);
-                        for tree in &drive.trees {
-                            if filter.as_ref().is_some_and(|f| !f.shows(&tree.key)) {
-                                continue;
-                            }
-                            match folder_tree_row_in(
+                            // `+`: the target collection, B's, as Lightroom marks it.
+                            let quick_target = self.target().is_none();
+                            let quick = source_row(
                                 ui,
-                                tree,
-                                0,
-                                &mut self.expanded,
-                                &self.selected_folders,
-                                self.subfolders_shown,
-                                &view,
-                            ) {
-                                Some(TreeAction::Select(key, click)) => {
-                                    clicked = Some((key, click));
-                                }
-                                Some(TreeAction::RelinkRoot(id)) => action = Action::RelinkRoot(id),
-                                Some(TreeAction::RelinkFolder { root, logical }) => {
-                                    action = Action::RelinkFolder(root, logical)
-                                }
-                                Some(TreeAction::Synchronize(scope, name)) => {
-                                    self.ask(super::outbox::Request::Sync(scope, name));
-                                }
-                                Some(TreeAction::NewFolder {
-                                    root,
-                                    parent,
-                                    name,
-                                    folder,
-                                }) => self.request_new_folder(root, parent, name, folder),
-                                Some(TreeAction::RenameFolder { root, logical }) => {
-                                    self.ask(super::outbox::Request::File(
-                                        super::FileRequest::RenameFolder { root, logical },
-                                    ))
-                                }
-                                Some(TreeAction::MoveFolder { root, logical }) => {
-                                    self.ask(super::outbox::Request::File(
-                                        super::FileRequest::ChooseParent {
-                                            root,
-                                            from: logical,
-                                        },
-                                    ))
-                                }
-                                Some(TreeAction::TrashFolder { root, logical }) => {
-                                    self.ask(super::outbox::Request::File(
-                                        super::FileRequest::TrashFolder { root, logical },
-                                    ))
-                                }
-                                Some(TreeAction::RemoveRoot(root, name)) => {
-                                    self.ask(super::outbox::Request::Removal(
-                                        super::FolderRemoval {
-                                            catalog: self.session.catalog().location().clone(),
-                                            name,
-                                            folders: HashSet::new(),
-                                            photos: 0,
-                                            empty_root: Some(root),
-                                            exported: None,
-                                        },
-                                    ));
-                                }
-                                Some(TreeAction::DropFolder {
-                                    root,
-                                    from,
-                                    to_root,
-                                    to,
-                                }) => self.ask(super::outbox::Request::File(
-                                    super::FileRequest::MoveFolder {
-                                        root,
-                                        from,
-                                        to_root,
-                                        to,
-                                    },
-                                )),
-                                Some(TreeAction::Reveal(path)) => {
-                                    if let Err(e) = crate::platform::reveal::reveal(&path) {
-                                        self.messages.fail(format!(
-                                            "Could not show {}: {e}",
-                                            path.display()
-                                        ));
+                                if quick_target {
+                                    "Quick Collection +"
+                                } else {
+                                    "Quick Collection"
+                                },
+                                self.quick_count(),
+                                self.showing_quick(),
+                            )
+                            .on_hover_text(if quick_target {
+                                "B adds the selected photos · ⌘B shows them"
+                            } else {
+                                "⌘B shows them · B adds to the target collection, marked +"
+                            });
+                            if quick.clicked()
+                                && !crate::app::ui::widgets::context_clicked(&quick)
+                                && let Err(e) = self.show_quick()
+                            {
+                                self.messages
+                                    .warn(format!("Quick Collection unavailable: {e}"));
+                            }
+                            let mut quick_action = None;
+                            crate::app::ui::widgets::context_menu(&quick, |ui| {
+                                use crate::app::ui::widgets::menu_item;
+                                crate::app::ui::widgets::menu_width(ui, 230.);
+                                ui.spacing_mut().item_spacing.y = 0.;
+                                for (title, key, choice) in [
+                                    ("Set as Target Collection", "", QuickMenu::Target),
+                                    ("Save Quick Collection…", "⌘⌥B", QuickMenu::Save),
+                                    ("Clear Quick Collection", "⌘⇧B", QuickMenu::Clear),
+                                ] {
+                                    let checked = choice == QuickMenu::Target && quick_target;
+                                    if menu_item(ui, title, key, true, checked) {
+                                        quick_action = Some(choice);
+                                        ui.close();
                                     }
                                 }
-                                Some(TreeAction::Drop {
-                                    root,
-                                    to,
-                                    name,
-                                    photos,
-                                }) => self.request_move(photos, root, to, name),
-                                Some(TreeAction::Remove(name, folders, photos)) => self.ask(
-                                    super::outbox::Request::Removal(super::FolderRemoval {
-                                        catalog: self.session.catalog().location().clone(),
-                                        name,
-                                        folders,
-                                        photos,
-                                        empty_root: None,
-                                        exported: None,
-                                    }),
-                                ),
-                                Some(TreeAction::ExportCatalog(name, folders, photos)) => {
-                                    let mut ids: Vec<_> = folders.iter().copied().collect();
-                                    ids.sort();
-                                    self.ask(super::outbox::Request::Export(
-                                        super::CatalogExportRequest {
-                                            name: name.clone(),
-                                            scope: crate::catalog::ExportScope::Folders(ids),
-                                            removal: Some(super::FolderRemoval {
-                                                catalog: self.session.catalog().location().clone(),
-                                                name,
-                                                folders,
-                                                photos,
-                                                empty_root: None,
-                                                exported: None,
-                                            }),
-                                        },
-                                    ))
-                                }
-                                Some(TreeAction::ShowSubfolders(shown)) => {
-                                    self.show_subfolders(shown)
+                            });
+                            match quick_action {
+                                Some(QuickMenu::Target) => self.set_target(None),
+                                Some(QuickMenu::Save) => self.ask_save_quick(),
+                                Some(QuickMenu::Clear) => {
+                                    if let Err(e) = self.clear_quick() {
+                                        self.messages
+                                            .fail(format!("Quick Collection not changed: {e}"));
+                                    }
                                 }
                                 None => {}
                             }
-                        }
-                    }
-                    if let Some((key, click)) = clicked {
-                        let rows = self.folder_rows(&trees, filter.as_ref());
-                        self.click_folder(&key, click, &rows);
-                    }
-                    if self.session.roots().is_empty() {
-                        empty_note(ui, "No folders yet");
-                    } else if filter.as_ref().is_some_and(|f| f.matches.is_empty()) {
-                        empty_note(ui, "No matching folders");
-                    }
-                    ui.add_space(space::XL);
-                    if add_row(ui, "Add Folder…")
+                            let imported = self.session.previous_import().len();
+                            if imported > 0
+                                && source_row(
+                                    ui,
+                                    "Previous Import",
+                                    imported,
+                                    self.filters.previous_import,
+                                )
+                                .on_hover_text(
+                                    "The photos the last Add Photo Folder or Synchronize added",
+                                )
+                                .clicked()
+                            {
+                                self.show_previous_import();
+                            }
+                            if offline > 0
+                                && source_row(
+                                    ui,
+                                    "Offline Photographs",
+                                    offline,
+                                    self.filters.only_missing,
+                                )
+                                .clicked()
+                            {
+                                self.filters.only_missing = !self.filters.only_missing;
+                                self.filter()
+                            }
+                        });
+                        section(ui, "Folders", |ui| {
+                            // Lightroom-style volume headers with an attached light.
+                            let anchors =
+                                self.anchors().into_iter().map(|(.., path)| path).collect();
+                            self.volumes.check(ui.ctx(), anchors);
+                            let online = self.volumes.snapshot().online;
+                            self.volumes_checked(&online);
+                            let entered =
+                                !self.session.roots().is_empty() && self.folder_filter_field(ui);
+                            let filter = self.folder_filter(&trees);
+                            if entered
+                                && let Some(first) = filter.as_ref().and_then(|f| f.matches.first())
+                            {
+                                self.reveal_folder(&trees, first);
+                                self.click_folder(first, Click::Replace, &[first]);
+                            }
+                            let scroll_to = self.scroll_to_folder.take();
+                            let view = TreeView {
+                                filter: filter.as_ref(),
+                                scroll_to: scroll_to.as_deref(),
+                            };
+                            // Applied once every row is drawn, for a Shift-click range.
+                            let mut clicked = None;
+                            let mut drawn = 0;
+                            for drive in &trees.volumes {
+                                let volume = &drive.volume;
+                                // While filtering, only the drives with a row shown.
+                                if let Some(filter) = &filter
+                                    && !drive.trees.iter().any(|t| filter.shows(&t.key))
+                                {
+                                    continue;
+                                }
+                                // Room between drives, so each reads as its own group.
+                                if drawn > 0 {
+                                    ui.add_space(space::L);
+                                }
+                                drawn += 1;
+                                let state = online.get(volume).copied();
+                                let attached = match &volume.mount {
+                                    None => Some(true),
+                                    Some(_) => state.map(|s| s.0),
+                                };
+                                let space = state.and_then(|s| s.1);
+                                let photos = drive.photos;
+                                let key = collapsed_key(volume);
+                                // A drive folded away still shows the rows filtering
+                                // finds on it, and stays folded once the text is gone.
+                                let collapsed = filter.is_none() && self.expanded.contains(&key);
+                                if volumes::volume_row(
+                                    ui, volume, attached, space, photos, !collapsed,
+                                )
+                                .clicked()
+                                    && filter.is_none()
+                                {
+                                    if collapsed {
+                                        self.expanded.remove(&key);
+                                    } else {
+                                        self.expanded.insert(key);
+                                    }
+                                }
+                                if collapsed {
+                                    continue;
+                                }
+                                ui.add_space(space::XXS);
+                                for tree in &drive.trees {
+                                    if filter.as_ref().is_some_and(|f| !f.shows(&tree.key)) {
+                                        continue;
+                                    }
+                                    match folder_tree_row_in(
+                                        ui,
+                                        tree,
+                                        0,
+                                        &mut self.expanded,
+                                        &self.selected_folders,
+                                        self.subfolders_shown,
+                                        &view,
+                                    ) {
+                                        Some(TreeAction::Select(key, click)) => {
+                                            clicked = Some((key, click));
+                                        }
+                                        Some(TreeAction::RelinkRoot(id)) => {
+                                            action = Action::RelinkRoot(id)
+                                        }
+                                        Some(TreeAction::RelinkFolder { root, logical }) => {
+                                            action = Action::RelinkFolder(root, logical)
+                                        }
+                                        Some(TreeAction::Synchronize(scope, name)) => {
+                                            self.ask(super::outbox::Request::Sync(scope, name));
+                                        }
+                                        Some(TreeAction::NewFolder {
+                                            root,
+                                            parent,
+                                            name,
+                                            folder,
+                                        }) => self.request_new_folder(root, parent, name, folder),
+                                        Some(TreeAction::RenameFolder { root, logical }) => self
+                                            .ask(super::outbox::Request::File(
+                                                super::FileRequest::RenameFolder { root, logical },
+                                            )),
+                                        Some(TreeAction::MoveFolder { root, logical }) => {
+                                            self.ask(super::outbox::Request::File(
+                                                super::FileRequest::ChooseParent {
+                                                    root,
+                                                    from: logical,
+                                                },
+                                            ))
+                                        }
+                                        Some(TreeAction::TrashFolder { root, logical }) => self
+                                            .ask(super::outbox::Request::File(
+                                                super::FileRequest::TrashFolder { root, logical },
+                                            )),
+                                        Some(TreeAction::RemoveRoot(root, name)) => {
+                                            self.ask(super::outbox::Request::Removal(
+                                                super::FolderRemoval {
+                                                    catalog: self
+                                                        .session
+                                                        .catalog()
+                                                        .location()
+                                                        .clone(),
+                                                    name,
+                                                    folders: HashSet::new(),
+                                                    photos: 0,
+                                                    empty_root: Some(root),
+                                                    exported: None,
+                                                },
+                                            ));
+                                        }
+                                        Some(TreeAction::DropFolder {
+                                            root,
+                                            from,
+                                            to_root,
+                                            to,
+                                        }) => self.ask(super::outbox::Request::File(
+                                            super::FileRequest::MoveFolder {
+                                                root,
+                                                from,
+                                                to_root,
+                                                to,
+                                            },
+                                        )),
+                                        Some(TreeAction::Reveal(path)) => {
+                                            if let Err(e) = crate::platform::reveal::reveal(&path) {
+                                                self.messages.fail(format!(
+                                                    "Could not show {}: {e}",
+                                                    path.display()
+                                                ));
+                                            }
+                                        }
+                                        Some(TreeAction::Drop {
+                                            root,
+                                            to,
+                                            name,
+                                            photos,
+                                        }) => self.request_move(photos, root, to, name),
+                                        Some(TreeAction::Remove(name, folders, photos)) => self
+                                            .ask(super::outbox::Request::Removal(
+                                                super::FolderRemoval {
+                                                    catalog: self
+                                                        .session
+                                                        .catalog()
+                                                        .location()
+                                                        .clone(),
+                                                    name,
+                                                    folders,
+                                                    photos,
+                                                    empty_root: None,
+                                                    exported: None,
+                                                },
+                                            )),
+                                        Some(TreeAction::ExportCatalog(name, folders, photos)) => {
+                                            let mut ids: Vec<_> = folders.iter().copied().collect();
+                                            ids.sort();
+                                            self.ask(super::outbox::Request::Export(
+                                                super::CatalogExportRequest {
+                                                    name: name.clone(),
+                                                    scope: crate::catalog::ExportScope::Folders(
+                                                        ids,
+                                                    ),
+                                                    removal: Some(super::FolderRemoval {
+                                                        catalog: self
+                                                            .session
+                                                            .catalog()
+                                                            .location()
+                                                            .clone(),
+                                                        name,
+                                                        folders,
+                                                        photos,
+                                                        empty_root: None,
+                                                        exported: None,
+                                                    }),
+                                                },
+                                            ))
+                                        }
+                                        Some(TreeAction::ShowSubfolders(shown)) => {
+                                            self.show_subfolders(shown)
+                                        }
+                                        None => {}
+                                    }
+                                }
+                            }
+                            if let Some((key, click)) = clicked {
+                                let rows = self.folder_rows(&trees, filter.as_ref());
+                                self.click_folder(&key, click, &rows);
+                            }
+                            if self.session.roots().is_empty() {
+                                empty_note(ui, "No folders yet");
+                            } else if filter.as_ref().is_some_and(|f| f.matches.is_empty()) {
+                                empty_note(ui, "No matching folders");
+                            }
+                            ui.add_space(space::XL);
+                            if add_row(ui, "Add Folder…")
                         .on_hover_text(
                             "Add a folder of photos to this catalog. Photos stay where they are.",
                         )
@@ -504,29 +533,29 @@ impl Library {
                     {
                         action = Action::AddFolder;
                     }
-                });
-                section(ui, "Collections", |ui| {
-                    let tree = &trees.collections;
-                    let mut asked = None;
-                    for node in tree.iter() {
-                        if let Some(row) = collections::collection_row(
-                            ui,
-                            node,
-                            0,
-                            &mut self.expanded,
-                            self.filters.collection,
-                        ) {
-                            asked = Some(row);
-                        }
-                    }
-                    if let Some(row) = collections::top_level_drop(ui) {
-                        asked = Some(row);
-                    }
-                    if tree.is_empty() {
-                        empty_note(ui, "No collections");
-                    }
-                    ui.add_space(space::XL);
-                    if add_row(ui, "Create Collection…")
+                        });
+                        section(ui, "Collections", |ui| {
+                            let tree = &trees.collections;
+                            let mut asked = None;
+                            for node in tree.iter() {
+                                if let Some(row) = collections::collection_row(
+                                    ui,
+                                    node,
+                                    0,
+                                    &mut self.expanded,
+                                    self.filters.collection,
+                                ) {
+                                    asked = Some(row);
+                                }
+                            }
+                            if let Some(row) = collections::top_level_drop(ui) {
+                                asked = Some(row);
+                            }
+                            if tree.is_empty() {
+                                empty_note(ui, "No collections");
+                            }
+                            ui.add_space(space::XL);
+                            if add_row(ui, "Create Collection…")
                         .on_hover_text(
                             "A collection of the photos you choose; with photos selected, of those",
                         )
@@ -537,29 +566,30 @@ impl Library {
                             parent: None,
                         });
                     }
-                    ui.add_space(space::S);
-                    if add_row(ui, "Create Collection Set…")
-                        .on_hover_text("A set holds collections and other sets")
-                        .clicked()
-                    {
-                        asked = Some(collections::RowAction::Create {
-                            set: true,
-                            parent: None,
+                            ui.add_space(space::S);
+                            if add_row(ui, "Create Collection Set…")
+                                .on_hover_text("A set holds collections and other sets")
+                                .clicked()
+                            {
+                                asked = Some(collections::RowAction::Create {
+                                    set: true,
+                                    parent: None,
+                                });
+                            }
+                            ui.add_space(space::S);
+                            if add_row(ui, "Create Smart Collection…")
+                                .on_hover_text(
+                                    "A collection of the photos its rules match, kept up to date",
+                                )
+                                .clicked()
+                            {
+                                asked = Some(collections::RowAction::CreateSmart(None));
+                            }
+                            if let Some(row) = asked {
+                                self.collection_row_action(row);
+                            }
                         });
-                    }
-                    ui.add_space(space::S);
-                    if add_row(ui, "Create Smart Collection…")
-                        .on_hover_text(
-                            "A collection of the photos its rules match, kept up to date",
-                        )
-                        .clicked()
-                    {
-                        asked = Some(collections::RowAction::CreateSmart(None));
-                    }
-                    if let Some(row) = asked {
-                        self.collection_row_action(row);
-                    }
-                });
+                    });
             });
         action
     }

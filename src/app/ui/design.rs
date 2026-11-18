@@ -35,10 +35,15 @@ pub(in crate::app) mod inset {
     /// A side panel section's contents from the panel's edges, and its
     /// header's title and chevron, so they line up.
     pub(in crate::app) const SECTION_CONTENT: f32 = space::M;
-    /// [`SECTION_CONTENT`] in Develop's adjustments, wider: it keeps controls
-    /// at the right edge, such as the curve's white point, clear of the scroll
-    /// bar that floats over them. The histogram's graph lines up with it.
+    /// [`SECTION_CONTENT`] in Develop's adjustments and the Library's right
+    /// panel, wider: it keeps controls at the right edge, such as the curve's
+    /// white point, clear of the scroll bar that floats over them. The histogram's graph lines up with it.
     pub(in crate::app) const ADJUSTMENT_CONTENT: f32 = space::XL;
+    /// The catalog sidebar's rows from its [`PANEL`] margin, inside its scroll
+    /// area so the scroll bar stays where Develop's is. The rows put their
+    /// names and counts 10 pt further in, which lands them on
+    /// [`ADJUSTMENT_CONTENT`], where Develop puts its labels and values.
+    pub(in crate::app) const SIDEBAR_ROWS: f32 = ADJUSTMENT_CONTENT - 10.;
     /// A modal window's content from its border.
     pub(in crate::app) const DIALOG: f32 = space::XXL;
     /// Above a side panel's section header or caption band, so the first
