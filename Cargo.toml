@@ -74,6 +74,7 @@ keyring-core = "1"
 # program `rawmakase mcp` runs.
 rawmakase-extensions = { path = "crates/rawmakase-extensions", version = "0.1.0" }
 rawmakase-fs = { path = "crates/rawmakase-fs", version = "0.1.0" }
+rawmakase-hdr-merge = { path = "crates/rawmakase-hdr-merge", version = "0.1.0" }
 rawmakase-inference = { path = "crates/rawmakase-inference", version = "0.1.0" }
 rawmakase-interop = { path = "crates/rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "crates/rawmakase-model", version = "0.1.0" }

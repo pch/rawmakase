@@ -3931,6 +3931,7 @@ dependencies = [
  "rawmakase-extension",
  "rawmakase-extensions",
  "rawmakase-fs",
+ "rawmakase-hdr-merge",
  "rawmakase-inference",
  "rawmakase-interop",
  "rawmakase-midi",
@@ -4174,6 +4175,7 @@ dependencies = [
 name = "rawmakase-hdr-merge"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "flate2",
  "half",
  "rawmakase-cancel",

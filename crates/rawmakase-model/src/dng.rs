@@ -204,7 +204,12 @@ fn neutral_calibration(
         None => Some(default.to_vec()),
     };
     let a = numbers(50723, &identity)?;
-    let b = numbers(50724, &identity)?;
+    // A file of one illuminant (no ColorMatrix2) has one calibration.
+    let b = if ifd.contains_key(&50722) {
+        numbers(50724, &identity)?
+    } else {
+        a.clone()
+    };
     let analog = if linear {
         vec![1.; 3]
     } else {
@@ -623,16 +628,36 @@ mod tests {
                 })
                 .collect::<Vec<_>>()
         };
-        let file = |analog: [f32; 3], photometric: u16| {
-            let entries = [
+        // The tags of a file of two illuminants, or with `one`, of one: its
+        // ColorMatrix1 and CameraCalibration1 alone.
+        let tags = |analog: [f32; 3], photometric: u16, one: bool| {
+            let mut entries = vec![
                 (262u16, 3u16, 1u32, photometric.to_le_bytes().to_vec()),
                 (273, 4, 1, 0u32.to_le_bytes().to_vec()),
                 (50706, 1, 4, vec![1, 4, 0, 0]),
+                (
+                    50721,
+                    10,
+                    9,
+                    rationals(&[1., 0., 0., 0., 1., 0., 0., 0., 1.]),
+                ),
+                (
+                    50722,
+                    10,
+                    9,
+                    rationals(&[1., 0., 0., 0., 1., 0., 0., 0., 1.]),
+                ),
                 (50723, 10, 9, rationals(&matrix)),
                 (50724, 10, 9, rationals(&matrix)),
                 (50727, 10, 3, rationals(&analog)),
                 (50931, 2, 10, b"com.adobe\0".to_vec()),
             ];
+            if one {
+                entries.retain(|e| e.0 != 50722 && e.0 != 50724);
+            }
+            entries
+        };
+        let read_tags = |entries: Vec<(u16, u16, u32, Vec<u8>)>| {
             let mut bytes = b"II*\0\x08\0\0\0".to_vec();
             bytes.extend((entries.len() as u16).to_le_bytes());
             let mut data: Vec<u8> = Vec::new();
@@ -654,6 +679,7 @@ mod tests {
             std::fs::write(f.path(), bytes).unwrap();
             read(f.path()).unwrap().neutral_calibration
         };
+        let file = |analog, photometric| read_tags(tags(analog, photometric, false));
         let calibration = file([1.; 3], 32803).unwrap();
         assert_eq!(calibration.gains, [0.9817, 1., 0.9687]);
         assert_eq!(calibration.signature, "com.adobe");
@@ -662,6 +688,13 @@ mod tests {
         assert!(file([1., 2., 1.], 32803).is_none());
         let linear = file([1., 2., 1.], 34892).unwrap();
         assert_eq!(linear.gains, [0.9817, 1., 0.9687]);
+        // A file of one illuminant has one calibration: CameraCalibration1.
+        let one = read_tags(tags([1.; 3], 34892, true)).unwrap();
+        assert_eq!(one.gains, [0.9817, 1., 0.9687]);
+        // Of two, CameraCalibration2 left out is the identity: it differs.
+        let mut two = tags([1.; 3], 34892, false);
+        two.retain(|e| e.0 != 50724);
+        assert!(read_tags(two).is_none());
         let mut other = matrix;
         other[0] = 0.99;
         assert!(constant_diagonal(&matrix, &other, &[1.; 3]).is_none());

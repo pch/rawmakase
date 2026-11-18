@@ -34,7 +34,7 @@ const _: () = assert!(BAND.is_multiple_of(super::PATTERN));
 const MARGIN: usize = CANDIDATE_EDGE + 1 + LUMINANCE_RADIUS;
 /// Distance from the band edge at which candidates are valid: the green line search,
 /// then the colour difference line search.
-const CANDIDATE_EDGE: usize = (REACH + COLOUR_REACH) as usize;
+pub(crate) const CANDIDATE_EDGE: usize = (REACH + COLOUR_REACH) as usize;
 /// How far along a line to look for a green.
 const REACH: isize = 4;
 /// How far along a line to look for a red or blue sample. Along a row or column of

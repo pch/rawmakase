@@ -56,6 +56,10 @@ const D65: [f64; 9] = [
     1.1434, -0.4699, -0.0377, -0.3305, 1.1357, 0.2208, -0.0349, 0.1066, 0.6046,
 ];
 
+/// The unit's calibration, as Adobe DNG Converter writes it for both
+/// illuminants.
+const CALIBRATION: [f64; 9] = [0.9785, 0., 0., 0., 1., 0., 0., 0., 1.0018];
+
 fn facts() -> DngFacts {
     let exif = vec![
         Field::rational(tag::EXPOSURE_TIME, 1, 20),
@@ -86,7 +90,7 @@ fn facts() -> DngFacts {
                     1.3426, -0.6334, -0.0177, -0.4244, 1.2136, 0.2371, -0.0844, 0.1922, 0.7097,
                 ],
                 forward_matrix: None,
-                camera_calibration: None,
+                camera_calibration: Some(CALIBRATION),
             },
             Calibration {
                 illuminant: 21,
@@ -94,9 +98,10 @@ fn facts() -> DngFacts {
                 forward_matrix: Some([
                     0.4386, 0.3874, 0.1383, 0.1599, 0.7541, 0.0860, 0.0405, 0.0004, 0.7842,
                 ]),
-                camera_calibration: None,
+                camera_calibration: Some(CALIBRATION),
             },
         ],
+        calibration_signature: Some("com.adobe".into()),
         analog_balance: None,
         as_shot_neutral: [0.5, 1., 0.625],
         orientation: 6,
@@ -160,6 +165,9 @@ fn a_merged_dng_opens_with_what_it_was_written_with() {
     for (got, want) in m.cam_xyz.iter().flatten().zip(D65) {
         assert!((f64::from(*got) - want).abs() < 1e-5, "{:?}", m.cam_xyz);
     }
+    let calibration = m.dng_neutral_calibration.as_ref().unwrap();
+    assert_eq!(calibration.signature, "com.adobe");
+    assert_eq!(calibration.gains, [0.9785, 1., 1.0018]);
     let covered = m.coverage.as_ref().unwrap();
     assert_eq!((covered.width, covered.height), (W, H));
     assert_eq!(covered.values, coverage);

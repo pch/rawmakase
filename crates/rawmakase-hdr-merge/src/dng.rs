@@ -88,6 +88,10 @@ pub struct DngFacts {
     pub baseline_exposure: f64,
     /// One or two calibrations, by illuminant.
     pub calibrations: Vec<Calibration>,
+    /// CameraCalibrationSignature: which profiles the calibrations'
+    /// [`Calibration::camera_calibration`] is for ("com.adobe" for Adobe's);
+    /// `None` writes none.
+    pub calibration_signature: Option<String>,
     /// Gains the samples carry (AnalogBalance); `None` for none.
     pub analog_balance: Option<[f64; 3]>,
     /// The as-shot white balance as camera RGB of a neutral (AsShotNeutral).
@@ -140,6 +144,7 @@ mod tag {
     pub(super) const AS_SHOT_NEUTRAL: u16 = 50728;
     pub(super) const BASELINE_EXPOSURE: u16 = 50730;
     pub(super) const DNG_PRIVATE_DATA: u16 = 50740;
+    pub(super) const CAMERA_CALIBRATION_SIGNATURE: u16 = 50931;
     pub(super) const CALIBRATION_ILLUMINANT: [u16; 2] = [50778, 50779];
     pub(super) const FORWARD_MATRIX: [u16; 2] = [50964, 50965];
 }
@@ -265,6 +270,9 @@ fn describe(tiff: &mut Tiff, raw: &mut Ifd, facts: &DngFacts) -> Result<(), Erro
         if let Some(m) = &c.camera_calibration {
             raw.set(tag::CAMERA_CALIBRATION[i], Value::srationals(m));
         }
+    }
+    if let Some(signature) = &facts.calibration_signature {
+        raw.set(tag::CAMERA_CALIBRATION_SIGNATURE, Value::ascii(signature));
     }
     if let Some(ab) = facts.analog_balance {
         raw.set(tag::ANALOG_BALANCE, Value::rationals(&ab));

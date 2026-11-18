@@ -57,6 +57,7 @@ pub mod comparison;
 pub mod diagnostics;
 pub(crate) mod edit_session;
 pub mod lensfun_install;
+pub mod merge_command;
 pub(crate) mod platform;
 pub mod render_command;
 /// For headless commands: whether a path's volume is mounted.

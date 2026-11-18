@@ -6,8 +6,10 @@ use anyhow::{Result, ensure};
 use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
 use std::path::Path;
+mod frame;
 pub(crate) mod lens;
 mod own;
+pub use frame::Frame;
 mod priority;
 use crate::camera_data::{
     CameraImage, Decode, HighlightTonePriority, Metadata, Source, WhiteBalancePresets,
