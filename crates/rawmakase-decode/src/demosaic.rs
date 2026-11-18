@@ -117,7 +117,7 @@ pub(crate) fn demosaic(cfa: &Cfa) -> Vec<[f32; 3]> {
         // mean of a dark noisy area rises less than clipping each sample would
         // (Camera Raw's dark noisy patches sit at that lower bias).
         let mut out = colour_difference(cfa, &green_bayer(cfa));
-        out.par_iter_mut().flatten().for_each(|v| *v = v.max(0.));
+        out.par_iter_mut().for_each(clip_at_black);
         out
     } else {
         let data: Vec<f32> = cfa.data.par_iter().map(|v| v.max(0.)).collect();
@@ -126,6 +126,38 @@ pub(crate) fn demosaic(cfa: &Cfa) -> Vec<[f32; 3]> {
             ..*cfa
         })
     }
+}
+
+/// Clips a white-balanced pixel below black. Its brightness is that of
+/// clipping each channel at zero, `(R + 2G + B) / 4` of the clipped channels,
+/// as before #802, but its colour is the pixel's own, pulled toward grey just
+/// far enough that no channel is negative (grey when its luminance is not
+/// above zero). Clipping each channel on its own raises red and blue, which
+/// white balance gives more noise, more than green, and colour noise
+/// reduction kept that as colour: high-ISO deep shadows turned magenta where
+/// Camera Raw's are neutral.
+fn clip_at_black(p: &mut [f32; 3]) {
+    let lowest = p[0].min(p[1]).min(p[2]);
+    if lowest >= 0. {
+        return;
+    }
+    let luminance = |p: [f32; 3]| (p[0] + 2. * p[1] + p[2]) * 0.25;
+    let target = luminance(p.map(|v| v.max(0.)));
+    let own = luminance(*p);
+    if own <= 0. {
+        *p = [target; 3];
+        return;
+    }
+    let keep = own / (own - lowest);
+    let scale = target / own;
+    let pulled = p.map(|v| (own + (v - own) * keep) * scale);
+    // An infinite sample beside a negative one makes the pull NaN: such a
+    // pixel is clipped per channel.
+    *p = if pulled.iter().all(|v| v.is_finite()) {
+        pulled.map(|v| v.max(0.))
+    } else {
+        p.map(|v| v.max(0.))
+    };
 }
 
 fn green_bayer(cfa: &Cfa) -> Vec<f32> {
@@ -852,6 +884,83 @@ mod tests {
                 }
             }
         }
+    }
+    /// A grey patch at 0.25% of white under noise eight times larger, as in a
+    /// Nikon Z fc's shadows at ISO 204,800, white balanced with red ×2 and blue
+    /// ×1.5, so red and blue carry more noise than green. Colour noise reduction
+    /// keeps the patch's mean colour in square-root values (`color_noise` in
+    /// the engine), so that is what is measured. Clipping each channel at zero
+    /// made it 1.48 red and 1.23 blue over green, the magenta deep shadows of
+    /// #802, where Camera Raw's are near neutral.
+    #[test]
+    fn noise_clipped_at_black_keeps_its_colour() {
+        let pattern = bayer_pattern();
+        let (w, h) = (256, 256);
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut uniform = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            ((seed >> 40) as f32 + 0.5) / (1u64 << 24) as f32
+        };
+        let gain = [2., 1., 1.5];
+        let data: Vec<f32> = (0..w * h)
+            .map(|i| {
+                let c = pattern[((i / w) % PATTERN) * PATTERN + (i % w) % PATTERN] as usize;
+                // Box–Muller: a normal sample of 0.02 before white balance.
+                let n = (-2. * uniform().ln()).sqrt() * (std::f32::consts::TAU * uniform()).cos();
+                0.0025 + n * 0.02 * gain[c]
+            })
+            .collect();
+        let cfa = Cfa {
+            data: &data,
+            width: w,
+            height: h,
+            pattern: &pattern,
+            white: [1.; 3],
+        };
+        let mut sum = [0f64; 3];
+        for p in demosaic(&cfa) {
+            for c in 0..3 {
+                sum[c] += f64::from(p[c]).sqrt();
+            }
+        }
+        let [red, blue] = [sum[0], sum[2]].map(|v| (v / sum[1]).powi(2));
+        // Measured 1.20 and 1.04.
+        assert!(
+            red < 1.35 && blue < 1.15,
+            "red/green {red:.3}, blue/green {blue:.3}"
+        );
+    }
+    /// A pixel clipped at black is as bright as clipping each channel at zero
+    /// makes it, keeps the order of its channels, and is grey when its own
+    /// luminance is not above zero.
+    #[test]
+    fn clip_at_black_keeps_the_brightness_of_a_channel_clip() {
+        let luminance = |p: [f32; 3]| (p[0] + 2. * p[1] + p[2]) * 0.25;
+        for p in [
+            [-0.02, 0.01, 0.03],
+            [0.05, -0.01, 0.02],
+            [0.01, 0.02, -0.04],
+        ] {
+            let mut q = p;
+            clip_at_black(&mut q);
+            let want = luminance(p.map(|v| v.max(0.)));
+            assert!((luminance(q) - want).abs() < 1e-6, "{p:?} → {q:?}");
+            assert!(q.iter().all(|v| *v >= 0.), "{q:?}");
+            for (i, j) in [(0, 1), (1, 2), (0, 2)] {
+                assert_eq!(p[i] < p[j], q[i] < q[j], "{p:?} → {q:?}");
+            }
+        }
+        let mut q = [-0.03, 0.01, -0.02];
+        clip_at_black(&mut q);
+        assert!(q.iter().all(|v| (v - 0.005).abs() < 1e-6), "{q:?}");
+        let mut q = [0.1, 0.2, 0.3];
+        clip_at_black(&mut q);
+        assert_eq!(q, [0.1, 0.2, 0.3]);
+        let mut q = [f32::INFINITY, -0.01, 0.02];
+        clip_at_black(&mut q);
+        assert_eq!(q, [f32::INFINITY, 0., 0.02]);
     }
     #[test]
     fn half_size_bayer_is_the_block_it_covers() {
