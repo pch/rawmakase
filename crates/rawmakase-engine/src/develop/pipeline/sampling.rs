@@ -108,23 +108,36 @@ pub fn preview(im: &CameraImage, max: u32) -> CameraImage {
     }
 }
 /// The photo reduced to `max` for measuring it. A DNG's OpcodeList3 GainMap (its lens
-/// shading) is part of the photo as Camera Raw measures it, so the copy carries it in
-/// full: the scene tone stage's measures, the haze and the Shadows/Highlights and
-/// Clarity maps read the shading the render corrects. (The render applies it at the
-/// lens Vignetting amount and with the built-in correction on; the copy, kept per
-/// image, does not follow either.)
+/// shading) and FixVignetteRadial are part of the photo as Camera Raw measures it, so
+/// the copy carries them in full: the scene tone stage's measures, the haze and the
+/// Shadows/Highlights and Clarity maps read the shading the render corrects. (The
+/// render applies them at the lens Vignetting amount and with the built-in correction
+/// on; the copy, kept per image, does not follow either.) Other vignetting, a camera
+/// maker's own table or an OpcodeList2 opcode, is not on the copy.
 pub(crate) fn measurement_source(im: Source, max: u32) -> CameraImage {
     let mut copy = preview_source(im, max);
-    if let Some(grid) = copy.metadata.lens.as_ref().and_then(|l| l.gain_map.clone()) {
-        let (w, h) = (copy.width as usize, copy.height as usize);
-        copy.pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
-            let gain = grid.gain(
-                ((i / w) as f32 + 0.5) / h as f32,
-                ((i % w) as f32 + 0.5) / w as f32,
-            );
-            (0..3).for_each(|c| p[c] *= gain[c]);
-        });
+    let lens = copy.metadata.lens.as_ref();
+    let grid = lens.and_then(|l| l.gain_map.clone());
+    let radial = lens
+        .filter(|l| l.vignetting_measured)
+        .and_then(|l| Some((l.vignetting.clone()?, l.centre)));
+    if grid.is_none() && radial.is_none() {
+        return copy;
     }
+    let (w, h) = (copy.width as usize, copy.height as usize);
+    let (width, height) = (w as f32, h as f32);
+    // Radius 1 is the half diagonal, from the correction's optical centre, as
+    // [`VignetteField`] has it.
+    let half = width.hypot(height) * 0.5;
+    copy.pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
+        let (x, y) = ((i % w) as f32 + 0.5, (i / w) as f32 + 0.5);
+        let mut gain = (grid.as_ref()).map_or([1.; 3], |g| g.gain(y / height, x / width));
+        if let Some((table, [cx, cy])) = &radial {
+            let lift = table.eval((x - cx * width).hypot(y - cy * height) / half);
+            gain = gain.map(|g| g * lift);
+        }
+        (0..3).for_each(|c| p[c] *= gain[c]);
+    });
     copy
 }
 pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {

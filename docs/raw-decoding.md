@@ -320,7 +320,7 @@ neighbours), MapTable, MapPolynomial, GainMap (phones' lens shading, gains up
 to 6 in our files), DeltaPerRow/Column, ScalePerRow/Column and, in
 OpcodeList1, FixVignetteRadial. OpcodeList2's FixVignetteRadial is left to
 development, which reads it as the file's lens correction with OpcodeList3's
-warps (`rawmakase-model`'s DNG reader). Warps, TrimBounds, later versions'
+warps, gain maps and vignetting (`rawmakase-model`'s DNG reader). Warps, TrimBounds, later versions'
 and unknown opcodes, and gain maps of gains 1 are skipped; a list that does
 not parse is not applied. A GainMap's point for a pixel is its row and column
 over the modified image's height and width. LibRaw applied none of them.

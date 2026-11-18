@@ -618,6 +618,7 @@ impl Calibration {
             source: source.to_string(),
             default_on: false,
             vignetting,
+            vignetting_measured: false,
             distortion: distortion_table,
             chromatic,
             chromatic_at_source: true,

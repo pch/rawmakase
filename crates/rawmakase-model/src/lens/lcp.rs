@@ -401,6 +401,7 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
         source: format!("{}: {}", LensCorrection::ADOBE_PROFILE, first.name),
         default_on: false,
         vignetting,
+        vignetting_measured: false,
         distortion,
         chromatic,
         chromatic_at_source: false,
