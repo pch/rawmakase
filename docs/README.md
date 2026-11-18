@@ -52,6 +52,7 @@ Start with the [code map](code-map.md) to find where a change belongs, the
 | [Extensions plan](extensions-plan.md) | Plan (2026-11-09), mostly built | The extension system's design; its status line says which phases are built |
 | [Lightroom extension plan](lightroom-extension-plan.md) | Plan (2026-11-16), step 1 built | Moving Lightroom Classic import into a bundled extension |
 | [Lightroom (cloud) import plan](lightroom-cloud-import-plan.md) | Plan (2026-11-16), not built | Importing from Lightroom (cloud), after the Lightroom extension plan |
+| [Editable previews](editable-previews.md) | Plan (2026-11-18), built in four parts | Editing an offline RAW from a 2560 px linear DNG copy, saved as the original's edit |
 
 ## Rendering
 
