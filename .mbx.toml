@@ -1,0 +1,7 @@
+# Settings for mbx (Mr Boxington), the Cargo build cache some contributors use.
+# Cargo and CI ignore this file.
+#
+# Let checkouts of this repository share compiled crates, so a new worktree
+# reuses what another worktree already built instead of compiling it again.
+# mbx still rebuilds anything that embeds its checkout's path.
+share_workspace_root = true
