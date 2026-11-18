@@ -481,8 +481,13 @@ fn open_runtime(path: &Path) -> Result<Environment, String> {
         if let Some(environment) = environment.as_ref() {
             return Ok(environment.clone());
         }
+        // Microsoft's builds, which we bundle, send usage telemetry on Windows
+        // unless it is switched off, and `ort` enables it by default. Photo
+        // editing stays local, so nothing about the models or their runs is
+        // reported.
         let built = builder
             .with_name("rawmakase")
+            .with_telemetry(false)
             .build()
             .map_err(|e| e.to_string())?;
         Ok(environment.insert(built).clone())
