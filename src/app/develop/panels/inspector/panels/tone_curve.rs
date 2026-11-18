@@ -20,14 +20,15 @@ use crate::model::recipe::Recipe;
 use crate::presets::curves::SavedCurve;
 use eframe::egui::{self, Sense, Vec2};
 
-/// Draws the panel over the photo's `histogram`. `targeted` is what a Targeted
-/// Adjustment Tool drag is moving, `saved_curves` the Point Curve menu's own.
+/// Draws the panel over `histogram`, of what the curves take in, asked for only
+/// while the panel is open. `targeted` is what a Targeted Adjustment Tool drag is
+/// moving, `saved_curves` the Point Curve menu's own.
 pub(in crate::app::develop::panels::inspector) fn show(
     ui: &mut egui::Ui,
     step: &mut StepName,
     r: &mut Recipe,
     view: &mut ViewState,
-    histogram: &[[u32; 256]; 3],
+    histogram: impl FnOnce() -> [[u32; 256]; 3],
     targeted: Option<TargetWeights>,
     saved_curves: &[SavedCurve],
 ) -> Vec<Action> {
@@ -75,7 +76,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
             parametric_curve_ui(
                 ui,
                 &mut r.effects,
-                histogram,
+                &histogram(),
                 moving.and_then(|w| (0..4).find(|i| w.shares[*i] > 0.)),
             );
             subheading(ui, "Region");
@@ -95,7 +96,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
                     } else {
                         &mut r.effects.channels[view.selected_curve - 1]
                     },
-                    histogram,
+                    &histogram(),
                     view.selected_curve,
                 );
             });

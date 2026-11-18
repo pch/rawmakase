@@ -627,7 +627,10 @@ impl Editor {
         let profiles = self.document.profiles.clone();
         let profile_errors = self.document.profile_errors.clone();
         let profile_groups = self.document.profile_groups.clone();
-        let histogram = self.preview.histogram.bins;
+        // The Tone Curve's histogram is of what the curves take in, rendered only
+        // while its section is open; until it is, Develop's own.
+        let output_histogram = self.preview.histogram.bins;
+        let curve_histogram_due = self.curve_histogram_due();
         // Auto needs the decoded photo, and runs one estimate at a time.
         let auto_ready = self.document.full().is_some() && !self.document.auto.is_running();
         let auto_in_effect = self.auto_in_effect();
@@ -665,6 +668,7 @@ impl Editor {
         let mut requests = panels::Requests::default();
         let view = &mut self.view;
         let step = &mut self.step_name;
+        let curve_histograms = &mut self.curve_histogram;
         let (r, photo) = self.document.recipe_and_colors();
         let metadata = metadata.as_ref();
         requests.add(panels::basic::show(
@@ -680,7 +684,11 @@ impl Editor {
             step,
             r,
             view,
-            &histogram,
+            || {
+                curve_histogram_due
+                    .and_then(|(key, image)| curve_histograms.shown(key, image).map(|h| h.bins))
+                    .unwrap_or(output_histogram)
+            },
             targeted,
             &saved_curves,
         ));

@@ -23,6 +23,7 @@ pub(in crate::app) enum Kind {
     ReferenceLoader,
     HdrPreview,
     HdrHistogram,
+    CurveHistogram,
     Export,
     Batch,
     FolderChange,
@@ -146,6 +147,16 @@ const WORK: &[Row] = &[
         slows_previews: false,
         pauses_checksums: false,
         stop: Some(|e, _| vec![e.hdr_histogram.stop()]),
+    },
+    // The Tone Curve panel's histogram, on a worker of its own.
+    Row {
+        kind: Kind::CurveHistogram,
+        running: None,
+        closing: None,
+        status: None,
+        slows_previews: false,
+        pauses_checksums: false,
+        stop: Some(|e, _| vec![e.curve_histogram.stop()]),
     },
     // Its progress in the bar. Queued exports count, not only the one running.
     Row {
