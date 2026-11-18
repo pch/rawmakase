@@ -5,7 +5,7 @@ const FILE: ModelFile = ModelFile {
     size_bytes: 3,
     sha256: "",
     url: "",
-    fallback: "",
+    fallback: None,
 };
 
 #[test]
@@ -96,11 +96,11 @@ fn host(answers: Vec<Answer>) -> (ModelFile, std::sync::mpsc::Receiver<Option<u6
         size_bytes: LEN as u64,
         sha256: Box::leak(hex(Sha256::new_with_prefix(body())).into_boxed_str()),
         url: Box::leak(url.into_boxed_str()),
-        fallback: "",
+        fallback: None,
     };
     (
         ModelFile {
-            fallback: file.url,
+            fallback: Some(file.url),
             ..file
         },
         requests,
@@ -247,7 +247,7 @@ fn a_host_ignoring_the_range_and_dropping_gets_no_further_and_is_left() {
         send: if i % 2 == 0 { 40_000 } else { 60_000 },
     });
     let (mut file, requests) = host(answers.collect());
-    file.fallback = host(vec![]).0.url;
+    file.fallback = Some(host(vec![]).0.url);
     let dir = tempfile::tempdir().unwrap();
     let part = partial(&dir, &[]);
     assert!(download(&part, &Progress::default(), &file, 0, BODY_BUDGET).is_err());
@@ -352,7 +352,7 @@ fn wrong_bytes_kept_from_before_are_fetched_again_from_the_same_source() {
     // The whole file is there but wrong: no request can show it, so the checksum
     // does, and the mirror is asked again rather than the fallback, which is down.
     let (mut file, requests) = host(vec![Answer::Whole { send: LEN }]);
-    file.fallback = host(vec![]).0.url;
+    file.fallback = Some(host(vec![]).0.url);
     let dir = tempfile::tempdir().unwrap();
     let part = partial(&dir, &[0; LEN]);
     assert_eq!(

@@ -74,7 +74,9 @@ pub const SUBJECT: ModelSpec = ModelSpec {
                 "https://huggingface.co/pch/rawmakase-models/resolve/5748347a4c11d29b1c747859a4c24883a01215ac/",
                 "sam2.1-hiera-small/vision_encoder.onnx"
             ),
-            fallback: "https://huggingface.co/onnx-community/sam2.1-hiera-small-ONNX/resolve/a7df49d8de14b9d2e4504d1687b0d568f905fd8d/onnx/vision_encoder.onnx",
+            fallback: Some(
+                "https://huggingface.co/onnx-community/sam2.1-hiera-small-ONNX/resolve/a7df49d8de14b9d2e4504d1687b0d568f905fd8d/onnx/vision_encoder.onnx",
+            ),
         },
         ModelFile {
             name: "vision_encoder.onnx_data",
@@ -84,7 +86,9 @@ pub const SUBJECT: ModelSpec = ModelSpec {
                 "https://huggingface.co/pch/rawmakase-models/resolve/5748347a4c11d29b1c747859a4c24883a01215ac/",
                 "sam2.1-hiera-small/vision_encoder.onnx_data"
             ),
-            fallback: "https://huggingface.co/onnx-community/sam2.1-hiera-small-ONNX/resolve/a7df49d8de14b9d2e4504d1687b0d568f905fd8d/onnx/vision_encoder.onnx_data",
+            fallback: Some(
+                "https://huggingface.co/onnx-community/sam2.1-hiera-small-ONNX/resolve/a7df49d8de14b9d2e4504d1687b0d568f905fd8d/onnx/vision_encoder.onnx_data",
+            ),
         },
         ModelFile {
             name: "prompt_encoder_mask_decoder.onnx",
@@ -94,7 +98,9 @@ pub const SUBJECT: ModelSpec = ModelSpec {
                 "https://huggingface.co/pch/rawmakase-models/resolve/5748347a4c11d29b1c747859a4c24883a01215ac/",
                 "sam2.1-hiera-small/prompt_encoder_mask_decoder.onnx"
             ),
-            fallback: "https://huggingface.co/onnx-community/sam2.1-hiera-small-ONNX/resolve/a7df49d8de14b9d2e4504d1687b0d568f905fd8d/onnx/prompt_encoder_mask_decoder.onnx",
+            fallback: Some(
+                "https://huggingface.co/onnx-community/sam2.1-hiera-small-ONNX/resolve/a7df49d8de14b9d2e4504d1687b0d568f905fd8d/onnx/prompt_encoder_mask_decoder.onnx",
+            ),
         },
         ModelFile {
             name: "prompt_encoder_mask_decoder.onnx_data",
@@ -104,7 +110,9 @@ pub const SUBJECT: ModelSpec = ModelSpec {
                 "https://huggingface.co/pch/rawmakase-models/resolve/5748347a4c11d29b1c747859a4c24883a01215ac/",
                 "sam2.1-hiera-small/prompt_encoder_mask_decoder.onnx_data"
             ),
-            fallback: "https://huggingface.co/onnx-community/sam2.1-hiera-small-ONNX/resolve/a7df49d8de14b9d2e4504d1687b0d568f905fd8d/onnx/prompt_encoder_mask_decoder.onnx_data",
+            fallback: Some(
+                "https://huggingface.co/onnx-community/sam2.1-hiera-small-ONNX/resolve/a7df49d8de14b9d2e4504d1687b0d568f905fd8d/onnx/prompt_encoder_mask_decoder.onnx_data",
+            ),
         },
     ],
     encoder_file: "vision_encoder.onnx",
@@ -143,7 +151,9 @@ pub const PANOPTIC: PanopticSpec = PanopticSpec {
             "https://huggingface.co/pch/rawmakase-models/resolve/5748347a4c11d29b1c747859a4c24883a01215ac/",
             "detr-resnet-50-panoptic/detr-panoptic-fp16.onnx"
         ),
-        fallback: "https://huggingface.co/Xenova/detr-resnet-50-panoptic/resolve/ea24b2d4e0bfae31f0a1299ba3fb892a2df064de/onnx/model_fp16.onnx",
+        fallback: Some(
+            "https://huggingface.co/Xenova/detr-resnet-50-panoptic/resolve/ea24b2d4e0bfae31f0a1299ba3fb892a2df064de/onnx/model_fp16.onnx",
+        ),
     },
     long_edge: 800,
     mean: [0.485, 0.456, 0.406],
@@ -194,7 +204,7 @@ pub const SKY: SkySpec = SkySpec {
         size_bytes: 242_162_020,
         sha256: "ed75b2ad81ad209949c9580071ed486a72a423037822a49faa4e98991a43b891",
         url: SKY_URL,
-        fallback: SKY_URL,
+        fallback: Some(SKY_URL),
     },
     logits: "/model/decode_head/classifier/Conv_output_0",
     long_edge: 1024,
@@ -246,7 +256,7 @@ mod tests {
                     .bytes()
                     .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
             );
-            for url in [file.url, file.fallback] {
+            for url in std::iter::once(file.url).chain(file.fallback) {
                 assert!(
                     url.starts_with("https://") && !url.contains("/main/"),
                     "{url}"
