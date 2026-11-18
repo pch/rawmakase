@@ -72,7 +72,7 @@ pub use defaults::{CameraExifReader, ImportOptions, MetadataDefaults, NewPhotoDe
 pub use descriptive::MetadataSnapshot;
 pub use develop_history::{HistoryUpdate, SavedHistory, SavedStep};
 pub use edits::PreviewEdit;
-pub use edits::{EditChange, EditToSave};
+pub use edits::{EditChange, EditToClear, EditToSave};
 pub use export_catalog::{CatalogExport, ExportScope, ExportedFolders};
 pub use fingerprint::Conditional;
 pub use format_upgrade::{OpeningProgress, Upgraded};

@@ -75,7 +75,7 @@ fn a_conditional_edit_is_written_only_while_the_photo_is_as_it_was_read() -> Res
     let (r, export) = (recipe(0.5), ExportOptions::default());
     let edit = EditToSave {
         id,
-        path: &path,
+        original: path.as_path().into(),
         source: &identity,
         recipe: &r,
         export: &export,
@@ -118,15 +118,15 @@ fn a_conditional_edit_of_several_photos_writes_those_still_as_read_in_one_go() -
     let (r, export) = (recipe(0.5), ExportOptions::default());
     let edit = |id, path, source| EditToSave {
         id,
-        path,
+        original: crate::edits::Original::file(path),
         source,
         recipe: &r,
         export: &export,
         history: HistoryUpdate::Keep,
     };
     let (edit_a, edit_b) = (
-        edit(a, &a_path, &identities[0]),
-        edit(b, &b_path, &identities[1]),
+        edit(a, a_path.as_path(), &identities[0]),
+        edit(b, b_path.as_path(), &identities[1]),
     );
     save(&mut cat, b, &b_path, 2.0)?;
     assert_eq!(

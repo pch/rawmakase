@@ -78,16 +78,75 @@ pub struct PhotoRecord {
     pub captured: String,
 }
 
+/// The photo an edit is checked against: the file at `path`, read when checked,
+/// or, for a photo opened from its editable preview, also the identity
+/// `recorded` for that preview (the catalog's row keeps it). The recorded identity stands in for the file only while
+/// nothing is at `path` ([`Original::is_absent`]). A file that is there is always
+/// read, so an original back online is checked as it is, even while its photo is
+/// still being edited from its editable preview.
+#[derive(Clone, Copy, Debug)]
+pub struct Original<'a> {
+    pub path: &'a Path,
+    pub recorded: Option<&'a Identity>,
+}
+impl<'a> Original<'a> {
+    /// The file at `path`, with nothing standing in for it.
+    pub fn file(path: &'a Path) -> Self {
+        Self {
+            path,
+            recorded: None,
+        }
+    }
+    /// The photo whose original is at `path`, opened from an editable preview
+    /// built from the file `recorded` names.
+    pub fn recorded(path: &'a Path, recorded: &'a Identity) -> Self {
+        Self {
+            path,
+            recorded: Some(recorded),
+        }
+    }
+    /// The photo's identity: its file's, read now; or, only when nothing is at
+    /// its path and an identity was recorded, the recorded one. A file that
+    /// can't be read for any other reason is an error, as it always was.
+    pub fn identity(&self) -> Result<Identity> {
+        match Identity::read(self.path) {
+            Ok(now) => Ok(now),
+            Err(e) => match self.recorded {
+                Some(recorded) if Self::is_absent(self.path) => Ok(recorded.clone()),
+                _ => Err(e),
+            },
+        }
+    }
+    /// Whether nothing is at `path`, as far as the file system can say, rather
+    /// than something unreadable there (a folder without permission, a network
+    /// share that stopped answering). This is the one rule for when an editable
+    /// preview's identity may stand in for its original, for saving and for
+    /// opening alike.
+    pub fn is_absent(path: &Path) -> bool {
+        matches!(path.try_exists(), Ok(false))
+    }
+}
+impl<'a> From<&'a Path> for Original<'a> {
+    fn from(path: &'a Path) -> Self {
+        Self::file(path)
+    }
+}
+impl<'a> From<&'a std::path::PathBuf> for Original<'a> {
+    fn from(path: &'a std::path::PathBuf) -> Self {
+        Self::file(path)
+    }
+}
+
 impl EditRecord {
     /// The saved RAWmakase edit, if there is one. An error when it can't be read, or
-    /// when the file at `path` is not the photo it was saved for
+    /// when `original` is not the photo it was saved for
     /// ([`Identity::same_photo`]): the edit is then protected, never replaced by
     /// another.
-    pub fn saved(&self, path: &Path) -> Result<Option<SavedEdit>> {
+    pub fn saved<'a>(&self, original: impl Into<Original<'a>>) -> Result<Option<SavedEdit>> {
         if self.recipe.is_none() {
             return Ok(None);
         }
-        self.saved_for(&Identity::read(path)?)
+        self.saved_for(&original.into().identity()?)
     }
     /// [`EditRecord::saved`], checked against `file`, the photo's file as
     /// read earlier, instead of reading it again: for a photo open in Develop,
@@ -167,15 +226,15 @@ pub enum Start {
     AdobeDefault,
 }
 impl Start {
-    /// Photo `record` at `path`'s source, as [`resolve`] chooses it: its saved edit
-    /// (read and checked now; an error when it can't be), else its Lightroom edit,
-    /// else `defaults`.
-    pub fn capture(
+    /// Photo `record` of `original`'s source, as [`resolve`] chooses it: its saved
+    /// edit (read and checked now; an error when it can't be), else its Lightroom
+    /// edit, else `defaults`.
+    pub fn capture<'a>(
         record: &EditRecord,
-        path: &Path,
+        original: impl Into<Original<'a>>,
         defaults: Arc<DevelopDefaults>,
     ) -> Result<Self> {
-        if let Some(saved) = record.saved(path)? {
+        if let Some(saved) = record.saved(original)? {
             return Ok(Self::Saved(Box::new(saved)));
         }
         Ok(match record.lightroom() {
@@ -282,6 +341,83 @@ mod hdr_tests {
         }
         let (on, _) = lightroom_edit("s = { HDREditMode = 1 }", &m, &[])?;
         assert!(on.hdr.enabled);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod original_tests {
+    use super::*;
+
+    #[test]
+    fn a_recorded_identity_stands_in_only_while_nothing_is_at_the_path() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let path = d.path().join("photo.ARW");
+        let recorded = Identity {
+            size: 3,
+            modified_ns: 1,
+            prefix_hash: "recorded".into(),
+        };
+        // Absent: the recorded identity, and without one, the file's error.
+        assert!(Original::is_absent(&path));
+        assert_eq!(Original::recorded(&path, &recorded).identity()?, recorded);
+        assert!(Original::file(&path).identity().is_err());
+        // Present: always the file as it is now.
+        std::fs::write(&path, b"raw")?;
+        assert!(!Original::is_absent(&path));
+        let now = Identity::read(&path)?;
+        assert_eq!(Original::recorded(&path, &recorded).identity()?, now);
+        assert_eq!(Original::from(path.as_path()).identity()?, now);
+        Ok(())
+    }
+
+    /// A path that can't be looked at is not absent: a folder without
+    /// permission refuses, recorded identity or not.
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_path_is_not_absent() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir()?;
+        let folder = d.path().join("locked");
+        std::fs::create_dir(&folder)?;
+        let path = folder.join("photo.ARW");
+        std::fs::write(&path, b"raw")?;
+        let recorded = Identity::read(&path)?;
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o000))?;
+        // Root ignores permissions, so there is nothing to test.
+        let locked = std::fs::File::open(&path).is_err();
+        let absent = Original::is_absent(&path);
+        let identity = Original::recorded(&path, &recorded).identity();
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755))?;
+        if locked {
+            assert!(!absent);
+            assert!(identity.is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_saved_edit_is_checked_against_the_recorded_identity_while_absent() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let path = d.path().join("photo.ARW");
+        std::fs::write(&path, b"raw")?;
+        let recorded = Identity::read(&path)?;
+        let record = EditRecord {
+            recipe: Some(serde_json::to_string(&Recipe::default())?),
+            export: Some(serde_json::to_string(&ExportOptions::default())?),
+            identity: Some(serde_json::to_string(&recorded)?),
+            ..EditRecord::default()
+        };
+        std::fs::remove_file(&path)?;
+        assert!(record.saved(&path).is_err());
+        assert!(
+            record
+                .saved(Original::recorded(&path, &recorded))?
+                .is_some()
+        );
+        // Another file at the path protects the edit, recorded identity or not.
+        std::fs::write(&path, b"another raw")?;
+        assert!(record.saved(Original::recorded(&path, &recorded)).is_err());
         Ok(())
     }
 }
