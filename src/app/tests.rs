@@ -103,3 +103,13 @@ fn eframes_reason_for_giving_up_is_kept() {
         Some("WGPU error: Parent device is lost\n\nQueue creation failed: E_INVALIDARG")
     );
 }
+
+/// Linux draws with the bundled Inter, not fontconfig's `system-ui`, which
+/// stock Omarchy answers with Liberation Sans; macOS and Windows use their own.
+#[test]
+fn the_interface_face_is_inter_on_linux_and_the_systems_elsewhere() {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    assert_eq!(INTERFACE_FACE, fastframe_fonts::Primary::Inter);
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    assert_eq!(INTERFACE_FACE, fastframe_fonts::Primary::System);
+}

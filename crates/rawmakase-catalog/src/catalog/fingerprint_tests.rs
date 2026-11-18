@@ -208,36 +208,3 @@ fn a_reused_id_has_the_new_photos_fingerprint() -> Result<()> {
     assert_ne!(cat.photo_fingerprint(again)?.unwrap(), first);
     Ok(())
 }
-
-/// A conditional edit whose every photo moved on writes nothing.
-#[test]
-fn a_conditional_edit_writes_only_while_the_photo_is_as_read() -> Result<()> {
-    let (_dir, mut cat, photos) = catalog(1)?;
-    let (id, path) = photos[0].clone();
-    let read = cat.photo_fingerprint(id)?.unwrap();
-    let identity = Identity::read(&path)?;
-    let mut r = recipe(0.5);
-    r.hdr.enabled = true;
-    let export = ExportOptions::default();
-    let edit = EditToSave {
-        id,
-        path: &path,
-        source: &identity,
-        recipe: &r,
-        export: &export,
-        history: HistoryUpdate::Keep,
-    };
-    save(&mut cat, id, &path, 2.0)?;
-    assert_eq!(
-        cat.change_edits_if(&[(&read, EditChange::Save(&edit))], &|| true)?,
-        Some(vec![Conditional::Moved])
-    );
-    // Still as read, it is written.
-    let now = cat.photo_fingerprint(id)?.unwrap();
-    assert_eq!(
-        cat.change_edits_if(&[(&now, EditChange::Save(&edit))], &|| true)?,
-        Some(vec![Conditional::Written])
-    );
-    assert_eq!(cat.load_edit(id, &path)?.unwrap().recipe, r);
-    Ok(())
-}

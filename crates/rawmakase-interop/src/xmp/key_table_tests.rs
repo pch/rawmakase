@@ -1,12 +1,11 @@
-//! What every Camera Raw setting key means today, frozen before the key table that
-//! names them once (#808 step 4.12): reading each key alone at values across and
-//! beyond its range, strictly and leniently, over a plain recipe, over one whose
-//! every setting differs from the default and whose conditional settings are on
-//! (black and white, grain, vignetting, grading), over one with every panel off,
-//! and over a rendered file's (relative white balance); what the writer then writes
-//! and stops writing; the preset group of each key and of keys only a prefix
-//! matches; the preset each group writes on its own; and Lightroom catalog edits
-//! with Auto Settings still to measure, and raw defaults made of a preset.
+//! What every Camera Raw setting key means, pinned in a golden file: reading each key
+//! alone at values across and beyond its range, strictly and leniently, over a plain
+//! recipe, over one whose every setting differs from the default and whose conditional
+//! settings are on (black and white, grain, vignetting, grading), over one with every
+//! panel off, and over a rendered file's (relative white balance); what the writer then
+//! writes and stops writing; the preset group of each key and of keys only a prefix
+//! matches; the preset each group writes on its own; and Lightroom catalog edits with
+//! Auto Settings still to measure, and raw defaults made of a preset.
 //!
 //! Each outcome is compared with `key_table_golden.txt`, written by this test with
 //! `RAWMAKASE_BLESS=1`. Floats are written in full (`{:?}` of the f32), so a change

@@ -17,6 +17,16 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// Held for the whole of a test that clears the process-wide asset cache or needs
+/// it warm, so no other test clears it partway through: a clear between two reads
+/// makes the second read build a value of its own instead of sharing the first.
+fn own_cache() -> std::sync::MutexGuard<'static, ()> {
+    static CACHE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    CACHE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn camera(seed: f32) -> Metadata {
     Metadata {
         make: "Test".into(),
@@ -375,6 +385,7 @@ fn a_failed_upgrade_leaves_the_catalog_unchanged() -> Result<()> {
 /// cache and stored in another open catalog, and the catalog stays as it was.
 #[test]
 fn the_upgrade_checks_what_it_stored_past_the_cache() -> Result<()> {
+    let _cache = own_cache();
     let profile = large_profile(0.09);
     // The same profile stored in another open catalog, and warm in the cache.
     let mut other = Earlier::new(6, 1)?;
@@ -399,6 +410,7 @@ fn the_upgrade_checks_what_it_stored_past_the_cache() -> Result<()> {
 /// cached.
 #[test]
 fn an_old_embedded_profile_is_stored_once_under_a_fresh_saves_id() -> Result<()> {
+    let _cache = own_cache();
     let mut f = Earlier::new(6, 1)?;
     f.set_edit(0, &edit(&old_embedded(), 0.5))?;
     drop(f.open()?);
@@ -743,6 +755,7 @@ fn the_upgraded_catalog_is_a_fraction_of_its_size() -> Result<()> {
 /// Edits naming one profile share it in memory, read cold.
 #[test]
 fn edits_naming_one_profile_share_it() -> Result<()> {
+    let _cache = own_cache();
     let mut f = Earlier::new(6, 4)?;
     let profile = large_profile(0.15);
     for n in 0..4 {
@@ -769,6 +782,7 @@ fn edits_naming_one_profile_share_it() -> Result<()> {
 /// with no catalog behind it says so.
 #[test]
 fn stored_references_resolve_through_the_public_reads() -> Result<()> {
+    let _cache = own_cache();
     let mut a = upgradable(6)?;
     let mut b = Earlier::new(6, 1)?;
     let b_profile = large_profile(0.16);
@@ -816,7 +830,8 @@ fn stored_references_resolve_through_the_public_reads() -> Result<()> {
 /// repaired by the next save naming it.
 #[test]
 fn saves_store_each_profile_once_and_repair_a_damaged_one() -> Result<()> {
-    let mut f = Earlier::new(6, 2)?;
+    let _cache = own_cache();
+    let mut f = Earlier::new(6, 3)?;
     let mut cat = f.open()?;
     let profile = large_profile(0.17);
     let save = |cat: &mut Catalog, (id, file): &(PhotoId, PathBuf), r: &Recipe| {
@@ -847,12 +862,18 @@ fn saves_store_each_profile_once_and_repair_a_damaged_one() -> Result<()> {
     );
     save(&mut cat, &f.photos[1], &edit(&profile, 0.2))?;
     assert_eq!(asset_ids(&f.path)?.len(), 1);
-    // Damaged on disk: the next save naming it stores it again.
+    // Damaged on disk: the next save naming it stores it again. The cache is
+    // cleared first, as a new process starts, so the save can't depend on what
+    // this process (or a test running beside it) happens to hold. The save is to
+    // a photo with no edit yet: one whose saved edit names the damaged profile
+    // can't be read without the cache, so it is protected from being replaced
+    // ([`crate::edits::EditRecord::saved`]).
     cat.db_for_tests().execute(
         "UPDATE recipe_assets SET data=?1 WHERE id=?2",
         rusqlite::params![recipe_assets::compress(b"{}"), id],
     )?;
-    save(&mut cat, &f.photos[1], &edit(&profile, 0.3))?;
+    recipe_assets::clear_cache();
+    save(&mut cat, &f.photos[2], &edit(&profile, 0.3))?;
     recipe_assets::clear_cache();
     let (photo, file) = &f.photos[0];
     assert_eq!(
@@ -870,6 +891,7 @@ fn saves_store_each_profile_once_and_repair_a_damaged_one() -> Result<()> {
 /// it from the catalog, with nothing cached.
 #[test]
 fn an_edit_keeps_its_profile_after_the_file_is_gone() -> Result<()> {
+    let _cache = own_cache();
     let mut f = Earlier::new(6, 1)?;
     let mut cat = f.open()?;
     let dir = tempfile::tempdir()?;
@@ -972,6 +994,7 @@ fn an_empty_catalog_is_upgraded_too() -> Result<()> {
 /// license.
 #[test]
 fn an_exported_lensfun_edit_keeps_its_attribution() -> Result<()> {
+    let _cache = own_cache();
     let mut f = Earlier::new(6, 1)?;
     let mut cat = f.open()?;
     let (id, file) = f.photos[0].clone();
@@ -1013,6 +1036,7 @@ fn an_exported_lensfun_edit_keeps_its_attribution() -> Result<()> {
 /// copy, in a History state only and in a snapshot.
 #[test]
 fn an_hdr_edit_survives_reopening_wherever_it_is_stored() -> Result<()> {
+    let _cache = own_cache();
     use rawmakase_model::model::masks::{LocalAdjust, MaskComponent, MaskGroup, MaskShape};
     let mut hdr = Recipe::default();
     hdr.hdr.enabled = true;
@@ -1132,5 +1156,119 @@ fn a_recipe_giving_a_key_twice_is_left_as_it_was() -> Result<()> {
         (edit.as_str(), snapshot.as_str()),
         (text.as_str(), text.as_str())
     );
+    Ok(())
+}
+
+/// A catalog beside a copy an earlier release's upgrade left, of format 2: a
+/// copy of a catalog of that format, named as the first backup is.
+fn with_earlier_backup() -> Result<(Earlier, PathBuf)> {
+    let mut f = Earlier::new(6, 1)?;
+    f.close();
+    let first = beside(&f, ".before-upgrade-backup");
+    std::fs::copy(&Earlier::new(2, 1)?.path, &first)?;
+    Ok((f, first))
+}
+fn beside(f: &Earlier, suffix: &str) -> PathBuf {
+    let name = f.path.file_name().unwrap().to_string_lossy();
+    f.dir.path().join(format!("{name}{suffix}"))
+}
+/// Opens the catalog as the Library and the command line do.
+fn open_session(path: &Path) -> Result<Catalog> {
+    let cat = Catalog::open(path)?;
+    cat.remove_earlier_backups();
+    Ok(cat)
+}
+
+/// A catalog upgraded again keeps only the newest backup, once it has opened
+/// again; the session that wrote a backup deletes none, and what isn't named as
+/// an upgrade names its backups, or isn't a catalog, stays.
+#[test]
+fn only_the_newest_backup_is_kept_once_the_catalog_opens_again() -> Result<()> {
+    let (f, first) = with_earlier_backup()?;
+    // Renamed by the user, or not a catalog: never deleted.
+    let kept: Vec<PathBuf> = [
+        ".before-upgrade-backup keep",
+        ".before-upgrade-backup-0",
+        ".before-upgrade-backup-01",
+        ".before-upgrade-backup-1000",
+        ".before-upgrade-backup-20261117",
+    ]
+    .iter()
+    .map(|suffix| beside(&f, suffix))
+    .collect();
+    for path in &kept {
+        std::fs::copy(&first, path)?;
+    }
+    let not_a_catalog = beside(&f, ".before-upgrade-backup-7");
+    std::fs::write(&not_a_catalog, b"notes")?;
+
+    let cat = open_session(&f.path)?;
+    let upgraded = cat.upgraded().unwrap().clone();
+    assert_eq!(upgraded.backup, beside(&f, ".before-upgrade-backup-1"));
+    assert_eq!(upgraded.earlier_backups, std::slice::from_ref(&first));
+    assert_eq!(
+        upgraded.earlier_backups_note().as_deref(),
+        Some(
+            "The older copy beside it, from earlier upgrades, will be deleted the next time \
+             the catalog opens; this one is kept."
+        )
+    );
+    // Connections working for the session that upgraded it delete nothing.
+    drop(Catalog::open(&f.path)?);
+    drop(cat);
+    assert!(
+        first.exists(),
+        "not deleted in the session that wrote the newest"
+    );
+
+    let cat = open_session(&f.path)?;
+    assert!(cat.upgraded().is_none());
+    drop(cat);
+    assert!(!first.exists());
+    assert!(upgraded.backup.exists());
+    assert_eq!(version(&upgraded.backup)?, 6);
+    assert!(kept.iter().all(|p| p.exists()) && not_a_catalog.exists());
+    Ok(())
+}
+
+/// The backup kept is the one the last upgrade wrote, whatever its name or
+/// format: an upgrade fills the first free name, and a catalog put back from an
+/// older copy is upgraded from that copy's format.
+#[test]
+fn the_backup_kept_is_the_one_the_last_upgrade_wrote() -> Result<()> {
+    let (f, first) = with_earlier_backup()?;
+    // A later backup of format 6 with a higher number.
+    let later = beside(&f, ".before-upgrade-backup-3");
+    std::fs::copy(&f.path, &later)?;
+    // The catalog put back from a copy of format 2.
+    std::fs::copy(&first, &f.path)?;
+    std::fs::remove_file(&first)?;
+    let upgraded = open_session(&f.path)?.upgraded().unwrap().clone();
+    assert_eq!(upgraded.backup, first);
+    assert_eq!(version(&upgraded.backup)?, 2);
+    drop(open_session(&f.path)?);
+    assert_eq!(backups(f.dir.path())?, [upgraded.backup]);
+    Ok(())
+}
+
+/// Backups upgrades before this release left, which recorded none: the one of
+/// the newest format is kept, whatever its name.
+#[test]
+fn of_unrecorded_backups_the_newest_format_is_kept() -> Result<()> {
+    let (f, first) = with_earlier_backup()?;
+    let six = beside(&f, ".before-upgrade-backup-2");
+    std::fs::copy(&f.path, &six)?;
+    let mut f = f;
+    let upgraded = f.open()?;
+    // As an upgrade before this release left it, recording no backup.
+    upgraded
+        .db_for_tests()
+        .execute("DELETE FROM meta WHERE key='upgrade_backup'", [])?;
+    let written = upgraded.upgraded().unwrap().backup.clone();
+    drop(upgraded);
+    std::fs::remove_file(&written)?;
+    drop(open_session(&f.path)?);
+    assert!(!first.exists());
+    assert_eq!(backups(f.dir.path())?, [six]);
     Ok(())
 }

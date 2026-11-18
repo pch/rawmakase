@@ -1441,8 +1441,8 @@ checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
 name = "fastframe-desktop"
-version = "0.13.0"
-source = "git+https://github.com/crmne/fastframe?tag=v0.13.0#d5e1a99702f39fda6e252b7acb5582c60becf545"
+version = "0.17.0"
+source = "git+https://github.com/crmne/fastframe?tag=v0.17.0#3617b1471763e3a36fed15d5da67c95e178173e9"
 dependencies = [
  "log",
  "mac-usernotifications",
@@ -1451,16 +1451,16 @@ dependencies = [
 
 [[package]]
 name = "fastframe-dirs"
-version = "0.13.0"
-source = "git+https://github.com/crmne/fastframe?tag=v0.13.0#d5e1a99702f39fda6e252b7acb5582c60becf545"
+version = "0.17.0"
+source = "git+https://github.com/crmne/fastframe?tag=v0.17.0#3617b1471763e3a36fed15d5da67c95e178173e9"
 dependencies = [
  "directories",
 ]
 
 [[package]]
 name = "fastframe-fonts"
-version = "0.13.0"
-source = "git+https://github.com/crmne/fastframe?tag=v0.13.0#d5e1a99702f39fda6e252b7acb5582c60becf545"
+version = "0.17.0"
+source = "git+https://github.com/crmne/fastframe?tag=v0.17.0#3617b1471763e3a36fed15d5da67c95e178173e9"
 dependencies = [
  "directories",
  "egui",
@@ -1472,16 +1472,16 @@ dependencies = [
 
 [[package]]
 name = "fastframe-icons"
-version = "0.13.0"
-source = "git+https://github.com/crmne/fastframe?tag=v0.13.0#d5e1a99702f39fda6e252b7acb5582c60becf545"
+version = "0.17.0"
+source = "git+https://github.com/crmne/fastframe?tag=v0.17.0#3617b1471763e3a36fed15d5da67c95e178173e9"
 dependencies = [
  "egui",
 ]
 
 [[package]]
 name = "fastframe-text"
-version = "0.13.0"
-source = "git+https://github.com/crmne/fastframe?tag=v0.13.0#d5e1a99702f39fda6e252b7acb5582c60becf545"
+version = "0.17.0"
+source = "git+https://github.com/crmne/fastframe?tag=v0.17.0#3617b1471763e3a36fed15d5da67c95e178173e9"
 dependencies = [
  "egui",
  "zbus",
@@ -1489,8 +1489,8 @@ dependencies = [
 
 [[package]]
 name = "fastframe-theme"
-version = "0.13.0"
-source = "git+https://github.com/crmne/fastframe?tag=v0.13.0#d5e1a99702f39fda6e252b7acb5582c60becf545"
+version = "0.17.0"
+source = "git+https://github.com/crmne/fastframe?tag=v0.17.0#3617b1471763e3a36fed15d5da67c95e178173e9"
 dependencies = [
  "directories",
  "egui",
@@ -1502,8 +1502,8 @@ dependencies = [
 
 [[package]]
 name = "fastframe-titlebar"
-version = "0.13.0"
-source = "git+https://github.com/crmne/fastframe?tag=v0.13.0#d5e1a99702f39fda6e252b7acb5582c60becf545"
+version = "0.17.0"
+source = "git+https://github.com/crmne/fastframe?tag=v0.17.0#3617b1471763e3a36fed15d5da67c95e178173e9"
 dependencies = [
  "directories",
  "eframe",
@@ -1518,8 +1518,8 @@ dependencies = [
 
 [[package]]
 name = "fastframe-update"
-version = "0.13.0"
-source = "git+https://github.com/crmne/fastframe?tag=v0.13.0#d5e1a99702f39fda6e252b7acb5582c60becf545"
+version = "0.17.0"
+source = "git+https://github.com/crmne/fastframe?tag=v0.17.0#3617b1471763e3a36fed15d5da67c95e178173e9"
 dependencies = [
  "anyhow",
  "fastframe-dirs",
@@ -3887,7 +3887,7 @@ dependencies = [
 
 [[package]]
 name = "rawmakase"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "apple-native-keyring-store",
@@ -3960,7 +3960,7 @@ dependencies = [
 
 [[package]]
 name = "rawmakase-ai-masks"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "rawmakase-cancel",
  "rawmakase-extension",
@@ -4191,7 +4191,7 @@ dependencies = [
 
 [[package]]
 name = "rawmakase-mcp"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -4208,7 +4208,7 @@ dependencies = [
 
 [[package]]
 name = "rawmakase-midi"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "midir",
  "rawmakase-extension",

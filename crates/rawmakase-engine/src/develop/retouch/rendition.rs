@@ -146,7 +146,7 @@ impl Rendition {
             let to_pro = match &r.profile {
                 Some(p) => {
                     gain *= p.exposure().exp2();
-                    p.camera_matrix(r.temperature)
+                    p.camera_matrix_at(r.temperature, r.tint)
                 }
                 None => mul_matrix(RGB_TO_PRO, m.matrix),
             };

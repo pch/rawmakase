@@ -170,12 +170,12 @@ impl Editor {
                 Event::AiRemoved(done) => self.ai_remove_done(*done),
                 Event::AiDenoise(update) => self.ai_denoise_update(*update),
                 Event::AiDenoiseStored(path) => self.ai_result_stored(&path),
-                Event::ModelInstalled(pack, result) => {
-                    self.installer_mut(pack).finished(&result);
+                Event::ModelInstalled(result) => {
+                    self.ai_denoise_model.finished(&result);
                     if matches!(result, Err(crate::model_install::InstallError::Cancelled)) {
                         self.messages.note("Model download cancelled");
                     } else {
-                        self.model_installed(pack, result);
+                        self.model_installed(result);
                     }
                 }
                 Event::Lensfun {
@@ -187,8 +187,8 @@ impl Editor {
                         self.messages.say(level, said);
                     }
                 }
-                Event::ModelRemoved(pack, result) => {
-                    self.installer_mut(pack).removed();
+                Event::ModelRemoved(result) => {
+                    self.ai_denoise_model.removed();
                     match result {
                         Ok(()) => self.messages.done("AI Denoise model removed"),
                         Err(e) => self.messages.fail(format!("Model not removed: {e}")),

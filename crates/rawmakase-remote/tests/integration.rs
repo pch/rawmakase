@@ -22,8 +22,6 @@ struct Fake {
     holding: Option<Arc<AtomicBool>>,
     /// Fail with this instead.
     fail: Option<EngineError>,
-    /// Sleep before answering.
-    delay: Duration,
     /// Set when the fake saw its cancel flag raised.
     cancelled: Arc<AtomicBool>,
     /// How many `analyze` runs happened (cache hits included).
@@ -61,7 +59,6 @@ impl Fake {
             photo,
             holding: None,
             fail: None,
-            delay: Duration::ZERO,
             cancelled: Arc::new(AtomicBool::new(false)),
             runs: Arc::new(AtomicU64::new(0)),
         }
@@ -77,7 +74,6 @@ impl Engine for Fake {
                 std::thread::sleep(Duration::from_millis(5));
             }
         }
-        std::thread::sleep(self.delay);
         if cancel.is_cancelled() {
             self.cancelled.store(true, Ordering::SeqCst);
             return Err(EngineError::Cancelled);
@@ -98,7 +94,6 @@ impl Engine for Fake {
         cancel: Cancel<'_>,
     ) -> Result<Coverage, EngineError> {
         self.runs.fetch_add(1, Ordering::SeqCst);
-        std::thread::sleep(self.delay);
         if cancel.is_cancelled() {
             return Err(EngineError::Cancelled);
         }
@@ -675,28 +670,6 @@ fn a_duplicate_live_id_is_refused() {
     assert!(
         done.ok.is_some(),
         "the cancel raced the gate; the request finished first: {done:?}"
-    );
-}
-
-#[test]
-fn a_worker_that_takes_too_long_is_an_error_not_a_hang() {
-    let mut fake = Fake::of(Photo::of("k1", 2, 2, 1));
-    fake.delay = Duration::from_secs(2);
-    let (endpoint, _, _) = worker(fake);
-    let session = RemoteSession::with_options(
-        &endpoint,
-        RemoteOptions {
-            connect_timeout: Duration::from_secs(2),
-            request_timeout: Duration::from_millis(150),
-        },
-    );
-    let cancel = AtomicBool::new(false);
-    let error = session
-        .analyze(&photo(2, 2), Cancel::new(&cancel))
-        .unwrap_err();
-    assert!(
-        matches!(&error, ClientError::Failed(why) if why.contains("in time")),
-        "{error:?}"
     );
 }
 

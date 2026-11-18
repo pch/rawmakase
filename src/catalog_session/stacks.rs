@@ -10,6 +10,7 @@ use anyhow::Result;
 impl CatalogSession {
     /// Reads every photo's place in its stack again into `photos`.
     pub(crate) fn refresh_stacks(&mut self) -> Result<()> {
+        self.changed();
         let places = self.catalog.stack_places()?;
         for photo in &mut self.photos {
             photo.stack = places.get(&photo.id).copied();
@@ -24,6 +25,7 @@ impl CatalogSession {
         &mut self,
         change: &StackChange,
     ) -> Result<Committed<StacksChanged>> {
+        self.changed();
         let value = self.catalog.change_stacks(change)?;
         Ok(Committed {
             value,
@@ -38,6 +40,7 @@ impl CatalogSession {
         batches: &[i64],
         stacks: &[Vec<crate::catalog::PhotoId>],
     ) -> Result<Committed<Option<StacksChanged>>> {
+        self.changed();
         let value = self.catalog.stack_imported_bursts(batches, stacks)?;
         Ok(Committed {
             value,
@@ -50,6 +53,7 @@ impl CatalogSession {
         ids: &[StackId],
         collapsed: bool,
     ) -> Result<Committed<()>> {
+        self.changed();
         self.catalog.set_stacks_collapsed(ids, collapsed)?;
         Ok(Committed {
             value: (),

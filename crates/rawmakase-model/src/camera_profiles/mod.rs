@@ -94,7 +94,7 @@ enum PhoneModule {
 /// Whether a profile made for `camera` (its UniqueCameraModel) fits the photo:
 /// the camera's make and model, the model alone, or one of the names Adobe uses
 /// for it (`Metadata::adobe_names`), compared without case, spaces or underscores
-/// (LibRaw's Nikon "Z 6_2" is Adobe's "Z 6 2"); for a phone, also such a name
+/// (the decoder's Nikon "Z 6_2" is Adobe's "Z 6 2"); for a phone, also such a name
 /// followed by the module that took the photo.
 pub(crate) fn camera_fits(camera: &str, m: &Metadata) -> bool {
     let key = |s: &str| {
@@ -366,10 +366,6 @@ impl CameraProfile {
             look.validate()?;
         }
         ensure!(
-            !self.is_hdr() || crate::model::hdr::renders(),
-            "HDR profiles are not supported yet"
-        );
-        ensure!(
             !self.name.is_empty()
                 && !self.camera.is_empty()
                 && self.name.len() < 1024
@@ -498,7 +494,12 @@ impl CameraProfile {
         }
         let gains: [f32; 3] =
             std::array::from_fn(|c| 1. / (calibration[c] * neutral[c] * m.wb[c].max(1e-6)));
-        Some(gains.map(|v| (v / gains[1]).clamp(0.01, 100.)))
+        // The DNG SDK scales the camera white to a largest channel of 1, so no raw channel is
+        // darkened. That is green for most whites, and the scale stays as it was there.
+        let least = (0..3)
+            .map(|c| gains[c] * m.wb[c].max(1e-6))
+            .fold(f32::MAX, f32::min);
+        Some(gains.map(|v| (v / least).clamp(0.01, 100.)))
     }
     pub fn as_shot_white_balance(&self, m: &Metadata) -> Option<[f32; 2]> {
         self.as_shot_calibrated(m, self.neutral_calibration(m))
@@ -532,6 +533,57 @@ impl CameraProfile {
     fn weight(&self, t: f32) -> f32 {
         weight(t, self.kelvin1, self.kelvin2)
     }
+    /// [`Self::camera_matrix`] at the white `temperature` and `tint`. A profile without
+    /// forward matrices of its own adapts that white to D50 by Bradford, as the DNG SDK
+    /// does for such a profile, rather than adapting D65 for every white. These are the
+    /// profiles whose forward matrix [`Self::camera_matrix_default`] derived from the
+    /// ColorMatrix at D65: the ColorMatrix fallback, RAWmakase Standard and Color, and
+    /// every look composed or fitted on them, perhaps with a fitted look's grey tint
+    /// ([`fitted::with_grey_gains`]), which the adaptation keeps. They are recognised by
+    /// their matrices, not their names, so a look's own name or a profile stored in a
+    /// saved edit takes the same rule. Any other profile keeps its forward matrices.
+    pub fn camera_matrix_at(&self, temperature: f32, tint: f32) -> Matrix {
+        let Some(tint_matrix) = self.color_matrix_tint() else {
+            return self.camera_matrix(temperature);
+        };
+        let Some(cm) = self.color1 else {
+            return self.camera_matrix(temperature);
+        };
+        let xyz = |[x, y]: [f32; 2]| [x / y, 1., (1. - x - y) / y];
+        let white = xyz(crate::camera_profiles::temperature::xy(temperature, tint));
+        let Some(scaled) = color_matrix_scaled(cm, white) else {
+            return self.camera_matrix(temperature);
+        };
+        let adapt = crate::model::white_balance::map_white(white, xyz([0.3457, 0.3585]));
+        matmul(XYZ_TO_PRO, matmul(tint_matrix, matmul(adapt, scaled)))
+    }
+    /// For a profile whose forward matrix is its ColorMatrix's at D65
+    /// ([`Self::camera_matrix_default`]), the XYZ matrix in front of that derivation:
+    /// the identity, or a fitted look's grey tint, diagonal on linear ProPhoto. `None`
+    /// for a profile with forward matrices of its own. A fitted matrix base
+    /// ([`fitted::matrix_base`]) derives its ColorMatrix from its forward matrix, so
+    /// the two agree at D65 there too; it is told apart by its identity
+    /// ([`fitted::is_uncalibrated_base`]), which its looks keep as their base's name.
+    fn color_matrix_tint(&self) -> Option<Matrix> {
+        if fitted::is_uncalibrated_base(self) {
+            return None;
+        }
+        let cm = self.color1?;
+        if self.color2.is_some() || self.forward1 != self.forward2 {
+            return None;
+        }
+        let derived = matmul(D65_TO_D50, color_matrix_scaled(cm, D65)?);
+        let tint = matmul(self.forward1, crate::color::inverse(derived));
+        // A grey tint is diagonal on linear ProPhoto; a forward matrix of its own is not.
+        let pro = matmul(XYZ_TO_PRO, matmul(tint, crate::color::inverse(XYZ_TO_PRO)));
+        let diagonal = (0..3).all(|i| {
+            (0..3).all(|j| i == j || pro[i][j].abs() <= 1e-4 * pro[i][i].abs())
+                && pro[i][i].is_finite()
+                && pro[i][i] > 0.
+        });
+        diagonal.then_some(tint)
+    }
+
     pub fn camera_matrix(&self, t: f32) -> Matrix {
         let w = self.weight(t);
         matmul(
@@ -921,8 +973,8 @@ impl CameraProfile {
         }
         self
     }
-    /// The DNG rendering of a file that carries only a ColorMatrix: LibRaw's XYZ-to-camera
-    /// matrix, no hue/look tables, and the published ACR 3 default tone curve. This is the
+    /// The DNG rendering of a file that carries only a ColorMatrix: the decoder's
+    /// XYZ-to-camera matrix, no hue/look tables, and the published ACR 3 default tone curve. This is the
     /// neutral starting point when the user has imported no camera profile.
     pub fn camera_matrix_default(m: &Metadata) -> Option<Self> {
         let cm = m.cam_xyz;
@@ -933,14 +985,7 @@ impl CameraProfile {
             return None;
         }
         // White-balanced camera values of 1 are the illuminant's neutral, mapped to D50 white.
-        let neutral = mul(cm, D65);
-        if neutral.iter().any(|v| !v.is_finite() || *v <= 0.) {
-            return None;
-        }
-        let inv = crate::color::inverse(cm);
-        let scaled: Matrix =
-            std::array::from_fn(|i| std::array::from_fn(|j| inv[i][j] * neutral[j]));
-        let forward = matmul(D65_TO_D50, scaled);
+        let forward = matmul(D65_TO_D50, color_matrix_scaled(cm, D65)?);
         let p = Self {
             name: "Camera Matrix".into(),
             camera: format!("{} {}", m.make, m.model),
@@ -965,6 +1010,19 @@ impl CameraProfile {
         p.validate().ok()?;
         Some(p)
     }
+}
+/// The colour matrix `cm` (XYZ to camera) inverted and scaled so that white-balanced
+/// camera values of 1 are `white` (XYZ); `None` when `cm` makes `white` no positive
+/// camera neutral.
+fn color_matrix_scaled(cm: Matrix, white: [f32; 3]) -> Option<Matrix> {
+    let neutral = mul(cm, white);
+    if neutral.iter().any(|v| !v.is_finite() || *v <= 0.) {
+        return None;
+    }
+    let inv = crate::color::inverse(cm);
+    Some(std::array::from_fn(|i| {
+        std::array::from_fn(|j| inv[i][j] * neutral[j])
+    }))
 }
 /// A profile tone curve's `points` at `x` (clamped to 0…1), linearly between points.
 fn evaluate_tone(points: &[[f32; 2]], x: f32) -> f32 {

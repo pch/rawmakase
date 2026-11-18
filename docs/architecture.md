@@ -38,14 +38,15 @@ flowchart TD
     extprotocol[rawmakase-extension-protocol]
     sdk[rawmakase-extension]
     cargoext[cargo-rawmakase]
+    midi[rawmakase-midi]
 
     app --> export & decode & catalog & engine & interop & model
     app --> ctl & denoise & fs & exthost
     denoise --> decode & inference & modelinstall
     export --> decode & engine & interop
     decode --> engine & raw
-    catalog --> interop & fs
-    engine --> model
+    catalog --> interop & fs & cancel
+    engine --> model & cancel
     interop --> model
     model --> tiff & protocol
     raw --> tiff & cancel
@@ -53,10 +54,12 @@ flowchart TD
     mcp --> ctl
     remote --> selection
     selection --> inference
+    inference --> cancel
     modelinstall --> inference & model
     aimasks --> sdk & remote & modelinstall & protocol
     exthost --> extprotocol & fs
     sdk --> extprotocol
+    midi --> sdk
     cargoext --> exthost & protocol
 ```
 
@@ -69,7 +72,7 @@ the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
 
 | Crate | Owns | Builds without |
 | --- | --- | --- |
-| `rawmakase-model` | What an edit is, as values: the recipe and its settings, camera and lens profiles, colour primitives, DNG hints, output buffers, file identity and storage helpers | The RAW decoders, the renderer, wgpu, the GUI |
+| `rawmakase-model` | What an edit is, as values: the recipe and its settings, camera and lens profiles, colour primitives, DNG hints, output buffers, file identity and storage helpers; whether a photo matches the filter bar or a smart collection's rules, and Lightroom's rule text (`collection_rules`, over a plain `Entry` the catalog session builds) | The RAW decoders, the renderer, wgpu, the GUI |
 | `rawmakase-interop` | The file formats and presets over the model: XMP, Lightroom's Develop settings, presets, raw defaults, EXIF and JPEG, export settings, and which edit a photo develops with (`edits`) | The same |
 | `rawmakase-catalog` | The SQLite catalog, Lightroom catalog import, file operations, and the stored edit records `edits` resolves | The same |
 | `rawmakase-engine` | The renderer (`develop`): the CPU pipeline, which is the reference, and the GPU preview port | The RAW decoders, the catalog, the GUI |
@@ -78,8 +81,8 @@ the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
 | `rawmakase-fs` | What moving a user's file needs of the file system, policy-free: exclusive renames, file ids, exact listings, name comparison, containment, volume facts and a copy's steps, one file per system, with the unsafe system calls the model used to hold. The catalog's file operations and the app's Trash use it | Every other workspace crate; the value, file-format, rendering, decoding and export crates never reach it |
 | `rawmakase-cancel` | `Cancel`, the borrowed request to stop long-running work, which its owner's flag sets: every crate that does such work takes one, and owners keep their flags | Everything |
 | `rawmakase-decode` | Opening and decoding photos: the only crate that reaches `rawmakase-raw`; colour management, demosaicing, rendered files (JPEG … HEIF), the full-size decode and its cache, AI Denoise's packing and assembly, Camera Look fitting | C imaging libraries, the catalog, export, the GUI |
-| `rawmakase-export` | Developing and writing exports, with their watermarks (Inter bundled, installed fonts listed without egui) | The app, the GUI, a window or GPU backend |
-| `rawmakase-inference` | The lazily loaded ONNX Runtime, the provider choice and the session helpers every model shares, `InferenceError`, the `ModelFile` record, and AI Denoise's model: its contract, tiler and gain fit, packed mosaic in, denoised camera RGB out | Every other workspace crate |
+| `rawmakase-export` | Developing and writing exports, with their watermarks (system default and installed fonts loaded without egui) | The app, the GUI, a window or GPU backend |
+| `rawmakase-inference` | The lazily loaded ONNX Runtime, the provider choice and the session helpers every model shares, `InferenceError`, the `ModelFile` record, and AI Denoise's model: its contract, tiler and gain fit, packed mosaic in, denoised camera RGB out | Every workspace crate but `rawmakase-cancel` |
 | `rawmakase-selection` | The selection models (Subject, Background and Sky): their pinned contracts, the image and coverage mappings, automatic selection, edge refinement and their sessions, run through inference's runtime: pixels in, coverage out. The AI masks extension's program runs them; the app never links them | Everything but inference |
 | `rawmakase-denoise` | AI Denoise's service, shared by the app and the command line (re-exported as `rawmakase::ai_denoise`): the queue, the worker and its ONNX session, job keys, the finished-result lookup, `AiBase` for export, `CommandLine` for `render` and `render-batch`, the `rawmakase denoise` development command, and the model pack it runs (`model_install`). Its callers pass the cache, the model's and the runtime's folders and the cancel in | The app, the catalog, export, the selection models and the GUI; it reaches wgpu only through the renderer, whose `AiSource` it hands on |
 | `rawmakase-model-install` | Installing a model pack: a folder and its files, downloaded resumably or copied from a folder, each checked against its size and SHA-256, the receipt that makes a pack installed, the lock across instances, and the models and runtime folders in the local data folder. Which packs exist is its caller's | Everything but inference and the model |
@@ -87,6 +90,7 @@ the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
 | `rawmakase-protocol` | What the app and its control clients agree on: protocol version, `control.json` endpoint, data folder | Everything |
 | `rawmakase-ctl` (`tools/`) | The control client, used by `rawmakase control`, the MCP program and the standalone `rawmakase-ctl` | The app |
 | `rawmakase-ai-masks` (`extensions/ai-masks`) | The bundled AI masks extension: its manifest (the `subject` and `sky` mask generators, which claim the provenance masks saved before it record, and `remove-models`) and its program `rawmakase-ai-masks`, which runs the selection models here (through the ONNX Runtime the app bundles) or on the remote worker, and installs their packs in the local data folder's `models`, where the app always installed them, beside AI Denoise's | Every photo, edit, catalog, renderer, decoder or GUI crate, and the extension host |
+| `rawmakase-midi` (`extensions/midi`) | The bundled MIDI extension: its manifest and its program `rawmakase-midi`, which finds MIDI devices and turns their input into device operations ([Live application control](#live-application-control)) | Every workspace crate but the SDK and the extension protocol |
 | `rawmakase-mcp` (`extensions/mcp`) | The bundled MCP extension: its manifest and its program `rawmakase-mcp`, an MCP server that is a client of the control protocol, which `rawmakase mcp` runs | Every workspace crate but `rawmakase-protocol` and `rawmakase-ctl` |
 | `rawmakase-extension-protocol` | What the app and extensions agree on ([extensions](extensions/overview.md)): the manifest and its schema, the protocol's messages, error codes and bounded line framing, host-drawn controls | Every other workspace crate |
 | `rawmakase-extension` | The SDK extension programs are written with: the channel, the run loop, handler traits, receiving and mapping the buffers the app passes (`shm`), a mock host for tests that passes them as the app does | Everything but the extension protocol |
@@ -224,16 +228,16 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `presets` | Native JSON recipe presets, installed XMP collections, favorites and preset import, and a preset's application to one photo, which Develop and the Library's batch share | `native.rs`, `library.rs`, `photo.rs` |
 | `storage` | RAW identity checks, the camera profiles and calibrations catalogs store once (`recipe_assets`: content ids, the source stored text is read through, the shared cache), which files are photos and the rendered formats' facts (`RasterFormat`: extensions, MIME types, names; the codecs are `raster`'s and `export`'s), application paths and atomic JSON writes. The file system primitives moving a user's files needs are `rawmakase-fs`'s. Saved-recipe versions are `model::saved_format`, the desktop session is `app::preferences::session` and legacy sidecar import is `catalog::legacy_sidecar` | `identity.rs`, `files.rs`, `formats.rs` |
 | `export_settings` | Export choices as values: the Export dialog's settings, Rename Photos' remembered choices (`RenameSettings`), the user's saved file-name templates (`SavedTemplates`), a photo's saved `ExportOptions`, and the naming templates (`NameTemplate`: Lightroom's presets and Filename Template Editor templates, `TokenTemplate`) exports and renames name files by, from the `NameFields` taken once per export | `export_settings.rs`, `export_settings/tokens.rs`, `export_settings/rename.rs`, `export_settings/saved.rs` |
-| `export` | JPEG, 16-bit TIFF and PNG encoding, selected EXIF with the colour space's ColorSpace and interoperability index, ICC embedding of the pixels' colour space (taken from the `ExportImage`, never from a second setting), the sRGB conversion of watermark colours, atomic output publication | `mod.rs`, `metadata.rs` |
+| `export` | JPEG, 16-bit TIFF, PNG and JPEG XL encoding, HDR TIFF and JPEG XL, gain-map JPEGs, selected EXIF with the colour space's ColorSpace and interoperability index, ICC embedding of the pixels' colour space (taken from the `ExportImage`, never from a second setting), the sRGB conversion of watermark colours, atomic output publication | `mod.rs`, `metadata.rs` |
 | `ids` | Typed catalog row ids (`PhotoId`, `FolderId`, `RootId`, `CollectionId`), stored and serialized as their integers; a leaf, so edit resolution and export use them below the catalog | `ids.rs` |
 | `metadata` | Photo metadata as values: descriptive fields (title, caption, copyright, creator, capture, location), keywords and camera settings; depends on nothing else | `metadata.rs` |
 | `edit_session` | The edit of the photo open in Develop apart from the window: its bounded History (named steps, one per gesture, saved with the edit) and save state; no egui | `history.rs`, `save_state.rs` |
 | `edits` | Which edit a photo develops with (saved, Lightroom or raw defaults), shared by Develop, Library previews, Sync and Export: `resolve` at once, or a `Start` chosen once and resolved later; callers keep their own error and warning policies. The catalog only reads the stored records. In `rawmakase-interop`, so export resolves edits without the catalog | `edits.rs` |
-| `catalog` | RAWmakase SQLite database, schema, photo/folder/collection models, edits, relinking, the default Creator and Copyright of photos added from folders (below the camera's own, which the app's reader finds, as the catalog can't reach the RAW decoders), Synchronize Folder's and Find on Disk's engine (`folder_sync`: scan, matching, apply, family digest; named apart from `app/library/sync.rs`, which is Sync Settings) and disposable preview cache | `schema.sql`, `models.rs`, `mod.rs`, `folder_sync.rs`, `preview_cache.rs` |
+| `catalog` | RAWmakase SQLite database, schema, photo/folder/collection models, collections and sets with their photos, positions, sort options, smart collections' rules, the keywords' Lightroom synonyms and the target collection (`collections`, the one owner of those rows, the Quick Collection's reserved name and collection id allocation), edits, relinking, the default Creator and Copyright of photos added from folders (below the camera's own, which the app's reader finds, as the catalog can't reach the RAW decoders), Synchronize Folder's and Find on Disk's engine (`folder_sync`: scan, matching, apply, family digest; named apart from `app/library/sync.rs`, which is Sync Settings) and disposable preview cache | `schema.sql`, `models.rs`, `mod.rs`, `collections.rs`, `folder_sync.rs`, `preview_cache.rs` |
 | `catalog::db` | The catalog's one connection boundary: an opaque `Db` with checked reads, `snapshot` for consistent reads, `write` as the only way to write, and `with_lightroom` for import; statements are `Sql` (portable) or `SqliteSql` (Lightroom), shape-checked at compile time; values go through the catalog's own `ToValue`/`FromRow` (`catalog::value`) | `mod.rs`, `sql.rs` |
 | `catalog::lightroom` | Read-only Lightroom snapshot import | `mod.rs`, `history.rs` |
 | `catalog::file_ops` | The one owner of changing where a photo or folder is or what it is named, on disk and in the catalog (#370, #556): planning against a snapshot, the refusals, destination conflicts, names, which companion files go with a photo (by `catalog::sidecar`'s candidate rule), the journal, the operation lock, execution and recovery. Names photos from `interop::export_settings::NameTemplate`, the one owner of naming templates. Reaches the file system through its `Disk` seam over `rawmakase-fs`, the Trash through a `Trash` the app passes in | `plan.rs`, `execute.rs`, `recover.rs`, `journal.rs`, `rename.rs`, `tree.rs` |
-| `catalog_session` | The open catalog and the lists read from it, with no window: opening it, reading it again, writes that must keep those lists in step (ratings, descriptive metadata, collections, virtual copies and their names, stacks), behind private fields: the lists and catalog are read through accessors, and the writes that change no list (edits, History, snapshots, camera sequences) are methods of their own, the background reads that fill in capture times and photo info for photos added from folders, and the throttled checksum reader, whose results a structural generation guards. Above `photo` and `raw`, as reading a RAW's info opens it; `app::library` decides which photos are online and shows the lists | `mod.rs`, `backfill.rs`, `background.rs`, `checksums.rs`, `stacks.rs` |
+| `catalog_session` | The open catalog and the lists read from it, with no window: opening it, reading it again, writes that must keep those lists in step (ratings, descriptive metadata, collections, virtual copies and their names, stacks), behind private fields: the lists and catalog are read through accessors, and the writes that change no list (edits, History, snapshots, camera sequences) are methods of their own, the background reads that fill in capture times and photo info for photos added from folders, the throttled checksum reader, whose results a structural generation guards, its photos as `collection_rules::Entry` values (`entries.rs`), and the query revision: a counter every session write moves, and edits written on other connections move through `note_external_change`, which only `Library::edits_written` calls (autosave directly; Sync and its Undo, batch presets and Auto, and extension proposals through `Library::edits_changed`), so smart collection membership worked out earlier is known to be stale; members are worked out by a background job for a revision and local day (`smart.rs`), and a result for an older one is dropped. Writes by other processes are seen once the catalog is read again. Above `photo` and `raw`, as reading a RAW's info opens it; `app::library` decides which photos are online and shows the lists | `mod.rs`, `backfill.rs`, `background.rs`, `checksums.rs`, `collections.rs`, `entries.rs`, `smart.rs`, `stacks.rs` |
 | `lr_develop` | Best-effort conversion of Lightroom's serialized Develop settings into a recipe, through XMP; below the catalog, so edit resolution can use it | `lr_develop.rs` |
 | `app` | Desktop editor state, UI, dialogs, background task coordination and presentation | Components described below |
 | `platform` | OS integration: the system's credential store extensions' secret settings are kept in (`credentials.rs`, through `keyring-core`), the Linux GVFS filesystem bridge, drives, the file manager, the browser, the system Trash file operations get (`trash::SystemTrash`, failing closed, and whether a drive has one; no policy), and the display's color management (macOS surface tagging and EDR, the Windows display profile), and whether a RAW on a network volume is read for its embedded preview alone (`preview_reads`) | `network.rs`, `volume.rs`, `reveal.rs`, `web.rs`, `trash.rs`, `display.rs`, `preview_reads.rs` |
@@ -394,8 +398,8 @@ to a listener fails that listener alone; and if the worker thread dies anyway, t
 it held and every queued one fail, so no Develop request or export waits for it, and
 the next request starts a new worker. The Detail panel's switch and Amount are ordinary edits (one
 History step each); a result arriving is not one. `app::develop::panels::inspector::ai_denoise` draws
-the panel's controls, credit and install offer; the model installs as
-`model_install::Pack::Denoise`, with the installer the AI masks extension uses for the selection models.
+the panel's controls, credit and install offer; the model installs through
+`rawmakase_denoise::model_install`, with the installer the AI masks extension uses for the selection models.
 
 ## Data flow
 
@@ -490,8 +494,8 @@ Some features span several owners; each module's docs describe its part:
   export. The check prints the chain that breaks a rule.
 - `scripts/deps-crates.txt` lists the workspace crates each crate must never
   depend on, directly or through others: the model never on file formats, the
-  catalog, rendering or decoding; the RAW decoders on no edit; the protocol and
-  inference on no other crate, the selection models on none but inference,
+  catalog, rendering or decoding; the RAW decoders on no edit; the protocol on no other
+  crate, inference on none but the cancellation token, the selection models on none but inference,
   and the app never on the selection models or the remote client. `scripts/deps.py check` reads the rules against
   `cargo metadata --no-deps`, so an edge that points up the layering fails
   without a build.
@@ -868,7 +872,7 @@ them instead of declaring their own. These follow-ups do not require a new editi
 ## Camera white-balance calibration
 
 Calibration facts stay in the model: DNG metadata or exact camera table rows
-combined with the per-file white-balance presets the native adapter reads.
+combined with the per-file white-balance presets the RAW decoders (`rawmakase-raw`) read.
 Camera profiles apply them after signature matching. XMP carries Temperature
 and Tint; it does not implement calibration rules.
 See [camera parity](camera-parity.md) for the offline Adobe audit and references.

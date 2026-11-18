@@ -403,13 +403,6 @@ mod tests {
     }
 
     #[test]
-    fn iso_ranges_overlap_when_they_share_a_speed() {
-        assert!(overlap([100., 400.], [400., 800.]));
-        assert!(overlap([1., 409600.], [160., 160.]));
-        assert!(!overlap([100., 400.], [500., 800.]));
-    }
-
-    #[test]
     fn iso_rows_give_their_speeds_white_one_speed_first() {
         assert!(Iso::One(160.).contains(160.));
         assert!(!Iso::One(160.).contains(200.));

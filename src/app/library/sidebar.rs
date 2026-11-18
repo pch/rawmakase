@@ -18,7 +18,7 @@ pub(super) struct Trees {
     drives: Vec<crate::platform::volume::Volume>,
     /// The startup disk first, then other drives by name.
     volumes: Vec<Drive>,
-    collections: Vec<collections::CollectionNode>,
+    collections: std::sync::Arc<Vec<collections::CollectionNode>>,
 }
 /// A drive in the Folders panel: its roots' folder trees and photo count.
 struct Drive {
@@ -169,13 +169,19 @@ impl Library {
             key,
             drives,
             volumes,
-            collections: collections::tree(
+            collections: std::sync::Arc::new(collections::tree(
                 self.session.collections(),
                 self.session.collection_photos(),
-            ),
+                self.smart_counts(),
+                self.target(),
+            )),
         });
         self.sidebar_trees = Some(trees.clone());
         trees
+    }
+    /// The Collections panel's tree, for Add to Collection.
+    pub(super) fn collection_tree(&mut self) -> std::sync::Arc<Vec<collections::CollectionNode>> {
+        self.sidebar_trees().collections.clone()
     }
     /// The left panel's catalog, folders and collections.
     pub(crate) fn sidebar(&mut self, ui: &mut egui::Ui) -> Action {
@@ -201,18 +207,57 @@ impl Library {
                         self.filters.previous_import = false;
                         self.filter()
                     }
-                    if source_row(
+                    // `+`: the target collection, B's, as Lightroom marks it.
+                    let quick_target = self.target().is_none();
+                    let quick = source_row(
                         ui,
-                        "Quick Collection",
+                        if quick_target {
+                            "Quick Collection +"
+                        } else {
+                            "Quick Collection"
+                        },
                         self.quick_count(),
                         self.showing_quick(),
                     )
-                    .on_hover_text("B adds the selected photos · ⌘B shows them")
-                    .clicked()
+                    .on_hover_text(if quick_target {
+                        "B adds the selected photos · ⌘B shows them"
+                    } else {
+                        "⌘B shows them · B adds to the target collection, marked +"
+                    });
+                    if quick.clicked()
+                        && !crate::app::ui::widgets::context_clicked(&quick)
                         && let Err(e) = self.show_quick()
                     {
                         self.messages
                             .warn(format!("Quick Collection unavailable: {e}"));
+                    }
+                    let mut quick_action = None;
+                    crate::app::ui::widgets::context_menu(&quick, |ui| {
+                        use crate::app::ui::widgets::menu_item;
+                        crate::app::ui::widgets::menu_width(ui, 230.);
+                        ui.spacing_mut().item_spacing.y = 0.;
+                        for (title, key, choice) in [
+                            ("Set as Target Collection", "", QuickMenu::Target),
+                            ("Save Quick Collection…", "⌘⌥B", QuickMenu::Save),
+                            ("Clear Quick Collection", "⌘⇧B", QuickMenu::Clear),
+                        ] {
+                            let checked = choice == QuickMenu::Target && quick_target;
+                            if menu_item(ui, title, key, true, checked) {
+                                quick_action = Some(choice);
+                                ui.close();
+                            }
+                        }
+                    });
+                    match quick_action {
+                        Some(QuickMenu::Target) => self.set_target(None),
+                        Some(QuickMenu::Save) => self.ask_save_quick(),
+                        Some(QuickMenu::Clear) => {
+                            if let Err(e) = self.clear_quick() {
+                                self.messages
+                                    .fail(format!("Quick Collection not changed: {e}"));
+                            }
+                        }
+                        None => {}
                     }
                     let imported = self.session.previous_import().len();
                     if imported > 0
@@ -423,25 +468,62 @@ impl Library {
                 });
                 section(ui, "Collections", |ui| {
                     let tree = &trees.collections;
-                    for node in tree {
-                        if let Some(id) = collections::collection_row(
+                    let mut asked = None;
+                    for node in tree.iter() {
+                        if let Some(row) = collections::collection_row(
                             ui,
                             node,
                             0,
                             &mut self.expanded,
                             self.filters.collection,
                         ) {
-                            self.select_collection(id);
+                            asked = Some(row);
                         }
+                    }
+                    if let Some(row) = collections::top_level_drop(ui) {
+                        asked = Some(row);
                     }
                     if tree.is_empty() {
                         empty_note(ui, "No collections");
+                    }
+                    ui.add_space(space::XL);
+                    if add_row(ui, "Create Collection…")
+                        .on_hover_text(
+                            "A collection of the photos you choose; with photos selected, of those",
+                        )
+                        .clicked()
+                    {
+                        asked = Some(collections::RowAction::Create {
+                            set: false,
+                            parent: None,
+                        });
+                    }
+                    ui.add_space(space::S);
+                    if add_row(ui, "Create Collection Set…")
+                        .on_hover_text("A set holds collections and other sets")
+                        .clicked()
+                    {
+                        asked = Some(collections::RowAction::Create {
+                            set: true,
+                            parent: None,
+                        });
+                    }
+                    ui.add_space(space::S);
+                    if add_row(ui, "Create Smart Collection…")
+                        .on_hover_text(
+                            "A collection of the photos its rules match, kept up to date",
+                        )
+                        .clicked()
+                    {
+                        asked = Some(collections::RowAction::CreateSmart(None));
+                    }
+                    if let Some(row) = asked {
+                        self.collection_row_action(row);
                     }
                 });
             });
         action
     }
-    /// Shows collection `id`'s photos; the filter bar still applies.
     /// Shows Previous Import: the photos the last import added.
     pub(in crate::app) fn show_previous_import(&mut self) {
         self.filters.previous_import = true;
@@ -453,15 +535,13 @@ impl Library {
         self.offer_previous_import = false;
         self.filter();
     }
+    /// Shows collection `id`'s photos, or for a set the photos of every
+    /// collection in it; the filter bar still applies.
     pub(in crate::app) fn select_collection(&mut self, id: crate::catalog::CollectionId) {
+        self.collection_sort(id);
         self.filters.previous_import = false;
         self.filters.collection = Some(id);
-        self.filters.members = self
-            .session
-            .collection_photos()
-            .get(&id)
-            .cloned()
-            .unwrap_or_default();
+        self.filters.members = self.source_members(id);
         self.filters.folder_scope = None;
         self.filters.only_missing = false;
         self.selected_folders.clear();
@@ -629,7 +709,11 @@ impl Library {
             .and_then(|id| id.parse::<i64>().ok())
             .map(crate::catalog::CollectionId)
             && self.session.collections().iter().any(|c| {
-                c.id == id && (c.kind == CollectionKind::Collection || self.quick() == Some(id))
+                c.id == id
+                    && (matches!(
+                        c.kind,
+                        CollectionKind::Collection | CollectionKind::Smart | CollectionKind::Set
+                    ) || self.quick() == Some(id))
             })
         {
             self.select_collection(id);
@@ -793,4 +877,59 @@ fn source_row(ui: &mut egui::Ui, name: &str, count: usize, active: bool) -> egui
         palette.tone(Tone::FAINT),
     );
     response
+}
+impl Library {
+    /// Does what a Collections panel row asked for.
+    pub(super) fn collection_row_action(&mut self, row: collections::RowAction) {
+        use collections::RowAction;
+        let done = match row {
+            RowAction::Select(id) => {
+                self.select_collection(id);
+                Ok(())
+            }
+            RowAction::AddPhotos(id, photos) => self.add_to_collection(id, photos),
+            RowAction::Move(id, parent) => self.move_collection(id, parent),
+            RowAction::Create { set, parent } => {
+                self.ask_create_collection(set, parent);
+                Ok(())
+            }
+            RowAction::Rename(id) => {
+                self.ask_rename_collection(id);
+                Ok(())
+            }
+            RowAction::Delete(id) => {
+                self.ask_delete_collection(id);
+                Ok(())
+            }
+            RowAction::EditSmart(id) => {
+                self.select_collection(id);
+                self.edit_smart_collection(id);
+                Ok(())
+            }
+            RowAction::CreateSmart(parent) => {
+                self.new_smart_collection();
+                if let Some(editor) = &mut self.smart_editor {
+                    editor.parent = parent;
+                    editor.inside = parent.is_some();
+                }
+                Ok(())
+            }
+            RowAction::SetTarget(id) => {
+                self.set_target(id);
+                Ok(())
+            }
+        };
+        if let Err(e) = done {
+            self.messages
+                .fail(format!("Collections not changed: {e:#}"));
+        }
+    }
+}
+
+/// The Quick Collection row's menu.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum QuickMenu {
+    Target,
+    Save,
+    Clear,
 }

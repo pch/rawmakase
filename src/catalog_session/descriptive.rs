@@ -1,5 +1,5 @@
-//! Title, caption, creator, copyright, location and keywords, collection
-//! membership and virtual copies with their Copy Names: changes to the catalog
+//! Title, caption, creator, copyright, location and keywords, and virtual
+//! copies with their Copy Names: changes to the catalog
 //! that the session's lists must follow.
 use super::CatalogSession;
 use crate::catalog::{FileMetadata, Merge, MetadataSnapshot, PhotoId, SidecarReport};
@@ -47,6 +47,7 @@ impl CatalogSession {
         ids: &[PhotoId],
         edit: DescriptiveEdit,
     ) -> Result<DescriptiveChange> {
+        self.changed();
         let before = self.catalog.metadata_snapshot(ids)?;
         match edit {
             DescriptiveEdit::Text(field, text) => self.catalog.set_text(ids, field, &text),
@@ -71,6 +72,7 @@ impl CatalogSession {
         values: &[MetadataSnapshot],
         ratings: &[(PhotoId, i32, i32, String)],
     ) -> Result<()> {
+        self.changed();
         self.catalog.restore_metadata(values)?;
         if !ratings.is_empty() {
             self.set_ratings(ratings)?;
@@ -85,38 +87,34 @@ impl CatalogSession {
         ids: &[PhotoId],
         read: &[(PhotoId, PathBuf, FileMetadata)],
     ) -> Result<SidecarReport> {
+        self.changed();
         let written = self.catalog.apply_file_metadata(read, Merge::Overwrite)?;
         self.refresh_photos(ids)?;
         Ok(written)
     }
     /// Names virtual copy `id` `name`, trimmed, in the catalog and the lists.
     pub(crate) fn rename_copy(&mut self, id: PhotoId, name: &str) -> Result<()> {
+        self.changed();
         self.catalog.set_copy_name(id, name)?;
         if let Some(p) = self.photos.iter_mut().find(|p| p.id == id) {
             p.copy_name = name.trim().to_string();
         }
         Ok(())
     }
-    /// Adds `add` to `collection` and takes `remove` out of it, in the catalog
-    /// and the lists. Returns the collection's photos as they now are.
-    pub(crate) fn change_collection(
+    /// Makes a virtual copy of `id` while collection `viewing` (or a folder,
+    /// `None`) is shown, and reads the lists again. The copy joins the
+    /// collections Lightroom's would ([`crate::catalog::Catalog::create_virtual_copy`]).
+    /// An error means no copy was made.
+    pub(crate) fn create_virtual_copy(
         &mut self,
-        collection: crate::catalog::CollectionId,
-        add: &[PhotoId],
-        remove: &[PhotoId],
-    ) -> Result<&std::collections::HashSet<PhotoId>> {
-        self.catalog.change_collection(collection, add, remove)?;
-        let members = self.collection_photos.entry(collection).or_default();
-        members.extend(add);
-        for id in remove {
-            members.remove(id);
-        }
-        Ok(members)
-    }
-    /// Makes a virtual copy of `id` and reads the lists again. An error means
-    /// no copy was made.
-    pub(crate) fn create_virtual_copy(&mut self, id: PhotoId) -> Result<Committed<PhotoId>> {
-        let copy = self.catalog.create_virtual_copy(id)?;
+        id: PhotoId,
+        viewing: Option<crate::catalog::CollectionId>,
+    ) -> Result<Committed<PhotoId>> {
+        self.changed();
+        let copy = match viewing {
+            Some(viewing) => self.catalog.create_virtual_copy_viewing(id, viewing)?,
+            None => self.catalog.create_virtual_copy(id)?,
+        };
         Ok(Committed {
             value: copy,
             listed: self.reload(),
@@ -126,6 +124,7 @@ impl CatalogSession {
     /// means nothing changed. Reading capture times and photo info stops, as what
     /// they read was of the masters before; start it again after.
     pub(crate) fn set_copy_as_master(&mut self, id: PhotoId) -> Result<Committed<()>> {
+        self.changed();
         self.stop_backfill();
         self.catalog.set_copy_as_master(id)?;
         Ok(Committed {
@@ -140,6 +139,7 @@ impl CatalogSession {
         &mut self,
         root: crate::catalog::RootId,
     ) -> Result<Committed<bool>> {
+        self.changed();
         let removed = self.catalog.remove_empty_root(root)?;
         let listed = self.reload();
         if removed && listed.is_err() {
@@ -155,6 +155,7 @@ impl CatalogSession {
     /// given to a new photo, even when reading the lists failed. Reading capture
     /// times and photo info stops, as it may hold the id; start it again after.
     pub(crate) fn remove_virtual_copy(&mut self, id: PhotoId) -> Result<Committed<()>> {
+        self.changed();
         self.stop_backfill();
         self.catalog.remove_virtual_copy(id)?;
         let listed = self.reload();
@@ -185,6 +186,7 @@ impl CatalogSession {
         folders: &[crate::catalog::FolderId],
         exported: Option<&crate::catalog::ExportedFolders>,
     ) -> Result<Committed<Vec<PhotoId>>> {
+        self.changed();
         self.stop_backfill();
         let removed = match exported {
             Some(exported) => self.catalog.remove_exported_folders(exported)?,

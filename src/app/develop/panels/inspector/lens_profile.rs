@@ -77,7 +77,7 @@ pub(super) fn profile_menus(ui: &mut egui::Ui, r: &mut Recipe, m: Option<&Metada
         };
         let mut picked: Option<Pick> = None;
         control_row(ui, "Make", |ui| {
-            egui::ComboBox::from_id_salt("lens-profile-make")
+            crate::app::ui::widgets::dropdown(ui, "lens-profile-make")
                 .width(ui.available_width())
                 .selected_text(&make)
                 .show_ui(ui, |ui| {
@@ -101,7 +101,7 @@ pub(super) fn profile_menus(ui: &mut egui::Ui, r: &mut Recipe, m: Option<&Metada
                 });
         });
         control_row(ui, "Model", |ui| {
-            egui::ComboBox::from_id_salt("lens-profile-model")
+            crate::app::ui::widgets::dropdown(ui, "lens-profile-model")
                 .width(ui.available_width())
                 .selected_text(&model_name)
                 .height(320.)
@@ -126,7 +126,7 @@ pub(super) fn profile_menus(ui: &mut egui::Ui, r: &mut Recipe, m: Option<&Metada
                 });
         });
         control_row(ui, "Profile", |ui| {
-            egui::ComboBox::from_id_salt("lens-profile-name")
+            crate::app::ui::widgets::dropdown(ui, "lens-profile-name")
                 .width(ui.available_width())
                 .selected_text(&name)
                 .show_ui(ui, |ui| {
@@ -175,7 +175,7 @@ fn setup_row(
 ) {
     control_row(ui, "Setup", |ui| {
         let mut setup = r.lens_profile_choice.setup;
-        egui::ComboBox::from_id_salt("lens-profile-setup")
+        crate::app::ui::widgets::dropdown(ui, "lens-profile-setup")
             .width(ui.available_width())
             .selected_text(setup.label())
             .show_ui(ui, |ui| {

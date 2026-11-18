@@ -51,7 +51,9 @@ use super::super::value::row;
 use super::super::{FolderId, PhotoId};
 use super::companions::is_legacy_edit;
 use super::conflicts::Names;
-use super::copy::{self, Cx, Failed, Originals, Problem, copy_at, extras_differ, original_here};
+use super::copy::{
+    self, Cx, Failed, Originals, Problem, copy_at, extras_differ, name, original_here,
+};
 use super::disk::{Disk, Presence, gone, parent, presence, spelled};
 use super::journal::{self, Item, ItemState, Kind, Member, MemberState, NewTreeMember, Subject};
 use super::plan::occupied;
@@ -609,13 +611,6 @@ fn build(
         .write(|w| named(w, id, &at))
         .map_err(Failed::Journal)?;
     Ok(())
-}
-
-fn name(path: &Path) -> String {
-    path.file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned()
 }
 
 /// Journals item `id`'s hidden folder named `at`: each member's
@@ -1267,27 +1262,7 @@ pub(super) fn undo(
     id: journal::OperationId,
     why: &str,
 ) -> Result<()> {
-    undo_as(cx, catalog, id, why, Originals::AsCopied)
-}
-
-fn undo_as(
-    cx: &Cx<'_>,
-    catalog: &mut Catalog,
-    id: journal::OperationId,
-    why: &str,
-    rule: Originals,
-) -> Result<()> {
-    catalog
-        .db
-        .write(|w| journal::set_state(w, id, ItemState::Restoring, Some(why)))?;
-    let item = journal::item(&catalog.db, id)?.context("the journalled item is gone")?;
-    let state = match discard(cx, catalog, &item, rule)? {
-        None => (ItemState::NoChange, None),
-        Some(left) => (ItemState::Restoring, Some(left)),
-    };
-    catalog
-        .db
-        .write(|w| journal::set_state(w, id, state.0, state.1))
+    copy::undo_as(cx, catalog, id, why, Originals::AsCopied, discard)
 }
 
 /// Where a folder item's copy is.
@@ -1665,5 +1640,5 @@ pub(super) fn decide(
         false => Originals::AsCopied,
     };
     let why = item.error.as_deref().unwrap_or("it was interrupted");
-    undo_as(cx, catalog, id, why, rule)
+    copy::undo_as(cx, catalog, id, why, rule, discard)
 }

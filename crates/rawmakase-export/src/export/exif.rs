@@ -12,8 +12,9 @@ pub(super) fn tiff_block(d: CameraExif) -> Vec<u8> {
     tiff_block_with(d, &[])
 }
 
-/// [`tiff_block`] with an interoperability directory of `interop`'s fields after
-/// the EXIF directory, which points to it, when there are any.
+/// The block `tiff_block` writes (a test-only wrapper), with an interoperability
+/// directory of `interop`'s fields after the EXIF directory, which points to it,
+/// when there are any.
 pub(super) fn tiff_block_with(d: CameraExif, interop: &[Field]) -> Vec<u8> {
     fn directory(mut fields: Vec<Field>, offset: u32) -> Vec<u8> {
         fields.sort_by_key(|f| f.tag);

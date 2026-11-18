@@ -101,10 +101,11 @@ pub fn convert_develop(
     let mut warnings = Vec::new();
     // A record from before process version 2012 (6.7). Lightroom 5 stores the 2012 tone
     // keys in these too, all 0, and ignores them (#1060).
-    let legacy = fields
-        .get("ProcessVersion")
-        .and_then(|v| v.trim_matches('"').parse::<f32>().ok())
-        .is_some_and(|v| v < 6.7);
+    let pv = fields.get("ProcessVersion").map(|v| v.trim_matches('"'));
+    let legacy = pv.is_some_and(crate::xmp::before_process_2012);
+    // Only real 2003 records (below 5.7); the Clarity scale was fitted on those.
+    let pv2003 = pv.is_some_and(|v| v.parse::<f32>().is_ok_and(|v| v < 5.7));
+    let mut old = std::collections::BTreeMap::new();
     for (key, value) in &fields {
         if value.starts_with('{') {
             if key == "Look" && !value[1..value.len() - 1].trim().is_empty() {
@@ -185,8 +186,7 @@ pub fn convert_develop(
             };
             // Process version 2003/2010 basic controls. Newer records keep them next to
             // their 2012 counterparts; never apply both generations. Older records have
-            // only these: exposure converts directly, the rest cannot be converted
-            // faithfully and are reported instead of silently dropped.
+            // only these, and they convert after this loop.
             if legacy
                 && matches!(
                     key.as_str(),
@@ -212,10 +212,9 @@ pub fn convert_develop(
                     | "HighlightRecovery"
             ) {
                 if legacy {
-                    if key == "Exposure" {
-                        preset.settings.insert("Exposure2012".into(), value);
-                    } else if value.parse::<f64>().is_ok_and(|v| v != legacy_default(key)) {
-                        warnings.push(format!("{key} (process version 2003/2010, not converted)"));
+                    match value.parse::<f64>() {
+                        Ok(v) => _ = old.insert(key.clone(), v),
+                        Err(_) => warnings.push(format!("{key}: {value} is not a number")),
                     }
                 }
                 continue;
@@ -230,6 +229,24 @@ pub fn convert_develop(
                 continue;
             }
             preset.settings.insert(key.clone(), value);
+        }
+    }
+    if legacy {
+        // Any Exposure2012, even 0, means Auto Tone already ran, so without an Exposure in
+        // the record an Auto Tone record gets none.
+        let auto = crate::xmp::boolean(&preset.settings, "AutoTone")
+            .ok()
+            .flatten()
+            == Some(true);
+        for (key, value) in legacy_tone(&old, pv2003) {
+            let write = if key == "Exposure2012" {
+                old.contains_key("Exposure") || (!auto && value != 0.)
+            } else {
+                value != 0.
+            };
+            if write {
+                preset.settings.insert(key.into(), value.to_string());
+            }
         }
     }
     // The catalog leaves out corners at their defaults (Lightroom 5 writes no CropLeft or
@@ -265,8 +282,6 @@ pub fn convert_develop(
         preset.settings.remove("RAWmakaseLookUUID");
         preset.settings.remove(crate::xmp::look::SETTING);
     }
-    // HDR on is refused outright, not skipped as one setting among others.
-    preset.check_hdr_renderable()?;
     // Spots and masks convert on their own and report what they skip.
     let local_settings = std::mem::take(&mut preset.local);
     // Build a compatible patch before application. Related fields are validated together.
@@ -408,12 +423,65 @@ fn lua_list_items(value: &str) -> Result<Vec<String>> {
     Ok(items)
 }
 
-/// Lightroom's defaults for process version 2003/2010 basic controls.
-fn legacy_default(key: &str) -> f64 {
-    match key {
-        "Contrast" => 25.,
-        "Brightness" => 50.,
-        "Shadows" => 5.,
-        _ => 0.,
-    }
+/// Process version 2003/2010 basic controls in process version 2012, as Lightroom 5's
+/// "Update to Current Process (2012)" writes them. Every rule here reproduces at least
+/// 99% of 341 updated catalog records. Fill Light also adds exposure, 0.02 EV a step up
+/// to 25, 0.01 up to 50 and 0.005 above; the records stop at Fill Light 89.
+fn legacy_tone(
+    old: &std::collections::BTreeMap<String, f64>,
+    pv2003: bool,
+) -> Vec<(&'static str, f64)> {
+    // Lightroom's placeholder for an Auto Tone not yet measured. As in XMP, it on Exposure
+    // leaves Auto pending; on another control it counts as that control's default.
+    let auto = old.get("Exposure") == Some(&-999999.);
+    let get = |key: &str, default: f64| {
+        old.get(key)
+            .copied()
+            .filter(|&v| v != -999999.)
+            .unwrap_or(default)
+    };
+    let fill = get("FillLight", 0.);
+    let fill_ev =
+        0.02 * fill.min(25.) + 0.01 * (fill.clamp(25., 50.) - 25.) + 0.005 * (fill.max(50.) - 50.);
+    let exposure = get("Exposure", 0.) + (get("Brightness", 50.) - 50.) / 50. + fill_ev;
+    // The old Shadows slider set the black point; 5 was its default.
+    let black = get("Shadows", 5.);
+    let clarity = get("Clarity", 0.);
+    vec![
+        (
+            "Exposure2012",
+            if auto {
+                -999999.
+            } else {
+                ((exposure * 100.).round() / 100.).clamp(-5., 5.)
+            },
+        ),
+        (
+            "Contrast2012",
+            ((get("Contrast", 25.) - 25.) * 4. / 3.)
+                .round()
+                .clamp(-100., 100.),
+        ),
+        ("Highlights2012", -(fill * 0.5).trunc()),
+        ("Shadows2012", (fill * 0.5).clamp(0., 100.).trunc()),
+        ("Whites2012", -get("HighlightRecovery", 0.)),
+        (
+            "Blacks2012",
+            if black <= 5. {
+                5. * (5. - black)
+            } else {
+                ((5. - black) / 4.).round()
+            },
+        ),
+        // Lightroom 5 writes half of positive Clarity. On process version 2003 records a
+        // fifth comes closer to Camera Raw 19's own rendering of the old edit.
+        (
+            "Clarity2012",
+            if clarity > 0. {
+                (clarity * if pv2003 { 0.2 } else { 0.5 }).trunc()
+            } else {
+                clarity
+            },
+        ),
+    ]
 }

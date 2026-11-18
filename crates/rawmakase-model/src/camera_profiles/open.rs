@@ -100,7 +100,7 @@ const DIMS: [usize; 3] = [72, 8, 8];
 /// RAWmakase Standard for this camera, or None without a usable colour matrix.
 pub fn standard(m: &Metadata) -> Option<CameraProfile> {
     matrix_standard(m).or_else(|| {
-        // LibRaw reports no matrix for some DNGs; use the D65 matrix the DNG's own
+        // Without a matrix from the decoder, use the D65 matrix the DNG's own
         // profile carries.
         let embedded = super::builtin(m)?;
         let mut with_matrix = m.clone();

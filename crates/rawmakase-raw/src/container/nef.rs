@@ -774,7 +774,7 @@ pub(crate) mod tests {
 
     #[test]
     fn high_efficiency_data_is_recognised_by_its_codestream() {
-        // A Z 9's, or a body LibRaw reads as Huffman-coded: the codestream's
+        // A Z 9's, or a body LibRaw read as Huffman-coded: the codestream's
         // start says what it is.
         for model in ["NIKON Z 9", "NIKON Z5_2"] {
             let stream = crate::codec::nikon_he::tests::blank_codestream(64, 64);

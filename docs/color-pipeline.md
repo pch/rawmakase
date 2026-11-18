@@ -27,6 +27,8 @@ RAW files are decoded by RAWmakase's own decoders (`crates/rawmakase-raw`, see [
 
 Development is cached at as-shot WB. Relative camera-space multipliers are applied before the camera matrix in Rust, without rerunning demosaicing. Metadata records both as-shot and daylight multipliers. A Planckian-locus CIE xy approximation, transformed through the inverse camera matrix and daylight normalization, estimates the as-shot temperature. Temperature/tint changes are anchored to this reference so touching a slider does not jump from camera WB to a different model. Stored relative multipliers are authoritative; Kelvin is approximate.
 
+The multipliers scale the camera white to a largest channel of 1, as the DNG SDK does, so no raw channel is darkened; for most whites that channel is green, which keeps the scale it had. RAWmakase Standard and Color, and the ColorMatrix fallback, have no forward matrices, so their matrix adapts the chosen white (Temp and Tint) to D50 by Bradford, as the DNG SDK does for such a profile (`CameraProfile::camera_matrix_at`). So do the Creative, `.cube` and fitted Camera Looks composed on them, whatever their names: the rule recognises a forward matrix derived from the ColorMatrix at D65, keeping a fitted look's grey tint in front of it. DCP profiles keep their forward matrices. The scene tone stage measures the photo's maximum at the as-shot Temp and Tint. On a synthetic ColorChecker DNG rendered by Camera Raw 19 (2026-11-17) the grey's shift against Camera Raw 19 is now 0.94 to 1.08 times as large, within 4.5 degrees, from 3000 K to 50000 K and Tint −150 to +150. At 2000 K the blue channel lies about 12 times above its white, and Camera Raw turns the grey cyan where RAWmakase turns it a paler blue (0.53 times the shift, 64 degrees apart); that gap is open.
+
 The neutral picker samples a 5 × 5 region in camera space via the same inverse geometry mapping used for rendering. It derives relative gains from that patch. Extreme WB changes can differ from WB-aware re-demosaicing; there is no claim of exact equivalence.
 
 ## Rust pipeline
@@ -141,8 +143,7 @@ profile's table differs by up to 6.5 code values (Little CMS's own 8-bit result 
 to 7 from its floating-point one there). Synthetic DisplayCAL-style profiles (XYZ
 lut16 tables with a matrix or a CLUT, matrix/TRC tags, raised blacks) agree with
 Little CMS's 8-bit result within one code value everywhere. `color_management`'s tests hold the
-committed fixtures (`crates/rawmakase-decode/tests/data/monitor`) to this; an
-ignored test runs the dense grid over a folder of profiles and Little CMS results.
+committed fixtures (`crates/rawmakase-decode/tests/data/monitor`) to this.
 Choosing this manual override, or sRGB, on macOS leaves the Metal surface
 unmanaged to avoid applying a second conversion; choosing the system profile
 restores system color management. Failure of the manual transform still shows the sRGB bytes with a

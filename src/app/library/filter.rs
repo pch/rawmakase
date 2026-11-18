@@ -1,79 +1,18 @@
 //! What the Library shows: the source (a folder scope or collection), the
-//! filter bar, the offline filter and the sort order. The bar follows
-//! Lightroom's Attribute filter: any combination of flags, a rating compared
-//! with ≥, ≤ or =, any set of color labels, and masters or virtual copies.
-//! Its Metadata menu follows Lightroom's Metadata filter: a column per
-//! attribute (camera, lens, settings, file type, keyword), any of a column's
-//! values, and every column chosen in.
+//! filter bar, the offline filter and the sort order. What the bar asks of a
+//! photo (Lightroom's Attribute and Metadata filters, and the search) is
+//! [`crate::collection_rules::Bar`]'s; this keeps what is set in it.
 //! Cmd+L turns the bar off and on without losing what is set in it.
-use super::facets::{Attribute, Counts, PhotoFacets, facets_of};
-use crate::app::library::photo_metadata::LABELS;
+use super::facets::{Attribute, Counts, PhotoFacets};
 use crate::catalog::{Photo, PhotoId};
+use crate::catalog_session::entry;
+use crate::collection_rules::Bar;
+pub(super) use crate::collection_rules::{Kind, Label, RatingOp};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     path::Path,
 };
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum RatingOp {
-    #[default]
-    AtLeast,
-    AtMost,
-    Exactly,
-}
-impl RatingOp {
-    pub(super) const ALL: [Self; 3] = [Self::AtLeast, Self::AtMost, Self::Exactly];
-    pub(super) fn symbol(self) -> &'static str {
-        match self {
-            Self::AtLeast => "≥",
-            Self::AtMost => "≤",
-            Self::Exactly => "=",
-        }
-    }
-    pub(super) fn name(self) -> &'static str {
-        match self {
-            Self::AtLeast => "Rating is greater than or equal to",
-            Self::AtMost => "Rating is less than or equal to",
-            Self::Exactly => "Rating is equal to",
-        }
-    }
-    fn holds(self, rating: i32, limit: i32) -> bool {
-        match self {
-            Self::AtLeast => rating >= limit,
-            Self::AtMost => rating <= limit,
-            Self::Exactly => rating == limit,
-        }
-    }
-}
-
-/// A color label the bar can match.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Label {
-    Color(String),
-    /// No label at all.
-    None,
-    /// Any label other than the five colors, such as a custom label set's.
-    Other,
-}
-impl Label {
-    fn matches(&self, label: &str) -> bool {
-        match self {
-            Self::Color(name) => label == name,
-            Self::None => label.is_empty(),
-            Self::Other => !label.is_empty() && !LABELS.contains(&label),
-        }
-    }
-}
-
-/// Masters, virtual copies or both.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum Kind {
-    #[default]
-    All,
-    Masters,
-    Copies,
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Filters {
@@ -141,7 +80,7 @@ impl Filters {
             .enumerate()
             .filter(|(_, p)| {
                 self.source_holds(p, &available)
-                    && (!self.enabled || self.bar_shows(p, &query, facets, None))
+                    && (!self.enabled || self.bar(&query).shows(&entry(p, facets), None))
             })
             .map(|(i, _)| i)
             .collect();
@@ -197,13 +136,15 @@ impl Filters {
         let mut unknown = 0;
         let mut total = 0;
         for p in photos {
-            if !self.source_holds(p, &available)
-                || !self.bar_shows(p, &query, facets, Some(attribute))
-            {
+            if !self.source_holds(p, &available) {
+                continue;
+            }
+            let entry = entry(p, facets);
+            if !self.bar(&query).shows(&entry, Some(attribute)) {
                 continue;
             }
             total += 1;
-            let mut values = attribute.values(p, facets.and_then(|f| facets_of(f, p)));
+            let mut values = attribute.values(&entry);
             // Two keywords may share a name, under different parents.
             values.sort_unstable();
             values.dedup();
@@ -226,50 +167,16 @@ impl Filters {
         }
         Counts::sorted(attribute, total, counts)
     }
-    /// Whether the filter bar lets `p` through, `except` a Metadata
-    /// attribute left out for its counts; `query` is in lower case.
-    fn bar_shows(
-        &self,
-        p: &Photo,
-        query: &str,
-        facets: Option<&PhotoFacets>,
-        except: Option<Attribute>,
-    ) -> bool {
-        let facets = facets.and_then(|f| facets_of(f, p));
-        let one = |attribute: Attribute| attribute.values(p, facets).into_iter().next();
-        (self.flags.is_empty() || self.flags.contains(&p.flag))
-            && self
-                .rating
-                .is_none_or(|limit| self.rating_op.holds(p.rating, limit))
-            && (self.labels.is_empty() || self.labels.iter().any(|l| l.matches(&p.label)))
-            && match self.kind {
-                Kind::All => true,
-                Kind::Masters => p.master.is_none(),
-                Kind::Copies => p.master.is_some(),
-            }
-            && self.metadata.iter().all(|(attribute, chosen)| {
-                if Some(*attribute) == except || chosen.is_empty() {
-                    return true;
-                }
-                let values = attribute.values(p, facets);
-                chosen.iter().any(|c| match c {
-                    Some(c) => values.iter().any(|v| v == c),
-                    None => values.is_empty(),
-                })
-            })
-            && (query.is_empty()
-                || format!(
-                    "{} {} {} {} {} {} {}",
-                    p.filename,
-                    p.copy_name,
-                    p.keywords.join(", "),
-                    p.captured,
-                    p.label,
-                    one(Attribute::Camera).unwrap_or_default(),
-                    one(Attribute::Lens).unwrap_or_default(),
-                )
-                .to_lowercase()
-                .contains(query))
+    /// The bar's test, with the search `query` in lower case.
+    fn bar<'a>(&'a self, query: &'a str) -> Bar<'a> {
+        Bar {
+            flags: &self.flags,
+            rating: self.rating.map(|limit| (self.rating_op, limit)),
+            labels: &self.labels,
+            kind: self.kind,
+            metadata: &self.metadata,
+            query,
+        }
     }
     /// Whether anything is set in the bar, applied or not.
     pub(super) fn bar_set(&self) -> bool {

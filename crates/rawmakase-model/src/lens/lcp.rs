@@ -166,11 +166,13 @@ fn make_rank(e: &Entry, m: &Metadata) -> Option<u8> {
     )
 }
 
-/// Parameters interpolated in focal length (and APEX aperture for vignetting).
+/// Parameters interpolated in focal length, focus `distance` in metres (0 when
+/// unknown) and, for vignetting, APEX aperture.
 fn interpolate<T: Copy>(
     entries: &[&Entry],
     focal: f32,
     aperture: Option<f32>,
+    distance: f32,
     get: impl Fn(&Entry) -> Option<T>,
     mix: impl Fn(T, T, f32) -> T,
 ) -> Option<(T, f32)> {
@@ -184,36 +186,56 @@ fn interpolate<T: Copy>(
         .find(|f| **f <= focal)
         .or(focals.first())?;
     let hi = focals.iter().find(|f| **f >= focal).or(focals.last())?;
+    let inv = |d: Option<f32>| {
+        d.filter(|d| d.is_finite() && *d > 0.)
+            .map_or(0., |d| 1. / d)
+    };
     let at_focal = |f: f32| -> Option<(T, f32)> {
-        let mut here: Vec<&&&Entry> = with.iter().filter(|e| e.focal == f).collect();
-        // Prefer the farthest focus distance, as Lightroom does without distance data.
-        let far = here
-            .iter()
-            .map(|e| e.distance.unwrap_or(f32::INFINITY))
-            .fold(0f32, f32::max);
-        here.retain(|e| e.distance.unwrap_or(f32::INFINITY) == far);
-        match aperture {
-            Some(av) if here.iter().any(|e| e.aperture.is_some()) => {
-                here.sort_by(|a, b| {
-                    a.aperture
-                        .unwrap_or(0.)
-                        .total_cmp(&b.aperture.unwrap_or(0.))
-                });
-                let below = here
-                    .iter()
-                    .rev()
-                    .find(|e| e.aperture.unwrap_or(0.) <= av)
-                    .or(here.first())?;
-                let above = here
-                    .iter()
-                    .find(|e| e.aperture.unwrap_or(0.) >= av)
-                    .or(here.last())?;
-                let (a0, a1) = (below.aperture.unwrap_or(av), above.aperture.unwrap_or(av));
-                let t = if a1 > a0 { (av - a0) / (a1 - a0) } else { 0. };
-                Some((mix(get(below)?, get(above)?, t), below.focal))
+        let here: Vec<&&&Entry> = with.iter().filter(|e| e.focal == f).collect();
+        // Blend the two entries around the photo's focus distance in 1/distance, which
+        // is 0 at infinity. Past either end the nearest entry applies, so a photo
+        // without a distance takes the farthest, as Lightroom does without distance data.
+        let mut keys: Vec<f32> = here.iter().map(|e| inv(e.distance)).collect();
+        keys.sort_by(f32::total_cmp);
+        keys.dedup();
+        let want = inv(Some(distance));
+        let (k0, k1) = (
+            *keys.iter().rev().find(|k| **k <= want).or(keys.first())?,
+            *keys.iter().find(|k| **k >= want).or(keys.last())?,
+        );
+        let at_distance = |k: f32| {
+            let mut here: Vec<&&&Entry> = here
+                .iter()
+                .filter(|e| inv(e.distance) == k)
+                .copied()
+                .collect();
+            match aperture {
+                Some(av) if here.iter().any(|e| e.aperture.is_some()) => {
+                    here.sort_by(|a, b| {
+                        a.aperture
+                            .unwrap_or(0.)
+                            .total_cmp(&b.aperture.unwrap_or(0.))
+                    });
+                    let below = here
+                        .iter()
+                        .rev()
+                        .find(|e| e.aperture.unwrap_or(0.) <= av)
+                        .or(here.first())?;
+                    let above = here
+                        .iter()
+                        .find(|e| e.aperture.unwrap_or(0.) >= av)
+                        .or(here.last())?;
+                    let (a0, a1) = (below.aperture.unwrap_or(av), above.aperture.unwrap_or(av));
+                    let t = if a1 > a0 { (av - a0) / (a1 - a0) } else { 0. };
+                    Some((mix(get(below)?, get(above)?, t), below.focal))
+                }
+                _ => here.first().and_then(|e| get(e).map(|v| (v, e.focal))),
             }
-            _ => here.first().and_then(|e| get(e).map(|v| (v, e.focal))),
-        }
+        };
+        let t = if k1 > k0 { (want - k0) / (k1 - k0) } else { 0. };
+        let (a, _) = at_distance(k0)?;
+        let (b, _) = at_distance(k1)?;
+        Some((mix(a, b, t), f))
     };
     let (a, _) = at_focal(*lo)?;
     let (b, _) = at_focal(*hi)?;
@@ -279,6 +301,7 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
             &found,
             focal,
             None,
+            m.focus_distance,
             |e| e.centre,
             |a, b, t| std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t),
         )
@@ -310,14 +333,34 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
         ]
     };
     let reach = crate::optics::reach(centre, size);
-    let knots: Vec<f32> = (0..=32).map(|i| i as f32 / 32. * reach).collect();
+    let knot = |i: usize| i as f32 / 32. * reach;
     let poly = |k: [f32; 3], r: f32| {
         let r2 = r * r;
         1. + k[0] * r2 + k[1] * r2 * r2 + k[2] * r2 * r2 * r2
     };
+    // Out to the farthest corner, the radius vignetting is read at.
     let curve = |f: &dyn Fn(f32) -> f32| Radial {
-        knots: knots.clone(),
-        values: knots.iter().map(|r| f(*r)).collect(),
+        knots: (0..=32).map(knot).collect(),
+        values: (0..=32).map(|i| f(knot(i))).collect(),
+    };
+    // Distortion and lateral CA are read at the output radius times the fill, which
+    // zooms an imported profile out up to [`LensCorrection::ADOBE_MAX_FILL`]: past the
+    // corner they follow the polynomial, as far as it stays a valid table value, and
+    // hold their last value beyond. A polynomial that leaves that range there has
+    // usually folded back before it, where the fill stops
+    // ([`LensCorrection::fill_scale`]).
+    let past = (32. * LensCorrection::ADOBE_MAX_FILL).ceil() as usize;
+    let extended = |f: &dyn Fn(f32) -> f32| {
+        let mut c = curve(f);
+        for r in (33..=past).map(knot) {
+            let v = f(r);
+            if !Radial::VALUES.contains(&v) {
+                break;
+            }
+            c.knots.push(r);
+            c.values.push(v);
+        }
+        c
     };
     let distortion = match builtin {
         Some(builtin) => Some(builtin.clone()),
@@ -325,15 +368,17 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
             &found,
             focal,
             None,
+            m.focus_distance,
             |e| e.distortion.map(|p| normalized(e, p)),
             mix3,
         )
-        .map(|(k, _)| curve(&|r| poly(k, r))),
+        .map(|(k, _)| extended(&|r| poly(k, r))),
     };
     let vignetting = interpolate(
         &found,
         focal,
         av,
+        m.focus_distance,
         |e| e.vignette.map(|p| normalized(e, p)),
         mix3,
     )
@@ -343,16 +388,17 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
             &found,
             focal,
             None,
+            m.focus_distance,
             |e| get(e).map(|(s, p)| (s, normalized(e, p))),
             |a, b, t| (a.0 + (b.0 - a.0) * t, mix3(a.1, b.1, t)),
         )
-        .map(|((s, k), _)| curve(&|r| s * poly(k, r)))
+        .map(|((s, k), _)| extended(&|r| s * poly(k, r)))
     };
     let chromatic = chroma(|e| e.red)
         .zip(chroma(|e| e.blue))
         .map(|(r, b)| [r, b]);
     let c = LensCorrection {
-        source: format!("Adobe profile: {}", first.name),
+        source: format!("{}: {}", LensCorrection::ADOBE_PROFILE, first.name),
         default_on: false,
         vignetting,
         distortion,
@@ -837,6 +883,91 @@ mod tests {
             ..Default::default()
         }
     }
+    /// A profile is tabulated past the farthest corner, as far as a fill that zooms out
+    /// reads it, so the corners follow the polynomial there, not its value at the corner.
+    #[test]
+    fn a_zoomed_out_profile_follows_its_polynomial_past_the_corner() {
+        let text = test_profile("Testcam", "35mm F2", "Adobe (Testcam 35mm F2)", -0.1, 0.);
+        let entries = parse(&text).unwrap();
+        let m = Metadata {
+            make: "Testcam".into(),
+            model: "X".into(),
+            lens_model: "35mm F2".into(),
+            focal: 35.,
+            aperture: 2.,
+            width: 6000,
+            height: 4000,
+            ..Default::default()
+        };
+        let c = correction(&entries, &m).unwrap();
+        let size = [6000., 4000.];
+        let fill = c.fill_scale(1., size, [0., 0., size[0], size[1]]);
+        assert!(fill > 1.01, "{fill}");
+        // The model's unit is FocalLengthX (here 35 / 36, from the focal length) times
+        // the long edge; ours is the half diagonal.
+        let k = -0.1 * (size[0].hypot(size[1]) * 0.5 / (35. / 36. * size[0])).powi(2);
+        let d = c.distortion.as_ref().unwrap();
+        let reach = c.reach(size);
+        for r in [reach, reach * fill] {
+            let model = 1. + k * r * r;
+            assert!(
+                (d.eval(r) - model).abs() < 1e-4,
+                "{r}: {} {model}",
+                d.eval(r)
+            );
+        }
+    }
+    /// A polynomial that leaves the table's valid range past the corner keeps its
+    /// correction: the table stops short of it, and the fill at the polynomial's fold.
+    #[test]
+    fn a_profile_invalid_past_the_corner_still_corrects() {
+        // 1 − 0.1 r² − 0.07 r⁶ in half diagonals: about 0.83 at the corner, below 0.2
+        // well before 1.5 times its radius, and folding back at about 1.05.
+        let text = test_profile("Testcam", "35mm F2", "Adobe (Testcam 35mm F2)", -0.1, 0.)
+            .replace(
+                r#"stCamera:RadialDistortParam1="-0.1""#,
+                r#"stCamera:FocalLengthX="0.6009252126" stCamera:RadialDistortParam1="-0.1" stCamera:RadialDistortParam3="-0.07""#,
+            );
+        let entries = parse(&text).unwrap();
+        let m = Metadata {
+            make: "Testcam".into(),
+            model: "X".into(),
+            lens_model: "35mm F2".into(),
+            focal: 35.,
+            aperture: 2.,
+            width: 6000,
+            height: 4000,
+            ..Default::default()
+        };
+        let c = correction(&entries, &m).expect("a correction");
+        let size = [6000., 4000.];
+        let d = c.distortion.as_ref().unwrap();
+        let end = *d.knots.last().unwrap();
+        assert!(end > c.reach(size) && end < c.reach(size) * LensCorrection::ADOBE_MAX_FILL);
+        let fill = c.fill_scale(1., size, [0., 0., size[0], size[1]]);
+        assert!(fill > 1. && fill < 1.06, "{fill}");
+    }
+    #[test]
+    fn the_focus_distance_picks_the_entries_around_it() {
+        let text = SAMPLE.replace(
+            r#"FocusDistance="3" stCamera:ApertureValue="2""#,
+            r#"FocusDistance="1" stCamera:ApertureValue="2""#,
+        );
+        let entries = parse(&text).unwrap();
+        let at = |d: f32| {
+            let mut m = a7ii(2.);
+            m.focus_distance = d;
+            let c = correction(&entries, &m).unwrap();
+            c.vignetting_gain(1.)
+        };
+        let (far, near) = (at(0.), at(1.));
+        assert!(far != near);
+        // Past either end the nearest entry applies; between them the gain blends.
+        assert_eq!(at(f32::INFINITY), far);
+        assert_eq!(at(0.5), near);
+        assert!((at(1.5) - far).abs() < (near - far).abs());
+    }
+
     #[test]
     fn parses_and_evaluates_sony_profile() {
         let entries = parse(SAMPLE).unwrap();
@@ -1266,7 +1397,7 @@ mod tests {
     #[test]
     fn a_pentax_lens_type_identifies_and_names_the_lens() {
         // Pentax bodies write no lens model (a K-x DNG among them, issue #501), only
-        // the maker note's two-byte LensType, which LibRaw reads as one number and
+        // the maker note's two-byte LensType, which the decoder reads as one number and
         // Adobe's Pentax profiles write as stCamera:LensID "4 252". Profiles of newer
         // lenses are made by Ricoh, which makes Pentax cameras.
         let pentax = |make: &str, lens: &str, id: &str| {

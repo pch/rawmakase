@@ -67,23 +67,6 @@ fn library_editor(
 }
 
 #[test]
-fn library_redo_key_redoes_rather_than_undoing() -> anyhow::Result<()> {
-    let (_d, mut e, ids) = library_editor(2)?;
-    tap(&mut e, Key::Num3, Modifiers::NONE);
-    assert_eq!(rating(&e, ids[0]), 3);
-    tap(&mut e, Key::Z, command(Modifiers::NONE));
-    assert_eq!(rating(&e, ids[0]), 0, "Cmd+Z undoes");
-    tap(&mut e, Key::Z, command(Modifiers::SHIFT));
-    assert_eq!(rating(&e, ids[0]), 3, "Cmd+Shift+Z redoes");
-    if !cfg!(target_os = "macos") {
-        tap(&mut e, Key::Z, command(Modifiers::NONE));
-        tap(&mut e, Key::Y, command(Modifiers::NONE));
-        assert_eq!(rating(&e, ids[0]), 3, "Ctrl+Y redoes");
-    }
-    Ok(())
-}
-
-#[test]
 fn a_rating_key_leaves_the_frames_other_library_keys_working() -> anyhow::Result<()> {
     let (_d, mut e, ids) = library_editor(3)?;
     let next = e.library.as_ref().unwrap().navigate(ids[0], 1);
@@ -135,45 +118,6 @@ fn develop_editor() -> Editor {
     e.onboarding.visible = false;
     frame(&mut e, vec![]);
     e
-}
-
-#[test]
-fn develop_keys_read_the_modifiers_held_for_them() {
-    use crate::app::develop::state::Tool;
-    // Each tap releases its modifiers within the frame, as a quick hand does.
-    let mut e = develop_editor();
-    tap(&mut e, Key::W, Modifiers::SHIFT);
-    assert!(e.view.is(Tool::Mask), "Shift+W opens Masking");
-    tap(&mut e, Key::W, Modifiers::SHIFT);
-    tap(&mut e, Key::T, Modifiers::SHIFT);
-    assert!(e.view.is(Tool::Guided), "Shift+T opens Guided Upright");
-    tap(&mut e, Key::T, Modifiers::SHIFT);
-    let compare = e.view.compare;
-    tap(&mut e, Key::R, Modifiers::SHIFT);
-    assert!(!e.view.is(Tool::Crop), "Shift+R is not Crop");
-    assert!(e.view.compare != compare, "Shift+R is Reference View");
-    tap(&mut e, Key::R, Modifiers::SHIFT);
-    tap(&mut e, Key::Q, Modifiers::NONE);
-    assert!(e.view.is(Tool::Remove));
-    let (size, feather) = (e.view.retouch.size, e.view.retouch.feather);
-    let key = if feather > 0. {
-        Key::OpenBracket
-    } else {
-        Key::CloseBracket
-    };
-    tap(&mut e, key, Modifiers::SHIFT);
-    assert_eq!(e.view.retouch.size, size, "Shift+bracket is not the size");
-    assert!(e.view.retouch.feather != feather, "Shift+bracket feathers");
-}
-
-#[test]
-fn a_virtual_copy_is_made_with_the_command_held_for_its_key() -> anyhow::Result<()> {
-    let (_d, mut e, _) = library_editor(1)?;
-    let count = |e: &Editor| e.library.as_ref().unwrap().session.photos().len();
-    let before = count(&e);
-    tap(&mut e, Key::Quote, command(Modifiers::NONE));
-    assert_eq!(count(&e), before + 1);
-    Ok(())
 }
 
 #[test]

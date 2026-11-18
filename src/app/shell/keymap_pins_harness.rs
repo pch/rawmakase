@@ -3,10 +3,8 @@
 //! frames sent as a keyboard sends them, and a fingerprint of everything a
 //! shortcut can change.
 //!
-//! The pins hold today's behaviour still while the shortcuts move into one
-//! command registry (#963): `keymap_pins_editor_tests` one shortcut at a time,
-//! `keymap_golden_editor_tests` every key in every place against a checked-in
-//! table.
+//! The pins themselves are in `keymap_pins_editor_tests`; `keymap_editor_tests`
+//! uses the same editors for the user's own keys.
 use crate::app::develop::state::Tool;
 use crate::app::*;
 use crate::catalog::PhotoId;
@@ -48,26 +46,6 @@ pub(super) enum Place {
 }
 
 impl Place {
-    pub(super) const ALL: [Place; 18] = [
-        Place::Grid,
-        Place::Loupe,
-        Place::Compare,
-        Place::Survey,
-        Place::Develop,
-        Place::Crop,
-        Place::Remove,
-        Place::RedEye,
-        Place::Mask,
-        Place::Guided,
-        Place::LoupePopup,
-        Place::DevelopPopup,
-        Place::GridTyping,
-        Place::DevelopTyping,
-        Place::GridButton,
-        Place::DevelopButton,
-        Place::GridModal,
-        Place::DevelopModal,
-    ];
     fn develop(self) -> bool {
         matches!(
             self,
@@ -331,11 +309,6 @@ impl Template {
             field: String::new(),
         };
         f.set_up(place)
-    }
-
-    /// The folder's path, as a message may name it.
-    pub(super) fn path(&self) -> &std::path::Path {
-        self.dir.path()
     }
 }
 
@@ -866,6 +839,9 @@ impl Fixture {
         }
         if e.auto_stack_open() {
             open.push("Auto-Stack".into());
+        }
+        if e.collection_dialog_open() {
+            open.push("Collection".into());
         }
         if open.is_empty() {
             "-".into()

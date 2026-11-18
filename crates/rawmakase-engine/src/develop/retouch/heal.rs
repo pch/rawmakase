@@ -29,40 +29,17 @@ pub(super) fn clip(r: PixelRect, w: u32, h: u32) -> PixelRect {
     ]
 }
 
-/// The values the membrane is solved in. Only `Log` renders; the tests compare it
-/// with the alternatives, which exist only there.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum Domain {
-    #[cfg(test)]
-    Linear,
-    /// ln(x + 0.001)
-    Log,
-    /// ln(1 + x)
-    #[cfg(test)]
-    Log1p,
+/// A linear value as the membrane is solved in it, ln(x + 0.001). Log values keep
+/// a texture's contrast relative to its surroundings under an illumination
+/// gradient, which linear values and ln(1 + x) do not; `retouch::tests` records
+/// the measurement.
+pub(super) fn to_log(v: f32) -> f32 {
+    (v.max(0.) + 1e-3).ln()
 }
-impl Domain {
-    pub(super) fn to(self, v: f32) -> f32 {
-        match self {
-            #[cfg(test)]
-            Domain::Linear => v,
-            Domain::Log => (v.max(0.) + 1e-3).ln(),
-            #[cfg(test)]
-            Domain::Log1p => v.max(0.).ln_1p(),
-        }
-    }
-    pub(super) fn from(self, v: f32) -> f32 {
-        match self {
-            #[cfg(test)]
-            Domain::Linear => v,
-            Domain::Log => (v.exp() - 1e-3).max(0.),
-            #[cfg(test)]
-            Domain::Log1p => v.exp_m1().max(0.),
-        }
-    }
+/// The linear value of `v`, the inverse of [`to_log`], at least zero.
+pub(super) fn from_log(v: f32) -> f32 {
+    (v.exp() - 1e-3).max(0.)
 }
-/// Heal's domain; see `retouch::tests` for the comparison on test data.
-pub(super) const DOMAIN: Domain = Domain::Log;
 
 /// How a Generate operation's patch meets the image. Only `Membrane` renders;
 /// `retouch::tests` compares it with a plain feathered composite of the patch on
@@ -341,15 +318,15 @@ pub(crate) fn apply_blend(im: &mut CameraImage, op: &Placed, blend: GenerateBlen
     };
     let patch: Vec<[f32; 3]> = match op.mode {
         RetouchMode::Clone => source,
-        RetouchMode::Heal => heal(&dest, &source, &alpha, w, h, DOMAIN),
+        RetouchMode::Heal => heal(&dest, &source, &alpha, w, h),
         RetouchMode::Generate => match blend {
             GenerateBlend::Membrane => {
-                let mut healed = heal(&dest, &source, &alpha, w, h, DOMAIN);
+                let mut healed = heal(&dest, &source, &alpha, w, h);
                 super::texture::apply(im, op, grid, &alpha, &mut healed);
                 healed
             }
             #[cfg(test)]
-            GenerateBlend::Untextured => heal(&dest, &source, &alpha, w, h, DOMAIN),
+            GenerateBlend::Untextured => heal(&dest, &source, &alpha, w, h),
             #[cfg(test)]
             GenerateBlend::Composite => source,
         },
@@ -363,16 +340,16 @@ pub(crate) fn apply_blend(im: &mut CameraImage, op: &Placed, blend: GenerateBlen
     }
     rect
 }
-/// Source plus the membrane of `dest - source` over `alpha > 0`, in `domain`.
+/// Source plus the membrane of `dest - source` over `alpha > 0`, in log values
+/// ([`to_log`]).
 pub(crate) fn heal(
     dest: &[[f32; 3]],
     source: &[[f32; 3]],
     alpha: &[f32],
     w: usize,
     h: usize,
-    domain: Domain,
 ) -> Vec<[f32; 3]> {
-    let (to, from) = (|v| domain.to(v), |v| domain.from(v));
+    let (to, from) = (to_log, from_log);
     let inside: Vec<bool> = alpha.iter().map(|a| *a > 0.).collect();
     let channels: Vec<Vec<f32>> = (0..3)
         .into_par_iter()

@@ -88,12 +88,9 @@ pub(crate) enum Event {
     AiDenoise(Box<crate::ai_denoise::Update>),
     /// An AI Denoise result was stored for the photo at this path, by any job.
     AiDenoiseStored(std::path::PathBuf),
-    /// The selection model finished installing, or why not.
-    ModelInstalled(
-        crate::model_install::Pack,
-        Result<(), crate::model_install::InstallError>,
-    ),
-    ModelRemoved(crate::model_install::Pack, Result<(), String>),
+    /// AI Denoise's model finished installing, or why not.
+    ModelInstalled(Result<(), crate::model_install::InstallError>),
+    ModelRemoved(Result<(), String>),
     /// A Lensfun database job finished (`app::develop::lensfun`).
     Lensfun {
         generation: u64,

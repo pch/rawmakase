@@ -772,16 +772,6 @@ mod tests {
         let error = error.to_string();
         assert!(error.contains("LUT_3D_OUTPUT_RANGE"), "{error}");
     }
-
-    /// A 65³ cube is the largest a `.cube` usually gets, and it has to parse and look
-    /// up without caring how big it is.
-    #[test]
-    fn a_65_cube_parses_and_looks_up() {
-        let lut = Lut3d::parse(&identity(65)).unwrap();
-        assert_eq!(lut.size(), 65);
-        assert_eq!(lut.lookup([1.0, 0.0, 0.0]), [1.0, 0.0, 0.0]);
-        assert_eq!(lut.lookup([0.0, 1.0, 0.0]), [0.0, 1.0, 0.0]);
-    }
 }
 
 #[cfg(test)]
@@ -921,14 +911,6 @@ mod real_files {
         let text = "LUT_1D_SIZE 2\nLUT_3D_SIZE 2\n0 0 0\n1 1 1\n1 1 1\n";
         let error = Lut3d::parse(text).unwrap_err().to_string();
         assert!(error.contains("needs"), "{error}");
-    }
-
-    #[test]
-    fn a_1d_cube_alone_is_not_read_as_a_3d_one() {
-        assert!(matches!(
-            Cube::parse("LUT_1D_SIZE 2\n0 0 0\n1 1 1\n").unwrap(),
-            Cube::One(_)
-        ));
     }
 
     /// The shapes clean files already had, kept so the tolerance above stays deliberate

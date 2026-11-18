@@ -57,6 +57,8 @@ pub(crate) struct Editor {
     /// Develop's HDR preview and its worker.
     hdr_preview: crate::app::develop::hdr_preview::HdrPreview,
     hdr_histogram: crate::app::develop::hdr_histogram::HdrHistograms,
+    /// The Tone Curve panel's histogram of what the curves take in, and its worker.
+    curve_histogram: crate::app::develop::curve_histogram::CurveHistograms,
     /// The window's wgpu state this frame, for the HDR preview's texture.
     render_state: Option<eframe::egui_wgpu::RenderState>,
     /// Reads the window's display's HDR headroom.
@@ -357,15 +359,16 @@ impl Editor {
             loader,
             decode_cache,
             ai_denoise,
-            ai_denoise_model: crate::app::develop::model_installer::Installer::new(
-                crate::model_install::Pack::Denoise,
-            ),
+            ai_denoise_model: crate::app::develop::model_installer::Installer::new(),
             ai_loupe,
             renderer,
             reference: Default::default(),
             reference_loader,
             hdr_preview: crate::app::develop::hdr_preview::HdrPreview::new(ctx.clone()),
             hdr_histogram: crate::app::develop::hdr_histogram::HdrHistograms::new(ctx.clone()),
+            curve_histogram: crate::app::develop::curve_histogram::CurveHistograms::new(
+                ctx.clone(),
+            ),
             render_state: None,
             headroom: Default::default(),
             clipboard: None,
@@ -607,6 +610,8 @@ impl eframe::App for Editor {
         self.draw(ui);
         // HDR previews the frame didn't draw are of views that are gone.
         self.hdr_preview.sweep(self.render_state.as_ref());
+        // The Tone Curve's histogram, when no panel showed it.
+        self.curve_histogram.sweep();
         self.follow_hdr_display();
         if self.view.monitor.follows_system() {
             if self.view.system_display.update(frame) {
@@ -1055,11 +1060,25 @@ fn follow_text_scale(ctx: &egui::Context) {
     }
 }
 
-/// Inter, with tabular figures so values keep their width as they change,
-/// and an installed face for every script and symbol it lacks (fastframe-fonts),
-/// rendered as the desktop renders text.
+/// The face the interface draws with. macOS and Windows use their own
+/// interface face (San Francisco, Segoe UI). Linux keeps the bundled Inter:
+/// fontconfig's `system-ui` is often a metric-compatible fallback, such as
+/// Omarchy's Liberation Sans, which looks soft under the desktop's slight
+/// hinting where Inter stays sharp.
+#[cfg(all(unix, not(target_os = "macos")))]
+const INTERFACE_FACE: fastframe_fonts::Primary = fastframe_fonts::Primary::Inter;
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+const INTERFACE_FACE: fastframe_fonts::Primary = fastframe_fonts::Primary::System;
+
+/// The interface face ([`INTERFACE_FACE`]), with installed fallbacks for other
+/// scripts, rendered as the desktop renders text.
 fn install_fonts(ctx: &egui::Context, text: &fastframe_text::TextRendering) {
-    let mut fonts = fastframe_fonts::FontSetup::default().definitions();
+    let mut fonts = fastframe_fonts::FontSetup::default()
+        .primary(INTERFACE_FACE)
+        // Monospace roles draw with the interface face at regular weight. With
+        // Inter its figures are tabular, so changing values keep their width.
+        .monospace(fastframe_fonts::Monospace::Inter)
+        .definitions();
     text.apply_to(&mut fonts);
     ctx.set_fonts(fonts);
 }

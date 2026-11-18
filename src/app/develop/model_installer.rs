@@ -4,24 +4,14 @@
 //! and Sky's models are the AI masks extension's to install.
 use crate::app::task::Stopping;
 use crate::app::worker::Event;
-use crate::model_install::{InstallError, Pack, Progress};
+use crate::model_install::{InstallError, Progress};
 use eframe::egui;
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc::Sender};
 use std::time::Duration;
 
-impl crate::app::Editor {
-    /// The installer of `pack`, wherever the feature using it keeps it.
-    pub(in crate::app) fn installer_mut(&mut self, pack: Pack) -> &mut Installer {
-        match pack {
-            Pack::Denoise => &mut self.ai_denoise_model,
-        }
-    }
-}
-
-/// One pack on disk and the install in progress, if any.
+/// The pack on disk and the install in progress, if any.
 pub(crate) struct Installer {
-    pack: Pack,
     /// What the folder held when last looked at, and when: the files on disk decide
     /// whether the models are installed (a copy made, or deleted, by hand counts), not
     /// a note of what this process did.
@@ -34,9 +24,8 @@ pub(crate) struct Installer {
 }
 
 impl Installer {
-    pub(in crate::app) fn new(pack: Pack) -> Self {
+    pub(in crate::app) fn new() -> Self {
         Self {
-            pack,
             seen: Default::default(),
             progress: None,
             thread: None,
@@ -52,7 +41,7 @@ impl Installer {
         match self.seen.get() {
             Some((at, installed)) if at.elapsed() < Duration::from_secs(1) => installed,
             _ => {
-                let installed = self.pack.is_installed();
+                let installed = crate::model_install::is_installed();
                 self.seen.set(Some((std::time::Instant::now(), installed)));
                 installed
             }
@@ -63,7 +52,7 @@ impl Installer {
     }
     /// The folder holding the model's files.
     pub(in crate::app) fn path(&self) -> Option<PathBuf> {
-        self.installed().then(|| self.pack.dir())
+        self.installed().then(crate::model_install::dir)
     }
     pub(in crate::app) fn busy(&self) -> bool {
         self.progress.is_some() || self.removing
@@ -72,7 +61,7 @@ impl Installer {
     pub(in crate::app) fn progress(&self) -> Option<(u64, u64)> {
         self.progress
             .as_ref()
-            .map(|p| (p.fetched(), self.pack.bytes()))
+            .map(|p| (p.fetched(), crate::model_install::bytes()))
     }
     pub(in crate::app) fn cancel(&mut self) {
         if let Some(p) = &self.progress {
@@ -103,7 +92,6 @@ impl Installer {
         if self.busy() || self.installed() {
             return;
         }
-        let pack = self.pack;
         let progress = Arc::new(Progress::default());
         self.progress = Some(progress.clone());
         self.failed = None;
@@ -111,14 +99,14 @@ impl Installer {
             .name("model-install".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    crate::model_install::install(pack, import.as_deref(), &progress)
+                    crate::model_install::install(import.as_deref(), &progress)
                 }))
                 .unwrap_or_else(|_| {
                     Err(InstallError::Failed(
                         "the install stopped unexpectedly".into(),
                     ))
                 });
-                let _ = tx.send(Event::ModelInstalled(pack, result));
+                let _ = tx.send(Event::ModelInstalled(result));
                 ctx.request_repaint();
             });
         match spawned {
@@ -146,10 +134,9 @@ impl Installer {
             return;
         }
         self.removing = true;
-        let pack = self.pack;
         std::thread::spawn(move || {
             unload();
-            let result = std::fs::remove_dir_all(pack.dir())
+            let result = std::fs::remove_dir_all(crate::model_install::dir())
                 .or_else(|e| {
                     if e.kind() == std::io::ErrorKind::NotFound {
                         Ok(())
@@ -158,7 +145,7 @@ impl Installer {
                     }
                 })
                 .map_err(|e| e.to_string());
-            let _ = tx.send(Event::ModelRemoved(pack, result));
+            let _ = tx.send(Event::ModelRemoved(result));
             ctx.request_repaint();
         });
     }
@@ -174,7 +161,7 @@ mod tests {
 
     #[test]
     fn a_failed_install_says_why_until_the_next_one() {
-        let mut installer = Installer::new(Pack::Denoise);
+        let mut installer = Installer::new();
         installer.finished(&Err(InstallError::Failed(
             "could not download the model: timed out".into(),
         )));

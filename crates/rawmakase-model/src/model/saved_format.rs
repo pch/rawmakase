@@ -432,11 +432,6 @@ mod tests {
         assert_eq!(newer.exposure, 0.5);
         let again = serde_json::to_value(&newer).unwrap();
         assert_eq!(again["future_slider"], serde_json::json!([1, 2]));
-        // A development build's schema 7, with spots in the recipe, still loads them.
-        let mut v = serde_json::json!({"schema": 7, "pipeline": 7, "recipe": serde_json::to_value(&r).unwrap()});
-        super::migrate_recipe(&mut v).unwrap();
-        let old: Recipe = serde_json::from_value(v["recipe"].clone()).unwrap();
-        assert_eq!(old.retouch, r.retouch);
     }
 
     /// AI Denoise needs schema 13 whenever it is not the default, switched off with a

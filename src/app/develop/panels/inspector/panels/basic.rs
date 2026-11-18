@@ -1,7 +1,7 @@
 //! The Basic panel: Auto, Treatment, Profile (with its imports, the community
 //! profile offer and Fit Camera Look), White Balance, Tone and Presence.
 use super::super::{
-    basic_control, control_row, eyedropper_icon, profile_menu, profile_offer, subheading,
+    basic_control, eyedropper_icon, profile_menu, profile_offer, stacked_control, subheading,
 };
 use super::Action;
 use crate::app::develop::panels::basic_keys;
@@ -12,7 +12,7 @@ use crate::app::presets::bulk_import::ImportKind;
 use crate::app::ui::design::{Tone, size, space};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::{
-    adjustment_section, control_left, segmented, slider_with, toolbar_action,
+    adjustment_section, control_left, slider_with, toolbar_action_sized,
 };
 use crate::app::worker::AutoKind;
 use crate::camera_data::Metadata;
@@ -76,71 +76,70 @@ pub(in crate::app::develop::panels::inspector) fn show(
     let rendered = metadata.is_some_and(|m| m.is_rendered());
     let mut actions = Vec::new();
     if adjustment_section(ui, step, "Basic", |ui, step| {
-        let shortcut = if cfg!(target_os = "macos") {
-            "⌘⇧U"
-        } else {
-            "Ctrl+Shift+U"
-        };
-        // Auto, right-aligned, styled as the toolbar's Before and Clipping.
-        let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.), Sense::hover());
-        ui.scope_builder(
-            egui::UiBuilder::new()
-                .max_rect(row)
-                .layout(egui::Layout::right_to_left(egui::Align::Center)),
-            |ui| {
-                let tip = if auto_in_effect {
-                    "Auto settings are applied".to_owned()
-                } else {
-                    format!("Set the tone sliders automatically · {shortcut}")
-                };
-                let auto = toolbar_action(ui, "Auto", 52., false, auto_ready && !auto_in_effect, 0);
-                if auto.on_hover_text(tip).clicked() {
-                    actions.push(Action::Auto(AutoKind::Settings));
-                }
-            },
-        );
-        // Lightroom's Treatment, above the profile; V switches it.
+        // Lightroom's Treatment, above the profile, as a Black & White switch; V
+        // turns it too. HDR's switch shares the row, as Lightroom's HDR button
+        // shares Treatment's.
         // A conversion waiting for the photo to decode shows as made.
         let shown = pending_treatment.unwrap_or_else(|| r.treatment());
         let mut treatment = shown;
-        control_row(ui, "Treatment", |ui| {
-            let w = ui.available_width();
-            segmented(
-                ui,
-                &mut treatment,
-                &[
-                    (Treatment::Color, "Color"),
-                    (Treatment::BlackWhite, "Black & White"),
-                ],
-                w,
-            );
-        });
-        if treatment != shown {
-            actions.push(Action::Treatment(treatment));
-        }
         // Raws, and HDR files; an SDR JPEG, PNG or TIFF has no HDR to give. Before
         // its metadata is read, a photo is checked as a raw, as it was before.
         let raw = Metadata::default();
-        match metadata {
-            // Beside a reference photo in HDR, still say what it shows.
-            Some(m) if m.is_rendered() && m.hdr_source.is_none() => {
-                second_side_note(ui, false, hdr_second);
-            }
-            m => hdr_row(
+        let hdr_photo = metadata.filter(|m| !m.is_rendered() || m.hdr_source.is_some());
+        let offers_hdr = metadata.is_none() || hdr_photo.is_some();
+        ui.add_space(space::S);
+        let (row, _) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), size::FIELD), Sense::hover());
+        let black_white = treatment == Treatment::BlackWhite;
+        if labelled_switch(
+            ui,
+            row,
+            false,
+            black_white,
+            "Black & White",
+            "Convert the photo to black and white · V",
+        ) {
+            treatment = if black_white {
+                Treatment::Color
+            } else {
+                Treatment::BlackWhite
+            };
+        }
+        if offers_hdr
+            && labelled_switch(
+                ui,
+                row,
+                true,
+                r.hdr.enabled,
+                "HDR",
+                "Edit in HDR: highlights above white are kept for HDR exports. \
+                 The photo is shown as its SDR rendition.",
+            )
+        {
+            r.hdr.enabled = !r.hdr.enabled;
+        }
+        if treatment != shown {
+            actions.push(Action::Treatment(treatment));
+        }
+        if offers_hdr {
+            hdr_options(
                 ui,
                 r,
                 &mut view.sdr_preview,
                 &mut view.visualize_hdr,
-                m.unwrap_or(&raw),
+                hdr_photo.unwrap_or(&raw),
                 hdr,
                 hdr_second,
-            ),
+            );
+        } else {
+            // Beside a reference photo in HDR, still say what it shows.
+            second_side_note(ui, false, hdr_second);
         }
         let old_profile = r.profile.clone();
         // Without a profile the matrix path renders through the DNG default look.
         let matrix = "Default (camera matrix)";
-        control_row(ui, "Profile", |ui| {
-            egui::ComboBox::from_id_salt("camera-profile")
+        stacked_control(ui, "Profile", |ui| {
+            crate::app::ui::widgets::dropdown(ui, "camera-profile")
                 .width(ui.available_width())
                 // Leave room for the import actions as well as the profiles.
                 .height(size::MENU * 12.)
@@ -280,7 +279,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
         // A monochrome photo has no white balance: Lightroom disables it.
         let white_balance = basic_keys::enabled(ParameterId::Temperature, photo);
         ui.add_enabled_ui(white_balance, |ui| {
-            control_row(ui, "WB", |ui| {
+            stacked_control(ui, "White balance", |ui| {
                 // A rendered file's white balance is relative Temp and Tint, which
                 // Auto records too; As Shot is 0 and 0.
                 let (current, as_shot) = if rendered {
@@ -306,12 +305,11 @@ pub(in crate::app::develop::panels::inspector) fn show(
                         .find(|w| near((w.values().temperature, w.values().tint)))
                         .map_or("Custom", NamedWhiteBalance::name)
                 };
-                // The selector sits at the row's far left, so the menu lines up
-                // with Profile's.
+                // The selector shares the caption line above the full-width menu.
                 let rect = Rect::from_center_size(
                     Pos2::new(
-                        ui.max_rect().left() - control_left(ui) + 13.,
-                        ui.max_rect().center().y,
+                        ui.max_rect().right() - 13.,
+                        ui.max_rect().top() - 15.,
                     ),
                     Vec2::new(26., 20.),
                 );
@@ -337,7 +335,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
                 {
                     view.toggle(Tool::WhiteBalance);
                 }
-                egui::ComboBox::from_id_salt("white-balance")
+                crate::app::ui::widgets::dropdown(ui, "white-balance")
                     .width(ui.available_width())
                     .selected_text(selected)
                     .show_ui(ui, |ui| {
@@ -408,7 +406,37 @@ pub(in crate::app::develop::panels::inspector) fn show(
                 basic_control(ui, step, r, ParameterId::Tint, 0., photo, selected);
             }
         });
-        subheading(ui, "Tone");
+        // Auto at the Tone heading's end, as in Lightroom, styled as the
+        // toolbar's Before and Clipping.
+        let heading = subheading(ui, "Tone");
+        let shortcut = if cfg!(target_os = "macos") {
+            "⌘⇧U"
+        } else {
+            "Ctrl+Shift+U"
+        };
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(heading)
+                .layout(egui::Layout::right_to_left(egui::Align::Center)),
+            |ui| {
+                let tip = if auto_in_effect {
+                    "Auto settings are applied".to_owned()
+                } else {
+                    format!("Set the tone sliders automatically · {shortcut}")
+                };
+                let auto = toolbar_action_sized(
+                    ui,
+                    "Auto",
+                    Vec2::new(52., size::CONTROL + 2.),
+                    false,
+                    auto_ready && !auto_in_effect,
+                    0,
+                );
+                if auto.on_hover_text(tip).clicked() {
+                    actions.push(Action::Auto(AutoKind::Settings));
+                }
+            },
+        );
         for id in [
             ParameterId::Exposure,
             ParameterId::Contrast,
@@ -451,15 +479,15 @@ pub(in crate::app::develop::panels::inspector) fn show(
     actions
 }
 
-/// High Dynamic Range: the edit's HDR switch, with what the photo shows: its HDR
-/// master where the viewport can show it (`shown`), else its SDR rendition and why;
-/// an edit whose HDR master can't render yet says why (`model::hdr::check_for`).
-/// Beside the edit, what the other side shows too (`second`), so a comparison of
-/// brightness says when one side is SDR. With HDR on, Lightroom's Preview for SDR
-/// display (`sdr_preview`, a view choice, not saved) shows the SDR rendition instead,
-/// and Visualize HDR (`visualize_hdr`, likewise) colours the photo by its stops above
-/// white.
-fn hdr_row(
+/// What High Dynamic Range shows once the edit's HDR switch beside Treatment
+/// is on: its HDR master where the viewport can show it (`shown`), else its SDR
+/// rendition and why; an edit whose HDR master can't render yet says why
+/// (`model::hdr::check_for`). Beside the edit, what the other side shows too
+/// (`second`), so a comparison of brightness says when one side is SDR. With HDR
+/// on, Lightroom's Preview for SDR display (`sdr_preview`, a view choice, not
+/// saved) shows the SDR rendition instead, and Visualize HDR (`visualize_hdr`,
+/// likewise) colours the photo by its stops above white.
+fn hdr_options(
     ui: &mut egui::Ui,
     r: &mut Recipe,
     sdr_preview: &mut bool,
@@ -468,28 +496,23 @@ fn hdr_row(
     shown: &crate::app::develop::hdr_preview::Presentation,
     second: Option<&(&'static str, crate::app::develop::hdr_preview::Presentation)>,
 ) {
-    control_row(ui, "HDR", |ui| {
-        ui.checkbox(&mut r.hdr.enabled, "High Dynamic Range")
-            .on_hover_text(
-                "Edit in HDR: highlights above white are kept for HDR exports. \
-                 The photo is shown as its SDR rendition.",
-            );
-    });
     if r.hdr.is_active() {
-        control_row(ui, "", |ui| {
-            ui.checkbox(sdr_preview, "Preview for SDR display")
-                .on_hover_text(
-                    "Show the SDR rendition, as SDR displays, the Library and SDR exports \
-                     show it, on this display too. Not saved with the edit.",
-                );
-        });
-        control_row(ui, "", |ui| {
-            ui.checkbox(visualize_hdr, "Visualize HDR").on_hover_text(
-                "Colour what lies above SDR white by its stops: cyan up to 1, blue up \
-                     to 2, purple up to 3, magenta beyond. The histogram marks its stops \
-                     the same way. Not saved with the edit.",
-            );
-        });
+        ui.add_space(space::XS);
+        switch_row(
+            ui,
+            sdr_preview,
+            "Preview for SDR display",
+            "Show the SDR rendition, as SDR displays, the Library and SDR exports \
+             show it, on this display too. Not saved with the edit.",
+        );
+        switch_row(
+            ui,
+            visualize_hdr,
+            "Visualize HDR",
+            "Colour what lies above SDR white by its stops: cyan up to 1, blue up \
+             to 2, purple up to 3, magenta beyond. The histogram marks its stops \
+             the same way. Not saved with the edit.",
+        );
         let text = match crate::model::hdr::check_for(r, metadata) {
             Err(e) => format!("Showing the SDR rendition. HDR export unavailable: {e}"),
             Ok(()) => presentation_note(shown),
@@ -500,6 +523,84 @@ fn hdr_row(
         }
     }
     second_side_note(ui, r.hdr.is_active(), second);
+}
+
+/// A caption followed by its switch, in `row`: at its start, or at its end when
+/// `at_end`. Both are clickable. Returns whether it was clicked; the caller turns
+/// it.
+fn labelled_switch(
+    ui: &mut egui::Ui,
+    row: Rect,
+    at_end: bool,
+    on: bool,
+    label: &str,
+    tip: &str,
+) -> bool {
+    let palette = theme::palette(ui.ctx());
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::FontId::proportional(crate::app::ui::design::text::SMALL),
+        palette.tone(Tone::SOFT),
+    );
+    let width = galley.size().x + space::S + SWITCH.x;
+    // At the end, the switch's track, narrower than its slot, ends where the
+    // values and drop-downs above do.
+    let left = if at_end {
+        row.right() - width + SWITCH_TRACK_INSET
+    } else {
+        row.left()
+    };
+    let rect = Rect::from_min_size(Pos2::new(left, row.top()), Vec2::new(width, row.height()));
+    let id = ui.id().with(("labelled-switch", label));
+    let response = ui
+        .interact(rect, id, Sense::click())
+        .on_hover_text(tip)
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let ink = if !ui.is_enabled() {
+        Tone::DISABLED
+    } else if on || response.hovered() {
+        Tone::BRIGHT
+    } else {
+        Tone::SOFT
+    };
+    ui.painter().galley_with_override_text_color(
+        Pos2::new(rect.left(), rect.center().y - galley.size().y / 2.),
+        galley,
+        palette.tone(ink),
+    );
+    let slot = Rect::from_min_size(
+        Pos2::new(rect.right() - SWITCH.x, rect.center().y - SWITCH.y / 2.),
+        SWITCH,
+    );
+    let switch = crate::app::ui::widgets::switch_in(ui, slot, id.with("switch"), on, label);
+    response.clicked() || switch.clicked()
+}
+
+/// The slot a panel switch is drawn in.
+const SWITCH: Vec2 = Vec2::new(26., 20.);
+/// The space between the slot's ends and the 20 pt track drawn in it.
+const SWITCH_TRACK_INSET: f32 = 3.;
+
+/// A view option as a caption with a switch at the row's end.
+fn switch_row(ui: &mut egui::Ui, on: &mut bool, label: &str, tip: &str) {
+    let (row, response) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.), Sense::click());
+    ui.painter().text(
+        row.left_center(),
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(crate::app::ui::design::text::SMALL),
+        theme::palette(ui.ctx()).tone(Tone::SOFT),
+    );
+    let slot = Rect::from_center_size(
+        row.right_center() - Vec2::new(SWITCH.x / 2. - SWITCH_TRACK_INSET, 0.),
+        SWITCH,
+    );
+    let switch =
+        crate::app::ui::widgets::switch_in(ui, slot, response.id.with("switch"), *on, label);
+    if response.on_hover_text(tip).clicked() || switch.clicked() {
+        *on = !*on;
+    }
 }
 
 /// What the side beside the edit shows (`second`), named, unless neither side is in
@@ -532,10 +633,7 @@ fn sdr_settings_note(sdr: &crate::model::hdr::SdrRendition) -> String {
 }
 
 fn hdr_note(ui: &mut egui::Ui, note: String) {
-    ui.horizontal(|ui| {
-        ui.add_space(control_left(ui));
-        ui.add(egui::Label::new(egui::RichText::new(note).small()).wrap());
-    });
+    ui.add(egui::Label::new(egui::RichText::new(note).small()).wrap());
 }
 
 /// What `shown` says the viewport shows, as the note under the HDR switch.

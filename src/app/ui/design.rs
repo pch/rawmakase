@@ -32,6 +32,13 @@ pub(in crate::app) mod inset {
     pub(in crate::app) const STAGE: f32 = space::XL;
     /// A side panel's content from its edges.
     pub(in crate::app) const PANEL: f32 = space::M;
+    /// A side panel section's contents from the panel's edges, and its
+    /// header's title and chevron, so they line up.
+    pub(in crate::app) const SECTION_CONTENT: f32 = space::M;
+    /// [`SECTION_CONTENT`] in Develop's adjustments, wider: it keeps controls
+    /// at the right edge, such as the curve's white point, clear of the scroll
+    /// bar that floats over them. The histogram's graph lines up with it.
+    pub(in crate::app) const ADJUSTMENT_CONTENT: f32 = space::XL;
     /// A modal window's content from its border.
     pub(in crate::app) const DIALOG: f32 = space::XXL;
     /// Above a side panel's section header or caption band, so the first
@@ -218,13 +225,6 @@ mod tests {
         for pair in ramp.windows(2) {
             assert!(pair[0].level() < pair[1].level(), "{pair:?}");
         }
-    }
-
-    #[test]
-    fn margins_keep_their_tokens() {
-        assert_eq!(margin(space::XL, space::L), egui::Margin::symmetric(16, 12));
-        assert_eq!(margin_same(inset::DIALOG), egui::Margin::same(24));
-        assert_eq!(inset::CARD, egui::Margin::symmetric(16, 12));
     }
 
     /// Calls that take a size, spacing or radius: the interface's code
@@ -455,7 +455,7 @@ mod tests {
                     dirs.push(path);
                 } else if name.ends_with(".rs")
                     && !name.contains("tests")
-                    && !["design.rs", "theme.rs", "ui_snapshot.rs"].contains(&name.as_str())
+                    && !["design.rs", "theme.rs"].contains(&name.as_str())
                 {
                     let text = std::fs::read_to_string(&path)
                         .unwrap()

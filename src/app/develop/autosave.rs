@@ -65,6 +65,9 @@ struct Worker {
 pub(in crate::app) struct Autosave {
     worker: Option<Worker>,
     in_flight: bool,
+    /// The catalog and photo of the last job submitted, until
+    /// [`Self::take_written`] takes them.
+    written: Option<(CatalogLocation, PhotoId)>,
     saver: Saver,
 }
 impl Default for Autosave {
@@ -72,6 +75,7 @@ impl Default for Autosave {
         Self {
             worker: None,
             in_flight: false,
+            written: None,
             saver: save,
         }
     }
@@ -98,15 +102,22 @@ impl Autosave {
             });
         }
         let worker = self.worker.as_ref().expect("started above");
+        let written = (job.catalog.clone(), job.photo);
         if let Err(mpsc::SendError(job)) = worker.jobs.send(job) {
             self.worker = None;
             return Err(Box::new(job));
         }
+        self.written = Some(written);
         self.in_flight = true;
         Ok(())
     }
     pub(crate) fn busy(&self) -> bool {
         self.in_flight
+    }
+    /// The catalog and photo of the save that finished last, once: a save
+    /// that failed or whose worker was lost may have written it too.
+    pub(in crate::app) fn take_written(&mut self) -> Option<(CatalogLocation, PhotoId)> {
+        self.written.take()
     }
     /// Drops the saver's channels at exit: it ends once the save in flight, if any,
     /// is written, and is then waited for.
@@ -288,6 +299,7 @@ mod tests {
                 thread: None,
             }),
             in_flight: true,
+            written: None,
             saver: panics_on_photo_one,
         };
         assert!(matches!(autosave.poll(), Some(Completion::WorkerLost)));
@@ -310,6 +322,7 @@ mod tests {
                 thread: None,
             }),
             in_flight: true,
+            written: None,
             saver: save,
         };
         assert!(matches!(autosave.wait(), Some(Completion::WorkerLost)));

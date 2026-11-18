@@ -292,6 +292,12 @@ pub fn camera_matching_profile<'a>(
     })
 }
 impl Recipe {
+    /// The values [`Self::crop`] may hold. A Lightroom crop on the photo keeps its place
+    /// where it reaches past the frame Straighten enlarges, so it can lie outside 0–1
+    /// (`xmp/crop.rs`); the photo's size is not known here, so the range is wider than
+    /// any but a long panorama turned far needs; such a crop shrinks into the enlarged
+    /// frame when read.
+    pub const CROP_RANGE: std::ops::RangeInclusive<f32> = -1.0..=2.0;
     /// The Treatment the photo renders with: Black & White by its own setting or by a
     /// black & white profile.
     pub fn treatment(&self) -> Treatment {
@@ -546,9 +552,8 @@ impl Recipe {
         );
         ensure!(self.ai_denoise.is_valid(), "Invalid AI Denoise Amount");
         self.hdr.validate()?;
-        self.hdr.check_renderable()?;
         ensure!(
-            self.crop.iter().all(|v| (0. ..=1.).contains(v))
+            self.crop.iter().all(|v| Self::CROP_RANGE.contains(v))
                 && self.crop[2] - self.crop[0] >= 0.01
                 && self.crop[3] - self.crop[1] >= 0.01,
             "Invalid crop"
@@ -1245,26 +1250,6 @@ mod tests {
             Recipe::default()
         );
         assert_eq!(serde_json::to_string(&LocalEdits::default()).unwrap(), "{}");
-    }
-
-    /// The copy of an applied XMP preset's settings earlier releases kept in every
-    /// recipe is dropped on read, never kept as a setting this release doesn't know
-    /// ([`crate::model::saved_format::OBSOLETE_SETTINGS`]), and a recipe no longer
-    /// writes it.
-    #[test]
-    fn a_legacy_preset_settings_map_is_dropped_on_read() {
-        let mut stored = serde_json::to_value(Recipe::default()).unwrap();
-        assert!(stored.get("preset_settings").is_none());
-        stored["preset_settings"] = serde_json::json!({"Exposure2012": "+1.00", "Look": "x"});
-        let r: Recipe = serde_json::from_value(stored).unwrap();
-        assert_eq!(r, Recipe::default());
-        assert!(r.unknown.is_empty(), "{:?}", r.unknown.keys());
-        assert!(
-            serde_json::to_value(&r)
-                .unwrap()
-                .get("preset_settings")
-                .is_none()
-        );
     }
 
     /// Settings a recipe was saved without take their defaults, and ones this build

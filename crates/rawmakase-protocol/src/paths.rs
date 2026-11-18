@@ -101,148 +101,70 @@ pub fn xdg_data_home() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use Os::{Linux, Mac, Windows};
 
+    const MAC: &str = "/Users/me/Library/Application Support/RAWmakase";
+    const LINUX: &str = "/home/me/.local/share/rawmakase";
+    const ROAMING: &str = r"C:\Users\me\AppData\Roaming";
+    const LOCAL: &str = r"C:\Users\me\AppData\Local";
+    const WIN_HOME: &str = r"C:\Users\me";
+    /// Windows without its AppData variable: under home, never XDG_DATA_HOME.
+    const WIN_FALLBACK: &str = r"C:\Users\me/.local/share/rawmakase";
+
+    #[derive(Clone, Copy, PartialEq)]
+    enum Os {
+        Linux,
+        Windows,
+        Mac,
+    }
+
+    fn data(
+        over: Option<&str>,
+        app: Option<&str>,
+        xdg: Option<&str>,
+        home: &str,
+        os: Os,
+    ) -> PathBuf {
+        let [over, app, xdg] = [over, app, xdg].map(|v| v.map(OsString::from));
+        data_dir_in(over, app, xdg, Path::new(home), os == Windows, os == Mac)
+    }
+
+    fn local(app: Option<&str>, xdg: Option<&str>, home: &str, os: Os) -> PathBuf {
+        let [app, xdg] = [app, xdg].map(|v| v.map(OsString::from));
+        local_data_dir_in(app, xdg, Path::new(home), os == Windows, os == Mac)
+    }
+
+    /// The override wins everywhere; macOS ignores APPDATA, Windows XDG_DATA_HOME.
     #[test]
-    fn the_environment_override_wins_on_every_platform() {
-        for (windows, macos) in [(false, false), (true, false), (false, true)] {
-            let dir = data_dir_in(
-                Some("D:/where/i/said".into()),
-                Some("C:/Users/me/AppData/Roaming".into()),
-                Some("/xdg".into()),
-                Path::new("/home/me"),
-                windows,
-                macos,
-            );
-            assert_eq!(dir, PathBuf::from("D:/where/i/said"));
+    fn the_data_folder_of_each_platform() {
+        for os in [Linux, Windows, Mac] {
+            let dir = data(Some("D:/said"), Some(ROAMING), Some("/xdg"), "/home/me", os);
+            assert_eq!(dir, Path::new("D:/said"));
         }
+        let mac = data(None, Some(ROAMING), Some("/xdg"), "/Users/me", Mac);
+        assert_eq!(mac, Path::new(MAC));
+        let windows = data(None, Some(ROAMING), Some("/xdg"), WIN_HOME, Windows);
+        assert_eq!(windows, Path::new(ROAMING).join("RAWmakase"));
+        let windows = data(None, None, Some("/xdg"), WIN_HOME, Windows);
+        assert_eq!(windows, Path::new(WIN_FALLBACK));
+        let linux = data(None, None, Some("/data"), "/home/me", Linux);
+        assert_eq!(linux, Path::new("/data/rawmakase"));
+        assert_eq!(data(None, None, None, "/home/me", Linux), Path::new(LINUX));
     }
 
+    /// The local folder takes no RAWMAKASE_DATA_DIR, so it never moves with it and
+    /// can't be shared or synced between computers. On Windows it is the local
+    /// AppData rather than the roaming one; elsewhere it is the default data folder.
     #[test]
-    fn macos_uses_library_application_support_and_ignores_appdata() {
-        let dir = data_dir_in(
-            None,
-            Some(r"C:\Users\me\AppData\Roaming".into()),
-            Some("/xdg".into()),
-            Path::new("/Users/me"),
-            false,
-            true,
-        );
-        assert_eq!(
-            dir,
-            PathBuf::from("/Users/me/Library/Application Support/RAWmakase")
-        );
-    }
-
-    #[test]
-    fn windows_uses_appdata_and_ignores_xdg_data_home() {
-        let dir = data_dir_in(
-            None,
-            Some(r"C:\Users\me\AppData\Roaming".into()),
-            Some("/xdg".into()),
-            Path::new(r"C:\Users\me"),
-            true,
-            false,
-        );
-        assert_eq!(
-            dir,
-            PathBuf::from(r"C:\Users\me\AppData\Roaming").join("RAWmakase")
-        );
-        // Without APPDATA the fallback is under home, never XDG_DATA_HOME.
-        let dir = data_dir_in(
-            None,
-            None,
-            Some("/xdg".into()),
-            Path::new(r"C:\Users\me"),
-            true,
-            false,
-        );
-        assert_eq!(dir, PathBuf::from(r"C:\Users\me/.local/share/rawmakase"));
-    }
-
-    #[test]
-    fn the_local_folder_ignores_the_override_and_roaming_appdata() {
-        // RAWMAKASE_DATA_DIR is not a parameter: the local folder never moves
-        // with it, so it can't be shared or synced between computers.
-        let dir = local_data_dir_in(
-            Some(r"C:\Users\me\AppData\Local".into()),
-            Some("/xdg".into()),
-            Path::new(r"C:\Users\me"),
-            true,
-            false,
-        );
-        assert_eq!(
-            dir,
-            PathBuf::from(r"C:\Users\me\AppData\Local").join("RAWmakase")
-        );
-        let roaming = data_dir_in(
-            None,
-            Some(r"C:\Users\me\AppData\Roaming".into()),
-            Some("/xdg".into()),
-            Path::new(r"C:\Users\me"),
-            true,
-            false,
-        );
-        assert_ne!(dir, roaming);
-        let dir = local_data_dir_in(
-            None,
-            Some("/xdg".into()),
-            Path::new(r"C:\Users\me"),
-            true,
-            false,
-        );
-        assert_eq!(dir, PathBuf::from(r"C:\Users\me/.local/share/rawmakase"));
-    }
-
-    #[test]
-    fn the_local_folder_is_the_default_data_folder_on_macos_and_linux() {
-        let mac = local_data_dir_in(
-            Some(r"C:\Users\me\AppData\Local".into()),
-            Some("/xdg".into()),
-            Path::new("/Users/me"),
-            false,
-            true,
-        );
-        assert_eq!(
-            mac,
-            PathBuf::from("/Users/me/Library/Application Support/RAWmakase")
-        );
-        let linux = local_data_dir_in(
-            None,
-            Some("/data".into()),
-            Path::new("/home/me"),
-            false,
-            false,
-        );
-        assert_eq!(linux, PathBuf::from("/data/rawmakase"));
-        let linux = local_data_dir_in(None, None, Path::new("/home/me"), false, false);
-        assert_eq!(linux, PathBuf::from("/home/me/.local/share/rawmakase"));
-        for (windows, macos, home) in [(false, false, "/home/me"), (false, true, "/Users/me")] {
-            assert_eq!(
-                local_data_dir_in(None, Some("/data".into()), Path::new(home), windows, macos),
-                data_dir_in(
-                    None,
-                    None,
-                    Some("/data".into()),
-                    Path::new(home),
-                    windows,
-                    macos
-                ),
-            );
-        }
-    }
-
-    #[test]
-    fn linux_uses_xdg_data_home_or_its_default_under_home() {
-        let dir = data_dir_in(
-            None,
-            None,
-            Some("/data".into()),
-            Path::new("/home/me"),
-            false,
-            false,
-        );
-        assert_eq!(dir, PathBuf::from("/data/rawmakase"));
-        let dir = data_dir_in(None, None, None, Path::new("/home/me"), false, false);
-        assert_eq!(dir, PathBuf::from("/home/me/.local/share/rawmakase"));
+    fn the_local_folder_of_each_platform() {
+        let windows = local(Some(LOCAL), Some("/xdg"), WIN_HOME, Windows);
+        assert_eq!(windows, Path::new(LOCAL).join("RAWmakase"));
+        let windows = local(None, Some("/xdg"), WIN_HOME, Windows);
+        assert_eq!(windows, Path::new(WIN_FALLBACK));
+        let mac = local(Some(LOCAL), Some("/xdg"), "/Users/me", Mac);
+        assert_eq!(mac, Path::new(MAC));
+        let linux = local(None, Some("/data"), "/home/me", Linux);
+        assert_eq!(linux, Path::new("/data/rawmakase"));
+        assert_eq!(local(None, None, "/home/me", Linux), Path::new(LINUX));
     }
 }

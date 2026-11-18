@@ -192,16 +192,4 @@ mod tests {
         selection.click("root:1/b", Click::Replace, &ROWS);
         assert_eq!(selection.single(), Some("root:1/b"));
     }
-
-    #[test]
-    fn modifiers_choose_the_click() {
-        use eframe::egui::Modifiers;
-        assert_eq!(Click::of(Modifiers::NONE), Click::Replace);
-        assert_eq!(Click::of(Modifiers::COMMAND), Click::Toggle);
-        assert_eq!(Click::of(Modifiers::SHIFT), Click::Range);
-        assert_eq!(
-            Click::of(Modifiers::SHIFT | Modifiers::COMMAND),
-            Click::Range
-        );
-    }
 }

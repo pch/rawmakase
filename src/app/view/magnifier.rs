@@ -627,40 +627,6 @@ mod tests {
         assert!(editor.preview.magnifier.texture.is_none());
     }
 
-    #[test]
-    #[ignore = "writes an image to look at"]
-    fn render_the_loupe() -> anyhow::Result<()> {
-        let ctx = egui::Context::default();
-        crate::app::install_fonts(&ctx, &fastframe_text::TextRendering::platform_default());
-        let mut textures = Default::default();
-        let image = crate::app::ui::ui_snapshot::render(
-            &ctx,
-            &mut textures,
-            Vec2::new(360., 340.),
-            2.,
-            3,
-            |ui| {
-                let r = ui.max_rect();
-                // A sky over a building, to see the lens against light and dark.
-                ui.painter()
-                    .rect_filled(r, 0., Color32::from_rgb(110, 150, 190));
-                ui.painter().rect_filled(
-                    Rect::from_min_max(Pos2::new(0., 200.), r.max),
-                    0.,
-                    Color32::from_rgb(60, 58, 52),
-                );
-                let c = r.center() - Vec2::splat(12.);
-                paint_body(ui.painter(), c, 120.);
-                ui.painter()
-                    .circle_filled(c, 120., Color32::from_rgb(140, 175, 210));
-                paint_trim(ui.painter(), c, 120., 1.);
-            },
-        );
-        let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/loupe.png");
-        image.save(&out)?;
-        Ok(())
-    }
-
     /// The region is wider than the circle, stays put for small moves, and stays
     /// inside the photo.
     #[test]

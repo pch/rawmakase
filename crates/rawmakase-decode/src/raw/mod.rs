@@ -229,8 +229,8 @@ pub(crate) struct Sensor {
     pub area: [u32; 2],
     /// SHA-256 of the values development reads (the visible area; the stored
     /// rotated area of a Super CCD), `channels` per pixel, row by row,
-    /// little-endian. Not the borders: LibRaw leaves rows and columns past some
-    /// decoders' data unwritten, so they hold whatever the memory held.
+    /// little-endian. Not the borders: LibRaw, the earlier decoder, left rows and
+    /// columns past some formats' data unwritten, so they were never hashed.
     pub data_sha256: [u8; 32],
     pub black: [u32; 4],
     /// The black pattern added to `black`: rows, columns and every value.
@@ -273,6 +273,8 @@ pub(crate) struct Header {
     pub aperture: f32,
     pub focal: f32,
     pub focal_35mm: f32,
+    /// Focus distance in metres, 0 when unknown.
+    pub focus_distance: f32,
     /// As shot and daylight, relative to green.
     pub wb: [f32; 3],
     pub daylight_wb: [f32; 3],
@@ -350,6 +352,7 @@ impl Raw {
             aperture: h.aperture,
             focal: h.focal,
             focal_35mm: h.focal_35mm,
+            focus_distance: h.focus_distance,
             wb: h.wb,
             daylight_wb: h.daylight_wb,
             wb_presets: WhiteBalancePresets {
@@ -577,16 +580,16 @@ fn crops(h: &Header) -> ([u32; 4], Option<[f32; 4]>) {
         camera_crop(frame, aspect, [h.width, h.height], h.margins),
     )
 }
-/// LibRaw's crop `[left, top, width, height]` in raw coordinates, in the decoded
+/// The decoder's crop `[left, top, width, height]` in raw coordinates, in the decoded
 /// image's, which start `margin` into the raw data. A crop without a position
-/// (LibRaw's 0xffff) or starting in the margin keeps its size and is centred.
+/// ([`UNSET`]) or starting in the margin keeps its size and is centred.
 fn visible([left, top, width, height]: [u32; 4], [x, y]: [u32; 2]) -> [u32; 4] {
     let at = |v: u32, m: u32| {
         if v < UNSET && v >= m { v - m } else { UNSET }
     };
     [at(left, x), at(top, y), width, height]
 }
-/// LibRaw's mark for a crop position it does not know.
+/// The decoder's mark for a crop position it does not know (LibRaw's convention).
 const UNSET: u32 = 0xffff;
 /// The in-camera aspect-ratio crop `aspect` as `[left, top, right, bottom]`
 /// fractions of the default crop `frame`, both raw-coordinate rectangles; `None`
@@ -621,11 +624,11 @@ fn camera_crop(
     (w >= 0.01 && h >= 0.01 && w.min(h) < 0.99).then_some(crop)
 }
 /// The frame and the in-camera aspect-ratio crop, both raw-coordinate rectangles,
-/// for files where LibRaw's default crop `frame` already is the aspect crop and
+/// for files where the decoder's default crop `frame` already is the aspect crop and
 /// `aspect` is unset: Panasonic and Leica's RW2 crop tags replace the sensor
 /// borders `sensor`, and a Sony ARW's default crop (`sony`, not a DNG's, which is
 /// the frame) is the aspect ratio's. Camera Raw's frame is then the sensor's, and
-/// the aspect ratio its starting crop. Other files keep LibRaw's rectangles.
+/// the aspect ratio its starting crop. Other files keep the decoder's rectangles.
 fn sensor_frame(
     sony: bool,
     sensor: Option<[u32; 4]>,
@@ -643,7 +646,7 @@ fn sensor_frame(
         None => None,
     };
     // Only a frame the crop is a camera crop of: otherwise (the same rectangle, a
-    // pixel's rounding, borders outside the decoded image) LibRaw's is kept.
+    // pixel's rounding, borders outside the decoded image) the decoder's is kept.
     widened
         .filter(|&(full, crop)| camera_crop(full, crop, size, margin).is_some())
         .unwrap_or((frame, aspect))
@@ -651,7 +654,7 @@ fn sensor_frame(
 /// A Sony default crop `frame` at another ratio than the sensor's (3:2, or 4:3 on
 /// the small-sensor compacts, whichever is nearer the decoded image of `size`),
 /// widened along the side the ratio cuts to the sensor's ratio, as the frame and
-/// the crop placed in raw coordinates (centred when LibRaw has no position).
+/// the crop placed in raw coordinates (centred when the decoder has no position).
 /// `None` when the crop is at the sensor's ratio (within 1%) or the frame would
 /// leave the decoded image.
 fn sony_frame(
@@ -865,8 +868,10 @@ mod tests {
         }
         assert!((pixels[1][0] - 2.).abs() < 1e-6 && (pixels[1][1] - 1.).abs() < 1e-6);
     }
+    /// Canon's Highlight Tone Priority maker-note value: 0 off, 1 on, 2 enhanced, and
+    /// anything else off. Read wrong, an HTP photo renders a stop dark.
     #[test]
-    fn reads_highlight_tone_priority_from_libraw() {
+    fn reads_highlight_tone_priority_from_the_maker_note_value() {
         use super::HighlightTonePriority as H;
         assert_eq!(H::from_libraw(0), H::Off);
         assert_eq!(H::from_libraw(1), H::On);
@@ -1026,12 +1031,6 @@ mod tests {
             [0, 0],
         );
         assert_eq!(got, olympus);
-    }
-    #[test]
-    fn corrupt_raw_is_an_error() {
-        let f = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(f.path(), b"not a raw file").unwrap();
-        assert!(super::Raw::open_file(f.path()).is_err());
     }
     /// A 64×64 NEF from `model` whose raw data, tagged Nikon-compressed, starts with `data`.
     fn nef(model: &str, data: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {

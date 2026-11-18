@@ -134,13 +134,14 @@ impl Format {
         Ok(())
     }
     /// Whether an HDR export can be written in this format: TIFF and JPEG XL hold
-    /// HDR pixels, JPEG a gain map.
+    /// HDR pixels, and JPEG and JPEG XL a gain map.
     pub fn holds_hdr(self) -> bool {
         matches!(self, Format::Tiff | Format::Jxl | Format::Jpeg)
     }
     /// Refuses an HDR export of `output` that `format` can't hold: a gain map in
-    /// anything but JPEG (and in another gamut than Rec. 709, its sRGB base's), HDR
-    /// pixels in anything but TIFF and JPEG XL, and linear light in anything but TIFF.
+    /// anything but JPEG or JPEG XL (or in a gamut other than Rec. 709, its sRGB
+    /// base's), HDR pixels in anything but TIFF and JPEG XL, and linear light in
+    /// anything but TIFF.
     pub fn check_hdr(format: Format, output: crate::color::hdr_output::HdrOutput) -> Result<()> {
         use crate::color::hdr_output::HdrGamut;
         if output.gain_map {
@@ -954,8 +955,8 @@ impl ExportSettings {
         let (file, note) = self.file_name_for(source, at);
         Some((folder.join(file), note))
     }
-    /// The HDR encoding these settings export, if any: refused in a format that
-    /// can't hold it (an HDR export is a TIFF until HDR JPEG XL is written).
+    /// The HDR encoding these settings export, if any. It is refused in a format that
+    /// can't hold it ([`Format::check_hdr`]).
     pub fn hdr_output(&self) -> Result<Option<crate::color::hdr_output::HdrOutput>> {
         if let LaterHdr(Some(later)) = &self.later_hdr {
             bail!(
@@ -1124,14 +1125,6 @@ mod tests {
         );
         s.destination = Destination::Folder;
         assert_eq!(s.target(source), None);
-    }
-    #[test]
-    fn each_format_is_named_by_the_extension_it_is_read_back_from() {
-        for format in [Format::Jpeg, Format::Tiff, Format::Png] {
-            let path = PathBuf::from(format!("out.{}", format.extension().to_uppercase()));
-            assert_eq!(Format::from_path(&path), Some(format));
-        }
-        assert_eq!(Format::from_path(Path::new("out.webp")), None);
     }
     #[test]
     fn a_format_from_a_later_release_keeps_the_other_settings() {
@@ -1447,6 +1440,12 @@ mod tests {
         ] {
             assert_eq!(Format::from_path(Path::new(name)), Some(format), "{name}");
         }
+        // Each format is read back from the extension it is named by.
+        for format in Format::ALL {
+            let path = PathBuf::from(format!("a.{}", format.extension().to_uppercase()));
+            assert_eq!(Format::from_path(&path), Some(format), "{path:?}");
+        }
+        assert_eq!(Format::from_path(Path::new("a.webp")), None);
         assert_eq!(
             Format::ALL.map(Format::mime_type),
             ["image/jpeg", "image/tiff", "image/png", "image/jxl"]

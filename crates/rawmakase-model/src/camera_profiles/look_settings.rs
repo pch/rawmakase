@@ -361,11 +361,11 @@ mod tests {
         assert!(bad.validate().is_err());
     }
 
-    /// What a look's settings read today, frozen before the Camera Raw key table
-    /// (#808 step 4.12): each key alone at values across and beyond its range, the
-    /// vignette's dependent settings with and without an amount, and which keys a
-    /// look accepts at all. Compared with `look_settings_golden.txt`, written by this
-    /// test with `RAWMAKASE_BLESS=1`; floats in full, so a one-bit change fails.
+    /// What a look's settings read, pinned in a golden file: each key alone at values
+    /// across and beyond its range, the vignette's dependent settings with and without
+    /// an amount, and which keys a look accepts at all. Compared with
+    /// `look_settings_golden.txt`, written by this test with `RAWMAKASE_BLESS=1`;
+    /// floats in full, so a one-bit change fails.
     #[test]
     fn every_look_setting_reads_as_before() {
         use std::fmt::Write as _;

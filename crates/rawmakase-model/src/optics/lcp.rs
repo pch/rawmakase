@@ -37,7 +37,7 @@ pub struct Entry {
     pub lens: Vec<String>,
     /// The maker's numeric lens ID (`stCamera:LensID`): for Nikon the maker note's
     /// `LensIDNumber`, for Pentax its two `LensType` bytes, written "4 252" and held
-    /// as LibRaw reads them, 4 << 8 | 252. `None` when the profile writes none.
+    /// as the decoder reads them, 4 << 8 | 252. `None` when the profile writes none.
     pub lens_id: Option<u32>,
     /// `stCamera:LensInfo`: the lens's shortest and longest focal length and its
     /// maximum aperture at each, as `Metadata::lens_info`.
@@ -101,7 +101,7 @@ fn params(node: roxmltree::Node, prefix: &str) -> Option<[f32; 3]> {
 }
 
 /// `stCamera:LensID` as one number: Nikon's "138" as it is, Pentax's "4 252" as
-/// LibRaw combines the two bytes. Other forms (Sony's hexadecimal) are left out.
+/// the decoder combines the two bytes. Other forms (Sony's hexadecimal) are left out.
 fn lens_id(v: &str) -> Option<u32> {
     let mut parts = v.split_whitespace();
     let first: u32 = parts.next()?.parse().ok()?;

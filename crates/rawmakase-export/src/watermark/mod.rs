@@ -120,7 +120,7 @@ impl Default for Watermark {
             name: String::new(),
             style: Style::Text,
             text: "Copyright".into(),
-            family: fonts::INTER.into(),
+            family: fonts::SYSTEM.into(),
             face: "Regular".into(),
             align: Align::Left,
             color: [1., 1., 1.],
@@ -563,7 +563,7 @@ pub fn save_in(
     }
     // Checked once installed fonts are listed; until then the export checks.
     if watermark.style == Style::Text
-        && (watermark.family == fonts::INTER || fonts::families_if_listed().is_some())
+        && (watermark.family == fonts::SYSTEM || fonts::families_if_listed().is_some())
     {
         let font = fonts::load(&watermark.family, &watermark.face)?;
         ensure!(

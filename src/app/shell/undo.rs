@@ -7,7 +7,8 @@ use crate::app::Editor;
 use crate::app::Module;
 use crate::app::history::{Recorded, Step};
 use crate::app::library::{
-    CollectionCommand, DescriptiveCommand, Library, MetadataCommand, Place, StackCommand,
+    CollectionCommand, CollectionTreeCommand, DescriptiveCommand, Library, MetadataCommand, Place,
+    StackCommand,
 };
 use crate::catalog::PhotoId;
 use anyhow::Result;
@@ -27,6 +28,9 @@ pub(in crate::app) enum Command {
     /// Photos added to or taken out of a collection, e.g. the Quick
     /// Collection; undone in the Library.
     Collection(Box<CollectionCommand>),
+    /// Collections or sets made, renamed, moved or deleted; undone in the
+    /// Library.
+    CollectionTree(Box<CollectionTreeCommand>),
     /// Title, caption, creator, copyright, location or keywords of one or
     /// more photos; undone in the Library.
     Descriptive(Box<DescriptiveCommand>),
@@ -44,6 +48,8 @@ pub(in crate::app) enum Command {
     /// Photos grouped into, taken out of or moved in stacks; undone in the
     /// Library.
     Stack(Box<StackCommand>),
+    /// A smart collection's rules changed; undone in the Library.
+    SmartRules(Box<crate::app::library::smart_editor::SmartRulesCommand>),
 }
 
 impl Command {
@@ -62,11 +68,21 @@ impl Command {
                 !change.before.is_empty()
             }
             Command::Collection(change) => {
-                change.added.retain(|p| *p != id);
-                change.removed.retain(|p| *p != id);
+                change.added.retain(|p| p.0 != id);
+                change.removed.retain(|p| p.0 != id);
+                change.renumbered_before.retain(|p| p.0 != id);
+                change.renumbered_after.retain(|p| p.0 != id);
                 change.place_before.forget_photo(id);
                 change.place_after.forget_photo(id);
-                !(change.added.is_empty() && change.removed.is_empty())
+                // Kept while it still numbers other photos: an earlier
+                // command's Undo needs their numbers back.
+                !(change.added.is_empty()
+                    && change.removed.is_empty()
+                    && change.renumbered_before.is_empty())
+            }
+            Command::CollectionTree(change) => {
+                change.forget_photo(id);
+                true
             }
             Command::Descriptive(change) => {
                 change.before.retain(|s| s.photo != id);
@@ -79,6 +95,11 @@ impl Command {
             }
             Command::Develop { photo, .. } => *photo != Some(id),
             Command::Stack(change) => change.forget_photo(id),
+            // Rules name no photo; only where it was made does.
+            Command::SmartRules(change) => {
+                change.place.forget_photo(id);
+                true
+            }
             Command::Sync(sync) => {
                 sync.edits.retain(|e| e.id != id);
                 !sync.edits.is_empty()
@@ -176,9 +197,21 @@ impl Editor {
             );
             commands.extend(
                 library
+                    .take_tree_done()
+                    .into_iter()
+                    .map(|change| (change.sequence, Command::CollectionTree(Box::new(change)))),
+            );
+            commands.extend(
+                library
                     .take_stack_done()
                     .into_iter()
                     .map(|change| (change.sequence, Command::Stack(Box::new(change)))),
+            );
+            commands.extend(
+                library
+                    .take_smart_done()
+                    .into_iter()
+                    .map(|change| (change.sequence, Command::SmartRules(Box::new(change)))),
             );
             commands.extend(
                 library
@@ -264,10 +297,14 @@ impl Editor {
             Direction::Undo => log.undo.pop_back(),
             Direction::Redo => log.redo.pop(),
         };
-        let Some(command) = command else {
+        let Some(mut command) = command else {
             return false;
         };
-        let applied = self.apply(&command, direction);
+        let applied = match &mut command {
+            // It keeps what the other direction puts back.
+            Command::CollectionTree(change) => self.apply_tree(change, direction),
+            command => self.apply(command, direction),
+        };
         let log = &mut self.undo_log;
         match (direction, applied) {
             (Direction::Undo, true) | (Direction::Redo, false) => log.redo.push(command),
@@ -294,12 +331,34 @@ impl Editor {
                 })
             }
             Command::Collection(change) => {
-                let (add, remove, place) = match direction {
-                    Direction::Undo => (&change.removed, &change.added, &change.place_before),
-                    Direction::Redo => (&change.added, &change.removed, &change.place_after),
+                let (add, remove, positions, place) = match direction {
+                    Direction::Undo => (
+                        &change.removed,
+                        &change.added,
+                        &change.renumbered_before,
+                        &change.place_before,
+                    ),
+                    Direction::Redo => (
+                        &change.added,
+                        &change.removed,
+                        &change.renumbered_after,
+                        &change.place_after,
+                    ),
                 };
+                let remove: Vec<PhotoId> = remove.iter().map(|m| m.0).collect();
                 self.apply_library(verb, &change.summary, place, None, |library| {
-                    library.change_collection(change.collection, add, remove)
+                    library
+                        .put_back_members(change.collection, add, &remove, positions)
+                        .map(|_| ())
+                })
+            }
+            Command::SmartRules(change) => {
+                let rules = match direction {
+                    Direction::Undo => change.before.as_ref(),
+                    Direction::Redo => Some(&change.after),
+                };
+                self.apply_library(verb, &change.summary, &change.place, None, |library| {
+                    library.put_back_smart_rules(change.collection, rules)
                 })
             }
             Command::Descriptive(change) => {
@@ -313,6 +372,8 @@ impl Editor {
                     library.restore_descriptive(values, ratings)
                 })
             }
+            // Applied by `apply_tree`, which can keep what it takes away.
+            Command::CollectionTree(_) => false,
             Command::Stack(change) => {
                 let (state, place) = match direction {
                     Direction::Undo => (&change.before, &change.place_before),
@@ -462,6 +523,19 @@ impl Editor {
     /// Writes a Library command with `write` and returns to where it was
     /// made: `place` in the Library, or `develop`, the photo open in Develop.
     /// False when nothing could be written.
+    /// [`Self::apply`] for a [`Command::CollectionTree`], which keeps what
+    /// Undo deletes for Redo, and the other way round.
+    fn apply_tree(&mut self, change: &mut CollectionTreeCommand, direction: Direction) -> bool {
+        let (verb, place) = match direction {
+            Direction::Undo => ("Undo", change.place_before.clone()),
+            Direction::Redo => ("Redo", change.place_after.clone()),
+        };
+        let summary = change.summary.clone();
+        let tree = &mut change.change;
+        self.apply_library(verb, &summary, &place, None, |library| {
+            library.apply_tree(tree, direction == Direction::Undo)
+        })
+    }
     fn apply_library(
         &mut self,
         verb: &str,

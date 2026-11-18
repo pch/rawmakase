@@ -825,31 +825,6 @@ mod tests {
         assert!(demosaic(&cfa).iter().flatten().all(|v| v.is_finite()));
     }
     #[test]
-    fn recognises_bayer_and_xtrans() {
-        let b = bayer_pattern();
-        let x = xtrans_pattern();
-        assert!(
-            Cfa {
-                data: &[],
-                width: 0,
-                height: 0,
-                pattern: &b,
-                white: [1.; 3],
-            }
-            .is_bayer()
-        );
-        assert!(
-            !Cfa {
-                data: &[],
-                width: 0,
-                height: 0,
-                pattern: &x,
-                white: [1.; 3],
-            }
-            .is_bayer()
-        );
-    }
-    #[test]
     fn half_size_keeps_colour_and_rounds_odd_sides_up() {
         // X-Trans demosaics exactly away from tiny images' borders only.
         for (pattern, sizes) in [

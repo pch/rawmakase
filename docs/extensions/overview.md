@@ -1,6 +1,6 @@
 # Extensions
 
-Status: Phase 2 built ([design](../extensions-plan.md)). The manifest,
+Status: Current; phases 1 to 3 of the [design](../extensions-plan.md) are built. The manifest,
 packages, installation, `extensions.json`, the extension protocol, the SDK and
 `cargo rawmakase` exist, and the app runs extensions: it supervises their
 programs, and has Preferences > Extensions, their commands, settings and

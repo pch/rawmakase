@@ -100,7 +100,6 @@ pub(crate) use editor::{Done, PathTarget};
 #[cfg(test)]
 pub(in crate::app) use page::AVAILABLE;
 pub(in crate::app) use page::Page;
-#[cfg(test)]
 pub(in crate::app) use page::Section;
 pub(crate) use sources::ReportDone;
 

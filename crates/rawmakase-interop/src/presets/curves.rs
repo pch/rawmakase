@@ -312,15 +312,16 @@ fn read(path: &Path) -> Result<SavedCurve> {
     let text = std::fs::read_to_string(path)?;
     let preset = crate::xmp::parse(path, &text)?;
     let get = |key: &str| preset.curves.get(key).cloned();
-    let rgb = get("ToneCurvePV2012")
-        .or_else(|| get("ToneCurve"))
+    let [first, second] = preset.point_curve_keys();
+    let rgb = get(first)
+        .or_else(|| get(second))
         .context("No point curve in the file")?;
     let channel_set = |prefix: &str| -> Option<[ToneCurve; 3]> {
         let [red, green, blue] = ["Red", "Green", "Blue"].map(|c| get(&format!("{prefix}{c}")));
         Some([red?, green?, blue?])
     };
-    let channels = channel_set("ToneCurvePV2012")
-        .or_else(|| channel_set("ToneCurve"))
+    let channels = channel_set(first)
+        .or_else(|| channel_set(second))
         .unwrap_or_default();
     let name = path
         .file_stem()

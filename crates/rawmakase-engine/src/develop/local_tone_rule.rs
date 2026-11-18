@@ -69,7 +69,7 @@ const TEXTURE_RADIUS: usize = 2;
 const TOP_BAND: f32 = 2.;
 /// Texture beyond this (log2 RMS) counts no further: the mosaics measured a step at a flat
 /// top and a slow growth after it; photos are always past the step, so the inputs are
-/// clamped rather than extrapolated (`pipeline.py`).
+/// clamped rather than extrapolated (`scripts/corpus/scene-tone-rule.py`).
 const TEX_CLAMP: f32 = 0.6;
 const TEX_TOP_CLAMP: f32 = 0.05;
 /// Per-level texture: the median absolute fine (radius [`TEXTURE_RADIUS`]) and coarse

@@ -74,7 +74,7 @@ fn everything_changed() -> Recipe {
             enabled: true,
             amount: 0.7,
         },
-        // Values kept while HDR is off: HDR on is refused until it renders.
+        // HDR off, with values kept for when it is switched back on.
         hdr: crate::model::hdr::HdrSettings {
             enabled: false,
             limit: 3.5,

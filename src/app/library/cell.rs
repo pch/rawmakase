@@ -1,4 +1,5 @@
 use crate::app::ui::design::{Tone, radius, text};
+use crate::app::ui::icons::{self, Icon};
 use crate::app::ui::theme;
 use crate::catalog::Photo;
 use eframe::egui::{self, Color32, Vec2};
@@ -57,6 +58,10 @@ pub(super) struct Shown {
     pub single: bool,
     /// The source shows stacks (see `Filters::shows_stacks`).
     pub stacks: bool,
+    /// The Collections panel's tree, for Add to Collection.
+    pub collections: std::sync::Arc<Vec<super::collections::CollectionNode>>,
+    /// The collections the photo is in, for its badge and Go to Collection.
+    pub in_collections: Vec<(crate::catalog::CollectionId, String)>,
 }
 pub(super) fn photo_cell(
     ui: &mut egui::Ui,
@@ -75,6 +80,8 @@ pub(super) fn photo_cell(
         details,
         single,
         stacks,
+        collections,
+        in_collections,
     } = shown;
     let stack = photo.stack.filter(|_| stacks);
     use crate::app::library::photo_metadata::label_color;
@@ -241,6 +248,7 @@ pub(super) fn photo_cell(
             ink,
         );
     }
+    let mut went_to = None;
     if extras {
         let badges = Badges {
             quick,
@@ -249,6 +257,26 @@ pub(super) fn photo_cell(
             ink,
         };
         footer_badges(painter, &palette, cell, footer, photo, badges);
+        // Lightroom's collection badge, for a photo in any collection the
+        // Quick Collection included (measured in Lightroom Classic 15.6);
+        // clicked, it lists them.
+        if !in_collections.is_empty() {
+            let at = Pos2::new(cell.right() - 24., cell.bottom() - footer / 2. - 1.);
+            icons::paint_at(painter, Icon::Collection, at, 11., ink);
+            let badge = ui
+                .interact(
+                    Rect::from_center_size(at, Vec2::splat(14.)),
+                    egui::Id::new(("catalog-collection-badge", photo.id)),
+                    Sense::click(),
+                )
+                .on_hover_text("In collections: click to go to one");
+            egui::Popup::menu(&badge).show(|ui| {
+                if let Some(id) = go_to_menu(ui, &in_collections) {
+                    went_to = Some(id);
+                    ui.close();
+                }
+            });
+        }
     }
     let action = photo_menu(
         &response,
@@ -257,8 +285,14 @@ pub(super) fn photo_cell(
         single,
         super::Module::Library,
         stacks,
+        MenuCollections {
+            tree: &collections,
+            photo: &in_collections,
+        },
     );
-    let action = action.or(badge_clicked.then_some(PhotoAction::StackBadge));
+    let action = action
+        .or(badge_clicked.then_some(PhotoAction::StackBadge))
+        .or(went_to.map(PhotoAction::GoToCollection));
     (response, action)
 }
 /// What a cell's footer shows besides the photo's own flag and rating.
@@ -329,7 +363,7 @@ fn footer_badges(
     }
     if !available {
         painter.text(
-            Pos2::new(cell.right() - 24., y),
+            Pos2::new(cell.right() - 38., y),
             Align2::RIGHT_CENTER,
             "?",
             FontId::proportional(text::SMALL),
@@ -445,6 +479,10 @@ pub(in crate::app) enum PhotoAction {
     Stack(super::StackAction),
     /// The stack badge was clicked: that stack collapses or expands.
     StackBadge,
+    /// Add to Collection: the photos go into this collection.
+    AddToCollection(crate::catalog::CollectionId),
+    /// Go to Collection, or the collection badge: show this collection.
+    GoToCollection(crate::catalog::CollectionId),
 }
 /// Remove from Catalog's shortcut, as Lightroom shows it.
 const REMOVE_SHORTCUT: &str = if cfg!(target_os = "macos") {
@@ -525,6 +563,57 @@ fn stacking_menu(
 pub(in crate::app) fn find_on_disk_enabled(available: bool, single: bool) -> bool {
     !available && single
 }
+/// Add to Collection's submenu: each set a submenu of its own, each
+/// collection an item. Returns the collection chosen.
+fn collection_menu(
+    ui: &mut egui::Ui,
+    nodes: &[super::collections::CollectionNode],
+) -> Option<crate::catalog::CollectionId> {
+    use crate::app::ui::widgets::{menu_item, submenu_style};
+    crate::app::ui::widgets::menu_width(ui, 210.);
+    ui.spacing_mut().item_spacing.y = 0.;
+    let mut chosen = None;
+    for node in nodes {
+        if node.set {
+            submenu_style(ui);
+            ui.add_enabled_ui(!node.children.is_empty(), |ui| {
+                ui.menu_button(&node.name, |ui| {
+                    if let Some(id) = collection_menu(ui, &node.children) {
+                        chosen = Some(id);
+                    }
+                })
+            });
+        } else if node.smart.is_none() && menu_item(ui, &node.name, "", true, false) {
+            // Smart collections take no photos by hand.
+            chosen = Some(node.id);
+        }
+    }
+    chosen
+}
+/// What the thumbnail menu offers of collections.
+#[derive(Clone, Copy, Default)]
+pub(in crate::app) struct MenuCollections<'a> {
+    /// The Collections panel's tree, for Add to Collection.
+    pub tree: &'a [super::collections::CollectionNode],
+    /// The photo's collections, for Go to Collection.
+    pub photo: &'a [(crate::catalog::CollectionId, String)],
+}
+/// Go to Collection's list: the photo's collections, by name.
+fn go_to_menu(
+    ui: &mut egui::Ui,
+    collections: &[(crate::catalog::CollectionId, String)],
+) -> Option<crate::catalog::CollectionId> {
+    use crate::app::ui::widgets::menu_item;
+    crate::app::ui::widgets::menu_width(ui, 210.);
+    ui.spacing_mut().item_spacing.y = 0.;
+    let mut chosen = None;
+    for (id, name) in collections {
+        if menu_item(ui, name, "", true, false) {
+            chosen = Some(*id);
+        }
+    }
+    chosen
+}
 /// The right-click menu shared by grid cells and the Develop filmstrip.
 /// Open in Develop is greyed out for a photo Develop cannot open, e.g. one
 /// not `available`, with the reason in place of its shortcut. In Develop's
@@ -539,7 +628,12 @@ pub(in crate::app) fn photo_menu(
     single: bool,
     module: super::Module,
     stacks: bool,
+    collections: MenuCollections<'_>,
 ) -> Option<PhotoAction> {
+    let MenuCollections {
+        tree: collections,
+        photo: in_collections,
+    } = collections;
     use crate::app::library::photo_metadata::{Edit, LABELS};
     use crate::app::ui::widgets::{menu_item, menu_separator, submenu_style};
     let mut action = None;
@@ -623,6 +717,25 @@ pub(in crate::app) fn photo_menu(
                 ui.spacing_mut().item_spacing.y = 0.;
                 if let Some(choice) = stacking_menu(ui, photo, module) {
                     action = Some(PhotoAction::Stack(choice));
+                    ui.close();
+                }
+            })
+        });
+        menu_separator(ui);
+        submenu_style(ui);
+        ui.add_enabled_ui(!collections.is_empty(), |ui| {
+            ui.menu_button("Add to Collection", |ui| {
+                if let Some(id) = collection_menu(ui, collections) {
+                    action = Some(PhotoAction::AddToCollection(id));
+                    ui.close();
+                }
+            })
+        });
+        submenu_style(ui);
+        ui.add_enabled_ui(!in_collections.is_empty(), |ui| {
+            ui.menu_button("Go to Collection", |ui| {
+                if let Some(id) = go_to_menu(ui, in_collections) {
+                    action = Some(PhotoAction::GoToCollection(id));
                     ui.close();
                 }
             })

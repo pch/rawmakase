@@ -419,7 +419,7 @@ impl Editor {
             move |tx| {
                 let event = match change_folders(&catalog, job) {
                     Ok((relinked, report, conflicts)) => {
-                        reopened(&catalog, relinked, &report, &conflicts, tx, &opened)
+                        reopened(&catalog, false, relinked, &report, &conflicts, tx, &opened)
                     }
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
                 };
@@ -535,11 +535,14 @@ fn entry(
     );
     clicked
 }
-/// The catalog at `location` opened again after a folder change, with what
-/// the change found. Upgrading one of an earlier format as it opens says how
-/// far it has got through `tx`.
+/// The catalog at `location` opened after the user chose it (`chosen`), or
+/// again after a folder change, with what the change found. Upgrading one of
+/// an earlier format as it opens says how far it has got through `tx`. Only a
+/// chosen catalog deletes the backups earlier upgrades left
+/// ([`super::open_for_user`]).
 pub(in crate::app) fn reopened(
     location: &CatalogLocation,
+    chosen: bool,
     relinked: bool,
     report: &crate::catalog::SidecarReport,
     conflicts: &[Conflict],
@@ -547,10 +550,14 @@ pub(in crate::app) fn reopened(
     ctx: &egui::Context,
 ) -> Event {
     Event::CatalogReady(
-        crate::catalog_session::CatalogSession::open_reporting(
-            location,
-            &mut super::upgrade_progress(tx, ctx),
-        )
+        if chosen {
+            super::open_for_user(location, &mut super::upgrade_progress(tx, ctx))
+        } else {
+            crate::catalog_session::CatalogSession::open_reporting(
+                location,
+                &mut super::upgrade_progress(tx, ctx),
+            )
+        }
         .map(|opened| crate::app::library::Library::new(opened, ctx.clone()))
         .map(|mut l| {
             if relinked {

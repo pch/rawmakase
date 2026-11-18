@@ -126,6 +126,9 @@ pub struct RawInfo {
     pub focal: f32,
     /// Focal length in 35 mm equivalent, 0 when unknown.
     pub focal_35mm: f32,
+    /// Focus distance in metres (Canon's FileInfo), infinity when focused there, 0 when
+    /// unknown.
+    pub focus_distance: f32,
     /// As-shot white balance multipliers (red, green, blue, second green);
     /// zero when the file has none.
     pub cam_mul: [f32; 4],
@@ -276,6 +279,7 @@ pub(crate) fn base(variant: Variant) -> RawInfo {
         aperture: 0.,
         focal: 0.,
         focal_35mm: 0.,
+        focus_distance: 0.,
         cam_mul: [0.; 4],
         pre_mul: [0.; 4],
         presets: Presets::default(),

@@ -344,7 +344,7 @@ fn turned(
     })
 }
 
-/// The header facts both decoders report, from `rawmakase-raw`'s.
+/// The decoder's header facts, from `rawmakase-raw`'s [`RawInfo`].
 fn header(i: &RawInfo) -> Header {
     // As shot, else daylight, relative to green; daylight at least 0.001.
     let mut wb: [f32; 3] = std::array::from_fn(|c| {
@@ -398,6 +398,7 @@ fn header(i: &RawInfo) -> Header {
         aperture: i.aperture,
         focal: i.focal,
         focal_35mm: i.focal_35mm,
+        focus_distance: i.focus_distance,
         wb,
         daylight_wb: daylight,
         presets,

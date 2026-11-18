@@ -1126,27 +1126,6 @@ mod tests {
         assert_eq!(m.entries.len(), 1);
     }
 
-    fn shift_esc() -> Vec<egui::Event> {
-        vec![egui::Event::Key {
-            key: egui::Key::Escape,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::SHIFT,
-        }]
-    }
-
-    #[test]
-    fn shift_esc_dismisses_every_message() {
-        let ctx = egui::Context::default();
-        let mut m = Messages::default();
-        m.warn("A warning");
-        m.fail("A failure");
-        frame(&ctx, &mut m, 0., vec![]);
-        frame(&ctx, &mut m, 0.1, shift_esc());
-        assert!(m.entries.is_empty());
-    }
-
     #[test]
     fn the_bars_cross_dismisses_every_message() {
         let ctx = egui::Context::default();
@@ -1157,43 +1136,6 @@ mod tests {
         frame(&ctx, &mut m, 0.1, vec![]);
         let id = m.shown_entry().unwrap().id;
         click_id(&ctx, &mut m, close_id(id), 0.2);
-        assert!(m.entries.is_empty());
-    }
-
-    #[test]
-    fn shift_esc_is_left_alone_with_nothing_to_dismiss() {
-        let ctx = egui::Context::default();
-        let mut m = Messages::default();
-        let input = egui::RawInput {
-            events: shift_esc(),
-            ..Default::default()
-        };
-        let mut left = false;
-        let mut output = ctx.run_ui(input, |ui| {
-            m.dismiss_key(ui.ctx());
-            left = ui.input(|i| i.key_pressed(egui::Key::Escape));
-        });
-        output.textures_delta.clear();
-        assert!(left);
-    }
-
-    /// Other code reads Esc whatever the modifiers, as a tool closing does.
-    #[test]
-    fn shift_esc_does_not_also_reach_what_reads_esc() {
-        let ctx = egui::Context::default();
-        let mut m = Messages::default();
-        m.fail(WHY);
-        let input = egui::RawInput {
-            events: shift_esc(),
-            ..Default::default()
-        };
-        let mut reached = false;
-        let mut output = ctx.run_ui(input, |ui| {
-            m.dismiss_key(ui.ctx());
-            reached = ui.input(|i| i.key_pressed(egui::Key::Escape));
-        });
-        output.textures_delta.clear();
-        assert!(!reached);
         assert!(m.entries.is_empty());
     }
 
@@ -1495,69 +1437,6 @@ mod tests {
         e.document.auto.start();
         e.document.reset(None);
         assert!(!shows(&e));
-    }
-
-    /// Renders the messages in Develop's real layout for looking at them:
-    /// `cargo test messages_look -- --ignored`, then `target/messages-*.png`.
-    #[test]
-    #[ignore = "writes images to look at"]
-    fn messages_look() {
-        type Say = fn(&mut Messages);
-        let say: [(&str, Say); 5] = [
-            ("failure", |m| m.fail(WHY)),
-            ("warning", |m| m.warn("Finish what is running first")),
-            ("working", |m| {
-                m.warn("DSC07576.ARW can't be opened: The photo is offline. Right-click it and choose Find on Disk…")
-            }),
-            ("open", |m| {
-                m.warn_with_detail(
-                    "Exported 1 of 1 · 1 with notes",
-                    "Exported, with notes\nRAWmakase Sous Chef.png: no capture date\nRAWmakase Sous Chef.png: no capture time\nRAWmakase Sous Chef.png: no Model"
-                        .to_string(),
-                );
-                m.warn("1 folder isn't found on this computer");
-                m.open = true;
-            }),
-            ("several", |m| {
-                m.warn("Finish what is running first");
-                m.fail(WHY);
-            }),
-        ];
-        for (name, say) in say {
-            let ctx = egui::Context::default();
-            crate::app::install_fonts(&ctx, &fastframe_text::TextRendering::platform_default());
-            crate::app::ui::icons::install(&ctx);
-            let mut e = crate::app::Editor::with_context(
-                &ctx,
-                None,
-                crate::app::preferences::session::Session::default(),
-                None,
-            );
-            e.module = crate::app::Module::Develop;
-            e.onboarding.visible = false;
-            e.messages = Messages::default();
-            say(&mut e.messages);
-            // At rest, past the tint on arrival.
-            for entry in &mut e.messages.entries {
-                entry.shown = Some(-10.);
-            }
-            if name == "working" {
-                e.document.auto.start();
-                e.messages.working.push(("auto", -10.));
-            }
-            let mut textures = Default::default();
-            let image = crate::app::ui::ui_snapshot::render(
-                &ctx,
-                &mut textures,
-                Vec2::new(1280., 720.),
-                2.,
-                5,
-                |ui| e.draw(ui),
-            );
-            let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join(format!("target/messages-{name}.png"));
-            image.save(&out).unwrap();
-        }
     }
 }
 

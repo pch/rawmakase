@@ -8,6 +8,7 @@
 pub mod camera_data;
 pub mod camera_profiles;
 pub mod cameras;
+pub mod collection_rules;
 pub mod color;
 pub mod dng;
 pub mod ids;
