@@ -634,8 +634,10 @@ impl Editor {
         // Auto needs the decoded photo, and runs one estimate at a time.
         let auto_ready = self.document.full().is_some() && !self.document.auto.is_running();
         let auto_in_effect = self.auto_in_effect();
-        // Upright analyses the decoded photo once and keeps a correction for every mode.
-        let upright_ready = self.document.full().is_some() && !self.document.upright.is_running();
+        // Upright analyses the photo's full-size image once (`start_upright`: not the
+        // half-size draft it opens with) and keeps a correction for every mode.
+        let upright_ready =
+            self.document.full().is_some_and(|im| !im.fast) && !self.document.upright.is_running();
         let can_fit_camera_look = self.can_fit_camera_look();
         let hdr = self.hdr_presentation();
         let hdr_second = self.hdr_second_side_presentation();

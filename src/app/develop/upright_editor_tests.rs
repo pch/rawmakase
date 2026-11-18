@@ -327,3 +327,33 @@ fn a_pasted_auto_straighten_flipped_before_it_is_measured_is_measured_again() {
         Some(AutoStraighten::Measured(r.straighten))
     );
 }
+
+/// Opened with nothing cached, a photo shows its half-size draft first. Upright's
+/// analysis started on the draft and was kept when the full-size image arrived,
+/// so the photo's corrections were not always the ones a batch export of it
+/// worked out from the full-size image
+/// (`a_batch_export_matches_develops_export_pixel_for_pixel` failed on a photo
+/// with Upright Auto once its neighbour's prefetch no longer had it cached).
+#[test]
+fn upright_is_analysed_on_the_full_size_image_not_its_draft() {
+    use crate::model::transform::UprightMode;
+    let ctx = egui::Context::default();
+    let (mut e, image) = crate::app::testing::editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    e.document.edit.setup_mut().upright.mode = UprightMode::Auto;
+    assert!(e.document.edit.recipe().upright.needs_analysis());
+    // The draft arrives: nothing is analysed yet.
+    e.document.set_image(Arc::new(CameraImage {
+        fast: true,
+        ..(*image).clone()
+    }));
+    e.ensure_analysis();
+    assert!(!e.document.upright.is_running());
+    // The full-size image arrives: now it is.
+    e.document.set_image(image);
+    e.ensure_analysis();
+    assert!(e.document.upright.is_running());
+}
