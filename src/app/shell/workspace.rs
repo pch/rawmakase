@@ -27,6 +27,7 @@ impl Editor {
             || self.folder_sync.is_reviewing()
             || self.file_ops.dialog_open()
             || self.auto_stack_open()
+            || self.keyword_dialog_open()
             || self.smart_editor_open()
             || self.collection_dialog_open()
     }
@@ -107,6 +108,13 @@ impl Editor {
     /// Whether the Library's Auto-Stack by Capture Time window is open.
     pub(in crate::app) fn auto_stack_open(&self) -> bool {
         self.library.as_ref().is_some_and(|l| l.auto_stack_open())
+    }
+    /// Whether a window of the Library's keywords is open: a keyword set's
+    /// or a keyword's.
+    pub(in crate::app) fn keyword_dialog_open(&self) -> bool {
+        self.library
+            .as_ref()
+            .is_some_and(|l| l.keyword_set_dialog_open() || l.keyword_list_dialog_open())
     }
     /// Whether Create or Edit Smart Collection is open.
     pub(in crate::app) fn smart_editor_open(&self) -> bool {
@@ -1127,6 +1135,28 @@ impl Editor {
             // stays the open photo's.
             if keys.take(&bindings::LIBRARY_AUTO).is_some() {
                 self.start_batch(crate::app::library::sync::BatchChange::AutoSettings);
+            }
+            // Lightroom's Keyword Set keys, on what the Keywording panel edits.
+            let slot = keys.take_first(&[
+                &bindings::KEYWORD_SET_1,
+                &bindings::KEYWORD_SET_2,
+                &bindings::KEYWORD_SET_3,
+                &bindings::KEYWORD_SET_4,
+                &bindings::KEYWORD_SET_5,
+                &bindings::KEYWORD_SET_6,
+                &bindings::KEYWORD_SET_7,
+                &bindings::KEYWORD_SET_8,
+                &bindings::KEYWORD_SET_9,
+            ]);
+            let next = keys.take(&bindings::KEYWORD_SET_NEXT).is_some();
+            let previous = keys.take(&bindings::KEYWORD_SET_PREVIOUS).is_some();
+            if let Some(library) = &mut self.library {
+                if let Some((slot, _)) = slot {
+                    library.click_keyword_slot(slot);
+                }
+                if next || previous {
+                    library.step_keyword_set(next);
+                }
             }
         }
         // The catalog's sidebar, drawn before the bar, asked for this.

@@ -62,7 +62,7 @@ impl Editor {
         let add = crate::app::ui::widgets::section_with(
             ui,
             "Snapshots",
-            crate::app::ui::widgets::HeaderButton::Add,
+            crate::app::ui::widgets::HeaderButton::Add("New Snapshot"),
             |ui| {
                 ui.spacing_mut().item_spacing.y = 0.;
                 if panel.list.is_empty() {

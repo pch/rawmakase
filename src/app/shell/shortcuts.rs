@@ -100,7 +100,7 @@ const fn option_short(parts: &'static [Part], action: &'static str) -> Row {
 use crate::app::shell::commands::registry::bindings as b;
 use Part::{EveryKey, Keys, Text};
 
-static LIBRARY: [Row; 17] = [
+static LIBRARY: [Row; 19] = [
     row(
         &[
             Keys(&b::GRID_PREVIOUS),
@@ -155,6 +155,14 @@ static LIBRARY: [Row; 17] = [
     row(
         &[Keys(&b::LIBRARY_AUTO)],
         "Auto Settings on each selected photo",
+    ),
+    row(
+        &[Keys(&b::KEYWORD_SET_1), Keys(&b::KEYWORD_SET_9)],
+        "Add or remove the keyword of Keyword Set slot 1 to 9",
+    ),
+    row(
+        &[Keys(&b::KEYWORD_SET_NEXT), Keys(&b::KEYWORD_SET_PREVIOUS)],
+        "Next or previous Keyword Set",
     ),
 ];
 static LOUPE: [Row; 7] = [

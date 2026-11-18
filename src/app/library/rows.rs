@@ -62,6 +62,18 @@ pub(super) fn panel_edit<'t>(
         .text_color(palette.tone(VALUE_GRAY))
         .margin(design::margin(space::XS, space::HAIR))
 }
+/// A field standing on its own in a panel, as the Keywording panel's entry
+/// and the Keyword List's filter: filled and inset, [`size::FIELD`] tall.
+pub(super) fn filled_edit<'t>(
+    palette: &theme::Palette,
+    edit: egui::TextEdit<'t>,
+) -> egui::TextEdit<'t> {
+    edit.font(egui::FontId::proportional(text::LABEL))
+        .text_color(palette.tone(Tone::TEXT))
+        .background_color(palette.tone(Tone::FIELD))
+        .margin(design::margin(space::M, space::XS))
+        .vertical_align(egui::Align::Center)
+}
 /// One line of `text` from `left_center`, cut short to `width`.
 pub(super) fn paint_truncated(
     ui: &egui::Ui,

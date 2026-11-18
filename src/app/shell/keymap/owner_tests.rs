@@ -27,6 +27,8 @@ const FIXED: &[(&str, &str, usize)] = &[
     ("develop/panels/snapshots.rs", "key_pressed(", 1),
     ("presets/user_presets.rs", "key_pressed(", 1),
     ("library/metadata_fields.rs", "key_pressed(", 1),
+    ("library/keyword_sets.rs", "key_pressed(", 1),
+    ("library/keyword_list.rs", "key_pressed(", 1),
     ("extensions/page.rs", "key_pressed(", 1),
     // Preferences' Escape, which an extension's page takes to go back to the
     // list before the window's own Escape closes it.
@@ -37,6 +39,9 @@ const FIXED: &[(&str, &str, usize)] = &[
     ("library/sidebar.rs", "consume_key(", 2),
     // A popup's own Escape.
     ("library/metadata_bar.rs", "key_pressed(", 1),
+    // The keyword field's suggestions: the arrows move through them and Tab
+    // takes one, before the field moves its cursor or the focus on.
+    ("library/metadata_fields.rs", "consume_key(", 3),
     // Widgets: the curve point's Delete, a focused number's arrows, the
     // hovered slider's Up and Down, and the destructive choice swallowing keys
     // held from before it opened.

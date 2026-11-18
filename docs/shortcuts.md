@@ -332,3 +332,14 @@ names where they have one. Fixed commands keep their keys.
 | `basic:previous` | Select the previous Basic slider |
 | `basic:increase` | Raise the selected Basic slider (Shift: more, Option: less) |
 | `basic:decrease` | Lower the selected Basic slider (Shift: more, Option: less) |
+| `keyword_set:1` | Add or remove the keyword of Keyword Set slot 1 (to `keyword_set:9`, slot 9) |
+| `keyword_set:2` | Keyword Set slot 2 |
+| `keyword_set:3` | Keyword Set slot 3 |
+| `keyword_set:4` | Keyword Set slot 4 |
+| `keyword_set:5` | Keyword Set slot 5 |
+| `keyword_set:6` | Keyword Set slot 6 |
+| `keyword_set:7` | Keyword Set slot 7 |
+| `keyword_set:8` | Keyword Set slot 8 |
+| `keyword_set:9` | Keyword Set slot 9 |
+| `keyword_set:next` | Next Keyword Set |
+| `keyword_set:previous` | Previous Keyword Set |

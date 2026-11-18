@@ -132,8 +132,8 @@ pub(in crate::app) enum HeaderButton {
     None,
     /// Resets the panel (and names the History step).
     Reset,
-    /// Adds an item, as the Snapshots panel's +.
-    Add,
+    /// Adds an item, as the Snapshots panel's +; says what it adds.
+    Add(&'static str),
 }
 /// [`section`] with a header button other than Reset, which names a History
 /// step ([`adjustment_section`]); returns whether it was clicked.
@@ -350,7 +350,7 @@ fn section_header(
     );
     let reset = match button {
         HeaderButton::Reset => reset.on_hover_text(format!("Reset {title}")),
-        HeaderButton::Add => reset.on_hover_text(format!("New {}", title.trim_end_matches('s'))),
+        HeaderButton::Add(what) => reset.on_hover_text(what),
         HeaderButton::None => reset,
     };
     let enabled = switch.as_deref().is_none_or(|s| *s == PanelState::On);
@@ -402,7 +402,7 @@ fn section_header(
         } else {
             Tone::SECONDARY
         });
-        let icon = if button == HeaderButton::Add {
+        let icon = if matches!(button, HeaderButton::Add(_)) {
             Icon::Add
         } else {
             Icon::Reset

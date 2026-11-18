@@ -74,31 +74,35 @@ impl DescriptiveCommand {
 
 pub(crate) use crate::catalog_session::DescriptiveEdit;
 
-/// Keywords typed as Lightroom takes them: separated by commas, a child
-/// before its parents, "Child < Parent". Returns their paths, top first.
+/// Keywords typed as Lightroom takes them, separated by commas: a child
+/// before its parents, "Child < Parent"; or, when an entry has a ">", its
+/// parents first, "Parent > Child"; and either way any name may itself be a
+/// path, top first, "Parent|Child". Returns their paths, top first.
 pub(crate) fn parse_keywords(text: &str) -> Result<Vec<Vec<String>>> {
-    let mut paths = Vec::new();
-    for entry in text.split(',') {
-        if entry.trim().is_empty() {
-            continue;
-        }
-        let mut path: Vec<String> = entry
-            .split('<')
-            .map(|name| name.trim().to_string())
-            .collect();
-        ensure!(
-            path.iter().all(|name| !name.is_empty()),
-            "A keyword needs a name: \"{}\"",
-            entry.trim()
-        );
-        ensure!(
-            path.iter().all(|name| !name.contains('|')),
-            "Keywords can't contain \"|\""
-        );
-        path.reverse();
-        paths.push(path);
-    }
-    Ok(paths)
+    text.split(',')
+        .filter(|entry| !entry.trim().is_empty())
+        .map(parse_keyword)
+        .collect()
+}
+
+/// One keyword typed, as [`parse_keywords`] takes each: its path, top first.
+pub(crate) fn parse_keyword(entry: &str) -> Result<Vec<String>> {
+    let levels: Vec<&str> = if entry.contains('>') {
+        entry.split('>').collect()
+    } else {
+        entry.split('<').rev().collect()
+    };
+    let path: Vec<String> = levels
+        .into_iter()
+        .flat_map(|level| level.split('|'))
+        .map(|name| name.trim().to_string())
+        .collect();
+    ensure!(
+        path.iter().all(|name| !name.is_empty()),
+        "A keyword needs a name: \"{}\"",
+        entry.trim()
+    );
+    Ok(path)
 }
 
 impl Library {
@@ -134,6 +138,7 @@ impl Library {
             DescriptiveEdit::Creators(_) => "Creator",
             DescriptiveEdit::ClearLocation => "Location cleared",
             DescriptiveEdit::AddKeywords(_) => "Keywords added",
+            DescriptiveEdit::AddKeyword(_) => "Keyword added",
             DescriptiveEdit::RemoveKeyword(_) => "Keyword removed",
         };
         let crate::catalog_session::DescriptiveChange {

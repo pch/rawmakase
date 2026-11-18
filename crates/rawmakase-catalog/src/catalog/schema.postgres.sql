@@ -259,6 +259,14 @@ CREATE TABLE IF NOT EXISTS keyword_export (
     parents BIGINT NOT NULL
 );
 
+-- When a keyword was last given to a photo by hand, as Lightroom's
+-- `lastApplied`: a number that grows with each, so Recent Keywords lists the
+-- latest. New without a format change; older releases ignore it.
+CREATE TABLE IF NOT EXISTS keyword_applied (
+    keyword BIGINT PRIMARY KEY REFERENCES keywords(id) ON DELETE CASCADE,
+    applied BIGINT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS computers (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

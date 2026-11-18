@@ -174,28 +174,26 @@ impl Catalog {
         ensure!(!path.is_empty(), "A keyword needs a name");
         self.db.write(|w| keyword_at(w, path))
     }
-    /// Adds keywords, by path (top first), to every photo given, making
-    /// them where missing; one transaction.
+    /// Adds keywords typed by path (top first) to every photo given, found
+    /// as Lightroom finds a typed name (see `keywords::find_typed`) and made
+    /// where missing; one transaction.
     pub fn add_keywords(&mut self, ids: &[PhotoId], paths: &[Vec<String>]) -> Result<()> {
         self.db.write(|w| {
             for path in paths {
-                ensure!(!path.is_empty(), "A keyword needs a name");
-                let keyword = keyword_at(w, path)?;
-                for id in ids {
-                    tag_photo(w, *id, keyword)?;
-                }
+                let keyword = super::keywords::typed_keyword(w, path)?;
+                apply(w, ids, keyword)?;
             }
             Ok(())
         })
     }
-    /// Adds a keyword to every photo given.
-    #[cfg(any(test, feature = "test-support"))]
+    /// Adds keyword `keyword` itself to every photo given, without looking
+    /// its name up again; one transaction.
     pub fn add_keyword(&mut self, ids: &[PhotoId], keyword: i64) -> Result<()> {
         self.db.write(|w| {
-            for id in ids {
-                tag_photo(w, *id, keyword)?;
-            }
-            Ok(())
+            let known: Option<i64> =
+                w.read_optional(sql!("SELECT id FROM keywords WHERE id=?"), &[&keyword])?;
+            ensure!(known.is_some(), "That keyword is no longer in the catalog");
+            apply(w, ids, keyword)
         })
     }
     /// Removes a keyword from every photo given that has it.
@@ -228,12 +226,25 @@ pub(super) fn keywords(db: &impl Reads, id: PhotoId) -> Result<Vec<Keyword>> {
     Ok(keywords)
 }
 
-/// Gives `photo` `keyword`, unless it has it already.
-pub(super) fn tag_photo(w: &mut Write<'_>, photo: PhotoId, keyword: i64) -> Result<()> {
-    w.execute(
+/// Gives `photo` `keyword`, unless it has it already; whether it did.
+pub(super) fn tag_photo(w: &mut Write<'_>, photo: PhotoId, keyword: i64) -> Result<bool> {
+    Ok(w.execute(
         sql!("INSERT INTO photo_keywords(photo, keyword) VALUES (?, ?) ON CONFLICT DO NOTHING"),
         &[&photo, &keyword],
-    )?;
+    )? > 0)
+}
+
+/// Gives every photo of `ids` `keyword` as the user applied it, and when one
+/// did not have it, makes it the most recently applied keyword, as Lightroom
+/// stamps its keywords' `lastApplied`.
+fn apply(w: &mut Write<'_>, ids: &[PhotoId], keyword: i64) -> Result<()> {
+    let mut any = false;
+    for id in ids {
+        any |= tag_photo(w, *id, keyword)?;
+    }
+    if any {
+        super::keywords::stamp_applied(w, keyword)?;
+    }
     Ok(())
 }
 
@@ -277,10 +288,7 @@ pub(super) fn keyword_at(w: &mut Write<'_>, path: &[String]) -> Result<i64> {
             .map(|k| k.id);
         parent = Some(match found {
             Some(id) => id,
-            None => w.insert_returning_id(
-                sql!("INSERT INTO keywords(name, parent) VALUES (?, ?) RETURNING id"),
-                &[&name, &parent.or(root)],
-            )?,
+            None => super::keywords::new_keyword(w, &name, parent.or(root))?,
         });
     }
     Ok(parent.unwrap())

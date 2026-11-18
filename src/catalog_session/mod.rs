@@ -48,7 +48,7 @@ pub(crate) fn read_file_metadata(
     crate::catalog::read_file_metadata(path, crate::photo::raw_xmp)
 }
 pub(crate) use background::Wake;
-pub(crate) use descriptive::{Committed, DescriptiveChange, DescriptiveEdit};
+pub(crate) use descriptive::{Committed, DescriptiveChange, DescriptiveEdit, KeywordListEdit};
 pub(crate) use entries::entry;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -77,6 +77,17 @@ pub(crate) struct CatalogSession {
     /// Previous Import: the photos the last Add Photo Folder or Synchronize
     /// added.
     previous_import: HashSet<PhotoId>,
+    /// Every keyword of the catalog with its photo count, read again with the
+    /// photos' keywords.
+    keywords: Vec<crate::catalog::ListedKeyword>,
+    /// Recent Keywords, latest first, read with [`Self::keywords`].
+    recent_keywords: Vec<i64>,
+    /// The name the Library gives each keyword ([`crate::catalog::keyword_labels`]).
+    keyword_labels: HashMap<i64, String>,
+    /// Each name a keyword had while this catalog is open, to that keyword:
+    /// a filter chose keywords by name, and the place Undo returns to keeps
+    /// the name it had then.
+    relabeled: HashMap<String, i64>,
     backfill: backfill::Backfill,
     wake: Wake,
     /// Changes whenever photos may have changed place, name or master (see
@@ -115,6 +126,42 @@ impl CatalogSession {
     /// The catalog's photos, without macOS "._" metadata files.
     pub(crate) fn photos(&self) -> &[Photo] {
         &self.photos
+    }
+    /// Every keyword of the catalog, Lightroom's hidden root left out.
+    pub(crate) fn keywords(&self) -> &[crate::catalog::ListedKeyword] {
+        &self.keywords
+    }
+    /// Lightroom's Recent Keywords: the keywords latest given to a photo.
+    pub(crate) fn recent_keywords(&self) -> &[i64] {
+        &self.recent_keywords
+    }
+    /// The name the Library gives each keyword, by id.
+    pub(crate) fn keyword_labels(&self) -> &HashMap<i64, String> {
+        &self.keyword_labels
+    }
+    /// The name the keyword named `name` has now: `name` while a keyword
+    /// has it, else the name the keyword that had it was given since; none
+    /// when that keyword is gone.
+    pub(crate) fn current_keyword_label<'a>(&'a self, name: &'a str) -> Option<&'a str> {
+        if self.keyword_labels.values().any(|l| l == name) {
+            return Some(name);
+        }
+        let id = self.relabeled.get(name)?;
+        self.keyword_labels.get(id).map(String::as_str)
+    }
+    /// Keeps `keywords` as the catalog's, with their names, noting the
+    /// names that changed.
+    fn set_keywords(&mut self, keywords: Vec<crate::catalog::ListedKeyword>) {
+        let labels = crate::catalog::keyword_labels(&keywords);
+        for (id, new) in &labels {
+            if let Some(old) = self.keyword_labels.get(id)
+                && old != new
+            {
+                self.relabeled.insert(old.clone(), *id);
+            }
+        }
+        self.keywords = keywords;
+        self.keyword_labels = labels;
     }
     /// Folders, each counting the photos in [`Self::photos`] it holds.
     pub(crate) fn folders(&self) -> &[Folder] {
@@ -264,6 +311,10 @@ impl CatalogSession {
             roots: Vec::new(),
             overrides: HashMap::new(),
             previous_import: HashSet::new(),
+            keywords: Vec::new(),
+            recent_keywords: Vec::new(),
+            keyword_labels: HashMap::new(),
+            relabeled: HashMap::new(),
             backfill: Default::default(),
             wake: std::sync::Arc::new(|| {}),
             generation: 0,
@@ -356,23 +407,28 @@ impl CatalogSession {
     /// Reads the keywords of `ids` again from the catalog into `photos`.
     pub(crate) fn refresh_keywords(&mut self, ids: &[PhotoId]) -> Result<()> {
         self.changed();
-        let mut names = HashMap::new();
+        let mut tagged = HashMap::new();
         for id in ids {
-            let mut keywords: Vec<String> = self
+            let keywords: Vec<i64> = self
                 .catalog
                 .keywords(*id)?
                 .into_iter()
-                .map(|k| k.name)
-                .filter(|name| !name.is_empty())
+                .filter(|k| !k.name.is_empty())
+                .map(|k| k.id)
                 .collect();
-            // In the order the catalog lists them in.
-            keywords.sort();
-            names.insert(*id, keywords);
+            tagged.insert(*id, keywords);
         }
+        let keywords = self.catalog.keyword_list()?;
+        let recent_keywords = self.catalog.recent_keywords()?;
+        self.set_keywords(keywords);
+        self.recent_keywords = recent_keywords;
+        // Every photo's names, not only these photos': a keyword made,
+        // renamed or deleted can change how another of its name is named.
         for p in &mut self.photos {
-            if let Some(n) = names.remove(&p.id) {
-                p.keywords = n;
+            if let Some(ids) = tagged.remove(&p.id) {
+                p.keyword_ids = ids;
             }
+            p.keywords = crate::catalog::labels_of(&p.keyword_ids, &self.keyword_labels);
         }
         Ok(())
     }
@@ -425,8 +481,12 @@ impl CatalogSession {
         let roots = self.catalog.roots()?;
         let overrides = self.catalog.overrides()?;
         let previous_import = self.catalog.previous_import()?.into_iter().collect();
+        let keywords = self.catalog.keyword_list()?;
+        let recent_keywords = self.catalog.recent_keywords()?;
         let smart_rules = self.catalog.smart_rules()?;
         self.photos = photos;
+        self.set_keywords(keywords);
+        self.recent_keywords = recent_keywords;
         self.previous_import = previous_import;
         self.folders = folders;
         self.collections = collections;
@@ -1158,7 +1218,7 @@ mod tests {
         )?;
         assert!(change.listed.is_ok());
         assert_ne!(change.before, change.after);
-        assert_eq!(session.photos[0].keywords, ["Kraków"]);
+        assert_eq!(session.photos[0].keywords, ["Kraków < Places"]);
         // Undone: the lists follow the catalog back.
         session.restore_descriptive(&change.before, &[(a, 3, -1, "Blue".into())])?;
         assert!(session.photos[0].keywords.is_empty());

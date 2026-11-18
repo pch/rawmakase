@@ -77,6 +77,8 @@ impl Library {
         magnifier: Option<&mut crate::app::view::magnifier::Magnifier>,
     ) -> Action {
         self.auto_stack_window(ui.ctx());
+        self.keyword_set_window(ui.ctx());
+        self.keyword_list_window(ui.ctx());
         if self.compare.open {
             return self.compare(ui, chrome);
         }

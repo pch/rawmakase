@@ -113,6 +113,12 @@ pub fn keyword_name(name: &str) -> String {
     name.trim().nfc().collect()
 }
 
+/// A keyword name as Lightroom matches a typed one: [`keyword_name`],
+/// ignoring case.
+pub fn keyword_key(name: &str) -> String {
+    keyword_name(name).to_lowercase()
+}
+
 /// A photo's camera settings and size, as Lightroom's Metadata panel shows
 /// them. Each is `None` when unknown.
 #[derive(Clone, Debug, Default, PartialEq)]
