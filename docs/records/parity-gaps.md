@@ -606,7 +606,7 @@ move. The form carries over to photos it was not read from, at half the sliders;
 fraction per photo does not yet, and the build would not pass the gate's regression
 rule.
 
-**The candidate (#1153, stacked on #1128).** The blend with the fractions predicted
+**The candidate (#1153, stacked on #1128; both merged 2026-11-18).** The blend with the fractions predicted
 per photo and sign combination from the photo's own two curves: how much of the photo
 each reaches (the mean over the map of its gain as a fraction of the extreme's), the
 extremes' sizes and their reciprocals, the extremes read at the 1st and 99th percentile
