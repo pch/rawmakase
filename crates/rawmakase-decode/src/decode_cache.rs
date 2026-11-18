@@ -279,7 +279,7 @@ impl DecodeCache {
             recovered: Default::default(),
             width: header.width,
             height: header.height,
-            pixels,
+            pixels: pixels.into(),
             metadata,
             fast: header.fast,
             scale_factor: header.scale_factor,
@@ -288,7 +288,7 @@ impl DecodeCache {
         };
         let mut recovered = CameraImage {
             recovered: Default::default(),
-            pixels: vec![[0.; 3]; image.pixels.len()],
+            pixels: vec![[0.; 3]; image.pixels.len()].into(),
             metadata: image.metadata.clone(),
             width: image.width,
             height: image.height,

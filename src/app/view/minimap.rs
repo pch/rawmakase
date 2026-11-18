@@ -201,7 +201,7 @@ mod tests {
             recovered: Default::default(),
             width: 2000,
             height: 1500,
-            pixels: vec![[0.2; 3]; 3_000_000],
+            pixels: vec![[0.2; 3]; 3_000_000].into(),
             metadata: Metadata {
                 width: 2000,
                 height: 1500,

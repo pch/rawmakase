@@ -598,7 +598,7 @@ mod tests {
         im.height = height;
         im.metadata.width = width;
         im.metadata.height = height;
-        im.pixels = vec![[0.2; 3]; (width * height) as usize];
+        im.pixels = vec![[0.2; 3]; (width * height) as usize].into();
         let r = Recipe {
             crop: [0.5, 0.5, 0.51, 0.51],
             ..Default::default()

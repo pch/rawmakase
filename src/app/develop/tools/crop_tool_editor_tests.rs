@@ -17,7 +17,7 @@ fn crop_tool_reads_each_photos_own_aspect() {
         recovered: Default::default(),
         width: 300,
         height: 200,
-        pixels: vec![[0.1; 3]; 60000],
+        pixels: vec![[0.1; 3]; 60000].into(),
         metadata: Metadata {
             width: 300,
             height: 200,
@@ -72,7 +72,7 @@ fn crop_tool_stays_open_from_photo_to_photo() {
         recovered: Default::default(),
         width: 300,
         height: 200,
-        pixels: vec![[0.1; 3]; 60000],
+        pixels: vec![[0.1; 3]; 60000].into(),
         metadata: Metadata {
             width: 300,
             height: 200,
@@ -151,7 +151,7 @@ fn choosing_the_photos_own_aspect_leaves_an_uncropped_photo_alone() {
         recovered: Default::default(),
         width: 100,
         height: 99,
-        pixels: vec![[0.1; 3]; 9900],
+        pixels: vec![[0.1; 3]; 9900].into(),
         metadata: Metadata {
             width: 100,
             height: 99,
@@ -186,7 +186,7 @@ fn fitting_a_crop_dragged_to_its_smallest_keeps_it_valid() {
         recovered: Default::default(),
         width: 300,
         height: 200,
-        pixels: vec![[0.1; 3]; 60000],
+        pixels: vec![[0.1; 3]; 60000].into(),
         metadata: Metadata {
             width: 300,
             height: 200,
@@ -224,7 +224,7 @@ fn the_chosen_aspect_is_its_own_edit_before_the_next_operation() {
         recovered: Default::default(),
         width: 300,
         height: 200,
-        pixels: vec![[0.1; 3]; 60000],
+        pixels: vec![[0.1; 3]; 60000].into(),
         metadata: Metadata {
             width: 300,
             height: 200,
@@ -276,7 +276,7 @@ fn the_chosen_aspect_ends_a_held_slider_drag_first() {
         recovered: Default::default(),
         width: 300,
         height: 200,
-        pixels: vec![[0.1; 3]; 60000],
+        pixels: vec![[0.1; 3]; 60000].into(),
         metadata: Metadata {
             width: 300,
             height: 200,
@@ -316,7 +316,7 @@ fn crop_tool_keeps_the_chosen_aspect_for_uncropped_photos() -> anyhow::Result<()
         recovered: Default::default(),
         width: 300,
         height: 200,
-        pixels: vec![[0.1; 3]; 60000],
+        pixels: vec![[0.1; 3]; 60000].into(),
         metadata: Metadata {
             width: 300,
             height: 200,
@@ -420,7 +420,7 @@ fn crop_keys_swap_and_cycle_the_overlay_but_not_while_typing() -> anyhow::Result
         recovered: Default::default(),
         width: 300,
         height: 200,
-        pixels: vec![[0.1; 3]; 60000],
+        pixels: vec![[0.1; 3]; 60000].into(),
         metadata: Metadata {
             width: 300,
             height: 200,
@@ -545,7 +545,7 @@ fn editor_for_crop_drags(ctx: &egui::Context, crop_aspect: &str) -> Editor {
         recovered: Default::default(),
         width: 300,
         height: 200,
-        pixels: vec![[0.1; 3]; 60000],
+        pixels: vec![[0.1; 3]; 60000].into(),
         metadata: Metadata {
             width: 300,
             height: 200,

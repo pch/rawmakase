@@ -740,7 +740,7 @@ mod tests {
         let im = CameraImage {
             width: w,
             height: h,
-            pixels,
+            pixels: pixels.into(),
             metadata: Metadata {
                 width: w,
                 height: h,

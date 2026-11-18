@@ -909,7 +909,7 @@ fn neutral_color_fast_path_matches_general_processing() {
 fn builtin_lens_correction_brightens_corners_and_keeps_regions_consistent() {
     use crate::optics::{LensCorrection, Radial};
     let mut im = fixture();
-    im.pixels = vec![[0.1; 3]; 96];
+    im.pixels = vec![[0.1; 3]; 96].into();
     im.metadata.lens = Some(LensCorrection {
         source: "test".into(),
         default_on: true,
@@ -954,7 +954,7 @@ fn builtin_lens_correction_brightens_corners_and_keeps_regions_consistent() {
 fn opcode_gain_maps_scale_each_channel_where_the_grid_says() {
     use crate::optics::{GainGrid, LensCorrection};
     let mut im = fixture();
-    im.pixels = vec![[0.1; 3]; 96];
+    im.pixels = vec![[0.1; 3]; 96].into();
     let w = im.width as f32;
     // Two columns of points: gain 1 on the first column of pixels; on the last, red 2,
     // green 1.5, blue 1.
@@ -1015,7 +1015,7 @@ fn opcode_gain_maps_scale_each_channel_where_the_grid_says() {
 fn measurement_copies_carry_the_gain_map() {
     use crate::optics::{GainGrid, LensCorrection};
     let mut im = fixture();
-    im.pixels = vec![[0.1; 3]; 96];
+    im.pixels = vec![[0.1; 3]; 96].into();
     im.metadata.lens = Some(LensCorrection {
         source: "DNG opcodes".into(),
         default_on: true,
@@ -1050,7 +1050,7 @@ fn measurement_copies_carry_the_gain_map() {
 fn measurement_copies_carry_a_dngs_opcode_list3_vignette() {
     use crate::optics::{GainGrid, LensCorrection, Radial};
     let mut im = fixture();
-    im.pixels = vec![[0.1; 3]; 96];
+    im.pixels = vec![[0.1; 3]; 96].into();
     let lens = LensCorrection {
         source: "DNG opcodes".into(),
         default_on: true,
@@ -1097,7 +1097,7 @@ fn measurement_copies_carry_a_dngs_opcode_list3_vignette() {
 fn gain_maps_before_a_warp_follow_each_channels_source() {
     use crate::optics::{GainGrid, LensCorrection, Radial};
     let mut im = fixture();
-    im.pixels = vec![[0.1; 3]; 96];
+    im.pixels = vec![[0.1; 3]; 96].into();
     let w = im.width as f32;
     im.metadata.lens = Some(LensCorrection {
         source: "DNG opcodes".into(),
@@ -1300,7 +1300,7 @@ fn constrain_crop_renders_no_white() {
         recovered: Default::default(),
         width: 90,
         height: 60,
-        pixels: vec![[0.1; 3]; 90 * 60],
+        pixels: vec![[0.1; 3]; 90 * 60].into(),
         metadata: m,
         fast: false,
         scale_factor: 1.,
@@ -1677,7 +1677,7 @@ fn lens_photo() -> CameraImage {
         recovered: Default::default(),
         width: 90,
         height: 60,
-        pixels: vec![[0.1; 3]; 90 * 60],
+        pixels: vec![[0.1; 3]; 90 * 60].into(),
         metadata: m,
         fast: false,
         scale_factor: 1.,
@@ -2014,7 +2014,7 @@ fn a_looks_parametric_curve_follows_the_users() {
 #[test]
 fn measured_manual_vignetting_darkens_the_photo_not_the_crop() {
     let mut im = fixture();
-    im.pixels = vec![[0.1; 3]; 96];
+    im.pixels = vec![[0.1; 3]; 96].into();
     let mut r = Recipe::for_metadata(&im.metadata);
     r.effects.lens_vignette = -0.5;
     let lum = |p: [f32; 3]| p.iter().sum::<f32>();
@@ -2073,7 +2073,7 @@ fn new_edits_render_grain_at_camera_raw_strength() -> anyhow::Result<()> {
         recovered: Default::default(),
         width,
         height,
-        pixels: vec![[0.18; 3]; (width * height) as usize],
+        pixels: vec![[0.18; 3]; (width * height) as usize].into(),
         metadata: m.clone(),
         fast: false,
         scale_factor: 1.,
@@ -2486,7 +2486,7 @@ fn a_lensfun_choice_reaches_the_warp_and_the_gpu() {
     let im = CameraImage {
         width: metadata.width,
         height: metadata.height,
-        pixels: vec![[0.2; 3]; (metadata.width * metadata.height) as usize],
+        pixels: vec![[0.2; 3]; (metadata.width * metadata.height) as usize].into(),
         metadata,
         recovered: Default::default(),
         fast: false,

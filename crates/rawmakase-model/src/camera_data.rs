@@ -3,6 +3,9 @@
 //! them from a file is the RAW decoders'; nothing here needs native code.
 use serde::{Deserialize, Serialize};
 
+mod pixels;
+pub use pixels::Pixels;
+
 /// A DNG's illuminant-independent diagonal camera calibration. The signature
 /// must match the selected profile before these gains may be used.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -423,7 +426,7 @@ pub struct CameraImage {
     pub width: u32,
     pub height: u32,
     pub recovered: std::sync::OnceLock<std::sync::Arc<CameraImage>>,
-    pub pixels: Vec<[f32; 3]>,
+    pub pixels: Pixels,
     pub metadata: Metadata,
     pub fast: bool,
     pub scale_factor: f32,
@@ -616,7 +619,7 @@ mod hdr_tests {
             width,
             height,
             recovered: Default::default(),
-            pixels: vec![[0.5; 3]; (width * height) as usize],
+            pixels: vec![[0.5; 3]; (width * height) as usize].into(),
             metadata: Metadata {
                 source: Source::Rendered,
                 ..Default::default()

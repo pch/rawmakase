@@ -29,7 +29,7 @@ fn open(e: &mut Editor, metadata: Metadata) {
         recovered: Default::default(),
         width: 8,
         height: 8,
-        pixels: vec![[0.1; 3]; 64],
+        pixels: vec![[0.1; 3]; 64].into(),
         metadata,
         fast: false,
         scale_factor: 1.,

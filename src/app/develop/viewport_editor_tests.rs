@@ -35,7 +35,7 @@ fn keyboard_fit_and_physical_pixel_region() {
         recovered: Default::default(),
         width: 12,
         height: 8,
-        pixels: vec![[0.1; 3]; 96],
+        pixels: vec![[0.1; 3]; 96].into(),
         metadata: Metadata {
             width: 12,
             height: 8,
@@ -72,7 +72,7 @@ fn zoom_keys_go_to_100_percent_fit_and_step_by_a_factor() {
         recovered: Default::default(),
         width: 1000,
         height: 1000,
-        pixels: vec![[0.1; 3]; 1_000_000],
+        pixels: vec![[0.1; 3]; 1_000_000].into(),
         metadata: Metadata {
             width: 1000,
             height: 1000,
@@ -140,7 +140,7 @@ fn photo_click_zooms_and_drag_pans_without_editing() {
         recovered: Default::default(),
         width: 400,
         height: 400,
-        pixels: vec![[0.1; 3]; 160000],
+        pixels: vec![[0.1; 3]; 160000].into(),
         metadata: Metadata {
             width: 400,
             height: 400,
@@ -219,7 +219,7 @@ fn a_zoomed_in_photo_sits_on_whole_screen_pixels() {
         recovered: Default::default(),
         width: 400,
         height: 300,
-        pixels: vec![[0.2; 3]; 120_000],
+        pixels: vec![[0.2; 3]; 120_000].into(),
         metadata: Metadata {
             width: 400,
             height: 300,

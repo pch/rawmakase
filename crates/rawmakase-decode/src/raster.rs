@@ -831,7 +831,7 @@ pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
         width,
         height,
         recovered: Default::default(),
-        pixels,
+        pixels: pixels.into(),
         metadata,
         fast: false,
         scale_factor: 1.,

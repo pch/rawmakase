@@ -152,7 +152,7 @@ pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {
         recovered: Default::default(),
         width: w,
         height: h,
-        pixels,
+        pixels: pixels.into(),
         metadata: im.metadata.clone(),
         fast: im.fast,
         scale_factor: im.scale_factor,

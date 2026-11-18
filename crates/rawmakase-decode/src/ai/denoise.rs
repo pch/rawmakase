@@ -255,7 +255,7 @@ pub fn assemble(
         recovered: Default::default(),
         width: plain.width,
         height: plain.height,
-        pixels,
+        pixels: pixels.into(),
         metadata: plain.metadata.clone(),
         fast: false,
         scale_factor: plain.scale_factor,

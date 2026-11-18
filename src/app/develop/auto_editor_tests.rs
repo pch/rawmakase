@@ -156,7 +156,7 @@ fn auto_shortcut_starts_auto_once_the_photo_is_decoded() {
         recovered: Default::default(),
         width: 8,
         height: 8,
-        pixels: vec![[0.1; 3]; 64],
+        pixels: vec![[0.1; 3]; 64].into(),
         metadata: Metadata {
             width: 8,
             height: 8,
@@ -238,7 +238,7 @@ fn auto_runs_again_when_the_crop_changed_while_it_ran() {
         recovered: Default::default(),
         width: 8,
         height: 8,
-        pixels: vec![[0.1; 3]; 64],
+        pixels: vec![[0.1; 3]; 64].into(),
         metadata: Metadata {
             width: 8,
             height: 8,
@@ -278,7 +278,7 @@ fn auto_runs_again_when_it_failed_on_settings_changed_since() {
         recovered: Default::default(),
         width: 8,
         height: 8,
-        pixels: vec![[0.1; 3]; 64],
+        pixels: vec![[0.1; 3]; 64].into(),
         metadata: Metadata {
             width: 8,
             height: 8,
