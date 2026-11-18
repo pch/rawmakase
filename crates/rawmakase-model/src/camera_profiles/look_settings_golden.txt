@@ -1757,6 +1757,316 @@ LuminanceAdjustmentMagenta="-1e-7" alone ok .hsl[7][2]=-1e-9
 LuminanceAdjustmentMagenta="inf" alone error Profile setting LuminanceAdjustmentMagenta is out of range
 LuminanceAdjustmentMagenta="x" alone error Invalid profile setting LuminanceAdjustmentMagenta: invalid float literal
 LuminanceAdjustmentMagenta="NaN" alone error Profile setting LuminanceAdjustmentMagenta is out of range
+# Whites2012 read true
+Whites2012="" alone ok
+Whites2012="0" alone ok
+Whites2012="-0" alone ok
+Whites2012="+0.5" alone ok .whites=0.005
+Whites2012="-0.5" alone ok .whites=-0.005
+Whites2012="1" alone ok .whites=0.01
+Whites2012="2.4" alone ok .whites=0.024
+Whites2012="4.99" alone ok .whites=0.0499
+Whites2012="5" alone ok .whites=0.05
+Whites2012="5.01" alone ok .whites=0.050100002
+Whites2012="-5" alone ok .whites=-0.05
+Whites2012="-5.01" alone ok .whites=-0.050100002
+Whites2012="5.5" alone ok .whites=0.055
+Whites2012="-12.5" alone ok .whites=-0.125
+Whites2012="33.3" alone ok .whites=0.333
+Whites2012="50" alone ok .whites=0.5
+Whites2012="99.99" alone ok .whites=0.9999
+Whites2012="-100" alone ok .whites=-1.0
+Whites2012="100" alone ok .whites=1.0
+Whites2012="100.01" alone error Profile setting Whites2012 is out of range
+Whites2012="101" alone error Profile setting Whites2012 is out of range
+Whites2012="180" alone error Profile setting Whites2012 is out of range
+Whites2012="359" alone error Profile setting Whites2012 is out of range
+Whites2012="360" alone error Profile setting Whites2012 is out of range
+Whites2012="361" alone error Profile setting Whites2012 is out of range
+Whites2012="1e-7" alone ok .whites=1e-9
+Whites2012="-1e-7" alone ok .whites=-1e-9
+Whites2012="inf" alone error Profile setting Whites2012 is out of range
+Whites2012="x" alone error Invalid profile setting Whites2012: invalid float literal
+Whites2012="NaN" alone error Profile setting Whites2012 is out of range
+# Vibrance read true
+Vibrance="" alone ok
+Vibrance="0" alone ok
+Vibrance="-0" alone ok
+Vibrance="+0.5" alone ok .vibrance=0.005
+Vibrance="-0.5" alone ok .vibrance=-0.005
+Vibrance="1" alone ok .vibrance=0.01
+Vibrance="2.4" alone ok .vibrance=0.024
+Vibrance="4.99" alone ok .vibrance=0.0499
+Vibrance="5" alone ok .vibrance=0.05
+Vibrance="5.01" alone ok .vibrance=0.050100002
+Vibrance="-5" alone ok .vibrance=-0.05
+Vibrance="-5.01" alone ok .vibrance=-0.050100002
+Vibrance="5.5" alone ok .vibrance=0.055
+Vibrance="-12.5" alone ok .vibrance=-0.125
+Vibrance="33.3" alone ok .vibrance=0.333
+Vibrance="50" alone ok .vibrance=0.5
+Vibrance="99.99" alone ok .vibrance=0.9999
+Vibrance="-100" alone ok .vibrance=-1.0
+Vibrance="100" alone ok .vibrance=1.0
+Vibrance="100.01" alone error Profile setting Vibrance is out of range
+Vibrance="101" alone error Profile setting Vibrance is out of range
+Vibrance="180" alone error Profile setting Vibrance is out of range
+Vibrance="359" alone error Profile setting Vibrance is out of range
+Vibrance="360" alone error Profile setting Vibrance is out of range
+Vibrance="361" alone error Profile setting Vibrance is out of range
+Vibrance="1e-7" alone ok .vibrance=1e-9
+Vibrance="-1e-7" alone ok .vibrance=-1e-9
+Vibrance="inf" alone error Profile setting Vibrance is out of range
+Vibrance="x" alone error Invalid profile setting Vibrance: invalid float literal
+Vibrance="NaN" alone error Profile setting Vibrance is out of range
+# Texture read true
+Texture="" alone ok
+Texture="0" alone ok
+Texture="-0" alone ok
+Texture="+0.5" alone ok .texture=0.005
+Texture="-0.5" alone ok .texture=-0.005
+Texture="1" alone ok .texture=0.01
+Texture="2.4" alone ok .texture=0.024
+Texture="4.99" alone ok .texture=0.0499
+Texture="5" alone ok .texture=0.05
+Texture="5.01" alone ok .texture=0.050100002
+Texture="-5" alone ok .texture=-0.05
+Texture="-5.01" alone ok .texture=-0.050100002
+Texture="5.5" alone ok .texture=0.055
+Texture="-12.5" alone ok .texture=-0.125
+Texture="33.3" alone ok .texture=0.333
+Texture="50" alone ok .texture=0.5
+Texture="99.99" alone ok .texture=0.9999
+Texture="-100" alone ok .texture=-1.0
+Texture="100" alone ok .texture=1.0
+Texture="100.01" alone error Profile setting Texture is out of range
+Texture="101" alone error Profile setting Texture is out of range
+Texture="180" alone error Profile setting Texture is out of range
+Texture="359" alone error Profile setting Texture is out of range
+Texture="360" alone error Profile setting Texture is out of range
+Texture="361" alone error Profile setting Texture is out of range
+Texture="1e-7" alone ok .texture=1e-9
+Texture="-1e-7" alone ok .texture=-1e-9
+Texture="inf" alone error Profile setting Texture is out of range
+Texture="x" alone error Invalid profile setting Texture: invalid float literal
+Texture="NaN" alone error Profile setting Texture is out of range
+# ShadowTint read true
+ShadowTint="" alone ok
+ShadowTint="0" alone ok
+ShadowTint="-0" alone ok
+ShadowTint="+0.5" alone ok .shadow_tint=0.005
+ShadowTint="-0.5" alone ok .shadow_tint=-0.005
+ShadowTint="1" alone ok .shadow_tint=0.01
+ShadowTint="2.4" alone ok .shadow_tint=0.024
+ShadowTint="4.99" alone ok .shadow_tint=0.0499
+ShadowTint="5" alone ok .shadow_tint=0.05
+ShadowTint="5.01" alone ok .shadow_tint=0.050100002
+ShadowTint="-5" alone ok .shadow_tint=-0.05
+ShadowTint="-5.01" alone ok .shadow_tint=-0.050100002
+ShadowTint="5.5" alone ok .shadow_tint=0.055
+ShadowTint="-12.5" alone ok .shadow_tint=-0.125
+ShadowTint="33.3" alone ok .shadow_tint=0.333
+ShadowTint="50" alone ok .shadow_tint=0.5
+ShadowTint="99.99" alone ok .shadow_tint=0.9999
+ShadowTint="-100" alone ok .shadow_tint=-1.0
+ShadowTint="100" alone ok .shadow_tint=1.0
+ShadowTint="100.01" alone error Profile setting ShadowTint is out of range
+ShadowTint="101" alone error Profile setting ShadowTint is out of range
+ShadowTint="180" alone error Profile setting ShadowTint is out of range
+ShadowTint="359" alone error Profile setting ShadowTint is out of range
+ShadowTint="360" alone error Profile setting ShadowTint is out of range
+ShadowTint="361" alone error Profile setting ShadowTint is out of range
+ShadowTint="1e-7" alone ok .shadow_tint=1e-9
+ShadowTint="-1e-7" alone ok .shadow_tint=-1e-9
+ShadowTint="inf" alone error Profile setting ShadowTint is out of range
+ShadowTint="x" alone error Invalid profile setting ShadowTint: invalid float literal
+ShadowTint="NaN" alone error Profile setting ShadowTint is out of range
+# RedHue read true
+RedHue="" alone ok
+RedHue="0" alone ok
+RedHue="-0" alone ok
+RedHue="+0.5" alone ok .calibration[0][0]=0.005
+RedHue="-0.5" alone ok .calibration[0][0]=-0.005
+RedHue="1" alone ok .calibration[0][0]=0.01
+RedHue="2.4" alone ok .calibration[0][0]=0.024
+RedHue="4.99" alone ok .calibration[0][0]=0.0499
+RedHue="5" alone ok .calibration[0][0]=0.05
+RedHue="5.01" alone ok .calibration[0][0]=0.050100002
+RedHue="-5" alone ok .calibration[0][0]=-0.05
+RedHue="-5.01" alone ok .calibration[0][0]=-0.050100002
+RedHue="5.5" alone ok .calibration[0][0]=0.055
+RedHue="-12.5" alone ok .calibration[0][0]=-0.125
+RedHue="33.3" alone ok .calibration[0][0]=0.333
+RedHue="50" alone ok .calibration[0][0]=0.5
+RedHue="99.99" alone ok .calibration[0][0]=0.9999
+RedHue="-100" alone ok .calibration[0][0]=-1.0
+RedHue="100" alone ok .calibration[0][0]=1.0
+RedHue="100.01" alone error Profile setting RedHue is out of range
+RedHue="101" alone error Profile setting RedHue is out of range
+RedHue="180" alone error Profile setting RedHue is out of range
+RedHue="359" alone error Profile setting RedHue is out of range
+RedHue="360" alone error Profile setting RedHue is out of range
+RedHue="361" alone error Profile setting RedHue is out of range
+RedHue="1e-7" alone ok .calibration[0][0]=1e-9
+RedHue="-1e-7" alone ok .calibration[0][0]=-1e-9
+RedHue="inf" alone error Profile setting RedHue is out of range
+RedHue="x" alone error Invalid profile setting RedHue: invalid float literal
+RedHue="NaN" alone error Profile setting RedHue is out of range
+# RedSaturation read true
+RedSaturation="" alone ok
+RedSaturation="0" alone ok
+RedSaturation="-0" alone ok
+RedSaturation="+0.5" alone ok .calibration[0][1]=0.005
+RedSaturation="-0.5" alone ok .calibration[0][1]=-0.005
+RedSaturation="1" alone ok .calibration[0][1]=0.01
+RedSaturation="2.4" alone ok .calibration[0][1]=0.024
+RedSaturation="4.99" alone ok .calibration[0][1]=0.0499
+RedSaturation="5" alone ok .calibration[0][1]=0.05
+RedSaturation="5.01" alone ok .calibration[0][1]=0.050100002
+RedSaturation="-5" alone ok .calibration[0][1]=-0.05
+RedSaturation="-5.01" alone ok .calibration[0][1]=-0.050100002
+RedSaturation="5.5" alone ok .calibration[0][1]=0.055
+RedSaturation="-12.5" alone ok .calibration[0][1]=-0.125
+RedSaturation="33.3" alone ok .calibration[0][1]=0.333
+RedSaturation="50" alone ok .calibration[0][1]=0.5
+RedSaturation="99.99" alone ok .calibration[0][1]=0.9999
+RedSaturation="-100" alone ok .calibration[0][1]=-1.0
+RedSaturation="100" alone ok .calibration[0][1]=1.0
+RedSaturation="100.01" alone error Profile setting RedSaturation is out of range
+RedSaturation="101" alone error Profile setting RedSaturation is out of range
+RedSaturation="180" alone error Profile setting RedSaturation is out of range
+RedSaturation="359" alone error Profile setting RedSaturation is out of range
+RedSaturation="360" alone error Profile setting RedSaturation is out of range
+RedSaturation="361" alone error Profile setting RedSaturation is out of range
+RedSaturation="1e-7" alone ok .calibration[0][1]=1e-9
+RedSaturation="-1e-7" alone ok .calibration[0][1]=-1e-9
+RedSaturation="inf" alone error Profile setting RedSaturation is out of range
+RedSaturation="x" alone error Invalid profile setting RedSaturation: invalid float literal
+RedSaturation="NaN" alone error Profile setting RedSaturation is out of range
+# GreenHue read true
+GreenHue="" alone ok
+GreenHue="0" alone ok
+GreenHue="-0" alone ok
+GreenHue="+0.5" alone ok .calibration[1][0]=0.005
+GreenHue="-0.5" alone ok .calibration[1][0]=-0.005
+GreenHue="1" alone ok .calibration[1][0]=0.01
+GreenHue="2.4" alone ok .calibration[1][0]=0.024
+GreenHue="4.99" alone ok .calibration[1][0]=0.0499
+GreenHue="5" alone ok .calibration[1][0]=0.05
+GreenHue="5.01" alone ok .calibration[1][0]=0.050100002
+GreenHue="-5" alone ok .calibration[1][0]=-0.05
+GreenHue="-5.01" alone ok .calibration[1][0]=-0.050100002
+GreenHue="5.5" alone ok .calibration[1][0]=0.055
+GreenHue="-12.5" alone ok .calibration[1][0]=-0.125
+GreenHue="33.3" alone ok .calibration[1][0]=0.333
+GreenHue="50" alone ok .calibration[1][0]=0.5
+GreenHue="99.99" alone ok .calibration[1][0]=0.9999
+GreenHue="-100" alone ok .calibration[1][0]=-1.0
+GreenHue="100" alone ok .calibration[1][0]=1.0
+GreenHue="100.01" alone error Profile setting GreenHue is out of range
+GreenHue="101" alone error Profile setting GreenHue is out of range
+GreenHue="180" alone error Profile setting GreenHue is out of range
+GreenHue="359" alone error Profile setting GreenHue is out of range
+GreenHue="360" alone error Profile setting GreenHue is out of range
+GreenHue="361" alone error Profile setting GreenHue is out of range
+GreenHue="1e-7" alone ok .calibration[1][0]=1e-9
+GreenHue="-1e-7" alone ok .calibration[1][0]=-1e-9
+GreenHue="inf" alone error Profile setting GreenHue is out of range
+GreenHue="x" alone error Invalid profile setting GreenHue: invalid float literal
+GreenHue="NaN" alone error Profile setting GreenHue is out of range
+# GreenSaturation read true
+GreenSaturation="" alone ok
+GreenSaturation="0" alone ok
+GreenSaturation="-0" alone ok
+GreenSaturation="+0.5" alone ok .calibration[1][1]=0.005
+GreenSaturation="-0.5" alone ok .calibration[1][1]=-0.005
+GreenSaturation="1" alone ok .calibration[1][1]=0.01
+GreenSaturation="2.4" alone ok .calibration[1][1]=0.024
+GreenSaturation="4.99" alone ok .calibration[1][1]=0.0499
+GreenSaturation="5" alone ok .calibration[1][1]=0.05
+GreenSaturation="5.01" alone ok .calibration[1][1]=0.050100002
+GreenSaturation="-5" alone ok .calibration[1][1]=-0.05
+GreenSaturation="-5.01" alone ok .calibration[1][1]=-0.050100002
+GreenSaturation="5.5" alone ok .calibration[1][1]=0.055
+GreenSaturation="-12.5" alone ok .calibration[1][1]=-0.125
+GreenSaturation="33.3" alone ok .calibration[1][1]=0.333
+GreenSaturation="50" alone ok .calibration[1][1]=0.5
+GreenSaturation="99.99" alone ok .calibration[1][1]=0.9999
+GreenSaturation="-100" alone ok .calibration[1][1]=-1.0
+GreenSaturation="100" alone ok .calibration[1][1]=1.0
+GreenSaturation="100.01" alone error Profile setting GreenSaturation is out of range
+GreenSaturation="101" alone error Profile setting GreenSaturation is out of range
+GreenSaturation="180" alone error Profile setting GreenSaturation is out of range
+GreenSaturation="359" alone error Profile setting GreenSaturation is out of range
+GreenSaturation="360" alone error Profile setting GreenSaturation is out of range
+GreenSaturation="361" alone error Profile setting GreenSaturation is out of range
+GreenSaturation="1e-7" alone ok .calibration[1][1]=1e-9
+GreenSaturation="-1e-7" alone ok .calibration[1][1]=-1e-9
+GreenSaturation="inf" alone error Profile setting GreenSaturation is out of range
+GreenSaturation="x" alone error Invalid profile setting GreenSaturation: invalid float literal
+GreenSaturation="NaN" alone error Profile setting GreenSaturation is out of range
+# BlueHue read true
+BlueHue="" alone ok
+BlueHue="0" alone ok
+BlueHue="-0" alone ok
+BlueHue="+0.5" alone ok .calibration[2][0]=0.005
+BlueHue="-0.5" alone ok .calibration[2][0]=-0.005
+BlueHue="1" alone ok .calibration[2][0]=0.01
+BlueHue="2.4" alone ok .calibration[2][0]=0.024
+BlueHue="4.99" alone ok .calibration[2][0]=0.0499
+BlueHue="5" alone ok .calibration[2][0]=0.05
+BlueHue="5.01" alone ok .calibration[2][0]=0.050100002
+BlueHue="-5" alone ok .calibration[2][0]=-0.05
+BlueHue="-5.01" alone ok .calibration[2][0]=-0.050100002
+BlueHue="5.5" alone ok .calibration[2][0]=0.055
+BlueHue="-12.5" alone ok .calibration[2][0]=-0.125
+BlueHue="33.3" alone ok .calibration[2][0]=0.333
+BlueHue="50" alone ok .calibration[2][0]=0.5
+BlueHue="99.99" alone ok .calibration[2][0]=0.9999
+BlueHue="-100" alone ok .calibration[2][0]=-1.0
+BlueHue="100" alone ok .calibration[2][0]=1.0
+BlueHue="100.01" alone error Profile setting BlueHue is out of range
+BlueHue="101" alone error Profile setting BlueHue is out of range
+BlueHue="180" alone error Profile setting BlueHue is out of range
+BlueHue="359" alone error Profile setting BlueHue is out of range
+BlueHue="360" alone error Profile setting BlueHue is out of range
+BlueHue="361" alone error Profile setting BlueHue is out of range
+BlueHue="1e-7" alone ok .calibration[2][0]=1e-9
+BlueHue="-1e-7" alone ok .calibration[2][0]=-1e-9
+BlueHue="inf" alone error Profile setting BlueHue is out of range
+BlueHue="x" alone error Invalid profile setting BlueHue: invalid float literal
+BlueHue="NaN" alone error Profile setting BlueHue is out of range
+# BlueSaturation read true
+BlueSaturation="" alone ok
+BlueSaturation="0" alone ok
+BlueSaturation="-0" alone ok
+BlueSaturation="+0.5" alone ok .calibration[2][1]=0.005
+BlueSaturation="-0.5" alone ok .calibration[2][1]=-0.005
+BlueSaturation="1" alone ok .calibration[2][1]=0.01
+BlueSaturation="2.4" alone ok .calibration[2][1]=0.024
+BlueSaturation="4.99" alone ok .calibration[2][1]=0.0499
+BlueSaturation="5" alone ok .calibration[2][1]=0.05
+BlueSaturation="5.01" alone ok .calibration[2][1]=0.050100002
+BlueSaturation="-5" alone ok .calibration[2][1]=-0.05
+BlueSaturation="-5.01" alone ok .calibration[2][1]=-0.050100002
+BlueSaturation="5.5" alone ok .calibration[2][1]=0.055
+BlueSaturation="-12.5" alone ok .calibration[2][1]=-0.125
+BlueSaturation="33.3" alone ok .calibration[2][1]=0.333
+BlueSaturation="50" alone ok .calibration[2][1]=0.5
+BlueSaturation="99.99" alone ok .calibration[2][1]=0.9999
+BlueSaturation="-100" alone ok .calibration[2][1]=-1.0
+BlueSaturation="100" alone ok .calibration[2][1]=1.0
+BlueSaturation="100.01" alone error Profile setting BlueSaturation is out of range
+BlueSaturation="101" alone error Profile setting BlueSaturation is out of range
+BlueSaturation="180" alone error Profile setting BlueSaturation is out of range
+BlueSaturation="359" alone error Profile setting BlueSaturation is out of range
+BlueSaturation="360" alone error Profile setting BlueSaturation is out of range
+BlueSaturation="361" alone error Profile setting BlueSaturation is out of range
+BlueSaturation="1e-7" alone ok .calibration[2][1]=1e-9
+BlueSaturation="-1e-7" alone ok .calibration[2][1]=-1e-9
+BlueSaturation="inf" alone error Profile setting BlueSaturation is out of range
+BlueSaturation="x" alone error Invalid profile setting BlueSaturation: invalid float literal
+BlueSaturation="NaN" alone error Profile setting BlueSaturation is out of range
 amount "" PostCropVignetteStyle="x" ok
 amount "" PostCropVignetteStyle="3" ok
 amount "" PostCropVignetteMidpoint="150" ok

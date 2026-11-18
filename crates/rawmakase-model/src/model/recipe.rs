@@ -355,19 +355,29 @@ impl Recipe {
         r.add_look_settings(&look.settings);
         std::borrow::Cow::Owned(r)
     }
-    /// A look's Exposure, Saturation and colour mixer added to the user's, and its
-    /// vignette in place of the user's, as Camera Raw 18.7 renders them. Its
-    /// parametric curve and split toning render as passes of their own.
+    /// A look's Exposure, Whites, Vibrance, Saturation, colour mixer, Texture and
+    /// calibration added to the user's, and its vignette in place of the user's, as
+    /// Camera Raw 18.7 renders them. Its parametric curve and split toning render as
+    /// passes of their own.
     fn add_look_settings(&mut self, s: &crate::camera_profiles::LookSettings) {
         let add = |a: f32, b: f32| (a + b).clamp(-1., 1.);
         self.exposure = (self.exposure + s.exposure).clamp(-8., 8.);
         self.saturation = add(self.saturation, s.saturation);
+        self.whites = add(self.whites, s.whites);
+        self.vibrance = add(self.vibrance, s.vibrance);
         for (band, look) in self.hsl.iter_mut().zip(s.hsl) {
             for (v, l) in band.iter_mut().zip(look) {
                 *v = add(*v, l);
             }
         }
         let e = &mut self.effects;
+        e.texture = add(e.texture, s.texture);
+        for (primary, look) in e.calibration.iter_mut().zip(s.calibration) {
+            for (v, l) in primary.iter_mut().zip(look) {
+                *v = add(*v, l);
+            }
+        }
+        e.shadow_tint = add(e.shadow_tint, s.shadow_tint);
         if let Some(v) = s.vignette {
             e.vignette = v.amount.clamp(-1., 1.);
             e.vignette_midpoint = v.midpoint;
