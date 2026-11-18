@@ -1042,6 +1042,55 @@ fn measurement_copies_carry_the_gain_map() {
         preview_source((&im).into(), 4).pixels
     );
 }
+/// The copy the photo is measured on carries a DNG's OpcodeList3 FixVignetteRadial
+/// about its optical centre, with the GainMap when there is one. Vignetting Camera Raw
+/// is not known to measure after (a maker's own table, OpcodeList2's opcode) is not on
+/// the copy.
+#[test]
+fn measurement_copies_carry_a_dngs_opcode_list3_vignette() {
+    use crate::optics::{GainGrid, LensCorrection, Radial};
+    let mut im = fixture();
+    im.pixels = vec![[0.1; 3]; 96];
+    let lens = LensCorrection {
+        source: "DNG opcodes".into(),
+        default_on: true,
+        vignetting: Radial::new(vec![0., 2.], vec![1., 3.]),
+        vignetting_measured: true,
+        centre: [0., 0.5],
+        ..Default::default()
+    };
+    im.metadata.lens = Some(lens.clone());
+    let copy = measurement_source((&im).into(), 4);
+    let (w, h) = (copy.width as usize, copy.height as usize);
+    let half = (w as f32).hypot(h as f32) * 0.5;
+    for (i, p) in copy.pixels.iter().enumerate() {
+        let (x, y) = ((i % w) as f32 + 0.5, (i / w) as f32 + 0.5);
+        let gain = 1. + x.hypot(y - h as f32 * 0.5) / half;
+        assert!(
+            (p[0] - 0.1 * gain).abs() < 1e-6 && p[0] == p[2],
+            "{i}: {p:?}"
+        );
+    }
+    // With a GainMap both apply.
+    let mut both = lens.clone();
+    both.gain_map = Some(GainGrid {
+        gains: vec![2.],
+        ..Default::default()
+    });
+    im.metadata.lens = Some(both);
+    let doubled = measurement_source((&im).into(), 4);
+    for (p, q) in doubled.pixels.iter().zip(&copy.pixels) {
+        assert!((p[1] - 2. * q[1]).abs() < 1e-6);
+    }
+    im.metadata.lens = Some(LensCorrection {
+        vignetting_measured: false,
+        ..lens
+    });
+    assert_eq!(
+        measurement_source((&im).into(), 4).pixels,
+        preview_source((&im).into(), 4).pixels
+    );
+}
 /// Before a per-channel warp (lateral chromatic aberration), each channel reads the
 /// GainMap where it samples the photo, not where green does.
 #[test]

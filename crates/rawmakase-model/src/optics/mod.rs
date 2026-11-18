@@ -174,6 +174,11 @@ pub struct LensCorrection {
     pub default_on: bool,
     /// Gain that restores illumination at each radius (1 = none).
     pub vignetting: Option<Radial>,
+    /// `vignetting` is part of the photo as Camera Raw measures it, so the copy the
+    /// photo is measured on carries it in full: a DNG's OpcodeList3 FixVignetteRadial,
+    /// like that list's GainMap. Other vignetting is only rendered.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub vignetting_measured: bool,
     /// Source radius divided by output radius for the green channel (1 = none).
     pub distortion: Option<Radial>,
     /// Additional source radius scale for red and blue relative to green (1 = none).
@@ -203,6 +208,7 @@ impl Default for LensCorrection {
             source: String::new(),
             default_on: false,
             vignetting: None,
+            vignetting_measured: false,
             distortion: None,
             chromatic: None,
             chromatic_at_source: false,
@@ -216,6 +222,7 @@ pub static NO_CORRECTION: LensCorrection = LensCorrection {
     source: String::new(),
     default_on: false,
     vignetting: None,
+    vignetting_measured: false,
     distortion: None,
     chromatic: None,
     chromatic_at_source: false,

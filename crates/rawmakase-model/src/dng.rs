@@ -1,7 +1,7 @@
 //! Rendering hints that a DNG carries for its raw image, as Lightroom uses them:
 //! the embedded camera profile, BaselineExposure, the default crop, and the
-//! FixVignetteRadial (OpcodeList2), and GainMap and WarpRectilinear (OpcodeList3) lens
-//! corrections.
+//! FixVignetteRadial (OpcodeList2 and 3), and GainMap and WarpRectilinear (OpcodeList3)
+//! lens corrections.
 use crate::{
     optics::{GainGrid, LensCorrection, Radial},
     tiff::{Entry, Tiff},
@@ -66,6 +66,10 @@ pub fn read(path: &Path) -> Option<Dng> {
             .map(|value| value.trim_end_matches('\0').to_owned()),
         ..Default::default()
     };
+    let vignette_limit = ifd0
+        .get(&50708)
+        .and_then(|entry| String::from_utf8(t.raw(entry)?).ok())
+        .and_then(|model| vignette_limit(model.trim_end_matches('\0')));
     // The full-resolution raw image is the SubIFD (or IFD0) with NewSubfileType 0.
     let mut candidates = vec![ifd0];
     if let Some(subs) = candidates[0].get(&330).and_then(|e| t.offsets(e)) {
@@ -123,12 +127,21 @@ pub fn read(path: &Path) -> Option<Dng> {
         }
     };
     let frame = size.map(|[h, w]| [w as f32, h as f32]);
-    let vignetting = raw
-        .get(&51009)
-        .and_then(|e| t.raw(e))
-        .and_then(|b| opcode(&b, 3))
-        .and_then(|p| vignette(&p, frame));
+    let list2 = raw.get(&51009).and_then(|e| t.raw(e));
     let list3 = raw.get(&51022).and_then(|e| t.raw(e));
+    // The decoder leaves OpcodeList2's FixVignetteRadials to this correction. Phones
+    // and drones write theirs in OpcodeList3 instead (iPhones alone, DJI drones ahead
+    // of the warp and the GainMap), which Camera Raw applies just the same. Each is
+    // kept with whether OpcodeList3 held it.
+    let vignettes: Vec<(Radial, [f32; 2], bool)> = (list2.iter())
+        .flat_map(|b| opcodes(b, 3).into_iter().map(|p| (p, false)))
+        .chain(
+            list3
+                .iter()
+                .flat_map(|b| vignettes_before_warp(b).into_iter().map(|p| (p, true))),
+        )
+        .filter_map(|(p, third)| vignette(&p, frame, vignette_limit).map(|(v, c)| (v, c, third)))
+        .collect();
     let warp = list3
         .as_deref()
         .and_then(|b| opcode(b, 1))
@@ -139,18 +152,32 @@ pub fn read(path: &Path) -> Option<Dng> {
         .and_then(|(b, size)| gain_grid(b, size));
     // One centre for the correction: the warp's, which moves the image. A vignette
     // centred elsewhere (no file seen) is left out rather than moved.
-    let centre = match (&warp, &vignetting) {
-        (Some((_, _, c)), _) | (None, Some((_, c))) => *c,
+    let centre = match (&warp, vignettes.first()) {
+        (Some((_, _, c)), _) | (None, Some((_, c, _))) => *c,
         (None, None) => LensCorrection::image_centre(),
     };
-    let vignetting = vignetting
-        .filter(|(_, c)| frame.is_none_or(|[w, h]| same_centre(*c, centre, [w, h])))
-        .map(|(v, _)| v);
+    // Vignettes about that centre multiply, as applying each opcode in turn does. A
+    // product the correction does not hold is left out on its own, as a GainMap is:
+    // the file's warp and gain map still apply.
+    let (vignetting, vignetting_measured) = vignettes
+        .into_iter()
+        .filter(|(_, c, _)| frame.is_none_or(|[w, h]| same_centre(*c, centre, [w, h])))
+        .map(|(v, _, third)| (v, third))
+        .reduce(|(a, measured), (b, third)| {
+            let values = (a.knots.iter().zip(&a.values))
+                .map(|(r, gain)| gain * b.eval(*r))
+                .collect();
+            let knots = a.knots;
+            (Radial { knots, values }, measured || third)
+        })
+        .filter(|(v, _)| v.valid())
+        .map_or((None, false), |(v, measured)| (Some(v), measured));
     let (distortion, chromatic) = warp.map_or((None, None), |(d, c, _)| (d, c));
     let lens = LensCorrection {
         source: "DNG opcodes".into(),
         default_on: true,
         vignetting,
+        vignetting_measured,
         distortion,
         chromatic,
         chromatic_at_source: false,
@@ -299,6 +326,18 @@ fn opcodes(b: &[u8], id: u32) -> Vec<Vec<u8>> {
     }
     found
 }
+/// The parameters of OpcodeList3's FixVignetteRadials (opcode 3) that come before its
+/// warp (opcode 1), in order. Such a vignette applies to the image as decoded, where
+/// the renderer evaluates vignetting. One after the warp would apply to the corrected
+/// image instead (no file seen) and is not read.
+fn vignettes_before_warp(list: &[u8]) -> Vec<Vec<u8>> {
+    let before = opcode_ids(list)
+        .iter()
+        .take_while(|id| **id != 1)
+        .filter(|id| **id == 3)
+        .count();
+    opcodes(list, 3).into_iter().take(before).collect()
+}
 /// OpcodeList3's GainMaps (opcode 9) as one gain per channel, on an image of `size`
 /// [height, width]. Each must cover a rectangle inside the image, every row and column,
 /// with planes among the three channels, each plane at most once; maps for separate
@@ -441,18 +480,90 @@ fn knots(reach: f32) -> Vec<f32> {
 fn same_centre(a: [f32; 2], b: [f32; 2], size: [f32; 2]) -> bool {
     ((a[0] - b[0]) * size[0]).hypot((a[1] - b[1]) * size[1]) <= 0.5
 }
+/// The Apple devices whose back camera's FixVignetteRadial Camera Raw limits
+/// ([`vignette_limit`]): iPhone 6s to iPhone 11 Pro Max, both iPhone SEs since, and
+/// three iPad Pros.
+const LIMITED_BACK_CAMERAS: &[&str] = &[
+    "iPhone8,1",
+    "iPhone8,2",
+    "iPhone8,4",
+    "iPhone9,1",
+    "iPhone9,2",
+    "iPhone9,3",
+    "iPhone9,4",
+    "iPhone10,1",
+    "iPhone10,2",
+    "iPhone10,3",
+    "iPhone10,4",
+    "iPhone10,5",
+    "iPhone10,6",
+    "iPhone11,2",
+    "iPhone11,4",
+    "iPhone11,6",
+    "iPhone11,8",
+    "iPhone12,1",
+    "iPhone12,3",
+    "iPhone12,5",
+    "iPhone12,8",
+    "iPhone14,6",
+    "iPad6,3",
+    "iPad6,4",
+    "iPad7,1",
+    "iPad7,2",
+    "iPad7,3",
+    "iPad7,4",
+];
+/// Those of them whose telephoto camera's opcode is limited too.
+const LIMITED_TELEPHOTO_CAMERAS: &[&str] = &[
+    "iPhone9,2",
+    "iPhone9,4",
+    "iPhone10,2",
+    "iPhone10,3",
+    "iPhone10,5",
+    "iPhone10,6",
+    "iPhone11,2",
+    "iPhone11,4",
+    "iPhone11,6",
+    "iPhone12,3",
+    "iPhone12,5",
+];
+/// The most gain Camera Raw 18.7 gives the image's farthest corner when it applies a
+/// FixVignetteRadial of the camera with this UniqueCameraModel: 2.5 for the Apple
+/// cameras above ("iPhone11,6 back camera", "iPhone11,6 back telephoto camera"), no
+/// limit for any other. It goes by that tag alone, not by Make or Model. Measured on
+/// copies of an iPhone 7 Plus DNG: with the opcode scaled to a corner gain of 2.29 it
+/// applies in full, and scaled to anything from 2.50 to 4.88 it renders the same; under
+/// another camera's name (an iPhone 12's, an ultra wide or a front camera's, a drone's)
+/// its own 3.16 applies in full.
+fn vignette_limit(unique_camera_model: &str) -> Option<f64> {
+    let listed = |devices: &[&str], camera: &str| {
+        (unique_camera_model.strip_suffix(camera)).is_some_and(|device| devices.contains(&device))
+    };
+    (listed(LIMITED_BACK_CAMERAS, " back camera")
+        || listed(LIMITED_TELEPHOTO_CAMERAS, " back telephoto camera"))
+    .then_some(2.5)
+}
 /// FixVignetteRadial: gain 1 + k0 r² + k1 r⁴ + k2 r⁶ + k3 r⁸ + k4 r¹⁰, and its centre.
-fn vignette(p: &[u8], frame: Option<[f32; 2]>) -> Option<(Radial, [f32; 2])> {
-    let v = doubles(p);
-    if v.len() != 7 {
+/// With a `limit` ([`vignette_limit`]), an opcode whose gain at radius 1, the image's
+/// farthest corner, is more has its gain above 1 scaled at every radius so that the
+/// corner's is the limit, as Camera Raw scales it.
+fn vignette(p: &[u8], frame: Option<[f32; 2]>, limit: Option<f64>) -> Option<(Radial, [f32; 2])> {
+    // Five coefficients and the centre: seven doubles, with no bytes left over.
+    if p.len() != 56 {
         return None;
     }
+    let v = doubles(p);
     let (centre, to_opcode, knots) = opcode_frame(v[5], v[6], frame)?;
+    let corner = 1. + v[..5].iter().sum::<f64>();
+    let share = match limit {
+        Some(limit) if corner > limit => (limit - 1.) / (corner - 1.),
+        _ => 1.,
+    };
     let values = knots
         .iter()
         .map(|r| {
             let r2 = f64::from(*r * to_opcode).powi(2);
-            (1. + (0..5).map(|i| v[i] * r2.powi(i as i32 + 1)).sum::<f64>()) as f32
+            (1. + share * (0..5).map(|i| v[i] * r2.powi(i as i32 + 1)).sum::<f64>()) as f32
         })
         .collect();
     let r = Radial { knots, values };
@@ -577,7 +688,7 @@ mod tests {
     fn decodes_vignette_and_warp_opcodes() {
         // DSCF7853's FixVignetteRadial from Lightroom's DNG.
         let p = be(&[0.2599, 0.3424, 0.0630, 0.0346, -0.0300, 0.5, 0.5]);
-        let (v, _) = vignette(&opcode(&list(3, &p), 3).unwrap(), None).unwrap();
+        let (v, _) = vignette(&opcode(&list(3, &p), 3).unwrap(), None, None).unwrap();
         assert!((v.eval(1.) - 1.67).abs() < 0.01);
         assert!((v.eval(0.5) - 1.087).abs() < 0.002);
         assert!(opcode(&list(3, &p), 1).is_none());
@@ -592,7 +703,13 @@ mod tests {
         assert!((red.eval(1.) - 1.0007).abs() < 1e-5);
         assert_eq!(blue.eval(1.), 1.);
         // Off-centre corrections need the image's size, to normalize the radius.
-        assert!(vignette(&be(&[0.2, 0., 0., 0., 0., 0.3, 0.5]), None).is_none());
+        assert!(vignette(&be(&[0.2, 0., 0., 0., 0., 0.3, 0.5]), None, None).is_none());
+        // The parameters are seven doubles exactly: a block with bytes left over is
+        // not this opcode's.
+        let mut long = be(&[0.2, 0., 0., 0., 0., 0.5, 0.5]);
+        assert!(vignette(&long, None, None).is_some());
+        long.push(0);
+        assert!(vignette(&long, None, None).is_none());
     }
     /// An optical centre off the image's: the radius is 1 at the image's corner farthest
     /// from it, as the DNG SDK normalizes it (Adobe's DNG of a Panasonic LX100, whose
@@ -618,14 +735,14 @@ mod tests {
         // Knots reach the far corner.
         assert!(*distortion.knots.last().unwrap() as f64 >= far / half - 1e-4);
         let p = be(&[0.3, 0.1, 0., 0., 0., 0.46, 0.53]);
-        let (v, centre) = vignette(&p, Some([6000., 4000.])).unwrap();
+        let (v, centre) = vignette(&p, Some([6000., 4000.]), None).unwrap();
         assert_eq!(centre, [0.46, 0.53]);
         let far = (0.54f64 * 6000.).hypot(0.53 * 4000.);
         let half = 6000f64.hypot(4000.) / 2.;
         let at = f64::from(v.eval((far / half) as f32));
         assert!((at - 1.4).abs() < 1e-3, "{at}");
         // A centre outside the image is not one.
-        assert!(vignette(&be(&[0.2, 0., 0., 0., 0., 1.3, 0.5]), Some(size)).is_none());
+        assert!(vignette(&be(&[0.2, 0., 0., 0., 0., 1.3, 0.5]), Some(size), None).is_none());
     }
     /// A GainMap opcode's parameters: `area` (top, left, bottom, right), its planes,
     /// a `rows` × `columns` map over the whole area and `map_planes` gains per point.
@@ -756,6 +873,154 @@ mod tests {
         ] {
             assert!(gain_grid(&list, size).is_none());
         }
+    }
+    /// A minimal DNG of `width` × `height` with these further IFD0 tags of undefined
+    /// bytes (opcode lists, a UniqueCameraModel), in ascending order, as [`read`] reads it.
+    fn dng_with(width: u32, height: u32, tags: &[(u16, Vec<u8>)]) -> Dng {
+        let mut entries = vec![
+            (256u16, 4u16, 1u32, width.to_le_bytes().to_vec()),
+            (257, 4, 1, height.to_le_bytes().to_vec()),
+            (273, 4, 1, 0u32.to_le_bytes().to_vec()),
+            (50706, 1, 4, vec![1, 4, 0, 0]),
+        ];
+        entries.extend(
+            tags.iter()
+                .map(|(tag, bytes)| (*tag, 7, bytes.len() as u32, bytes.clone())),
+        );
+        let mut bytes = b"II*\0\x08\0\0\0".to_vec();
+        bytes.extend((entries.len() as u16).to_le_bytes());
+        let mut data: Vec<u8> = Vec::new();
+        for (tag, kind, count, value) in &entries {
+            bytes.extend(tag.to_le_bytes());
+            bytes.extend(kind.to_le_bytes());
+            bytes.extend(count.to_le_bytes());
+            if value.len() <= 4 {
+                bytes.extend(value.iter().copied().chain([0; 4]).take(4));
+            } else {
+                let at = 8 + 2 + entries.len() * 12 + 4 + data.len();
+                bytes.extend((at as u32).to_le_bytes());
+                data.extend(value);
+            }
+        }
+        bytes.extend(0u32.to_le_bytes());
+        bytes.extend(data);
+        let f = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(f.path(), bytes).unwrap();
+        read(f.path()).unwrap()
+    }
+    fn vignetting(dng: &Dng) -> &Radial {
+        let lens = dng.lens.as_ref().expect("a lens correction");
+        lens.vignetting.as_ref().expect("vignetting")
+    }
+    /// A FixVignetteRadial in OpcodeList3, where phones and drones put it (an iPhone's
+    /// alone; a DJI FC7303's before its warp and gain map), is the photo's
+    /// vignetting like one in OpcodeList2. Camera Raw applies it: without it an iPhone
+    /// XS Max photo's corners rendered 1 stop darker than Camera Raw's.
+    #[test]
+    fn reads_a_vignette_from_opcode_list3() {
+        // A DJI FC220's opcode, alone in the list, on its 4000 × 3000 image.
+        let k = [2.2847, -5.3943, 16.1074, -18.2383, 7.4375];
+        let corner: f64 = 1. + k.iter().sum::<f64>();
+        let alone = lists(&[(3, be(&[k[0], k[1], k[2], k[3], k[4], 0.5, 0.5]))]);
+        let drone = dng_with(4000, 3000, &[(51022, alone)]);
+        let at_corner = f64::from(vignetting(&drone).eval(1.));
+        assert!((at_corner - corner).abs() < 2e-3, "{at_corner}");
+        let lens = drone.lens.as_ref().unwrap();
+        // Camera Raw measures the photo after it, as after that list's GainMap.
+        assert!(lens.default_on && lens.vignetting_measured);
+        // Before a warp and a gain map (a DJI FC7303's order): each is read.
+        let centred = be(&[0.3, 0.1, 0., 0., 0., 0.5, 0.5]);
+        let warp = {
+            let mut w = 1u32.to_be_bytes().to_vec();
+            w.extend(be(&[1., 0.01, 0., 0., 0., 0., 0.5, 0.5]));
+            w
+        };
+        let gains = gain_map([0, 0, 3024, 4032], 0, 3, 1, &[2.; 6]);
+        let all = lists(&[(3, centred.clone()), (1, warp.clone()), (9, gains)]);
+        let drone = dng_with(4032, 3024, &[(51022, all)]);
+        let lens = drone.lens.as_ref().unwrap();
+        assert!((vignetting(&drone).eval(1.) - 1.4).abs() < 1e-3);
+        assert!(lens.distortion.is_some() && lens.gain_map.is_some());
+        // After a warp it would apply to the corrected image, where the renderer does
+        // not evaluate vignetting (no file seen): left out, the warp kept.
+        let after = lists(&[(1, warp.clone()), (3, centred.clone())]);
+        let after = dng_with(4032, 3024, &[(51022, after)]);
+        let lens = after.lens.as_ref().unwrap();
+        assert!(lens.vignetting.is_none() && lens.distortion.is_some());
+        assert!(!lens.vignetting_measured);
+        // OpcodeList2's is read as before, and one in each list about one centre
+        // multiply, as applying both does.
+        let second = dng_with(4032, 3024, &[(51009, lists(&[(3, centred.clone())]))]);
+        assert!((vignetting(&second).eval(1.) - 1.4).abs() < 1e-3);
+        assert!(!second.lens.as_ref().unwrap().vignetting_measured);
+        let both = dng_with(
+            4032,
+            3024,
+            &[
+                (51009, lists(&[(3, centred.clone())])),
+                (51022, lists(&[(3, centred)])),
+            ],
+        );
+        assert!((vignetting(&both).eval(1.) - 1.96).abs() < 2e-3);
+        assert!(both.lens.as_ref().unwrap().vignetting_measured);
+        // A gain the correction's tables do not hold is left out without the warp.
+        let steep = lists(&[(3, be(&[9., 0., 0., 0., 0., 0.5, 0.5])), (1, warp)]);
+        let steep = dng_with(4032, 3024, &[(51022, steep)]);
+        let lens = steep.lens.as_ref().unwrap();
+        assert!(lens.vignetting.is_none() && lens.distortion.is_some());
+        assert!(!lens.vignetting_measured);
+    }
+    /// Camera Raw limits the gain of the iPhones' own strong opcode: an iPhone XS Max's
+    /// wide camera states 3.43 at the corner and renders with 2.5 there, the gain above
+    /// 1 scaled alike at every radius. Applied in full, such a photo's corners rendered
+    /// 0.3 stop brighter than Camera Raw's.
+    #[test]
+    fn limits_the_vignette_gain_of_the_iphones_camera_raw_limits() {
+        // The wide camera's opcode, on its 4032 × 3024 image.
+        let k = [1.5123, 4.1918, -9.2382, 8.7175, -2.7503];
+        let centre = [0.49976f32, 0.49841];
+        let params = be(&[k[0], k[1], k[2], k[3], k[4], 0.49976, 0.49841]);
+        let stated = |r: f64| 1. + (0..5).map(|i| k[i] * r.powi(2 * i as i32 + 2)).sum::<f64>();
+        let far = crate::optics::reach(centre, [4032., 3024.]);
+        let photo = |camera: &str, list: u16| {
+            let name = (50708, format!("{camera}\0").into_bytes());
+            dng_with(4032, 3024, &[name, (list, lists(&[(3, params.clone())]))])
+        };
+        let gain = |dng: &Dng, r: f64| f64::from(vignetting(dng).eval(far * r as f32));
+        let share = 1.5 / (stated(1.) - 1.);
+        for list in [51009, 51022] {
+            let wide = photo("iPhone11,6 back camera", list);
+            assert_eq!(wide.lens.as_ref().unwrap().centre, centre);
+            assert!((gain(&wide, 1.) - 2.5).abs() < 2e-3, "{}", gain(&wide, 1.));
+            let half = 1. + share * (stated(0.5) - 1.);
+            assert!(
+                (gain(&wide, 0.5) - half).abs() < 2e-3,
+                "{}",
+                gain(&wide, 0.5)
+            );
+        }
+        // Its telephoto camera is limited too, which its own opcode (1.56) never reaches.
+        let telephoto = photo("iPhone11,6 back telephoto camera", 51022);
+        assert!((gain(&telephoto, 1.) - 2.5).abs() < 2e-3);
+        let weak = be(&[0.1135, 3.2415, -7.9973, 7.7698, -2.5675, 0.48985, 0.49282]);
+        let name = (50708, b"iPhone11,6 back telephoto camera\0".to_vec());
+        let telephoto = dng_with(4032, 3024, &[name, (51022, lists(&[(3, weak)]))]);
+        let far = crate::optics::reach([0.48985, 0.49282], [4032., 3024.]);
+        assert!((vignetting(&telephoto).eval(far) - 1.56).abs() < 2e-3);
+        // Cameras Camera Raw does not limit: an iPhone 12 Pro, an ultra wide camera, a
+        // front camera, a file that names none.
+        for camera in [
+            "iPhone13,3 back camera",
+            "iPhone12,3 back ultra wide camera",
+            "iPhone11,6 front camera",
+            "iPhone11,8 back telephoto camera",
+            "FC220",
+        ] {
+            let full = photo(camera, 51022);
+            assert!((gain(&full, 1.) - stated(1.)).abs() < 3e-3, "{camera}");
+        }
+        let unnamed = dng_with(4032, 3024, &[(51022, lists(&[(3, params.clone())]))]);
+        assert!((gain(&unnamed, 1.) - stated(1.)).abs() < 3e-3);
     }
     #[test]
     fn non_dng_files_are_ignored() {

@@ -449,6 +449,7 @@ fn olympus(path: &Path, t: &mut Tiff, m: &Metadata) -> Option<LensCorrection> {
         // their warp, or for newer bodies as the "Camera Settings" profile.
         default_on: true,
         vignetting: None,
+        vignetting_measured: false,
         distortion,
         chromatic,
         chromatic_at_source: false,
@@ -602,6 +603,7 @@ fn panasonic(t: &mut Tiff, m: &Metadata) -> Option<LensCorrection> {
         source: source.into(),
         default_on: true,
         vignetting: None,
+        vignetting_measured: false,
         distortion,
         chromatic,
         chromatic_at_source: false,
@@ -739,6 +741,7 @@ fn nikon(t: &mut Tiff, m: &Metadata) -> Option<LensCorrection> {
         // Adobe writes a lens that needs it as its DNGs' opcodes, which always apply.
         default_on: mode & 2 != 0,
         vignetting,
+        vignetting_measured: false,
         distortion,
         chromatic,
         chromatic_at_source: false,
@@ -924,6 +927,7 @@ fn samsung(path: &Path, t: &mut Tiff, m: &Metadata) -> Option<LensCorrection> {
         // Adobe writes it into its DNGs as their warp, which always applies.
         default_on: true,
         vignetting: None,
+        vignetting_measured: false,
         distortion,
         chromatic,
         chromatic_at_source: false,
