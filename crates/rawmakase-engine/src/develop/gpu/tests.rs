@@ -239,6 +239,28 @@ fn gpu_measured_tails_match_cpu_globally_and_in_masks() -> Result<()> {
             shadows: 1.,
             ..Default::default()
         },
+        // Both together, in each sign combination and at unequal amounts: each curve
+        // is blended toward its extreme (`local_tone_rule::Pair`).
+        LocalAdjust {
+            shadows: 0.8,
+            highlights: -0.6,
+            ..Default::default()
+        },
+        LocalAdjust {
+            shadows: -0.5,
+            highlights: 1.,
+            ..Default::default()
+        },
+        LocalAdjust {
+            shadows: 1.,
+            highlights: 0.25,
+            ..Default::default()
+        },
+        LocalAdjust {
+            shadows: -0.3,
+            highlights: -0.9,
+            ..Default::default()
+        },
         LocalAdjust {
             dehaze: -1.,
             ..Default::default()

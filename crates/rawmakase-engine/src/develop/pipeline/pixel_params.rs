@@ -60,6 +60,10 @@ pub(crate) mod slot {
         // +100, Highlights −100, Shadows −100 and Highlights +100, for masks
         // (`local_tone::LocalToneMap::rule`).
         RULE: 16,
+        // How Shadows and Highlights act together, for masks (`local_tone_rule::Pair`):
+        // the four unit curves' extremes in `RULE`'s order, then Shadows' and Highlights'
+        // fraction for each sign combination. All 0 without one: nothing is blended.
+        PAIR: 12,
         LOCAL_REGION: 1,
         BASIC: 1,
         LEVELS: 3,
@@ -151,10 +155,13 @@ pub(crate) fn wgsl_prelude() -> String {
              const SCENE_U: vec3<f32> = vec3({U_FIRST:?}, {U_STEP:?}, {U_SAMPLES}.0);\n\
              const SCENE_S: vec3<f32> = vec3(-1.0, {SLIDER_STEP:?}, {SLIDERS}.0);\n\
              const MASK_VALUES = array<f32, {}>({});\n\
-             const LOCAL_FLOOR: f32 = {:?};\n",
+             const LOCAL_FLOOR: f32 = {:?};\n\
+             const PAIR_SAME_POWER: f32 = {:?};\nconst PAIR_OPPOSITE_RATE: f32 = {:?};\n",
             MASK_VALUES.len(),
             MASK_VALUES.map(|v| format!("{v:?}")).join(", "),
-            crate::develop::local_tone::FLOOR
+            crate::develop::local_tone::FLOOR,
+            crate::develop::local_tone_rule::PAIR_SAME_POWER,
+            crate::develop::local_tone_rule::PAIR_OPPOSITE_RATE
         )
         + &{
             use crate::develop::scene_tone::hdr_whites::{GRID, IDENTITY_FROM, SAMPLES};
@@ -450,6 +457,14 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
     p.set(slot::HIGHLIGHTS, &highlights);
     p.set(slot::LIFT, &[detail, region].concat());
     p.set(slot::RULE, &rule);
+    if let Some(pair) = &local.pair {
+        let values: Vec<f32> = pair
+            .extremes
+            .into_iter()
+            .chain(pair.fractions.into_iter().flatten())
+            .collect();
+        p.set(slot::PAIR, &values);
+    }
 }
 fn set_rgb_table(p: &mut PixelParams, look: Option<&crate::camera_profiles::RgbLook>) {
     use crate::camera_profiles::{Dimensions, Gamut};
