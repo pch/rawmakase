@@ -59,6 +59,12 @@ enum Dialog {
     },
     Delete(String),
     Edit([String; SLOTS]),
+    /// New Keyword Set: a name and nine keywords typed together.
+    New {
+        name: String,
+        focused: bool,
+        slots: Box<[String; SLOTS]>,
+    },
 }
 
 /// What a slot is, to show and to click.
@@ -333,6 +339,7 @@ impl Library {
                 clicked = Some(slot);
             }
         }
+        ui.add_space(space::M);
         if let Some(slot) = clicked {
             self.click_keyword_slot(slot);
         }
@@ -368,6 +375,13 @@ impl Library {
                     }
                 }
                 ui.separator();
+                if ui.button("New Keyword Set…").clicked() {
+                    self.keyword_sets.dialog = Some(Dialog::New {
+                        name: String::new(),
+                        focused: false,
+                        slots: Box::default(),
+                    });
+                }
                 if ui.button("Save Current Settings as New Preset…").clicked() {
                     self.keyword_sets.dialog = Some(Dialog::SaveAs {
                         name: String::new(),
@@ -439,12 +453,17 @@ impl Library {
             .backdrop_color(Color32::from_black_alpha(140))
             .frame(modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
-                ui.set_width(420.);
+                ui.set_width(if matches!(dialog, Dialog::Edit(_) | Dialog::New { .. }) {
+                    480.
+                } else {
+                    420.
+                });
                 let (title, action) = match dialog {
                     Dialog::SaveAs { .. } => ("New Keyword Set", "Create"),
                     Dialog::Rename { .. } => ("Rename Keyword Set", "Rename"),
                     Dialog::Delete(_) => ("Delete Keyword Set", "Delete"),
                     Dialog::Edit(_) => ("Edit Keyword Set", "Change"),
+                    Dialog::New { .. } => ("New Keyword Set", "Create"),
                 };
                 ui.label(
                     egui::RichText::new(title)
@@ -455,11 +474,7 @@ impl Library {
                 let mut ready = true;
                 match dialog {
                     Dialog::SaveAs { name, focused } | Dialog::Rename { name, focused, .. } => {
-                        let field = ui.add(
-                            egui::TextEdit::singleline(name)
-                                .hint_text("Keyword set name")
-                                .desired_width(f32::INFINITY),
-                        );
+                        let field = ui.add(dialog_edit(&palette, name, "Keyword set name"));
                         if !*focused {
                             field.request_focus();
                             *focused = true;
@@ -480,31 +495,20 @@ impl Library {
                                 .color(palette.tone(Tone::SECONDARY)),
                         );
                     }
-                    Dialog::Edit(slots) => {
-                        ui.label(
-                            egui::RichText::new(
-                                "Each slot takes one keyword, typed as in the Keywording \
-                                 panel: Child < Parent.",
-                            )
-                            .size(text::SMALL)
-                            .color(palette.tone(Tone::SECONDARY)),
-                        );
-                        ui.add_space(space::S);
-                        egui::Grid::new("keyword-set-slots")
-                            .num_columns(3)
-                            .spacing(Vec2::splat(space::XS))
-                            .show(ui, |ui| {
-                                for (i, slot) in KEYPAD.iter().enumerate() {
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut slots[*slot])
-                                            .hint_text(format!("⌥{}", slot + 1))
-                                            .desired_width(128.),
-                                    );
-                                    if i % 3 == 2 {
-                                        ui.end_row();
-                                    }
-                                }
-                            });
+                    Dialog::Edit(slots) => slot_fields(ui, &palette, slots),
+                    Dialog::New {
+                        name,
+                        focused,
+                        slots,
+                    } => {
+                        let field = ui.add(dialog_edit(&palette, name, "Keyword set name"));
+                        if !*focused {
+                            field.request_focus();
+                            *focused = true;
+                        }
+                        ready = !name.trim().is_empty();
+                        ui.add_space(space::L);
+                        slot_fields(ui, &palette, slots);
                     }
                 }
                 ui.add_space(space::XL);
@@ -567,6 +571,10 @@ impl Library {
                     .messages
                     .fail(format!("Keyword set not deleted: {e:#}")),
             },
+            Some(Dialog::New { name, slots, .. }) => {
+                let slots = slots.map(|s| s.trim().to_string());
+                self.save_keyword_set(&name, &slots, false);
+            }
             Some(Dialog::Edit(slots)) => {
                 let slots = slots.map(|s| s.trim().to_string());
                 let set = self.keyword_sets.set();
@@ -593,6 +601,59 @@ fn slot_texts(slots: &[Slot; SLOTS]) -> [String; SLOTS] {
         } => String::new(),
         Slot::Typed { label, .. } | Slot::Keyword { label, .. } => label.clone(),
     })
+}
+
+/// A dialog's text field: filled, rounded and roomy, as the panels' drop-downs.
+fn dialog_edit<'t>(
+    palette: &theme::Palette,
+    text: &'t mut String,
+    hint: &str,
+) -> egui::TextEdit<'t> {
+    egui::TextEdit::singleline(text)
+        .hint_text(hint)
+        .font(egui::FontId::proportional(text::BODY))
+        .background_color(palette.tone(Tone::FIELD))
+        .margin(design::margin(space::M, space::S))
+        .min_size(Vec2::new(0., size::FIELD))
+        .vertical_align(egui::Align::Center)
+        .desired_width(f32::INFINITY)
+}
+
+/// The nine slots of a keyword set to type in, laid out as the keypad that
+/// gives them (⌥7 ⌥8 ⌥9 on top), each captioned with its shortcut.
+fn slot_fields(ui: &mut egui::Ui, palette: &theme::Palette, slots: &mut [String; SLOTS]) {
+    ui.label(
+        egui::RichText::new(
+            "One keyword in each slot, typed as in the Keywording panel: Child < Parent.",
+        )
+        .size(text::SMALL)
+        .color(palette.tone(Tone::SECONDARY)),
+    );
+    ui.add_space(space::M);
+    let gap = space::M;
+    let width = (ui.available_width() - 2. * gap) / 3.;
+    for row in KEYPAD.chunks(3) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for &slot in row {
+                ui.allocate_ui_with_layout(
+                    Vec2::new(width, 0.),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        ui.set_width(width);
+                        ui.label(
+                            egui::RichText::new(format!("⌥{}", slot + 1))
+                                .size(text::MICRO)
+                                .color(palette.tone(Tone::MUTED)),
+                        );
+                        ui.add_space(space::XXS);
+                        ui.add(dialog_edit(palette, &mut slots[slot], ""));
+                    },
+                );
+            }
+        });
+        ui.add_space(space::S);
+    }
 }
 
 /// The height of a keyword tile.
@@ -762,6 +823,38 @@ mod tests {
         panel.shown = Shown::Recent;
         panel.step(false);
         assert_eq!(panel.shown, Shown::Set("Wedding Photography".into()));
+    }
+
+    #[test]
+    fn a_new_keyword_set_is_saved_as_typed_and_shown() -> anyhow::Result<()> {
+        let (d, mut e, _) = crate::app::testing::editor_with_catalog(&["a.RAF"])?;
+        let library = e.library.as_mut().unwrap();
+        library.keyword_sets.store = KeywordSets {
+            dir: d.path().join("own"),
+            lightroom: None,
+        };
+        let mut slots: Box<[String; SLOTS]> = Box::default();
+        slots[6] = " Studio < Places ".into();
+        library.keyword_sets.dialog = Some(Dialog::New {
+            name: " Studio ".into(),
+            focused: true,
+            slots,
+        });
+        let dialog = library.keyword_sets.dialog.take();
+        library.finish_keyword_set_dialog(dialog);
+        assert_eq!(library.keyword_sets.shown, Shown::Set("Studio".into()));
+        let set = library.keyword_sets.set().unwrap();
+        assert_eq!(
+            (set.origin, set.keywords[6].as_str()),
+            (Origin::Own, "Studio < Places")
+        );
+        assert!(
+            set.keywords
+                .iter()
+                .enumerate()
+                .all(|(i, k)| i == 6 || k.is_empty())
+        );
+        Ok(())
     }
 
     #[test]

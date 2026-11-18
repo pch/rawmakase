@@ -7,7 +7,7 @@ use super::descriptive::{DescriptiveEdit, parse_keywords};
 use super::keyword_entry;
 use super::rows::{ROW, VALUE_GRAY, caption_at, field_rect, paint_truncated, panel_edit, value_at};
 use super::{Library, Place};
-use crate::app::ui::design::{space, text};
+use crate::app::ui::design::{self, Tone, size, space, text};
 use crate::app::ui::theme;
 use crate::catalog::PhotoId;
 use crate::metadata::{Descriptive, Keyword, Location, TextField, Value};
@@ -361,6 +361,7 @@ impl Library {
     pub(super) fn keyword_fields(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
         self.sync_fields();
+        ui.add_space(space::XS);
         let mut remove = None;
         for (keyword, all) in &self.fields.keywords {
             let (rect, _) =
@@ -404,9 +405,11 @@ impl Library {
             self.messages
                 .fail(format!("Keyword could not be removed: {e}"));
         }
-        ui.add_space(space::XS);
-        let (rect, _) =
-            ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), egui::Sense::hover());
+        ui.add_space(space::S);
+        let (rect, _) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), size::FIELD),
+            egui::Sense::hover(),
+        );
         let field_id = egui::Id::new("keyword-entry");
         let focused = ui.memory(|m| m.has_focus(field_id));
         let suggestions = if focused {
@@ -449,13 +452,15 @@ impl Library {
         }
         let response = ui.add_enabled(!targets.is_empty(), |ui: &mut egui::Ui| {
             ui.put(
-                rect.shrink2(Vec2::new(0., 1.)),
-                panel_edit(
-                    &palette,
-                    egui::TextEdit::singleline(&mut self.fields.keyword_entry).id(field_id),
-                )
-                .hint_text("Add keywords: Child < Parent, …")
-                .vertical_align(egui::Align::Center),
+                rect,
+                egui::TextEdit::singleline(&mut self.fields.keyword_entry)
+                    .id(field_id)
+                    .font(egui::FontId::proportional(text::LABEL))
+                    .text_color(palette.tone(Tone::TEXT))
+                    .background_color(palette.tone(Tone::FIELD))
+                    .margin(design::margin(space::M, space::XS))
+                    .hint_text("Add keywords: Child < Parent, …")
+                    .vertical_align(egui::Align::Center),
             )
         });
         if response.changed() {
