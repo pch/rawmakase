@@ -1072,7 +1072,12 @@ impl Preset {
                     let ordered = corners[0] < corners[2] && corners[1] < corners[3];
                     ordered.then_some((corners, angle))
                 } else {
+                    // The whole frame where it makes no rectangle at its angle (a landscape
+                    // frame at +45) renders unturned and uncropped in Camera Raw 19. Other
+                    // such crops were not measured and are still refused.
+                    let whole = corners == super::crop::WHOLE;
                     super::crop::from_lightroom(corners, angle, size)
+                        .or(whole.then_some((super::crop::WHOLE, 0.)))
                 }
                 .context("Invalid crop")?;
                 r.crop = frame.rect_from_unrotated(crop);

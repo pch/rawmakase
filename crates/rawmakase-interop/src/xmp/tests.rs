@@ -633,6 +633,12 @@ fn lightroom_crop_angle_turns_its_crop() -> Result<()> {
     assert_eq!(whole.straighten, -5.);
     let [w, h] = size(&whole, [970., 742.]);
     assert!((w / h / (922. / 585.) - 1.).abs() < 0.005, "{w} × {h}");
+    // At +45 the whole landscape frame makes no rectangle, and Camera Raw 19 renders it unturned.
+    let flat = apply(
+        &m,
+        r#"c:HasCrop="True" c:CropLeft="0" c:CropTop="0" c:CropRight="1" c:CropBottom="1" c:CropAngle="45""#,
+    )?;
+    assert_eq!((flat.straighten, flat.crop), (0., [0., 0., 1., 1.]));
 
     // Written back, Lightroom's corners and angle, which read back as the same edit.
     let photo = write::Photo {
