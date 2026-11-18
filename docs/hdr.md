@@ -119,10 +119,13 @@ switched on or off), which a hidden window of its own receives, and the registry
 Windows writes for a display profile assignment, per user and system-wide, and each
 display's `MonitorDataStore` key, which holds the HDR switch and the SDR content
 brightness. The window reads its display again only after one of those, when it
-reaches another display, or at its first frame, and the watcher wakes it to do so.
-Reading on a timer instead (every two seconds whenever the window redrew) flickered
-the whole screen on an NVIDIA GeForce under Windows 10 (#1126); it is what the window
-falls back to when a key can't be watched. DXGI is asked only about a display whose
+reaches another display, or at its first frame, and the watcher wakes it to do so. A
+display that can show HDR is also read again when the window gains the focus, as
+Chromium does, since Windows documents no notification of the HDR switch or the SDR
+content brightness and both are changed in another window. Reading on a timer instead
+(every two seconds whenever the window redrew) flickered the whole screen on an NVIDIA
+GeForce under Windows 10 (#1126); it is what the window falls back to when a key can't
+be watched, and while its last read of the display failed. DXGI is asked only about a display whose
 advanced color info says it can show HDR (or when that info can't be read).
 Measured in a virtual machine whose display shows no HDR: the interface on the scRGB
 surface matches the 8-bit surface to two code values, and with SDR white and the

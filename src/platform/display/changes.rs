@@ -188,8 +188,9 @@ struct Watcher {
     window: HWND,
     /// Every key and the window are watched.
     complete: bool,
-    /// Boxed, so the window's pointer to it stays put while the watcher moves.
-    changed: Box<Arc<dyn Fn() + Send + Sync>>,
+    /// Shared with the window, which holds a pointer from [`Arc::as_ptr`]: moving
+    /// the watcher leaves the callback in place.
+    changed: Arc<Callback>,
 }
 
 impl Watcher {
@@ -197,8 +198,8 @@ impl Watcher {
     /// the one that [`run`](Self::run)s it; `None` when nothing can be watched.
     fn new(keys: &[KeyToWatch], changed: Arc<dyn Fn() + Send + Sync>) -> Option<Self> {
         let watched: Vec<Watched> = keys.iter().filter_map(Watched::open).collect();
-        let changed = Box::new(changed);
-        let window = hidden_window(&*changed);
+        let changed = Arc::new(Callback(changed));
+        let window = hidden_window(Arc::as_ptr(&changed));
         let complete = watched.len() == keys.len() && !window.is_null();
         if watched.is_empty() && window.is_null() {
             log::warn!("display changes aren't watched");
@@ -255,7 +256,7 @@ impl Watcher {
     }
 
     fn changed(&self) {
-        (self.changed)();
+        (self.changed.0)();
     }
 }
 
@@ -274,7 +275,11 @@ impl Drop for Watcher {
 
 /// A top-level window that is never shown, for the `WM_DISPLAYCHANGE` Windows
 /// sends every top-level window (a message-only window gets no broadcasts).
-fn hidden_window(changed: *const Arc<dyn Fn() + Send + Sync>) -> HWND {
+/// What the hidden window calls on `WM_DISPLAYCHANGE`, sized so that the
+/// window's user data can point at it.
+struct Callback(Arc<dyn Fn() + Send + Sync>);
+
+fn hidden_window(changed: *const Callback) -> HWND {
     let class: Vec<u16> = "RAWmakase display changes"
         .encode_utf16()
         .chain([0])
@@ -305,7 +310,8 @@ fn hidden_window(changed: *const Arc<dyn Fn() + Send + Sync>) -> HWND {
             std::ptr::null(),
         );
         if !window.is_null() {
-            // The window calls `changed`, which the watcher keeps boxed in place.
+            // The window calls `changed`, which the watcher keeps alive until it
+            // destroys the window.
             SetWindowLongPtrW(window, GWLP_USERDATA, changed as isize);
         }
         window
@@ -321,10 +327,9 @@ unsafe extern "system" fn window_proc(
     if message == WM_DISPLAYCHANGE {
         // SAFETY: the user data is 0 or the watcher's `changed`, alive while its
         // thread dispatches this window's messages.
-        let changed = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) }
-            as *const Arc<dyn Fn() + Send + Sync>;
+        let changed = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) } as *const Callback;
         if let Some(changed) = unsafe { changed.as_ref() } {
-            changed();
+            (changed.0)();
         }
     }
     // SAFETY: the message is passed on as received.
@@ -339,14 +344,15 @@ mod tests {
     use windows_sys::Win32::System::Registry::{
         KEY_WRITE, REG_DWORD, RegDeleteTreeW, RegSetValueExW,
     };
-    use windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SMTO_ABORTIFHUNG, SendMessageTimeoutW};
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain([0]).collect()
     }
 
-    /// A watcher on its own thread, of the keys `paths` under HKCU, reporting
-    /// each change it announces on the returned channel, and its window.
+    /// A watcher on its own thread, of the key `paths` names under HKCU (none
+    /// when empty), reporting each change it announces on the returned channel,
+    /// and its window.
     fn watcher(paths: &'static [&'static str]) -> (mpsc::Receiver<()>, HWND, bool) {
         let (sent, changes) = mpsc::channel();
         let (window_sent, window) = mpsc::channel();
@@ -355,12 +361,17 @@ mod tests {
             let changed: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
                 let _ = sent.lock().unwrap().send(());
             });
-            let keys = [KeyToWatch {
+            let key = KeyToWatch {
                 root: HKEY_CURRENT_USER,
                 paths,
                 create: false,
-            }];
-            let watcher = Watcher::new(&keys, changed).expect("watcher");
+            };
+            let keys = if paths.is_empty() {
+                &[][..]
+            } else {
+                std::slice::from_ref(&key)
+            };
+            let watcher = Watcher::new(keys, changed).expect("watcher");
             window_sent
                 .send((watcher.window as isize, watcher.complete))
                 .unwrap();
@@ -434,10 +445,22 @@ mod tests {
 
     #[test]
     fn a_display_mode_change_is_announced() {
-        // A key that always exists, so the watcher starts.
-        let (changes, window, _) = watcher(&[r"Software"]);
-        // SAFETY: the watcher's live window; SendMessageW waits for its thread.
-        unsafe { SendMessageW(window, WM_DISPLAYCHANGE, 32, 0) };
+        // The window alone, so that only it can announce the change.
+        let (changes, window, _) = watcher(&[]);
+        let mut result = 0;
+        // SAFETY: the watcher's live window; the send gives up after 5 s.
+        let delivered = unsafe {
+            SendMessageTimeoutW(
+                window,
+                WM_DISPLAYCHANGE,
+                32,
+                0,
+                SMTO_ABORTIFHUNG,
+                5000,
+                &mut result,
+            )
+        };
+        assert_ne!(delivered, 0, "the watcher's thread handles the message");
         changes
             .recv_timeout(Duration::from_secs(5))
             .expect("the change is announced");

@@ -127,7 +127,11 @@ impl SystemProbe {
     ) -> bool {
         use crate::platform::display;
         let now = display::Reading::of(display::monitor(window));
-        if self.last.is_some_and(|last| !last.outdated_by(&now)) {
+        let failed = self.display == SystemDisplay::Unknown;
+        if self
+            .last
+            .is_some_and(|last| !last.outdated_by(&now, failed))
+        {
             return false;
         }
         self.last = Some(now);

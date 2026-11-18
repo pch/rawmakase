@@ -51,10 +51,11 @@ impl Reading {
         self.monitor
     }
     /// Whether what was read at `self` may be out of date by `now`: the window
-    /// reached another display, the system announced a change, or, where it
-    /// announces none, [`RECHECK`] passed.
-    pub(crate) fn outdated_by(&self, now: &Self) -> bool {
-        self.outdated_with(now, changes_announced())
+    /// reached another display, the system announced a change, or [`RECHECK`]
+    /// passed where the system announces none or the read `failed`, which
+    /// may have been passing (a display connected while it was asked).
+    pub(crate) fn outdated_by(&self, now: &Self, failed: bool) -> bool {
+        self.outdated_with(now, changes_announced() && !failed)
     }
     fn outdated_with(&self, now: &Self, announced: bool) -> bool {
         self.monitor != now.monitor
@@ -429,30 +430,42 @@ mod windows {
     }
 
     fn active_paths() -> Option<Vec<DISPLAYCONFIG_PATH_INFO>> {
-        let (mut path_count, mut mode_count) = (0, 0);
-        // SAFETY: the counts are written; then the buffers have those lengths.
-        unsafe {
-            if GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut path_count, &mut mode_count)
-                != 0
-            {
-                return None;
+        // A display connected between the two calls needs bigger buffers, which
+        // QueryDisplayConfig says with ERROR_INSUFFICIENT_BUFFER; ask again then,
+        // as Microsoft's remarks on it suggest.
+        const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
+        for _ in 0..3 {
+            let (mut path_count, mut mode_count) = (0, 0);
+            // SAFETY: the counts are written; then the buffers have those lengths.
+            unsafe {
+                if GetDisplayConfigBufferSizes(
+                    QDC_ONLY_ACTIVE_PATHS,
+                    &mut path_count,
+                    &mut mode_count,
+                ) != 0
+                {
+                    return None;
+                }
+                let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); path_count as usize];
+                let mut modes = vec![DISPLAYCONFIG_MODE_INFO::default(); mode_count as usize];
+                match QueryDisplayConfig(
+                    QDC_ONLY_ACTIVE_PATHS,
+                    &mut path_count,
+                    paths.as_mut_ptr(),
+                    &mut mode_count,
+                    modes.as_mut_ptr(),
+                    std::ptr::null_mut(),
+                ) {
+                    0 => {
+                        paths.truncate(path_count as usize);
+                        return Some(paths);
+                    }
+                    ERROR_INSUFFICIENT_BUFFER => continue,
+                    _ => return None,
+                }
             }
-            let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); path_count as usize];
-            let mut modes = vec![DISPLAYCONFIG_MODE_INFO::default(); mode_count as usize];
-            if QueryDisplayConfig(
-                QDC_ONLY_ACTIVE_PATHS,
-                &mut path_count,
-                paths.as_mut_ptr(),
-                &mut mode_count,
-                modes.as_mut_ptr(),
-                std::ptr::null_mut(),
-            ) != 0
-            {
-                return None;
-            }
-            paths.truncate(path_count as usize);
-            Some(paths)
         }
+        None
     }
 
     /// DXGI's description of a display, through the COM interfaces windows-sys
