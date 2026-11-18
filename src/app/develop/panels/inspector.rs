@@ -1027,6 +1027,14 @@ fn subheading(ui: &mut egui::Ui, text: &str) -> Rect {
     ui.add_space(space::M);
     rect
 }
+/// Where a tool button, such as a colour selector, sits on a [`subheading`]'s
+/// `row`: at the far right, clear of the heading's text.
+fn subheading_tool_rect(row: Rect) -> Rect {
+    Rect::from_center_size(
+        Pos2::new(row.right() - 13., row.center().y),
+        Vec2::new(26., 20.),
+    )
+}
 /// A caption above a full-width control, such as a drop-down, on the slider grid.
 fn stacked_control<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     ui.add_space(space::M);
@@ -1420,3 +1428,32 @@ mod histogram_tests {
 #[cfg(test)]
 #[path = "inspector/editor_tests.rs"]
 mod editor_tests;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A heading's tool button stays clear of the heading's text (issue #1159:
+    /// the Fringe Color Selector was drawn over "Defringe").
+    #[test]
+    fn a_subheading_tool_button_clears_the_heading_text() {
+        let ctx = egui::Context::default();
+        let mut button = Rect::NOTHING;
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            ui.set_width(280.);
+            button = subheading_tool_rect(subheading(ui, "Defringe"));
+        });
+        output.textures_delta.clear();
+        let text = output
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::Shape::Text(t) if t.galley.text() == "Defringe" => {
+                    Some(t.galley.rect.translate(t.pos.to_vec2()))
+                }
+                _ => None,
+            })
+            .expect("the heading's text is drawn");
+        assert!(!button.intersects(text), "{button:?} overlaps {text:?}");
+    }
+}
