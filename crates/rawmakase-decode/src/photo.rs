@@ -75,8 +75,8 @@ pub fn open(path: &Path) -> Result<Raw> {
 
 /// The metadata [`open`] gives the RAW at `path`, from its header read in
 /// pieces, without its sensor data ([`Raw::open_header`]): for
-/// photo info on a network volume, where reading the whole file is most of
-/// the cost. Facts the readers take from the sensor data (measured black
+/// photo info, where reading the whole file is most of the cost and takes
+/// the file's size in memory. Facts the readers take from the sensor data (measured black
 /// levels) are not to be relied on. An error when the header can't be read
 /// that way, or gives none of ISO, shutter speed and aperture; the caller then
 /// opens the file whole.

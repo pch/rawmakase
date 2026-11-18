@@ -79,7 +79,7 @@ again later, and only the properties asked for are decoded.
 
 `preview_from_file(file, edge)` reads a RAW's preview for a thumbnail `edge`
 pixels on its long side without the rest of the file, for Library thumbnails
-on network volumes. Unlike the reads above, it gives the existing readers a
+on every volume. Unlike the reads above, it gives the existing readers a
 buffer the file's size, filled only where read: the file's start and end, each
 preview candidate's start up to its JPEG frame header, at which the file is
 opened again (NEF's reader sizes its previews from their frames), then the
@@ -91,12 +91,16 @@ reads the whole file.
 The ignored test `real_files_give_the_same_preview_read_in_pieces` compares
 the two reads on a folder of RAWs; it is how a variant is added.
 `header_from_file(file)` reads the header the same way, stopping before
-the preview, for the photo info of RAWs on network volumes (`rawmakase-decode`'s
+the preview, for the photo info of RAWs on every volume (`rawmakase-decode`'s
 `photo::header_metadata`), by the same list of variants; its comparison with
 whole-file reads is `photo_info_from_the_header_is_the_whole_file_s`, as photo
 info can come from parts a preview doesn't need.
 `largest_preview_from_file(file)` reads the largest preview, as `preview`
 chooses it, the same way, for Develop's placeholder on network volumes.
+Thumbnails and photo info were read this way on network volumes only until
+2026-11-18, when a 100,000-photo catalog on a local disk was measured reading
+3.2 TB in fifteen minutes for its photo info, and a folder of 60 RAWs taking
+2 GB as its thumbnails were made (`platform::preview_reads`).
 
 Modules, each with a small `pub(crate)` surface:
 

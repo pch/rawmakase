@@ -42,12 +42,12 @@ pub(super) fn available_paths(photos: &[Photo]) -> HashSet<PathBuf> {
 /// The Library's thumbnail of `path`, within 640 pixels. A RAW's comes from
 /// its file's facts alone (no lens tables or profiles, which `photo::open`
 /// adds for developing) and from the smallest embedded preview that reaches
-/// that size, else, should that one not decode, from the largest. On a network
-/// volume that preview is read alone, without the rest of the file, where its
-/// format allows (`platform::preview_reads`).
+/// that size, else, should that one not decode, from the largest. That preview
+/// is read alone, without the rest of the file, where its format allows
+/// (`platform::preview_reads`); the file is read whole only when it doesn't.
 pub(super) fn thumbnail(path: &std::path::Path) -> Result<image::RgbImage> {
     let image = if crate::storage::is_raw(path) {
-        if crate::platform::preview_reads::previews_only(path)
+        if crate::platform::preview_reads::in_pieces()
             && let Ok(image) = crate::raw::thumbnail_reaching_from_file(path, 640)
         {
             return Ok(downscale(&image, 640));
@@ -77,4 +77,36 @@ pub(super) fn fit(width: u32, height: u32, edge: u32) -> (u32, u32) {
         ((width as f32 * scale).round() as u32).max(1),
         ((height as f32 * scale).round() as u32).max(1),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::platform::preview_reads::fixture;
+
+    /// A RAW's thumbnail is its embedded preview, read without the rest of the
+    /// file on a local volume too. Read whole, each RAW in a folder took its
+    /// size in memory for its thumbnail: 60 RAWs put 2 GB into the allocator's
+    /// hands as the Library opened.
+    #[test]
+    fn a_raw_s_thumbnail_is_read_without_its_sensor_data() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = fixture::dng(dir.path());
+        let before = crate::raw::whole_file_reads();
+        let thumbnail = super::thumbnail(&path)?;
+        assert_eq!(crate::raw::whole_file_reads(), before, "read whole");
+        // Within 640 pixels, the preview's shape kept.
+        assert_eq!(thumbnail.dimensions(), (640, 427));
+        Ok(())
+    }
+
+    /// A RAW without an embedded preview that can be read in pieces is still
+    /// read whole, and fails as before when it has none at all.
+    #[test]
+    fn a_raw_without_a_preview_in_reach_is_read_whole() {
+        let chart = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/corpus/charts/synthetic-d65.dng");
+        let before = crate::raw::whole_file_reads();
+        assert!(super::thumbnail(&chart).is_err());
+        assert_eq!(crate::raw::whole_file_reads(), before + 1);
+    }
 }

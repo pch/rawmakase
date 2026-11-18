@@ -350,11 +350,11 @@ pub(crate) fn read_info(path: &Path) -> Option<Option<PhotoInfo>> {
         if let Some(undecoded) = crate::raw::undecoded(path) {
             return (undecoded.info != PhotoInfo::default()).then_some(Some(undecoded.info));
         }
-        // On a network volume, from the header alone: the whole RAW is most of
-        // the cost and none of the info. Else, or when that can't be read,
-        // from the file opened whole. A RAW that cannot be opened now (still
-        // copying, a network error) is tried again later.
-        let header = crate::platform::preview_reads::previews_only(path)
+        // From the header alone: the whole RAW is most of the cost and none of
+        // the info. When that can't be read, from the file opened whole. A RAW
+        // that cannot be opened now (still copying, a network error) is tried
+        // again later.
+        let header = crate::platform::preview_reads::in_pieces()
             .then(|| crate::photo::header_metadata(path).ok())
             .flatten();
         let metadata = match header {
@@ -375,6 +375,33 @@ pub(crate) fn read_info(path: &Path) -> Option<Option<PhotoInfo>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A RAW's photo info comes from its header, read without the rest of the
+    /// file on a local volume too. Read whole, a 100,000-photo catalog of
+    /// 43 MB RAWs had 3.2 TB read in its first fifteen minutes, one core busy
+    /// throughout.
+    #[test]
+    fn a_raw_s_info_is_read_from_its_header_alone() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = crate::platform::preview_reads::fixture::dng(dir.path());
+        let before = crate::raw::whole_file_reads();
+        let info = read_info(&path).flatten().expect("the header's info");
+        assert_eq!(crate::raw::whole_file_reads(), before, "read whole");
+        assert_eq!(info.exposure_text().as_deref(), Some("1/250 sec at f/2.8"));
+        assert_eq!(info.iso_text().as_deref(), Some("ISO 200"));
+        Ok(())
+    }
+
+    /// A header that gives no exposure may be one whose EXIF lies beyond the
+    /// parts read: that RAW is still read whole.
+    #[test]
+    fn a_raw_whose_header_has_no_exposure_is_read_whole() {
+        let chart = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/corpus/charts/synthetic-d65.dng");
+        let before = crate::raw::whole_file_reads();
+        assert!(read_info(&chart).is_some());
+        assert_eq!(crate::raw::whole_file_reads(), before + 1);
+    }
 
     /// An X3F, whose sensor data RAWmakase doesn't decode, has the info of
     /// its preview's EXIF, else of its property list (SD9, SD10), read

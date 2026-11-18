@@ -1,7 +1,7 @@
 //! The embedded preview, and the header facts, read from a file in pieces,
-//! without its sensor data:
-//! for files on network volumes, where reading the whole file to show its
-//! preview costs most of the time.
+//! without its sensor data: for Library thumbnails and photo info, where
+//! reading the whole file costs its size in memory and most of the time, and
+//! for Develop's placeholder on network volumes.
 //!
 //! The readers stay as they are. They are given a buffer the file's size in
 //! which only the parts read from the file are filled: its start and end,
