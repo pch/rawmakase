@@ -247,12 +247,12 @@ winit = { git = "https://github.com/crmne/winit", rev = "ed7caa9023f10b397f5b6ec
 [profile.release]
 lto = "thin"
 
+# Development builds keep line tables, so backtraces name files and lines, but
+# not the full debug info a debugger needs to show variables. For dependencies
+# this shrank a workspace test build's target from 31 to 20 GB. For the app
+# crate it cut the test build's compile time by roughly a third or more, as CI
+# (which sets the same) already had. Set CARGO_PROFILE_DEV_DEBUG=full to step
+# through code with a debugger.
 [profile.dev]
 opt-level = 1
-
-# Dependencies keep line tables for backtraces but not the full debug info a
-# debugger needs to step through them: a workspace test build's target shrinks
-# from 31 to 20 GB, with no slower build. The workspace crates keep full debug
-# info.
-[profile.dev.package."*"]
 debug = "line-tables-only"

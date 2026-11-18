@@ -629,7 +629,7 @@ the validation docs.
 | Location | Responsibility |
 | --- | --- |
 | [Cargo.toml](../Cargo.toml), [Cargo.lock](../Cargo.lock) | Package/toolchain requirements, dependencies and locked resolution. |
-| [build.rs](../build.rs) | The app's build script: the MCP guide's link and, on Windows, the executable's icon and version information. No C code is built or linked. |
+| [build.rs](../build.rs) | The app's build script: the MCP guide's link, the commit and target the system report names and, on Windows, the executable's icon and version information. Only release builds ask Git: development and test builds name no commit and link to main's guide, so their output is the same in every worktree and a build cache can share the app crate. No C code is built or linked. |
 | [Makefile](../Makefile) | Build/check and local install/uninstall shortcuts. |
 | [packaging/macos/app.sh](../packaging/macos/app.sh), [Info.plist](../packaging/macos/Info.plist) | Local Finder-launchable macOS bundle and its metadata. |
 | [rawmakase.desktop](../packaging/applications/rawmakase.desktop), [rawmakase.svg](../packaging/icons/rawmakase.svg) | Linux launcher and application icon. |
