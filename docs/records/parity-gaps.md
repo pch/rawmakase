@@ -128,6 +128,19 @@ the train split that the rule has not seen (421 from raw.pixls.us, 342 from Sign
 Edits, 26 others). They are being rendered in Camera Raw at the rule's settings and at
 Whites +100; a refit of both ensembles on them is the next candidate.
 
+**The newer method for the first ensemble's curves: no difference.** A network of the
+second ensemble's method (its inputs, its targets through the engine's white curve)
+for Shadows +100 and Highlights −100 too, fitted on the same 213 photos and rendered in a
+test build (189 photos): Shadows +100 0.0115 at the median against main's 0.0112 (50
+photos closer, 87 further), Highlights −100 0.0094 against 0.0101 (71 and 68). With the
+default black's key on the darkest levels' gain as well, Shadows +100 is at 0.0106 (84
+and 51). The two ensembles stay; both are to be refitted on the new photos.
+
+**The gate (#1175).** Its sets now hold Shadows with Highlights in the four sign combinations at
+full sliders, Shadows +80 with Highlights −30, and Shadows +60 with Highlights −60,
+Whites +30 and Blacks −30: the `pairs` sets, 33 validation photos of four families,
+the same photos as the mixed sets.
+
 ### Negative Shadows and positive Highlights by the global rule (2026-11-17)
 
 Shadows, Highlights, Whites and Blacks come before Dehaze and Clarity. This section
