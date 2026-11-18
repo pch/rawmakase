@@ -80,6 +80,13 @@ fn shown(library: &Library) -> Vec<PhotoId> {
     ids
 }
 
+/// `ids` in the order [`shown`] lists them: ids taken from the session's
+/// photos are in the library's order, which need not be the ids' order.
+fn sorted<const N: usize>(mut ids: [PhotoId; N]) -> [PhotoId; N] {
+    ids.sort();
+    ids
+}
+
 #[test]
 fn a_smart_collection_shows_its_members_and_follows_changes() -> Result<()> {
     let (_d, mut library, smart) =
@@ -111,7 +118,7 @@ fn a_smart_collection_shows_its_members_and_follows_changes() -> Result<()> {
     library.edits_written(&[photos[2]]);
     library.reload()?;
     settle(&mut library);
-    assert_eq!(shown(&library), [photos[1], photos[2]]);
+    assert_eq!(shown(&library), sorted([photos[1], photos[2]]));
     Ok(())
 }
 
@@ -396,7 +403,7 @@ fn a_set_shows_and_follows_its_smart_collections_photos() -> Result<()> {
     library.select_all();
     assert!(library.selected_ids().is_empty());
     settle(&mut library);
-    assert_eq!(shown(&library), [photos[0], photos[2]]);
+    assert_eq!(shown(&library), sorted([photos[0], photos[2]]));
     Ok(())
 }
 
