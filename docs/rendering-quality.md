@@ -75,7 +75,7 @@ balance taken off and sampled again as RGGB), run in 512-pixel packed tiles with
 pixels of mirrored or real context, and brought to the mosaic's scale by one gain
 fitted on 8×8 packed blocks without clipped samples or dark channels. Fed a mosaic
 clipped at black, the model lifts the deep shadows; their channels are scaled back
-to the mosaic's own mean over 16-pixel packed blocks, in full below 0.01 of white and
+to the mosaic's own mean over 64-pixel packed blocks, in full below 0.01 of white and
 not at all above 0.03. The result is white balanced as development balances the
 mosaic; within 8 pixels of a clipped sample, feathered over 8 more, it is the plain
 demosaic, which the model never saw unclipped. Highlights are then recovered on this
@@ -83,12 +83,13 @@ image of its own, never with the plain image's recovery, since recovery depends 
 each pixel's values.
 
 Rendering blends the two recovered images by Amount before colour and luminance noise
-reduction, which then apply as without it: the AI source's change in luminance (the
-channels' mean) and in colour each by a weight, the AI source itself at 100%. The
-weights are Camera Raw 18.7's: its Denoise records the blend it applies (`BlendParams`)
-as 0.4375 and 0.5 at Amount 25, 0.70 and 0.75 at 50 and 1 at 100. That they are
-luminance's and colour's, the channels' mean as luminance, and linear interpolation
-between them (from 0 at 0) are RAWmakase's reading, not established Camera Raw
+reduction, which then apply as without it. Each pixel keeps the AI source's colour, its
+channels scaled together, and takes a luminance (the mean of the white-balanced
+channels) blended from the two by a weight; at 100% it is the AI source itself.
+The weight is Camera Raw 18.7's: its Denoise records the blend it applies (`BlendParams`)
+as 0.4375 at Amount 25, 0.70 at 50 and 1 at 100 (and a second value, 0.5, 0.75 and 1).
+That the first is luminance's and linear interpolation between them (from 0 at 0) are
+RAWmakase's reading, not established Camera Raw
 behaviour. Switching AI Denoise on sets manual Luminance and Color noise reduction to
 0, and switching it off brings Color's defaults back, as Camera Raw writes them from
 its defaults (how it treats manual noise reduction the user changed is not measured); everything after is unchanged. Half-size drafts and a photo
@@ -140,6 +141,21 @@ similar at ISO 12,800–20,000 (Camera Raw keeps slightly more fine texture); be
 ISO 32,000 and above, where RawNIND leaves colour blotches in dark areas and Camera Raw
 keeps more detail, and on X-Trans, where the RGGB rebuild leaves the result softer and
 mottled beside Camera Raw's own X-Trans model.
+
+Measured again on 2026-11-18 against Camera Raw 18.7's renders of the same five photos
+(Adobe defaults, Denoise off, 50 and 100, full size), with the metrics of
+[#802](https://github.com/pch/rawmakase/issues/802) (colour and luminance noise in flat
+areas, colour blotches in dark areas, gradient energy in textured areas, ΔE00 of 32-pixel
+block means): at Amount 50 Camera Raw keeps about as little colour noise as at 100, while
+mixing the plain image back channel by channel kept 4–16 times as much (camera values
+are not white balanced, so an equal change of them is not neutral). Keeping the AI
+source's colour cut it from 14.2 to 1.3 (Camera Raw 1.0) on the Canon R10 at ISO 32,000
+and from 15.1 to 2.5 (2.3) on the Nikon Z fc at ISO 204,800, with luminance noise and
+detail unchanged. The dark correction over 16-pixel blocks left colour patches of that
+size in dark areas at ISO 32,000 and above (blotch measure 8.7 and 10.2 at Amount 100,
+Camera Raw 4.6 and 5.1); over 64-pixel blocks they are 4.6 and 5.2, and ΔE00 in dark
+areas fell from 5.8 to 4.4 on the R10 and rose from 11.5 to 13.4 on the Z fc, whose deep
+shadows already differ in colour from Camera Raw's with AI Denoise off.
 
 ## Tone and highlights
 
