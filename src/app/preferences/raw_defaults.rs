@@ -431,6 +431,7 @@ mod tests {
             let (generation, _) = editor.document.start_load();
             for event in [
                 Event::Header(Box::new(LoadedHeader {
+                    from: Default::default(),
                     id: generation,
                     file: crate::storage::Identity::read(&raw.clone()).ok(),
                     path: raw.clone(),
@@ -515,6 +516,7 @@ mod tests {
         editor
             .tx
             .send(Event::Header(Box::new(LoadedHeader {
+                from: Default::default(),
                 id: generation,
                 file: crate::storage::Identity::read(&raw).ok(),
                 path: raw,
@@ -559,6 +561,7 @@ mod tests {
         let (generation, _) = editor.document.start_load();
         for event in [
             Event::Header(Box::new(LoadedHeader {
+                from: Default::default(),
                 id: generation,
                 file: crate::storage::Identity::read(&raw).ok(),
                 path: raw,
@@ -684,6 +687,8 @@ mod tests {
         loader.submit(crate::app::worker::LoadJob {
             id: 1,
             path: chart,
+            from: Default::default(),
+            copies: crate::app::worker::editable_preview::decoder(),
             cancel: Default::default(),
             defaults: defaults.clone(),
             demosaic: crate::camera_data::Demosaic::default(),

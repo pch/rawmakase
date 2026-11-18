@@ -216,6 +216,7 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `demosaic` | RAWmakase's own Bayer and X-Trans demosaicing of the unpacked sensor data | `demosaic.rs` |
 | `dng`, `tiff` | A DNG's rendering hints (embedded profile, baseline exposure, crop, opcodes) and the bounded TIFF reader behind them (`crates/rawmakase-tiff`, a leaf crate with no RAW knowledge, re-exported as `model::tiff`) | `dng.rs`, `rawmakase-tiff/src/lib.rs` |
 | `decode` | A photo's full-size image, made one way for Develop, prefetch, Reference View and export: the cache's copy, else a decode with highlights recovered and stored, as a `DecodePolicy` asks | `decode.rs` |
+| `editable_preview` | Opening an editable preview ([docs/editable-previews.md](editable-previews.md)) as the photo again (the record's facts, a reduced decode of the original's size, highlights not recovered twice), and its record's format; export writes them. The DNG reader itself is unchanged; which photos have a copy is `catalog::editable_previews`', and the app reaches both through `app::worker::editable_preview` | `editable_preview/` |
 | `decode_cache` | Disk cache of developed camera images, keyed by file identity, demosaic setting and build; the app shares one live size limit and folder across Develop, prefetch, Reference View, export and preview builds, persisted in its session | `decode_cache.rs` |
 | `rawmakase_decode::ai::denoise` | AI Denoise's side of decoding, with no model knowledge: the visible mosaic packed as the model takes it (`PackedBayer`, RGGB; X-Trans rebuilt as RGGB by `Raw::packed_bayer`), the camera image assembled from the model's output (`assemble`), and `AiBase`, the trait export and the app ask for a photo's complete AI source through (`AiService`; `Refusing` for callers without one) | decode's `ai/denoise.rs` |
 | `ai_cache` | Disk cache of AI Denoise results: its own subfolder, extension and size cap (10 GB by default) over the decode cache's trim, purge and relocation (`decode_cache::Namespace`); half-precision payload with the gain applied, checked finite when stored and loaded | decode's `ai/cache.rs` |
@@ -451,7 +452,16 @@ operation step by step; in terms of the crates:
   stored in the catalog's preview cache.
 
 Whether Develop opens a catalog photo has one owner, `app::library::Refusal`:
-`develop_refusal` refuses an offline file, and a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL whose header
+`Library::develop_from` says what Develop opens it from: its original, or, while
+nothing is at the original's path (`edits::Original::is_absent`) and the catalog
+records an up-to-date copy whose file is there, its editable preview
+([editable previews](editable-previews.md)); otherwise why not (no copy, a copy out
+of date, a path that is there but can't be read). Only the loader sets what a
+document was opened from, and only a document opened from its copy passes the
+identity the catalog recorded for it with its saves (autosave and the flush before
+navigating or closing). AI masks, AI Denoise and Fit Camera Look are turned off
+for it, with the reason. Export of an offline photo stays refused
+(`availability_refusal`). `develop_refusal` refuses an offline file, and a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL whose header
 `raster::probe` finds Develop can't edit (`raster::Unsupported`, such as a CMYK
 JPEG, an HDR or animated file, or a tiled AVIF), before anything opens it. The probe reads the file, so only work on one
 photo uses it (opening it, its dialog, Quick Develop, the context menu,

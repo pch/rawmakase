@@ -606,6 +606,11 @@ impl Editor {
         if self.library.is_none() || self.document.catalog_photo.is_none() {
             return Some("Add this photo to a catalog to use this tool".into());
         }
+        // Not from an editable preview, reduced: its patches would be the
+        // original's edit.
+        if self.document.opened_from_copy() {
+            return Some("Connect the original to use AI Remove".into());
+        }
         // Not on the half-size draft shown while the full size decodes: its
         // answer would be dropped once the full image replaces it.
         let Some(image) = self.document.full().filter(|im| !im.fast) else {

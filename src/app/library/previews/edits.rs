@@ -27,6 +27,11 @@ pub(in crate::app::library) enum EditJob {
         /// reused a removed copy's id.
         ticket: u64,
         path: PathBuf,
+        /// For an offline photo with an up-to-date editable preview, the
+        /// copy's file: Develop's renders of the photo opened from it are kept
+        /// under it, and looked up there after the original's path. Never
+        /// rendered from.
+        copy: Option<PathBuf>,
         source: EditSource,
         /// Asked for before the photo is shown, to be kept in the cache: only
         /// at [`Pace::Full`], after every photo shown, and answered
@@ -400,19 +405,21 @@ impl Renders {
     /// Answers the job at `index` from the cache, else renders it when
     /// `render`, else marks it to wait for a render.
     fn look(&self, index: usize, render: bool) {
-        let (id, ticket, path, source, ahead, ai) = {
+        let (id, ticket, path, copy, source, ahead, ai) = {
             let state = self.results.shared.lock();
             match &state.jobs[index].job {
                 EditJob::Render {
                     id,
                     ticket,
                     path,
+                    copy,
                     source,
                     ahead,
                 } => (
                     *id,
                     *ticket,
                     path.clone(),
+                    copy.clone(),
                     source.clone(),
                     *ahead,
                     state.ai.clone(),
@@ -420,12 +427,19 @@ impl Renders {
                 EditJob::Store { .. } => unreachable!("stores are not looked up"),
             }
         };
-        let tags = preview_tags(&path, &source, ai.as_ref());
+        let tags: Vec<(&Path, String)> = std::iter::once(&path)
+            .chain(&copy)
+            .flat_map(|at| {
+                preview_tags(at, &source, ai.as_ref())
+                    .into_iter()
+                    .map(move |tag| (at.as_path(), tag))
+            })
+            .collect();
         let hit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let cache = cache(&self.cache);
             let cache = cache.as_ref()?;
             tags.iter()
-                .find_map(|tag| cache.load_tagged(&path, tag).ok().flatten())
+                .find_map(|(at, tag)| cache.load_tagged(at, tag).ok().flatten())
         }))
         .unwrap_or_else(|_| {
             reopen(&self.cache, &self.cache_path);
@@ -469,6 +483,7 @@ impl Renders {
             path,
             source,
             ahead,
+            ..
         } = queued.job
         else {
             unreachable!("stores are not rendered")

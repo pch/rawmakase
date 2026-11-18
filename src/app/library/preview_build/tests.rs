@@ -295,7 +295,9 @@ fn edited_in_grid(e: &mut Editor, id: PhotoId) {
     library.update_edited(
         &ctx,
         id,
-        rendered.as_ref(),
+        rendered
+            .as_ref()
+            .map(crate::app::library::RenderedFrom::Original),
         crate::app::library::PreviewAi::Off,
         image::RgbImage::new(4, 4),
         &Default::default(),

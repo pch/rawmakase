@@ -1101,6 +1101,9 @@ impl Editor {
             return;
         };
         library.loupe_overlay(ui.painter(), area);
+        if self.document.opened_from_copy() {
+            crate::app::develop::viewport::editable_preview_badge(ui, area);
+        }
         if self.view.zoom.on != before {
             library.loupe_zoom_toggled(before);
         }
@@ -1853,6 +1856,11 @@ impl Editor {
                         ui.separator();
                         ui.small(&self.preview.status);
                     }
+                    if self.document.opened_from_copy() {
+                        ui.separator();
+                        ui.small(crate::app::worker::OpenedFrom::EDITABLE_PREVIEW)
+                            .on_hover_text(crate::app::worker::OpenedFrom::EDITABLE_PREVIEW_DETAIL);
+                    }
                     self.preview_progress(ui);
                     if !self.document.lightroom_notice.is_empty() {
                         ui.separator();
@@ -1943,7 +1951,13 @@ impl Editor {
                     .fill(backdrop)
                     .inner_margin(design::margin_same(PHOTO_MARGIN)),
             )
-            .show(ui, |ui| self.viewport_ui(ui))
+            .show(ui, |ui| {
+                let response = self.viewport_ui(ui);
+                if self.document.opened_from_copy() {
+                    crate::app::develop::viewport::editable_preview_badge(ui, response.rect);
+                }
+                response
+            })
             .response
             .rect;
         self.drop_area = Some(area);

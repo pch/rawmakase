@@ -87,6 +87,8 @@ pub(crate) struct Editor {
     exports: export::Exports,
     /// Build Standard-Sized Previews, in the background.
     preview_builds: crate::app::library::preview_build::PreviewBuilds,
+    /// Reads editable previews' files, for the loader; tests stand in for it.
+    copies: crate::app::worker::editable_preview::Copies,
     /// Stored Standard previews read for the photo opening and its neighbour.
     stand_ins: crate::app::develop::stand_in::StandIns,
     autosave: crate::app::develop::autosave::Autosave,
@@ -401,6 +403,7 @@ impl Editor {
                 standard_preview_size,
                 discard_one_to_one_after,
             ),
+            copies: crate::app::worker::editable_preview::decoder(),
             stand_ins,
             autosave: Default::default(),
             waiting: crate::app::catalog::Waiting::restoring(place),

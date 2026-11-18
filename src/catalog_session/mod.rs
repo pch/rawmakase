@@ -189,10 +189,10 @@ impl CatalogSession {
         &self.previous_import
     }
     /// Saves photo `id`'s edit ([`Catalog::save_edit`]). Changes no list.
-    pub(crate) fn save_edit(
+    pub(crate) fn save_edit<'a>(
         &mut self,
         id: PhotoId,
-        path: &Path,
+        original: impl Into<crate::edits::Original<'a>>,
         source: &crate::storage::Identity,
         recipe: &crate::model::recipe::Recipe,
         export: &crate::export_settings::ExportOptions,
@@ -200,7 +200,7 @@ impl CatalogSession {
     ) -> Result<()> {
         self.changed();
         self.catalog
-            .save_edit(id, path, source, recipe, export, history)
+            .save_edit(id, original, source, recipe, export, history)
     }
     /// Saves and clears edits in one transaction ([`Catalog::change_edits`]).
     /// Changes no list.
@@ -210,6 +210,16 @@ impl CatalogSession {
     ) -> Result<()> {
         self.changed();
         self.catalog.change_edits(changes)
+    }
+    /// Notes photo `id`'s original as the file `now` names, marking its
+    /// editable preview out of date when that is another photo
+    /// ([`Catalog::note_original`]). Changes no list.
+    pub(crate) fn note_original(
+        &mut self,
+        id: PhotoId,
+        now: &crate::storage::Identity,
+    ) -> Result<Option<crate::catalog::EditablePreview>> {
+        self.catalog.note_original(id, now)
     }
     /// Adds a snapshot of `photo` ([`Catalog::add_snapshot`]). Changes no list.
     pub(crate) fn add_snapshot(

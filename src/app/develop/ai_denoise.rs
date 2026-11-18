@@ -125,6 +125,10 @@ impl Photo {
     }
 }
 
+/// Why AI Denoise is off for a photo opened from its editable preview: it
+/// needs the RAW's sensor data, which the copy doesn't keep.
+pub(in crate::app) const CONNECT_FOR_AI_DENOISE: &str = "Connect the original to use AI Denoise";
+
 impl crate::app::Editor {
     /// Asks for the open photo's AI Denoise result when its edit renders AI Denoise and
     /// the full-size image is decoded; withdraws the request when it no longer does.
@@ -137,7 +141,9 @@ impl crate::app::Editor {
         region: Option<[u32; 4]>,
     ) {
         let renders = self.document.edit.recipe().ai_denoise.renders();
-        if !renders {
+        // An editable preview has no sensor data to denoise: the photo shows
+        // plain, and the Detail panel says why. The setting stays as saved.
+        if !renders || self.document.opened_from_copy() {
             self.document.ai.release();
             return;
         }

@@ -39,6 +39,9 @@ pub(super) struct PreviewTextures {
     /// Photos with an edited preview requested, by the ticket of the latest
     /// request; results of earlier requests are dropped.
     pub(super) edited_requested: HashMap<PhotoId, u64>,
+    /// Offline photos' up-to-date editable previews, by photo: where Develop's
+    /// renders of a photo opened from its copy are looked up too.
+    copies: HashMap<PhotoId, PathBuf>,
     next_ticket: u64,
     /// Photos asking for an edited preview this frame, and last frame's
     /// as the worker sees them.
@@ -100,6 +103,7 @@ impl PreviewTextures {
             edit_tx,
             edit_rx,
             edited_requested: HashMap::new(),
+            copies: HashMap::new(),
             next_ticket: 0,
             edit_seen: HashSet::new(),
             edit_wanted,
@@ -348,6 +352,7 @@ impl PreviewTextures {
                     id: photo.id,
                     ticket,
                     path: photo.path.clone(),
+                    copy: self.copies.get(&photo.id).cloned(),
                     source,
                     ahead: false,
                 })
@@ -355,6 +360,31 @@ impl PreviewTextures {
         {
             self.edits_pending += 1;
         }
+    }
+    /// Where offline photos' renders from their editable previews are looked
+    /// up, from now on. A photo whose source changes (its original back
+    /// online, or offline again with a copy) is asked for again the next time
+    /// it is shown, and a request made before is no longer the latest, so its
+    /// result is dropped: a render from the copy never stays as the
+    /// original's.
+    pub(super) fn set_copies(&mut self, copies: HashMap<PhotoId, PathBuf>) {
+        let changed: Vec<PhotoId> = self
+            .copies
+            .iter()
+            .filter(|(id, path)| copies.get(id) != Some(*path))
+            .map(|(id, _)| *id)
+            .chain(
+                copies
+                    .keys()
+                    .filter(|id| !self.copies.contains_key(id))
+                    .copied(),
+            )
+            .collect();
+        for id in changed {
+            self.ask_again(id);
+            self.kept.remove(&id);
+        }
+        self.copies = copies;
     }
     /// Renders edited previews at `pace` from now on.
     pub(super) fn set_pace(&mut self, pace: Pace) {
@@ -424,6 +454,7 @@ impl PreviewTextures {
                         id: photo.id,
                         ticket,
                         path: photo.path.clone(),
+                        copy: self.copies.get(&photo.id).cloned(),
                         source,
                         ahead: true,
                     })

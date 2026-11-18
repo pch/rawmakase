@@ -174,6 +174,7 @@ impl Library {
                                         mark: self.mark(p.id),
                                         number: row * columns + col + 1,
                                         available: exists,
+                                        copy: self.editable_preview(p.id).map(cell::CopyState::of),
                                         quick: self.in_quick(p.id),
                                         style: self.cell_style,
                                         details: if self.cell_style == cell::Style::Expanded {

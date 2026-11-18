@@ -114,7 +114,10 @@ fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImpo
             library.update_edited(
                 &ctx,
                 photo.id,
-                crate::storage::Identity::read(&photo.path).ok().as_ref(),
+                crate::storage::Identity::read(&photo.path)
+                    .ok()
+                    .as_ref()
+                    .map(super::RenderedFrom::Original),
                 super::PreviewAi::Off,
                 image::RgbImage::from_pixel(4, 4, image::Rgb([30, 140, 250])),
                 &recipe,
@@ -580,6 +583,7 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
                     mark: selection::Mark::None,
                     number: 1,
                     available: true,
+                    copy: None,
                     quick: false,
                     style: cell::Style::Compact,
                     details: String::new(),
@@ -2102,7 +2106,7 @@ fn an_edited_preview_from_develop_is_kept_for_the_file_it_was_rendered_from() ->
     library.update_edited(
         &ctx,
         photo.id,
-        Some(&rendered),
+        Some(super::RenderedFrom::Original(&rendered)),
         super::PreviewAi::Off,
         image::RgbImage::new(4, 4),
         &Default::default(),
@@ -2110,6 +2114,104 @@ fn an_edited_preview_from_develop_is_kept_for_the_file_it_was_rendered_from() ->
     match jobs.try_recv() {
         Some(previews::EditJob::Store { stamp, .. }) => assert_eq!(stamp, rendered.stamp()),
         _ => panic!("not a store"),
+    }
+    Ok(())
+}
+/// Develop's render of a photo opened from its editable preview is kept under
+/// the copy's file and stamp; the Library asks for an offline photo's edited
+/// preview under its up-to-date copy too, and for an online one under its
+/// original alone (docs/editable-previews.md, Caches).
+#[test]
+fn renders_from_an_editable_preview_are_kept_and_looked_up_under_the_copy() -> Result<()> {
+    let (directory, mut library) = library_of(&["a.RAF", "b.RAF"])?;
+    let ctx = library.ctx.clone();
+    let [a, b] = [0, 1].map(|i| library.session.photos()[i].clone());
+    let folder = library.session.catalog().editable_previews_folder();
+    std::fs::create_dir_all(&folder)?;
+    let mut copies = Vec::new();
+    for photo in [&a, &b] {
+        let identity = crate::storage::Identity::read(&photo.path)?;
+        let file = crate::catalog::editable_preview_file_name(photo.id, &identity);
+        std::fs::write(folder.join(&file), b"a copy")?;
+        library
+            .session
+            .catalog_mut_for_tests()
+            .record_editable_preview(photo.id, &identity)?;
+        copies.push(folder.join(&file));
+    }
+    // a offline, b online, as the Library finds them when it opens.
+    std::fs::remove_file(&a.path)?;
+    drop(library);
+    let mut library = Library::load(&directory.path().join("library.rawmakase"), ctx.clone())?;
+    library.wait_for_availability();
+    let (job_tx, jobs) = previews::EditQueue::detached();
+    library.cache.edit_tx = job_tx;
+    let copy = crate::storage::Identity::read(&copies[0])?;
+    library.update_edited(
+        &ctx,
+        a.id,
+        Some(super::RenderedFrom::Copy(&copies[0], &copy)),
+        super::PreviewAi::Off,
+        image::RgbImage::new(4, 4),
+        &Default::default(),
+    );
+    match jobs.try_recv() {
+        Some(previews::EditJob::Store { path, stamp, .. }) => {
+            assert_eq!(path, copies[0]);
+            assert_eq!(stamp, copy.stamp());
+        }
+        _ => panic!("not a store"),
+    }
+    let edit = || Some(EditSource::saved(Default::default()));
+    library.cache.edited_requested.clear();
+    for photo in [&a, &b] {
+        library.cache.request_edited(photo, edit);
+    }
+    let looked: Vec<_> = std::iter::from_fn(|| jobs.try_recv())
+        .filter_map(|job| match job {
+            previews::EditJob::Render { id, path, copy, .. } => Some((id, path, copy)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        looked,
+        vec![
+            (a.id, a.path.clone(), Some(copies[0].clone())),
+            (b.id, b.path.clone(), None),
+        ]
+    );
+    Ok(())
+}
+/// A photo whose original comes back after its thumbnail was asked for from
+/// its editable preview is asked for again from the original, with nothing
+/// else clearing the request, and the earlier request's result is no longer
+/// the latest, so it is dropped.
+#[test]
+fn a_photo_back_online_is_asked_for_again_from_its_original() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF"])?;
+    let a = library.session.photos()[0].clone();
+    let (job_tx, jobs) = previews::EditQueue::detached();
+    library.cache.edit_tx = job_tx;
+    let edit = || Some(EditSource::saved(Default::default()));
+    let copy = std::path::PathBuf::from("copy.dng");
+    library
+        .cache
+        .set_copies(std::collections::HashMap::from([(a.id, copy.clone())]));
+    library.cache.request_edited(&a, edit);
+    let offline = library.cache.edited_ticket(a.id).expect("asked for");
+    match jobs.try_recv() {
+        Some(previews::EditJob::Render { copy: found, .. }) => assert_eq!(found, Some(copy)),
+        _ => panic!("not a render"),
+    }
+    // The original is back: the Library finds no copy to look under.
+    library.cache.set_copies(std::collections::HashMap::new());
+    library.cache.request_edited(&a, edit);
+    match jobs.try_recv() {
+        Some(previews::EditJob::Render { ticket, copy, .. }) => {
+            assert_eq!(copy, None);
+            assert_ne!(ticket, offline);
+        }
+        _ => panic!("not asked for again"),
     }
     Ok(())
 }
@@ -2157,7 +2259,7 @@ fn an_edited_preview_from_develop_outranks_renders_in_flight() -> Result<()> {
     library.update_edited(
         &ctx,
         id,
-        Some(&rendered),
+        Some(super::RenderedFrom::Original(&rendered)),
         super::PreviewAi::Off,
         image::RgbImage::new(4, 4),
         &Default::default(),

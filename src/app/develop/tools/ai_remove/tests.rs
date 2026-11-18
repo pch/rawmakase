@@ -1132,6 +1132,7 @@ fn a_saved_spot_keeps_its_patch_and_a_missing_one_protects_the_edit() {
     let path = e.document.path.clone().unwrap();
     e.tx.send(crate::app::worker::Event::Header(Box::new(
         crate::app::worker::LoadedHeader {
+            from: Default::default(),
             id: generation,
             file: crate::storage::Identity::read(&path).ok(),
             path,

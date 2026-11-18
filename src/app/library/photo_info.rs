@@ -38,6 +38,8 @@ impl Library {
             )),
             Some(photo.capture_text()).filter(|t| !t.is_empty()),
             info.and_then(PhotoInfo::dimensions_text),
+            self.editable_preview(photo.id)
+                .map(|copy| super::cell::CopyState::of(copy).text().to_string()),
         ]
         .into_iter()
         .flatten()

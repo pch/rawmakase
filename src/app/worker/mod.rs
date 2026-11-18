@@ -14,8 +14,11 @@ use std::{
 pub(crate) struct LoadedHeader {
     pub id: u64,
     pub path: PathBuf,
+    /// What the photo was opened from: its original, or its editable preview.
+    pub from: OpenedFrom,
     /// The file as read before it was opened: what the header, and every image
-    /// of this load, are of.
+    /// of this load, are of. For a photo opened from its editable preview, the
+    /// original's identity the catalog recorded for the copy.
     pub file: Option<crate::storage::Identity>,
     pub metadata: Metadata,
     pub recipe: Recipe,
@@ -343,12 +346,55 @@ pub(crate) struct HdrTexture {
 }
 pub(crate) struct LoadJob {
     pub id: u64,
+    /// The photo's original, which an editable preview stands in for.
     pub path: PathBuf,
+    /// What to open: the original, or its editable preview while the original
+    /// is absent.
+    pub from: OpenedFrom,
+    /// Opens an editable preview's file.
+    pub copies: editable_preview::Copies,
     pub cancel: Arc<AtomicBool>,
     /// What the photo starts from when it has no edit.
     pub defaults: Arc<crate::raw_defaults::DevelopDefaults>,
     /// The demosaic of the full-size decode and of its decode-cache key.
     pub demosaic: crate::camera_data::Demosaic,
+}
+/// What a photo in Develop was opened from, which belongs to the document, not
+/// to its pixels: only the loader sets it, from what the Library chose
+/// ([`crate::app::library::Library::develop_from`]).
+///
+/// An editable preview is a reduced image, but unlike the half-size decode,
+/// which a full-size decode replaces, it is final: nothing is decoded after it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) enum OpenedFrom {
+    #[default]
+    Original,
+    EditablePreview(EditablePreviewSource),
+}
+impl OpenedFrom {
+    /// What Develop calls a photo opened from its editable preview.
+    pub(crate) const EDITABLE_PREVIEW: &'static str = "Editable Preview";
+    /// What that means, on hover.
+    pub(crate) const EDITABLE_PREVIEW_DETAIL: &'static str = "Editing its editable preview: the original is offline. Edits are saved for the original and render from it once it is back and the photo is opened again. AI masks, AI Denoise, Fit Camera Look and Export need the original.";
+    /// The editable preview opened, if it was one.
+    pub(crate) fn editable_preview(&self) -> Option<&EditablePreviewSource> {
+        match self {
+            Self::Original => None,
+            Self::EditablePreview(source) => Some(source),
+        }
+    }
+}
+/// A photo's editable preview, as the catalog recorded it when the Library
+/// chose to open the photo from it. The file's name is made from `original`
+/// when the row is recorded (`catalog::editable_previews`), so the file is a
+/// copy of that original for as long as it is there.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct EditablePreviewSource {
+    /// The copy's file.
+    pub file: PathBuf,
+    /// The original's identity when the copy was built: what the photo's edit
+    /// is loaded and saved against while the original is absent.
+    pub original: crate::storage::Identity,
 }
 /// A photo to develop into the decode cache ahead of time, so opening it next
 /// skips decoding. It has its own cancel flag: the photo on screen finishing
@@ -450,6 +496,7 @@ fn send(tx: &Sender<Event>, ctx: &egui::Context, event: Event) {
     ctx.request_repaint();
 }
 
+pub(crate) mod editable_preview;
 mod latest;
 mod loader;
 #[cfg(test)]
