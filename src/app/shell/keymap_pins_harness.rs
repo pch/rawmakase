@@ -111,8 +111,6 @@ pub(super) fn command(extra: Modifiers) -> Modifiers {
 pub(super) struct Fixture {
     /// The catalog file this editor has open, a copy of the template's.
     catalog: std::path::PathBuf,
-    /// The template's folder, when the fixture is the only one built from it.
-    _dir: Option<tempfile::TempDir>,
     pub(super) e: Editor,
     pub(super) ids: Vec<PhotoId>,
     pub(super) surround: Surround,
@@ -302,7 +300,6 @@ impl Template {
         e.onboarding.visible = false;
         let f = Fixture {
             catalog,
-            _dir: None,
             e,
             ids: self.ids.clone(),
             surround: Surround::Nothing,
@@ -325,11 +322,17 @@ impl Fixture {
     /// and in the Quick Collection, the last rejected; a message showing, a step
     /// to undo and one to redo; settings copied and a previous photo's to paste;
     /// and in each tool a crop, spot, red eye, mask or guide selected.
+    ///
+    /// Every fixture a test thread builds comes from that thread's one
+    /// [`Template`]: building a template (its catalog, JPEGs and first frame)
+    /// took most of each key tap's time, and on Windows, where each catalog
+    /// commit waits for the disk, most of the shortcut pins' time.
     pub(super) fn new(place: Place) -> Self {
-        let mut template = Template::new();
-        let mut f = template.fixture(place);
-        f._dir = Some(template.dir);
-        f
+        thread_local! {
+            static TEMPLATE: std::cell::RefCell<Option<Template>> =
+                const { std::cell::RefCell::new(None) };
+        }
+        TEMPLATE.with_borrow_mut(|t| t.get_or_insert_with(Template::new).fixture(place))
     }
 
     fn set_up(mut self, place: Place) -> Self {
