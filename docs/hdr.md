@@ -6,6 +6,7 @@ and its progress are [HDR implementation plan](records/hdr-implementation-plan.m
 and [HDR results](records/hdr-stage1-results.md), and how #253 meets the plan's
 completion criteria is [HDR completion](records/hdr-253-closure.md); the settings themselves are
 `model::hdr` (Lightroom's `crs:HDREditMode`, `HDRMaxValue` and `SDR*`).
+Merging a bracket of RAWs into one HDR raw is [Merge to HDR](hdr-merge.md).
 
 ## Two renderings of one edit
 

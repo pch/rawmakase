@@ -1,0 +1,27 @@
+[package]
+name = "rawmakase-hdr-merge"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Merge to HDR: a bracket of RAWs merged into a scene-referred linear floating-point DNG, and the DNG writer"
+license.workspace = true
+publish = false
+
+[dependencies]
+rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
+# The camera's EXIF directories, copied into the merged DNG as read.
+rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
+# Deflate-compressed DNG tiles.
+flate2.workspace = true
+# Half-precision samples, rounded to nearest.
+half = "2.7"
+rayon.workspace = true
+
+[dev-dependencies]
+# The round trip: written DNGs read back as the app opens them.
+rawmakase-decode = { path = "../rawmakase-decode", version = "0.1.0" }
+rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
+tempfile.workspace = true
+
+[lints]
+workspace = true
