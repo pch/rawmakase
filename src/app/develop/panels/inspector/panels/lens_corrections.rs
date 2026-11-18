@@ -2,8 +2,8 @@
 //! the RAW, and Lensfun's, `inspector::lens_profile` and `inspector::lensfun`),
 //! then Lightroom's Manual tab: Distortion, Defringe and Vignetting.
 use super::super::{
-    PanelSwitch, control_row, defringe_sliders, eyedropper_icon, lens_profile, lensfun,
-    setting_control, subheading, subheading_tool_rect,
+    PanelSwitch, checkbox_row, control_row, defringe_sliders, eyedropper_icon, lens_profile,
+    lensfun, setting_control, subheading, subheading_tool_rect,
 };
 use super::Action;
 use crate::app::develop::state::{Tool, ViewState};
@@ -39,11 +39,11 @@ pub(in crate::app::develop::panels::inspector) fn show(
         |ui, step| {
             let photo = metadata;
             subheading(ui, "Profile");
-            control_row(ui, "", |ui| {
+            checkbox_row(ui, |ui| {
                 ui.checkbox(&mut r.lens_ca, "Remove Chromatic Aberration")
                 .on_hover_text("Remove red/cyan and blue/yellow fringes toward the edges of the frame, measured from the photo itself.");
             });
-            control_row(ui, "", |ui| {
+            checkbox_row(ui, |ui| {
                 let mut on = r.lens_profile;
                 if ui
                 .checkbox(&mut on, "Enable Profile Corrections")

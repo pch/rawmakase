@@ -3,7 +3,7 @@
 //! install (credit shown first, nothing fetched until the user accepts), the result
 //! being computed, ready, or why there is none. The result arriving is not an edit.
 use super::lensfun::{accent_button, band, note, progress, small, title, warning};
-use super::{control_row, subheading};
+use super::{checkbox_row, control_row, subheading};
 use crate::ai_denoise::State;
 use crate::app::develop::step_name::StepName;
 use crate::app::ui::design::text;
@@ -38,7 +38,7 @@ pub(super) fn controls(
 ) -> Option<Action> {
     let heading = subheading(ui, "AI Denoise");
     credit_button(ui, heading);
-    control_row(ui, "", |ui| {
+    checkbox_row(ui, |ui| {
         let mut on = r.ai_denoise.enabled;
         if ui
             .checkbox(&mut on, "AI Denoise")
