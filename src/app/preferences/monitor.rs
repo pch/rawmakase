@@ -108,14 +108,13 @@ pub(crate) fn report_mode(
 }
 
 /// Asks the system for the window's display profile, again when the window
-/// reaches another display and every few seconds for a newly assigned profile.
+/// reaches another display or a profile may have been assigned
+/// ([`Reading::outdated_by`](crate::platform::display::Reading::outdated_by)).
 #[derive(Default)]
 pub(crate) struct SystemProbe {
     display: SystemDisplay,
-    last: Option<(crate::platform::display::Monitor, std::time::Instant)>,
+    last: Option<crate::platform::display::Reading>,
 }
-
-pub(crate) const RECHECK: std::time::Duration = std::time::Duration::from_secs(2);
 
 impl SystemProbe {
     pub(crate) fn display(&self) -> &SystemDisplay {
@@ -127,17 +126,12 @@ impl SystemProbe {
         window: &impl winit::raw_window_handle::HasWindowHandle,
     ) -> bool {
         use crate::platform::display;
-        let monitor = display::monitor(window);
-        let now = std::time::Instant::now();
-        if self
-            .last
-            .as_ref()
-            .is_some_and(|(m, at)| *m == monitor && now.duration_since(*at) < RECHECK)
-        {
+        let now = display::Reading::of(display::monitor(window));
+        if self.last.is_some_and(|last| !last.outdated_by(&now)) {
             return false;
         }
-        self.last = Some((monitor, now));
-        self.set(display::system_display(monitor))
+        self.last = Some(now);
+        self.set(display::system_display(now.monitor()))
     }
     /// Records the display, returning whether it changed.
     pub(crate) fn set(&mut self, display: SystemDisplay) -> bool {

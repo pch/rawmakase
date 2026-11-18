@@ -598,6 +598,14 @@ impl eframe::App for Editor {
         );
         #[cfg(windows)]
         crate::platform::taskbar_icon(frame);
+        // Windows announces display changes, so the window reads its display
+        // again only then and wakes for it (#1126).
+        #[cfg(windows)]
+        crate::platform::display::changes::watch({
+            let ctx = ui.ctx().clone();
+            move || ctx.request_repaint()
+        });
+        let display_changes_announced = crate::platform::display::changes_announced();
         self.view.hdr_display =
             crate::app::shell::display::HdrDisplay::of(frame, &mut self.headroom);
         self.render_state = frame.wgpu_render_state().cloned();
@@ -610,25 +618,28 @@ impl eframe::App for Editor {
             if self.view.system_display.update(frame) {
                 self.schedule();
             }
-            // Recheck for a newly assigned profile while nothing else repaints.
-            if cfg!(windows) {
+            // Recheck for a newly assigned profile while nothing else repaints,
+            // where Windows doesn't announce one.
+            if cfg!(windows) && !display_changes_announced {
                 ui.ctx()
-                    .request_repaint_after(crate::app::preferences::monitor::RECHECK);
+                    .request_repaint_after(crate::platform::display::RECHECK);
             }
         }
         // The display's headroom follows its brightness, and nothing repaints an idle
         // window when it moves: read it again while an HDR photo is due. A Wayland
         // display that turns HDR on wakes no window either, so on Linux also while an
         // HDR edit waits for one. On Windows a float surface's whole window follows
-        // the HDR switch and the SDR content brightness (`HeadroomReader`), which
-        // change without waking it.
+        // the HDR switch and the SDR content brightness (`HeadroomReader`); a move
+        // repaints the window there, and the watcher wakes it for those changes,
+        // unless it can't watch them.
+        let polled = !display_changes_announced;
         let windows_float = cfg!(windows) && self.view.hdr_display.float_surface;
-        if self.view.hdr_shown
-            || windows_float
+        if (self.view.hdr_shown && polled)
+            || (windows_float && polled)
             || (cfg!(target_os = "linux") && self.hdr_awaits_display())
         {
             ui.ctx()
-                .request_repaint_after(crate::app::preferences::monitor::RECHECK);
+                .request_repaint_after(crate::platform::display::RECHECK);
         }
         crate::app::shell::display::paint(
             ui,

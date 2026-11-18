@@ -113,13 +113,17 @@ settings. A backend that presents a float surface only as plain sRGB (wgpu's Ope
 which RAWmakase falls back to where DirectX 12 and Vulkan don't start, or a Vulkan
 driver without extended sRGB) says the graphics backend shows no HDR, on any
 platform but macOS. Windows changes the switch and the SDR content brightness without a
-message winit passes on, so the window reads them again, at most every two seconds,
-whenever it redraws and when it reaches another display (a read costs about a
-millisecond); with a float surface it also wakes itself to do so. DXGI is asked only
-about a display whose advanced color info says it can show HDR (or when that info can't
-be read): creating a DXGI factory and reading every adapter's outputs that often on an
-SDR display is the suspected cause of a whole-screen flicker on an NVIDIA GeForce under
-Windows 10 (#1126).
+message winit passes on, so a thread watches for Windows announcing them
+(`platform::display::changes`): `WM_DISPLAYCHANGE` (a display's mode changed, HDR
+switched on or off), which a hidden window of its own receives, and the registry keys
+Windows writes for a display profile assignment, per user and system-wide, and each
+display's `MonitorDataStore` key, which holds the HDR switch and the SDR content
+brightness. The window reads its display again only after one of those, when it
+reaches another display, or at its first frame, and the watcher wakes it to do so.
+Reading on a timer instead (every two seconds whenever the window redrew) flickered
+the whole screen on an NVIDIA GeForce under Windows 10 (#1126); it is what the window
+falls back to when a key can't be watched. DXGI is asked only about a display whose
+advanced color info says it can show HDR (or when that info can't be read).
 Measured in a virtual machine whose display shows no HDR: the interface on the scRGB
 surface matches the 8-bit surface to two code values, and with SDR white and the
 headroom forced, the HDR preview's light above white keeps its ratio to the
@@ -164,7 +168,8 @@ shows the SDR rendition's sharp region rather than a blurred master. A preview o
 view the frame didn't draw (a region after zooming out, a comparison closed, a
 reference photo removed) is freed and its render cancelled when the frame ends; only
 the edit's whole photo stays, to show again in Fit. While a master is due, the window reads the headroom again every two seconds,
-since macOS changes it with the display's brightness without waking the window.
+since macOS changes it with the display's brightness without waking the window
+(not on Windows, where the change is announced; see above).
 Display changes are view changes, never edits.
 
 **Preview for SDR display**, under the Basic panel's HDR switch while HDR is on, shows

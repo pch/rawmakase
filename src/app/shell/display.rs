@@ -131,8 +131,7 @@ pub(in crate::app) struct HeadroomReader {
     /// The display Windows was last asked about, when, and what it said.
     #[cfg(windows)]
     windows: Option<(
-        crate::platform::display::Monitor,
-        std::time::Instant,
+        crate::platform::display::Reading,
         Option<crate::platform::display::WindowsHdr>,
     )>,
 }
@@ -140,25 +139,20 @@ pub(in crate::app) struct HeadroomReader {
 #[cfg(windows)]
 impl HeadroomReader {
     /// What Windows says about the window's display, asked again when the window
-    /// reaches another display and every [`RECHECK`]: the HDR switch and the SDR
-    /// content brightness change without a message winit passes on. Each read
-    /// presents SDR white where Windows shows it (`WindowsHdr::scrgb_white`).
+    /// reaches another display or Windows announces a change to the HDR switch or
+    /// the SDR content brightness, which winit passes on no message for
+    /// ([`Reading::outdated_by`]). Each read presents SDR white where Windows
+    /// shows it (`WindowsHdr::scrgb_white`).
     ///
-    /// [`RECHECK`]: crate::app::preferences::monitor::RECHECK
+    /// [`Reading::outdated_by`]: crate::platform::display::Reading::outdated_by
     fn read(&mut self, frame: &eframe::Frame) -> Option<crate::platform::display::WindowsHdr> {
         use crate::platform::display;
-        let monitor = display::monitor(frame);
-        let now = std::time::Instant::now();
+        let now = display::Reading::of(display::monitor(frame));
         let hdr = match self.windows {
-            Some((m, at, hdr))
-                if m == monitor
-                    && now.duration_since(at) < crate::app::preferences::monitor::RECHECK =>
-            {
-                hdr
-            }
+            Some((last, hdr)) if !last.outdated_by(&now) => hdr,
             _ => {
-                let hdr = display::windows_hdr(monitor);
-                self.windows = Some((monitor, now, hdr));
+                let hdr = display::windows_hdr(now.monitor());
+                self.windows = Some((now, hdr));
                 hdr
             }
         };
