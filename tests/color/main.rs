@@ -361,6 +361,70 @@ pub fn describe(patch: &Patch, reference: [u16; 3], candidate: [u16; 3], delta_e
     )
 }
 
+/// What [`render_chart`] makes: each case's patch values, or why it has none.
+pub type Renders = BTreeMap<String, Result<PatchValues, String>>;
+
+/// Every applicable case of `chart` rendered with its embedded profiles and no
+/// extra settings, rendered once for this test binary's run. The snapshot and
+/// Camera Raw parity tests both check these renders (every case a parity
+/// reference holds is also a snapshot case), and rendering is most of their
+/// time. Call it from a test's own thread, never from inside a rayon job: a
+/// test waits here while another renders the chart on rayon's threads, and a
+/// rayon worker waiting here could be the one meant to render it.
+fn embedded_renders(chart: &str, layout: &Layout, cases: &Cases) -> Arc<Renders> {
+    static RENDERS: std::sync::Mutex<BTreeMap<String, Arc<std::sync::OnceLock<Arc<Renders>>>>> =
+        std::sync::Mutex::new(BTreeMap::new());
+    let chart_renders = RENDERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry(chart.to_string())
+        .or_default()
+        .clone();
+    chart_renders
+        .get_or_init(|| {
+            Arc::new(render_chart(
+                chart,
+                layout,
+                cases,
+                &[],
+                embedded_profiles,
+                None,
+            ))
+        })
+        .clone()
+}
+
+/// The cases in `only` rendered as [`embedded_renders`] renders them: from its
+/// renders, and any case not among them rendered here.
+fn embedded_renders_of(
+    chart: &str,
+    layout: &Layout,
+    cases: &Cases,
+    only: &BTreeMap<String, PatchValues>,
+) -> Renders {
+    let all = embedded_renders(chart, layout, cases);
+    let missing: BTreeMap<String, PatchValues> = only
+        .iter()
+        .filter(|(name, _)| !all.contains_key(*name))
+        .map(|(name, values)| (name.clone(), values.clone()))
+        .collect();
+    let mut renders: Renders = only
+        .keys()
+        .filter_map(|name| Some((name.clone(), all.get(name)?.clone())))
+        .collect();
+    if !missing.is_empty() {
+        renders.extend(render_chart(
+            chart,
+            layout,
+            cases,
+            &[],
+            embedded_profiles,
+            Some(&missing),
+        ));
+    }
+    renders
+}
+
 /// Renders every applicable case of a chart (or only the cases in `only`) and
 /// measures its patches. A case that cannot be rendered (e.g. a missing profile)
 /// is an error message instead.
@@ -371,7 +435,7 @@ pub fn render_chart(
     extra: &[(&str, &str)],
     profiles: impl Fn(&CameraImage) -> Vec<Arc<CameraProfile>>,
     only: Option<&BTreeMap<String, PatchValues>>,
-) -> BTreeMap<String, Result<PatchValues, String>> {
+) -> Renders {
     let im = develop(&chart_path(chart));
     let profiles = profiles(&im);
     cases
@@ -496,12 +560,13 @@ fn colors_match_snapshots() {
         let path = corpus()
             .join("snapshots")
             .join(format!("{}.json", spec.name));
-        let rendered = render_chart(&spec.name, &layout, &cases, &[], embedded_profiles, None);
+        let rendered = embedded_renders(&spec.name, &layout, &cases);
         let mut current = BTreeMap::new();
-        for (name, result) in rendered {
+        for (name, result) in rendered.iter() {
+            let name = name.clone();
             match result {
                 Ok(values) => {
-                    current.insert(name, values);
+                    current.insert(name, values.clone());
                 }
                 Err(e) => failures.push(format!("{} / {name}: {e}", spec.name)),
             }
@@ -744,15 +809,15 @@ pub struct Baseline {
 
 /// Compares renders with Camera Raw references and fails when any case is worse than
 /// its baseline. Prints a table per chart with tone, contrast, hue and saturation.
+/// `render` renders a chart's cases that a reference holds, given the chart's
+/// name and the reference's cases.
 pub fn check_parity(
     title: &str,
     references: &[(String, PatchFile)],
     baseline_path: &Path,
-    extra: &[(&str, &str)],
-    profiles: impl Fn(&CameraImage) -> Vec<Arc<CameraProfile>> + Copy,
+    render: impl Fn(&str, &BTreeMap<String, PatchValues>) -> Renders,
 ) {
     let layout = Layout::new();
-    let cases = cases();
     let mut baseline: Baseline = std::fs::read(baseline_path)
         .ok()
         .map(|b| serde_json::from_slice(&b).expect("baseline"))
@@ -776,14 +841,7 @@ pub fn check_parity(
                 }
             }
         }
-        let current = render_chart(
-            chart,
-            &layout,
-            &cases,
-            extra,
-            profiles,
-            Some(&reference.cases),
-        );
+        let current = render(chart, &reference.cases);
         // RAWmakase's patch values for scripts/corpus/parity-report.py.
         if let Some(dir) = std::env::var_os("RAWMAKASE_PARITY_DUMP") {
             PatchFile {
@@ -874,12 +932,12 @@ fn camera_raw_parity_does_not_regress() {
         println!("No Camera Raw references in {}", dir.display());
         return;
     }
+    let (layout, cases) = (Layout::new(), cases());
     check_parity(
         "Embedded profile",
         &references,
         &dir.join("baseline.json"),
-        &[],
-        embedded_profiles,
+        |chart, only| embedded_renders_of(chart, &layout, &cases, only),
     );
 }
 
