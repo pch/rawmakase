@@ -382,6 +382,16 @@ fn first_timed_note<T>(
     None
 }
 
+/// Where a CR3 keeps what [`open`] reads beyond its `moov` box, as offset and
+/// length in the file, for a file read in pieces (`partial`): the first
+/// sample of each timed metadata track, megabytes in, whose maker notes hold
+/// the white balance and the levels ([`first_timed_note`]). Empty until the
+/// `moov` box is read.
+pub(crate) fn header_parts(bytes: &[u8]) -> Vec<(u64, u64)> {
+    let timed = |t: &Track| (&t.entry == b"CTMD").then_some(t.sample).flatten();
+    parse(bytes).tracks.iter().filter_map(timed).collect()
+}
+
 /// Reads a CR3's header facts.
 pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
     let c = parse(bytes);
@@ -603,7 +613,7 @@ fn mean(data: &[u16], width: u32, info: &RawInfo, area: [u32; 4]) -> Result<[u32
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{CANON_UUID, XMP_UUID};
     use crate::info::UNSET;
     use rawmakase_cancel::Cancel;
@@ -700,7 +710,12 @@ mod tests {
 
     /// As `cr3_of`, the timed metadata's sample `timed` when given, named by
     /// `tracks` tracks.
-    fn cr3_built(jpeg: bool, craw_image: bool, timed: Option<Vec<u8>>, tracks: usize) -> Vec<u8> {
+    pub(crate) fn cr3_built(
+        jpeg: bool,
+        craw_image: bool,
+        timed: Option<Vec<u8>>,
+        tracks: usize,
+    ) -> Vec<u8> {
         let n: u16 = if craw_image { 16 } else { 4 };
         let cmt1 = tiff(&[
             text(271, "Canon"),

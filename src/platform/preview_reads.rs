@@ -5,7 +5,7 @@
 //! ([`in_pieces`]): reading the file whole instead took the file's size in
 //! memory for each (twice, until `raw::own` kept the buffer it was read into) and,
 //! on a 100,000-photo catalog of 43 MB files, 3.2 TB of reads to fill in the
-//! photo info. A file not read that way (a CR2, a header without exposure) is
+//! photo info. A file not read that way (an IIQ, a header without exposure) is
 //! read whole, as before.
 //!
 //! Develop's placeholder is different: it decodes the photo next and needs the

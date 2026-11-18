@@ -32,6 +32,12 @@ pub(crate) struct TiffFile<'a> {
 /// The most directories followed: files with more are malformed or hostile.
 const MAX_IFDS: usize = 64;
 
+/// The most places a directory is looked for, those that hold none included
+/// (a file read in pieces, `partial`, has directories not read yet). A
+/// SubIFDs entry can name 262,144 places that hold none, and each was looked
+/// up among all those before it, in every directory of the chain.
+const MAX_FOLLOWED: usize = 4 * MAX_IFDS;
+
 /// The longest Make and Model read: Exif names are short.
 pub(crate) const NAME_MAX: usize = 64;
 
@@ -51,34 +57,10 @@ fn collect<T>(values: impl ExactSizeIterator<Item = T>) -> Option<Vec<T>> {
 impl<'a> TiffFile<'a> {
     /// The TIFF whose header is at `base` in `file`.
     pub(crate) fn parse(file: &'a [u8], base: u64) -> Option<Self> {
-        let mut t = Tiff::open(Cursor::new(file), base)?;
-        let mut ifds = Vec::new();
-        let mut seen = Vec::new();
-        let mut next = t.first;
-        while next != 0 && ifds.len() < MAX_IFDS && !seen.contains(&next) {
-            seen.push(next);
-            let Some(entries) = t.ifd(next) else { break };
-            let count = t.bytes(next, 2).map(|b| u64::from(t.u16(&b)))?;
-            let link = t
-                .bytes(next + 2 + count * 12, 4)
-                .map(|b| u64::from(t.u32(&b)))
-                .unwrap_or(0);
-            let ifd = Ifd { entries };
-            let subs = ifd.entries.get(&330).and_then(|e| t.offsets(e));
-            ifds.push(ifd);
-            for sub in subs.into_iter().flatten() {
-                walk(&mut t, sub, &mut ifds, &mut seen, 1);
-            }
-            next = link;
-        }
+        let Followed { t, ifds, exif, .. } = follow(file, base)?;
         if ifds.is_empty() {
             return None;
         }
-        let exif = ifds
-            .first()
-            .and_then(|i| i.entries.get(&34665))
-            .and_then(|e| t.offset(e))
-            .and_then(|at| t.ifd(at).map(|entries| Ifd { entries }));
         let order = if t.little { Order::Little } else { Order::Big };
         Some(Self {
             bytes: Bytes::new(file.get(usize::try_from(base).ok()?..)?, order),
@@ -105,6 +87,13 @@ impl<'a> TiffFile<'a> {
     pub(crate) fn offset_of(&self, e: &Entry) -> Option<u64> {
         let len = u64::from(e.count).checked_mul(e.type_size()? as u64)?;
         (len > 4).then(|| u64::from(self.u32(&e.value)))
+    }
+    /// Where the values `ifd` keeps outside its entries are, as offset and
+    /// length in the file (see [`parts`]): for a directory outside the chain,
+    /// as a maker note's.
+    pub(crate) fn values(&self, ifd: &Ifd) -> Vec<(u64, u64)> {
+        let t = Tiff::headless(Cursor::new(self.bytes.data), 0, self.little());
+        values(&t, self.base, &ifd.entries).collect()
     }
     pub(crate) fn u32(&self, b: &[u8]) -> u32 {
         match self.bytes.order {
@@ -286,6 +275,98 @@ impl<'a> TiffFile<'a> {
     }
 }
 
+/// The directories of a TIFF, as [`TiffFile::parse`] follows them from its
+/// header.
+struct Followed<'a> {
+    t: Tiff<Cursor<&'a [u8]>>,
+    ifds: Vec<Ifd>,
+    exif: Option<Ifd>,
+    /// Where each directory followed is, from the TIFF header, whether it
+    /// read or not: the chain, the SubIFDs and the EXIF directory.
+    at: Vec<u64>,
+}
+
+/// Follows the directories of the TIFF at `base` in `file`: IFD0 and its
+/// chain, each followed by its SubIFDs, and IFD0's EXIF directory. `None`
+/// when `file` has no TIFF header there.
+fn follow(file: &[u8], base: u64) -> Option<Followed<'_>> {
+    let mut t = Tiff::open(Cursor::new(file), base)?;
+    let mut ifds = Vec::new();
+    let mut seen = Vec::new();
+    let mut next = t.first;
+    while next != 0 && ifds.len() < MAX_IFDS && seen.len() < MAX_FOLLOWED && !seen.contains(&next) {
+        seen.push(next);
+        let Some(entries) = t.ifd(next) else { break };
+        let count = t.bytes(next, 2).map(|b| u64::from(t.u16(&b)))?;
+        let link = t
+            .bytes(next + 2 + count * 12, 4)
+            .map(|b| u64::from(t.u32(&b)))
+            .unwrap_or(0);
+        let ifd = Ifd { entries };
+        let subs = ifd.entries.get(&330).and_then(|e| t.offsets(e));
+        ifds.push(ifd);
+        for sub in subs.into_iter().flatten() {
+            walk(&mut t, sub, &mut ifds, &mut seen, 1);
+        }
+        next = link;
+    }
+    let exif_at = ifds
+        .first()
+        .and_then(|i| i.entries.get(&34665))
+        .and_then(|e| t.offset(e));
+    let exif = exif_at.and_then(|at| t.ifd(at).map(|entries| Ifd { entries }));
+    seen.extend(exif_at);
+    Some(Followed {
+        t,
+        ifds,
+        exif,
+        at: seen,
+    })
+}
+
+/// What is read of a directory that doesn't read, for [`parts`]: in a file
+/// read in pieces, one not read yet. Its values usually follow it.
+const UNREAD_DIRECTORY: u64 = 64 << 10;
+
+/// Where the TIFF at `base` in `file` keeps what [`TiffFile::parse`] reads of
+/// it and its readers read through its entries, as offset and length in
+/// `file`: each directory followed, with the link after it, and each value
+/// of at most `longest` bytes a directory keeps outside its entry (names,
+/// rationals, tables, and a maker note where `longest` allows; an image is
+/// no value, its entry holds an offset). For a file read in pieces
+/// (`partial`), where a directory not read yet doesn't read and lists
+/// neither its values nor the next directory: it is listed as its first
+/// [`UNREAD_DIRECTORY`] bytes, and once those are read the parts are listed
+/// again. Empty without a TIFF header at `base`.
+pub(crate) fn parts(file: &[u8], base: u64, longest: u64) -> Vec<(u64, u64)> {
+    let Some(mut f) = follow(file, base) else {
+        return Vec::new();
+    };
+    let mut parts = Vec::new();
+    for &at in &f.at {
+        let Some(entries) = f.t.ifd(at) else {
+            parts.push((base.saturating_add(at), UNREAD_DIRECTORY));
+            continue;
+        };
+        parts.push((base.saturating_add(at), 2 + 12 * entries.len() as u64 + 4));
+        parts.extend(values(&f.t, base, &entries).filter(|&(_, len)| len <= longest));
+    }
+    parts
+}
+
+/// Where the values the directory `entries` of the TIFF `t` at `base` keeps
+/// outside its entries are, as offset and length in the file.
+fn values<'e, R: std::io::Read + std::io::Seek>(
+    t: &'e Tiff<R>,
+    base: u64,
+    entries: &'e BTreeMap<u16, Entry>,
+) -> impl Iterator<Item = (u64, u64)> + 'e {
+    entries.values().filter_map(move |e| {
+        let len = u64::from(e.count).checked_mul(e.type_size()? as u64)?;
+        (len > 4).then(|| (base.saturating_add(u64::from(t.u32(&e.value))), len))
+    })
+}
+
 fn walk(
     t: &mut Tiff<Cursor<&[u8]>>,
     at: u64,
@@ -293,7 +374,7 @@ fn walk(
     seen: &mut Vec<u64>,
     depth: u32,
 ) {
-    if depth > 3 || ifds.len() >= MAX_IFDS || seen.contains(&at) {
+    if depth > 3 || ifds.len() >= MAX_IFDS || seen.len() >= MAX_FOLLOWED || seen.contains(&at) {
         return;
     }
     seen.push(at);

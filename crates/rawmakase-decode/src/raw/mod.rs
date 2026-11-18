@@ -730,6 +730,15 @@ pub fn thumbnail_reaching(raw: &mut Raw, edge: u32) -> anyhow::Result<image::Rgb
     let bytes = raw.thumbnail_reaching(edge)?;
     preview_image(bytes, raw.metadata.flip)
 }
+/// The name of the variant of the RAW at `path`, as its header read in pieces
+/// gives it; `None` when it isn't read that way. For tests that tally by
+/// format.
+#[cfg(test)]
+pub(crate) fn header_variant(path: &Path) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let header = rawmakase_raw::header_from_file(&mut file)?;
+    Some(format!("{:?}", header.info.variant))
+}
 /// [`thumbnail_reaching`]'s thumbnail of the RAW at `path`, read without its
 /// sensor data (see [`rawmakase_raw::preview_from_file`]). An error when the
 /// file can't be read that way; the caller then opens it whole.

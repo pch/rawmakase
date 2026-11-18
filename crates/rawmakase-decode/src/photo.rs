@@ -199,14 +199,19 @@ fn embedded_profile_status(
 mod tests {
     /// Every RAW in `RAWMAKASE_HEADER_FIXTURES` (paths separated by `:`, folders
     /// searched) has the same photo info from its header read in pieces as
-    /// from the file opened whole; prints how many were compared.
+    /// from the file opened whole; prints for each variant how many gave the
+    /// same, how many another and how many only read whole (by extension where
+    /// the header isn't read in pieces), and fails if any gave another.
     #[test]
     #[ignore = "Set RAWMAKASE_HEADER_FIXTURES to RAWs or folders of them"]
     fn photo_info_from_the_header_is_the_whole_file_s() {
         use rawmakase_model::metadata::PhotoInfo;
+        use std::collections::BTreeMap;
         let list = std::env::var("RAWMAKASE_HEADER_FIXTURES").expect("RAWMAKASE_HEADER_FIXTURES");
         let mut todo: Vec<std::path::PathBuf> = std::env::split_paths(&list).collect();
-        let (mut same, mut header_failed) = (0, 0);
+        // Per variant: the same, another, read whole.
+        let mut tally: BTreeMap<String, [u32; 3]> = BTreeMap::new();
+        let mut differ = Vec::new();
         while let Some(path) = todo.pop() {
             if path.is_dir() {
                 todo.extend(
@@ -223,21 +228,32 @@ mod tests {
             let Ok(whole) = super::open(&path) else {
                 continue;
             };
+            let variant = crate::raw::header_variant(&path);
+            let extension = path.extension().unwrap_or_default().to_string_lossy();
+            let counts = tally
+                .entry(variant.unwrap_or_else(|| format!("{} files", extension.to_uppercase())))
+                .or_default();
             let Ok(header) = super::header_metadata(&path) else {
-                eprintln!("header not read: {}", path.display());
-                header_failed += 1;
+                counts[2] += 1;
                 continue;
             };
-            assert_eq!(
+            let (header, whole) = (
                 PhotoInfo::from_metadata(&header),
                 PhotoInfo::from_metadata(&whole.metadata),
-                "{}",
-                path.display()
             );
-            same += 1;
+            if header == whole {
+                counts[0] += 1;
+            } else {
+                counts[1] += 1;
+                eprintln!("another: {}\n  {header:?}\n  {whole:?}", path.display());
+                differ.push(path.display().to_string());
+            }
         }
-        eprintln!("same photo info: {same}, header not read (read whole instead): {header_failed}");
-        assert!(same > 0);
+        for (variant, [same, other, whole]) in &tally {
+            eprintln!("{variant}: same {same}, another {other}, read whole {whole}");
+        }
+        assert!(tally.values().any(|counts| counts[0] > 0));
+        assert!(differ.is_empty(), "another photo info: {differ:?}");
     }
 
     /// A header counts as read only with any of ISO, shutter speed and

@@ -70,6 +70,17 @@ pub(crate) fn is_nef(t: &TiffFile) -> bool {
         .is_some_and(|m| m.trim().to_ascii_uppercase().starts_with("NIKON"))
 }
 
+/// Where a NEF keeps what [`open`] reads beyond its directories, as offset
+/// and length in the file, for a file read in pieces (`partial`): the first
+/// four bytes of its sensor data, which say whether it is High Efficiency's
+/// JPEG XS. Empty until the raw image's directory is read.
+pub(crate) fn header_parts(t: &TiffFile) -> Vec<(u64, u64)> {
+    raw_directory(t)
+        .and_then(|raw| strips(t, &t.ifds[raw]).ok())
+        .and_then(|strips| strips.first().map(|&(at, _)| vec![(at, 4)]))
+        .unwrap_or_default()
+}
+
 /// Reads a NEF's header facts.
 pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     let raw =
