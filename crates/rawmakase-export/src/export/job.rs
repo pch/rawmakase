@@ -238,7 +238,8 @@ pub fn stand_in(source: &Path, metadata: &crate::camera_data::Metadata) -> exif:
 }
 
 /// `raw` at full resolution, as Develop decodes the photo it opens: the decode
-/// cache's copy when it has one.
+/// cache's copy when it has one, else a decode with its highlights recovered in
+/// its own buffer, for the render that follows (`develop::quality::with_recovered`).
 pub fn decode_full(
     raw: Raw,
     source: &Path,
@@ -249,7 +250,10 @@ pub fn decode_full(
     let full = FullSize::with_cache(source, demosaic, cache.clone());
     match full.cached(&raw.metadata) {
         Some(image) => Ok(image),
-        None => full.decode(raw, DecodePolicy::Export, cancel),
+        None => crate::develop::quality::with_recovered(
+            full.decode(raw, DecodePolicy::Export, cancel)?,
+            cancel,
+        ),
     }
 }
 
@@ -293,7 +297,11 @@ fn full_size(
     let full = FullSize::with_cache(source, demosaic, cache.clone());
     Ok(Arc::new(match full.cached(&image.metadata) {
         Some(cached) => cached,
-        None => full.decode(crate::photo::open(source)?, DecodePolicy::Export, cancel)?,
+        // Recovered in its own buffer, as `decode_full` does.
+        None => crate::develop::quality::with_recovered(
+            full.decode(crate::photo::open(source)?, DecodePolicy::Export, cancel)?,
+            cancel,
+        )?,
     }))
 }
 
@@ -638,6 +646,40 @@ mod tests {
         cache.store(&DecodeCache::key(&chart, Demosaic::default())?, &cached)?;
         let image = decode_full(raw, &chart, Demosaic::default(), &cache, Cancel::NEVER)?;
         assert_eq!((image.width, image.height), (4, 3));
+        Ok(())
+    }
+
+    /// A photo decoded for export has its highlights recovered in the decode's own
+    /// buffer, which the render then samples, and renders what a decode recovered
+    /// into a second buffer renders.
+    #[test]
+    fn a_decode_for_export_holds_one_buffer_and_renders_the_same() -> Result<()> {
+        let chart = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/corpus/charts/synthetic-d65.dng");
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let raw = crate::photo::open(&chart)?;
+        let apart = crate::photo::open(&chart)?.develop(
+            crate::camera_data::Decode::Full(Demosaic::default()),
+            Cancel::NEVER,
+        )?;
+        let image = decode_full(raw, &chart, Demosaic::default(), &cache, Cancel::NEVER)?;
+        let recovered = image.recovered.get().expect("recovered when decoded");
+        assert!(image.pixels.shares_buffer(&recovered.pixels));
+        assert_ne!(image.pixels, recovered.pixels, "the chart has highlights");
+        // An export never fills the cache.
+        assert!(!cache.contains(&DecodeCache::key(&chart, Demosaic::default())?));
+        let recipe = Recipe {
+            highlights: -0.7,
+            ..Default::default()
+        };
+        let recipe = recipe.checked()?;
+        let space = crate::color::OutputSpace::Srgb;
+        let render = |image: &CameraImage| {
+            crate::develop::render_export(image, &recipe, None, 0, space, Cancel::NEVER)
+        };
+        assert!(render(&image)?.pixels() == render(&apart)?.pixels());
+        assert!(image.pixels.shares_buffer(&recovered.pixels));
         Ok(())
     }
 

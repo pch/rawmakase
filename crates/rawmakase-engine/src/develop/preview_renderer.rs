@@ -913,6 +913,49 @@ mod tests {
         assert_eq!(again.pixels, first.pixels);
         assert_eq!(kept(&p), kept(&fresh));
     }
+    /// A decode that holds one buffer with its recovered image, as the app opens
+    /// one, previews as a decode with a buffer of its own does: Fit from the
+    /// pyramid of its recovered image, by identity, and regions from that image.
+    /// Rendering never copies the decode out.
+    #[test]
+    fn a_decode_holding_one_buffer_with_its_recovered_image_previews_the_same() {
+        let cancel = AtomicBool::new(false);
+        let bright = || {
+            let mut im = image(400, 300, 0.7);
+            // The upper half stays dark: recovery leaves it alone.
+            for p in &mut im.pixels[..400 * 150] {
+                *p = [0.1, 0.12, 0.05];
+            }
+            im
+        };
+        let apart = bright();
+        let one = quality::with_recovered(bright(), Cancel::new(&cancel)).unwrap();
+        let recovered = one.recovered.get().unwrap().clone();
+        assert!(one.pixels.shares_buffer(&recovered.pixels));
+        assert_ne!(one.pixels, recovered.pixels);
+        let (mut p, mut q) = (PreviewRenderer::default(), PreviewRenderer::default());
+        let r = Recipe {
+            highlights: -0.6,
+            ..Default::default()
+        };
+        for (edge, region) in [(60, None), (0, Some([120, 100, 100, 80])), (0, None)] {
+            let own = p
+                .render(&apart, &r, edge, region, Cancel::new(&cancel))
+                .unwrap();
+            let shared = q
+                .render(&one, &r, edge, region, Cancel::new(&cancel))
+                .unwrap();
+            assert_eq!(own.pixels, shared.pixels, "{edge} {region:?}");
+        }
+        assert!(Arc::ptr_eq(
+            q.pyramid.as_ref().unwrap().source(),
+            &recovered
+        ));
+        assert!(
+            one.pixels.shares_buffer(&recovered.pixels),
+            "rendering copied the decode out"
+        );
+    }
     #[test]
     fn fit_uses_a_pyramid_level_and_never_reuses_another_photo() {
         let mut p = PreviewRenderer::default();

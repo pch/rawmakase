@@ -208,7 +208,7 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 
 | Module | Owns | Main extension points |
 | --- | --- | --- |
-| `camera_data` | A RAW's metadata, the demosaic and decode choices and the decoded camera-space image, as values with no native code | `camera_data.rs` |
+| `camera_data` | A RAW's metadata, the demosaic and decode choices and the decoded camera-space image, as values with no native code; `Pixels` is the one owner of how an image's pixels are held, a buffer of its own or one shared with the image recovered from it | `camera_data.rs`, `camera_data/pixels.rs` |
 | `raw` | RAW files: reading metadata, decoding into `camera_data` images, oriented embedded thumbnails, with RAWmakase's own decoders (`crates/rawmakase-raw`, see [RAW decoding](raw-decoding.md)) | RAW decoding |
 | `color_management` | The profile each export colour space embeds (`output_profile`: sRGB's, and the CC0 Adobe RGB and ProPhoto profiles) and the transform of 8-bit sRGB to a monitor profile, in pure Rust (moxcms reads the profiles) | `color_management.rs` |
 | `photo` | Opening a photo: `open_source` is the one entry point, sending a RAW to `raw` and a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL to `raster`; a RAW's decoder facts from `raw`, then the camera's lens tables, a DNG's profile and hints, and the imported lens profiles that fit | `photo.rs` |

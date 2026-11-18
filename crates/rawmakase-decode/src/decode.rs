@@ -72,7 +72,10 @@ impl FullSize {
     }
     /// Decodes `raw` (this photo, opened). Highlights are recovered, so the first
     /// render does not wait for them and the cache holds them, unless `policy` is
-    /// [`Export`](DecodePolicy::Export), which renders once.
+    /// [`Export`](DecodePolicy::Export), whose caller recovers them when it
+    /// renders. They are recovered in the decode's own buffer, which the image and
+    /// its recovered image then hold between them (`develop::quality::with_recovered`),
+    /// as the cache's copy does.
     pub fn decode(
         &self,
         raw: Raw,
@@ -80,10 +83,12 @@ impl FullSize {
         cancel: Cancel<'_>,
     ) -> Result<CameraImage> {
         let image = raw.develop(Decode::Full(self.demosaic), cancel)?;
-        if policy != DecodePolicy::Export {
-            crate::develop::quality::recovered(&image, cancel)?;
+        match policy {
+            DecodePolicy::Export => Ok(image),
+            DecodePolicy::Show | DecodePolicy::Prefetch => {
+                crate::develop::quality::with_recovered(image, cancel)
+            }
         }
-        Ok(image)
     }
     /// Keeps `image`, decoded by [`decode`](Self::decode), for next time. Develop
     /// stores after showing the image, so writing it never delays the photo; a
@@ -163,6 +168,41 @@ mod tests {
             .get(open, DecodePolicy::Export, Cancel::new(&go))?
             .unwrap();
         assert_eq!(exported.pixels, shown.pixels);
+        Ok(())
+    }
+
+    /// A photo shown, and the cache's copy of it, hold one buffer for the decode and
+    /// its recovered image, each the pixels a decode recovered into a second buffer
+    /// has; a decode for export is left for its caller to recover.
+    #[test]
+    fn a_shown_photo_and_its_recovered_image_hold_one_buffer() -> Result<()> {
+        use crate::develop::quality::{recover_highlights, recovered};
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let full = FullSize::with_cache(&chart(), Demosaic::default(), cache);
+        let open = || crate::photo::open(&chart());
+        let decoded = open()?.develop(Decode::Full(Demosaic::default()), Cancel::NEVER)?;
+        let apart = recover_highlights(&decoded, Cancel::NEVER)?;
+        assert_ne!(apart.pixels, decoded.pixels, "the chart has highlights");
+        let bits = |image: &CameraImage| -> Vec<[u32; 3]> {
+            let pixels = image.pixels.range(0..image.pixels.len());
+            pixels.iter().map(|p| p.map(f32::to_bits)).collect()
+        };
+        let shown = full.get(open, DecodePolicy::Show, Cancel::NEVER)?.unwrap();
+        let cached = full.cached(&open()?.metadata).unwrap();
+        for image in [&shown, &cached] {
+            let made = image.recovered.get().expect("recovered when decoded");
+            assert!(image.pixels.shares_buffer(&made.pixels));
+            assert_eq!(bits(image), bits(&decoded));
+            assert_eq!(bits(made), bits(&apart));
+            assert!(std::sync::Arc::ptr_eq(
+                &recovered(image, Cancel::NEVER)?,
+                made
+            ));
+        }
+        let export = full.decode(open()?, DecodePolicy::Export, Cancel::NEVER)?;
+        assert!(export.recovered.get().is_none());
+        assert_eq!(bits(&export), bits(&decoded));
         Ok(())
     }
 }

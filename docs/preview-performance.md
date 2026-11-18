@@ -484,6 +484,104 @@ Through the real loader, in a folder of three X100F photos: the first open showe
 the half-size image at 166 ms and the full image at 884 ms; reopening it showed the
 full image at 140 ms, and the two prefetched neighbours opened in 190 and 300 ms.
 
+## One buffer for a decode and its recovered image
+
+A decoded photo used to hold its pixels twice: as decoded, and with highlights
+recovered (`CameraImage::recovered`), 12 bytes a pixel each. That is 277 MB twice for
+a 24-megapixel photo and 698 MB twice for a 61-megapixel one, for the photo open in
+Develop, the neighbour being prefetched, each export and each Library preview
+rendered from a full-size decode. Recovery changes few pixels: 0% to 25% over nine
+cached decodes, 3% in the median, and none of a rendered file (JPEG, TIFF…), whose
+recovered image is the file as it is.
+
+Since 2026-11-18 the two images hold one buffer between them
+(`camera_data::Pixels`, #1173). The buffer is the recovered image's. The decode
+keeps its own value only for each pixel recovery changed (12 bytes), with one bit a
+pixel that says which those are and a count per 64 pixels that finds a value without
+a search (0.25 bytes a pixel together). A rendered file and its recovered image, and
+a RAW recovery changed nowhere, are the same buffer outright.
+
+The buffer is the recovered image's because that is the one read whole and fast:
+the pyramid's first level, the input of noise reduction and retouching, the image
+the device keeps and every sample of a render come from it, as one slice. The
+decode's own values are read less often, but they are read, long after recovery:
+Auto white balance, the Tone Curve's histogram, mask and HDR previews (each reduces
+the decode, then recovers the reduced copy), Upright's analysis, Auto black & white,
+AI Denoise's assembly, Auto CA's measurement, the decode cache's store and the
+camera-input stage. So the decode can't be dropped, and three simpler designs
+were set aside:
+
+- **Share the buffer only when recovery changed nothing.** It covers rendered files
+  and one RAW in nine of those measured.
+- **Keep the decode whole and the recovered image as its changes.** Every render
+  would then read each pixel through the list of changes.
+- **Keep the recovered image and let its pixels stand for the decode's.** Each
+  reader above would silently measure other pixels; nothing in a type says which
+  image a reader means.
+
+The decode still reads as any image does, so no reader can get the wrong pixels.
+One pixel (`pixels[i]`) or a range (`Pixels::range`, a row at a time) is read where
+it is kept and costs no copy; every reader listed above does one or the other. Auto
+CA's measurement takes the whole decode as a range, which is a copy for the
+measurement alone. Reading a decode as one slice (`&pixels[..]`, `iter()`) is still
+right: it copies the whole image out the first time and keeps the copy, which spends
+the memory again. New code that reads a whole decode should use `range` or an index.
+
+The pair is made where a decode is owned, before it is shared:
+
+- `develop::quality::with_recovered` recovers in the decode's own buffer. Recovery is
+  each pixel's own, so the pixels are those a second buffer would hold, bit for bit
+  (tested). The loader's full-size decode, the prefetch, Reference View, exports
+  and the Library previews built from a full-size decode (`export::job::decode_full`)
+  go through it, so decoding no longer allocates the second buffer at all.
+- The decode cache loads an entry as a pair. Its format is unchanged: the pixels as
+  decoded, then the changed pixels' recovered values.
+- A rendered file opens with pixels its recovered image shares (`Pixels::share`).
+
+A decode that is only borrowed when it is first rendered is recovered into a second
+buffer as before: the half-size image shown while the full size decodes, a Library
+preview's half-size decode, the full-size decode of a Library preview with AI
+Denoise, the full-size decode batch Sync measures on, and the `render` command's.
+They are small or short-lived; each could use `with_recovered` too.
+
+`CameraImage::recovered` is the same `Arc` for a decode as before, so what is keyed
+by it (the pyramid's source, the retouch cache, the stage cache and the device's
+image) is unchanged.
+
+Measured on an M1 Pro (32 GB, macOS 27.2), release builds: one photo open at Fit in
+Develop with default settings, the app launched for that photo alone, live heap from
+`heap` once work had gone quiet. Each photo went from three full-size buffers (the
+decode, its recovered image, its noise-reduced image) to two and its changed pixels.
+
+| Photo | Pixels recovery changed | Decoded, before | after | From the cache, before | after |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 61 MP ARW | 28.3% | 2,367 MB | 1,916 MB | 2,437 MB | 1,991 MB |
+| 44 MP CR3 | 0.15% | 1,723 MB | 1,222 MB | 1,723 MB | 1,222 MB |
+| 33 MP ARW | 4.3% | 1,316 MB | 965 MB | 1,316 MB | 964 MB |
+| 29 MP DNG | 4.2% | 1,150 MB | 835 MB | 1,179 MB | 863 MB |
+| 24 MP CR2 | 10.5% | 1,232 MB | 992 MB | 1,244 MB | 1,004 MB |
+| 24 MP CR3 | 0.07% | 930 MB | 660 MB | 952 MB | 684 MB |
+| 24 MP JPEG | none | 664 MB | 386 MB | 661 MB | 386 MB |
+
+The 61-megapixel photo's 17 million changed pixels take 197 MB; the block that held
+them was 233 MB in these runs.
+
+Exports of the seven photos (16-bit ProPhoto TIFF, full size, with Highlights −100,
+Shadows +60 and Exposure +0.7) hold the same samples from both builds, decoded and
+from the decode cache.
+
+Times, on the same machine while other work loaded it (load average about 150, so
+steps this change does not touch moved by a third either way between builds):
+opening from the decode cache took 104 ms before and 63 ms after for the
+61-megapixel photo, 45 and 41 ms for the 24-megapixel CR2 (the best of 15 interleaved
+runs of `preview_benchmark`); the first Fit after opening showed no difference
+beyond that noise. Recovering in the decode's own buffer against into a second one,
+the best of 12 runs in one process: 416 against 354 ms for the 61-megapixel photo,
+88 against 102 ms for the 24-megapixel CR2 and 80 against 52 ms for the 33-megapixel
+one, with medians within 25 ms of each other for all three. Where recovery changes
+much of a photo it now keeps what the changed pixels were, which the second buffer
+did not need.
+
 ## Library edited previews
 
 The Library's 640-pixel edited previews render with `develop::render_fitted`,

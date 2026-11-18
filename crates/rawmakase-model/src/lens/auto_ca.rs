@@ -34,8 +34,12 @@ struct Shift {
 /// corrections are evaluated about, else from the image centre.
 pub fn prime(im: &crate::camera_data::CameraImage) {
     let m = &im.metadata;
-    m.lateral_ca
-        .get_or_init(|| estimate(&im.pixels, im.width, im.height, centre(m)));
+    // Read as a range: a decode kept as its recovered image's buffer is copied
+    // out for the measurement alone, where reading it as a slice would keep the copy.
+    m.lateral_ca.get_or_init(|| {
+        let pixels = im.pixels.range(0..im.pixels.len());
+        estimate(&pixels, im.width, im.height, centre(m))
+    });
 }
 /// The optical centre [`prime`] measures about, in fractions of the decoded image: the
 /// camera's own correction's, whether or not an edit applies it, else the image
