@@ -117,6 +117,20 @@ fn deleting_takes_the_keywords_inside_and_undo_puts_back_everything() -> Result<
 }
 
 #[test]
+fn a_keyword_with_lightroom_synonyms_is_deleted_and_undo_puts_them_back() -> Result<()> {
+    let (_dir, mut cat, _) = catalog(0)?;
+    let (car, _) = cat.create_keyword("Car", None)?;
+    cat.db_for_tests().execute_batch(&format!(
+        "INSERT INTO keyword_synonyms(keyword, name) VALUES ({car}, 'Auto'), ({car}, 'Automobile');"
+    ))?;
+    let change = cat.delete_keywords(&[car])?;
+    assert!(cat.keyword_synonyms()?.is_empty());
+    cat.restore_keywords(&change.before)?;
+    assert_eq!(cat.keyword_synonyms()?[&car], ["Auto", "Automobile"]);
+    Ok(())
+}
+
+#[test]
 fn ids_are_never_given_again_after_the_newest_is_deleted() -> Result<()> {
     let (_dir, mut cat, _) = catalog(0)?;
     let (a, _) = cat.create_keyword("A", None)?;

@@ -584,17 +584,20 @@ pub(super) fn photo_measures(
     };
     // The white point and the photo's maximum are the camera's: measured at the as-shot
     // white balance, so a white balance change keeps them (the synthetic chart's). A
-    // profile's matrices follow the temperature, so its as-shot one is used too.
+    // profile's matrices follow the white (Temp, and Tint for a profile without forward
+    // matrices: `CameraProfile::camera_matrix_at`), so its as-shot one is used too.
     let metadata = &small.metadata;
+    let [temperature, tint] = r
+        .profile
+        .as_ref()
+        .and_then(|p| p.as_shot_white_balance(metadata))
+        .unwrap_or([r.temperature, r.tint]);
     let as_shot = Recipe {
         wb: [1.; 3],
         incremental_temperature: 0.,
         incremental_tint: 0.,
-        temperature: r
-            .profile
-            .as_ref()
-            .and_then(|p| p.as_shot_white_balance(metadata))
-            .map_or(r.temperature, |[temperature, _]| temperature),
+        temperature,
+        tint,
         ..base
     };
     let shot_camera = super::camera_stage(metadata, &as_shot);

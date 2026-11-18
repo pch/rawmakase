@@ -279,7 +279,7 @@ fn photos_go_after_the_last_and_come_back_where_they_were() -> Result<()> {
     assert_eq!(removed.removed, [(ids[1], Some(Position::new("---7")))]);
     assert!(removed.added.is_empty());
     // Undo puts it back at its position.
-    c.put_back_members(japan, &removed.removed, &[])?;
+    c.put_back_members(japan, &removed.removed, &[], &[])?;
     assert_eq!(members(&c, japan)?[1], (ids[1], Some("---7".into())));
     // A photo without a position (as Lightroom's B leaves it) comes back
     // without one.
@@ -289,10 +289,10 @@ fn photos_go_after_the_last_and_come_back_where_they_were() -> Result<()> {
     )?;
     let removed = c.change_collection(japan, &[], &[ids[0]])?;
     assert_eq!(removed.removed, [(ids[0], None)]);
-    c.put_back_members(japan, &removed.removed, &[])?;
+    c.put_back_members(japan, &removed.removed, &[], &[])?;
     assert_eq!(members(&c, japan)?[0], (ids[0], None));
     // Taken out and put back in one change, a photo stays in.
-    let both = c.put_back_members(japan, &[(ids[0], Some(Position::new("5")))], &[ids[0]])?;
+    let both = c.put_back_members(japan, &[(ids[0], Some(Position::new("5")))], &[ids[0]], &[])?;
     assert_eq!(both.removed, [(ids[0], None)]);
     assert_eq!(members(&c, japan)?[0], (ids[0], Some("5".into())));
     Ok(())
@@ -343,7 +343,7 @@ fn deleting_a_set_takes_everything_in_it_and_undo_restores_it_all() -> Result<()
     let kyoto = c.create_collection(CollectionKind::Collection, "Kyoto", Some(asia))?;
     let other = c.create_collection(CollectionKind::Collection, "Other", None)?;
     c.change_collection(japan, &ids[..2], &[])?;
-    c.put_back_members(kyoto, &[(ids[2], Some(Position::new("---4")))], &[])?;
+    c.put_back_members(kyoto, &[(ids[2], Some(Position::new("---4")))], &[], &[])?;
     c.change_collection(other, &ids, &[])?;
     let options = CollectionOptions {
         sort: "fileName".into(),
@@ -577,5 +577,148 @@ fn export_as_catalog_never_gives_a_pruned_collections_id_to_its_own() -> Result<
         .context("collection")?;
     assert!(added.id.0 > 2);
     assert_eq!(out.target_collection()?, None);
+    Ok(())
+}
+
+/// A collection made with its photos is made with all of them or not at
+/// all, so a failed write never leaves an empty one behind.
+#[test]
+fn a_collection_and_its_photos_are_made_together_or_not_at_all() -> Result<()> {
+    let (_dir, mut c, ids) = catalog()?;
+    let (made, change) = c.create_collection_of(" Picks ", None, &ids[..2])?;
+    assert_eq!(row(&c, made)?.name, "Picks");
+    assert_eq!(change.added.len(), 2);
+    c.db_for_tests().execute_batch(
+        "CREATE TEMP TRIGGER no_members BEFORE INSERT ON collection_photos
+         BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+    )?;
+    assert!(c.create_collection_of("Failed", None, &ids).is_err());
+    assert!(c.collections()?.iter().all(|c| c.name != "Failed"));
+    Ok(())
+}
+
+/// Save Quick Collection, its Undo and its Redo are each one transaction:
+/// a failure of the second write leaves the first undone too.
+#[test]
+fn save_quick_collection_and_its_undo_and_redo_are_all_or_nothing() -> Result<()> {
+    let (_dir, mut c, ids) = catalog()?;
+    let quick = c.quick_collection()?;
+    c.change_collection(quick, &ids[..2], &[])?;
+    let fail_clear = "CREATE TEMP TRIGGER fail_clear BEFORE DELETE ON collection_photos
+                      BEGIN SELECT RAISE(ABORT, 'disk full'); END";
+    c.db_for_tests().execute_batch(fail_clear)?;
+    assert!(c.save_quick_collection("Keepers", true).is_err());
+    assert!(c.collections()?.iter().all(|c| c.name != "Keepers"));
+    c.db_for_tests().execute_batch("DROP TRIGGER fail_clear")?;
+
+    let (id, cleared) = c.save_quick_collection("Keepers", true)?;
+    assert_eq!(members(&c, id)?.len(), 2);
+    assert!(members(&c, quick)?.is_empty());
+    assert_eq!(cleared.removed.len(), 2);
+    // Undo: the photos back in the Quick Collection, the collection gone.
+    let fail_delete = "CREATE TEMP TRIGGER fail_delete BEFORE DELETE ON collections
+                       BEGIN SELECT RAISE(ABORT, 'disk full'); END";
+    c.db_for_tests().execute_batch(fail_delete)?;
+    assert!(
+        c.unsave_quick_collection(id, quick, &cleared.removed)
+            .is_err()
+    );
+    assert!(members(&c, quick)?.is_empty());
+    c.db_for_tests().execute_batch("DROP TRIGGER fail_delete")?;
+    let removed = c.unsave_quick_collection(id, quick, &cleared.removed)?;
+    assert_eq!(members(&c, quick)?.len(), 2);
+    assert!(c.collections()?.iter().all(|c| c.id != id));
+    // Redo: the collection back and the Quick Collection cleared, or neither.
+    let photos: Vec<PhotoId> = cleared.removed.iter().map(|m| m.0).collect();
+    c.db_for_tests().execute_batch(fail_clear)?;
+    assert!(c.resave_quick_collection(&removed, quick, &photos).is_err());
+    assert!(c.collections()?.iter().all(|c| c.id != id));
+    assert_eq!(members(&c, quick)?.len(), 2);
+    c.db_for_tests().execute_batch("DROP TRIGGER fail_clear")?;
+    c.resave_quick_collection(&removed, quick, &photos)?;
+    assert_eq!(members(&c, id)?.len(), 2);
+    assert!(members(&c, quick)?.is_empty());
+    Ok(())
+}
+
+/// Custom Order reads Lightroom's `---N` by number, puts photos with no
+/// position after the others, and a reorder numbers them 1, 2, 3… with Undo
+/// putting every position back as it was.
+#[test]
+fn custom_order_moves_photos_and_undo_puts_positions_back() -> Result<()> {
+    let (dir, mut c, _) = catalog()?;
+    // Five photos.
+    let folder = dir.path().join("more");
+    std::fs::create_dir(&folder)?;
+    for name in ["d.ARW", "e.ARW"] {
+        std::fs::write(folder.join(name), name)?;
+    }
+    c.add_folder(&folder)?;
+    let mut ids: Vec<PhotoId> = c.photos()?.iter().map(|p| p.id).collect();
+    ids.sort();
+    let japan = c.create_collection(CollectionKind::Collection, "Japan", None)?;
+    c.change_collection(japan, &ids, &[])?;
+    // As Lightroom left them: `---N`, and none for one B added.
+    for (photo, position) in [
+        (0, Some("---3")),
+        (1, Some("---1")),
+        (2, None),
+        (3, Some("---2")),
+        (4, Some("---10")),
+    ] {
+        c.db_for_tests().execute(
+            "UPDATE collection_photos SET position=? WHERE photo=?",
+            rusqlite::params![position, ids[photo].0],
+        )?;
+    }
+    let before = c.collection_members(japan)?;
+    assert_eq!(
+        c.collection_order(japan)?,
+        [ids[1], ids[3], ids[0], ids[4], ids[2]]
+    );
+    // Two photos dragged before the first.
+    let undo = c.arrange_collection(japan, &[ids[0], ids[2], ids[1]])?;
+    assert_eq!(undo, Some(before.clone()));
+    assert_eq!(
+        c.collection_order(japan)?,
+        [ids[0], ids[2], ids[1], ids[3], ids[4]]
+    );
+    assert_eq!(
+        members(&c, japan)?
+            .iter()
+            .map(|m| m.1.clone())
+            .collect::<Vec<_>>(),
+        ["1", "3", "2", "4", "5"].map(|p| Some(p.to_string()))
+    );
+    // Where they are already: nothing written.
+    let same = c.collection_members(japan)?;
+    assert_eq!(c.arrange_collection(japan, &[ids[0], ids[2]])?, None);
+    assert_eq!(c.collection_members(japan)?, same);
+    // To the end: the photos left out follow in their order, and photos
+    // not in the collection are ignored.
+    c.arrange_collection(japan, &[ids[2], ids[1], ids[3], ids[4], PhotoId(999)])?;
+    assert_eq!(c.collection_order(japan)?.last(), Some(&ids[0]));
+    c.restore_positions(japan, &before)?;
+    assert_eq!(c.collection_members(japan)?, before);
+    // Only plain collections have a custom order.
+    let set = c.create_collection(CollectionKind::Set, "Set", None)?;
+    assert!(c.arrange_collection(set, &[]).is_err());
+    Ok(())
+}
+
+/// Photos added to a collection go after the last in its custom order, even
+/// after photos Lightroom left without a position, which come last.
+#[test]
+fn photos_added_go_after_photos_without_a_position() -> Result<()> {
+    let (_dir, mut c, ids) = catalog()?;
+    let quick = c.quick_collection()?;
+    c.change_collection(quick, &ids[..2], &[])?;
+    c.db_for_tests().execute(
+        "UPDATE collection_photos SET position=NULL WHERE photo=?",
+        [ids[0].0],
+    )?;
+    assert_eq!(c.collection_order(quick)?, [ids[1], ids[0]]);
+    c.change_collection(quick, &ids[2..], &[])?;
+    assert_eq!(c.collection_order(quick)?, [ids[1], ids[0], ids[2]]);
     Ok(())
 }

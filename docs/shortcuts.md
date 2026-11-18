@@ -267,9 +267,11 @@ names where they have one. Fixed commands keep their keys.
 | `grid:page_down` | Move the active photo a page down |
 | `first_photo` | First photo |
 | `last_photo` | Last photo |
-| `quick:toggle` | Add to or take out of the Quick Collection |
+| `quick:toggle` | Add to or take out of the target collection (the Quick Collection unless another is set) |
 | `quick:show` | Show the Quick Collection |
 | `quick:clear` | Clear the Quick Collection |
+| `quick:save` | Save the Quick Collection as a collection (Cmd+Alt+B) |
+| `collection:new` | Create a collection (Cmd+N, in the Library) |
 | `delete` | Move to Trash, or remove from the catalog |
 | `remove_from_catalog` | Remove from the catalog |
 | `delete_rejected` | Delete the rejected photos |

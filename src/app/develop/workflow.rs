@@ -356,6 +356,14 @@ impl Editor {
         Flushed::Saved
     }
     fn background_saved(&mut self, completion: crate::app::develop::autosave::Completion) {
+        // Whether or not the document still takes the result, the catalog may
+        // have the edit.
+        if let Some((catalog, photo)) = self.autosave.take_written()
+            && let Some(library) = &mut self.library
+            && library.session.catalog().location() == &catalog
+        {
+            library.edits_written(&[photo]);
+        }
         let saved = completion.into_result();
         let result = saved.as_ref().map(|_| ()).map_err(Clone::clone);
         if !self.document.edit.save_state_mut().finished(result) {

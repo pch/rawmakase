@@ -1046,11 +1046,15 @@ fn a_proposal_for_photos_not_open_runs_on_a_worker_and_is_answered_when_it_is_do
     assert!(result(&outcomes, "Brighten").is_none());
     assert!(e.extensions.command_running(ID));
     assert_eq!(exposure(e, &f.photos[0]), None);
+    let revision = |e: &Editor| e.library.as_ref().unwrap().session.query_revision();
+    let before = revision(e);
     barrier.wait();
     let outcomes = pump(e, "Brighten", |_, o| result(o, "Brighten").is_some());
     let proposed: Proposed =
         serde_json::from_value(result(&outcomes, "Brighten").unwrap().clone().unwrap()).unwrap();
     assert_eq!(proposed.applied, vec![ids[0].0, ids[1].0]);
+    // Issue 998: the session hears of the edits, so smart collections see them.
+    assert!(revision(e) > before);
     assert!(!e.activity.is_busy());
     assert_eq!(exposure(e, &f.photos[0]), Some(0.5));
     assert_eq!(exposure(e, &f.photos[1]), Some(0.5));

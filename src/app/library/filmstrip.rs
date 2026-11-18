@@ -396,17 +396,33 @@ impl Library {
         let available = self.is_available(&photo.path);
         let single = self.menu_single(photo.id, whole_selection);
         let stacks = self.filters.shows_stacks();
-        let menu = cell::photo_menu(&response, photo, available, single, module, stacks)
-            .or(badge_clicked.then_some(cell::PhotoAction::StackBadge));
+        let collections = self.collection_tree();
+        let menu = cell::photo_menu(
+            &response,
+            photo,
+            available,
+            single,
+            module,
+            stacks,
+            cell::MenuCollections {
+                tree: &collections,
+                photo: &self.photo_collections(photo.id),
+            },
+        )
+        .or(badge_clicked.then_some(cell::PhotoAction::StackBadge));
         if let Some(menu) = menu {
             if matches!(menu, cell::PhotoAction::SetReference) {
                 return (Some(Pick::Reference(photo.id)), false);
             }
+            // These can change the photos shown, so the strip stops drawing
+            // the list it started with.
             let edited = matches!(
                 menu,
                 cell::PhotoAction::Edit(_)
                     | cell::PhotoAction::Stack(_)
                     | cell::PhotoAction::StackBadge
+                    | cell::PhotoAction::GoToCollection(_)
+                    | cell::PhotoAction::AddToCollection(_)
             );
             let develop = self.photo_action(ui.ctx(), photo, menu, whole_selection);
             return (develop.map(Pick::Develop), edited);

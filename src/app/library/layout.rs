@@ -49,6 +49,8 @@ impl Keyed for Sort {
             Self::FileName => "file_name",
             Self::Extension => "extension",
             Self::AspectRatio => "aspect_ratio",
+            // Never kept: it is a collection's, kept with the collection.
+            Self::Custom => "custom",
         }
     }
 }
@@ -103,8 +105,9 @@ impl Library {
         let filters = &self.filters;
         LibraryLayout {
             view: self.view().key().into(),
-            sort: filters.sort.key().into(),
-            reverse: filters.reverse,
+            // The folders' order, not the collection shown's.
+            sort: self.folder_sort.map_or(filters.sort, |f| f.0).key().into(),
+            reverse: self.folder_sort.map_or(filters.reverse, |f| f.1),
             cell_style: self.cell_style.key().into(),
             thumb_size: Some(self.thumb_size),
             query: filters.query.clone(),
@@ -138,9 +141,15 @@ impl Library {
     /// Returns to a layout kept from last time, after the source and
     /// selection are restored, so a Loupe, Compare or Survey has its photos.
     pub(crate) fn apply_layout(&mut self, layout: &LibraryLayout) {
+        // A collection shown keeps its own order; the folders' comes back
+        // when it is left.
+        let sort = (Sort::from_key(&layout.sort), layout.reverse);
+        if self.folder_sort.is_some() {
+            self.folder_sort = Some(sort);
+        } else {
+            (self.filters.sort, self.filters.reverse) = sort;
+        }
         let filters = &mut self.filters;
-        filters.sort = Sort::from_key(&layout.sort);
-        filters.reverse = layout.reverse;
         filters.query = layout.query.clone();
         filters.flags = layout
             .flags

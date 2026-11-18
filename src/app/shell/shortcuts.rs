@@ -257,10 +257,15 @@ static RATING: [Row; 8] = [
         "Undo / redo, anywhere",
     ),
 ];
-static QUICK: [Row; 3] = [
-    row(&[Keys(&b::GRID_QUICK_TOGGLE)], "Add to or take out of it"),
+static QUICK: [Row; 5] = [
+    row(
+        &[Keys(&b::GRID_QUICK_TOGGLE)],
+        "Add to or take out of the target collection",
+    ),
     row(&[Keys(&b::GRID_QUICK_SHOW)], "Show it"),
     row(&[Keys(&b::GRID_QUICK_CLEAR)], "Clear it"),
+    row(&[Keys(&b::GRID_QUICK_SAVE)], "Save it as a collection"),
+    row(&[Keys(&b::NEW_COLLECTION)], "Create a collection"),
 ];
 static STACKS: [Row; 4] = [
     row(&[Keys(&b::STACK_GROUP)], "Group into stack"),

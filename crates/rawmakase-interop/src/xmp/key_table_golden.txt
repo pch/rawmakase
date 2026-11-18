@@ -1733,16 +1733,16 @@ plain CropAngle=["False"] error Invalid CropAngle: False: invalid float literal 
 plain CropAngle=["Custom"] error Invalid CropAngle: Custom: invalid float literal || lenient warns ["Invalid CropAngle: Custom: invalid float literal"]
 plain CropAngle=["As Shot"] error Invalid CropAngle: As Shot: invalid float literal || lenient warns ["Invalid CropAngle: As Shot: invalid float literal"]
 rich CropAngle=["0", "-0"] ok | writes || lenient same
-rich CropAngle=["1"] ok .crop[0]=0.30774632 .crop[2]=0.99165833 .crop[3]=0.27383292 .straighten=-1.0 | writes CropAngle=+1.00 CropBottom=0.292148 CropLeft=0.318321 CropRight=0.981679 CropTop=0.007852 || lenient same
-rich CropAngle=["-1"] ok .crop[0]=0.34085125 .crop[2]=0.97526616 .crop[3]=0.28994882 .straighten=1.0 | writes CropAngle=-1.00 CropBottom=0.283182 CropLeft=0.339242 CropRight=0.960758 CropTop=0.016818 || lenient same
-rich CropAngle=["7"] ok .crop[0]=0.38971496 .crop[2]=0.8934169 .crop[3]=0.1189298 .straighten=-7.0 | writes CropAngle=+7.00 CropBottom=0.239387 CropLeft=0.441430 CropRight=0.858570 CropTop=0.060613 || lenient same
+rich CropAngle=["1"] ok .crop[0]=0.29220402 .crop[1]=-0.006223008 .crop[2]=1.0072006 .crop[3]=0.28005594 .straighten=-1.0 | writes CropAngle=+1.00 CropBottom=0.298609 CropLeft=0.303246 CropRight=0.996754 CropTop=0.001391 || lenient same
+rich CropAngle=["-1"] ok .crop[0]=0.3395109 .crop[1]=-0.00061257184 .crop[2]=0.9766065 .crop[3]=0.29056138 .straighten=1.0 | writes CropAngle=-1.00 CropBottom=0.283745 CropLeft=0.337929 CropRight=0.962071 CropTop=0.016255 || lenient same
+rich CropAngle=["7"] ok .crop[0]=0.2349625 .crop[1]=-0.03653884 .crop[2]=1.0481694 .crop[3]=0.15546864 .straighten=-7.0 | writes CropAngle=+7.00 CropBottom=0.294312 CropLeft=0.313272 CropRight=0.986727 CropTop=0.005688 || lenient same
 rich CropAngle=["50", "-100", "100", "5500"] error CropAngle is outside supported range || lenient warns ["CropAngle is outside supported range"]
 rich CropAngle=["True"] error Invalid CropAngle: True: invalid float literal || lenient warns ["Invalid CropAngle: True: invalid float literal"]
 rich CropAngle=["x"] error Invalid CropAngle: x: invalid float literal || lenient warns ["Invalid CropAngle: x: invalid float literal"]
 off CropAngle=["0", "-0"] ok | writes || lenient same
-off CropAngle=["1"] ok .crop[0]=0.30774632 .crop[2]=0.99165833 .crop[3]=0.27383292 .straighten=-1.0 | writes CropAngle=+1.00 CropBottom=0.292148 CropLeft=0.318321 CropRight=0.981679 CropTop=0.007852 || lenient same
-off CropAngle=["-1"] ok .crop[0]=0.34085125 .crop[2]=0.97526616 .crop[3]=0.28994882 .straighten=1.0 | writes CropAngle=-1.00 CropBottom=0.283182 CropLeft=0.339242 CropRight=0.960758 CropTop=0.016818 || lenient same
-off CropAngle=["7"] ok .crop[0]=0.38971496 .crop[2]=0.8934169 .crop[3]=0.1189298 .straighten=-7.0 | writes CropAngle=+7.00 CropBottom=0.239387 CropLeft=0.441430 CropRight=0.858570 CropTop=0.060613 || lenient same
+off CropAngle=["1"] ok .crop[0]=0.29220402 .crop[1]=-0.006223008 .crop[2]=1.0072006 .crop[3]=0.28005594 .straighten=-1.0 | writes CropAngle=+1.00 CropBottom=0.298609 CropLeft=0.303246 CropRight=0.996754 CropTop=0.001391 || lenient same
+off CropAngle=["-1"] ok .crop[0]=0.3395109 .crop[1]=-0.00061257184 .crop[2]=0.9766065 .crop[3]=0.29056138 .straighten=1.0 | writes CropAngle=-1.00 CropBottom=0.283745 CropLeft=0.337929 CropRight=0.962071 CropTop=0.016255 || lenient same
+off CropAngle=["7"] ok .crop[0]=0.2349625 .crop[1]=-0.03653884 .crop[2]=1.0481694 .crop[3]=0.15546864 .straighten=-7.0 | writes CropAngle=+7.00 CropBottom=0.294312 CropLeft=0.313272 CropRight=0.986727 CropTop=0.005688 || lenient same
 off CropAngle=["50", "-100", "100", "5500"] error CropAngle is outside supported range || lenient warns ["CropAngle is outside supported range"]
 off CropAngle=["True"] error Invalid CropAngle: True: invalid float literal || lenient warns ["Invalid CropAngle: True: invalid float literal"]
 off CropAngle=["x"] error Invalid CropAngle: x: invalid float literal || lenient warns ["Invalid CropAngle: x: invalid float literal"]

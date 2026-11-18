@@ -73,10 +73,29 @@ CREATE TABLE IF NOT EXISTS collection_options (
     direction TEXT NOT NULL
 );
 
+-- A smart collection's rules: `rules` in RAWmakase's JSON form of version
+-- `format` (JSON null when they could not be read), and `lightroom` the text
+-- Lightroom had, kept verbatim when imported.
+CREATE TABLE IF NOT EXISTS smart_collection_rules (
+    collection INTEGER PRIMARY KEY REFERENCES collections(id),
+    rules TEXT NOT NULL,
+    format INTEGER NOT NULL,
+    lightroom TEXT
+);
+
 CREATE TABLE IF NOT EXISTS keywords (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     parent INTEGER
+);
+
+-- A keyword's synonyms, as Lightroom keeps them; smart collections'
+-- keyword rules match them. `meta.keyword_synonyms` says whether they are
+-- known.
+CREATE TABLE IF NOT EXISTS keyword_synonyms (
+    keyword INTEGER NOT NULL REFERENCES keywords(id),
+    name TEXT NOT NULL,
+    PRIMARY KEY(keyword, name)
 );
 
 CREATE TABLE IF NOT EXISTS photo_keywords (

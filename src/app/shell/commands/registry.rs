@@ -127,9 +127,14 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     command("grid:page_down", "Move the active photo a page down"),
     command("first_photo", "First photo"),
     command("last_photo", "Last photo"),
-    command("quick:toggle", "Add to or take out of the Quick Collection"),
+    command(
+        "quick:toggle",
+        "Add to or take out of the target collection",
+    ),
     command("quick:show", "Show the Quick Collection"),
     command("quick:clear", "Clear the Quick Collection"),
+    command("quick:save", "Save the Quick Collection as a collection"),
+    command("collection:new", "Create a collection"),
     command("delete", "Move to Trash, or remove from the catalog"),
     command("remove_from_catalog", "Remove from the catalog"),
     command("delete_rejected", "Delete the rejected photos"),
@@ -404,6 +409,9 @@ pub(in crate::app) mod bindings {
         // From the search field too, but not with a menu open.
         FILTERS = b("filters", Library, &[d(&[Key::L], CMD).once_per_press()])
             .guarded(Guards::POPUP.with(Guards::BUSY).with(Guards::MODAL));
+        // Create Collection…, as Lightroom's Library has it.
+        NEW_COLLECTION = b("collection:new", Library, &[d(&[Key::N], CMD).once_per_press()])
+            .guarded(Guards::POPUP.with(Guards::BUSY).with(Guards::MODAL));
         GRID_LOUPE = b("loupe", Grid, &[d(&[Key::E], NONE), d(&[Key::Enter], NONE)]);
         GRID_COMPARE = b("library:compare", Grid, &[d(&[Key::C], NONE)]);
         GRID_SURVEY = b("library:survey", Grid, &[d(&[Key::N], NONE)]);
@@ -411,6 +419,7 @@ pub(in crate::app) mod bindings {
         GRID_QUICK_TOGGLE = b("quick:toggle", Grid, &[d(&[Key::B], NONE).once_per_press()]);
         GRID_QUICK_SHOW = b("quick:show", Grid, &[d(&[Key::B], CMD).once_per_press()]);
         GRID_QUICK_CLEAR = b("quick:clear", Grid, &[d(&[Key::B], CMD_SHIFT).once_per_press()]);
+        GRID_QUICK_SAVE = b("quick:save", Grid, &[d(&[Key::B], CMD_ALT).once_per_press()]);
         GRID_DELETE = b("delete", Grid, &[d(DELETE_KEYS, NONE).once_per_press()]);
         GRID_REMOVE_FROM_CATALOG = b("remove_from_catalog", Grid, &[
             d(DELETE_KEYS, ALT).once_per_press(),
@@ -468,6 +477,9 @@ pub(in crate::app) mod bindings {
         LOUPE_QUICK_CLEAR = b("quick:clear", Loupe, &[
             d(&[Key::B], CMD_SHIFT).once_per_press().off_card(),
         ]);
+        LOUPE_QUICK_SAVE = b("quick:save", Loupe, &[
+            d(&[Key::B], CMD_ALT).once_per_press().off_card(),
+        ]);
         LOUPE_INFO = b("info", Loupe, &[d(&[Key::I], NONE).once_per_press()]);
         LOUPE_STACK_TOGGLE = b("stack:toggle", Loupe, &[
             d(&[Key::S], NONE).once_per_press().off_card(),
@@ -485,6 +497,9 @@ pub(in crate::app) mod bindings {
         ]);
         COMPARE_QUICK_CLEAR = b("quick:clear", Compare, &[
             d(&[Key::B], CMD_SHIFT).once_per_press().off_card(),
+        ]);
+        COMPARE_QUICK_SAVE = b("quick:save", Compare, &[
+            d(&[Key::B], CMD_ALT).once_per_press().off_card(),
         ]);
         COMPARE_PREVIOUS = b("compare_view:previous_candidate", Compare, &[
             d(&[Key::ArrowLeft], NONE),
@@ -508,6 +523,9 @@ pub(in crate::app) mod bindings {
         ]);
         SURVEY_QUICK_CLEAR = b("quick:clear", Survey, &[
             d(&[Key::B], CMD_SHIFT).once_per_press().off_card(),
+        ]);
+        SURVEY_QUICK_SAVE = b("quick:save", Survey, &[
+            d(&[Key::B], CMD_ALT).once_per_press().off_card(),
         ]);
         SURVEY_PREVIOUS = b("previous", Survey, &[
             d(&[Key::ArrowLeft, Key::ArrowUp], NONE).off_card(),

@@ -1,6 +1,9 @@
 //! Collections, collection sets and their photos, as Lightroom keeps them:
-//! the one owner of the `collections`, `collection_photos` and
-//! `collection_options` rows, the target collection and the Quick Collection.
+//! the one owner of the `collections`, `collection_photos`,
+//! `collection_options` and `smart_collection_rules` rows, the keywords'
+//! Lightroom synonyms (`keyword_synonyms`, which smart collections' keyword
+//! rules match) and whether they are known, the target collection and the
+//! Quick Collection.
 //!
 //! Rows keep Lightroom's `creationId` as their kind, so a catalog changed here
 //! still reads in older releases. Those releases take any plain collection
@@ -15,6 +18,7 @@ use super::value::row;
 use super::{Catalog, Collection, CollectionId, CollectionKind, PhotoId};
 use crate::catalog::models::QUICK_COLLECTION;
 use anyhow::{Context, Result, bail, ensure};
+use rawmakase_model::collection_rules::{Group, JSON_FORMAT, Malformed};
 use std::collections::{HashMap, HashSet};
 
 /// Lightroom's `creationId` of a collection of photos (the Quick Collection
@@ -22,6 +26,8 @@ use std::collections::{HashMap, HashSet};
 pub(super) const COLLECTION_KIND: &str = "com.adobe.ag.library.collection";
 /// Lightroom's `creationId` of a collection set.
 const SET_KIND: &str = "com.adobe.ag.library.group";
+/// Lightroom's `creationId` of a smart collection.
+pub(super) const SMART_KIND: &str = "com.adobe.ag.library.smart_collection";
 /// The `meta` key above which new collection ids are allocated.
 const ID_HIGH: &str = "collection_id_high";
 /// The `meta` key holding the target collection; missing means never chosen.
@@ -57,11 +63,15 @@ pub type Member = (PhotoId, Option<Position>);
 
 /// What [`Catalog::change_collection`] did: the photos it added and the ones
 /// it took out, each with its position, so Undo and Redo put them back where
-/// they were.
+/// they were; and, when photos were added after photos without a position,
+/// the other photos it numbered first, with their positions `before` and
+/// `after` ([`Catalog::put_back_members`] sets either back).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MembershipChange {
     pub added: Vec<Member>,
     pub removed: Vec<Member>,
+    pub renumbered_before: Vec<Member>,
+    pub renumbered_after: Vec<Member>,
 }
 
 /// A collection's sort, as Lightroom stores it: `sort` is its `sortType`
@@ -83,6 +93,7 @@ pub struct RemovedCollections {
     rows: Vec<StoredCollection>,
     members: Vec<(CollectionId, PhotoId, Option<Position>)>,
     options: Vec<(CollectionId, CollectionOptions)>,
+    rules: Vec<(CollectionId, SmartRules)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -115,6 +126,10 @@ impl RemovedCollections {
                 kind: CollectionKind::from_lightroom(&r.kind, &r.name),
             })
             .collect()
+    }
+    /// The smart collections' rules that would be restored.
+    pub fn smart_rules(&self) -> impl Iterator<Item = (CollectionId, &SmartRules)> + '_ {
+        self.rules.iter().map(|(id, rules)| (*id, rules))
     }
     /// The photos that would be restored, with their collections.
     pub fn members(&self) -> impl Iterator<Item = (CollectionId, PhotoId)> + '_ {
@@ -192,6 +207,63 @@ impl Catalog {
             insert(w, &name, parent, kind)
         })
     }
+    /// Lightroom's Create Smart Collection: a smart collection named `name`,
+    /// trimmed, at the top or in set `parent`, with `rules`, in one
+    /// transaction, by the naming rules of [`Catalog::create_collection`].
+    pub fn create_smart_collection(
+        &mut self,
+        name: &str,
+        parent: Option<CollectionId>,
+        rules: &SmartRules,
+    ) -> Result<CollectionId> {
+        self.db.write(|w| {
+            if let Some(parent) = parent {
+                ensure_set(w, parent)?;
+            }
+            let name = usable_name(w, name, parent, None)?;
+            let id = insert(w, &name, parent, SMART_KIND)?;
+            write_rules(w, id, rules)?;
+            Ok(id)
+        })
+    }
+    /// What New Catalog adds, as Lightroom's does: its default smart
+    /// collections, in a set named "Smart Collections", with Lightroom's own
+    /// text for their rules. Not for a catalog imported from Lightroom, which
+    /// has Lightroom's.
+    pub fn add_default_smart_collections(&mut self) -> Result<()> {
+        use rawmakase_model::collection_rules::{LIGHTROOM_DEFAULTS, LIGHTROOM_DEFAULTS_SET};
+        self.db.write(|w| {
+            let set = insert(
+                w,
+                &usable_name(w, LIGHTROOM_DEFAULTS_SET, None, None)?,
+                None,
+                SET_KIND,
+            )?;
+            for (name, text) in LIGHTROOM_DEFAULTS {
+                let id = insert(w, name, Some(set), SMART_KIND)?;
+                write_rules(w, id, &SmartRules::from_lightroom(text))?;
+            }
+            Ok(())
+        })
+    }
+    /// [`Catalog::create_collection`] of a collection holding `photos`, in
+    /// one transaction: made with them all, or not at all.
+    pub fn create_collection_of(
+        &mut self,
+        name: &str,
+        parent: Option<CollectionId>,
+        photos: &[PhotoId],
+    ) -> Result<(CollectionId, MembershipChange)> {
+        self.db.write(|w| {
+            if let Some(parent) = parent {
+                ensure_set(w, parent)?;
+            }
+            let name = usable_name(w, name, parent, None)?;
+            let id = insert(w, &name, parent, COLLECTION_KIND)?;
+            let change = change_members(w, id, Adding::Last(photos), &[])?;
+            Ok((id, change))
+        })
+    }
     /// Renames a collection or set to `name`, trimmed, by the rules of
     /// [`Catalog::create_collection`]. The Quick Collection keeps its name.
     pub fn rename_collection(&mut self, id: CollectionId, name: &str) -> Result<()> {
@@ -240,131 +312,71 @@ impl Catalog {
     /// Photos stay in the catalog. Returns what [`Catalog::restore_collections`]
     /// needs to put them back. The Quick Collection can't be deleted.
     pub fn remove_collections(&mut self, ids: &[CollectionId]) -> Result<RemovedCollections> {
-        self.db.write(|w| {
-            row! {
-                struct TreeRow {
-                    id: CollectionId,
-                    name: String,
-                    parent: Option<CollectionId>,
-                    kind: String,
-                }
-            }
-            let all: Vec<TreeRow> = w.read(
-                sql!("SELECT id, name, parent, kind FROM collections ORDER BY id"),
-                &[],
-            )?;
-            let mut children: HashMap<Option<CollectionId>, Vec<&TreeRow>> = HashMap::new();
-            let by_id: HashMap<CollectionId, &TreeRow> = all.iter().map(|r| (r.id, r)).collect();
-            for row in &all {
-                children.entry(row.parent).or_default().push(row);
-            }
-            let mut removed = RemovedCollections::default();
-            let mut seen = HashSet::new();
-            for id in ids {
-                let row = by_id.get(id).context("That collection is gone")?;
-                ensure!(
-                    !is_quick(&row.name, row.parent, &row.kind),
-                    "The Quick Collection can't be deleted"
-                );
-                // A set and something inside it, both chosen: the set takes it.
-                let mut above = row.parent;
-                let mut inside_chosen = false;
-                while let Some(parent) = above {
-                    inside_chosen |= ids.contains(&parent);
-                    above = by_id.get(&parent).and_then(|r| r.parent);
-                }
-                if inside_chosen || !seen.insert(*id) {
-                    continue;
-                }
-                // Parents before their children.
-                let mut queue = std::collections::VecDeque::from([*row]);
-                while let Some(row) = queue.pop_front() {
-                    removed.rows.push(StoredCollection {
-                        id: row.id,
-                        name: row.name.clone(),
-                        parent: row.parent,
-                        kind: row.kind.clone(),
-                    });
-                    queue.extend(children.get(&Some(row.id)).into_iter().flatten().copied());
-                }
-            }
-            // Ids stay taken: Undo restores them.
-            if let Some(highest) = all.iter().map(|r| r.id.0).max() {
-                raise_high(w, highest)?;
-            }
-            row! {
-                struct MemberRow {
-                    photo: PhotoId,
-                    position: Option<String>,
-                }
-            }
-            for row in &removed.rows {
-                let members: Vec<MemberRow> = w.read(
-                    sql!(
-                        "SELECT photo, position FROM collection_photos WHERE collection=?
-                         ORDER BY photo"
-                    ),
-                    &[&row.id],
-                )?;
-                removed.members.extend(
-                    members
-                        .into_iter()
-                        .map(|m| (row.id, m.photo, m.position.map(Position))),
-                );
-                if let Some(options) = options_of(w, row.id)? {
-                    removed.options.push((row.id, options));
-                }
-            }
-            // Children before their parents.
-            for row in removed.rows.iter().rev() {
-                w.execute(
-                    sql!("DELETE FROM collection_photos WHERE collection=?"),
-                    &[&row.id],
-                )?;
-                w.execute(
-                    sql!("DELETE FROM collection_options WHERE collection=?"),
-                    &[&row.id],
-                )?;
-                w.execute(sql!("DELETE FROM collections WHERE id=?"), &[&row.id])?;
-            }
-            Ok(removed)
-        })
+        self.db.write(|w| remove_rows(w, ids))
     }
     /// Puts back collections [`Catalog::remove_collections`] deleted, under
     /// their ids, with their photos (those still in the catalog), positions
     /// and options. Refused, changing nothing, when one of the ids is in use,
     /// its set is gone or its name is now taken there.
     pub fn restore_collections(&mut self, removed: &RemovedCollections) -> Result<()> {
+        self.db.write(|w| restore_rows(w, removed))
+    }
+    /// Lightroom's Save Quick Collection: a top-level collection `name` of
+    /// the Quick Collection's photos, which are taken out of it when
+    /// `clear`, all in one transaction. Returns the collection and the
+    /// photos taken out, with their positions.
+    pub fn save_quick_collection(
+        &mut self,
+        name: &str,
+        clear: bool,
+    ) -> Result<(CollectionId, MembershipChange)> {
         self.db.write(|w| {
-            for row in &removed.rows {
-                let taken: Option<i64> =
-                    w.read_optional(sql!("SELECT 1 FROM collections WHERE id=?"), &[&row.id])?;
-                ensure!(taken.is_none(), "That collection is already there");
-                if let Some(parent) = row.parent {
-                    ensure_set(w, parent).context("The collection set it was in is gone")?;
-                }
-                // Restored as it was, even a set's `quick collection` an
-                // imported Lightroom catalog had; a name taken since refuses it.
-                ensure_unused(w, &row.name, row.parent, None)?;
-                w.execute(
-                    sql!("INSERT INTO collections(id, name, parent, kind) VALUES (?, ?, ?, ?)"),
-                    &[&row.id, &row.name, &row.parent, &row.kind],
-                )?;
-            }
-            for (collection, photo, position) in &removed.members {
-                let position = position.as_ref().map(Position::as_str);
-                w.execute(
-                    sql!(
-                        "INSERT INTO collection_photos(collection, photo, position)
-                         SELECT ?, id, ? FROM photos WHERE id=?"
-                    ),
-                    &[collection, &position, photo],
-                )?;
-            }
-            for (collection, options) in &removed.options {
-                write_options(w, *collection, options)?;
-            }
-            Ok(())
+            let quick: CollectionId = w
+                .read_optional(
+                    sql!("SELECT id FROM collections WHERE name=?1 AND kind=?2 AND parent IS NULL"),
+                    &[&QUICK_COLLECTION, &COLLECTION_KIND],
+                )?
+                .context("There is no Quick Collection")?;
+            let photos: Vec<PhotoId> = w.read(
+                sql!("SELECT photo FROM collection_photos WHERE collection=? ORDER BY photo"),
+                &[&quick],
+            )?;
+            let name = usable_name(w, name, None, None)?;
+            let id = insert(w, &name, None, COLLECTION_KIND)?;
+            change_members(w, id, Adding::Last(&photos), &[])?;
+            let cleared = if clear {
+                change_members(w, quick, Adding::At(&[]), &photos)?
+            } else {
+                MembershipChange::default()
+            };
+            Ok((id, cleared))
+        })
+    }
+    /// Undoes [`Catalog::save_quick_collection`] in one transaction: puts
+    /// `cleared` back in the Quick Collection at their positions and deletes
+    /// collection `id`, returning what Redo puts back.
+    pub fn unsave_quick_collection(
+        &mut self,
+        id: CollectionId,
+        quick: CollectionId,
+        cleared: &[Member],
+    ) -> Result<RemovedCollections> {
+        self.db.write(|w| {
+            change_members(w, quick, Adding::At(cleared), &[])?;
+            remove_rows(w, &[id])
+        })
+    }
+    /// Redoes [`Catalog::save_quick_collection`] in one transaction: puts the
+    /// collection back and takes `cleared` out of the Quick Collection again.
+    pub fn resave_quick_collection(
+        &mut self,
+        removed: &RemovedCollections,
+        quick: CollectionId,
+        cleared: &[PhotoId],
+    ) -> Result<MembershipChange> {
+        self.db.write(|w| {
+            restore_rows(w, removed)?;
+            change_members(w, quick, Adding::At(&[]), cleared)
         })
     }
     /// Adds `add` to and takes `remove` out of a collection, in one
@@ -382,16 +394,24 @@ impl Catalog {
         self.db
             .write(|w| change_members(w, collection, Adding::Last(add), remove))
     }
-    /// [`Catalog::change_collection`] for Undo and Redo: puts `add` back each
-    /// at the position it had, none included, and takes `remove` out.
+    /// [`Catalog::change_collection`] for Undo and Redo, in one
+    /// transaction: takes `remove` out, gives the photos of `positions`
+    /// those positions (a change's numbering, before or after), and puts
+    /// `add` back each at the position it had, none included.
     pub fn put_back_members(
         &mut self,
         collection: CollectionId,
         add: &[Member],
         remove: &[PhotoId],
+        positions: &[Member],
     ) -> Result<MembershipChange> {
-        self.db
-            .write(|w| change_members(w, collection, Adding::At(add), remove))
+        self.db.write(|w| {
+            let mut change = change_members(w, collection, Adding::At(&[]), remove)?;
+            set_positions(w, collection, positions)?;
+            let added = change_members(w, collection, Adding::At(add), &[])?;
+            change.added = added.added;
+            Ok(change)
+        })
     }
     /// Every collection's photos, by collection.
     pub fn collection_photos(&self) -> Result<HashMap<CollectionId, HashSet<PhotoId>>> {
@@ -426,6 +446,57 @@ impl Catalog {
             .into_iter()
             .map(|r| (r.photo, r.position.map(Position)))
             .collect())
+    }
+    /// A collection's photos in its custom order (Lightroom's Custom Order):
+    /// by position number, Lightroom's `---N` read as N; photos with no
+    /// position, or one that isn't a number, after the others; photos alike,
+    /// by id.
+    pub fn collection_order(&self, id: CollectionId) -> Result<Vec<PhotoId>> {
+        Ok(ordered(self.collection_members(id)?)
+            .into_iter()
+            .map(|m| m.0)
+            .collect())
+    }
+    /// Custom Order's drag: numbers the collection's photos 1, 2, 3… in
+    /// `order` (photos of the collection it leaves out follow, in their
+    /// present order; others are ignored), in one transaction. Returns every
+    /// photo's position before, for Undo ([`Catalog::restore_positions`]),
+    /// or `None`, writing nothing, when the order stays as it was. Only
+    /// plain collections have a custom order.
+    pub fn arrange_collection(
+        &mut self,
+        collection: CollectionId,
+        order: &[PhotoId],
+    ) -> Result<Option<Vec<Member>>> {
+        self.db.write(|w| {
+            ensure_plain(w, collection)?;
+            let members = members_of(w, collection)?;
+            let current: Vec<PhotoId> = ordered(members.clone()).into_iter().map(|m| m.0).collect();
+            let mut arranged: Vec<PhotoId> = Vec::with_capacity(current.len());
+            for photo in order.iter().chain(&current) {
+                if current.contains(photo) && !arranged.contains(photo) {
+                    arranged.push(*photo);
+                }
+            }
+            if arranged == current {
+                return Ok(None);
+            }
+            number(w, collection, &arranged)?;
+            Ok(Some(members))
+        })
+    }
+    /// Puts positions [`Catalog::arrange_collection`] returned back, each as
+    /// it was (none included), in one transaction. Photos no longer in the
+    /// collection are left out.
+    pub fn restore_positions(
+        &mut self,
+        collection: CollectionId,
+        members: &[Member],
+    ) -> Result<()> {
+        self.db.write(|w| {
+            ensure_plain(w, collection)?;
+            set_positions(w, collection, members)
+        })
     }
     /// Every collection's sort chosen here or imported, by collection.
     pub fn collection_options(&self) -> Result<HashMap<CollectionId, CollectionOptions>> {
@@ -521,6 +592,251 @@ impl Catalog {
             super::set_meta(w, TARGET, &value)
         })
     }
+}
+
+/// A smart collection's rules as stored: [`Group::to_json`]'s form, and the
+/// text Lightroom had when they were imported from it, kept verbatim so a
+/// rule this release can't read or evaluate is never lost and a later one
+/// can read it again.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SmartRules {
+    /// None when the rules could not be read (Lightroom text the parser
+    /// refused, or a stored form of a later release).
+    json: Option<String>,
+    format: i64,
+    lightroom: Option<String>,
+}
+impl SmartRules {
+    /// Rules made here: there is no Lightroom text.
+    pub fn new(rules: &Group) -> Self {
+        Self {
+            json: Some(rules.to_json().to_string()),
+            format: JSON_FORMAT,
+            lightroom: None,
+        }
+    }
+    /// Lightroom's text (`AgLibraryCollectionContent.content`), read when it
+    /// can be and kept either way.
+    pub fn from_lightroom(text: &str) -> Self {
+        Self {
+            json: Group::from_lightroom(text)
+                .ok()
+                .map(|g| g.to_json().to_string()),
+            format: JSON_FORMAT,
+            lightroom: Some(text.to_string()),
+        }
+    }
+    /// The rules, or why they can't be read.
+    pub fn rules(&self) -> std::result::Result<Group, Malformed> {
+        if self.format > JSON_FORMAT {
+            return Err(Malformed(
+                "These rules were made by a later release of RAWmakase".into(),
+            ));
+        }
+        match &self.json {
+            Some(json) => serde_json::from_str(json)
+                .map_err(|e| Malformed(e.to_string()))
+                .and_then(|json| Group::from_json(&json)),
+            None => match &self.lightroom {
+                Some(text) => Group::from_lightroom(text),
+                None => Err(Malformed("The rules are missing".into())),
+            },
+        }
+    }
+    /// The Lightroom text they were imported from.
+    pub fn lightroom(&self) -> Option<&str> {
+        self.lightroom.as_deref()
+    }
+}
+
+/// Whether the catalog has its keywords' Lightroom synonyms (`meta`
+/// `keyword_synonyms`). A catalog imported from Lightroom before this
+/// release, or exported from one, may have keywords but not their synonyms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SynonymState {
+    Complete,
+    Missing,
+}
+/// The `meta` key of [`SynonymState`].
+const SYNONYMS: &str = "keyword_synonyms";
+
+impl Catalog {
+    /// Every smart collection's rules, by collection.
+    pub fn smart_rules(&self) -> Result<HashMap<CollectionId, SmartRules>> {
+        row! {
+            struct RulesRow {
+                collection: CollectionId,
+                rules: String,
+                format: i64,
+                lightroom: Option<String>,
+            }
+        }
+        let rows: Vec<RulesRow> = self.db.read(
+            sql!("SELECT collection, rules, format, lightroom FROM smart_collection_rules"),
+            &[],
+        )?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.collection, stored_rules(r.rules, r.format, r.lightroom)))
+            .collect())
+    }
+    /// Keeps smart collection `id`'s rules.
+    pub fn set_smart_rules(&mut self, id: CollectionId, rules: &SmartRules) -> Result<()> {
+        self.db.write(|w| {
+            let kind: Option<String> =
+                w.read_optional(sql!("SELECT kind FROM collections WHERE id=?"), &[&id])?;
+            match kind {
+                Some(kind) if kind == SMART_KIND => write_rules(w, id, rules),
+                Some(_) => bail!("Only a smart collection has rules"),
+                None => bail!("That collection is gone"),
+            }
+        })
+    }
+    /// Takes smart collection `id`'s rules row away.
+    pub fn clear_smart_rules(&mut self, id: CollectionId) -> Result<()> {
+        self.db.write(|w| {
+            w.execute(
+                sql!("DELETE FROM smart_collection_rules WHERE collection=?"),
+                &[&id],
+            )?;
+            Ok(())
+        })
+    }
+    /// Every keyword's Lightroom synonyms, by keyword id.
+    pub fn keyword_synonyms(&self) -> Result<HashMap<i64, Vec<String>>> {
+        row! {
+            struct SynonymRow {
+                keyword: i64,
+                name: String,
+            }
+        }
+        let rows: Vec<SynonymRow> = self.db.read(
+            sql!("SELECT keyword, name FROM keyword_synonyms ORDER BY keyword, name"),
+            &[],
+        )?;
+        let mut out: HashMap<i64, Vec<String>> = HashMap::new();
+        for r in rows {
+            out.entry(r.keyword).or_default().push(r.name);
+        }
+        Ok(out)
+    }
+    /// Whether the keywords' Lightroom synonyms are known. A catalog that
+    /// never recorded it was made by an earlier release: missing, unless it
+    /// has no keyword (see [`Catalog::open`]).
+    pub fn synonym_state(&self) -> Result<SynonymState> {
+        Ok(match self.meta(SYNONYMS)?.as_deref() {
+            Some("complete") => SynonymState::Complete,
+            _ => SynonymState::Missing,
+        })
+    }
+    /// Records whether the keywords' Lightroom synonyms are known: complete
+    /// once read from a Lightroom catalog, or when the user says there are
+    /// none.
+    pub fn set_synonym_state(&mut self, state: SynonymState) -> Result<()> {
+        self.db.write(|w| write_synonym_state(w, state))
+    }
+}
+
+/// Records the synonyms' state of a catalog that has none recorded: an
+/// earlier release's. Its keywords can't be told to be Lightroom's or not
+/// (their ids carry no provenance, and an exported catalog has no
+/// `sources`), so any keyword makes it missing.
+pub(super) fn record_synonym_state(w: &mut Write<'_>) -> Result<()> {
+    let recorded: Option<String> =
+        w.read_optional(sql!("SELECT value FROM meta WHERE key=?"), &[&SYNONYMS])?;
+    if recorded.is_some() {
+        return Ok(());
+    }
+    let keyword: Option<i64> = w.read_optional(sql!("SELECT 1 FROM keywords LIMIT 1"), &[])?;
+    write_synonym_state(
+        w,
+        if keyword.is_some() {
+            SynonymState::Missing
+        } else {
+            SynonymState::Complete
+        },
+    )
+}
+
+/// Records that every keyword's Lightroom synonyms are known: a catalog
+/// imported from Lightroom by this release.
+pub(super) fn record_synonyms_complete(w: &mut Write<'_>) -> Result<()> {
+    write_synonym_state(w, SynonymState::Complete)
+}
+
+/// Makes Lightroom's target collection (`Adobe_variablesTable`'s
+/// `targetCollection`: a collection's id, written as a number, or `qc` for
+/// the Quick Collection) the imported catalog's. Anything else, or a
+/// collection that can't take photos, leaves the Quick Collection.
+pub(super) fn import_target(w: &mut Write<'_>, value: &str) -> Result<()> {
+    let value = value.trim();
+    if value == "qc" {
+        return super::set_meta(w, TARGET, TARGET_QUICK);
+    }
+    let Some(id) = value
+        .parse::<f64>()
+        .ok()
+        .filter(|n| n.fract() == 0. && *n > 0. && *n < 9e15)
+        .map(|n| CollectionId(n as i64))
+    else {
+        return Ok(());
+    };
+    let row: Option<KindRow> = w.read_optional(
+        sql!("SELECT name, parent, kind FROM collections WHERE id=?"),
+        &[&id],
+    )?;
+    match row {
+        Some(r) if r.kind == COLLECTION_KIND && !is_quick(&r.name, r.parent, &r.kind) => {
+            super::set_meta(w, TARGET, &id.0.to_string())
+        }
+        Some(r) if is_quick(&r.name, r.parent, &r.kind) => super::set_meta(w, TARGET, TARGET_QUICK),
+        _ => Ok(()),
+    }
+}
+
+fn write_synonym_state(w: &mut Write<'_>, state: SynonymState) -> Result<()> {
+    let value = match state {
+        SynonymState::Complete => "complete",
+        SynonymState::Missing => "missing",
+    };
+    super::set_meta(w, SYNONYMS, value)
+}
+
+fn stored_rules(json: String, format: i64, lightroom: Option<String>) -> SmartRules {
+    SmartRules {
+        json: (json != "null").then_some(json),
+        format,
+        lightroom,
+    }
+}
+
+fn rules_of(w: &Write<'_>, id: CollectionId) -> Result<Option<SmartRules>> {
+    row! {
+        struct RulesRow {
+            rules: String,
+            format: i64,
+            lightroom: Option<String>,
+        }
+    }
+    let row: Option<RulesRow> = w.read_optional(
+        sql!("SELECT rules, format, lightroom FROM smart_collection_rules WHERE collection=?"),
+        &[&id],
+    )?;
+    Ok(row.map(|r| stored_rules(r.rules, r.format, r.lightroom)))
+}
+
+pub(super) fn write_rules(w: &mut Write<'_>, id: CollectionId, rules: &SmartRules) -> Result<()> {
+    let json = rules.json.as_deref().unwrap_or("null");
+    w.execute(
+        sql!(
+            "INSERT INTO smart_collection_rules(collection, rules, format, lightroom)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(collection) DO UPDATE SET
+                 rules=excluded.rules, format=excluded.format, lightroom=excluded.lightroom"
+        ),
+        &[&id, &json, &rules.format, &rules.lightroom],
+    )?;
+    Ok(())
 }
 
 /// Whether a row is the Quick Collection, by the rule every release reads it by.
@@ -625,18 +941,58 @@ fn movable(w: &Write<'_>, id: CollectionId) -> Result<KindRow> {
     Ok(row)
 }
 
-/// The highest position number in a collection, or 0.
-fn next_position(w: &Write<'_>, collection: CollectionId) -> Result<i64> {
-    let positions: Vec<Option<String>> = w.read(
-        sql!("SELECT position FROM collection_photos WHERE collection=?"),
-        &[&collection],
-    )?;
-    let highest = positions
-        .into_iter()
-        .flatten()
-        .filter_map(|p| Position(p).number())
+/// The highest position number in a collection, or 0: photos added go
+/// after it. When some photos have no number (as Lightroom's B leaves them),
+/// which the custom order puts after the others, every photo is numbered
+/// 1, 2, 3… in that order first, so photos added go after them too; the
+/// positions before and after are returned, for Undo and Redo.
+fn next_position(
+    w: &mut Write<'_>,
+    collection: CollectionId,
+) -> Result<(i64, Vec<Member>, Vec<Member>)> {
+    let members = members_of(w, collection)?;
+    if members
+        .iter()
+        .any(|m| m.1.as_ref().and_then(Position::number).is_none())
+    {
+        let order: Vec<PhotoId> = ordered(members.clone()).into_iter().map(|m| m.0).collect();
+        number(w, collection, &order)?;
+        let after = order
+            .iter()
+            .enumerate()
+            .map(|(n, p)| (*p, Some(Position((n + 1).to_string()))))
+            .collect();
+        return Ok((order.len() as i64, members, after));
+    }
+    let highest = members
+        .iter()
+        .filter_map(|m| m.1.as_ref().and_then(Position::number))
         .fold(0.0_f64, f64::max);
-    Ok(highest.floor() as i64)
+    Ok((highest.floor() as i64, Vec::new(), Vec::new()))
+}
+
+/// Gives each photo of `positions` in a collection its position.
+fn set_positions(w: &mut Write<'_>, collection: CollectionId, positions: &[Member]) -> Result<()> {
+    for (photo, position) in positions {
+        let position = position.as_ref().map(Position::as_str);
+        w.execute(
+            sql!("UPDATE collection_photos SET position=? WHERE collection=? AND photo=?"),
+            &[&position, &collection, photo],
+        )?;
+    }
+    Ok(())
+}
+
+/// Numbers `order`'s photos 1, 2, 3… in a collection.
+fn number(w: &mut Write<'_>, collection: CollectionId, order: &[PhotoId]) -> Result<()> {
+    for (n, photo) in order.iter().enumerate() {
+        let position = (n + 1).to_string();
+        w.execute(
+            sql!("UPDATE collection_photos SET position=? WHERE collection=? AND photo=?"),
+            &[&position, &collection, photo],
+        )?;
+    }
+    Ok(())
 }
 
 fn options_of(w: &Write<'_>, id: CollectionId) -> Result<Option<CollectionOptions>> {
@@ -656,7 +1012,11 @@ fn options_of(w: &Write<'_>, id: CollectionId) -> Result<Option<CollectionOption
     }))
 }
 
-fn write_options(w: &mut Write<'_>, id: CollectionId, options: &CollectionOptions) -> Result<()> {
+pub(super) fn write_options(
+    w: &mut Write<'_>,
+    id: CollectionId,
+    options: &CollectionOptions,
+) -> Result<()> {
     w.execute(
         sql!(
             "INSERT INTO collection_options(collection, sort, direction) VALUES (?, ?, ?)
@@ -779,8 +1139,11 @@ fn change_members(
     }
     let members: Vec<Member> = match add {
         Adding::At(members) => members.to_vec(),
+        Adding::Last([]) => Vec::new(),
         Adding::Last(photos) => {
-            let mut next = next_position(w, collection)?;
+            let (mut next, before, after) = next_position(w, collection)?;
+            change.renumbered_before = before;
+            change.renumbered_after = after;
             photos
                 .iter()
                 .map(|photo| {
@@ -815,5 +1178,182 @@ pub(super) fn reserve_ids(w: &mut Write<'_>) -> Result<()> {
     match used {
         Some(used) => raise_high(w, used),
         None => Ok(()),
+    }
+}
+
+/// [`Catalog::remove_collections`] in a transaction already open.
+fn remove_rows(w: &mut Write<'_>, ids: &[CollectionId]) -> Result<RemovedCollections> {
+    row! {
+        struct TreeRow {
+            id: CollectionId,
+            name: String,
+            parent: Option<CollectionId>,
+            kind: String,
+        }
+    }
+    let all: Vec<TreeRow> = w.read(
+        sql!("SELECT id, name, parent, kind FROM collections ORDER BY id"),
+        &[],
+    )?;
+    let mut children: HashMap<Option<CollectionId>, Vec<&TreeRow>> = HashMap::new();
+    let by_id: HashMap<CollectionId, &TreeRow> = all.iter().map(|r| (r.id, r)).collect();
+    for row in &all {
+        children.entry(row.parent).or_default().push(row);
+    }
+    let mut removed = RemovedCollections::default();
+    let mut seen = HashSet::new();
+    for id in ids {
+        let row = by_id.get(id).context("That collection is gone")?;
+        ensure!(
+            !is_quick(&row.name, row.parent, &row.kind),
+            "The Quick Collection can't be deleted"
+        );
+        // A set and something inside it, both chosen: the set takes it.
+        let mut above = row.parent;
+        let mut inside_chosen = false;
+        while let Some(parent) = above {
+            inside_chosen |= ids.contains(&parent);
+            above = by_id.get(&parent).and_then(|r| r.parent);
+        }
+        if inside_chosen || !seen.insert(*id) {
+            continue;
+        }
+        // Parents before their children.
+        let mut queue = std::collections::VecDeque::from([*row]);
+        while let Some(row) = queue.pop_front() {
+            removed.rows.push(StoredCollection {
+                id: row.id,
+                name: row.name.clone(),
+                parent: row.parent,
+                kind: row.kind.clone(),
+            });
+            queue.extend(children.get(&Some(row.id)).into_iter().flatten().copied());
+        }
+    }
+    // Ids stay taken: Undo restores them.
+    if let Some(highest) = all.iter().map(|r| r.id.0).max() {
+        raise_high(w, highest)?;
+    }
+    row! {
+        struct MemberRow {
+            photo: PhotoId,
+            position: Option<String>,
+        }
+    }
+    for row in &removed.rows {
+        let members: Vec<MemberRow> = w.read(
+            sql!(
+                "SELECT photo, position FROM collection_photos WHERE collection=?
+                     ORDER BY photo"
+            ),
+            &[&row.id],
+        )?;
+        removed.members.extend(
+            members
+                .into_iter()
+                .map(|m| (row.id, m.photo, m.position.map(Position))),
+        );
+        if let Some(options) = options_of(w, row.id)? {
+            removed.options.push((row.id, options));
+        }
+        if let Some(rules) = rules_of(w, row.id)? {
+            removed.rules.push((row.id, rules));
+        }
+    }
+    // Children before their parents.
+    for row in removed.rows.iter().rev() {
+        w.execute(
+            sql!("DELETE FROM collection_photos WHERE collection=?"),
+            &[&row.id],
+        )?;
+        w.execute(
+            sql!("DELETE FROM collection_options WHERE collection=?"),
+            &[&row.id],
+        )?;
+        w.execute(
+            sql!("DELETE FROM smart_collection_rules WHERE collection=?"),
+            &[&row.id],
+        )?;
+        w.execute(sql!("DELETE FROM collections WHERE id=?"), &[&row.id])?;
+    }
+    Ok(removed)
+}
+
+/// [`Catalog::restore_collections`] in a transaction already open.
+fn restore_rows(w: &mut Write<'_>, removed: &RemovedCollections) -> Result<()> {
+    for row in &removed.rows {
+        let taken: Option<i64> =
+            w.read_optional(sql!("SELECT 1 FROM collections WHERE id=?"), &[&row.id])?;
+        ensure!(taken.is_none(), "That collection is already there");
+        if let Some(parent) = row.parent {
+            ensure_set(w, parent).context("The collection set it was in is gone")?;
+        }
+        // Restored as it was, even a set's `quick collection` an
+        // imported Lightroom catalog had; a name taken since refuses it.
+        ensure_unused(w, &row.name, row.parent, None)?;
+        w.execute(
+            sql!("INSERT INTO collections(id, name, parent, kind) VALUES (?, ?, ?, ?)"),
+            &[&row.id, &row.name, &row.parent, &row.kind],
+        )?;
+    }
+    for (collection, photo, position) in &removed.members {
+        let position = position.as_ref().map(Position::as_str);
+        w.execute(
+            sql!(
+                "INSERT INTO collection_photos(collection, photo, position)
+                     SELECT ?, id, ? FROM photos WHERE id=?"
+            ),
+            &[collection, &position, photo],
+        )?;
+    }
+    for (collection, options) in &removed.options {
+        write_options(w, *collection, options)?;
+    }
+    for (collection, rules) in &removed.rules {
+        write_rules(w, *collection, rules)?;
+    }
+    Ok(())
+}
+
+/// `members` in custom order: by position number, then those without one,
+/// alike by photo id.
+fn ordered(mut members: Vec<Member>) -> Vec<Member> {
+    members.sort_by(|a, b| {
+        let number = |m: &Member| m.1.as_ref().and_then(Position::number);
+        match (number(a), number(b)) {
+            (Some(x), Some(y)) => x.total_cmp(&y),
+            (x, y) => x.is_none().cmp(&y.is_none()),
+        }
+        .then(a.0.cmp(&b.0))
+    });
+    members
+}
+
+/// A collection's photos with their positions, by photo id, in a write.
+fn members_of(w: &Write<'_>, collection: CollectionId) -> Result<Vec<Member>> {
+    row! {
+        struct MemberRow {
+            photo: PhotoId,
+            position: Option<String>,
+        }
+    }
+    let rows: Vec<MemberRow> = w.read(
+        sql!("SELECT photo, position FROM collection_photos WHERE collection=? ORDER BY photo"),
+        &[&collection],
+    )?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.photo, r.position.map(Position)))
+        .collect())
+}
+
+/// Refuses anything but a plain collection (the Quick Collection too).
+fn ensure_plain(w: &Write<'_>, id: CollectionId) -> Result<()> {
+    let kind: Option<String> =
+        w.read_optional(sql!("SELECT kind FROM collections WHERE id=?"), &[&id])?;
+    match kind {
+        Some(kind) if kind == COLLECTION_KIND => Ok(()),
+        Some(_) => bail!("Only a collection has a custom order"),
+        None => bail!("That collection is gone"),
     }
 }

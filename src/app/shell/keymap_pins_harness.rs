@@ -840,6 +840,9 @@ impl Fixture {
         if e.auto_stack_open() {
             open.push("Auto-Stack".into());
         }
+        if e.collection_dialog_open() {
+            open.push("Collection".into());
+        }
         if open.is_empty() {
             "-".into()
         } else {

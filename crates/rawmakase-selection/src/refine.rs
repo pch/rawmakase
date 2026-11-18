@@ -49,15 +49,19 @@ pub(crate) fn mean(src: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
             tmp[y * w + x] = ((prefix[b] - prefix[a]) / (b - a) as f64) as f32;
         }
     }
-    let mut out = vec![0f32; w * h];
-    for x in 0..w {
-        let mut prefix = vec![0f64; h + 1];
-        for y in 0..h {
-            prefix[y + 1] = prefix[y] + tmp[y * w + x] as f64;
+    // The same column sums, built and read a row at a time so memory is walked in
+    // order.
+    let mut prefix = vec![0f64; (h + 1) * w];
+    for y in 0..h {
+        for x in 0..w {
+            prefix[(y + 1) * w + x] = prefix[y * w + x] + tmp[y * w + x] as f64;
         }
-        for y in 0..h {
-            let (a, b) = (y.saturating_sub(r), (y + r + 1).min(h));
-            out[y * w + x] = ((prefix[b] - prefix[a]) / (b - a) as f64) as f32;
+    }
+    let mut out = vec![0f32; w * h];
+    for y in 0..h {
+        let (a, b) = (y.saturating_sub(r), (y + r + 1).min(h));
+        for x in 0..w {
+            out[y * w + x] = ((prefix[b * w + x] - prefix[a * w + x]) / (b - a) as f64) as f32;
         }
     }
     out

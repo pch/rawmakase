@@ -292,6 +292,12 @@ pub fn camera_matching_profile<'a>(
     })
 }
 impl Recipe {
+    /// The values [`Self::crop`] may hold. A Lightroom crop on the photo keeps its place
+    /// where it reaches past the frame Straighten enlarges, so it can lie outside 0–1
+    /// (`xmp/crop.rs`); the photo's size is not known here, so the range is wider than
+    /// any but a long panorama turned far needs; such a crop shrinks into the enlarged
+    /// frame when read.
+    pub const CROP_RANGE: std::ops::RangeInclusive<f32> = -1.0..=2.0;
     /// The Treatment the photo renders with: Black & White by its own setting or by a
     /// black & white profile.
     pub fn treatment(&self) -> Treatment {
@@ -547,7 +553,7 @@ impl Recipe {
         ensure!(self.ai_denoise.is_valid(), "Invalid AI Denoise Amount");
         self.hdr.validate()?;
         ensure!(
-            self.crop.iter().all(|v| (0. ..=1.).contains(v))
+            self.crop.iter().all(|v| Self::CROP_RANGE.contains(v))
                 && self.crop[2] - self.crop[0] >= 0.01
                 && self.crop[3] - self.crop[1] >= 0.01,
             "Invalid crop"

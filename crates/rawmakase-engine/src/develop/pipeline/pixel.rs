@@ -220,8 +220,7 @@ fn mixer_stage(
         selection: None,
     };
     if lut.output == PixelOutput::CurveInput {
-        let [red, green, blue] = curve_input(rgb, r, lut, local);
-        return sampled([0.299 * red + 0.587 * green + 0.114 * blue; 3]);
+        return sampled(curve_input(rgb, r, lut, local));
     }
     let rgb = apply_reference_curves(rgb, r, lut, local);
     // Lightroom grades after the tone curves: a faded point curve changes which tones
@@ -331,9 +330,9 @@ pub(crate) enum PixelOutput {
     /// Linear ProPhoto RGB after the swatches already there: what Point Color's
     /// dropper samples.
     PointColor,
-    /// The parametric curve's input, as the luma of the three channels it curves
-    /// (Rec. 601 weights, as Refine Saturation's): what the Tone Curve's Targeted
-    /// Adjustment Tool samples, in every channel.
+    /// The tone curves' input: each channel of encoded ProPhoto RGB after Contrast, a
+    /// mask's tone and Levels, before the parametric and point curves. The Tone
+    /// Curve's Targeted Adjustment Tool samples its luma, and its histogram counts it.
     CurveInput,
     /// Linear ProPhoto RGB where the color mixer works, after the tone curves: what
     /// the Color Mixer's Targeted Adjustment Tool samples.

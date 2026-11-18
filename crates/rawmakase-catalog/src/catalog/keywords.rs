@@ -132,6 +132,9 @@ struct KeywordRow {
     export: Option<(bool, bool)>,
     /// When it was last given to a photo, for Recent Keywords.
     applied: Option<i64>,
+    /// Its Lightroom synonyms (`keyword_synonyms`), which smart collections'
+    /// keyword rules match.
+    synonyms: Vec<String>,
 }
 
 /// What a Keyword List change did: the keywords it touched before and
@@ -431,6 +434,10 @@ fn rows_of(db: &impl Reads, ids: &[i64]) -> Result<KeywordRows> {
                 parent: k.parent,
                 export: k.include.zip(k.parents),
                 applied: k.applied,
+                synonyms: db.read(
+                    sql!("SELECT name FROM keyword_synonyms WHERE keyword=? ORDER BY name"),
+                    &[id],
+                )?,
             });
         }
         let tags: Vec<Tag> = db.read(
@@ -453,6 +460,7 @@ fn put(w: &mut Write<'_>, rows: &KeywordRows) -> Result<()> {
         w.execute(sql!("DELETE FROM photo_keywords WHERE keyword=?"), &[id])?;
         w.execute(sql!("DELETE FROM keyword_export WHERE keyword=?"), &[id])?;
         w.execute(sql!("DELETE FROM keyword_applied WHERE keyword=?"), &[id])?;
+        w.execute(sql!("DELETE FROM keyword_synonyms WHERE keyword=?"), &[id])?;
         w.execute(sql!("DELETE FROM keywords WHERE id=?"), &[id])?;
     }
     for k in &rows.keywords {
@@ -470,6 +478,12 @@ fn put(w: &mut Write<'_>, rows: &KeywordRows) -> Result<()> {
             w.execute(
                 sql!("INSERT INTO keyword_applied(keyword, applied) VALUES (?, ?)"),
                 &[&k.id, &applied],
+            )?;
+        }
+        for name in &k.synonyms {
+            w.execute(
+                sql!("INSERT INTO keyword_synonyms(keyword, name) VALUES (?, ?)"),
+                &[&k.id, name],
             )?;
         }
     }

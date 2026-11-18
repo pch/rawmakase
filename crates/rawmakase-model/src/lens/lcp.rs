@@ -333,14 +333,34 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
         ]
     };
     let reach = crate::optics::reach(centre, size);
-    let knots: Vec<f32> = (0..=32).map(|i| i as f32 / 32. * reach).collect();
+    let knot = |i: usize| i as f32 / 32. * reach;
     let poly = |k: [f32; 3], r: f32| {
         let r2 = r * r;
         1. + k[0] * r2 + k[1] * r2 * r2 + k[2] * r2 * r2 * r2
     };
+    // Out to the farthest corner, the radius vignetting is read at.
     let curve = |f: &dyn Fn(f32) -> f32| Radial {
-        knots: knots.clone(),
-        values: knots.iter().map(|r| f(*r)).collect(),
+        knots: (0..=32).map(knot).collect(),
+        values: (0..=32).map(|i| f(knot(i))).collect(),
+    };
+    // Distortion and lateral CA are read at the output radius times the fill, which
+    // zooms an imported profile out up to [`LensCorrection::ADOBE_MAX_FILL`]: past the
+    // corner they follow the polynomial, as far as it stays a valid table value, and
+    // hold their last value beyond. A polynomial that leaves that range there has
+    // usually folded back before it, where the fill stops
+    // ([`LensCorrection::fill_scale`]).
+    let past = (32. * LensCorrection::ADOBE_MAX_FILL).ceil() as usize;
+    let extended = |f: &dyn Fn(f32) -> f32| {
+        let mut c = curve(f);
+        for r in (33..=past).map(knot) {
+            let v = f(r);
+            if !Radial::VALUES.contains(&v) {
+                break;
+            }
+            c.knots.push(r);
+            c.values.push(v);
+        }
+        c
     };
     let distortion = match builtin {
         Some(builtin) => Some(builtin.clone()),
@@ -352,7 +372,7 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
             |e| e.distortion.map(|p| normalized(e, p)),
             mix3,
         )
-        .map(|(k, _)| curve(&|r| poly(k, r))),
+        .map(|(k, _)| extended(&|r| poly(k, r))),
     };
     let vignetting = interpolate(
         &found,
@@ -372,13 +392,13 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
             |e| get(e).map(|(s, p)| (s, normalized(e, p))),
             |a, b, t| (a.0 + (b.0 - a.0) * t, mix3(a.1, b.1, t)),
         )
-        .map(|((s, k), _)| curve(&|r| s * poly(k, r)))
+        .map(|((s, k), _)| extended(&|r| s * poly(k, r)))
     };
     let chromatic = chroma(|e| e.red)
         .zip(chroma(|e| e.blue))
         .map(|(r, b)| [r, b]);
     let c = LensCorrection {
-        source: format!("Adobe profile: {}", first.name),
+        source: format!("{}: {}", LensCorrection::ADOBE_PROFILE, first.name),
         default_on: false,
         vignetting,
         distortion,
@@ -862,6 +882,70 @@ mod tests {
             height: 4000,
             ..Default::default()
         }
+    }
+    /// A profile is tabulated past the farthest corner, as far as a fill that zooms out
+    /// reads it, so the corners follow the polynomial there, not its value at the corner.
+    #[test]
+    fn a_zoomed_out_profile_follows_its_polynomial_past_the_corner() {
+        let text = test_profile("Testcam", "35mm F2", "Adobe (Testcam 35mm F2)", -0.1, 0.);
+        let entries = parse(&text).unwrap();
+        let m = Metadata {
+            make: "Testcam".into(),
+            model: "X".into(),
+            lens_model: "35mm F2".into(),
+            focal: 35.,
+            aperture: 2.,
+            width: 6000,
+            height: 4000,
+            ..Default::default()
+        };
+        let c = correction(&entries, &m).unwrap();
+        let size = [6000., 4000.];
+        let fill = c.fill_scale(1., size, [0., 0., size[0], size[1]]);
+        assert!(fill > 1.01, "{fill}");
+        // The model's unit is FocalLengthX (here 35 / 36, from the focal length) times
+        // the long edge; ours is the half diagonal.
+        let k = -0.1 * (size[0].hypot(size[1]) * 0.5 / (35. / 36. * size[0])).powi(2);
+        let d = c.distortion.as_ref().unwrap();
+        let reach = c.reach(size);
+        for r in [reach, reach * fill] {
+            let model = 1. + k * r * r;
+            assert!(
+                (d.eval(r) - model).abs() < 1e-4,
+                "{r}: {} {model}",
+                d.eval(r)
+            );
+        }
+    }
+    /// A polynomial that leaves the table's valid range past the corner keeps its
+    /// correction: the table stops short of it, and the fill at the polynomial's fold.
+    #[test]
+    fn a_profile_invalid_past_the_corner_still_corrects() {
+        // 1 − 0.1 r² − 0.07 r⁶ in half diagonals: about 0.83 at the corner, below 0.2
+        // well before 1.5 times its radius, and folding back at about 1.05.
+        let text = test_profile("Testcam", "35mm F2", "Adobe (Testcam 35mm F2)", -0.1, 0.)
+            .replace(
+                r#"stCamera:RadialDistortParam1="-0.1""#,
+                r#"stCamera:FocalLengthX="0.6009252126" stCamera:RadialDistortParam1="-0.1" stCamera:RadialDistortParam3="-0.07""#,
+            );
+        let entries = parse(&text).unwrap();
+        let m = Metadata {
+            make: "Testcam".into(),
+            model: "X".into(),
+            lens_model: "35mm F2".into(),
+            focal: 35.,
+            aperture: 2.,
+            width: 6000,
+            height: 4000,
+            ..Default::default()
+        };
+        let c = correction(&entries, &m).expect("a correction");
+        let size = [6000., 4000.];
+        let d = c.distortion.as_ref().unwrap();
+        let end = *d.knots.last().unwrap();
+        assert!(end > c.reach(size) && end < c.reach(size) * LensCorrection::ADOBE_MAX_FILL);
+        let fill = c.fill_scale(1., size, [0., 0., size[0], size[1]]);
+        assert!(fill > 1. && fill < 1.06, "{fill}");
     }
     #[test]
     fn the_focus_distance_picks_the_entries_around_it() {
