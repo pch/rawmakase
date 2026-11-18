@@ -1,4 +1,4 @@
-//! Issue 998: smart collections' rules, keyword synonyms and their state,
+//! Issue 998: smart collections' rules and keyword synonyms,
 //! stored, imported from Lightroom, restored by Undo and kept by Export as
 //! Catalog.
 use super::lightroom::import_lightroom;
@@ -69,7 +69,6 @@ fn lightroom_smart_collections_sort_target_and_synonyms_are_imported() -> Result
         cat.keyword_synonyms()?,
         HashMap::from([(60, vec!["Metropolis".to_string()])])
     );
-    assert_eq!(cat.synonym_state()?, SynonymState::Complete);
     Ok(())
 }
 
@@ -148,46 +147,17 @@ fn rules_of_a_later_release_are_kept_unread() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn synonyms_are_complete_for_new_catalogs_and_missing_for_older_ones_with_keywords() -> Result<()> {
-    let (d, mut cat, photo) = catalog_with_photo()?;
-    assert_eq!(cat.synonym_state()?, SynonymState::Complete);
-    // As an earlier release left it: keywords, and no state recorded.
-    cat.add_keywords(&[photo], &[vec!["City".into()]])?;
-    cat.db_for_tests()
-        .execute("DELETE FROM meta WHERE key='keyword_synonyms'", [])?;
-    drop(cat);
-    let path = d.path().join("c.rawmakase");
-    let mut cat = Catalog::open(&path)?;
-    assert_eq!(cat.synonym_state()?, SynonymState::Missing);
-    // Recorded once: reopening keeps it, until it is set.
-    drop(cat);
-    cat = Catalog::open(&path)?;
-    assert_eq!(cat.synonym_state()?, SynonymState::Missing);
-    cat.set_synonym_state(SynonymState::Complete)?;
-    assert_eq!(cat.synonym_state()?, SynonymState::Complete);
-    // An earlier release's catalog without keywords has nothing to miss.
-    let (d2, cat2, _) = catalog_with_photo()?;
-    cat2.db_for_tests()
-        .execute("DELETE FROM meta WHERE key='keyword_synonyms'", [])?;
-    drop(cat2);
-    let cat2 = Catalog::open(d2.path().join("c.rawmakase"))?;
-    assert_eq!(cat2.synonym_state()?, SynonymState::Complete);
-    Ok(())
-}
-
 /// Export as Catalog keeps smart collections, whatever photos go, with their
-/// sets and rules, and the synonyms' state with `meta`, although `sources`
-/// is emptied; synonyms stay with their keywords.
+/// sets and rules, although `sources` is emptied; synonyms stay with their
+/// keywords.
 #[test]
-fn export_as_catalog_keeps_smart_collections_and_the_synonyms_state() -> Result<()> {
+fn export_as_catalog_keeps_smart_collections() -> Result<()> {
     let d = tempfile::tempdir()?;
     let source = d.path().join("smart.lrcat");
     lightroom(&source, "50.0")?;
     let imported = d.path().join("smart.rawmakase");
     import_lightroom(&source, &imported)?;
-    let mut cat = Catalog::open(&imported)?;
-    cat.set_synonym_state(SynonymState::Missing)?;
+    let cat = Catalog::open(&imported)?;
     let export = cat.export_catalog(
         &ExportScope::Photos(vec![PhotoId(41)]),
         &d.path().join("export.rawmakase"),
@@ -209,7 +179,6 @@ fn export_as_catalog_keeps_smart_collections_and_the_synonyms_state() -> Result<
         Some(FIVE_STARS)
     );
     assert_eq!(out.keyword_synonyms()?.len(), 1);
-    assert_eq!(out.synonym_state()?, SynonymState::Missing);
     Ok(())
 }
 
@@ -359,107 +328,5 @@ fn smart_collections_are_created_with_their_rules_by_the_naming_rules() -> Resul
         cat.create_smart_collection("Inside", Some(plain), &SmartRules::new(&group))
             .is_err()
     );
-    Ok(())
-}
-
-/// A catalog this release imported from `source`, made as an earlier
-/// release left it: no rules, sorts, target or synonyms, and synonyms
-/// missing.
-fn imported_earlier(d: &tempfile::TempDir, source: &Path) -> Result<Catalog> {
-    let destination = d.path().join("earlier.rawmakase");
-    import_lightroom(source, &destination)?;
-    let cat = Catalog::open(&destination)?;
-    cat.db_for_tests().execute_batch(
-        "DELETE FROM smart_collection_rules;
-         DELETE FROM collection_options;
-         DELETE FROM keyword_synonyms;
-         DELETE FROM meta WHERE key IN ('target_collection', 'keyword_synonyms');
-         INSERT INTO meta(key, value) VALUES ('keyword_synonyms', 'missing');",
-    )?;
-    Ok(cat)
-}
-
-#[test]
-fn reading_smart_collections_fills_only_what_is_missing_and_once() -> Result<()> {
-    let d = tempfile::tempdir()?;
-    let source = d.path().join("smart.lrcat");
-    lightroom(&source, "50.0")?;
-    let mut cat = imported_earlier(&d, &source)?;
-    // Chosen here since: kept.
-    let mine = Group::new(
-        Combine::Union,
-        vec![Item::Rule(Rule::new(
-            "rating",
-            "==",
-            Some(Value::Number(2.)),
-        ))],
-    );
-    cat.set_smart_rules(CollectionId(18), &SmartRules::new(&mine))?;
-    cat.set_collection_options(
-        CollectionId(50),
-        &CollectionOptions {
-            sort: "captureTime".into(),
-            direction: "ascending".into(),
-        },
-    )?;
-    let read = cat.read_smart_collections(&source)?;
-    assert_eq!(
-        (read.rules, read.sorts, read.target, read.synonyms),
-        (2, 1, true, 1)
-    );
-    assert!(read.collections_apart.is_empty() && read.keywords_apart.is_empty());
-    assert!(read.synonyms_complete);
-    let rules = cat.smart_rules()?;
-    assert_eq!(rules[&CollectionId(17)].lightroom(), Some(FIVE_STARS));
-    assert_eq!(rules[&CollectionId(18)].rules().unwrap(), mine);
-    assert_eq!(
-        rules[&CollectionId(19)].lightroom(),
-        Some("s = { os.exit() }")
-    );
-    let options = cat.collection_options()?;
-    assert_eq!(options[&CollectionId(17)].sort, "captureTime");
-    assert_eq!(options[&CollectionId(50)].sort, "captureTime");
-    assert_eq!(cat.target_collection()?, Some(CollectionId(50)));
-    assert_eq!(cat.keyword_synonyms()?[&60], ["Metropolis"]);
-    assert_eq!(cat.synonym_state()?, SynonymState::Complete);
-    // Twice: nothing more.
-    let again = cat.read_smart_collections(&source)?;
-    assert_eq!(
-        (again.rules, again.sorts, again.target, again.synonyms),
-        (0, 0, false, 0)
-    );
-    assert!(again.synonyms_complete);
-    Ok(())
-}
-
-#[test]
-fn reading_smart_collections_leaves_what_isnt_lightroom_s() -> Result<()> {
-    let d = tempfile::tempdir()?;
-    let source = d.path().join("smart.lrcat");
-    lightroom(&source, "'qc'")?;
-    let mut cat = imported_earlier(&d, &source)?;
-    // Renamed here, and a keyword renamed: not taken for Lightroom's.
-    cat.rename_collection(CollectionId(17), "Best")?;
-    cat.db_for_tests()
-        .execute("UPDATE keywords SET name = 'Town' WHERE id = 60", [])?;
-    let read = cat.read_smart_collections(&source)?;
-    assert_eq!(read.collections_apart, ["Five Stars"]);
-    assert_eq!(read.keywords_apart, ["Town"]);
-    assert!(!read.synonyms_complete);
-    assert!(!cat.smart_rules()?.contains_key(&CollectionId(17)));
-    assert!(cat.keyword_synonyms()?.is_empty());
-    assert_eq!(cat.synonym_state()?, SynonymState::Missing);
-    // A nameless root keyword that isn't Lightroom's is listed too.
-    cat.db_for_tests()
-        .execute("UPDATE keywords SET name = 'City' WHERE id = 60", [])?;
-    cat.db_for_tests().execute(
-        "INSERT INTO keywords(id, name, parent) VALUES (61, '', NULL)",
-        [],
-    )?;
-    let again = cat.read_smart_collections(&source)?;
-    assert_eq!(again.keywords_apart, ["the hidden root keyword (61)"]);
-    assert!(!again.synonyms_complete);
-    // The Quick Collection target needs no collection matched.
-    assert!(read.target && cat.has_target_collection()?);
     Ok(())
 }

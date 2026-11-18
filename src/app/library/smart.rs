@@ -5,11 +5,10 @@
 //! photos it had and says it is updating; Select All and Delete Rejected
 //! Photos wait, so they never act on photos the rules no longer match. A
 //! smart collection whose rules can't be evaluated lists no photos and says
-//! why; one that reads keywords says when the catalog doesn't know its
-//! keywords' Lightroom synonyms yet.
+//! why.
 use super::Library;
 use super::collections::SmartCount;
-use crate::catalog::{CollectionId, CollectionKind, SynonymState};
+use crate::catalog::{CollectionId, CollectionKind};
 use crate::catalog_session::smart::SmartStatus;
 use crate::collection_rules::Date;
 use std::collections::HashMap;
@@ -35,8 +34,6 @@ pub(in crate::app) enum SmartNote {
     Updating,
     Unsupported(String),
     Failed(String),
-    /// Its rules read keywords, whose Lightroom synonyms aren't known.
-    SynonymsMissing,
 }
 
 impl Library {
@@ -164,16 +161,10 @@ impl Library {
         if !self.source_settled() {
             return Some(SmartNote::Updating);
         }
-        if let Some(why) = self.smart.unsupported.get(&id) {
-            return Some(SmartNote::Unsupported(why.clone()));
-        }
-        let reads_keywords = self
-            .session
-            .smart_rules_listed()
-            .iter()
-            .any(|(c, rules)| *c == id && rules.as_ref().is_ok_and(|g| g.reads_keywords()));
-        (reads_keywords && self.session.synonym_state() == SynonymState::Missing)
-            .then_some(SmartNote::SynonymsMissing)
+        self.smart
+            .unsupported
+            .get(&id)
+            .map(|why| SmartNote::Unsupported(why.clone()))
     }
     /// The panel's count of each smart collection.
     pub(super) fn smart_counts(&self) -> &HashMap<CollectionId, SmartCount> {
@@ -200,41 +191,6 @@ impl Library {
             self.messages.warn(unsupported_line(count));
         }
     }
-    /// What Read Smart Collections from Lightroom Catalog did, on the
-    /// status line.
-    pub(in crate::app) fn note_smart_read(
-        &mut self,
-        read: &crate::catalog::lightroom::SmartRecovery,
-    ) {
-        let line = smart_read_line(read);
-        if read.collections_apart.is_empty()
-            && read.keywords_apart.is_empty()
-            && read.synonyms_complete
-        {
-            self.messages.done(line);
-        } else {
-            // Every one left, one per line, when the message is opened.
-            let detail = read
-                .collections_apart
-                .iter()
-                .map(|name| format!("Collection: {name}"))
-                .chain(
-                    read.keywords_apart
-                        .iter()
-                        .map(|name| format!("Keyword: {name}")),
-                )
-                .collect::<Vec<_>>()
-                .join("\n");
-            self.messages.warn_with_detail(line, detail);
-        }
-    }
-    /// The dismissal of the synonyms notice: the user says this catalog has
-    /// no Lightroom synonyms to read.
-    pub(in crate::app) fn dismiss_missing_synonyms(&mut self) {
-        if let Err(e) = self.session.dismiss_missing_synonyms() {
-            self.messages.warn(format!("Could not save that: {e}"));
-        }
-    }
 }
 
 impl SmartNote {
@@ -246,11 +202,6 @@ impl SmartNote {
                 format!("This smart collection lists no photos: a rule can't be evaluated ({why})")
             }
             Self::Failed(error) => error.clone(),
-            Self::SynonymsMissing => {
-                "Keyword rules don't see Lightroom's keyword synonyms yet: this catalog doesn't \
-                 have them. Catalog › Read Smart Collections from Lightroom Catalog… reads them"
-                    .into()
-            }
         }
     }
 }
@@ -266,66 +217,4 @@ pub(in crate::app) fn unsupported_line(count: usize) -> String {
     format!(
         "{them} {have} rules RAWmakase can't evaluate; they list no photos until those rules are removed"
     )
-}
-
-/// The summary of Read Smart Collections from Lightroom Catalog.
-pub(in crate::app) fn smart_read_line(read: &crate::catalog::lightroom::SmartRecovery) -> String {
-    let count = |n: usize, one: &str, many: &str| {
-        if n == 1 {
-            format!("1 {one}")
-        } else {
-            format!("{n} {many}")
-        }
-    };
-    let mut filled = Vec::new();
-    if read.rules > 0 {
-        filled.push(count(
-            read.rules,
-            "smart collection's rules",
-            "smart collections' rules",
-        ));
-    }
-    if read.sorts > 0 {
-        filled.push(count(read.sorts, "collection's sort", "collections' sorts"));
-    }
-    if read.target {
-        filled.push("the target collection".into());
-    }
-    if read.synonyms > 0 {
-        filled.push(format!(
-            "the synonyms of {}",
-            count(read.synonyms, "keyword", "keywords")
-        ));
-    }
-    let mut line = if filled.is_empty() && read.synonyms_complete {
-        "Read from Lightroom: nothing was missing".to_string()
-    } else if filled.is_empty() {
-        "Read from Lightroom: nothing filled in".to_string()
-    } else {
-        format!("Read from Lightroom: {}", filled.join(", "))
-    };
-    let names = |names: &[String]| {
-        let shown: Vec<&str> = names.iter().take(3).map(String::as_str).collect();
-        let more = names.len().saturating_sub(3);
-        let mut text = shown.join(", ");
-        if more > 0 {
-            text.push_str(&format!(" and {more} more"));
-        }
-        text
-    };
-    if !read.collections_apart.is_empty() {
-        line.push_str(&format!(
-            ". Left as they are here (renamed, moved or not Lightroom's): {}",
-            names(&read.collections_apart)
-        ));
-    }
-    if !read.keywords_apart.is_empty() {
-        line.push_str(&format!(
-            ". Keywords not in that Lightroom catalog: {}, so synonyms stay incomplete",
-            names(&read.keywords_apart)
-        ));
-    } else if !read.synonyms_complete {
-        line.push_str(". Keyword synonyms stay incomplete");
-    }
-    line
 }

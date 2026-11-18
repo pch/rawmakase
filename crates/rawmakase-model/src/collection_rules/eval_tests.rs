@@ -530,7 +530,6 @@ fn searchable_text_covers_the_fields_rawmakase_keeps() {
         matching(&one_rule("metadata", "any", text("kyoto")), &entries),
         Vec::<usize>::new()
     );
-    assert!(one_rule("all", "any", text("x")).reads_keywords());
 }
 
 #[test]

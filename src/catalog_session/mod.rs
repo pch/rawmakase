@@ -88,7 +88,6 @@ pub(crate) struct CatalogSession {
     smart: smart::Smart,
     /// Each smart collection's rules, by collection.
     smart_rules: HashMap<CollectionId, crate::catalog::SmartRules>,
-    synonyms: crate::catalog::SynonymState,
 }
 
 /// The last structural generation given out, by any session: unique across
@@ -141,19 +140,6 @@ impl CatalogSession {
     /// added.
     pub(crate) fn previous_import(&self) -> &HashSet<PhotoId> {
         &self.previous_import
-    }
-    /// Whether the keywords' Lightroom synonyms are known, which smart
-    /// collections' keyword rules match.
-    pub(crate) fn synonym_state(&self) -> crate::catalog::SynonymState {
-        self.synonyms
-    }
-    /// The user says this catalog has no Lightroom synonyms to read: its
-    /// keywords' synonyms are complete as they are.
-    pub(crate) fn dismiss_missing_synonyms(&mut self) -> Result<()> {
-        self.catalog
-            .set_synonym_state(crate::catalog::SynonymState::Complete)?;
-        self.synonyms = crate::catalog::SynonymState::Complete;
-        Ok(())
     }
     /// Saves photo `id`'s edit ([`Catalog::save_edit`]). Changes no list.
     pub(crate) fn save_edit(
@@ -284,7 +270,6 @@ impl CatalogSession {
             query_revision: 0,
             smart: Default::default(),
             smart_rules: HashMap::new(),
-            synonyms: crate::catalog::SynonymState::Complete,
         };
         session.reload()?;
         Ok(Opened {
@@ -441,7 +426,6 @@ impl CatalogSession {
         let overrides = self.catalog.overrides()?;
         let previous_import = self.catalog.previous_import()?.into_iter().collect();
         let smart_rules = self.catalog.smart_rules()?;
-        let synonyms = self.catalog.synonym_state()?;
         self.photos = photos;
         self.previous_import = previous_import;
         self.folders = folders;
@@ -450,7 +434,6 @@ impl CatalogSession {
         self.roots = roots;
         self.overrides = overrides;
         self.smart_rules = smart_rules;
-        self.synonyms = synonyms;
         self.count_checksums();
         Ok(())
     }

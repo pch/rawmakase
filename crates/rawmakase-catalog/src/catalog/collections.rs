@@ -649,17 +649,6 @@ impl SmartRules {
     }
 }
 
-/// Whether the catalog has its keywords' Lightroom synonyms (`meta`
-/// `keyword_synonyms`). A catalog imported from Lightroom before this
-/// release, or exported from one, may have keywords but not their synonyms.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SynonymState {
-    Complete,
-    Missing,
-}
-/// The `meta` key of [`SynonymState`].
-const SYNONYMS: &str = "keyword_synonyms";
-
 impl Catalog {
     /// Every smart collection's rules, by collection.
     pub fn smart_rules(&self) -> Result<HashMap<CollectionId, SmartRules>> {
@@ -720,48 +709,6 @@ impl Catalog {
         }
         Ok(out)
     }
-    /// Whether the keywords' Lightroom synonyms are known. A catalog that
-    /// never recorded it was made by an earlier release: missing, unless it
-    /// has no keyword (see [`Catalog::open`]).
-    pub fn synonym_state(&self) -> Result<SynonymState> {
-        Ok(match self.meta(SYNONYMS)?.as_deref() {
-            Some("complete") => SynonymState::Complete,
-            _ => SynonymState::Missing,
-        })
-    }
-    /// Records whether the keywords' Lightroom synonyms are known: complete
-    /// once read from a Lightroom catalog, or when the user says there are
-    /// none.
-    pub fn set_synonym_state(&mut self, state: SynonymState) -> Result<()> {
-        self.db.write(|w| write_synonym_state(w, state))
-    }
-}
-
-/// Records the synonyms' state of a catalog that has none recorded: an
-/// earlier release's. Its keywords can't be told to be Lightroom's or not
-/// (their ids carry no provenance, and an exported catalog has no
-/// `sources`), so any keyword makes it missing.
-pub(super) fn record_synonym_state(w: &mut Write<'_>) -> Result<()> {
-    let recorded: Option<String> =
-        w.read_optional(sql!("SELECT value FROM meta WHERE key=?"), &[&SYNONYMS])?;
-    if recorded.is_some() {
-        return Ok(());
-    }
-    let keyword: Option<i64> = w.read_optional(sql!("SELECT 1 FROM keywords LIMIT 1"), &[])?;
-    write_synonym_state(
-        w,
-        if keyword.is_some() {
-            SynonymState::Missing
-        } else {
-            SynonymState::Complete
-        },
-    )
-}
-
-/// Records that every keyword's Lightroom synonyms are known: a catalog
-/// imported from Lightroom by this release.
-pub(super) fn record_synonyms_complete(w: &mut Write<'_>) -> Result<()> {
-    write_synonym_state(w, SynonymState::Complete)
 }
 
 /// Makes Lightroom's target collection (`Adobe_variablesTable`'s
@@ -792,14 +739,6 @@ pub(super) fn import_target(w: &mut Write<'_>, value: &str) -> Result<()> {
         Some(r) if is_quick(&r.name, r.parent, &r.kind) => super::set_meta(w, TARGET, TARGET_QUICK),
         _ => Ok(()),
     }
-}
-
-fn write_synonym_state(w: &mut Write<'_>, state: SynonymState) -> Result<()> {
-    let value = match state {
-        SynonymState::Complete => "complete",
-        SynonymState::Missing => "missing",
-    };
-    super::set_meta(w, SYNONYMS, value)
 }
 
 fn stored_rules(json: String, format: i64, lightroom: Option<String>) -> SmartRules {

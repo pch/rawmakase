@@ -515,13 +515,6 @@ impl Group {
             )
         })
     }
-    /// Whether a rule reads keywords, whose Lightroom synonyms a catalog
-    /// imported earlier may not have.
-    pub fn reads_keywords(&self) -> bool {
-        self.rules()
-            .iter()
-            .any(|r| matches!(r.criteria.as_str(), "keywords" | "metadata" | "all"))
-    }
 }
 
 fn compile_rule(rule: &Rule, clock: &Clock) -> Result<Test, Unsupported> {

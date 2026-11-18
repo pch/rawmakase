@@ -72,7 +72,6 @@ impl Library {
         let Some(note) = self.smart_note() else {
             return;
         };
-        let mut dismiss = false;
         egui::Frame::new()
             .fill(theme::palette(ui.ctx()).tone(Tone::FIELD))
             .inner_margin(inset::BAR)
@@ -84,16 +83,8 @@ impl Library {
                             .small()
                             .color(theme::palette(ui.ctx()).tone(Tone::SECONDARY)),
                     );
-                    if note == super::smart::SmartNote::SynonymsMissing {
-                        dismiss = ui
-                            .small_button("Dismiss — this catalog has no Lightroom synonyms")
-                            .clicked();
-                    }
                 });
             });
-        if dismiss {
-            self.dismiss_missing_synonyms();
-        }
     }
     /// Cmd+L: turns the filter bar off or back on, keeping what is set.
     pub(super) fn toggle_filters(&mut self) {

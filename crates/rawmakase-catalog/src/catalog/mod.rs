@@ -65,7 +65,6 @@ pub use crate::xmp::descriptive::Read as FileMetadata;
 pub use checksums::ReadChecksum;
 pub use collections::{
     CollectionOptions, Member, MembershipChange, Position, RemovedCollections, SmartRules,
-    SynonymState,
 };
 pub use db::assert_shape as assert_sql_shape;
 pub use defaults::{CameraExifReader, ImportOptions, MetadataDefaults, NewPhotoDefaults};
@@ -149,9 +148,6 @@ impl Catalog {
         // The schema is idempotent: a catalog from an earlier release gains the
         // tables added since.
         self.db.apply_schema()?;
-        if self.meta("keyword_synonyms")?.is_none() {
-            self.db.write(collections::record_synonym_state)?;
-        }
         locations::prepare(&mut self.db, &self.computer)
     }
     pub fn photos(&self) -> Result<Vec<Photo>> {
