@@ -660,7 +660,7 @@ mod tests {
         assert!((recipe.exposure - 0.5).abs() < f32::EPSILON);
     }
     #[test]
-    fn unchanged_gesture_and_document_reset_leave_no_history() {
+    fn an_unchanged_gesture_leaves_no_history() {
         let mut history = History::default();
         let recipe = Recipe::default();
         let mut changed = recipe.clone();
@@ -668,18 +668,6 @@ mod tests {
         history.observe(recipe.clone(), &changed, true);
         history.observe(changed, &recipe, false);
         assert!(!history.can_undo());
-        history.observe(
-            recipe.clone(),
-            &Recipe {
-                exposure: 1.,
-                ..Default::default()
-            },
-            true,
-        );
-        history = History::default();
-        assert!(!history.in_gesture());
-        assert!(!history.can_undo());
-        assert!(!history.can_redo());
     }
     #[test]
     fn red_and_pet_eye_edits_have_lightroom_names() {

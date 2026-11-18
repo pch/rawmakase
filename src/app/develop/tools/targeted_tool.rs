@@ -662,7 +662,7 @@ mod tests {
     }
 
     #[test]
-    fn lightrooms_shortcuts_open_each_tool_and_esc_puts_it_away() {
+    fn bw_shortcut_opens_its_tool_on_a_monochrome_photo_and_esc_puts_it_away() {
         let ctx = egui::Context::default();
         let mut e = editor(&ctx);
         let press = |e: &mut Editor, key: egui::Key, modifiers: egui::Modifiers| {
@@ -683,23 +683,12 @@ mod tests {
             );
             output.textures_delta.clear();
         };
+        // The keymap pins cover the other tools' shortcuts and a colour photo.
         let all = egui::Modifiers::COMMAND | egui::Modifiers::ALT | egui::Modifiers::SHIFT;
-        for (key, target) in [
-            (egui::Key::T, Target::ToneCurve),
-            (egui::Key::H, Target::Hsl(HslChannel::Hue)),
-            (egui::Key::S, Target::Hsl(HslChannel::Saturation)),
-            (egui::Key::L, Target::Hsl(HslChannel::Luminance)),
-        ] {
-            press(&mut e, key, all);
-            assert_eq!(e.view.tool(), Tool::Targeted(target), "{key:?}");
-        }
-        press(&mut e, egui::Key::Escape, egui::Modifiers::NONE);
-        assert_eq!(e.view.tool(), Tool::None);
-        // B&W's is for black & white photos.
-        press(&mut e, egui::Key::G, all);
-        assert_eq!(e.view.tool(), Tool::None);
         e.document.edit.setup_mut().effects.monochrome = true;
         press(&mut e, egui::Key::G, all);
         assert_eq!(e.view.tool(), Tool::Targeted(Target::BlackWhite));
+        press(&mut e, egui::Key::Escape, egui::Modifiers::NONE);
+        assert_eq!(e.view.tool(), Tool::None);
     }
 }

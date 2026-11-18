@@ -90,12 +90,14 @@ fn as_srgb(path: &Path) -> Result<Vec<f64>> {
 
 /// An Adobe RGB or ProPhoto export, read back through its own profile, is the sRGB
 /// export wherever sRGB holds the colour. In 16-bit TIFF, grays within 4 code
-/// values and colours within 3e-4 (a tenth of an 8-bit code value): the profiles'
-/// s15.16 colorants and white differ from the published chromaticities, which the
-/// conversion follows, by up to 2e-5, which a reader's matrix carries into the
-/// darker channels of saturated colours. In 8-bit PNG, grays within 2.5 code values
-/// and colours within 0.008 in linear light: a dark channel beside a bright one
-/// is read back as the difference of two Adobe RGB values, each rounded to 8 bits.
+/// values and colours within 6e-5 in linear light: the profiles' s15.16 colorants
+/// and white differ from the published chromaticities, which the conversion follows,
+/// by up to 2e-5, which a reader's matrix carries into every channel of a saturated
+/// colour, summed over the three. Encoded, that error is up to 12.92 times larger
+/// in sRGB's linear toe, so a dark channel is compared in linear light. In 8-bit
+/// PNG, grays within 2.5 code values and colours within 0.008 in linear light: a
+/// dark channel beside a bright one is read back as the difference of two Adobe RGB
+/// values, each rounded to 8 bits.
 #[test]
 fn wide_gamut_exports_read_back_through_their_profiles_as_the_srgb_export() -> Result<()> {
     let dir = tempfile::tempdir()?;
@@ -115,8 +117,8 @@ fn wide_gamut_exports_read_back_through_their_profiles_as_the_srgb_export() -> R
     };
     let photo = photo(image, &source, &dir.path().join("cache"), recipe);
     for (format, space, gray, colour) in [
-        (Format::Tiff, OutputSpace::AdobeRgb, 4. / 65535., 3e-4),
-        (Format::Tiff, OutputSpace::ProPhoto, 4. / 65535., 3e-4),
+        (Format::Tiff, OutputSpace::AdobeRgb, 4. / 65535., 6e-5),
+        (Format::Tiff, OutputSpace::ProPhoto, 4. / 65535., 6e-5),
         (Format::Png, OutputSpace::AdobeRgb, 2.5 / 255., 0.008),
     ] {
         let srgb = pixels(&export(
@@ -139,11 +141,10 @@ fn wide_gamut_exports_read_back_through_their_profiles_as_the_srgb_export() -> R
             }
             let is_gray = (s[0] - s[1]).abs() < 1e-4 && (s[1] - s[2]).abs() < 1e-4;
             grays += usize::from(is_gray);
-            let close = |s: &f64, b: &f64| match (is_gray, format) {
-                (true, _) | (false, Format::Tiff) => {
-                    (s - b).abs() <= if is_gray { gray } else { colour }
-                }
-                (false, _) => {
+            let close = |s: &f64, b: &f64| {
+                if is_gray {
+                    (s - b).abs() <= gray
+                } else {
                     let linear = |v: f64| f64::from(crate::color::srgb_decode(v as f32));
                     (linear(*s) - linear(*b)).abs() <= colour
                 }

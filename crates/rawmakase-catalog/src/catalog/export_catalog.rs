@@ -21,9 +21,6 @@ use anyhow::{Context, Result, bail, ensure};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-/// The kind of an ordinary collection, as Lightroom names it.
-const COLLECTION_KIND: &str = "com.adobe.ag.library.collection";
-
 /// The photos to export.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExportScope {
@@ -199,19 +196,27 @@ impl Catalog {
             .collect();
         let lens_profiles = self.lens_profiles(&keep)?;
 
-        let kept_every_mask = self.db.write(|w| {
+        let (kept_every_mask, collection) = self.db.write(|w| {
             let all: Vec<PhotoId> = w.read(sql!("SELECT id FROM photos"), &[])?;
             for id in all.into_iter().filter(|id| !keep.contains(id)) {
                 super::copies::delete_photo(w, id)?;
             }
             super::ingest::remove_folders(w, &others)?;
             super::locations::forget_unused(w)?;
+            // A pruned collection's id is never given to the one added below.
+            super::collections::reserve_ids(w)?;
             prune_unreferenced(w)?;
-            let kept_every_mask = prune_bitmaps(w)?;
+            let kept_every_mask = match super::mask_assets::unnamed(w)? {
+                Some(unnamed) => {
+                    super::mask_assets::delete(w, &unnamed)?;
+                    false
+                }
+                None => true,
+            };
             prune_recipe_assets(w)?;
             keep_reread(w, &keep)?;
-            add_collection(w, collection)?;
-            Ok(kept_every_mask)
+            let collection = add_collection(w, collection)?;
+            Ok((kept_every_mask, collection))
         })?;
         self.db.compact()?;
         // Each photo is found where this catalog finds it.
@@ -230,7 +235,7 @@ impl Catalog {
             path: PathBuf::new(),
             photos: keep.len(),
             family: keep.len() - chosen.len(),
-            collection: collection.to_string(),
+            collection,
             offline,
             lens_profiles,
             kept_every_mask,
@@ -241,7 +246,7 @@ impl Catalog {
     /// Refuses a catalog with a table this release does not know: a later
     /// release added it, and whether its rows are about photos left out, and
     /// must go, can't be told here.
-    fn ensure_known_tables(&self) -> Result<()> {
+    pub(super) fn ensure_known_tables(&self) -> Result<()> {
         let known = known_tables();
         let unknown: Vec<String> = self
             .db
@@ -366,8 +371,10 @@ fn known_tables() -> BTreeSet<&'static str> {
         .collect()
 }
 
-/// Deletes what no photo kept refers to: keywords (but a used one's parents),
-/// collections (but a used one's sets), stacks, import batches (and every
+/// Deletes what no photo kept refers to: keywords (but a used one's parents)
+/// with their synonyms, collections (but a used one's sets, and smart
+/// collections with their sets: their rules are kept as text and see what
+/// the exported catalog has), stacks, import batches (and every
 /// batch's bursts still to stack), the Lightroom
 /// catalog it was imported from (every other photo's too), and the journal of
 /// file operations, all finished.
@@ -385,14 +392,36 @@ fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
                  SELECT keyword FROM photo_keywords
                  UNION SELECT k.parent FROM keywords k JOIN used u ON k.id=u.id
                  WHERE k.parent IS NOT NULL)
+             DELETE FROM keyword_synonyms WHERE keyword NOT IN (SELECT id FROM used)"
+        ),
+        sql!(
+            "WITH RECURSIVE used(id) AS (
+                 SELECT keyword FROM photo_keywords
+                 UNION SELECT k.parent FROM keywords k JOIN used u ON k.id=u.id
+                 WHERE k.parent IS NOT NULL)
              DELETE FROM keywords WHERE id NOT IN (SELECT id FROM used)"
         ),
         sql!(
             "WITH RECURSIVE used(id) AS (
                  SELECT collection FROM collection_photos
+                 UNION SELECT id FROM collections
+                 WHERE kind='com.adobe.ag.library.smart_collection'
+                 UNION SELECT c.parent FROM collections c JOIN used u ON c.id=u.id
+                 WHERE c.parent IS NOT NULL)
+             DELETE FROM collection_options WHERE collection NOT IN (SELECT id FROM used)"
+        ),
+        sql!(
+            "WITH RECURSIVE used(id) AS (
+                 SELECT collection FROM collection_photos
+                 UNION SELECT id FROM collections
+                 WHERE kind='com.adobe.ag.library.smart_collection'
                  UNION SELECT c.parent FROM collections c JOIN used u ON c.id=u.id
                  WHERE c.parent IS NOT NULL)
              DELETE FROM collections WHERE id NOT IN (SELECT id FROM used)"
+        ),
+        sql!(
+            "DELETE FROM smart_collection_rules
+             WHERE collection NOT IN (SELECT id FROM collections)"
         ),
         sql!("DELETE FROM stacks WHERE id NOT IN (SELECT stack FROM stack_photos)"),
         // Bursts still to stack are this catalog's to stack, not the copy's.
@@ -408,64 +437,20 @@ fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
     Ok(())
 }
 
-/// Every stored text that may name a mask raster, profile or calibration: edits,
-/// Lightroom settings, spots and masks, snapshots and inflated Histories, whatever
-/// release wrote them. `None` when a History can't be read.
-fn naming_texts(w: &Write<'_>) -> Result<Option<Vec<String>>> {
-    let mut texts: Vec<String> = Vec::new();
-    for statement in [
-        sql!("SELECT recipe FROM photos WHERE recipe IS NOT NULL"),
-        sql!("SELECT lightroom_develop FROM photos WHERE lightroom_develop IS NOT NULL"),
-        sql!("SELECT data FROM local_edits"),
-        sql!("SELECT recipe FROM develop_snapshots WHERE recipe IS NOT NULL"),
-    ] {
-        texts.extend(w.read::<String>(statement, &[])?);
-    }
-    let histories: Vec<Vec<u8>> = w.read(sql!("SELECT data FROM develop_history"), &[])?;
-    for data in histories {
-        match super::develop_history::text(&data) {
-            Ok(text) => texts.push(String::from_utf8_lossy(&text).into_owned()),
-            Err(_) => return Ok(None),
-        }
-    }
-    Ok(Some(texts))
-}
-
-/// Deletes the mask rasters no edit, History or snapshot left names. A
-/// raster is kept if its id appears anywhere in them, whatever release wrote
-/// them; if a History can't be read, every raster is kept. Returns whether
-/// that happened.
-fn prune_bitmaps(w: &mut Write<'_>) -> Result<bool> {
-    let hashes: Vec<String> = w.read(sql!("SELECT hash FROM bitmaps"), &[])?;
-    if hashes.is_empty() {
-        return Ok(false);
-    }
-    let Some(texts) = naming_texts(w)? else {
-        return Ok(true);
-    };
-    for hash in hashes {
-        if !texts.iter().any(|t| t.contains(hash.as_str())) {
-            w.execute(sql!("DELETE FROM bitmaps WHERE hash=?"), &[&hash])?;
-        }
-    }
-    Ok(false)
-}
-
 /// Deletes the camera profiles and Lensfun calibrations no edit, History or
-/// snapshot left names, by the rule [`prune_bitmaps`] follows: one is kept if its id
-/// appears anywhere in them, and every one is kept if a History can't be read.
+/// snapshot left names, by the rule rasters follow ([`super::mask_assets::named`]):
+/// one is kept if its id appears anywhere in them, and every one is kept if a
+/// History can't be read.
 fn prune_recipe_assets(w: &mut Write<'_>) -> Result<()> {
     let ids: Vec<String> = w.read(sql!("SELECT id FROM recipe_assets"), &[])?;
     if ids.is_empty() {
         return Ok(());
     }
-    let Some(texts) = naming_texts(w)? else {
+    let Some(named) = super::mask_assets::named(w, &ids)? else {
         return Ok(());
     };
-    for id in ids {
-        if !texts.iter().any(|t| t.contains(id.as_str())) {
-            w.execute(sql!("DELETE FROM recipe_assets WHERE id=?"), &[&id])?;
-        }
+    for id in ids.iter().filter(|id| !named.contains(*id)) {
+        w.execute(sql!("DELETE FROM recipe_assets WHERE id=?"), &[id])?;
     }
     Ok(())
 }
@@ -485,12 +470,24 @@ fn keep_reread(w: &mut Write<'_>, keep: &BTreeSet<PhotoId>) -> Result<()> {
     super::set_meta(w, key, &kept.join(","))
 }
 
-/// Adds collection `name` of every photo.
-fn add_collection(w: &mut Write<'_>, name: &str) -> Result<()> {
-    let id: i64 = w.insert_returning_id(
-        sql!("INSERT INTO collections(name, parent, kind) VALUES (?, NULL, ?) RETURNING id"),
-        &[&name, &COLLECTION_KIND],
-    )?;
+/// Adds a top-level collection of every photo, named `name`, or `name
+/// (export)` when a collection there has that name already or it is the
+/// Quick Collection's (which older releases would take it for). Returns
+/// the name it has.
+fn add_collection(w: &mut Write<'_>, name: &str) -> Result<String> {
+    let taken: BTreeSet<String> = w
+        .read::<String>(
+            sql!("SELECT name FROM collections WHERE parent IS NULL"),
+            &[],
+        )?
+        .into_iter()
+        .collect();
+    let name = std::iter::once(name.to_string())
+        .chain(std::iter::once(format!("{name} (export)")))
+        .chain((2..).map(|n| format!("{name} (export {n})")))
+        .find(|n| n != super::QUICK_COLLECTION && !taken.contains(n))
+        .expect("an unused name");
+    let id = super::collections::insert(w, &name, None, super::collections::COLLECTION_KIND)?;
     w.execute(
         sql!(
             "INSERT INTO collection_photos(collection, photo)
@@ -498,5 +495,5 @@ fn add_collection(w: &mut Write<'_>, name: &str) -> Result<()> {
         ),
         &[&id],
     )?;
-    Ok(())
+    Ok(name)
 }

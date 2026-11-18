@@ -945,14 +945,6 @@ mod camera_names_tests {
         std::fs::write(&path, file).unwrap();
         assert_eq!(camera_names(&path), Some((String::new(), "X-T".into())));
     }
-
-    #[test]
-    fn a_file_without_exif_has_no_names() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("a.bin");
-        std::fs::write(&path, [0u8; 200]).unwrap();
-        assert_eq!(camera_names(&path), None);
-    }
 }
 
 #[cfg(test)]

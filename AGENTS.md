@@ -162,7 +162,7 @@ capabilities before falling back to GitHub connectors or browser automation.
 Run `make check` and push only when it passes. It runs every check CI runs
 (`.github/workflows/ci.yml`) that can run on this machine: dependency and crate
 closure checks, the Python calibration tests, formatting, clippy, every
-crate's tests and the MSRV build. The Makefile lists what only CI covers (the
+crate's tests, the docs build (`cargo doc`) and the MSRV build. The Makefile lists what only CI covers (the
 other platforms, the Arch package, Postgres). Use the current stable Rust, as
 CI does; newer clippy releases add lints. Where rustup's `cargo +toolchain`
 proxy doesn't work, set `MSRV_BIN` to the MSRV toolchain's `bin` folder.

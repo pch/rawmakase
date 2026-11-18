@@ -45,6 +45,13 @@ Start with the [code map](code-map.md) to find where a change belongs, the
 | [MIDI](midi.md) | Current | MIDI controllers |
 | [Remote inference](remote-inference.md) | Current | Running the selection models on another computer |
 | [Subject and Background masks](subject-and-background-masks.md) | Plan (2026-10-08), built | The selection masks' design; its closing notes record where the build differs |
+| [Extensions](extensions/overview.md) | Current | What an extension can add, trust, installing and managing extensions, the bundled ones |
+| [Extension manifest](extensions/manifest.md) | Current | `rawmakase-extension.toml` and its JSON Schema |
+| [Extension protocol](extensions/protocol.md) | Current | What the app and an extension's program say to each other, with deadlines and limits |
+| [Publishing an extension](extensions/publishing.md) | Current | `cargo rawmakase`: making, building, packaging and publishing an extension |
+| [Extensions plan](extensions-plan.md) | Plan (2026-11-09), mostly built | The extension system's design; its status line says which phases are built |
+| [Lightroom extension plan](lightroom-extension-plan.md) | Plan (2026-11-16), step 1 built | Moving Lightroom Classic import into a bundled extension |
+| [Lightroom (cloud) import plan](lightroom-cloud-import-plan.md) | Plan (2026-11-16), not built | Importing from Lightroom (cloud), after the Lightroom extension plan |
 
 ## Rendering
 
@@ -58,13 +65,19 @@ Start with the [code map](code-map.md) to find where a change belongs, the
 | [Demosaic](demosaic.md) | Current | RAWmakase's Bayer and X-Trans demosaicing |
 | [RAW decoding](raw-decoding.md) | Current | RAWmakase's own RAW decoders, per format |
 | [Preview performance](preview-performance.md) | Current | The resolution pyramid, stage caching, the GPU stages and the decode cache |
+| [HDR](hdr.md) | Current | HDR editing: the master and SDR rendition, display, HDR files, HDR export and gain maps |
 | [Camera parity](camera-parity.md) | Current | Checking camera white-balance calibration and tone against Adobe's converters |
 
 ## Records
 
 | Page | Status | What it covers |
 | --- | --- | --- |
-| [Parity gaps](records/parity-gaps.md) | Record (2026-10-05, last updated 2026-11-03) | Known differences from Lightroom, with their measurements |
+| [Parity gaps](records/parity-gaps.md) | Record (2026-10-05, last updated 2026-11-16) | Known differences from Lightroom, with their measurements |
 | [Preview performance measurements](records/preview-performance-measurements.md) | Record (2026-09-26 to 2026-10-29) | Timings behind the preview path's choices |
 | [Validation](records/validation.md) | Record (September 2026) | What was checked while engines 2 and 3 were current |
 | [macOS and Lightroom validation](records/macos-lightroom-validation.md) | Record (2026-09-25 to 2026-09-26) | Photographic comparisons and platform checks of that time |
+| [HDR implementation plan](records/hdr-implementation-plan.md) | Plan (2026-11-05), built | HDR editing, camera profiles and HDR export (#253, #894) and their completion criteria |
+| [HDR results](records/hdr-stage1-results.md) | Record (2026-11-05 to 2026-11-14) | References, measurements and decisions behind HDR rendering |
+| [HDR stage 4 design](records/hdr-stage4-design.md) | Record (2026-11-06 to 2026-11-10) | Opening HDR files as HDR edits, as designed and built |
+| [JPEG XL HDR interoperability](records/hdr-jxl-interop.md) | Record (2026-11-12) | Independent checks of JPEG XL PQ, HLG and gain-map exports |
+| [HDR completion](records/hdr-253-closure.md) | Record (2026-11-12) | How #253 meets the HDR plan's completion criteria, and what stays refused |

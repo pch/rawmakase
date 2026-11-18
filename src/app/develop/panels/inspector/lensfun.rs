@@ -343,7 +343,7 @@ fn pick(
         return;
     }
     let mut chosen = None;
-    egui::ComboBox::from_id_salt(id)
+    crate::app::ui::widgets::dropdown(ui, id)
         .width(ui.available_width())
         .selected_text(label)
         .height(320.)

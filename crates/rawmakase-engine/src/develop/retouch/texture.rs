@@ -27,7 +27,7 @@
 //!
 //! Both read the image the patch is laid on, so noise reduction or an earlier spot
 //! changes the detail and grain a patch takes, as it changes the membrane.
-use super::heal::{self, DOMAIN, PixelRect, Placed};
+use super::heal::{self, PixelRect, Placed, from_log, to_log};
 use super::patch::PatchPixels;
 use crate::camera_data::CameraImage;
 use crate::model::image_frame::ImageFrame;
@@ -137,7 +137,7 @@ impl Field {
                 let k = (y / step) * w + x / step;
                 let p = patch.pixels[y * pw + x];
                 for c in 0..3 {
-                    values[k][c] += DOMAIN.to(p[c]);
+                    values[k][c] += to_log(p[c]);
                 }
                 counts[k] += 1.;
             }
@@ -410,7 +410,7 @@ fn detail(
                     (0..3).for_each(|c| sum[c] += p[c]);
                 }
             }
-            sum.map(|v| DOMAIN.to(v / (taps * taps) as f32))
+            sum.map(|v| to_log(v / (taps * taps) as f32))
         })
         .collect();
     let low = |c: [f32; 2]| -> [f32; 3] {
@@ -428,9 +428,8 @@ fn detail(
     for (i, s, c) in sources {
         let photo = im.pixels[s];
         let low = low(c);
-        out[i] = std::array::from_fn(|ch| {
-            DOMAIN.from(DOMAIN.to(out[i][ch]) + DOMAIN.to(photo[ch]) - low[ch])
-        });
+        out[i] =
+            std::array::from_fn(|ch| from_log(to_log(out[i][ch]) + to_log(photo[ch]) - low[ch]));
     }
 }
 

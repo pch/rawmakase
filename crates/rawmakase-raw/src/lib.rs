@@ -13,7 +13,7 @@
 //! CR3 keeps in a box of its own.
 #![forbid(unsafe_code)]
 // Every public item says what it is for: the decoders' boundary is a contract
-// the decoding crate builds on (#808 step 4.13).
+// the decoding crate builds on.
 #![warn(missing_docs)]
 use rawmakase_cancel::Cancel;
 mod captured;

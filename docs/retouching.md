@@ -109,7 +109,9 @@ any of them.
   ("AI Remove", "AI Replace"). A failure adds nothing and says why, named after
   its mode, in a card at the area on the photo as well as the drawer: the
   extension needs setting up (a key; **Set up…** opens that extension's page),
-  the service is unavailable, or it declined the area. Nothing is ever sent again
+  the service is unavailable, or it declined the area. **Extension details…**
+  opens the failed extension's About tab, where its errors and **Details → Log**
+  help diagnose a program that stopped unexpectedly. Nothing is ever sent again
   by itself: each request is one paid call. After "needs setting up", sending to
   that extension waits until one of its settings or keys changes, it starts
   again, or the failure is dismissed (for a fix made on the service's side).

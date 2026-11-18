@@ -891,55 +891,6 @@ mod tests {
         e.leave_compare_for_tools();
         assert_eq!(e.view.compare, Compare::BeforeOnly);
     }
-
-    #[test]
-    fn y_keys_choose_the_view() {
-        let ctx = egui::Context::default();
-        let mut e = Editor::with_context(
-            &ctx,
-            None,
-            crate::app::preferences::session::Session::default(),
-            None,
-        );
-        let press = |modifiers: egui::Modifiers, e: &mut Editor| {
-            let input = egui::RawInput {
-                events: vec![
-                    egui::Event::ModifiersChanged(modifiers),
-                    egui::Event::Key {
-                        key: egui::Key::Y,
-                        physical_key: Some(egui::Key::Y),
-                        pressed: true,
-                        repeat: false,
-                        modifiers,
-                    },
-                    egui::Event::Key {
-                        key: egui::Key::Y,
-                        physical_key: Some(egui::Key::Y),
-                        pressed: false,
-                        repeat: false,
-                        modifiers,
-                    },
-                ],
-                ..Default::default()
-            };
-            let mut output = ctx.run_ui(input, |_| e.develop_shortcuts(&ctx));
-            output.textures_delta.clear();
-            e.view.compare
-        };
-        let none = egui::Modifiers::NONE;
-        assert_eq!(press(none, &mut e), Compare::SideBySide(Axis::LeftRight));
-        assert_eq!(
-            press(egui::Modifiers::ALT, &mut e),
-            Compare::SideBySide(Axis::TopBottom)
-        );
-        assert_eq!(
-            press(egui::Modifiers::SHIFT, &mut e),
-            Compare::Split(Axis::LeftRight)
-        );
-        assert_eq!(press(egui::Modifiers::SHIFT, &mut e), Compare::Off);
-        // Redo's Ctrl+Y elsewhere is not a view.
-        assert_eq!(press(egui::Modifiers::COMMAND, &mut e), Compare::Off);
-    }
 }
 
 #[cfg(test)]

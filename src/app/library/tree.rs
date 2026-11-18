@@ -180,15 +180,15 @@ pub(super) fn shown_count(node: &FolderNode, subfolders: bool) -> usize {
 /// What of type `P` was dropped on `response` this frame. egui's own
 /// `dnd_release_payload` takes whatever is dragged, of any type, so a row
 /// asking for photos would lose a folder dropped on it.
-fn released<P: std::any::Any + Send + Sync>(
+pub(super) fn released<P: std::any::Any + Send + Sync>(
     response: &egui::Response,
 ) -> Option<std::sync::Arc<P>> {
     egui::DragAndDrop::has_payload_of_type::<P>(&response.ctx)
         .then(|| response.dnd_release_payload::<P>())
         .flatten()
 }
-/// A dragged folder's icon and name, following the pointer.
-fn dragged_chip(ui: &egui::Ui, name: &str) {
+/// A dragged folder's or collection's icon and name, following the pointer.
+pub(super) fn dragged_chip(ui: &egui::Ui, name: &str, icon: Icon) {
     let Some(pos) = ui.ctx().pointer_latest_pos() else {
         return;
     };
@@ -211,7 +211,7 @@ fn dragged_chip(ui: &egui::Ui, name: &str) {
     );
     icons::paint_at(
         &painter,
-        Icon::Folder,
+        icon,
         egui::pos2(chip.left() + 14., chip.center().y),
         13.,
         palette.tone(Tone::SOFT),
@@ -248,7 +248,7 @@ pub(super) fn folder_tree_row(
         name: node.name.clone(),
     }) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-        dragged_chip(ui, &dragged.name);
+        dragged_chip(ui, &dragged.name, Icon::Folder);
     }
     let painter = ui.painter();
     let active = selected.contains(&node.key);

@@ -2,9 +2,11 @@ use crate::model::recipe::Recipe;
 use crate::{camera_data::CameraImage, model::transform::Transform};
 
 /// The crop as rendered, `[left, top, right, bottom]`: with Constrain Crop, the crop
-/// constrained to the photo, which is what Lightroom stores; otherwise the recipe's.
+/// constrained to the photo, which is what Lightroom stores; otherwise the recipe's, or
+/// for one past 0–1 that no longer lies on the photo, the part inside 0–1
+/// ([`Geometry::crop`]).
 pub fn rendered_crop(r: &Recipe, m: &crate::camera_data::Metadata) -> [f32; 4] {
-    if r.constrain_crop {
+    if r.constrain_crop || r.crop.iter().any(|v| !(0. ..=1.).contains(v)) {
         Geometry::for_metadata(m, &r.as_rendered()).crop()
     } else {
         r.crop
@@ -220,6 +222,7 @@ impl Geometry {
             forward: transform.map(crate::color::inverse),
             manual,
         };
+        g.crop = crate::model::image_frame::crop_as_rendered(r.crop, r.straighten, [ow, oh]);
         if r.constrain_crop && (g.transform.is_some() || g.manual.is_some()) {
             g.crop = g.constrained_crop();
         }
@@ -252,6 +255,8 @@ impl Geometry {
     }
     /// The crop as rendered (0–1 of the straightened photo): the recipe's, or with
     /// Constrain Crop the part of it that has a source pixel everywhere.
+    /// A crop past 0–1 renders as
+    /// [`crop_as_rendered`](crate::model::image_frame::crop_as_rendered) says.
     pub fn crop(&self) -> [f32; 4] {
         self.crop
     }
@@ -780,6 +785,50 @@ mod constrain_crop_tests {
         let constrained = rendered_crop(&r, &m);
         assert_eq!(constrained, Geometry::for_metadata(&m, &r).crop());
         assert_ne!(constrained, r.crop);
+    }
+    /// Grid positions over the rendered crop whose source lies past the photo.
+    fn off_photo(g: &Geometry) -> usize {
+        let n = 120;
+        (0..=n)
+            .flat_map(|i| (0..=n).map(move |j| (i, j)))
+            .filter(|&(i, j)| {
+                let [x, y] = g.source(i as f32 / n as f32, j as f32 / n as f32);
+                !(-0.501..=299.501).contains(&x) || !(-0.501..=199.501).contains(&y)
+            })
+            .count()
+    }
+    /// A Lightroom crop on the photo keeps its place where it reaches past the frame
+    /// Straighten enlarges (`xmp/crop.rs`). Once Straighten changes, part of it can lie
+    /// past the photo, which has no pixel there: Lightroom refits its crop to the photo
+    /// then, and RAWmakase renders the part of the crop inside the enlarged frame.
+    #[test]
+    fn a_crop_past_the_frame_renders_only_the_photo() {
+        let im = photo();
+        let crop = [-0.02, 0.1, 1.02, 0.9];
+        let turned = Recipe {
+            crop,
+            straighten: 3.,
+            ..Default::default()
+        };
+        let g = Geometry::new(&im, &turned, 0);
+        assert_eq!(g.crop(), crop);
+        assert_eq!(off_photo(&g), 0);
+        let level = Recipe {
+            crop,
+            ..Default::default()
+        };
+        let g = Geometry::new(&im, &level, 0);
+        assert_eq!(off_photo(&g), 0, "{:?}", g.crop());
+        assert_eq!(g.crop(), [0., 0.1, 1., 0.9]);
+        assert_eq!(rendered_crop(&level, &im.metadata), g.crop());
+        assert_eq!((g.width, g.height), (300, 160));
+        // A crop wholly past the frame, which a paste onto a photo of another aspect can
+        // leave, renders the whole frame.
+        let past = Recipe {
+            crop: [1.2, 0.1, 1.5, 0.9],
+            ..Default::default()
+        };
+        assert_eq!(Geometry::new(&im, &past, 0).crop(), [0., 0., 1., 1.]);
     }
     #[test]
     fn constrain_crop_takes_the_largest_crop_that_fits() {

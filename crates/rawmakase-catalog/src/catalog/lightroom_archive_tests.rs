@@ -91,7 +91,7 @@ fn opening_removes_the_archive_keeps_everything_else_and_compacts() -> Result<()
     assert!(before.contains("Compressed"));
     let size = std::fs::metadata(&a.path)?.len();
     let mut steps = Vec::new();
-    assert_eq!(cat.remove_lightroom_archive(&mut |p| steps.push(p)), None);
+    assert_eq!(cat.remove_unused_data(&mut |p| steps.push(p)), None);
     assert_eq!(steps, [OpeningProgress::Compacting]);
     assert_eq!(archive_len(&cat)?, 0);
     assert_eq!(contents(&cat)?, before);
@@ -106,7 +106,7 @@ fn opening_removes_the_archive_keeps_everything_else_and_compacts() -> Result<()
     let mut cat = Catalog::open(&a.path)?;
     assert_eq!(contents(&cat)?, before);
     let mut steps = Vec::new();
-    assert_eq!(cat.remove_lightroom_archive(&mut |p| steps.push(p)), None);
+    assert_eq!(cat.remove_unused_data(&mut |p| steps.push(p)), None);
     assert!(steps.is_empty());
     // A release with the backfills finds nothing to read.
     let old: Option<Vec<u8>> = cat
@@ -124,7 +124,7 @@ fn a_failed_compaction_still_opens_and_is_tried_again() -> Result<()> {
     let mut cat = Catalog::open(&a.path)?;
     let before = contents(&cat)?;
     FAIL_COMPACTION.with(|f| f.set(true));
-    let failed = cat.remove_lightroom_archive(&mut |_| {});
+    let failed = cat.remove_unused_data(&mut |_| {});
     FAIL_COMPACTION.with(|f| f.set(false));
     assert!(failed.unwrap().contains("No space left"));
     // The archive is gone; the space it took is still in the file.
@@ -135,7 +135,7 @@ fn a_failed_compaction_still_opens_and_is_tried_again() -> Result<()> {
     let mut cat = Catalog::open(&a.path)?;
     assert_eq!(contents(&cat)?, before);
     let mut steps = Vec::new();
-    assert_eq!(cat.remove_lightroom_archive(&mut |p| steps.push(p)), None);
+    assert_eq!(cat.remove_unused_data(&mut |p| steps.push(p)), None);
     assert_eq!(steps, [OpeningProgress::Compacting]);
     assert_eq!(meta_of(&cat, "compact_pending"), None);
     drop(cat);
@@ -149,7 +149,7 @@ fn a_catalog_without_an_archive_is_left_alone() -> Result<()> {
     let path = d.path().join("Photos.rawmakase");
     let mut cat = Catalog::create(&path)?;
     let mut steps = Vec::new();
-    assert_eq!(cat.remove_lightroom_archive(&mut |p| steps.push(p)), None);
+    assert_eq!(cat.remove_unused_data(&mut |p| steps.push(p)), None);
     assert!(steps.is_empty());
     assert_eq!(meta_of(&cat, "lightroom_archive_removed"), None);
     Ok(())

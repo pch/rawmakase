@@ -167,8 +167,8 @@ Review those notes against that tag, not against the latest application code.
    measured speedups with the tested conditions; do not promise universal gains.
    Verify notes, media and downloads on the published release page.
 
-Use `packaging/release-notes/v0.1.2.md` as an example of structure, not a source
-of claims to copy into later releases. No external project's release history
+Use the latest notes in `packaging/release-notes/` as an example of structure,
+not a source of claims to copy into later releases. No external project's release history
 is required. Keep the length proportional to the changes.
 
 To correct only a published description, edit and commit its notes file, then

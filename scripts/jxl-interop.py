@@ -514,7 +514,7 @@ print(String(data: try! JSONSerialization.data(withJSONObject: info, options: [.
 
 # -- checks ---------------------------------------------------------------------------
 
-# Tolerances (docs/records/hdr-jxl-interop.md#tolerances). Errors are |log2| of
+# Tolerances (docs/records/hdr-jxl-interop.md#checks-and-tolerances). Errors are |log2| of
 # luminance in stops; "lossless" allows the 16-bit quantisation of float light, "lossy"
 # jixel's VarDCT at the default quality 92 (distance 0.82).
 TOL = {

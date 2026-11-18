@@ -1,6 +1,6 @@
 [package]
 name = "rawmakase"
-version = "0.6.0"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
 description = "A fast, non-destructive RAW photo developer"
@@ -25,7 +25,7 @@ license = "MIT"
 # the state structs (10).
 [workspace.lints.rust]
 # An item marked `pub` is reachable from outside its crate; one that isn't says
-# `pub(crate)` or narrower (#808 step 4.13).
+# `pub(crate)` or narrower.
 unreachable_pub = "warn"
 
 [workspace.lints.clippy]
@@ -43,7 +43,7 @@ anyhow = "1"
 base64 = "0.23"
 bytemuck = { version = "1.25", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
-fastframe-fonts = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0" }
+fastframe-fonts = { git = "https://github.com/crmne/fastframe", tag = "v0.17.0", version = "0.17.0", default-features = false }
 flate2 = "1"
 getrandom = "0.4"
 libc = "0.2"
@@ -112,14 +112,14 @@ bzip2-rs = "0.1"
 tar = { version = "0.4", default-features = false }
 # Shared egui app foundation (github.com/crmne/fastframe). Not on crates.io
 # yet: pin a tag and update it deliberately.
-fastframe-update = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0" }
-fastframe-text = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0", features = ["watch"] }
+fastframe-update = { git = "https://github.com/crmne/fastframe", tag = "v0.17.0", version = "0.17.0" }
+fastframe-text = { git = "https://github.com/crmne/fastframe", tag = "v0.17.0", version = "0.17.0", features = ["watch"] }
 fastframe-fonts.workspace = true
-fastframe-icons = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0" }
+fastframe-icons = { git = "https://github.com/crmne/fastframe", tag = "v0.17.0", version = "0.17.0" }
 # The SVG loader behind the icons, at eframe's egui version.
 egui_extras = { version = "0.36", default-features = false, features = ["svg"] }
-fastframe-titlebar = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0" }
-fastframe-theme = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0" }
+fastframe-titlebar = { git = "https://github.com/crmne/fastframe", tag = "v0.17.0", version = "0.17.0" }
+fastframe-theme = { git = "https://github.com/crmne/fastframe", tag = "v0.17.0", version = "0.17.0" }
 
 # Native quit handling and display color management (src/platform/).
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -138,8 +138,10 @@ objc2-quartz-core = { version = "0.3", default-features = false, features = ["st
 # and URLForDirectory for whether a volume has one; a drive's name for the
 # Folders panel (src/platform/volume.rs): NSURLVolumeNameKey; the region's
 # decimal separator for file names (src/platform/locale.rs): NSLocale.
+# The week's first day for smart collections (src/platform/clock.rs):
+# NSCalendar.
 # The computer's memory (src/platform/memory.rs): NSProcessInfo.
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "FoundationErrors", "NSError", "NSFileManager", "NSLocale", "NSPathUtilities", "NSProcessInfo", "NSRunLoop", "NSString", "NSURL", "NSUserDefaults"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "FoundationErrors", "NSError", "NSCalendar", "NSFileManager", "NSLocale", "NSPathUtilities", "NSProcessInfo", "NSRunLoop", "NSString", "NSURL", "NSUserDefaults"] }
 
 # The freedesktop Trash (src/platform/trash/freedesktop.rs, also built for
 # macOS's tests): the user's id, and whether a folder could be made where
@@ -147,6 +149,8 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 # The computer's memory on Linux (src/platform/memory.rs): sysinfo.
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1.1", features = ["fs", "process", "system"] }
+# Smart collections' local dates (src/platform/clock.rs): localtime_r.
+libc.workspace = true
 
 # The Wayland display's HDR headroom (src/platform/display.rs), read through
 # the color-management protocol on winit's own connection. winit and
@@ -159,6 +163,12 @@ wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 
+# Linux draws its interface with the bundled Inter (src/app/mod.rs,
+# INTERFACE_FACE): fontconfig's system-ui is often a soft metric-compatible
+# fallback. macOS and Windows use their own interface face and leave it out.
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+fastframe-fonts = { workspace = true, features = ["inter"] }
+
 [target.'cfg(windows)'.dependencies]
 # Extensions' secret settings (src/platform/credentials.rs): the Credential
 # Manager.
@@ -167,7 +177,8 @@ windows-native-keyring-store = "1"
 # type of a volume, for whether it has a Recycle Bin (src/platform/trash/
 # windows.rs); rawmakase-fs builds both already.
 # Win32_System_SystemInformation: the computer's memory (src/platform/memory.rs).
-windows-sys = { version = "0.61", features = ["Win32_Devices_Display", "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_WindowsProgramming", "Win32_UI_ColorSystem", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+# Win32_System_Time: smart collections' local dates (src/platform/clock.rs).
+windows-sys = { version = "0.61", features = ["Win32_Devices_Display", "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Time", "Win32_System_WindowsProgramming", "Win32_UI_ColorSystem", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 # The Recycle Bin (src/platform/trash/windows.rs): IFileOperation and its
 # progress sink, COM interfaces windows-sys has no vtables for; the sink's
 # #[implement] names windows-core. DXGI (src/platform/display.rs): the HDR
@@ -190,11 +201,11 @@ rawmakase-example = { path = "extensions/example", version = "0.1.0" }
 # The MIDI tests run the bundled MIDI extension's program the same way, its
 # input fed by the test; a scripted adapter speaks the protocol through the
 # SDK's channel.
-rawmakase-midi = { path = "extensions/midi", version = "0.6.0" }
+rawmakase-midi = { path = "extensions/midi", version = "0.6.1" }
 # The AI masks tests run the bundled AI masks extension's program the same
 # way, its models a stand-in; the app itself never links the selection models
 # or the remote worker's client.
-rawmakase-ai-masks = { path = "extensions/ai-masks", version = "0.6.0" }
+rawmakase-ai-masks = { path = "extensions/ai-masks", version = "0.6.1" }
 rawmakase-extension = { path = "crates/rawmakase-extension", version = "0.1.0" }
 # Tests set up and inspect catalog files directly; the app itself reaches
 # the catalog's database only through rawmakase-catalog.

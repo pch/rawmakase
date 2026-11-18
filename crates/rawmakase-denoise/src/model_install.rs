@@ -12,53 +12,42 @@ use std::path::{Path, PathBuf};
 
 pub use rawmakase_model_install::{InstallError, Progress, runtime_dir};
 
-/// One set of model files, installed and removed as a unit.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Pack {
-    /// AI Denoise's model, with its `LICENSE` and `NOTICE`: an install without them is
-    /// not one.
-    #[default]
-    Denoise,
+/// AI Denoise's model, with its `LICENSE` and `NOTICE`: an install without them
+/// is not one.
+fn files() -> Vec<ModelFile> {
+    denoise_files()
 }
-impl Pack {
-    fn files(self) -> Vec<ModelFile> {
-        match self {
-            Self::Denoise => denoise_files(),
-        }
-    }
-    pub fn bytes(self) -> u64 {
-        self.files().iter().map(|f| f.size_bytes).sum()
-    }
-    /// Where it is kept: under this computer's own data folder, in a folder named for the
-    /// model and its contract version, so a replacement model sits beside it.
-    pub fn dir(self) -> PathBuf {
-        let (id, version) = match self {
-            Self::Denoise => (
-                rawmakase_inference::RAWNIND.id,
-                rawmakase_inference::RAWNIND.version,
-            ),
-        };
-        rawmakase_model_install::models_dir().join(format!("{id}-v{version}"))
-    }
-    /// Whether every file is in place and verified.
-    pub fn is_installed(self) -> bool {
-        self.is_installed_in(&self.dir())
-    }
-    /// Whether every file is in place and verified in `dir`, a folder of the pack's
-    /// own (its [`dir`](Self::dir) or another the caller chose).
-    pub fn is_installed_in(self, dir: &Path) -> bool {
-        rawmakase_model_install::is_installed(dir, &self.files())
-    }
-    /// The megabytes the drawer quotes.
-    pub fn megabytes(self) -> u64 {
-        self.bytes().div_ceil(1_000_000)
-    }
+/// The pack's size in bytes.
+pub fn bytes() -> u64 {
+    files().iter().map(|f| f.size_bytes).sum()
+}
+/// Where it is kept: under this computer's own data folder, in a folder named for the
+/// model and its contract version, so a replacement model sits beside it.
+pub fn dir() -> PathBuf {
+    let (id, version) = (
+        rawmakase_inference::RAWNIND.id,
+        rawmakase_inference::RAWNIND.version,
+    );
+    rawmakase_model_install::models_dir().join(format!("{id}-v{version}"))
+}
+/// Whether every file is in place and verified.
+pub fn is_installed() -> bool {
+    is_installed_in(&dir())
+}
+/// Whether every file is in place and verified in `dir`, a folder of the pack's
+/// own (its [`dir`] or another the caller chose).
+pub fn is_installed_in(dir: &Path) -> bool {
+    rawmakase_model_install::is_installed(dir, &files())
+}
+/// The megabytes the drawer quotes.
+pub fn megabytes() -> u64 {
+    bytes().div_ceil(1_000_000)
 }
 
-/// Fetches or copies `pack`'s files into its folder and checks them; see
+/// Fetches or copies the pack's files into its folder and checks them; see
 /// [`rawmakase_model_install::install`].
-pub fn install(pack: Pack, import: Option<&Path>, progress: &Progress) -> Result<(), InstallError> {
-    rawmakase_model_install::install(&pack.dir(), &pack.files(), import, progress)
+pub fn install(import: Option<&Path>, progress: &Progress) -> Result<(), InstallError> {
+    rawmakase_model_install::install(&dir(), &files(), import, progress)
 }
 
 #[cfg(test)]

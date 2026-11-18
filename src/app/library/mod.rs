@@ -66,6 +66,8 @@ impl Place {
     }
 }
 pub(in crate::app) use cell::copy_suffix;
+pub(crate) use collection_edit::CollectionTreeCommand;
+pub(in crate::app) use collection_edit::NewCollection;
 pub(crate) use descriptive::DescriptiveCommand;
 pub(crate) use filmstrip::{DraggedPhoto, Module, Pick};
 pub(crate) use metadata::{Metadata, MetadataCommand};
@@ -159,6 +161,17 @@ pub(crate) struct DraggedFolder {
     pub from: String,
     pub name: String,
 }
+/// A collection or set being dragged in the Collections panel, with the
+/// set it is in and every collection and set inside it, which it can't be
+/// dropped into.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DraggedCollection {
+    pub id: crate::catalog::CollectionId,
+    pub parent: Option<crate::catalog::CollectionId>,
+    pub inside: std::collections::HashSet<crate::catalog::CollectionId>,
+    pub name: String,
+    pub set: bool,
+}
 /// Photos being dragged from the grid: the selection, or the photo dragged
 /// when it isn't in it.
 #[derive(Clone, Debug, PartialEq)]
@@ -225,6 +238,12 @@ pub(crate) struct Library {
     facets: facets::Cache,
     /// The Metadata filter's strip and Find fields.
     metadata_bar: metadata_bar::MetadataBar,
+    /// Smart collections' members, as last taken from the session.
+    smart: smart::Smart,
+    /// Create or Edit Smart Collection, while open.
+    smart_editor: Option<smart_editor::SmartEditor>,
+    /// Smart collection rule changes not yet handed to the undo log.
+    smart_done: Vec<smart_editor::SmartRulesCommand>,
     strip: filmstrip::State,
     /// Counts changes to the photos shown, their order or their metadata,
     /// so the filmstrip notices a change made after it was drawn.
@@ -254,6 +273,14 @@ pub(crate) struct Library {
     done: Vec<MetadataCommand>,
     /// Collection changes not yet handed to the shared undo log.
     collection_done: Vec<quick::CollectionCommand>,
+    /// Collections and sets made, renamed, moved or deleted since the undo
+    /// log last took them.
+    collection_tree_done: Vec<collection_edit::CollectionTreeCommand>,
+    /// Create Collection…, Rename… or Delete's question, while open.
+    collection_dialog: Option<collection_edit::CollectionDialog>,
+    /// The folders' sort and direction while a collection with its own is
+    /// shown; they come back when it is left. `None` when no collection is.
+    folder_sort: Option<(sort::Sort, bool)>,
     /// Descriptive metadata changes not yet handed to the shared undo log.
     descriptive_done: Vec<DescriptiveCommand>,
     /// Stack changes not yet handed to the shared undo log.
@@ -340,6 +367,9 @@ impl Library {
             cell_info: HashMap::new(),
             facets: Default::default(),
             metadata_bar: Default::default(),
+            smart: Default::default(),
+            smart_editor: None,
+            smart_done: Vec::new(),
             strip: filmstrip::State::default(),
             shown_version: 0,
             visible: Vec::new(),
@@ -351,6 +381,9 @@ impl Library {
             fields: Default::default(),
             done: Vec::new(),
             collection_done: Vec::new(),
+            collection_tree_done: Vec::new(),
+            collection_dialog: None,
+            folder_sort: None,
             descriptive_done: Vec::new(),
             stack_done: Vec::new(),
             auto_stack: None,
@@ -490,12 +523,7 @@ impl Library {
         }
         if let Some(id) = self.filters.collection {
             if self.session.collections().iter().any(|c| c.id == id) {
-                self.filters.members = self
-                    .session
-                    .collection_photos()
-                    .get(&id)
-                    .cloned()
-                    .unwrap_or_default();
+                self.filters.members = self.source_members(id);
             } else {
                 self.filters.collection = None;
                 self.filters.members.clear();
@@ -604,11 +632,21 @@ impl Library {
         self.availability.count(self.session.photos())
     }
     fn filter(&mut self) {
+        // Leaving the collections: the folders' order again.
+        if self.filters.collection.is_none()
+            && let Some((sort, reverse)) = self.folder_sort.take()
+        {
+            self.filters.sort = sort;
+            self.filters.reverse = reverse;
+        }
         // What the order needs from the catalog, read once until it changes.
         let sort = self.filters.sort;
-        if self.sort_keys.as_ref().is_none_or(|(of, _)| *of != sort) {
-            self.sort_keys = Some((sort, sort.keys(self.session.catalog())));
+        // A custom order is read again each time: a drag or Undo changes it.
+        if sort == sort::Sort::Custom || self.sort_keys.as_ref().is_none_or(|(of, _)| *of != sort) {
+            let collection = self.filters.collection;
+            self.sort_keys = Some((sort, sort.keys(self.session.catalog(), collection)));
         }
+
         if self.filters.needs_facets() {
             self.load_facets();
         }
@@ -722,8 +760,18 @@ impl Library {
             .map(|i| self.session.photos()[*i].id)
             .collect()
     }
+    /// Edits of `ids` were written on another connection than the session's
+    /// (autosave, Sync and its Undo, batch presets and Auto, an extension's
+    /// proposal), whether or not each was: the one place the session hears of
+    /// them, so smart collections see them. Autosave calls this alone; the
+    /// others through [`Self::edits_changed`].
+    pub(in crate::app) fn edits_written(&mut self, ids: &[PhotoId]) {
+        self.session.note_external_change(ids.iter().copied());
+    }
     /// Edits written elsewhere (Sync, its Undo): their previews render again.
     pub(in crate::app) fn edits_changed(&mut self, ids: impl IntoIterator<Item = PhotoId>) {
+        let ids: Vec<PhotoId> = ids.into_iter().collect();
+        self.edits_written(&ids);
         for id in ids {
             self.cache.forget(id);
         }
@@ -748,7 +796,21 @@ impl Library {
     /// Returns to `place`, with the photos it had selected that are still
     /// there, and scrolls to its active photo.
     pub(in crate::app) fn go_to_place(&mut self, place: &Place) {
+        // The folders' order as it is now, whatever the place was shown in.
+        let folders = self
+            .folder_sort
+            .unwrap_or((self.filters.sort, self.filters.reverse));
         self.filters = place.filters.clone();
+        if self
+            .filters
+            .collection
+            .is_some_and(|id| self.has_own_sort(id))
+        {
+            self.folder_sort = Some(folders);
+        } else {
+            self.folder_sort = None;
+            (self.filters.sort, self.filters.reverse) = folders;
+        }
         self.selected_folders = place.folders.clone();
         // The source as the catalog has it now, e.g. after a folder gained
         // subfolders since.
@@ -756,12 +818,13 @@ impl Library {
             self.filters.folder_scope = Some(scope);
         }
         if let Some(id) = self.filters.collection {
-            self.filters.members = self
-                .session
-                .collection_photos()
-                .get(&id)
-                .cloned()
-                .unwrap_or_default();
+            // Deleted since: All Photographs, as when it is deleted.
+            if self.session.collections().iter().any(|c| c.id == id) {
+                self.filters.members = self.source_members(id);
+            } else {
+                self.filters.collection = None;
+                self.filters.members.clear();
+            }
         }
         self.selection = place.selection.clone();
         self.filter();
@@ -798,10 +861,10 @@ impl Library {
         }
         None
     }
-    /// Delete and Backspace (with Option too): in the Quick Collection, takes
-    /// `ids` out of it, as one undoable step; in an imported collection, which
-    /// can't be changed, nothing; elsewhere, asks to remove them from the
-    /// catalog.
+    /// Delete and Backspace (with Option too): in a collection (the Quick
+    /// Collection too), takes `ids` out of it, as one undoable step, as
+    /// Lightroom does; in a collection set, nothing; elsewhere, asks to
+    /// remove them from the catalog.
     pub(in crate::app) fn delete_key(&mut self, ids: Vec<PhotoId>) {
         if ids.is_empty() {
             return;
@@ -818,8 +881,35 @@ impl Library {
                 self.messages
                     .fail(format!("Quick Collection not changed: {e}"));
             }
-        } else if self.filters.collection.is_some() {
-            self.messages.warn("Imported collections can't be changed");
+        } else if let Some(id) = self.filters.collection {
+            if self.is_set(id) {
+                self.messages
+                    .warn("Select a collection to take photos out of it");
+                return;
+            }
+            if self
+                .session
+                .collections()
+                .iter()
+                .any(|c| c.id == id && c.kind == crate::catalog::CollectionKind::Smart)
+            {
+                self.messages
+                    .warn("A smart collection's photos are the ones its rules match");
+                return;
+            }
+            let name = self
+                .session
+                .collections()
+                .iter()
+                .find(|c| c.id == id)
+                .map_or_else(String::new, |c| c.name.clone());
+            let summary = format!(
+                "Removed from “{name}” · {}",
+                plural(ids.len(), "photo", "photos")
+            );
+            if let Err(e) = self.record_collection(id, Vec::new(), ids, summary) {
+                self.messages.fail(format!("Collection not changed: {e}"));
+            }
         } else {
             self.ask(outbox::Request::File(FileRequest::Delete(ids)));
         }
@@ -851,6 +941,25 @@ impl Library {
         if !ids.is_empty() {
             self.ask(outbox::Request::File(FileRequest::Trash(ids)));
         }
+    }
+    /// Collection `id`'s photos: a smart collection's as last worked out.
+    pub(super) fn members_of_collection(
+        &self,
+        id: crate::catalog::CollectionId,
+    ) -> HashSet<PhotoId> {
+        if self
+            .session
+            .collections()
+            .iter()
+            .any(|c| c.id == id && c.kind == crate::catalog::CollectionKind::Smart)
+        {
+            return self.smart_members_of(id);
+        }
+        self.session
+            .collection_photos()
+            .get(&id)
+            .cloned()
+            .unwrap_or_default()
     }
     /// The rejected photos of the source shown (its folders, collection,
     /// previous import or offline photos), whatever the filter bar shows:
@@ -1101,12 +1210,15 @@ impl Library {
         let folder = self.session.folders().iter().find(|f| f.id == id)?;
         Some((folder.root, folder.relative.clone()))
     }
-    /// Creates a virtual copy of `id` and selects it.
+    /// Creates a virtual copy of `id` and selects it. Made while a
+    /// collection is shown, the copy joins it, as in Lightroom.
     pub(in crate::app) fn create_virtual_copy(
         &mut self,
         id: PhotoId,
     ) -> Result<Committed<PhotoId>> {
-        let made = self.session.create_virtual_copy(id)?;
+        let made = self
+            .session
+            .create_virtual_copy(id, self.filters.collection)?;
         if self.listed_after(&made.listed, "Copy made") {
             self.show(made.value);
             if let Some(p) = self.photo(made.value) {
@@ -1342,6 +1454,7 @@ impl Library {
         if self.availability.poll(false, self.session.photos()) {
             self.availability_known();
         }
+        self.poll_smart();
         self.poll_capture_times();
         self.poll_photo_info();
         self.poll_import_stacks();
@@ -1608,6 +1721,10 @@ fn upgrade_note(upgraded: &crate::catalog::Upgraded) -> String {
          older releases of RAWmakase open that copy, not the catalog.",
         upgraded.backup.display()
     );
+    if let Some(earlier) = upgraded.earlier_backups_note() {
+        note.push(' ');
+        note.push_str(&earlier);
+    }
     if upgraded.unreadable > 0 {
         note.push_str(&format!(
             " {} stored edits could not be read and were left as they were.",
@@ -1633,6 +1750,7 @@ mod capture;
 /// a lighter surround instead of the app's blue button fill.
 mod cell;
 mod checksums;
+mod collection_edit;
 mod collections;
 mod compare;
 mod copy_name;
@@ -1661,6 +1779,10 @@ mod rows;
 mod screen;
 mod selection;
 mod sidebar;
+pub(in crate::app) mod smart;
+pub(in crate::app) mod smart_editor;
+#[cfg(test)]
+mod smart_tests;
 mod sort;
 mod stacks;
 mod stage;
@@ -1688,6 +1810,8 @@ fn wake(ctx: &egui::Context) -> crate::catalog_session::Wake {
 mod editor_tests;
 
 pub(in crate::app) mod batch;
+#[cfg(test)]
+mod collections_tests;
 pub(in crate::app) mod photo_metadata;
 pub(in crate::app) mod preview_build;
 #[cfg(test)]

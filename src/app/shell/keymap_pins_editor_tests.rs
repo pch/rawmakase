@@ -1,8 +1,8 @@
-//! Pins of what each keyboard shortcut does today, before the shortcuts move into
-//! one command registry (#963): each fires in its place and not outside it, and
-//! keeps its guards behind a window, under a menu, while a field is typed in and
-//! with a button focused. Then the Escape chain, the keys that change module, and
-//! frames that bring several presses at once.
+//! Pins of what each keyboard shortcut does: each fires in its place and not
+//! outside it, with exactly its modifiers, and keeps its guards behind a window,
+//! under a menu, while a field is typed in and with a button focused. Then the
+//! Escape chain, frames that bring several presses at once, and other keyboard
+//! layouts.
 //!
 //! Each pin starts from a newly built editor in a [`Place`]; see
 //! [`Fixture::new`] for what it holds. Photos are named by their index in the
@@ -181,15 +181,22 @@ fn escape_brings_the_hidden_chrome_back_before_it_closes_anything() {
         "the Loupe stays"
     );
     assert!(tap_in(&mut f, Key::Escape, NONE).is("view", "grid"));
-    // Develop: the chrome, then the tool.
+    // Develop: Shift+Escape dismisses the messages alone, then Escape brings
+    // the chrome back, then closes the tool, then does nothing.
     let mut f = Fixture::new(Place::Crop);
     f.tap(Key::F, NONE);
+    let o = tap_in(&mut f, Key::Escape, SHIFT);
+    assert!(
+        o.is("messages", "0") && o.get("chrome").is_none() && o.get("tool").is_none(),
+        "{o:?}"
+    );
     let o = tap_in(&mut f, Key::Escape, NONE);
     assert!(
         o.get("chrome").is_some() && o.get("tool").is_none(),
         "{o:?}"
     );
     assert!(tap_in(&mut f, Key::Escape, NONE).is("tool", "None"));
+    assert!(tap_in(&mut f, Key::Escape, NONE).nothing());
     // A menu closes first: the chrome stays hidden and the Loupe open.
     let mut f = Fixture::new(Place::LoupePopup);
     f.tap(Key::F, NONE);
@@ -242,13 +249,19 @@ fn escape_closes_the_innermost_thing_in_each_view() {
     // A text field gives Escape up; behind a window the window takes it.
     let o = tap(Place::DevelopTyping, Key::Escape, NONE);
     assert!(o.get("tool").is_none(), "{o:?}");
+    let o = tap(Place::DevelopModal, Key::Escape, NONE);
+    assert!(o.is("dialog", "-") && o.get("tool").is_none(), "{o:?}");
 }
 
 #[test]
 fn g_shows_the_grid_from_anywhere_alone() {
     for place in [Place::Develop, Place::Crop] {
+        // The grid, without Cmd+G's stack or anything else G does there.
         let o = tap(place, Key::G, NONE);
-        assert!(o.is("module", "Library"), "{place:?} {o:?}");
+        assert!(
+            o.is("module", "Library") && o.get("photos").is_none(),
+            "{place:?} {o:?}"
+        );
         // G alone (#963): it took Shift.
         assert!(tap(place, Key::G, SHIFT).get("module").is_none());
         assert!(
@@ -270,7 +283,10 @@ fn g_shows_the_grid_from_anywhere_alone() {
 fn e_in_develop_shows_the_open_photo_in_the_loupe() {
     let mut f = Fixture::new(Place::Develop);
     let o = tap_in(&mut f, Key::E, NONE);
-    assert!(o.is("module", "Library") && o.is("view", "loupe"), "{o:?}");
+    assert!(
+        o.is("module", "Library") && o.is("view", "loupe") && o.get("dialog").is_none(),
+        "{o:?}"
+    );
     assert_eq!(f.active(), Some(f.ids[3]));
     // E alone (#963): it took Shift.
     assert!(tap(Place::Develop, Key::E, SHIFT).get("module").is_none());
@@ -323,8 +339,12 @@ fn f_hides_and_shows_the_chrome_once_per_press_and_alone() {
 
 #[test]
 fn d_develops_the_active_photo_and_cmd_d_selects_none() {
+    // Develop, and D does nothing more there.
     let o = tap(Place::Grid, Key::D, NONE);
-    assert!(o.is("module", "Develop") && o.is("open", "3"), "{o:?}");
+    assert!(
+        o.is("module", "Develop") && o.is("open", "3") && o.get("selected").is_none(),
+        "{o:?}"
+    );
     // D alone (#963): it took Shift.
     assert!(tap(Place::Grid, Key::D, SHIFT).get("module").is_none());
     assert!(repeat(Place::Grid, Key::D, NONE).is("module", "Develop"));
@@ -348,8 +368,13 @@ fn library_undo_and_redo_take_their_keys_with_a_button_focused_too() {
             assert!(tap(place, Key::Y, cmd()).is("photos", &redone), "Ctrl+Y");
         }
     }
-    assert!(tap(Place::Develop, Key::Z, cmd()).is("photos", &undone));
-    assert!(tap(Place::Develop, Key::Z, cmd_shift()).is("photos", &redone));
+    for place in [Place::Develop, Place::DevelopButton] {
+        assert!(tap(place, Key::Z, cmd()).is("photos", &undone), "{place:?}");
+        assert!(
+            tap(place, Key::Z, cmd_shift()).is("photos", &redone),
+            "{place:?}"
+        );
+    }
     assert!(tap(Place::Grid, Key::Z, ALT).get("photos").is_none());
     assert_inert_behind_a_window_and_while_typing(Key::Z, cmd(), "Cmd+Z");
 }
@@ -603,14 +628,6 @@ fn a_tool_that_takes_a_metadata_key_keeps_it() {
     // Other tools leave [ ] and X to the rating.
     assert!(tap(Place::Guided, Key::CloseBracket, NONE).is("photos", &edited(&[3], "r1f0_")));
     assert!(tap(Place::Remove, Key::X, NONE).is("photos", &edited(&[3], "r0f-1_")));
-}
-
-#[test]
-fn only_a_frames_first_metadata_key_applies() {
-    let o = taps(Place::Grid, &[(Key::Num3, NONE), (Key::Num6, NONE)]);
-    assert!(o.is("photos", &edited(&[1, 2, 3], "r3f0_")), "{o:?}");
-    let o = taps(Place::Develop, &[(Key::P, NONE), (Key::Num4, NONE)]);
-    assert!(o.is("photos", &edited(&[3], "r0f1_")), "{o:?}");
 }
 
 // ---------------------------------------------------------------------------
@@ -1033,6 +1050,7 @@ fn develop_keys_change_the_view() {
     assert!(tap(Place::Develop, Key::Y, cmd()).get("compare").is_none());
     assert!(tap(Place::Develop, Key::C, cmd()).get("tool").is_none());
     assert!(tap(Place::Develop, Key::R, cmd()).get("tool").is_none());
+    assert!(tap(Place::Develop, Key::R, SHIFT).get("tool").is_none());
     assert!(tap(Place::Develop, Key::Q, SHIFT).get("tool").is_none());
     assert!(tap(Place::Develop, Key::J, ALT).get("clipping").is_none());
     assert!(tap(Place::Develop, Key::I, SHIFT).get("info").is_none());
@@ -1158,31 +1176,17 @@ fn mask_keys_make_new_masks() {
     assert!(tap(Place::Develop, Key::M, ALT).get("tool").is_none());
 }
 
+/// What `crop_tool_editor_tests` leaves out: A locks the aspect, the modifiers each
+/// crop key takes, and that O repeats.
 #[test]
 fn crop_keys() {
-    let o = tap(Place::Crop, Key::X, NONE);
-    assert!(
-        o.get("recipe").is_some() && o.get("aspect").is_some(),
-        "swap: {o:?}"
-    );
     assert!(
         tap(Place::Crop, Key::A, NONE).get("aspect").is_some(),
         "aspect lock"
     );
     assert!(tap(Place::Crop, Key::A, SHIFT).get("aspect").is_none());
-    assert!(
-        tap(Place::Crop, Key::O, NONE)
-            .is("guides", "{ guide: Diagonal, orientation: 0, show: Auto }")
-    );
     // Shift+O turns a guide that has a way round; Thirds has none.
     assert!(tap(Place::Crop, Key::O, SHIFT).nothing());
-    let mut f = Fixture::new(Place::Crop);
-    f.taps(&[(Key::O, NONE), (Key::O, NONE)]);
-    let o = tap_in(&mut f, Key::O, SHIFT);
-    assert!(
-        o.is("guides", "{ guide: Triangle, orientation: 1, show: Auto }"),
-        "{o:?}"
-    );
     assert!(
         repeat(Place::Crop, Key::O, NONE).get("guides").is_some(),
         "repeats"
@@ -1190,7 +1194,6 @@ fn crop_keys() {
     for m in [cmd(), ALT] {
         assert!(tap(Place::Crop, Key::O, m).get("guides").is_none(), "{m:?}");
     }
-    assert!(tap(Place::DevelopTyping, Key::O, NONE).nothing());
 }
 
 #[test]
@@ -1361,61 +1364,6 @@ fn basic_keys_select_and_step_the_selected_slider() {
 }
 
 // ---------------------------------------------------------------------------
-// The Escape chain and the keys that change module.
-
-#[test]
-fn escape_is_taken_in_order_messages_chrome_menu_view_tool() {
-    // Shift+Esc with messages: only the messages.
-    let mut f = Fixture::new(Place::Crop);
-    f.tap(Key::F, NONE);
-    let o = tap_in(&mut f, Key::Escape, SHIFT);
-    assert!(
-        o.is("messages", "0") && o.get("chrome").is_none() && o.get("tool").is_none(),
-        "{o:?}"
-    );
-    // Then plain Escape: the chrome, then the tool, then nothing.
-    assert!(tap_in(&mut f, Key::Escape, NONE).get("chrome").is_some());
-    assert!(tap_in(&mut f, Key::Escape, NONE).is("tool", "None"));
-    assert!(tap_in(&mut f, Key::Escape, NONE).nothing());
-    // In the Library: the chrome, then the Loupe, then nothing.
-    let mut f = Fixture::new(Place::Loupe);
-    f.tap(Key::F, NONE);
-    assert!(tap_in(&mut f, Key::Escape, NONE).get("chrome").is_some());
-    assert!(tap_in(&mut f, Key::Escape, NONE).is("view", "grid"));
-    // Behind Preferences, Escape closes Preferences alone.
-    let o = tap(Place::DevelopModal, Key::Escape, NONE);
-    assert!(o.is("dialog", "-") && o.get("tool").is_none(), "{o:?}");
-}
-
-#[test]
-fn a_key_that_changes_module_does_not_act_again_in_the_new_one() {
-    // D from the grid: Develop, and D is nothing more there.
-    let o = tap(Place::Grid, Key::D, NONE);
-    assert!(
-        o.is("module", "Develop") && o.get("selected").is_none(),
-        "{o:?}"
-    );
-    // G from Develop: the grid, without Cmd+G's stack or anything else.
-    let o = tap(Place::Develop, Key::G, NONE);
-    assert!(
-        o.is("module", "Library") && o.get("photos").is_none(),
-        "{o:?}"
-    );
-    // E from Develop: the Loupe, not E's other uses there.
-    let o = tap(Place::Develop, Key::E, NONE);
-    assert!(o.is("view", "loupe") && o.get("dialog").is_none(), "{o:?}");
-    // Cmd+Z in the Library is taken there: Develop's keys never see it.
-    let mut f = Fixture::new(Place::Develop);
-    f.tap(Key::V, NONE);
-    f.tap(Key::G, NONE);
-    assert_eq!(f.e.module, Module::Library);
-    let o = tap_in(&mut f, Key::Z, cmd());
-    assert!(o.taken, "{o:?}");
-    let (_, applied) = f.e.document.edit.history().steps();
-    assert_eq!(applied, 0, "one step undone: {o:?}");
-}
-
-// ---------------------------------------------------------------------------
 // Several presses in one frame.
 
 #[test]
@@ -1467,12 +1415,21 @@ fn several_presses_in_one_frame() {
     );
 }
 
-/// Today one press can act twice when another press in its frame changes
-/// module, view or tool between two steps that both read it. The command
-/// registry makes the first step to take a press its only owner, so these pins
-/// are expected to change with it.
+/// A press belongs to the first step that takes it, so it acts once even when
+/// it, or another press in its frame, changes module, view or tool before a
+/// later step reads it.
 #[test]
 fn one_press_acts_once_across_a_module_change() {
+    // Cmd+Z after G from Develop is taken in the Library: Develop's keys never
+    // see it, and one step is undone.
+    let mut f = Fixture::new(Place::Develop);
+    f.tap(Key::V, NONE);
+    f.tap(Key::G, NONE);
+    assert_eq!(f.e.module, Module::Library);
+    let o = tap_in(&mut f, Key::Z, cmd());
+    assert!(o.taken, "{o:?}");
+    let (_, applied) = f.e.document.edit.history().steps();
+    assert_eq!(applied, 0, "one step undone: {o:?}");
     // Each press runs one command, in the step that takes it first; a module
     // changed by another press in the frame doesn't give it a second one.
     // D then J: Develop from the grid, and J restyles the grid's cells only,
@@ -1500,47 +1457,6 @@ fn one_press_acts_once_across_a_module_change() {
 
 // ---------------------------------------------------------------------------
 // What reaches the shortcuts from around them.
-
-#[test]
-fn copy_and_paste_with_shift_or_alt_reach_the_shortcuts_as_keys() {
-    let ctx = eframe::egui::Context::default();
-    let keys = |events: Vec<eframe::egui::Event>| {
-        let mut input = eframe::egui::RawInput {
-            events,
-            ..Default::default()
-        };
-        super::clipboard_shortcut_keys(&ctx, &mut input);
-        input
-            .events
-            .iter()
-            .filter_map(|e| match e {
-                eframe::egui::Event::Key { key, modifiers, .. } => Some((*key, *modifiers)),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-    };
-    let with = |m: Modifiers, event: eframe::egui::Event| {
-        vec![eframe::egui::Event::ModifiersChanged(m), event]
-    };
-    use eframe::egui::Event::{Copy, Paste};
-    assert_eq!(keys(with(cmd_shift(), Copy)), vec![(Key::C, cmd_shift())]);
-    assert_eq!(
-        keys(with(cmd_alt(), Paste(String::new()))),
-        vec![(Key::V, cmd_alt())]
-    );
-    // Plain Cmd+C and Cmd+V stay the text field's.
-    assert!(keys(with(cmd(), Copy)).is_empty());
-    assert!(keys(with(cmd(), Paste(String::new()))).is_empty());
-    // And then Cmd+Shift+C opens Copy Settings in Develop.
-    let mut f = Fixture::new(Place::Develop);
-    let mut input = eframe::egui::RawInput {
-        events: with(cmd_shift(), Copy),
-        ..Default::default()
-    };
-    super::clipboard_shortcut_keys(&f.e.context, &mut input);
-    f.frame(input.events);
-    assert!(matches!(f.e.modal, Some(Modal::CopySettings(_))));
-}
 
 #[test]
 fn enter_confirms_copy_settings_unless_a_menu_is_open() {
@@ -1811,5 +1727,249 @@ fn a_refused_delete_leaves_the_next_delete_in_the_frame_to_delete() {
     assert!(
         o.get("dialog").is_some_and(|d| d.contains("Delete")),
         "{o:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Every default shortcut at once.
+
+/// Every action a default shortcut takes, in the place it is taken: each must
+/// change something there, so the place's start gives it something to act on
+/// and a shortcut that stops working shows here even without a pin of its own.
+#[test]
+fn every_default_shortcut_changes_something_from_its_places_start() {
+    let (none, shift, alt) = (NONE, SHIFT, ALT);
+    let (cmd, cmd_shift, cmd_alt, cmd_alt_shift) = (cmd(), cmd_shift(), cmd_alt(), cmd_alt_shift());
+    use Place::*;
+    let mut actions: Vec<(Place, Key, Modifiers, &str)> = vec![
+        // Everywhere.
+        (Grid, Key::Escape, shift, "dismiss messages"),
+        (Develop, Key::G, none, "Library grid"),
+        (Loupe, Key::G, none, "Library grid from the Loupe"),
+        (Develop, Key::E, none, "Library Loupe"),
+        (Grid, Key::Quote, cmd, "virtual copy"),
+        (Develop, Key::Quote, cmd, "virtual copy in Develop"),
+        (Grid, Key::F, none, "hide the chrome"),
+        (Grid, Key::D, none, "develop the active photo"),
+        (Grid, Key::Z, cmd, "undo"),
+        (Grid, Key::Z, cmd_shift, "redo"),
+        (Grid, Key::Comma, cmd, "Preferences"),
+        (GridTyping, Key::Comma, cmd, "Preferences while typing"),
+        (Grid, Key::Slash, cmd, "the sheet"),
+        (Grid, Key::Tab, none, "panels: all sides"),
+        (Grid, Key::Tab, shift, "panels: all"),
+        (Grid, Key::F6, none, "filmstrip"),
+        (Grid, Key::F7, none, "left panel"),
+        (Grid, Key::F8, none, "right panel"),
+        (Grid, Key::F8, shift, "Presets panel"),
+        (Develop, Key::F8, shift, "Develop's tab panel"),
+        // Metadata.
+        (Grid, Key::ArrowUp, cmd, "flag +1"),
+        (Grid, Key::ArrowDown, cmd, "flag -1"),
+        (Grid, Key::P, none, "pick"),
+        (Grid, Key::U, none, "unflag"),
+        (Grid, Key::X, none, "reject"),
+        (Grid, Key::Backtick, none, "toggle pick"),
+        (Grid, Key::OpenBracket, none, "rating -1"),
+        (Grid, Key::CloseBracket, none, "rating +1"),
+        (Loupe, Key::Num3, shift, "rating and advance"),
+    ];
+    for (i, key) in [
+        Key::Num0,
+        Key::Num1,
+        Key::Num2,
+        Key::Num3,
+        Key::Num4,
+        Key::Num5,
+        Key::Num6,
+        Key::Num7,
+        Key::Num8,
+        Key::Num9,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        actions.push((
+            Grid,
+            key,
+            none,
+            [
+                "0", "1", "2", "3", "4", "5", "Red", "Yellow", "Green", "Blue",
+            ][i],
+        ));
+    }
+    actions.extend([
+        // The grid.
+        (Grid, Key::E, none, "Loupe"),
+        (Grid, Key::Enter, none, "Loupe by Enter"),
+        (Grid, Key::C, none, "Compare"),
+        (Grid, Key::N, none, "Survey"),
+        (Grid, Key::J, none, "cell style"),
+        (Grid, Key::B, none, "Quick Collection toggle"),
+        (Grid, Key::B, cmd, "show the Quick Collection"),
+        (Grid, Key::B, cmd_shift, "clear the Quick Collection"),
+        (Grid, Key::Delete, none, "delete"),
+        (Grid, Key::Backspace, none, "delete by Backspace"),
+        (Grid, Key::Delete, alt, "remove from the catalog"),
+        (Grid, Key::Delete, cmd, "delete rejected photos"),
+        (Grid, Key::Delete, cmd_alt_shift, "move to the Trash"),
+        (Grid, Key::F2, none, "rename"),
+        (Grid, Key::G, cmd, "stack"),
+        (Grid, Key::S, none, "stack collapse"),
+        (Grid, Key::A, cmd, "select all"),
+        (Grid, Key::D, cmd, "select none"),
+        (Grid, Key::Slash, none, "deselect the active photo"),
+        (Grid, Key::ArrowLeft, none, "left"),
+        (Grid, Key::ArrowRight, none, "right"),
+        (Grid, Key::ArrowUp, none, "up"),
+        (Grid, Key::ArrowDown, shift, "down, extending"),
+        (Grid, Key::PageUp, none, "page up"),
+        (Grid, Key::PageDown, none, "page down"),
+        (Grid, Key::Home, none, "home"),
+        (Grid, Key::End, none, "end"),
+        (Grid, Key::L, cmd, "filters"),
+        (GridTyping, Key::L, cmd, "filters while typing"),
+        (Grid, Key::E, cmd_shift, "export"),
+        (Grid, Key::E, cmd_alt_shift, "export with previous"),
+        (Grid, Key::S, cmd_shift, "sync"),
+        (Grid, Key::U, cmd_shift, "auto settings"),
+        // The Loupe.
+        (Loupe, Key::ArrowLeft, none, "previous"),
+        (Loupe, Key::ArrowUp, none, "previous by Up"),
+        (Loupe, Key::ArrowRight, none, "next"),
+        (Loupe, Key::ArrowDown, none, "next by Down"),
+        (Loupe, Key::Home, none, "first"),
+        (Loupe, Key::End, none, "last"),
+        (Loupe, Key::Escape, none, "close the Loupe"),
+        (Loupe, Key::Delete, none, "delete the photo"),
+        (Loupe, Key::F2, none, "rename the photo"),
+        (Loupe, Key::C, none, "Compare"),
+        (Loupe, Key::N, none, "Survey"),
+        (Loupe, Key::B, none, "Quick Collection"),
+        (Loupe, Key::I, none, "info"),
+        (Loupe, Key::S, none, "stack"),
+        (Loupe, Key::Num0, cmd, "100%"),
+        (Loupe, Key::Equals, cmd, "zoom in"),
+        (Loupe, Key::Plus, cmd, "zoom in by +"),
+        (Loupe, Key::Z, none, "zoom"),
+        (Loupe, Key::Z, shift, "magnifier"),
+        // Compare and Survey.
+        (Compare, Key::B, none, "Quick Collection"),
+        (Compare, Key::ArrowLeft, none, "candidate -1"),
+        (Compare, Key::ArrowRight, none, "candidate +1"),
+        (Compare, Key::ArrowUp, none, "make select"),
+        (Compare, Key::ArrowDown, none, "swap"),
+        (Compare, Key::Escape, none, "close"),
+        (Compare, Key::E, none, "Loupe"),
+        (Compare, Key::Enter, none, "Loupe by Enter"),
+        (Compare, Key::N, none, "Survey"),
+        (Survey, Key::B, none, "Quick Collection"),
+        (Survey, Key::ArrowLeft, none, "previous"),
+        (Survey, Key::ArrowUp, none, "previous by Up"),
+        (Survey, Key::Escape, none, "close"),
+        (Survey, Key::E, none, "Loupe"),
+        (Survey, Key::Enter, none, "Loupe by Enter"),
+        (Survey, Key::C, none, "Compare"),
+        // Develop.
+        (Develop, Key::Num0, cmd, "100%"),
+        (Develop, Key::Equals, cmd, "zoom in"),
+        (Develop, Key::Z, none, "zoom"),
+        (Develop, Key::Z, shift, "magnifier"),
+        (Develop, Key::Delete, none, "delete"),
+        (Develop, Key::ArrowLeft, cmd_alt_shift, "After to Before"),
+        (Develop, Key::ArrowRight, cmd_alt_shift, "Before to After"),
+        (
+            Develop,
+            Key::ArrowUp,
+            cmd_alt_shift,
+            "swap Before and After",
+        ),
+        (Develop, Key::ArrowLeft, none, "previous photo"),
+        (Develop, Key::ArrowRight, none, "next photo"),
+        (Develop, Key::Y, none, "Before/After"),
+        (Develop, Key::Y, alt, "Before/After top and bottom"),
+        (Develop, Key::Y, shift, "Before/After split"),
+        (Develop, Key::C, cmd_shift, "Copy Settings"),
+        (Develop, Key::V, cmd_shift, "Paste Settings"),
+        (Develop, Key::V, cmd_alt, "Paste from Previous"),
+        (Develop, Key::M, cmd_alt_shift, "Match Total Exposures"),
+        (Develop, Key::N, cmd_shift, "New Develop Preset"),
+        (Develop, Key::T, cmd_alt_shift, "targeted Tone Curve"),
+        (Develop, Key::H, cmd_alt_shift, "targeted Hue"),
+        (Develop, Key::S, cmd_alt_shift, "targeted Saturation"),
+        (Develop, Key::L, cmd_alt_shift, "targeted Luminance"),
+        (Develop, Key::G, cmd_alt_shift, "targeted B&W"),
+        (Develop, Key::S, cmd_shift, "Sync"),
+        (Develop, Key::R, cmd_shift, "Reset"),
+        (Develop, Key::V, none, "B&W"),
+        (Develop, Key::U, cmd_shift, "Auto Settings"),
+        (Develop, Key::E, cmd_shift, "Export"),
+        (Develop, Key::E, cmd_alt_shift, "Export with Previous"),
+        (Develop, Key::A, cmd, "select all"),
+        (Develop, Key::D, cmd, "select none"),
+        (Develop, Key::Z, cmd, "undo"),
+        (Develop, Key::Z, cmd_shift, "redo"),
+        (Develop, Key::C, none, "Crop"),
+        (Develop, Key::R, none, "Crop by R"),
+        (Develop, Key::R, shift, "Reference View"),
+        (Develop, Key::I, none, "info"),
+        (Develop, Key::J, none, "clipping"),
+        (Develop, Key::Pipe, none, "camera thumbnail"),
+        (
+            Develop,
+            Key::Backslash,
+            shift,
+            "camera thumbnail by Shift+\\",
+        ),
+        (Develop, Key::Backslash, none, "Before only"),
+        (Crop, Key::Enter, none, "Crop away"),
+        (Guided, Key::Enter, none, "Guided away"),
+        (Develop, Key::W, none, "White Balance"),
+        (Develop, Key::Q, none, "Remove"),
+        (Develop, Key::W, shift, "Masking"),
+        (Develop, Key::T, shift, "Guided"),
+        (Crop, Key::Escape, none, "tool away"),
+        (Develop, Key::K, none, "brush mask"),
+        (Develop, Key::M, none, "linear mask"),
+        (Develop, Key::M, shift, "radial mask"),
+        (Develop, Key::J, shift, "colour range mask"),
+        // The tools.
+        (Crop, Key::X, none, "crop orientation"),
+        (Crop, Key::A, none, "aspect lock"),
+        (Crop, Key::O, none, "next overlay"),
+        (Remove, Key::OpenBracket, none, "smaller"),
+        (Remove, Key::OpenBracket, shift, "less feather"),
+        (Remove, Key::CloseBracket, none, "larger"),
+        (Remove, Key::CloseBracket, shift, "more feather"),
+        (Remove, Key::Slash, none, "new source"),
+        (Remove, Key::Delete, none, "delete the spot"),
+        (Remove, Key::H, none, "hide pins"),
+        (Remove, Key::A, none, "visualize spots"),
+        (RedEye, Key::Delete, none, "delete the correction"),
+        (RedEye, Key::OpenBracket, none, "smaller"),
+        (RedEye, Key::CloseBracket, none, "larger"),
+        (Mask, Key::OpenBracket, none, "smaller brush"),
+        (Mask, Key::CloseBracket, shift, "more feather"),
+        (Mask, Key::Escape, none, "close Masking"),
+        (Mask, Key::O, none, "overlay"),
+        (Mask, Key::Slash, none, "brush A/B"),
+        (Mask, Key::Delete, none, "delete the mask"),
+        (Guided, Key::Delete, none, "delete the guide"),
+        // Basic.
+        (Develop, Key::Period, none, "next slider"),
+        (Develop, Key::Comma, none, "previous slider"),
+        (Develop, Key::Equals, none, "step up"),
+        (Develop, Key::Plus, none, "step up by +"),
+        (Develop, Key::Minus, none, "step down"),
+    ]);
+    let mut t = Template::new();
+    let idle: Vec<String> = actions
+        .iter()
+        .filter(|(place, key, m, _)| tap_in(&mut t.fixture(*place), *key, *m).nothing())
+        .map(|(place, key, m, what)| format!("{what} ({place:?} {key:?} {m:?})"))
+        .collect();
+    assert!(
+        idle.is_empty(),
+        "these change nothing from their start: {idle:#?}"
     );
 }

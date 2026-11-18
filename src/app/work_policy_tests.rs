@@ -169,6 +169,7 @@ fn quitting_stops_the_workers_in_order() {
             ReferenceLoader,
             HdrPreview,
             HdrHistogram,
+            CurveHistogram,
             Export,
             PreviewBuilds,
             StandIns,

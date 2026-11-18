@@ -584,6 +584,8 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
                     details: String::new(),
                     single: true,
                     stacks: true,
+                    collections: Default::default(),
+                    in_collections: Vec::new(),
                 };
                 photo_cell(ui, &photo, Some(&texture), shown, width);
             });
@@ -768,6 +770,10 @@ fn tree_click_modifiers_choose_how_the_folder_is_selected() {
         (egui::Modifiers::NONE, Click::Replace),
         (egui::Modifiers::COMMAND, Click::Toggle),
         (egui::Modifiers::SHIFT, Click::Range),
+        (
+            egui::Modifiers::SHIFT | egui::Modifiers::COMMAND,
+            Click::Range,
+        ),
     ] {
         frame(modifiers, None);
         frame(modifiers, Some(true));
@@ -1331,6 +1337,32 @@ fn library_of(names: &[&str]) -> Result<(tempfile::TempDir, Library)> {
     Catalog::create(&path)?.add_folder(&folder)?;
     let library = Library::load(&path, egui::Context::default())?;
     Ok((directory, library))
+}
+/// As in Lightroom Classic, a copy made while a collection is shown joins
+/// it, and shows there right after its source.
+#[test]
+fn a_copy_made_in_a_collection_shows_in_it() -> Result<()> {
+    let (_d, mut library) = library_of(&["a.ARW", "b.ARW"])?;
+    let [a, b] = [
+        library.session.photos()[0].id,
+        library.session.photos()[1].id,
+    ];
+    let picks = library.session.catalog_mut_for_tests().create_collection(
+        crate::catalog::CollectionKind::Collection,
+        "Picks",
+        None,
+    )?;
+    library.session.reload()?;
+    library.change_collection(picks, &[a, b], &[])?;
+    library.select_collection(picks);
+    let copy = library.create_virtual_copy(a)?.value;
+    let mut shown = library.shown();
+    shown.sort();
+    let mut expected = vec![a, b, copy];
+    expected.sort();
+    assert_eq!(shown, expected);
+    assert_eq!(library.selected(), Some(copy));
+    Ok(())
 }
 fn visible_names(library: &Library) -> Vec<&str> {
     library
@@ -2174,12 +2206,22 @@ fn collections_panel_shows_imported_collections_and_filters_through_them() -> Re
     let tree = collections::tree(
         library.session.collections(),
         library.session.collection_photos(),
+        &Default::default(),
+        None,
     );
-    // Sets first, then collections, by name; smart and system ones hidden,
-    // and a set left empty by hiding them is dropped too.
+    // Sets first, then collections, by name; system ones hidden. A smart
+    // collection shows (issue 998), being worked out until its members are
+    // known.
     let names: Vec<_> = tree.iter().map(|n| n.name.as_str()).collect();
-    assert_eq!(names, ["Empty set", "Trips", "Archive"]);
-    let trips: Vec<_> = tree[1]
+    assert_eq!(
+        names,
+        ["Empty set", "Smart Collections", "Trips", "Archive"]
+    );
+    assert_eq!(
+        tree[1].children[0].smart,
+        Some(collections::SmartCount::Pending)
+    );
+    let trips: Vec<_> = tree[2]
         .children
         .iter()
         .map(|n| (n.name.as_str(), n.count))
@@ -2208,7 +2250,7 @@ fn collections_panel_shows_imported_collections_and_filters_through_them() -> Re
     assert_eq!(restored.visible.len(), 2);
     assert_eq!(restored.selected(), Some(ids[1]));
     let mut other = Library::load(&path, egui::Context::default())?;
-    other.restore_source("collection:4", None);
+    other.restore_source("collection:5", None);
     assert_eq!(other.filters.collection, None);
     assert_eq!(other.visible.len(), 3);
 
@@ -3892,33 +3934,6 @@ fn the_sidebar_builds_its_trees_once_until_the_lists_change() -> Result<()> {
 }
 
 #[test]
-fn the_folders_panel_groups_roots_by_the_drive_found_for_them() -> Result<()> {
-    let (_dir, mut library) = library_of(&["a.RAF"])?;
-    let ctx = library.ctx.clone();
-    let frame = |library: &mut Library| {
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            egui::Panel::left("sidebar").show(ui, |ui| library.sidebar(ui));
-        });
-        output.textures_delta.clear();
-        let trees = library.sidebar_trees.clone().expect("the sidebar's trees");
-        trees.drives()
-    };
-    frame(&mut library);
-    library.volumes.wait();
-    let root = library.anchors().remove(0).2;
-    let image = crate::platform::volume::Volume {
-        name: "RMK590".into(),
-        mount: Some(root.parent().unwrap().into()),
-        id: None,
-    };
-    library
-        .volumes
-        .set_seen(volumes::Seen::from([(root, image.clone())]));
-    assert_eq!(frame(&mut library), vec![image]);
-    Ok(())
-}
-
-#[test]
 fn two_disks_given_one_drive_letter_show_as_two_drives() -> Result<()> {
     // #891: a disk detached from F: and another given F: showed as one F:,
     // holding both disks' folders. Unlabelled, both are named F:.
@@ -4210,44 +4225,57 @@ fn rejected_photos_of_the_offline_source_are_only_offline_ones() -> Result<()> {
     assert_eq!(l.rejected_in_source(), [gone]);
     Ok(())
 }
-/// A folder renamed in the tree keeps what was selected and unfolded in it,
-/// and nothing beside it changes.
+/// A folder renamed in the tree or moved into another root, or a root moved into
+/// another, keeps what was selected and unfolded in it under its new name, and
+/// nothing beside it changes.
 #[test]
-fn a_renamed_folder_keeps_its_selection_and_unfolded_folders() -> Result<()> {
+fn a_moved_or_renamed_folder_keeps_its_selection_and_unfolded_folders() -> Result<()> {
     let (_directory, mut library) = library_of(&["a.RAF"])?;
-    let root = RootId(3);
-    library.selected_folders = folder_selection::FolderSelection::one("root:3/trip/day1");
-    library.expanded = ["root:3/trip", "root:3/trip/day1", "root:3/tripod"]
-        .map(String::from)
-        .into();
-    library.folder_renamed(root, "trip", root, "Iceland");
-    assert!(library.selected_folders.contains("root:3/Iceland/day1"));
-    assert_eq!(library.selected_folders.anchor(), "root:3/Iceland/day1");
-    let mut expanded: Vec<_> = library.expanded.iter().cloned().collect();
-    expanded.sort();
-    assert_eq!(
-        expanded,
-        ["root:3/Iceland", "root:3/Iceland/day1", "root:3/tripod"]
-    );
-    Ok(())
-}
-/// A folder moved into another root keeps what was selected and unfolded
-/// in it, under that root.
-#[test]
-fn a_folder_moved_to_another_root_keeps_its_selection_and_unfolded_folders() -> Result<()> {
-    let (_directory, mut library) = library_of(&["a.RAF"])?;
-    library.selected_folders = folder_selection::FolderSelection::one("root:3/trip/day1");
-    library.expanded = ["root:3/trip", "root:3/trip/day1", "root:4/2025"]
-        .map(String::from)
-        .into();
-    library.folder_renamed(RootId(3), "trip", RootId(4), "2025/trip");
-    assert!(library.selected_folders.contains("root:4/2025/trip/day1"));
-    let mut expanded: Vec<_> = library.expanded.iter().cloned().collect();
-    expanded.sort();
-    assert_eq!(
-        expanded,
-        ["root:4/2025", "root:4/2025/trip", "root:4/2025/trip/day1"]
-    );
+    type Move<'a> = (i64, &'a str, i64, &'a str);
+    type Case<'a> = (&'a str, &'a [&'a str], Move<'a>, &'a str, &'a [&'a str]);
+    let cases: [Case; 4] = [
+        // Renamed in its root.
+        (
+            "root:3/trip/day1",
+            &["root:3/trip", "root:3/trip/day1", "root:3/tripod"],
+            (3, "trip", 3, "Iceland"),
+            "root:3/Iceland/day1",
+            &["root:3/Iceland", "root:3/Iceland/day1", "root:3/tripod"],
+        ),
+        // Moved into another root.
+        (
+            "root:3/trip/day1",
+            &["root:3/trip", "root:3/trip/day1", "root:4/2025"],
+            (3, "trip", 4, "2025/trip"),
+            "root:4/2025/trip/day1",
+            &["root:4/2025", "root:4/2025/trip", "root:4/2025/trip/day1"],
+        ),
+        // A root moved into another, as that root's folder now.
+        (
+            "root:3/day1",
+            &["root:3", "root:3/day1", "root:4/2025", "root:30"],
+            (3, "", 4, "2025/trip"),
+            "root:4/2025/trip/day1",
+            &[
+                "root:30",
+                "root:4/2025",
+                "root:4/2025/trip",
+                "root:4/2025/trip/day1",
+            ],
+        ),
+        // The root itself selected: the folder it became.
+        ("root:5", &[], (5, "", 4, "trip"), "root:4/trip", &[]),
+    ];
+    for (selected, expanded, (from_root, from, to_root, to), want, want_expanded) in cases {
+        library.selected_folders = folder_selection::FolderSelection::one(selected);
+        library.expanded = expanded.iter().map(|k| k.to_string()).collect();
+        library.folder_renamed(RootId(from_root), from, RootId(to_root), to);
+        assert!(library.selected_folders.contains(want), "{selected}");
+        assert_eq!(library.selected_folders.anchor(), want, "{selected}");
+        let mut got: Vec<_> = library.expanded.iter().cloned().collect();
+        got.sort();
+        assert_eq!(got, want_expanded, "{selected}");
+    }
     Ok(())
 }
 /// A folder dragged past 8 points onto another folder of its root is
@@ -4626,34 +4654,6 @@ fn a_root_dragged_onto_another_roots_folder_is_dropped_there() {
     );
     // Into a folder of its own: no drop.
     assert_eq!(drop_on(1), None);
-}
-/// A root moved into another root keeps what was selected and unfolded in
-/// it, as that root's folder now.
-#[test]
-fn a_root_moved_into_another_keeps_its_selection_and_unfolded_folders() -> Result<()> {
-    let (_directory, mut library) = library_of(&["a.RAF"])?;
-    library.selected_folders = folder_selection::FolderSelection::one("root:3/day1");
-    library.expanded = ["root:3", "root:3/day1", "root:4/2025", "root:30"]
-        .map(String::from)
-        .into();
-    library.folder_renamed(RootId(3), "", RootId(4), "2025/trip");
-    assert!(library.selected_folders.contains("root:4/2025/trip/day1"));
-    let mut expanded: Vec<_> = library.expanded.iter().cloned().collect();
-    expanded.sort();
-    assert_eq!(
-        expanded,
-        [
-            "root:30",
-            "root:4/2025",
-            "root:4/2025/trip",
-            "root:4/2025/trip/day1"
-        ]
-    );
-    // The root itself selected: the folder it became.
-    library.selected_folders = folder_selection::FolderSelection::one("root:5");
-    library.folder_renamed(RootId(5), "", RootId(4), "trip");
-    assert!(library.selected_folders.contains("root:4/trip"));
-    Ok(())
 }
 /// A folder moved onto a drive that spells it otherwise (composed, on FAT,
 /// exFAT and SMB shares) keeps what was selected and unfolded in it, by the

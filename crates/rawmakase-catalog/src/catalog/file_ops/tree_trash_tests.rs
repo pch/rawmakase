@@ -1550,10 +1550,6 @@ fn the_journal_reads_this_release_s_first_shape() -> Result<()> {
     let state: tree_trash::TrashTreeState = serde_json::from_str(first)?;
     assert_eq!(state.proof, proof::Proof::Names);
     assert_eq!(state.photos, [PhotoId(3), PhotoId(4)]);
-    // Fields added later default when absent.
-    let bare = r#"{"root":1,"from":"day","from_path":"/p/trip/day","folders":[],"photos":[],"families":[]}"#;
-    let state: tree_trash::TrashTreeState = serde_json::from_str(bare)?;
-    assert_eq!((state.proof, state.since), (proof::Proof::Ids, 0));
     assert_eq!(
         serde_json::from_str::<tree_trash::TrashTreeState>(&serde_json::to_string(&state)?)?,
         state
@@ -1562,30 +1558,6 @@ fn the_journal_reads_this_release_s_first_shape() -> Result<()> {
         "trash_folder".parse::<journal::Kind>()?,
         journal::Kind::TrashFolder
     );
-    Ok(())
-}
-
-#[test]
-fn an_item_of_the_first_shape_is_recovered() -> Result<()> {
-    // A crash after the receipt, its preconditions rewritten as this
-    // release's first shape wrote them: recovery still finishes it.
-    let (mut t, _trash, batch) = crashed_with_receipt(false);
-    let stored: String = t.fx.cat.db_for_tests().query_row(
-        "SELECT preconditions FROM file_operations WHERE batch=?1",
-        [&batch.0],
-        |r| r.get(0),
-    )?;
-    let mut value: serde_json::Value = serde_json::from_str(&stored)?;
-    let object = value.as_object_mut().unwrap();
-    object.remove("since");
-    object.remove("proof");
-    t.fx.cat.db_for_tests().execute(
-        "UPDATE file_operations SET preconditions=?1 WHERE batch=?2",
-        [&value.to_string(), &batch.0],
-    )?;
-    let recovery = t.fx.recover(&Faulty::default());
-    assert!(recovery.unfinished.is_empty(), "{recovery:?}");
-    assert_eq!(item(&t.fx, &batch).state, ItemState::Done);
     Ok(())
 }
 

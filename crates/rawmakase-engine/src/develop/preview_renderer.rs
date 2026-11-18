@@ -200,6 +200,11 @@ impl PreviewRenderer {
     pub fn used_gpu(&self) -> bool {
         self.backend.used_gpu
     }
+    /// The backend, for the GPU tests in [`super::gpu`], which drive it directly.
+    #[cfg(test)]
+    pub(super) fn backend(&mut self) -> &mut Backend {
+        &mut self.backend
+    }
     pub fn render(
         &mut self,
         image: &CameraImage,
@@ -2044,47 +2049,6 @@ mod tests {
         }
         let error = error / (60. * 45. * 3.);
         assert!(error < 0.02, "mean error {error}");
-    }
-    #[test]
-    #[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
-    fn a_region_beyond_the_gpu_limits_renders_on_the_cpu_and_keeps_the_gpu() {
-        use crate::develop::pipeline::{Samples, pixel_params::PixelParams};
-        let mut p = PreviewRenderer::with_gpu();
-        assert!(p.gpu().is_some(), "{:?}", p.fallback_reason());
-        let cancel = AtomicBool::new(false);
-        let params = PixelParams {
-            params: Vec::new(),
-            tables: Vec::new(),
-            weights: Vec::new(),
-            grid: None,
-            color: None,
-        };
-        // Over the develop memory budget, then over the device's buffer limits; their
-        // size alone, as the region is refused before its pixels are read.
-        for edge in [5_000, 40_000] {
-            let samples = Arc::new(Samples {
-                width: edge,
-                height: edge,
-                pixels: Vec::new(),
-                positions: Vec::new(),
-            });
-            assert!(
-                p.backend
-                    .develop(&samples, &params, Cancel::new(&cancel))
-                    .is_none()
-            );
-            assert!(p.gpu().is_some(), "{edge}: {:?}", p.fallback_reason());
-        }
-        // The next, smaller render still uses the GPU (finishing, at full size).
-        p.render(
-            &image(400, 300, 0.2),
-            &Recipe::default(),
-            0,
-            None,
-            Cancel::new(&cancel),
-        )
-        .unwrap();
-        assert!(p.used_gpu());
     }
 
     /// An HDR file's scenes are kept a size each: Exposure replaces the scene of its

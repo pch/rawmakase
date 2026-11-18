@@ -3,9 +3,10 @@
 //! A command's id names it to the key map, automation and MIDI: the
 //! [`Action`](super::Action) names are kept as they are, and new ids follow
 //! their style (lower-case snake_case words, `:` before a parameter, never `/`,
-//! which will separate an extension's name from its command). A [`Binding`]
-//! says where a key runs the command and how its press is matched; the handler
-//! that runs it names it (`bindings::CLIPPING`) and takes its press from
+//! which separates an extension's name from its command, as in
+//! `<extension>/<command>`). A [`Binding`] says where a key runs the command
+//! and how its press is matched; the handler that runs it names it
+//! (`bindings::CLIPPING`) and takes its press from
 //! [`FrameKeys`](crate::app::shell::keymap::FrameKeys).
 use crate::app::shell::keymap::{Binding, Context, Default, Guards, Mods, Tool};
 use eframe::egui::Key;
@@ -98,7 +99,8 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     command("panels:filmstrip", "Filmstrip"),
     command("panels:presets", "Fold / open Presets and History"),
     command("chrome", "Hide all but the photo"),
-    // Keys only, for now.
+    // Only its key runs it: the messages bar's cross dismisses the messages
+    // without it.
     command(
         "messages:dismiss_all",
         "Dismiss the messages in the top bar",
@@ -125,9 +127,14 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     command("grid:page_down", "Move the active photo a page down"),
     command("first_photo", "First photo"),
     command("last_photo", "Last photo"),
-    command("quick:toggle", "Add to or take out of the Quick Collection"),
+    command(
+        "quick:toggle",
+        "Add to or take out of the target collection",
+    ),
     command("quick:show", "Show the Quick Collection"),
     command("quick:clear", "Clear the Quick Collection"),
+    command("quick:save", "Save the Quick Collection as a collection"),
+    command("collection:new", "Create a collection"),
     command("delete", "Move to Trash, or remove from the catalog"),
     command("remove_from_catalog", "Remove from the catalog"),
     command("delete_rejected", "Delete the rejected photos"),
@@ -391,6 +398,9 @@ pub(in crate::app) mod bindings {
         // From the search field too, but not with a menu open.
         FILTERS = b("filters", Library, &[d(&[Key::L], CMD).once_per_press()])
             .guarded(Guards::POPUP.with(Guards::BUSY).with(Guards::MODAL));
+        // Create Collection…, as Lightroom's Library has it.
+        NEW_COLLECTION = b("collection:new", Library, &[d(&[Key::N], CMD).once_per_press()])
+            .guarded(Guards::POPUP.with(Guards::BUSY).with(Guards::MODAL));
         GRID_LOUPE = b("loupe", Grid, &[d(&[Key::E], NONE), d(&[Key::Enter], NONE)]);
         GRID_COMPARE = b("library:compare", Grid, &[d(&[Key::C], NONE)]);
         GRID_SURVEY = b("library:survey", Grid, &[d(&[Key::N], NONE)]);
@@ -398,6 +408,7 @@ pub(in crate::app) mod bindings {
         GRID_QUICK_TOGGLE = b("quick:toggle", Grid, &[d(&[Key::B], NONE).once_per_press()]);
         GRID_QUICK_SHOW = b("quick:show", Grid, &[d(&[Key::B], CMD).once_per_press()]);
         GRID_QUICK_CLEAR = b("quick:clear", Grid, &[d(&[Key::B], CMD_SHIFT).once_per_press()]);
+        GRID_QUICK_SAVE = b("quick:save", Grid, &[d(&[Key::B], CMD_ALT).once_per_press()]);
         GRID_DELETE = b("delete", Grid, &[d(DELETE_KEYS, NONE).once_per_press()]);
         GRID_REMOVE_FROM_CATALOG = b("remove_from_catalog", Grid, &[
             d(DELETE_KEYS, ALT).once_per_press(),
@@ -455,6 +466,9 @@ pub(in crate::app) mod bindings {
         LOUPE_QUICK_CLEAR = b("quick:clear", Loupe, &[
             d(&[Key::B], CMD_SHIFT).once_per_press().off_card(),
         ]);
+        LOUPE_QUICK_SAVE = b("quick:save", Loupe, &[
+            d(&[Key::B], CMD_ALT).once_per_press().off_card(),
+        ]);
         LOUPE_INFO = b("info", Loupe, &[d(&[Key::I], NONE).once_per_press()]);
         LOUPE_STACK_TOGGLE = b("stack:toggle", Loupe, &[
             d(&[Key::S], NONE).once_per_press().off_card(),
@@ -472,6 +486,9 @@ pub(in crate::app) mod bindings {
         ]);
         COMPARE_QUICK_CLEAR = b("quick:clear", Compare, &[
             d(&[Key::B], CMD_SHIFT).once_per_press().off_card(),
+        ]);
+        COMPARE_QUICK_SAVE = b("quick:save", Compare, &[
+            d(&[Key::B], CMD_ALT).once_per_press().off_card(),
         ]);
         COMPARE_PREVIOUS = b("compare_view:previous_candidate", Compare, &[
             d(&[Key::ArrowLeft], NONE),
@@ -495,6 +512,9 @@ pub(in crate::app) mod bindings {
         ]);
         SURVEY_QUICK_CLEAR = b("quick:clear", Survey, &[
             d(&[Key::B], CMD_SHIFT).once_per_press().off_card(),
+        ]);
+        SURVEY_QUICK_SAVE = b("quick:save", Survey, &[
+            d(&[Key::B], CMD_ALT).once_per_press().off_card(),
         ]);
         SURVEY_PREVIOUS = b("previous", Survey, &[
             d(&[Key::ArrowLeft, Key::ArrowUp], NONE).off_card(),

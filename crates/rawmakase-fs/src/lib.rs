@@ -26,7 +26,7 @@
 // sound, and an unsafe function's body is no unsafe block of its own.
 #![deny(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
 // Every public item says what it is for: this crate is a contract other crates
-// and clients build on (#808 step 4.13).
+// and clients build on.
 #![warn(missing_docs)]
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};

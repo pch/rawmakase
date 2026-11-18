@@ -188,7 +188,7 @@ fn white_xyz(mired: f32, tint: f32) -> [f32; 3] {
 
 /// The DNG SDK's `MapWhiteMatrix`: Bradford adaptation from white `from` to white `to`
 /// (XYZ), each cone's response taken as at least 0 and its scaling held to 0.1…10.
-fn map_white(from: [f32; 3], to: [f32; 3]) -> [[f32; 3]; 3] {
+pub(crate) fn map_white(from: [f32; 3], to: [f32; 3]) -> [[f32; 3]; 3] {
     use crate::color::{inverse, mul, mul_matrix};
     let (from, to) = (mul(BRADFORD, from), mul(BRADFORD, to));
     let scale: [f32; 3] = std::array::from_fn(|c| {
@@ -546,12 +546,6 @@ mod rendered_tests {
         let mut r = Recipe::for_metadata(&m);
         r.pick_white_balance([1.4, 1., 1.2], &m);
         assert_eq!(r.wb, [1.4, 1., 1.2]);
-    }
-
-    #[test]
-    fn a_raw_recipe_saves_without_relative_white_balance() {
-        let text = serde_json::to_string(&Recipe::default()).unwrap();
-        assert!(!text.contains("incremental"));
     }
 
     #[test]

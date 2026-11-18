@@ -216,7 +216,7 @@ mod tests {
                     ..Default::default()
                 },
                 |ui| {
-                    egui::ComboBox::from_id_salt("camera-profile")
+                    crate::app::ui::widgets::dropdown(ui, "camera-profile")
                         .width(200.)
                         .selected_text("Profile")
                         .show_ui(ui, |ui| {

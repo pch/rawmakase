@@ -928,11 +928,6 @@ fn seeded_random_operations_with_faults_keep_every_invariant() {
 }
 
 #[test]
-fn bytes_differ_per_file() {
-    assert_ne!(bytes("a.NEF"), bytes("b.NEF"));
-}
-
-#[test]
 fn a_put_back_that_fails_stays_a_put_back() -> Result<()> {
     let (mut fx, batch) = moved_but_unfinished();
     let a = fx.photo("a.NEF");

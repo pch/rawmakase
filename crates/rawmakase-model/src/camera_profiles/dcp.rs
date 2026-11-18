@@ -221,8 +221,7 @@ pub fn from_bytes(b: &[u8]) -> Result<CameraProfile> {
     Ok(p)
 }
 
-/// [`from_bytes`] without the profile's validation, which also refuses what this
-/// release cannot render yet (HDR profiles).
+/// [`from_bytes`] without the profile's validation.
 pub(crate) fn parse(b: &[u8]) -> Result<CameraProfile> {
     let d = Dcp::read(b)?;
     ensure!(

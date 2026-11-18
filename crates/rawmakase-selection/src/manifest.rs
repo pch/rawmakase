@@ -159,13 +159,17 @@ pub const PANOPTIC: PanopticSpec = PanopticSpec {
 };
 
 /// The sky model's contract: one graph from a photo of any size to the probability, at
-/// each of its pixels, that it is sky.
+/// each of its pixels, that it is sky, and, through [`SkySpec::logits`], its class scores.
 #[derive(Debug, Clone, Copy)]
 pub struct SkySpec {
     pub id: &'static str,
     /// Version of this contract, as [`ModelSpec::version`].
     pub version: u32,
     pub file: ModelFile,
+    /// The internal tensor made a second output when the model is loaded (`onnx_patch`):
+    /// the class scores at a quarter of the input. The name is the export's and holds only
+    /// for the file `file.sha256` pins; a re-export must keep it or update it here.
+    pub logits: &'static str,
     /// The photo is scaled to this long edge, keeping its proportions.
     pub long_edge: usize,
     /// Neither side goes below this: the network halves it five times.
@@ -179,7 +183,7 @@ pub struct SkySpec {
 }
 
 /// UperNet with a ConvNeXt base backbone, trained on ADE20K, exported to ONNX by
-/// `scripts/export_upernet_sky.py` from `openmmlab/upernet-convnext-base` with half-precision
+/// `scripts/models/export_upernet_sky.py` from `openmmlab/upernet-convnext-base` with half-precision
 /// weights and its adaptive pooling written so the graph takes any size. There is no upstream
 /// export to fall back on, so both sources are the mirror.
 pub const SKY: SkySpec = SkySpec {
@@ -192,11 +196,12 @@ pub const SKY: SkySpec = SkySpec {
         url: SKY_URL,
         fallback: SKY_URL,
     },
+    logits: "/model/decode_head/classifier/Conv_output_0",
     long_edge: 1024,
     min_side: 64,
     mean: [0.485, 0.456, 0.406],
     std: [0.229, 0.224, 0.225],
-    processing_version: 5,
+    processing_version: 6,
     license: "MIT (openmmlab/upernet-convnext-base's card). The checkpoint was trained on \
               ADE20K, whose images MIT offers for non-commercial research and education.",
     attribution: "UperNet (Xiao et al., 2018) with ConvNeXt (Liu et al., Meta AI, 2022), trained \

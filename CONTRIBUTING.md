@@ -45,11 +45,12 @@ cargo run --release -- --help  # the command line
 ## Tests and checks
 
 ```sh
-make check   # dependency checks, formatting, clippy and tests
+make check   # dependency checks, formatting, clippy, tests, docs and the MSRV build
 ```
 
 `make check` runs the dependency and crate checks, `cargo fmt --check`, clippy with
-warnings denied and the crates' tests; the [Makefile](Makefile) lists them. CI
+warnings denied, the crates' tests, `cargo doc` with warnings denied, the
+Python calibration tests and the MSRV build; the [Makefile](Makefile) lists them. CI
 (`.github/workflows/ci.yml`) also runs what one computer cannot: the Windows, Arch
 and Ubuntu lanes, among others. Run one crate's tests with
 `cargo test --locked -p rawmakase-model` and so on.

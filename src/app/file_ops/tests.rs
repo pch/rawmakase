@@ -206,8 +206,10 @@ fn delete_in_the_quick_collection_takes_photos_out_of_it_only() -> anyhow::Resul
     Ok(())
 }
 
+/// A collection imported from Lightroom is the catalog's own, as any other:
+/// Delete takes photos out of it, asking nothing, as one undoable step.
 #[test]
-fn delete_in_an_imported_collection_changes_nothing_and_says_so() -> anyhow::Result<()> {
+fn delete_in_an_imported_collection_takes_photos_out_of_it_only() -> anyhow::Result<()> {
     let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     let library = e.library.as_mut().unwrap();
     let id = library.session.catalog().db_for_tests().query_row(
@@ -225,18 +227,15 @@ fn delete_in_an_imported_collection_changes_nothing_and_says_so() -> anyhow::Res
     select(&mut e, &ids[..1]);
     tap(&mut e, Key::Delete, Modifiers::NONE);
     settle(&mut e);
-    assert!(!e.file_ops.confirming());
-    assert_eq!(ids_left(&e).len(), 2);
-    assert!(
-        e.library
-            .as_ref()
-            .unwrap()
-            .messages
-            .line()
-            .contains("can't be changed"),
-        "{}",
-        e.library.as_ref().unwrap().messages.line()
-    );
+    assert!(!e.file_ops.confirming(), "no question for a collection");
+    assert_eq!(ids_left(&e).len(), 2, "still in the catalog");
+    let in_trip = |e: &crate::app::Editor| {
+        e.library.as_ref().unwrap().session.collection_photos()[&collection].len()
+    };
+    assert_eq!(in_trip(&e), 1);
+    e.sync_undo();
+    e.undo();
+    assert_eq!(in_trip(&e), 2);
     Ok(())
 }
 
@@ -874,4 +873,64 @@ fn stop_says_a_batch_of_photos_finishes_when_photos_go_in_batches() {
     for verb in [Verb::Trash, Verb::Delete { rejected: false }] {
         assert_eq!(verb.stopping(), "Stopping after the photo under way…");
     }
+}
+
+/// Issue 998 (review): Delete Rejected Photos in a smart collection saves
+/// the open edit before it chooses the photos, as saving can change which
+/// photos the collection shows; it then waits for the members to be worked
+/// out again rather than delete photos the rules no longer match.
+#[test]
+fn delete_rejected_in_a_smart_collection_saves_before_it_chooses() -> anyhow::Result<()> {
+    use crate::collection_rules::{Combine, Group, Item, Rule, lua::Value};
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    let library = e.library.as_mut().unwrap();
+    let colour = Group::new(
+        Combine::Intersect,
+        vec![
+            Item::Rule(Rule::new("pick", "==", Some(Value::Number(-1.)))),
+            Item::Rule(Rule::new(
+                "treatment",
+                "==",
+                Some(Value::Str("color".into())),
+            )),
+        ],
+    );
+    let catalog = library.session.catalog_mut_for_tests();
+    let smart: i64 = catalog.db_for_tests().query_row(
+        "INSERT INTO collections(name, parent, kind)
+         VALUES ('Rejected colour', NULL, 'com.adobe.ag.library.smart_collection') RETURNING id",
+        [],
+        |r| r.get(0),
+    )?;
+    let smart = crate::catalog::CollectionId(smart);
+    catalog.set_smart_rules(smart, &crate::catalog::SmartRules::new(&colour))?;
+    library.session.set_ratings(&[
+        (ids[0], 0, -1, String::new()),
+        (ids[1], 0, -1, String::new()),
+    ])?;
+    library.session.reload()?;
+    library.select_collection(smart);
+    let started = Instant::now();
+    while !(library.source_settled() && library.smart_note().is_none()) {
+        assert!(started.elapsed() < Duration::from_secs(10));
+        library.poll_smart();
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    // Photo a open in Develop, turned Black & White, not saved yet.
+    let path = library.photo(ids[0]).unwrap().path.clone();
+    e.document.catalog_photo = Some(ids[0]);
+    e.document.opened_at(path);
+    e.document.edit.setup_mut().effects.monochrome = true;
+    e.document.edit.save_state_mut().mark_changed();
+    e.request_rejected_delete();
+    assert!(
+        matches!(e.file_ops.state, State::Idle),
+        "nothing is planned while the members are stale"
+    );
+    assert!(
+        !e.document.edit.save_state().needs_save(),
+        "the edit was saved"
+    );
+    assert!(!e.library.as_ref().unwrap().source_settled());
+    Ok(())
 }

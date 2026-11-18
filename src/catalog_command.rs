@@ -30,7 +30,7 @@ pub fn open_catalog(path: &Path, err: &mut dyn Write) -> Result<crate::catalog::
         &crate::catalog::locations::Computer::this(),
         &mut progress,
     )?;
-    let archive = catalog.remove_lightroom_archive(&mut progress);
+    let archive = catalog.remove_unused_data(&mut progress);
     if let Some(error) = archive {
         writeln!(
             err,
@@ -45,6 +45,9 @@ pub fn open_catalog(path: &Path, err: &mut dyn Write) -> Result<crate::catalog::
             upgraded.from,
             upgraded.backup.display()
         )?;
+        if let Some(earlier) = upgraded.earlier_backups_note() {
+            writeln!(err, "{earlier}")?;
+        }
         if upgraded.unreadable > 0 {
             writeln!(
                 err,
@@ -59,5 +62,6 @@ pub fn open_catalog(path: &Path, err: &mut dyn Write) -> Result<crate::catalog::
             )?;
         }
     }
+    catalog.remove_earlier_backups();
     Ok(catalog)
 }

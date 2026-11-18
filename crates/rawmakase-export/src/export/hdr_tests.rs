@@ -117,8 +117,8 @@ fn an_hdr_tiff_keeps_highlights_above_white() -> Result<()> {
     Ok(())
 }
 
-/// An HDR export needs an HDR edit and a TIFF; each is refused before
-/// anything is written.
+/// An HDR export needs an HDR edit and a format that holds its encoding (HDR pixels
+/// in a JPEG are refused); each is refused before anything is written.
 #[test]
 fn an_hdr_export_refuses_what_it_cannot_write() -> Result<()> {
     let dir = tempfile::tempdir()?;

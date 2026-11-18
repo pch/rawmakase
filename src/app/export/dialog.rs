@@ -676,8 +676,9 @@ fn section(ui: &mut egui::Ui, title: &str) {
     );
 }
 
-/// HDR export, for a TIFF: off (SDR, in the colour space above), or the edit's HDR
-/// master in a gamut and transfer. Edits with HDR off are refused when exported
+/// HDR export: off (SDR, in the colour space above), or the edit's HDR master, as HDR
+/// pixels in a gamut and transfer (TIFF, JPEG XL) or as a gain map over the SDR
+/// rendition (JPEG, JPEG XL). Edits with HDR off are refused when exported
 /// (`export::job::prepare`), so the choice is the user's to make per export.
 fn hdr_rows(ui: &mut egui::Ui, s: &mut crate::export_settings::ExportSettings) {
     use crate::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};

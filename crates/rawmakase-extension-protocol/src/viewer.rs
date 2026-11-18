@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 
 /// The most clicks one input carries.
 ///
-/// Kept equal to `rawmakase_selection::process::MAX_POINTS` (today in
-/// `rawmakase-inference`), the most clicks Select Subject's model takes, so
+/// Kept equal to `rawmakase_selection::process::MAX_POINTS`, the most clicks
+/// Select Subject's model takes, so
 /// every input the app collects can reach it.
 pub const MAX_CLICKS: usize = 32;
 

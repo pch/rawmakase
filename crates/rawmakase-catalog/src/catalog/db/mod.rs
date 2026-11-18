@@ -35,7 +35,7 @@ pub use sql::assert_shape;
 pub(in crate::catalog) use sql::{Sql, SqliteSql, sql, sqlite_sql};
 
 /// Marks a file as a RAWmakase catalog (`PRAGMA application_id`).
-const APPLICATION_ID: i64 = 0x4f4d4152;
+pub(in crate::catalog) const APPLICATION_ID: i64 = 0x4f4d4152;
 /// The first catalog format version (`PRAGMA user_version`) holding only edits
 /// rendered by the one engine, which releases before it would render with
 /// operators they no longer choose; older releases check the version too. Version 2
@@ -503,6 +503,21 @@ pub(in crate::catalog) struct Write<'db> {
 impl Write<'_> {
     fn connection(&self) -> &Connection {
         self.db
+    }
+
+    /// The file's size and the bytes inside it that deleted rows left free
+    /// (including this transaction's), which [`Db::vacuum`] would give back.
+    pub(in crate::catalog) fn space(&self) -> Result<(i64, i64)> {
+        let pragma = |name: &str| -> Result<i64> {
+            Ok(self
+                .db
+                .query_row(&format!("PRAGMA {name}"), [], |r| r.get(0))?)
+        };
+        let page = pragma("page_size")?;
+        Ok((
+            pragma("page_count")? * page,
+            pragma("freelist_count")? * page,
+        ))
     }
 
     /// Runs `sql`; returns how many rows it changed.
