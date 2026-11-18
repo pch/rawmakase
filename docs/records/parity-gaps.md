@@ -8,13 +8,210 @@ These controls were fitted to Camera Raw renders and match within the default-re
 
 ## Tone
 
-- **Scene tone stage**: Exposure, the default white and black point, Whites, Blacks, Shadows, Highlights, Clarity, Texture and Dehaze render on scene values before the profile, fitted on linear-profile Camera Raw 18.7 renders ([scene tone stage](../scene-tone-stage.md), [tone controls](../tone-controls.md#whites-and-blacks)). Positive Shadows and negative Highlights follow the measured [global rule](../scene-tone-stage.md#the-global-rule) (2026-10-28): a curve per photo from the histogram of its base levels, which the earlier percentile-keyed tables could not express. Negative Shadows, positive Highlights, Dehaze (a curve per amount, no spatial part) and positive Whites (+100 especially) stay fitted and still differ. Shadows and Highlights on the synthetic chart's flat patches are a degenerate case for Camera Raw (a flat maximum) and are not a measure of either engine.
+- **Scene tone stage**: Exposure, the default white and black point, Whites, Blacks, Shadows, Highlights, Clarity, Texture and Dehaze render on scene values before the profile, fitted on linear-profile Camera Raw 18.7 renders ([scene tone stage](../scene-tone-stage.md), [tone controls](../tone-controls.md#whites-and-blacks)). Shadows and Highlights follow the measured [global rule](../scene-tone-stage.md#the-global-rule): a curve per photo from the histogram of its base levels, which the earlier percentile-keyed tables could not express (positive Shadows and negative Highlights since 2026-10-28, negative Shadows and positive Highlights since 2026-11-17, [below](#negative-shadows-and-positive-highlights-by-the-global-rule-2026-11-17)). Dehaze (a curve per amount, no spatial part) and positive Whites (+100 especially) stay fitted and still differ. Shadows and Highlights on the synthetic chart's flat patches are a degenerate case for Camera Raw (a flat maximum) and are not a measure of either engine.
 - **Contrast** follows Camera Raw's curve, after the profile and so after Whites and Blacks, at a pivot predicted from the photo ([tone controls](../tone-controls.md#contrast)); the prediction is within about 0.03 of the pivot that fits each photo best, and its extra error over the default render on photos is 0.003–0.007.
 - **Clarity** of both signs follows a model fitted to Camera Raw's scene-value renders of synthetic scenes ([tone controls](../tone-controls.md#clarity)); its residual is not modelled. **Texture** follows a model fitted to Camera Raw on synthetic charts ([tone controls](../tone-controls.md#texture)): on the corpus chart its ΔE00 to Camera Raw drops from 2.0–2.2 to 1.5–1.6 at ±100.
 - **Parametric tone curve** renders as Camera Raw 18.7 does on the chart ([tone controls](../tone-controls.md#parametric-curve)): the 24 `parametric-*` cases sit at mean ΔE00 0.8–3.0, down from 0.95–7.9, and the looks carrying one at 0.9–1.6, down from 1.7–4.9. With out-of-gamut colors clipped per channel as Camera Raw does ([out-of-gamut colors](../color-pipeline.md#out-of-gamut-colors)), the cases sit at 0.48–1.15. A look's own parametric curve is a second curve after the user's, as in Camera Raw (`look-parametric-darks+30`: 0.93, was 1.41); at Amount 200 Camera Raw's look curve does about 1.6 times its effect at 100, where RAWmakase doubles it. **Point curves** match on ramps, but saturated colors under an S master curve still differ (ramp MAE 0.0024, peak 0.11).
 - **Curve Refine Saturation** renders as Camera Raw 18.7 does on the chart ([tone controls](../tone-controls.md#refine-saturation)): the `curve-*-refine-saturation-*` cases sit at mean ΔE00 1.1–1.5, against 1.4 for the same S curve at 100. Values above 100 render as 100, as in Camera Raw. It imports, is written back, and has a Refine › Saturation slider (0–100) under the RGB point curve.
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the colour curves was not checked; here they set the RGB curve only.
 - **Auto** tone is fitted to Lightroom Classic's own Auto values, from 452 Auto Settings steps on 439 catalog photos with every fifth photo held out; each slider is a linear fit of one or two display-encoded percentiles of luminance, of the brightest channel or of chroma, and the held-out error is a median 1 step on Contrast and 0.21 EV on Exposure. Lightroom changed Auto in mid-2019 and the catalog's history shows both versions, so the slopes are fitted on every photo and the levels, Contrast, Vibrance and Saturation on the current Auto alone. The WB menu's Auto white balance is fitted to Lightroom's Auto values (a median of 2.7 mired off on 133 photos); see [tone controls](../tone-controls.md#auto).
+
+### Negative Shadows and positive Highlights by the global rule (2026-11-17)
+
+Shadows, Highlights, Whites and Blacks come before Dehaze and Clarity. This section
+records what Camera Raw's renders of the four show on the training photos, the
+extension of the [global rule](../scene-tone-stage.md#the-global-rule) to Shadows −100
+and Highlights +100 that came out of it, and what was tried on the way and did not
+work. Training photos only: the 134 photos of the three families' shadows, highlights,
+whites and blacks training sets at each control's ±100, then all 243 training photos at
+default, Shadows ±100 and −50 and Highlights ±100 and +50, as scene values through a
+linear profile at 1024 pixels. Nothing was fitted on validation; holdout is untouched.
+Errors are the RMS of the difference of cube roots of linear values over all channels
+(0.01 is about 1.2 L\*), with each engine's own change (its render at the setting over
+main's default render) applied to Camera Raw's default render, so the default's own
+differences do not count.
+
+**Where main stood** (108 photos whose renders line up with the engine's; median, and
+for main also mean and 90th percentile):
+
+| Setting | No change | Main | Main given Camera Raw's 32-pixel level |
+| --- | --- | --- | --- |
+| Highlights +100 | 0.0626 | 0.0189 / 0.0248 / 0.0510 | 0.0081 |
+| Shadows −100 | 0.0378 | 0.0128 / 0.0143 / 0.0228 | 0.0071 |
+| Shadows +100 | 0.0484 | 0.0119 / 0.0130 / 0.0196 | 0.0077 |
+| Whites +100 | 0.1960 | 0.0118 / 0.0212 / 0.0509 | 0.0067 |
+| Highlights −100 | 0.0550 | 0.0103 / 0.0117 / 0.0182 | 0.0053 |
+| Blacks +100 | 0.0504 | 0.0051 / 0.0055 / 0.0082 | 0.0051 |
+| Blacks −100 | 0.1582 | 0.0042 / 0.0074 / 0.0161 | 0.0041 |
+| Whites −100 | 0.0204 | 0.0031 / 0.0041 / 0.0089 | 0.0031 |
+
+Blacks of both signs and Whites −100 are matched. The two largest errors were the two
+settings still rendered from fitted tables, and most of each is the large-scale level
+(last column: main's render with its 32-pixel level replaced by Camera Raw's).
+
+**What Camera Raw's renders show, with no model of ours between them.**
+
+- *Which level the curve reads does not matter.* With the best curve per photo, main's
+  guided base (radius 32 of 1024 pixels, ε 0.5) scores 0.0093 at Shadows +100, as the
+  best of the radii and ε tried (0.0093), against 0.0122 for a curve of the pixel
+  itself. The base filter's constants are not a lever.
+- *Shadows and Highlights are not one detail filter on a large-scale layer*, unlike
+  negative Dehaze: given Camera Raw's own 32-pixel level and a median detail gain, 0.0093
+  to 0.0112 remains, and 0.0053 to 0.0063 given its 8-pixel level. A perfect curve per
+  photo at a guided base leaves 0.0085 (Shadows +100), 0.0068 (−100), 0.0093
+  (Highlights −100) and 0.0132 (+100): the curve is worth up to half of main's error at
+  Shadows −100 and a third at Highlights +100.
+- *Fine detail under positive Shadows.* Camera Raw keeps 0.88, 0.83, 0.79, 0.77, 0.74,
+  0.73 and 0.70 of the detail in octave bands from 1 to 64 pixels (0.66 of the low-pass)
+  at Shadows +100; main 0.72, 0.72, 0.71, 0.71, 0.70, 0.66 and 0.64 (0.62). At −100
+  Camera Raw 1.13 to 1.32 (1.34), main 1.27 to 1.36 (1.40). Highlights, Whites and
+  Blacks are within 1 to 3%. Not addressed here.
+- *The lift by level*, main less Camera Raw in stops, by stops under the photo's top:
+  Shadows +100 0, +0.01, +0.03, +0.06, +0.08, +0.16, +0.31 down to eight stops, +0.60 at
+  eight to ten and +1.05 below (deep shadows over-lifted); Shadows −100 +0.02 to +0.14
+  in the first four stops, then −0.03 and −0.23; Highlights +100 −0.11 and −0.10 in the
+  top two stops, with a tenth of the photos 0.6 short.
+- *Highlights +100 follows how dark the photo is.* Its lift of a photo's top stop is
+  0.35 to 1.69 EV (10th to 90th percentile) and correlates −0.86 with the photo's median
+  level. Main's worst photos are low-key (a window in a dark room, streets at night,
+  neon): Camera Raw lifts their bright areas 1.3 to 3.3 EV, main 0.5 to 1.9, and on
+  daylight scenes Camera Raw lifts about 0.1 where main lifts 0.5. A rule of the
+  histogram's shape alone cannot tell these apart: cross-validated on these photos, it
+  was worse than main at Highlights +100 (0.0239 against 0.0184) until it also read the
+  level and the photo's top, median and mean themselves (0.0195).
+- *Whites +100* follows the 99th percentile (correlation −0.93 to −0.95 with the lift);
+  main's error there (0.15 to 0.30 stop RMS) is no worse than such fits, and its misses
+  are photos with a clipped top. Open.
+- *The slider is linear.* The lift in stops at half the slider over the lift at the full
+  slider is 0.49 to 0.50 at every level for Shadows −50 against −100, and 0.50 for
+  Highlights +50 against +100 from two stops under the top down, rising to 0.51, 0.52,
+  0.54 and 0.56 in the half-stops up to the top (a tenth of the photos reach 0.70
+  there).
+- *Highlights acts before the white curve.* Predicting Camera Raw's Highlights +50
+  render from its default and +100 renders as linear in the slider on the output is off
+  by −0.02 to −0.04 stop in the top two stops (RMS 0.03 to 0.115); as linear on the
+  input of the engine's white curve of that photo, by −0.00 to −0.02 (0.03 to 0.08). The
+  engine's order, the gain first and the white curve after, is the better description.
+
+**The rule's extension.** A second ensemble of the global rule's networks gives the
+curves of Shadows −100 and Highlights +100 (28 inputs: the first's 24 and the level and
+the photo's top, median and mean), fitted on 436 mosaics and 213 of the 243 training
+photos; the fitted tables are no longer read
+([scene tone stage](../scene-tone-stage.md#the-global-rule)). The builds on the way, on
+228 training photos (median; main is 0.0118 at Shadows −100 and 0.0159 at Highlights
++100; share of the pixels at white at Highlights +100 and +50: Camera Raw 0.89% and
+0.57%, main 0.94% and 0.48%):
+
+| Build | What it added | Shadows −100 | Highlights +100 | At white, +100 / +50 | What was still wrong |
+| --- | --- | --- | --- | --- | --- |
+| 1 | The second ensemble, the default black's key untouched | 0.0106 | 0.0126 | | Shadows −100: tones four to eight stops under the top 0.3 to 0.6 stop too dark |
+| 2 | The key moved by the median gain of negative Shadows, as positive Shadows moves it | 0.0096 | | | Still 0.24 to 0.49 stop too dark there |
+| 3 | The key moved by the gain of the darkest 0.1% of the map, the levels it reads | 0.0069 | | | |
+| 6 | Refitted with 213 photos; first validation gate (252 pass, 62 fail of 432) | 0.0068 | 0.0127 | 0.44% | Positive Highlights short of white |
+| 7 | Targets exact up to white | | | 0.30% | Worse: a clipped result understates the gain |
+| 8 | Clipped results as bounds | | | 0.41% | |
+| 9 | Bounds, and 0.3 stop more where clipped | | | 0.50% | |
+| 10 | Targets with the engine's white curve undone, the curve measured on the photo's own pixels; second gate (256 pass, 56 fail) | 0.0069 | 0.0118 | 0.60% / 0.26% | +25 and +50: the L\* ≥ 90 band worse than main on validation (1.55 → 2.08, 2.13 → 2.59) |
+| 12 | Half-slider renders where the full slider clipped | 0.0067 | 0.0119 | 0.64% / 0.30% | Only 0.2% of the samples were clipped at all: not the cause |
+| 13 | The engine's own white curve, also above the photo's top | 0.0067 | 0.0108 | 0.75% / 0.35% | The fit lands on the bound, half of the pixels just under white |
+| 14 | A clipped result asks for white and 0.25 stop more | | 0.0110 | 0.83% / 0.40% | Coloured highlights: Camera Raw clips a channel, luminance is under 0.97 |
+| 15 | The brightest channel decides what is clipped; third gate, stopped after 10 of 18 sets | | 0.0106 | 1.03% / 0.49% | A validation photo with a few black holes 2.21 → 6.29 ΔE00 at Shadows −100 |
+| 17 | The second ensemble's bottom within 3.5 stops of the 10th percentile | 0.0068 | 0.0106 | 1.00% / 0.48% | |
+
+**What did not work, and why.**
+
+- *The key moved by the median gain for negative Shadows.* The default black's key is
+  the 0.1th percentile; what matters is where Shadows leaves those levels, not the
+  median level (build 2 against 3).
+- *The darkest levels' gain for positive Shadows too.* On the training photos it halved
+  the deepest shadows' over-lift at +100 (+0.11, +0.17 and +0.30 stop at four, five and
+  six to eight stops under the top to +0.03, +0.06 and +0.14; 0.0106 → 0.0103, 96 photos
+  better and 35 worse). On validation it was a wash (Shadows +100 median 1.66 → 1.67,
+  mean 1.80 → 1.76; +50 0.93 → 0.96, stress 0.75 → 0.81) and failed the gate's
+  median rule in three strata. Positive Shadows keeps the median.
+- *The key moved by Highlights' gain.* No measurable effect (Highlights +100 0.0118
+  with it, 0.0120 without). Dropped.
+- *Targets up to white as they are seen* (build 7): a result at white says only that the
+  gain was at least that much, and fitting it as the gain under-lifts.
+- *A white curve measured on the photo's own pixels* (builds 10 to 12): it ends at the
+  photo's top, which is under 0.9 of white on 73% of the training photos, so every
+  Camera Raw result above the top was read as the top. The top stop stayed 0.05 stop
+  short and positive Highlights at +25 and +50 lost the highlights main's table had. A
+  full-frame mask's Exposure reaches above the top on most photos but not on one with a
+  clipped top, so the engine now writes its curve out for the fit
+  (`RAWMAKASE_RULE_DUMP`).
+- *Luminance deciding what is clipped* (build 14): 57% of the pixels Camera Raw newly
+  puts at white at Highlights +50 have a luminance under 0.97; the candidate reached
+  white on 88% of the rest and on 37 to 54% of these.
+- *The histogram's bottom as the 0.1th percentile* (build 15): a few black pixels set
+  it. The four training photos whose bottom sat more than four stops under their 10th
+  percentile (two of them the aspect-crop photos, whose map includes a black sensor
+  border) were the four worst at Shadows −100 (0.0545, 0.0326, 0.0261 and 0.0273 against
+  main's 0.0055, 0.0073, 0.0189 and 0.0051), their mid-tones 0.26 to 0.91 stop too dark;
+  the median training photo's bottom is 1.5 stops under its 10th percentile and the
+  98th percentile's 3.8. With the bottom held within 3.5 stops they are 0.0221, 0.0208,
+  0.0146 and 0.0137, still 0.1 to 0.3 stop too dark in the upper stops on three, and
+  better than main at Highlights +100 and +50 on all four. The first ensemble has the
+  same weakness and was left as fitted.
+
+**Validation.** The gate's shadows, highlights and mixed validation sets of six
+families against the recorded baseline of main: the median ΔE00 of each photo, over the
+three main families' 29 Shadows and 32 Highlights photos and over the stress families'
+24 (median, mean, 90th percentile).
+
+| Setting | Main families: median | mean | 90th percentile | Stress families: median | mean | 90th percentile |
+| --- | --- | --- | --- | --- | --- | --- |
+| Shadows −100 | 0.78 → 0.54 | 1.04 → 0.66 | 2.22 → 1.13 | 0.60 → 0.62 | 0.84 → 0.70 | 1.62 → 1.27 |
+| Shadows −50 | 0.74 → 0.50 | 0.78 → 0.60 | 1.36 → 1.04 | 0.61 → 0.55 | 0.73 → 0.67 | 1.38 → 1.14 |
+| Shadows −25 | 0.57 → 0.50 | 0.65 → 0.57 | 1.15 → 1.03 | 0.59 → 0.52 | 0.67 → 0.65 | 1.25 → 1.10 |
+| Highlights +100 | 0.95 → 0.81 | 1.27 → 1.02 | 2.12 → 1.93 | 1.09 → 1.00 | 1.55 → 1.13 | 3.92 → 1.82 |
+| Highlights +50 | 0.75 → 0.67 | 0.89 → 0.79 | 1.50 → 1.49 | 0.78 → 0.79 | 1.08 → 0.88 | 2.29 → 1.48 |
+| Highlights +25 | 0.61 → 0.50 | 0.72 → 0.68 | 1.32 → 1.33 | 0.71 → 0.65 | 0.85 → 0.78 | 1.54 → 1.34 |
+
+Positive Shadows, negative Highlights and the mixed sets render as on main.
+
+The gate's regression rule fails a stratum when any of a photo's 650 or so windows, or its
+band of L\* ≥ 90 or ≤ 10, is 2 ΔE00 further from Camera Raw, when a photo's clipping
+disagreement grows by half a point, or when the stratum's median is 0.1 worse. It fails
+42 of the 432 setting and stratum pairs (271 pass, 119 have too few photos to judge);
+builds 6 and 10 failed 62 and 56. Over all 56 Highlights and 53 Shadows photo cases:
+
+| Setting | Windows 2 ΔE00 worse (photos) | Windows 2 ΔE00 better (photos) | Band (L\* ≥ 90 for Highlights, ≤ 10 for Shadows) | Clipping disagreement, % | Photos' clipping 0.5 point worse / better |
+| --- | --- | --- | --- | --- | --- |
+| Highlights +100 | 585 (18) | 3,132 (32) | 3.02 → 2.18 | 1.42 → 1.44 | 9 / 10 |
+| Highlights +50 | 85 (6) | 176 (12) | 2.13 → 2.05 | 1.04 → 1.14 | 7 / 5 |
+| Highlights +25 | 0 | 0 | 1.55 → 1.67 | 0.95 → 1.01 | 2 / 0 |
+| Shadows −100 | 32 (4) | 1,306 (19) | 0.93 → 0.67 | 4.52 → 2.55 | 5 / 24 |
+| Shadows −50 | 0 | 71 (5) | 0.84 → 0.68 | 1.68 → 1.39 | 9 / 13 |
+| Shadows −25 | 0 | 0 | 0.80 → 0.71 | 1.29 → 1.09 | 4 / 9 |
+
+What gets worse. At Highlights +100: a silhouette on a beach at dusk (1.83 → 2.55, and
+0.73 → 1.22 at +50), a portrait against a pale wall (0.71 → 1.32), a lioness in grass
+(1.72 → 2.21), a taxi at night (0.93 → 1.37) and a snow-capped mountain (0.68 → 1.06).
+At negative Shadows: a village in a valley (2.29 → 2.60 at −50) and a man in a dim room
+(0.74 → 0.98 at −100, its disagreement with Camera Raw on which pixels are black
+growing). Five strata fail on their median, each of four photos: three of one stress
+family's bright photos at positive Highlights (0.91 → 1.36 at +100), one of dark
+photos at Highlights +100 and one at Shadows −100. Highlights +25 is the one setting
+whose highlight band is further from Camera Raw than main's.
+
+**Rendering tests that moved.** The synthetic chart and the synthetic scenes are what
+the tables were fitted on, and the rule is not closer on all of them.
+`tests/corpus/camera-raw/baseline.json`, the chart's distance from Camera Raw (mean and
+95th percentile ΔE00): Highlights +100 6.17 / 10.34 → 6.99 / 12.57 and +60 4.16 / 6.78
+→ 4.91 / 8.13 (further), Shadows −100 6.16 / 10.83 → 4.95 / 8.86 and −60 3.66 / 6.42 →
+2.99 / 6.06 (closer); flat patches are a degenerate case for both controls (a flat
+maximum). `scene-probes-baseline.json`, the error of the setting's effect on three
+synthetic scenes (EV): Highlights +50 0.023, 0.036 and 0.012 → 0.043, 0.077 and 0.019
+(further), Shadows −50 0.019, 0.067 and 0.066 → 0.013, 0.014 and 0.075 (the first two
+closer, the third further). Those entries and the chart's four snapshots were rewritten
+with this change; nothing else in the three files was.
+
+**Open.** Whites +100 on photos with a clipped top. The fine detail Camera Raw keeps
+under positive Shadows and the deep shadows' over-lift at Shadows +100. Photos shot
+with an in-camera aspect crop: the engine measures the whole sensor area, Camera Raw
+the crop. The first ensemble's bottom. The tail of daylight photos whose mid-tones
+positive Highlights lifts too little.
 
 ### Negative Dehaze: what was tried, why it failed, and what Camera Raw's renders say (2026-11-16)
 

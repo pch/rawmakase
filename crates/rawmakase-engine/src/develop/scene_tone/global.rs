@@ -85,6 +85,8 @@ pub(crate) const BLACK_KEYS: [f32; 11] =
 pub(crate) const Y_FIRST: f32 = -16.;
 pub(crate) const Y_STEP: f32 = 0.125;
 pub(crate) const Y_SAMPLES: usize = 129;
+/// Rows of a mask's black response: its total Shadows from −1 to 1 in tenths.
+pub(crate) const SHADOW_BLACK_ROWS: usize = 21;
 
 fn value(data: &[u8], i: usize) -> f32 {
     f32::from_le_bytes([
@@ -160,7 +162,8 @@ pub(crate) struct GlobalTone {
     /// response, over log2 white-curve outputs. Absent for DefaultBlackRender None.
     default_black: Option<Box<[f32; Y_SAMPLES]>>,
     blacks_curve: Option<Box<[f32; Y_SAMPLES]>>,
-    /// Default-black curves at positive Shadows 0..1 in steps of 0.1, for masks.
+    /// Default-black curves at a total Shadows of −1 to 1 in steps of 0.1
+    /// ([`SHADOW_BLACK_ROWS`]), for masks, with the recipe's own Shadows.
     shadow_black: Option<(f32, Vec<f32>)>,
     /// An HDR render's ([`Self::hdr`]): its Whites as log2 gains over log2 scene value.
     hdr: Option<Box<[f32; super::hdr_whites::SAMPLES]>>,
@@ -375,7 +378,9 @@ impl GlobalTone {
             _ => y,
         }
     }
-    pub(crate) fn set_shadow_black(&mut self, shadows: f32, dark_keys: &[f32; 11]) {
+    /// Black responses for a mask's total Shadows: one dark key for each tenth from
+    /// −1 to 1, with the recipe's own `shadows`.
+    pub(crate) fn set_shadow_black(&mut self, shadows: f32, dark_keys: &[f32; SHADOW_BLACK_ROWS]) {
         if self.black_point {
             self.shadow_black = Some((
                 shadows,
@@ -416,8 +421,8 @@ impl GlobalTone {
         let p = if let Some((shadows, rows)) = &self.shadow_black
             && shadow_delta != 0.
         {
-            let f = (shadows + shadow_delta).clamp(0., 1.) * 10.;
-            let i = (f as usize).min(9);
+            let f = ((shadows + shadow_delta).clamp(-1., 1.) + 1.) * 10.;
+            let i = (f as usize).min(SHADOW_BLACK_ROWS - 2);
             let t = f - i as f32;
             p.map(|v| {
                 if v < 1. {
@@ -1095,7 +1100,7 @@ mod tests {
         }
         // Its masks' Shadows rows carry the same curve.
         let mut masked = tone(0.5, -11.);
-        masked.set_shadow_black(0.3, &[-11.; 11]);
+        masked.set_shadow_black(0.3, &[-11.; SHADOW_BLACK_ROWS]);
         let (_, rows) = masked.shadow_black_samples().unwrap();
         assert_eq!(&rows[..Y_SAMPLES], masked.default_black_samples().unwrap());
     }

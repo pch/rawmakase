@@ -139,11 +139,26 @@ Exposure, and parts of the cool magenta corner of Temp and Tint.
 - **The default black** follows the photo's dark scene level, including camera
   baseline exposure and the user's Exposure. Its key is the 0.1th percentile of
   the measurement copy's luminance before red-eye correction and spot removal.
-  Positive global Shadows moves this key by its median log-luminance gain on the
-  measurement copy. This is a robust approximation to Camera Raw's moving black
-  response; using the unchanged key overstated the gain at negative Exposure.
-  A mask selects the response at its combined Shadows value locally, interpolating
-  prepared curves at steps of 0.1; pixels outside it keep the global response.
+  Global Shadows moves this key by its log-luminance gain: Camera Raw keys its default
+  black on the photo's levels as Shadows leaves them, not as it finds them (with and
+  without the profile's automatic black, the black's curve at Dehaze ±100 is a curve of
+  the rendered image, not the default render's; 2026-11-16). Positive Shadows moves it
+  by its median gain over the measurement copy; using the unchanged key overstated the
+  gain at negative Exposure. Negative Shadows moves it by its gain on the darkest 0.1%
+  of the copy, the levels the key reads: on 228 training photos at Shadows −100, with
+  the key left alone the tones four to eight stops under the top render 0.3 to 0.6 stop
+  too dark, with the median gain 0.2 to 0.5, and with the darkest levels' gain 0.04 to
+  0.14 (lighter tones within 0.02). Reading the darkest levels for positive Shadows
+  too halved the deepest shadows' over-lift at +100 on those photos (+0.11, +0.17 and
+  +0.30 stop at four, five and six to eight stops under the top to +0.03, +0.06 and
+  +0.14) but left the validation sets' medians more than 0.1 ΔE00 worse in three
+  strata, so positive Shadows keeps the median. Highlights does not move the key:
+  moving it by Highlights' gain on the darkest levels changed Highlights +100 on the
+  training photos by 0.0002 (0.0118 against 0.0120 in the measure of
+  [the global rule](#the-global-rule)).
+  A mask selects the response at its combined Shadows value locally, from −100 to
+  +100, interpolating prepared curves at steps of 0.1; pixels outside it keep the
+  global response.
   Full-frame masked Shadows matches the global adjustment in Camera Raw probes
   with both Auto and None default-black rendering. Blacks retains its separate
   minimum-based key. On photos that key is almost always below `BLACK_KEYS`'s first
@@ -200,9 +215,11 @@ Exposure, and parts of the cool magenta corner of Temp and Tint.
 
 ### The global rule
 
-Positive Shadows and negative Highlights read a curve computed per photo from the
-photo's histogram of base levels (`local_tone_rule.rs`; measured and fitted by
-`scripts/corpus/scene-tone-rule.py`, 2026-10-27). The measurement: 1024-pixel
+Shadows and Highlights read a curve computed per photo from the photo's histogram of
+base levels (`local_tone_rule.rs`; measured and fitted by
+`scripts/corpus/scene-tone-rule.py`): positive Shadows and negative Highlights since
+2026-10-27, negative Shadows and positive Highlights since 2026-11-17 (below). The
+measurement: 1024-pixel
 mosaics of flat square patches whose log levels form a chosen histogram, patch
 positions permuted so level is uncorrelated with position, rendered with a linear
 profile at Shadows +100 and Highlights −100. On them Camera Raw's gain is a function
@@ -314,6 +331,124 @@ by their level alone (depth 5: 1.8 to 2.4 EV from 16 to 512 pixels). The rule re
 such scenes through the histogram alone: the shadow-gap probe lifts 0.4 EV against
 Camera Raw's 0.6.
 
+**Negative Shadows and positive Highlights (2026-11-17).** Until then both rendered
+from tables of the base level relative to a key (the photo's mean luminance for
+Shadows, halfway between two percentiles for Highlights), and those were the two
+settings where the engine followed Camera Raw's differences from photo to photo
+least. On 108 training photos, the lift of the 32-pixel level by stops under the
+photo's top (root mean square over photos of the engine's less Camera Raw's): at
+Shadows −100 0.10, 0.15, 0.21, 0.29, 0.38 and 0.52 EV from the first to the sixth
+stop, where Camera Raw's own lift varies by 0.09 to 0.69 from photo to photo; at
+Highlights +100 0.34, 0.38, 0.31 and 0.27 in the top four stops against a spread of
+0.55 to 0.44. Positive Shadows' and negative Highlights' rule left 0.05 to 0.27 and
+0.23 to 0.10 against spreads of 0.09 to 0.59 and 1.39 to 0.59.
+
+Camera Raw's Highlights +100 follows how dark the photo is: its lift of a photo's top
+stop is 0.35 to 1.69 EV (10th to 90th percentile of 134 training photos) and
+correlates −0.86 with the photo's median level; the bright areas of low-key photos (a
+window in a dark room, a street at night) are lifted 1.3 to 3.3 EV where the table
+lifted 0.5 to 1.9, and a daylight scene near white 0.1 where the table lifted 0.5.
+A level's place in the histogram does not tell these apart, so the second ensemble
+also reads the level and the photo's top, median and mean themselves
+(`local_tone_rule_ext_data.rs`, 28 inputs; with the histogram's 24 alone the
+held-out error at Highlights +100 was 0.130 EV against 0.112). It is fitted on 436 of
+the mosaics above and 213 training photos at Shadows −100 and Highlights +100. Held out
+by photo in four folds, its curve is 0.20 to 0.24 EV (Shadows −100) and 0.13 to 0.14 EV
+(Highlights +100) from the target on the median photo, where the same fit gives 0.17
+to 0.20 and 0.13 to 0.15 for the first ensemble's two settings.
+
+The slider scales the curve linearly. On 243 training photos Camera Raw's lift in
+stops at Shadows −50 is 0.49 to 0.50 of that at −100 at every level, and at Highlights
++50 0.50 of that at +100 from two stops under the photo's top down, rising to 0.56 in
+the last half-stop.
+
+The second ensemble's targets are not the gains read off Camera Raw's renders. The
+stage applies the rule's gain and then its white curve, which is fitted per photo and
+compresses everything near the photo's top (the default render above); Camera Raw's
+renders show its gain after its own curve. Three rules follow, each found by a build
+that failed without it ([the record](records/parity-gaps.md#negative-shadows-and-positive-highlights-by-the-global-rule-2026-11-17)):
+
+- A target is the gain that gives Camera Raw's result through the engine's white curve
+  of that photo, which the engine writes out with the measurement map
+  (`RAWMAKASE_RULE_DUMP`), also above the photo's top: three quarters of the training
+  photos top out under 0.9 of white, and Highlights +100 takes their bright areas above
+  their own top. Predicting Camera Raw's Highlights +50 render from its default and
+  +100 renders as this gain, linear in the slider, is off by 0.00 to 0.02 stop in the
+  top two stops; as a gain on the output, by 0.02 to 0.04.
+- A clipped result is a bound. At the black floor the gain was at most what the render
+  shows. At white it was at least what takes the pixel's brightest channel to the level
+  the engine renders white, and a quarter stop more, so that the fit's own scatter does
+  not leave half of those pixels just under white. The brightest channel decides, not
+  luminance: more than half of the pixels Camera Raw newly clips at Highlights +50 are
+  coloured highlights with a luminance under 0.97.
+- Where the full slider clipped, a photo's render at half the slider gives twice its
+  own gain.
+
+The second ensemble reads a bottom that a few black pixels cannot set. The histogram's
+bottom is the 0.1th percentile of the base levels, and a hole, a black object's core or
+a black sensor border the render crops away puts it stops under everything else; the
+rule then read every mid-tone as far above the bottom and darkened it. The four training
+photos whose bottom sat more than four stops under their 10th percentile were the four
+worst at Shadows −100, their mid-tones 0.3 to 0.9 stop too dark, while the eight between
+three and four stops were as good as the rest. Its bottom is therefore held within 3.5
+stops of the 10th percentile, and darker levels read as that bottom (`BOTTOM_GAP`; the
+worst of the four, 0.0545 → 0.0221 at Shadows −100 and 0.0921 → 0.0519 at Highlights
++100; a validation photo of this kind, which the constant was not chosen on, 6.29 →
+0.62 ΔE00 at Shadows −100 against the table's 2.21). The first ensemble reads the bottom it was
+fitted with, and has the same weakness: that photo's darkest tones are 9 ΔE00 off at
+Shadows +100.
+
+On 228 training photos (the engine's change against Camera Raw's on the same default
+render, root mean square of the difference of cube roots of linear values, where 0.01
+is about 1.2 L\*; main → the rule, median and 90th percentile):
+
+| Setting | Median | 90th percentile | Photos better / worse | Pixels at white: Camera Raw, main, the rule |
+| --- | --- | --- | --- | --- |
+| Shadows −100 | 0.0118 → 0.0068 | 0.0195 → 0.0107 | 202 / 11 | |
+| Highlights +100 | 0.0159 → 0.0106 | 0.0376 → 0.0177 | 197 / 20 | 0.89%, 0.94%, 1.00% |
+| Highlights +50 | 0.0083 → 0.0059 | 0.0184 → 0.0112 | 171 / 21 | 0.57%, 0.48%, 0.48% |
+
+About half of the gain at negative Shadows is the default black's key (see the default
+render above); its disagreement with Camera Raw on which pixels are black falls from
+1.82 to 0.81 points per photo, and the lift's error four to eight stops under the top
+from 0.37, 0.52 and 0.62 EV (RMS over photos) to 0.16, 0.25 and 0.30. At Highlights
++100 the lift's error in the photo's top stop falls from 0.29 to 0.10 EV and its mean
+from −0.14 to 0.00; the disagreement on which pixels are white from 0.44 to 0.26 points
+per photo (at +50 0.12 and 0.11).
+
+On the validation sets (the median ΔE00 of each photo; median and mean over the three
+main families' 29 Shadows and 32 Highlights photos): Shadows −100 0.78 → 0.54 and 1.04 →
+0.66, −50 0.74 → 0.50 and 0.78 → 0.60, −25 0.57 → 0.50; Highlights +100 0.95 → 0.81 and
+1.27 → 1.02, +50 0.75 → 0.67 and 0.89 → 0.79, +25 0.61 → 0.50. On the stress families'
+24 photos the means fall alike (Shadows −100 0.84 → 0.70, Highlights +100 1.55 → 1.13,
++50 1.08 → 0.88) and two medians do not (Shadows −100 0.60 → 0.62, Highlights +50 0.78
+→ 0.79). The gate's regression rule, which fails a stratum when any window of any photo
+is 2 ΔE00 further from Camera Raw or a photo's clipping disagreement grows by half a
+point, fails 42 of 432 setting and stratum pairs: at Highlights +100, 585 windows on 18
+photos are that much worse and 3,132 on 32 photos that much better; at Shadows −100, 32
+on 4 against 1,306 on 19. The band of L\* ≥ 90 goes from 3.02 to 2.18 at Highlights
++100 and from 2.13 to 2.05 at +50, but from 1.55 to 1.67 at +25; the band of L\* ≤ 10
+from 0.93 to 0.67 at Shadows −100.
+
+Still wrong after it: photos shot with an in-camera aspect crop, whose measurement copy
+covers the whole sensor area where Camera Raw renders and measures the crop (of the 243
+training photos, 15 have no linear profile to render with and 15 more do not align with
+their renders, most of them for such a crop; none of the 30 is in the fit); a tail of daylight photos whose sky and mid-tones the rule lifts
+less than Camera Raw does (20 of the 228 are worse than with the table at Highlights
++100); and the synthetic scenes the tables were fitted on, where the tables stay closer
+at Highlights +50 (the error of the setting's effect on the three test scenes 0.023,
+0.036 and 0.012 EV with the tables, 0.043, 0.077 and 0.019 with the rule; at Shadows
+−50 0.019, 0.067 and 0.066 against 0.013, 0.014 and 0.075, the third scene further
+with the rule). The synthetic chart's flat
+patches are a degenerate case for both controls: its Highlights +100 is 7.0 ΔE00 from
+Camera Raw's on average where the table's was 6.2 and its Highlights +60 4.9 where the
+table's was 4.2, its Shadows −100 4.9 where the table's was 6.2 and its Shadows −60 3.0
+where the table's was 3.7.
+
+The fitted tables of both controls (`local_tone_data.rs`) remain as what a map
+without the rule's curves evaluates; a render with either slider or a mask builds the
+curves, so they are no longer read in practice.
+
 ### Local operators
 
 Shadows, Highlights and Clarity are luminance gains from a smooth, edge-aware base
@@ -394,6 +529,8 @@ training photos have no such scene. Highlights −100 on bright photos is short 
 rule's material improvement (1.53 against engine 4's 1.67). A median key for Highlights
 fitted the photos' scene gain better in cross-validation at every position but rendered
 the training photos worse (+100 1.37 → 1.44, −100 1.30 → 1.41), so the key is unchanged.
+Since 2026-11-17 positive Highlights follows the global rule, which reads the base level
+itself; these tables are what a map without the rule evaluates.
 
 **Negative Highlights past the table.** The table spans base levels up to 7 stops over
 the key, and past it each row used to hold its last column, so Highlights −100 stopped at
@@ -441,9 +578,10 @@ Positive Shadows' gain is a table of the base level less K plus a table of K les
 Shadows key (`SHADOWS_DETAIL`, `SHADOWS_REGION`), fitted together by least squares on the
 training photos at the renders' size (1024 pixels), with the region table held at 0 at
 the key (a constant could otherwise move between the tables). K is read from the map like
-the base level, so region and preview size do not change it. Negative Shadows keeps the
-base-level table: an earlier two-scale fit made Shadows −100 worse on validation (bands
-20–40 L* about 3.5 too light on bright photos). Masks read the same three tables at their own
+the base level, so region and preview size do not change it. Negative Shadows kept the
+base-level table (an earlier two-scale fit made Shadows −100 worse on validation, bands
+20–40 L* about 3.5 too light on bright photos) until it took the global rule's curve on
+2026-11-17. Masks read the same three tables at their own
 slider value.
 
 Chosen on the training photos alone (cross-validated by photo, 2 and 4 folds, EV of scene

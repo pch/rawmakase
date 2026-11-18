@@ -1,24 +1,60 @@
-//! The global rule of positive Shadows and negative Highlights: Camera Raw's gain for a
-//! base level is a function of where that level sits in the photo's histogram of base
-//! levels (how far below the top, above the bottom and from the mean and quantiles, the
-//! mass in the stops around it, the range) and of how textured the photo is at the
-//! top. Measured on flat-patch mosaics with controlled histograms (including deep
-//! ranges, bimodal histograms and clipped tops) and fitted together with
-//! linear-profile training photos, targets counted to 13 stops under white
-//! (2026-10-28; docs/scene-tone-stage.md). A flat maximum is a degenerate case for Camera Raw, so
-//! the mosaics carry a faint texture. The slider scales the +100 / −100 gain linearly
-//! (measured exactly at ±50).
+//! The global rule of Shadows and Highlights: Camera Raw's gain for a base level is a
+//! function of where that level sits in the photo's histogram of base levels (how far
+//! below the top, above the bottom and from the mean and quantiles, the mass in the
+//! stops around it, the range) and of how textured the photo is at the top. Measured on
+//! flat-patch mosaics with controlled histograms (including deep ranges, bimodal
+//! histograms and clipped tops) and fitted together with linear-profile training
+//! photos, targets counted to 13 stops under white (2026-10-28;
+//! docs/scene-tone-stage.md). A flat maximum is a degenerate case for Camera Raw, so the
+//! mosaics carry a faint texture. The slider scales the +100 / −100 gain linearly
+//! (positive Shadows and negative Highlights exactly at ±50; on 243 training photos
+//! Shadows −50 is 0.49 to 0.50 of the lift at −100 in stops and Highlights +50 0.50
+//! of that at +100, rising to 0.56 just under the photo's top).
 //!
-//! The rule is the mean of [`MEMBERS`] small networks fitted from different seeds
-//! (`local_tone_rule_data.rs`; two hidden layers of [`HIDDEN`] units), since one fit's
-//! gain at a level varies by 0.1 to 0.3 EV with the seed on real photos. It is
-//! evaluated once per photo at
+//! Positive Shadows and negative Highlights are the mean of four small networks
+//! fitted from different seeds (`local_tone_rule_data.rs`; two hidden layers of
+//! 64 units), since one fit's gain at a level varies by 0.1 to 0.3 EV with the
+//! seed on real photos. Negative Shadows and positive Highlights are a second ensemble
+//! (`local_tone_rule_ext_data.rs`, 2026-11-17), which also reads the level and the
+//! photo's top, median and mean themselves: Camera Raw's Highlights +100 lifts the bright
+//! areas of a dark photo by up to three stops and those of a bright one hardly at all,
+//! which no place in a histogram tells. Its gains are those that give Camera Raw's
+//! result through the scene tone stage's default white curve, which follows the gain
+//! and compresses everything near the photo's top; where Camera Raw's result was
+//! clipped, they come from its render at half the slider
+//! (docs/scene-tone-stage.md#the-global-rule). Each is evaluated once per photo at
 //! 48 base levels, which gives a [`Curve`] the per-pixel code and the GPU read like any
 //! other. With `RAWMAKASE_RULE_DUMP=<path>` set, each curve built appends its statistics
 //! and table to `<path>` as a JSON line and writes the map it read to `<path>.map`
 //! (diagnostics; `scene-tone-rule.py taps` trains on those maps).
 use super::local_tone::{Curve, blur};
-use super::local_tone_rule_data::{B1, B2, B3, FEATURES, HIDDEN, MEMBERS, MU, SD, W1, W2, W3};
+use super::local_tone_rule_data::{B1, B2, B3, FEATURES, MU, SD, W1, W2, W3};
+use super::local_tone_rule_ext_data as ext;
+
+/// The controls the rule has a curve for, in the order of [`RuleStats`]' gains.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RuleCurve {
+    /// Shadows +100.
+    ShadowsUp,
+    /// Highlights −100.
+    HighlightsDown,
+    /// Shadows −100.
+    ShadowsDown,
+    /// Highlights +100.
+    HighlightsUp,
+}
+impl RuleCurve {
+    pub(crate) const ALL: [Self; 4] = [
+        Self::ShadowsUp,
+        Self::HighlightsDown,
+        Self::ShadowsDown,
+        Self::HighlightsUp,
+    ];
+    /// Whether the control brightens: its gains are never negative (else never positive).
+    fn lifts(self) -> bool {
+        matches!(self, Self::ShadowsUp | Self::HighlightsUp)
+    }
+}
 
 /// Radius (map pixels) of the mean whose residual measures texture.
 const TEXTURE_RADIUS: usize = 2;
@@ -63,14 +99,22 @@ pub(super) struct RuleStats {
     fine_median: f32,
     coarse_median: f32,
     /// The curves' extent and the ensemble's gains at [`LEVELS`] levels across it,
-    /// computed once per map: the per-level medians are the costly part, and both
-    /// controls' curves read the same table.
+    /// computed once per map: the per-level medians are the costly part, and every
+    /// control's curve reads the same table (in [`RuleCurve::ALL`]'s order).
     lo: f32,
     hi: f32,
-    gains: [[f32; 2]; LEVELS],
+    gains: [[f32; 4]; LEVELS],
 }
 /// Levels at which the curves sample the rule.
 const LEVELS: usize = 48;
+/// How far under the 10th percentile (stops) the bottom the second ensemble reads may
+/// sit. The bottom is the 0.1th percentile, which a tiny black area or a black sensor
+/// border sets on its own, and the rule then reads every mid-tone as far above the
+/// bottom: the four training photos whose bottom sat more than four stops under the
+/// 10th percentile were its four worst at Shadows −100, their mid-tones 0.3 to 0.9
+/// stop too dark, while the eight between three and four stops were as good as the
+/// rest (2026-11-17). The first ensemble reads the bottom as it was fitted with.
+const BOTTOM_GAP: f32 = 3.5;
 impl RuleStats {
     /// From the map's log2 luminance and base level (a · log + b), `w` × `h`.
     pub(super) fn new(logs: &[f32], base: &[f32], w: usize, h: usize) -> Self {
@@ -140,7 +184,7 @@ impl RuleStats {
             coarse_median,
             lo: 0.,
             hi: 0.,
-            gains: [[0.; 2]; LEVELS],
+            gains: [[0.; 4]; LEVELS],
         };
         stats.lo = stats.bot - 1.;
         stats.hi = stats.top + 1.;
@@ -168,12 +212,13 @@ impl RuleStats {
         self.sorted.partition_point(|v| *v <= x) as f32 / self.sorted.len() as f32
     }
     /// The network's inputs for base level `x` (`scene-tone-rule.py`'s `FEAT`, in order).
-    fn features(&self, x: f32) -> [f32; FEATURES] {
+    /// The descriptors of level `x`, with the histogram's bottom at `bot`.
+    fn features(&self, x: f32, bot: f32) -> [f32; FEATURES] {
         let m = |lo: f32, hi: f32| self.cdf(x + hi) - self.cdf(x + lo);
         let (fine, coarse) = self.texture_at(x);
         [
             self.top - x,
-            x - self.bot,
+            x - bot,
             self.mean - x,
             self.q50 - x,
             self.q75 - x,
@@ -181,7 +226,7 @@ impl RuleStats {
             self.q25 - x,
             self.q10 - x,
             self.cdf(x),
-            self.top - self.bot,
+            self.top - bot,
             m(0., 1.),
             m(1., 2.),
             m(2., 3.),
@@ -201,49 +246,54 @@ impl RuleStats {
             self.m_top2,
         ]
     }
-    /// Log2 gain at base level `x`: Shadows +100, Highlights −100 (the ensemble's mean).
-    fn gain(&self, x: f32) -> [f32; 2] {
-        let f = self.features(x);
+    /// Log2 gain at base level `x`, in [`RuleCurve::ALL`]'s order (each ensemble's mean).
+    fn gain(&self, x: f32) -> [f32; 4] {
+        let f = self.features(x, self.bot);
         let z: [f32; FEATURES] = std::array::from_fn(|i| (f[i] - MU[i]) / SD[i]);
-        let mut sum = [0f32; 2];
-        for m in 0..MEMBERS {
-            let mut h1 = [0f32; HIDDEN];
-            for (j, out) in h1.iter_mut().enumerate() {
-                let mut s = B1[m][j];
-                for (i, v) in z.iter().enumerate() {
-                    s += W1[m][j][i] * v;
-                }
-                *out = silu(s);
-            }
-            let mut h2 = [0f32; HIDDEN];
-            for (j, out) in h2.iter_mut().enumerate() {
-                let mut s = B2[m][j];
-                for (i, v) in h1.iter().enumerate() {
-                    s += W2[m][j][i] * v;
-                }
-                *out = silu(s);
-            }
-            for (k, out) in sum.iter_mut().enumerate() {
-                let mut s = B3[m][k];
-                for (i, v) in h2.iter().enumerate() {
-                    s += W3[m][k][i] * v;
-                }
-                *out += s;
-            }
-        }
-        sum.map(|v| v / MEMBERS as f32)
+        let [up, down] = ensemble(&z, &W1, &B1, &W2, &B2, &W3, &B3);
+        // The second ensemble's inputs: the same, then the photo's top, median and mean
+        // and the level itself (`scene-tone-rule.py`'s `FEAT_EXT`), with the bottom no
+        // more than `BOTTOM_GAP` under the 10th percentile and darker levels read as it.
+        let floor = self.bot.max(self.q10 - BOTTOM_GAP);
+        let (x, f) = if floor > self.bot {
+            let x = x.max(floor);
+            (x, self.features(x, floor))
+        } else {
+            (x, f)
+        };
+        let absolute = [self.top, self.q50, self.mean, x];
+        let z: [f32; ext::FEATURES] = std::array::from_fn(|i| {
+            let v = if i < FEATURES {
+                f[i]
+            } else {
+                absolute[i - FEATURES]
+            };
+            (v - ext::MU[i]) / ext::SD[i]
+        });
+        let [shadows_down, highlights_up] = ensemble(
+            &z,
+            &ext::W1,
+            &ext::B1,
+            &ext::W2,
+            &ext::B2,
+            &ext::W3,
+            &ext::B3,
+        );
+        [up, down, shadows_down, highlights_up]
     }
-    /// The curve of one control at full strength (Shadows +100 when `shadows`, else
-    /// Highlights −100) over the photo's base levels, as [`Curve`] reads it: absolute
-    /// levels (key 0) from a stop below the bottom to a stop above the top, held
-    /// outside. Shadows lifts nothing above the top and Highlights pulls nothing below
-    /// the bottom, so holding the ends extends the rule as the mosaics measured it.
-    pub(super) fn curve(&self, shadows: bool) -> Curve {
+    /// The curve of one control at full strength over the photo's base levels, as
+    /// [`Curve`] reads it: absolute levels (key 0) from a stop below the bottom to a
+    /// stop above the top, held outside. Shadows changes nothing above the top and
+    /// Highlights nothing below the bottom, so holding the ends extends the rule as
+    /// the mosaics measured it.
+    pub(super) fn curve(&self, kind: RuleCurve) -> Curve {
         let (lo, hi) = (self.lo, self.hi);
         let step = (hi - lo) / LEVELS as f32;
+        let k = RuleCurve::ALL.iter().position(|c| *c == kind).unwrap_or(0);
+        let shadows = kind == RuleCurve::ShadowsUp;
         let mut table: [f32; LEVELS] = std::array::from_fn(|i| {
-            let g = self.gains[i];
-            if shadows { g[0].max(0.) } else { g[1].min(0.) }
+            let g = self.gains[i][k];
+            if kind.lifts() { g.max(0.) } else { g.min(0.) }
         });
         monotone(&mut table, step);
         if let Ok(path) = std::env::var("RAWMAKASE_RULE_DUMP") {
@@ -328,6 +378,32 @@ fn median(values: &[f32]) -> f32 {
 fn silu(x: f32) -> f32 {
     x / (1. + (-x).exp())
 }
+/// The mean of an ensemble's two outputs for the standardized inputs `z`: `M` networks
+/// of two hidden layers of `H` units.
+fn ensemble<const F: usize, const H: usize, const M: usize>(
+    z: &[f32; F],
+    w1: &[[[f32; F]; H]; M],
+    b1: &[[f32; H]; M],
+    w2: &[[[f32; H]; H]; M],
+    b2: &[[f32; H]; M],
+    w3: &[[[f32; H]; 2]; M],
+    b3: &[[f32; 2]; M],
+) -> [f32; 2] {
+    // Each sum starts from its bias and adds the products in order. Another order
+    // rounds differently, and the first ensemble's curves must stay what they were.
+    let dot = |input: &[f32], weights: &[f32], bias: f32| {
+        input.iter().zip(weights).fold(bias, |s, (v, w)| s + w * v)
+    };
+    let mut sum = [0f32; 2];
+    for m in 0..M {
+        let h1: [f32; H] = std::array::from_fn(|j| silu(dot(z, &w1[m][j], b1[m][j])));
+        let h2: [f32; H] = std::array::from_fn(|j| silu(dot(&h1, &w2[m][j], b2[m][j])));
+        for (k, out) in sum.iter_mut().enumerate() {
+            *out += dot(&h2, &w3[m][k], b3[m][k]);
+        }
+    }
+    sum.map(|v| v / M as f32)
+}
 /// `unit` scaled to slider fraction `s` (the rule is linear in the slider).
 pub(super) fn at(unit: &Curve, s: f32) -> Curve {
     Curve {
@@ -388,8 +464,8 @@ mod tests {
             *v = -1.3 - 6. * patch as f32 / 15. + 0.05 * noise;
         }
         let stats = RuleStats::new(&logs, &logs, w, h);
-        let s = stats.curve(true);
-        let hc = stats.curve(false);
+        let s = stats.curve(RuleCurve::ShadowsUp);
+        let hc = stats.curve(RuleCurve::HighlightsDown);
         let at = |c: &Curve, x: f32| {
             let f = ((x - c.lo) / (c.hi - c.lo) * 48. - 0.5).clamp(0., 47.);
             c.table[(f as usize).min(47)]
@@ -398,5 +474,61 @@ mod tests {
         assert!(at(&s, -7.) > 0.6, "bottom lifted: {}", at(&s, -7.));
         assert!(at(&hc, -1.5) < -0.5, "top pulled: {}", at(&hc, -1.5));
         assert!(at(&hc, -7.) > -0.15, "bottom left: {}", at(&hc, -7.));
+    }
+
+    /// The networks' sums start from the bias, the order the first ensemble's curves
+    /// were shipped with: summing the products first rounds differently (here to
+    /// 2^27 + 16), which moved positive Shadows and negative Highlights by 4e-7 EV.
+    #[test]
+    fn a_sum_starts_from_its_bias() {
+        // Hidden units of exactly 20 (SiLU of 20 in f32), four products of 5 each on
+        // a bias whose spacing is 16: one at a time they round away, together they
+        // would not.
+        let (z, zero) = ([0f32; 4], [[[0f32; 4]; 4]; 1]);
+        let out = ensemble(
+            &z,
+            &zero,
+            &[[0.; 4]],
+            &zero,
+            &[[20.; 4]],
+            &[[[0.25; 4]; 2]],
+            &[[134_217_728.; 2]],
+        );
+        assert_eq!(out, [134_217_728.; 2]);
+    }
+
+    /// A few near-black pixels (a hole, a black sensor border) set the histogram's
+    /// bottom on their own. Shadows −100 must not read the mid-tones as far above the
+    /// bottom for them: the second ensemble's bottom is held within [`BOTTOM_GAP`] of
+    /// the 10th percentile.
+    #[test]
+    fn a_sparse_dark_tail_leaves_negative_shadows_on_the_mid_tones_alone() {
+        let (w, h) = (128, 128);
+        let curve = |tail: bool| {
+            let mut logs = vec![0f32; w * h];
+            for (i, v) in logs.iter_mut().enumerate() {
+                let (x, y) = (i % w, i / w);
+                let patch = (y / 32) * 4 + x / 32;
+                let noise = ((i * 7919) % 13) as f32 / 13. - 0.5;
+                *v = -1.3 - 4. * patch as f32 / 15. + 0.05 * noise;
+                // 0.2% of the frame, eight stops under everything else.
+                if tail && i < 33 {
+                    *v = -13.5;
+                }
+            }
+            RuleStats::new(&logs, &logs, w, h).curve(RuleCurve::ShadowsDown)
+        };
+        let at = |c: &Curve, x: f32| {
+            let f = ((x - c.lo) / (c.hi - c.lo) * 48. - 0.5).clamp(0., 47.);
+            c.table[(f as usize).min(47)]
+        };
+        let (plain, tailed) = (curve(false), curve(true));
+        for level in [-2., -3., -4., -5.] {
+            let (a, b) = (at(&plain, level), at(&tailed, level));
+            assert!(
+                (a - b).abs() < 0.15,
+                "{level}: {a} without the tail, {b} with it"
+            );
+        }
     }
 }

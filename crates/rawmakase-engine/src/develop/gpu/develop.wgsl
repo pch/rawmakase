@@ -809,8 +809,9 @@ fn scene_global(q: vec3<f32>) -> vec3<f32> {
     let black = offset(P_SCENE_DEFAULT_BLACK);
     let shadow_black = offset(P_SCENE_SHADOW_BLACK);
     if shadow_black >= 0 && (V_MASKS && masked) && delta[L_SHADOWS] != 0.0 {
-        let f = clamp(p(P_SCENE_SHADOW_BLACK + 1u) + delta[L_SHADOWS], 0.0, 1.0) * 10.0;
-        let i = min(i32(f), 9);
+        // One row for each tenth of the total Shadows from -1 to 1 (`SHADOW_BLACK_ROWS`).
+        let f = (clamp(p(P_SCENE_SHADOW_BLACK + 1u) + delta[L_SHADOWS], -1.0, 1.0) + 1.0) * 10.0;
+        let i = min(i32(f), 19);
         let a = shadow_black + i * i32(SCENE_Y.z);
         let b = a + i32(SCENE_Y.z);
         out = mix(vec3(default_black(a, out.x), default_black(a, out.y), default_black(a, out.z)),
@@ -1023,15 +1024,20 @@ fn local_gain(pos: vec2<f32>, lum: f32, clarity_lum: f32) -> f32 {
         if r >= 0 {
             lift = family(3u, s, 0.0, base - region, base - region) + family(4u, s, p(P_LOCAL_KEYS + 2u), region, region);
         }
-        // Positive Shadows and negative Highlights follow the photo's global rule
-        // (`local_tone_rule`), scaled by the slider; the other signs their families.
+        // Shadows and Highlights follow the photo's global rule (`local_tone_rule`),
+        // scaled by the slider: the curves of Shadows +100, Highlights −100, Shadows
+        // −100 and Highlights +100. Their families only where a map carries no rule.
         var sg = family(0u, s, p(P_LOCAL_KEYS), base, base);
         if s > 0.0 && offset(P_RULE) >= 0 {
             sg = local_curve(P_RULE, base, base) * min(s, 1.0);
+        } else if s < 0.0 && offset(P_RULE + 8u) >= 0 {
+            sg = local_curve(P_RULE + 8u, base, base) * min(-s, 1.0);
         }
         var hg = family(1u, h, p(P_LOCAL_KEYS + 1u), base, tail_base);
         if h < 0.0 && offset(P_RULE + 4u) >= 0 {
             hg = local_curve(P_RULE + 4u, base, base) * min(-h, 1.0);
+        } else if h > 0.0 && offset(P_RULE + 12u) >= 0 {
+            hg = local_curve(P_RULE + 12u, base, base) * min(h, 1.0);
         }
         return exp2(sg + hg + lift + clarity);
     }

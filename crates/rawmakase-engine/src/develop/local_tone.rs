@@ -10,6 +10,7 @@
 //! levels and keys come from the photo's measurement copy, so the result does not
 //! depend on the rendered region or preview size.
 use super::local_tone_data::{Family, HIGHLIGHTS, SHADOWS, SHADOWS_DETAIL, SHADOWS_REGION};
+use super::local_tone_rule::RuleCurve;
 use rayon::prelude::*;
 
 /// Long edge of the reduced image the base level is computed on.
@@ -112,10 +113,11 @@ pub(crate) struct LocalToneMap {
     pub(crate) clarity: Option<super::clarity::ClarityField>,
     /// Clarity's detail, when masks change Clarity and read it at their own amount.
     pub(crate) clarity_detail: Option<super::clarity::ClarityDetail>,
-    /// The photo's global rule at full strength (`local_tone_rule`): positive Shadows
-    /// (+100) and negative Highlights (−100), for masks that evaluate them at their
-    /// own slider values. Built when either slider or a mask may need them.
-    pub(crate) rule: [Option<Curve>; 2],
+    /// The photo's global rule at full strength (`local_tone_rule`), in
+    /// [`RuleCurve::ALL`]'s order: Shadows +100, Highlights −100, Shadows −100 and
+    /// Highlights +100, for masks that evaluate them at their own slider values. Built
+    /// when either slider or a mask may need them.
+    pub(crate) rule: [Option<Curve>; 4],
 }
 pub(crate) struct Curve {
     pub(crate) key: f32,
@@ -130,6 +132,8 @@ fn past_hi(lo: f32, hi: f32, key: f32, base: f32) -> f32 {
     (base - key - (hi - (hi - lo) / 96.)).max(0.)
 }
 impl Curve {
+    /// A family's curve at slider `s`: what [`family`] evaluates, kept to check it.
+    #[cfg(test)]
     fn new(family: &Family, s: f32, key: f32) -> Option<Self> {
         if s == 0. {
             return None;
@@ -448,26 +452,31 @@ impl LocalToneMap {
                 Some(weights) => f.scaled(weights),
                 None => f,
             });
-        // Positive Shadows and negative Highlights follow the photo's global rule
-        // (`local_tone_rule`); the two-scale lift and the regional level are not read.
-        let rule = if sliders.shadows > 0. || sliders.highlights < 0. || local {
+        // Shadows and Highlights follow the photo's global rule (`local_tone_rule`);
+        // the two-scale lift and the regional level are not read.
+        let rule = if sliders.shadows != 0. || sliders.highlights != 0. || local {
             let stats = base.rule();
-            [Some(stats.curve(true)), Some(stats.curve(false))]
+            RuleCurve::ALL.map(|kind| Some(stats.curve(kind)))
         } else {
-            [None, None]
+            [None, None, None, None]
         };
-        let shadows = match &rule[0] {
-            Some(unit) if sliders.shadows > 0. => {
-                Some(super::local_tone_rule::at(unit, sliders.shadows))
-            }
-            _ => Curve::new(&SHADOWS, sliders.shadows, keys[0]),
+        let scaled = |up: RuleCurve, down: RuleCurve, slider: f32| {
+            let kind = if slider > 0. { up } else { down };
+            rule[kind as usize]
+                .as_ref()
+                .filter(|_| slider != 0.)
+                .map(|unit| super::local_tone_rule::at(unit, slider))
         };
-        let highlights = match &rule[1] {
-            Some(unit) if sliders.highlights < 0. => {
-                Some(super::local_tone_rule::at(unit, sliders.highlights))
-            }
-            _ => Curve::new(&HIGHLIGHTS, sliders.highlights, keys[1]),
-        };
+        let shadows = scaled(
+            RuleCurve::ShadowsUp,
+            RuleCurve::ShadowsDown,
+            sliders.shadows,
+        );
+        let highlights = scaled(
+            RuleCurve::HighlightsUp,
+            RuleCurve::HighlightsDown,
+            sliders.highlights,
+        );
         Self {
             width: w,
             height: h,
@@ -522,20 +531,31 @@ impl LocalToneMap {
             family(&SHADOWS_DETAIL, sliders[0], 0., base - k)
                 + family(&SHADOWS_REGION, sliders[0], self.keys[2], k)
         });
-        let shadows = match &self.rule[0] {
-            Some(unit) if sliders[0] > 0. => unit.eval(base) * sliders[0].min(1.),
-            _ => family(&SHADOWS, sliders[0], self.keys[0], base),
+        // The rule's curve of each sign, scaled by the slider; the fitted families only
+        // where a map carries no rule.
+        let ruled = |up: RuleCurve, down: RuleCurve, slider: f32| {
+            let kind = if slider > 0. { up } else { down };
+            self.rule[kind as usize]
+                .as_ref()
+                .filter(|_| slider != 0.)
+                .map(|unit| unit.eval(base) * slider.abs().min(1.))
         };
-        let highlights = match &self.rule[1] {
-            Some(unit) if sliders[1] < 0. => unit.eval(base) * (-sliders[1]).min(1.),
-            _ => family_t(
+        let shadows = ruled(RuleCurve::ShadowsUp, RuleCurve::ShadowsDown, sliders[0])
+            .unwrap_or_else(|| family(&SHADOWS, sliders[0], self.keys[0], base));
+        let highlights = ruled(
+            RuleCurve::HighlightsUp,
+            RuleCurve::HighlightsDown,
+            sliders[1],
+        );
+        let highlights = highlights.unwrap_or_else(|| {
+            family_t(
                 &HIGHLIGHTS,
                 sliders[1],
                 self.keys[1],
                 base,
                 self.tail_base(x, y, base),
-            ),
-        };
+            )
+        });
         (shadows + highlights + lift + clarity).exp2()
     }
     /// The regional level on this grid, when positive Shadows may read it.
@@ -1090,16 +1110,39 @@ mod tests {
     }
 
     #[test]
-    fn the_rule_is_built_for_positive_shadows_negative_highlights_and_masks() {
+    fn the_rule_is_built_for_either_sign_and_for_masks() {
         let lum = scene(&[[20, 30, 100, 100]]);
-        let negative = map(&lum, -0.6, false);
-        assert!(negative.region().is_none() && negative.lift.is_none());
-        assert!(negative.rule.iter().all(Option::is_none));
-        let positive = map(&lum, 0.6, false);
-        // The regional level and the two-scale lift are not read: the rule's curve is.
-        assert!(positive.region().is_none() && positive.lift.is_none());
-        assert!(positive.rule.iter().all(Option::is_some) && positive.shadows.is_some());
-        // Masks may lift Shadows or pull Highlights anywhere, so the curves are there for them.
-        assert!(map(&lum, -0.6, true).rule.iter().all(Option::is_some));
+        // Neither slider and no mask: nothing to read.
+        assert!(map(&lum, 0., false).rule.iter().all(Option::is_none));
+        for s in [-0.6, 0.6] {
+            let m = map(&lum, s, false);
+            // The regional level and the two-scale lift are not read: the rule's curve is.
+            assert!(m.region().is_none() && m.lift.is_none());
+            assert!(m.rule.iter().all(Option::is_some) && m.shadows.is_some());
+        }
+        // Masks may move Shadows or Highlights either way anywhere, so the curves are
+        // there for them.
+        assert!(map(&lum, 0., true).rule.iter().all(Option::is_some));
+    }
+
+    #[test]
+    fn negative_shadows_darkens_and_positive_highlights_lifts_by_the_rule() {
+        // A dark area in a textured surround: the rule's curves of the two signs it
+        // took over from the fitted tables keep their direction at every level, and
+        // scale with the slider.
+        let lum = scene(&[[20, 30, 100, 100]]);
+        let m = map(&lum, -1., false);
+        let curve = |kind: RuleCurve| m.rule[kind as usize].as_ref().unwrap();
+        let (down, up) = (
+            curve(RuleCurve::ShadowsDown),
+            curve(RuleCurve::HighlightsUp),
+        );
+        assert!(down.table.iter().all(|g| *g <= 0.) && down.table.iter().any(|g| *g < -0.2));
+        assert!(up.table.iter().all(|g| *g >= 0.) && up.table.iter().any(|g| *g > 0.2));
+        let half = map(&lum, -0.5, false);
+        let (full, half) = (m.shadows.as_ref().unwrap(), half.shadows.as_ref().unwrap());
+        for (f, h) in full.table.iter().zip(&half.table) {
+            assert!((h - 0.5 * f).abs() < 1e-6, "{h} against half of {f}");
+        }
     }
 }
