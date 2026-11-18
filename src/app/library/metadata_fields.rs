@@ -5,9 +5,11 @@
 //! it alone changes nothing.
 use super::descriptive::{DescriptiveEdit, parse_keywords};
 use super::keyword_entry;
-use super::rows::{ROW, VALUE_GRAY, caption_at, field_rect, paint_truncated, panel_edit, value_at};
+use super::rows::{
+    ROW, VALUE_GRAY, caption_at, field_rect, filled_edit, paint_truncated, panel_edit, value_at,
+};
 use super::{Library, Place};
-use crate::app::ui::design::{self, Tone, size, space, text};
+use crate::app::ui::design::{size, space, text};
 use crate::app::ui::theme;
 use crate::catalog::PhotoId;
 use crate::metadata::{Descriptive, Keyword, Location, TextField, Value};
@@ -453,14 +455,11 @@ impl Library {
         let response = ui.add_enabled(!targets.is_empty(), |ui: &mut egui::Ui| {
             ui.put(
                 rect,
-                egui::TextEdit::singleline(&mut self.fields.keyword_entry)
-                    .id(field_id)
-                    .font(egui::FontId::proportional(text::LABEL))
-                    .text_color(palette.tone(Tone::TEXT))
-                    .background_color(palette.tone(Tone::FIELD))
-                    .margin(design::margin(space::M, space::XS))
-                    .hint_text("Add keywords: Child < Parent, …")
-                    .vertical_align(egui::Align::Center),
+                filled_edit(
+                    &palette,
+                    egui::TextEdit::singleline(&mut self.fields.keyword_entry).id(field_id),
+                )
+                .hint_text("Add keywords: Child < Parent, …"),
             )
         });
         if response.changed() {

@@ -7,10 +7,10 @@
 //! one step of the shared undo log.
 use super::descriptive::DescriptiveEdit;
 use super::facets::Attribute;
-use super::rows::{ROW, VALUE_GRAY, paint_truncated, panel_edit};
+use super::rows::{ROW, VALUE_GRAY, filled_edit, paint_truncated};
 use super::{Library, Place};
 use crate::app::ui::design::text;
-use crate::app::ui::design::{self, Tone, button, inset, space};
+use crate::app::ui::design::{self, Tone, button, inset, size, space};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::{modal_frame, primary_button};
 use crate::catalog::ListedKeyword;
@@ -197,17 +197,19 @@ impl Library {
         let palette = theme::palette(ui.ctx());
         self.sync_fields();
         let targets = self.fields.targets.clone();
-        let (rect, _) =
-            ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), egui::Sense::hover());
+        ui.add_space(space::XS);
+        let (rect, _) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), size::FIELD),
+            egui::Sense::hover(),
+        );
         let mut clicked = None;
         let filter = ui.put(
-            rect.shrink2(Vec2::new(0., 1.)),
-            panel_edit(
+            rect,
+            filled_edit(
                 &palette,
                 egui::TextEdit::singleline(&mut self.keyword_list.filter),
             )
-            .hint_text("Filter Keywords")
-            .vertical_align(egui::Align::Center),
+            .hint_text("Filter Keywords"),
         );
         crate::app::ui::widgets::context_menu(&filter, |ui| {
             keyword_menu(ui, None, &mut clicked);
