@@ -495,7 +495,9 @@ impl Library {
                                 .color(palette.tone(Tone::SECONDARY)),
                         );
                     }
-                    Dialog::Edit(slots) => slot_fields(ui, &palette, slots),
+                    Dialog::Edit(slots) => {
+                        slot_fields(ui, &palette, slots);
+                    }
                     Dialog::New {
                         name,
                         focused,
@@ -620,8 +622,13 @@ fn dialog_edit<'t>(
 }
 
 /// The nine slots of a keyword set to type in, laid out as the keypad that
-/// gives them (⌥7 ⌥8 ⌥9 on top), each captioned with its shortcut.
-fn slot_fields(ui: &mut egui::Ui, palette: &theme::Palette, slots: &mut [String; SLOTS]) {
+/// gives them (⌥7 ⌥8 ⌥9 on top), each captioned with its shortcut. Returns
+/// each slot's field, by slot.
+fn slot_fields(
+    ui: &mut egui::Ui,
+    palette: &theme::Palette,
+    slots: &mut [String; SLOTS],
+) -> [egui::Rect; SLOTS] {
     ui.label(
         egui::RichText::new(
             "One keyword in each slot, typed as in the Keywording panel: Child < Parent.",
@@ -630,30 +637,37 @@ fn slot_fields(ui: &mut egui::Ui, palette: &theme::Palette, slots: &mut [String;
         .color(palette.tone(Tone::SECONDARY)),
     );
     ui.add_space(space::M);
+    // Every cell is placed in its row's rect, so the three line up
+    // whatever each one's contents measure.
+    const CAPTION: f32 = 14.;
     let gap = space::M;
     let width = (ui.available_width() - 2. * gap) / 3.;
+    let mut fields = [egui::Rect::NOTHING; SLOTS];
     for row in KEYPAD.chunks(3) {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            for &slot in row {
-                ui.allocate_ui_with_layout(
-                    Vec2::new(width, 0.),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        ui.set_width(width);
-                        ui.label(
-                            egui::RichText::new(format!("⌥{}", slot + 1))
-                                .size(text::MICRO)
-                                .color(palette.tone(Tone::MUTED)),
-                        );
-                        ui.add_space(space::XXS);
-                        ui.add(dialog_edit(palette, &mut slots[slot], ""));
-                    },
-                );
-            }
-        });
-        ui.add_space(space::S);
+        let (rect, _) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), CAPTION + space::XXS + size::FIELD),
+            egui::Sense::hover(),
+        );
+        for (column, &slot) in row.iter().enumerate() {
+            let left = rect.left() + column as f32 * (width + gap);
+            ui.painter().text(
+                egui::pos2(left, rect.top()),
+                egui::Align2::LEFT_TOP,
+                format!("⌥{}", slot + 1),
+                egui::FontId::proportional(text::MICRO),
+                palette.tone(Tone::MUTED),
+            );
+            let field = egui::Rect::from_min_size(
+                egui::pos2(left, rect.top() + CAPTION + space::XXS),
+                Vec2::new(width, size::FIELD),
+            );
+            fields[slot] = ui
+                .put(field, dialog_edit(palette, &mut slots[slot], ""))
+                .rect;
+        }
+        ui.add_space(space::M);
     }
+    fields
 }
 
 /// The height of a keyword tile.
@@ -855,6 +869,33 @@ mod tests {
                 .all(|(i, k)| i == 6 || k.is_empty())
         );
         Ok(())
+    }
+
+    #[test]
+    fn the_slot_fields_line_up_in_three_even_columns() {
+        let ctx = egui::Context::default();
+        let mut fields = [egui::Rect::NOTHING; SLOTS];
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            ui.set_width(480.);
+            let palette = theme::palette(ui.ctx());
+            let mut slots: [String; SLOTS] = Default::default();
+            slots[KEYPAD[1]] = "A long keyword < Parent".into();
+            fields = slot_fields(ui, &palette, &mut slots);
+        });
+        output.textures_delta.clear();
+        for row in KEYPAD.chunks(3) {
+            let rects: Vec<egui::Rect> = row.iter().map(|&s| fields[s]).collect();
+            for r in &rects {
+                assert_eq!(r.top(), rects[0].top(), "{rects:?}");
+                assert_eq!(r.height(), rects[0].height(), "{rects:?}");
+                assert!((r.width() - rects[0].width()).abs() < 0.5, "{rects:?}");
+            }
+            assert!(rects[0].right() < rects[1].left() && rects[1].right() < rects[2].left());
+        }
+        // Columns line up from row to row, ⌥7 above ⌥4 above ⌥1.
+        assert_eq!(fields[6].left(), fields[3].left());
+        assert_eq!(fields[3].left(), fields[0].left());
+        assert!(fields[6].bottom() < fields[3].top() && fields[3].bottom() < fields[0].top());
     }
 
     #[test]
