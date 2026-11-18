@@ -300,7 +300,9 @@ fn section_header(
     let sidebar = group == Some(SectionGroup::LibraryLeft.key());
     // Contents, and the header's title and chevron over them, from the panel's
     // edges.
-    let content_inset = if group == Some(SectionGroup::DevelopRight.key()) {
+    let content_inset = if group == Some(SectionGroup::DevelopRight.key())
+        || group == Some(SectionGroup::LibraryRight.key())
+    {
         inset::ADJUSTMENT_CONTENT
     } else {
         inset::SECTION_CONTENT

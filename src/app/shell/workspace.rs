@@ -1289,17 +1289,27 @@ impl Editor {
                     egui::Sense::hover(),
                 );
                 crate::platform::titlebar::drag(ui, row.expand2(Vec2::new(8., 0.)));
+                // The bar's separator line takes its bottom point, so the bar
+                // centres its buttons above it; so does this row.
+                let line = ui.visuals().widgets.noninteractive.bg_stroke.width.round();
                 ui.scope_builder(
                     egui::UiBuilder::new()
-                        .max_rect(row)
+                        .max_rect(row.with_max_y(row.bottom() - line))
                         .layout(egui::Layout::left_to_right(egui::Align::Center)),
                     |ui| {
-                        ui.add_space(space::L + fastframe_titlebar::footprint(ui.ctx(), BAR_HEIGHT).left);
+                        // Where the workspace bar puts it with the sidebar hidden,
+                        // so it doesn't move when the sidebar is toggled.
+                        ui.add_space(
+                            inset::STAGE - inset::PANEL
+                                + fastframe_titlebar::footprint(ui.ctx(), BAR_HEIGHT).left,
+                        );
                         self.panel_toggle(ui, WorkspacePanel::Left);
                     },
                 );
                 ui.add_space(space::XS);
-                self.catalog_switcher(ui, Some(ui.available_width()));
+                egui::Frame::new()
+                    .inner_margin(design::margin(inset::SIDEBAR_ROWS, 0.))
+                    .show(ui, |ui| self.catalog_switcher(ui, Some(ui.available_width())));
                 if export {
                     self.open_export_dialog();
                 }
@@ -1309,7 +1319,7 @@ impl Editor {
                     ui.add_space(space::L);
                     // On the catalog name's column.
                     egui::Frame::new()
-                        .inner_margin(design::margin(inset::PANEL, 0.))
+                        .inner_margin(design::margin(inset::ADJUSTMENT_CONTENT, 0.))
                         .show(ui, |ui| {
                             ui.label(
                                 egui::RichText::new(
