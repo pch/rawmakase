@@ -56,7 +56,10 @@ check rawmakase-engine "rawmakase|rawmakase-catalog|rawmakase-export|$gui|$nativ
 # workspace may turn asm on. Drop the exception once rav1d makes them optional,
 # or the AV1 decoder needs no build script.
 rav1d_build='cc|nasm-rs'
-check rawmakase-decode "rawmakase|rawmakase-catalog|rawmakase-export|cc|nasm.*|cmake|pkg-config|$gui|$c_imaging|$inference" "$rav1d_build"
+# Decoding writes no encoded image either: the JPEG XL encoders, which export
+# writes its JPEG XL files with, stay export's.
+encoders='zune-jpegxl|jixel'
+check rawmakase-decode "rawmakase|rawmakase-catalog|rawmakase-export|cc|nasm.*|cmake|pkg-config|$encoders|$gui|$c_imaging|$inference" "$rav1d_build"
 decode_tree=$(cargo tree --locked -p rawmakase-decode --all-features --target all -e normal,build \
     --prefix none --format '{p}')
 for dep in cc nasm-rs; do

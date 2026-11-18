@@ -1,9 +1,11 @@
 //! Atomic JPEG, 16-bit TIFF, PNG and JPEG XL export with the ICC profile of the pixels'
 //! colour space (sRGB, Adobe RGB (1998) or ProPhoto RGB; HDR edits export as HDR TIFF,
 //! JPEG XL or a gain-map JPEG), the camera's EXIF and the edit as Camera Raw XMP, as
-//! Lightroom embeds them.
+//! Lightroom embeds them; and editable previews, the linear DNGs Develop edits an
+//! offline photo from ([`editable_preview`]).
 pub mod assemble;
 pub mod batch;
+pub mod editable_preview;
 mod encode;
 pub mod exif;
 mod extended_xmp;
