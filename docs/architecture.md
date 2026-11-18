@@ -297,8 +297,8 @@ metadata field being typed, and the session file ([shutdown](shutdown.md#where-t
 - **Owned services with their own queue**: autosave (its own thread and catalog
   connection), AI Denoise (`ai_denoise::Service`: one queue and one worker for
   Develop, export and the CLI), the Library's edited-preview scheduler and thumbnail
-  workers, and the catalog session's background reads (capture times, photo info,
-  checksums).
+  workers, Build Standard-Sized Previews and Build Editable Previews, and the catalog
+  session's background reads (capture times, photo info, checksums).
 - **Rayon pools** inside a job, for pixel work; background work such as the
   neighbour's prefetch uses a small pool at background priority
   (`raw::background_pool`).
@@ -461,7 +461,10 @@ document was opened from, and only a document opened from its copy passes the
 identity the catalog recorded for it with its saves (autosave and the flush before
 navigating or closing). AI masks, AI Denoise and Fit Camera Look are turned off
 for it, with the reason. Export of an offline photo stays refused
-(`availability_refusal`). `develop_refusal` refuses an offline file, and a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL whose header
+(`availability_refusal`). Build and Discard Editable Previews
+(`app::library::editable_previews`, a row of `app::work`) write copies on a
+background worker and record them on the interface's catalog connection, after
+checking the result still applies. `develop_refusal` refuses an offline file, and a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL whose header
 `raster::probe` finds Develop can't edit (`raster::Unsupported`, such as a CMYK
 JPEG, an HDR or animated file, or a tiled AVIF), before anything opens it. The probe reads the file, so only work on one
 photo uses it (opening it, its dialog, Quick Develop, the context menu,
@@ -613,7 +616,11 @@ Some features span several owners; each module's docs describe its part:
   moved, renamed or put in the Trash only by a file operation the user
   confirmed (`catalog::file_ops`); nothing copies over, replaces or deletes
   one. A move to another volume copies it, verified, and puts the original in
-  the Trash only once the catalog follows the copy. Preserve unsupported source data, legacy sidecars, no-clobber
+  the Trash only once the catalog follows the copy. Editable previews
+  ([docs/editable-previews.md](editable-previews.md)) are not a user's photos
+  but RAWmakase's own derived files in the catalog's copies folder: their
+  owner, the catalog's `editable_previews` and the app's Build, Discard
+  and removal sweep, deletes them outright, as the preview cache's are. Preserve unsupported source data, legacy sidecars, no-clobber
   publication, ICC/EXIF handling and temporary-file write behavior.
 - Rendering math stays in `develop` and `camera_profiles`. Fit previews, regions
   and exports must continue to share the relevant processing paths. What the

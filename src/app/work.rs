@@ -29,6 +29,7 @@ pub(in crate::app) enum Kind {
     FolderChange,
     FileChange,
     PreviewBuilds,
+    EditableBuilds,
     StandIns,
     Selection,
     AiRemove,
@@ -207,6 +208,18 @@ const WORK: &[Row] = &[
         slows_previews: true,
         pauses_checksums: true,
         stop: Some(|e, _| vec![task::Stopping::new(e.preview_builds.close())]),
+    },
+    // Its progress and Cancel in the bar; a finished build's report is not
+    // running. Quitting cancels it: the originals are still there to build
+    // from again.
+    Row {
+        kind: Kind::EditableBuilds,
+        running: Some(|e| e.editable_builds.running()),
+        closing: None,
+        status: None,
+        slows_previews: true,
+        pauses_checksums: true,
+        stop: Some(|e, _| vec![task::Stopping::new(e.editable_builds.close())]),
     },
     // Stand-ins replace a preview where it shows.
     Row {

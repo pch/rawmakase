@@ -185,6 +185,10 @@ pub(crate) enum PreviewsRequest {
         Vec<PhotoId>,
         Vec<crate::catalog::preview_cache::PreviewKind>,
     ),
+    /// Build Editable Previews.
+    BuildEditable(Vec<PhotoId>),
+    /// Discard Editable Previews.
+    DiscardEditable(Vec<PhotoId>),
 }
 pub(crate) struct Library {
     /// The open catalog and the photos, folders and collections read from it.
@@ -1910,6 +1914,7 @@ mod collections;
 mod compare;
 mod copy_name;
 mod descriptive;
+pub(in crate::app) mod editable_previews;
 mod facets;
 pub(crate) mod filmstrip;
 mod filter;

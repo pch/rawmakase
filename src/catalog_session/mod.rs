@@ -221,6 +221,21 @@ impl CatalogSession {
     ) -> Result<Option<crate::catalog::EditablePreview>> {
         self.catalog.note_original(id, now)
     }
+    /// Records master photo `id`'s editable preview of the file `original`
+    /// names ([`Catalog::record_editable_preview`]), returning the file it
+    /// replaced. Changes no list.
+    pub(crate) fn record_editable_preview(
+        &mut self,
+        id: PhotoId,
+        original: &crate::storage::Identity,
+    ) -> Result<Option<String>> {
+        self.catalog.record_editable_preview(id, original)
+    }
+    /// Forgets the editable previews of `ids` ([`Catalog::discard_editable_previews`]),
+    /// returning their files. Changes no list.
+    pub(crate) fn discard_editable_previews(&mut self, ids: &[PhotoId]) -> Result<Vec<String>> {
+        self.catalog.discard_editable_previews(ids)
+    }
     /// Adds a snapshot of `photo` ([`Catalog::add_snapshot`]). Changes no list.
     pub(crate) fn add_snapshot(
         &mut self,

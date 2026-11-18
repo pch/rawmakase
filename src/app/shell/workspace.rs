@@ -61,6 +61,12 @@ impl Editor {
                 Request::Previews(PreviewsRequest::Discard(ids, kinds)) => {
                     self.discard_previews(&ids, &kinds)
                 }
+                Request::Previews(PreviewsRequest::BuildEditable(ids)) => {
+                    self.build_editable_previews_from_menu(&ids)
+                }
+                Request::Previews(PreviewsRequest::DiscardEditable(ids)) => {
+                    self.discard_editable_previews(&ids)
+                }
                 Request::Sync(scope, name) => self.start_folder_sync(scope, name),
                 Request::Find(photo) => self.choose_file_on_disk(photo, ctx),
                 Request::Removal(removal) => {
@@ -326,6 +332,7 @@ impl Editor {
             }
         }
         self.poll_preview_builds();
+        self.poll_editable_builds();
         // Entering a module draws its chrome: the whole-window mode belongs to
         // the module it was turned on in.
         let loupe = self.library.as_ref().is_some_and(|l| l.loupe_open());
@@ -985,6 +992,7 @@ impl Editor {
                     let start = ui.cursor().left();
                     self.export_progress(ui);
                     self.preview_build_progress(ui);
+                    self.editable_build_progress(ui);
                     self.folder_sync_progress(ui);
                     self.file_op_progress(ui);
                     self.messages.work_ui(ui);
