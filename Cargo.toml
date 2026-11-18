@@ -100,7 +100,7 @@ log = "0.4"
 # The user's keymap.toml, edited in place so its comments, its order and the
 # entries this release doesn't know survive a change (app::shell::keymap::file).
 toml_edit = { version = "0.25", default-features = false, features = ["parse", "display"] }
-rfd = "0.17.2"
+rfd = "0.18"
 # The HTTP client behind fastframe-update; rustls with bundled roots needs no
 # system TLS library.
 ureq = { version = "3.4", default-features = false, features = ["rustls"] }
