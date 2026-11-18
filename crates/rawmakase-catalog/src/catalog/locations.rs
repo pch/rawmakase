@@ -9,6 +9,7 @@
 //! are copied into a computer's rows the first time it opens the catalog
 //! with this release; after that they are only written, for older releases.
 use super::db::{Db, Reads, Write, sql};
+use super::editable_previews::{read_relocated, relocated};
 use super::value::row;
 use super::{Catalog, FolderId, RootId};
 use anyhow::{Context, Result, ensure};
@@ -484,7 +485,13 @@ impl Catalog {
         ensure!(path.is_dir(), "Choose an existing folder");
         let path = path.to_string_lossy();
         let computer = &self.computer.id;
-        self.db.write(|w| {
+        // As the transaction below writes this computer's rows.
+        let found = read_relocated(&self.db, computer, |rows| {
+            let own = rows.entry(id).or_default();
+            own.retain(|(relative, _)| !relative.is_empty() && overrides == Overrides::Keep);
+            own.push((String::new(), PathBuf::from(&*path)));
+        })?;
+        self.db.write(|w| relocated(w, computer, &found, |w| {
             // Older releases read the last change made anywhere.
             ensure!(
                 w.execute(
@@ -513,7 +520,7 @@ impl Catalog {
                 }
             }
             Ok(())
-        })
+        }))
     }
     #[cfg(any(test, feature = "test-support"))]
     /// Finds folder `id` and its subfolders at `path` on this computer,
@@ -535,7 +542,18 @@ impl Catalog {
     ) -> Result<()> {
         ensure!(path.is_dir(), "Choose an existing folder");
         let computer = &self.computer.id;
-        self.db.write(|w| {
+        // As the transaction below writes this computer's rows.
+        let found = read_relocated(&self.db, computer, |rows| {
+            let own = rows.entry(root).or_default();
+            own.retain(|(below, _)| {
+                below != relative && !(overrides == Overrides::Clear && within(relative, below))
+            });
+            own.push((
+                relative.to_string(),
+                PathBuf::from(&*path.to_string_lossy()),
+            ));
+        })?;
+        self.db.write(|w| relocated(w, computer, &found, |w| {
             let folders = logical_folders(w, root)?;
             ensure!(
                 folders.iter().any(|(_, logical)| within(relative, logical)),
@@ -569,14 +587,20 @@ impl Catalog {
                 )?;
             }
             Ok(())
-        })
+        }))
     }
     /// Forgets this computer's location of root `root` ('') or of its folder
     /// `relative`: it is then found through the nearest location above it,
     /// else where its root was added. Folders below keep their own.
     pub fn clear_folder_location(&mut self, root: RootId, relative: &str) -> Result<()> {
         let computer = &self.computer.id;
-        self.db.write(|w| clear(w, computer, root, relative))
+        let found = read_relocated(&self.db, computer, |rows| {
+            if let Some(own) = rows.get_mut(&root) {
+                own.retain(|(below, _)| below != relative);
+            }
+        })?;
+        self.db
+            .write(|w| relocated(w, computer, &found, |w| clear(w, computer, root, relative)))
     }
     /// The folders of every root located separately on this computer, by
     /// root.

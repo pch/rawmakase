@@ -186,6 +186,20 @@ CREATE TABLE IF NOT EXISTS photo_checksums (
 );
 CREATE INDEX IF NOT EXISTS photo_checksums_quick ON photo_checksums(size, quick_hash);
 
+-- Each master photo's editable preview (docs/editable-previews.md): a reduced
+-- copy of its original, built while the original was online, which Develop
+-- edits the photo from while it is offline. Virtual copies share their
+-- master's. The file is RAWmakase's own, in the catalog's copies folder;
+-- the catalog records it and never decodes it.
+CREATE TABLE IF NOT EXISTS editable_previews (
+    photo INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE, -- the master
+    file TEXT NOT NULL,            -- file name in the catalog's copies folder
+    format TEXT NOT NULL,          -- 'rawmakase-dng-1'; an importer adds its own
+    original TEXT NOT NULL,        -- the original's Identity JSON, as recorded
+    out_of_date INTEGER NOT NULL DEFAULT 0,
+    built_at TEXT NOT NULL
+);
+
 -- Where the photo falls in its camera's sequences (see `sequences`), read
 -- from the master's file in the background: a burst id, or a frame number
 -- (0 for a single shot); a row of NULLs records a file that said nothing.

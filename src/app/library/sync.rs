@@ -1637,6 +1637,65 @@ mod tests {
         Ok(())
     }
 
+    /// Sync and a preset from the Library read each target's file before they
+    /// write: an offline photo with an editable preview is refused like any
+    /// other offline photo, and keeps its edit (docs/editable-previews.md).
+    #[test]
+    fn sync_and_presets_leave_an_offline_photo_with_a_copy_alone() -> Result<()> {
+        let Fixture {
+            _dir,
+            catalog: mut c,
+            photos,
+        } = catalog()?;
+        let metadata = crate::photo::open(&photos[0].1)?.metadata;
+        let (profiles, _) = crate::camera_profiles::installed(&metadata);
+        let mut source = Recipe::with_profiles(&metadata, &profiles);
+        source.exposure = 0.5;
+        let (id, path) = &photos[1];
+        let identity = crate::storage::Identity::read(path)?;
+        let mut before = source.clone();
+        before.exposure = -0.3;
+        c.save_edit(
+            *id,
+            path,
+            &identity,
+            &before,
+            &ExportOptions::default(),
+            HistoryUpdate::Keep,
+        )?;
+        c.record_editable_preview(*id, &identity)?;
+        std::fs::rename(path, path.with_extension("away"))?;
+        let preset = crate::xmp::parse(
+            Path::new("Bright.xmp"),
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:Name="Bright" crs:Exposure2012="+1.00"/></rdf:RDF></x:xmpmeta>"#,
+        )?;
+        for change in [
+            BatchChange::Settings(GroupSelection::default()),
+            BatchChange::Preset(Box::new(BatchPreset {
+                preset,
+                name: "Bright".into(),
+            })),
+        ] {
+            let result = synchronize(
+                &mut c,
+                Some(&SyncSource::Open(Box::new(Settings {
+                    recipe: source.clone(),
+                    metadata: metadata.clone(),
+                }))),
+                &change,
+                &[target(*id, path)],
+                &DevelopDefaults::default(),
+                &Decoding::default(),
+                &BatchProgress::new("Sync", 0),
+            );
+            assert!(result.synced.is_empty(), "{}", change.name());
+            assert_eq!(result.failed.len(), 1, "{}", change.name());
+            let saved = c.edit_record(*id)?.saved_for(&identity)?.unwrap();
+            assert_eq!(saved.recipe.exposure, -0.3);
+        }
+        Ok(())
+    }
+
     /// Undo and Redo of a Sync read each photo's file, as the Sync did: over an
     /// offline photo they are refused and leave its edit as it was, whether or not
     /// it had an edit before the Sync (docs/editable-previews.md).

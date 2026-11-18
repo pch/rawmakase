@@ -370,10 +370,25 @@ impl Catalog {
     }
 }
 
+/// This computer's location rows, by root: each a logical path (`''` for the
+/// root) and where it is.
+pub(in crate::catalog) type LocationRows = HashMap<RootId, Vec<(String, PathBuf)>>;
+
 /// Every catalog folder and where it is on `computer`, read in `db`.
 pub(in crate::catalog) fn locate_folders(
     db: &impl Reads,
     computer: &str,
+) -> Result<HashMap<FolderId, Located>> {
+    locate_folders_as(db, computer, |_| {})
+}
+
+/// Every catalog folder and where it would be on `computer` were its location
+/// rows, read in `db`, changed by `edit`: where a change not yet written takes
+/// them. A folder resolves from these rows alone.
+pub(in crate::catalog) fn locate_folders_as(
+    db: &impl Reads,
+    computer: &str,
+    edit: impl FnOnce(&mut LocationRows),
 ) -> Result<HashMap<FolderId, Located>> {
     row! {
         struct FolderRow {
@@ -403,12 +418,13 @@ pub(in crate::catalog) fn locate_folders(
         sql!("SELECT root, relative_path, path FROM folder_locations WHERE computer=?"),
         &[&computer],
     )?;
-    let mut rows: HashMap<RootId, Vec<(String, PathBuf)>> = HashMap::new();
+    let mut rows: LocationRows = HashMap::new();
     for l in located {
         rows.entry(l.root)
             .or_default()
             .push((l.relative, PathBuf::from(l.path)));
     }
+    edit(&mut rows);
     Ok(folders
         .into_iter()
         .map(|f| {

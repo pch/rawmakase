@@ -55,6 +55,10 @@ pub struct CatalogExport {
     /// For a folder exported, what to check before removing it from this
     /// catalog.
     pub removal: Option<ExportedFolders>,
+    /// Editable previews carried with the photos, in the exported catalog's
+    /// own copies folder. A copy whose file this catalog no longer has is left
+    /// out, row and all, so the photo is offered a new one.
+    pub editable_previews: usize,
 }
 
 /// Folders as they were exported: removing them from the catalog is refused
@@ -123,6 +127,10 @@ impl Catalog {
             .unwrap_or_else(|| "Exported".into());
         let mut copy = Catalog::open_as(working.as_path(), &self.computer)?;
         let mut export = copy.keep_only(scope, &collection)?;
+        // The copies of the photos kept, and only those, staged beside it.
+        let staged = staging.path().join("editable-previews");
+        export.editable_previews =
+            super::editable_previews::carry(&self.editable_previews_folder(), &mut copy, &staged)?;
         let kept: i64 = copy.db.read_one(sql!("SELECT count(*) FROM photos"), &[])?;
         drop(copy);
         // Opened again as anyone would open it, on this computer.
@@ -132,8 +140,25 @@ impl Catalog {
             "The exported catalog does not list every photo exported"
         );
         drop(opened);
-        crate::storage::rename_noclobber(&working, destination)
-            .context("Could not save the exported catalog under its name")?;
+        // The copies go in place first, so the catalog is never published
+        // naming files that aren't there; they go again if it can't be.
+        let previews = super::editable_previews::folder(&destination.into());
+        if export.editable_previews > 0 {
+            ensure!(
+                !previews.exists(),
+                "A folder of editable previews already has that catalog's name ({}); choose another name",
+                previews.display()
+            );
+            std::fs::rename(&staged, &previews)
+                .context("Could not save the exported catalog's editable previews")?;
+        }
+        if let Err(e) = crate::storage::rename_noclobber(&working, destination) {
+            if export.editable_previews > 0 {
+                let _ = std::fs::remove_dir_all(&previews);
+            }
+            return Err(anyhow::Error::from(e)
+                .context("Could not save the exported catalog under its name"));
+        }
         export.path = destination.to_path_buf();
         Ok(export)
     }
@@ -240,6 +265,7 @@ impl Catalog {
             lens_profiles,
             kept_every_mask,
             removal,
+            editable_previews: 0,
         })
     }
 

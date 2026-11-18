@@ -366,6 +366,32 @@ fn the_picked_file_without_a_checksum_is_ticked_but_not_verified() -> Result<()>
     Ok(())
 }
 
+/// A photo found at another file than the one its editable preview was built
+/// from puts the copy out of date, in the move's own transaction; the same
+/// photo found keeps it. Neither has a checksum, so neither is verified.
+#[test]
+fn a_photo_found_as_another_file_puts_its_editable_preview_out_of_date() -> Result<()> {
+    let mut f = fixture()?;
+    let (a, b) = (f.id("IMG_1001.dng"), f.id("IMG_1002.dng"));
+    for id in [a, b] {
+        f.cat
+            .record_editable_preview(id, &Identity::read(&f.path_of(id))?)?;
+        f.sql("DELETE FROM photo_checksums WHERE photo=?", id)?;
+    }
+    let out = f.outside();
+    f.move_out("IMG_1001.dng", &out.join("IMG_1001.dng"))?;
+    std::fs::remove_file(f.lisbon("IMG_1002.dng"))?;
+    std::fs::write(out.join("IMG_1002.dng"), bytes(9))?;
+    for (id, name) in [(a, "IMG_1001.dng"), (b, "IMG_1002.dng")] {
+        let plan = f.find(id, &out.join(name))?;
+        f.apply(&plan, &plan.default_accepted())?;
+        assert_eq!(f.path_of(id), out.join(name));
+    }
+    assert!(!f.cat.editable_preview(a)?.unwrap().out_of_date);
+    assert!(f.cat.editable_preview(b)?.unwrap().out_of_date);
+    Ok(())
+}
+
 #[test]
 fn an_offline_old_location_takes_only_verified_matches() -> Result<()> {
     let mut f = fixture()?;

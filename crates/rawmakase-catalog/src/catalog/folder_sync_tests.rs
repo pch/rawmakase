@@ -144,7 +144,7 @@ fn placement_and_user_state_change_apart() -> Result<()> {
 mod scenarios {
     use super::super::{Accepted, Applied, SyncPlan, SyncScope, scan};
     use crate::catalog::{Catalog, FolderId, PhotoId, ReadChecksum};
-    use crate::storage::{ChecksumRead, FileChecksum};
+    use crate::storage::{ChecksumRead, FileChecksum, Identity};
     use crate::{export_settings::ExportOptions, model::recipe::Recipe};
     use anyhow::Result;
     use rawmakase_cancel::Cancel;
@@ -320,6 +320,37 @@ mod scenarios {
         // A second sync finds nothing to do.
         let again = f.plan(SyncScope::All)?;
         assert!(again.moves.is_empty() && again.additions.is_empty() && again.missing.is_empty());
+        Ok(())
+    }
+
+    /// A photo Synchronize finds moved, as a version of its file other than
+    /// the one its editable preview was built from, puts the copy out of date;
+    /// a photo found moved as the same file keeps its copy.
+    #[test]
+    fn a_photo_moved_as_another_version_puts_its_editable_preview_out_of_date() -> Result<()> {
+        let mut f = fixture()?;
+        let (a, b) = (f.id("IMG_1001.dng"), f.id("IMG_1002.dng"));
+        // `a`'s copy is of an earlier version of its file.
+        let now = Identity::read(&f.path_of(a))?;
+        let earlier = Identity {
+            size: now.size + 1,
+            ..now
+        };
+        f.cat.record_editable_preview(a, &earlier)?;
+        f.cat
+            .record_editable_preview(b, &Identity::read(&f.path_of(b))?)?;
+        for name in ["IMG_1001.dng", "IMG_1002.dng"] {
+            copy_then_delete(
+                &f.root.join("Lisbon").join(name),
+                &f.root.join("Lisbon/selects").join(name),
+            )?;
+        }
+        let plan = f.plan(SyncScope::Folder(f.folder("Lisbon")))?;
+        assert_eq!(plan.moves.len(), 2);
+        let applied = f.apply(&plan, &plan.default_accepted())?;
+        assert_eq!(applied.moved.len(), 2);
+        assert!(f.cat.editable_preview(a)?.unwrap().out_of_date);
+        assert!(!f.cat.editable_preview(b)?.unwrap().out_of_date);
         Ok(())
     }
 

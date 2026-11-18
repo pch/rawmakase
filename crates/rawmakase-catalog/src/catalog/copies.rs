@@ -126,6 +126,15 @@ impl Catalog {
                 sql!("UPDATE photo_checksums SET photo=? WHERE photo=?"),
                 &[&id, &master],
             )?;
+            // And its editable preview, which its virtual copies share.
+            w.execute(
+                sql!("DELETE FROM editable_previews WHERE photo=?"),
+                &[&id],
+            )?;
+            w.execute(
+                sql!("UPDATE editable_previews SET photo=? WHERE photo=?"),
+                &[&id, &master],
+            )?;
             // And what it was when it entered the catalog.
             w.execute(
                 sql!("DELETE FROM photo_import_facts WHERE photo=?"),
