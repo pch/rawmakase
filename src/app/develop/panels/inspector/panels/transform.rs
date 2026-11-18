@@ -1,6 +1,6 @@
 //! The Transform panel: Upright, its Guided tool, Constrain Crop and the
 //! manual Transform sliders.
-use super::super::{PanelSwitch, control_row, subheading};
+use super::super::{PanelSwitch, checkbox_row, control_row, subheading};
 use super::Action;
 use crate::app::develop::state::{Tool, ViewState};
 use crate::app::develop::step_name::StepName;
@@ -112,7 +112,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
                 });
             });
             if view.is(Tool::Guided) {
-                control_row(ui, "", |ui| {
+                checkbox_row(ui, |ui| {
                     ui.checkbox(&mut view.guided.loupe, "Show Loupe")
                         .on_hover_text("Magnify the photo while placing a guide's end");
                     ui.checkbox(&mut view.guided.grid, "Grid");
@@ -121,7 +121,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
         } else if view.is(Tool::Guided) {
             view.set_tool(Tool::None);
         }
-        control_row(ui, "", |ui| {
+        checkbox_row(ui, |ui| {
             ui.checkbox(&mut r.constrain_crop, "Constrain Crop")
                 .on_hover_text("Shrink the crop, keeping its aspect, to leave out the white areas outside the photo");
         });

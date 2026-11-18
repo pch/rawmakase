@@ -2,8 +2,8 @@
 //! the RAW, and Lensfun's, `inspector::lens_profile` and `inspector::lensfun`),
 //! then Lightroom's Manual tab: Distortion, Defringe and Vignetting.
 use super::super::{
-    PanelSwitch, control_row, defringe_sliders, eyedropper_icon, lens_profile, lensfun,
-    setting_control, subheading,
+    PanelSwitch, checkbox_row, control_row, defringe_sliders, eyedropper_icon, lens_profile,
+    lensfun, setting_control, subheading, subheading_tool_rect,
 };
 use super::Action;
 use crate::app::develop::state::{Tool, ViewState};
@@ -16,7 +16,7 @@ use crate::camera_data::Metadata;
 use crate::model::panels::Panel;
 use crate::model::params::ParameterId;
 use crate::model::recipe::Recipe;
-use eframe::egui::{self, Pos2, Rect, Sense, Vec2};
+use eframe::egui::{self, Sense};
 
 /// Draws the panel for photo `metadata`; `lensfun_view` is what Lensfun's
 /// database holds this frame.
@@ -39,11 +39,11 @@ pub(in crate::app::develop::panels::inspector) fn show(
         |ui, step| {
             let photo = metadata;
             subheading(ui, "Profile");
-            control_row(ui, "", |ui| {
+            checkbox_row(ui, |ui| {
                 ui.checkbox(&mut r.lens_ca, "Remove Chromatic Aberration")
                 .on_hover_text("Remove red/cyan and blue/yellow fringes toward the edges of the frame, measured from the photo itself.");
             });
-            control_row(ui, "", |ui| {
+            checkbox_row(ui, |ui| {
                 let mut on = r.lens_profile;
                 if ui
                 .checkbox(&mut on, "Enable Profile Corrections")
@@ -116,12 +116,9 @@ pub(in crate::app::develop::panels::inspector) fn show(
             ui.push_id("manual-distortion", |ui| {
                 setting_control(ui, step, r, ParameterId::ManualDistortion, 0., photo);
             });
-            let row = subheading(ui, "Defringe");
-            // The Fringe Color Selector, at the row's far left as White Balance's.
-            let rect = Rect::from_center_size(
-                Pos2::new(row.left() + 13., row.center().y),
-                Vec2::new(26., 20.),
-            );
+            // The Fringe Color Selector, at the heading row's far right, as White
+            // Balance's sits at the right of its caption.
+            let rect = subheading_tool_rect(subheading(ui, "Defringe"));
             let response = ui.interact(rect, ui.id().with("fringe-selector"), Sense::click());
             let picking = view.is(Tool::Defringe);
             if picking || response.hovered() {
