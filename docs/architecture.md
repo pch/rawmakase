@@ -356,7 +356,12 @@ nearly a gigabyte after thumbnails and photo opens (measurements in
 `platform::memory::release_freed`). The
 UI thread's `background` step has them given back once the process's CPU time
 shows work has gone quiet for four seconds (`platform::memory::Release`), so no
-worker reports in and a worker added later is covered. It releases nothing the
+worker reports in and a worker added later is covered. Opening a photo does not
+go quiet between its bursts, so on macOS the Develop loader gives them back
+itself at the two points where one stage's planes are freed and the next
+allocates others: after a full-size decode, before its image is sent to be
+rendered, and before the neighbour's prefetch decodes or opens a file. It does
+not on Linux, where glibc reuses an arena's free space. It releases nothing the
 app still holds: the open photo's decode stays while it is the document, in the
 Library too.
 

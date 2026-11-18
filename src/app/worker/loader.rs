@@ -25,7 +25,6 @@ struct FullJob {
     cancel: Arc<std::sync::atomic::AtomicBool>,
     started: Instant,
     full: FullSize,
-    prefetch: Option<Prefetch>,
 }
 /// What a failed load says: why Develop refuses the file, or the error.
 fn load_error(path: &std::path::Path, e: &anyhow::Error) -> String {
@@ -97,6 +96,21 @@ impl Ahead {
         .then_some(held.image)
     }
 }
+
+/// Gives back the large blocks macOS's allocator keeps of what the loader's
+/// stages freed ([`crate::platform::memory::release_freed`]), where the next
+/// stage is about to allocate planes of other sizes: a kept block is handed out
+/// again only for a request near its own size, so those planes would come on
+/// top of it (measurements in `docs/records/preview-performance-measurements.md`).
+///
+/// It does nothing elsewhere. On Linux, glibc reuses an arena's free space, and
+/// its `malloc_trim` takes 1 to 100 ms, which would hold up the image this
+/// loader is about to send.
+fn release_kept_blocks() {
+    #[cfg(target_os = "macos")]
+    crate::platform::memory::release_freed();
+}
+
 /// Develops a neighbour on two threads, leaving the other cores to rendering the
 /// photo on screen: a RAW into the decode cache, a JPEG, PNG or TIFF into `ahead`.
 fn prefetcher(cache: DecodeCache, ahead: Ahead) -> Latest<Prefetch> {
@@ -110,10 +124,20 @@ fn prefetcher(cache: DecodeCache, ahead: Ahead) -> Latest<Prefetch> {
             return;
         }
         if !crate::storage::is_raw(&job.path) {
+            // What the open photo's first render freed goes before the neighbour
+            // is opened, as before a RAW's decode below.
+            release_kept_blocks();
             pool.install(|| ahead.prefetch(&job.path, Cancel::new(&job.cancel)));
             return;
         }
         let full = FullSize::with_cache(&job.path, job.demosaic, cache.clone());
+        if full.is_cached() {
+            return;
+        }
+        // The open photo's first full-size render has just ended (the app starts
+        // the prefetch after it), and the allocator still holds the planes its
+        // noise reduction freed: they go before this decode allocates its own.
+        release_kept_blocks();
         let open = || crate::photo::open(&job.path);
         let _ = pool.install(|| full.get(open, DecodePolicy::Prefetch, Cancel::new(&job.cancel)));
     })
@@ -136,14 +160,8 @@ impl Between {
         }
     }
 }
-fn full_loader(
-    tx: Sender<Event>,
-    ctx: egui::Context,
-    prefetcher: Mailbox<Prefetch>,
-    between: Between,
-) -> Latest<FullJob> {
-    Latest::new(move |mut job: FullJob| {
-        let prefetch = job.prefetch.take();
+fn full_loader(tx: Sender<Event>, ctx: egui::Context, between: Between) -> Latest<FullJob> {
+    Latest::new(move |job: FullJob| {
         let result = caught(|| -> anyhow::Result<()> {
             if job.cancel.load(Ordering::Relaxed) {
                 return Ok(());
@@ -166,6 +184,10 @@ fn full_loader(
                 // Opened again: shown and stored only if it is still the version the
                 // first stage read.
                 unchanged(&job.path, job.file.as_ref())?;
+                // The half-size stage and this decode are done with their planes,
+                // which the allocator still holds: they go before the first
+                // full-size render allocates its own.
+                release_kept_blocks();
                 send(
                     &tx,
                     &ctx,
@@ -177,10 +199,6 @@ fn full_loader(
                     },
                 );
                 job.full.store(&image, Cancel::new(&job.cancel));
-            }
-            // Only now, so decoding the neighbour never slows the photo on screen.
-            if let Some(prefetch) = prefetch {
-                prefetcher.submit(prefetch);
             }
             Ok(())
         });
@@ -199,8 +217,9 @@ fn full_loader(
         }
     })
 }
-/// Opens photos for Develop: the quick first stage, then the full-size decode and a
-/// neighbour's prefetch, each on a worker of its own.
+/// Opens photos for Develop: the quick first stage and the full-size decode, each
+/// on a worker of its own, and on a third the neighbour's prefetch, which the
+/// app starts ([`Loader::prefetch`]).
 pub(crate) struct Loader {
     open: Latest<LoadJob>,
     full: Latest<FullJob>,
@@ -220,8 +239,8 @@ impl Loader {
         between: Between,
     ) -> Self {
         let prefetch = prefetcher(cache.clone(), ahead.clone());
-        let full = full_loader(tx.clone(), ctx.clone(), prefetch.mailbox(), between);
-        let open = opener(tx, ctx, cache, ahead, full.mailbox(), prefetch.mailbox());
+        let full = full_loader(tx.clone(), ctx.clone(), between);
+        let open = opener(tx, ctx, cache, ahead, full.mailbox());
         Self {
             open,
             full,
@@ -230,6 +249,14 @@ impl Loader {
     }
     pub(crate) fn submit(&self, job: LoadJob) {
         self.open.submit(job);
+    }
+    /// Develops a neighbour ahead of time, in place of any prefetch not started
+    /// yet. The app asks once the open photo's first full-size render is done
+    /// ([`super::NeighbourPrefetch`]): started as the photo's full-size image
+    /// arrived, as it used to be, the neighbour's decode ran beside that
+    /// render's noise reduction, the two largest bursts of an open at once.
+    pub(crate) fn prefetch(&self, job: Prefetch) {
+        self.prefetch.submit(job);
     }
     /// Stops all three workers once their current jobs are done.
     pub(in crate::app) fn stop(&mut self) -> [crate::app::task::Stopping; 3] {
@@ -258,10 +285,8 @@ fn opener(
     cache: DecodeCache,
     ahead: Ahead,
     full: Mailbox<FullJob>,
-    prefetcher: Mailbox<Prefetch>,
 ) -> Latest<LoadJob> {
-    Latest::new(move |mut job: LoadJob| {
-        let prefetch = job.prefetch.take();
+    Latest::new(move |job: LoadJob| {
         let result = caught(|| -> anyhow::Result<()> {
             let path = job.path.clone();
             let started = Instant::now();
@@ -364,9 +389,6 @@ fn opener(
                             },
                         },
                     );
-                    if let Some(prefetch) = prefetch {
-                        prefetcher.submit(prefetch);
-                    }
                     return Ok(());
                 }
             };
@@ -399,9 +421,6 @@ fn opener(
                         status: format!("Opened from cache in {:.2}s", t.elapsed().as_secs_f32()),
                     },
                 );
-                if let Some(prefetch) = prefetch {
-                    prefetcher.submit(prefetch);
-                }
                 return Ok(());
             }
             // Lightroom-style two stages: a half-size decode (about 0.2 s) makes
@@ -426,7 +445,6 @@ fn opener(
                 cancel: job.cancel.clone(),
                 started: t,
                 full: full_size,
-                prefetch,
             });
             Ok(())
         });
@@ -480,7 +498,6 @@ pub(in crate::app) mod tests {
             id: 7,
             path: path.into(),
             cancel: Default::default(),
-            prefetch: None,
             defaults: Arc::new(crate::raw_defaults::DevelopDefaults::with_presets(
                 Default::default(),
                 |_| None,
@@ -794,6 +811,66 @@ pub(in crate::app) mod tests {
                 .take(&path, crate::storage::Identity::read(&path).ok().as_ref())
                 .is_none()
         );
+        Ok(())
+    }
+
+    fn chart() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/corpus/charts/synthetic-d65.dng")
+    }
+    /// A loader caching in `cache`, and what tells whether the chart is there.
+    fn prefetching_loader(cache: &Path) -> (Loader, FullSize) {
+        let cache = DecodeCache::new(cache.into(), u64::MAX);
+        let (tx, _rx) = mpsc::channel();
+        let loader = Loader::new(tx, egui::Context::default(), cache.clone());
+        (
+            loader,
+            FullSize::with_cache(&chart(), Default::default(), cache),
+        )
+    }
+
+    #[test]
+    fn a_prefetched_raw_is_in_the_decode_cache() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let (mut loader, cached) = prefetching_loader(dir.path());
+
+        loader.prefetch(Prefetch {
+            path: chart(),
+            cancel: Default::default(),
+            demosaic: Default::default(),
+        });
+
+        let started = Instant::now();
+        while !cached.is_cached() && started.elapsed() < Duration::from_secs(30) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(cached.is_cached());
+        let waited = crate::app::task::wait_for(loader.stop().into(), Duration::from_secs(30));
+        assert_eq!(waited.detached, 0);
+        Ok(())
+    }
+
+    /// A photo moved past before its neighbour's prefetch began decodes nothing.
+    #[test]
+    fn a_raw_prefetch_cancelled_before_it_starts_stores_nothing() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let (mut loader, cached) = prefetching_loader(dir.path());
+
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        loader.prefetch(Prefetch {
+            path: chart(),
+            cancel: cancelled.clone(),
+            demosaic: Default::default(),
+        });
+        // Until the worker has taken the job and is done with it, which drops
+        // the job's hold on its flag: a decode would have stored the chart by then.
+        let started = Instant::now();
+        while Arc::strong_count(&cancelled) > 1 && started.elapsed() < Duration::from_secs(30) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(Arc::strong_count(&cancelled), 1);
+        assert!(!cached.is_cached());
+        let waited = crate::app::task::wait_for(loader.stop().into(), Duration::from_secs(30));
+        assert_eq!(waited.detached, 0);
         Ok(())
     }
 

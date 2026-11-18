@@ -1,9 +1,6 @@
 //! Quitting, however it happens: the steps of docs/shutdown.md's exit sequence.
 use crate::app::{Editor, develop::workflow::Flushed, task};
-use std::{
-    sync::atomic::Ordering,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 /// How long quitting waits for the edit to save and the stopped workers to end. The
 /// preview renderer can wait up to 10 s for one GPU submission, but a quit that
@@ -76,7 +73,7 @@ impl Editor {
         self.preview.task.invalidate();
         self.preview.before.task.invalidate();
         self.reference.cancel_load();
-        self.prefetch_cancel.store(true, Ordering::Relaxed);
+        self.neighbour_prefetch.cancel();
         self.automation.cancel_outputs();
         self.extensions.cancel_requests();
     }

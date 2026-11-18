@@ -57,7 +57,7 @@ that drops it.
 
 | Worker | Where | Blocks on | Stop | Join |
 | --- | --- | --- | --- | --- |
-| Develop loader, with its full-size loader and prefetcher | `app/worker/loader.rs` | A job; file I/O, RAW decodes and JPEG, PNG or TIFF decodes (cancellable between rows); decode cache reads and writes | All three `Latest`s stopped, between jobs; the load `Task`'s cancel within one; `prefetch_cancel` for a prefetch | Yes, all three, after cancelling the load and the prefetch |
+| Develop loader, with its full-size loader and prefetcher | `app/worker/loader.rs` | A job; file I/O, RAW decodes and JPEG, PNG or TIFF decodes (cancellable between rows); decode cache reads and writes | All three `Latest`s stopped, between jobs; the load `Task`'s cancel within one; `NeighbourPrefetch::cancel` for a prefetch, whether it still waits for the open photo's first full-size render or is decoding | Yes, all three, after cancelling the load and the prefetch |
 | Preview renderer | `app/worker/renderer.rs` | A job; CPU and GPU renders, up to 10 s per GPU submission; the egui renderer lock, briefly | `Latest` stopped; the After and Before render `Task`s | Yes, before the painter and device are dropped |
 | Reference View loader | `app/worker/reference.rs` | A job; file I/O and decodes | `Latest` stopped; the reference `Task` | Yes |
 | Autosave | `app/develop/autosave.rs` | The job channel; one SQLite commit | Its job sender dropped | Yes, after the save at exit and dropping the job sender, which lets a save in flight finish |

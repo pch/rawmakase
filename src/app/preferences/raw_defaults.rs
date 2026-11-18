@@ -685,7 +685,6 @@ mod tests {
             id: 1,
             path: chart,
             cancel: Default::default(),
-            prefetch: None,
             defaults: defaults.clone(),
             demosaic: crate::camera_data::Demosaic::default(),
         });

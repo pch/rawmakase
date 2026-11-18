@@ -1,10 +1,54 @@
 # Preview performance measurements
 
-Status: Record (2026-09-26 to 2026-10-29). Measurements moved from
+Status: Record (2026-09-26 to 2026-11-18). Measurements moved from
 [preview performance](../preview-performance.md), which describes the current
 preview path. Numbers are from the code and machines of their dates; the
 "interactive draft" of 2026-09-26 has since been replaced by rendering the real
 pipeline at Fit size.
+
+## Memory while a photo opens — 2026-11-18
+
+What is alive at the peak of opening a photo, and of rendering Library previews
+side by side (#1173). Release build, Apple M1 Pro with 32 GB, macOS 27.2, an
+isolated data folder, 60 CC0 RAWs of 24 to 61 megapixels. The footprint is
+`phys_footprint` sampled every 50 ms; what is alive was read from allocation
+stacks (`MallocStackLogging=lite`, `malloc_history -allBySize`) with the app
+stopped as its footprint crossed a level. The machine was under heavy load from
+other work throughout, so the times below compare runs made minutes apart and
+are not the app's speed.
+
+Opening a 61-megapixel ARW with nothing cached peaked at 7.2 and 7.5 GB (two
+runs). Alive on the way there:
+
+| What | Size |
+| --- | ---: |
+| The photo's decode and its highlight-recovered copy (they stay) | 1.4 GB |
+| Colour noise reduction of the first full-size render: the chroma, the mask, the level's blur, the coarser levels' result, the output, the luminance | up to 2.6 GB |
+| The neighbour's prefetch, started as the full-size image arrived: its file, mosaic, green plane and output, then its recovered copy | 0.7 to 1.6 GB |
+| The decode cache's list of pixels recovery changed, while the photo is stored | 0.26 GB |
+| Freed blocks the allocator still held (macOS keeps its last 64 large ones) | up to 1.1 GB at the start of the render; 1.6 GB left afterwards |
+
+The half-size draft and what was made from it were gone by then. So the peak
+was three bursts at once on top of the photo: the render's noise reduction,
+the neighbour's decode and what the stage before had freed.
+
+Launching into the folder with every photo edited and no preview cached peaked
+at 5.0 GB, with 4.1 GB of it in use: four half-size renders of 61-megapixel
+photos side by side, each about 1 GB (its half-size image and recovered copy,
+0.35 GB, and the same noise reduction planes, 0.65 GB), and 0.6 GB of embedded
+previews being decoded for the grid at the same moment. Freed blocks were
+0.1 to 0.2 GB there.
+
+Changed for it:
+
+- Colour noise reduction filters in place: 26 bytes a pixel at its peak instead
+  of 44 (1.5 GB instead of 2.6 GB of a 61-megapixel photo), every value as it
+  was.
+- A RAW's file is freed before its mosaic is demosaiced.
+- The neighbour's prefetch starts once the open photo's first full-size render
+  is done, not as its full-size image arrives.
+- The Develop loader gives freed blocks back before the first full-size render
+  and before the prefetch (`platform::memory::release_freed`), on macOS.
 
 ## Library edited previews — 2026-10-29
 
