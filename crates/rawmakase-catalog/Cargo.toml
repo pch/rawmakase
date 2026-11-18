@@ -10,6 +10,12 @@ publish = false
 [features]
 # The file system's, model's and file formats' fixtures, for tests that share them.
 test-support = ["rawmakase-fs/test-support", "rawmakase-model/test-support", "rawmakase-interop/test-support"]
+# Commits that reach the operating system without waiting for the disk
+# (`synchronous=OFF`), as this crate's own unit tests make them, for the tests
+# of crates that build catalogs: only their dev-dependencies turn it on, so no
+# shipping build has it. A test that measures the shipping flush (the ignored
+# `file_ops_throughput`) must run in a `cargo test` that builds none of them.
+unsynced-commits = []
 
 [dependencies]
 rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
