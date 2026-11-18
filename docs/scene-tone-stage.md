@@ -886,6 +886,9 @@ Texture, Clarity, Dehaze) at ±25, ±50, ±100; Exposure at −2, −1, +1, +2 E
 with Whites +100, Shadows +50 with Highlights −50, Contrast +50 with Blacks −50,
 Dehaze +40 with Clarity +40, a gradient mask with Exposure +2 EV and Shadows +50 (0.5 and 0.5 in Lightroom's normalised local units); and,
 with Adobe Color, the default render, Shadows +100, Dehaze +40 and Whites +100 (#354).
+The `pairs` sets hold Shadows with Highlights, whose render in Camera Raw is not the sum
+of each alone: ±100 with ±100 in the four sign combinations, Shadows +80 with Highlights
+−30, and Shadows +60 with Highlights −60, Whites +30 and Blacks −30.
 
 **Metric.** Both renders reduced by area to 1024 pixels on the long edge. Per-photo
 score: median ΔE00 over pixels (secondary: mean). A setting's score over a set: the

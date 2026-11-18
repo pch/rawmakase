@@ -100,7 +100,17 @@ def settings():
             ('exposure-1+whites+100', {'Exposure2012': '-1', 'Whites2012': '100'}, 100),
             ('shadows+50+highlights-50', {'Shadows2012': '50', 'Highlights2012': '-50'}, 50),
             ('contrast+50+blacks-50', {'Contrast2012': '50', 'Blacks2012': '-50'}, 50),
-            ('dehaze+40+clarity+40', {'Dehaze': '40', 'Clarity2012': '40'}, 40)]:
+            ('dehaze+40+clarity+40', {'Dehaze': '40', 'Clarity2012': '40'}, 40),
+            # Shadows with Highlights (the `pairs` sets): Camera Raw's render of the two is
+            # not the sum of each alone, so every sign combination is its own case; then
+            # unequal sliders, and the pair beside Whites and Blacks.
+            ('shadows+100+highlights-100', {'Shadows2012': '100', 'Highlights2012': '-100'}, 100),
+            ('shadows-100+highlights+100', {'Shadows2012': '-100', 'Highlights2012': '100'}, 100),
+            ('shadows+100+highlights+100', {'Shadows2012': '100', 'Highlights2012': '100'}, 100),
+            ('shadows-100+highlights-100', {'Shadows2012': '-100', 'Highlights2012': '-100'}, 100),
+            ('shadows+80+highlights-30', {'Shadows2012': '80', 'Highlights2012': '-30'}, 80),
+            ('shadows+60+highlights-60+whites+30+blacks-30',
+             {'Shadows2012': '60', 'Highlights2012': '-60', 'Whites2012': '30', 'Blacks2012': '-30'}, 60)]:
         out[name] = (s, 'Adobe Standard', magnitude, '')
     out['mask-exposure+shadows'] = ({}, 'Adobe Standard', 50, MASK)
     # The #354 report: Adobe Color.
