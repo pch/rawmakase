@@ -319,6 +319,8 @@ impl Editor {
         let loupe = self.library.as_ref().is_some_and(|l| l.loupe_open());
         let entered = self.chrome.follow(self.module, loupe);
         self.chrome_view(entered);
+        // Before any of the frame's keys are read.
+        crate::app::library::take_folder_filter_escape(&ctx);
         // Preferences is modal: keys go to it, not to the photo behind.
         #[cfg(target_os = "macos")]
         self.native_menu_actions(&ctx);

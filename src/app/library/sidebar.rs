@@ -1,7 +1,7 @@
 //! The Library's left panel: Catalog, Folders and Collections, and
 //! the source they choose.
 use super::folder_selection::{Click, FolderSelection};
-use super::tree::{FolderNode, TreeAction, folder_tree_row};
+use super::tree::{FolderFilter, FolderNode, TreeAction, TreeView, folder_tree_row_in};
 use super::{Action, Library, collections, volumes};
 use crate::app::ui::design::{Tone, space, text};
 use crate::app::ui::theme;
@@ -32,6 +32,27 @@ struct Drive {
 /// failed, the Quick Collection made).
 type ListsKey = (u64, usize, usize, usize, usize);
 
+/// Filter Folders' text field.
+pub(super) fn folder_filter_id() -> egui::Id {
+    egui::Id::new("library-folder-filter")
+}
+/// Takes an Escape pressed in Filter Folders, which egui lets go of before
+/// the frame's keys are read, so that it doesn't also close the Loupe, a
+/// Develop tool or the whole-window mode. The text stays, as in Lightroom.
+pub(crate) fn take_folder_filter_escape(ctx: &egui::Context) {
+    if ctx.memory(|m| m.had_focus_last_frame(folder_filter_id())) {
+        ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    }
+}
+/// The key in [`Library::expanded`] that says drive `volume` is folded away
+/// in the Folders panel. A drive the system gives an id (#891) is told apart
+/// from another of the same name by it.
+pub(super) fn collapsed_key(volume: &crate::platform::volume::Volume) -> String {
+    match &volume.id {
+        Some(id) => format!("volume-collapsed:{}:{id}", volume.name),
+        None => format!("volume-collapsed:{}", volume.name),
+    }
+}
 impl Trees {
     /// The drives the Folders panel shows, in order.
     #[cfg(test)]
@@ -291,14 +312,34 @@ impl Library {
                     self.volumes.check(ui.ctx(), anchors);
                     let online = self.volumes.snapshot().online;
                     self.volumes_checked(&online);
+                    let entered = !self.session.roots().is_empty() && self.folder_filter_field(ui);
+                    let filter = self.folder_filter(&trees);
+                    if entered && let Some(first) = filter.as_ref().and_then(|f| f.matches.first())
+                    {
+                        self.reveal_folder(&trees, first);
+                        self.click_folder(first, Click::Replace, &[first]);
+                    }
+                    let scroll_to = self.scroll_to_folder.take();
+                    let view = TreeView {
+                        filter: filter.as_ref(),
+                        scroll_to: scroll_to.as_deref(),
+                    };
                     // Applied once every row is drawn, for a Shift-click range.
                     let mut clicked = None;
-                    for (k, drive) in trees.volumes.iter().enumerate() {
+                    let mut drawn = 0;
+                    for drive in &trees.volumes {
                         let volume = &drive.volume;
+                        // While filtering, only the drives with a row shown.
+                        if let Some(filter) = &filter
+                            && !drive.trees.iter().any(|t| filter.shows(&t.key))
+                        {
+                            continue;
+                        }
                         // Room between drives, so each reads as its own group.
-                        if k > 0 {
+                        if drawn > 0 {
                             ui.add_space(space::L);
                         }
+                        drawn += 1;
                         let state = online.get(volume).copied();
                         let attached = match &volume.mount {
                             None => Some(true),
@@ -306,13 +347,13 @@ impl Library {
                         };
                         let space = state.and_then(|s| s.1);
                         let photos = drive.photos;
-                        let key = match &volume.id {
-                            Some(id) => format!("volume-collapsed:{}:{id}", volume.name),
-                            None => format!("volume-collapsed:{}", volume.name),
-                        };
-                        let collapsed = self.expanded.contains(&key);
+                        let key = collapsed_key(volume);
+                        // A drive folded away still shows the rows filtering
+                        // finds on it, and stays folded once the text is gone.
+                        let collapsed = filter.is_none() && self.expanded.contains(&key);
                         if volumes::volume_row(ui, volume, attached, space, photos, !collapsed)
                             .clicked()
+                            && filter.is_none()
                         {
                             if collapsed {
                                 self.expanded.remove(&key);
@@ -325,13 +366,17 @@ impl Library {
                         }
                         ui.add_space(space::XXS);
                         for tree in &drive.trees {
-                            match folder_tree_row(
+                            if filter.as_ref().is_some_and(|f| !f.shows(&tree.key)) {
+                                continue;
+                            }
+                            match folder_tree_row_in(
                                 ui,
                                 tree,
                                 0,
                                 &mut self.expanded,
                                 &self.selected_folders,
                                 self.subfolders_shown,
+                                &view,
                             ) {
                                 Some(TreeAction::Select(key, click)) => {
                                     clicked = Some((key, click));
@@ -442,19 +487,13 @@ impl Library {
                         }
                     }
                     if let Some((key, click)) = clicked {
-                        let mut rows = Vec::new();
-                        for drive in &trees.volumes {
-                            let collapsed = format!("volume-collapsed:{}", drive.volume.name);
-                            if !self.expanded.contains(&collapsed) {
-                                for tree in &drive.trees {
-                                    tree.shown_rows(&self.expanded, &mut rows);
-                                }
-                            }
-                        }
+                        let rows = self.folder_rows(&trees, filter.as_ref());
                         self.click_folder(&key, click, &rows);
                     }
                     if self.session.roots().is_empty() {
                         empty_note(ui, "No folders yet");
+                    } else if filter.as_ref().is_some_and(|f| f.matches.is_empty()) {
+                        empty_note(ui, "No matching folders");
                     }
                     ui.add_space(space::XL);
                     if add_row(ui, "Add Folder…")
@@ -523,6 +562,86 @@ impl Library {
                 });
             });
         action
+    }
+    /// The folder rows the Folders panel shows, in the order it draws them,
+    /// filtered by `filter` while Filter Folders holds text: a Shift-click's
+    /// range is taken from these.
+    pub(super) fn folder_rows<'a>(
+        &self,
+        trees: &'a Trees,
+        filter: Option<&FolderFilter>,
+    ) -> Vec<&'a str> {
+        let mut rows = Vec::new();
+        for drive in &trees.volumes {
+            if filter.is_some() || !self.expanded.contains(&collapsed_key(&drive.volume)) {
+                for tree in &drive.trees {
+                    if filter.is_none_or(|f| f.shows(&tree.key)) {
+                        tree.shown_rows(&self.expanded, filter, &mut rows);
+                    }
+                }
+            }
+        }
+        rows
+    }
+    /// What Filter Folders shows of `trees`, or `None` while it holds no
+    /// text. A folder matches when its name holds the text typed, whatever
+    /// the case; unlike Lightroom, the text is one phrase, not words any of
+    /// which may match.
+    pub(super) fn folder_filter<'a>(&self, trees: &'a Trees) -> Option<FolderFilter<'a>> {
+        let needle = self.folder_filter.trim().to_lowercase();
+        if needle.is_empty() {
+            return None;
+        }
+        let selected: HashSet<&str> = self
+            .selected_folders
+            .keys()
+            .iter()
+            .map(String::as_str)
+            .collect();
+        let mut filter = FolderFilter::default();
+        for drive in &trees.volumes {
+            for tree in &drive.trees {
+                tree.filter_into(&needle, &selected, &mut filter);
+            }
+        }
+        Some(filter)
+    }
+    /// Filter Folders' field. Returns whether Enter was pressed in it, which
+    /// keeps it focused to refine the text.
+    fn folder_filter_field(&mut self, ui: &mut egui::Ui) -> bool {
+        let id = folder_filter_id();
+        // The single-line field lets go of the keyboard on Enter as it is
+        // drawn: it held it at the start of this frame, and Enter was this
+        // frame's, not one meant for a field focused since.
+        let had = ui.memory(|m| m.had_focus_last_frame(id));
+        let field = crate::app::ui::widgets::search_field_with_id(
+            ui,
+            &mut self.folder_filter,
+            "Filter Folders",
+            Some(id),
+        );
+        ui.add_space(space::S);
+        let entered = had
+            && !field.has_focus()
+            && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+        if entered {
+            field.request_focus();
+        }
+        entered
+    }
+    /// Unfolds the rows above folder row `key` and its drive, so it stays in
+    /// view once Filter Folders is cleared, and scrolls to it.
+    pub(super) fn reveal_folder(&mut self, trees: &Trees, key: &str) {
+        for drive in &trees.volumes {
+            for tree in &drive.trees {
+                if let Some(above) = tree.path_to(key) {
+                    self.expanded.extend(above.into_iter().map(str::to_string));
+                    self.expanded.remove(&collapsed_key(&drive.volume));
+                    self.scroll_to_folder = Some(key.to_string());
+                    return;
+                }
+            }
+        }
     }
     /// Shows Previous Import: the photos the last import added.
     pub(in crate::app) fn show_previous_import(&mut self) {

@@ -3020,6 +3020,16 @@ pub(in crate::app) fn search_field(
     text: &mut String,
     hint: &str,
 ) -> egui::Response {
+    search_field_with_id(ui, text, hint, None)
+}
+/// A [`search_field`] whose text field has id `id`, for code that asks egui
+/// about its focus before it is drawn.
+pub(in crate::app) fn search_field_with_id(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    hint: &str,
+    id: Option<egui::Id>,
+) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.), Sense::hover());
     let field = rect
@@ -3033,13 +3043,15 @@ pub(in crate::app) fn search_field(
                 .max_rect(field)
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
             |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(text)
-                        .hint_text(hint)
-                        .frame(egui::Frame::new())
-                        .font(egui::FontId::proportional(text::LABEL))
-                        .desired_width(field.width()),
-                )
+                let field = egui::TextEdit::singleline(text)
+                    .hint_text(hint)
+                    .frame(egui::Frame::new())
+                    .font(egui::FontId::proportional(text::LABEL))
+                    .desired_width(field.width());
+                ui.add(match id {
+                    Some(id) => field.id(id),
+                    None => field,
+                })
             },
         )
         .inner;

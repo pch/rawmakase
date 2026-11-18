@@ -13,6 +13,16 @@ only folders shows none), until it is turned on again. The choice is kept with
 the Library's layout across launches. Remove from Catalog, Synchronize Folder
 and the drives' counts still cover a folder's subfolders.
 
+**Filter Folders**, at the top of the Folders panel, finds a folder among many
+without scrolling: type part of its name (in any case) and the panel shows only
+the folders whose names hold that text, with the folders above them unfolded,
+including those inside folded folders and drives. Unlike Lightroom, the text is
+matched as one phrase, not as words any of which may match. The folders chosen
+stay shown, as in Lightroom, and typing never changes which photos the grid
+shows. **Enter** chooses the first folder found and keeps the keyboard in the
+field to refine the text; the folders above it stay unfolded once the field is
+cleared. **Escape** leaves the field and keeps its text; the × clears it.
+
 Use **Catalog → Import Lightroom catalog…**, select a closed `.lrcat`, then choose a new `.rawmakase` filename. Existing destination files are never overwritten. **New catalog** creates an empty library; **Add photo folder** recursively registers RAW files (any extension in `RAW_EXTENSIONS`), JPEG, PNG, TIFF, WebP, AVIF, HEIF (`.heic`, `.heif`, `.hif`) and JPEG XL files without copying or modifying them. The last four are read only: they are catalogued, shown and edited, but export to them is not available yet.
 
 **Library** (`G`) provides a virtualized thumbnail grid, folder browsing, filename/keyword/date/label search, minimum-rating and flag filters, offline filtering, capture-date sorting, and rating/flag/color-label editing. Double-click an available photo, a RAW file (see `RAW_EXTENSIONS` in `crates/rawmakase-model/src/storage/files.rs`) or a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL, or select it and use **Develop** (`D`); an offline photo is refused, as is a rendered file whose header says Develop can't edit its pixels (a CMYK JPEG, an HDR or animated WebP, AVIF, HEIF or JPEG XL, or a tiled AVIF, say; "RAWmakase can't edit HDR images"), with the reason in a dialog and under Quick Develop. A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL is edited from its own pixels with the Embedded profile and relative white balance, as Lightroom does ([rendered files](color-pipeline.md#rendered-files-jpeg-png-tiff-webp-avif-heif-jpeg-xl)). Until it has an edit, the Library and Loupe show it as its file, converted from its embedded ICC profile to sRGB (a file without one is taken as sRGB), which its defaults reproduce; once edited, it is shown developed, as a RAW is. An HDR or animated file still shows in the Library, as a plain preview of its first frame (an HDR one tone mapped for an SDR screen); a tiled AVIF and a 4:2:2 or monochrome HEIF show nothing. Library thumbnails are original embedded/file previews, not Lightroom-rendered previews.
