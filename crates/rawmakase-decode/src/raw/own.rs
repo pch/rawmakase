@@ -67,6 +67,11 @@ impl Own {
             header,
         ))
     }
+    /// Lets go of the file's bytes once nothing more is read from them: what is
+    /// asked of the file afterwards fails, as for one opened by its header.
+    pub(super) fn release_file(&mut self) {
+        self.bytes = Arc::default();
+    }
     /// The colour space the maker notes give the camera's JPEGs.
     pub(super) fn preview_space(&self) -> Option<super::MakerPreviewSpace> {
         self.info.preview_space.map(|s| match s {
