@@ -1,7 +1,8 @@
-//! Develop settings some of Lightroom's looks carry beyond their tables and the tone
-//! adjustments in `Enhanced` (Vintage 07, Modern 03 and 04): Exposure, Saturation,
-//! the colour mixer, the parametric curve, split toning and a post-crop vignette.
-//! They render with the user's settings without moving the user's sliders (see
+//! Develop settings some looks carry beyond their tables and the tone adjustments in
+//! `Enhanced`: Exposure, Saturation, the colour mixer, the parametric curve, split
+//! toning and a post-crop vignette (Lightroom's Vintage 07, Modern 03 and 04), and
+//! Whites, Vibrance, Texture and calibration (third-party looks such as RNI's). They
+//! render with the user's settings without moving the user's sliders (see
 //! `Recipe::with_profile_adjustments`).
 use crate::model::camera_raw as crs;
 use anyhow::{Context, Result, bail, ensure};
@@ -46,6 +47,28 @@ pub struct LookSettings {
     pub splits: [f32; 3],
     pub toning: Option<Toning>,
     pub vignette: Option<Vignette>,
+    /// Whites, Vibrance and Texture, in the recipe's units. Omitted at zero, as are the
+    /// calibration settings below, so a recipe whose look has none of them reads in
+    /// releases that predate them.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub whites: f32,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub vibrance: f32,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub texture: f32,
+    /// Calibration's hue and saturation of the red, green and blue primaries, as
+    /// `Effects::calibration`.
+    #[serde(skip_serializing_if = "is_zero_calibration")]
+    pub calibration: [[f32; 2]; 3],
+    /// Calibration's Shadows Tint.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub shadow_tint: f32,
+}
+fn is_zero(v: &f32) -> bool {
+    *v == 0.
+}
+fn is_zero_calibration(c: &[[f32; 2]; 3]) -> bool {
+    c.iter().flatten().all(|v| *v == 0.)
 }
 impl Default for LookSettings {
     fn default() -> Self {
@@ -57,6 +80,11 @@ impl Default for LookSettings {
             splits: DEFAULT_SPLITS,
             toning: None,
             vignette: None,
+            whites: 0.,
+            vibrance: 0.,
+            texture: 0.,
+            calibration: [[0.; 2]; 3],
+            shadow_tint: 0.,
         }
     }
 }
@@ -67,6 +95,10 @@ impl LookSettings {
         let named = [
             crs::EXPOSURE,
             crs::SATURATION,
+            crs::WHITES,
+            crs::VIBRANCE,
+            crs::TEXTURE,
+            crs::SHADOW_TINT,
             crs::SPLIT_TONING_BALANCE,
             crs::POST_CROP_VIGNETTE_AMOUNT,
             crs::POST_CROP_VIGNETTE_MIDPOINT,
@@ -82,6 +114,7 @@ impl LookSettings {
                 .chain(crs::SPLIT_TONING_HUE)
                 .chain(crs::SPLIT_TONING_SATURATION)
                 .chain(crs::HSL.into_iter().flatten())
+                .chain(crs::CALIBRATION.into_iter().flatten())
                 .any(|s| s.key == key)
     }
     /// The settings among a look's attributes (`attr` gives "" when absent).
@@ -109,8 +142,17 @@ impl LookSettings {
         let mut s = Self {
             exposure: number(crs::EXPOSURE, [-5., 5.])?.unwrap_or_default(),
             saturation: slider(crs::SATURATION)?,
+            whites: slider(crs::WHITES)?,
+            vibrance: slider(crs::VIBRANCE)?,
+            texture: slider(crs::TEXTURE)?,
+            shadow_tint: slider(crs::SHADOW_TINT)?,
             ..Self::default()
         };
+        for (i, primary) in crs::CALIBRATION.into_iter().enumerate() {
+            for (j, control) in primary.into_iter().enumerate() {
+                s.calibration[i][j] = slider(control)?;
+            }
+        }
         for (i, band) in crs::HSL.into_iter().enumerate() {
             for (j, control) in band.into_iter().enumerate() {
                 s.hsl[i][j] = slider(control)?;
@@ -175,6 +217,11 @@ impl LookSettings {
         Self {
             exposure: self.exposure * strength,
             saturation: self.saturation * strength,
+            whites: self.whites * strength,
+            vibrance: self.vibrance * strength,
+            texture: self.texture * strength,
+            calibration: self.calibration.map(|p| p.map(|v| v * strength)),
+            shadow_tint: self.shadow_tint * strength,
             hsl: self.hsl.map(|band| band.map(|v| v * strength)),
             parametric: self.parametric.map(|v| v * strength),
             splits: self.splits,
@@ -218,10 +265,17 @@ impl LookSettings {
                 && self.splits.windows(2).all(|p| p[0] < p[1]),
             "Invalid profile parametric splits"
         );
-        let sliders = [self.saturation]
-            .into_iter()
-            .chain(self.hsl.iter().flatten().copied())
-            .chain(self.parametric);
+        let sliders = [
+            self.saturation,
+            self.whites,
+            self.vibrance,
+            self.texture,
+            self.shadow_tint,
+        ]
+        .into_iter()
+        .chain(self.calibration.iter().flatten().copied())
+        .chain(self.hsl.iter().flatten().copied())
+        .chain(self.parametric);
         ensure!(
             self.exposure.is_finite()
                 && self.exposure.abs() <= 10.
@@ -361,6 +415,64 @@ mod tests {
         assert!(bad.validate().is_err());
     }
 
+    /// Whites, Vibrance, Texture and calibration in a look render as the user's
+    /// sliders at those values and add to them (measured with Camera Raw 18.7 on
+    /// synthetic looks, ΔE00 0.00 at 50% and 100%), and are left out of a recipe
+    /// when zero, so recipes with looks that have none read in earlier releases.
+    #[test]
+    fn look_whites_vibrance_texture_and_calibration_add_to_the_users() -> Result<()> {
+        let s = parse(&[
+            ("Whites2012", "-10"),
+            ("Vibrance", "+40"),
+            ("Texture", "+60"),
+            ("GreenHue", "-40"),
+            ("BlueSaturation", "+20"),
+            ("ShadowTint", "+40"),
+        ])?;
+        let m = Metadata {
+            make: "Test".into(),
+            model: "Camera".into(),
+            cam_xyz: [[0.8, -0.2, -0.1], [-0.3, 1.1, 0.2], [-0.05, 0.15, 0.6]],
+            ..Default::default()
+        };
+        let mut profile = CameraProfile::creative_for_test(&m);
+        profile.enhanced.as_mut().unwrap().settings = s.clone();
+        let mut user = Recipe {
+            profile: Some(Arc::new(profile)),
+            whites: 0.3,
+            vibrance: -0.2,
+            ..Default::default()
+        };
+        user.effects.calibration[1][0] = 0.1;
+        let r = user.with_profile_adjustments();
+        assert!((r.whites - 0.2).abs() < 1e-6);
+        assert!((r.vibrance - 0.2).abs() < 1e-6);
+        assert!((r.effects.texture - 0.6).abs() < 1e-6);
+        assert!((r.effects.calibration[1][0] - -0.3).abs() < 1e-6);
+        assert!((r.effects.calibration[2][1] - 0.2).abs() < 1e-6);
+        assert!((r.effects.shadow_tint - 0.4).abs() < 1e-6);
+        // At 50% half as strong; at 200% half again (Camera Raw's 200% is 1.5×
+        // within ΔE00 0.12–0.36, 2× is 0.55–3.7 off).
+        user.profile_amount = 0.5;
+        assert!((user.with_profile_adjustments().effects.texture - 0.3).abs() < 1e-6);
+        user.profile_amount = 2.;
+        assert!((user.with_profile_adjustments().effects.texture - 0.9).abs() < 1e-6);
+        // Saved and read back; a look without them saves as before.
+        let copy: LookSettings = serde_json::from_value(serde_json::to_value(&s)?)?;
+        assert_eq!(copy, s);
+        let old = serde_json::to_value(vintage())?;
+        for key in [
+            "whites",
+            "vibrance",
+            "texture",
+            "calibration",
+            "shadow_tint",
+        ] {
+            assert!(old.get(key).is_none(), "{key}");
+        }
+        Ok(())
+    }
+
     /// What a look's settings read, pinned in a golden file: each key alone at values
     /// across and beyond its range, the vignette's dependent settings with and without
     /// an amount, and which keys a look accepts at all. Compared with
@@ -408,18 +520,38 @@ mod tests {
                 keys.push(format!("{control}Adjustment{band}"));
             }
         }
+        keys.extend(
+            [
+                "Whites2012",
+                "Vibrance",
+                "Texture",
+                "ShadowTint",
+                "RedHue",
+                "RedSaturation",
+                "GreenHue",
+                "GreenSaturation",
+                "BlueHue",
+                "BlueSaturation",
+            ]
+            .map(String::from),
+        );
         // The settings' fields that differ from a look without any, floats in full.
+        // Fields a look without them leaves out (zero) compare as zero.
         fn changed(result: &Result<LookSettings>) -> String {
             fn walk(prefix: &str, v: &serde_json::Value, d: &serde_json::Value, out: &mut String) {
                 match (v, d) {
                     (serde_json::Value::Object(m), serde_json::Value::Object(dm)) => {
                         for (k, v) in m {
-                            walk(&format!("{prefix}.{k}"), v, &dm[k], out);
+                            let d = dm.get(k).unwrap_or(&serde_json::Value::Null);
+                            walk(&format!("{prefix}.{k}"), v, d, out);
                         }
                     }
-                    (serde_json::Value::Array(a), serde_json::Value::Array(da)) => {
+                    (
+                        serde_json::Value::Array(a),
+                        serde_json::Value::Array(_) | serde_json::Value::Null,
+                    ) => {
                         for (i, v) in a.iter().enumerate() {
-                            let d = da.get(i).unwrap_or(&serde_json::Value::Null);
+                            let d = d.get(i).unwrap_or(&serde_json::Value::Null);
                             walk(&format!("{prefix}[{i}]"), v, d, out);
                         }
                     }
@@ -429,7 +561,11 @@ mod tests {
                             Some(f) if v.is_f64() => format!("{:?}", f as f32),
                             _ => v.to_string(),
                         };
-                        if text(v) != text(d) {
+                        let default = match d {
+                            serde_json::Value::Null if v.is_f64() => "0.0".into(),
+                            d => text(d),
+                        };
+                        if text(v) != default {
                             let _ = write!(out, " {prefix}={}", text(v));
                         }
                     }

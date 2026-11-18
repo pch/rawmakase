@@ -491,15 +491,33 @@ impl LookFile {
             "ShowInPresets",
             "ShowInQuickActions",
             "HasSettings",
+            // The point curve's name in Lightroom's menu; the curve's points are
+            // what renders.
+            "ToneCurveName2012",
             "Highlights2012",
             "Shadows2012",
             "Clarity2012",
             "Contrast2012",
             "Blacks2012",
         ];
+        // Settings Camera Raw 18.7 renders a look without: a look's sharpening and grain
+        // leave the render as it is without them, with the user's own sharpening or
+        // not, and `OverrideLookVignette` changes nothing whether true or false (third-
+        // party looks such as RNI's carry them).
+        const IGNORED: &[&str] = &[
+            "Sharpness",
+            "SharpenRadius",
+            "SharpenDetail",
+            "SharpenEdgeMasking",
+            "GrainAmount",
+            "GrainSize",
+            "GrainFrequency",
+            "OverrideLookVignette",
+        ];
         for a in d.attributes().filter(|a| a.namespace() == Some(CRS)) {
             ensure!(
                 META.contains(&a.name())
+                    || IGNORED.contains(&a.name())
                     || a.name().starts_with("Table_")
                     || LookSettings::reads(a.name()),
                 "Unsupported profile setting {}",
@@ -927,6 +945,61 @@ pub(super) mod tests {
         // Settings looks can't hold yet are still refused.
         let err = LookFile::parse(&xml.replace("c:Saturation=", "c:Dehaze=")).unwrap_err();
         assert!(format!("{err:#}").contains("Dehaze"), "{err:#}");
+        Ok(())
+    }
+
+    /// Issue 949: third-party looks (RNI's film profiles) list every Basic,
+    /// Calibration, Detail and Effects setting, mostly at their defaults. Those
+    /// Camera Raw applies are read; sharpening, grain and `OverrideLookVignette`,
+    /// which it ignores in a look, are accepted and ignored.
+    #[test]
+    fn third_party_looks_with_calibration_detail_and_grain_import() -> Result<()> {
+        let attributes = [
+            ("Version", "11.3"),
+            ("ProcessVersion", "11.0"),
+            ("Saturation", "-5"),
+            ("Sharpness", "40"),
+            ("ShadowTint", "+4"),
+            ("RedHue", "+10"),
+            ("RedSaturation", "-6"),
+            ("GreenHue", "0"),
+            ("GreenSaturation", "0"),
+            ("BlueHue", "-3"),
+            ("BlueSaturation", "+20"),
+            ("Vibrance", "-10"),
+            ("HueAdjustmentGreen", "+10"),
+            ("SaturationAdjustmentBlue", "+10"),
+            ("SharpenRadius", "+1.0"),
+            ("SharpenDetail", "25"),
+            ("SharpenEdgeMasking", "0"),
+            ("PostCropVignetteAmount", "0"),
+            ("GrainAmount", "0"),
+            ("Exposure2012", "0.00"),
+            ("Highlights2012", "-30"),
+            ("Shadows2012", "+50"),
+            ("Whites2012", "-10"),
+            ("Blacks2012", "-5"),
+            ("Texture", "+15"),
+            ("OverrideLookVignette", "False"),
+            ("ToneCurveName2012", "Custom"),
+            ("HasSettings", "True"),
+        ];
+        let text: String = attributes
+            .iter()
+            .map(|(k, v)| format!(r#"c:{k}="{v}" "#))
+            .collect();
+        let xml = profile_xml(&fixture()).replace("c:PresetType=", &format!("{text}c:PresetType="));
+        let s = LookFile::parse(&xml)?.look.settings;
+        assert_eq!((s.whites, s.vibrance, s.texture), (-0.1, -0.1, 0.15));
+        assert_eq!(s.calibration, [[0.1, -0.06], [0., 0.], [-0.03, 0.2]]);
+        assert_eq!(s.shadow_tint, 0.04);
+        assert_eq!(s.saturation, -0.05);
+        // Camera Raw ignores a look's grain at any amount.
+        LookFile::parse(&xml.replace(r#"c:GrainAmount="0""#, r#"c:GrainAmount="50""#))?;
+        // The new settings are checked against their range like the others.
+        let err =
+            LookFile::parse(&xml.replace(r#"c:RedHue="+10""#, r#"c:RedHue="+150""#)).unwrap_err();
+        assert!(format!("{err:#}").contains("RedHue"), "{err:#}");
         Ok(())
     }
 }

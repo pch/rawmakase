@@ -202,7 +202,7 @@ Supported enhanced-profile features:
 - Adobe RGB tables, 1D and 3D, in sRGB, Adobe RGB, ProPhoto, Display P3 or Rec. 2020 primaries with linear, sRGB, 1.8, 2.2 or Rec. 2020 encoding, described in [RGB tables](#rgb-tables).
 - A profile-specific master tone curve, applied separately from the user's point curve. Identity per-channel profile curves are accepted; nonidentity profile channel curves are reported as unsupported.
 - Profile-internal Highlights, Shadows, Clarity, Contrast and Blacks adjustments, plus monochrome conversion. These use RAWmakase's existing approximate operators without moving the user's sliders.
-- Profile-internal Exposure, Saturation, colour mixer, parametric curve, split toning and post-crop vignette, described in [Settings inside looks](#settings-inside-looks).
+- Profile-internal Exposure, Whites, Vibrance, Saturation, Texture, colour mixer, calibration, parametric curve, split toning and post-crop vignette, described in [Settings inside looks](#settings-inside-looks).
 - The six Adobe Raw looks: Color, Portrait, Neutral, Landscape, Vivid and Monochrome (these have no Amount), the creative looks Artistic 01–08, B&W 01, B&W 03 to 12, Modern 01–10, and Vintage 01–10, and camera-matching XMPs that carry their RGB table (over the camera's imported Camera Standard DCP, or the one they name).
 - Profile Amount for looks that have one (`crs:SupportsAmount`), described below.
 - XMP sidecars/presets and Lightroom catalog `Look` records resolve imported profiles by name, UUID when supplied, and camera model.
@@ -337,6 +337,18 @@ Vintage 07 and Modern 03 and 04 carry develop settings besides their tables: Exp
 | Exposure, Saturation, colour mixer, parametric curve | Added to the user's sliders | As the tone adjustments: in proportion up to 100%, half as fast above | colour 1.0/1.2/1.4, exposure 1.2/1.5/2.6, parametric 1.7/2.8/4.9 |
 | Split toning | Tones the shadows or highlights the user doesn't tone (`look-split-grading-shadows-h30` 3.5, against 4.9 when the user's toning replaced the look's and 5.3 when the look's replaced the user's) | Saturations scale, hues stay | 1.6/2.6/3.5 |
 | Post-crop vignette | Replaces the user's: Camera Raw renders a look vignette with the user's −20 exactly as without it | Amount scales | 1.0/1.2/1.5 |
+
+Third-party looks such as Really Nice Images' film profiles ([#949](https://github.com/pch/rawmakase/issues/949)) list every Basic, Calibration, Detail and Effects setting, mostly at their defaults. Measured the same way, with a synthetic look holding one setting against the user's slider on the synthetic chart and a crop of a CC0 photo:
+
+| Setting | With the user's | Amount | Look against the user's slider, mean ΔE00 |
+|---|---|---|---|
+| Whites, Vibrance, Texture, Calibration's red, green and blue Hue and Saturation, Shadows Tint | Added to the user's sliders | As the tone adjustments | 0.00 at 100% and 50%; at 200% 0.07–0.36 from 1.5× the value (0.55–3.7 from 2×); a look's value with half of it on the user's slider 0.10–0.47 from 1.5× |
+| Sharpening (Amount, Radius, Detail, Masking) and Grain | Ignored: the render is the same as without them (0.00), with or without the user's own sharpening | — | — |
+| `OverrideLookVignette` | Ignored, true or false: the look's vignette still replaces the user's | — | — |
+
+RAWmakase reads the first row and accepts the others without applying them, as Camera Raw does. The point curve's name (`ToneCurveName2012`) is a label; the curve's points render. Other settings, such as Dehaze, are still refused.
+
+Six such looks (RNI All Films 5's demo profiles: colour, black and white and infrared, with Whites, Vibrance, sharpening and grain among their settings) were rendered over Adobe Standard on the 12 CC0 photos of [Parity with Camera Raw](#parity-with-camera-raw) at 50, 100 and 200%, against Camera Raw 18.7 at 1024 px: median of per-photo median ΔE00 1.66, 1.54 and 2.04 (216 pairs), where the same photos without a look are at 2.09. Each look's error follows its photo's error without one (a street scene 14–21 with every look, at 16.4 without). The one look with a non-zero new setting, Vibrance −10, is at 1.59 at 100% and 1.81 at 200% with it read, 2.01 and 2.92 without. The looks and references are private.
 
 The half rate above 100% matched best for the colour, exposure and vignette looks (at 200%, colour 1.4 against 2.3 for full rate, vignette 1.5 against 1.8), and was even for split toning; the parametric look was closer at full rate (4.0 against 4.9), but RAWmakase's parametric curve is already 2.8 off at 100%, as it is for the user's own parametric sliders. The remaining error is that of the existing operators: parametric curve (user Lights −50: 3.7), split toning (user shadows 210°: 2.6) and Exposure above +0.5.
 
