@@ -209,7 +209,7 @@ rawmakase-ai-masks = { path = "extensions/ai-masks", version = "0.6.1" }
 rawmakase-extension = { path = "crates/rawmakase-extension", version = "0.1.0" }
 # Tests set up and inspect catalog files directly; the app itself reaches
 # the catalog's database only through rawmakase-catalog.
-rusqlite = { version = "0.41.0", features = ["bundled"] }
+rusqlite = { version = "0.43.0", features = ["bundled"] }
 # The sync tests write a compressed catalog edit; the private RAW fixture
 # test reads the ICC profile tag of an exported TIFF.
 flate2.workspace = true
