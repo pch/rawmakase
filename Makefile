@@ -63,8 +63,8 @@ check: check-python check-tools check-msrv
 	cargo fmt --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
 	cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
-	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export
-	$(TEST_ENV) cargo test --locked --doc -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export
+	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-hdr-merge
+	$(TEST_ENV) cargo test --locked --doc -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-hdr-merge
 	cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi -- -D warnings
 	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase-model --all-features
 	$(TEST_ENV) cargo test --locked --doc -p rawmakase-model --all-features

@@ -4171,6 +4171,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rawmakase-hdr-merge"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "half",
+ "rawmakase-cancel",
+ "rawmakase-decode",
+ "rawmakase-interop",
+ "rawmakase-model",
+ "rayon",
+ "tempfile",
+]
+
+[[package]]
 name = "rawmakase-inference"
 version = "0.1.0"
 dependencies = [

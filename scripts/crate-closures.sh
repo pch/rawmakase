@@ -77,6 +77,9 @@ if [ -n "$asm" ]; then
     status=1
 fi
 check rawmakase-export "rawmakase|$gui|$c_imaging|$inference"
+# Merge to HDR reads RAWs through decoding and writes DNGs: no app, catalog,
+# export, window, GUI, C imaging library or inference.
+check rawmakase-hdr-merge "rawmakase|rawmakase-catalog|rawmakase-export|rawmakase-denoise|$gui|$c_imaging|$inference"
 # Inference itself is a leaf: it runs the ONNX Runtime and AI Denoise's model, and
 # knows no workspace crate but the cancellation token (not the selection models or
 # the remote worker built on it), and no window, GPU or imaging library.

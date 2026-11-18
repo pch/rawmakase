@@ -111,8 +111,8 @@ jobs:
       # libheif, installed above, decodes the HEIC pixel tests, which fail
       # here rather than skip without it.
       - run: |
-          PATH="/usr/bin/vendor_perl:$PATH" cargo test --locked --lib --bins --tests -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-model-install -p rawmakase-selection -p rawmakase-ai-masks
-          cargo test --locked --doc -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-model-install -p rawmakase-selection -p rawmakase-ai-masks
+          PATH="/usr/bin/vendor_perl:$PATH" cargo test --locked --lib --bins --tests -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-hdr-merge -p rawmakase-model-install -p rawmakase-selection -p rawmakase-ai-masks
+          cargo test --locked --doc -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-hdr-merge -p rawmakase-model-install -p rawmakase-selection -p rawmakase-ai-masks
         env:
           RAWMAKASE_REQUIRE_EXIFTOOL: "1"
           RAWMAKASE_REQUIRE_HEIF: "1"
