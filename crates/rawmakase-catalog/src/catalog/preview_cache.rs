@@ -43,7 +43,9 @@ const VERSION: i64 = 1;
 // 14: a half-size decode reduces luminance and colour noise at its photo's scales.
 // 15: a DNG's OpcodeList3 FixVignetteRadial applies (iPhones' and DJI drones'
 //     vignetting), which saved edits of those DNGs render differently.
-const GENERATION: i64 = 15;
+// 16: AI Denoise keeps its own colour below Amount 100 and corrects dark areas over
+//     larger blocks, which saved edits with AI Denoise render differently.
+const GENERATION: i64 = 16;
 // 3: a JPEG, PNG or TIFF is converted from its embedded ICC profile.
 // 4: the one engine, as `GENERATION` 3.
 // 5: an edited JPEG, PNG or TIFF renders from the scene its rendering is of.

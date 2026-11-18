@@ -59,13 +59,15 @@ pub(crate) struct AiBlend {
     /// 0–1, above 0.
     pub amount: f32,
 }
-/// How much of the AI source's luminance and colour change an Amount keeps: Camera Raw
-/// 18.7's Denoise blends its result in by the `BlendParams` it writes, measured at 25,
-/// 50 and 100 (0.4375 and 0.5, 0.70 and 0.75, 1 and 1; docs/rendering-quality.md#ai-denoise),
-/// and linearly between them and from 0. The first is taken as luminance's, the second,
-/// always the larger, as colour's.
+/// How much of the AI source's luminance change an Amount keeps: Camera Raw 18.7's
+/// Denoise records the blend it applies (`BlendParams`) as 0.4375 at 25, 0.70 at 50 and
+/// 1 at 100 (docs/rendering-quality.md#ai-denoise), read here as luminance's, linearly
+/// between them and from 0. Its colour is the AI source's at every Amount: Camera Raw's
+/// renders at 50 keep almost no colour noise, about as little as at 100 (#802).
 const LUMA_WEIGHTS: [(f32, f32); 4] = [(0., 0.), (0.25, 0.4375), (0.5, 0.7), (1., 1.)];
-const CHROMA_WEIGHTS: [(f32, f32); 4] = [(0., 0.), (0.25, 0.5), (0.5, 0.75), (1., 1.)];
+/// AI source values (of white) below which a pixel's colour is too uncertain to scale:
+/// there it is blended channel by channel instead.
+const DARKEST: f32 = 1e-4;
 
 /// The weight at Amount `a` of the piecewise linear `curve`.
 fn weight(curve: &[(f32, f32); 4], a: f32) -> f32 {
@@ -78,26 +80,32 @@ fn weight(curve: &[(f32, f32); 4], a: f32) -> f32 {
 }
 
 impl AiBlend {
-    /// The plain recovered image with the AI source's change blended in by Amount, its
-    /// luminance (the channels' mean) and colour (the rest) each by their weight; at
-    /// Amount 1 the AI source itself.
+    /// The AI source with its luminance moved toward the plain recovered image's by
+    /// Amount: each pixel keeps the AI source's colour (its channels are scaled
+    /// together) and takes the blended luminance, the mean of the white-balanced
+    /// channels. Mixing camera values channel by channel would bring the plain image's
+    /// colour noise back, since an equal change of unbalanced camera values is not
+    /// neutral. At Amount 1 the AI source itself.
     pub(crate) fn apply(&self, plain: &Arc<CameraImage>) -> Arc<CameraImage> {
         let ai = self.source.image();
         if self.amount >= 1. {
             return ai.clone();
         }
-        let (wl, wc) = (
-            weight(&LUMA_WEIGHTS, self.amount),
-            weight(&CHROMA_WEIGHTS, self.amount),
-        );
+        let wl = weight(&LUMA_WEIGHTS, self.amount);
+        let wb = plain.metadata.wb;
+        let luma = move |v: &[f32; 3]| (v[0] * wb[0] + v[1] * wb[1] + v[2] * wb[2]) / 3.;
         let pixels = plain
             .pixels
             .par_iter()
             .zip(ai.pixels.par_iter())
             .map(|(p, q)| {
-                let d: [f32; 3] = std::array::from_fn(|c| q[c] - p[c]);
-                let luma = (d[0] + d[1] + d[2]) / 3.;
-                std::array::from_fn(|c| p[c] + wl * luma + wc * (d[c] - luma))
+                let (lp, lq) = (luma(p), luma(q));
+                if lq > DARKEST {
+                    let k = (wl * lq + (1. - wl) * lp).max(0.) / lq;
+                    q.map(|v| v * k)
+                } else {
+                    std::array::from_fn(|c| p[c] + wl * (q[c] - p[c]))
+                }
             })
             .collect();
         Arc::new(CameraImage {
@@ -190,12 +198,11 @@ mod tests {
             .zip(&plain.pixels)
             .zip(&ai.image().pixels)
         {
-            // Camera Raw's weights at 50: 0.70 of the luminance change, 0.75 of colour's.
-            let d: [f32; 3] = std::array::from_fn(|c| a[c] - p[c]);
-            let luma = (d[0] + d[1] + d[2]) / 3.;
+            // Camera Raw's luminance weight at 50 (0.70), with the AI source's colour.
+            let luma = |v: &[f32; 3]| (v[0] + v[1] + v[2]) / 3.;
+            let k = (0.7 * luma(a) + 0.3 * luma(p)) / luma(a);
             for c in 0..3 {
-                let expected = p[c] + 0.7 * luma + 0.75 * (d[c] - luma);
-                assert!((h[c] - expected).abs() < 1e-6);
+                assert!((h[c] - a[c] * k).abs() < 1e-6);
             }
         }
         // The same Amount with a new source (equal pixels, another result): rebuilt.
@@ -252,17 +259,55 @@ mod tests {
         assert_ne!(on.pixels, today.pixels);
     }
 
+    /// Below Amount 100 the plain image's colour noise does not come back (#802): each
+    /// pixel keeps the AI source's colour and takes the blended luminance, measured on
+    /// white-balanced values.
+    #[test]
+    fn amount_below_100_keeps_the_ai_colour_and_blends_luminance() {
+        let wb = [2., 1., 1.5];
+        let mut plain = image([0.1, 0.2, 0.1]);
+        let mut ai = image([0.1, 0.2, 0.1]);
+        plain.metadata.wb = wb;
+        ai.metadata.wb = wb;
+        // The plain pixels carry colour noise around the AI's neutral grey.
+        for (i, (p, a)) in plain.pixels.iter_mut().zip(&mut ai.pixels).enumerate() {
+            let g = 0.1 + (i % 7) as f32 * 0.01;
+            *a = [g / wb[0], g / wb[1], g / wb[2]];
+            let n = [
+                (i % 3) as f32 - 1.,
+                (i % 5) as f32 * 0.5 - 1.,
+                (i % 2) as f32 - 0.5,
+            ];
+            *p = std::array::from_fn(|c| (g + 0.03 * n[c]) / wb[c]);
+        }
+        let plain = Arc::new(plain);
+        let source = AiSource::recover(ai, Cancel::NEVER).unwrap();
+        let blended = AiBlend {
+            source: source.clone(),
+            amount: 0.5,
+        }
+        .apply(&plain);
+        let luma = |v: &[f32; 3]| (v[0] * wb[0] + v[1] * wb[1] + v[2] * wb[2]) / 3.;
+        for ((b, p), a) in blended
+            .pixels
+            .iter()
+            .zip(&plain.pixels)
+            .zip(&source.image().pixels)
+        {
+            // The AI's colour: the same balanced value in every channel.
+            let balanced: [f32; 3] = std::array::from_fn(|c| b[c] * wb[c]);
+            assert!((balanced[0] - balanced[1]).abs() < 1e-6, "{balanced:?}");
+            assert!((balanced[2] - balanced[1]).abs() < 1e-6, "{balanced:?}");
+            // Camera Raw's luminance weight at 50.
+            let expected = 0.7 * luma(a) + 0.3 * luma(p);
+            assert!((luma(b) - expected).abs() < 1e-6);
+        }
+    }
+
     #[test]
     fn amount_weights_follow_camera_raws_blend() {
-        for (a, l, c) in [
-            (0., 0., 0.),
-            (0.25, 0.4375, 0.5),
-            (0.5, 0.7, 0.75),
-            (0.75, 0.85, 0.875),
-            (1., 1., 1.),
-        ] {
+        for (a, l) in [(0., 0.), (0.25, 0.4375), (0.5, 0.7), (0.75, 0.85), (1., 1.)] {
             assert!((weight(&LUMA_WEIGHTS, a) - l).abs() < 1e-6, "{a}");
-            assert!((weight(&CHROMA_WEIGHTS, a) - c).abs() < 1e-6, "{a}");
         }
     }
 }
