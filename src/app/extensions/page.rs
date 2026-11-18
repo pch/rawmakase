@@ -180,7 +180,6 @@ impl Page {
         self.section = Section::default();
     }
     /// Shows `section` of the open extension's page.
-    #[cfg(test)]
     pub(in crate::app) fn show(&mut self, section: Section) {
         self.section = section;
     }

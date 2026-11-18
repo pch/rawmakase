@@ -584,6 +584,8 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
                     details: String::new(),
                     single: true,
                     stacks: true,
+                    collections: Default::default(),
+                    in_collections: Vec::new(),
                 };
                 photo_cell(ui, &photo, Some(&texture), shown, width);
             });
@@ -1335,6 +1337,32 @@ fn library_of(names: &[&str]) -> Result<(tempfile::TempDir, Library)> {
     Catalog::create(&path)?.add_folder(&folder)?;
     let library = Library::load(&path, egui::Context::default())?;
     Ok((directory, library))
+}
+/// As in Lightroom Classic, a copy made while a collection is shown joins
+/// it, and shows there right after its source.
+#[test]
+fn a_copy_made_in_a_collection_shows_in_it() -> Result<()> {
+    let (_d, mut library) = library_of(&["a.ARW", "b.ARW"])?;
+    let [a, b] = [
+        library.session.photos()[0].id,
+        library.session.photos()[1].id,
+    ];
+    let picks = library.session.catalog_mut_for_tests().create_collection(
+        crate::catalog::CollectionKind::Collection,
+        "Picks",
+        None,
+    )?;
+    library.session.reload()?;
+    library.change_collection(picks, &[a, b], &[])?;
+    library.select_collection(picks);
+    let copy = library.create_virtual_copy(a)?.value;
+    let mut shown = library.shown();
+    shown.sort();
+    let mut expected = vec![a, b, copy];
+    expected.sort();
+    assert_eq!(shown, expected);
+    assert_eq!(library.selected(), Some(copy));
+    Ok(())
 }
 fn visible_names(library: &Library) -> Vec<&str> {
     library
@@ -2178,12 +2206,22 @@ fn collections_panel_shows_imported_collections_and_filters_through_them() -> Re
     let tree = collections::tree(
         library.session.collections(),
         library.session.collection_photos(),
+        &Default::default(),
+        None,
     );
-    // Sets first, then collections, by name; smart and system ones hidden,
-    // and a set left empty by hiding them is dropped too.
+    // Sets first, then collections, by name; system ones hidden. A smart
+    // collection shows (issue 998), being worked out until its members are
+    // known.
     let names: Vec<_> = tree.iter().map(|n| n.name.as_str()).collect();
-    assert_eq!(names, ["Empty set", "Trips", "Archive"]);
-    let trips: Vec<_> = tree[1]
+    assert_eq!(
+        names,
+        ["Empty set", "Smart Collections", "Trips", "Archive"]
+    );
+    assert_eq!(
+        tree[1].children[0].smart,
+        Some(collections::SmartCount::Pending)
+    );
+    let trips: Vec<_> = tree[2]
         .children
         .iter()
         .map(|n| (n.name.as_str(), n.count))
@@ -2212,7 +2250,7 @@ fn collections_panel_shows_imported_collections_and_filters_through_them() -> Re
     assert_eq!(restored.visible.len(), 2);
     assert_eq!(restored.selected(), Some(ids[1]));
     let mut other = Library::load(&path, egui::Context::default())?;
-    other.restore_source("collection:4", None);
+    other.restore_source("collection:5", None);
     assert_eq!(other.filters.collection, None);
     assert_eq!(other.visible.len(), 3);
 

@@ -17,12 +17,15 @@
 //! identity belong to the callers.
 
 pub mod auto;
+mod kinds;
 pub mod manifest;
+mod onnx_patch;
 pub mod panoptic;
 pub mod process;
 pub mod refine;
 pub mod runtime;
+mod sky_edge;
 
 pub use manifest::{ModelSpec, PANOPTIC, PanopticSpec, SKY, SUBJECT, SkySpec};
 pub use process::{Coverage, Point, Prompt, RgbImage};
-pub use runtime::{Analysis, Embedding, Session, Sky, SkySession, Subject};
+pub use runtime::{Analysis, Embedding, Session, Sky, SkySession, SkyTimings, Subject};

@@ -131,6 +131,7 @@ impl CatalogSession {
             ..Default::default()
         };
         if !reads.is_empty() {
+            self.changed();
             match self.catalog.record_capture_reads(&reads) {
                 // Only the photos given a date: one read only for its import
                 // facts keeps its own, as the catalog does.
@@ -219,6 +220,7 @@ impl CatalogSession {
             })
             .collect();
         if !infos.is_empty() {
+            self.changed();
             let saved = self
                 .catalog
                 .fill_photo_info(&infos)

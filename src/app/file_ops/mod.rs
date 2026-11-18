@@ -1100,9 +1100,26 @@ impl Editor {
     /// rejected photos of the source shown, whatever is selected or
     /// filtered.
     pub(in crate::app) fn request_rejected_delete(&mut self) {
+        if self.library.is_none() {
+            return;
+        }
+        // Saved before the photos are chosen: saving the open edit or a
+        // metadata draft can change which photos a smart collection shows.
+        if !self.flush() {
+            self.messages.fail(format!(
+                "The open photo's edit could not be saved; {}",
+                Verb::Delete { rejected: true }.nothing()
+            ));
+            return;
+        }
         let Some(library) = &self.library else {
             return;
         };
+        if !library.source_settled() {
+            self.messages
+                .warn("This smart collection is still updating; try again in a moment");
+            return;
+        }
         let rejected = library.rejected_in_source();
         if rejected.is_empty() {
             self.messages.warn("No rejected photos here");

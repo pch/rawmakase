@@ -6,7 +6,8 @@
 The graph takes `pixel_values` (1, 3, height, width), normalized with ImageNet's mean and
 std, and answers `sky` (1, height, width), the probability of ADE20K's sky at each pixel.
 Its weights are half precision, cast back to float32 as it loads, so every operator still
-computes in float32.
+computes in float32. Its classifier's output, `LOGITS` (ADE20K's class scores at a quarter
+of the input), is an internal tensor that RAWmakase makes a second output as it loads the file.
 
 The checkpoint's pyramid pooling uses adaptive pooling, which ONNX cannot express at a size
 known only at run time. It is replaced by the same averages over the same bins, written with
@@ -26,6 +27,10 @@ from transformers import UperNetForSemanticSegmentation
 REPOSITORY = "openmmlab/upernet-convnext-base"
 REVISION = "13a9c410ff779f25236a8d24802d2742e4694e9c"
 SKY = 2  # ADE20K's class
+# The classifier's output. rawmakase-inference (`SkySpec::logits` in manifest.rs) exposes this
+# internal tensor as a second output when it loads the file, so a re-export must produce a node
+# with this output name, or `SKY` there must be updated with the new name and digest together.
+LOGITS = "/model/decode_head/classifier/Conv_output_0"
 
 
 class Pool(nn.Module):
@@ -107,6 +112,9 @@ def main():
         do_constant_folding=True,
     )
     half_precision_weights(out)
+    graph = onnx.load(out).graph
+    if not any(LOGITS in node.output for node in graph.node):
+        sys.exit(f"no node produces {LOGITS}; update SkySpec::logits in manifest.rs together with the digest")
 
 
 if __name__ == "__main__":

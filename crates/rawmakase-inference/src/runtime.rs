@@ -166,7 +166,7 @@ impl Denoiser {
         let network = catch_unwind(AssertUnwindSafe(|| {
             build_session_with(
                 &environment,
-                &dir.join(RAWNIND.model.name),
+                Model::File(&dir.join(RAWNIND.model.name)),
                 threads,
                 GraphOptimizationLevel::All,
                 provider,
@@ -326,7 +326,7 @@ pub fn build_session(
 ) -> Result<OrtSession, InferenceError> {
     build_session_with(
         environment,
-        model_path,
+        Model::File(model_path),
         threads,
         level,
         provider,
@@ -334,15 +334,43 @@ pub fn build_session(
     )
 }
 
-fn build_session_with(
+/// [`build_session`] for a model read from `model_path` and edited in memory; the
+/// path only names it in errors.
+pub fn build_session_from_memory(
     environment: &Environment,
     model_path: &Path,
+    model: &[u8],
+    threads: usize,
+    level: GraphOptimizationLevel,
+    provider: Provider,
+) -> Result<OrtSession, InferenceError> {
+    build_session_with(
+        environment,
+        Model::Bytes(model_path, model),
+        threads,
+        level,
+        provider,
+        provider.providers(),
+    )
+}
+
+/// Where a session's model comes from: its file, or bytes read from that file and
+/// edited (the path then only names it in errors).
+#[derive(Clone, Copy)]
+enum Model<'a> {
+    File(&'a Path),
+    Bytes(&'a Path, &'a [u8]),
+}
+
+fn build_session_with(
+    environment: &Environment,
+    model: Model<'_>,
     threads: usize,
     level: GraphOptimizationLevel,
     provider: Provider,
     providers: Vec<ExecutionProviderDispatch>,
 ) -> Result<OrtSession, InferenceError> {
-    OrtSession::builder(environment)
+    let mut builder = OrtSession::builder(environment)
         .map_err(failed)?
         .with_optimization_level(level)
         .map_err(failed)?
@@ -355,15 +383,18 @@ fn build_session_with(
         .with_memory_pattern(false)
         .map_err(failed)?
         .with_execution_providers(providers)
-        .map_err(failed)?
-        .commit_from_file(model_path)
-        .map_err(|e| {
-            InferenceError::ModelInvalid(format!(
-                "cannot load {} on {}: {e}",
-                model_path.display(),
-                provider.name()
-            ))
-        })
+        .map_err(failed)?;
+    let (path, committed) = match model {
+        Model::File(path) => (path, builder.commit_from_file(path)),
+        Model::Bytes(path, bytes) => (path, builder.commit_from_memory(bytes)),
+    };
+    committed.map_err(|e| {
+        InferenceError::ModelInvalid(format!(
+            "cannot load {} on {}: {e}",
+            path.display(),
+            provider.name()
+        ))
+    })
 }
 
 /// Opens the ONNX Runtime library if it is not open yet. The first successful

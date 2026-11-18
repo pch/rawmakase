@@ -3887,7 +3887,7 @@ dependencies = [
 
 [[package]]
 name = "rawmakase"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "apple-native-keyring-store",
@@ -3960,7 +3960,7 @@ dependencies = [
 
 [[package]]
 name = "rawmakase-ai-masks"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "rawmakase-cancel",
  "rawmakase-extension",
@@ -4191,7 +4191,7 @@ dependencies = [
 
 [[package]]
 name = "rawmakase-mcp"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -4208,7 +4208,7 @@ dependencies = [
 
 [[package]]
 name = "rawmakase-midi"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "midir",
  "rawmakase-extension",

@@ -120,6 +120,42 @@ pub fn straighten_zoom(degrees: f32, [width, height]: [f32; 2]) -> f32 {
     let (s, c) = (s.abs(), c.abs());
     (c + s * height / width).max(c + s * width / height)
 }
+/// The crop as rendered on a `size` photo Straighten turns by `degrees`: `crop` (0–1
+/// of the turned photo, enlarged by [`straighten_zoom`]) where it lies on the photo, else
+/// its part inside 0–1, which always does, or the whole frame when less than 1% of a
+/// side is left there.
+///
+/// A crop read from Lightroom keeps its place where it reaches past 0–1 on the photo
+/// (`xmp/crop.rs`). Once Straighten changes, or the crop is pasted onto a photo of
+/// another aspect, part of it can lie past the photo, which has no pixel there.
+/// Lightroom refits its crop then; RAWmakase keeps the stored crop, so turning back
+/// brings it back, and renders and writes this one. Upright, the Transform sliders and
+/// manual Distortion come after and render white where they leave no pixel.
+pub fn crop_as_rendered(crop: [f32; 4], degrees: f32, size: [f32; 2]) -> [f32; 4] {
+    if crop.iter().all(|v| (0. ..=1.).contains(v)) || on_photo(crop, degrees, size) {
+        return crop;
+    }
+    let inside = crop.map(|v| v.clamp(0., 1.));
+    if inside[2] - inside[0] >= 0.01 && inside[3] - inside[1] >= 0.01 {
+        inside
+    } else {
+        [0., 0., 1., 1.]
+    }
+}
+/// Whether `crop` lies on the photo, to 1e-4 of a side for the six decimals Lightroom
+/// writes. The photo and the crop are both convex, so checking the corners is enough.
+fn on_photo([left, top, right, bottom]: [f32; 4], degrees: f32, [w, h]: [f32; 2]) -> bool {
+    let zoom = straighten_zoom(degrees, [w, h]);
+    let (s, c) = degrees.to_radians().sin_cos();
+    let inside = |v: f32| (-1e-4..=1. + 1e-4).contains(&v);
+    [[left, top], [right, top], [left, bottom], [right, bottom]]
+        .into_iter()
+        .all(|[x, y]| {
+            let x = (x - 0.5) * w / zoom;
+            let y = (y - 0.5) * h / zoom;
+            inside((c * x + s * y) / w + 0.5) && inside((-s * x + c * y) / h + 0.5)
+        })
+}
 /// `turns` quarter turns of normalised coordinates, as `Geometry::source` applies them.
 pub fn turn(turns: u8, x: f32, y: f32) -> [f32; 2] {
     match turns % 4 {

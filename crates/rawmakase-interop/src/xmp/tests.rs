@@ -513,6 +513,61 @@ fn lightroom_crops_of_a_photo_held_upright_are_of_the_unrotated_frame() -> Resul
     near(back.crop, drawn.crop);
     Ok(())
 }
+/// A crop past 0–1 writes a preset that reads back: kept where it lies on the turned
+/// photo, and as rendered where it no longer does (Straighten changed after a Lightroom
+/// crop was read).
+#[test]
+fn presets_of_crops_past_the_frame_read_back() -> Result<()> {
+    let m = Metadata {
+        width: 3000,
+        height: 2000,
+        wb: [2., 1., 1.5],
+        daylight_wb: [2., 1., 1.5],
+        ..Default::default()
+    };
+    let base = Recipe::with_profiles(&m, &[]);
+    for (rotation, crop, straighten, want) in [
+        // On the photo turned by 3°.
+        (0, [-0.02, 0.1, 1.02, 0.9], 3., [-0.02, 0.1, 1.02, 0.9]),
+        (0, [-0.02, 0.1, 1.02, 0.9], 0., [0., 0.1, 1., 0.9]),
+        // XMP leaves Rotate out, so a crop is converted on the photo before Rotate
+        // (3000 × 2000 here, though it renders on the 2000 × 3000 one). This crop
+        // reaches past that photo, so it writes its part inside 0–1, which reads back
+        // as written.
+        (1, [0.1, -0.02, 0.9, 1.02], 3., [0.1, 0., 0.9, 1.]),
+        // Wholly past the photo once nearly level.
+        (0, [1.01, 0.3, 1.02, 0.4], 0.01, [0., 0., 1., 1.]),
+        (0, [1.01, 0.3, 1.02, 0.4], 0., [0., 0., 1., 1.]),
+    ] {
+        // Rotate stays out of XMP, so the preset is applied to the photo as rotated.
+        let base = Recipe {
+            rotation,
+            ..base.clone()
+        };
+        let drawn = Recipe {
+            crop,
+            straighten,
+            ..base.clone()
+        };
+        let preset = crate::xmp::preset_write::preset(
+            &drawn,
+            &m,
+            &crate::xmp::preset_write::PresetInfo::new("Crop", "Mine"),
+            &crate::model::settings_groups::GroupSelection::all(),
+        );
+        let back = parse(Path::new("crop.xmp"), &preset)?.apply(&base, &m, &[], None)?;
+        assert!(
+            back.crop
+                .iter()
+                .zip(want)
+                .all(|(g, w)| (g - w).abs() < 1e-3),
+            "{crop:?} at {straighten}: {:?}",
+            back.crop
+        );
+        assert!((back.straighten - straighten).abs() < 1e-3, "{crop:?}");
+    }
+    Ok(())
+}
 /// Lightroom's `CropAngle` turns the photo the other way from Straighten, and its
 /// corners are opposite corners of the turned crop (#1059). Sizes are Camera Raw's
 /// renders of a synthetic 970 × 742 chart (docs/transform.md).
@@ -2311,13 +2366,76 @@ fn lightroom_catalog_crops_without_default_corners_still_turn() -> Result<()> {
 }
 
 /// A Lightroom 5 record before process version 2012 carries the 2012 tone keys at 0, which
-/// Lightroom ignores: its Exposure still converts, and the rest is reported (#1060).
+/// Lightroom ignores (#1060). Its basic controls convert as Lightroom's process update
+/// writes them.
 #[test]
-fn lightroom_5_legacy_records_keep_exposure_over_zeroed_2012_keys() -> Result<()> {
-    let text = r#"s = { ProcessVersion = "5.0", Exposure = 1.7, Exposure2012 = 0, Contrast = 17, Contrast2012 = 0, Brightness = 3, FillLight = 100, Clarity2012 = 0 }"#;
+fn lightroom_5_legacy_records_convert_over_zeroed_2012_keys() -> Result<()> {
+    let text = r#"s = { ProcessVersion = "5.0", Exposure = 1.7, Exposure2012 = 0, Contrast = 17, Contrast2012 = 0, Brightness = 3, FillLight = 100, Shadows = 0, HighlightRecovery = 20, Clarity = 100, Clarity2012 = 0 }"#;
     let (r, warnings) = crate::lr_develop::convert_develop(text, &Metadata::default(), &[], None)?;
-    assert_eq!(r.exposure, 1.7);
-    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    let got = [
+        r.exposure,
+        r.contrast,
+        r.highlights,
+        r.shadows,
+        r.whites,
+        r.blacks,
+        r.effects.clarity,
+    ];
+    let want = [1.76, -0.11, -0.5, 0.5, -0.2, 0.25, 0.2];
+    assert!(
+        got.iter().zip(want).all(|(g, w)| (g - w).abs() < 1e-6),
+        "{got:?}"
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
+    Ok(())
+}
+
+/// Older records may quote their numbers. An explicit Exposure, even 0, means Auto Tone was
+/// already applied, while Lightroom's placeholder or a missing Exposure leaves it to be measured.
+#[test]
+fn lightroom_legacy_records_read_quoted_numbers_and_keep_auto_tone_state() -> Result<()> {
+    let convert = |text: &str| {
+        let photo = FakeMeasures::default();
+        crate::lr_develop::convert_develop(text, &Metadata::default(), &[], Some(&photo))
+    };
+    let (r, w) =
+        convert(r#"s = { ProcessVersion = "5.7", Exposure = "0.75", Brightness = "100" }"#)?;
+    assert_eq!(r.exposure, 1.75);
+    assert!(w.is_empty(), "{w:?}");
+    let (r, _) =
+        convert(r#"s = { ProcessVersion = "5.0", AutoTone = true, Exposure = 0, Contrast = 40 }"#)?;
+    assert_eq!(r.exposure, 0.);
+    assert!((r.contrast - 0.2).abs() < 1e-6, "{}", r.contrast);
+    let auto = [
+        r#"s = { ProcessVersion = "5.0", AutoTone = true, Exposure = -999999, Contrast = -999999, Clarity = 100 }"#,
+        r#"s = { ProcessVersion = "5.0", AutoTone = true, Clarity = 100 }"#,
+        r#"s = { ProcessVersion = "5.0", AutoTone = true, Brightness = 100, FillLight = 25, Clarity = 100 }"#,
+        r#"s = { ProcessVersion = "5.0", AutoTone = "1", Brightness = 100, Clarity = 100 }"#,
+    ];
+    // A placeholder on Contrast alone leaves a measured Exposure in place.
+    let (r, _) = convert(
+        r#"s = { ProcessVersion = "5.0", AutoTone = true, Exposure = 0.5, Contrast = -999999 }"#,
+    )?;
+    assert_eq!((r.exposure, r.contrast), (0.5, 0.));
+    for text in auto {
+        let (r, _) = convert(text)?;
+        assert_eq!(
+            (r.exposure, r.contrast),
+            (FakeMeasures::TONE[0], FakeMeasures::TONE[1])
+        );
+        assert!(
+            (r.effects.clarity - 0.2).abs() < 1e-6,
+            "{}",
+            r.effects.clarity
+        );
+    }
+    // PV2010 keeps its old Clarity conversion.
+    let (r, _) = convert(r#"s = { ProcessVersion = "5.7", Clarity = 100 }"#)?;
+    assert!(
+        (r.effects.clarity - 0.5).abs() < 1e-6,
+        "{}",
+        r.effects.clarity
+    );
     Ok(())
 }
 

@@ -22,6 +22,8 @@ pub struct Radial {
 impl Radial {
     /// The most knots a table may have; `develop`'s GPU port sizes its search by it.
     pub const MAX_KNOTS: usize = 256;
+    /// The values a table may hold: a radius or light scale of at most 5 either way.
+    pub const VALUES: std::ops::RangeInclusive<f32> = 0.2..=5.;
     /// The table of `knots` and `values`, or `None` when it is not a valid one
     /// (see `valid`).
     pub fn new(knots: Vec<f32>, values: Vec<f32>) -> Option<Self> {
@@ -35,7 +37,35 @@ impl Radial {
             && self.knots.iter().chain(&self.values).all(|v| v.is_finite())
             && self.knots.windows(2).all(|k| k[0] < k[1])
             && self.knots[0] >= 0.
-            && self.values.iter().all(|v| (0.2..=5.).contains(v))
+            && self.values.iter().all(|v| Self::VALUES.contains(v))
+    }
+    /// The radius out to which `r · g(r)` keeps growing, at most `end`, where `g` is
+    /// this table scaled about 1 by `amount`, as a distortion is. `g` is linear between
+    /// knots, so `r · g(r)` turns only where its slope `g(r) + r · g'(r)` crosses zero
+    /// within a span, and grows past the outermost knot while `g` is positive there.
+    pub(crate) fn rising_until(&self, amount: f32, end: f32) -> f32 {
+        let g = |v: f32| 1. + (v - 1.) * amount;
+        for (k, v) in self.knots.windows(2).zip(self.values.windows(2)) {
+            if k[0] >= end {
+                return end;
+            }
+            let (g0, g1) = (g(v[0]), g(v[1]));
+            let slope = (g1 - g0) / (k[1] - k[0]);
+            // The slope of r · g(r) at r is g0 + slope · (2r − k0).
+            let at = |r: f32| g0 + slope * (2. * r - k[0]);
+            if at(k[0]) <= 0. {
+                return k[0];
+            }
+            if at(k[1]) <= 0. {
+                return ((k[0] - g0 / slope) * 0.5).min(end);
+            }
+        }
+        let last = self.values.last().map_or(1., |v| g(*v));
+        if last > 0. {
+            end
+        } else {
+            self.knots.last().map_or(0., |k| k.min(end))
+        }
     }
     pub fn eval(&self, r: f32) -> f32 {
         let k = &self.knots;
@@ -224,6 +254,13 @@ impl LensCorrection {
     /// The `source` of the correction read from a Sony file's own tables (a DNG's
     /// opcodes are another source, with Lightroom's framing).
     pub const SONY_BUILTIN: &'static str = "Sony built-in";
+    /// The start of the `source` of a correction read from an imported Adobe lens
+    /// profile, which Camera Raw frames differently ([`Self::fill_scale`]).
+    pub const ADOBE_PROFILE: &'static str = "Adobe profile";
+    /// The largest fill [`Self::fill_scale`] zooms an Adobe profile out to. Its
+    /// correction is tabulated out to this many times the farthest corner's radius, as
+    /// far as the corners then read it.
+    pub const ADOBE_MAX_FILL: f32 = 1.5;
     pub fn is_empty(&self) -> bool {
         self.vignetting.is_none()
             && self.distortion.is_none()
@@ -278,7 +315,9 @@ impl LensCorrection {
     /// every point of the photo's edge, the rectangle `frame` (`[left, top, right,
     /// bottom]`, in pixels) of the decoded image of `size`, lies inside the decoded
     /// image, with Lightroom's Distortion amount (1 = 100%): as Lightroom frames the
-    /// corrected photo, never zooming out. Only green frames it, as in Adobe's warps,
+    /// corrected photo, never zooming out. An imported Adobe profile is framed as
+    /// Camera Raw 19 and Lightroom frame it instead: zoomed in or out until green's
+    /// samples for the edge touch `frame`'s own edge. Only green frames it, as in Adobe's warps,
     /// whose red and blue planes may reach a little past the image's edge; samplers clamp
     /// them there. Where the corrected radius grows with the output radius, as it does
     /// for any real lens, the interior samples nearer the centre than the edge along the
@@ -298,29 +337,49 @@ impl LensCorrection {
         // Every radius out to the farthest corner sampling at or inside its own keeps
         // every sample inside the image, which is convex around the centre.
         let radii = (0..=256).map(|i| reach * i as f32 / 256.);
-        let whole = 1. / radii.clone().map(green).fold(1f32, f32::max);
-        let mut previous = 0f32;
-        let monotonic = radii.skip(1).all(|r| {
-            let s = r * green(r);
-            let rising = s > previous;
-            previous = s;
-            rising
-        });
-        if !monotonic {
+        let whole = 1. / radii.map(green).fold(1f32, f32::max);
+        let adobe = self.source.starts_with(Self::ADOBE_PROFILE);
+        // The corrected radius has to grow with the output radius out to the farthest
+        // corner. An Adobe profile, which may zoom out, reads it as far out as the fill
+        // takes the corner, where its polynomial can fold back: the fill stops where
+        // it still grows, found exactly on the table.
+        let rising = if adobe {
+            distortion.rising_until(amount, reach * Self::ADOBE_MAX_FILL)
+        } else {
+            let mut previous = 0f32;
+            let monotonic = (1..=256).all(|i| {
+                let r = reach * i as f32 / 256.;
+                let s = r * green(r);
+                let rising = s > previous;
+                previous = s;
+                rising
+            });
+            if monotonic { reach } else { 0. }
+        };
+        if rising < reach {
             return whole;
         }
         let [cx, cy] = self.centre_in(size);
         let [left, top, right, bottom] = frame;
         let (x0, x1) = (left.max(0.) - cx, right.min(w) - cx);
         let (y0, y1) = (top.max(0.) - cy, bottom.min(h) - cy);
+        // Camera Raw keeps an Adobe profile's samples inside the frame, not the decoded image.
+        let (bx, by) = if adobe {
+            ((left.max(0.), right.min(w)), (top.max(0.), bottom.min(h)))
+        } else {
+            ((0., w), (0., h))
+        };
         let inside = |dx: f32, dy: f32, fill: f32| {
             let s = fill * green(dx.hypot(dy) * fill / half);
-            (0. ..=w).contains(&(cx + dx * s)) && (0. ..=h).contains(&(cy + dy * s))
+            (bx.0..=bx.1).contains(&(cx + dx * s)) && (by.0..=by.1).contains(&(cy + dy * s))
         };
         // About one sample per pixel along the edge, so no extremum between samples
         // leaves the image by more than a fraction of a pixel.
         let steps = (w.max(h).ceil() as usize).clamp(64, 8192);
-        let mut fill = 1f32;
+        // Camera Raw also zooms an Adobe profile out until the frame's edge touches that
+        // bound. The search starts at the largest fill it allows, so a correction that
+        // would need more stays there.
+        let mut fill = if adobe { rising / reach } else { 1. };
         for i in 0..=steps {
             let t = i as f32 / steps as f32;
             let (x, y) = (x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
@@ -462,6 +521,47 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(fill(&barrel, [6000., 4000.]), 1.);
+    }
+    /// An Adobe profile's barrel correction zooms out until the edge touches the frame's
+    /// edge, as in Camera Raw 19 and Lightroom (Canon EF 24-105mm f/4L at 24mm: 3.1%).
+    #[test]
+    fn adobe_profile_zooms_out_until_the_edge_touches() {
+        let adobe = LensCorrection {
+            source: format!("{}: x", LensCorrection::ADOBE_PROFILE),
+            distortion: Radial::new(vec![0., 1.], vec![1., 0.97]),
+            ..Default::default()
+        };
+        let size = [300., 200.];
+        let s = fill(&adobe, size);
+        assert!(s > 1.01, "{s}");
+        assert!(worst_outside(&adobe, size, s).abs() < 0.01);
+        let other = LensCorrection {
+            source: "x".into(),
+            ..adobe
+        };
+        assert_eq!(fill(&other, size), 1.);
+    }
+    /// An Adobe profile whose corrected radius stops growing just past the corner zooms
+    /// out only as far as it still grows there, so the corners never fold back on
+    /// themselves; the edge alone would take it to about 1.017.
+    #[test]
+    fn adobe_profile_zooms_out_only_as_far_as_its_correction_grows() {
+        let c = LensCorrection {
+            source: format!("{}: x", LensCorrection::ADOBE_PROFILE),
+            distortion: Radial::new(vec![0., 1., 1.01, 1.5], vec![1., 0.97, 0.9652, 0.3]),
+            ..Default::default()
+        };
+        let size = [300., 200.];
+        let s = fill(&c, size);
+        assert!((s - 1.01).abs() < 1e-5, "{s}");
+        // The corrected radius grows all the way out to the corner at that fill.
+        let d = c.distortion.as_ref().unwrap();
+        let reach = c.reach(size);
+        let corrected = |i: usize| {
+            let r = reach * s * i as f32 / 4096.;
+            r * d.eval(r)
+        };
+        assert!((1..=4096).all(|i| corrected(i) > corrected(i - 1)));
     }
     /// An off-centre optical centre: the corner farthest from it sets the zoom, and every
     /// edge sample stays inside without zooming more than that needs.

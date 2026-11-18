@@ -3,9 +3,11 @@
 mod backfill;
 pub(crate) mod background;
 mod checksums;
+mod collections;
 mod descriptive;
 mod entries;
 mod import_stacks;
+pub(crate) mod smart;
 mod stacks;
 
 use crate::catalog::{
@@ -80,6 +82,13 @@ pub(crate) struct CatalogSession {
     /// Changes whenever photos may have changed place, name or master (see
     /// [`Self::reload`]), so a background result read before is dropped.
     generation: u64,
+    /// See [`Self::query_revision`].
+    query_revision: u64,
+    /// Smart collections' members and the job working them out.
+    smart: smart::Smart,
+    /// Each smart collection's rules, by collection.
+    smart_rules: HashMap<CollectionId, crate::catalog::SmartRules>,
+    synonyms: crate::catalog::SynonymState,
 }
 
 /// The last structural generation given out, by any session: unique across
@@ -133,6 +142,19 @@ impl CatalogSession {
     pub(crate) fn previous_import(&self) -> &HashSet<PhotoId> {
         &self.previous_import
     }
+    /// Whether the keywords' Lightroom synonyms are known, which smart
+    /// collections' keyword rules match.
+    pub(crate) fn synonym_state(&self) -> crate::catalog::SynonymState {
+        self.synonyms
+    }
+    /// The user says this catalog has no Lightroom synonyms to read: its
+    /// keywords' synonyms are complete as they are.
+    pub(crate) fn dismiss_missing_synonyms(&mut self) -> Result<()> {
+        self.catalog
+            .set_synonym_state(crate::catalog::SynonymState::Complete)?;
+        self.synonyms = crate::catalog::SynonymState::Complete;
+        Ok(())
+    }
     /// Saves photo `id`'s edit ([`Catalog::save_edit`]). Changes no list.
     pub(crate) fn save_edit(
         &mut self,
@@ -143,6 +165,7 @@ impl CatalogSession {
         export: &crate::export_settings::ExportOptions,
         history: crate::catalog::HistoryUpdate<'_>,
     ) -> Result<()> {
+        self.changed();
         self.catalog
             .save_edit(id, path, source, recipe, export, history)
     }
@@ -152,6 +175,7 @@ impl CatalogSession {
         &mut self,
         changes: &[crate::catalog::EditChange<'_, '_>],
     ) -> Result<()> {
+        self.changed();
         self.catalog.change_edits(changes)
     }
     /// Adds a snapshot of `photo` ([`Catalog::add_snapshot`]). Changes no list.
@@ -205,6 +229,7 @@ impl CatalogSession {
     /// new one, so none is offered to be changed. The collections and overrides
     /// stay as listed; the failed read started a new generation already.
     pub(crate) fn forget_lists(&mut self) {
+        self.changed();
         self.photos.clear();
         self.folders.clear();
         self.roots.clear();
@@ -256,6 +281,10 @@ impl CatalogSession {
             backfill: Default::default(),
             wake: std::sync::Arc::new(|| {}),
             generation: 0,
+            query_revision: 0,
+            smart: Default::default(),
+            smart_rules: HashMap::new(),
+            synonyms: crate::catalog::SynonymState::Complete,
         };
         session.reload()?;
         Ok(Opened {
@@ -273,7 +302,29 @@ impl CatalogSession {
     /// again: what background readers read before is dropped when it comes
     /// back, as before a change that may free photos' ids.
     pub(crate) fn bump_generation(&mut self) {
+        self.changed();
         self.generation = GENERATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    }
+    /// Changes whenever what a smart collection's rules see may have changed:
+    /// every write through the session (metadata, keywords, collections,
+    /// edits, copies, stacks, photo info and capture times read in the
+    /// background, reading the catalog again) and every edit written on
+    /// another connection that [`Self::note_external_change`] is told of.
+    /// Membership worked out for an older revision is stale. Writes by other
+    /// processes are seen only once the catalog is read again.
+    pub(crate) fn query_revision(&self) -> u64 {
+        self.query_revision
+    }
+    /// Edits of `ids` were written on another connection (autosave, Sync and
+    /// its Undo, batch presets and Auto, extension proposals), whether or not
+    /// they all were: what rules see may have changed.
+    pub(crate) fn note_external_change(&mut self, ids: impl IntoIterator<Item = PhotoId>) {
+        if ids.into_iter().next().is_some() {
+            self.changed();
+        }
+    }
+    fn changed(&mut self) {
+        self.query_revision += 1;
     }
     /// Calls `wake` whenever a background read has something to save, for
     /// whoever shows the catalog to poll it.
@@ -283,6 +334,7 @@ impl CatalogSession {
     /// Sets rating, flag and label in the catalog, in one transaction, then
     /// in `photos`.
     pub(crate) fn set_ratings(&mut self, values: &[(PhotoId, i32, i32, String)]) -> Result<()> {
+        self.changed();
         self.catalog.set_metadata_of(values)?;
         for (id, rating, flag, label) in values {
             if let Some(p) = self.photos.iter_mut().find(|p| p.id == *id) {
@@ -297,6 +349,7 @@ impl CatalogSession {
     /// from the catalog into `photos`, after the catalog changed them. The
     /// photos keep their order.
     pub(crate) fn refresh_photos(&mut self, ids: &[PhotoId]) -> Result<()> {
+        self.changed();
         let wanted: HashSet<PhotoId> = ids.iter().copied().collect();
         let fresh: HashMap<PhotoId, Photo> = self
             .catalog
@@ -317,6 +370,7 @@ impl CatalogSession {
     }
     /// Reads the keywords of `ids` again from the catalog into `photos`.
     pub(crate) fn refresh_keywords(&mut self, ids: &[PhotoId]) -> Result<()> {
+        self.changed();
         let mut names = HashMap::new();
         for id in ids {
             let mut keywords: Vec<String> = self
@@ -349,6 +403,7 @@ impl CatalogSession {
     }
     /// The Quick Collection, made if there is none yet.
     pub(crate) fn ensure_quick_collection(&mut self) -> Result<CollectionId> {
+        self.changed();
         if let Some(id) = self.quick_collection() {
             return Ok(id);
         }
@@ -360,6 +415,7 @@ impl CatalogSession {
     /// Reads the photos, folders, collections and roots again. All or nothing:
     /// when a read fails, the lists stay as they were, still matching each other.
     pub(crate) fn reload(&mut self) -> Result<()> {
+        self.changed();
         // Read again after a change that may move, rename, promote or remove
         // photos: what was read before no longer applies, even if this read fails.
         self.generation = GENERATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
@@ -384,6 +440,8 @@ impl CatalogSession {
         let roots = self.catalog.roots()?;
         let overrides = self.catalog.overrides()?;
         let previous_import = self.catalog.previous_import()?.into_iter().collect();
+        let smart_rules = self.catalog.smart_rules()?;
+        let synonyms = self.catalog.synonym_state()?;
         self.photos = photos;
         self.previous_import = previous_import;
         self.folders = folders;
@@ -391,11 +449,15 @@ impl CatalogSession {
         self.collection_photos = collection_photos;
         self.roots = roots;
         self.overrides = overrides;
+        self.smart_rules = smart_rules;
+        self.synonyms = synonyms;
         self.count_checksums();
         Ok(())
     }
 }
 
+#[cfg(test)]
+mod revision_tests;
 #[cfg(test)]
 pub(crate) mod upgrade_tests;
 #[cfg(test)]
@@ -547,12 +609,16 @@ mod tests {
         assert_eq!(session.collection_photos[&collection], HashSet::from([a]));
 
         // Changes made through the catalog show once it is read again.
-        session.catalog.create_virtual_copy(a)?;
+        // The copy joins the Quick Collection its photo is in, as Lightroom's does.
+        let copy = session.catalog.create_virtual_copy(a)?;
         session.catalog.change_collection(collection, &[], &[a])?;
         session.reload()?;
         assert_eq!(session.photos.len(), 3);
         assert_eq!(session.folders[0].count, 3);
-        assert!(!session.collection_photos.contains_key(&collection));
+        assert_eq!(
+            session.collection_photos[&collection],
+            HashSet::from([copy])
+        );
         Ok(())
     }
 
@@ -1071,12 +1137,13 @@ mod tests {
         assert_eq!(session.ensure_quick_collection()?, quick);
         assert!(session.collection_photos[&quick].is_empty());
         let members = session.change_collection(quick, &[a], &[])?;
-        assert!(members.contains(&a));
+        assert_eq!(members.added.len(), 1);
+        assert!(session.collection_photos[&quick].contains(&a));
         assert!(session.catalog.collection_photos()?[&quick].contains(&a));
         session.change_collection(quick, &[], &[a])?;
         assert!(session.collection_photos[&quick].is_empty());
 
-        let copy = session.create_virtual_copy(a)?.value;
+        let copy = session.create_virtual_copy(a, None)?.value;
         session.rename_copy(copy, " B&W ")?;
         let named = |photos: &[Photo]| {
             photos
@@ -1116,7 +1183,7 @@ mod tests {
         assert_eq!(session.catalog.photos()?[0].label, "Blue");
         assert_eq!(session.catalog.metadata_snapshot(&[a])?, change.before);
 
-        let copy = session.create_virtual_copy(a)?.value;
+        let copy = session.create_virtual_copy(a, None)?.value;
         assert!(session.photos.iter().any(|p| p.id == copy));
         session.set_copy_as_master(copy)?;
         assert_eq!(

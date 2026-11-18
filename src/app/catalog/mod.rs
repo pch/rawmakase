@@ -187,9 +187,15 @@ impl Editor {
                     )))
                 })();
                 let event = match result {
-                    Ok(Some(location)) => {
-                        reopened(&location, true, false, &Default::default(), &[], tx, &ctx)
-                    }
+                    Ok(Some(location)) => imported(reopened(
+                        &location,
+                        true,
+                        false,
+                        &Default::default(),
+                        &[],
+                        tx,
+                        &ctx,
+                    )),
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
                 };
@@ -216,7 +222,7 @@ impl Editor {
             move |tx| {
                 let result = (|| -> anyhow::Result<_> {
                     if create && !path.exists() {
-                        crate::catalog::Catalog::create(&path)?;
+                        crate::catalog::Catalog::create(&path)?.add_default_smart_collections()?;
                     }
                     open_for_user(
                         &CatalogLocation::File(path),
@@ -255,7 +261,12 @@ impl Editor {
                 let mut conflicts = Vec::new();
                 // Create, Open and Import Lightroom open the catalog the user
                 // chose; a folder change reads the open one again.
-                let chosen = !matches!(kind, CatalogDialog::Folder(_));
+                let chosen = !matches!(
+                    kind,
+                    CatalogDialog::Folder(_) | CatalogDialog::ReadSmartCollections
+                );
+                let mut recovered = None;
+                let import = matches!(kind, CatalogDialog::ImportLightroom);
                 let relinks = matches!(
                     kind,
                     CatalogDialog::Folder(
@@ -271,7 +282,8 @@ impl Editor {
                             else {
                                 return Ok(None);
                             };
-                            crate::catalog::Catalog::create(&path)?;
+                            crate::catalog::Catalog::create(&path)?
+                                .add_default_smart_collections()?;
                             Some(CatalogLocation::File(path))
                         }
                         CatalogDialog::Open => {
@@ -301,6 +313,36 @@ impl Editor {
                             Some(CatalogLocation::File(
                                 crate::catalog::lightroom::import_lightroom(&source, &destination)?,
                             ))
+                        }
+                        CatalogDialog::ReadSmartCollections => {
+                            let current =
+                                current.ok_or_else(|| anyhow::anyhow!("Open a catalog first"))?;
+                            let mut cat = crate::catalog::Catalog::open(&current)?;
+                            let mut dialog = rfd::FileDialog::new()
+                                .set_title(
+                                    "Read Smart Collections from Lightroom Catalog \
+                                     (fills in only what is missing; can't be undone)",
+                                )
+                                .add_filter("Lightroom catalog", &["lrcat"]);
+                            // Where this catalog was imported from, when it is there.
+                            if let Some(source) = cat.lightroom_sources()?.into_iter().next() {
+                                if let Some(parent) = source.parent().filter(|p| p.is_dir()) {
+                                    dialog = dialog.set_directory(parent);
+                                }
+                                if let Some(name) = source.file_name() {
+                                    dialog = dialog.set_file_name(name.to_string_lossy());
+                                }
+                            }
+                            let Some(source) = dialog.pick_file() else {
+                                return Ok(None);
+                            };
+                            let _ = tx.send(Event::CatalogWorking(format!(
+                                "Reading {}…",
+                                source.file_name().unwrap_or_default().to_string_lossy()
+                            )));
+                            ctx.request_repaint();
+                            recovered = Some(cat.read_smart_collections(&source)?);
+                            Some(current)
                         }
                         CatalogDialog::Folder(action) => {
                             crate::platform::network::prepare_filesystem_bridge();
@@ -387,7 +429,13 @@ impl Editor {
                 }
                 let event = match result {
                     Ok(Some(location)) => {
-                        reopened(&location, chosen, relinks, &report, &conflicts, tx, &ctx)
+                        let event =
+                            reopened(&location, chosen, relinks, &report, &conflicts, tx, &ctx);
+                        match recovered {
+                            Some(read) => smart_read(event, &read),
+                            None if import => imported(event),
+                            None => event,
+                        }
                     }
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
@@ -771,6 +819,40 @@ impl Editor {
             Err(e) => self.messages.fail(format!("Virtual copy failed: {e:#}")),
         }
     }
+    /// Create Collection with Make new virtual copies: the open edit is
+    /// saved first, as for Create Virtual Copy, so each copy starts from what
+    /// is on screen; nothing is made when that save fails.
+    pub(in crate::app) fn create_collection_of_copies(
+        &mut self,
+        asked: crate::app::library::NewCollection,
+    ) {
+        if self.activity.is_busy() {
+            self.messages
+                .warn("Collection not made: wait for the work in progress to finish.");
+            return;
+        }
+        // Flushing says why the edit was not saved.
+        if !self.flush() {
+            self.messages
+                .fail("Collection not made: unsaved changes could not be saved first.");
+            return;
+        }
+        let Some(library) = &mut self.library else {
+            return;
+        };
+        match library.create_collection(false, &asked.name, asked.parent, &asked.photos, true) {
+            Ok(id) => {
+                if asked.target {
+                    library.set_target(Some(id));
+                }
+                library.select_collection(id);
+            }
+            Err(e) => library
+                .messages
+                .fail(format!("Collections not changed: {e:#}")),
+        }
+        self.messages.absorb(&mut library.messages);
+    }
     /// Asks before removing a virtual copy, as Lightroom does; a copy shown
     /// in Develop gives way to its master.
     pub(in crate::app) fn remove_copy_window(&mut self, ctx: &egui::Context) {
@@ -1054,4 +1136,22 @@ pub(in crate::app) fn upgrade_progress<'a>(
         let _ = tx.send(Event::CatalogWorking(progress.to_string()));
         ctx.request_repaint();
     }
+}
+
+/// A Lightroom catalog just imported and opened: says how many of its smart
+/// collections have rules RAWmakase can't evaluate.
+fn imported(mut event: Event) -> Event {
+    if let Event::CatalogReady(Ok(library)) = &mut event {
+        library.note_unsupported_smart();
+    }
+    event
+}
+
+/// After Read Smart Collections from Lightroom Catalog: what it filled in,
+/// and what it left because it isn't the Lightroom catalog's.
+fn smart_read(mut event: Event, read: &crate::catalog::lightroom::SmartRecovery) -> Event {
+    if let Event::CatalogReady(Ok(library)) = &mut event {
+        library.note_smart_read(read);
+    }
+    event
 }

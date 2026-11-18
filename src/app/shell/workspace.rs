@@ -27,6 +27,8 @@ impl Editor {
             || self.folder_sync.is_reviewing()
             || self.file_ops.dialog_open()
             || self.auto_stack_open()
+            || self.smart_editor_open()
+            || self.collection_dialog_open()
     }
     /// Carries out what the Library asked for this frame, in the order it asked
     /// (`library::outbox`). A request that opens a window (Remove Copy, Remove Folder,
@@ -105,6 +107,16 @@ impl Editor {
     /// Whether the Library's Auto-Stack by Capture Time window is open.
     pub(in crate::app) fn auto_stack_open(&self) -> bool {
         self.library.as_ref().is_some_and(|l| l.auto_stack_open())
+    }
+    /// Whether Create or Edit Smart Collection is open.
+    pub(in crate::app) fn smart_editor_open(&self) -> bool {
+        self.library.as_ref().is_some_and(|l| l.smart_editor_open())
+    }
+    /// Whether a Collections window (Create Collection…, Rename…, Delete) is open.
+    pub(in crate::app) fn collection_dialog_open(&self) -> bool {
+        self.library
+            .as_ref()
+            .is_some_and(|l| l.collection_dialog_open())
     }
 
     /// The open Develop tool with keys of its own.
@@ -290,6 +302,9 @@ impl Editor {
         // builds keep the computer.
         let pace = self.preview_pace();
         if let Some(library) = &mut self.library {
+            // Over whatever is shown, an empty Library or Develop included:
+            // while it is open it holds the keys (`workspace_modal`).
+            library.smart_editor_window(&ctx);
             library.session.pause_checksums(busy);
             library.set_preview_pace(pace);
             library.publish_shown();
@@ -404,6 +419,14 @@ impl Editor {
         self.discard_for_find_window(&ctx);
         self.read_metadata_window(&ctx);
         self.file_op_window(&ctx);
+        // Opened from the sidebar in either module, with or without photos.
+        if let Some(asked) = self
+            .library
+            .as_mut()
+            .and_then(|l| l.collection_dialog_window(&ctx))
+        {
+            self.create_collection_of_copies(asked);
+        }
         self.shortcuts_window(&ctx);
         self.report_issue_window(&ctx);
         self.copy_dialog_window(&ctx);
@@ -744,6 +767,36 @@ impl Editor {
         .clicked()
         {
             self.request_rejected_delete();
+            ui.close();
+        }
+        if menu_row(
+            ui,
+            Icon::SmartCollection,
+            "Read Smart Collections from Lightroom Catalog…",
+            location.is_some(),
+        )
+        .on_hover_text(
+            "Read the rules, sorts, target collection and keyword synonyms a catalog imported \
+             from Lightroom before this release is missing; nothing here is replaced",
+        )
+        .clicked()
+        {
+            self.catalog_dialog(CatalogDialog::ReadSmartCollections, ctx);
+            ui.close();
+        }
+        if menu_row(
+            ui,
+            Icon::SmartCollection,
+            "New Smart Collection…",
+            self.library.is_some(),
+        )
+        .on_hover_text("A collection of the photos that match rules, as Lightroom's")
+        .clicked()
+        {
+            self.module = Module::Library;
+            if let Some(library) = &mut self.library {
+                library.new_smart_collection();
+            }
             ui.close();
         }
         menu_separator(ui);

@@ -19,7 +19,8 @@
 //!
 //! Both work in the unrotated frame. A camera's quarter turn turns the photo and the
 //! crop together, so it leaves the angle as it is.
-use crate::model::image_frame::straighten_zoom;
+use crate::model::image_frame::{crop_as_rendered, straighten_zoom};
+use crate::model::recipe::Recipe;
 
 /// The whole frame, as Lightroom's corners and as RAWmakase's crop.
 pub(super) const WHOLE: [f32; 4] = [0., 0., 1., 1.];
@@ -31,8 +32,12 @@ const MINIMUM: f32 = 0.01;
 /// Lightroom's corners and angle for RAWmakase's `crop` (in the unrotated frame) and
 /// `straighten` (degrees), on a photo of `size` (unrotated, any unit).
 pub(super) fn to_lightroom(crop: [f32; 4], straighten: f32, size: [f32; 2]) -> ([f32; 4], f32) {
+    // A crop that no longer lies on the photo writes the crop that renders, since its
+    // corners would lie past the photo, where Lightroom's can't.
+    let crop = crop_as_rendered(crop, straighten, size);
     if straighten == 0. {
-        return (crop, 0.);
+        // Within the six decimals' margin of the photo's edge.
+        return (crop.map(|v| v.clamp(0., 1.)), 0.);
     }
     let [width, height] = size;
     let zoom = straighten_zoom(straighten, size);
@@ -61,10 +66,10 @@ pub(super) fn to_lightroom(crop: [f32; 4], straighten: f32, size: [f32; 2]) -> (
 /// and `angle` (degrees) on a photo of `size` (unrotated, any unit), or `None` when
 /// the corners make no rectangle at that angle.
 ///
-/// The crop always lies inside 0–1. A Lightroom crop that is wider or taller than the
-/// photo enlarged by Straighten allows shrinks about its centre until it fits, as Camera
-/// Raw shrinks a crop that reaches past the photo. Lightroom allows such a crop when it
-/// has another aspect ratio than the photo, so RAWmakase crops it a little tighter.
+/// A crop on the photo, rotated by `angle`, keeps its size and place, as in Lightroom and
+/// Camera Raw, though it may reach past the frame RAWmakase's Straighten enlarges (the
+/// crop then has values outside 0-1). One that reaches past the photo shrinks about its
+/// centre until it fits.
 pub(super) fn from_lightroom(
     corners: [f32; 4],
     angle: f32,
@@ -85,7 +90,14 @@ pub(super) fn from_lightroom(
 pub(super) fn at_least_minimum(mut crop: [f32; 4]) -> [f32; 4] {
     for (lo, hi) in [(0, 2), (1, 3)] {
         if (MINIMUM - 1e-4..MINIMUM).contains(&(crop[hi] - crop[lo])) {
-            crop[hi] = (crop[lo] + MINIMUM + 1e-6).min(1.);
+            // A crop at the frame's edge widens inwards; one past it, which a turned
+            // crop can be, stays where it is.
+            let end = if crop[hi] > 1. {
+                *Recipe::CROP_RANGE.end()
+            } else {
+                1.
+            };
+            crop[hi] = (crop[lo] + MINIMUM + 1e-6).min(end);
             crop[lo] = crop[lo].min(crop[hi] - MINIMUM - 1e-6);
         }
     }
@@ -109,11 +121,30 @@ fn turned(corners: [f32; 4], angle: f32, size: [f32; 2]) -> Option<([f32; 4], f3
     let (x, y) = (c * px + s * py, c * py - s * px);
     let straighten = -angle;
     let zoom = straighten_zoom(straighten, size);
-    let centre = [
-        (0.5 + x * zoom / width).clamp(0., 1.),
-        (0.5 + y * zoom / height).clamp(0., 1.),
+    // Camera Raw shrinks a crop about its centre only until it lies on the photo, so the
+    // photo bounds it, not the enlarged frame. The crop may then reach past 0-1.
+    let (ex, ey) = (
+        c.abs() * w / 2. + s.abs() * h / 2.,
+        s.abs() * w / 2. + c.abs() * h / 2.,
+    );
+    let fit = ((width / 2. - px.abs()) / ex)
+        .min((height / 2. - py.abs()) / ey)
+        .clamp(0., 1.);
+    let centre = [0.5 + x * zoom / width, 0.5 + y * zoom / height];
+    let half = [w * fit * zoom / width / 2., h * fit * zoom / height / 2.];
+    let crop = [
+        centre[0] - half[0],
+        centre[1] - half[1],
+        centre[0] + half[0],
+        centre[1] + half[1],
     ];
-    let half = [w * zoom / width / 2., h * zoom / height / 2.];
+    if crop.iter().all(|v| Recipe::CROP_RANGE.contains(v)) {
+        return Some((crop, straighten));
+    }
+    // Only a long panorama turned far reaches past what the recipe holds. Such a crop
+    // shrinks about its centre until it fits the enlarged frame, as every crop past
+    // that frame did before.
+    let centre = centre.map(|v| v.clamp(0., 1.));
     let fit = [
         centre[0] / half[0],
         (1. - centre[0]) / half[0],
@@ -150,41 +181,24 @@ mod tests {
         ]
     }
 
-    /// Camera Raw's output sizes. A crop inside the photo Straighten enlarges comes out
-    /// at Camera Raw's size; one reaching past it at Camera Raw's aspect, smaller.
+    /// Camera Raw's output sizes. A crop on the photo comes out at Camera Raw's size even
+    /// when it reaches past the frame Straighten enlarges; one reaching past the photo
+    /// shrinks about its centre to fit it (922 × 585).
     #[test]
     fn crops_come_out_as_camera_raw_renders_them() {
-        for (corners, angle, camera_raw, fits) in [
-            ([0.1, 0.1, 0.9, 0.9], 5., [825., 524.], true),
-            ([0.1, 0.1, 0.9, 0.9], -5., [721., 659.], true),
-            // Inside the turned photo, but wider than the enlarged one or reaching past
-            // its edge.
-            ([0.06, 0.06, 0.94, 0.94], 5., [907., 576.], false),
-            ([0.05, 0.2, 0.6, 0.7], 5., [564., 323.], false),
+        for (corners, angle, camera_raw) in [
+            ([0.1, 0.1, 0.9, 0.9], 5., [825., 524.]),
+            ([0.1, 0.1, 0.9, 0.9], -5., [721., 659.]),
+            ([0.06, 0.06, 0.94, 0.94], 5., [907., 576.]),
+            ([0.05, 0.2, 0.6, 0.7], 5., [564., 323.]),
+            ([0.03, 0.03, 0.97, 0.97], 5., [922., 585.]),
         ] {
             let got = rendered(corners, angle);
-            let context = format!("{corners:?} at {angle}: {got:?}, Camera Raw {camera_raw:?}");
-            if fits {
-                assert!(
-                    (got[0] - camera_raw[0]).abs() < 1. && (got[1] - camera_raw[1]).abs() < 1.,
-                    "{context}"
-                );
-            } else {
-                let aspect = |s: [f32; 2]| s[0] / s[1];
-                assert!(
-                    (aspect(got) / aspect(camera_raw) - 1.).abs() < 0.005,
-                    "{context}"
-                );
-                assert!(got[0] < camera_raw[0], "{context}");
-            }
+            assert!(
+                (got[0] - camera_raw[0]).abs() < 1.5 && (got[1] - camera_raw[1]).abs() < 1.5,
+                "{corners:?} at {angle}: {got:?}, Camera Raw {camera_raw:?}"
+            );
         }
-        // Past the photo itself, Camera Raw shrinks the crop about its centre to fit
-        // (922 × 585); RAWmakase fits it to the enlarged photo at the same aspect.
-        let got = rendered([0.03, 0.03, 0.97, 0.97], 5.);
-        assert!(
-            (got[0] / got[1] / (922. / 585.) - 1.).abs() < 0.005,
-            "{got:?}"
-        );
     }
 
     /// Camera Raw turns corners on the whole frame too, shrunk to fit (922 × 585).
@@ -220,7 +234,11 @@ mod tests {
                         back[2] - back[0] >= MINIMUM && back[3] - back[1] >= MINIMUM,
                         "{context}"
                     );
-                    assert!(back.iter().all(|v| (0. ..=1.).contains(v)), "{context}");
+                    // A crop reaching past the enlarged frame may sit a float's width outside 0-1.
+                    assert!(
+                        back.iter().all(|v| (-1e-4..=1.0001).contains(v)),
+                        "{context}"
+                    );
                     for (a, b) in back.iter().zip(crop) {
                         assert!((a - b).abs() < 1e-4, "{context}");
                     }
@@ -266,5 +284,48 @@ mod tests {
         assert_eq!(angle, 5.);
         assert_ne!(corners, WHOLE);
         assert!(corners.iter().all(|v| (0. ..=1.).contains(v)));
+    }
+
+    /// A crop at the smallest size past the enlarged frame, which a turned crop can be,
+    /// keeps its place when six decimals leave it just under that size.
+    #[test]
+    fn the_smallest_crop_past_the_frame_keeps_its_place() {
+        let six = |v: f32| (v * 1e6).round() / 1e6;
+        let (size, crop) = ([3000., 2000.], [1.01, 0.3, 1.020001, 0.4]);
+        let (corners, angle) = to_lightroom(crop, -30., size);
+        let (back, _) = from_lightroom(corners.map(six), angle, size).unwrap();
+        let back = at_least_minimum(back);
+        assert!(back[2] - back[0] >= MINIMUM, "{back:?}");
+        for (a, b) in back.iter().zip(crop) {
+            assert!((a - b).abs() < 1e-4, "{back:?}");
+        }
+    }
+
+    /// On a long panorama turned far, a crop on the photo can reach further past the
+    /// enlarged frame than the recipe holds (here to 2.01); it shrinks about its centre
+    /// into that frame, rather than the edit being refused.
+    #[test]
+    fn a_panorama_crop_fits_the_recipe() {
+        let (crop, straighten) =
+            from_lightroom([0.375, 0., 0.425, 1.], 15., [6000., 1000.]).unwrap();
+        assert_eq!(straighten, -15.);
+        let recipe = Recipe {
+            crop,
+            straighten,
+            ..Default::default()
+        };
+        assert!(recipe.validate().is_ok(), "{crop:?}");
+        assert!(crop.iter().all(|v| (0. ..=1.).contains(v)), "{crop:?}");
+    }
+
+    /// Unturned, a crop past 0–1 (left there by Straighten reset to 0) writes the part
+    /// that renders, since Lightroom's corners lie inside 0–1 and are refused outside it.
+    #[test]
+    fn an_unturned_crop_past_the_frame_writes_what_renders() {
+        assert_eq!(
+            to_lightroom([-0.02, 0.1, 1.02, 0.9], 0., CHART),
+            ([0., 0.1, 1., 0.9], 0.)
+        );
+        assert_eq!(to_lightroom([1.2, 0.1, 1.5, 0.9], 0., CHART), (WHOLE, 0.));
     }
 }
