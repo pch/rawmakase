@@ -14,9 +14,10 @@ pub struct ModelFile {
     /// Where it is fetched from: RAWmakase's own mirror, pinned to an immutable commit,
     /// and checked against `sha256` whatever the host sends.
     pub url: &'static str,
-    /// The repository the mirror copied it from, pinned the same way: tried when the
-    /// mirror cannot be reached. The same bytes, so the same checksum.
-    pub fallback: &'static str,
+    /// A second source for the same bytes, pinned the same way and checked against the
+    /// same checksum, tried when `url` cannot be reached. `None` when the mirror is the
+    /// only source.
+    pub fallback: Option<&'static str>,
 }
 
 /// AI Denoise's model contract: RawNIND UtNet2 (Bayer), which denoises and demosaics a
@@ -54,9 +55,6 @@ pub struct DenoiseSpec {
 /// The mirror's commit that holds `rawnind-utnet2-bayer/`.
 pub const DENOISE_MIRROR: &str =
     "https://huggingface.co/pch/rawmakase-models/resolve/ce76dbfa066e6eafb1162048613534ae204346b3";
-/// The same bytes as release assets of RAWmakase, tried when the mirror cannot be reached.
-pub const DENOISE_RELEASE: &str =
-    "https://github.com/pch/rawmakase/releases/download/models-rawnind-utnet2-bayer-1";
 
 macro_rules! denoise_file {
     ($name:literal, $size:expr, $sha:expr) => {
@@ -69,10 +67,8 @@ macro_rules! denoise_file {
                 "/rawnind-utnet2-bayer/",
                 $name
             ),
-            fallback: concat!(
-                "https://github.com/pch/rawmakase/releases/download/models-rawnind-utnet2-bayer-1/",
-                $name
-            ),
+            // The mirror is the only source: no release asset holds these files.
+            fallback: None,
         }
     };
 }
@@ -159,7 +155,7 @@ mod tests {
                 file.url
                     .ends_with(&format!("/rawnind-utnet2-bayer/{}", file.name))
             );
-            assert_eq!(file.fallback, format!("{DENOISE_RELEASE}/{}", file.name));
+            assert_eq!(file.fallback, None, "{}", file.name);
         }
         let commit = DENOISE_MIRROR.rsplit('/').next().unwrap();
         assert!(commit.len() == 40 && commit.bytes().all(|b| b.is_ascii_hexdigit()));

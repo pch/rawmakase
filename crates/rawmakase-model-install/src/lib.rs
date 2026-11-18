@@ -378,7 +378,7 @@ impl Partial {
 const BODY_BUDGET: Duration = Duration::from_secs(60);
 
 /// Fetches `file` into the partial file at `part`, resuming what it already holds,
-/// from RAWmakase's mirror, else from the repository it was copied from; a source
+/// from RAWmakase's mirror, else from its fallback source when it has one; a source
 /// whose bytes do not match the checksum is not used. On success the file is
 /// complete, checked and synced; otherwise it keeps what arrived.
 fn download(
@@ -391,7 +391,7 @@ fn download(
     let agent = agent(body);
     let mut partial = Partial::open(part, file, progress, before)?;
     let mut last = String::new();
-    let mut sources = [file.url, file.fallback].into_iter().peekable();
+    let mut sources = std::iter::once(file.url).chain(file.fallback).peekable();
     while let Some(&url) = sources.peek() {
         let resumed = partial.len > 0;
         match fetch(&agent, url, &mut partial, progress, file, before) {
