@@ -189,6 +189,43 @@ The stage's form (a per-photo curve of a guided base level) is therefore near it
 floor for Shadows and Highlights at full sliders: more photos move the predictable
 third slowly, and no single local term explains the rest.
 
+**The refit on the 375 photos: rejected on validation (2026-11-19).** Both ensembles
+and the pair model were fitted again on the larger set and rendered through the
+validation gate against a new baseline of main (`main-6ef32ab87-metric2`). The control's
+own ΔE00, median over photos, main → refit, with the photos closer and further by 0.05:
+
+| Setting | Main | Refit | Closer / further |
+| --- | --- | --- | --- |
+| Shadows +100 | 1.32 | 1.52 | 17 / 28 |
+| Shadows +50 | 0.54 | 0.62 | 10 / 21 |
+| Shadows +25 | 0.22 | 0.27 | 4 / 12 |
+| Shadows −100 | 0.49 | 0.51 | 15 / 17 |
+| Highlights +100 | 0.46 | 0.50 | 17 / 18 |
+| Highlights −100 | 0.42 | 0.43 | 16 / 21 |
+| Shadows +100, Highlights −100 | 1.13 | 1.28 | 13 / 13 |
+| Shadows +100, Highlights +100 | 3.01 | 3.53 | 16 / 15 |
+| Shadows +80, Highlights −30 | 0.91 | 1.00 | 8 / 15 |
+
+Over every case it changes, 224 photos are closer and 299 further. At Shadows +100 the
+refit is 0.5 to 0.8 L\* brighter than main in every band from 0 to 60, where main sat
+within 0.6 of Camera Raw above 20. On the 228 known training photos the two builds are
+level, as they must be on photos both have seen (Shadows +100 0.0106 and 0.0105).
+What the held-out folds promised did not carry over. Two things bear on that: the
+first ensemble's shipped fit was chosen among several with these validation sets in
+view (2026-10-28), so a new fit starts behind on them whatever its merit; and the new
+photos change the balance of photos to mosaics, which is what set the mid-shadow lift
+then. Not shipped. The 162 photos' renders are kept for a fit of another form.
+
+**The baseline of main after #1068, #1128, #1153 and #1162** (`main-6ef32ab87-metric2`,
+83 validation sets, 2026-11-19). Blacks +100 now adds 0.95 (1.70 before #1068), +50
+0.33 and +25 0.05. The new `pairs` cases, own ΔE00 at the median and the 90th
+percentile over 33 photos: Shadows +100 with Highlights +100 3.01 and 7.13 (three
+photos in four over 2), −100 with −100 1.36 and 2.96, +100 with −100 1.13 and 2.02,
++80 with −30 0.91 and 1.47, +60 with −60, Whites +30 and Blacks −30 0.90 and 1.22, −100
+with +100 0.85 and 1.25. With both sliders at +100 RAWmakase is 2.4 to 4.2 L\* brighter
+than Camera Raw in every band from 0 to 50, most on the stress photos: the largest
+error outside Dehaze −100, and one the training photos' scene values had not shown.
+
 **The gate (#1175).** Its sets now hold Shadows with Highlights in the four sign combinations at
 full sliders, Shadows +80 with Highlights −30, and Shadows +60 with Highlights −60,
 Whites +30 and Blacks −30: the `pairs` sets, 33 validation photos of four families,
