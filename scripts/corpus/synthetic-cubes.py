@@ -14,6 +14,8 @@ about 8 MB of text); this script writes the same bytes every time.
       the generated look XMPs the chart cases in tests/corpus/cases.json use (and
       scripts/corpus/camera-raw-charts.py renders) to tests/corpus/looks/cube-<name>.xmp.
       Cubes RAWmakase refuses (a DOMAIN other than 0–1) are listed and get no look.
+      `cube-creative-33-mono.xmp` is the same look with `ConvertToGrayscale` true in its
+      settings, as a black and white photo's sidecar carries it (#1187).
   python3 scripts/corpus/synthetic-cubes.py looks --lut-space adobe-rgb
       the same, imported with `--lut-space` (adobe-rgb, display-p3, prophoto-rgb or
       rec2020), into tests/corpus/looks/cube-<name>-<space>.xmp.
@@ -22,9 +24,11 @@ Run from the repository root.
 """
 import argparse
 import colorsys
+import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -178,6 +182,18 @@ def write_looks(rawmakase, space='srgb'):
             elif target.name in used:
                 shutil.copyfile(look, target)
                 print(target)
+            mono = LOOKS / f'cube-{name}{suffix}-mono.xmp'
+            if look.exists() and mono.name in used:
+                mono.write_text(monochrome(look.read_text(), mono.stem))
+                print(mono)
+
+
+def monochrome(text, name):
+    """A look whose settings say black and white, under its own name and UUID."""
+    uuid = hashlib.md5(name.encode()).hexdigest().upper()
+    text = re.sub(r'crs:UUID="[^"]*"', f'crs:UUID="{uuid}"', text, count=1)
+    text = text.replace('crs:ConvertToGrayscale="False"', 'crs:ConvertToGrayscale="True"', 1)
+    return re.sub(r'(<crs:Name>\s*<rdf:Alt>\s*<rdf:li xml:lang="x-default">)[^<]*', rf'\g<1>{name}', text, count=1)
 
 
 if __name__ == '__main__':

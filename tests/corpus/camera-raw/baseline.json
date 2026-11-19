@@ -130,6 +130,22 @@
         0.564,
         2.351
       ],
+      "bw-grading-global-h210-s100": [
+        0.419,
+        1.34
+      ],
+      "bw-grading-highlights-h30": [
+        0.365,
+        1.405
+      ],
+      "bw-grading-midtones-h30": [
+        0.382,
+        1.468
+      ],
+      "bw-grading-shadows-h210": [
+        0.381,
+        1.42
+      ],
       "bw-green+60": [
         0.322,
         1.386
@@ -269,6 +285,18 @@
       "cube-creative-33-grading-shadows-h210": [
         0.332,
         0.934
+      ],
+      "cube-creative-33-mono": [
+        0.361,
+        1.816
+      ],
+      "cube-creative-33-mono-grading-midtones-h30": [
+        0.433,
+        2.143
+      ],
+      "cube-creative-33-mono-grading-shadows-h210": [
+        0.42,
+        1.877
       ],
       "cube-creative-33-point-curve": [
         0.474,
