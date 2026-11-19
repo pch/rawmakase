@@ -78,12 +78,13 @@ impl Editor {
         let color_profile = self.photo_defaults().and_then(|d| d.recipe.profile);
         let document = &mut self.document;
         match &document.metadata {
-            Some(m) => {
-                document
-                    .edit
-                    .recipe_mut()
-                    .choose_treatment(treatment, first, color_profile, m)
-            }
+            Some(m) => document.edit.recipe_mut().choose_treatment(
+                treatment,
+                first,
+                color_profile,
+                &document.profiles,
+                m,
+            ),
             None => document.edit.recipe_mut().set_treatment(treatment, first),
         }
         let name = match treatment {
