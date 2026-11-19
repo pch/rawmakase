@@ -14,6 +14,7 @@ use super::db::{Reads, Write, sql};
 use super::format_upgrade::{BATCH, Rewrite, Upgrade};
 use super::value::row;
 use super::{Catalog, EditChange, HistoryUpdate, PhotoId};
+use crate::edits::Original;
 use crate::storage::Identity;
 use crate::{export_settings::ExportOptions, model::recipe::Recipe};
 use anyhow::{Result, ensure};
@@ -67,33 +68,51 @@ impl CheckedNew {
 
 impl Catalog {
     /// Checks `change` before it is written: the recipe and export options
-    /// are valid, the photo's file is still the one the edit was made for,
-    /// and the edit it replaces was saved for that same file.
+    /// are valid, the photo's original is still the one the edit was made for,
+    /// and the edit it replaces or clears was saved for that same photo. A
+    /// clear is checked as a save is, so it is refused while the original can't
+    /// be read, unless a recorded identity stands in for it ([`Original`]).
     pub(super) fn check_edit<'a>(&self, change: &EditChange<'_, 'a>) -> Result<CheckedChange<'a>> {
         let e = match change {
-            EditChange::Clear { id } => {
+            EditChange::Clear(e) => {
+                self.check_original(e.id, e.original, e.source, "cleared")?;
                 return Ok(CheckedChange {
-                    id: *id,
+                    id: e.id,
                     save: None,
                 });
             }
             EditChange::Save(e) => e,
         };
-        let now = Identity::read(e.path)?;
-        ensure!(
-            now.same_photo(e.source),
-            "{} changed since its edit was made; edit not saved",
-            e.path.display()
-        );
+        let now = self.check_original(e.id, e.original, e.source, "saved")?;
         // Stored for the file as it is, so a new modification time alone
-        // (issue #870) is taken up by the next save.
+        // (issue #870) is taken up by the next save. For a photo whose original
+        // is absent, that is the identity recorded for its editable preview: an
+        // ordinary one, which older releases read as they always have.
         let save = self.checked(&now, e.recipe, e.export, e.history)?;
-        // Refuse replacing an edit after the underlying source changed.
-        let _ = self.load_edit(e.id, e.path)?;
         Ok(CheckedChange {
             id: e.id,
             save: Some(save),
         })
+    }
+    /// The identity of photo `id`'s `original` now, when it is still the photo
+    /// `source` names ([`Identity::same_photo`]) and the photo its stored edit,
+    /// if any, was saved for; otherwise why its edit can't be `done`.
+    fn check_original(
+        &self,
+        id: PhotoId,
+        original: Original<'_>,
+        source: &Identity,
+        done: &str,
+    ) -> Result<Identity> {
+        let now = original.identity()?;
+        ensure!(
+            now.same_photo(source),
+            "{} changed since its edit was made; edit not {done}",
+            original.path.display()
+        );
+        // Refuse replacing or clearing an edit after the underlying source changed.
+        let _ = self.load_edit(id, original)?;
+        Ok(now)
     }
     /// Checks the edit of a photo not yet in the catalog, as `check_edit`
     /// checks a save, for the file `identity` names: the one the edit was

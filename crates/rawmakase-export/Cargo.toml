@@ -25,6 +25,8 @@ md-5.workspace = true
 memmap2 = "0.9"
 # PNG exports, with XMP in an iTXt chunk, which image's encoder cannot write.
 png = "0.18.1"
+# Editable previews' tiles are encoded in parallel.
+rayon.workspace = true
 roxmltree.workspace = true
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json.workspace = true

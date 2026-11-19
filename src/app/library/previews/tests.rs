@@ -193,6 +193,7 @@ fn a_panicking_edited_preview_fails_and_the_next_one_is_rendered() -> anyhow::Re
         id,
         ticket: 0,
         path: path.clone(),
+        copy: None,
         source: source.clone(),
         ahead: false,
     };
@@ -232,6 +233,7 @@ fn a_stored_render_of_a_file_replaced_since_is_not_kept() -> anyhow::Result<()> 
         id: PhotoId(1),
         ticket: 0,
         path: source.clone(),
+        copy: None,
         source: EditSource::saved(Recipe::default()),
         ahead: false,
     })?;
@@ -246,6 +248,61 @@ fn a_stored_render_of_a_file_replaced_since_is_not_kept() -> anyhow::Result<()> 
             .is_none(),
         "kept as the replaced file's preview"
     );
+    Ok(())
+}
+
+/// Develop's render of a photo opened from its editable preview is kept under
+/// the copy's file, and found only by a lookup that names the copy, as the
+/// Library makes for an offline photo with an up-to-date copy; a lookup of the
+/// original alone, as made once it is online, never finds it.
+#[test]
+fn a_render_from_an_editable_preview_is_found_only_under_the_copy() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let original = directory.path().join("photo.ARW");
+    let copy = directory.path().join("copies").join("1-key.dng");
+    std::fs::create_dir_all(copy.parent().unwrap())?;
+    std::fs::write(&copy, b"the copy")?;
+    let wanted = Wanted::default();
+    wanted.lock().unwrap().insert(PhotoId(1));
+    let (tx, rx, _) = spawn_edited(
+        directory.path().join("previews.sqlite3"),
+        wanted,
+        egui::Context::default(),
+    );
+    let source = EditSource::saved(Recipe::default());
+    tx.send(EditJob::Store {
+        path: copy.clone(),
+        family: source.tag(),
+        tag: source.preview_tag(PreviewAi::Off),
+        stamp: Stamp::read(&copy)?,
+        image: image::RgbImage::new(4, 4),
+    })?;
+    let render = |copy: Option<PathBuf>| EditJob::Render {
+        id: PhotoId(1),
+        ticket: 0,
+        path: original.clone(),
+        copy,
+        source: source.clone(),
+        ahead: false,
+    };
+    // Offline: under the copy, and only when the lookup names it.
+    tx.send(render(None))?;
+    assert!(matches!(
+        rx.recv_timeout(Duration::from_secs(10))?,
+        EditResult::Failed(PhotoId(1), 0)
+    ));
+    tx.send(render(Some(copy)))?;
+    assert!(matches!(
+        rx.recv_timeout(Duration::from_secs(10))?,
+        EditResult::Ready(PhotoId(1), 0, _)
+    ));
+    // Online again: the original's path alone, where nothing of the copy is.
+    std::fs::write(&original, b"the original")?;
+    tx.send(render(None))?;
+    assert!(matches!(
+        rx.recv_timeout(Duration::from_secs(10))?,
+        EditResult::Failed(PhotoId(1), 0)
+    ));
     Ok(())
 }
 
@@ -316,6 +373,7 @@ fn preview_of(
         id: PhotoId(1),
         ticket,
         path: path.into(),
+        copy: None,
         source: source.clone(),
         ahead: false,
     })?;
@@ -534,6 +592,7 @@ pub(super) fn render_job(id: i64, path: &Path, ahead: bool) -> EditJob {
         id: PhotoId(id),
         ticket: id as u64,
         path: path.into(),
+        copy: None,
         source: EditSource::saved(Recipe {
             unknown: [("photo".to_string(), id.into())].into(),
             ..Default::default()
@@ -746,6 +805,7 @@ fn closing_cancels_the_edited_preview_under_way() -> anyhow::Result<()> {
         id: PhotoId(1),
         ticket,
         path: source.clone(),
+        copy: None,
         source: EditSource::saved(Recipe::default()),
         ahead: false,
     };
@@ -891,6 +951,7 @@ fn render_for(
         id,
         ticket,
         path: path.into(),
+        copy: None,
         source: source.clone(),
         ahead: false,
     })?;

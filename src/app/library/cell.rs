@@ -49,6 +49,8 @@ pub(super) struct Shown {
     /// Its place in the grid, from 1.
     pub number: usize,
     pub available: bool,
+    /// Its editable preview, when the catalog records one.
+    pub copy: Option<CopyState>,
     /// In the Quick Collection.
     pub quick: bool,
     pub style: Style,
@@ -75,6 +77,7 @@ pub(super) fn photo_cell(
         mark,
         number,
         available,
+        copy,
         quick,
         style,
         details,
@@ -254,6 +257,7 @@ pub(super) fn photo_cell(
             quick,
             selected,
             available,
+            copy,
             ink,
         };
         footer_badges(painter, &palette, cell, footer, photo, badges);
@@ -281,7 +285,10 @@ pub(super) fn photo_cell(
     let action = photo_menu(
         &response,
         photo,
-        available,
+        Presence {
+            available,
+            copy: copy == Some(CopyState::UpToDate),
+        },
         single,
         super::Module::Library,
         stacks,
@@ -300,11 +307,35 @@ struct Badges {
     quick: bool,
     selected: bool,
     available: bool,
+    copy: Option<CopyState>,
     /// The colour of the cell's text.
     ink: Color32,
 }
+/// A photo's editable preview, as its cell shows it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum CopyState {
+    UpToDate,
+    /// The original came back as another file: built again while it is online.
+    OutOfDate,
+}
+impl CopyState {
+    pub(in crate::app) fn of(copy: &crate::catalog::EditablePreview) -> Self {
+        if copy.out_of_date {
+            Self::OutOfDate
+        } else {
+            Self::UpToDate
+        }
+    }
+    /// What the cell's hover and the right panel say of it.
+    pub(in crate::app) fn text(self) -> &'static str {
+        match self {
+            Self::UpToDate => "Has an editable preview",
+            Self::OutOfDate => "Its editable preview is out of date",
+        }
+    }
+}
 /// The footer of a cell with extras: flag, stars, copy name, the Quick
-/// Collection marker and the offline mark.
+/// Collection marker, the editable preview mark and the offline mark.
 fn footer_badges(
     painter: &egui::Painter,
     palette: &theme::Palette,
@@ -319,6 +350,7 @@ fn footer_badges(
         quick,
         selected,
         available,
+        copy,
         ink,
     } = badges;
     // Lightroom's Quick Collection marker, in the footer's right corner,
@@ -336,14 +368,18 @@ fn footer_badges(
         flag_icon(painter, palette, Pos2::new(x + 4., y), photo.flag, selected);
         x += 14.;
     }
+    // How far right the flag, stars and copy name reach: the editable preview
+    // mark is drawn only clear of them.
+    let mut reached = x;
     if photo.rating > 0 {
-        painter.text(
+        let stars = painter.text(
             Pos2::new(x, y),
             Align2::LEFT_CENTER,
             "★".repeat(photo.rating as usize),
             FontId::proportional(text::MICRO),
             palette.tone(if selected { Tone::PANEL } else { Tone::SOFT }),
         );
+        reached = reached.max(stars.right());
     }
     if photo.master.is_some() {
         let name = if photo.copy_name.is_empty() {
@@ -354,12 +390,34 @@ fn footer_badges(
         let galley = painter.layout_no_wrap(name.into(), FontId::proportional(text::MICRO), ink);
         let space = cell.width() * 0.36;
         let left = cell.center().x - galley.size().x.min(space) / 2.;
+        reached = reached.max(left + galley.size().x.min(space));
         painter
             .with_clip_rect(Rect::from_min_size(
                 Pos2::new(left, y - 7.),
                 Vec2::new(space, 14.),
             ))
             .galley(Pos2::new(left, y - galley.size().y / 2.), galley, ink);
+    }
+    // Lightroom's Smart Preview mark, filled while the copy is up to date,
+    // struck through once it is out of date. Left out of a cell too narrow for
+    // it beside the stars and copy name; the cell's tooltip and the Metadata
+    // panel still say whether the photo has a copy.
+    if let Some(copy) = copy
+        && let Some(mark) = copy_mark(cell, y, reached)
+    {
+        let stroke = egui::Stroke::new(1., ink);
+        painter.rect_stroke(mark, 1., stroke, egui::StrokeKind::Inside);
+        match copy {
+            CopyState::UpToDate => {
+                painter.rect_filled(mark.shrink(2.), 0., ink);
+            }
+            CopyState::OutOfDate => {
+                painter.line_segment(
+                    [mark.left_bottom(), mark.right_top()],
+                    egui::Stroke::new(1., Color32::from_rgb(210, 150, 60)),
+                );
+            }
+        }
     }
     if !available {
         painter.text(
@@ -370,6 +428,18 @@ fn footer_badges(
             Color32::from_rgb(210, 150, 60),
         );
     }
+}
+/// Where the editable preview mark goes in a cell's footer at height `y`: a
+/// small square left of the offline mark (right-aligned 38 px from the edge),
+/// clear of it, of the collection badge (centred 24 px from the edge) and of
+/// the Quick Collection marker (10 px). `None` when the flag, stars or copy
+/// name, which reach `reached`, leave no room for it.
+fn copy_mark(cell: egui::Rect, y: f32, reached: f32) -> Option<egui::Rect> {
+    let mark = egui::Rect::from_center_size(
+        egui::Pos2::new(cell.right() - 52., y),
+        egui::Vec2::splat(8.),
+    );
+    (mark.left() >= reached + 2.).then_some(mark)
 }
 /// Lightroom's virtual copy badge: the image's lower left corner folded
 /// over. `background` is what shows behind the fold.
@@ -473,6 +543,10 @@ pub(in crate::app) enum PhotoAction {
     BuildPreviews(crate::catalog::preview_cache::PreviewKind),
     /// Library › Previews: Discard 1:1 Previews, or Standard and 1:1.
     DiscardPreviews(Vec<crate::catalog::preview_cache::PreviewKind>),
+    /// Library › Previews: Build Editable Previews.
+    BuildEditablePreviews,
+    /// Library › Previews: Discard Editable Previews.
+    DiscardEditablePreviews,
     /// Develop's Set as Reference Photo.
     SetReference,
     /// A Photo › Stacking command.
@@ -614,17 +688,25 @@ fn go_to_menu(
     }
     chosen
 }
+/// Whether a photo's file is `available`, and whether it has an up-to-date
+/// editable preview recorded (`copy`), which Develop opens it from while it
+/// isn't.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) struct Presence {
+    pub available: bool,
+    pub copy: bool,
+}
 /// The right-click menu shared by grid cells and the Develop filmstrip.
 /// Open in Develop is greyed out for a photo Develop cannot open, e.g. one
-/// not `available`, with the reason in place of its shortcut. In Develop's
-/// filmstrip it starts with Set as Reference Photo, as in Lightroom. Find on
-/// Disk… is offered for a photo not `available` when the menu acts on it
-/// alone (`single`). Stacking is offered where the source shows stacks
-/// (`stacks`), or for a photo in none.
+/// not `available` without a `copy`, with the reason in place of its shortcut.
+/// In Develop's filmstrip it starts with Set as Reference Photo, as in
+/// Lightroom. Find on Disk… is offered for a photo not `available` when the
+/// menu acts on it alone (`single`). Stacking is offered where the source
+/// shows stacks (`stacks`), or for a photo in none.
 pub(in crate::app) fn photo_menu(
     response: &egui::Response,
     photo: &Photo,
-    available: bool,
+    presence: Presence,
     single: bool,
     module: super::Module,
     stacks: bool,
@@ -636,6 +718,7 @@ pub(in crate::app) fn photo_menu(
     } = collections;
     use crate::app::library::photo_metadata::{Edit, LABELS};
     use crate::app::ui::widgets::{menu_item, menu_separator, submenu_style};
+    let Presence { available, copy } = presence;
     let mut action = None;
     // Why Develop can't open the photo reads its file: once each time the menu opens.
     let key = response.id.with(("develop-refusal", photo.id, available));
@@ -658,8 +741,19 @@ pub(in crate::app) fn photo_menu(
             }
             menu_separator(ui);
         }
-        let shortcut = refusal.as_ref().map_or("D".into(), super::Refusal::label);
-        if menu_item(ui, "Open in Develop", &shortcut, refusal.is_none(), false) {
+        // Offline with an up-to-date copy recorded, it opens from that; opening
+        // checks the copy and says why, if it can't.
+        let open_refusal = refusal.filter(|r| !(*r == super::Refusal::Offline && copy));
+        let shortcut = open_refusal
+            .as_ref()
+            .map_or("D".into(), super::Refusal::label);
+        if menu_item(
+            ui,
+            "Open in Develop",
+            &shortcut,
+            open_refusal.is_none(),
+            false,
+        ) {
             action = Some(PhotoAction::Develop);
             ui.close();
         }
@@ -788,6 +882,15 @@ pub(in crate::app) fn photo_menu(
                 action = Some(PhotoAction::DiscardPreviews(PreviewKind::ALL.to_vec()));
                 ui.close();
             }
+            menu_separator(ui);
+            if menu_item(ui, "Build Editable Previews", "", true, false) {
+                action = Some(PhotoAction::BuildEditablePreviews);
+                ui.close();
+            }
+            if menu_item(ui, "Discard Editable Previews", "", true, false) {
+                action = Some(PhotoAction::DiscardEditablePreviews);
+                ui.close();
+            }
         });
         menu_separator(ui);
         submenu_style(ui);
@@ -861,3 +964,28 @@ pub(in crate::app) fn photo_menu(
 #[cfg(test)]
 #[path = "cell_menu_tests.rs"]
 mod menu_tests;
+
+#[cfg(test)]
+mod footer_tests {
+    use super::copy_mark;
+    use eframe::egui::{Pos2, Rect, Vec2};
+
+    /// At the grid's narrowest cell, 80 px, a flagged photo's five stars reach
+    /// x = 72.8 (measured with the app's fonts on macOS): the editable preview
+    /// mark is left out rather than drawn over them, and drawn clear of them in a
+    /// cell wide enough.
+    #[test]
+    fn the_editable_preview_mark_never_overlaps_the_stars() {
+        let narrow = Rect::from_min_size(Pos2::ZERO, Vec2::new(80., 100.));
+        assert_eq!(copy_mark(narrow, 90., 72.8), None);
+        let wide = Rect::from_min_size(Pos2::ZERO, Vec2::new(160., 120.));
+        let mark = copy_mark(wide, 110., 72.8).expect("room for it");
+        assert!(mark.left() >= 72.8 + 2.);
+        // Clear of the offline mark, right-aligned 38 px from the edge and about
+        // 7 px wide, and so of the collection badge (14 px, centred 24 px from
+        // the edge) and the Quick Collection marker (10 px) beyond it.
+        assert!(mark.right() < wide.right() - 38. - 7.);
+        // Nothing to its left: drawn even in the narrowest cell.
+        assert!(copy_mark(narrow, 90., narrow.left() + 7.).is_some());
+    }
+}

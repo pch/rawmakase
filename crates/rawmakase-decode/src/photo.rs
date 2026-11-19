@@ -102,6 +102,13 @@ fn has_exposure(metadata: &crate::camera_data::Metadata) -> bool {
     metadata.iso > 0. || metadata.shutter > 0. || metadata.aperture > 0.
 }
 
+/// The imported lens profiles that fit the photo `metadata` describes: what
+/// [`open`] gives a photo, for a photo opened another way (an editable
+/// preview, whose facts are its original's).
+pub fn lens_profiles(metadata: &Metadata) -> rawmakase_model::optics::lcp::PhotoProfiles {
+    LENS_PROFILES.current().for_photo(metadata)
+}
+
 /// `raw`, opened from `path`, with what the file says beyond the decoders'
 /// facts: lens tables, a DNG's profile and hints, and the imported lens
 /// profiles.
@@ -165,7 +172,7 @@ fn with_file_facts(path: &Path, mut raw: Raw) -> Result<Raw> {
             metadata.camera_crop = dng.user_crop.filter(|c| *c != [0., 0., 1., 1.]);
         }
     }
-    metadata.lens_profiles = LENS_PROFILES.current().for_photo(metadata);
+    metadata.lens_profiles = lens_profiles(metadata);
     // Pentax bodies record no lens name, only the lens ID: name the lens as the
     // profile matched by that ID does. Matched first, as the ID only counts for a
     // file without a lens name.

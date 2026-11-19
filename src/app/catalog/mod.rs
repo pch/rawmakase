@@ -664,7 +664,8 @@ impl Editor {
         if exists && let Some(l) = &mut self.library {
             l.found(&p.path);
         }
-        if let Some(refusal) = crate::app::library::develop_refusal(&p, exists) {
+        let from = self.library.as_ref().map(|l| l.develop_from(&p, exists));
+        if let Some(Err(refusal)) = from {
             // In the top bar, so the click is seen to have been answered, and the
             // right-click it may ask for can be made at once.
             self.messages.warn(format!(

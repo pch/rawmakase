@@ -72,6 +72,30 @@ impl Editor {
         if !self.flush() {
             return false;
         }
+        // An offline catalog photo opens from its editable preview when the
+        // Library says it can; one without a copy opens from its file, whose
+        // load says it can't be read, and one whose copy can't stand in says why.
+        let from = match photo {
+            Some(id) if !path.is_file() => {
+                let chosen = self
+                    .library
+                    .as_ref()
+                    .and_then(|l| l.photo(id).map(|p| (l, p)))
+                    .filter(|(_, p)| p.path == path)
+                    .map(|(l, p)| l.develop_from(p, false));
+                match chosen {
+                    Some(Ok(from)) => from,
+                    Some(Err(refusal @ crate::app::library::Refusal::Copy(_))) => {
+                        let name = path.file_name().unwrap_or_default().to_string_lossy();
+                        self.messages
+                            .warn(format!("{name} can't be opened: {}", refusal.detail()));
+                        return false;
+                    }
+                    _ => crate::app::worker::OpenedFrom::Original,
+                }
+            }
+            _ => crate::app::worker::OpenedFrom::Original,
+        };
         // The photo left, saved with another edit: its built previews follow it.
         if let Some(left) = self.document.catalog_photo
             && self.left_edited(left)
@@ -109,7 +133,9 @@ impl Editor {
         // What failed for the photo left says nothing of this one.
         self.messages.settle(Topic::Load);
         self.messages.settle(Topic::Render);
-        let text: String = if crate::storage::is_raw(&path) {
+        let text: String = if from.editable_preview().is_some() {
+            "Reading editable preview…"
+        } else if crate::storage::is_raw(&path) {
             "Reading RAW…"
         } else {
             "Reading photo…"
@@ -119,6 +145,8 @@ impl Editor {
         self.loader.submit(LoadJob {
             id,
             path,
+            from,
+            copies: self.copies.clone(),
             cancel,
             defaults: self.raw_defaults.clone(),
             demosaic: self.session.demosaic,
@@ -208,7 +236,7 @@ impl Editor {
                 .and_then(|source| {
                     l.session.save_edit(
                         id,
-                        path,
+                        self.document.original(path),
                         source,
                         self.document.edit.recipe(),
                         &self.document.export,
@@ -285,6 +313,11 @@ impl Editor {
             photo,
             raw,
             source,
+            recorded: self
+                .document
+                .from
+                .editable_preview()
+                .map(|copy| copy.original.clone()),
             recipe: self.document.edit.recipe().clone(),
             export: self.document.export.clone(),
             history: self
@@ -640,7 +673,8 @@ impl Editor {
         }
     }
     /// The photo `step` photos from `id` in the filmstrip that Develop can
-    /// open, passing over the ones it can't (offline, HDR, animated, CMYK):
+    /// open, passing over the ones it can't (offline without a usable editable
+    /// preview, HDR, animated, CMYK):
     /// stopping on them would leave every photo beyond out of reach of the
     /// arrow keys. With none in that direction, the first one, so opening it
     /// says why it can't be.
@@ -650,8 +684,12 @@ impl Editor {
         let mut at = first;
         loop {
             let photo = library.photo(at)?;
+            // An offline photo without a copy recorded is passed over by its file
+            // alone, as before; only the others ask the catalog.
+            let online = photo.path.is_file();
             if at == id
-                || crate::app::library::develop_refusal(photo, photo.path.is_file()).is_none()
+                || ((online || library.editable_preview(at).is_some())
+                    && library.develop_from(photo, online).is_ok())
             {
                 return Some(at);
             }
@@ -693,3 +731,7 @@ pub(in crate::app) struct RenderEdges {
 #[cfg(test)]
 #[path = "workflow_editor_tests.rs"]
 mod editor_tests;
+
+#[cfg(test)]
+#[path = "editable_preview_editor_tests.rs"]
+mod editable_preview_editor_tests;

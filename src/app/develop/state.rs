@@ -42,8 +42,13 @@ pub(in crate::app) struct Document {
     /// profiles arrive.
     pub(in crate::app) pending_lightroom: Option<String>,
     /// The photo's file as it was when it was opened: what an export of the edit
-    /// shown checks it still has.
+    /// shown checks it still has. For a photo opened from its editable preview,
+    /// the original's identity the catalog recorded for the copy.
     pub(in crate::app) file: Option<crate::storage::Identity>,
+    /// What the photo was opened from, once its header arrived: its original, or
+    /// its editable preview, until the photo opens again. Only the loader's
+    /// header sets it.
+    pub(in crate::app) from: crate::app::worker::OpenedFrom,
     /// Where the edit on screen started from.
     pub(in crate::app) origin: EditOrigin,
     /// The raw defaults for this photo, once its profiles are known: what Reset
@@ -555,9 +560,34 @@ impl Document {
     /// whether it still needs saving; a save that failed on the old path is
     /// tried again on the new one.
     pub(in crate::app) fn relink(&mut self, path: PathBuf) {
-        self.file = crate::storage::Identity::read(&path).ok();
+        // Opened from its editable preview with nothing at the new path either
+        // (its folder moved, say), the recorded identity stays what saves are
+        // checked against.
+        let recorded = self
+            .from
+            .editable_preview()
+            .filter(|_| crate::edits::Original::is_absent(&path))
+            .map(|copy| copy.original.clone());
+        self.file = crate::storage::Identity::read(&path).ok().or(recorded);
         self.path = Some(path);
         self.edit.save_state_mut().retry_now();
+    }
+    /// What the open photo's edit is loaded and saved against: its file at
+    /// `path`, and for a photo opened from its editable preview, the identity
+    /// the catalog recorded for the copy, which stands in for the file only
+    /// while nothing is at `path` ([`crate::edits::Original`]).
+    pub(in crate::app) fn original<'a>(
+        &'a self,
+        path: &'a std::path::Path,
+    ) -> crate::edits::Original<'a> {
+        match self.from.editable_preview() {
+            Some(copy) => crate::edits::Original::recorded(path, &copy.original),
+            None => crate::edits::Original::file(path),
+        }
+    }
+    /// Whether the photo was opened from its editable preview.
+    pub(in crate::app) fn opened_from_copy(&self) -> bool {
+        self.from.editable_preview().is_some()
     }
     /// Stands in for opening the file at `path`: its path and its identity as
     /// read now, which saves are checked against.
@@ -901,6 +931,13 @@ impl PresetBrowser {
 impl Document {
     pub(crate) fn full(&self) -> Option<&Arc<CameraImage>> {
         self.image.as_ref()
+    }
+    /// The image analyses that need the photo at its largest run on: the
+    /// full-size image, or the editable preview a photo opened from (reduced,
+    /// and final, with nothing larger after it). `None` while only an
+    /// original's half-size draft is here.
+    pub(crate) fn largest(&self) -> Option<&Arc<CameraImage>> {
+        self.full().filter(|im| !im.fast || self.opened_from_copy())
     }
     /// What applying XMP or Lightroom settings measures for Auto, on the full-size
     /// image when it is decoded.

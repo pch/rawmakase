@@ -396,11 +396,17 @@ impl Library {
         let available = self.is_available(&photo.path);
         let single = self.menu_single(photo.id, whole_selection);
         let stacks = self.filters.shows_stacks();
+        let presence = cell::Presence {
+            available,
+            copy: self
+                .editable_preview(photo.id)
+                .is_some_and(|copy| !copy.out_of_date),
+        };
         let collections = self.collection_tree();
         let menu = cell::photo_menu(
             &response,
             photo,
-            available,
+            presence,
             single,
             module,
             stacks,

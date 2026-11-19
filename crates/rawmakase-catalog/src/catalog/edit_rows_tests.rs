@@ -1,6 +1,7 @@
 //! A photo's edit changes only through `edit_rows`, and a virtual copy takes
 //! its master's edit exactly as stored.
 use super::*;
+use crate::edits::Original;
 use crate::{export_settings::ExportOptions, model::recipe::Recipe};
 use std::path::Path;
 use std::path::PathBuf;
@@ -158,8 +159,141 @@ fn clearing_an_edit_leaves_nothing_of_it() -> Result<()> {
         "INSERT INTO develop_history(photo, data) VALUES (?, X'01')",
         [id.0],
     )?;
-    cat.change_edits(&[EditChange::Clear { id }])?;
+    let source = crate::storage::Identity::read(&_file)?;
+    cat.change_edits(&[EditChange::Clear(EditToClear {
+        id,
+        original: _file.as_path().into(),
+        source: &source,
+    })])?;
     assert_eq!(stored(&cat, id)?, [None, None, None, None, None, None]);
+    Ok(())
+}
+
+/// The exposure of photo `id`'s saved edit, read against `original`.
+fn exposure(cat: &Catalog, id: PhotoId, original: Original<'_>) -> Result<f32> {
+    Ok(cat.load_edit(id, original)?.unwrap().recipe.exposure)
+}
+
+fn save_exposure(
+    cat: &mut Catalog,
+    id: PhotoId,
+    original: Original<'_>,
+    source: &crate::storage::Identity,
+    exposure: f32,
+) -> Result<()> {
+    let recipe = Recipe {
+        exposure,
+        ..Default::default()
+    };
+    cat.save_edit(
+        id,
+        original,
+        source,
+        &recipe,
+        &ExportOptions::default(),
+        HistoryUpdate::Keep,
+    )
+}
+
+fn clear(
+    cat: &mut Catalog,
+    id: PhotoId,
+    original: Original<'_>,
+    source: &crate::storage::Identity,
+) -> Result<()> {
+    cat.change_edits(&[EditChange::Clear(EditToClear {
+        id,
+        original,
+        source,
+    })])
+}
+
+/// The saving rule (docs/editable-previews.md): an edit is saved or cleared
+/// against a recorded identity only while nothing is at the original's path.
+#[test]
+fn a_recorded_identity_saves_and_clears_only_while_the_original_is_absent() -> Result<()> {
+    let (_dir, mut cat, file, id) = edited()?;
+    let recorded = crate::storage::Identity::read(&file)?;
+    let bytes = std::fs::read(&file)?;
+    std::fs::remove_file(&file)?;
+    let offline = Original::recorded(&file, &recorded);
+    // The file alone, as every caller but Develop's preview passes it: refused.
+    assert!(save_exposure(&mut cat, id, file.as_path().into(), &recorded, 1.0).is_err());
+    assert!(clear(&mut cat, id, file.as_path().into(), &recorded).is_err());
+    assert_eq!(exposure(&cat, id, offline)?, 0.5);
+    // With the recorded identity: saved, as the original's edit.
+    save_exposure(&mut cat, id, offline, &recorded, 1.0)?;
+    assert_eq!(exposure(&cat, id, offline)?, 1.0);
+    // The same file back: checked against the file, and the edit is its own.
+    std::fs::write(&file, &bytes)?;
+    assert_eq!(exposure(&cat, id, file.as_path().into())?, 1.0);
+    let back = crate::storage::Identity::read(&file)?;
+    save_exposure(&mut cat, id, offline, &back, 1.5)?;
+    assert_eq!(exposure(&cat, id, file.as_path().into())?, 1.5);
+    // Absent again, a clear with the recorded identity goes through.
+    std::fs::remove_file(&file)?;
+    clear(&mut cat, id, offline, &recorded)?;
+    assert!(cat.load_edit(id, offline)?.is_none());
+    Ok(())
+}
+
+#[test]
+fn a_recorded_identity_never_stands_in_for_another_file() -> Result<()> {
+    let (_dir, mut cat, file, id) = edited()?;
+    let recorded = crate::storage::Identity::read(&file)?;
+    std::fs::remove_file(&file)?;
+    std::fs::write(&file, b"another photo")?;
+    let other = crate::storage::Identity::read(&file)?;
+    let offline = Original::recorded(&file, &recorded);
+    for source in [&recorded, &other] {
+        assert!(save_exposure(&mut cat, id, offline, source, 1.0).is_err());
+        assert!(clear(&mut cat, id, offline, source).is_err());
+    }
+    // The edit stays, protected, for the photo it was saved for.
+    assert_eq!(
+        cat.edit_record(id)?
+            .saved_for(&recorded)?
+            .unwrap()
+            .recipe
+            .exposure,
+        0.5
+    );
+    Ok(())
+}
+
+/// A path that can't be looked at isn't absent: a folder without permission
+/// refuses saves and clears, recorded identity or not.
+#[cfg(unix)]
+#[test]
+fn a_recorded_identity_never_stands_in_for_an_unreadable_original() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let (_dir, mut cat, file, id) = edited()?;
+    let recorded = crate::storage::Identity::read(&file)?;
+    let folder = file.parent().unwrap().to_path_buf();
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o000))?;
+    // Root ignores permissions, so there is nothing to test.
+    let locked = std::fs::File::open(&file).is_err();
+    let offline = Original::recorded(&file, &recorded);
+    let saved = save_exposure(&mut cat, id, offline, &recorded, 1.0);
+    let cleared = clear(&mut cat, id, offline, &recorded);
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755))?;
+    if locked {
+        assert!(saved.is_err());
+        assert!(cleared.is_err());
+        assert_eq!(exposure(&cat, id, file.as_path().into())?, 0.5);
+    }
+    Ok(())
+}
+
+/// A clear is checked as a save is: a stored edit saved for another file is
+/// protected from it too.
+#[test]
+fn a_clear_never_removes_a_protected_edit() -> Result<()> {
+    let (_dir, mut cat, file, id) = edited()?;
+    std::fs::write(&file, b"another photo")?;
+    let other = crate::storage::Identity::read(&file)?;
+    assert!(clear(&mut cat, id, file.as_path().into(), &other).is_err());
+    assert!(cat.edit_record(id)?.recipe.is_some());
     Ok(())
 }
 

@@ -174,6 +174,7 @@ impl Library {
                                         mark: self.mark(p.id),
                                         number: row * columns + col + 1,
                                         available: exists,
+                                        copy: self.editable_preview(p.id).map(cell::CopyState::of),
                                         quick: self.in_quick(p.id),
                                         style: self.cell_style,
                                         details: if self.cell_style == cell::Style::Expanded {
@@ -302,6 +303,16 @@ impl Library {
             PhotoAction::DiscardPreviews(kinds) => {
                 self.ask(super::outbox::Request::Previews(
                     super::PreviewsRequest::Discard(self.menu_scope(photo.id), kinds),
+                ));
+            }
+            PhotoAction::BuildEditablePreviews => {
+                self.ask(super::outbox::Request::Previews(
+                    super::PreviewsRequest::BuildEditable(self.menu_scope(photo.id)),
+                ));
+            }
+            PhotoAction::DiscardEditablePreviews => {
+                self.ask(super::outbox::Request::Previews(
+                    super::PreviewsRequest::DiscardEditable(self.menu_scope(photo.id)),
                 ));
             }
             PhotoAction::Remove => {

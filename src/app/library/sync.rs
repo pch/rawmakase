@@ -417,7 +417,7 @@ pub(in crate::app) fn synchronize(
         .iter()
         .map(|p| EditToSave {
             id: p.synced.id,
-            path: &p.synced.path,
+            original: (&p.synced.path).into(),
             source: &p.synced.identity,
             recipe: &p.synced.after,
             export: &p.export,
@@ -569,7 +569,7 @@ pub(in crate::app) fn apply_proposal(
             .iter()
             .map(|(_, _, p)| EditToSave {
                 id: p.synced.id,
-                path: &p.synced.path,
+                original: (&p.synced.path).into(),
                 source: &p.synced.identity,
                 recipe: &p.synced.after,
                 export: &p.export,
@@ -979,9 +979,15 @@ pub(in crate::app) fn restore(
         .collect::<Option<Vec<_>>>()
         .ok_or(SyncRestoreError::PhotoRemoved)?;
     let mut saves = Vec::with_capacity(edits.len());
+    let mut clears = Vec::new();
     for (e, path) in edits.iter().zip(paths) {
         let (recipe, history) = match (side, &e.before) {
-            (SyncSide::Before, EditBefore::None { .. }) => continue,
+            // A clear is checked as a save is: refused while the file can't be read,
+            // or when it is no longer the one the Sync read.
+            (SyncSide::Before, EditBefore::None { .. }) => {
+                clears.push((e.id, path, &e.identity));
+                continue;
+            }
             // Undo brings back the History it had, redo branch included.
             (SyncSide::Before, EditBefore::Saved(r)) => {
                 (r.as_ref(), HistoryUpdate::Replace(&e.history_before))
@@ -1010,7 +1016,7 @@ pub(in crate::app) fn restore(
         .iter()
         .map(|(id, path, source, recipe, export, history)| EditToSave {
             id: *id,
-            path,
+            original: path.into(),
             source,
             recipe,
             export,
@@ -1018,14 +1024,13 @@ pub(in crate::app) fn restore(
         })
         .collect();
     let mut changes: Vec<EditChange> = saves.iter().map(EditChange::Save).collect();
-    if side == SyncSide::Before {
-        changes.extend(
-            edits
-                .iter()
-                .filter(|e| matches!(e.before, EditBefore::None { .. }))
-                .map(|e| EditChange::Clear { id: e.id }),
-        );
-    }
+    changes.extend(clears.iter().map(|(id, path, source)| {
+        EditChange::Clear(crate::catalog::EditToClear {
+            id: *id,
+            original: path.into(),
+            source,
+        })
+    }));
     session
         .change_edits(&changes)
         .map_err(SyncRestoreError::Write)
@@ -1629,6 +1634,139 @@ mod tests {
         std::fs::write(changed, bytes)?;
         assert!(restore(&mut session, &result.synced, SyncSide::After, path).is_err());
         assert!(c.load_edit(photos[2].0, &photos[2].1)?.is_none());
+        Ok(())
+    }
+
+    /// Sync and a preset from the Library read each target's file before they
+    /// write: an offline photo with an editable preview is refused like any
+    /// other offline photo, and keeps its edit (docs/editable-previews.md).
+    #[test]
+    fn sync_and_presets_leave_an_offline_photo_with_a_copy_alone() -> Result<()> {
+        let Fixture {
+            _dir,
+            catalog: mut c,
+            photos,
+        } = catalog()?;
+        let metadata = crate::photo::open(&photos[0].1)?.metadata;
+        let (profiles, _) = crate::camera_profiles::installed(&metadata);
+        let mut source = Recipe::with_profiles(&metadata, &profiles);
+        source.exposure = 0.5;
+        let (id, path) = &photos[1];
+        let identity = crate::storage::Identity::read(path)?;
+        let mut before = source.clone();
+        before.exposure = -0.3;
+        c.save_edit(
+            *id,
+            path,
+            &identity,
+            &before,
+            &ExportOptions::default(),
+            HistoryUpdate::Keep,
+        )?;
+        c.record_editable_preview(*id, &identity)?;
+        std::fs::rename(path, path.with_extension("away"))?;
+        let preset = crate::xmp::parse(
+            Path::new("Bright.xmp"),
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:Name="Bright" crs:Exposure2012="+1.00"/></rdf:RDF></x:xmpmeta>"#,
+        )?;
+        for change in [
+            BatchChange::Settings(GroupSelection::default()),
+            BatchChange::Preset(Box::new(BatchPreset {
+                preset,
+                name: "Bright".into(),
+            })),
+        ] {
+            let result = synchronize(
+                &mut c,
+                Some(&SyncSource::Open(Box::new(Settings {
+                    recipe: source.clone(),
+                    metadata: metadata.clone(),
+                }))),
+                &change,
+                &[target(*id, path)],
+                &DevelopDefaults::default(),
+                &Decoding::default(),
+                &BatchProgress::new("Sync", 0),
+            );
+            assert!(result.synced.is_empty(), "{}", change.name());
+            assert_eq!(result.failed.len(), 1, "{}", change.name());
+            let saved = c.edit_record(*id)?.saved_for(&identity)?.unwrap();
+            assert_eq!(saved.recipe.exposure, -0.3);
+        }
+        Ok(())
+    }
+
+    /// Undo and Redo of a Sync read each photo's file, as the Sync did: over an
+    /// offline photo they are refused and leave its edit as it was, whether or not
+    /// it had an edit before the Sync (docs/editable-previews.md).
+    #[test]
+    fn undo_and_redo_of_a_sync_leave_an_offline_photos_edit_alone() -> Result<()> {
+        let Fixture {
+            _dir,
+            catalog: mut c,
+            photos,
+        } = catalog()?;
+        let metadata = crate::photo::open(&photos[0].1)?.metadata;
+        let (profiles, _) = crate::camera_profiles::installed(&metadata);
+        let mut source = Recipe::with_profiles(&metadata, &profiles);
+        source.exposure = 0.5;
+        let (edited, unedited) = (&photos[1], &photos[2]);
+        let mut before = source.clone();
+        before.exposure = -0.3;
+        c.save_edit(
+            edited.0,
+            &edited.1,
+            &crate::storage::Identity::read(&edited.1)?,
+            &before,
+            &ExportOptions::default(),
+            HistoryUpdate::Keep,
+        )?;
+        let result = synchronize(
+            &mut c,
+            Some(&SyncSource::Open(Box::new(Settings {
+                recipe: source,
+                metadata,
+            }))),
+            &BatchChange::Settings(GroupSelection::default()),
+            &[target(edited.0, &edited.1), target(unedited.0, &unedited.1)],
+            &DevelopDefaults::default(),
+            &Decoding::default(),
+            &BatchProgress::new("Sync", 0),
+        );
+        assert_eq!(result.synced.len(), 2, "{:?}", result.failed);
+        let identities = [
+            crate::storage::Identity::read(&edited.1)?,
+            crate::storage::Identity::read(&unedited.1)?,
+        ];
+        let exposure = |c: &crate::catalog::Catalog, id, identity| -> Result<Option<f32>> {
+            Ok(c.edit_record(id)?
+                .saved_for(identity)?
+                .map(|e| e.recipe.exposure))
+        };
+        let path = |id: PhotoId| {
+            photos
+                .iter()
+                .find(|(p, _)| *p == id)
+                .map(|(_, path)| path.clone())
+        };
+        let mut session = open_session(&_dir)?;
+        // Each target offline in turn: the other's file is there.
+        for (offline, identity) in [(edited, &identities[0]), (unedited, &identities[1])] {
+            let away = offline.1.with_extension("away");
+            std::fs::rename(&offline.1, &away)?;
+            for side in [SyncSide::Before, SyncSide::After] {
+                assert!(matches!(
+                    restore(&mut session, &result.synced, side, path),
+                    Err(SyncRestoreError::Write(_))
+                ));
+                assert_eq!(exposure(&c, offline.0, identity)?, Some(0.5));
+            }
+            std::fs::rename(&away, &offline.1)?;
+        }
+        // Online again, Undo goes through: one gets its edit back, the other none.
+        restore(&mut session, &result.synced, SyncSide::Before, path)?;
+        assert_eq!(exposure(&c, edited.0, &identities[0])?, Some(-0.3));
+        assert_eq!(exposure(&c, unedited.0, &identities[1])?, None);
         Ok(())
     }
 

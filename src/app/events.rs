@@ -589,6 +589,7 @@ impl Editor {
     fn header_ready(&mut self, header: LoadedHeader) {
         let LoadedHeader {
             path: p,
+            from,
             file,
             metadata: m,
             recipe: r,
@@ -596,7 +597,16 @@ impl Editor {
             status,
             ..
         } = header;
+        // Opened from its original, the Library learns which file it is now: a
+        // copy built from another file goes out of date.
+        if from.editable_preview().is_none()
+            && let (Some(l), Some(photo), Some(now)) =
+                (&mut self.library, self.document.catalog_photo, &file)
+        {
+            l.note_original(photo, now);
+        }
         self.document.file = file;
+        self.document.from = from;
         self.document.metadata = Some(m);
         self.document.edit.replace(r);
         self.document.export = ex;
@@ -617,7 +627,13 @@ impl Editor {
                 .catalog()
                 .edit_record(photo)
                 .map_err(|e| anyhow::anyhow!("{e:#}"))
-                .and_then(|r| crate::edits::Start::capture(&r, &p, self.raw_defaults.clone()));
+                .and_then(|r| {
+                    crate::edits::Start::capture(
+                        &r,
+                        self.document.original(&p),
+                        self.raw_defaults.clone(),
+                    )
+                });
             match start {
                 Ok(crate::edits::Start::Saved(saved)) => {
                     self.document.origin = crate::app::develop::state::EditOrigin::Saved;
@@ -738,14 +754,13 @@ impl Editor {
         let (Some(library), Some(id)) = (&mut self.library, self.document.catalog_photo) else {
             return;
         };
-        library.update_edited(
-            ctx,
-            id,
-            self.document.image_file.as_ref(),
-            shows,
-            small,
-            self.document.edit.recipe(),
-        );
+        let rendered = self.document.image_file.as_ref().map(|file| {
+            match self.document.from.editable_preview() {
+                Some(copy) => crate::app::library::RenderedFrom::Copy(&copy.file, file),
+                None => crate::app::library::RenderedFrom::Original(file),
+            }
+        });
+        library.update_edited(ctx, id, rendered, shows, small, self.document.edit.recipe());
     }
 }
 

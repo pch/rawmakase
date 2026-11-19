@@ -301,7 +301,7 @@ impl Catalog {
             .collect::<Result<Vec<_>>>()?;
         let id_of = |change: &EditChange<'_, '_>| match change {
             EditChange::Save(e) => e.id,
-            EditChange::Clear { id } => *id,
+            EditChange::Clear(e) => e.id,
         };
         let edited_at = rawmakase_model::time::now_text();
         let write = |w: &mut super::db::Write<'_>| {

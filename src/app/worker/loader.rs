@@ -287,6 +287,24 @@ fn opener(
     full: Mailbox<FullJob>,
 ) -> Latest<LoadJob> {
     Latest::new(move |job: LoadJob| {
+        if let Some(source) = job.from.editable_preview().cloned() {
+            // Final as it is: no embedded preview or full-size stage follows it.
+            let result = caught(|| open_editable_preview(&job, &source, &tx, &ctx));
+            if let Err(e) = result
+                && !job.cancel.load(Ordering::Relaxed)
+            {
+                send(
+                    &tx,
+                    &ctx,
+                    Event::Failed {
+                        id: job.id,
+                        task: TaskKind::Load,
+                        error: format!("{e:#}"),
+                    },
+                );
+            }
+            return;
+        }
         let result = caught(|| -> anyhow::Result<()> {
             let path = job.path.clone();
             let started = Instant::now();
@@ -349,6 +367,7 @@ fn opener(
                 Event::Header(Box::new(LoadedHeader {
                     id: job.id,
                     path: path.clone(),
+                    from: super::OpenedFrom::Original,
                     file: file.clone(),
                     metadata,
                     recipe,
@@ -464,6 +483,90 @@ fn opener(
     })
 }
 
+/// Opens `job`'s photo from its editable preview `source`, through `job.copies`:
+/// the reduced image with the original's facts, and the default Camera Look the
+/// copy keeps. Every image, and the edit, are the photo's as `source.original`
+/// names it: the catalog's row says which original the copy is of, and the
+/// copy's file is named after that original's identity
+/// ([`editable_preview_file_name`](crate::catalog::editable_preview_file_name)),
+/// so whatever file is at `source.file` is a copy of it. A copy discarded or
+/// rebuilt for another file since the Library chose it is no longer there, and
+/// fails to open.
+fn open_editable_preview(
+    job: &LoadJob,
+    source: &super::EditablePreviewSource,
+    tx: &Sender<Event>,
+    ctx: &egui::Context,
+) -> anyhow::Result<()> {
+    let started = Instant::now();
+    // The copy's own file, read before it is opened, as for an original: what
+    // the image is of, under which Develop's thumbnail of it is kept.
+    let copy_file = crate::storage::Identity::read(&source.file).ok();
+    let opened = job
+        .copies
+        .open(&source.file, Cancel::new(&job.cancel))
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Its editable preview can't be read ({e:#}); build it again while the original is online"
+            )
+        })?;
+    if job.cancel.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+    let metadata = opened.image.metadata.clone();
+    let crate::camera_profiles::Listed {
+        mut profiles,
+        errors,
+        groups,
+    } = crate::camera_profiles::listed(&metadata);
+    profiles.extend(opened.default_look.map(Arc::new));
+    let recipe = crate::edits::Start::Defaults(job.defaults.clone())
+        .resolve(&metadata, &profiles)?
+        .recipe;
+    send(
+        tx,
+        ctx,
+        Event::Header(Box::new(LoadedHeader {
+            id: job.id,
+            path: job.path.clone(),
+            from: job.from.clone(),
+            file: Some(source.original.clone()),
+            metadata,
+            recipe,
+            export: ExportOptions::default(),
+            status: super::OpenedFrom::EDITABLE_PREVIEW.into(),
+        })),
+    );
+    send(
+        tx,
+        ctx,
+        Event::Profiles {
+            id: job.id,
+            profiles,
+            errors,
+            groups,
+            imported: false,
+        },
+    );
+    if job.cancel.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+    send(
+        tx,
+        ctx,
+        Event::Ready {
+            id: job.id,
+            full: Arc::new(opened.image),
+            file: copy_file,
+            status: format!(
+                "Opened its editable preview in {:.2}s",
+                started.elapsed().as_secs_f32()
+            ),
+        },
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 pub(in crate::app) mod tests {
     use super::*;
@@ -497,6 +600,8 @@ pub(in crate::app) mod tests {
         loader.submit(LoadJob {
             id: 7,
             path: path.into(),
+            from: Default::default(),
+            copies: crate::app::worker::editable_preview::decoder(),
             cancel: Default::default(),
             defaults: Arc::new(crate::raw_defaults::DevelopDefaults::with_presets(
                 Default::default(),

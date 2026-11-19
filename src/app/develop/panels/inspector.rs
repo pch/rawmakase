@@ -605,6 +605,10 @@ impl Editor {
             install_failure: self.ai_denoise_model.failure().map(str::to_string),
             megabytes: crate::model_install::megabytes(),
             status: self.document.ai.status().cloned(),
+            unavailable: self
+                .document
+                .opened_from_copy()
+                .then_some(crate::app::develop::ai_denoise::CONNECT_FOR_AI_DENOISE),
         };
         // Cached per camera: this scans Adobe's profile folders.
         let adobe_key = self
@@ -637,8 +641,9 @@ impl Editor {
         // Upright analyses the photo's full-size image once (`start_upright`: not the
         // half-size draft it opens with) and keeps a correction for every mode.
         let upright_ready =
-            self.document.full().is_some_and(|im| !im.fast) && !self.document.upright.is_running();
+            self.document.largest().is_some() && !self.document.upright.is_running();
         let can_fit_camera_look = self.can_fit_camera_look();
+        let fit_camera_look_unavailable = self.camera_look_unavailable();
         let hdr = self.hdr_presentation();
         let hdr_second = self.hdr_second_side_presentation();
         // A conversion to black & white waiting for the photo to decode.
@@ -664,6 +669,7 @@ impl Editor {
             auto_ready,
             auto_in_effect,
             can_fit_camera_look,
+            fit_camera_look_unavailable,
             hdr: &hdr,
             hdr_second: hdr_second.as_ref(),
         };

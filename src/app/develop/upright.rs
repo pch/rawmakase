@@ -21,8 +21,10 @@ impl Editor {
         // always give the corrections its full-size image gives, which are the
         // ones an export of a photo never opened works out; and an analysis
         // started on the draft was kept when the full-size image arrived. The
-        // full-size image's arrival asks again ([`Self::ensure_analysis`]).
-        let Some(im) = self.document.full().filter(|im| !im.fast).cloned() else {
+        // full-size image's arrival asks again ([`Self::ensure_analysis`]). A
+        // photo opened from its editable preview has only the copy, which is
+        // final.
+        let Some(im) = self.document.largest().cloned() else {
             return;
         };
         let (generation, _) = self.document.upright.start();

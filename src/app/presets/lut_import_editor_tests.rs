@@ -35,6 +35,7 @@ fn import_cube_luts_asks_the_space_before_the_files() {
     let (generation, _) = editor.document.start_load();
     for event in [
         Event::Header(Box::new(worker::LoadedHeader {
+            from: Default::default(),
             id: generation,
             file: None,
             path: "photo.dng".into(),

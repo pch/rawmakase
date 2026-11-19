@@ -21,6 +21,10 @@ impl Library {
         ui.spacing_mut().item_spacing.y = 0.;
         let photo = self.selected().and_then(|id| self.photo(id)).cloned();
         let info = self.active_info();
+        let copy = photo
+            .as_ref()
+            .and_then(|p| self.editable_preview(p.id))
+            .map(super::cell::CopyState::of);
         egui::ScrollArea::vertical()
             .id_salt("library-info")
             .auto_shrink(false)
@@ -50,6 +54,15 @@ impl Library {
                     let note = match &refusal {
                         Some(super::Refusal::Offline) => {
                             "Offline: relink its folder to edit".into()
+                        }
+                        Some(super::Refusal::Copy(super::Unusable::OutOfDate)) => {
+                            "Offline: its editable preview is out of date".into()
+                        }
+                        Some(super::Refusal::Copy(_)) => {
+                            "Offline: its editable preview can't be used".into()
+                        }
+                        None if photo.as_ref().is_some_and(|p| !self.is_available(&p.path)) => {
+                            "Offline: edits its editable preview".into()
                         }
                         Some(super::Refusal::Unsupported { reason, .. }) => {
                             format!("{reason} images can't be edited in Develop")
@@ -119,6 +132,16 @@ impl Library {
                         ("ISO Speed", text(PhotoInfo::iso_text), None),
                         ("Camera", text(|i| i.camera.clone()), None),
                         ("Lens", text(|i| i.lens.clone()), None),
+                        (
+                            "Editable Preview",
+                            copy.map(|copy| match copy {
+                                super::cell::CopyState::UpToDate => "Up to date",
+                                super::cell::CopyState::OutOfDate => "Out of date",
+                            })
+                            .unwrap_or_default()
+                            .to_string(),
+                            copy.map(|copy| copy.text().to_string()),
+                        ),
                     ] {
                         let response = metadata_row(ui, key, &value);
                         if let Some(hover) = hover {

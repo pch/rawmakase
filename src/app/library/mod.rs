@@ -185,6 +185,10 @@ pub(crate) enum PreviewsRequest {
         Vec<PhotoId>,
         Vec<crate::catalog::preview_cache::PreviewKind>,
     ),
+    /// Build Editable Previews.
+    BuildEditable(Vec<PhotoId>),
+    /// Discard Editable Previews.
+    DiscardEditable(Vec<PhotoId>),
 }
 pub(crate) struct Library {
     /// The open catalog and the photos, folders and collections read from it.
@@ -328,6 +332,9 @@ pub(crate) struct Library {
     loupe_stored: Option<(PhotoId, String)>,
     /// The photo whose refusal the right panel last showed, and that refusal.
     refusal_shown: Option<((PhotoId, std::path::PathBuf, bool), Option<Refusal>)>,
+    /// The editable previews the catalog records, by master photo, as read when
+    /// the Library last filtered or was told of a build, discard or change.
+    editable_previews: HashMap<PhotoId, crate::catalog::EditablePreview>,
     /// Read Metadata from Files while it reads.
     reread: Option<descriptive::Reread>,
     /// Read Metadata from Files finished since the editor last asked.
@@ -423,6 +430,7 @@ impl Library {
             reads_suspended: false,
             loupe_stored: None,
             refusal_shown: None,
+            editable_previews: HashMap::new(),
             reread: None,
             reread_finished: false,
         };
@@ -636,16 +644,114 @@ impl Library {
         match &self.refusal_shown {
             Some((shown, refusal)) if *shown == key => refusal.clone(),
             _ => {
-                let refusal = develop_refusal(photo, available);
+                let refusal = self.develop_from(photo, available).err();
                 self.refusal_shown = Some((key, refusal.clone()));
                 refusal
             }
+        }
+    }
+    /// What Develop opens `photo` from, given whether its file is `available`:
+    /// its original, as [`develop_refusal`] allows; or, offline, its editable
+    /// preview, only while nothing is at the original's path
+    /// ([`Original::is_absent`](crate::edits::Original::is_absent)) and the
+    /// catalog records the copy up to date with its file there
+    /// ([`EditablePreview::usable`](crate::catalog::EditablePreview::usable)).
+    /// Why not, if neither. The copy's contents are not read here: the loader
+    /// opens it, and says why it can't.
+    pub(in crate::app) fn develop_from(
+        &self,
+        photo: &Photo,
+        available: bool,
+    ) -> Result<crate::app::worker::OpenedFrom, Refusal> {
+        use crate::app::worker::{EditablePreviewSource, OpenedFrom};
+        match develop_refusal(photo, available) {
+            None => return Ok(OpenedFrom::Original),
+            Some(Refusal::Offline) => {}
+            Some(refusal) => return Err(refusal),
+        }
+        let catalog = self.session.catalog();
+        let copy = match catalog.editable_preview(photo.id) {
+            Ok(Some(copy)) => copy,
+            Ok(None) => return Err(Refusal::Offline),
+            Err(e) => return Err(Refusal::Copy(Unusable::Unreadable(format!("{e:#}")))),
+        };
+        if !crate::edits::Original::is_absent(&photo.path) {
+            return Err(Refusal::Copy(Unusable::NotAbsent));
+        }
+        let folder = catalog.editable_previews_folder();
+        let file = copy.usable(&folder, |path| {
+            anyhow::ensure!(path.is_file(), "its file is missing");
+            Ok(())
+        });
+        match file {
+            Some(file) => Ok(OpenedFrom::EditablePreview(EditablePreviewSource {
+                file,
+                original: copy.original,
+            })),
+            None => Err(Refusal::Copy(Unusable::OutOfDate)),
+        }
+    }
+    /// Photo `id`'s editable preview as the catalog recorded it when last read:
+    /// its master's, which a virtual copy shares.
+    pub(in crate::app) fn editable_preview(
+        &self,
+        id: PhotoId,
+    ) -> Option<&crate::catalog::EditablePreview> {
+        let photo = self.photo(id)?;
+        self.editable_previews
+            .get(&photo.master.unwrap_or(photo.id))
+    }
+    /// Reads again which photos have an editable preview, after a build,
+    /// discard or anything else that changed them; what the right panel says of
+    /// the selected photo is worked out again.
+    pub(in crate::app) fn editable_previews_changed(&mut self) {
+        self.refusal_shown = None;
+        // Unreadable, as none: opening such a photo says why.
+        self.editable_previews = self
+            .session
+            .catalog()
+            .editable_previews()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|copy| (copy.master, copy))
+            .collect();
+        // Offline photos with an up-to-date copy: Develop's renders of them from
+        // it are looked up under the copy's file. Its file isn't looked at here,
+        // as this runs with every filter: the preview cache checks the stamp of
+        // a file that is there, and finds nothing for one never rendered.
+        let folder = self.session.catalog().editable_previews_folder();
+        let copies = self
+            .session
+            .photos()
+            .iter()
+            .filter(|photo| !self.availability.is_available(&photo.path))
+            .filter_map(|photo| {
+                let copy = self
+                    .editable_previews
+                    .get(&photo.master.unwrap_or(photo.id))
+                    .filter(|copy| !copy.out_of_date)?;
+                Some((photo.id, copy.path_in(&folder)?))
+            })
+            .collect();
+        self.cache.set_copies(copies);
+    }
+    /// Notes that photo `id`'s original is the file `now` names, as Develop
+    /// read it opening the photo: a copy built from another file goes out of
+    /// date. A failure to note it is not worth stopping for: the copy is
+    /// still checked against the file whenever the file is there.
+    pub(in crate::app) fn note_original(&mut self, id: PhotoId, now: &crate::storage::Identity) {
+        let before = self.editable_preview(id).map(|copy| copy.out_of_date);
+        if let Ok(after) = self.session.note_original(id, now)
+            && after.map(|copy| copy.out_of_date) != before
+        {
+            self.editable_previews_changed();
         }
     }
     pub(crate) fn available_count(&self) -> usize {
         self.availability.count(self.session.photos())
     }
     fn filter(&mut self) {
+        self.editable_previews_changed();
         // Leaving the collections: the folders' order again.
         if self.filters.collection.is_none()
             && let Some((sort, reverse)) = self.folder_sort.take()
@@ -1520,20 +1626,26 @@ impl Library {
     /// Shows Develop's latest render as the photo's thumbnail and caches it
     /// under the edit it was rendered with, and what it shows of AI Denoise
     /// (`ai`), for the file `rendered` names (the one its pixels were decoded
-    /// from); without one it is not cached.
+    /// from); without one it is not cached. A render of the photo's editable
+    /// preview is cached under the copy's file, never the original's, so the
+    /// original's renders never find it.
     pub(in crate::app) fn update_edited(
         &mut self,
         ctx: &egui::Context,
         id: PhotoId,
-        rendered: Option<&crate::storage::Identity>,
+        rendered: Option<RenderedFrom<'_>>,
         ai: PreviewAi,
         image: image::RgbImage,
         recipe: &crate::model::recipe::Recipe,
     ) {
-        let Some(path) = self.photo(id).map(|p| p.path.clone()) else {
+        let Some(original) = self.photo(id).map(|p| p.path.clone()) else {
             return;
         };
-        let stamp = rendered.map(crate::storage::Identity::stamp);
+        let (path, stamp) = match rendered {
+            None => (original, None),
+            Some(RenderedFrom::Original(file)) => (original, Some(file.stamp())),
+            Some(RenderedFrom::Copy(copy, file)) => (copy.to_path_buf(), Some(file.stamp())),
+        };
         let source = EditSource::saved(recipe.clone());
         self.cache
             .store_edited(ctx, id, path, stamp, &source, ai, image);
@@ -1654,13 +1766,13 @@ impl Library {
 /// HEIF and JPEG XL files that are online and whose pixels it can read.
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::app) enum Refusal {
+    /// Offline, without an editable preview.
     Offline,
+    /// Offline, with an editable preview that can't stand in for it.
+    Copy(Unusable),
     /// A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL of a kind Develop can't edit: its `format` (e.g. "JPG")
     /// and the `reason` (e.g. "CMYK").
-    Unsupported {
-        format: String,
-        reason: String,
-    },
+    Unsupported { format: String, reason: String },
 }
 impl Refusal {
     /// What opening `path` failed with, when it is a refusal rather than an error:
@@ -1682,7 +1794,7 @@ impl Refusal {
     /// A word or two, shown beside a greyed-out Open in Develop.
     pub(in crate::app) fn label(&self) -> String {
         match self {
-            Self::Offline => "Offline".into(),
+            Self::Offline | Self::Copy(_) => "Offline".into(),
             Self::Unsupported { format, .. } => format!("{format} file"),
         }
     }
@@ -1693,9 +1805,41 @@ impl Refusal {
                 "The photo is offline. Right-click it and choose Find on Disk… to pick its file, or relink its folder with Locate root folder or Locate this folder."
                     .into()
             }
+            Self::Copy(Unusable::OutOfDate) => {
+                "The photo is offline, and its editable preview is out of date. Build it again while the original is online, or right-click the photo and choose Find on Disk… to pick its file."
+                    .into()
+            }
+            Self::Copy(Unusable::NotAbsent) => {
+                "The photo's file is there but can't be read, so its editable preview can't stand in for it. Check that its drive or folder can be read."
+                    .into()
+            }
+            Self::Copy(Unusable::Unreadable(why)) => format!(
+                "The photo is offline, and its editable preview can't be read from the catalog: {why}"
+            ),
             Self::Unsupported { reason, .. } => format!("RAWmakase can't edit {reason} images"),
         }
     }
+}
+/// The file a render of a photo in Develop was decoded from, as read before it
+/// was decoded: the photo's original, or its editable preview's file.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::app) enum RenderedFrom<'a> {
+    Original(&'a crate::storage::Identity),
+    Copy(&'a std::path::Path, &'a crate::storage::Identity),
+}
+/// Why an offline photo's editable preview can't stand in for its original.
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::app) enum Unusable {
+    /// The catalog marks it out of date (the original came back as another
+    /// file), or its file is missing: it is built again while the original is
+    /// online.
+    OutOfDate,
+    /// Something is at the original's path that can't be read (a folder
+    /// without permission, a share that stopped answering): a copy stands in
+    /// only for a file that is certainly not there.
+    NotAbsent,
+    /// The catalog's record of it can't be read.
+    Unreadable(String),
 }
 /// A catalog photo as Develop would open it, from `Library::develop_source`.
 #[derive(Clone)]
@@ -1770,6 +1914,7 @@ mod collections;
 mod compare;
 mod copy_name;
 mod descriptive;
+pub(in crate::app) mod editable_previews;
 mod facets;
 pub(crate) mod filmstrip;
 mod filter;

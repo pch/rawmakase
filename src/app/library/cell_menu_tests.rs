@@ -1,5 +1,5 @@
 //! The photo menu's layout: every shortcut fits beside its label (#979).
-use super::photo_menu;
+use super::{Presence, photo_menu};
 use crate::app::library::Module;
 use crate::catalog::Photo;
 use eframe::egui::{self, Pos2, Rect, Vec2};
@@ -30,7 +30,10 @@ fn open_menu(cell: Rect) -> Vec<Texts> {
                 photo_menu(
                     &response,
                     &photo,
-                    true,
+                    Presence {
+                        available: true,
+                        copy: false,
+                    },
                     true,
                     Module::Library,
                     true,

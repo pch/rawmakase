@@ -6,7 +6,8 @@
 //! JPEG XL, which is not developed ([`raster`]). It also holds what AI Denoise needs
 //! from a decode, with no model knowledge ([`ai`]), fitting Camera Look to a RAW's
 //! embedded JPEG ([`camera_look`]), and the command line's regression and diagnosis
-//! tools ([`dev`]).
+//! tools ([`dev`]). Editable previews, the reduced copies Develop edits an
+//! offline photo from, are opened by [`editable_preview`]; export writes them.
 //!
 //! No C library is built or bundled: a HEIC's pixels come from the operating
 //! system's ImageIO or Windows Imaging Component on macOS and Windows, and
@@ -23,6 +24,7 @@ pub mod decode;
 pub mod decode_cache;
 mod demosaic;
 pub mod dev;
+pub mod editable_preview;
 pub mod photo;
 pub mod raster;
 pub mod raw;

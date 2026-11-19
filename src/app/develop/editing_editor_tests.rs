@@ -22,6 +22,7 @@ fn develop_history_survives_reopening_the_photo() -> anyhow::Result<()> {
         editor
             .tx
             .send(Event::Header(Box::new(LoadedHeader {
+                from: Default::default(),
                 id: generation,
                 file: crate::storage::Identity::read(&raw.clone()).ok(),
                 path: raw.clone(),
@@ -116,6 +117,7 @@ fn an_edited_jpeg_whose_file_changed_reopens_from_the_file() -> anyhow::Result<(
             editor
                 .tx
                 .send(Event::Header(Box::new(LoadedHeader {
+                    from: Default::default(),
                     id: generation,
                     file: crate::storage::Identity::read(&file.clone()).ok(),
                     path: file.clone(),
@@ -194,6 +196,7 @@ fn an_unreadable_history_protects_the_edit() -> anyhow::Result<()> {
     editor
         .tx
         .send(Event::Header(Box::new(LoadedHeader {
+            from: Default::default(),
             id: generation,
             file: crate::storage::Identity::read(&file).ok(),
             path: file.clone(),
@@ -249,6 +252,7 @@ fn a_first_save_after_the_file_was_replaced_is_refused() -> anyhow::Result<()> {
         editor
             .tx
             .send(Event::Header(Box::new(LoadedHeader {
+                from: Default::default(),
                 id: generation,
                 file: crate::storage::Identity::read(&raw.clone()).ok(),
                 path: raw.clone(),

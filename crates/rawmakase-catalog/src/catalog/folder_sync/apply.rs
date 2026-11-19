@@ -301,6 +301,9 @@ impl Catalog {
                         &[&m.photo],
                     )?;
                 }
+                // Its editable preview, if the file found isn't what it was
+                // built from.
+                crate::catalog::editable_previews::note_found(w, m.photo, &m.identity)?;
                 moved.push(m.photo);
             }
             for (id, path) in &removals {
