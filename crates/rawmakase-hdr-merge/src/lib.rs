@@ -3,9 +3,11 @@
 //! as an ordinary raw, here and in Lightroom and Camera Raw.
 //!
 //! [`merge()`] checks the bracket ([`bracket`]), decodes its frames from the
-//! darkest to the brightest, measures each one's exposure against the one
-//! before (`ratio`) and its noise (`noise`), and adds it to the noise-weighted
-//! merge (`merge`); then it encodes the DNG ([`encode`]). [`write_dng`]
+//! darkest to the brightest, aligns each to the reference (`align`), measures
+//! each one's exposure against the one before (`ratio`) and its noise
+//! (`noise`), masks what moved against the reference (`ghost`) and adds it
+//! to the noise-weighted merge (`merge`); then it encodes the DNG
+//! ([`encode`]). [`write_dng`]
 //! publishes it beside the sources, once they are checked unchanged.
 //!
 //! It never depends on the catalog, export, the app, the GUI or inference
@@ -15,6 +17,7 @@
 mod align;
 pub mod bracket;
 mod dng;
+mod ghost;
 mod merge;
 mod noise;
 mod ratio;
@@ -32,6 +35,7 @@ use rawmakase_interop::exif::{CameraExif, Field, tag};
 use rawmakase_model::camera_data::{Demosaic, Metadata};
 use rawmakase_model::storage::Identity;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// The merged DNG's WhiteLevel, which the darkest frame's saturation maps to,
 /// as Lightroom's merges have it: a power of two, so the reference frame's
@@ -71,8 +75,22 @@ pub struct MergeOptions {
     /// Auto Align: each frame aligned to the reference and warped into its
     /// geometry. Off, the frames are merged as they were taken.
     pub align: bool,
+    /// How much of what moved between the frames is left out of the merge.
+    pub deghost: Deghost,
     /// The DNG's Software tag: the application and its version.
     pub software: String,
+}
+
+/// Deghost: how readily what differs between a frame and the reference
+/// counts as something that moved, and the frame is left out there. Off by
+/// default, as in Lightroom.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Deghost {
+    #[default]
+    None,
+    Low,
+    Medium,
+    High,
 }
 
 /// Where a merge is.
@@ -88,6 +106,8 @@ pub enum Stage {
     Align(usize),
     /// Measuring the `n`th frame's exposure against the one before.
     Measure(usize),
+    /// Masking what moved between the `n`th frame and the reference.
+    Deghost(usize),
     /// Adding the `n`th frame to the merge.
     Merge(usize),
     Encode,
@@ -125,6 +145,9 @@ pub struct MergedFrame {
     /// How Auto Align moved it onto the reference; `None` for the
     /// reference and without Auto Align.
     pub alignment: Option<Alignment>,
+    /// The share of its pixels deghosting took weight from: 0 for the
+    /// reference, without deghosting and where nothing moved.
+    pub deghosted: f64,
 }
 
 /// Why a merge or its DNG failed.
@@ -247,37 +270,48 @@ pub fn merge(
     };
 
     let n = bracket.order.len();
+    let threshold = options.deghost.threshold();
     let mut frames: Vec<MergedFrame> = Vec::with_capacity(n);
     let mut kept: Vec<Kept> = Vec::with_capacity(n);
     let mut accumulator: Option<merge::Accumulator> = None;
-    let mut previous: Option<(Frame, noise::Noise)> = None;
-    // With Auto Align the reference comes first: every other frame is
-    // aligned to it. It is kept until its turn to be merged.
-    let mut reference_frame: Option<(Frame, noise::Noise)> = None;
+    let mut previous: Option<Arc<(Frame, noise::Noise)>> = None;
+    // With Auto Align or deghosting the reference comes first: every other
+    // frame is aligned to it and compared with it. It is kept until its turn
+    // to be merged, and with deghosting to the end.
+    let mut reference_frame: Option<Arc<(Frame, noise::Noise)>> = None;
+    let mut ghost_reference: Option<Arc<(Frame, noise::Noise)>> = None;
     let mut template: Option<align::Template> = None;
-    if options.align {
+    if options.align || threshold.is_some() {
         let k = bracket.reference;
-        let (frame, noise) = decoded(k)?;
-        progress(Stage::Align(k), 0.);
-        template = Some(align::Template::new(align::Pyramid::of_frame(
-            &frame, noise,
-        )));
-        progress(Stage::Align(k), 1.);
-        reference_frame = Some((frame, noise));
+        let first = Arc::new(decoded(k)?);
+        if options.align {
+            progress(Stage::Align(k), 0.);
+            template = Some(align::Template::new(align::Pyramid::of_frame(
+                &first.0, first.1,
+            )));
+            progress(Stage::Align(k), 1.);
+        }
+        if threshold.is_some() {
+            ghost_reference = Some(Arc::clone(&first));
+        }
+        reference_frame = Some(first);
     }
     // Which pixels every frame covers so far, once a frame was warped.
     let mut coverage: Option<Vec<bool>> = None;
+    // What the frames deghosting left out saw, for where no frame is left.
+    let mut left_out: Vec<ghost::LeftOut> = Vec::new();
     for (k, &input) in bracket.order.iter().enumerate() {
         let path = &inputs[input].path;
-        let (frame, noise) = match reference_frame.take_if(|_| k == bracket.reference) {
+        let this = match reference_frame.take_if(|_| k == bracket.reference) {
             Some(kept) => kept,
-            None => decoded(k)?,
+            None => Arc::new(decoded(k)?),
         };
-        let (frame, covered, alignment) = match &template {
+        let noise = this.1;
+        let (this, covered, alignment) = match &template {
             Some(template) if k != bracket.reference => {
                 cancelled()?;
                 progress(Stage::Align(k), 0.);
-                let pyramid = align::Pyramid::of_frame(&frame, noise);
+                let pyramid = align::Pyramid::of_frame(&this.0, noise);
                 let alignment =
                     align::align(template, &pyramid, cancel).map_err(|why| match why {
                         align::Failure::Cancelled => Error::Cancelled,
@@ -287,26 +321,27 @@ pub fn merge(
                         },
                     })?;
                 drop(pyramid);
-                let (frame, covered) = if alignment.warped {
-                    let (warped, covered) = align::warp(&frame, &alignment.matrix, cancel)?;
-                    (warped, Some(covered))
+                let (this, covered) = if alignment.warped {
+                    let (warped, covered) = align::warp(&this.0, &alignment.matrix, cancel)?;
+                    (Arc::new((warped, noise)), Some(covered))
                 } else {
-                    (frame, None)
+                    (this, None)
                 };
                 progress(Stage::Align(k), 1.);
-                (frame, covered, Some(alignment))
+                (this, covered, Some(alignment))
             }
-            _ => (frame, None, None),
+            _ => (this, None, None),
         };
+        let frame = &this.0;
         let nominal_ev = bracket.ev[k];
-        let (ev, measured) = match &previous {
+        let (ev, measured) = match previous.as_deref() {
             None => (0., true),
             Some((dark, dark_noise)) => {
                 cancelled()?;
                 progress(Stage::Measure(k), 0.);
                 let last = frames.last().map_or(0., |f: &MergedFrame| f.ev);
                 let step = nominal_ev - bracket.ev[k - 1];
-                let measured = ratio::measure(dark, &frame, *dark_noise);
+                let measured = ratio::measure(dark, frame, *dark_noise);
                 progress(Stage::Measure(k), 1.);
                 match measured {
                     Some(r) => {
@@ -325,11 +360,63 @@ pub fn merge(
                 }
             }
         };
+        let excluded = match (threshold, ghost_reference.as_deref()) {
+            (Some(threshold), Some((reference, reference_noise))) if k != bracket.reference => {
+                cancelled()?;
+                progress(Stage::Deghost(k), 0.);
+                // The frame's levels at the reference's exposure, measured
+                // against the reference itself.
+                let ratio = if k < bracket.reference {
+                    ratio::measure(frame, reference, noise)
+                } else {
+                    ratio::measure(reference, frame, *reference_noise).map(|r| 1. / r)
+                }
+                .unwrap_or_else(|| (bracket.ev[bracket.reference] - nominal_ev).exp2());
+                let mask = ghost::mask(
+                    reference,
+                    *reference_noise,
+                    frame,
+                    noise,
+                    ratio,
+                    covered.as_deref(),
+                    threshold,
+                    cancel,
+                )?;
+                progress(Stage::Deghost(k), 1.);
+                mask
+            }
+            _ => None,
+        };
         progress(Stage::Merge(k), 0.);
         let acc =
             accumulator.get_or_insert_with(|| merge::Accumulator::new(frame.width, frame.height));
-        acc.add(&frame, ev.exp2(), noise, k == 0, covered.as_deref(), cancel)?;
+        acc.add(
+            frame,
+            ev.exp2(),
+            noise,
+            k == 0,
+            covered.as_deref(),
+            excluded.as_deref(),
+            cancel,
+        )?;
         progress(Stage::Merge(k), 1.);
+        let deghosted = excluded.as_ref().map_or(0., |mask| {
+            mask.iter().filter(|m| **m > 0.).count() as f64 / mask.len() as f64
+        });
+        if let Some(mask) = excluded {
+            let reference = ghost_reference
+                .as_deref()
+                .map(|(reference, _)| reference)
+                .filter(|_| bracket.reference != 0);
+            left_out.push(ghost::LeftOut::new(
+                k,
+                frame,
+                ev.exp2(),
+                &mask,
+                covered.as_deref(),
+                reference,
+            ));
+        }
         if let Some(covered) = covered {
             match &mut coverage {
                 None => coverage = Some(covered),
@@ -342,6 +429,7 @@ pub fn merge(
             ev,
             measured,
             alignment,
+            deghosted,
         });
         kept.push(Kept {
             saturation: frame.saturation,
@@ -349,11 +437,14 @@ pub fn merge(
             height: frame.height,
             metadata: frame.metadata.clone(),
         });
-        previous = Some((frame, noise));
+        previous = Some(this);
     }
     drop(previous);
+    drop(ghost_reference);
     cancelled()?;
-    let light = accumulator.ok_or(Error::Invalid("no frames"))?.finish();
+    let mut light = accumulator.ok_or(Error::Invalid("no frames"))?.finish();
+    ghost::fill(&mut light, kept[0].width as usize, &left_out);
+    drop(left_out);
 
     // The darkest frame's saturation, in its units, is the DNG's white.
     let white = f64::from(kept[0].saturation.iter().fold(1f32, |a, b| a.min(*b)));

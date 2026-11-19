@@ -9,11 +9,11 @@ lives in `crates/rawmakase-hdr-merge` and arrives in stages, one pull request ea
 - Floating-point DNGs keep their precision through decoding (`SensorData::F32`,
   [RAW decoding](raw-decoding.md)).
 - The DNG writer and its round trip (below).
-- The merge of a bracket, without deghosting, and the `rawmakase merge-hdr`
-  command.
+- The merge of a bracket and the `rawmakase merge-hdr` command.
 - Auto Align: brackets taken by hand.
+- Deghost: what moved between the frames.
 
-Deghosting, and the app's dialog and job follow.
+The app's dialog and job follow.
 
 ## The bracket
 
@@ -44,8 +44,9 @@ median exposure; of two as near, the darker.
    around on Bayer, 9 on X-Trans (beyond that, only X-Trans's pass over fine
    stripes averages colour along rows and columns).
    Small RAWs and linear DNGs are refused. Only two frames are held at a time;
-   with Auto Align also the reference, decoded first, until its turn, and a
-   frame's warped copy while it is warped: up to four.
+   with Auto Align or Deghost also the reference, decoded first (until its
+   turn, or with Deghost to the end), and a frame's warped copy while it is
+   warped: up to four.
 2. **Aligns** each frame to the reference (Auto Align, on by default; below),
    and warps it into the reference's geometry.
 3. **Measures** each frame's exposure against the one before, on pixels both
@@ -55,12 +56,14 @@ median exposure; of two as near, the darker.
    (a camera's 1/60 s is 1/64 s); the EXIF's ratio would leave a seam of that
    size. A ratio more than 0.5 stop from the EXIF's is refused as another scene;
    with fewer than 1000 such pixels, the EXIF's ratio is used.
-4. **Measures each frame's noise**, variance = shot · level + read, from its
+4. **Deghosts** (Deghost Low, Medium or High; below): masks what moved
+   between each frame and the reference, and takes it from the reference.
+5. **Measures each frame's noise**, variance = shot · level + read, from its
    flat 16 × 16 tiles: the robust variance of differences two pixels apart,
    the flattest fifth of each half-stop level, a weighted line through them.
    A frame with too few levels takes a rough model by its ISO speed. It is
    measured before the warp, which smooths it.
-5. **Merges**: per pixel and channel, each frame's estimate `s / g` (its
+6. **Merges**: per pixel and channel, each frame's estimate `s / g` (its
    sample over its exposure relative to the darkest) weighted by
    `g² / (shot · s + read)`, the inverse of its variance. Brighter frames win
    wherever they are unclipped. A ramp takes a frame's weight from 1 to 0
@@ -69,8 +72,10 @@ median exposure; of two as near, the darker.
    from the same frames and a ratio slightly off can't tint the passage. The
    darkest frame is never ramped or dropped: where every brighter frame
    clipped it alone says what the light was, as a single RAW would, and the
-   decoder's highlight recovery works on it as on any raw.
-6. **Encodes**: the darkest frame's saturation is WhiteLevel 32768, as in
+   decoder's highlight recovery works on it as on any raw. A frame's
+   deghosting mask takes its share of the frame's weight away, the darkest
+   frame's too.
+7. **Encodes**: the darkest frame's saturation is WhiteLevel 32768, as in
    Lightroom's merges. BaselineExposure is the reference camera's own (Camera
    Raw's, `camera_profiles::reference`) plus log2 of the reference's exposure
    over the darkest's and of the darkest's saturation, so the merge renders at
@@ -156,16 +161,56 @@ detector:
 Each frame's alignment (its shift at the centre, turn and remaining residual)
 is in `Merged::frames`, and the command line prints it.
 
+## Deghost
+
+Something that moved between the frames (a person walking, branches in the
+wind, waves, a near object's parallax Auto Align's one homography can't fit)
+merges as a half-transparent ghost of every frame's place. `ghost` leaves each
+frame out where it shows something else than the reference, so it appears
+once, as the reference saw it. None (the default, as in Lightroom), Low,
+Medium and High differ only in how readily a difference counts:
+
+- **What is compared:** each frame's luminance (the sum of its three channels)
+  against the reference's, the frame's brought to the reference's exposure by
+  their ratio, measured between the two directly (`ratio`). A pixel differs
+  when they are more than 6, 4 or 3 (Low, Medium, High) standard deviations
+  apart, the deviation from both frames' noise, 2% of the reference's level
+  for the ratio's error, and 0.3 pixel's misalignment at the reference's
+  gradient. Where one of them is clipped (or past 98% of its saturation), its
+  luminance is only a lower bound and only the other falling short of it
+  differs: a frame that saw a person where the reference saw a clipped sky
+  is left out there too.
+- **The mask:** the differing pixels are opened (a square of 1/2000 of the long
+  edge, so noise's lone outliers leave nothing), dilated by 0.5% of the long
+  edge and feathered by a blur of 0.5% (three box blurs), doubled: 1 over the
+  dilated mask, falling to 0 over about two standard deviations outside it.
+  The frame's weight is multiplied by 1 minus the mask. Frames' weights
+  differ by the square of their exposure ratio, so a frame much brighter than
+  the rest takes back most of the merge within the feather's first pixels:
+  the dilation's margin, not the feather, is what keeps its ghost out. A
+  mover narrower than the opening (a twig, a cable) is not masked.
+- **Where nothing is left:** where the reference clipped and the frames that
+  saw it unclipped were all left out, each connected region takes the
+  brightest of them that saw all of it unclipped, or the darkest: all of it
+  from one frame, as a single RAW would, so no seam runs through it. Only
+  what that can need is kept of the frames left out, the pixels where the
+  reference has no weight (none when it is the darkest frame), so it costs
+  memory in proportion to what moved where the reference clipped.
+
+Each frame's deghosted share is in `Merged::frames`, and the command line
+prints it.
+
 ## The command line
 
 ```sh
-rawmakase merge-hdr IMG_9814.CR3 IMG_9815.CR3 IMG_9816.CR3 [-o out.dng] [--no-align]
+rawmakase merge-hdr IMG_9814.CR3 IMG_9815.CR3 IMG_9816.CR3 [-o out.dng] [--no-align] [--deghost none|low|medium|high]
 ```
 
 The first RAW names the merge. Progress and what was measured (each frame's
 exposure by EXIF and measured, the reference, the BaselineExposure) go to
 standard error, the DNG's path to standard output. `--no-align` merges the
-frames as they were taken. `--output` must not exist.
+frames as they were taken; `--deghost` sets the deghost level (none by
+default). `--output` must not exist.
 Ctrl-C stops the merge without writing anything; a second Ctrl-C ends the
 process at once.
 
@@ -297,4 +342,41 @@ find the camera's profiles by its name.
 - **Not checked:** the Canon T8i tripod bracket (refused until its camera
   name is fixed), so whether a real tripod bracket comes out as the identity;
   a bracket of more than 24 megapixels.
+
+### Deghost (2026-11-19)
+
+- **Synthetic frames** (`ghost.rs`'s tests, 600 × 400, shot and read noise):
+  frames of one scene, two stops either side of the reference, leave no mask
+  at any level; a block in one frame is masked whole with its feather and
+  nothing beyond; where the reference clipped, a frame darker than the clip
+  there is masked and one that agrees is not; an empty region is filled from
+  one frame, the brightest that saw all of it unclipped.
+- **A synthetic bracket** (`tests/merge.rs`, through mosaic, demosaic and
+  merge, on a tripod): blocks in the darkest and brightest frames that the
+  reference doesn't show leave ghosts in eight blocks without deghosting; at
+  every level each block follows the scene as the reference saw it, within
+  the reference's noise, and a block the darkest frame alone saw where the
+  reference clips comes from it, within 5%, not as a hole. The bracket
+  without movers deghosts nothing at any level.
+- **The `play-raw` brackets**, aligned, the share of each frame deghosted
+  (Low / Medium / High) and the cost of Medium over Auto Align alone (CPU
+  time and peak memory on an Apple M1 Pro under load from other work):
+
+  | Bracket | Deghosted | CPU | Memory |
+  | --- | --- | --- | --- |
+  | Panasonic GX80 | 11–15% / 18–21% / 28% | +3 s | +0.3 GB |
+  | Fujifilm X-T4 | 0.3–0.5% / 0.5–0.8% / 0.8–1.1% | +5 s | +0.4 GB |
+  | Nikon D750, 5 frames | 7–24% / 13–31% / 19–35% | +10 s | +0.3 GB |
+  | Panasonic GH3, 5 frames | 0% / 0–0.2% / 0–0.4% | +4 s | +0.3 GB |
+
+  On the GX80 the masks cover the walking person and the birch's branches in
+  the wind (and a few patches of grass); with Medium both come out single, as
+  in the reference, where without deghosting they are doubled. On the D750
+  they cover the waves and the near car and grass, whose parallax no one
+  homography fits: the car comes out as sharp as the reference, the sun's
+  glitter on the water without most of the patches of darker frames' waves
+  (a few small ones remain where only darker frames saw a sparkle unclipped).
+  The static GH3 canyon is left nearly whole at every level.
+- **Not checked:** a real bracket where a mover crosses an area the reference
+  clipped (the synthetic test covers it); the dialog's preview of the masks.
 

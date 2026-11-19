@@ -4,7 +4,7 @@
 //! Nothing here reaches `app` (`scripts/deps-closures.txt`).
 use anyhow::{Result, bail};
 use rawmakase_cancel::Cancel;
-use rawmakase_hdr_merge::{Destination, FrameInput, MergeOptions, Stage};
+use rawmakase_hdr_merge::{Deghost, Destination, FrameInput, MergeOptions, Stage};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -24,6 +24,31 @@ pub struct MergeHdr {
     /// taken on a tripod, or one Auto Align can't align.
     #[arg(long)]
     pub no_align: bool,
+    /// Leave what moved between the frames out of the merge, taking it from
+    /// the reference frame: low leaves out only what clearly moved, high also
+    /// what moved little.
+    #[arg(long, value_enum, default_value_t = DeghostLevel::None)]
+    pub deghost: DeghostLevel,
+}
+
+/// The command line's names of [`Deghost`]'s levels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum DeghostLevel {
+    None,
+    Low,
+    Medium,
+    High,
+}
+
+impl From<DeghostLevel> for Deghost {
+    fn from(level: DeghostLevel) -> Self {
+        match level {
+            DeghostLevel::None => Self::None,
+            DeghostLevel::Low => Self::Low,
+            DeghostLevel::Medium => Self::Medium,
+            DeghostLevel::High => Self::High,
+        }
+    }
 }
 
 /// Merges `args.raws` and writes the DNG; returns its path. Progress and what
@@ -47,6 +72,7 @@ pub fn merge_hdr(
     let options = MergeOptions {
         demosaic: Default::default(),
         align: !args.no_align,
+        deghost: args.deghost.into(),
         software: format!("RAWmakase {}", env!("CARGO_PKG_VERSION")),
     };
     let err = Mutex::new(err);
@@ -58,6 +84,7 @@ pub fn merge_hdr(
             Stage::Check => "Checking the bracket".to_string(),
             Stage::Decode(n) => format!("Decoding frame {} of {}", n + 1, inputs.len()),
             Stage::Align(n) => format!("Aligning frame {} of {}", n + 1, inputs.len()),
+            Stage::Deghost(n) => format!("Deghosting frame {} of {}", n + 1, inputs.len()),
             Stage::Measure(_) | Stage::Merge(_) => return,
             Stage::Encode => "Writing the DNG".to_string(),
         };
@@ -87,9 +114,14 @@ pub fn merge_hdr(
             Some(a) => format!(", aligned: in place, residual {:.3} stop", a.residual),
             None => String::new(),
         };
+        let deghosted = if frame.deghosted > 0. {
+            format!(", deghosted {:.1}% of it", frame.deghosted * 100.)
+        } else {
+            String::new()
+        };
         writeln!(
             err,
-            "  {name}: {:+.2} EV by EXIF, {how}{reference}{aligned}",
+            "  {name}: {:+.2} EV by EXIF, {how}{reference}{aligned}{deghosted}",
             frame.nominal_ev
         )?;
     }
@@ -126,6 +158,7 @@ mod tests {
             raws: vec![dir.path().join("missing.CR3")],
             output: Some(output.clone()),
             no_align: false,
+            deghost: DeghostLevel::None,
         };
         let mut err = Vec::new();
         let got = merge_hdr(&args, Cancel::NEVER, &mut err).unwrap_err();

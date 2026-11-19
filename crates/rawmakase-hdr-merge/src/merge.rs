@@ -46,7 +46,10 @@ impl Accumulator {
     /// Adds `frame`, of `gain` over the darkest frame and `noise`; `darkest`
     /// for the darkest frame, which is never ramped or dropped where it
     /// covers the image. `covered`, for a frame warped by Auto Align, says
-    /// which pixels it covers; it adds nothing to the others.
+    /// which pixels it covers; it adds nothing to the others. `excluded`,
+    /// the frame's deghosting mask, takes that share of each pixel's weight
+    /// away, the darkest frame's too.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn add(
         &mut self,
         frame: &Frame,
@@ -54,10 +57,12 @@ impl Accumulator {
         noise: Noise,
         darkest: bool,
         covered: Option<&[bool]>,
+        excluded: Option<&[f32]>,
         cancel: Cancel<'_>,
     ) -> Result<(), Error> {
         if frame.pixels.len() != self.sums.len()
             || covered.is_some_and(|c| c.len() != self.sums.len())
+            || excluded.is_some_and(|e| e.len() != self.sums.len())
         {
             return Err(Error::Invalid("frames of different sizes"));
         }
@@ -89,6 +94,7 @@ impl Accumulator {
                             .fold(0f32, f32::max);
                         ramp(level)
                     };
+                    let ramp = ramp * (1. - excluded.map_or(0., |e| e[i]));
                     if ramp <= 0. {
                         continue;
                     }
@@ -103,11 +109,19 @@ impl Accumulator {
     }
 
     /// The merged light, in the darkest frame's units: 1 is what reached its
-    /// white level.
+    /// white level. NaN where no frame was merged into a pixel: where the
+    /// frames Auto Align warped don't reach it, or deghosting left every
+    /// unclipped frame out ([`crate::ghost::fill`]).
     pub(crate) fn finish(self) -> Vec<[f32; 3]> {
         self.sums
             .into_par_iter()
-            .map(|s| std::array::from_fn(|c| if s[c + 3] > 0. { s[c] / s[c + 3] } else { 0. }))
+            .map(|s| {
+                if s[3..].iter().all(|w| *w > 0.) {
+                    std::array::from_fn(|c| s[c] / s[c + 3])
+                } else {
+                    [f32::NAN; 3]
+                }
+            })
             .collect()
     }
 }
