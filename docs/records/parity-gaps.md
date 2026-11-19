@@ -136,6 +136,59 @@ photos closer, 87 further), Highlights −100 0.0094 against 0.0101 (71 and 68).
 default black's key on the darkest levels' gain as well, Shadows +100 is at 0.0106 (84
 and 51). The two ensembles stay; both are to be refitted on the new photos.
 
+**What the rule's error is made of (2026-11-19).** The first 162 of those photos are
+in (375 training photos with the 213 before). Held out by photo in four folds, the
+second ensemble's method leaves 0.176, 0.125, 0.206 and 0.123 stop at Shadows +100,
+Highlights −100, Shadows −100 and Highlights +100 (0.184, 0.142, 0.216 and 0.135 on the
+213). Like for like, on the old photos held out and fitted with or without the new
+ones: 0.185 → 0.173, 0.132 → 0.129, 0.218 → 0.207 and 0.129 → 0.128 at the median
+(84 to 90 photos closer by 0.01, 61 to 68 further), and 1 to 4% at the mean: real and
+small, and the worst photos do not move.
+
+Each held-out photo's error was then split (RMS over its pixels, median over photos):
+the prediction as it is; scaled by the one factor that suits the photo best; and the
+photo's own best curve of the base level, which no rule can beat.
+
+| | Shadows +100 | Highlights −100 | Shadows −100 | Highlights +100 |
+| --- | --- | --- | --- | --- |
+| Predicted, photo held out | 0.178 | 0.124 | 0.206 | 0.122 |
+| With the photo's best factor | 0.148 | 0.110 | 0.168 | 0.101 |
+| The photo's own best curve | 0.131 | 0.080 | 0.165 | 0.081 |
+
+For Shadows more than half of the error's variance (54% at +100, 64% at −100) is left
+by any curve of the base level, and 42 to 44% for Highlights: the gain is not a
+function of the base level alone. Of what a curve could gain, two thirds is one factor
+per photo (the whole curve a fifth too strong or too weak on a tenth of the photos
+each way). Nothing known about a photo goes with that factor: its best correlations
+are 0.23 with the share of black pixels and 0.19 with the top's texture, and the
+classes of scene, light, contrast and camera maker explain 1 to 5% of it.
+
+What is left under the photo's own best curve (0.12 stop for Shadows, 0.075 for
+Highlights, on the engine's 512-pixel map) was tested against four local causes, each
+as a term with one set of coefficients for all photos:
+
+- *A base at another scale* (the curve's slope times a Gaussian of 2 to 64 map pixels
+  less the base): 1% of its variance; 14% with coefficients fitted to each photo. With
+  the pixel's own detail as a term too, 5 to 7% and 19 to 21%.
+- *Another intensity than luminance* (the slope times the log of each channel, of the
+  brightest and of the darkest over luminance): 0.5%, no more on the most colourful
+  quarter of the photos.
+- *Local texture as a multiplier of the lift*: the sign holds for Shadows (3 to 4%
+  more lift for each doubling of the texture around a pixel, on three photos in four),
+  and it explains 1%.
+- *A base that follows fine detail less* (less a quarter to a half of the guided
+  filter's weight times the detail finer than two map pixels): 3% less of the residual
+  for Shadows, none for Highlights, and the contrast kept in the finest band then moves
+  away from Camera Raw's (Shadows +100: Camera Raw 0.80, the base as shipped 0.89, with
+  the change 0.93).
+
+On contact sheets the residual shows large smooth dark areas (hair, a car's body)
+lifted more than the curve says, small dark details less, smooth haze less than a
+textured meadow at the same level, and noise on night scenes, where it is largest.
+The stage's form (a per-photo curve of a guided base level) is therefore near its
+floor for Shadows and Highlights at full sliders: more photos move the predictable
+third slowly, and no single local term explains the rest.
+
 **The gate (#1175).** Its sets now hold Shadows with Highlights in the four sign combinations at
 full sliders, Shadows +80 with Highlights −30, and Shadows +60 with Highlights −60,
 Whites +30 and Blacks −30: the `pairs` sets, 33 validation photos of four families,
