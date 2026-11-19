@@ -112,6 +112,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         (1, 1) => Variant::DngUncompressed,
         (7, 1) => Variant::DngLosslessJpeg,
         (8, _) => Variant::DngDeflate,
+        (LOSSY_JPEG, 1) => Variant::DngLossyJpeg,
         (1, 3) => Variant::DngUncompressedFloat,
         (9, _) => Variant::DngVc5,
         (JPEG_XL, 1 | 3) => Variant::DngJpegXl,
@@ -766,10 +767,26 @@ fn int_tile(
         // Lossless JPEG; some writers (Blackmagic) store DCT JPEG under
         // the same code.
         7 if dct::is_dct(tile) => {
-            dct::decode_into(tile, cancel, decoded)?;
+            if dct::decode_into(tile, cancel, decoded)?.components != spp {
+                return Err(corrupt("DNG DCT JPEG tile samples"));
+            }
         }
         7 => {
             ljpeg::decode_into(&ljpeg::header(tile)?, tile, cancel, decoded)?;
+        }
+        // DCT JPEG, a pixel's samples side by side. Its frame is as wide as
+        // the tile, as `place` lays the samples out, and no taller (a last
+        // strip may be shorter); checked before the frame is decoded, so
+        // that a header can't make one tile cost more than its size.
+        LOSSY_JPEG => {
+            let frame = dct::frame_size(tile).ok_or_else(|| corrupt("DNG lossy JPEG tile"))?;
+            if frame.components != spp
+                || frame.width * spp != tile_row
+                || frame.height > plan.tile[1] as usize
+            {
+                return Err(corrupt("DNG lossy JPEG tile size or samples"));
+            }
+            dct::decode_into(tile, cancel, decoded)?;
         }
         c => return Err(Error::Unsupported(format!("DNG compression {c}"))),
     }
@@ -1129,6 +1146,9 @@ fn floats(data: &[u8], bps: u32, n: usize, little: bool, out: &mut Vec<f32>) -> 
     out.resize(n, 0.);
     Ok(())
 }
+
+/// DNG 1.4's compression code for lossy JPEG.
+const LOSSY_JPEG: u32 = 34892;
 
 /// DNG 1.7's compression code for JPEG XL.
 const JPEG_XL: u32 = 52546;
@@ -1524,6 +1544,36 @@ pub(crate) mod tests {
         assert_eq!((s.channels, s.data.u16s()), (3, &[1, 2, 3, 4, 5, 6][..]));
         assert_eq!((s.black, s.white), ([10, 20, 30, 20], 4095));
         assert_eq!(s.area, [0, 0, 2, 1]);
+    }
+
+    /// Lossy JPEG (compression 34892), as Adobe DNG Converter wrote lossy
+    /// DNGs before JPEG XL: linear raw in tiles of 8-bit DCT JPEG, YCbCr
+    /// under an Adobe marker, decoded to RGB samples under the file's white.
+    /// A tile whose JPEG frame is not the tile's size is refused.
+    #[test]
+    fn lossy_jpeg_linear_raw_decodes_to_rgb() {
+        use crate::codec::dct::tests::three_component_jpeg;
+        let le16s = |v: &[u16]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+        let mut extra = linear_raw();
+        extra.extend([
+            (258, 3, 3, le16s(&[8, 8, 8])),
+            (50717, 3, 3, le16s(&[255, 255, 255])),
+        ]);
+        let jpeg = three_component_jpeg(Some(1), [0, 1, 2]);
+        let f = one_tile_dng([8, 8], [8, 8], 34892, &jpeg, &extra);
+        assert_eq!(
+            crate::open(&f).unwrap().variant,
+            crate::Variant::DngLossyJpeg
+        );
+        let s = decode(&f);
+        assert_eq!((s.channels, s.white), (3, 255));
+        assert_eq!(s.data.u16s(), [135, 129, 131].repeat(64));
+        // A frame narrower than its tile, or taller.
+        for (image, tile) in [([8, 8], [16, 8]), ([8, 4], [8, 4])] {
+            let f = one_tile_dng(image, tile, 34892, &jpeg, &extra);
+            let info = crate::open(&f).unwrap();
+            assert!(crate::decode(&info, &f, Cancel::NEVER).is_err());
+        }
     }
 
     /// A black pattern that differs by position (Samsung's 2 × 2 of three
