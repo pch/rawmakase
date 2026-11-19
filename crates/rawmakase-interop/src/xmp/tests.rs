@@ -2975,3 +2975,120 @@ fn hdr_settings_are_kept_while_off_and_applied_on() {
         .unwrap();
     assert_eq!(back.hdr, strict.hdr);
 }
+/// An edit's look is written as Lightroom Classic writes it, so Lightroom and Camera
+/// Raw render it (#666): its settings in `Parameters`, with the edit's Treatment as
+/// their `ConvertToGrayscale` (Camera Raw takes it from the look), and a user look's
+/// table beside the settings. RAWmakase reads both back as they were made.
+#[test]
+fn looks_are_written_with_their_lightroom_settings() -> Result<()> {
+    use crate::camera_profiles::{CameraProfile, look_source::testing};
+    use crate::model::settings_groups::GroupSelection;
+    let m = Metadata {
+        make: "Test".into(),
+        model: "Camera".into(),
+        cam_xyz: [[0.8, -0.2, -0.1], [-0.3, 1.1, 0.2], [-0.05, 0.15, 0.6]],
+        ..Default::default()
+    };
+    let base = CameraProfile::camera_matrix_default(&m).unwrap();
+    let uuid = "66600000000000000000000000000020";
+    let look = std::sync::Arc::new(testing::look_profile(
+        &testing::look_xmp("Written look", uuid, "Someone", "128, 140"),
+        &base,
+    ));
+    let profiles = vec![std::sync::Arc::new(base.clone()), look.clone()];
+    let mut r = Recipe {
+        profile: Some(look.clone()),
+        profile_amount: 0.5,
+        ..Recipe::default()
+    };
+    let info = crate::xmp::preset_write::PresetInfo::new("Look", "Mine");
+    let photo = crate::xmp::write::Photo {
+        raw_name: "IMG.ARW".into(),
+        settings: true,
+        format: "image/jpeg".into(),
+        ..Default::default()
+    };
+    for black_white in [false, true] {
+        r.effects.monochrome = black_white;
+        let flag = if black_white { "True" } else { "False" };
+        let preset = crate::xmp::preset_write::preset(&r, &m, &info, &GroupSelection::all());
+        let packet = crate::xmp::write::packet(&r, &m, &photo);
+        for text in [&preset, &packet] {
+            assert!(text.contains("<crs:Parameters>"), "{text}");
+            assert!(
+                text.contains(&format!(r#"crs:RGBTable="{uuid}""#)),
+                "{text}"
+            );
+            assert!(text.contains(&format!("crs:Table_{uuid}=")), "{text}");
+            assert!(text.contains(r#"crs:Amount="0.5""#), "{text}");
+            assert!(text.contains(r#"crs:SupportsMonochrome="true""#), "{text}");
+            assert!(text.contains("<rdf:li>128, 140</rdf:li>"), "{text}");
+            let parameters = &text[text.find("<crs:Parameters>").unwrap()..];
+            assert!(
+                parameters.contains(&format!(r#"crs:ConvertToGrayscale="{flag}""#)),
+                "{text}"
+            );
+            assert_eq!(text.matches("ConvertToGrayscale").count(), 2, "{text}");
+        }
+        // Read back by RAWmakase: the look, its Amount and the Treatment.
+        let base_recipe = Recipe::with_profiles(&m, &profiles);
+        let read =
+            parse(Path::new("look.xmp"), &preset)?.apply(&base_recipe, &m, &profiles, None)?;
+        assert!(std::sync::Arc::ptr_eq(
+            read.profile.as_ref().unwrap(),
+            &look
+        ));
+        assert_eq!(read.profile_amount, 0.5);
+        assert_eq!(read.effects.monochrome, black_white);
+    }
+    // Adobe's looks are written without their tables, as Lightroom does.
+    let adobe_uuid = "66600000000000000000000000000021";
+    let adobe = std::sync::Arc::new(testing::look_profile(
+        &testing::look_xmp(
+            "Adobe look",
+            adobe_uuid,
+            "© 2018 Adobe Systems, Inc.",
+            "128, 140",
+        ),
+        &base,
+    ));
+    let r = Recipe {
+        profile: Some(adobe),
+        ..Recipe::default()
+    };
+    let preset = crate::xmp::preset_write::preset(&r, &m, &info, &GroupSelection::all());
+    assert!(
+        preset.contains(&format!(r#"crs:RGBTable="{adobe_uuid}""#)),
+        "{preset}"
+    );
+    assert!(!preset.contains("Table_"), "{preset}");
+    // A look whose settings this process doesn't have is named only, as before.
+    let mut unknown = (*look).clone();
+    unknown.enhanced.as_mut().unwrap().uuid = "66600000000000000000000000000022".into();
+    let r = Recipe {
+        profile: Some(std::sync::Arc::new(unknown)),
+        ..Recipe::default()
+    };
+    let preset = crate::xmp::preset_write::preset(&r, &m, &info, &GroupSelection::all());
+    assert!(preset.contains("<crs:Look>"), "{preset}");
+    assert!(
+        !preset.contains("Parameters") && !preset.contains("Table_"),
+        "{preset}"
+    );
+    Ok(())
+}
+/// Lightroom writes a user look's table beside a photo's settings as `Table_<md5>`;
+/// reading the settings accepts it rather than refusing it as unsupported.
+#[test]
+fn a_user_looks_table_beside_the_settings_is_accepted() -> Result<()> {
+    let r = parse(
+        Path::new("photo.xmp"),
+        &xml(
+            r#"c:Exposure2012="0.5" c:Table_F4AC6B5A3A86FA0F70C12C90334518A7="abc""#,
+            "",
+        ),
+    )?
+    .apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    assert_eq!(r.exposure, 0.5);
+    Ok(())
+}

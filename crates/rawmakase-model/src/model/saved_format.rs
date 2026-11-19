@@ -143,7 +143,9 @@ pub(crate) fn unknown_settings<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<BTreeMap<String, serde_json::Value>, D::Error> {
     let mut unknown = BTreeMap::<String, serde_json::Value>::deserialize(d)?;
-    unknown.retain(|key, _| !is_obsolete(key));
+    // A stored recipe's reference to its look's settings, which reading resolves and
+    // the next save writes again from the profile (`stored_recipe`).
+    unknown.retain(|key, _| !is_obsolete(key) && key != super::stored_recipe::LOOK_SOURCE);
     Ok(unknown)
 }
 

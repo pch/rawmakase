@@ -600,6 +600,13 @@ Some features span several owners; each module's docs describe its part:
   rendering without its profile. Values read are verified against their id before
   they are parsed; the process-wide cache only shares verified values, and the
   upgrade's check reads past it.
+- A look's settings as Lightroom writes them (`camera_profiles::look_source`) are
+  kept only for writing the look out: the profile library reads them from the
+  look file, a catalog stores them as a `recipe_assets` kind of their own, named
+  from the stored recipe under `look_source` (releases that predate it keep it as
+  an unknown setting), and writers find them by the look's UUID and fingerprint in
+  a process-wide registry. Unlike the assets above, that registry is global: it
+  only ever decides what is written, never how an edit renders.
 - Parsing XMP produces settings, while application validates and resolves a
   recipe. Collection discovery and favorites belong in `presets`. Auto settings in
   XMP are interpreted in `xmp` and measured by the engine through the model's `PhotoMeasures`,

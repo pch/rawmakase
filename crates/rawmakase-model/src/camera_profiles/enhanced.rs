@@ -405,6 +405,8 @@ pub(super) struct LookFile {
     restriction: String,
     copyright: String,
     look: Enhanced,
+    /// The look's settings as Lightroom writes them (see [`super::look_source`]).
+    source: Arc<super::look_source::LookSource>,
 }
 impl LookFile {
     pub(super) fn read(path: &Path) -> Result<Self> {
@@ -445,6 +447,8 @@ impl LookFile {
             ..self.look.clone()
         });
         p.validate()?;
+        // A profile made from the file is one a recipe may hold and a writer write.
+        super::look_source::register(self.source.clone(), true);
         Ok(p)
     }
     /// A look file's name and UUID, without reading its tables: what an import
@@ -653,6 +657,11 @@ impl LookFile {
             settings: LookSettings::parse(|key: &str| d.attribute((CRS, key)).unwrap_or(""))?,
         };
         look.validate_contents()?;
+        let source = super::look_source::LookSource::read(
+            d,
+            &look,
+            super::look_source::is_adobe(attr("Copyright")),
+        );
         Ok(Self {
             name: name.into(),
             group: label(d, "Group").unwrap_or("").trim().into(),
@@ -660,6 +669,7 @@ impl LookFile {
             restriction: attr("CameraModelRestriction").into(),
             copyright: attr("Copyright").into(),
             look,
+            source: Arc::new(source),
         })
     }
 }
@@ -723,6 +733,47 @@ pub(super) mod tests {
         format!(
             r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><r:RDF xmlns:r="{RDF}"><r:Description xmlns:c="{CRS}" c:PresetType="Look" c:UUID="0123456789ABCDEF0123456789ABCDEF" c:CameraProfile="Test base" c:LookTable="0123456789ABCDEF0123456789ABCDEF" c:Table_0123456789ABCDEF0123456789ABCDEF="{table}"><c:Name><r:Alt><r:li xml:lang="x-default">Test look</r:li></r:Alt></c:Name></r:Description></r:RDF></x:xmpmeta>"#
         )
+    }
+    /// A look's fingerprint is the same for the profile a catalog reads back as for the
+    /// one the library made, for every kind of look: an HSV table with its Amount
+    /// bounds, black & white, internal sliders and settings, and a point curve (see
+    /// `look_source::fingerprint`).
+    #[test]
+    fn stored_settings_keep_their_fingerprint() -> Result<()> {
+        use crate::storage::recipe_assets::{Asset, AssetKind, AssetValue};
+        let mut base = CameraProfile::camera_matrix_default(&crate::camera_data::Metadata {
+            make: "Test".into(),
+            model: "Camera".into(),
+            cam_xyz: [[0.8, -0.2, -0.1], [-0.3, 1.1, 0.2], [-0.05, 0.15, 0.6]],
+            ..Default::default()
+        })
+        .unwrap();
+        base.name = "Test base".into();
+        let xml = profile_xml(&fixture()).replace(
+            "c:PresetType=",
+            r#"c:SupportsAmount="True" c:ConvertToGrayscale="True" c:Contrast2012="+20" c:Shadows2012="+10" c:Clarity2012="+5" c:Blacks2012="-5" c:Saturation="-20" c:SplitToningShadowHue="44" c:SplitToningShadowSaturation="25" c:PostCropVignetteAmount="-8" c:PresetType="#,
+        ).replace(
+            "</c:Name>",
+            "</c:Name><c:ToneCurvePV2012><r:Seq><r:li>0, 0</r:li><r:li>128, 140</r:li><r:li>255, 255</r:li></r:Seq></c:ToneCurvePV2012>",
+        );
+        let made = std::sync::Arc::new(LookFile::parse(&xml)?.compose(&base)?);
+        let look = made.enhanced.as_ref().unwrap();
+        assert!(look.monochrome && look.amount.is_some() && look.table.is_some());
+        assert!(!look.settings.is_default() && look.contrast != 0.);
+        let stored = Asset::profile(&made);
+        let AssetValue::Profile(read) =
+            Asset::from_stored(&stored.id, AssetKind::Profile, &stored.compressed())
+                .map_err(|e| anyhow::anyhow!("{e}"))?
+                .value
+        else {
+            panic!("a profile")
+        };
+        assert_eq!(
+            super::super::look_source::fingerprint(read.enhanced.as_ref().unwrap()),
+            super::super::look_source::fingerprint(look)
+        );
+        assert!(super::super::look_source::find(&read).is_some());
+        Ok(())
     }
     #[test]
     fn sdk_base85_zlib_table_has_expected_hue_rotation() -> Result<()> {

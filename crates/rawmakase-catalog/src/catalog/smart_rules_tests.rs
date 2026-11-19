@@ -291,6 +291,68 @@ fn edit_facts_take_a_lightroom_looks_treatment() -> Result<()> {
     Ok(())
 }
 
+/// An edit with a look whose Lightroom settings are known stores them once beside its
+/// profile, named from the edit, and reads back with its look (#666).
+#[test]
+fn an_edits_look_settings_are_stored_beside_its_profile() -> Result<()> {
+    use crate::camera_profiles::look_source::{self, testing};
+    let (_d, mut cat, photo) = catalog_with_photo()?;
+    let path = cat.photos()?[0].path.clone();
+    let base = crate::camera_profiles::CameraProfile::camera_matrix_default(
+        &crate::camera_data::Metadata {
+            make: "Test".into(),
+            model: "Camera".into(),
+            cam_xyz: [[0.8, -0.2, -0.1], [-0.3, 1.1, 0.2], [-0.05, 0.15, 0.6]],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let look = std::sync::Arc::new(testing::look_profile(
+        &testing::look_xmp(
+            "Catalog look",
+            "66600000000000000000000000000030",
+            "Someone",
+            "128, 150",
+        ),
+        &base,
+    ));
+    let source = look_source::find(&look).unwrap();
+    let recipe = crate::model::recipe::Recipe {
+        profile: Some(look),
+        ..Default::default()
+    };
+    cat.save_edit(
+        photo,
+        &path,
+        &crate::storage::Identity::read(&path)?,
+        &recipe,
+        &Default::default(),
+        HistoryUpdate::Keep,
+    )?;
+    let db = cat.db_for_tests();
+    let stored: String =
+        db.query_row("SELECT recipe FROM photos WHERE id = ?", [photo.0], |r| {
+            r.get(0)
+        })?;
+    let id = crate::storage::recipe_assets::Asset::look_source(&source).id;
+    assert!(
+        stored.contains(&format!("\"look_source\":\"{id}\"")),
+        "{stored}"
+    );
+    let kind: String = db.query_row("SELECT kind FROM recipe_assets WHERE id = ?", [&id], |r| {
+        r.get(0)
+    })?;
+    assert_eq!(kind, "look_source");
+    crate::storage::recipe_assets::clear_cache();
+    let read = cat.load_edit(photo, &path)?.unwrap().recipe;
+    assert_eq!(read, recipe);
+    assert!(std::sync::Arc::ptr_eq(
+        &look_source::find(read.profile.as_ref().unwrap()).unwrap(),
+        &source
+    ));
+    Ok(())
+}
+
 /// New Catalog's defaults, as Lightroom Classic 15.6 makes them: six smart
 /// collections in a "Smart Collections" set, with Lightroom's text.
 #[test]

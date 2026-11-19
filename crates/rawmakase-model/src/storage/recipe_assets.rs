@@ -1,5 +1,5 @@
-//! Camera profiles and Lensfun calibrations a catalog stores once and recipes name
-//! by content.
+//! Camera profiles, Lensfun calibrations and looks' Lightroom settings a catalog
+//! stores once and recipes name by content.
 //!
 //! In memory a recipe always holds its profile and calibration. Only a catalog's
 //! stored form names them by id instead (`"profile": "sha256:…"`, see
@@ -8,16 +8,24 @@
 //! removed or updated, or on another computer: the catalog holds the value.
 //!
 //! Reading a reference needs the catalog it was stored in. A caller parses stored
-//! text inside [`reading`] with the [`AssetSource`] it read the text from; nothing
-//! is registered globally, so two open catalogs, a closed one an export job still
-//! reads from and a command-line run all resolve the same way, and a reference read
-//! with no source fails with a clear error rather than rendering something else.
+//! text inside [`reading`] with the [`AssetSource`] it read the text from; no
+//! reference is resolved through global state, so two open catalogs, a closed one an
+//! export job still reads from and a command-line run all resolve the same way, and a
+//! reference read with no source fails with a clear error rather than rendering
+//! something else. (Looks' settings read are registered globally, for writing only;
+//! see below.)
 //!
 //! A process-wide cache shares one value between every recipe that names it (a
 //! weak map by id, and the most recently used ones held strongly). It is only an
 //! accelerator: it holds values whose bytes a source verified against their id, or
 //! values a write is storing, which name themselves.
-use crate::camera_profiles::{CameraProfile, asset};
+//!
+//! A look's settings as Lightroom writes them ([`LookSource`]) are stored beside the
+//! profile only so RAWmakase can write the look back out; nothing renders them. A
+//! stored recipe names them under `look_source`, which releases that predate them
+//! keep as an unknown setting. Each one read is also handed to
+//! [`crate::camera_profiles::look_source`], whose writers find it by the look.
+use crate::camera_profiles::{CameraProfile, asset, look_source::LookSource};
 use crate::optics::lensfun::Calibration;
 use std::collections::{HashMap, VecDeque};
 use std::io::Read;
@@ -34,14 +42,16 @@ const RECENT: usize = 32;
 pub enum AssetKind {
     Profile,
     Calibration,
+    LookSource,
 }
 impl AssetKind {
-    pub const ALL: [Self; 2] = [Self::Profile, Self::Calibration];
+    pub const ALL: [Self; 3] = [Self::Profile, Self::Calibration, Self::LookSource];
     /// The name stored with it.
     pub fn name(self) -> &'static str {
         match self {
             Self::Profile => "camera_profile",
             Self::Calibration => "lensfun_calibration",
+            Self::LookSource => "look_source",
         }
     }
     pub fn from_name(name: &str) -> Option<Self> {
@@ -53,12 +63,14 @@ impl AssetKind {
         match self {
             Self::Profile => b"rawmakase-camera-profile-v1\n",
             Self::Calibration => b"rawmakase-lensfun-calibration-v1\n",
+            Self::LookSource => b"rawmakase-look-source-v1\n",
         }
     }
     fn label(self) -> &'static str {
         match self {
             Self::Profile => "Camera profile",
             Self::Calibration => "Lensfun calibration",
+            Self::LookSource => "Look settings",
         }
     }
 }
@@ -120,18 +132,21 @@ impl std::error::Error for AssetError {}
 pub enum AssetValue {
     Profile(Arc<CameraProfile>),
     Calibration(Arc<Calibration>),
+    LookSource(Arc<LookSource>),
 }
 impl AssetValue {
     pub fn kind(&self) -> AssetKind {
         match self {
             Self::Profile(_) => AssetKind::Profile,
             Self::Calibration(_) => AssetKind::Calibration,
+            Self::LookSource(_) => AssetKind::LookSource,
         }
     }
     fn downgrade(&self) -> WeakValue {
         match self {
             Self::Profile(p) => WeakValue::Profile(Arc::downgrade(p)),
             Self::Calibration(c) => WeakValue::Calibration(Arc::downgrade(c)),
+            Self::LookSource(s) => WeakValue::LookSource(Arc::downgrade(s)),
         }
     }
 }
@@ -165,6 +180,15 @@ impl Asset {
         Self {
             id: asset_id(AssetKind::Calibration, &canonical),
             value: AssetValue::Calibration(c.clone()),
+            canonical: Arc::new(canonical),
+        }
+    }
+    /// `s` as stored. A look's settings are stored as they are read.
+    pub fn look_source(s: &Arc<LookSource>) -> Self {
+        let canonical = serde_json::to_vec(s.as_ref()).expect("look settings serialize");
+        Self {
+            id: asset_id(AssetKind::LookSource, &canonical),
+            value: AssetValue::LookSource(s.clone()),
             canonical: Arc::new(canonical),
         }
     }
@@ -226,6 +250,14 @@ fn parse(kind: AssetKind, canonical: &[u8]) -> Result<AssetValue, String> {
         ))),
         AssetKind::Calibration => {
             AssetValue::Calibration(Arc::new(serde_json::from_slice(canonical).map_err(why)?))
+        }
+        AssetKind::LookSource => {
+            let source: LookSource = serde_json::from_slice(canonical).map_err(why)?;
+            source.validate()?;
+            AssetValue::LookSource(crate::camera_profiles::look_source::register(
+                Arc::new(source),
+                false,
+            ))
         }
     })
 }
@@ -464,7 +496,7 @@ fn lookup(kind: AssetKind, id: &str) -> Result<AssetValue, AssetError> {
 pub fn profile(id: &str) -> Result<Arc<CameraProfile>, AssetError> {
     match lookup(AssetKind::Profile, id)? {
         AssetValue::Profile(p) => Ok(p),
-        AssetValue::Calibration(_) => unreachable!("kind checked by lookup"),
+        _ => unreachable!("kind checked by lookup"),
     }
 }
 
@@ -472,19 +504,21 @@ pub fn profile(id: &str) -> Result<Arc<CameraProfile>, AssetError> {
 pub fn calibration(id: &str) -> Result<Arc<Calibration>, AssetError> {
     match lookup(AssetKind::Calibration, id)? {
         AssetValue::Calibration(c) => Ok(c),
-        AssetValue::Profile(_) => unreachable!("kind checked by lookup"),
+        _ => unreachable!("kind checked by lookup"),
     }
 }
 
 enum WeakValue {
     Profile(Weak<CameraProfile>),
     Calibration(Weak<Calibration>),
+    LookSource(Weak<LookSource>),
 }
 impl WeakValue {
     fn upgrade(&self) -> Option<AssetValue> {
         match self {
             Self::Profile(p) => p.upgrade().map(AssetValue::Profile),
             Self::Calibration(c) => c.upgrade().map(AssetValue::Calibration),
+            Self::LookSource(s) => s.upgrade().map(AssetValue::LookSource),
         }
     }
 }
