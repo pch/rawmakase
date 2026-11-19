@@ -4248,6 +4248,7 @@ dependencies = [
  "half",
  "libc",
  "md-5",
+ "png 0.18.1",
  "rawmakase-protocol",
  "rawmakase-tiff",
  "rayon",

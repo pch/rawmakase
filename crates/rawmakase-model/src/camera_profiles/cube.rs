@@ -326,6 +326,19 @@ fn one_dimensional(
 }
 
 impl Lut3d {
+    /// A table of `size` divisions per side over 0–1 without a shaper, from its
+    /// `size³` nodes with the red index fastest: what a HaldCLUT holds (`hald`).
+    pub(super) fn from_nodes(size: usize, data: Vec<[f32; 3]>) -> Self {
+        assert!((2..=MAX_SIDE).contains(&size) && data.len() == size.pow(3));
+        Self {
+            size,
+            domain_min: [0.; 3],
+            domain_max: [1.; 3],
+            shaper: None,
+            data,
+        }
+    }
+
     /// The cube's divisions per side.
     pub(super) fn size(&self) -> usize {
         self.size

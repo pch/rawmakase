@@ -183,7 +183,7 @@ fn the_basic_panel_offers_relative_white_balance_for_a_jpeg() {
         "Import Adobe profiles for this camera",
         "Import profiles…",
         "Import profiles from folder…",
-        "Import .cube LUTs…",
+        "Import LUTs…",
     ] {
         assert_eq!(count(&labels, absent), 0, "{absent}: {labels:?}");
     }

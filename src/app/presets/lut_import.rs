@@ -1,4 +1,4 @@
-//! The Import .cube LUTs window: the colour space the LUTs expect, chosen for the
+//! The Import LUTs window: the colour space the LUTs expect, chosen for the
 //! batch before the files, as Camera Raw's Create Profile asks for it. It opens at
 //! sRGB every time, so a space chosen for one pack never applies to the next.
 use crate::app::presets::bulk_import::ImportKind;
@@ -10,15 +10,15 @@ use crate::camera_profiles::LutSpace;
 use eframe::egui::{self, Color32};
 
 impl Editor {
-    /// Opens the Import .cube LUTs window at sRGB.
+    /// Opens the Import LUTs window at sRGB.
     pub(in crate::app) fn open_lut_import(&mut self) {
         self.lut_import = Some(LutSpace::Srgb);
     }
-    /// Whether the Import .cube LUTs window is open.
+    /// Whether the Import LUTs window is open.
     pub(in crate::app) fn lut_import_open(&self) -> bool {
         self.lut_import.is_some()
     }
-    /// The Import .cube LUTs window, while open; its choice opens the file chooser.
+    /// The Import LUTs window, while open; its choice opens the file chooser.
     pub(in crate::app) fn lut_import_window(&mut self, ctx: &egui::Context) {
         if let Some(dialog) = self.lut_import_ui(ctx) {
             self.dialog(dialog, ctx);
@@ -36,7 +36,7 @@ impl Editor {
             .show(ctx, |ui| {
                 ui.set_width(400.);
                 ui.label(
-                    egui::RichText::new("Import .cube LUTs")
+                    egui::RichText::new("Import LUTs")
                         .size(text::TITLE)
                         .color(palette.tone(Tone::STRONG)),
                 );

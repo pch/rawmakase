@@ -4,7 +4,7 @@ use crate::app::*;
 use crate::camera_data::Metadata;
 use eframe::egui::{Pos2, Rect};
 
-/// A raw photo's Profile menu offers Import .cube LUTs…, which opens the window at
+/// A raw photo's Profile menu offers Import LUTs…, which opens the window at
 /// sRGB. Choosing Rec. 2020, the last of Create Profile's five spaces, and Choose
 /// Files… asks for the file chooser for Rec. 2020 LUTs; Cancel asks for nothing; the
 /// window opens at sRGB again.
@@ -77,7 +77,7 @@ fn import_cube_luts_asks_the_space_before_the_files() {
             .cloned()
             .unwrap_or_else(|| panic!("no {label}"))
     };
-    let item = node(&menu, "Import .cube LUTs…");
+    let item = node(&menu, "Import LUTs…");
     let [down, up] = press_and_release(centre(&item));
     controls_frame(&ctx, &mut editor, down);
     controls_frame(&ctx, &mut editor, up);

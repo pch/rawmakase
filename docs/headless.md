@@ -54,7 +54,7 @@ is built:
 
 ```sh
 export RAWMAKASE_DATA_DIR=/opt/rawmakase/data
-rawmakase import-profiles /path/to/profiles/        # DCPs, look XMPs, .cube LUTs
+rawmakase import-profiles /path/to/profiles/        # DCPs, look XMPs, .cube and HaldCLUT .png LUTs
 rawmakase import-lens-profiles /path/to/lcp/        # Adobe .lcp lens profiles
 rawmakase lensfun install                           # Lensfun's community lens database
 ```

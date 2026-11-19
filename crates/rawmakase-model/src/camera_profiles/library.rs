@@ -444,7 +444,7 @@ fn collect(dir: &Path, depth: usize, files: &mut Vec<std::path::PathBuf>) {
 }
 
 /// Explicitly import files into RAWmakase's own library: DCPs and look XMPs are
-/// copied, and a `.cube` becomes a look XMP (see `cube_look`) for colours in `space`,
+/// copied, and a `.cube` or HaldCLUT `.png` becomes a look XMP (see `cube_look`) for colours in `space`,
 /// one for the whole batch (DCPs and XMPs have their own). Validate the complete batch
 /// before writing; never follow or discover Adobe application directories.
 pub fn import_files(paths: &[std::path::PathBuf], space: LutSpace) -> Result<Vec<ImportedProfile>> {
@@ -464,12 +464,12 @@ pub struct ImportedProfile {
     /// For a `.cube`, the look it became.
     pub cube: Option<CubeImport>,
 }
-/// What became of a `.cube`.
+/// What became of a LUT (a `.cube` or HaldCLUT `.png`).
 #[derive(Clone, Debug)]
 pub struct CubeImport {
     /// The look's name in the profile list.
     pub name: String,
-    /// The cube's file stem, which the look is named after unless a different
+    /// The LUT's file stem, which the look is named after unless a different
     /// profile has that name.
     pub stem: String,
     /// In the library already, under `name`: nothing was written.
@@ -502,14 +502,32 @@ impl std::fmt::Display for CubeImport {
         write!(f, ": {}", self.fidelity)
     }
 }
-/// Whether a `.cube` can be imported, and how faithfully: what [`import_files`] would
-/// make of its bytes, in any space (the space changes neither).
-pub fn read_cube(bytes: &[u8]) -> Result<Fidelity> {
-    ensure!(
-        bytes.len() as u64 <= cube_look::MAX_BYTES,
-        "the cube is too large"
-    );
-    Ok(cube_look::convert(bytes, LutSpace::Srgb)?.fidelity)
+/// Whether a LUT file (a `.cube` or a HaldCLUT `.png`, told apart by `path`'s
+/// extension) can be imported, as [`import_files`] would in any space: it tells
+/// whether the import fails, not how faithfully the look will hold the LUT.
+pub fn read_lut(path: &Path, bytes: &[u8]) -> Result<()> {
+    let format = cube_look::Format::of(path).context("not a .cube or HaldCLUT .png LUT")?;
+    cube_look::read(bytes, format)?.check()
+}
+/// What a folder import makes of a `.png` it found, rather than was given by name:
+/// `None` to pass it over, else whether it can be imported, as [`read_lut`] says.
+///
+/// LUT packs ship sample images beside their LUTs, so a PNG found in a folder is passed
+/// over when it is not a HaldCLUT's size, or is but does not look like a table
+/// (`hald::looks_like_lut`), and when it is too large or unreadable to be one. A PNG
+/// of a HaldCLUT's size that does not decode is reported, as a damaged `.cube` is.
+pub fn found_hald(path: &Path) -> Option<Result<()>> {
+    use cube_look::Format;
+    let fits = std::fs::metadata(path).is_ok_and(|m| m.len() <= Format::Hald.max_bytes());
+    let bytes = fits.then(|| std::fs::read(path).ok()).flatten()?;
+    if !super::hald::has_hald_size(&bytes) {
+        return None;
+    }
+    match cube_look::read(&bytes, Format::Hald) {
+        Ok(lut) if !lut.looks_like_lut() => None,
+        Ok(lut) => Some(lut.check()),
+        Err(e) => Some(Err(e)),
+    }
 }
 /// What [`import_readable`] did.
 #[derive(Debug, Default)]
@@ -609,23 +627,20 @@ pub(super) fn import_into(
             .and_then(|v| v.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
+        let lut = cube_look::Format::of(path);
         ensure!(
-            matches!(ext.as_str(), "dcp" | "xmp" | "cube"),
-            "Choose DCP or XMP profiles or .cube files"
+            lut.is_some() || matches!(ext.as_str(), "dcp" | "xmp"),
+            "Choose DCP or XMP profiles, .cube LUTs or HaldCLUT .png LUTs"
         );
-        let limit = if ext == "cube" {
-            cube_look::MAX_BYTES
-        } else {
-            16_000_000
-        };
+        let limit = lut.map_or(16_000_000, cube_look::Format::max_bytes);
         ensure!(
             std::fs::metadata(path)?.len() <= limit,
             "Profile too large: {}",
             path.display()
         );
         let bytes = std::fs::read(path)?;
-        if ext == "cube" {
-            cubes.push((path, bytes));
+        if let Some(format) = lut {
+            cubes.push((path, bytes, format));
             continue;
         }
         if ext == "dcp" {
@@ -686,9 +701,11 @@ pub(super) fn import_into(
     }
     // Cubes last, so their names avoid every other profile's in this import.
     let mut imported = Vec::new();
-    for (path, bytes) in cubes {
+    for (path, bytes, format) in cubes {
         let file = path.file_name().unwrap_or_default().to_string_lossy();
-        let converted = cube_look::convert(&bytes, space).with_context(|| format!("{file}"))?;
+        let converted = cube_look::read(&bytes, format)
+            .and_then(|lut| cube_look::convert_lut(&lut, space))
+            .with_context(|| format!("{file}"))?;
         let (stem, group) = cube_look::stem_and_group(path)?;
         let report = |name: String, already| CubeImport {
             name,
@@ -1541,7 +1558,56 @@ mod tests {
         let error = import_into(&[good, bad], &dest, LutSpace::Srgb).unwrap_err();
         assert!(format!("{error:#}").starts_with("Log.cube: "), "{error:#}");
         assert!(!dest.join("Good.xmp").exists());
-        assert!(read_cube(&std::fs::read(temp.path().join("Pack/Good.cube"))?).is_ok());
+        let good = temp.path().join("Pack/Good.cube");
+        assert!(read_lut(&good, &std::fs::read(&good)?).is_ok());
+        let bad = temp.path().join("Pack/Log.cube");
+        assert!(read_lut(&bad, &std::fs::read(&bad)?).is_err());
+        Ok(())
+    }
+
+    /// A HaldCLUT imports as the look its table would as a `.cube`: the same table,
+    /// so the same look, which the second import finds already imported. It has no
+    /// title, so its look has no description.
+    #[test]
+    fn a_hald_clut_imports_as_the_same_look_as_its_cube() -> Result<()> {
+        use super::super::hald::tests::{Encoding, hald_png};
+        let temp = tempfile::tempdir()?;
+        let dest = temp.path().join("library");
+        let pack = temp.path().join("Film");
+        std::fs::create_dir_all(&pack)?;
+        let png = pack.join("Portra.png");
+        // Colours both files store exactly, at 16 bits, so both give one table.
+        let warm = |p| warm(p).map(|v| (v * 65535.).round() / 65535.);
+        // Level 3: the 9 divisions `write_cube` writes.
+        std::fs::write(&png, hald_png(3, warm, Encoding::Rgb16))?;
+        let done = import_into(std::slice::from_ref(&png), &dest, LutSpace::Srgb)?;
+        let report = done[0].cube.as_ref().expect("a LUT's report");
+        assert_eq!((report.name.as_str(), report.already), ("Portra", false));
+        let xmp = std::fs::read_to_string(&done[0].path)?;
+        assert!(!xmp.contains("crs:Description"), "{xmp}");
+        let cube = write_cube(&temp.path().join("Elsewhere"), "Portra.cube", warm);
+        let again = import_into(std::slice::from_ref(&cube), &dest, LutSpace::Srgb)?;
+        assert!(again[0].cube.as_ref().unwrap().already);
+        Ok(())
+    }
+
+    /// A PNG that is not a HaldCLUT's size fails the import with why, before writing.
+    #[test]
+    fn a_png_of_another_size_is_refused() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let png = temp.path().join("Sample.png");
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, 10, 10);
+            encoder.set_color(png::ColorType::Rgb);
+            encoder.write_header()?.write_image_data(&[0; 300])?;
+        }
+        std::fs::write(&png, &bytes)?;
+        let dest = temp.path().join("library");
+        let error = import_into(std::slice::from_ref(&png), &dest, LutSpace::Srgb).unwrap_err();
+        assert!(format!("{error:#}").contains("not a HaldCLUT"), "{error:#}");
+        assert!(read_lut(&png, &bytes).is_err());
+        assert!(!dest.exists());
         Ok(())
     }
 }

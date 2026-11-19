@@ -23,6 +23,8 @@ md-5.workspace = true
 sha2.workspace = true
 unicode-normalization.workspace = true
 rayon.workspace = true
+# Reads HaldCLUT LUTs, which are PNG images (`camera_profiles::hald`).
+png = "0.18.1"
 roxmltree.workspace = true
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json.workspace = true

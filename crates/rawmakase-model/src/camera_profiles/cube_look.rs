@@ -8,8 +8,12 @@
 //! The look is named after the file: the name is what RAWmakase lists, dedupes and
 //! resolves looks by, so the import owns collisions ([`Names`]) and a cube's `TITLE`,
 //! which packs often repeat across files, is only its description.
+//!
+//! A HaldCLUT `.png` ([`Format::Hald`], read by `hald`) holds a 3D table as a `.cube`
+//! does, and is imported the same way; it has no title.
 use super::{
     cube::Cube,
+    hald,
     rgb_table::{RgbTable, Tail},
 };
 use anyhow::{Context, Result, bail, ensure};
@@ -83,11 +87,13 @@ impl std::fmt::Display for LutSpace {
 pub enum Fidelity {
     /// Within 16-bit rounding everywhere.
     Exact,
-    /// Approximation with a sampled maximum of `max_levels` 8-bit levels (of 255), because
-    /// the cube was resampled from `resampled` divisions, its 1D shaper was baked into
-    /// the table (`shaper`), its outputs outside 0–1 were clamped, or several of these.
+    /// Approximation with a sampled maximum of `max_levels` 8-bit levels (of 255) and a
+    /// sampled mean of `mean_levels`, because the cube was resampled from `resampled`
+    /// divisions, its 1D shaper was baked into the table (`shaper`), its outputs outside
+    /// 0–1 were clamped, or several of these.
     Approximated {
         max_levels: f32,
+        mean_levels: f32,
         resampled: Option<usize>,
         shaper: bool,
         clamped: bool,
@@ -99,13 +105,17 @@ impl std::fmt::Display for Fidelity {
             Self::Exact => write!(f, "exact"),
             Self::Approximated {
                 max_levels,
+                mean_levels,
                 resampled,
                 shaper,
                 clamped,
             } => {
+                // The mean as well, as a large table resampled is off by most at the
+                // few colours where it clips, and by far less elsewhere.
                 write!(
                     f,
-                    "approximated, sampled error {max_levels:.1} 8-bit levels"
+                    "approximated, sampled error {max_levels:.1} 8-bit levels at most, \
+                     {mean_levels:.2} on average"
                 )?;
                 let mut why = Vec::new();
                 if let Some(size) = resampled {
@@ -138,18 +148,97 @@ pub(super) struct Converted {
     pub fidelity: Fidelity,
 }
 
-/// The most a `.cube` file may hold: a 65³ cube is about 8 MB of text.
-pub(super) const MAX_BYTES: u64 = 64_000_000;
+/// The LUT file formats imported as looks, told apart by their extension.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Format {
+    /// A `.cube`, as Adobe's Cube LUT specification writes it.
+    Cube,
+    /// A HaldCLUT `.png`.
+    Hald,
+}
+impl Format {
+    /// The format a file's extension names, if it is a LUT's.
+    pub(super) fn of(path: &Path) -> Option<Self> {
+        let extension = path.extension()?.to_str()?;
+        if extension.eq_ignore_ascii_case("cube") {
+            Some(Self::Cube)
+        } else if extension.eq_ignore_ascii_case("png") {
+            Some(Self::Hald)
+        } else {
+            None
+        }
+    }
+    /// The most a file of this format may hold.
+    pub(super) fn max_bytes(self) -> u64 {
+        match self {
+            // A 65³ cube is about 8 MB of text.
+            Self::Cube => 64_000_000,
+            Self::Hald => hald::MAX_BYTES,
+        }
+    }
+}
 
-/// Reads and converts a cube expecting colours in `space`, or says why it cannot be
-/// imported.
+/// A LUT read from its file, not yet converted.
+pub(super) struct Lut {
+    cube: Cube,
+    format: Format,
+    /// A `.cube`'s `TITLE`.
+    title: Option<String>,
+}
+
+/// Reads a LUT file of `format`, or says why it cannot be imported.
+pub(super) fn read(bytes: &[u8], format: Format) -> Result<Lut> {
+    ensure!(
+        bytes.len() as u64 <= format.max_bytes(),
+        "the file is too large for a LUT"
+    );
+    match format {
+        Format::Cube => {
+            let text = std::str::from_utf8(bytes).map_err(|_| {
+                anyhow::anyhow!("not a .cube file: it is not text (a macOS ._ file, perhaps)")
+            })?;
+            Ok(Lut {
+                cube: Cube::parse(text)?,
+                format,
+                title: super::cube::title_of(text).filter(|t| !t.trim().is_empty()),
+            })
+        }
+        Format::Hald => Ok(Lut {
+            cube: Cube::Three(hald::read(bytes)?),
+            format,
+            title: None,
+        }),
+    }
+}
+
+impl Lut {
+    /// Whether the LUT converts, without measuring how faithfully (which costs more
+    /// than the conversion for a large table).
+    pub(super) fn check(&self) -> Result<()> {
+        RgbTable::from_cube(&self.cube, LutSpace::Srgb).map(drop)
+    }
+
+    /// Whether a HaldCLUT's image looks like a lookup table rather than a photo of a
+    /// HaldCLUT's size (`hald::looks_like_lut`). A `.cube` always does.
+    pub(super) fn looks_like_lut(&self) -> bool {
+        match (&self.cube, self.format) {
+            (Cube::Three(lut), Format::Hald) => hald::looks_like_lut(lut),
+            _ => true,
+        }
+    }
+}
+
+/// Reads and converts a `.cube` expecting colours in `space`.
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn convert(bytes: &[u8], space: LutSpace) -> Result<Converted> {
-    let text = std::str::from_utf8(bytes).map_err(|_| {
-        anyhow::anyhow!("not a .cube file: it is not text (a macOS ._ file, perhaps)")
-    })?;
-    let cube = Cube::parse(text)?;
-    let (table, table_bytes) = RgbTable::from_cube(&cube, space)?;
-    let fidelity = fidelity(&cube, &table);
+    convert_lut(&read(bytes, Format::Cube)?, space)
+}
+
+/// Converts a LUT expecting colours in `space`, or says why it cannot be imported.
+pub(super) fn convert_lut(lut: &Lut, space: LutSpace) -> Result<Converted> {
+    let cube = &lut.cube;
+    let (table, table_bytes) = RgbTable::from_cube(cube, space)?;
+    let fidelity = fidelity(cube, &table);
     let uuid = {
         use md5::{Digest, Md5};
         Md5::digest(&table_bytes)
@@ -160,7 +249,7 @@ pub(super) fn convert(bytes: &[u8], space: LutSpace) -> Result<Converted> {
     Ok(Converted {
         uuid,
         table: super::enhanced::compress(&table_bytes),
-        title: super::cube::title_of(text).filter(|t| !t.trim().is_empty()),
+        title: lut.title.clone(),
         fidelity,
     })
 }
@@ -205,13 +294,16 @@ fn fidelity(cube: &Cube, table: &RgbTable) -> Fidelity {
     if divisions != size {
         grids.push(points(divisions));
     }
-    let mut worst = match cube {
+    // The largest error and the sum and count of errors, over every sample.
+    let merge = |a: (f32, f64, usize), b: (f32, f64, usize)| (a.0.max(b.0), a.1 + b.1, a.2 + b.2);
+    let one = |e: f32| (e, f64::from(e), 1);
+    let (mut worst, sum, count) = match cube {
         // A 1D table's channels are independent, so the gray axis tries each curve.
         Cube::One(_) => grids
             .iter()
             .flatten()
-            .map(|&v| error([v; 3]))
-            .fold(0f32, f32::max),
+            .map(|&v| one(error([v; 3])))
+            .fold((0., 0., 0), merge),
         Cube::Three(_) => {
             use rayon::prelude::*;
             grids
@@ -219,17 +311,17 @@ fn fidelity(cube: &Cube, table: &RgbTable) -> Fidelity {
                 .map(|axis| {
                     axis.par_iter()
                         .map(|&r| {
-                            let mut worst = 0f32;
+                            let mut sampled = (0., 0., 0);
                             for &g in axis {
                                 for &b in axis {
-                                    worst = worst.max(error([r, g, b]));
+                                    sampled = merge(sampled, one(error([r, g, b])));
                                 }
                             }
-                            worst
+                            sampled
                         })
-                        .reduce(|| 0., f32::max)
+                        .reduce(|| (0., 0., 0), merge)
                 })
-                .fold(0f32, f32::max)
+                .fold((0., 0., 0), merge)
         }
     };
     // A shaper can have narrow features between all of the 3D probe points.
@@ -248,6 +340,7 @@ fn fidelity(cube: &Cube, table: &RgbTable) -> Fidelity {
     } else {
         Fidelity::Approximated {
             max_levels: worst * 255.,
+            mean_levels: (sum / count as f64) as f32 * 255.,
             // A shaped cube is always sampled anew; its own grid is not the table's.
             resampled: (divisions != size && !shaper).then_some(size),
             shaper,
@@ -438,6 +531,8 @@ pub(super) fn group_of(folders: &[String]) -> String {
         "apps",
         "application",
         "applications",
+        "clut",
+        "cluts",
         "cube",
         "cubes",
         "export",
@@ -446,9 +541,14 @@ pub(super) fn group_of(folders: &[String]) -> String {
         "for",
         "format",
         "formats",
+        "hald",
+        "haldclut",
+        "haldcluts",
         "lut",
         "luts",
         "macosx",
+        "png",
+        "pngs",
         "other",
         "others",
         "program",
@@ -584,6 +684,7 @@ pub(super) mod tests {
         }
         let Fidelity::Approximated {
             max_levels,
+            mean_levels,
             resampled,
             shaper: false,
             clamped,
@@ -593,6 +694,18 @@ pub(super) mod tests {
         };
         assert_eq!((resampled, clamped), (Some(65), false));
         assert!(max_levels > 0.01 && max_levels < 40., "{max_levels}");
+        // Off by most at a few colours only: the mean is a small part of the most.
+        assert!(
+            mean_levels > 0. && mean_levels < max_levels / 4.,
+            "{mean_levels} of {max_levels}"
+        );
+        assert!(
+            converted.fidelity.to_string().contains(&format!(
+                "{max_levels:.1} 8-bit levels at most, {mean_levels:.2} on average"
+            )),
+            "{}",
+            converted.fidelity
+        );
         // A smooth cube survives resampling nearly untouched.
         let smooth = |[r, g, b]: [f32; 3]| [r * 0.9, g, 0.1 + 0.8 * b];
         assert_eq!(table_fidelity(&cube_text(65, smooth)), Fidelity::Exact);
@@ -610,6 +723,7 @@ pub(super) mod tests {
             resampled,
             shaper: false,
             clamped,
+            ..
         } = table_fidelity(&cube_text(9, over))
         else {
             panic!("not approximated");
@@ -692,6 +806,7 @@ pub(super) mod tests {
             resampled,
             shaper,
             clamped,
+            ..
         } = converted.fidelity
         else {
             panic!("{:?}", converted.fidelity);
@@ -872,6 +987,8 @@ pub(super) mod tests {
             // Folders named like those deeper in the path are ordinary ones.
             ("/Users/me/Media/Film Emulation/A.cube", "Film Emulation"),
             ("/Users/me/Media/Pack/Cube Files/A.cube", "Pack"),
+            ("/Users/me/Media/Pack/HaldCLUT/A.png", "Pack"),
+            ("/Users/me/Media/Pack/Hald CLUTs/PNG/A.png", "Pack"),
             ("/Volumes/T5/Home/Pack/A.cube", "Pack"),
             ("/LUTs/A.cube", "LUTs"),
             ("A.cube", ""),

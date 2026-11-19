@@ -1063,6 +1063,7 @@ mod cube_look;
 mod dcp;
 mod enhanced;
 pub mod fitted;
+mod hald;
 pub mod hdr_look;
 pub mod hdr_tone;
 #[rustfmt::skip]
@@ -1085,8 +1086,8 @@ pub fn table_bytes(text: &str) -> Result<Vec<u8>> {
 pub use library::listed_from;
 pub use library::{
     CubeImport, Groups, Imported, ImportedProfile, Listed, MenuEntry, adobe_installed, builtin,
-    compose_look, fingerprint as library_fingerprint, import_files, import_into_dir,
-    import_readable, installed, library_dirs, listed, load, read_cube,
+    compose_look, fingerprint as library_fingerprint, found_hald, import_files, import_into_dir,
+    import_readable, installed, library_dirs, listed, load, read_lut,
 };
 pub use look_settings::{LookSettings, Toning};
 pub use rgb_table::{Dimensions, Gamma, Gamut, Primaries};
