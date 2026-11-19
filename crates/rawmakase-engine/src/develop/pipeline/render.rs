@@ -598,7 +598,7 @@ mod sampling_tests {
         let mut im = CameraImage {
             width: 256,
             height: 128,
-            pixels: vec![],
+            pixels: vec![].into(),
             metadata: Metadata {
                 wb: [1.; 3],
                 daylight_wb: [1.; 3],

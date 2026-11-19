@@ -38,8 +38,13 @@ impl Opened {
 pub fn open_source(path: &Path, cancel: Cancel<'_>) -> Result<Opened> {
     match source(path) {
         Source::Raw => open(path).map(Opened::Raw),
-        Source::Rendered => raster::open(path, cancel)
-            .map(|image| Opened::Rendered(rawmakase_engine::develop::rendered::to_scene(image))),
+        Source::Rendered => raster::open(path, cancel).map(|image| {
+            let mut image = rawmakase_engine::develop::rendered::to_scene(image);
+            // Its recovered image is the file as it is (`develop::quality::recovered`):
+            // sharing the pixels lets the two be one buffer.
+            image.pixels.share();
+            Opened::Rendered(image)
+        }),
     }
 }
 
@@ -741,6 +746,24 @@ mod tests {
                 super::Opened::Raw(_) => panic!("{name} must open as rendered"),
             }
         }
+    }
+
+    /// A rendered file's recovered image is the file as it is, and the same
+    /// pixels in memory: the two hold one buffer, where each had its own.
+    #[test]
+    fn a_rendered_file_and_its_recovered_image_are_one_buffer() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/data/formats")
+            .join("corners.png");
+        let super::Opened::Rendered(image) = super::open_source(&path, Cancel::NEVER).unwrap()
+        else {
+            panic!("a PNG opens as rendered");
+        };
+        let recovered =
+            rawmakase_engine::develop::quality::recovered(&image, Cancel::NEVER).unwrap();
+        assert!(!image.pixels.is_empty());
+        assert_eq!(image.pixels.as_ptr(), recovered.pixels.as_ptr());
+        assert!(image.pixels.shares_buffer(&recovered.pixels));
     }
 
     /// An HDR file opens for Develop and export as an HDR edit: its light survives

@@ -343,7 +343,7 @@ mod tests {
         let im = CameraImage {
             width: 100,
             height: 50,
-            pixels: vec![[0.2; 3]; 5000],
+            pixels: vec![[0.2; 3]; 5000].into(),
             metadata: Metadata {
                 width: 100,
                 height: 50,

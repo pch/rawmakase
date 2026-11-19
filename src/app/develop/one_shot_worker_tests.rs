@@ -20,7 +20,7 @@ pub(in crate::app) fn broken_photo() -> Arc<CameraImage> {
         recovered: Default::default(),
         width: 64,
         height: 64,
-        pixels: vec![[0.2, 0.1, 0.05]; 3],
+        pixels: vec![[0.2, 0.1, 0.05]; 3].into(),
         metadata,
         fast: false,
         scale_factor: 1.,

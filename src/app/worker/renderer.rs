@@ -1167,7 +1167,7 @@ mod tests {
         let recipe = Recipe::default();
         // Fewer pixels than its size says: indexing it panics.
         let mut broken = (*image()).clone();
-        broken.pixels.truncate(10);
+        broken.pixels = broken.pixels[..10].to_vec().into();
         worker.submit(RenderJob {
             id: 1,
             pane: Pane::After,

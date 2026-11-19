@@ -230,32 +230,31 @@ pub fn assemble(
     let (ow, plane) = (2 * pw, 4 * pw * ph);
     let [ax, ay] = layout.pad;
     let mut pixels = vec![[0f32; 3]; w * h];
-    pixels
-        .par_chunks_mut(w)
-        .zip(plain.pixels.par_chunks(w))
-        .enumerate()
-        .for_each(|(y, (row, plain_row))| {
-            let oy = y + ay;
-            for (x, (p, q)) in row.iter_mut().zip(plain_row).enumerate() {
-                let ox = x + ax;
-                let s = share[(oy / 2) * pw + ox / 2];
-                let i = oy * ow + ox;
-                if s == 1. {
-                    *p = *q;
-                    continue;
-                }
-                for c in 0..3 {
-                    let ai = (output.rgb[c * plane + i] * wb[c]).max(0.);
-                    p[c] = if s == 0. { ai } else { ai + s * (q[c] - ai) };
-                }
+    pixels.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
+        let oy = y + ay;
+        // A row at a time: a decode kept as its recovered image's buffer is
+        // never copied out whole.
+        let plain_row = plain.pixels.range(y * w..(y + 1) * w);
+        for (x, (p, q)) in row.iter_mut().zip(plain_row.iter()).enumerate() {
+            let ox = x + ax;
+            let s = share[(oy / 2) * pw + ox / 2];
+            let i = oy * ow + ox;
+            if s == 1. {
+                *p = *q;
+                continue;
             }
-        });
+            for c in 0..3 {
+                let ai = (output.rgb[c * plane + i] * wb[c]).max(0.);
+                p[c] = if s == 0. { ai } else { ai + s * (q[c] - ai) };
+            }
+        }
+    });
     ensure!(!cancel.is_cancelled(), "Development cancelled");
     Ok(CameraImage {
         recovered: Default::default(),
         width: plain.width,
         height: plain.height,
-        pixels,
+        pixels: pixels.into(),
         metadata: plain.metadata.clone(),
         fast: false,
         scale_factor: plain.scale_factor,
@@ -500,6 +499,47 @@ mod tests {
         // Not yet computed: plain.
         assert_eq!(at(58, 0), p(58, 0));
         assert_eq!(at(58, 2), 0.9);
+    }
+
+    /// The plain image is read as it was decoded, never as its recovered image,
+    /// when the two hold one buffer (as the app's open photo does): the same
+    /// source as from a decode with a buffer of its own, which is not copied out.
+    #[test]
+    fn a_decode_holding_one_buffer_assembles_the_same_source() {
+        use rawmakase_engine::develop::quality::with_recovered;
+        let (width, height) = (60, 4);
+        let bright = || {
+            let mut im = plain(width, height, [1.; 3]);
+            // Unequal channels, bright: recovery changes them.
+            for p in im.pixels.iter_mut().step_by(3) {
+                *p = [0.9, 0.5, 0.3];
+            }
+            im
+        };
+        let apart = bright();
+        let one = with_recovered(bright(), Cancel::NEVER).unwrap();
+        let recovered = one.recovered.get().unwrap();
+        assert!(one.pixels.shares_buffer(&recovered.pixels));
+        assert_ne!(one.pixels, recovered.pixels);
+        let layout = Layout::new(width, height, [0, 0]);
+        let rgb = output(&layout, |_, _, _| 0.9);
+        let mut clipped = vec![false; layout.packed_width * layout.packed_height];
+        clipped[0] = true;
+        let assembled = |plain: &CameraImage| {
+            let output = ModelOutput {
+                layout,
+                rgb: &rgb,
+                done: None,
+                clipped: &clipped,
+            };
+            assemble(&output, plain, Cancel::NEVER).unwrap()
+        };
+        let source = assembled(&one);
+        assert_eq!(source.pixels, assembled(&apart).pixels);
+        // Where the model saw clipping, the decode's own value: not the recovered one.
+        assert_eq!(source.pixels[0], [0.9, 0.5, 0.3]);
+        assert_ne!(recovered.pixels[0], [0.9, 0.5, 0.3]);
+        assert!(one.pixels.shares_buffer(&recovered.pixels));
     }
 
     #[test]

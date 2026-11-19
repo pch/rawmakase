@@ -28,7 +28,7 @@ fn editor() -> (Editor, egui::Context) {
             recovered: Default::default(),
             width: 12,
             height: 8,
-            pixels: vec![[0.2, 0.1, 0.05]; 96],
+            pixels: vec![[0.2, 0.1, 0.05]; 96].into(),
             metadata,
             fast: false,
             scale_factor: 1.,

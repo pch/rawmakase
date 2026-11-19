@@ -472,7 +472,7 @@ impl Raw {
                 recovered: Default::default(),
                 width,
                 height,
-                pixels,
+                pixels: pixels.into(),
                 metadata: self.metadata,
                 fast: decode == Decode::Half,
                 // Developed in floating point: nothing is scaled down to
@@ -537,7 +537,7 @@ impl Raw {
             recovered: Default::default(),
             width: w,
             height: h,
-            pixels,
+            pixels: pixels.into(),
             metadata: self.metadata.clone(),
             fast: half,
             scale_factor: 1.,

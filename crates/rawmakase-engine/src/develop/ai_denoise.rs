@@ -16,8 +16,10 @@ use std::sync::Arc;
 pub struct AiSource(Arc<CameraImage>);
 impl AiSource {
     /// Recovers the highlights of `image`, the assembled AI source
-    /// (`rawmakase_decode::ai::denoise::assemble`); its unrecovered pixels are let go.
+    /// (`rawmakase_decode::ai::denoise::assemble`), in its own buffer; its
+    /// unrecovered pixels are let go.
     pub fn recover(image: CameraImage, cancel: Cancel<'_>) -> Result<Self> {
+        let image = super::quality::with_recovered(image, cancel)?;
         Ok(Self(super::quality::recovered(&image, cancel)?))
     }
     /// The recovered image.

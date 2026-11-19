@@ -93,7 +93,7 @@ fn halve(im: &CameraImage) -> CameraImage {
         recovered: Default::default(),
         width: w,
         height: h,
-        pixels,
+        pixels: pixels.into(),
         metadata: im.metadata.clone(),
         fast: im.fast,
         scale_factor: im.scale_factor,

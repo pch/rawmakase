@@ -40,12 +40,25 @@ fn reconstruct(p: [f32; 3], sensor: [f32; 3]) -> [f32; 3] {
     x
 }
 
+/// One white-balanced pixel reconstructed, or `None` for a pixel no channel of
+/// which is bright enough to be pulled: `wb` are the photo's as-shot multipliers,
+/// which give each channel's fraction of the sensor's white.
+fn recovered_pixel(p: [f32; 3], wb: [f32; 3]) -> Option<[f32; 3]> {
+    let sensor = std::array::from_fn(|c| p[c] / wb[c]);
+    (!sensor.iter().all(|s| *s <= PULL_FLOOR)).then(|| reconstruct(p, sensor))
+}
+
+/// The multipliers [`recovered_pixel`] takes, kept away from zero.
+fn sensor_white(im: &CameraImage) -> [f32; 3] {
+    im.metadata.wb.map(|v| v.max(0.001))
+}
+
 /// Highlight reconstruction in camera space, before colour conversion. Stops with an
 /// error once `cancel` is set, and only then.
 pub fn recover_highlights(im: &CameraImage, cancel: Cancel<'_>) -> Result<CameraImage> {
     check_cancel(cancel)?;
     let mut out = im.clone();
-    let wb = im.metadata.wb.map(|v| v.max(0.001));
+    let wb = sensor_white(im);
     out.pixels
         .par_chunks_mut(im.width.max(1) as usize)
         .for_each(|row| {
@@ -53,15 +66,69 @@ pub fn recover_highlights(im: &CameraImage, cancel: Cancel<'_>) -> Result<Camera
                 return;
             }
             for p in row {
-                let sensor = std::array::from_fn(|c| p[c] / wb[c]);
-                if sensor.iter().all(|s| *s <= PULL_FLOOR) {
-                    continue;
+                if let Some(recovered) = recovered_pixel(*p, wb) {
+                    *p = recovered;
                 }
-                *p = reconstruct(*p, sensor);
             }
         });
     check_cancel(cancel)?;
     Ok(out)
+}
+
+/// [`recover_highlights`] on `pixels`, the pixels of `im`, where they are:
+/// reconstruction is each pixel's own, so the values are the same. Returns which
+/// pixels it changed, one bit a pixel (64 a word, from the lowest bit), and the
+/// values those had, in pixel order: what [`Pixels::pair_masked`] takes. A pixel
+/// counts as changed when any bit of it is, so writing the returned values back
+/// restores `pixels` exactly.
+///
+/// The values are 12 bytes a changed pixel: where recovery changes much of a photo
+/// (28% of one measured) they are the most memory recovery takes, in place of
+/// the second buffer of 12 bytes a pixel.
+///
+/// [`Pixels::pair_masked`]: crate::camera_data::Pixels::pair_masked
+pub(super) fn recover_in_place(
+    pixels: &mut [[f32; 3]],
+    im: &CameraImage,
+    cancel: Cancel<'_>,
+) -> Result<(Vec<u64>, Vec<[f32; 3]>)> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    check_cancel(cancel)?;
+    let wb = sensor_white(im);
+    let width = im.width.max(1) as usize;
+    // Rows are recovered side by side, and a word of the mask can span two of
+    // them: each bit is set atomically.
+    let changed: Vec<AtomicU64> = (0..pixels.len().div_ceil(64))
+        .map(|_| AtomicU64::new(0))
+        .collect();
+    let rows: Vec<Vec<[f32; 3]>> = pixels
+        .par_chunks_mut(width)
+        .enumerate()
+        .map(|(y, row)| {
+            let mut had = Vec::new();
+            if cancel.is_cancelled() {
+                return had;
+            }
+            for (x, p) in row.iter_mut().enumerate() {
+                if let Some(recovered) = recovered_pixel(*p, wb)
+                    && recovered.map(f32::to_bits) != p.map(f32::to_bits)
+                {
+                    let i = y * width + x;
+                    changed[i / 64].fetch_or(1 << (i % 64), Ordering::Relaxed);
+                    had.push(*p);
+                    *p = recovered;
+                }
+            }
+            had
+        })
+        .collect();
+    check_cancel(cancel)?;
+    let mut values = Vec::with_capacity(rows.iter().map(Vec::len).sum());
+    for row in rows {
+        values.extend(row);
+    }
+    let changed = changed.into_iter().map(AtomicU64::into_inner).collect();
+    Ok((changed, values))
 }
 
 #[cfg(test)]

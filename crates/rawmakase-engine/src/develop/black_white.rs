@@ -21,8 +21,11 @@ impl ColorSpread {
     pub fn measure(im: &CameraImage) -> Self {
         let step = (im.width.max(im.height) / 1024).max(1) as usize;
         let (mut n, mut sum, mut products) = (0f64, [0f64; 3], [[0f64; 3]; 3]);
+        let width = im.width as usize;
         for y in (0..im.height as usize).step_by(step) {
-            let row = &im.pixels[y * im.width as usize..][..im.width as usize];
+            // A row at a time: a decode kept as its recovered image's buffer is
+            // never copied out whole.
+            let row = im.pixels.range(y * width..(y + 1) * width);
             for p in row.iter().step_by(step) {
                 let peak = (0..3)
                     .map(|c| p[c] / im.metadata.wb[c].max(0.001))

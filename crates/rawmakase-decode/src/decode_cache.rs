@@ -1,7 +1,10 @@
 //! Disk cache of developed camera images, so reopening a photo, or opening one that
 //! was prefetched, skips decoding. An entry holds the image exactly as `raw::Raw::develop`
-//! produced it, plus the pixels highlight recovery changed (usually under 1%), so the
-//! recovered image is restored without recomputing it.
+//! produced it, plus the pixels highlight recovery changed (3% in the median photo
+//! measured, #1173), so the recovered image is restored without recomputing it. A
+//! pixel counts as changed when any bit of it is (a zero that changed sign too). The
+//! two images are loaded as one buffer and those pixels ([`Pixels::pair_masked`]),
+//! not as a buffer each.
 //!
 //! Entries are keyed by the RAW file's identity (size, modification time and a hash of
 //! its first 64 KB), the demosaic setting and the running executable's size and
@@ -10,7 +13,7 @@
 //! derived pixels are stored: RAW files, sidecars and catalogs are never touched.
 //! The user can move the directory to a folder of their choice, such as another
 //! drive.
-use crate::camera_data::{CameraImage, Demosaic, Metadata};
+use crate::camera_data::{CameraImage, Demosaic, Metadata, Pixels};
 use anyhow::{Context, Result, ensure};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -26,6 +29,10 @@ use std::{
 };
 
 const MAGIC: &[u8; 8] = b"RMKDEC\0\x01";
+/// Pixels written at a time when an entry is stored.
+const PIECE: usize = 1 << 18;
+/// Changed pixels one task puts back at a time when an entry is loaded.
+const TAKE: usize = 1 << 14;
 /// Default size cap of the cache directory.
 pub const DEFAULT_LIMIT: u64 = 4 << 30;
 /// The subfolder of a chosen folder that holds the entries.
@@ -275,6 +282,12 @@ impl DecodeCache {
             lateral_ca: Default::default(),
             ..metadata.clone()
         };
+        // The entry's pixels become the recovered image's, and the decode keeps the
+        // values the changed ones had: the two images hold one buffer between them.
+        let (changed, had) = exchange(&mut pixels, &changes)?;
+        drop(changes);
+        let (pixels, recovered) =
+            Pixels::pair_masked(pixels, changed, had).context("Invalid recovered pixel")?;
         let image = CameraImage {
             recovered: Default::default(),
             width: header.width,
@@ -286,9 +299,9 @@ impl DecodeCache {
             scale_clipped: header.scale_clipped,
             hdr: Default::default(),
         };
-        let mut recovered = CameraImage {
+        let recovered = CameraImage {
             recovered: Default::default(),
-            pixels: vec![[0.; 3]; image.pixels.len()],
+            pixels: recovered,
             metadata: image.metadata.clone(),
             width: image.width,
             height: image.height,
@@ -297,18 +310,6 @@ impl DecodeCache {
             scale_clipped: image.scale_clipped,
             hdr: Default::default(),
         };
-        recovered
-            .pixels
-            .par_chunks_mut(1 << 20)
-            .zip(image.pixels.par_chunks(1 << 20))
-            .for_each(|(a, b)| a.copy_from_slice(b));
-        for change in changes {
-            let p = recovered
-                .pixels
-                .get_mut(change.index as usize)
-                .context("Invalid recovered pixel")?;
-            *p = change.value;
-        }
         let _ = image.recovered.set(Arc::new(recovered));
         Ok(image)
     }
@@ -327,17 +328,21 @@ impl DecodeCache {
             recovered.pixels.len() == image.pixels.len(),
             "Recovered size mismatch"
         );
-        let changes: Vec<Change> = image
-            .pixels
-            .iter()
-            .zip(&recovered.pixels)
-            .enumerate()
-            .filter(|(_, (a, b))| a != b)
-            .map(|(i, (_, b))| Change {
-                index: i as u32,
-                value: *b,
-            })
-            .collect();
+        let change = |i: usize| Change {
+            index: i as u32,
+            value: recovered.pixels[i],
+        };
+        // Images that hold one buffer between them list the pixels that differ;
+        // images with a buffer each are compared, bit by bit as recovery in place
+        // lists them, so an entry is the same whichever way its image is held.
+        let changes: Vec<Change> = if image.pixels.shares_buffer(&recovered.pixels) {
+            image.pixels.differing().map(change).collect()
+        } else {
+            (image.pixels.iter().zip(recovered.pixels.iter()).enumerate())
+                .filter(|(_, (a, b))| a.map(f32::to_bits) != b.map(f32::to_bits))
+                .map(|(i, _)| change(i))
+                .collect()
+        };
         let header = serde_json::to_vec(&Header {
             key: key.into(),
             width: image.width,
@@ -355,7 +360,13 @@ impl DecodeCache {
             out.write_all(MAGIC)?;
             out.write_all(&(header.len() as u32).to_le_bytes())?;
             out.write_all(&header)?;
-            out.write_all(bytemuck::cast_slice(&image.pixels))?;
+            // A piece at a time: a decode kept as its recovered image's buffer
+            // is never copied out whole.
+            let n = image.pixels.len();
+            for start in (0..n).step_by(PIECE) {
+                let piece = image.pixels.range(start..(start + PIECE).min(n));
+                out.write_all(bytemuck::cast_slice(&piece[..]))?;
+            }
             out.write_all(bytemuck::cast_slice(&changes))?;
             out.flush()?;
         }
@@ -445,6 +456,60 @@ pub(crate) fn read_at(file: &fs::File, offset: u64, buf: &mut [u8]) -> Result<()
             }
         })?;
     Ok(())
+}
+/// Puts each change's recovered value in `pixels`, the image as decoded, which
+/// become the recovered image's. Returns which pixels changed, one bit a pixel
+/// (64 a word, from the lowest bit), and the values those had, in pixel order:
+/// what [`Pixels::pair_masked`] takes. `changes` must be in ascending order of
+/// index, each within `pixels`, as [`DecodeCache::store`] writes them.
+fn exchange(pixels: &mut [[f32; 3]], changes: &[Change]) -> Result<(Vec<u64>, Vec<[f32; 3]>)> {
+    let n = pixels.len();
+    ensure!(
+        changes.par_windows(2).all(|w| w[0].index < w[1].index)
+            && changes.last().is_none_or(|c| (c.index as usize) < n),
+        "Invalid recovered pixel"
+    );
+    let mut changed = vec![0u64; n.div_ceil(64)];
+    let mut had = vec![[0f32; 3]; changes.len()];
+    // A photo recovery changed much of has millions of changes (17 million in one
+    // measured), so they are shared out: each task takes a run of changes and the
+    // whole words of the mask they fall in, with those words' pixels, so no two
+    // tasks write to the same word, pixel or value.
+    let mut tasks = Vec::new();
+    let (mut words, mut pixels, mut values) = (&mut changed[..], pixels, &mut had[..]);
+    let (mut start, mut first_word) = (0, 0);
+    while start < changes.len() {
+        let mut end = (start + TAKE).min(changes.len());
+        // On to the first change that falls in another word.
+        while end < changes.len() && changes[end].index / 64 == changes[end - 1].index / 64 {
+            end += 1;
+        }
+        let next_word = match changes.get(end) {
+            Some(change) => change.index as usize / 64,
+            None => n.div_ceil(64),
+        };
+        let count = next_word - first_word;
+        let (task_words, rest) = std::mem::take(&mut words).split_at_mut(count);
+        words = rest;
+        let split = (count * 64).min(pixels.len());
+        let (task_pixels, rest) = std::mem::take(&mut pixels).split_at_mut(split);
+        pixels = rest;
+        let (task_values, rest) = std::mem::take(&mut values).split_at_mut(end - start);
+        values = rest;
+        let run = &changes[start..end];
+        tasks.push((run, task_words, task_pixels, task_values, first_word * 64));
+        (start, first_word) = (end, next_word);
+    }
+    tasks
+        .into_par_iter()
+        .for_each(|(run, words, pixels, values, first)| {
+            for (change, had) in run.iter().zip(values) {
+                let i = change.index as usize - first;
+                *had = std::mem::replace(&mut pixels[i], change.value);
+                words[i / 64] |= 1 << (i % 64);
+            }
+        });
+    Ok((changed, had))
 }
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
@@ -569,6 +634,170 @@ mod tests {
         recovered.pixels[3] = [2., 3., 4.];
         im.recovered = Arc::new(recovered).into();
         im
+    }
+    /// A loaded entry holds one buffer for the image and its recovered image,
+    /// both read as they were stored. Storing it again writes the entry an image
+    /// with a buffer each wrote, byte for byte, without copying the image out.
+    #[test]
+    fn a_loaded_entry_is_one_buffer_and_stores_the_same_entry() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let first = DecodeCache::new(dir.path().join("first"), u64::MAX);
+        let second = DecodeCache::new(dir.path().join("second"), u64::MAX);
+        let metadata = Metadata::default();
+        // Pixels recovery changed at both ends, next to each other and apart.
+        let mut a = image(70, 30, 0.2);
+        let mut recovered = (**a.recovered.get().unwrap()).clone();
+        for i in [0, 1, 63, 64, 1000, 2099] {
+            recovered.pixels[i] = [5., 6., i as f32];
+        }
+        a.recovered = Arc::new(recovered).into();
+        let apart = a.recovered.get().unwrap();
+        assert!(!a.pixels.shares_buffer(&apart.pixels));
+        first.store("a", &a)?;
+        let loaded = first.load("a", &metadata).unwrap();
+        let one = loaded.recovered.get().unwrap();
+        assert!(loaded.pixels.shares_buffer(&one.pixels));
+        assert_eq!(loaded.pixels, a.pixels);
+        assert_eq!(one.pixels, apart.pixels);
+        assert_eq!(
+            loaded.pixels.differing().collect::<Vec<_>>(),
+            [0, 1, 3, 63, 64, 1000, 2099]
+        );
+        second.store("a", &loaded)?;
+        assert_eq!(fs::read(first.file("a"))?, fs::read(second.file("a"))?);
+        assert!(loaded.pixels.shares_buffer(&one.pixels));
+        // Read as one slice, the image is copied out and holds a buffer of its own
+        // again: it still stores the same entry.
+        assert_eq!(loaded.pixels[..].len(), 2100);
+        assert!(!loaded.pixels.shares_buffer(&one.pixels));
+        let third = DecodeCache::new(dir.path().join("third"), u64::MAX);
+        third.store("a", &loaded)?;
+        assert_eq!(fs::read(first.file("a"))?, fs::read(third.file("a"))?);
+        // An image recovery changed nowhere: no changes stored, one buffer loaded.
+        let mut same = image(70, 30, 0.4);
+        same.recovered = Arc::new(CameraImage {
+            recovered: Default::default(),
+            ..same.clone()
+        })
+        .into();
+        first.store("same", &same)?;
+        let loaded = first.load("same", &metadata).unwrap();
+        let one = loaded.recovered.get().unwrap();
+        assert_eq!(loaded.pixels.as_ptr(), one.pixels.as_ptr());
+        assert_eq!((&loaded.pixels, &one.pixels), (&same.pixels, &same.pixels));
+        Ok(())
+    }
+    /// A zero recovery gave another sign is a change, and a NaN it left as it was
+    /// is none, whether the two images hold one buffer or a buffer each: the
+    /// loaded recovered image is the stored one bit for bit.
+    #[test]
+    fn changes_are_of_bits() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let mut apart = image(40, 30, 0.2);
+        apart.pixels[5] = [-0., 0.5, 0.25];
+        apart.pixels[6] = [f32::NAN, 0.5, 0.25];
+        let mut recovered = apart.clone();
+        recovered.recovered = Default::default();
+        recovered.pixels[5] = [0., 0.5, 0.25];
+        let bits = |image: &CameraImage| -> Vec<[u32; 3]> {
+            let pixels = image.pixels.range(0..image.pixels.len());
+            pixels.iter().map(|p| p.map(f32::to_bits)).collect()
+        };
+        let expected = (bits(&apart), bits(&recovered));
+        apart.recovered = Arc::new(recovered).into();
+        cache.store("apart", &apart)?;
+        let one = cache.load("apart", &Metadata::default()).unwrap();
+        assert_eq!(one.pixels.differing().collect::<Vec<_>>(), [5]);
+        cache.store("one", &one)?;
+        for key in ["apart", "one"] {
+            let loaded = cache.load(key, &Metadata::default()).unwrap();
+            let got = (bits(&loaded), bits(loaded.recovered.get().unwrap()));
+            assert!(got == expected, "{key}");
+        }
+        Ok(())
+    }
+    /// An entry with more changed pixels than one task puts back loads as it was
+    /// stored. Dense: changes next to each other, across the words of the mask and
+    /// across the tasks' shares, and the image's last pixel. Sparse: none in the
+    /// first words, and stretches without any, short and long, between changes.
+    /// Both: a stretch without any where one task's share ends and the next begins.
+    #[test]
+    fn many_changes_load_as_they_were_stored() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let dense = |i: usize, n: usize| !i.is_multiple_of(3) || i == 3 || i == n - 1;
+        let sparse = |i: usize, _: usize| {
+            i >= 200
+                && i.is_multiple_of(7)
+                && !(30_000..31_000).contains(&i)
+                && !(100_000..140_000).contains(&i)
+        };
+        type Changed = fn(usize, usize) -> bool;
+        let cases: [(&str, u32, u32, Changed); 2] =
+            [("dense", 301, 211, dense), ("sparse", 701, 400, sparse)];
+        for (name, width, height, is_changed) in cases {
+            let mut a = image(width, height, 0.2);
+            let mut recovered = (**a.recovered.get().unwrap()).clone();
+            // `image` changed pixel 3; here the case alone says which pixels changed.
+            recovered.pixels[3] = a.pixels[3];
+            let n = recovered.pixels.len();
+            let mut changed: Vec<usize> = (0..n).filter(|i| is_changed(*i, n)).collect();
+            // And none in the 3,000 pixels after the last change of the first
+            // task's share, so whole words without a change lie between two shares.
+            let share = changed[TAKE - 1];
+            changed.retain(|i| !(share + 1..=share + 3_000).contains(i));
+            assert!(changed[TAKE] / 64 > share / 64 + 40, "{name}");
+            assert!(changed.len() > 2 * TAKE && !n.is_multiple_of(64), "{name}");
+            for &i in &changed {
+                recovered.pixels[i] = [9., i as f32, 0.5];
+            }
+            a.recovered = Arc::new(recovered).into();
+            cache.store(name, &a)?;
+            let loaded = cache.load(name, &Metadata::default()).unwrap();
+            let one = loaded.recovered.get().unwrap();
+            assert!(loaded.pixels.shares_buffer(&one.pixels), "{name}");
+            assert!(
+                loaded.pixels.differing().eq(changed.iter().copied()),
+                "{name}"
+            );
+            assert!(loaded.pixels == a.pixels, "{name}: the image as decoded");
+            assert!(
+                one.pixels == a.recovered.get().unwrap().pixels,
+                "{name}: the recovered image"
+            );
+        }
+        Ok(())
+    }
+    /// An entry whose changed pixels are out of order, or outside the image, is a
+    /// miss: the photo is decoded again.
+    #[test]
+    fn an_entry_with_changes_out_of_order_is_a_miss() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let mut a = image(40, 30, 0.2);
+        let mut recovered = (**a.recovered.get().unwrap()).clone();
+        recovered.pixels[700] = [7.; 3];
+        a.recovered = Arc::new(recovered).into();
+        cache.store("a", &a)?;
+        let stored = fs::read(cache.file("a"))?;
+        assert!(cache.load("a", &Metadata::default()).is_some());
+        // The two changes (pixels 3 and 700) are the entry's last 32 bytes.
+        let (rest, changes) = stored.split_at(stored.len() - 32);
+        let swapped = [rest, &changes[16..], &changes[..16]].concat();
+        fs::write(cache.file("a"), swapped)?;
+        assert!(cache.load("a", &Metadata::default()).is_none());
+        let repeated = [rest, &changes[..16], &changes[..16]].concat();
+        fs::write(cache.file("a"), repeated)?;
+        assert!(cache.load("a", &Metadata::default()).is_none());
+        let mut outside = stored.clone();
+        let at = outside.len() - 16;
+        outside[at..at + 4].copy_from_slice(&1200u32.to_le_bytes());
+        fs::write(cache.file("a"), outside)?;
+        assert!(cache.load("a", &Metadata::default()).is_none());
+        fs::write(cache.file("a"), stored)?;
+        assert!(cache.load("a", &Metadata::default()).is_some());
+        Ok(())
     }
     #[test]
     fn entries_round_trip_and_stay_within_the_cap() -> Result<()> {

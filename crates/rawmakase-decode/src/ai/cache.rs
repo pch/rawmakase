@@ -346,7 +346,7 @@ mod tests {
             recovered: Default::default(),
             width: 2,
             height: 2,
-            pixels: vec![[0.5; 3]; 4],
+            pixels: vec![[0.5; 3]; 4].into(),
             metadata: Default::default(),
             fast: false,
             scale_factor: 1.,

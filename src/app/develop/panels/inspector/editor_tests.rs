@@ -235,7 +235,7 @@ fn the_crop_aspect_names_the_crops_ratio_beside_its_padlock() {
                 recovered: Default::default(),
                 width: 300,
                 height: 200,
-                pixels: vec![[0.1; 3]; 60000],
+                pixels: vec![[0.1; 3]; 60000].into(),
                 metadata: Metadata {
                     width: 300,
                     height: 200,
@@ -300,7 +300,7 @@ fn clicking_the_crop_padlock_locks_and_unlocks_the_aspect() {
             recovered: Default::default(),
             width: 300,
             height: 200,
-            pixels: vec![[0.1; 3]; 60000],
+            pixels: vec![[0.1; 3]; 60000].into(),
             metadata: Metadata {
                 width: 300,
                 height: 200,

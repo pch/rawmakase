@@ -20,7 +20,7 @@ fn a_mask_brush_paints_live_and_preserves_the_overlay_choice() {
         recovered: Default::default(),
         width: 400,
         height: 400,
-        pixels: vec![[0.2; 3]; 160000],
+        pixels: vec![[0.2; 3]; 160000].into(),
         metadata: Metadata {
             width: 400,
             height: 400,
@@ -235,7 +235,7 @@ fn dragging_a_mask_pin_moves_the_mask() {
         recovered: Default::default(),
         width: 400,
         height: 400,
-        pixels: vec![[0.2; 3]; 160000],
+        pixels: vec![[0.2; 3]; 160000].into(),
         metadata: Metadata {
             width: 400,
             height: 400,
@@ -467,7 +467,7 @@ fn masking_tool_draws_gradients_paints_brushes_and_edits_handles() {
         recovered: Default::default(),
         width: 400,
         height: 400,
-        pixels: vec![[0.2; 3]; 160000],
+        pixels: vec![[0.2; 3]; 160000].into(),
         metadata: Metadata {
             width: 400,
             height: 400,

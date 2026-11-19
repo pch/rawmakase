@@ -168,6 +168,190 @@ pub(super) mod tests {
             recovered: Default::default(),
         }
     }
+    /// [`fixture`] with highlights at and above the sensor's white, bright areas
+    /// recovery pulls a little and dark ones it leaves alone.
+    fn clipped() -> CameraImage {
+        let mut im = fixture();
+        for y in 20..40 {
+            for x in 30..60 {
+                im.pixels[y * 96 + x] = [1., 0.6 + x as f32 * 0.01, 0.4];
+            }
+        }
+        for p in &mut im.pixels[..96 * 10] {
+            *p = [0.1, 0.12, 0.05];
+        }
+        // A colour matrix, which Auto white balance needs.
+        im.metadata.cam_xyz = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
+        im
+    }
+    /// Every bit of every pixel, read without copying the image out.
+    fn bits(image: &CameraImage) -> Vec<[u32; 3]> {
+        let pixels = image.pixels.range(0..image.pixels.len());
+        pixels.iter().map(|p| p.map(f32::to_bits)).collect()
+    }
+    /// Highlights recovered in a decode's own buffer are the pixels a second
+    /// buffer would hold, bit for bit; the decode still reads as it was decoded,
+    /// and the two images hold one buffer between them.
+    #[test]
+    fn recovering_in_place_gives_the_same_two_images_from_one_buffer() -> Result<()> {
+        // With a zero recovery gives another sign and a channel that is not a
+        // number, which only a comparison of bits tells apart.
+        let odd = || {
+            let mut im = clipped();
+            im.pixels[96 * 50 + 7] = [-0., 0.9, 0.5];
+            im.pixels[96 * 50 + 9] = [f32::NAN, 0.9, 0.5];
+            im
+        };
+        let decoded = odd();
+        let expected = recover_highlights(&decoded, Cancel::NEVER)?;
+        assert_eq!(expected.pixels[96 * 50 + 7][0].to_bits(), 0f32.to_bits());
+        let changed = (bits(&decoded).iter().zip(bits(&expected)))
+            .filter(|(a, b)| **a != *b)
+            .count();
+        assert!(changed > 600 && changed < decoded.pixels.len() - 900);
+        let image = with_recovered(odd(), Cancel::NEVER)?;
+        let made = recovered(&image, Cancel::NEVER)?;
+        assert!(Arc::ptr_eq(&made, image.recovered.get().unwrap()));
+        assert_eq!(bits(&made), bits(&expected));
+        assert_eq!(bits(&image), bits(&decoded));
+        assert!(image.pixels.shares_buffer(&made.pixels));
+        assert_eq!(image.pixels.differing().count(), changed);
+        // The recovered image is the decode's copy in all but its pixels, as
+        // `recover_highlights` makes it: the same Auto CA measurement, no
+        // recovered image of its own.
+        assert!(made.recovered.get().is_none());
+        assert!(Arc::ptr_eq(
+            &made.metadata.lateral_ca,
+            &image.metadata.lateral_ca
+        ));
+        // Once recovered, an image is left as it is.
+        let again = with_recovered(image, Cancel::NEVER)?;
+        assert!(Arc::ptr_eq(&made, again.recovered.get().unwrap()));
+        assert!(again.pixels.shares_buffer(&made.pixels));
+        Ok(())
+    }
+    /// Where recovery changes nothing the two images are one buffer outright: a
+    /// RAW without a bright pixel, and a rendered file, whose recovered image
+    /// is the file as it is.
+    #[test]
+    fn images_recovery_leaves_alone_are_one_buffer() -> Result<()> {
+        let mut dark = fixture();
+        dark.pixels.fill([0.2, 0.1, 0.05]);
+        let dark = with_recovered(dark, Cancel::NEVER)?;
+        let made = recovered(&dark, Cancel::NEVER)?;
+        assert_eq!(dark.pixels.differing().count(), 0);
+        assert_eq!(dark.pixels.as_ptr(), made.pixels.as_ptr());
+        assert!(dark.pixels.shares_buffer(&made.pixels));
+        // An image without a pixel is recovered too, to one without a pixel.
+        let mut none = fixture();
+        (none.width, none.height, none.pixels) = (0, 0, Default::default());
+        let none = with_recovered(none, Cancel::NEVER)?;
+        assert!(recovered(&none, Cancel::NEVER)?.pixels.is_empty());
+
+        let file = || {
+            let mut file = clipped();
+            file.metadata.source = crate::camera_data::Source::Rendered;
+            file
+        };
+        let expected = bits(&file());
+        // Owned: recovered in place.
+        let owned = with_recovered(file(), Cancel::NEVER)?;
+        // Borrowed: one buffer when the file's pixels are shared, as a file opens.
+        let mut opened = file();
+        opened.pixels.share();
+        // Borrowed with a buffer of its own: a copy, as it always was.
+        let apart = file();
+        for (image, one_buffer) in [(&owned, true), (&opened, true), (&apart, false)] {
+            let made = recovered(image, Cancel::NEVER)?;
+            assert_eq!(bits(&made), expected);
+            assert_eq!(bits(image), expected);
+            assert_eq!(image.pixels.shares_buffer(&made.pixels), one_buffer);
+            assert_eq!(image.pixels.as_ptr() == made.pixels.as_ptr(), one_buffer);
+        }
+        Ok(())
+    }
+    /// A cancelled recovery in place is an error, as a cancelled recovery is.
+    #[test]
+    fn a_cancelled_recovery_in_place_is_an_error() {
+        let cancel = AtomicBool::new(true);
+        assert!(with_recovered(clipped(), Cancel::new(&cancel)).is_err());
+    }
+    /// A decode that holds one buffer with its recovered image renders, measures
+    /// and samples as a decode with a buffer of its own does, whichever of its
+    /// two images the reader takes; and none of it copies the decode out, which
+    /// would spend the memory again.
+    #[test]
+    fn a_decode_holding_one_buffer_renders_and_measures_the_same() -> Result<()> {
+        use crate::develop::{auto, upright};
+        let one = with_recovered(clipped(), Cancel::NEVER)?;
+        let apart = clipped();
+        let made = recovered(&one, Cancel::NEVER)?;
+        assert_ne!(bits(&one), bits(&made));
+        let never = Cancel::NEVER;
+        let mut edited = Recipe {
+            highlights: -0.8,
+            shadows: 0.5,
+            lens_ca: true,
+            ..Default::default()
+        };
+        edited.effects.texture = 0.3;
+        for r in [Recipe::default(), edited] {
+            let valid = r.checked()?;
+            // Rendered from the recovered image, whole, reduced and a region.
+            for (edge, region) in [(0, None), (40, None), (0, Some([30, 15, 40, 30]))] {
+                assert_eq!(
+                    render(&one, &valid, edge, region, never)?.pixels,
+                    render(&apart, &valid, edge, region, never)?.pixels,
+                    "{edge} {region:?}"
+                );
+            }
+            // Reduced from the decode itself, then recovered: the Tone Curve's histogram.
+            assert_eq!(
+                curve_input_histogram(&one, &valid, None, 48, never)?,
+                curve_input_histogram(&apart, &valid, None, 48, never)?
+            );
+            // Auto white balance reads the decode, Auto tone its recovered image.
+            assert_eq!(
+                auto::auto_white_balance(&one, &r, never)?.wb,
+                auto::auto_white_balance(&apart, &r, never)?.wb
+            );
+            let (a, b) = (
+                auto::auto_tone(&one, &r, never)?,
+                auto::auto_tone(&apart, &r, never)?,
+            );
+            assert_eq!(
+                (a.exposure, a.highlights, a.shadows),
+                (b.exposure, b.highlights, b.shadows)
+            );
+            // The decode's own samples, before recovery, and a stage after it.
+            for stage in [Stage::CameraInput, Stage::SceneInput] {
+                assert_eq!(
+                    render_stage(&one, &r, stage, never)?.pixels,
+                    render_stage(&apart, &r, stage, never)?.pixels,
+                    "{stage:?}"
+                );
+            }
+            assert_eq!(
+                point_color_pick(&one, &r, 0.45, 0.4, never)?,
+                point_color_pick(&apart, &r, 0.45, 0.4, never)?
+            );
+            // Upright analyses the decode pixel by pixel.
+            assert_eq!(
+                upright::analysis_image(&one, &r),
+                upright::analysis_image(&apart, &r)
+            );
+        }
+        // Auto black & white measures the decode's colours row by row.
+        assert_eq!(
+            crate::develop::ColorSpread::measure(&one),
+            crate::develop::ColorSpread::measure(&apart)
+        );
+        assert!(
+            one.pixels.shares_buffer(&made.pixels),
+            "a reader copied the decode out"
+        );
+        Ok(())
+    }
     #[test]
     fn preset_effects_match_tiles_and_survive_serialization() -> Result<()> {
         let im = fixture();

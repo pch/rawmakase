@@ -83,7 +83,7 @@ fn gpu_clarity_reconstructs_fine_edges_like_the_cpu() -> Result<()> {
     let samples = Arc::new(Samples {
         width: w,
         height: h,
-        pixels: image.pixels.clone(),
+        pixels: image.pixels.to_vec(),
         positions: (0..w * h)
             .map(|i| [(i % w) as f32, (i / w) as f32])
             .collect(),
@@ -204,7 +204,7 @@ fn gpu_measured_tails_match_cpu_globally_and_in_masks() -> Result<()> {
     let samples = Arc::new(Samples {
         width: 240,
         height: 240,
-        pixels: image.pixels.clone(),
+        pixels: image.pixels.to_vec(),
         positions: (0..240 * 240)
             .map(|i| [(i % 240) as f32, (i / 240) as f32])
             .collect(),
@@ -765,7 +765,7 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     let rendered_samples = Arc::new(Samples {
         width: srgb.len() as u32,
         height: 1,
-        pixels: rendered.pixels.clone(),
+        pixels: rendered.pixels.to_vec(),
         positions: (0..srgb.len()).map(|i| [i as f32, 0.]).collect(),
     });
     let untouched = Recipe::for_rendered(&rendered.metadata);
@@ -2110,7 +2110,7 @@ fn hdr_fixture() -> (
     let image = CameraImage {
         width: w,
         height: h,
-        pixels: pixels.clone(),
+        pixels: pixels.clone().into(),
         metadata,
         recovered: Default::default(),
         fast: false,

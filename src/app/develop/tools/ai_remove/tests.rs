@@ -138,7 +138,7 @@ fn image(level: f32) -> Arc<CameraImage> {
         recovered: Default::default(),
         width: 48,
         height: 32,
-        pixels: vec![[level; 3]; 48 * 32],
+        pixels: vec![[level; 3]; 48 * 32].into(),
         metadata: Metadata {
             width: 48,
             height: 32,

@@ -5,8 +5,13 @@ use rawmakase_cancel::Cancel;
 
 /// The highlight-recovered image, computed once per decoded image. A rendered file's
 /// is the file as it is: recovery rebuilds a camera's clipped channels, and a rendered
-/// file's bright colours are its rendering, not clipping. (That costs one copy of its
-/// pixels, as recovery does.)
+/// file's bright colours are its rendering, not clipping. It holds the file's
+/// buffer with it when the file's pixels are shared ([`Pixels::share`], as
+/// `rawmakase_decode`'s `photo::open_source` opens one), else a copy. A RAW's is a
+/// second buffer here, where `im` is only borrowed; [`with_recovered`] makes it
+/// without one.
+///
+/// [`Pixels::share`]: crate::camera_data::Pixels::share
 pub fn recovered(im: &CameraImage, cancel: Cancel<'_>) -> Result<Arc<CameraImage>> {
     if let Some(recovered) = im.recovered.get() {
         return Ok(recovered.clone());
@@ -16,6 +21,35 @@ pub fn recovered(im: &CameraImage, cancel: Cancel<'_>) -> Result<Arc<CameraImage
         false => recover_highlights(im, cancel)?,
     });
     Ok(im.recovered.get_or_init(|| recovered).clone())
+}
+/// `image` with its highlight-recovered image made, which [`recovered`] then returns,
+/// the two holding one buffer between them: for whoever owns a decode before it
+/// is shared. Highlights are recovered in the decode's own buffer, which becomes
+/// the recovered image's, and the decode keeps the values it had where recovery
+/// changed them ([`Pixels::pair_masked`]): every pixel of both images is what
+/// [`recovered`] would have made it, for 12 bytes a changed pixel in place of 12
+/// bytes a pixel. Stops with an error once `cancel` is set, and only then.
+///
+/// [`Pixels::pair_masked`]: crate::camera_data::Pixels::pair_masked
+pub fn with_recovered(mut image: CameraImage, cancel: Cancel<'_>) -> Result<CameraImage> {
+    if image.recovered.get().is_some() {
+        return Ok(image);
+    }
+    if image.metadata.is_rendered() {
+        image.pixels.share();
+        recovered(&image, cancel)?;
+        return Ok(image);
+    }
+    let mut buffer = std::mem::take(&mut image.pixels).into_vec();
+    let (changed, had) = highlights::recover_in_place(&mut buffer, &image, cancel)?;
+    let (own, recovered) = crate::camera_data::Pixels::pair_masked(buffer, changed, had)
+        .ok_or_else(|| anyhow::anyhow!("Highlight recovery lost count of its pixels"))?;
+    image.pixels = own;
+    // As `recover_highlights` makes it: a copy of the decode with other pixels.
+    let mut twin = image.clone();
+    twin.pixels = recovered;
+    let _ = image.recovered.set(Arc::new(twin));
+    Ok(image)
 }
 /// The camera image after highlight recovery, AI Denoise's blend and Color and
 /// luminance noise reduction, before retouching: what noise reduction made of the photo,
