@@ -176,11 +176,10 @@ find the camera's profiles by its name.
     illuminants' matrices, RAWmakase only D65's.
   - Adobe's `dng_validate` 1.4 reads it with no warning but the zero entries
     of the camera's own LensSpecification, copied from its EXIF.
-  - This needed a local name fix, not in the build: RAWmakase names the camera
-    "EOS Rebel T8i", which its colour-matrix table and camera table list only
-    as "EOS 850D", so it has no colour matrix for it and refuses the merge, and
-    Camera Raw doesn't match its UniqueCameraModel to Adobe's profiles (a
-    separate fix).
+  - RAWmakase names the T8i the EOS 850D, as its colour-matrix and camera
+    tables and Adobe's profiles do, so the merge's UniqueCameraModel is
+    "Canon EOS 850D". Before it did, the camera had no colour matrix and the
+    merge refused the bracket.
 - **The other `play-raw` brackets** merge: Fujifilm X-T4 (X-Trans, handheld,
   not aligned yet), Nikon D750 (5 frames), Panasonic GX80 and GH3 (ISO only,
   whose measured steps are smaller than its EXIF's ISO speeds say).

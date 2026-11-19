@@ -179,17 +179,21 @@ pub fn same_name(a: &str, b: &str) -> bool {
                 .is_some_and(|make| MAKES.contains(&make.trim())))
 }
 /// Whether `name`, from this catalog or Lightroom's, is the photo's camera. Lightroom
-/// names some cameras by model alone ("ILCE-7CR"), others with the make.
+/// names some cameras by model alone ("ILCE-7CR"), others with the make. The
+/// file's own model is the camera too: a body sold under several names is named
+/// for the body ("EOS 850D") while its files and Lightroom give the regional name
+/// ("Canon EOS Rebel T8i").
 pub fn same_camera(name: &str, m: &Metadata) -> bool {
     let name = name.trim();
     !name.is_empty()
-        && [
+        && ([
             camera_name(m),
             m.model.trim().to_string(),
             format!("{} {}", m.make.trim(), m.model.trim()),
         ]
         .iter()
         .any(|c| c.eq_ignore_ascii_case(name))
+            || same_name(name, &m.exif_model))
 }
 
 /// The raw defaults ready to apply: the choices, with the presets they name read.
@@ -723,6 +727,26 @@ mod tests {
         assert!(same_camera("Canon EOS R5", &other_camera()));
         assert!(!same_camera("Canon EOS R6", &other_camera()));
         assert!(!same_camera("", &Metadata::default()));
+    }
+
+    /// A body sold under several names is named for the body, while its
+    /// files and Lightroom name it by the regional name; a default set under
+    /// that name, or under the one RAWmakase gave it before it knew the body,
+    /// is still the camera's.
+    #[test]
+    fn cameras_match_by_the_files_own_name_too() {
+        let t8i = Metadata {
+            make: "Canon".into(),
+            model: "EOS 850D".into(),
+            exif_make: "Canon".into(),
+            exif_model: "Canon EOS Rebel T8i".into(),
+            ..Default::default()
+        };
+        assert!(same_camera("Canon EOS 850D", &t8i));
+        assert!(same_camera("Canon EOS Rebel T8i", &t8i));
+        assert!(same_camera("EOS Rebel T8i", &t8i));
+        assert!(!same_camera("Rebel T8i", &t8i));
+        assert!(!same_camera("Canon EOS Rebel T7i", &t8i));
     }
 
     #[test]
