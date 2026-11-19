@@ -4,7 +4,7 @@
 use rawmakase_cancel::Cancel;
 use rawmakase_hdr_merge::bracket::Refusal;
 use rawmakase_hdr_merge::{
-    Destination, Error, FrameInput, MergeOptions, Merged, Stage, WHITE, merge, write_dng,
+    Deghost, Destination, Error, FrameInput, MergeOptions, Merged, Stage, WHITE, merge, write_dng,
 };
 use rawmakase_model::camera_data::{Decode, Demosaic};
 use std::path::{Path, PathBuf};
@@ -264,6 +264,7 @@ fn options() -> MergeOptions {
     MergeOptions {
         demosaic: Demosaic::Rawmakase,
         align: true,
+        deghost: Deghost::None,
         software: "RAWmakase test".into(),
     }
 }
@@ -333,6 +334,12 @@ fn handheld(dir: &Path, motion: [[f64; 3]; 3]) -> Vec<PathBuf> {
 /// The blocks whose merged light is further from the scene than their noise
 /// allows, away from their edges and where the darkest frame clips.
 fn wrong_blocks(pixels: &[[f64; 3]], scene: &[[f64; 3]]) -> Vec<u32> {
+    wrong_blocks_within(pixels, scene, f64::INFINITY)
+}
+
+/// [`wrong_blocks`], the noise allowed that of a merge of the frames
+/// exposed at most `most` times the darkest.
+fn wrong_blocks_within(pixels: &[[f64; 3]], scene: &[[f64; 3]], most: f64) -> Vec<u32> {
     (0..48u32)
         .filter(|block| {
             let (bx, by) = (block % 12 * 32, block / 12 * 32);
@@ -348,7 +355,7 @@ fn wrong_blocks(pixels: &[[f64; 3]], scene: &[[f64; 3]]) -> Vec<u32> {
             let exposure = TRUE
                 .iter()
                 .copied()
-                .filter(|t| want * t < 0.8)
+                .filter(|t| want * t < 0.8 && *t <= most)
                 .fold(1., f64::max);
             let dn = want * exposure * (WHITE_DN - BLACK);
             let sigma = (dn / GAIN + 3. * READ * READ).sqrt() / (exposure * (WHITE_DN - BLACK));
@@ -426,6 +433,126 @@ fn a_handheld_bracket_is_aligned() {
         "{:?}",
         wrong_blocks(&pixels, &scene)
     );
+}
+
+/// The bracket in `dir` with something that moved: the darkest frame shows
+/// a block the others don't, and another where the reference clips; the
+/// brightest a block elsewhere. Each is (frame, columns, rows, light).
+fn with_movers(dir: &Path) -> Vec<PathBuf> {
+    let movers = [
+        (0, 64..128, 32..96, 0.05),
+        (0, 288..352, 100..128, 0.01),
+        (2, 224..288, 0..64, 0.002),
+    ];
+    (0..3)
+        .map(|k| {
+            let mut light = scene();
+            for (frame, columns, rows, level) in movers.clone() {
+                if frame != k {
+                    continue;
+                }
+                for y in rows {
+                    for x in columns.clone() {
+                        light[(y * W + x) as usize] = NEUTRAL.map(|n| level * n);
+                    }
+                }
+            }
+            let path = dir.join(format!("IMG_{}.dng", k + 1));
+            let samples = mosaic(&light, TRUE[k], 7 + k as u64);
+            std::fs::write(
+                &path,
+                dng(&samples, RECORDED[k], &format!("{}", 10 + k * 30)),
+            )
+            .unwrap();
+            path
+        })
+        .collect()
+}
+
+/// Deghosting takes what moved from the reference frame: merged without it,
+/// the blocks something moved over in another frame show its ghost; with it,
+/// every block follows the scene as the reference saw it, within the noise
+/// the reference's exposure leaves. Where the reference clipped, what the
+/// darkest frame alone saw comes from it whole, not as a hole. (A tripod
+/// bracket: the darkest frame's block is most of what it exposes well, so
+/// Auto Align would refuse it as disagreeing with its fit.)
+#[test]
+fn what_moved_comes_from_the_reference() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = with_movers(dir.path());
+    let scene = scene();
+    let merge_with = |deghost: Deghost, name: &str| {
+        let merged = merge(
+            &inputs(&paths),
+            &MergeOptions {
+                deghost,
+                align: false,
+                ..options()
+            },
+            &|_, _| {},
+            Cancel::NEVER,
+        )
+        .unwrap();
+        let path = dir.path().join(name);
+        write_dng(&merged, &Destination::Exactly(path.clone()), Cancel::NEVER).unwrap();
+        (merged, developed(&path).0)
+    };
+    let (merged, ghosted) = merge_with(Deghost::None, "none.dng");
+    assert!(merged.frames.iter().all(|f| f.deghosted == 0.));
+    let wrong = wrong_blocks_within(&ghosted, &scene, 4.);
+    for block in [14, 15, 26, 27, 7, 8, 19, 20] {
+        assert!(wrong.contains(&block), "{block} in {wrong:?}");
+    }
+    for deghost in [Deghost::Low, Deghost::Medium, Deghost::High] {
+        let (merged, pixels) = merge_with(deghost, &format!("{deghost:?}.dng"));
+        let deghosted: Vec<f64> = merged.frames.iter().map(|f| f.deghosted).collect();
+        assert!(
+            deghosted[0] > 0. && deghosted[1] == 0. && deghosted[2] > 0.,
+            "{deghost:?}: {deghosted:?}"
+        );
+        // Under a tenth of each frame: the blocks, dilated and feathered.
+        assert!(
+            deghosted.iter().all(|d| *d < 0.1),
+            "{deghost:?}: {deghosted:?}"
+        );
+        let wrong = wrong_blocks_within(&pixels, &scene, 4.);
+        assert!(wrong.is_empty(), "{deghost:?}: blocks {wrong:?}");
+        // The darkest frame's block where the reference clipped.
+        let (mut got, mut n) = (0., 0.);
+        for y in 104..124 {
+            for x in 296..344 {
+                got += level(pixels[(y * W + x) as usize]);
+                n += 1.;
+            }
+        }
+        let want = 0.01 * NEUTRAL.iter().sum::<f64>();
+        assert!(
+            (got / n / want - 1.).abs() < 0.05,
+            "{deghost:?}: {} for {want}",
+            got / n
+        );
+    }
+}
+
+/// A bracket in which nothing moved leaves nothing out at any level.
+#[test]
+fn noise_alone_is_not_deghosted() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = bracket(dir.path());
+    for deghost in [Deghost::Low, Deghost::Medium, Deghost::High] {
+        let merged = merge(
+            &inputs(&paths),
+            &MergeOptions {
+                deghost,
+                ..options()
+            },
+            &|_, _| {},
+            Cancel::NEVER,
+        )
+        .unwrap();
+        let deghosted: Vec<f64> = merged.frames.iter().map(|f| f.deghosted).collect();
+        assert_eq!(deghosted, [0.; 3], "{deghost:?}");
+    }
 }
 
 /// A tripod bracket stays as it was taken: Auto Align finds every frame
@@ -620,11 +747,39 @@ fn cancelling_at_any_stage_leaves_nothing() {
     // The reference is decoded and prepared first, then each frame aligned.
     assert_eq!(&stages[1..3], &[Stage::Decode(1), Stage::Align(1)]);
     assert!(stages.contains(&Stage::Align(0)) && stages.contains(&Stage::Align(2)));
-    for at in stages {
+    // Deghosting without Auto Align also decodes the reference first, and
+    // compares each other frame with it.
+    let deghosting = MergeOptions {
+        align: false,
+        deghost: Deghost::High,
+        ..options()
+    };
+    let deghost_stages = Mutex::new(Vec::new());
+    merge(
+        &inputs,
+        &deghosting,
+        &|stage, _| deghost_stages.lock().unwrap().push(stage),
+        Cancel::NEVER,
+    )
+    .unwrap();
+    let mut deghost_stages = deghost_stages.into_inner().unwrap();
+    deghost_stages.dedup();
+    assert_eq!(&deghost_stages[1..3], &[Stage::Decode(1), Stage::Decode(0)]);
+    assert!(
+        deghost_stages.contains(&Stage::Deghost(0))
+            && deghost_stages.contains(&Stage::Deghost(2))
+            && !deghost_stages.contains(&Stage::Deghost(1))
+    );
+    let runs = stages.into_iter().map(|at| (at, options())).chain(
+        deghost_stages
+            .into_iter()
+            .map(|at| (at, deghosting.clone())),
+    );
+    for (at, options) in runs {
         let flag = AtomicBool::new(false);
         let got = merge(
             &inputs,
-            &options(),
+            &options,
             &|stage, _| {
                 if stage == at {
                     flag.store(true, Ordering::Relaxed);
@@ -632,7 +787,7 @@ fn cancelling_at_any_stage_leaves_nothing() {
             },
             Cancel::new(&flag),
         );
-        assert_eq!(got.unwrap_err(), Error::Cancelled, "at {at:?}");
+        assert_eq!(got.unwrap_err(), Error::Cancelled, "at {at:?}, {options:?}");
     }
     let files = || {
         let mut names: Vec<_> = std::fs::read_dir(dir.path())
