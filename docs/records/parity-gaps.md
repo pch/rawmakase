@@ -1,6 +1,6 @@
 # Remaining Lightroom parity gaps
 
-Status: Record (2026-10-05, last updated 2026-11-17); tone research updated 2026-10-16 for the [scene tone stage](../scene-tone-stage.md); lens, profile and catalog notes updated 2026-10-03. RAWmakase renders close to Lightroom but not identically. Each item below says what differs and, where measured, by how much. Errors are encoded-sRGB mean absolute error (0–1) against Camera Raw 18.6 or Lightroom Classic 15.5 exports, scored with `scripts/lightroom-scorecard.py`; most of the entries below are mean ΔE00 against Camera Raw 18.7 renders of the synthetic charts. For scale: Lightroom X100F references averaged 0.0090, Sony A7 II Camera Raw references 0.0065. The scene tone stage changed the default render and every tone control, so figures measured before it (dated 2026-10-05 and earlier) may have moved. Details: [tone controls](../tone-controls.md), [color mixer and grading](../color-mixer.md), [lens corrections](../lens-corrections.md), [transform](../transform.md).
+Status: Record (2026-10-05, last updated 2026-11-19); tone research updated 2026-10-16 for the [scene tone stage](../scene-tone-stage.md); lens, profile and catalog notes updated 2026-10-03. RAWmakase renders close to Lightroom but not identically. Each item below says what differs and, where measured, by how much. Errors are encoded-sRGB mean absolute error (0–1) against Camera Raw 18.6 or Lightroom Classic 15.5 exports, scored with `scripts/lightroom-scorecard.py`; most of the entries below are mean ΔE00 against Camera Raw 18.7 renders of the synthetic charts. For scale: Lightroom X100F references averaged 0.0090, Sony A7 II Camera Raw references 0.0065. The scene tone stage changed the default render and every tone control, so figures measured before it (dated 2026-10-05 and earlier) may have moved. Details: [tone controls](../tone-controls.md), [color mixer and grading](../color-mixer.md), [lens corrections](../lens-corrections.md), [transform](../transform.md).
 
 ## Measured and matched (for reference)
 
@@ -15,6 +15,331 @@ These controls were fitted to Camera Raw renders and match within the default-re
 - **Curve Refine Saturation** renders as Camera Raw 18.7 does on the chart ([tone controls](../tone-controls.md#refine-saturation)): the `curve-*-refine-saturation-*` cases sit at mean ΔE00 1.1–1.5, against 1.4 for the same S curve at 100. Values above 100 render as 100, as in Camera Raw. It imports, is written back, and has a Refine › Saturation slider (0–100) under the RGB point curve.
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the colour curves was not checked; here they set the RGB curve only.
 - **Auto** tone is fitted to Lightroom Classic's own Auto values, from 452 Auto Settings steps on 439 catalog photos with every fifth photo held out; each slider is a linear fit of one or two display-encoded percentiles of luminance, of the brightest channel or of chroma, and the held-out error is a median 1 step on Contrast and 0.21 EV on Exposure. Lightroom changed Auto in mid-2019 and the catalog's history shows both versions, so the slopes are fitted on every photo and the levels, Contrast, Vibrance and Saturation on the current Auto alone. The WB menu's Auto white balance is fitted to Lightroom's Auto values (a median of 2.7 mired off on 133 photos); see [tone controls](../tone-controls.md#auto).
+
+### One field per slider, and Dehaze as a veil (2026-11-19)
+
+After the refit on more photos was rejected, the errors left at full sliders were taken
+apart instead of fitted again, the largest first, and controls were compared with each
+other. Camera Raw 18.7 through a linear profile, on the measurement map's grid (512 px)
+unless said; training photos only, except where a validation gate is named; holdout
+untouched.
+
+**The default black's key under every slider: a wash.** A test build keyed the default
+black by the whole local gain on the map's darkest 0.1%, for Shadows and Highlights of
+either sign with their blend. On 51 training photos Shadows +100 moved from 0.0116 to
+0.0114 (RMS of cube-root differences; 22 photos closer, 11 further) and the lift's bias
+six to ten stops under the top halved (+0.27 / +0.46 stop to +0.14 / +0.24). On
+validation (17 sets) nothing moved: Shadows +100 1.32 → 1.30 own ΔE00 (19 photos closer,
+16 further), Shadows +100 with Highlights +100 3.01 → 2.86 (10 / 6), Shadows +100 with
+Highlights −100 1.13 → 1.17 (6 / 9); over the changed cases 82 photos closer and 79
+further. It removes the dark bands' bias (+2.81 / +1.16 / +0.82 L\* in the bands 0 to 30
+at Shadows +100 become +1.26 / +0.26 / −0.01) and the photos' medians stay. Not changed.
+
+**#1153's blend on cases it was not judged on.** The pairs sets added with #1175 hold
+six combined cases; #1153 had been judged on one, at half the sliders. The plain sum of
+the two curves against the blend, on those sets (33 photos, own ΔE00, median):
+
+| Case | Sum | Blend (main) | Photos closer / further |
+| --- | --- | --- | --- |
+| Shadows +100, Highlights −100 | 1.52 | 1.13 | 31 / 1 |
+| Shadows +60, Highlights −60, Whites +30, Blacks −30 | 1.19 | 0.90 | 30 / 1 |
+| Shadows +80, Highlights −30 | 1.08 | 0.91 | 28 / 3 |
+| Shadows −100, Highlights +100 | 0.96 | 0.85 | 23 / 6 |
+| Shadows −100, Highlights −100 | 2.06 | 1.36 | 21 / 12 |
+| Shadows +100, Highlights +100 | 2.85 | 3.01 | 19 / 13 |
+
+The blend holds (152 closer, 36 further). At both sliders up it is better in the mean
+(5.69 → 3.72) and the 90th percentile (15.0 → 7.1) and worse at the median: the sum is
+2.6 to 4.7 L\* too dark in the bands 20 to 90 and the blend 2.4 to 4.2 L\* too bright
+in the bands 0 to 50. That overshoot is open.
+
+**Each slider follows one spatial field per photo.** What a photo's own best curve of
+the base level leaves of Camera Raw's gain (its residual, a map) was compared between
+settings on 373 photos. Shadows +100's and Shadows −100's residuals correlate −0.94
+over a photo's pixels at the median (quartiles −0.96 and −0.88), −0.97 after a 7-pixel
+blur; Highlights −100's and +100's −0.95 and −0.98. Shadows' and Highlights' residuals
+correlate 0.08 to 0.18 in size. So the residual is not noise. Camera Raw's Shadows moves
+a photo by one field, which the slider's sign flips, and Highlights by another, and a
+curve of the engine's guided base approximates each; 56 to 62% of the residual's energy
+is left after the blur.
+
+The field is not a simple filter of the map's log luminance. On 124 photos the shipped
+base (a guided filter, radius 16, ε 0.5) leaves 0.1138 / 0.0700 / 0.1108 / 0.0710 at
+Shadows +100, Highlights −100, Shadows −100 and Highlights +100; guided filters of
+radius 4 to 32 and ε 0.1 to 2 leave as much or more (0.1148 at radius 8, 0.1162 at 32),
+Gaussians of 1 to 8 pixels 0.134 to 0.160, the pixel itself 0.1405, and a guided filter
+of a closed or an opened luminance (small dark or bright features removed first) 0.1146
+and 0.1154 at 3 pixels and more beyond.
+
+A third of the residual's variance is a function of a pixel's surroundings that carries
+over to unseen photos. A base correction that explains both signs' residuals, predicted
+from 26 local features of the map (Gaussians less the base, local extremes, textures,
+gradients, the guided filter's weight, the level's place in the photo, the distance
+from the centre), four folds by photo, 373 photos:
+
+| | Shadows +100 | Shadows −100 | Highlights −100 | Highlights +100 |
+| --- | --- | --- | --- | --- |
+| The curve alone | 0.1076 | 0.1154 | 0.0751 | 0.0755 |
+| With boosted trees | 0.0909 | 0.0948 | 0.0635 | 0.0624 |
+| Photos closer / further | 327 / 11 | 333 / 11 | 317 / 11 | 321 / 7 |
+| With a ridge regression | 0.1013 | 0.1091 | 0.0703 | 0.0712 |
+
+A six-layer dilated convolution network on the map (65 pixels in view, one fold, 94
+held-out photos) does the same and no more: 0.1136 → 0.0982, 0.1215 → 0.1046, 0.0787 →
+0.0700, 0.0819 → 0.0700. In the whole held-out error, the curve's and the field's, that
+is about 8% for Shadows and 6% for Highlights. A learned local correction is real and
+small. Not built.
+
+**Dehaze is one field too, and Camera Raw's Clarity field is part of it.** On 94 photos
+with Dehaze −100, −50, +50, +100 and Clarity −100 and +100 beside the four Shadows and
+Highlights renders, a curve of the base level leaves 17 to 20% of the gain's RMS for
+Shadows and Highlights, 23% at Dehaze −100, 24% at −50, 41% at +50, 46% at +100, 67% at
+Clarity +100 and 95% at Clarity −100. Dehaze's residual maps correlate +1.00 between
+−100 and −50, +0.98 between +50 and +100, and −0.93 and −0.91 between −100 and the
+positive amounts: one field, unrelated to the Shadows and Highlights fields (under 0.1).
+
+Clarity +100's residual correlates +0.52 with positive Dehaze's, −0.53 with negative
+Dehaze's, +0.44 and −0.40 with Shadows +100's and −100's, and +0.38 and −0.36 with
+Highlights −100's and +100's. Taking Camera Raw's own Clarity +100 field times a weight
+by tenth of the photo's levels, with one set of weights for all photos, explains 37% of
+Dehaze −100's residual (weights −0.46 to −0.64 at every level; 93% of photos closer),
+28% of Dehaze +100's, 28% of Highlights −100's (weights 0 in the dark half, then +0.16
+to +0.45 in the top four tenths), 22% of Highlights +100's and 7% of each Shadows
+setting's. The engine's own detail (the map less a 4-pixel Gaussian) in its place
+explains 1% for Highlights and 7 to 10% for Dehaze. So the field Camera Raw's Clarity
+draws is a third of what the Dehaze curve leaves at both signs and a quarter of what
+the Highlights curve leaves. Clarity is the third largest gap itself, and a part of the
+first, the second and Highlights.
+
+A fast local Laplacian filter on the 512-pixel map, tried as that field on 30 photos,
+reaches a correlation of 0.56 with Camera Raw's Clarity +100 field at one scale per
+photo (R² 0.32; an unsharp mask 0.17) and R² 0.36 to 0.41 with a weight per pyramid
+level. The engine's own Clarity +100, at full resolution, correlates 0.735 with Camera
+Raw's (R² 0.17 as rendered, 0.54 with one scale per photo; the field's RMS is 0.567
+against Camera Raw's 0.512). The shipped operator is closer in form than the prototype,
+which lacks the scales under the map's pixel; the prototype says nothing against the
+form.
+
+**Dehaze in luminance is near what a curve per photo can give.** On 94 photos Camera
+Raw's Dehaze −100 gain has an RMS of 1.431 stop; the engine's differs from it by 0.388
+(mean 0.511, bias +0.07), the photo's own best curve of the base level leaves 0.343 and
+one curve for all photos 0.497. At +100: 1.105; 0.528 (bias −0.09); 0.492; 0.642. A
+rule for Dehaze's curve would gain little; what is left in luminance is the field.
+
+**Negative Dehaze's error is more colour than lightness.** In Lab, on 25 photos, the
+engine's Dehaze −100 is 7.35 ΔE76 from Camera Raw's at the median: 3.42 in lightness and
+4.29 in colour. Camera Raw keeps 0.67 of the default render's chroma there and the
+engine 0.86 (at −50: 0.87 and 0.95; at +100: 1.20 and 1.27).
+
+Camera Raw's own renders (100 photos) say what it does to colour. With `d = rgb − Y`
+the colour part of a pixel and `g` its luminance gain, the colour part's absolute size
+after Dehaze over before is 0.98 to 1.00 at +50 in every quartile of the gain (the gain
+runs from 0.65 to 0.92), 0.78 to 1.00 at +100, 0.99 to 1.24 at −50 and 0.77 to 0.88 at
+−100: Dehaze adds or takes away light of one colour and leaves a pixel's own colour
+nearly alone. Clarity +100 (0.97), Shadows +100 (0.99) and Highlights −100 (1.01)
+scale the colour part with the luminance: they are gains on RGB, as the engine applies
+them. The colour part of ΔE76 left by three models of Camera Raw's Dehaze, each given
+Camera Raw's own luminance (median of the photos):
+
+| Model | −100 | −50 | +50 | +100 |
+| --- | --- | --- | --- | --- |
+| A gain on RGB | 7.41 | 2.92 | 1.72 | 3.30 |
+| `t · rgb` plus a neutral veil | 3.27 | 1.71 | 0.97 | 2.36 |
+| `t · rgb` plus a veil of one colour per photo | 0.65 | 0.58 | 0.40 | 0.99 |
+
+The veil's colour is the same at every amount (its −25, −50 and −75 fits correlate 0.96
+to 0.99 with −100's over 45 photos), and `t`, the share of the pixel's own colour kept,
+is 1.0 down to −75 and 0.9 at −100 when one value serves all photos. At the median the
+colour is neutral; on half of the photos its blue is between 0.86 and 1.13 and its red
+between 0.97 and 1.04 (linear ProPhoto, unit luminance).
+
+**Camera Raw's rule for the veil's colour, by probes.** A neutral daylight training
+photo (Camera Raw's default render through a linear profile, about 1000 pixels) written
+as a linear DNG whose sensor holds the scene two stops down, so that a source of up to
+four times the white is unclipped, with one patch of known colour, level and size
+added; rendered at default and Dehaze −100; the veil's colour fitted on the pixels away
+from the patch, as the share of the way from the photo's own veil to the patch's colour
+(about 110 renders):
+
+| Patch | Share of the way (red / blue) |
+| --- | --- |
+| Pale orange (1, 0.75, 0.45), 1% of the frame, at 2 × the white | 0.96 / 1.00 |
+| The same at 3.5 × the white | 0.84 / 0.83 |
+| The same at 8 × (red and green clipped) and 16 × (all clipped) | 0.01 / 0.08, 0.00 / 0.04 |
+| The same at 0.9 × on a photo with brighter highlights of its own; on a darker one | 0.00 at every size to 5%; 1.25 / 1.28 |
+| Deep orange (1, 0.5, 0.05), 1%, at 0.9 × and 3.5 × | 0.00 |
+| Pale orange at 2 ×: a square of 0.015% or 0.1% of the frame (26 px of 1000) | 0.00 to 0.04 |
+| A square of 0.2%, 0.3%, 0.5%, 0.7% (36 px and more) | 0.96 / 1.00 each |
+| A strip 8 px high of 0.3%; a strip 16 px high of 1% | 0.00; 0.96 / 1.00 |
+| The 1% square flush with the right edge, 2% and 5% in, at the top, in the corner | 0.96 / 1.00 each |
+| A tint of the whole photo (× 1.15, 1, 0.6), no patch | 0.93 / 0.93 (0.62 / 0.95 on a second photo) |
+| White, clipped (16 ×), 1% and 0.3%, on the tinted photo | past neutral (1.36 / 1.32); 0.1%: 0.13 / 0.08 |
+| White at 3 ×, 5 × (green clipped), 8 × and 16 × with a camera white balance of (2, 1, 1.54) | neutral each (1.000, 1.000, 0.979) |
+| White of 1% in two night photos, at 0.9 ×, 2 × and 16 × | the veil goes white (1.003, 0.999, 0.997) |
+
+So the pixels are ranked by their darkest channel, not their luminance (a saturated
+light of any brightness does not count); a window of about 1.3% of the long edge is
+taken first (a thin strip does not count); and the colour is all or nothing by whether
+what is left of a patch is most of the haziest 0.1% of the frame: a majority, not a
+mean, which would answer by degrees. Clipped lights count as white. The veil follows the
+photo's own colour cast. The frame's edge is not special. The amount follows the
+airlight's level too: the lift away from the patch is +1.47 stops without it, +1.62 with
+a pale patch of 0.2 to 1% at 2 ×, +1.73 at 3.5 ×, +1.82 clipped; a patch of 0.1% changes
+nothing.
+
+That is the dark channel prior's airlight with a median: the engine's window (0.5% of
+the long edge each way, 7 pixels of its 512-pixel copy) and each channel's median over
+the haziest 0.1%. Partly clipped lights, on the same files rendered by Camera Raw and
+by the engine with that rule (camera white balance (2, 1, 1.54); veil R G B):
+
+| Patch (sensor values) | Camera Raw | Engine |
+| --- | --- | --- |
+| Red and green clipped, blue 0.2 | 1.38 0.85 0.30 | 1.39 0.84 0.29 |
+| Red and green clipped, blue 0.6 | 1.12 0.95 0.75 | 1.14 0.94 0.74 |
+| Green alone clipped | 1.21 0.92 0.51 | 1.22 0.91 0.49 |
+| The first one's colour, unclipped | 1.39 0.84 0.33 | 1.40 0.84 0.32 |
+| All clipped | neutral | neutral |
+
+**The same rule on the training photos.** The earlier table took its statistics from
+Camera Raw's render, where a source brighter than white is white, and found nothing
+better than the mean of the haziest 1%. On the scene the engine itself measures
+(unclamped linear ProPhoto after highlight reconstruction, 512 pixels; dumped by a test
+build) the colour fitted to Camera Raw correlates 0.63 in red and 0.58 in blue with the
+mean of the haziest 1% and 0.89 and 0.70 with the mean of the haziest 0.1%; the colour
+error at −100 is 1.32 / 3.28 / 7.92 with the first, 0.82 / 2.26 / 5.09 with the second
+and 0.79 / 1.97 / 4.97 with the median of the 0.1% (0.83 / 1.51 / 3.55 fitted per
+photo). The choice is not sharp: shares of 0.05 to 0.3% and radii of 2 to 4 pixels give
+0.82 to 0.93 at the median. The median answers the probes' patches as Camera Raw does
+(simulated on the probe photo: 0.02 for 0.1% of the frame, 1.00 for 1%; the mean of the
+0.1% gives 0.54). A red neon sign shows the difference: the mean of its 1% is the
+neon's red (red 1.51, blue 0.49), the median of its 0.1% a white sign's (0.95, 1.15),
+and Camera Raw's veil is blue-grey (0.95, 1.19).
+
+Ranking by the darkest channel of the camera's own white-balanced values, where a
+saturated colour has more of its weakest channel than in ProPhoto, is level over the
+photos (with the haze equation below: 0.50 / 1.43 / 2.03 against 0.49 / 1.46 / 2.77; 8
+photos closer by 0.5 and 6 further) and right on two that ProPhoto misses: a vault lit
+by lamps (the veil becomes 1.18, 0.42; Camera Raw's fit 1.20, 0.42) and a face on a
+bright orange backdrop, where the backdrop is the haze (1.49, 0.08; fit 1.58, −0.06).
+The probes cannot tell the two rankings apart, their camera being ProPhoto.
+
+Tried and worse: the colour of the typical pixel (the mean or median of each pixel's
+colour per unit luminance, the geometric mean, the darker half: 5.6 to 7.0 at the
+median against 1.73 for the haziest 1% of the render); a window minimum of 1 to 8% of
+the long edge (the mean error rises to 5.9, with photos 17 to 23 further than neutral);
+leaving out pixels near the clip (failures of 43 to 59); a veil coloured by the photo
+blurred at 1 to 32% of its long edge, in place of one colour (6.9 to 4.0); the ring
+around clipped areas (two of the worst photos have no clipped pixel); the darkest
+channel taken in sRGB or Adobe RGB (2.8 against 1.96 in the mean; P3 2.04, Rec.2020
+1.91); medians of larger shares (0.3%: 2.80, one photo 23 further); mixes of the
+airlight with larger shares or the photo's mean, fitted with one photo left out (1.8 to
+2.2). Neither the disagreement between shares nor the share of the haziest pixels that
+is sensor-clipped tells where the rule is wrong (rank AUC 0.55 to 0.61; of 20 photos
+whose haziest 0.1% is all clipped, mostly white skies, 19 are closer with the veil).
+
+**How much of its own colour a pixel keeps: the haze equation.** Camera Raw rendering
+the engine's own scene of five photos, as probe files, gives the engine rule's colour
+where the fits on the real files agree (a night square: 1.29, 0.16 against 1.31, 0.16),
+and the fits on dusk and blue-sky photos are yellower than both. They were made with
+one kept share for all pixels. In `out = t · pixel + (1 − t) · airlight` the airlight
+has a level: given the luminance before and after, `t = (Y_A − Y_after) / (Y_A −
+Y_before)`, so a pixel far under the airlight keeps its colour and gains the veil, and
+one near it, a sky, gives its colour up. With Camera Raw's own luminance and the
+engine's airlight (median of the haziest 0.1%, colour and level), the colour error at
+−100 over 100 photos:
+
+| Kept share | Median / mean / p90 |
+| --- | --- |
+| 0.9 for every pixel | 0.80 / 1.96 / 4.97 |
+| 1.0 for every pixel | 0.88 / 2.09 / 5.69 |
+| The haze equation, the airlight's level as measured | 0.51 / 1.48 / 2.77 |
+| The same with the level × 0.5, × 0.7, × 1.4, × 2 | 0.97 / 2.01, 0.71 / 1.66, 0.63 / 1.65, 0.71 / 1.80 |
+| The colour fitted per photo, kept 0.9 | 0.83 / 1.51 / 3.55 |
+
+The level is right as measured (47 of the photos are best at × 1), 26 photos are closer
+by 0.5 than with one share and 1 further; two blue-sky photos go from 1.8 and 4.1 to 0.4
+and 0.5. At −50 it is level with a share of 1.0 (0.85 / 1.32 / 2.55 against 0.85 / 1.31
+/ 2.45). At the airlight's own level the equation is unstable; a floor of 1.05 to 1.5
+on the ratio of the airlight's luminance to the pixel's costs nothing. So the yellow
+veils fitted on blue-sky and dusk photos were the single share's doing.
+
+Haze never takes a pixel past the airlight. Of the pixels under the airlight's level,
+the share Camera Raw's −100 leaves more than a tenth above it is nothing at the median
+and at the 90th percentile of the photos (0.295 on one, a dusk scene whose lamp is the
+engine's airlight and not Camera Raw's); pixels above it lose 0.06 stop.
+
+**The luminance is not the haze equation with one transmission.** With `g = t + (1 −
+t) · Y_A / Y` and one `t` for all photos the gain's error at −100 is 0.799 stop (mean
+1.021), with `t` per photo 0.578, with the level free as well 0.558; the engine's curve
+leaves 0.388 and the photo's own best curve 0.343. Keying the engine's curve to the
+airlight's level in place of the luminance's 99th percentile (the two differ by under
+half a stop on 69 of 100 photos) is mixed on 34 photos: a night scene improves by 6.4
+to 8.8 and the bulk gets worse (7 to 9 closer, 11 to 14 further). What Camera Raw's
+amount follows is open: its gain four stops under the airlight is +1.5 to +1.9 on most
+photos whatever the airlight's level over the white, and +0.45 and +0.97 on two night
+scenes lit by coloured lights, which nothing tried explains (the airlight's level over
+the white or over the 99th percentile, its darkest channel, the room under it).
+
+**The candidate, and why it is not shipped.** The engine's luminance curve as it is,
+with the gain added as a veil instead of applied per channel, in SDR renders (branch
+`t3/negative-dehaze-veil`, local). Its forms in turn, rendered on the 100 training
+photos (the change on Camera Raw's default against Camera Raw's render, ΔE76 of a
+photo: median / mean / p90, photos closer / further than main by 0.3, the worst
+worsening) and on validation's six Dehaze sets (53 photos, own ΔE00 against the
+baseline of main):
+
+| Form | Training −100 | | | Validation −100 | | −50 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Main: the curve per channel | 8.00 / 9.42 / 14.73 | | | 6.56 / 7.47 / 13.60 | | 2.92 |
+| Neutral veil, kept 1 to 0.9 | 6.25 / 8.04 / 12.42 | 73 / 16 | +11.2 | | | |
+| Mean of the haziest 1% | 4.79 / 6.66 / 12.37 | 85 / 10 | +12.5 | 4.00 / 5.02 / 9.94 | 47 / 6 | 1.99 |
+| Mean of the haziest 0.1% | 4.54 / 5.98 / 11.43 | 89 / 8 | +3.3 | 3.60 / 4.88 / 8.53 | 47 / 6 | 1.99 |
+| Median of the haziest 0.1% | 4.59 / 6.06 / 11.12 | 86 / 9 | +9.0 | 3.48 / 4.87 / 8.56 | 48 / 5 | 1.93 |
+| With the haze equation's kept share | 4.20 / 5.77 / 10.58 | 89 / 7 | +11.8 | 3.27 / 4.70 / 8.63 | 50 / 3 | 1.98 |
+| With the ceiling and the camera's ranking | 4.09 / 5.87 / 10.53 | 90 / 6 | +20.5 | 3.15 / 4.60 / 8.76 | 50 / 3 | 1.95 |
+
+The colour part of the training error goes from 5.21 to 1.32 with the last form; the
+lightness part stays (3.49). On the synthetic chart −100 goes from 7.42 to 4.25 mean ΔE00 with the first
+form. Every form fails the gate's regression rule, and the panels say the failures are
+real:
+
+- *A moonrise over water* (validation), which Camera Raw's −100 hardly lifts and leaves
+  blue, turned pink with the mean of the 1% (3.79 → 5.94) and red-brown with the mean
+  of the 0.1% (7.69): the photo the added-haze candidate of 2026-11-13 was rejected on.
+  The median leaves it blue (3.87).
+- *A portrait on black* and *a desert under a blue sky* (validation) got a skin-coloured
+  and a sky-blue veil; with the median and the haze equation they are near Camera Raw's
+  cool grey and pale sky.
+- *A neon sign at night* (validation) is worse with every form and worst with the last
+  ones (14.49 → 29.47 at −100, 4.99 → 14.52 at −50): a blue-grey fog where Camera Raw's
+  veil is the street's saturated orange (its blue channel does not move at all). The
+  haziest 0.1% is one lit white panel of about 0.8% of the frame, which by every probe
+  above should be Camera Raw's airlight too; a white patch of that size added to two
+  night photos does turn Camera Raw's veil white. Unexplained.
+- *Night scenes lit by coloured lights* (training: Las Vegas, a neon club sign): Camera
+  Raw's −100 changes next to nothing. Main lays a brown fog over them; the candidate a
+  blue and a magenta one (+11.8 and +6.1), since the haziest pixels of a scene with
+  nothing pale in it are saturated ones and the engine's curve lifts such a scene as
+  much as any other.
+- *A portrait by a grey-green wall* gets a pink cast (+5.2; the haziest 0.1% is skin,
+  Camera Raw's veil the wall's grey) and *a dusk scene with one lamp* a grey-blue veil
+  (+4.2; Camera Raw's is the lamp's yellow-orange, with a glow around it).
+- *A face on a bright orange backdrop* (training): with the camera's ranking the veil is
+  the backdrop's orange, as Camera Raw's, and the photo is 20.5 further than main: the
+  skin, near the airlight's level, takes the backdrop's colour in full, where Camera Raw
+  lays a peach fog over it.
+- *Where the engine's curve lifts more than Camera Raw does* (a green park at −50:
+  0.519 against 0.474 in display green), the excess is now fog where it was a lighter
+  green.
+
+Main's curve per channel keeps a scene's own saturation, which on these scenes is less
+wrong than a fog of the wrong colour. What is established and waits for the amount: the
+airlight rule (median of the haziest 0.1%, ranked in the camera's values), the kept
+share from the haze equation, and the ceiling at the airlight's level.
+
+Positive Dehaze with the haziest 0.1% as its airlight is a wash on the training photos
+(+100: 3.18 → 3.01 at the median, 23 photos closer and 18 further, one by 11.7; +50:
+1.37 → 1.43): its strengths were fitted with the 1%.
 
 ### What is left of Shadows, Highlights and Whites, and what more training photos buy (2026-11-18)
 
