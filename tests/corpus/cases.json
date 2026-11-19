@@ -1784,6 +1784,67 @@
    }
   },
   {
+   "name": "cube-creative-33-mono",
+   "look": {
+    "file": "cube-creative-33-mono.xmp",
+    "amount": 1
+   }
+  },
+  {
+   "name": "cube-creative-33-mono-grading-shadows-h210",
+   "look": {
+    "file": "cube-creative-33-mono.xmp",
+    "amount": 1
+   },
+   "settings": {
+    "SplitToningShadowHue": "210",
+    "SplitToningShadowSaturation": "50"
+   }
+  },
+  {
+   "name": "cube-creative-33-mono-grading-midtones-h30",
+   "look": {
+    "file": "cube-creative-33-mono.xmp",
+    "amount": 1
+   },
+   "settings": {
+    "ColorGradeMidtoneHue": "30",
+    "ColorGradeMidtoneSat": "50"
+   }
+  },
+  {
+   "name": "bw-grading-shadows-h210",
+   "settings": {
+    "ConvertToGrayscale": "True",
+    "SplitToningShadowHue": "210",
+    "SplitToningShadowSaturation": "50"
+   }
+  },
+  {
+   "name": "bw-grading-midtones-h30",
+   "settings": {
+    "ConvertToGrayscale": "True",
+    "ColorGradeMidtoneHue": "30",
+    "ColorGradeMidtoneSat": "50"
+   }
+  },
+  {
+   "name": "bw-grading-highlights-h30",
+   "settings": {
+    "ConvertToGrayscale": "True",
+    "SplitToningHighlightHue": "30",
+    "SplitToningHighlightSaturation": "50"
+   }
+  },
+  {
+   "name": "bw-grading-global-h210-s100",
+   "settings": {
+    "ConvertToGrayscale": "True",
+    "ColorGradeGlobalHue": "210",
+    "ColorGradeGlobalSat": "100"
+   }
+  },
+  {
    "name": "bw-mix-zero",
    "settings": {
     "ConvertToGrayscale": "True",

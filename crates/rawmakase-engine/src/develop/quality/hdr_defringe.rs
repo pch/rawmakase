@@ -36,7 +36,10 @@ pub(super) fn radius(im: &CameraImage) -> u32 {
 /// each by the luminance range within `radius` of it. Pixels within `radius` of the
 /// slice's edge read only what the slice holds, so a region renders with that margin.
 pub(super) fn apply(pixels: &mut [[f32; 3]], width: usize, r: &Recipe, radius: u32) {
-    if r.effects.defringe == [0.; 2] || pixels.is_empty() {
+    // Camera Raw 18.7's HDR Defringe changes nothing under Black & White
+    // (docs/records/hdr-stage1-results.md#defringe), including where a look's table or
+    // grading tints the gray (#1187).
+    if r.effects.defringe == [0.; 2] || r.effects.monochrome || pixels.is_empty() {
         return;
     }
     let height = pixels.len() / width;
@@ -192,6 +195,29 @@ mod tests {
         let mut r = Recipe::default();
         r.effects.defringe = [0.4, 0.];
         r
+    }
+
+    /// Black & White toned by a look's table or grading (#1187) keeps its tint beside an
+    /// edge: Camera Raw 18.7's HDR Defringe changes nothing under Black & White.
+    #[test]
+    fn toned_black_and_white_is_left_alone() {
+        let w = 40usize;
+        // A purple tint, which Defringe's purple band would pull toward gray.
+        let toned: Vec<[f32; 3]> = (0..w)
+            .map(|x| {
+                let v = if x < 8 { 0.004 } else { 0.3 + x as f32 * 0.1 };
+                [v * 1.2, v * 0.7, v * 1.3]
+            })
+            .collect();
+        let mut r = purple();
+        r.effects.defringe = [0.8, 0.3];
+        let mut pixels = toned.clone();
+        apply(&mut pixels, w, &r, 4);
+        assert_ne!(pixels, toned, "the colour render defringes this edge");
+        r.effects.monochrome = true;
+        let mut pixels = toned.clone();
+        apply(&mut pixels, w, &r, 4);
+        assert_eq!(pixels, toned);
     }
 
     /// Gray light, as Black & White's mix leaves the master before Defringe, is left as

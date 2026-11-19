@@ -262,12 +262,10 @@ pub(super) fn color_stage(
             unreachable!("process_pixel returns the scene stage's taps")
         }
     }
-    // A look's RGB table: after the colour mixer, before colour grading, as Camera
-    // Raw 18.7 applies it (also after the user's tone curves and Saturation).
-    let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply(rgb));
-    let rgb = lut.grade.as_ref().map_or(rgb, |g| g.apply(rgb));
-    // The SDR rendition's sliders change the finished rendition's luminance.
-    let rgb = lut.sdr_rendition.as_ref().map_or(rgb, |t| t.apply(rgb));
+    if let Some(grid) = &lut.gray_grid {
+        return black_white_stage(rgb, grid, r, lut, local, mixed.selection);
+    }
+    let rgb = toning(rgb, lut);
     let mut lab = srgb_to_lab(rgb);
     if let Some(d) = local {
         lab = local::hue_saturation(d, lab);
@@ -276,24 +274,7 @@ pub(super) fn color_stage(
         return lab;
     }
     if lut.color_adjustments {
-        // HSL, Saturation and Vibrance render in the measured color mixer; Defringe
-        // and the black & white mix work here, on the color's Oklab hue.
-        let chroma = lab[1].hypot(lab[2]);
-        let hue = lab[2].atan2(lab[1]).rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
-        let angle = hue * std::f32::consts::TAU;
-        lab[0] = lab[0].clamp(0., 1.);
-        lab[1] = angle.cos() * chroma;
-        lab[2] = angle.sin() * chroma;
-        lab = r.effects.defringe_color(lab, hue);
-        // `gray_grid` is there for black & white renders.
-        if let Some(grid) = &lut.gray_grid {
-            // The gray's Oklab lightness is the cube root of its luminance.
-            lab[0] = crate::develop::black_white::gray(grid, lab_to_srgb(lab))
-                .cbrt()
-                .clamp(0., 1.);
-            lab[1] = 0.;
-            lab[2] = 0.;
-        }
+        lab = adjust_color(lab, r);
     } else {
         // Identity color controls need no hue angle or trigonometry.
         lab[0] = lab[0].clamp(0., 1.);
@@ -304,6 +285,62 @@ pub(super) fn color_stage(
     mixed
         .selection
         .map_or(out, |w| crate::develop::point_color::visualize(out, w))
+}
+/// What follows the colour mixer on linear display RGB: a look's RGB table, colour
+/// grading and an HDR edit's SDR rendition sliders.
+fn toning(rgb: [f32; 3], lut: &CurveSet) -> [f32; 3] {
+    // A look's RGB table: after the colour mixer, before colour grading, as Camera
+    // Raw 18.7 applies it (also after the user's tone curves and Saturation).
+    let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply(rgb));
+    let rgb = lut.grade.as_ref().map_or(rgb, |g| g.apply(rgb));
+    // The SDR rendition's sliders change the finished rendition's luminance.
+    lut.sdr_rendition.as_ref().map_or(rgb, |t| t.apply(rgb))
+}
+/// The Oklab colour controls after the measured mixer: the hue angle round trip and
+/// Defringe, with the lightness clipped to 0–1.
+fn adjust_color(mut lab: [f32; 3], r: &Recipe) -> [f32; 3] {
+    // HSL, Saturation and Vibrance render in the measured color mixer; Defringe works
+    // here, on the color's Oklab hue, as the black & white mix does.
+    let chroma = lab[1].hypot(lab[2]);
+    let hue = lab[2].atan2(lab[1]).rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
+    let angle = hue * std::f32::consts::TAU;
+    lab[0] = lab[0].clamp(0., 1.);
+    lab[1] = angle.cos() * chroma;
+    lab[2] = angle.sin() * chroma;
+    r.effects.defringe_color(lab, hue)
+}
+/// [`color_stage`]'s end for a black & white render. Camera Raw 18.7 converts the
+/// colour to gray first and then applies a look's RGB table and colour grading to the
+/// gray, so a colour table or grading tones it (#1187;
+/// docs/color-mixer.md#black--white). The colour the gray is mixed from has a
+/// mask's Hue and Saturation and Defringe, as before.
+fn black_white_stage(
+    rgb: [f32; 3],
+    grid: &[[f32; 3]],
+    r: &Recipe,
+    lut: &CurveSet,
+    local: Option<&LocalDelta>,
+    selection: Option<f32>,
+) -> [f32; 3] {
+    let mut lab = srgb_to_lab(rgb);
+    if let Some(d) = local {
+        lab = local::hue_saturation(d, lab);
+    }
+    if lut.output == PixelOutput::ColorInput {
+        return lab;
+    }
+    let lab = adjust_color(lab, r);
+    // Linear sRGB, so the gray's Oklab lightness is the cube root of its luminance.
+    let gray = crate::develop::black_white::gray(grid, lab_to_srgb(lab)).clamp(0., 1.);
+    let lab = if lut.rgb_table.is_none() && lut.grade.is_none() && lut.sdr_rendition.is_none() {
+        [gray.cbrt(), 0., 0.]
+    } else {
+        let mut lab = srgb_to_lab(toning([gray; 3], lut));
+        lab[0] = lab[0].clamp(0., 1.);
+        lab
+    };
+    let out = finish_color_in(lab, lut.space);
+    selection.map_or(out, |w| crate::develop::point_color::visualize(out, w))
 }
 /// The colour stage's end, after the colour controls and Defringe: each channel
 /// clipped into sRGB on its own, as Camera Raw's conversion does

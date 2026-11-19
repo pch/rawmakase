@@ -215,8 +215,9 @@ each channel's curve, held at 16), and
 the colour stage (the colour mixer's grids looked up as `color_mixer::Lookup::Hdr`
 looks them up, with Vibrance's fading value factors, band Luminance per channel by the
 scene's level and Saturation's fade to gray,
-then a look's RGB table on overrange-encoded values (`RgbTable::apply_hdr`), colour
-grading in its HDR domain (`grade_hdr`) and black & white's gray, unclipped). It writes linear ProPhoto unclipped; `present_hdr.wgsl` sharpens it on
+then a look's RGB table on overrange-encoded values (`RgbTable::apply_hdr`) and colour
+grading in its HDR domain (`grade_hdr`); in black & white the gray, unclipped, comes
+first, and the table and grading tone it, as in SDR). It writes linear ProPhoto unclipped; `present_hdr.wgsl` sharpens it on
 sRGB-curve-encoded values with ProPhoto luminance, applies the limit, and encodes
 extended sRGB held to the display's headroom (`color::hdr_output::extended_srgb`,
 which the CPU preview uses too). The HDR tone curve is sampled every 1/32 stop over
@@ -499,9 +500,10 @@ is worse than its SDR score by more than 0.2. On the blocks Camera Raw changes m
 keeps ×0.89 of their chroma where Camera Raw keeps ×0.68. The weights and the band were
 fitted on these photos; no other photos have HDR Defringe captures.
 
-With Black & White the master's Defringe runs after the gray mix, where it changes
-nothing, as Camera Raw 18.7's HDR Defringe changes nothing under Black & White (SDR's
-precedes the mix and changes fringes' gray). Measurements:
+With Black & White the master's Defringe is skipped, as Camera Raw 18.7's HDR
+Defringe changes nothing under Black & White (SDR's precedes the mix and changes
+fringes' gray). Before a look's table and grading toned black and white (#1187) it ran
+on the gray, where it changed nothing either. Measurements:
 [record](records/hdr-stage1-results.md#defringe).
 
 ### Masks

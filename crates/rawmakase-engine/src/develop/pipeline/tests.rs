@@ -1326,7 +1326,8 @@ fn constrain_crop_renders_no_white() {
     assert!(constrained.width < free.width && constrained.width > 45);
 }
 /// A look's RGB table goes after the colour controls: a fully desaturated gray still
-/// takes the table's tint, and Monochrome still makes it gray.
+/// takes the table's tint, and so does a black & white photo's gray, as Camera Raw 18.7
+/// renders a colour look under black and white (#1187).
 #[test]
 fn rgb_tables_follow_the_colour_controls() {
     let m = Metadata {
@@ -1348,10 +1349,49 @@ fn rgb_tables_follow_the_colour_controls() {
         out.iter().fold(0f32, |a, v| a.max(*v)) - out.iter().fold(1f32, |a, v| a.min(*v))
     };
     assert!(spread(&r) > 0.01);
-    // Monochrome comes after the table and stays gray.
+    // Black & white comes before the table, which tints the gray.
     let mut mono = r;
     mono.effects.monochrome = true;
-    assert!(spread(&mono) < 1e-3);
+    assert!(spread(&mono) > 0.01, "{}", spread(&mono));
+}
+/// Black & white converts to gray before colour grading, so grading tones the gray
+/// in SDR and in an HDR master, as Camera Raw 18.7 renders split toning on black and
+/// white (#1187).
+#[test]
+fn grading_tones_black_and_white() {
+    let m = Metadata {
+        make: "Test".into(),
+        model: "Camera".into(),
+        cam_xyz: [[0.8, -0.2, -0.1], [-0.3, 1.1, 0.2], [-0.05, 0.15, 0.6]],
+        ..Default::default()
+    };
+    let profile = crate::camera_profiles::CameraProfile::camera_matrix_default(&m).unwrap();
+    let mut r = Recipe {
+        profile: Some(Arc::new(profile)),
+        ..Default::default()
+    };
+    r.effects.monochrome = true;
+    let spread =
+        |v: [f32; 3]| v.iter().fold(0f32, |a, x| a.max(*x)) - v.iter().fold(1f32, |a, x| a.min(*x));
+    let sdr = |r: &Recipe| color_stage([0.05, 0.2, 0.1], r, &CurveSet::new(r), None);
+    let hdr = |r: &Recipe| {
+        let lut = CurveSet::new(r);
+        lut.hdr
+            .as_ref()
+            .unwrap()
+            .finish([0.05, 0.2, 0.1], r, &lut, None)
+    };
+    assert!(spread(sdr(&r)) < 1e-3, "{:?}", sdr(&r));
+    // Shadows toward blue.
+    r.grading[0] = [210. / 360., 0.5, 0.];
+    let toned = sdr(&r);
+    assert!(toned[2] > toned[0] + 0.01, "{toned:?}");
+    r.hdr.enabled = true;
+    r.hdr.limit = 4.;
+    let toned = hdr(&r);
+    assert!(toned[2] > toned[0] * 1.05, "{toned:?}");
+    r.grading[0] = [0.; 3];
+    assert!(spread(hdr(&r)) < 1e-4, "{:?}", hdr(&r));
 }
 /// A `.cube` imports as a look whose RGB table is the cube: an identity cube at 100%
 /// renders as the base profile does, within the table's 16-bit rounding, at 0% exactly

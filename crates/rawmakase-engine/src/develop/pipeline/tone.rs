@@ -295,21 +295,29 @@ impl HdrFinish {
             .point_colors
             .as_ref()
             .map_or(rgb, |p| point_colors_hdr(p, rgb));
-        // A look's RGB table follows the mixer, as in SDR, on overrange-encoded values.
-        let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply_hdr(rgb));
-        // Colour grading follows the colour mixer and a look's RGB table, as in SDR.
-        let rgb = lut.grade.as_ref().map_or(rgb, |g| g.apply_hdr(rgb));
+        let toning = |rgb: [f32; 3]| {
+            // A look's RGB table follows the mixer, as in SDR, on overrange-encoded
+            // values.
+            let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply_hdr(rgb));
+            // Colour grading follows the colour mixer and a look's RGB table, as in SDR.
+            lut.grade.as_ref().map_or(rgb, |g| g.apply_hdr(rgb))
+        };
         // A mask's Hue and Saturation follow grading, as in SDR, on the unclipped light:
         // positive Saturation keeping the colour's value (`local::saturate_hdr`) and
         // negative Saturation toward its HSL lightness (`local::desaturate_hdr`), as
         // Camera Raw 18.7's HDR render of them does at every brightness, and Hue on
         // Oklab (docs/records/hdr-stage1-results.md#masks).
-        let rgb = local_color.map_or(rgb, |d| local_color_hdr(d, rgb));
-        // The gray's luminance, unclipped: SDR renders clip it at white.
-        let rgb = lut.gray_grid.as_ref().map_or(rgb, |g| {
-            let lookup = crate::develop::color_mixer::Lookup::Hdr(None, None);
-            [crate::develop::black_white::gray_in(g, rgb, lookup); 3]
-        });
+        let local_color = |rgb| local_color.map_or(rgb, |d| local_color_hdr(d, rgb));
+        let rgb = match &lut.gray_grid {
+            // Black & white: the gray first, then a look's table and grading tone it, as
+            // in SDR (#1187). The gray's luminance is unclipped: SDR renders clip it at
+            // white.
+            Some(g) => {
+                let lookup = crate::develop::color_mixer::Lookup::Hdr(None, None);
+                toning([crate::develop::black_white::gray_in(g, local_color(rgb), lookup); 3])
+            }
+            None => local_color(toning(rgb)),
+        };
         mul(crate::camera_profiles::RGB_TO_PRO, rgb).map(|v| v.max(0.))
     }
     #[cfg(test)]

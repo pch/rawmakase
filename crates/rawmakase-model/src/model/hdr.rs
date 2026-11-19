@@ -798,8 +798,8 @@ mod tests {
             check_recipe(&masked).is_ok(),
             "a hidden mask renders nothing"
         );
-        // Defringe renders, with Black & White too: the master's follows the gray mix
-        // and changes nothing there, as Camera Raw 18.7's HDR render doesn't.
+        // Defringe renders, with Black & White too: the master skips it there, as
+        // Camera Raw 18.7's HDR render changes nothing.
         let mut defringe = r.clone();
         defringe.effects.defringe = [0.3, 0.2];
         assert!(check_recipe(&defringe).is_ok());

@@ -703,6 +703,10 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     let mut mono = r.clone();
     mono.effects.monochrome = true;
     mono.effects.gray_mix = [0.3, -0.7, 0.1, 0., -0.2, 0.9, 0., -1.];
+    recipes.push(mono.clone());
+    // Colour grading tones the black & white gray (#1187).
+    mono.grading = [[0.58, 0.4, 0.2], [0.08, 0.3, -0.3], [0.11, 0.6, 0.5]];
+    mono.effects.global_grade = [0.6, 0.25, -0.2];
     recipes.push(mono);
     // Point Color: overlapping swatches, one across red, with Variance and Range.
     let mut warm = crate::model::point_color::PointColor::sampled([0.6, 0.5, 0.2]);
@@ -2270,6 +2274,10 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
     let mut graded_mixed = bands.clone();
     graded_mixed.grading[2] = [0.6, 0.5, -0.6];
     graded_mixed.saturation = 0.3;
+    // Grading tones the black & white gray (#1187).
+    let mut graded_mono = graded.clone();
+    graded_mono.effects.monochrome = true;
+    graded_mono.effects.gray_mix = mono.effects.gray_mix;
     let variants = variants.into_iter().chain([
         Recipe {
             saturation: 0.4,
@@ -2290,6 +2298,7 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         mono,
         graded,
         graded_mixed,
+        graded_mono,
         // Texture: its image made on the CPU, as for the SDR rendition, then sampled on
         // the device (it changes this fixture's master by up to 0.8 of a value).
         Recipe {

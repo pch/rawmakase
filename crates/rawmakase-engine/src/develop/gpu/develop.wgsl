@@ -526,8 +526,8 @@ fn mixer_hdr(rgb: vec3<f32>, base: i32, fading: i32, luminance: i32, scene: vec3
     return PRO_TO_RGB * out;
 }
 // HdrFinish::finish's colour stage: the colour mixer (with Saturation's fade to the
-// gray source's luminance), colour grading, then the black & white mix's gray,
-// unclipped above white.
+// gray source's luminance), the black & white mix's gray (unclipped above white), a
+// look's RGB table, then colour grading.
 // Linear ProPhoto, not negative, in and out.
 fn hdr_colour_stage(pro: vec3<f32>, scene: vec3<f32>) -> vec3<f32> {
     let grid = offset(P_MIXER);
@@ -551,16 +551,18 @@ fn hdr_colour_stage(pro: vec3<f32>, scene: vec3<f32>) -> vec3<f32> {
         }
         rgb = mixed;
     }
+    // Black & white: the gray first, then a look's table and grading tone it, as in
+    // SDR (#1187).
+    if gray >= 0 {
+        let scaled = mixer_hdr(max(rgb, vec3(0.0)), gray, -1, -1, vec3(0.0));
+        rgb = vec3(max(dot(scaled, vec3(0.2126, 0.7152, 0.0722)), 0.0));
+    }
     if table {
         rgb = rgb_table_hdr(rgb);
     }
     // Colour grading follows the colour mixer and a look's RGB table, as in SDR.
     if graded {
         rgb = PRO_TO_RGB * grade_hdr(RGB_TO_PRO * rgb);
-    }
-    if gray >= 0 {
-        let scaled = mixer_hdr(max(rgb, vec3(0.0)), gray, -1, -1, vec3(0.0));
-        rgb = vec3(max(dot(scaled, vec3(0.2126, 0.7152, 0.0722)), 0.0));
     }
     return max(RGB_TO_PRO * rgb, vec3(0.0));
 }
@@ -1593,6 +1595,17 @@ fn adjust(lab_in: vec3<f32>) -> vec3<f32> {
     }
     return lab;
 }
+// pixel::toning: a look's RGB table, then colour grading, on linear display RGB.
+fn toning(rgb_in: vec3<f32>) -> vec3<f32> {
+    var rgb = rgb_in;
+    if V_COLOR && offset(P_RGB) >= 0 && p(P_RGB + 5u) != 0.0 {
+        rgb = rgb_table(rgb);
+    }
+    if V_COLOR && offset(P_GRADE) >= 0 {
+        rgb = grade(rgb);
+    }
+    return rgb;
+}
 // S1: scene_color.
 fn scene_color(sample: vec3<f32>, apply_local: bool) -> vec3<f32> {
     var wb = vec3(1.0);
@@ -1711,11 +1724,11 @@ fn process_pixel(i: u32, pos: vec2<f32>) -> vec3<f32> {
     if V_COLOR && offset(P_POINT) >= 0 {
         rgb = point_colors(rgb);
     }
-    if V_COLOR && offset(P_RGB) >= 0 && p(P_RGB + 5u) != 0.0 {
-        rgb = rgb_table(rgb);
-    }
-    if V_COLOR && offset(P_GRADE) >= 0 {
-        rgb = grade(rgb);
+    // Black & white: the gray first, then a look's table and grading tone it, as
+    // `black_white_stage` (#1187).
+    let black_white = V_COLOR && offset(P_GRAY_GRID) >= 0;
+    if !black_white {
+        rgb = toning(rgb);
     }
     var lab = srgb_to_lab(rgb);
     if (V_MASKS && masked) && (delta[L_HUE] != 0.0 || delta[L_SATURATION] != 0.0) {
@@ -1732,6 +1745,11 @@ fn process_pixel(i: u32, pos: vec2<f32>) -> vec3<f32> {
         lab.x = clamp(lab.x, 0.0, 1.0);
     }
     rgb = lab_to_srgb(lab);
+    if black_white && (offset(P_GRADE) >= 0 || (offset(P_RGB) >= 0 && p(P_RGB + 5u) != 0.0)) {
+        lab = srgb_to_lab(toning(rgb));
+        lab.x = clamp(lab.x, 0.0, 1.0);
+        rgb = lab_to_srgb(lab);
+    }
     // Each channel clipped on its own, as Camera Raw does.
     var out: vec3<f32>;
     for (var k = 0; k < 3; k++) {
