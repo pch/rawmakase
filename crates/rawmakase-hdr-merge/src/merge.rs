@@ -44,16 +44,21 @@ impl Accumulator {
     }
 
     /// Adds `frame`, of `gain` over the darkest frame and `noise`; `darkest`
-    /// for the darkest frame, which is never ramped or dropped.
+    /// for the darkest frame, which is never ramped or dropped where it
+    /// covers the image. `covered`, for a frame warped by Auto Align, says
+    /// which pixels it covers; it adds nothing to the others.
     pub(crate) fn add(
         &mut self,
         frame: &Frame,
         gain: f64,
         noise: Noise,
         darkest: bool,
+        covered: Option<&[bool]>,
         cancel: Cancel<'_>,
     ) -> Result<(), Error> {
-        if frame.pixels.len() != self.sums.len() {
+        if frame.pixels.len() != self.sums.len()
+            || covered.is_some_and(|c| c.len() != self.sums.len())
+        {
             return Err(Error::Invalid("frames of different sizes"));
         }
         let g = gain as f32;
@@ -70,6 +75,9 @@ impl Accumulator {
                 let start = band * width * BAND;
                 for (k, sum) in sums.iter_mut().enumerate() {
                     let i = start + k;
+                    if covered.is_some_and(|c| !c[i]) {
+                        continue;
+                    }
                     let p = frame.pixels[i];
                     let ramp = if darkest {
                         1.

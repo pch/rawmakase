@@ -12,6 +12,7 @@
 //! (`scripts/deps-crates.txt`).
 #![forbid(unsafe_code)]
 
+mod align;
 pub mod bracket;
 mod dng;
 mod merge;
@@ -19,6 +20,7 @@ mod noise;
 mod ratio;
 mod write;
 
+pub use align::{Alignment, MAX_ROTATION, MAX_SHIFT, Matrix};
 pub use dng::{Calibration, DngFacts, LinearImage, MAX_WHITE, MakerNote, TILE, encode};
 pub use write::{Destination, write_dng};
 
@@ -66,6 +68,9 @@ impl FrameInput {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MergeOptions {
     pub demosaic: Demosaic,
+    /// Auto Align: each frame aligned to the reference and warped into its
+    /// geometry. Off, the frames are merged as they were taken.
+    pub align: bool,
     /// The DNG's Software tag: the application and its version.
     pub software: String,
 }
@@ -75,8 +80,12 @@ pub struct MergeOptions {
 pub enum Stage {
     /// Reading the photos' metadata and checking they are a bracket.
     Check,
-    /// Decoding the `n`th frame (from 0) in merge order.
+    /// Decoding the `n`th frame (from 0) in merge order. With Auto Align
+    /// the reference frame is decoded first.
     Decode(usize),
+    /// Aligning the `n`th frame to the reference (Auto Align), the
+    /// reference's own `Align` preparing it for the others.
+    Align(usize),
     /// Measuring the `n`th frame's exposure against the one before.
     Measure(usize),
     /// Adding the `n`th frame to the merge.
@@ -113,6 +122,9 @@ pub struct MergedFrame {
     pub ev: f64,
     /// Whether [`Self::ev`] was measured.
     pub measured: bool,
+    /// How Auto Align moved it onto the reference; `None` for the
+    /// reference and without Auto Align.
+    pub alignment: Option<Alignment>,
 }
 
 /// Why a merge or its DNG failed.
@@ -134,6 +146,9 @@ pub enum Error {
     Write { folder: PathBuf, why: String },
     /// The file to write already exists.
     Exists(PathBuf),
+    /// Auto Align couldn't align a frame to the reference: nothing is
+    /// merged.
+    Align { photo: String, why: String },
 }
 
 impl std::fmt::Display for Error {
@@ -154,6 +169,10 @@ impl std::fmt::Display for Error {
                 folder.display()
             ),
             Self::Exists(path) => write!(f, "{} already exists", path.display()),
+            Self::Align { photo, why } => write!(
+                f,
+                "Couldn't align {photo}: {why}. Try with Auto Align off, or a bracket taken on a tripod"
+            ),
         }
     }
 }
@@ -208,16 +227,11 @@ pub fn merge(
         .collect();
     let bracket = bracket::check(&shots)?;
     progress(Stage::Check, 1.);
-
-    let n = bracket.order.len();
-    let mut frames: Vec<MergedFrame> = Vec::with_capacity(n);
-    let mut kept: Vec<Kept> = Vec::with_capacity(n);
-    let mut accumulator: Option<merge::Accumulator> = None;
-    let mut previous: Option<(Frame, noise::Noise)> = None;
-    for (k, &input) in bracket.order.iter().enumerate() {
+    // The `k`th frame in merge order, decoded, and its noise.
+    let decoded = |k: usize| -> Result<(Frame, noise::Noise), Error> {
         cancelled()?;
         progress(Stage::Decode(k), 0.);
-        let path = &inputs[input].path;
+        let path = &inputs[bracket.order[k]].path;
         let frame = decode(path, options.demosaic, cancel)?;
         if frame.metadata.cam_xyz.iter().flatten().all(|v| *v == 0.) {
             return Err(Refusal::Unreadable(
@@ -226,8 +240,64 @@ pub fn merge(
             )
             .into());
         }
+        // Measured before any warp: resampling smooths the noise.
         let noise = noise::measure(&frame);
         progress(Stage::Decode(k), 1.);
+        Ok((frame, noise))
+    };
+
+    let n = bracket.order.len();
+    let mut frames: Vec<MergedFrame> = Vec::with_capacity(n);
+    let mut kept: Vec<Kept> = Vec::with_capacity(n);
+    let mut accumulator: Option<merge::Accumulator> = None;
+    let mut previous: Option<(Frame, noise::Noise)> = None;
+    // With Auto Align the reference comes first: every other frame is
+    // aligned to it. It is kept until its turn to be merged.
+    let mut reference_frame: Option<(Frame, noise::Noise)> = None;
+    let mut template: Option<align::Template> = None;
+    if options.align {
+        let k = bracket.reference;
+        let (frame, noise) = decoded(k)?;
+        progress(Stage::Align(k), 0.);
+        template = Some(align::Template::new(align::Pyramid::of_frame(
+            &frame, noise,
+        )));
+        progress(Stage::Align(k), 1.);
+        reference_frame = Some((frame, noise));
+    }
+    // Which pixels every frame covers so far, once a frame was warped.
+    let mut coverage: Option<Vec<bool>> = None;
+    for (k, &input) in bracket.order.iter().enumerate() {
+        let path = &inputs[input].path;
+        let (frame, noise) = match reference_frame.take_if(|_| k == bracket.reference) {
+            Some(kept) => kept,
+            None => decoded(k)?,
+        };
+        let (frame, covered, alignment) = match &template {
+            Some(template) if k != bracket.reference => {
+                cancelled()?;
+                progress(Stage::Align(k), 0.);
+                let pyramid = align::Pyramid::of_frame(&frame, noise);
+                let alignment =
+                    align::align(template, &pyramid, cancel).map_err(|why| match why {
+                        align::Failure::Cancelled => Error::Cancelled,
+                        why => Error::Align {
+                            photo: name(path),
+                            why: why.to_string(),
+                        },
+                    })?;
+                drop(pyramid);
+                let (frame, covered) = if alignment.warped {
+                    let (warped, covered) = align::warp(&frame, &alignment.matrix, cancel)?;
+                    (warped, Some(covered))
+                } else {
+                    (frame, None)
+                };
+                progress(Stage::Align(k), 1.);
+                (frame, covered, Some(alignment))
+            }
+            _ => (frame, None, None),
+        };
         let nominal_ev = bracket.ev[k];
         let (ev, measured) = match &previous {
             None => (0., true),
@@ -258,13 +328,20 @@ pub fn merge(
         progress(Stage::Merge(k), 0.);
         let acc =
             accumulator.get_or_insert_with(|| merge::Accumulator::new(frame.width, frame.height));
-        acc.add(&frame, ev.exp2(), noise, k == 0, cancel)?;
+        acc.add(&frame, ev.exp2(), noise, k == 0, covered.as_deref(), cancel)?;
         progress(Stage::Merge(k), 1.);
+        if let Some(covered) = covered {
+            match &mut coverage {
+                None => coverage = Some(covered),
+                Some(all) => all.iter_mut().zip(covered).for_each(|(a, c)| *a &= c),
+            }
+        }
         frames.push(MergedFrame {
             input,
             nominal_ev,
             ev,
             measured,
+            alignment,
         });
         kept.push(Kept {
             saturation: frame.saturation,
@@ -315,11 +392,14 @@ pub fn merge(
         baseline_exposure,
         options,
     )?;
+    let coverage: Option<Vec<u8>> = coverage
+        .filter(|c| c.contains(&false))
+        .map(|c| c.into_iter().map(|c| if c { 255 } else { 0 }).collect());
     let image = LinearImage {
         width: r.width,
         height: r.height,
         pixels: &pixels,
-        coverage: None,
+        coverage: coverage.as_deref(),
     };
     let dng = encode(&image, &facts, cancel)?;
     progress(Stage::Encode, 1.);

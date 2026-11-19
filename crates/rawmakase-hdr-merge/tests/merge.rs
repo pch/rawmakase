@@ -31,19 +31,52 @@ const NEUTRAL: [f64; 3] = [0.5, 1., 0.6];
 /// gradients across the same range below.
 fn scene() -> Vec<[f64; 3]> {
     (0..H)
+        .flat_map(|y| (0..W).map(move |x| light(f64::from(x), f64::from(y))))
+        .collect()
+}
+
+/// The scene's light at any place, the frame's edge extending beyond it.
+fn light(x: f64, y: f64) -> [f64; 3] {
+    let x = x.clamp(0., f64::from(W - 1));
+    let y = y.clamp(0., f64::from(H - 1));
+    if y < 128. {
+        let block = ((y / 32.).floor() * f64::from(W / 32) + (x / 32.).floor()).min(47.);
+        let level = 2f64.powf(-14. + 15. * block / 47.);
+        let tint = [[1., 0.8, 0.6], [0.6, 1., 0.9], [0.9, 0.7, 1.]][(block as usize) % 3];
+        std::array::from_fn(|c| level * tint[c] * NEUTRAL[c])
+    } else {
+        let level = 2f64.powf(-14. + 15. * x / f64::from(W - 1));
+        let tint = if y < 192. { [1.; 3] } else { [1., 0.7, 0.4] };
+        std::array::from_fn(|c| level * tint[c] * NEUTRAL[c])
+    }
+}
+
+/// The scene as a frame moved by `dx`, `dy` pixels and turned `degrees`
+/// about its centre sees it: its pixel `p` sees the scene's place `p` moved
+/// back, blurred over about two pixels as a lens and sensor blur it (a
+/// tent, sampled 8 × 8), so the blocks' edges move by fractions of a pixel
+/// too and the demosaic sees no sharper edge than a camera gives it.
+fn moved(dx: f64, dy: f64, degrees: f64) -> Vec<[f64; 3]> {
+    let (s, c) = degrees.to_radians().sin_cos();
+    let (cx, cy) = (f64::from(W - 1) / 2., f64::from(H - 1) / 2.);
+    (0..H)
         .flat_map(|y| {
             (0..W).map(move |x| {
-                if y < 128 {
-                    let block = (y / 32 * (W / 32) + x / 32) as f64;
-                    let level = 2f64.powf(-14. + 15. * block / 47.);
-                    let tint =
-                        [[1., 0.8, 0.6], [0.6, 1., 0.9], [0.9, 0.7, 1.]][(block as usize) % 3];
-                    std::array::from_fn(|c| level * tint[c] * NEUTRAL[c])
-                } else {
-                    let level = 2f64.powf(-14. + 15. * f64::from(x) / f64::from(W - 1));
-                    let tint = if y < 192 { [1.; 3] } else { [1., 0.7, 0.4] };
-                    std::array::from_fn(|c| level * tint[c] * NEUTRAL[c])
+                let (mut sum, mut total) = ([0.; 3], 0.);
+                for j in 0..8 {
+                    for i in 0..8 {
+                        let (a, b) = ((f64::from(i) - 3.5) / 4., (f64::from(j) - 3.5) / 4.);
+                        let weight = (1. - a.abs()) * (1. - b.abs());
+                        let u = f64::from(x) + a - dx - cx;
+                        let v = f64::from(y) + b - dy - cy;
+                        let l = light(c * u + s * v + cx, -s * u + c * v + cy);
+                        for k in 0..3 {
+                            sum[k] += weight * l[k];
+                        }
+                        total += weight;
+                    }
                 }
+                sum.map(|v| v / total)
             })
         })
         .collect()
@@ -230,6 +263,7 @@ fn bracket(dir: &Path) -> Vec<PathBuf> {
 fn options() -> MergeOptions {
     MergeOptions {
         demosaic: Demosaic::Rawmakase,
+        align: true,
         software: "RAWmakase test".into(),
     }
 }
@@ -276,6 +310,155 @@ fn written() -> &'static (tempfile::TempDir, Merged, PathBuf) {
         let path = write_dng(&merged, &Destination::beside(&paths[0]), Cancel::NEVER).unwrap();
         (dir, merged, path)
     })
+}
+
+/// The bracket in `dir` taken by hand: the darkest and brightest frames
+/// moved by `motion` (dx, dy, degrees) each.
+fn handheld(dir: &Path, motion: [[f64; 3]; 3]) -> Vec<PathBuf> {
+    (0..3)
+        .map(|k| {
+            let path = dir.join(format!("IMG_{}.dng", k + 1));
+            let [dx, dy, degrees] = motion[k];
+            let samples = mosaic(&moved(dx, dy, degrees), TRUE[k], 7 + k as u64);
+            std::fs::write(
+                &path,
+                dng(&samples, RECORDED[k], &format!("{}", 10 + k * 30)),
+            )
+            .unwrap();
+            path
+        })
+        .collect()
+}
+
+/// The blocks whose merged light is further from the scene than their noise
+/// allows, away from their edges and where the darkest frame clips.
+fn wrong_blocks(pixels: &[[f64; 3]], scene: &[[f64; 3]]) -> Vec<u32> {
+    (0..48u32)
+        .filter(|block| {
+            let (bx, by) = (block % 12 * 32, block / 12 * 32);
+            let (mut got, mut want, mut n) = (0., 0., 0.);
+            for y in by + 6..by + 26 {
+                for x in bx + 6..bx + 26 {
+                    got += level(pixels[(y * W + x) as usize]);
+                    want += level(scene[(y * W + x) as usize]);
+                    n += 1.;
+                }
+            }
+            let (got, want) = (got / n, want / n);
+            let exposure = TRUE
+                .iter()
+                .copied()
+                .filter(|t| want * t < 0.8)
+                .fold(1., f64::max);
+            let dn = want * exposure * (WHITE_DN - BLACK);
+            let sigma = (dn / GAIN + 3. * READ * READ).sqrt() / (exposure * (WHITE_DN - BLACK));
+            // The demosaic correlates neighbouring pixels: on a flat frame a
+            // 20×20 block's mean varied 1.8 times as much as independent
+            // pixels would give. A quarter of the pixels as independent
+            // samples leaves about twice that as headroom.
+            let bound = 6. * sigma / (n / 4.).sqrt() + want * 2e-3;
+            let clipped = scene[((by + 16) * W + bx + 16) as usize]
+                .into_iter()
+                .fold(0., f64::max)
+                > 0.9;
+            !clipped && (got - want).abs() >= bound
+        })
+        .collect()
+}
+
+/// A bracket taken by hand is aligned to its middle frame: the motion is
+/// found to a fifth of a pixel, the merge follows the scene as the reference
+/// frame saw it, and what the moved frames leave uncovered is the DNG's
+/// transparency mask. Without Auto Align the same bracket merges blurred.
+#[test]
+fn a_handheld_bracket_is_aligned() {
+    let dir = tempfile::tempdir().unwrap();
+    let motion = [[6.5, -4.25, 0.5], [0.; 3], [-5.2, 3.1, -0.3]];
+    let paths = handheld(dir.path(), motion);
+    let merged = merged(&paths);
+    assert_eq!(merged.reference, 1);
+    for (frame, [dx, dy, degrees]) in merged.frames.iter().zip(motion) {
+        let Some(a) = &frame.alignment else {
+            assert_eq!((dx, dy, degrees), (0., 0., 0.));
+            continue;
+        };
+        assert!(a.warped);
+        // The frame's pixel for the reference's centre is the centre moved.
+        assert!(
+            (a.shift[0] - dx).abs() < 0.2 && (a.shift[1] - dy).abs() < 0.2,
+            "{a:?} for {dx}, {dy}"
+        );
+        assert!((a.rotation - degrees).abs() < 0.05, "{a:?} for {degrees}°");
+    }
+    let path = write_dng(&merged, &Destination::beside(&paths[1]), Cancel::NEVER).unwrap();
+    let (pixels, _) = developed(&path);
+    let scene = scene();
+    let wrong = wrong_blocks(&pixels, &scene);
+    assert!(wrong.is_empty(), "blocks {wrong:?}");
+    // The mask: the frames' moved edges are uncovered, the middle covered.
+    let raw = rawmakase_decode::photo::open(&path).unwrap();
+    let coverage = raw.metadata.coverage.as_ref().expect("a transparency mask");
+    let at = |x: u32, y: u32| coverage.values[(y * coverage.width + x) as usize];
+    assert_eq!((at(0, 0), at(W - 1, H - 1)), (0, 0));
+    assert_eq!(at(W / 2, H / 2), 255);
+    // Without Auto Align, the edges of most blocks are smeared.
+    let unaligned = merge(
+        &inputs(&paths),
+        &MergeOptions {
+            align: false,
+            ..options()
+        },
+        &|_, _| {},
+        Cancel::NEVER,
+    )
+    .unwrap();
+    assert!(unaligned.frames.iter().all(|f| f.alignment.is_none()));
+    let path = dir.path().join("unaligned.dng");
+    write_dng(
+        &unaligned,
+        &Destination::Exactly(path.clone()),
+        Cancel::NEVER,
+    )
+    .unwrap();
+    let (pixels, _) = developed(&path);
+    assert!(
+        wrong_blocks(&pixels, &scene).len() > 10,
+        "{:?}",
+        wrong_blocks(&pixels, &scene)
+    );
+}
+
+/// A tripod bracket stays as it was taken: Auto Align finds every frame
+/// within half a pixel of the reference everywhere, and leaves uncovered at
+/// most a pixel's border.
+#[test]
+fn a_tripod_bracket_stays_in_place() {
+    let (_, merged, path) = written();
+    let aligned: Vec<_> = merged
+        .frames
+        .iter()
+        .filter_map(|f| f.alignment.as_ref())
+        .collect();
+    assert_eq!(aligned.len(), 2);
+    let (w, h) = (f64::from(W - 1), f64::from(H - 1));
+    for a in aligned {
+        let m = &a.matrix;
+        for (x, y) in [(0., 0.), (w, 0.), (0., h), (w, h)] {
+            let d = m[2][0] * x + m[2][1] * y + m[2][2];
+            let u = (m[0][0] * x + m[0][1] * y + m[0][2]) / d;
+            let v = (m[1][0] * x + m[1][1] * y + m[1][2]) / d;
+            assert!((u - x).hypot(v - y) < 0.5, "{a:?}");
+        }
+    }
+    let raw = rawmakase_decode::photo::open(path).unwrap();
+    if let Some(coverage) = &raw.metadata.coverage {
+        let (w, h) = (coverage.width, coverage.height);
+        for y in 1..h - 1 {
+            for x in 1..w - 1 {
+                assert_eq!(coverage.values[(y * w + x) as usize], 255, "{x}, {y}");
+            }
+        }
+    }
 }
 
 /// The exposures between frames are measured: 2 stops each, where the EXIF's
@@ -358,39 +541,8 @@ fn the_merge_follows_the_scene_without_seams() {
         assert!((sum / windows).abs() < 0.002, "{} stops off", sum / windows);
     }
     // Every block, to within its noise.
-    for block in 0..48u32 {
-        let (bx, by) = (block % 12 * 32, block / 12 * 32);
-        let (mut got, mut want, mut n) = (0., 0., 0.);
-        for y in by + 6..by + 26 {
-            for x in bx + 6..bx + 26 {
-                got += level(pixels[(y * W + x) as usize]);
-                want += level(scene[(y * W + x) as usize]);
-                n += 1.;
-            }
-        }
-        let (got, want) = (got / n, want / n);
-        // The brightest unclipped frame's noise of a pixel, in the darkest's
-        // units: its shot and read noise over its exposure, over the pixels.
-        let exposure = TRUE
-            .iter()
-            .copied()
-            .filter(|t| want * t < 0.8)
-            .fold(1., f64::max);
-        let dn = want * exposure * (WHITE_DN - BLACK);
-        let sigma = (dn / GAIN + 3. * READ * READ).sqrt() / (exposure * (WHITE_DN - BLACK));
-        let bound = 6. * sigma / n.sqrt() + want * 2e-3;
-        // Where the darkest frame clips, nothing says what the light was.
-        let clipped = scene[((by + 16) * W + bx + 16) as usize]
-            .into_iter()
-            .fold(0., f64::max)
-            > 0.9;
-        if !clipped {
-            assert!(
-                (got - want).abs() < bound,
-                "block {block}: {got} for {want} (bound {bound})"
-            );
-        }
-    }
+    let wrong = wrong_blocks(&pixels, &scene);
+    assert!(wrong.is_empty(), "blocks {wrong:?}");
 }
 
 /// In the shadows the merge is about as noisy as the brightest frame alone.
@@ -465,6 +617,9 @@ fn cancelling_at_any_stage_leaves_nothing() {
     assert_eq!(stages.first(), Some(&Stage::Check));
     assert_eq!(stages.last(), Some(&Stage::Encode));
     assert!(stages.contains(&Stage::Measure(2)) && stages.contains(&Stage::Merge(0)));
+    // The reference is decoded and prepared first, then each frame aligned.
+    assert_eq!(&stages[1..3], &[Stage::Decode(1), Stage::Align(1)]);
+    assert!(stages.contains(&Stage::Align(0)) && stages.contains(&Stage::Align(2)));
     for at in stages {
         let flag = AtomicBool::new(false);
         let got = merge(
