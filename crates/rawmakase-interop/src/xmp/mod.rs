@@ -71,6 +71,11 @@ pub struct Preset {
     /// isn't imported.
     pub builtin: bool,
 }
+/// The process version RAWmakase renders with, written into every Camera Raw
+/// settings packet, preset and curve file so Camera Raw renders them the same way.
+/// Camera Raw renders the same settings differently under an earlier version: under
+/// 11.0, Profile Amounts above 100% (#1188).
+pub(crate) const PROCESS_VERSION: &str = "15.4";
 /// Whether a `ProcessVersion` value is from before process version 2012 (6.7), whose
 /// controls and point curve Lightroom keeps apart from the 2012 ones.
 pub(crate) fn before_process_2012(version: &str) -> bool {

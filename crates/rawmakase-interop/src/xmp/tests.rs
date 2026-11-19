@@ -3092,3 +3092,27 @@ fn a_user_looks_table_beside_the_settings_is_accepted() -> Result<()> {
     assert_eq!(r.exposure, 0.5);
     Ok(())
 }
+
+/// Issue 1188: written settings carry the process version RAWmakase renders, so Camera
+/// Raw renders them as RAWmakase does. Under 11.0 it renders Profile Amounts above 100%
+/// differently (1.8 mean ΔE00 on the chart's `amount-look-200`, 0.01 with 15.4).
+#[test]
+fn written_settings_carry_the_rendered_process_version() {
+    let pv = r#"ProcessVersion="15.4""#;
+    let photo = write::Photo {
+        settings: true,
+        ..Default::default()
+    };
+    let packet = write::packet(&Recipe::default(), &Metadata::default(), &photo);
+    let preset = crate::xmp::preset_write::preset(
+        &Recipe::default(),
+        &Metadata::default(),
+        &crate::xmp::preset_write::PresetInfo::new("Mine", "Mine"),
+        &crate::model::settings_groups::GroupSelection::all(),
+    );
+    let curve = crate::xmp::preset_write::point_curve(&Default::default(), &Default::default());
+    for text in [&packet, &preset, &curve] {
+        assert!(text.contains(pv), "{text}");
+        assert!(!text.contains(r#"ProcessVersion="11.0""#), "{text}");
+    }
+}

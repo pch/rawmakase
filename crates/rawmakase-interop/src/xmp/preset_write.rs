@@ -186,7 +186,8 @@ pub fn preset(r: &Recipe, shown: &Metadata, info: &PresetInfo, groups: &GroupSel
 /// the RGB curve and the Red, Green and Blue curves, named by the file.
 pub fn point_curve(rgb: &ToneCurve, channels: &[ToneCurve; 3]) -> String {
     let mut out = format!(
-        "  <rdf:Description rdf:about=\"\"\n    xmlns:crs=\"{CRS}\"\n   crs:Version=\"15.4\"\n   crs:ProcessVersion=\"11.0\"\n   crs:ToneCurveName2012=\"Custom\"\n   crs:HasSettings=\"True\">\n"
+        "  <rdf:Description rdf:about=\"\"\n    xmlns:crs=\"{CRS}\"\n   crs:Version=\"15.4\"\n   crs:ProcessVersion=\"{pv}\"\n   crs:ToneCurveName2012=\"Custom\"\n   crs:HasSettings=\"True\">\n",
+        pv = super::PROCESS_VERSION
     );
     curve(&mut out, "ToneCurvePV2012", rgb);
     for (channel, name) in channels.iter().zip(["Red", "Green", "Blue"]) {
