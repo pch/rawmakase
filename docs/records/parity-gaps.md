@@ -10,11 +10,186 @@ These controls were fitted to Camera Raw renders and match within the default-re
 
 - **Scene tone stage**: Exposure, the default white and black point, Whites, Blacks, Shadows, Highlights, Clarity, Texture and Dehaze render on scene values before the profile, fitted on linear-profile Camera Raw 18.7 renders ([scene tone stage](../scene-tone-stage.md), [tone controls](../tone-controls.md#whites-and-blacks)). Shadows and Highlights follow the measured [global rule](../scene-tone-stage.md#the-global-rule): a curve per photo from the histogram of its base levels, which the earlier percentile-keyed tables could not express (positive Shadows and negative Highlights since 2026-10-28, negative Shadows and positive Highlights since 2026-11-17, [below](#negative-shadows-and-positive-highlights-by-the-global-rule-2026-11-17)). Dehaze (a curve per amount, no spatial part) and positive Whites (+100 especially) stay fitted and still differ. Shadows and Highlights on the synthetic chart's flat patches are a degenerate case for Camera Raw (a flat maximum) and are not a measure of either engine.
 - **Contrast** follows Camera Raw's curve, after the profile and so after Whites and Blacks, at a pivot predicted from the photo ([tone controls](../tone-controls.md#contrast)); the prediction is within about 0.03 of the pivot that fits each photo best, and its extra error over the default render on photos is 0.003–0.007.
-- **Clarity** of both signs follows a model fitted to Camera Raw's scene-value renders of synthetic scenes ([tone controls](../tone-controls.md#clarity)); its residual is not modelled. **Texture** follows a model fitted to Camera Raw on synthetic charts ([tone controls](../tone-controls.md#texture)): on the corpus chart its ΔE00 to Camera Raw drops from 2.0–2.2 to 1.5–1.6 at ±100.
+- **Clarity** of both signs follows a model fitted to Camera Raw's scene-value renders of synthetic scenes ([tone controls](../tone-controls.md#clarity)); on photos it leaves most of Camera Raw's field, whose structure is measured [below](#clarity-a-slope-around-a-base-and-no-closed-form-for-either-yet-2026-11-19). **Texture** follows a model fitted to Camera Raw on synthetic charts ([tone controls](../tone-controls.md#texture)): on the corpus chart its ΔE00 to Camera Raw drops from 2.0–2.2 to 1.5–1.6 at ±100.
 - **Parametric tone curve** renders as Camera Raw 18.7 does on the chart ([tone controls](../tone-controls.md#parametric-curve)): the 24 `parametric-*` cases sit at mean ΔE00 0.8–3.0, down from 0.95–7.9, and the looks carrying one at 0.9–1.6, down from 1.7–4.9. With out-of-gamut colors clipped per channel as Camera Raw does ([out-of-gamut colors](../color-pipeline.md#out-of-gamut-colors)), the cases sit at 0.48–1.15. A look's own parametric curve is a second curve after the user's, as in Camera Raw (`look-parametric-darks+30`: 0.93, was 1.41); at Amount 200 Camera Raw's look curve does about 1.6 times its effect at 100, where RAWmakase doubles it. **Point curves** match on ramps, but saturated colors under an S master curve still differ (ramp MAE 0.0024, peak 0.11).
 - **Curve Refine Saturation** renders as Camera Raw 18.7 does on the chart ([tone controls](../tone-controls.md#refine-saturation)): the `curve-*-refine-saturation-*` cases sit at mean ΔE00 1.1–1.5, against 1.4 for the same S curve at 100. Values above 100 render as 100, as in Camera Raw. It imports, is written back, and has a Refine › Saturation slider (0–100) under the RGB point curve.
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the colour curves was not checked; here they set the RGB curve only.
 - **Auto** tone is fitted to Lightroom Classic's own Auto values, from 452 Auto Settings steps on 439 catalog photos with every fifth photo held out; each slider is a linear fit of one or two display-encoded percentiles of luminance, of the brightest channel or of chroma, and the held-out error is a median 1 step on Contrast and 0.21 EV on Exposure. Lightroom changed Auto in mid-2019 and the catalog's history shows both versions, so the slopes are fitted on every photo and the levels, Contrast, Vibrance and Saturation on the current Auto alone. The WB menu's Auto white balance is fitted to Lightroom's Auto values (a median of 2.7 mired off on 133 photos); see [tone controls](../tone-controls.md#auto).
+
+### Clarity: a slope around a base, and no closed form for either yet (2026-11-19)
+
+Clarity +100 is the third largest gap of the tone controls (1.94 own ΔE00 on validation)
+and its field is part of what Dehaze and Highlights leave ([above](#one-field-per-slider-and-dehaze-as-a-veil-2026-11-19)).
+This round measured Camera Raw 18.7's Clarity by itself before choosing an operator:
+about 420 probe renders (linear probe DNGs, one pattern per frame, rendered at default
+and with Clarity, the engine on the same files as the control), three photos at full
+size, 59 training photos at the gate's render size, and the 100 training photos'
+Clarity ±100 renders through a linear profile on the map grid. Nothing
+was fitted on validation and holdout was not touched. No engine change came out of it;
+what follows is what a later attempt can start from.
+
+**The step reading of 2026-11-12 is withdrawn.** That probe stacked four steps in one
+frame, and the "overshoot of 0.63, 0.45, 0.14 and 0 of a 0.05, 0.2, 1 and 2 EV step" was
+the neighbouring bands leaking into each other. On a frame of its own (1536 × 1024, flat
+sides) a step of 0.025 to 0.4 EV changes by 1.8% of itself at Clarity +100 and has no
+halo; steps of 0.7 to 4 EV get only an overshoot one to four pixels wide (0.46 to 0.71
+of the step beside a 0.7 to 2 EV edge, 0.19 at 4 EV). Camera Raw's Clarity is not a
+compressive gain on small differences.
+
+**Flat synthetic frames are degenerate for positive Clarity.** The same 0.2 EV step on
+a 768 px frame grows to 0.6 EV with the dark side lowered as a whole; on 1536 and 3072 px
+frames nothing happens. A dark bar of 8 px drops 0.44 EV and bright bars leave the bar
+alone and lower the whole background by 0.02 to 0.035 EV. Whole flat regions move and
+the brightest one stays. Probes for positive Clarity need texture.
+
+**Positive Clarity is a slope, and context sets it.** A test texture (one octave of
+noise at 4 px, 0.1 EV RMS) gets a gain of 1.02 by itself. Beside a step, on either
+side and at every distance from it (768 px, and 1536 px on a 3072 px frame), the same
+texture's log contrast is multiplied by:
+
+| Step between the two halves (EV) | 0.1 | 0.25 | 0.5 | 1 | 2 | 4 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Dark half | 1.01 | 1.02 | 1.17 | 2.12 | 2.59 | 2.74 |
+| Bright half | 1.02 | 1.02 | 1.10 | 1.64 | 1.86 | 1.6 |
+
+The halves' means hardly move (−0.15 EV and +0.02 EV at 2 EV). With three and five
+levels the gain follows the level and not the place (levels −2, 0 and +2 EV: 2.53,
+2.31, 1.38; the same levels in another order: 2.50, 2.37, 1.60), and the brightest
+level always has the least. Along a ramp the gain has two plateaus that meet at the
+frame's middle level (8 EV across the frame: 2.35 below, 1.83 above, falling to 1.05 at
+white). Over coarse noise of 64 px the texture gets 1.24, 1.80, 2.11, 2.03 and 2.07 at
+0.1, 0.2, 0.4, 0.8 and 1.6 EV RMS of the coarse part, while the coarse part itself gets
+1.12, 1.33, 1.57, 1.68 and 1.48. One octave at 32 px alone gets 1.03 at 0.1 EV RMS,
+1.12 at 0.15, 1.47 at 0.2 and 1.5 to 1.6 from 0.3 to 1.2. So at +100 Camera Raw
+multiplies the log contrast of all detail at a place by one slope, up to about 2.3 to
+2.7, less near the frame's top levels; a frame without about a stop of range gets
+nothing; coarser structure gets less than the detail on it (1.3 to 1.7 from 8 to
+256 px), and regions of several hundred pixels move apart a little (a band 1 to
+2 EV under its neighbours: −0.44 to −0.58 EV). The engine gives the texture 1.02 to 1.07 beside
+steps and on ramps and 1.10 to 1.24 over coarse noise, and coarse noise itself 1.2 to
+1.6 at every amplitude: it is linear, and it has no slope under its map.
+
+**The law on photos: gain = amount × slope × (level − base).** On five training photos
+rendered at 2048 px, the gain of every map cell (4 px) at Clarity +50 and +100 was split
+into a slope (the regression of the log gain on the log level inside 12 × 12 px) and a
+base (the level that the cell's gain leaves unchanged). The slope at +50 is 0.50 to 0.53
+of the slope at +100 with a cell-wise correlation of 0.96 to 1.00, and the base is the
+same at both amounts (correlation 0.99; 0.05 to 0.08 EV RMS apart on four photos, 0.41
+on a night photo). So Camera Raw's
+positive Clarity is linear in the slider, and a photo has one slope field and one base
+field. On the raw file at full size the slope is there down to the pixel: 2.19, 1.52
+and 1.99 in 7 × 7 px windows of three files (1.94, 1.43 and 1.78 after reducing eight
+times). A probe DNG made of the file's own default render answers like the file (field
+correlation 0.92 to 0.98 at full size), so probes built from photos are valid, and
+the slope hardly depends on the frame's size (2.31, 2.29, 2.23 and 2.11 from full size
+to one eighth) while the large-scale part of the field does (correlation with the
+file's 0.98 falling to 0.80).
+
+- *The base* is a much stronger edge-preserving smoothing than any tried: regions come
+  out nearly flat (a van, a road, a facade each one level), thin structures such as
+  branches disappear into their surroundings, and edges between regions stay sharp. With
+  Camera Raw's own slope, the best of Gaussian, bilateral (spatial 8 to 64 map px, range
+  0.35 to 2 EV), guided (radius 8 to 96, ε 0.05 to 6), iterated guided, median, local
+  Laplacian smoothing (threshold 0.7 to 2 EV) and an edge-aware upsampling of a coarse
+  copy (cells of 4 to 32 map px) leave 51 to 68% of the field's RMS, and a mix of six of
+  them fitted on the other photos 53 to 67%.
+- *The slope* is 0.6 to 1.3 at +100 where it can be measured. On daylight photos it is
+  1.1 to 1.2 below the photo's middle level and 0.5 to 0.7 above; on a dusk and a night
+  photo it is the other way round (0.3 to 0.5 in the dark, noisy areas, 0.9 to 1.0 in
+  the lit ones). Halving a photo's log contrast nearly halves it on three of four
+  photos; doubling the contrast raises it by 8 to 108%.
+- *Dark photos*: what is lit is lifted by 1 to 1.6 EV and the darkest levels stay, with
+  the automatic black and without it (DefaultBlackRender None): the base lies far under
+  the lit levels there.
+
+**What a gain map can carry.** With Camera Raw's own cell gains on the engine's map grid
+(the best any gain map could do), upsampled as the engine upsamples, the median |ΔL\*|
+after the gate's reduction to 1024 px is 0.53, 0.03, 0.51, 1.01 and 1.61 on the five
+photos (doing nothing: 3.7, 1.2, 2.8, 3.1, 10.8); with the cell's slope as well it is
+0.08, 0.03, 0.16, 0.16 and 0.93. The engine's own field in the same place leaves 2.84,
+1.27, 2.50, 2.35 and 9.70. So the slope under the map is worth up to 0.85 L\* on
+textured photos, and the map-level field is the larger fault: on the 100 training
+photos the engine's Clarity +100 leaves 86% of Camera Raw's field (median photo;
+correlation 0.72) and a median |ΔL\*| of 2.05 where doing nothing leaves 2.87.
+
+**A slope under the engine's own map: tried in a test build, not kept.** Simulated on
+Camera Raw's own 2048 px renders of 59 training photos, giving every cell of the
+engine's field a slope of 0.7 (the pixel's gain is the cell's plus 0.7 times its
+distance from the cell's level) moves the median photo's |ΔL\*| at 1024 px from 1.79 to
+1.66 with 20 photos closer by 0.1 and none further. Rendered by a test build on the 100
+training photos it does not hold: the median photo goes from 2.05 to 2.16 (mean 2.45 to
+2.39), 33 photos closer by 0.1 and 15 further, ten of them by more than 0.3 and the
+worst by 2.2. The slope on full-size pixels lifts the mean of whatever is textured or
+noisy when the render is reduced (0.1 to 0.2 EV over whole daylight photos), and Camera
+Raw's field has no such lift there: its mean is −0.05 to −0.28 EV on those photos. On
+night photos the same lift is what was missing (four of them 1.0 to 2.4 L\* closer).
+
+**In dark, noisy areas the lift is made by the pixels.** On two night photos at full
+size, 8 × 8 px blocks whose default level is 6 to 11 stops under white hold mostly
+noise, with a fifth to four fifths of their pixels at black in the 16-bit render. At
+Clarity +100 the pixels' mean log gain there is +0.1 to +1.9 EV and the gain of the
+block's mean is +1.6 to +5.1 EV: a slope on every pixel, followed by a reduction, raises the mean. The reduced
+renders show it as a lift of 2 to 4 EV over a third of such a photo. On two daylight
+photos the same difference is 0.05 to 0.1 EV. A map cannot carry this part, and an
+engine that reproduces it has to match Camera Raw's noise near black as well.
+
+**What the engine's field lacks most is a tone curve per photo.** On top of the
+engine's Clarity +100, a curve of the level fitted to each photo's own remainder (an
+oracle) takes the median photo's |ΔL\*| from 2.05 to 1.14 (mean 2.45 to 1.35, 90th
+percentile 3.83 to 2.17; 85 photos closer by 0.2, none further); one offset per photo
+1.84. On daylight photos the engine darkens the darkest levels two to four times as
+much as Camera Raw (a photo's levels 3.8, 2.3 and 1.3 stops under its median: −1.83,
+−1.01 and −0.35 EV against −0.36, −0.30 and −0.02), and on night photos it lacks the
+lift above. The curve is not yet predictable: boosted trees on 30 descriptors of a
+level's place in the histogram (those of the Shadows and Highlights rule), four folds
+over the 100 photos, reach 1.85 with 50 photos closer by 0.2, 21 further and the worst
+6.5 further; a pooled correction of the engine's field by level (a factor and an
+offset by the level about the median or under the top) gains nothing (2.02 to 2.12,
+16 to 51 photos closer and 20 to 36 further).
+
+**Forms tested against the field on the 100 training photos** (map grid, the input
+Camera Raw's own default render, four folds by photo, median photo's share of the field
+left and median |ΔL\*|; the engine as rendered: 0.86 and 2.05):
+
+| Form | Field left | Median \|ΔL\*\| |
+| --- | --- | --- |
+| Five Gaussian scales | 0.89 | 2.64 |
+| Five bilateral scales (range 1.4 EV) | 0.77 | 2.39 |
+| Local Laplacian detail, threshold 1 EV, three groups of levels | 0.78 | 2.34 |
+| The same at three thresholds | 0.77 | 2.24 |
+| Bilateral scales with weights by level under the top (the engine's form, refitted) | 0.69 | 1.87 |
+| The same by level about the mean, with a curve of the level | 0.71 | 1.99 |
+| All of the above together (about 120 weights) | 0.62 | 1.68 |
+
+A local Laplacian filter with a free remap (twelve knots from −4 to +4 EV for each of
+four groups of pyramid levels) was also fitted where the input is known exactly, on
+photo probes: fitted on a probe itself it leaves 20 to 37% of the field, fitted on another
+probe 48 to 102%, and on the same photo at half contrast 117 to 168%. Camera Raw's
+Clarity is not a local Laplacian filter with one remap, and not a filter of the map's
+log luminance of any of these kinds; the best of them would take about a fifth off the
+engine's error at the map level, which is what the refit of 2026-10-20 found and did
+not see in renders.
+
+**Negative Clarity** is cleaner on flat probes and no simpler on photos. A flat step
+loses 0.69 of itself at the edge at −100 (0.41 at −50), 0.51 at 8 px, 0.33 at 16, 0.09
+at 32 and nothing at 64 px of a 1536 px frame, the same share from 0.025 to 1 EV and
+less above (0.63 at 2 EV, 0.31 at 4), as a blend toward a blur in linear light does (the
+dark side +0.40 EV, the bright side −0.28 EV at 1 EV), and a side never gains more than
+one stop. Noise of 0.2 EV RMS keeps 0.43 to 0.45 of its contrast up to 32 px, 0.61 at 64
+and 0.85 at 128. The field is the same at every frame size (a probe at one eighth of the
+size: correlation 0.97 with the file's), so its width is a share of the frame. But that
+blend, applied to the training photos, is two to three times Camera Raw's field (in
+windows of a few pixels the slope is 0.75 to 1.0, and many regions are not touched): the
+strength follows the place there too. The engine's negative Clarity leaves 76% of
+Camera Raw's field at −100; its own error on validation is small (0.32).
+
+Open: what sets the slope (the frame's range, the level about the photo's middle, the
+top, noise), what the base is, and the curve per photo, which is the largest part and
+the one a rule might learn from more photos (100 have Clarity renders; the Shadows and
+Highlights rule needed 283). Camera Raw's own cell gains, levels and slopes of 59
+training photos at the gate's render size are on disk for that. A refit of the present
+form is not worth another try: this round and the one of 2026-10-20 agree on about a
+tenth to a fifth at the map level and nothing in renders.
 
 ### One field per slider, and Dehaze as a veil (2026-11-19)
 
@@ -1005,8 +1180,8 @@ each octave band of log2 luminance (px of 1024, then the 128 px low-pass):
   0.036), and 0.015 against +50 (0.018). Nor is Clarity a filter with one gain per band:
   the median gains leave 0.0367, a photo's own gains 0.0338, and the median gains finer
   than 32 px on Camera Raw's own 32 px low-pass 0.0181. Half of Clarity is in its
-  large-scale layer and the rest depends on the detail's size, as the step probes of
-  2026-11-12 showed.
+  large-scale layer. (The step probes of 2026-11-12, cited here before as showing a
+  dependence on the detail's size, were withdrawn on 2026-11-19.)
 - *Positive Dehaze.* Main matches Camera Raw up to 16 px and is 16% to 21% short at 32
   and 64 px: its density follows structures larger than its window, the fault of the
   negative candidate. Camera Raw lowers the low-pass contrast (0.95; 0.78 in the dark
@@ -1418,7 +1593,9 @@ either (0.3 to 0.4 EV RMS residual): the bright end is held and everything below
 lifted toward it. Next: mosaics built from the failing photos' own histograms, to see
 whether the histogram or the spatial structure carries the photos' response.
 
-**6. Clarity +100 on sinusoids and steps (#468): gain depends on amplitude.** Step
+**6. Clarity +100 on sinusoids and steps (#468): gain depends on amplitude.** (The step
+reading here is withdrawn: the four steps shared one frame and leaked into each other; see
+[Clarity, 2026-11-19](#clarity-a-slope-around-a-base-and-no-closed-form-for-either-yet-2026-11-19).) Step
 edges of 0.05, 0.2, 1 and 2 EV in one frame: Camera Raw's overshoot beside the edge is
 0.63, 0.45, 0.14 and 0.00 of the step at +100 (half that at +50), with a halo wider
 than 128 pixels; RAWmakase's is 0.21 to 0.27 at every step size, 26 to 85 pixels wide.
