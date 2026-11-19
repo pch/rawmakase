@@ -249,6 +249,25 @@ mod tests {
         );
     }
 
+    /// Canon's regional names are the body they are, so the colour matrix,
+    /// the camera table and Adobe's profiles (all under the body's name) find
+    /// them. The model strings are those the cameras' files write.
+    #[test]
+    fn canon_regional_names_are_their_body() {
+        for (file_model, body) in [
+            ("Canon EOS Rebel T7i", "EOS 800D"),
+            ("Canon EOS Rebel SL3", "EOS 250D"),
+            // A CR3 of discuss.pixls.us #39443.
+            ("Canon EOS Rebel T8i", "EOS 850D"),
+        ] {
+            assert_eq!(
+                named("Canon", file_model),
+                ["Canon", body, "Canon", body],
+                "{file_model}"
+            );
+        }
+    }
+
     #[test]
     fn makers_without_canonical_names_have_an_empty_canonical_make() {
         assert_eq!(

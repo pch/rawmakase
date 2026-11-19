@@ -6378,6 +6378,12 @@ source = "compat-observed"
 
 [[name]]
 make = "Canon"
+model = "EOS Rebel T8i"
+is = "EOS 850D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
 model = "EOS M50m2"
 is = "EOS M50 Mark II"
 source = "compat-observed"

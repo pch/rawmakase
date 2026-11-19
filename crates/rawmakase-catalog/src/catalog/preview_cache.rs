@@ -45,7 +45,9 @@ const VERSION: i64 = 1;
 //     vignetting), which saved edits of those DNGs render differently.
 // 16: AI Denoise keeps its own colour below Amount 100 and corrects dark areas over
 //     larger blocks, which saved edits with AI Denoise render differently.
-const GENERATION: i64 = 16;
+// 17: the Canon EOS Rebel T8i is the EOS 850D, whose colour matrix and baseline
+//     exposure its photos had none of before.
+const GENERATION: i64 = 17;
 // 3: a JPEG, PNG or TIFF is converted from its embedded ICC profile.
 // 4: the one engine, as `GENERATION` 3.
 // 5: an edited JPEG, PNG or TIFF renders from the scene its rendering is of.
@@ -115,7 +117,8 @@ fn budget() -> i64 {
 //     previews built from it).
 // 13: a half-size decode's noise reduction, as `GENERATION` 14.
 // 14: OpcodeList3 FixVignetteRadial, as `GENERATION` 15.
-const SIZED_GENERATION: i64 = 14;
+// 15: the EOS Rebel T8i as the EOS 850D, as `GENERATION` 17.
+const SIZED_GENERATION: i64 = 15;
 const SIZED_QUALITY: u8 = 85;
 /// Tables added after version 1, created on open so older builds, which ignore
 /// them, keep opening the file.
