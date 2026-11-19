@@ -815,6 +815,7 @@ impl Editor {
                             s.naming,
                             s.tokens.as_deref(),
                             &r.saved,
+                            false,
                         );
                         match choice {
                             Some(Choice::Preset(naming)) => s.choose_naming(naming),

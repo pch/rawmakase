@@ -24,8 +24,16 @@ fn utc_date(seconds: i64) -> Date {
 
 /// The local date of `seconds` since 1970 in UTC, with the offset (daylight
 /// saving time included) the system's time zone had then.
-#[cfg(unix)]
 pub(crate) fn local_date(seconds: i64) -> Option<Date> {
+    let [y, m, d, ..] = local_time(seconds)?;
+    Some(Date::from_ymd(y, m, d))
+}
+
+/// The local date and time of `seconds` since 1970 in UTC (year, month,
+/// day, hour, minute, second), with the offset (daylight saving time
+/// included) the system's time zone had then.
+#[cfg(unix)]
+pub(crate) fn local_time(seconds: i64) -> Option<[i64; 6]> {
     let time = libc::time_t::try_from(seconds).ok()?;
     // SAFETY: `tm` is plain data that `localtime_r` fills in; both pointers
     // are valid for the call, and the reentrant form keeps no shared state.
@@ -36,15 +44,18 @@ pub(crate) fn local_date(seconds: i64) -> Option<Date> {
         }
         tm
     };
-    Some(Date::from_ymd(
+    Some([
         i64::from(tm.tm_year) + 1900,
         i64::from(tm.tm_mon) + 1,
         i64::from(tm.tm_mday),
-    ))
+        i64::from(tm.tm_hour),
+        i64::from(tm.tm_min),
+        i64::from(tm.tm_sec),
+    ])
 }
 
 #[cfg(windows)]
-pub(crate) fn local_date(seconds: i64) -> Option<Date> {
+pub(crate) fn local_time(seconds: i64) -> Option<[i64; 6]> {
     use windows_sys::Win32::Foundation::SYSTEMTIME;
     use windows_sys::Win32::System::Time::SystemTimeToTzSpecificLocalTime;
     let [y, m, d, h, mi, s] = crate::time::utc(seconds);
@@ -64,16 +75,19 @@ pub(crate) fn local_date(seconds: i64) -> Option<Date> {
     // SYSTEMTIMEs for the call.
     let ok = unsafe { SystemTimeToTzSpecificLocalTime(std::ptr::null(), &utc, &mut local) };
     (ok != 0).then(|| {
-        Date::from_ymd(
+        [
             i64::from(local.wYear),
             i64::from(local.wMonth),
             i64::from(local.wDay),
-        )
+            i64::from(local.wHour),
+            i64::from(local.wMinute),
+            i64::from(local.wSecond),
+        ]
     })
 }
 
 #[cfg(not(any(unix, windows)))]
-pub(crate) fn local_date(_seconds: i64) -> Option<Date> {
+pub(crate) fn local_time(_seconds: i64) -> Option<[i64; 6]> {
     None
 }
 

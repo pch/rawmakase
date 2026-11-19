@@ -15,6 +15,7 @@ pub(in crate::app) fn command_of(action: Action) -> Option<&'static str> {
     Some(match action {
         _ if action.fixed_key() => return None,
         Action::Preferences => "preferences",
+        Action::ImportPhotos => "import_photos",
         Action::Export => "export_dialog",
         Action::Library => "library",
         Action::Develop => "develop",
@@ -27,8 +28,9 @@ pub(in crate::app) fn command_of(action: Action) -> Option<&'static str> {
 }
 
 /// Every menu item whose key follows the key map.
-pub(in crate::app) const KEYED: [Action; 8] = [
+pub(in crate::app) const KEYED: [Action; 9] = [
     Action::Preferences,
+    Action::ImportPhotos,
     Action::Export,
     Action::Library,
     Action::Develop,
@@ -129,7 +131,7 @@ impl Editor {
             Action::Preferences | Action::NewCatalog | Action::OpenCatalog | Action::Shortcuts => {
                 free
             }
-            Action::AddFolder => free && library,
+            Action::AddFolder | Action::ImportPhotos => free && library,
             Action::Export => workspace && selected,
             Action::Develop => workspace && selected,
             Action::SelectAll => workspace,
@@ -204,6 +206,7 @@ impl Editor {
             Action::NewCatalog => self.catalog_dialog(CatalogDialog::Create, ctx),
             Action::OpenCatalog => self.catalog_dialog(CatalogDialog::Open, ctx),
             Action::AddFolder => self.catalog_dialog(CatalogDialog::Folder(FolderAction::Add), ctx),
+            Action::ImportPhotos => self.request_import(),
             Action::Export => self.open_export_dialog(),
             Action::Close => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             Action::Undo => self.undo(),
@@ -625,6 +628,7 @@ mod tests {
             (Action::Preferences, ",", false),
             (Action::OpenCatalog, "o", false),
             (Action::AddFolder, "o", true),
+            (Action::ImportPhotos, "i", true),
             (Action::Export, "e", true),
             (Action::Close, "w", false),
             (Action::Undo, "z", false),
@@ -701,6 +705,7 @@ mod tests {
             Action::NewCatalog,
             Action::OpenCatalog,
             Action::AddFolder,
+            Action::ImportPhotos,
             Action::Export,
             Action::Undo,
             Action::Redo,

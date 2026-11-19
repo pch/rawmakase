@@ -61,6 +61,11 @@ impl Editor {
                 }
                 Event::RenamePlanned(planned) => self.rename_planned(*planned),
                 Event::FileOpDone(batch, done) => self.file_op_done(batch, *done),
+                Event::ImportVolumes(dialog, drives) => self.import_drives(dialog, drives),
+                Event::ImportScanned(scanned) => self.import_scanned(*scanned),
+                Event::ImportThumbnail(thumbnail) => self.import_thumbnail(*thumbnail),
+                Event::ImportPlanned(planned) => self.import_planned(*planned),
+                Event::ImportDone(run, done) => self.import_done(run, *done),
                 Event::FileOpsRecovered(catalog, recovered) => {
                     self.file_ops_recovered(catalog, *recovered)
                 }

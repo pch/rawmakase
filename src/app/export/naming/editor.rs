@@ -8,7 +8,7 @@ use super::presets::{Library, Preset, Presets};
 use crate::app::ui::design::{self, Tone, button, inset, space, text};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::{modal_frame, primary_button};
-use crate::export_settings::{Menu, Span, TokenTemplate, menu as tokens_in};
+use crate::export_settings::{Menu, Span, TokenTemplate, import_menu, menu as tokens_in};
 use eframe::egui::{self, Color32, Stroke, Vec2};
 use egui::text::{CCursor, CCursorRange, LayoutJob, TextFormat};
 
@@ -38,6 +38,8 @@ pub(in crate::app) struct NameEditor {
     /// The text has been given the keyboard, as the editor opened.
     focused: bool,
     pub presets: Presets,
+    /// Import Photos' editor: its Numbering menu offers Import # too.
+    import: bool,
 }
 
 impl NameEditor {
@@ -48,6 +50,15 @@ impl NameEditor {
             chosen: [0; MENUS.len()],
             focused: false,
             presets: Presets::new(preset, tokens),
+            import: false,
+        }
+    }
+    /// This editor, offering the tokens only Import Photos fills
+    /// ([`crate::export_settings::import_menu`]): Import # and Shoot Name.
+    pub(crate) fn with_import_tokens(self) -> Self {
+        Self {
+            import: true,
+            ..self
         }
     }
 }
@@ -232,7 +243,10 @@ impl NameEditor {
                     );
                     for &m in menus {
                         let slot = MENUS.iter().position(|x| *x == m).unwrap_or(0);
-                        let defs: Vec<_> = tokens_in(m).collect();
+                        let mut defs: Vec<_> = tokens_in(m).collect();
+                        if editor.import {
+                            defs.extend(import_menu(m));
+                        }
                         let index = chosen[slot].min(defs.len().saturating_sub(1));
                         ui.horizontal(|ui| {
                             ui.add_space(space::XL);

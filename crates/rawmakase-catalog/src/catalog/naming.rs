@@ -70,6 +70,8 @@ pub(super) fn read(db: &impl Reads, id: PhotoId) -> Result<NameFields> {
         captured: Some(photo.captured).filter(|c| !c.is_empty()),
         copy_name: photo.copy_name,
         original_name,
+        import_number: None,
+        shoot_name: None,
         info: super::info::read(db, id)?.unwrap_or_default(),
         title: text(&d.title),
         caption: text(&d.caption),

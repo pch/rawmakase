@@ -72,6 +72,11 @@ stored! {
         /// older release can't read the kind, and fails closed on an
         /// unfinished one rather than take it for a folder move.
         MoveRoot = "move_root",
+        /// Import Photos (#806): photo files copied from a card or folder
+        /// into the library, with their companions, then added to the
+        /// catalog; or the run's finishing item. An older release can't
+        /// read the kind, and fails closed on an unfinished one.
+        ImportCopy = "import_copy",
     }
 }
 
@@ -188,12 +193,16 @@ pub(super) enum Subject {
     Tree(TreeState),
     /// A folder it puts in the Trash, with the subtree it removes.
     TrashTree(TrashTreeState),
+    /// Photos it imports, or the end of an import run.
+    Import(super::import::ImportState),
 }
 
 /// A journalled item.
 #[derive(Clone, Debug)]
 pub(super) struct Item {
     pub id: OperationId,
+    /// The run it is of.
+    pub batch: String,
     /// The computer whose files it changes, the only one to decide it.
     pub computer: String,
     pub kind: Kind,
@@ -216,6 +225,7 @@ impl Item {
             Subject::Folder(_) => &[],
             Subject::Tree(tree) => &tree.photos,
             Subject::TrashTree(tree) => &tree.photos,
+            Subject::Import(import) => &import.committed,
         }
     }
 }
@@ -549,6 +559,53 @@ pub(super) fn insert_tree_copy(
     Ok(OperationId(id))
 }
 
+/// Journals a new import item of `batch`, `planned`, with what it is
+/// (`state`) and its members, each copied first to its partial copy
+/// `temps[ordinal]`.
+pub(super) fn insert_import(
+    w: &mut Write<'_>,
+    (batch, computer): (&str, &str),
+    state: &super::import::ImportState,
+    members: &[NewMember],
+    temps: &[PathBuf],
+) -> Result<OperationId> {
+    let id: i64 = w.insert_returning_id(
+        sql!(
+            "INSERT INTO file_operations(batch, computer, kind, state, preconditions, created_at, error)
+             VALUES (?, ?, ?, ?, ?, ?, NULL) RETURNING id"
+        ),
+        &[
+            &batch,
+            &computer,
+            &Kind::ImportCopy.as_str(),
+            &ItemState::Planned.as_str(),
+            &serde_json::to_string(state)?,
+            &crate::time::now_text(),
+        ],
+    )?;
+    insert_members(w, id, members)?;
+    insert_copies(w, OperationId(id), temps)?;
+    Ok(OperationId(id))
+}
+
+/// Replaces import item `id`'s state.
+pub(super) fn set_import(
+    w: &mut Write<'_>,
+    id: OperationId,
+    state: &super::import::ImportState,
+) -> Result<()> {
+    let changed = w.execute(
+        sql!("UPDATE file_operations SET preconditions=? WHERE id=? AND kind=?"),
+        &[
+            &serde_json::to_string(state)?,
+            &id.0,
+            &Kind::ImportCopy.as_str(),
+        ],
+    )?;
+    anyhow::ensure!(changed == 1, "unknown import operation");
+    Ok(())
+}
+
 /// A name of a folder put in the Trash, as planned.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct NewTrashMember {
@@ -768,6 +825,7 @@ pub(super) fn set_member(
 row! {
     struct ItemRow {
         id: i64,
+        batch: String,
         computer: String,
         kind: String,
         state: String,
@@ -868,12 +926,14 @@ fn read(db: &impl Reads, row: ItemRow) -> Result<Item> {
             Subject::Tree(tree)
         }
         Kind::TrashFolder => Subject::TrashTree(serde_json::from_str(&row.preconditions)?),
+        Kind::ImportCopy => Subject::Import(serde_json::from_str(&row.preconditions)?),
         Kind::RemoveFromCatalog | Kind::MovePhotos | Kind::TrashPhotos | Kind::RenamePhotos => {
             Subject::Photos(serde_json::from_str(&row.preconditions)?)
         }
     };
     Ok(Item {
         id: OperationId(row.id),
+        batch: row.batch,
         computer: row.computer,
         kind,
         state: row.state.parse()?,
@@ -887,7 +947,7 @@ fn read(db: &impl Reads, row: ItemRow) -> Result<Item> {
 pub(super) fn item(db: &impl Reads, id: OperationId) -> Result<Option<Item>> {
     let row: Option<ItemRow> = db.read_optional(
         sql!(
-            "SELECT id, computer, kind, state, preconditions, error FROM file_operations WHERE id=?"
+            "SELECT id, batch, computer, kind, state, preconditions, error FROM file_operations WHERE id=?"
         ),
         &[&id.0],
     )?;
@@ -898,7 +958,7 @@ pub(super) fn item(db: &impl Reads, id: OperationId) -> Result<Option<Item>> {
 pub(super) fn of_batch(db: &impl Reads, batch: &str) -> Result<Vec<Item>> {
     let rows: Vec<ItemRow> = db.read(
         sql!(
-            "SELECT id, computer, kind, state, preconditions, error FROM file_operations
+            "SELECT id, batch, computer, kind, state, preconditions, error FROM file_operations
              WHERE batch=? ORDER BY id"
         ),
         &[&batch],
@@ -910,7 +970,7 @@ pub(super) fn of_batch(db: &impl Reads, batch: &str) -> Result<Vec<Item>> {
 pub(super) fn unresolved(db: &impl Reads, computer: &str) -> Result<Vec<Item>> {
     let rows: Vec<ItemRow> = db.read(
         sql!(
-            "SELECT id, computer, kind, state, preconditions, error FROM file_operations
+            "SELECT id, batch, computer, kind, state, preconditions, error FROM file_operations
              WHERE computer=? AND state IN ('planned', 'restoring', 'committed', 'needs_recovery')
              ORDER BY id"
         ),
@@ -923,7 +983,7 @@ pub(super) fn unresolved(db: &impl Reads, computer: &str) -> Result<Vec<Item>> {
 pub(super) fn unresolved_anywhere(db: &impl Reads) -> Result<Vec<Item>> {
     let rows: Vec<ItemRow> = db.read(
         sql!(
-            "SELECT id, computer, kind, state, preconditions, error FROM file_operations
+            "SELECT id, batch, computer, kind, state, preconditions, error FROM file_operations
              WHERE state IN ('planned', 'restoring', 'committed', 'needs_recovery')
              ORDER BY id"
         ),

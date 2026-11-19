@@ -14,6 +14,8 @@ pub(crate) enum Action {
     /// The folder of a root at a logical path.
     RelinkFolder(RootId, String),
     AddFolder,
+    /// Import Photos…: copies from a card or folder.
+    ImportPhotos,
 }
 impl Action {
     /// Combines the actions of panels drawn in turn: a later panel's action
@@ -69,6 +71,7 @@ pub(in crate::app) use cell::copy_suffix;
 pub(crate) use collection_edit::CollectionTreeCommand;
 pub(in crate::app) use collection_edit::NewCollection;
 pub(crate) use descriptive::DescriptiveCommand;
+pub(in crate::app) use descriptive::parse_keywords;
 pub(crate) use filmstrip::{DraggedPhoto, Module, Pick};
 pub(crate) use keyword_list::KeywordCommand;
 pub(crate) use metadata::{Metadata, MetadataCommand};
@@ -76,6 +79,7 @@ pub(in crate::app) use previews::{EditSource, Pace, PreviewAi};
 pub(crate) use quick::CollectionCommand;
 pub(in crate::app) use stacks::StackAction;
 pub(crate) use stacks::StackCommand;
+pub(in crate::app) use thumbnails::thumbnail_of;
 /// Lightroom's virtual copy commands, carried out by the editor so the open
 /// edit is saved first.
 #[derive(Clone, Copy, Debug, PartialEq)]

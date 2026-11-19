@@ -93,7 +93,8 @@ pub(super) fn execute_with(
         | Kind::RenameFolder
         | Kind::MoveFolder
         | Kind::MoveRoot
-        | Kind::TrashFolder => {
+        | Kind::TrashFolder
+        | Kind::ImportCopy => {
             let lock = super::lock::acquire(catalog)?;
             super::recover::prune(catalog)?;
             let recovery = super::recover::run(catalog, disk, trash)?;
@@ -170,9 +171,12 @@ pub(super) fn execute_with(
                     run.files(catalog, &item, cancel)
                 }
                 // A folder rename, move or Trash has no photo items.
-                Kind::RenameFolder | Kind::MoveFolder | Kind::MoveRoot | Kind::TrashFolder => {
-                    Ok(())
-                }
+                // Nor does a plan import: imports run as `import` runs them.
+                Kind::RenameFolder
+                | Kind::MoveFolder
+                | Kind::MoveRoot
+                | Kind::TrashFolder
+                | Kind::ImportCopy => Ok(()),
             }
         };
         // A catalog that can't be written stops the run; what was
@@ -279,97 +283,14 @@ impl Run<'_> {
         })
     }
 
-    /// Makes folder `new`, journalled first, then adds it to the catalog
-    /// once it is proven there. Returns it when the catalog has it; when it
-    /// doesn't, the item says why, and nothing is to move.
+    /// Makes folder `new` as [`folder::create`] does, in this run's batch.
     fn create(
         &self,
         catalog: &mut Catalog,
         new: &NewFolder,
         cancel: Cancel<'_>,
     ) -> Result<Option<Made>> {
-        if cancel.is_cancelled() {
-            return Ok(None);
-        }
-        let dir = parent(&new.path);
-        // a. Checked again and journalled, in one transaction: its parent
-        // where it was, plainly, and its name free.
-        let started = catalog.db.write_immediate(|w| {
-            let plain = self.disk.canonical(dir).is_ok_and(|c| c == dir);
-            let reason = match new.state.check(w, self.computer)? {
-                Some(reason) => Some(reason.to_string()),
-                None if !plain => Some(format!("{} changed since it was planned", dir.display())),
-                None => folder::taken(w, self.computer, self.disk, new)?,
-            };
-            let state = match reason {
-                None => ItemState::Planned,
-                Some(_) => ItemState::NoChange,
-            };
-            let id = journal::insert_folder(
-                w,
-                self.batch,
-                self.computer,
-                state,
-                &new.state,
-                &new.path,
-                reason.as_deref(),
-            )?;
-            Ok(reason.is_none().then_some(id))
-        })?;
-        let Some(id) = started else {
-            return Ok(None);
-        };
-        let set = |catalog: &mut Catalog, state: ItemState, error: &str| {
-            catalog
-                .db
-                .write(|w| journal::set_state(w, id, state, Some(error)))
-        };
-        // b. Made, durable, and which folder it is journalled. A failed
-        // `mkdir` made nothing.
-        if let Err(e) = self.disk.create_dir(&new.path) {
-            set(catalog, ItemState::NoChange, &e.to_string())?;
-            return Ok(None);
-        }
-        let found = self
-            .disk
-            .sync_dir(dir)
-            .and_then(|()| folder::made(self.disk, &new.path));
-        let journalled = found.map_err(|e| e.to_string()).and_then(|(file, at)| {
-            catalog
-                .db
-                .write(|w| journal::set_created(w, id, file, &at))
-                .map_err(|e| format!("{e:#}"))
-        });
-        if let Err(e) = journalled {
-            set(catalog, ItemState::NeedsRecovery, &e)?;
-            return Ok(None);
-        }
-        // c. The catalog's folder, on the evidence.
-        let finished = catalog.db.write_immediate(|w| {
-            let item = journal::item(w, id)?.context("the journalled item is gone")?;
-            folder::complete(w, self.computer, self.disk, &item)
-        });
-        if let Err(e) = finished {
-            set(catalog, ItemState::NeedsRecovery, &format!("{e:#}"))?;
-            return Ok(None);
-        }
-        let item = journal::item(&catalog.db, id)?.context("the journalled item is gone")?;
-        let (Subject::Folder(state), ItemState::Done) = (&item.subject, item.state) else {
-            return Ok(None);
-        };
-        let made = (
-            state.folder,
-            item.members.first().and_then(|m| m.destination.clone()),
-        );
-        let (Some(folder), Some(dir)) = made else {
-            return Ok(None);
-        };
-        let name = dir.file_name().and_then(OsStr::to_str).unwrap_or_default();
-        Ok(Some(Made {
-            folder,
-            resolved: state.parent_path.join(name),
-            dir,
-        }))
+        folder::create(catalog, (self.batch, self.computer), self.disk, new, cancel)
     }
 
     /// Renames folder `tree`'s directory, journalled first, then re-keys
@@ -1404,7 +1325,7 @@ pub(super) fn complete(
         Subject::Tree(_) => return super::tree::complete(w, computer, disk, item),
         // Completed only by `tree_trash`, from its receipt read before the
         // transaction.
-        Subject::TrashTree(_) => {
+        Subject::TrashTree(_) | Subject::Import(_) => {
             return journal::set_state(
                 w,
                 item.id,
@@ -1444,7 +1365,8 @@ pub(super) fn complete(
             | Kind::RenameFolder
             | Kind::MoveFolder
             | Kind::MoveRoot
-            | Kind::TrashFolder => Some("not a photo operation".into()),
+            | Kind::TrashFolder
+            | Kind::ImportCopy => Some("not a photo operation".into()),
         },
     };
     let state = match reason {

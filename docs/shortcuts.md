@@ -248,6 +248,7 @@ names where they have one. Fixed commands keep their keys.
 | `chrome:show` | Leave the whole-window mode |
 | `fullscreen` | Full screen |
 | `virtual_copy` | Create virtual copy |
+| `import_photos` | Import Photos… |
 | `preferences` | Preferences |
 | `shortcuts` | Keyboard shortcuts |
 | `shortcuts:clear_search` | Clear the shortcuts search |

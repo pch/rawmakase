@@ -3,7 +3,7 @@
 //! user's saved ones, the template made in the editor, and Edit… to make
 //! one.
 use super::presets::{Library, Preset};
-use crate::export_settings::{BUILTIN, Naming};
+use crate::export_settings::{BUILTIN, IMPORT_BUILTIN, Naming};
 use eframe::egui;
 
 /// What was picked.
@@ -17,6 +17,7 @@ pub(in crate::app) enum Choice {
 
 /// The menu, `width` wide, for `naming`, or for `custom` (Lightroom's form)
 /// when a template names files in its place: what was picked, if anything.
+/// Import Photos' (`import`) offers Lightroom's Shoot Name templates too.
 pub(in crate::app) fn combo(
     ui: &mut egui::Ui,
     id_salt: &str,
@@ -24,6 +25,7 @@ pub(in crate::app) fn combo(
     naming: Naming,
     custom: Option<&str>,
     library: &Library,
+    import: bool,
 ) -> Option<Choice> {
     let current = Preset::of(naming, custom, library);
     let mut picked = None;
@@ -37,6 +39,16 @@ pub(in crate::app) fn combo(
                     .clicked()
                 {
                     picked = Some(Choice::Preset(n));
+                }
+            }
+            if import {
+                for b in &IMPORT_BUILTIN {
+                    if ui
+                        .selectable_label(current == Preset::Builtin(b), b.name)
+                        .clicked()
+                    {
+                        picked = Some(Choice::Tokens(b.tokens.into()));
+                    }
                 }
             }
             ui.separator();

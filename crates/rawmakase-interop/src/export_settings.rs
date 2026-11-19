@@ -13,8 +13,8 @@ mod tokens;
 pub use rename::RenameSettings;
 pub use saved::{SavedTemplate, SavedTemplates};
 pub use tokens::{
-    BUILTIN, Builtin, DatePart, Def, DisplayError, Field, Menu, Needs, Part, Span, TOKENS, Token,
-    TokenTemplate, builtin, by_label, menu,
+    BUILTIN, Builtin, DatePart, Def, DisplayError, Field, IMPORT_BUILTIN, Menu, Needs, Part, Span,
+    TOKENS, Token, TokenTemplate, builtin, by_label, import_menu, menu,
 };
 
 /// The Export dialog's choice that takes its text from the photo's
@@ -285,6 +285,11 @@ pub struct NameFields {
     /// a virtual copy), with its extension; `None` when the catalog doesn't
     /// know it, and the Original filename token then gives the current name.
     pub original_name: Option<String>,
+    /// The number of the Import Photos run naming it (Lightroom's Import #),
+    /// which only that run gives.
+    pub import_number: Option<u32>,
+    /// The Shoot Name typed in Import Photos, which only that run gives.
+    pub shoot_name: Option<String>,
     /// Lens, exposure, focal length, ISO and dimensions; its camera is not
     /// used, see `camera`.
     pub info: crate::metadata::PhotoInfo,
@@ -339,6 +344,8 @@ impl NameFields {
         captured: None,
         copy_name: String::new(),
         original_name: None,
+        import_number: None,
+        shoot_name: None,
         info: crate::metadata::PhotoInfo {
             camera: None,
             lens: None,
@@ -484,6 +491,11 @@ impl NameTemplate {
         self.tokens
             .as_ref()
             .map_or(self.naming.uses_sequence(), TokenTemplate::uses_sequence)
+    }
+    /// Whether it takes Import Photos' Shoot Name: none of Lightroom's
+    /// presets does.
+    pub fn uses_shoot(&self) -> bool {
+        self.tokens.as_ref().is_some_and(TokenTemplate::uses_shoot)
     }
 }
 

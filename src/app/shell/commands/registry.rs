@@ -108,6 +108,7 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     command("chrome:show", "Leave the whole-window mode"),
     command("fullscreen", "Full screen"),
     command("virtual_copy", "Create virtual copy"),
+    command("import_photos", "Import Photos…"),
     command("preferences", "Preferences"),
     command("shortcuts", "Keyboard shortcuts"),
     command("shortcuts:clear_search", "Clear the shortcuts search"),
@@ -548,6 +549,7 @@ pub(in crate::app) mod bindings {
         LIBRARY = b("library", Everywhere, &[d(&[Key::G], NONE)]);
         LOUPE_FROM_DEVELOP = b("loupe", Develop, &[d(&[Key::E], NONE)]);
         VIRTUAL_COPY = b("virtual_copy", Everywhere, &[d(&[Key::Quote], CMD).once_per_press()]);
+        IMPORT_PHOTOS = b("import_photos", Everywhere, &[d(&[Key::I], CMD_SHIFT).once_per_press()]);
         CHROME = b("chrome", Everywhere, &[d(&[Key::F], NONE).once_per_press()]).once();
         DEVELOP = b("develop", Everywhere, &[d(&[Key::D], NONE)]);
 

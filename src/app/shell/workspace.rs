@@ -609,6 +609,10 @@ impl Editor {
                 library.reveal(id);
                 library.open_loupe();
             }
+            // Lightroom's Import Photos and Video, in Library and Develop.
+            if self.keys(ctx).take(&bindings::IMPORT_PHOTOS).is_some() && self.library.is_some() {
+                self.request_import();
+            }
             // Lightroom's Create Virtual Copy, in Library and Develop.
             // Only the first key-down: a held key must not make copy after copy.
             if self.keys(ctx).take(&bindings::VIRTUAL_COPY).is_some() {
@@ -743,6 +747,13 @@ impl Editor {
         .clicked()
         {
             self.catalog_dialog(CatalogDialog::Folder(FolderAction::Add), ctx);
+            ui.close();
+        }
+        if menu_row(ui, Icon::Export, "Import Photos…", location.is_some())
+            .on_hover_text("Copy photos from a card or folder into the library")
+            .clicked()
+        {
+            self.request_import();
             ui.close();
         }
         let selected = self.library.as_ref().and_then(|l| l.selected_sync_scope());
@@ -1230,6 +1241,7 @@ impl Editor {
                 crate::app::library::Action::AddFolder => {
                     self.catalog_dialog(CatalogDialog::Folder(FolderAction::Add), ctx)
                 }
+                crate::app::library::Action::ImportPhotos => self.request_import(),
                 crate::app::library::Action::None => {}
             }
         }

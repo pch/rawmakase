@@ -292,6 +292,7 @@ impl Editor {
                 naming,
                 custom.as_deref(),
                 &self.exports.saved,
+                false,
             ) {
                 Some(Choice::Preset(n)) => s.choose_naming(n),
                 Some(Choice::Tokens(tokens)) => s.choose_tokens(&tokens),

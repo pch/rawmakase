@@ -46,6 +46,12 @@ pub(super) fn available_paths(photos: &[Photo]) -> HashSet<PathBuf> {
 /// is read alone, without the rest of the file, where its format allows
 /// (`platform::preview_reads`); the file is read whole only when it doesn't.
 pub(super) fn thumbnail(path: &std::path::Path) -> Result<image::RgbImage> {
+    thumbnail_of(path, 640)
+}
+/// A thumbnail of the photo file at `path` within `edge` pixels, as
+/// [`thumbnail`] makes one but from the smallest embedded preview reaching
+/// `edge`: Import Photos' of a card's photos, which no catalog has yet.
+pub(in crate::app) fn thumbnail_of(path: &std::path::Path, edge: u32) -> Result<image::RgbImage> {
     let image = if crate::storage::is_raw(path) {
         if crate::platform::preview_reads::in_pieces()
             && let Ok(image) = crate::raw::thumbnail_reaching_from_file(path, 640)
@@ -53,14 +59,14 @@ pub(super) fn thumbnail(path: &std::path::Path) -> Result<image::RgbImage> {
             return Ok(downscale(&image, 640));
         }
         let mut raw = crate::raw::Raw::open_file(path)?;
-        match crate::raw::thumbnail_reaching(&mut raw, 640) {
+        match crate::raw::thumbnail_reaching(&mut raw, edge) {
             Ok(image) => image,
             Err(_) => crate::raw::thumbnail(&mut raw)?,
         }
     } else {
         crate::raster::decode(path)?
     };
-    Ok(downscale(&image, 640))
+    Ok(downscale(&image, edge))
 }
 /// `image` within `edge`×`edge`; never enlarged.
 pub(super) fn downscale(image: &image::RgbImage, edge: u32) -> image::RgbImage {

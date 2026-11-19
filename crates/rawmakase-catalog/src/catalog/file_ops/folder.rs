@@ -299,6 +299,98 @@ pub(super) fn arrive(
     }
 }
 
+/// Makes folder `new` for the run `batch` of `computer`, journalled first,
+/// then adds it to the catalog once it is proven there. Returns it when the
+/// catalog has it; when it doesn't, the item says why, and nothing is to
+/// go into it.
+pub(super) fn create(
+    catalog: &mut super::super::Catalog,
+    (batch, computer): (&str, &str),
+    disk: &dyn Disk,
+    new: &NewFolder,
+    cancel: rawmakase_cancel::Cancel<'_>,
+) -> Result<Option<Made>> {
+    if cancel.is_cancelled() {
+        return Ok(None);
+    }
+    let dir = parent(&new.path);
+    // a. Checked again and journalled, in one transaction: its parent
+    // where it was, plainly, and its name free.
+    let started = catalog.db.write_immediate(|w| {
+        let plain = disk.canonical(dir).is_ok_and(|c| c == dir);
+        let reason = match new.state.check(w, computer)? {
+            Some(reason) => Some(reason.to_string()),
+            None if !plain => Some(format!("{} changed since it was planned", dir.display())),
+            None => taken(w, computer, disk, new)?,
+        };
+        let state = match reason {
+            None => ItemState::Planned,
+            Some(_) => ItemState::NoChange,
+        };
+        let id = journal::insert_folder(
+            w,
+            batch,
+            computer,
+            state,
+            &new.state,
+            &new.path,
+            reason.as_deref(),
+        )?;
+        Ok(reason.is_none().then_some(id))
+    })?;
+    let Some(id) = started else {
+        return Ok(None);
+    };
+    let set = |catalog: &mut super::super::Catalog, state: ItemState, error: &str| {
+        catalog
+            .db
+            .write(|w| journal::set_state(w, id, state, Some(error)))
+    };
+    // b. Made, durable, and which folder it is journalled. A failed
+    // `mkdir` made nothing.
+    if let Err(e) = disk.create_dir(&new.path) {
+        set(catalog, ItemState::NoChange, &e.to_string())?;
+        return Ok(None);
+    }
+    let found = disk.sync_dir(dir).and_then(|()| made(disk, &new.path));
+    let journalled = found.map_err(|e| e.to_string()).and_then(|(file, at)| {
+        catalog
+            .db
+            .write(|w| journal::set_created(w, id, file, &at))
+            .map_err(|e| format!("{e:#}"))
+    });
+    if let Err(e) = journalled {
+        set(catalog, ItemState::NeedsRecovery, &e)?;
+        return Ok(None);
+    }
+    // c. The catalog's folder, on the evidence.
+    let finished = catalog.db.write_immediate(|w| {
+        let item = journal::item(w, id)?.context("the journalled item is gone")?;
+        complete(w, computer, disk, &item)
+    });
+    if let Err(e) = finished {
+        set(catalog, ItemState::NeedsRecovery, &format!("{e:#}"))?;
+        return Ok(None);
+    }
+    let item = journal::item(&catalog.db, id)?.context("the journalled item is gone")?;
+    let (Subject::Folder(state), ItemState::Done) = (&item.subject, item.state) else {
+        return Ok(None);
+    };
+    let made = (
+        state.folder,
+        item.members.first().and_then(|m| m.destination.clone()),
+    );
+    let (Some(folder), Some(dir)) = made else {
+        return Ok(None);
+    };
+    let name = dir.file_name().and_then(OsStr::to_str).unwrap_or_default();
+    Ok(Some(Made {
+        folder,
+        resolved: state.parent_path.join(name),
+        dir,
+    }))
+}
+
 /// Why a folder item is still unfinished when no file object was
 /// journalled: what is there may not be the folder made.
 pub(super) const NOT_PROVEN: &str = "A folder is there that RAWmakase can't tell it made; it stays out of the catalog. Add it with Add Folder if it is yours.";

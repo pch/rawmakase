@@ -71,6 +71,7 @@ impl Menu {
                     (Action::NewCatalog, "New Catalog…"),
                     (Action::OpenCatalog, "Open Catalog…"),
                     (Action::AddFolder, "Add Folder…"),
+                    (Action::ImportPhotos, "Import Photos…"),
                     (Action::Export, "Export…"),
                     (Action::Close, "Close Window"),
                 ],

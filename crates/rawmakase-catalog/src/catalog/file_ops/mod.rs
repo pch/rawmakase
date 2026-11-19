@@ -47,6 +47,7 @@ mod copy;
 mod disk;
 mod execute;
 mod folder;
+mod import;
 mod journal;
 mod lock;
 mod names;
@@ -61,6 +62,12 @@ mod tree_trash;
 
 pub use execute::execute;
 pub use folder::folder_name_problem;
+pub(in crate::catalog) use import::reserved as reserved_for_import;
+pub use import::{
+    DateFolders, Duplicate, ExtensionCase, ImportMetadata, ImportOutcome, ImportPlan,
+    ImportRequest, ImportSource, Organize, PlannedPhoto, ScannedFile, execute_import,
+    import_companions, plan_import, scan_file, suspected_duplicates,
+};
 pub use journal::OperationId;
 pub(in crate::catalog) use lock::opening;
 pub use names::{NameProblem, photo_name_problem};
@@ -605,6 +612,8 @@ pub enum ItemResult {
     Kept,
     /// Its thread stopped before it finished; [`recover`](fn@recover) decides it.
     Interrupted,
+    /// Its photos were copied and added to the catalog (Import Photos).
+    Imported,
 }
 
 /// One item's outcome.
@@ -661,6 +670,8 @@ mod copy_tests;
 mod editable_preview_tests;
 #[cfg(test)]
 mod folder_tests;
+#[cfg(test)]
+mod import_tests;
 #[cfg(test)]
 mod journal_tests;
 #[cfg(test)]

@@ -3,7 +3,8 @@
 //! confirmation, and applying the outcome to the Library, the open photo,
 //! the undo log and the caches. `catalog::file_ops` owns everything else
 //! (what an operation takes, its refusals, the journal, the disk); nothing
-//! here reads files or writes SQL.
+//! here reads files or writes SQL, but Import Photos' reads of the source
+//! it copies from (`import::scan`).
 //!
 //! An operation (Remove from Catalog, moving photos to a folder, making a
 //! folder and moving photos into it) goes, in one uninterrupted step on the
@@ -47,6 +48,10 @@ pub(crate) use rename::RenamePlanned;
 use rename::{Renaming, RenamingFolder};
 mod folders;
 use folders::ChoosingParent;
+mod import;
+pub(crate) use import::{
+    Drive, ImportPlanned, Scanned as ImportScanned, Thumbnail as ImportThumbnail,
+};
 
 /// A Trash that takes nothing, for tests whose operations have no file to
 /// trash.
@@ -191,6 +196,16 @@ pub(in crate::app) struct FileOps {
     /// Tests: what reads a rename's files for their names.
     #[cfg(test)]
     name_reader: Option<crate::app::export::naming::read::Reader>,
+    /// Tests: Import Photos' remembered choices, in place of
+    /// `import-copy.json`.
+    #[cfg(test)]
+    import_settings: import::ImportCopySettings,
+    /// Tests: what reads an import's files for their names.
+    #[cfg(test)]
+    import_reader: Option<import::FileReader>,
+    /// Tests: the import's worker panics.
+    #[cfg(test)]
+    import_panics: bool,
 }
 
 #[derive(Default)]
@@ -240,6 +255,10 @@ enum State {
         verb: Verb,
         progress: Progress,
     },
+    /// Import Photos…, open. Holds nothing.
+    Importing(Box<import::Importing>),
+    /// Import Photos running on a worker; holds the catalog.
+    ImportRunning(Box<import::RunningImport>),
     /// What a crash left unfinished, decided on a worker as the catalog
     /// opens.
     Recovering { catalog: CatalogLocation },
@@ -280,6 +299,12 @@ impl Default for FileOps {
             rename_settings: Default::default(),
             #[cfg(test)]
             name_reader: None,
+            #[cfg(test)]
+            import_settings: Default::default(),
+            #[cfg(test)]
+            import_reader: None,
+            #[cfg(test)]
+            import_panics: false,
         }
     }
 }
@@ -288,12 +313,12 @@ impl FileOps {
     /// Asks a running operation to stop after the photo under way (the
     /// top bar's Stop, closing the window). What it did by then stands.
     pub(in crate::app) fn stop(&self) {
-        if let State::Running { cancel, .. } = &self.state {
-            cancel.store(true, Ordering::Relaxed);
+        match &self.state {
+            State::Running { cancel, .. } => cancel.store(true, Ordering::Relaxed),
+            State::ImportRunning(running) => running.stop(),
+            _ => {}
         }
     }
-    /// Whether a dialog of a file operation with a field or a list is
-    /// open: keys go to it, not to the photos behind.
     /// The operation's state by name, with its verb where it has one, for the
     /// keyboard shortcut pins to tell Delete from Remove or Rename.
     // The pins don't run on Windows (`shell::workspace`).
@@ -313,8 +338,12 @@ impl FileOps {
             State::Recovering { .. } => "Recovering".into(),
             State::Unfinished { .. } => "Unfinished".into(),
             State::Resolving { .. } => "Resolving".into(),
+            State::Importing(_) => "Importing".into(),
+            State::ImportRunning(_) => "ImportRunning".into(),
         }
     }
+    /// Whether a dialog of a file operation with a field or a list is
+    /// open: keys go to it, not to the photos behind.
     pub(in crate::app) fn dialog_open(&self) -> bool {
         matches!(
             self.state,
@@ -325,6 +354,7 @@ impl FileOps {
                 | State::Renaming(_)
                 | State::RenamingFolder(_)
                 | State::ChoosingParent(_)
+                | State::Importing(_)
         )
     }
     /// Whether a running operation was asked to stop.
@@ -995,7 +1025,8 @@ fn summary_of(outcome: &Outcome, verb: &Verb) -> String {
             | ItemResult::Renamed { .. }
             | ItemResult::FolderRenamed
             | ItemResult::FolderMoved
-            | ItemResult::Created { .. } => None,
+            | ItemResult::Created { .. }
+            | ItemResult::Imported => None,
             ItemResult::Unchanged(why) => Some(why.clone().unwrap_or_else(|| "unchanged".into())),
             ItemResult::NeedsRecovery(why) => Some(why.clone()),
             ItemResult::Kept => Some("kept as it is".into()),
@@ -1321,6 +1352,7 @@ impl Editor {
             State::Renaming(_) => return self.rename_window(ctx),
             State::RenamingFolder(_) => return self.rename_folder_window(ctx),
             State::ChoosingParent(_) => return self.choose_parent_window(ctx),
+            State::Importing(_) => return self.import_window(ctx),
             _ => {}
         }
         let State::Confirming {
@@ -1652,6 +1684,25 @@ impl Editor {
 
     /// The top bar's part while an operation runs: what it does, and Stop.
     pub(in crate::app) fn file_op_progress(&mut self, ui: &mut egui::Ui) {
+        if let Some((text, stoppable)) = self.import_progress() {
+            let palette = crate::app::ui::theme::palette(ui.ctx());
+            ui.label(
+                egui::RichText::new(text)
+                    .size(text::LABEL)
+                    .color(palette.tone(Tone::SOFT)),
+            );
+            if stoppable
+                && ui
+                    .small_button("Stop")
+                    .on_hover_text("Stop after the photo under way")
+                    .clicked()
+            {
+                self.file_ops.stop();
+            }
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(250));
+            return;
+        }
         let text = match &mut self.file_ops.state {
             State::Recovering { .. } | State::Resolving { .. } => {
                 "Checking unfinished file operations…".to_string()
@@ -1763,6 +1814,8 @@ impl Editor {
     }
 }
 
+#[cfg(test)]
+mod import_tests;
 #[cfg(test)]
 mod move_folder_tests;
 #[cfg(test)]

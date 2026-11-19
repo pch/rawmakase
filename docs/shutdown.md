@@ -220,6 +220,12 @@ and finishes it on the evidence on disk or reports it. The top bar's Stop, and a
 flag, so it stops after the photo under way; the close guard then waits for it.
 Close anyway closes at once without saving: the open edit was saved before the
 operation began, and nothing may be written while it holds the catalog.
+Import Photos runs the same way, holding the catalog from its run's start to its
+end, and stops after the file being copied; a file copied in part is left to
+recovery, which never deletes a copy written whole. While its dialog is open it
+holds nothing: its scan of the source, its thumbnails and its plans are one-shot
+workers that only read, cancelled when the dialog closes and left to end with
+the process at exit.
 
 ## Where the code stands
 

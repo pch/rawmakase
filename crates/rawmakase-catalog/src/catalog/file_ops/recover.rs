@@ -207,6 +207,11 @@ pub(super) fn resolve_with(
                 "Only a folder put in the Trash can be removed from the catalog so.",
             ));
         }
+        Resolution::PutBack if item.kind == Kind::ImportCopy => {
+            return Err(FileOpError::Unsupported(
+                "An import's copies are never removed again. Keep them as they are.",
+            ));
+        }
         Resolution::PutBack if folder => {
             return Err(FileOpError::Unsupported(
                 "A folder that was made is never deleted. Keep it, or add it to the catalog.",
@@ -276,6 +281,16 @@ fn decide(
         return catalog
             .db
             .write_immediate(|w| folder::decide(w, computer, disk, item));
+    }
+    // Imports first: they copy, but never put back.
+    if item.kind == Kind::ImportCopy {
+        let cx = super::copy::Cx {
+            computer,
+            folders,
+            disk,
+            trash,
+        };
+        return super::import::decide(&cx, catalog, item);
     }
     // Rule 7, before anything that reads members as renamed.
     if item.copies() {
@@ -384,7 +399,7 @@ fn changed(
         Subject::Photos(pre) => pre,
         Subject::Tree(tree) => return tree.check(&catalog.db, computer),
         Subject::TrashTree(tree) => return tree.check(&catalog.db, computer),
-        Subject::Folder(_) => return Ok(None),
+        Subject::Folder(_) | Subject::Import(_) => return Ok(None),
     };
     if let Some(reason) = pre.check(&catalog.db, computer)? {
         return Ok(Some(reason.into()));
@@ -479,6 +494,8 @@ fn unfinished(item: &Item) -> Unfinished {
             Subject::Folder(_) => vec![Resolution::Keep],
             Subject::TrashTree(_) => super::tree_trash::choices(item),
             Subject::Photos(_) | Subject::Tree(_) => vec![Resolution::PutBack, Resolution::Keep],
+            // A copy is never removed again: its files stay, for the user.
+            Subject::Import(_) => vec![Resolution::Keep],
         },
     }
 }
@@ -514,6 +531,7 @@ pub(super) fn outcome_of(item: &Item) -> ItemOutcome {
             },
             Subject::TrashTree(_) if super::tree_trash::trashed(item) => ItemResult::Trashed,
             Subject::TrashTree(_) => ItemResult::Removed,
+            Subject::Import(_) => ItemResult::Imported,
         },
         ItemState::NoChange => ItemResult::Unchanged(item.error.clone()),
         ItemState::NeedsRecovery => {
