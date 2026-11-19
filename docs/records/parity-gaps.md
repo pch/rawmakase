@@ -280,6 +280,17 @@ photos whatever the airlight's level over the white, and +0.45 and +0.97 on two 
 scenes lit by coloured lights, which nothing tried explains (the airlight's level over
 the white or over the 99th percentile, its darkest channel, the room under it).
 
+The automatic black is not what keeps the fog off a night scene. Two night photos and a
+daylight one as probe files with the default black on Auto and on None render alike at
+−100: the first night scene gains 0.00 to 0.20 stop at every depth under its top with
+either, the second up to 1.03 four to eight stops down, and the daylight photo 0.5 stop
+at its top, 1.9 four stops down and 4.4 at its darkest. A black sky gets no fog and the
+darkest corners of a daylight photo get the most, so the amount is not a curve of the
+level under the top or under the airlight: it follows what surrounds the pixel at a
+large scale, as the structure tests of 2026-11-16 found (the veil follows the photo
+blurred at 8% of the frame better than any airlight). Night scenes are that large-scale
+layer's clearest case.
+
 **The candidate, and why it is not shipped.** The engine's luminance curve as it is,
 with the gain added as a veil instead of applied per channel, in SDR renders (branch
 `t3/negative-dehaze-veil`, local). Its forms in turn, rendered on the 100 training
