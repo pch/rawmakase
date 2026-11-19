@@ -6,6 +6,13 @@ model (docs/subject-and-background-masks.md); nothing links it. Every platform
 ships the same release because 1.23.2 is the last one with an official macOS x86_64
 build. Only the library and the notices are taken from the archive.
 
+The release archives come from Microsoft's GitHub releases. When those cannot be
+downloaded (Microsoft took the repository down in November 2026), the same release
+is taken from Microsoft's NuGet package, which holds every platform's library. Its
+libraries are byte-for-byte the archives' ones, and each is pinned by its own
+SHA-256 as well as the package's. Only a failed download falls back: a file that
+does not match its pin is always an error.
+
   packaging/onnxruntime.py macos arm64 OUTPUT_DIR NOTICES_DIR
 """
 import argparse
@@ -17,6 +24,7 @@ import shutil
 import sys
 import tarfile
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -51,26 +59,61 @@ ASSETS = {
 }
 NOTICES = ("LICENSE", "ThirdPartyNotices.txt")
 
+NUGET = (f"https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/{VERSION}/"
+         f"microsoft.ml.onnxruntime.{VERSION}.nupkg")
+NUGET_SHA256 = "25fe172f7fcdf34f2b5b02c8b997f6b88abc282956849d4af4335af23d0c4e4a"
+# (platform, architecture) -> the library inside the NuGet package, and its SHA-256.
+# Except for Windows arm64, whose archive was never downloaded here, each digest is
+# that of the library in the archive above.
+NUGET_LIBRARIES = {
+    ("macos", "arm64"): (
+        "runtimes/osx-arm64/native/libonnxruntime.dylib",
+        "d306d2bc768540766c7ed8a1e0ff05d2870c77a934ebeee4a7bafa1b732ef299"),
+    ("macos", "x86_64"): (
+        "runtimes/osx-x64/native/libonnxruntime.dylib",
+        "8c9c78de65ea3786f987c0d980e9c1b13a3a5fbc6b3e2965ba05b450e6e4c054"),
+    ("linux", "x86_64"): (
+        "runtimes/linux-x64/native/libonnxruntime.so",
+        "13ab8084954fa4a47c777880180b90810d6020f021441395712b48a75b74c68b"),
+    ("linux", "aarch64"): (
+        "runtimes/linux-arm64/native/libonnxruntime.so",
+        "648ffa64fbe027ae27139109410900cf776a030dec2dbbac51053318cc44c286"),
+    ("windows", "x86_64"): (
+        "runtimes/win-x64/native/onnxruntime.dll",
+        "dec964ab1ee36cc9b0ae247d13b376627992fc57dec0454354017ab8fd84f1ea"),
+    ("windows", "aarch64"): (
+        "runtimes/win-arm64/native/onnxruntime.dll",
+        "99a11bb077f723a81d100fd98099f332e4178bbb7025ac10fd40699a0b82c2f0"),
+}
 
-def fetch(platform, arch, output, notices):
-    """Put the library in `output` and ONNX Runtime's notices in `notices`."""
-    try:
-        archive, digest, member, name = ASSETS[(platform, arch)]
-    except KeyError:
-        raise SystemExit(f"No ONNX Runtime {VERSION} for {platform} {arch}")
+
+def download(url, name, digest):
+    """The bytes at `url`, kept in `RAWMAKASE_ORT_CACHE` as `name` when it is set,
+    after checking they hash to `digest`."""
     cache = os.environ.get("RAWMAKASE_ORT_CACHE")
-    cached = Path(cache) / archive if cache else None
+    cached = Path(cache) / name if cache else None
     if cached and cached.is_file():
         data = cached.read_bytes()
     else:
-        with urllib.request.urlopen(BASE + archive, timeout=300) as response:
+        with urllib.request.urlopen(url, timeout=300) as response:
             data = response.read()
-        if cached:
-            cached.parent.mkdir(parents=True, exist_ok=True)
-            cached.write_bytes(data)
+    check(name, data, digest)
+    if cached and not cached.is_file():
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        cached.write_bytes(data)
+    return data
+
+
+def check(name, data, digest):
     found = hashlib.sha256(data).hexdigest()
     if found != digest:
-        raise SystemExit(f"{archive}: SHA-256 is {found}, expected {digest}")
+        raise SystemExit(f"{name}: SHA-256 is {found}, expected {digest}")
+
+
+def from_archive(platform, arch):
+    """The library and the notices, by their paths in the release archive."""
+    archive, digest, member, _ = ASSETS[(platform, arch)]
+    data = download(BASE + archive, archive, digest)
     prefix = archive.rsplit(".", 1)[0]
     wanted = [f"{prefix}/{member}"] + [f"{prefix}/{notice}" for notice in NOTICES]
     if archive.endswith(".zip"):
@@ -81,14 +124,38 @@ def fetch(platform, arch, output, notices):
             files = {m.name.removeprefix("./"): tf.extractfile(m).read()
                      for m in tf.getmembers()
                      if m.isfile() and m.name.removeprefix("./") in wanted}
-    read = lambda path: files[f"{prefix}/{path}"]
+    return {path: files[f"{prefix}/{path}"] for path in [member, *NOTICES]}
+
+
+def from_nuget(platform, arch):
+    """The same files as from_archive returns, taken from the NuGet package."""
+    _, _, member, _ = ASSETS[(platform, arch)]
+    library, digest = NUGET_LIBRARIES[(platform, arch)]
+    data = download(NUGET, NUGET.rsplit("/", 1)[1], NUGET_SHA256)
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        files = {member: zf.read(library), **{notice: zf.read(notice) for notice in NOTICES}}
+    check(library, files[member], digest)
+    return files
+
+
+def fetch(platform, arch, output, notices):
+    """Put the library in `output` and ONNX Runtime's notices in `notices`."""
+    try:
+        archive, _, member, name = ASSETS[(platform, arch)]
+    except KeyError:
+        raise SystemExit(f"No ONNX Runtime {VERSION} for {platform} {arch}")
+    try:
+        files = from_archive(platform, arch)
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+        print(f"{archive}: {error}; using the NuGet package", file=sys.stderr)
+        files = from_nuget(platform, arch)
     output.mkdir(parents=True, exist_ok=True)
     notices.mkdir(parents=True, exist_ok=True)
     target = output / name
-    target.write_bytes(read(member))
+    target.write_bytes(files[member])
     target.chmod(0o755)
     for notice in NOTICES:
-        (notices / f"onnxruntime-{notice}").write_bytes(read(notice))
+        (notices / f"onnxruntime-{notice}").write_bytes(files[notice])
     return target
 
 
