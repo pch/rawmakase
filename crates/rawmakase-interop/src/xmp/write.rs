@@ -268,7 +268,7 @@ pub(super) struct Frame<'a> {
 pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -> Settings {
     let m = photo.map(|p| p.metadata);
     let mut s = Settings(Vec::new());
-    s.text("ProcessVersion", "11.0");
+    s.text("ProcessVersion", super::PROCESS_VERSION);
     if let Some(profile) = &r.profile {
         let name = match &profile.enhanced {
             Some(look) => &look.base_name,
