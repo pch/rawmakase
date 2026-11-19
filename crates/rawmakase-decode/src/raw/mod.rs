@@ -24,8 +24,9 @@ pub fn version() -> String {
 /// 2: Directional X-Trans blending, stripe chromaticity reconstruction and
 /// matching lens-CA sampling protection (#547).
 /// 3: A DNG's transparency mask renders white (a panorama's empty corners).
+/// 4: Full-size Bayer pixels below black keep their own colour (#802).
 pub fn developed() -> String {
-    "rawmakase-raw 3".into()
+    "rawmakase-raw 4".into()
 }
 /// Runs `work` on a thread of its own at background priority: a lower
 /// scheduling priority, and parallel work (RAWmakase's decoders) on two
