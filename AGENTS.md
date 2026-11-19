@@ -159,15 +159,43 @@ capabilities before falling back to GitHub connectors or browser automation.
 
 ## Before every push
 
-Run `make check` and push only when it passes. It runs every check CI runs
-(`.github/workflows/ci.yml`) that can run on this machine: dependency and crate
-closure checks, the Python calibration tests, formatting, clippy, every
-crate's tests, the docs build (`cargo doc`) and the MSRV build. The Makefile lists what only CI covers (the
-other platforms, the Arch package, Postgres). Use the current stable Rust, as
-CI does; newer clippy releases add lints. Where rustup's `cargo +toolchain`
-proxy doesn't work, set `MSRV_BIN` to the MSRV toolchain's `bin` folder.
+Before pushing a pull request branch, run the fast check below and push only
+when it passes. It catches formatting, lint, dependency-rule and test breakage
+in minutes; CI's Lint and test job then runs everything else. Use the current
+stable Rust, as CI does; newer clippy releases add lints.
 
-A `v*` tag builds and publishes a release, so the same applies before tagging.
+```sh
+cargo fmt --check
+python3 scripts/deps.py check && scripts/crate-closures.sh
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked -p <each crate the change touches>
+RUSTDOCFLAGS="-D warnings -A rustdoc::private_intra_doc_links" \
+  cargo doc --no-deps --locked --document-private-items -p <same crates>
+```
+
+Add `-p rawmakase` to the tests when a change to a lower crate alters behaviour
+the app relies on. Name the crates you tested in the pull request.
+
+The fast check leaves the MSRV build, the other crates' tests, the
+workspace docs build, the Python calibration tests and `cargo deny` to CI. A
+pull request is not ready until CI's Lint and test job passes.
+
+Run the full `make check` instead when the change:
+
+- bumps a dependency, `Cargo.lock` or `rust-version`;
+- edits the Makefile, CI workflows, `scripts/` or the calibration data;
+- spans many crates, or changes a shared API (protocol, catalog schema,
+  `rawmakase-model` types) used across the workspace;
+- is a release commit that changes code, or before pushing a `v*` tag, which
+  builds and publishes a release.
+
+`make check` runs every check CI runs (`.github/workflows/ci.yml`) that can
+run on this machine: dependency and crate closure checks, the Python
+calibration tests, formatting, clippy, every crate's tests, the docs build
+(`cargo doc`) and the MSRV build. The Makefile lists what only CI covers (the
+other platforms, the Arch package, Postgres). Where rustup's `cargo
++toolchain` proxy doesn't work, set `MSRV_BIN` to the MSRV toolchain's `bin`
+folder.
 
 Docs-only commits and `Release x.y.z` commits that change no code are the
 exception: push them straight to `main` without a pull request, subagent
