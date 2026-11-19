@@ -176,3 +176,43 @@ fn auto_ends_a_conversion_waiting_for_the_photo() {
     assert_eq!(editor.document.edit.recipe().exposure, 1.);
     assert!(editor.document.pending_treatment.is_none());
 }
+
+/// With Adobe Monochrome imported for the camera, V changes the profile to it, as
+/// Lightroom Classic's Treatment does, in the one step; V again goes back to the
+/// photo's default profile, and Undo brings back the profile as it was (#666).
+#[test]
+fn v_changes_to_adobe_monochrome_when_the_photo_has_it() {
+    let ctx = egui::Context::default();
+    let (mut editor, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    let before = editor.document.edit.recipe().clone();
+    let m = editor.document.metadata.clone().expect("the photo is read");
+    let mono = {
+        let mut p = crate::camera_profiles::CameraProfile::camera_matrix_default(&m)
+            .expect("a matrix profile for the photo")
+            .with_test_tables();
+        p.name = "Adobe Monochrome".into();
+        p.enhanced.as_mut().unwrap().monochrome = true;
+        std::sync::Arc::new(p)
+    };
+    editor.document.profiles.push(mono.clone());
+    in_edit_frame(&ctx, &mut editor, Editor::toggle_treatment);
+    let r = editor.document.edit.recipe();
+    assert!(std::sync::Arc::ptr_eq(r.profile.as_ref().unwrap(), &mono));
+    assert_eq!(r.treatment(), crate::model::recipe::Treatment::BlackWhite);
+    let (steps, applied) = editor.document.edit.history().steps();
+    assert_eq!(
+        (applied, steps[0].name.as_str()),
+        (1, "Convert to Black & White")
+    );
+    in_edit_frame(&ctx, &mut editor, Editor::toggle_treatment);
+    let r = editor.document.edit.recipe();
+    assert!(!crate::model::recipe::is_monochrome(r.profile.as_deref()));
+    assert_eq!(r.treatment(), crate::model::recipe::Treatment::Color);
+    editor.undo();
+    editor.undo();
+    assert_eq!(*editor.document.edit.recipe(), before);
+}

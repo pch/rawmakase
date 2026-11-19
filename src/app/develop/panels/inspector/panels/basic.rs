@@ -469,6 +469,12 @@ pub(in crate::app::develop::panels::inspector) fn show(
             r.reset_white_balance(m);
         }
         r.effects.monochrome = false;
+        // A black & white profile (Adobe Monochrome, which Black & White chooses) would
+        // keep the photo black and white: Color leaves it for the photo's default, as
+        // the Treatment switch does.
+        if crate::model::recipe::is_monochrome(r.profile.as_deref()) {
+            actions.push(Action::Treatment(Treatment::Color));
+        }
         r.effects.texture = 0.;
         r.effects.clarity = 0.;
         r.effects.dehaze = 0.;

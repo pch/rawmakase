@@ -235,6 +235,9 @@ impl ColorSpread {
     }
 }
 
+/// The profile Lightroom's Treatment switches a color photo to.
+const ADOBE_MONOCHROME: &str = "Adobe Monochrome";
+
 /// Setting a recipe's Treatment, with the Auto mix it measures.
 pub trait TreatmentChoice {
     /// Sets the Treatment. Converting to black & white sets the Auto mix when the mix
@@ -242,14 +245,21 @@ pub trait TreatmentChoice {
     /// converting to black and white"); a mix already set (by hand, by Auto, or kept
     /// from an earlier conversion) stays, as do the color mixer's settings.
     fn set_treatment(&mut self, treatment: Treatment, first: Option<AutoMix>);
-    /// Lightroom's Treatment switcher: as [`Recipe::set_treatment`], and choosing Color
-    /// while a black & white profile is in use changes to `color_profile`, the photo's
-    /// default, since the profile alone would keep it black & white.
+    /// Lightroom's Treatment switcher: as [`Recipe::set_treatment`], and the profile
+    /// changes with it, as in Lightroom Classic. Choosing Color while a black & white
+    /// profile is in use changes to `color_profile`, the photo's default, since the
+    /// profile alone would keep it black & white. Choosing Black & White from a color
+    /// profile changes to Adobe Monochrome when `profiles` (the photo's) has it;
+    /// Lightroom always does, dropping a color look (recorded in Lightroom Classic 15
+    /// for Adobe Color, a creative look and a `.cube` look that supports monochrome,
+    /// #666). Without it the profile stays, so Color still returns to it: going back
+    /// to the photo's default needs a black & white profile to leave.
     fn choose_treatment(
         &mut self,
         treatment: Treatment,
         first: Option<AutoMix>,
         color_profile: Option<Arc<CameraProfile>>,
+        profiles: &[Arc<CameraProfile>],
         m: &Metadata,
     );
     /// Keeps the Treatment with the profile, as Lightroom does: choosing a black &
@@ -274,10 +284,26 @@ impl TreatmentChoice for Recipe {
         treatment: Treatment,
         first: Option<AutoMix>,
         color_profile: Option<Arc<CameraProfile>>,
+        profiles: &[Arc<CameraProfile>],
         m: &Metadata,
     ) {
-        if treatment == Treatment::Color && is_monochrome(self.profile.as_deref()) {
-            self.profile = color_profile.filter(|p| !is_monochrome(Some(p)));
+        let monochrome = is_monochrome(self.profile.as_deref());
+        let profile = match treatment {
+            Treatment::Color if monochrome => {
+                Some(color_profile.filter(|p| !is_monochrome(Some(p))))
+            }
+            Treatment::BlackWhite if !monochrome => profiles
+                .iter()
+                .find(|p| {
+                    p.name == ADOBE_MONOCHROME
+                        && is_monochrome(Some(p))
+                        && p.ensure_camera(m).is_ok()
+                })
+                .map(|p| Some(p.clone())),
+            _ => None,
+        };
+        if let Some(profile) = profile {
+            self.profile = profile;
             // A newly chosen profile starts at 100%, as in Lightroom.
             self.profile_amount = 1.;
             self.profile_changed(m);
@@ -474,6 +500,59 @@ mod tests {
         assert_eq!(r.effects.gray_mix, [0.; 8]);
     }
 
+    /// Black & White from a color profile changes to Adobe Monochrome, as Lightroom
+    /// Classic's Treatment does, when the photo has it (#666); without it the profile
+    /// stays, and Color returns to it.
+    #[test]
+    fn black_white_changes_a_color_profile_as_lightroom_does() {
+        let m = metadata();
+        let base = Arc::new(CameraProfile::camera_matrix_default(&m).unwrap());
+        assert!(base.enhanced.is_none());
+        let look = {
+            let mut p = (*base).clone().with_test_tables();
+            p.name = "Color look".into();
+            p.enhanced.as_mut().unwrap().base_name = base.name.clone();
+            Arc::new(p)
+        };
+        let adobe = {
+            let mut p = (*monochrome_profile(&m)).clone();
+            p.name = ADOBE_MONOCHROME.into();
+            Arc::new(p)
+        };
+        let with = |profile: &Arc<CameraProfile>| Recipe {
+            profile: Some(profile.clone()),
+            profile_amount: 0.5,
+            ..Recipe::with_profiles(&m, &[])
+        };
+        let all = [base.clone(), look.clone(), adobe.clone()];
+        // A color look, or a profile that isn't one, goes to Adobe Monochrome at 100%.
+        for from in [&look, &base] {
+            let mut r = with(from);
+            r.choose_treatment(Treatment::BlackWhite, None, None, &all, &m);
+            assert!(Arc::ptr_eq(r.profile.as_ref().unwrap(), &adobe));
+            assert_eq!(r.profile_amount, 1.);
+            assert_eq!(r.treatment(), Treatment::BlackWhite);
+        }
+        // Without Adobe Monochrome the profile and its Amount stay, and Color brings
+        // the photo back as it was.
+        let without = [base.clone(), look.clone()];
+        let mut r = with(&look);
+        r.choose_treatment(Treatment::BlackWhite, None, None, &without, &m);
+        assert!(Arc::ptr_eq(r.profile.as_ref().unwrap(), &look));
+        assert_eq!(r.profile_amount, 0.5);
+        assert!(r.effects.monochrome);
+        r.choose_treatment(Treatment::Color, None, Some(base), &without, &m);
+        assert!(Arc::ptr_eq(r.profile.as_ref().unwrap(), &look));
+        assert_eq!(r.treatment(), Treatment::Color);
+        // A black & white profile is kept, and Color goes back to the photo's default.
+        let mut r = with(&adobe);
+        r.choose_treatment(Treatment::BlackWhite, None, None, &all, &m);
+        assert!(Arc::ptr_eq(r.profile.as_ref().unwrap(), &adobe));
+        r.choose_treatment(Treatment::Color, None, Some(look.clone()), &all, &m);
+        assert!(Arc::ptr_eq(r.profile.as_ref().unwrap(), &look));
+        assert_eq!(r.treatment(), Treatment::Color);
+    }
+
     #[test]
     fn black_white_profiles_carry_the_treatment() {
         let m = metadata();
@@ -492,7 +571,7 @@ mod tests {
         assert!(r.effects.monochrome);
         assert_ne!(r.effects.gray_mix, [0.; 8]);
         // Color with that profile in use goes back to a color profile.
-        r.choose_treatment(Treatment::Color, auto, color.clone(), &m);
+        r.choose_treatment(Treatment::Color, auto, color.clone(), &[], &m);
         assert_eq!(r.treatment(), Treatment::Color);
         assert!(!is_monochrome(r.profile.as_deref()));
         // Leaving a black & white profile for a color one converts back too.
