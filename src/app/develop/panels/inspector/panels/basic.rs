@@ -194,8 +194,8 @@ pub(in crate::app::develop::panels::inspector) fn show(
                         ui.close();
                     }
                     if ui
-                        .button("Import .cube LUTs…")
-                        .on_hover_text("Import .cube LUTs as looks, choosing the colour space they expect first")
+                        .button("Import LUTs…")
+                        .on_hover_text("Import .cube and HaldCLUT .png LUTs as looks, choosing the colour space they expect first")
                         .clicked()
                     {
                         actions.push(Action::ImportLuts);

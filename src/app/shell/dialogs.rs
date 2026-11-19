@@ -8,7 +8,7 @@ pub(in crate::app) enum FileDialog {
     LoadPreset,
     SavePreset,
     CameraProfile,
-    /// `.cube` LUTs expecting colours in this space (Import .cube LUTs).
+    /// LUTs expecting colours in this space (Import LUTs).
     Luts(crate::camera_profiles::LutSpace),
     LensProfile,
     ImportXmp,

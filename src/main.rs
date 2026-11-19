@@ -28,10 +28,10 @@ enum Command {
         #[arg(long)]
         data_dir: Option<PathBuf>,
     },
-    /// Import Lightroom DCP and look XMP profiles and .cube LUTs (as looks), or the
-    /// folders holding them, into RAWmakase's profile library.
+    /// Import Lightroom DCP and look XMP profiles and .cube and HaldCLUT .png LUTs
+    /// (as looks), or the folders holding them, into RAWmakase's profile library.
     ImportProfiles {
-        /// The colour space the .cube LUTs expect, as Camera Raw's Create Profile
+        /// The colour space the LUTs expect, as Camera Raw's Create Profile
         /// asks; keep sRGB unless the LUT's maker says otherwise.
         #[arg(long, value_enum, default_value_t = LutSpace::Srgb)]
         lut_space: LutSpace,

@@ -14,9 +14,10 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ImportKind {
-    /// DCPs, look XMPs and `.cube` LUTs, the LUTs at the sRGB default.
+    /// DCPs, look XMPs and LUTs (`.cube` and HaldCLUT `.png`), the LUTs at the sRGB
+    /// default.
     CameraProfiles,
-    /// `.cube` LUTs only, expecting colours in this space (Import .cube LUTs).
+    /// LUTs only, expecting colours in this space (Import LUTs).
     Luts(LutSpace),
     LensProfiles,
     Presets,
@@ -24,8 +25,8 @@ pub(crate) enum ImportKind {
 impl ImportKind {
     fn extensions(self) -> &'static [&'static str] {
         match self {
-            Self::CameraProfiles => &["dcp", "xmp", "cube"],
-            Self::Luts(_) => &["cube"],
+            Self::CameraProfiles => &["dcp", "xmp", "cube", "png"],
+            Self::Luts(_) => &["cube", "png"],
             Self::LensProfiles => &["lcp"],
             Self::Presets => &["xmp"],
         }
@@ -45,8 +46,8 @@ impl ImportKind {
     /// Label for the multi-file chooser's filter.
     pub(in crate::app) fn filter(self) -> (&'static str, &'static [&'static str]) {
         match self {
-            Self::CameraProfiles => ("Camera profiles and .cube LUTs", &["dcp", "xmp", "cube"]),
-            Self::Luts(_) => ("LUTs (.cube)", &["cube"]),
+            Self::CameraProfiles => ("Camera profiles and LUTs", &["dcp", "xmp", "cube", "png"]),
+            Self::Luts(_) => ("LUTs (.cube, HaldCLUT .png)", &["cube", "png"]),
             Self::LensProfiles => ("Adobe lens profiles", &["lcp"]),
             Self::Presets => ("Lightroom presets", &["xmp"]),
         }
@@ -161,8 +162,8 @@ pub struct Summary {
     pub(in crate::app) without_base: usize,
     /// Files that couldn't be imported, with the reason.
     pub(in crate::app) failed: Vec<(PathBuf, String)>,
-    /// What became of each `.cube`: its look's name and how faithfully it holds
-    /// the cube.
+    /// What became of each LUT: its look's name and how faithfully it holds the
+    /// LUT.
     pub(in crate::app) cubes: Vec<(PathBuf, crate::camera_profiles::CubeImport)>,
 }
 impl Summary {
@@ -228,7 +229,7 @@ impl Summary {
         }
         parts.join(" · ")
     }
-    /// The skipped files, then the `.cube` files approximated or renamed, one per
+    /// The skipped files, then the LUTs approximated or renamed, one per
     /// line, at most `limit` of them.
     pub(in crate::app) fn details(&self, limit: usize) -> String {
         let noted = self.cubes.iter().filter(|(_, c)| {
@@ -250,7 +251,7 @@ impl Summary {
     pub(in crate::app) fn has_details(&self) -> bool {
         !self.details(1).is_empty()
     }
-    /// Every `.cube` and every file that couldn't be imported, one line each.
+    /// Every LUT and every file that couldn't be imported, one line each.
     pub fn lines(&self) -> Vec<String> {
         self.cubes
             .iter()
@@ -381,26 +382,38 @@ fn import_camera_profiles(
     let (mut dcps, mut looks, mut cubes) = (Vec::new(), Vec::new(), Vec::new());
     for (i, file) in found.iter().enumerate() {
         report(progress, i, found.len(), "profiles");
-        let Ok(bytes) = std::fs::read(&file.path) else {
-            summary.fail(&file.path, "unreadable");
-            continue;
-        };
         let extension = |e: &str| {
             file.path
                 .extension()
                 .is_some_and(|x| x.eq_ignore_ascii_case(e))
         };
-        let xmp = extension("xmp");
-        // A LUT import takes cubes only; a folder's other files are left out when
-        // found, and a profile chosen by name is said to be the wrong kind.
-        if matches!(kind, ImportKind::Luts(_)) && !extension("cube") {
-            summary.fail(&file.path, "not a .cube LUT");
+        // LUT packs ship sample images beside their HaldCLUTs, some of a HaldCLUT's
+        // size; a folder's PNGs that are not HaldCLUTs are passed over, as its presets
+        // are below, without being read in full.
+        if extension("png") && !file.chosen {
+            match crate::camera_profiles::found_hald(&file.path) {
+                None => {}
+                Some(Ok(())) => cubes.push(file.path.clone()),
+                Some(Err(e)) => summary.fail(&file.path, format!("{e:#}")),
+            }
             continue;
         }
-        if extension("cube") {
+        let Ok(bytes) = std::fs::read(&file.path) else {
+            summary.fail(&file.path, "unreadable");
+            continue;
+        };
+        let xmp = extension("xmp");
+        let lut = extension("cube") || extension("png");
+        // A LUT import takes LUTs only; a folder's other files are left out when
+        // found, and a profile chosen by name is said to be the wrong kind.
+        if matches!(kind, ImportKind::Luts(_)) && !lut {
+            summary.fail(&file.path, "not a LUT");
+            continue;
+        }
+        if lut {
             // Its look's name is the import's to choose, so it is checked by its
             // table rather than its file name (`camera_profiles::import_files`).
-            match crate::camera_profiles::read_cube(&bytes) {
+            match crate::camera_profiles::read_lut(&file.path, &bytes) {
                 Ok(_) => cubes.push(file.path.clone()),
                 Err(e) => summary.fail(&file.path, format!("{e:#}")),
             }
@@ -659,7 +672,7 @@ fn run(kind: ImportKind, picks: &[PathBuf], progress: &ImportProgress) -> Summar
 }
 
 /// The `import-profiles` command: imports `picks` (files and folders) as the app's
-/// Import does, waiting for it, with the `.cube` LUTs among them expecting colours in
+/// Import does, waiting for it, with the LUTs among them expecting colours in
 /// `space`.
 pub fn import_profiles(picks: &[PathBuf], space: LutSpace) -> Summary {
     let kind = ImportKind::CameraProfiles;
@@ -933,17 +946,18 @@ mod tests {
         );
     }
 
-    /// Import .cube LUTs takes only the `.cube` files of a folder that holds profiles
-    /// too, as LUT packs ship Lightroom profiles beside their cubes; a profile chosen
-    /// by name is reported as the wrong kind, and nothing is written for it.
+    /// Import LUTs takes only the `.cube` and `.png` files of a folder that holds
+    /// profiles too, as LUT packs ship Lightroom profiles beside their cubes; a profile
+    /// chosen by name is reported as the wrong kind, and nothing is written for it.
     #[test]
-    fn a_lut_import_takes_only_cubes() {
+    fn a_lut_import_takes_only_luts() {
         let temp = tempfile::tempdir().unwrap();
         let pack = temp.path().join("Pack");
         std::fs::create_dir_all(pack.join("Lightroom")).unwrap();
         for file in [
             "A.cube",
             "Sub.CUBE",
+            "Hald.png",
             "Lightroom/A.xmp",
             "Camera.dcp",
             "notes.txt",
@@ -959,7 +973,7 @@ mod tests {
         };
         assert_eq!(
             names(&gather(kind, std::slice::from_ref(&pack))),
-            ["A.cube", "Sub.CUBE"]
+            ["A.cube", "Hald.png", "Sub.CUBE"]
         );
         let chosen = gather(
             kind,
@@ -975,13 +989,103 @@ mod tests {
         assert_eq!(summary.imported, 0);
         assert_eq!(
             summary.lines(),
-            ["Camera.dcp: not a .cube LUT", "A.xmp: not a .cube LUT"]
+            ["Camera.dcp: not a LUT", "A.xmp: not a LUT"]
         );
         assert_eq!(
             summary.message(),
             "Imported 0 LUTs in Adobe RGB (1998) · 2 skipped"
         );
-        assert_eq!(kind.filter(), ("LUTs (.cube)", &["cube"][..]));
+        assert_eq!(
+            kind.filter(),
+            ("LUTs (.cube, HaldCLUT .png)", &["cube", "png"][..])
+        );
+    }
+
+    /// A level-`level` HaldCLUT's image, its node at `(r, g, b)` (0–1) `f` of it.
+    fn hald(level: u32, f: impl Fn([f32; 3]) -> [f32; 3]) -> image::RgbImage {
+        let side = level.pow(3);
+        let size = level * level;
+        let last = (size - 1) as f32;
+        image::RgbImage::from_fn(side, side, |x, y| {
+            let i = y * side + x;
+            let node = [i % size, i / size % size, i / size / size].map(|v| v as f32 / last);
+            image::Rgb(f(node).map(|v| (v * 255.).round() as u8))
+        })
+    }
+
+    /// A folder's HaldCLUTs import, by either import, and the pack's sample images
+    /// beside them are passed over quietly, one of a HaldCLUT's size among them; a
+    /// damaged HaldCLUT is reported. A sample chosen by name is imported when it has a
+    /// HaldCLUT's size, and reported when it does not.
+    #[test]
+    fn a_folders_sample_images_are_passed_over() {
+        for kind in [ImportKind::Luts(LutSpace::Srgb), ImportKind::CameraProfiles] {
+            a_folders_sample_images_are_passed_over_by(kind);
+        }
+    }
+    fn a_folders_sample_images_are_passed_over_by(kind: ImportKind) {
+        let temp = tempfile::tempdir().unwrap();
+        let pack = temp.path().join("Film Pack");
+        std::fs::create_dir_all(pack.join("Samples")).unwrap();
+        hald(2, |[r, g, b]| [0.05 + 0.9 * r, g, 0.9 * b])
+            .save(pack.join("Warm.png"))
+            .unwrap();
+        // A scene of a level-8 HaldCLUT's size: sky above, textured ground below.
+        image::RgbImage::from_fn(512, 512, |x, y| {
+            let t = ((x as f32 * 0.35).sin() * (y as f32 * 0.27).cos() * 40.) as i32;
+            if y < 256 {
+                image::Rgb([110, 150 + (y / 8) as u8, 230])
+            } else {
+                image::Rgb([(90 + t) as u8, (100 + t / 2) as u8, 50])
+            }
+        })
+        .save(pack.join("Samples/Before.png"))
+        .unwrap();
+        image::RgbImage::new(300, 200)
+            .save(pack.join("Samples/After.png"))
+            .unwrap();
+        // A HaldCLUT cut short: its header says level 3, its data ends early.
+        let damaged = pack.join("Damaged.png");
+        hald(3, |p| p).save(&damaged).unwrap();
+        let bytes = std::fs::read(&damaged).unwrap();
+        std::fs::write(&damaged, &bytes[..bytes.len() / 2]).unwrap();
+        let library = temp.path().join("library");
+        let import = |picks: &[PathBuf]| {
+            import_camera_profiles(
+                &gather(kind, picks),
+                &ImportProgress::default(),
+                kind,
+                LutSpace::Srgb,
+                &library,
+            )
+        };
+        let summary = import(std::slice::from_ref(&pack));
+        assert_eq!(summary.imported, 1, "{kind:?}: {:?}", summary.lines());
+        assert!(library.join("Warm.xmp").is_file());
+        assert_eq!(summary.failures(), 1, "{:?}", summary.lines());
+        assert!(
+            summary
+                .lines()
+                .iter()
+                .any(|l| l.starts_with("Damaged.png: ")),
+            "{:?}",
+            summary.lines()
+        );
+        let chosen = import(&[pack.join("Samples/Before.png")]);
+        assert_eq!(
+            (chosen.imported, chosen.failures()),
+            (1, 0),
+            "{:?}",
+            chosen.lines()
+        );
+        assert!(library.join("Before.xmp").is_file());
+        let chosen = import(&[pack.join("Samples/After.png")]);
+        assert_eq!(chosen.failures(), 1);
+        assert!(
+            chosen.lines()[0].starts_with("After.png: not a HaldCLUT"),
+            "{:?}",
+            chosen.lines()
+        );
     }
 
     /// The status line names a LUT import's space unless it is sRGB, and a profile
@@ -998,6 +1102,7 @@ mod tests {
         };
         let rough = || Fidelity::Approximated {
             max_levels: 1.,
+            mean_levels: 0.1,
             resampled: Some(65),
             shaper: false,
             clamped: false,

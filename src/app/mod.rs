@@ -68,7 +68,7 @@ pub(crate) struct Editor {
     previous_settings: Option<crate::app::develop::settings_transfer::Settings>,
     /// The Point Curve menu's saved curves and its Save window.
     curves: crate::app::develop::panels::curve_menu::CurveMenu,
-    /// The Import .cube LUTs window's colour space, while it is open.
+    /// The Import LUTs window's colour space, while it is open.
     lut_import: Option<crate::camera_profiles::LutSpace>,
     /// Reopening it maximized, until the window manager has done so.
     restoring_maximized: crate::app::shell::workspace::RestoreMaximized,
