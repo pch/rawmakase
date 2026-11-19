@@ -124,6 +124,7 @@ fn checked(variant: Variant) -> bool {
         DngUncompressed
             | DngLosslessJpeg
             | DngDeflate
+            | DngLossyJpeg
             | DngUncompressedFloat
             | DngJpegXl
             | DngVc5

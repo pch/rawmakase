@@ -152,6 +152,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `DngLosslessJpeg` | DNG, lossless JPEG tiles or strips; DCT JPEG ones some writers store under the same code | DNG 1.7, ITU T.81 |
 | `DngDeflate` | DNG, Deflate tiles, integer (horizontal differences) or floating point (byte planes; predictors 3, 34894 and 34895 on mosaics and linear raw) | DNG 1.7, Adobe TIFF Technical Note 3 |
 | `DngUncompressedFloat` | DNG, uncompressed 16, 24 or 32-bit floating point | DNG 1.7, IEEE 754 |
+| `DngLossyJpeg` | DNG, lossy JPEG tiles (compression 34892): 8-bit DCT JPEG of linear raw, three components, YCbCr converted to RGB and subsampled chroma upsampled as libjpeg does. Adobe DNG Converter writes tiles at full resolution in one sequential scan (its lossy DNGs before JPEG XL, and still for DNG 1.4 compatibility), with a MapPolynomial per plane in OpcodeList2 to linear; Lightroom Classic's DNGs of JPEGs write one tile, 4:4:4, 4:2:2 or 4:2:0, sequential or (Lightroom Classic 13) progressive, with a LinearizationTable | DNG 1.4, ITU T.81, libjpeg's colour space rules and libjpeg-turbo's upsampling; checked against libjpeg-turbo and the same photos' JPEG XL DNGs |
 | `DngJpegXl` | DNG, JPEG XL tiles (compression 52546), integer or floating point, lossless or lossy: Lightroom's HDR and panorama merges | DNG 1.7, ISO/IEC 18181, jxl-oxide, checked against libjxl's djxl |
 | `DngVc5` | DNG of VC5-coded tiles (compression 9, GoPro's GPR): opened for its header facts, its sensor data `Unsupported` | DNG 1.7 |
 | `Rw2Delta` | Panasonic RW2/RWL raw formats 3 and 4: delta-coded 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
@@ -309,11 +310,16 @@ uncovered (see [Transform](transform.md)): the empty corners hold whatever the
 writer filled them with, smeared edge pixels in Lightroom's.
 
 Linear raw in separate planes, DNGs of interleaved rows or
-columns (RowInterleaveFactor or ColumnInterleaveFactor over 1) and Adobe's lossy linear DNGs
-(compression 34892, baseline JPEG of three components) are `Unsupported`;
+columns (RowInterleaveFactor or ColumnInterleaveFactor over 1) and lossy JPEG
+tiles subsampled other than 4:2:2 or 4:2:0 are `Unsupported`;
 Apple's and Samsung's
 ProfileGainTableMap, a local tone map Camera Raw applies after the profile,
 is not applied.
+
+Lossy JPEG tiles are decoded with an exact inverse DCT, where libjpeg's is in
+fixed point: on Adobe DNG Converter's and Lightroom Classic's files about 2 to
+3% of samples differ from libjpeg-turbo's by one 8-bit step, and a few by up to
+three after the YCbCr conversion.
 
 DNG colour: a camera Adobe knows has Adobe's matrix (`data/raw-matrices.toml`;
 Adobe DNG Converter rewrites such DNGs with its own matrices, so its D65

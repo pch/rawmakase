@@ -16,6 +16,10 @@ pub enum Variant {
     DngLosslessJpeg,
     /// DNG, Deflate-compressed (integer or floating point).
     DngDeflate,
+    /// DNG, lossy JPEG tiles (compression 34892): 8-bit DCT JPEG of linear
+    /// raw, as Adobe DNG Converter wrote lossy DNGs before JPEG XL and
+    /// Lightroom Classic writes DNGs of JPEGs.
+    DngLossyJpeg,
     /// DNG, uncompressed floating-point samples.
     DngUncompressedFloat,
     /// DNG, JPEG XL tiles (integer or floating point, lossless or lossy).
@@ -168,6 +172,7 @@ impl Variant {
             Variant::DngUncompressed => "dng-uncompressed",
             Variant::DngLosslessJpeg => "dng-ljpeg",
             Variant::DngDeflate => "dng-deflate",
+            Variant::DngLossyJpeg => "dng-lossy-jpeg",
             Variant::DngUncompressedFloat => "dng-float",
             Variant::DngJpegXl => "dng-jxl",
             Variant::DngVc5 => "dng-vc5",
@@ -429,6 +434,7 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: Cancel<'_>) -> Result
             Variant::DngUncompressed
             | Variant::DngLosslessJpeg
             | Variant::DngDeflate
+            | Variant::DngLossyJpeg
             | Variant::DngUncompressedFloat
             | Variant::DngJpegXl,
         ) => crate::container::dng::decode(info, plan, bytes, cancel),
