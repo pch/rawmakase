@@ -53,7 +53,7 @@ const KEPT_BLOCKS: usize = 128;
 const KEPT_BLOCK: usize = 4 << 20;
 
 /// Gives the memory the allocator keeps after the app freed it back to the
-/// system. Elsewhere than macOS it does nothing.
+/// system, on macOS and on Linux with glibc. Elsewhere it does nothing.
 ///
 /// macOS's allocator keeps the last large blocks freed, whatever their size, to
 /// hand out again, and they count as the app's meanwhile. Measured on macOS
@@ -75,6 +75,20 @@ const KEPT_BLOCK: usize = 4 << 20;
 /// in its environment) left the Library at 232 MB, but took 12% more CPU time
 /// to render the same previews: so the blocks are kept while work goes on and
 /// given back after it ([`Release`]).
+///
+/// glibc keeps freed memory another way: it hands blocks above its mmap
+/// threshold straight back, but the threshold rises to 32 MB as large blocks
+/// are freed, each of the worker threads takes memory from one of up to 16
+/// arenas here, and an arena gives memory back from its top only. Measured on
+/// glibc 2.44 with a release build (2026-11-18, 16 threads, 27 GB): after
+/// thumbnails for 48 RAWs the heap held 792 MB with 168 MB in use; after
+/// opening the 48 in Develop one after another, 1.2 GB with 260 MB in use,
+/// level from the sixth photo on; after the Library rendered their edited
+/// previews, 3.0 GB with 180 MB in use. All of it stayed through five idle
+/// minutes. `malloc_trim(0)` gives back the free pages inside every arena, in
+/// 1 to 100 ms: with it, the Library sat at 0.81 GB instead of 3.1 GB, and at
+/// 1.0 GB instead of 1.76 GB after the 48 photos, for no more CPU time. Fewer
+/// arenas (`MALLOC_ARENA_MAX=2`) kept nearly as much in a standalone program.
 pub(crate) fn release_freed() {
     #[cfg(target_os = "macos")]
     {
@@ -85,12 +99,18 @@ pub(crate) fn release_freed() {
         // optimised away as unused.
         drop(std::hint::black_box(blocks));
     }
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: `malloc_trim` takes each arena's lock while it works, so it may
+    // run beside other threads' allocations; 0 keeps no extra space at the top.
+    unsafe {
+        libc::malloc_trim(0);
+    }
 }
 
 /// The CPU time the process has used on all its threads, where
 /// [`release_freed`] does something; elsewhere `None`, and nothing is timed.
 fn cpu_time() -> Option<Duration> {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", all(target_os = "linux", target_env = "gnu")))]
     {
         // SAFETY: `usage` is a zeroed `rusage`, which `getrusage` fills.
         let usage = unsafe {
@@ -103,7 +123,7 @@ fn cpu_time() -> Option<Duration> {
         };
         Some(time(usage.ru_utime) + time(usage.ru_stime))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", all(target_os = "linux", target_env = "gnu"))))]
     None
 }
 
@@ -339,5 +359,53 @@ mod tests {
             after >> 20
         );
         assert!(after < before + 4 * BLOCK as u64, "{before} to {after}");
+    }
+
+    /// What the app frees goes back to the system when asked, on glibc too:
+    /// 512 MB of medium blocks, written and freed below a block still held, is
+    /// no longer the process's afterwards. Without the call, glibc 2.44 kept it
+    /// (the process stayed 512 MB up).
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    #[test]
+    #[ignore = "Measures the whole process's memory: run alone, `cargo test --lib -- --ignored freed_memory`"]
+    fn freed_memory_goes_back_to_the_system_on_glibc() {
+        /// The process's anonymous memory in bytes: its heap and mappings.
+        fn anonymous() -> u64 {
+            let status = std::fs::read_to_string("/proc/self/status").expect("status");
+            let kb = status
+                .lines()
+                .find_map(|l| l.strip_prefix("RssAnon:"))
+                .and_then(|v| v.trim().trim_end_matches("kB").trim().parse::<u64>().ok())
+                .expect("RssAnon");
+            kb << 10
+        }
+        const BLOCK: usize = 8 << 20;
+        // A 16 MB block freed raises glibc's mmap threshold to its size, as the
+        // app's images do, so the 8 MB blocks below come from the heap rather
+        // than mappings of their own, which are returned when freed.
+        drop(std::hint::black_box(vec![1u8; 16 << 20]));
+        let before = anonymous();
+        let blocks: Vec<Vec<u8>> = (0..64).map(|i| vec![i as u8 + 1; BLOCK]).collect();
+        // Kept above them, as long-lived allocations are: the heap can only
+        // shrink from its top, which this pins.
+        let kept = std::hint::black_box(vec![1u8; 4096]);
+        let held = anonymous();
+        assert!(held >= before + 60 * BLOCK as u64, "{before} to {held}");
+        drop(blocks);
+        let freed = anonymous();
+        // Kept after the free, or the test proves nothing: glibc tunables such
+        // as a fixed `mmap_threshold` return the blocks at once.
+        assert!(freed >= before + 60 * BLOCK as u64, "{before} to {freed}");
+        super::release_freed();
+        let after = anonymous();
+        drop(kept);
+        eprintln!(
+            "before {} MB, holding {} MB, freed {} MB, released {} MB",
+            before >> 20,
+            held >> 20,
+            freed >> 20,
+            after >> 20
+        );
+        assert!(after < before + 8 * BLOCK as u64, "{before} to {after}");
     }
 }

@@ -351,7 +351,9 @@ on the worker.
 
 What workers free is not the system's again until the allocator gives it back:
 macOS's keeps large freed blocks, and the app then shows gigabytes while using
-tens of megabytes (measurements in `platform::memory::release_freed`). The
+tens of megabytes; glibc's keeps the free space inside each thread's arena,
+nearly a gigabyte after thumbnails and photo opens (measurements in
+`platform::memory::release_freed`). The
 UI thread's `background` step has them given back once the process's CPU time
 shows work has gone quiet for four seconds (`platform::memory::Release`), so no
 worker reports in and a worker added later is covered. It releases nothing the
