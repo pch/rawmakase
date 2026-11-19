@@ -9,7 +9,8 @@
 # name a module the app re-exports from those crates: the app crate depends on
 # all of them, so only this check keeps an app module from using one.
 edit_session never raw photo develop decode decode_cache app
-# `render` and `render-batch` run without the desktop app: the binary passes in
-# what the session keeps.
+# `render`, `render-batch` and `merge-hdr` run without the desktop app: the
+# binary passes in what the session keeps.
 render_command never app platform catalog_session edit_session
 catalog_command never app platform catalog_session edit_session
+merge_command never app platform catalog_session edit_session

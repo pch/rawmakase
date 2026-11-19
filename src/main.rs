@@ -111,6 +111,10 @@ enum Command {
         output: PathBuf,
     },
     Render(rawmakase::render_command::Render),
+    /// Merge a bracket of RAWs into one HDR DNG (linear raw, half-precision
+    /// floats), as Lightroom's Photo Merge > HDR does. Ctrl-C stops it without
+    /// writing anything.
+    MergeHdr(rawmakase::merge_command::MergeHdr),
     /// Print each file's decode fingerprint as a line of JSON: what opening and
     /// unpacking it yields, for decode regression checks.
     Fingerprint {
@@ -283,6 +287,55 @@ fn attach_console() {
             AttachConsole(ATTACH_PARENT_PROCESS);
         }
     }
+}
+/// Ctrl-C for commands that stop cleanly when asked: the first sets a flag
+/// they watch, the second ends the process as Ctrl-C otherwise does.
+mod interrupt {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+    /// The flag Ctrl-C sets from now on.
+    pub(super) fn flag() -> &'static AtomicBool {
+        install();
+        &INTERRUPTED
+    }
+
+    #[cfg(unix)]
+    fn install() {
+        extern "C" fn on_interrupt(_: libc::c_int) {
+            if INTERRUPTED.swap(true, Ordering::Relaxed) {
+                // SAFETY: `_exit` is async-signal-safe.
+                unsafe { libc::_exit(130) };
+            }
+        }
+        let handler: extern "C" fn(libc::c_int) = on_interrupt;
+        // SAFETY: the handler only touches an atomic and calls `_exit`, both
+        // async-signal-safe.
+        unsafe {
+            libc::signal(libc::SIGINT, handler as libc::sighandler_t);
+        }
+    }
+
+    #[cfg(windows)]
+    fn install() {
+        use windows_sys::Win32::Foundation::{FALSE, TRUE};
+        use windows_sys::Win32::System::Console::{CTRL_C_EVENT, SetConsoleCtrlHandler};
+        unsafe extern "system" fn on_control(kind: u32) -> windows_sys::core::BOOL {
+            if kind == CTRL_C_EVENT && !INTERRUPTED.swap(true, Ordering::Relaxed) {
+                TRUE
+            } else {
+                FALSE
+            }
+        }
+        // SAFETY: the handler only touches an atomic.
+        unsafe {
+            SetConsoleCtrlHandler(Some(on_control), TRUE);
+        }
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    fn install() {}
 }
 /// Started from the Start menu there is no console to print a failure to, so
 /// the app would vanish without a word. The failure may come at startup or, as a
@@ -479,6 +532,15 @@ fn main() -> Result<()> {
                     err: &mut std::io::stderr(),
                 },
             )?;
+        }
+        Some(Command::MergeHdr(options)) => {
+            let flag = interrupt::flag();
+            let path = rawmakase::merge_command::merge_hdr(
+                &options,
+                Cancel::new(flag),
+                &mut std::io::stderr(),
+            )?;
+            println!("{}", path.display());
         }
         Some(Command::Fingerprint { files }) => {
             for path in &files {

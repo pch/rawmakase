@@ -42,10 +42,10 @@ flowchart TD
     hdrmerge[rawmakase-hdr-merge]
 
     app --> export & decode & catalog & engine & interop & model
-    app --> ctl & denoise & fs & exthost
+    app --> ctl & denoise & fs & exthost & hdrmerge
     denoise --> decode & inference & modelinstall
     export --> decode & engine & interop
-    hdrmerge --> interop & cancel
+    hdrmerge --> decode & interop & model & cancel
     decode --> engine & raw
     catalog --> interop & fs & cancel
     engine --> model & cancel
@@ -83,7 +83,7 @@ the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
 | `rawmakase-fs` | What moving a user's file needs of the file system, policy-free: exclusive renames, file ids, exact listings, name comparison, containment, volume facts and a copy's steps, one file per system, with the unsafe system calls the model used to hold. The catalog's file operations and the app's Trash use it | Every other workspace crate; the value, file-format, rendering, decoding and export crates never reach it |
 | `rawmakase-cancel` | `Cancel`, the borrowed request to stop long-running work, which its owner's flag sets: every crate that does such work takes one, and owners keep their flags | Everything |
 | `rawmakase-decode` | Opening and decoding photos: the only crate that reaches `rawmakase-raw`; colour management, demosaicing, rendered files (JPEG … HEIF), the full-size decode and its cache, AI Denoise's packing and assembly, Camera Look fitting | C imaging libraries, the catalog, export, the GUI |
-| `rawmakase-hdr-merge` | Merge to HDR ([Merge to HDR](hdr-merge.md)): so far its DNG writer, a linear raw image of half-precision samples with the camera's colour, levels, EXIF and maker note, in a TIFF writer of its own (`rawmakase-tiff` stays the bounded reader) | The catalog, export, the app, the GUI, inference and the extension crates |
+| `rawmakase-hdr-merge` | Merge to HDR ([Merge to HDR](hdr-merge.md)): checking a bracket, decoding its frames through `rawmakase-decode` (`Raw::develop_frame`), measuring their exposure ratios and noise, the noise-weighted merge, and the DNG writer, a linear raw image of half-precision samples with the camera's colour, levels, EXIF and maker note, in a TIFF writer of its own (`rawmakase-tiff` stays the bounded reader); `write_dng` publishes it beside the sources without replacing a file | The catalog, export, the app, the GUI, inference and the extension crates |
 | `rawmakase-export` | Developing and writing exports, with their watermarks (system default and installed fonts loaded without egui) | The app, the GUI, a window or GPU backend |
 | `rawmakase-inference` | The lazily loaded ONNX Runtime, the provider choice and the session helpers every model shares, `InferenceError`, the `ModelFile` record, and AI Denoise's model: its contract, tiler and gain fit, packed mosaic in, denoised camera RGB out | Every workspace crate but `rawmakase-cancel` |
 | `rawmakase-selection` | The selection models (Subject, Background and Sky): their pinned contracts, the image and coverage mappings, automatic selection, edge refinement and their sessions, run through inference's runtime: pixels in, coverage out. The AI masks extension's program runs them; the app never links them | Everything but inference |
@@ -250,6 +250,7 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `model_install` | The app's model pack, AI Denoise's (`crates/rawmakase-denoise`): which files it holds and its folder; installing it is `rawmakase-model-install`'s, and the thread and the panel are `app`'s. Select Subject's and Sky's are the AI masks extension's | `model_install.rs` |
 | `lensfun_install` | Downloading, checking, publishing and removing Lensfun's lens database on request (never bundled, never fetched unasked); reading it is `lens::lensfun::installed`'s, the panels and the job thread are `app`'s | `lensfun_install.rs` |
 | `render_command` | `rawmakase render` and `render-batch` as library functions: the edit sources `render` layers, its warnings and refusals, `render-batch`'s jobs. The binary passes in the raw defaults, AI Denoise (with its cache, model and runtime folders), the cancel and where to print; it never reaches `app` | `mod.rs` |
+| `merge_command` | `rawmakase merge-hdr` as a library function: the bracket merged by `rawmakase-hdr-merge` and its DNG written beside the first RAW or at `--output`, never over a file. The binary passes in the cancel Ctrl-C sets and where to print; it never reaches `app` | `merge_command.rs` |
 | `catalog_command` | Opening a catalog for a command-line command (`render --catalog` and the binary's catalog commands): an upgrade's progress and backup, and removing an archived Lightroom catalog, reported to the error writer it is given; never reaches `app` | `catalog_command.rs` |
 | `comparison` | Reproducible reference-image comparisons using the same develop APIs | `comparison.rs` |
 
@@ -521,8 +522,8 @@ Some features span several owners; each module's docs describe its part:
   system's decoders, opened at run time ([dependencies](dependencies.md)).
 - Keep `eframe`, `egui` and native chooser code in `app`. The CLI must be able to
   use domain operations without creating an editor or UI context. `render` and
-  `render-batch` are `render_command`, which `scripts/deps-closures.txt` keeps
-  from `app`: what the desktop keeps (the session's raw defaults and AI Denoise
+  `render-batch` are `render_command`, and `merge-hdr` is `merge_command`, which
+  `scripts/deps-closures.txt` keeps from `app`: what the desktop keeps (the session's raw defaults and AI Denoise
   cache) is read by the binary and passed in. The crate still
   links its existing GUI dependencies; this is module separation, not a separate
   headless build feature.
