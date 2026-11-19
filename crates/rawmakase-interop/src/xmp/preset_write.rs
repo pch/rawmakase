@@ -133,6 +133,9 @@ pub fn preset(r: &Recipe, shown: &Metadata, info: &PresetInfo, groups: &GroupSel
     // Look over its base profile, which `settings` names.
     let look = super::write::look_element(r)
         .filter(|_| groups.contains(SettingGroup::TreatmentAndProfile));
+    if look.is_some() {
+        attributes.extend(super::write::look_tables(r));
+    }
     // Written once, after the settings, as Lightroom does.
     attributes.push(("HasSettings".into(), "True".into()));
     let mut out = format!(

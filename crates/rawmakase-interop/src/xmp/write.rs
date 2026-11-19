@@ -1,6 +1,7 @@
 //! Writes a recipe back out as Camera Raw settings (`crs:`), the XMP Lightroom
 //! embeds in its exports. The keys and scales mirror `apply`, so reading the
 //! packet back reproduces the edit.
+use crate::camera_profiles::look_source;
 use crate::model::camera_raw as crs;
 use crate::xml::{
     self, escape_text,
@@ -113,8 +114,15 @@ pub(super) fn hdr_settings(r: &Recipe) -> Settings {
 }
 
 /// An enhanced profile (Adobe Color, a creative look) as Lightroom writes it: a `Look`
-/// element over its base profile, which `CameraProfile` names. Indented for a
-/// settings description.
+/// over its base profile, which `CameraProfile` names. Indented for a settings
+/// description.
+///
+/// With the look's settings known ([`look_source::find`]) it is written as Lightroom
+/// Classic writes it, with them in `Parameters`, which Camera Raw and Lightroom need
+/// to render it; their `ConvertToGrayscale` is the edit's Treatment, which Camera Raw
+/// takes from the look over the photo's (#666). Without them (a fitted camera look,
+/// or an edit whose look file is gone or has changed) only the look's name and UUID
+/// are written, as before, which Camera Raw renders without the look.
 pub(super) fn look_element(r: &Recipe) -> Option<String> {
     let profile = r.profile.as_ref()?;
     let look = profile.enhanced.as_ref()?;
@@ -123,13 +131,65 @@ pub(super) fn look_element(r: &Recipe) -> Option<String> {
     } else {
         1.
     };
-    Some(format!(
-        "   <crs:Look>\n    <rdf:Description\n     crs:Name=\"{}\"\n     crs:Amount=\"{}\"\n     crs:UUID=\"{}\"\n     crs:SupportsAmount=\"{}\"/>\n   </crs:Look>\n",
+    let amount = (amount * 100.).round() / 100.;
+    let Some(source) = look_source::find(profile) else {
+        return Some(format!(
+            "   <crs:Look>\n    <rdf:Description\n     crs:Name=\"{}\"\n     crs:Amount=\"{}\"\n     crs:UUID=\"{}\"\n     crs:SupportsAmount=\"{}\"/>\n   </crs:Look>\n",
+            escape_text(&profile.name),
+            amount,
+            escape_text(&look.uuid),
+            look.amount.is_some(),
+        ));
+    };
+    let mut out = format!(
+        "   <crs:Look>\n    <rdf:Description\n     crs:Name=\"{}\"\n     crs:Amount=\"{amount}\"\n     crs:UUID=\"{}\"",
         escape_text(&profile.name),
-        (amount * 100.).round() / 100.,
         escape_text(&look.uuid),
-        look.amount.is_some(),
-    ))
+    );
+    for (key, value) in &source.supports {
+        let _ = write!(
+            out,
+            "\n     crs:{key}=\"{}\"",
+            escape_text(&value.to_ascii_lowercase())
+        );
+    }
+    out.push_str(">\n    <crs:Parameters>\n     <rdf:Description");
+    let black_white = r.treatment() == crate::model::recipe::Treatment::BlackWhite;
+    let grayscale = (
+        "ConvertToGrayscale",
+        if black_white { "True" } else { "False" },
+    );
+    let parameters = source
+        .parameters
+        .iter()
+        .filter(|(key, _)| key != grayscale.0)
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .chain([grayscale]);
+    for (key, value) in parameters {
+        let _ = write!(out, "\n      crs:{key}=\"{}\"", escape_text(value));
+    }
+    out.push_str(">\n");
+    for (name, points) in &source.curves {
+        let _ = write!(out, "     <crs:{name}>\n      <rdf:Seq>\n");
+        for point in points {
+            let _ = writeln!(out, "       <rdf:li>{}</rdf:li>", escape_text(point));
+        }
+        let _ = write!(out, "      </rdf:Seq>\n     </crs:{name}>\n");
+    }
+    out.push_str(
+        "     </rdf:Description>\n    </crs:Parameters>\n    </rdf:Description>\n   </crs:Look>\n",
+    );
+    Some(out)
+}
+
+/// The tables of the edit's look, as the `Table_<md5>` attributes Lightroom writes
+/// beside a photo's settings (none for Adobe's looks; see [`look_element`]).
+pub(super) fn look_tables(r: &Recipe) -> Vec<(String, String)> {
+    r.profile
+        .as_ref()
+        .and_then(look_source::find)
+        .map(|source| source.tables.clone())
+        .unwrap_or_default()
 }
 
 /// Lightroom's lens profile Setup and the profile the edit uses: the one rendering
@@ -656,6 +716,11 @@ pub fn packet(r: &Recipe, m: &Metadata, photo: &Photo) -> String {
             .0
             .into_iter()
             .map(|(k, v)| (super::qualified(&k), v)),
+        );
+        attributes.extend(
+            look_tables(r)
+                .into_iter()
+                .map(|(k, v)| (super::qualified(&k), v)),
         );
         attributes.push(("crs:AlreadyApplied".into(), "True".into()));
     }

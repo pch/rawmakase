@@ -1307,6 +1307,12 @@ impl Preset {
             neutral.extend(["GlowRange", "GlowSpread", "GlowStyle", "GlowWarmth"]);
         }
         settings.seen.extend(neutral.into_iter().map(String::from));
+        // Tables a look or a filter names, which Lightroom writes beside the settings
+        // as `Table_<md5>` (a user look's table, #666). The look renders from the
+        // profile library and the filter list reads its own, so they are data here.
+        settings
+            .seen
+            .extend(v.keys().filter(|k| k.starts_with("Table_")).cloned());
         let unknown: Vec<_> = v
             .keys()
             .filter(|k| !settings.seen.contains(*k))

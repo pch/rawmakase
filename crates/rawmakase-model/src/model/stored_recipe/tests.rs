@@ -210,3 +210,52 @@ fn the_stored_text_is_the_same_from_either_form() {
     changed.profile = Some(profile(0.027));
     assert_ne!(to_text(&changed), to_text(&from_inline));
 }
+
+/// A look with known Lightroom settings is stored with them, once, named under
+/// `look_source`; reading drops the reference from the recipe, and the edit's
+/// identity leaves it out.
+#[test]
+fn a_looks_lightroom_settings_are_stored_beside_its_profile() {
+    use crate::camera_profiles::look_source::{self, testing};
+    let look = Arc::new(testing::look_profile(
+        &testing::look_xmp(
+            "Stored look",
+            "66600000000000000000000000000010",
+            "Someone",
+            "128, 170",
+        ),
+        &profile(0.1),
+    ));
+    let source = look_source::find(&look).unwrap();
+    let r = Recipe {
+        profile: Some(look.clone()),
+        ..Recipe::default()
+    };
+    let (stored, assets) = to_stored(&r);
+    let source_asset = Asset::look_source(&source);
+    let named = stored.get(LOOK_SOURCE).expect("the reference is stored");
+    assert_eq!(named.get(), format!("\"{}\"", source_asset.id));
+    assert!(assets.iter().any(|a| a.id == source_asset.id));
+    // Read back: the same recipe, without the reference among its unknown settings.
+    let read = from_text(&Assets::of(&assets), &stored.to_text()).unwrap();
+    assert_eq!(read, r);
+    assert!(!read.unknown.contains_key(LOOK_SOURCE));
+    // What identifies the edit doesn't depend on whether its look's settings are known.
+    assert!(!to_text(&r).contains(LOOK_SOURCE));
+    let unknown = Arc::new({
+        let mut p = (*look).clone();
+        p.enhanced.as_mut().unwrap().uuid = "66600000000000000000000000000011".into();
+        p
+    });
+    let without = Recipe {
+        profile: Some(unknown),
+        ..Recipe::default()
+    };
+    assert!(to_stored(&without).0.get(LOOK_SOURCE).is_none());
+    // A stale reference kept from another release's unknown settings is not kept.
+    let mut stale = without;
+    stale
+        .unknown
+        .insert(LOOK_SOURCE.into(), serde_json::json!(source_asset.id));
+    assert!(to_stored(&stale).0.get(LOOK_SOURCE).is_none());
+}
