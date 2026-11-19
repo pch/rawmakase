@@ -4,8 +4,12 @@
 //! writer of our own ([`ifd`]); `rawmakase-tiff` stays the bounded reader.
 //!
 //! Layout (DNG Specification 1.7.1.0): IFD0 is the raw image, with every DNG
-//! tag; its SubIFDs hold the transparency mask (NewSubFileType 4), when there
-//! is one. The image is 256 × 256 tiles of three interleaved 16-bit floats a
+//! tag and the XMP packet, when there is one; its SubIFDs hold the
+//! transparency mask (NewSubFileType 4) and the preview (NewSubFileType 1),
+//! when there are. [`encoded`] makes everything but IFD0 itself, the expensive
+//! part; [`Encoded::with`] then makes the file with the XMP and preview it
+//! is given, IFD0 last, so the same merge can be written with and without
+//! them. The image is 256 × 256 tiles of three interleaved 16-bit floats a
 //! pixel, Deflate-compressed under Adobe's floating-point predictor 34894
 //! (FloatingPointX2: each row's samples as byte planes, most significant
 //! first, each byte the difference from the same byte two pixels before;
@@ -122,6 +126,11 @@ mod tag {
     pub(super) const SAMPLES_PER_PIXEL: u16 = 277;
     pub(super) const PLANAR_CONFIGURATION: u16 = 284;
     pub(super) const SOFTWARE: u16 = 305;
+    pub(super) const STRIP_OFFSETS: u16 = 273;
+    pub(super) const ROWS_PER_STRIP: u16 = 278;
+    pub(super) const STRIP_BYTE_COUNTS: u16 = 279;
+    pub(super) const XMP: u16 = 700;
+    pub(super) const YCBCR_SUB_SAMPLING: u16 = 530;
     pub(super) const PREDICTOR: u16 = 317;
     pub(super) const TILE_WIDTH: u16 = 322;
     pub(super) const TILE_LENGTH: u16 = 323;
@@ -147,6 +156,10 @@ mod tag {
     pub(super) const CAMERA_CALIBRATION_SIGNATURE: u16 = 50931;
     pub(super) const CALIBRATION_ILLUMINANT: [u16; 2] = [50778, 50779];
     pub(super) const FORWARD_MATRIX: [u16; 2] = [50964, 50965];
+    pub(super) const PREVIEW_APPLICATION_NAME: u16 = 50966;
+    pub(super) const PREVIEW_APPLICATION_VERSION: u16 = 50967;
+    pub(super) const PREVIEW_COLOR_SPACE: u16 = 50970;
+    pub(super) const PREVIEW_DATE_TIME: u16 = 50971;
 }
 
 /// PhotometricInterpretation LinearRaw.
@@ -157,10 +170,146 @@ const TRANSPARENCY_MASK: u16 = 4;
 const DEFLATE: u16 = 8;
 /// Predictor FloatingPointX2 (DNG 1.4).
 const FLOATING_POINT_X2: u16 = 34894;
+/// Compression JPEG (TIFF Technical Note 2) and PhotometricInterpretation
+/// YCbCr, as previews are written.
+const JPEG: u16 = 7;
+const YCBCR: u16 = 6;
+/// PreviewColorSpace sRGB.
+const SRGB: u32 = 2;
 
-/// The merged DNG of `image` and `facts`, as file bytes. Stops with
-/// [`Error::Cancelled`] soon after `cancel` is set.
+/// A merged DNG, encoded but for IFD0, which [`Self::with`] adds.
+#[derive(Debug)]
+pub struct Encoded {
+    /// The header, the image's and the mask's tiles, the mask's directory and
+    /// the EXIF and GPS directories.
+    body: Vec<u8>,
+    /// IFD0's entries but the XMP and the SubIFDs.
+    raw: Ifd,
+    /// The mask's directory, when there is one.
+    mask: Option<u32>,
+}
+
+/// What a merged DNG may hold besides the merge: what Lightroom's merges hold.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Extras<'a> {
+    /// The XMP packet: the photo's starting settings and Lightroom's
+    /// `aux:IsMergedHDR`.
+    pub xmp: Option<&'a str>,
+    pub preview: Option<Preview<'a>>,
+}
+
+/// A preview of the merge as it renders: a baseline sRGB JPEG.
+#[derive(Clone, Copy, Debug)]
+pub struct Preview<'a> {
+    pub jpeg: &'a [u8],
+    pub width: u32,
+    pub height: u32,
+    /// The application that rendered it and its version.
+    pub application: (&'a str, &'a str),
+    /// When it was rendered, as XMP writes dates ("2026-11-19T10:15:00Z").
+    pub rendered: &'a str,
+}
+
+impl Encoded {
+    /// The DNG with `extras`, ready to write.
+    pub fn with(&self, extras: &Extras<'_>) -> Result<Dng<'_>, Error> {
+        let mut tail = Tiff::after(self.body.len());
+        let mut raw = self.raw.clone();
+        let mut subs: Vec<u32> = self.mask.into_iter().collect();
+        if let Some(preview) = &extras.preview {
+            subs.push(preview_directory(&mut tail, preview)?);
+        }
+        if !subs.is_empty() {
+            raw.set(tag::SUB_IFDS, Value::longs(&subs));
+        }
+        if let Some(xmp) = extras.xmp {
+            raw.set(tag::XMP, Value::bytes(kind::BYTE, xmp.as_bytes().to_vec()));
+        }
+        let first = tail.directory(&raw)?;
+        Ok(Dng {
+            body: &self.body,
+            first,
+            tail: tail.into_bytes(),
+        })
+    }
+}
+
+/// A merged DNG as [`Encoded::with`] makes it: written without copying the
+/// encoded image.
+pub struct Dng<'a> {
+    body: &'a [u8],
+    /// IFD0's offset.
+    first: u32,
+    /// The preview, the XMP and IFD0, which follow the body.
+    tail: Vec<u8>,
+}
+
+impl Dng<'_> {
+    pub fn write_to(&self, out: &mut impl Write) -> std::io::Result<()> {
+        out.write_all(&self.body[..4])?;
+        out.write_all(&self.first.to_le_bytes())?;
+        out.write_all(&self.body[8..])?;
+        out.write_all(&self.tail)
+    }
+    /// The file's bytes.
+    pub fn to_vec(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.body.len() + self.tail.len());
+        // Writing to memory doesn't fail.
+        let _ = self.write_to(&mut out);
+        out
+    }
+}
+
+/// The preview's directory (one strip of JPEG), added to `tiff`; its offset.
+fn preview_directory(tiff: &mut Tiff, preview: &Preview<'_>) -> Result<u32, Error> {
+    if preview.width == 0 || preview.height == 0 || preview.jpeg.is_empty() {
+        return Err(Error::Invalid("an empty preview"));
+    }
+    let at = tiff.block(preview.jpeg)?;
+    let count = u32::try_from(preview.jpeg.len()).map_err(|_| Error::TooLarge)?;
+    let mut ifd = Ifd::default();
+    ifd.set(tag::NEW_SUBFILE_TYPE, Value::longs(&[1]));
+    ifd.set(tag::IMAGE_WIDTH, Value::longs(&[preview.width]));
+    ifd.set(tag::IMAGE_LENGTH, Value::longs(&[preview.height]));
+    ifd.set(tag::BITS_PER_SAMPLE, Value::shorts(&[8; 3]));
+    ifd.set(tag::COMPRESSION, Value::shorts(&[JPEG]));
+    ifd.set(tag::PHOTOMETRIC, Value::shorts(&[YCBCR]));
+    // The `image` crate's baseline JPEGs keep every chroma sample (4:4:4);
+    // TIFF takes a missing tag for 2 × 2.
+    ifd.set(tag::YCBCR_SUB_SAMPLING, Value::shorts(&[1, 1]));
+    ifd.set(tag::SAMPLES_PER_PIXEL, Value::shorts(&[3]));
+    ifd.set(tag::PLANAR_CONFIGURATION, Value::shorts(&[1]));
+    ifd.set(tag::STRIP_OFFSETS, Value::longs(&[at]));
+    ifd.set(tag::ROWS_PER_STRIP, Value::longs(&[preview.height]));
+    ifd.set(tag::STRIP_BYTE_COUNTS, Value::longs(&[count]));
+    ifd.set(
+        tag::PREVIEW_APPLICATION_NAME,
+        Value::ascii(preview.application.0),
+    );
+    ifd.set(
+        tag::PREVIEW_APPLICATION_VERSION,
+        Value::ascii(preview.application.1),
+    );
+    ifd.set(tag::PREVIEW_COLOR_SPACE, Value::longs(&[SRGB]));
+    ifd.set(tag::PREVIEW_DATE_TIME, Value::ascii(preview.rendered));
+    tiff.directory(&ifd)
+}
+
+/// The merged DNG of `image` and `facts`, as file bytes, without
+/// [`Extras`].
 pub fn encode(image: &LinearImage, facts: &DngFacts, cancel: Cancel<'_>) -> Result<Vec<u8>, Error> {
+    Ok(encoded(image, facts, cancel)?
+        .with(&Extras::default())?
+        .to_vec())
+}
+
+/// The merged DNG of `image` and `facts`, all but IFD0 (see [`Encoded`]).
+/// Stops with [`Error::Cancelled`] soon after `cancel` is set.
+pub fn encoded(
+    image: &LinearImage,
+    facts: &DngFacts,
+    cancel: Cancel<'_>,
+) -> Result<Encoded, Error> {
     let (w, h) = (image.width as usize, image.height as usize);
     if w == 0 || h == 0 || w.checked_mul(h) != Some(image.pixels.len()) {
         return Err(Error::Invalid("the image's size does not match its pixels"));
@@ -229,13 +378,16 @@ pub fn encode(image: &LinearImage, facts: &DngFacts, cancel: Cancel<'_>) -> Resu
         raw.set(tag::DEFAULT_CROP_ORIGIN, Value::longs(&[x, y]));
         raw.set(tag::DEFAULT_CROP_SIZE, Value::longs(&[cw, ch]));
     }
-    if let Some(coverage) = image.coverage {
-        let mask = mask(&mut tiff, image, coverage, cancel)?;
-        raw.set(tag::SUB_IFDS, Value::longs(&[mask]));
-    }
+    let mask = match image.coverage {
+        Some(coverage) => Some(mask(&mut tiff, image, coverage, cancel)?),
+        None => None,
+    };
     describe(&mut tiff, &mut raw, facts)?;
-    let first = tiff.directory(&raw)?;
-    Ok(tiff.finish(first))
+    Ok(Encoded {
+        body: tiff.into_bytes(),
+        raw,
+        mask,
+    })
 }
 
 /// IFD0's camera, colour and EXIF tags, its EXIF and GPS directories added

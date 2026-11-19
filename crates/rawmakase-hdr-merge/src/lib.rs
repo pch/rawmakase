@@ -16,6 +16,7 @@
 
 mod align;
 pub mod bracket;
+mod crop;
 mod dng;
 mod ghost;
 mod merge;
@@ -24,7 +25,10 @@ mod ratio;
 mod write;
 
 pub use align::{Alignment, MAX_ROTATION, MAX_SHIFT, Matrix};
-pub use dng::{Calibration, DngFacts, LinearImage, MAX_WHITE, MakerNote, TILE, encode};
+pub use dng::{
+    Calibration, Dng, DngFacts, Encoded, Extras, LinearImage, MAX_WHITE, MakerNote, Preview, TILE,
+    encode, encoded,
+};
 pub use write::{Destination, write_dng};
 
 use bracket::{Exposure, Refusal, Shot};
@@ -116,8 +120,12 @@ pub enum Stage {
 /// A merge, ready for [`write_dng`].
 #[derive(Debug)]
 pub struct Merged {
-    /// The DNG file's bytes.
-    pub dng: Vec<u8>,
+    /// The DNG, but for the XMP and preview [`write_dng`] adds.
+    pub dng: Encoded,
+    /// The crop that leaves out what Auto Align left uncovered, as a recipe's
+    /// crop (`[left, top, right, bottom]` in 0–1 of the DNG's default crop,
+    /// unrotated); `None` when every frame covers all of it.
+    pub crop: Option<[f32; 4]>,
     /// The sources, as captured.
     pub inputs: Vec<FrameInput>,
     /// The frames in merge order, from the darkest.
@@ -483,6 +491,10 @@ pub fn merge(
         baseline_exposure,
         options,
     )?;
+    let region = facts.default_crop.unwrap_or([0, 0, r.width, r.height]);
+    let crop = coverage
+        .as_deref()
+        .and_then(|c| crop::covered(c, r.width, region));
     let coverage: Option<Vec<u8>> = coverage
         .filter(|c| c.contains(&false))
         .map(|c| c.into_iter().map(|c| if c { 255 } else { 0 }).collect());
@@ -492,10 +504,11 @@ pub fn merge(
         pixels: &pixels,
         coverage: coverage.as_deref(),
     };
-    let dng = encode(&image, &facts, cancel)?;
+    let dng = encoded(&image, &facts, cancel)?;
     progress(Stage::Encode, 1.);
     Ok(Merged {
         dng,
+        crop,
         inputs: inputs.to_vec(),
         frames,
         reference,

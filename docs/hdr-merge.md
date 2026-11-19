@@ -12,8 +12,11 @@ lives in `crates/rawmakase-hdr-merge` and arrives in stages, one pull request ea
 - The merge of a bracket and the `rawmakase merge-hdr` command.
 - Auto Align: brackets taken by hand.
 - Deghost: what moved between the frames.
+- The starting edit, the DNG's XMP and preview, and adding it to a catalog,
+  stacked with its sources, from the command line.
 
-The app's dialog and job follow.
+The app's dialog and job follow, then the maker note in DNGPrivateData.
+
 
 ## The bracket
 
@@ -200,17 +203,60 @@ Medium and High differ only in how readily a difference counts:
 Each frame's deghosted share is in `Merged::frames`, and the command line
 prints it.
 
+## The starting edit
+
+A merge opens with the edit Lightroom Classic 15.6 gives its own merges, as
+measured there on a Canon bracket (2026-11-18): the merged DNG's raw defaults,
+with these settings of the active photo (the first RAW on the command line)
+carried over as Sync Settings carries them (`settings_groups::transfer`):
+
+- **White Balance:** Temp and Tint, the gains worked out again for the DNG.
+- **Treatment & Profile:** the profile and its look (Adobe Color, Landscape,
+  Neutral and the like are looks on Adobe Standard), or the same profile for
+  the DNG's camera. Lightroom copies the profile's name; for a look-based
+  profile it then records the profile as missing and falls back to Adobe
+  Standard without the look, which RAWmakase doesn't copy.
+- **Lens Profile Corrections:** whether they are on, and the profile chosen.
+
+Exposure and the other tone settings are not carried over: the merge renders
+at the reference frame's brightness. High Dynamic Range is off
+(`HDREditMode="0"`, no limit), whatever the preference for new photos says.
+The crop is the largest of the photo's aspect that leaves out what Auto Align
+left uncovered, as near the centre as it fits (searched on a grid of 1024 cells
+on the long edge, so it loses at most a cell to rounding); without uncovered
+pixels the raw defaults' crop stays.
+
+The same settings are the DNG's XMP (tag 700): every setting the XMP writer
+knows, `crs:AlreadyApplied="False"` as they are still to apply, Lightroom's
+`aux:IsMergedHDR="True"`, the reference frame as `xmpMM:PreservedFileName` and
+the DNG as `crs:RawFileName`. Added to a catalog, they are its catalog edit,
+stored in the import's own transaction (`Catalog::import_files_with`). The DNG
+carries a preview rendered with them, a baseline sRGB JPEG of at most 1024
+pixels on its long edge, unrotated as the image is kept.
+
+The DNG is encoded once (`rawmakase_hdr_merge::encoded`): to work out the
+edit, it is first written without its XMP and preview to a staging file beside
+where it goes, opened as the photo it will be (its camera, its raw defaults,
+the preview's render), then removed. `Encoded::with` adds the XMP, the
+preview's directory and IFD0 after the encoded image, which isn't copied.
+
 ## The command line
 
 ```sh
-rawmakase merge-hdr IMG_9814.CR3 IMG_9815.CR3 IMG_9816.CR3 [-o out.dng] [--no-align] [--deghost none|low|medium|high]
+rawmakase merge-hdr IMG_9814.CR3 IMG_9815.CR3 IMG_9816.CR3 [-o out.dng] [--no-align] [--deghost none|low|medium|high] [--catalog Photos.rawmakase [--stack]]
 ```
 
-The first RAW names the merge. Progress and what was measured (each frame's
+The first RAW names the merge and is the active photo. Progress and what was measured (each frame's
 exposure by EXIF and measured, the reference, the BaselineExposure) go to
 standard error, the DNG's path to standard output. `--no-align` merges the
 frames as they were taken; `--deghost` sets the deghost level (none by
-default). `--output` must not exist.
+default). `--output` must not exist. `--catalog` adds the DNG to that catalog, which must
+have the first RAW: the merge starts from its edit there instead of its raw
+defaults. `--stack` puts the DNG on top of a stack with its RAWs, which must all
+be in the catalog: in the stack the first of them is in, if any, where those in
+no stack join it; else a new collapsed one (`StackChange::Join`). Lightroom's
+Create Stack wasn't measured for where the merge goes in the stack. When the
+DNG is saved but can't be added, the error says where it was saved.
 Ctrl-C stops the merge without writing anything; a second Ctrl-C ends the
 process at once.
 
@@ -231,12 +277,14 @@ process at once.
 | Coverage | A transparency mask (NewSubFileType 4, PhotometricInterpretation 4, 8-bit Deflate tiles) in IFD0's SubIFDs, where aligned frames leave the image uncovered |
 | Camera | Make, Model and UniqueCameraModel as the camera's own files write them, so Adobe's camera profiles and lens profiles fit |
 | EXIF | The camera's EXIF and GPS directories as `interop::exif` reads them, and ImageDescription, Artist and Copyright from its main directory; the maker note is left out of EXIF |
-| Maker note | Adobe's DNGPrivateData record `MakN`: the note's byte order, its offset in its original file, the note, as Adobe DNG Converter keeps it, so the built-in lens tables and camera facts read from it survive |
+| Maker note | Adobe's DNGPrivateData record `MakN`: the note's byte order, its offset in its original file, the note, as Adobe DNG Converter keeps it, so the built-in lens tables and camera facts read from it survive. The writer supports it; the merge doesn't carry the camera's note over yet |
+| XMP | The starting edit (above), in IFD0's tag 700 |
+| Preview | A SubIFD of NewSubFileType 1: one strip of baseline JPEG (Compression 7, YCbCr), PreviewColorSpace sRGB, PreviewApplicationName and Version, PreviewDateTime |
 
 Where it departs from Lightroom's own merges (Lightroom Classic 15.6): those are DNG
 1.7 with JPEG XL tiles and the Adobe Standard profile embedded, without
 DNGPrivateData. RAWmakase writes lossless Deflate (no float JPEG XL encoder is in the
-tree), DNG 1.4, keeps the maker note and embeds no profile: RAWmakase and Camera Raw
+tree), DNG 1.4 and embeds no profile: RAWmakase and Camera Raw
 find the camera's profiles by its name.
 
 ## Validation

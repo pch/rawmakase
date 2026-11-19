@@ -544,6 +544,7 @@ fn main() -> Result<()> {
             let flag = interrupt::flag();
             let path = rawmakase::merge_command::merge_hdr(
                 &options,
+                &rawmakase::app::user_raw_defaults,
                 Cancel::new(flag),
                 &mut std::io::stderr(),
             )?;

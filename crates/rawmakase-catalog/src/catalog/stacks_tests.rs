@@ -567,3 +567,98 @@ fn several_stacks_are_made_all_or_none() -> Result<()> {
     assert_eq!(cat.stack_of(d)?, [c, d]);
     Ok(())
 }
+
+#[test]
+fn a_merge_joins_its_sources_on_top_of_a_new_collapsed_stack() -> Result<()> {
+    let (_dir, mut cat, ids, _) = catalog(&["a.ARW", "b.ARW", "c.ARW", "a-HDR.dng", "x.ARW"])?;
+    let [a, b, c, merge, x] = ids[..] else {
+        panic!()
+    };
+    let join = |with: Vec<PhotoId>| StackChange::Join { photo: merge, with };
+    let changed = cat.change_stacks(&join(vec![b, a, c]))?;
+    assert_eq!(cat.stack_of(merge)?, [merge, b, a, c]);
+    assert!(cat.stack_places()?[&merge].collapsed);
+    assert!(cat.stack_of(x)?.is_empty());
+
+    // Undo puts the photos back as they were, Redo as the join left them.
+    cat.change_stacks(&StackChange::Restore(changed.before.clone()))?;
+    assert!(cat.stack_places()?.is_empty());
+    cat.change_stacks(&StackChange::Restore(changed.after))?;
+    assert_eq!(cat.stack_of(a)?, [merge, b, a, c]);
+    Ok(())
+}
+
+#[test]
+fn a_merge_goes_on_top_of_the_stack_its_sources_are_in() -> Result<()> {
+    let (_dir, mut cat, ids, _) =
+        catalog(&["a.ARW", "b.ARW", "c.ARW", "d.ARW", "e.ARW", "a-HDR.dng"])?;
+    let [a, b, c, d, e, merge] = ids[..] else {
+        panic!()
+    };
+    // a and d are one stack, open; e is in another; b and c in none.
+    let first = group(&mut cat, &[d, a])?;
+    cat.set_stacks_collapsed(&[first], false)?;
+    let other = group(&mut cat, &[e, c])?;
+    let changed = cat.change_stacks(&StackChange::Join {
+        photo: merge,
+        with: vec![b, a, c],
+    })?;
+    // The first source in a stack (a) takes the merge on top; b, in none,
+    // joins after its photos; c stays in its own stack.
+    assert_eq!(cat.stack_of(merge)?, [merge, d, a, b]);
+    assert_eq!(cat.stack_places()?[&merge].id, first);
+    assert!(!cat.stack_places()?[&merge].collapsed);
+    assert_eq!(cat.stack_of(c)?, [e, c]);
+    assert_eq!(cat.stack_places()?[&c].id, other);
+
+    cat.change_stacks(&StackChange::Restore(changed.before))?;
+    assert_eq!(cat.stack_of(a)?, [d, a]);
+    assert!(cat.stack_of(merge)?.is_empty() && cat.stack_of(b)?.is_empty());
+    assert_eq!(cat.stack_of(c)?, [e, c]);
+    Ok(())
+}
+
+#[test]
+fn a_merge_leaves_out_sources_removed_or_in_another_folder() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let photos = dir.path().join("photos");
+    for (sub, name) in [
+        ("x", "a.ARW"),
+        ("x", "b.ARW"),
+        ("x", "a-HDR.dng"),
+        ("y", "c.ARW"),
+    ] {
+        std::fs::create_dir_all(photos.join(sub))?;
+        std::fs::write(photos.join(sub).join(name), name)?;
+    }
+    let mut cat = Catalog::create(&dir.path().join("Photos.rawmakase"))?;
+    cat.add_folder(&photos)?;
+    let all = cat.photos()?;
+    let id = |name: &str| all.iter().find(|p| p.filename == name).unwrap().id;
+    let (a, b, c, merge) = (id("a.ARW"), id("b.ARW"), id("c.ARW"), id("a-HDR.dng"));
+    remove(&mut cat, b)?;
+    cat.change_stacks(&StackChange::Join {
+        photo: merge,
+        with: vec![a, b, c],
+    })?;
+    assert_eq!(cat.stack_of(merge)?, [merge, a]);
+    assert!(cat.stack_of(c)?.is_empty());
+
+    // With no source left, nothing changes.
+    cat.change_stacks(&StackChange::Unstack(vec![merge]))?;
+    remove(&mut cat, a)?;
+    cat.change_stacks(&StackChange::Join {
+        photo: merge,
+        with: vec![a, c],
+    })?;
+    assert!(cat.stack_places()?.is_empty());
+    // An unknown merge is refused.
+    assert!(
+        cat.change_stacks(&StackChange::Join {
+            photo: PhotoId(9999),
+            with: vec![c],
+        })
+        .is_err()
+    );
+    Ok(())
+}

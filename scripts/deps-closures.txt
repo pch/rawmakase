@@ -14,3 +14,4 @@ edit_session never raw photo develop decode decode_cache app
 render_command never app platform catalog_session edit_session
 catalog_command never app platform catalog_session edit_session
 merge_command never app platform catalog_session edit_session
+merge_hdr never app platform catalog_session edit_session

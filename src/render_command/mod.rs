@@ -536,29 +536,8 @@ fn catalog_edit(
     err: &mut dyn Write,
 ) -> Result<crate::edits::EditRecord> {
     let c = crate::catalog_command::open_catalog(catalog, err)?;
-    let input = input.canonicalize()?;
-    let found: Vec<_> = c
-        .photos()?
-        .into_iter()
-        .filter(|p| p.master.is_none() && p.path.canonicalize().is_ok_and(|p| p == input))
-        .map(|p| p.id)
-        .collect();
-    let photo = match found[..] {
-        [photo] => photo,
-        [] => anyhow::bail!("{} is not in the catalog", input.display()),
-        _ => anyhow::bail!(
-            "{} is {} photos in the catalog: two of its folders are found at the same place",
-            input.display(),
-            found.len()
-        ),
-    };
-    // Masks made from a selection are read back from the catalog, as in the app.
-    crate::storage::mask_assets::add_loader(c.mask_asset_loader());
-    // One consistent read: the recipe with the spots and masks saved with it.
-    c.photo_records(&[photo])?
-        .pop()
-        .map(|record| record.edit)
-        .ok_or_else(|| anyhow!("{} is not in the catalog", input.display()))
+    let photo = crate::catalog_command::photo_at(&c, input)?;
+    crate::catalog_command::photo_edit(&c, photo)
 }
 
 /// Writes a stage tap as a 32-bit float TIFF at `output`, with an export's
