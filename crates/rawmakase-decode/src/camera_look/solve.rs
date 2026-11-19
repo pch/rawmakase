@@ -232,143 +232,320 @@ fn refit_curve(base: &CameraProfile, look: &FittedLook, scene: &[Rgb], target: &
         .collect()
 }
 
-/// The table's kernels, in node units: hue 2.5° (nodes 5° apart), saturation 0.6 of a
-/// node (narrow enough that lips and the skin beside them differ) and encoded value
-/// 0.12 (nodes 1/7 apart); and the shrinkage towards no change.
-const SIGMA: [f32; 3] = [0.5, 0.6, 0.12 * 7.];
-const SHRINK: f64 = 5.;
 /// The most a node may shift hue (degrees), and scale saturation and value (as a
 /// natural logarithm).
 const LIMITS: [f32; 3] = [30., 0.7, 0.7];
+/// How firmly neighbouring nodes are tied to each other, against a sample's weight of
+/// about 1, and how firmly each node is held to no change, as a share of that.
+const SMOOTHNESS: f64 = 3.;
+const NO_CHANGE: f64 = 0.05;
+/// The most a sample weighs, and the least lightness (encoded value over 0.5) it is
+/// weighed by, so that a dark photo's colours still count.
+const WEIGHT_MOST: f64 = 9.;
+const WEIGHT_DARKEST: f32 = 0.2;
 
-/// One round of the table: each sample's remaining hue, saturation and value
-/// change, from what the current table makes of it to what the curves need, spread
-/// to the nodes around where it enters the table, and added to the nodes.
+/// The look table's nodes as the solve sees them: which lie beside which, and how
+/// firmly neighbours are tied. The neutral column is fixed at no change and takes no
+/// part.
+///
+/// The ties are those of a smooth look over the cylinder of hue, saturation and
+/// value. Neighbouring hues of little saturation are nearly one colour, and are tied
+/// the more firmly: nodes near grey are learned from few pixels, mostly of soft
+/// edges, and a zigzag between them shows as bands around such an edge. Along
+/// saturation and value the ties weaken towards grey, as the cells there shrink.
+struct Nodes {
+    dims: [usize; 3],
+    /// Each node's 27 neighbours (itself among them), by offset: hue, saturation and
+    /// value each one below, at or one above; `NONE` outside the table and on the
+    /// neutral column.
+    beside: Vec<[u32; 27]>,
+}
+const NONE: u32 = u32::MAX;
+impl Nodes {
+    fn new() -> Self {
+        let dims = TABLE_DIMS;
+        let [nh, ns, nv] = dims;
+        let index = |h: usize, s: usize, v: usize| (v * nh + h) * ns + s;
+        let beside = (0..nh * ns * nv)
+            .map(|node| {
+                let (s, h, v) = (node % ns, node / ns % nh, node / ns / nh);
+                std::array::from_fn(|k| {
+                    let d = [k as i32 % 3 - 1, k as i32 / 3 % 3 - 1, k as i32 / 9 - 1];
+                    let (is, iv) = (s as i32 + d[1], v as i32 + d[2]);
+                    if is < 1 || is >= ns as i32 || iv < 0 || iv >= nv as i32 {
+                        return NONE;
+                    }
+                    let ih = (h as i32 + d[0]).rem_euclid(nh as i32) as usize;
+                    index(ih, is as usize, iv as usize) as u32
+                })
+            })
+            .collect();
+        Self { dims, beside }
+    }
+    /// The offset (see `beside`) from a cell's corner `a` to its corner `b`, each 0 or
+    /// 1 along hue, saturation and value.
+    fn offset(a: [usize; 3], b: [usize; 3]) -> usize {
+        let d = |c: usize| b[c] + 1 - a[c];
+        d(2) * 9 + d(1) * 3 + d(0)
+    }
+    /// The steps between nodes along hue (radians), saturation and value.
+    fn steps(&self) -> [f64; 3] {
+        let [nh, ns, nv] = self.dims;
+        [
+            std::f64::consts::TAU / nh as f64,
+            1. / (ns - 1) as f64,
+            1. / (nv - 1) as f64,
+        ]
+    }
+    /// How firmly `node` is held to no change: its cell's volume.
+    fn hold(&self, node: usize) -> f64 {
+        let [dh, ds, dv] = self.steps();
+        let s = (node % self.dims[1]) as f64;
+        NO_CHANGE * SMOOTHNESS * dh * s * ds * ds * dv
+    }
+    /// The ties of `node` for `channel` (0 hue, 1 saturation, 2 value): each
+    /// neighbour and the tie's weight, the cell's face between them over their
+    /// distance. No neighbour is the neutral column's no change: saturation and value
+    /// end there, no more firmly than they are tied to each other (a value scale held
+    /// at 1 beside grey left a pale colour lighter than the camera made it, and the
+    /// soft edge between two colours, which passes through pale ones, with a ring);
+    /// a hue shift has nothing to meet.
+    fn ties(&self, channel: usize, node: usize) -> [(u32, f64); 6] {
+        let [_, ns, nv] = self.dims;
+        let [dh, ds, dv] = self.steps();
+        let (s, v) = (node % ns, node / ns / self.dims[0]);
+        let radius = |s: f64| s * ds;
+        let hue = SMOOTHNESS * ds * dv / (dh * radius(s as f64));
+        let saturation = |low: usize| SMOOTHNESS * dh * radius(low as f64 + 0.5) * dv / ds;
+        let value = SMOOTHNESS * dh * radius(s as f64) * ds / dv;
+        let to_grey = if channel == 0 { 0. } else { saturation(0) };
+        let beside = |d: [usize; 3]| self.beside[node][Self::offset([1, 1, 1], d)];
+        [
+            (beside([2, 1, 1]), hue),
+            (beside([0, 1, 1]), hue),
+            match s > 1 {
+                true => (beside([1, 0, 1]), saturation(s - 1)),
+                false => (NONE, to_grey),
+            },
+            (
+                beside([1, 2, 1]),
+                if s + 1 < ns { saturation(s) } else { 0. },
+            ),
+            (beside([1, 1, 0]), if v > 0 { value } else { 0. }),
+            (beside([1, 1, 2]), if v + 1 < nv { value } else { 0. }),
+        ]
+    }
+    /// What the samples' side `data` (per node, by offset), the ties and the holds make
+    /// of `x`.
+    fn apply(&self, data: &[[f64; 27]], channel: usize, x: &[f64], out: &mut [f64]) {
+        for (node, out) in out.iter_mut().enumerate() {
+            if node % self.dims[1] == 0 {
+                *out = x[node];
+                continue;
+            }
+            let mut sum = self.hold(node) * x[node];
+            for (coefficient, other) in data[node].iter().zip(&self.beside[node]) {
+                if *other != NONE {
+                    sum += coefficient * x[*other as usize];
+                }
+            }
+            for (other, weight) in self.ties(channel, node) {
+                let there = if other == NONE { 0. } else { x[other as usize] };
+                sum += weight * (x[node] - there);
+            }
+            *out = sum;
+        }
+    }
+    /// The table's `channel` the samples ask for: from `now`, the least squares of
+    /// their remaining changes (`asked`, already gathered onto the nodes), the ties
+    /// and the holds, by conjugate gradients preconditioned with the diagonal. The
+    /// same steps in the same order on any machine.
+    fn solve(&self, data: &[[f64; 27]], asked: &[f64], now: &[f64], channel: usize) -> Vec<f64> {
+        let n = now.len();
+        let ns = self.dims[1];
+        let mut scratch = vec![0f64; n];
+        // The right-hand side: what the samples make of the table as it is, and the
+        // change they still ask for.
+        let mut b = vec![0f64; n];
+        for node in (0..n).filter(|node| node % ns != 0) {
+            b[node] = asked[node];
+            for (coefficient, other) in data[node].iter().zip(&self.beside[node]) {
+                if *other != NONE {
+                    b[node] += coefficient * now[*other as usize];
+                }
+            }
+        }
+        let diagonal: Vec<f64> = (0..n)
+            .map(|node| match node % ns {
+                0 => 1.,
+                _ => {
+                    let ties: f64 = self.ties(channel, node).iter().map(|t| t.1).sum();
+                    data[node][13] + self.hold(node) + ties
+                }
+            })
+            .collect();
+        let dot = |a: &[f64], b: &[f64]| a.iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
+        let mut x = now.to_vec();
+        self.apply(data, channel, &x, &mut scratch);
+        let mut r: Vec<f64> = b.iter().zip(&scratch).map(|(b, m)| b - m).collect();
+        let mut z: Vec<f64> = r.iter().zip(&diagonal).map(|(r, d)| r / d).collect();
+        let mut p = z.clone();
+        let mut rz = dot(&r, &z);
+        let small = 1e-18 * dot(&b, &b).max(1e-30);
+        for _ in 0..400 {
+            if dot(&r, &r) <= small {
+                break;
+            }
+            self.apply(data, channel, &p, &mut scratch);
+            let curvature = dot(&p, &scratch);
+            if curvature <= 0. {
+                break;
+            }
+            let alpha = rz / curvature;
+            for node in 0..n {
+                x[node] += alpha * p[node];
+                r[node] -= alpha * scratch[node];
+                z[node] = r[node] / diagonal[node];
+            }
+            let next = dot(&r, &z);
+            let beta = next / rz;
+            rz = next;
+            for node in 0..n {
+                p[node] = z[node] + beta * p[node];
+            }
+        }
+        x
+    }
+}
+
+/// One round of the table, by weighted least squares. Each sample asks the eight
+/// nodes around where it enters the table, by the table's own interpolation, for the
+/// hue, saturation and value change that remains between what the current table makes
+/// of it and what the curves need. Neighbouring nodes are tied ([`Nodes`]), so a
+/// colour the photo has little of is still learned, and the nodes around it follow
+/// instead of staying unchanged beside it: a face among trees is a few hundred
+/// samples, and kernel averages shrunk towards no change left it grey.
 fn refine_table(base: &CameraProfile, look: &mut FittedLook, scene: &[Rgb], target: &[Rgb]) {
     let profile = fitted::with_look(base, look).expect("a valid look");
     let curve_inverse = inverse(|v| at(&look.curve, v));
-    let [nh, ns, nv] = TABLE_DIMS;
-    let mut sums = vec![[0f64; 3]; nh * ns * nv];
-    let mut weights = vec![[0f64; 2]; nh * ns * nv];
+    let nodes = Nodes::new();
+    let [nh, ns, nv] = nodes.dims;
+    let n = nh * ns * nv;
+    // The samples' side of the normal equations, for hue and saturation and for value
+    // (their weights differ), and the changes asked for, gathered onto the nodes.
+    let mut data = [vec![[0f64; 27]; n], vec![[0f64; 27]; n]];
+    let mut asked = [vec![0f64; n], vec![0f64; n], vec![0f64; n]];
     for (s, t) in scene.iter().zip(target) {
         let input = clamp01(*s);
         let [h, sat, v] = hsv(input);
         let made = hsv(fitted::table_output(&profile, input));
         let wanted = hsv(untoned(*t, &curve_inverse));
         let d_hue = ((wanted[0] - made[0] + 0.5).rem_euclid(1.) - 0.5) * 360.;
+        // Scales are asked for as differences, not logarithms: among noisy bright
+        // pixels it is their mean the table should make, not their geometric mean.
         let colour = (sat > 0.05 && made[1] > 0.02 && wanted[1] > 0.)
-            .then(|| [f64::from(d_hue), f64::from((wanted[1] / made[1]).ln())]);
+            .then(|| [f64::from(d_hue), f64::from(wanted[1] / made[1] - 1.)]);
         let value = (made[2] > 1e-3 && wanted[2] > 1e-4)
-            .then(|| f64::from((srgb_encode(wanted[2]) / srgb_encode(made[2])).ln()));
-        let at = [
-            h * nh as f32,
-            sat * (ns - 1) as f32,
-            srgb_encode(v) * (nv - 1) as f32,
+            .then(|| f64::from(srgb_encode(wanted[2]) / srgb_encode(made[2]) - 1.));
+        let encoded = srgb_encode(v).clamp(0., 1.);
+        // A change of hue or saturation shows as much as the colour is saturated and
+        // light, one of value as much as it is light.
+        let light = f64::from((encoded / 0.5).max(WEIGHT_DARKEST)).powi(2);
+        let weights = [
+            (f64::from(sat / 0.3).powi(2) * light).min(WEIGHT_MOST),
+            light,
         ];
-        let reach = SIGMA.map(|s| (3. * s).ceil() as i32);
-        let centre = at.map(|v| v.round() as i32);
-        for dz in -reach[2]..=reach[2] {
-            let iz = centre[2] + dz;
-            if iz < 0 || iz >= nv as i32 {
+        // The cell, as `Table::lookup` finds it.
+        let place = [
+            h.rem_euclid(1.) * nh as f32,
+            sat.clamp(0., 1.) * (ns - 1) as f32,
+            encoded * (nv - 1) as f32,
+        ];
+        let cell = place.map(|c| c.floor() as usize);
+        let within: [f32; 3] = std::array::from_fn(|c| place[c] - cell[c] as f32);
+        let corners: [(usize, [usize; 3], f64); 8] = std::array::from_fn(|i| {
+            let o = [i & 1, i >> 1 & 1, i >> 2 & 1];
+            let (ih, is, iv) = (
+                (cell[0] + o[0]) % nh,
+                (cell[1] + o[1]).min(ns - 1),
+                (cell[2] + o[2]).min(nv - 1),
+            );
+            let share: f32 = (0..3)
+                .map(|c| if o[c] == 1 { within[c] } else { 1. - within[c] })
+                .product();
+            // The neutral column is fixed: its share asks nothing.
+            let share = if is == 0 { 0. } else { f64::from(share) };
+            ((iv * nh + ih) * ns + is, o, share)
+        });
+        for (node, a, share) in corners {
+            if share == 0. {
                 continue;
             }
-            let wz = gauss(iz as f32 - at[2], SIGMA[2]);
-            for dy in -reach[1]..=reach[1] {
-                let iy = centre[1] + dy;
-                if iy < 1 || iy >= ns as i32 {
-                    continue;
+            if let Some([d_hue, d_saturation]) = colour {
+                asked[0][node] += weights[0] * share * d_hue;
+                asked[1][node] += weights[0] * share * d_saturation;
+            }
+            if let Some(d_value) = value {
+                asked[2][node] += weights[1] * share * d_value;
+            }
+            for (_, b, other) in corners {
+                let k = Nodes::offset(a, b);
+                if colour.is_some() {
+                    data[0][node][k] += weights[0] * share * other;
                 }
-                let wy = gauss(iy as f32 - at[1], SIGMA[1]);
-                for dx in -reach[0]..=reach[0] {
-                    let ix = (centre[0] + dx).rem_euclid(nh as i32);
-                    let dh = ((ix as f32 - at[0] + nh as f32 / 2.).rem_euclid(nh as f32))
-                        - nh as f32 / 2.;
-                    let w = f64::from(gauss(dh, SIGMA[0]) * wy * wz);
-                    let node = (iz as usize * nh + ix as usize) * ns + iy as usize;
-                    if let Some([dh, ds]) = colour {
-                        // Hue and saturation are as sure as the colour is saturated.
-                        let wc = w * f64::from(sat);
-                        sums[node][0] += wc * dh;
-                        sums[node][1] += wc * ds;
-                        weights[node][0] += wc;
-                    }
-                    if let Some(dv) = value {
-                        sums[node][2] += w * dv;
-                        weights[node][1] += w;
-                    }
+                if value.is_some() {
+                    data[1][node][k] += weights[1] * share * other;
                 }
             }
         }
     }
+    let now = |channel: usize| -> Vec<f64> {
+        look.table
+            .iter()
+            .map(|e| match channel {
+                0 => f64::from(e[0]),
+                c => f64::from(e[c].ln()),
+            })
+            .collect()
+    };
+    let solved: [Vec<f64>; 3] = std::array::from_fn(|channel| {
+        let data = &data[usize::from(channel == 2)];
+        nodes.solve(data, &asked[channel], &now(channel), channel)
+    });
     for (node, entry) in look.table.iter_mut().enumerate() {
         if node % ns == 0 {
             // The neutral column stays as it is: grey's tone is the curve's.
             *entry = [0., 1., 1.];
             continue;
         }
-        let [w_colour, w_value] = weights[node];
-        let step = [
-            sums[node][0] / (w_colour + SHRINK),
-            sums[node][1] / (w_colour + SHRINK),
-            sums[node][2] / (w_value + SHRINK),
-        ];
-        let now = [entry[0], entry[1].ln(), entry[2].ln()];
         let next: [f32; 3] =
-            std::array::from_fn(|c| (now[c] + step[c] as f32).clamp(-LIMITS[c], LIMITS[c]));
+            std::array::from_fn(|c| (solved[c][node] as f32).clamp(-LIMITS[c], LIMITS[c]));
         *entry = [next[0], next[1].exp(), next[2].exp()];
     }
-    smooth_table(&mut look.table, &weights);
+    limit_slopes(&mut look.table);
 }
-/// How much a node may differ from its neighbour along hue, saturation and value, for
-/// the hue shift (degrees) and the logarithms of the saturation and value scales.
-/// Without this a gradient of skin crossing a node between two photographed colours
-/// bends into contours; the slopes also keep the table's output in the input's order.
-/// Hue along hue is the loosest, short of reversing: a camera draws skin's hues together,
-/// and a table that can't leaves a face blotchy and off in hue.
-const SLOPES: [[f32; 3]; 3] = [[4.5, 5., 5.], [0.08, 0.12, 0.12], [0.04, 0.12, 0.12]];
-/// The nodes out from the neutral column that are smoothed, how many times, and how far
-/// each goes towards the mean of its neighbours along saturation, hue and value (their
-/// sum below 1, so that a zigzag only ever shrinks).
-const NEAR_GREY_NODES: usize = 3;
-const NEAR_GREY_PASSES: usize = 4;
-const NEAR_GREY_PULL: [f32; 3] = [0.35, 0.35, 0.2];
-/// Node weight at which that pull is halved: colours the photo has plenty of keep what
-/// they were fitted to.
-const NEAR_GREY_WEIGHT: f32 = 100.;
+/// The most a node may differ from its neighbour along hue, saturation and value, for
+/// the hue shift (degrees) and the logarithms of the saturation and value scales: a
+/// bound on what the solve may make of contradictory samples (skin in two lights,
+/// nearly one colour and asked for very different ones), which would bend a gradient
+/// into contours. The smoothness of a look is the solve's ties'; these are three times
+/// what kernel averages needed, which held a small face's colours back.
+const SLOPES: [[f32; 3]; 3] = [[13.5, 15., 15.], [0.24, 0.36, 0.36], [0.12, 0.36, 0.36]];
+/// The most the value scale of the least saturated nodes may differ from grey's 1 (as a
+/// logarithm): as much as from a neighbouring hue's. Saturation is the least steady
+/// thing about a dark or pale colour, so a value scale that leaves grey steeply turns
+/// noise and soft edges there into contours (a dark light out of focus, lightened by
+/// 1.4 where its noise read as green and darkened beside it). What a camera does to
+/// pale colours is within it: 5% between coloured stage lights.
+const GREY_SLOPE: f32 = 0.12;
 
 /// The closest table, in sweeps along each axis, whose neighbouring nodes respect
-/// [`SLOPES`], thinly learned nodes near grey smoothed first (`weights` as
-/// [`refine_table`] gathers them); the neutral column stays as it is.
-fn smooth_table(table: &mut [[f32; 3]], weights: &[[f64; 2]]) {
+/// [`SLOPES`]; the neutral column stays as it is.
+fn limit_slopes(table: &mut [[f32; 3]]) {
     let [nh, ns, nv] = TABLE_DIMS;
     let index = |h: usize, s: usize, v: usize| (v * nh + h) * ns + s;
     let log = |e: [f32; 3]| [e[0], e[1].ln(), e[2].ln()];
     let mut logged: Vec<[f32; 3]> = table.iter().map(|e| log(*e)).collect();
-    // Near grey a node with little weight is learned from few pixels, of soft edges, and
-    // neighbouring ones disagree within the slopes: a smooth edge shows the zigzag as bands.
-    for _ in 0..NEAR_GREY_PASSES {
-        let old = logged.clone();
-        for v in 0..nv {
-            for h in 0..nh {
-                for s in 1..=NEAR_GREY_NODES {
-                    let at = |h: usize, s: usize, v: usize| old[index(h, s, v)];
-                    let x = at(h, s, v);
-                    let (sp, sn) = (at(h, s - 1, v), at(h, s + 1, v));
-                    let (hp, hn) = (at((h + nh - 1) % nh, s, v), at((h + 1) % nh, s, v));
-                    let (vp, vn) = (at(h, s, v.saturating_sub(1)), at(h, s, (v + 1).min(nv - 1)));
-                    let thin =
-                        NEAR_GREY_WEIGHT / (NEAR_GREY_WEIGHT + weights[index(h, s, v)][1] as f32);
-                    let [ws, wh, wv] = NEAR_GREY_PULL.map(|w| w * thin);
-                    for c in 0..3 {
-                        logged[index(h, s, v)][c] = x[c]
-                            + ws * ((sp[c] + sn[c]) / 2. - x[c])
-                            + wh * ((hp[c] + hn[c]) / 2. - x[c])
-                            + wv * ((vp[c] + vn[c]) / 2. - x[c]);
-                    }
-                }
-            }
-        }
-    }
     let limit = |to: &mut f32, from: f32, slope: f32| *to = to.clamp(from - slope, from + slope);
     for _ in 0..2 {
         for c in 0..3 {
@@ -391,7 +568,12 @@ fn smooth_table(table: &mut [[f32; 3]], weights: &[[f64; 2]]) {
                 for h in 0..nh {
                     for s in 1..ns {
                         let from = logged[index(h, s - 1, v)][c];
-                        limit(&mut logged[index(h, s, v)][c], from, SLOPES[c][1]);
+                        let slope = if (c, s) == (2, 1) {
+                            GREY_SLOPE
+                        } else {
+                            SLOPES[c][1]
+                        };
+                        limit(&mut logged[index(h, s, v)][c], from, slope);
                     }
                     for s in (1..ns - 1).rev() {
                         let from = logged[index(h, s + 1, v)][c];
@@ -416,9 +598,6 @@ fn smooth_table(table: &mut [[f32; 3]], weights: &[[f64; 2]]) {
     for (entry, l) in table.iter_mut().zip(&logged) {
         *entry = [l[0], l[1].exp(), l[2].exp()];
     }
-}
-fn gauss(d: f32, sigma: f32) -> f32 {
-    (-0.5 * (d / sigma).powi(2)).exp()
 }
 
 /// Most and least a channel of grey is moved, and the fewest grey pairs to judge by.
@@ -728,29 +907,135 @@ mod tests {
         );
     }
 
-    /// The bands around a soft edge: a zigzag near grey goes where nothing was learned, and
-    /// stays where plenty was.
+    /// The bands around a soft edge: neighbouring hues near grey, each learned from a
+    /// few pixels that disagree, come out together; plenty of pixels keep their own.
     #[test]
-    fn only_thinly_learned_colours_near_grey_are_smoothed() {
-        let [nh, ns, nv] = TABLE_DIMS;
-        let index = |h: usize, s: usize, v: usize| (v * nh + h) * ns + s;
-        let zigzag = |h: usize| if h.is_multiple_of(2) { 1.03 } else { 1. / 1.03 };
-        let mut table = vec![[0., 1., 1.]; nh * ns * nv];
-        for h in 0..nh {
-            table[index(h, 2, 4)][2] = zigzag(h);
+    fn hues_near_grey_are_drawn_together_unless_plenty_was_learned() {
+        let base = base();
+        let [nh, ns, _] = TABLE_DIMS;
+        // Pale colours on every other hue node, asked for a hue shift of +6° on one
+        // node and -6° on the next: a zigzag.
+        let pale = |count: usize| -> (Vec<Rgb>, Vec<Rgb>) {
+            let mut look = FittedLook::identity();
+            for (node, entry) in look.table.iter_mut().enumerate() {
+                let hue = node / ns % nh;
+                *entry = [if hue.is_multiple_of(2) { 6. } else { -6. }, 1., 1.];
+            }
+            let camera = fitted::with_look(&base, &look).unwrap();
+            let scene: Vec<Rgb> = (0..nh * count)
+                .map(|i| {
+                    let hue = (i % nh) as f32 / nh as f32 * std::f32::consts::TAU;
+                    let third = std::f32::consts::TAU / 3.;
+                    [hue, hue - third, hue + third].map(|a| 0.3 * (1. + 0.12 * a.cos()))
+                })
+                .collect();
+            let target = scene
+                .iter()
+                .map(|s| {
+                    rawmakase_model::color::mul(
+                        rawmakase_model::camera_profiles::RGB_TO_PRO,
+                        camera.finish(*s),
+                    )
+                })
+                .collect();
+            (scene, target)
+        };
+        let zigzag = |count: usize| {
+            let (scene, target) = pale(count);
+            let mut look = FittedLook::identity();
+            refine_table(&base, &mut look, &scene, &target);
+            let shifts: Vec<f32> = (0..nh)
+                .map(|h| look.table[(4 * nh + h) * ns + 1][0])
+                .collect();
+            (0..nh)
+                .map(|h| (shifts[h] - shifts[(h + 1) % nh]).abs())
+                .sum::<f32>()
+                / nh as f32
+        };
+        let (few, plenty) = (zigzag(1), zigzag(400));
+        assert!(few < 1., "{few}");
+        assert!(plenty > 4. * few, "{few} {plenty}");
+    }
+
+    /// The mean of what `look` makes of `colours` over what the camera did, less 1.
+    fn off(base: &CameraProfile, look: &FittedLook, colours: &[Rgb], camera: &[Rgb]) -> f32 {
+        let p = fitted::with_look(base, look).unwrap();
+        let sum: f32 = colours
+            .iter()
+            .zip(camera)
+            .map(|(s, t)| {
+                let got = rawmakase_model::color::mul(
+                    rawmakase_model::camera_profiles::RGB_TO_PRO,
+                    p.finish(*s),
+                );
+                got[0].max(got[1]).max(got[2]) / t[0].max(t[1]).max(t[2])
+            })
+            .sum();
+        sum / colours.len() as f32 - 1.
+    }
+    /// Colours of every hue and one small saturation, at one value.
+    fn pale(saturation: f32, value: f32, of_each: usize) -> Vec<Rgb> {
+        let nh = TABLE_DIMS[0];
+        let third = std::f32::consts::TAU / 3.;
+        (0..nh * of_each)
+            .map(|i| {
+                let hue = (i % nh) as f32 / nh as f32 * std::f32::consts::TAU;
+                [hue, hue - third, hue + third].map(|a| value * (1. + saturation * a.cos()))
+            })
+            .collect()
+    }
+    /// What the profile without a look makes of `scene`, each colour scaled by `by`.
+    fn scaled(base: &CameraProfile, scene: &[Rgb], by: impl Fn(usize) -> f32) -> Vec<Rgb> {
+        let plain = fitted::with_look(base, &FittedLook::identity()).unwrap();
+        scene
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let made = rawmakase_model::color::mul(
+                    rawmakase_model::camera_profiles::RGB_TO_PRO,
+                    plain.finish(*s),
+                );
+                made.map(|v| v * by(i))
+            })
+            .collect()
+    }
+
+    /// The soft edge between two coloured lights passes through pale colours, which a
+    /// camera makes a little darker than its greys, as it does the colours beside
+    /// them. With their value held at grey's they came out lighter than those, a ring
+    /// around a pink highlight on blue.
+    #[test]
+    fn pale_colours_are_as_dark_as_the_camera_made_them() {
+        let base = base();
+        // A few pixels a node, as a photo has of such colours.
+        let (pale, coloured) = (pale(0.12, 0.3, 2), pale(0.24, 0.3, 2));
+        let scene = [pale.clone(), coloured].concat();
+        let camera = scaled(&base, &scene, |_| 0.93);
+        let mut look = FittedLook::identity();
+        for _ in 0..2 {
+            refine_table(&base, &mut look, &scene, &camera);
         }
-        let spread = |t: &[[f32; 3]]| (t[index(10, 2, 4)][2] / t[index(11, 2, 4)][2]).ln().abs();
-        let before = spread(&table);
-        let mut thin = table.clone();
-        smooth_table(&mut thin, &vec![[0.; 2]; table.len()]);
-        assert!(spread(&thin) < 0.25 * before, "{} {before}", spread(&thin));
-        let mut learned = table.clone();
-        smooth_table(&mut learned, &vec![[1e6; 2]; table.len()]);
-        assert!(
-            spread(&learned) > 0.95 * before.min(SLOPES[2][0]),
-            "{}",
-            spread(&learned)
-        );
+        let left = off(&base, &look, &pale, &camera[..pale.len()]);
+        assert!(left.abs() < 0.015, "{left}");
+    }
+
+    /// A dark light out of focus: dark, pale colours whose noise reads as one hue here
+    /// and another there, asked for very different lightness. The value scale leaves
+    /// grey within [`GREY_SLOPE`], or the noise shows as contours.
+    #[test]
+    fn dark_pale_colours_stay_nearly_as_light_as_grey() {
+        let base = base();
+        let [nh, ns, _] = TABLE_DIMS;
+        let scene = pale(0.07, 0.02, 40);
+        // Half the hue circle twice as light as the profile makes it, half at half.
+        let target = scaled(&base, &scene, |i| if i % nh < nh / 2 { 2. } else { 0.5 });
+        let mut look = FittedLook::identity();
+        refine_table(&base, &mut look, &scene, &target);
+        let beside_grey = || look.table.iter().skip(1).step_by(ns).map(|e| e[2].ln());
+        let most = beside_grey().fold(0f32, |m, v| m.max(v.abs()));
+        assert!(most <= GREY_SLOPE + 1e-3, "{most}");
+        // The bound is met: the colours did ask.
+        assert!(most > 0.9 * GREY_SLOPE, "{most}");
     }
 
     #[test]
@@ -827,6 +1112,50 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A face among trees: a few hundred samples of skin, with nothing of their colour
+    /// around them, are still taken to the camera's skin.
+    #[test]
+    fn a_small_patch_of_colour_is_learned_beside_a_large_one() {
+        let base = base();
+        let plain = fitted::with_look(&base, &FittedLook::identity()).unwrap();
+        let to_pro =
+            |p: Rgb| rawmakase_model::color::mul(rawmakase_model::camera_profiles::RGB_TO_PRO, p);
+        // Greens, cyans and blues, rendered as the base renders them.
+        let mut scene: Vec<Rgb> = scene()
+            .into_iter()
+            .filter(|p| (0.25..0.75).contains(&hsv(*p)[0]))
+            .collect();
+        let mut target: Vec<Rgb> = scene.iter().map(|s| to_pro(plain.finish(*s))).collect();
+        let trees = scene.len();
+        // Skin, which the camera draws warmer and fuller than the base does.
+        let mut camera = FittedLook::identity();
+        for entry in camera.table.iter_mut() {
+            *entry = [8., 1.25, 1.];
+        }
+        let camera = fitted::with_look(&base, &camera).unwrap();
+        for i in 0..200 {
+            let t = i as f32 / 200.;
+            let skin = [0.20 + 0.06 * t, 0.155 + 0.04 * t, 0.125 + 0.03 * t];
+            scene.push(skin);
+            target.push(to_pro(camera.finish(skin)));
+        }
+        let look = colour_look(&base, &scene, &target);
+        let fit = fitted::with_look(&base, &look).unwrap();
+        let error = |p: &CameraProfile| {
+            let sse: f32 = scene[trees..]
+                .iter()
+                .zip(&target[trees..])
+                .map(|(s, t)| {
+                    let got = to_pro(p.finish(*s));
+                    (0..3).map(|c| (got[c] - t[c]).powi(2)).sum::<f32>()
+                })
+                .sum();
+            (sse / (3 * 200) as f32).sqrt()
+        };
+        let (before, after) = (error(&plain), error(&fit));
+        assert!(after < 0.25 * before, "{before} → {after}");
     }
 
     #[test]
