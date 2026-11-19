@@ -144,7 +144,8 @@ impl Catalog {
     /// What each photo with a saved edit (RAWmakase's, else Lightroom's) does,
     /// for Has Adjustments, Cropped and Treatment rules: a saved edit counts
     /// as adjusted; the crop and Black & White come from RAWmakase's recipe,
-    /// else from Lightroom's `HasCrop` and `ConvertToGrayscale`. An edit that
+    /// else from Lightroom's `HasCrop` and Treatment
+    /// ([`rawmakase_interop::lr_develop::grayscale`]). An edit that
     /// can't be read counts as adjusted, neither cropped nor Black & White.
     pub fn edit_facts(&self) -> Result<HashMap<PhotoId, EditFacts>> {
         row! {
@@ -182,9 +183,8 @@ impl Catalog {
                     .as_deref()
                     .and_then(|t| rawmakase_interop::lr_develop::develop_fields(t).ok())
                 {
-                    let yes = |key: &str| fields.get(key).is_some_and(|v| v.trim() == "true");
-                    facts.cropped = yes("HasCrop");
-                    facts.grayscale = yes("ConvertToGrayscale");
+                    facts.cropped = fields.get("HasCrop").is_some_and(|v| v.trim() == "true");
+                    facts.grayscale = rawmakase_interop::lr_develop::grayscale(&fields);
                 }
                 (e.id, facts)
             })

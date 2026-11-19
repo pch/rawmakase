@@ -159,6 +159,7 @@ impl Preset {
         };
         let mut recipe = base.clone();
         self.apply_profile(&mut settings, &mut recipe, m, profiles)?;
+        self.apply_treatment(&mut settings, &mut recipe, m, profiles)?;
         self.apply_basic(&mut settings, &mut recipe)?;
         // Auto white balance is measured on the crop, so geometry comes first.
         self.apply_geometry(&mut settings, &mut recipe, m, lensfun)?;
@@ -224,6 +225,9 @@ impl Preset {
         let settings = std::cell::RefCell::new(&mut settings);
         stage(&mut recipe, &|r| {
             self.apply_profile(&mut settings.borrow_mut(), r, m, profiles)
+        });
+        stage(&mut recipe, &|r| {
+            self.apply_treatment(&mut settings.borrow_mut(), r, m, profiles)
         });
         stage(&mut recipe, &|r| {
             self.apply_basic(&mut settings.borrow_mut(), r)
@@ -660,7 +664,6 @@ impl Preset {
     }
 
     fn apply_curves(&self, settings: &mut Settings<'_>, r: &mut Recipe) -> Result<()> {
-        let v = settings.values;
         for (slider, value) in crs::PARAMETRIC.iter().zip(&mut r.effects.parametric) {
             settings.assign(*slider, value, -1., 1.)?;
         }
@@ -688,8 +691,38 @@ impl Preset {
         if let Some(set) = channel_set(first).or_else(|| channel_set(second)) {
             r.effects.channels = set.map(Clone::clone);
         }
+        Ok(())
+    }
+
+    /// The Treatment. A look that carries its own settings decides it, as in Camera
+    /// Raw 18.7: on the synthetic chart a colour look renders in colour over a photo
+    /// set to black & white, a black & white look in black & white over a photo set
+    /// to colour, and a look whose settings leave the flag out in colour, whatever
+    /// its `SupportsMonochrome` and Amount (#666). Without such a look, or when the
+    /// look isn't the profile the settings end up with, the photo's own flag does.
+    fn apply_treatment(
+        &self,
+        settings: &mut Settings<'_>,
+        r: &mut Recipe,
+        m: &Metadata,
+        profiles: &[Arc<CameraProfile>],
+    ) -> Result<()> {
+        let v = settings.values;
         settings.seen.insert("ConvertToGrayscale".into());
+        settings.seen.insert(super::look::GRAYSCALE.into());
         if let Some(b) = boolean(v, "ConvertToGrayscale")? {
+            r.effects.monochrome = b;
+        }
+        let look_applied = || {
+            !self.look.is_empty()
+                && self
+                    .resolve_look(m, profiles)
+                    .zip(r.profile.as_ref())
+                    .is_some_and(|(look, used)| Arc::ptr_eq(&look, used))
+        };
+        if let Some(b) = boolean(v, super::look::GRAYSCALE)?
+            && look_applied()
+        {
             r.effects.monochrome = b;
         }
         Ok(())

@@ -925,6 +925,78 @@ fn profile_amount_applies_to_looks_that_have_one() -> Result<()> {
     assert!(preset("Test Creative", "2.5").is_err());
     Ok(())
 }
+/// Camera Raw 18.7 takes the Treatment from the settings a look carries, not from the
+/// photo's `ConvertToGrayscale` (#666): measured on the synthetic chart, a colour look
+/// over a photo set to black & white renders in colour, a black & white look over a
+/// photo set to colour in black & white, and a look whose settings leave the flag out
+/// in colour. A look named without its settings leaves the photo's flag.
+#[test]
+fn a_looks_own_grayscale_flag_sets_the_treatment() -> Result<()> {
+    use crate::camera_profiles::CameraProfile;
+    let m = Metadata {
+        make: "Test".into(),
+        model: "Camera".into(),
+        cam_xyz: [[0.8, -0.2, -0.1], [-0.3, 1.1, 0.2], [-0.05, 0.15, 0.6]],
+        ..Default::default()
+    };
+    let profiles: Vec<_> = [CameraProfile::creative_for_test(&m)]
+        .into_iter()
+        .map(std::sync::Arc::new)
+        .collect();
+    let base = Recipe::with_profiles(&m, &[]);
+    let treatment = |photo: &str, parameters: &str| -> Result<bool> {
+        let r = parse(
+            Path::new("photo.xmp"),
+            &xml(
+                &format!(r#"c:ConvertToGrayscale="{photo}""#),
+                &format!(
+                    r#"<c:Look><r:Description c:Name="Test Creative" c:Amount="1">{parameters}</r:Description></c:Look>"#
+                ),
+            ),
+        )?
+        .apply(&base, &m, &profiles, None)?;
+        assert_eq!(r.profile.as_ref().unwrap().name, "Test Creative");
+        Ok(r.effects.monochrome)
+    };
+    let parameters = |attrs: &str| {
+        format!(r#"<c:Parameters><r:Description c:ProcessVersion="15.4" {attrs}/></c:Parameters>"#)
+    };
+    let colour = parameters(r#"c:ConvertToGrayscale="False""#);
+    let black_white = parameters(r#"c:ConvertToGrayscale="True""#);
+    let unset = parameters("");
+    assert!(!treatment("True", &colour)?);
+    assert!(!treatment("True", &unset)?);
+    assert!(treatment("False", &black_white)?);
+    assert!(treatment("True", &black_white)?);
+    assert!(!treatment("False", &colour)?);
+    // Without the look's settings, the photo's own flag decides.
+    assert!(treatment("True", "")?);
+    assert!(!treatment("False", "")?);
+    // Camera Raw's resource form of the same.
+    let r = parse(
+        Path::new("photo.xmp"),
+        &xml(
+            r#"c:ConvertToGrayscale="True""#,
+            r#"<c:Look r:parseType="Resource"><c:Name>Test Creative</c:Name><c:Parameters r:parseType="Resource"><c:ConvertToGrayscale>False</c:ConvertToGrayscale></c:Parameters></c:Look>"#,
+        ),
+    )?
+    .apply(&base, &m, &profiles, None)?;
+    assert!(!r.effects.monochrome);
+    // A look that isn't available leaves the photo's flag, with the rest of the edit.
+    let (r, skipped) = parse(
+        Path::new("photo.xmp"),
+        &xml(
+            r#"c:ConvertToGrayscale="True""#,
+            &format!(
+                r#"<c:Look><r:Description c:Name="Missing Look">{colour}</r:Description></c:Look>"#
+            ),
+        ),
+    )?
+    .apply_lenient(&base, &m, &profiles, None)?;
+    assert!(!skipped.is_empty());
+    assert!(r.effects.monochrome);
+    Ok(())
+}
 #[test]
 fn every_lightroom_vignette_style_imports() -> Result<()> {
     use crate::model::effects::VignetteStyle;

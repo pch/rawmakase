@@ -175,6 +175,24 @@ pub fn parse(path: &Path, text: &str) -> Result<Preset> {
             {
                 settings.insert("RAWmakaseLookUUID".into(), uuid);
             }
+            if let Some(parameters) = d
+                .children()
+                .find(|n| n.has_tag_name((CRS, "Parameters")))
+                .filter(|_| !look.is_empty())
+            {
+                let parameters = parameters
+                    .descendants()
+                    .find(|n| n.has_tag_name((RDF, "Description")))
+                    .unwrap_or(parameters);
+                let flag = parameters
+                    .attribute((CRS, "ConvertToGrayscale"))
+                    .map(str::to_string)
+                    .or_else(|| child_text(parameters, "ConvertToGrayscale"));
+                settings.insert(
+                    super::look::GRAYSCALE.into(),
+                    super::look::grayscale(flag.as_deref()).into(),
+                );
+            }
         } else if name == "Preset" && sidecar {
             // In a photo sidecar, the nested preset-amount record is provenance.
             // The resolved top-level edits (including curves) remain authoritative.
