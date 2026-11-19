@@ -276,6 +276,47 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
     Ok(info)
 }
 
+/// The longest value of a TIFF's directories read for [`header_parts`] where
+/// the container's reader names no parts of its own: names, rationals and
+/// small tables. Longer ones (maker notes, which may hold a preview; XMP;
+/// profiles) are read only where they are in the file's start or end.
+const SHORT_VALUE: u64 = 64 << 10;
+
+/// Where the file in `bytes` keeps what [`open`] reads beyond its start and
+/// end, as offset and length, for a file read in pieces (`partial`), by what
+/// is read of it so far: a part read may show where the next is, so this is
+/// asked again until it names nothing new. A RAF's, a CR3's and a CR2's
+/// readers name theirs; of any other TIFF, the directories followed and
+/// their short values, wherever the file keeps them (an older PEF's or SRW's
+/// and a Nikon 1's are megabytes in, after an image), and what a NEF's or an
+/// ORF's reader names besides. `None` when the container can't be read in
+/// pieces.
+pub(crate) fn header_parts(bytes: &[u8]) -> Option<Vec<(u64, u64)>> {
+    use crate::container::{cr2, cr3, nef, orf, raf, tiff};
+    if raf::is_raf(bytes) {
+        return Some(raf::header_parts(bytes));
+    }
+    if cr3::is_cr3(bytes) {
+        return Some(cr3::header_parts(bytes));
+    }
+    if cr2::is_cr2(bytes) {
+        return cr2::header_parts(bytes);
+    }
+    let mut parts = tiff::parts(bytes, 0, SHORT_VALUE);
+    // A DNG is none of these, whatever camera it is of. A file `probe` gives
+    // another reader at worst has a few bytes more read.
+    if let Some(t) = tiff::TiffFile::parse(bytes, 0)
+        && !t.ifds[0].has(50706)
+    {
+        if nef::is_nef(&t) {
+            parts.extend(nef::header_parts(&t));
+        } else if orf::is_orf(bytes, &t) {
+            parts.extend(orf::header_parts(t));
+        }
+    }
+    Some(parts)
+}
+
 /// The container's own reading of the file, names as the file writes them.
 fn probe(bytes: &[u8]) -> Result<RawInfo> {
     if crate::container::raf::is_raf(bytes) {

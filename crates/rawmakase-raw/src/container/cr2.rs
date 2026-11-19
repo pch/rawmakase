@@ -63,6 +63,47 @@ fn raw_ifd<'t>(t: &'t TiffFile) -> Option<&'t Ifd> {
         .or_else(|| t.ifds.get(3))
 }
 
+/// What is read of the sensor data's strip for its lossless JPEG headers
+/// ([`header_parts`]): a few hundred bytes in the files measured.
+const STRIP_HEAD: u64 = 64 << 10;
+
+/// Where a CR2 keeps what [`open`] reads, as offset and length in the file,
+/// for a file read in pieces (`partial`): its directories and all their
+/// values, the maker note among them ([`super::tiff::parts`]; the older
+/// bodies write each directory after the image before it, megabytes into the
+/// file), the maker note's own values, and the start of the sensor data's
+/// strip, whose lossless JPEG headers say the image's size and sampling.
+/// Directories not read yet list nothing, so the parts are asked for again
+/// once these are read. `None` when the strip's headers are longer than the
+/// part read of it: read that way they would be cut short and completed with
+/// zeros.
+pub(crate) fn header_parts(bytes: &[u8]) -> Option<Vec<(u64, u64)>> {
+    let mut parts = super::tiff::parts(bytes, 0, u64::MAX);
+    let Some(t) = TiffFile::parse(bytes, 0) else {
+        return Some(parts);
+    };
+    if let Some(note) = maker_note(&t) {
+        parts.extend(t.values(&note));
+    }
+    if let Some(ifd) = raw_ifd(&t)
+        && let (Some(at), Some(len)) = (t.int(ifd, 273), t.int(ifd, 279))
+    {
+        let (at, head) = (u64::from(at), u64::from(len).min(STRIP_HEAD));
+        // A JPEG starts there once the part is read, and its headers must
+        // then end within the part alone. Read whole also where the strip's
+        // start was read with something else and its headers were not.
+        let read = crate::io::Bytes::new(bytes, crate::io::Order::Little)
+            .slice(at, head)
+            .ok()
+            .filter(|strip| strip.starts_with(&[0xff, 0xd8]));
+        if head < u64::from(len) && read.is_some_and(|strip| ljpeg::header(strip).is_err()) {
+            return None;
+        }
+        parts.push((at, head));
+    }
+    Some(parts)
+}
+
 /// Reads a CR2's header facts.
 pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     let ifd = raw_ifd(&t).ok_or_else(|| corrupt("CR2 without a raw image"))?;
@@ -71,11 +112,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     let strip = (t.base + u64::from(at), u64::from(len));
     let file = crate::io::Bytes::new(bytes, crate::io::Order::Little);
     let jpeg = ljpeg::header(file.slice(strip.0, strip.1)?)?;
-    let note = t
-        .exif
-        .as_ref()
-        .and_then(|e| e.entries.get(&37500))
-        .and_then(|e| t.ifd_at(t.offset_of(e)?));
+    let note = maker_note(&t);
     let camera_look = note
         .as_ref()
         .and_then(|note| crate::vendor::canon::picture_style(&t, note));
@@ -928,7 +965,12 @@ pub(crate) mod tests {
     /// An EOS-1D TIF: the stream of two components, 4 MCUs × 2 lines, then
     /// IFD0 (make, model, EXIF) whose maker note has RawDataOffset and
     /// WhiteBalanceTable.
-    fn canon_tif() -> (Vec<u8>, Vec<u16>) {
+    pub(crate) fn canon_tif() -> (Vec<u8>, Vec<u16>) {
+        canon_tif_with(&[])
+    }
+
+    /// [`canon_tif`] with `more` entries in IFD0.
+    pub(crate) fn canon_tif_with(more: &[Entry]) -> (Vec<u8>, Vec<u16>) {
         let planes: Vec<Vec<u16>> = (0..2u16)
             .map(|c| (0..8).map(|i| 100 * (c + 1) + i).collect())
             .collect();
@@ -952,15 +994,13 @@ pub(crate) mod tests {
         f.extend(note_len.to_le_bytes());
         f.extend(note_at.to_le_bytes());
         f.extend(0u32.to_le_bytes());
-        let ifd0 = put_ifd(
-            &mut f,
-            &[
-                (271, 2, 6, b"Canon\0".to_vec()),
-                (272, 2, 13, b"Canon EOS-1D\0".to_vec()),
-                (34665, 4, 1, exif.to_le_bytes().to_vec()),
-            ],
-            0,
-        );
+        let mut entries = vec![
+            (271, 2, 6, b"Canon\0".to_vec()),
+            (272, 2, 13, b"Canon EOS-1D\0".to_vec()),
+            (34665, 4, 1, exif.to_le_bytes().to_vec()),
+        ];
+        entries.extend(more.iter().cloned());
+        let ifd0 = put_ifd(&mut f, &entries, 0);
         f[4..8].copy_from_slice(&ifd0.to_le_bytes());
         (f, order)
     }

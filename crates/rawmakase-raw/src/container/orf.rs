@@ -239,9 +239,20 @@ fn aspect([left, top, width, height]: [u32; 4], [across, down]: [u32; 2]) -> Opt
     ])
 }
 
-/// The JPEG some compacts store after their fields of sensor data: at the
-/// next 2 KiB boundary after the odd rows' field (our measurements), to the
-/// end of the file. `(offset, length)` from the TIFF header.
+/// Where the JPEG some compacts store after their fields of sensor data
+/// starts, from the TIFF header: at the next 2 KiB boundary after the odd
+/// rows' field (our measurements).
+fn trailing_jpeg_at(offset: u64, p: Packing, width: u32, height: u32) -> u64 {
+    let stride = p.row_bytes(width as usize) as u64;
+    let even = u64::from(height.div_ceil(2));
+    let second = (even * stride).next_multiple_of(2048);
+    let end = offset + second + u64::from(height / 2) * stride;
+    end.next_multiple_of(2048)
+}
+
+/// The JPEG some compacts store after their fields of sensor data
+/// ([`trailing_jpeg_at`]), to the end of the file. `(offset, length)` from
+/// the TIFF header.
 fn trailing_jpeg(
     tiff: &[u8],
     offset: u32,
@@ -249,13 +260,34 @@ fn trailing_jpeg(
     width: u32,
     height: u32,
 ) -> Option<(u64, u64)> {
-    let stride = p.row_bytes(width as usize) as u64;
-    let even = u64::from(height.div_ceil(2));
-    let second = (even * stride).next_multiple_of(2048);
-    let end = u64::from(offset) + second + u64::from(height / 2) * stride;
-    let at = end.next_multiple_of(2048);
+    let at = trailing_jpeg_at(u64::from(offset), p, width, height);
     let len = (tiff.len() as u64).checked_sub(at)?;
     crate::preview::is_jpeg(tiff, at).then_some((at, len))
+}
+
+/// Where an ORF keeps what [`open`] reads beyond its directories, as offset
+/// and length in the file, for a file read in pieces (`partial`): the first
+/// bytes of the JPEG a compact stores after its fields of sensor data, which
+/// say whether it is there. Empty for other files, and until the directories
+/// read say where the sensor data is.
+pub(crate) fn header_parts(t: TiffFile) -> Vec<(u64, u64)> {
+    let base = t.base;
+    let Ok(info) = open(t) else {
+        return Vec::new();
+    };
+    match info.plan {
+        Plan::Orf(OrfPlan {
+            offset,
+            coding: Coding::Fields(p),
+            width,
+            height,
+            ..
+        }) => {
+            // The three bytes `preview::is_jpeg` reads.
+            vec![(base + trailing_jpeg_at(offset - base, p, width, height), 3)]
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// The colour filter from EXIF's CFAPattern at the sensor's corner,
@@ -314,7 +346,7 @@ pub(crate) fn decode(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::container::test_tiff::{E, ascii, dir, long, offsets, short, shorts, tiff};
     use std::sync::atomic::AtomicBool;
@@ -327,7 +359,13 @@ mod tests {
 
     /// A little-endian ORF (`IIRO`) of `width × height` and `bps` bits, its
     /// data `strip`, IFD0 entries `more` and a maker note.
-    fn orf(size: [u32; 2], bps: u16, strip: &[u8], more: Vec<E>, note: Option<Vec<u8>>) -> Vec<u8> {
+    pub(crate) fn orf(
+        size: [u32; 2],
+        bps: u16,
+        strip: &[u8],
+        more: Vec<E>,
+        note: Option<Vec<u8>>,
+    ) -> Vec<u8> {
         let mut blobs: Vec<&[u8]> = vec![strip];
         if let Some(n) = &note {
             blobs.push(n);

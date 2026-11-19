@@ -223,6 +223,47 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
     Ok(info)
 }
 
+/// The TIFF at `raw_at` a current body's raw data is, and the raw image
+/// directory its first directory points to (0xF000).
+fn raw_directory(bytes: &[u8], raw_at: u64) -> Option<(TiffFile<'_>, Ifd)> {
+    let t = TiffFile::parse(bytes, raw_at)?;
+    let at = t.int(&t.ifds[0], 0xf000)?;
+    let entries =
+        rawmakase_tiff::Tiff::open(std::io::Cursor::new(bytes), raw_at)?.ifd(u64::from(at))?;
+    Some((t, Ifd { entries }))
+}
+
+/// What is read of the raw data's start before its directory says where its
+/// samples are ([`header_parts`]). Our measurements: the samples start 1 to
+/// 15 KiB into it.
+const RAW_HEAD: u64 = 64 << 10;
+
+/// Where a RAF keeps what [`open`] reads beyond its header and its embedded
+/// JPEG (the EXIF), as offset and length in the file, for a file read in
+/// pieces (`partial`): the records, which follow the JPEG, and the raw data's
+/// start, as the header's pointers give them; and, once the raw data's
+/// directory is read, all that comes before its samples, where its
+/// directories keep their values (the black levels and white balances).
+/// Empty when the header doesn't read.
+pub(crate) fn header_parts(bytes: &[u8]) -> Vec<(u64, u64)> {
+    let header = Bytes::new(bytes, Order::Big);
+    let (Ok(dir), Ok(dir_len), Ok(raw_at)) = (
+        pointer(&header, 2),
+        pointer(&header, 3),
+        pointer(&header, 4),
+    ) else {
+        return Vec::new();
+    };
+    let raw_at = u64::from(raw_at);
+    let mut parts = vec![(u64::from(dir), u64::from(dir_len)), (raw_at, RAW_HEAD)];
+    if let Some((t, ifd)) = raw_directory(bytes, raw_at)
+        && let Some(data) = t.int(&ifd, fuji::RAW_OFFSET)
+    {
+        parts.push((raw_at, u64::from(data)));
+    }
+    parts
+}
+
 /// The plan of a current body's raw data: a TIFF at `raw_at` whose first
 /// directory points (0xF000) to the raw image directory.
 fn tiff_plan(
@@ -232,17 +273,7 @@ fn tiff_plan(
     records: &Records,
     info: &mut RawInfo,
 ) -> Result<RafPlan> {
-    let t = TiffFile::parse(bytes, raw_at).ok_or_else(|| corrupt("RAF raw directory"))?;
-    let at = t
-        .int(&t.ifds[0], 0xf000)
-        .ok_or_else(|| corrupt("RAF raw directory"))?;
-    let mut tiff = rawmakase_tiff::Tiff::open(std::io::Cursor::new(bytes), raw_at)
-        .ok_or_else(|| corrupt("RAF raw directory"))?;
-    let ifd = Ifd {
-        entries: tiff
-            .ifd(u64::from(at))
-            .ok_or_else(|| corrupt("RAF raw directory"))?,
-    };
+    let (t, ifd) = raw_directory(bytes, raw_at).ok_or_else(|| corrupt("RAF raw directory"))?;
     let int = |tag| t.int(&ifd, tag);
     let width = int(fuji::RAW_WIDTH).ok_or_else(|| corrupt("RAF width"))?;
     let height = int(fuji::RAW_HEIGHT).ok_or_else(|| corrupt("RAF height"))?;
@@ -575,7 +606,7 @@ fn unpack_lsb(src: &[u8], bits: u32, out: &mut [u16]) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use crate::info::UNSET;
     use rawmakase_cancel::Cancel;
     use std::sync::atomic::AtomicBool;
@@ -597,7 +628,17 @@ mod tests {
     /// A RAF: header (version 0201, `name`, `compression` at byte 108), a
     /// JPEG, the records, then `raw` (a TIFF or older samples).
     fn raf(name: &str, records: &[(u16, Vec<u8>)], raw: &[u8], compression: u32) -> Vec<u8> {
-        let jpeg = [0xff, 0xd8, 0xff, 0xd9];
+        raf_with_jpeg(name, &[0xff, 0xd8, 0xff, 0xd9], records, raw, compression)
+    }
+
+    /// [`raf`] with `jpeg` as its embedded JPEG.
+    pub(crate) fn raf_with_jpeg(
+        name: &str,
+        jpeg: &[u8],
+        records: &[(u16, Vec<u8>)],
+        raw: &[u8],
+        compression: u32,
+    ) -> Vec<u8> {
         let dir = directory(records);
         let mut out = b"FUJIFILMCCD-RAW 0201FF000000".to_vec();
         out.extend(name.as_bytes());
@@ -624,7 +665,7 @@ mod tests {
 
     /// A raw block: a little-endian TIFF whose first directory points
     /// (0xF000) to a directory of LONG `entries`, then `data`.
-    fn block(entries: &[(u16, Vec<u32>)], data: &[u8]) -> Vec<u8> {
+    pub(crate) fn block(entries: &[(u16, Vec<u32>)], data: &[u8]) -> Vec<u8> {
         let mut entries = entries.to_vec();
         let n = entries.len() + 2;
         let ifd_at = 26u32;
@@ -660,7 +701,7 @@ mod tests {
         b
     }
 
-    fn records(xtrans: bool) -> Vec<(u16, Vec<u8>)> {
+    pub(crate) fn records(xtrans: bool) -> Vec<(u16, Vec<u8>)> {
         let mut r = vec![
             (0x110, pair(3, 2)),
             (0x111, pair(4, 6)),
@@ -676,7 +717,7 @@ mod tests {
     }
 
     /// The common raw image directory: `width` × `height` of `bits`.
-    fn entries(width: u32, height: u32, bits: u32) -> Vec<(u16, Vec<u32>)> {
+    pub(crate) fn entries(width: u32, height: u32, bits: u32) -> Vec<(u16, Vec<u32>)> {
         vec![
             (0xf001, vec![width]),
             (0xf002, vec![height]),

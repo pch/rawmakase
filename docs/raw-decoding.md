@@ -80,16 +80,39 @@ again later, and only the properties asked for are decoded.
 `preview_from_file(file, edge)` reads a RAW's preview for a thumbnail `edge`
 pixels on its long side without the rest of the file, for Library thumbnails
 on every volume. Unlike the reads above, it gives the existing readers a
-buffer the file's size, filled only where read: the file's start and end, each
-preview candidate's start up to its JPEG frame header, at which the file is
-opened again (NEF's reader sizes its previews from their frames), then the
-preview chosen. A reader can't tell zeros not read from the file's own, so
-it is used only for the variants whose previews read this way matched the
-whole-file ones (`partial::checked`), and a preview smaller than `edge` is
-none. In either case, and whenever a part needed isn't found, the caller
-reads the whole file.
+buffer the file's size, filled only where read: the file's start and end, the
+parts its container keeps its header in beyond those, each preview
+candidate's start up to its JPEG frame header, at which the file is opened
+again (NEF's reader sizes its previews from their frames, and a RAF's takes
+the EXIF from its embedded JPEG), then the preview chosen.
+
+The container's parts are asked for until it names nothing new
+(`variant::header_parts`), as one part read shows where the next is:
+
+- a RAF's records and raw data directory, which follow its embedded JPEG
+  (`raf::header_parts`);
+- a TIFF's directories with the links after them and their values of up to
+  64 KiB, wherever the file keeps them (`tiff::parts`): an older CR2, PEF or
+  SRW and a Nikon 1 write directories megabytes in, after an image;
+- for a CR2 every value, its maker note's too, and the start of its sensor
+  data, whose lossless JPEG headers say the image's size
+  (`cr2::header_parts`);
+- the first sample of a CR3's timed metadata, which holds its white balance
+  and levels (`cr3::header_parts`);
+- the first bytes of a NEF's sensor data, which say whether it is High
+  Efficiency (`nef::header_parts`);
+- the first bytes of the JPEG some Olympus compacts store after their sensor
+  data, listed by no directory (`orf::header_parts`).
+
+A reader can't tell zeros not read from the file's own, so reading in pieces
+is used only for the variants whose previews and header facts read this way
+matched the whole-file ones (`partial::checked`), and a preview smaller than
+`edge` is none. In either case, and whenever a part needed isn't found, the
+caller reads the whole file. A Phase One IIQ is read whole: its block's
+directory is about 1 MB before the file's end.
 The ignored test `real_files_give_the_same_preview_read_in_pieces` compares
-the two reads on a folder of RAWs; it is how a variant is added.
+the two reads on a folder of RAWs, the preview and every header fact; it is
+how a variant is added.
 `header_from_file(file)` reads the header the same way, stopping before
 the preview, for the photo info of RAWs on every volume (`rawmakase-decode`'s
 `photo::header_metadata`), by the same list of variants; its comparison with
