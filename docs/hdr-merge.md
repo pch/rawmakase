@@ -9,10 +9,11 @@ lives in `crates/rawmakase-hdr-merge` and arrives in stages, one pull request ea
 - Floating-point DNGs keep their precision through decoding (`SensorData::F32`,
   [RAW decoding](raw-decoding.md)).
 - The DNG writer and its round trip (below).
-- The merge of a tripod bracket, without alignment or deghosting, and the
-  `rawmakase merge-hdr` command.
+- The merge of a bracket, without deghosting, and the `rawmakase merge-hdr`
+  command.
+- Auto Align: brackets taken by hand.
 
-Alignment, deghosting, and the app's dialog and job follow.
+Deghosting, and the app's dialog and job follow.
 
 ## The bracket
 
@@ -42,19 +43,24 @@ median exposure; of two as near, the darker.
    marked clipped when a sample that can change it reaches saturation: 3 pixels
    around on Bayer, 9 on X-Trans (beyond that, only X-Trans's pass over fine
    stripes averages colour along rows and columns).
-   Small RAWs and linear DNGs are refused. Only two frames are held at a time.
-2. **Measures** each frame's exposure against the one before, on pixels both
+   Small RAWs and linear DNGs are refused. Only two frames are held at a time;
+   with Auto Align also the reference, decoded first, until its turn, and a
+   frame's warped copy while it is warped: up to four.
+2. **Aligns** each frame to the reference (Auto Align, on by default; below),
+   and warps it into the reference's geometry.
+3. **Measures** each frame's exposure against the one before, on pixels both
    saw unclipped (the brighter below 85% of its saturation) and the darker 20
    standard deviations above black: the median of their ratios, refined by
    Tukey's biweight so a moving object can't pull it. Shutter speeds are rounded
    (a camera's 1/60 s is 1/64 s); the EXIF's ratio would leave a seam of that
    size. A ratio more than 0.5 stop from the EXIF's is refused as another scene;
    with fewer than 1000 such pixels, the EXIF's ratio is used.
-3. **Measures each frame's noise**, variance = shot · level + read, from its
+4. **Measures each frame's noise**, variance = shot · level + read, from its
    flat 16 × 16 tiles: the robust variance of differences two pixels apart,
    the flattest fifth of each half-stop level, a weighted line through them.
-   A frame with too few levels takes a rough model by its ISO speed.
-4. **Merges**: per pixel and channel, each frame's estimate `s / g` (its
+   A frame with too few levels takes a rough model by its ISO speed. It is
+   measured before the warp, which smooths it.
+5. **Merges**: per pixel and channel, each frame's estimate `s / g` (its
    sample over its exposure relative to the darkest) weighted by
    `g² / (shot · s + read)`, the inverse of its variance. Brighter frames win
    wherever they are unclipped. A ramp takes a frame's weight from 1 to 0
@@ -64,7 +70,7 @@ median exposure; of two as near, the darker.
    darkest frame is never ramped or dropped: where every brighter frame
    clipped it alone says what the light was, as a single RAW would, and the
    decoder's highlight recovery works on it as on any raw.
-5. **Encodes**: the darkest frame's saturation is WhiteLevel 32768, as in
+6. **Encodes**: the darkest frame's saturation is WhiteLevel 32768, as in
    Lightroom's merges. BaselineExposure is the reference camera's own (Camera
    Raw's, `camera_profiles::reference`) plus log2 of the reference's exposure
    over the darkest's and of the darkest's saturation, so the merge renders at
@@ -87,15 +93,79 @@ place without replacing a file: beside the active photo as `<name>-HDR.dng`,
 then `-HDR-2`, `-HDR-3`… as Lightroom names them, or at an exact path. A cancel
 or a changed source publishes nothing, and the staged file is removed.
 
+## Auto Align
+
+`align` fits each frame to the reference with a homography, by direct
+photometric alignment (inverse-compositional Lucas–Kanade), with no feature
+detector:
+
+- **What is compared:** the log of each frame's demosaiced green. Green is
+  sampled on every row and column of a Bayer sensor; where the demosaic puts a
+  red or blue edge depends on its phase on the colour filter, which a frame
+  moved by an odd number of pixels changes. The exposure between the frames
+  is one offset in the log, fitted with the motion from the mean difference
+  the coarse search finds.
+  A pixel takes no part when it is clipped, above 85% of its saturation or
+  less than 10 standard deviations of its noise above black.
+- **Weights:** each pixel by the inverse of its log's variance from the
+  frame's noise model, times Tukey's biweight of its residual over that
+  noise, so a moving object doesn't pull the fit. A residual that half a
+  pixel's misalignment explains at the pixel's gradient is not an outlier:
+  otherwise smooth areas, which agree under any shift, set so tight a reach
+  that the edges which carry the fit are thrown out while it is still a
+  little off.
+- **Coarse to fine:** a Gaussian pyramid ([1 3 3 1] blur, halved until the long
+  edge is 200 pixels at most). On the coarsest level an exhaustive search
+  for the shift, within 5% of the long edge, refined to a fraction of a
+  pixel; then Gauss–Newton steps on every level down to full resolution, on
+  at most 2^18 pixels a level, the steepest of each 16 × 16 cell, with
+  Sobel gradients (noise in the gradients shortens every step).
+- **Steps:** each is tried at full length, then doubled while the robust cost
+  falls, or halved if it rose; one that no length makes cheaper is not taken,
+  and the level is done. A level is done when a step moves no corner
+  0.01 of its pixels or lowers the cost by less than 0.01%: where parallax
+  leaves no one homography exact (a car before a landscape), the weights hand
+  pixels from one depth to the other and the fit would creep along a valley
+  no lower than where it is.
+- **Models:** a shift, then a similarity (shift, turn, scale), then the full
+  homography, each through the pyramid from where the simpler one ended (a
+  richer one that can't be fitted is passed over), and the identity with only
+  its offset fitted. The one kept has the least
+  robust cost at full resolution plus 25 per parameter (four times the
+  Bayesian information criterion's, as neighbouring pixels' noise is not
+  independent), so a richer model must explain more than noise.
+- **Failure:** a frame that moved more than 5% of the long edge at its centre,
+  turned more than 5°, moved any corner more than 10%, whose fit still moved
+  half a pixel in its last step, that most pixels disagree with (fewer than
+  half within 14 standard deviations of their noise, or half a pixel's
+  misalignment at an edge), or that the
+  best fit leaves more than half a stop from the reference (robust standard
+  deviation) fails the merge: "Couldn't align IMG_1.CR3: … Try with Auto
+  Align off, or a bracket taken on a tripod". A smeared merge is never
+  written.
+- **Warp:** a fit that moves no corner 0.05 pixel is the identity, and the frame
+  is merged as taken. Otherwise every reference pixel takes the Catmull–Rom
+  cubic of the 4 × 4 frame pixels around where it lands, clipped if one of
+  them is. Lens distortion is the same in every frame, so it stays in the
+  data and is corrected at render time as for any raw.
+- **Coverage:** where a warped frame doesn't reach adds nothing from it (the
+  darkest frame included), and what not every frame covers is the DNG's
+  transparency mask, as in Lightroom's merges. The starting crop that hides it
+  comes with the app's merge.
+
+Each frame's alignment (its shift at the centre, turn and remaining residual)
+is in `Merged::frames`, and the command line prints it.
+
 ## The command line
 
 ```sh
-rawmakase merge-hdr IMG_9814.CR3 IMG_9815.CR3 IMG_9816.CR3 [-o out.dng]
+rawmakase merge-hdr IMG_9814.CR3 IMG_9815.CR3 IMG_9816.CR3 [-o out.dng] [--no-align]
 ```
 
 The first RAW names the merge. Progress and what was measured (each frame's
 exposure by EXIF and measured, the reference, the BaselineExposure) go to
-standard error, the DNG's path to standard output. `--output` must not exist.
+standard error, the DNG's path to standard output. `--no-align` merges the
+frames as they were taken. `--output` must not exist.
 Ctrl-C stops the merge without writing anything; a second Ctrl-C ends the
 process at once.
 
@@ -182,6 +252,49 @@ find the camera's profiles by its name.
     merge refused the bracket.
 - **The other `play-raw` brackets** merge: Fujifilm X-T4 (X-Trans, handheld,
   not aligned yet), Nikon D750 (5 frames), Panasonic GX80 and GH3 (ISO only,
-  whose measured steps are smaller than its EXIF's ISO speeds say).
+  whose measured steps came out smaller than its EXIF's ISO speeds say; Auto
+  Align showed why: its frames are up to 30 pixels apart, below).
   A 24-megapixel bracket of three takes about 27 s and 1.9 GB on an Apple M1 Pro.
+
+### Auto Align (2026-11-19)
+
+- **Synthetic frames** (`align.rs`'s tests, 1536 × 1024, a texture of waves and
+  soft edges rendered exactly under each motion, two stops apart, with noise
+  and the EXIF's exposure a tenth of a stop off): shifts of 60 pixels, turns of
+  2°, a perspective and sub-pixel shifts are found within 0.1 pixel everywhere
+  in the frame; a frame of the same place is the identity; an eighth of the
+  frame moved elsewhere doesn't pull the fit past 0.1 pixel; another scene and
+  a frame two thirds covered by one (most pixels disagree), a turn of 8° and a
+  frame with nothing well exposed fail. On the four brackets below 91% to 100%
+  of the pixels agree with the fit.
+- **A synthetic handheld bracket** (`tests/merge.rs`, the bracket above with
+  the darkest and brightest frames moved 7.8 and 6.0 pixels and turned 0.5°
+  and −0.3°, through mosaic, demosaic and merge): the shifts are found within
+  0.2 pixel and the turns within 0.05°, every block of the merge is within its
+  noise of the scene, and the moved edges are the transparency mask. Unaligned,
+  the exposure ratios are measured across misplaced edges and every block comes
+  out about 17% dark.
+- **The `play-raw` brackets**, merged with and without Auto Align and rendered
+  beside the reference frame alone (CPU time and peak memory on an Apple M1
+  Pro under load from other work):
+
+  | Bracket | Frames moved | Residual | CPU | Memory |
+  | --- | --- | --- | --- | --- |
+  | Fujifilm X-T4 (X-Trans) | 6.6, 4.5 px | 0.04 stop | 32 s (23 s unaligned) | 3.1 GB (2.4) |
+  | Panasonic GX80 | 1.7, 3.5 px | 0.08 stop | 13 s (7 s) | 1.6 GB (1.3) |
+  | Nikon D750, 5 frames | 14 to 25 px | 0.06 to 0.17 stop | 32 s (15 s) | 2.7 GB (2.0) |
+  | Panasonic GH3, 5 frames | 15 to 31 px | 0.10 to 0.12 stop | 18 s (10 s) | 1.8 GB (1.3) |
+
+  Aligned, the X-T4's foliage, the D750's car and the GH3's canyon are as sharp
+  as the reference frame alone; unaligned, doubled or smeared. The GH3's
+  measured steps now agree with its EXIF (+0.33, +0.66, +0.99, +1.31 stops
+  against +0.32, +0.64, +1.00, +1.32; unaligned they measured +0.25 to
+  +0.93). The GX80's thin branches still show double edges where the wind moved
+  them: what moved within the scene is deghosting's, not alignment's. The
+  D750's car stands before a far landscape, which no one homography fits; the
+  car comes out sharp, and runs with different stopping rules put the fit
+  about a pixel apart.
+- **Not checked:** the Canon T8i tripod bracket (refused until its camera
+  name is fixed), so whether a real tripod bracket comes out as the identity;
+  a bracket of more than 24 megapixels.
 

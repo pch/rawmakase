@@ -20,6 +20,10 @@ pub struct MergeHdr {
     /// that is taken.
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+    /// Merge the frames as they were taken, without Auto Align: for a bracket
+    /// taken on a tripod, or one Auto Align can't align.
+    #[arg(long)]
+    pub no_align: bool,
 }
 
 /// Merges `args.raws` and writes the DNG; returns its path. Progress and what
@@ -42,6 +46,7 @@ pub fn merge_hdr(
         .collect::<Result<Vec<_>, _>>()?;
     let options = MergeOptions {
         demosaic: Default::default(),
+        align: !args.no_align,
         software: format!("RAWmakase {}", env!("CARGO_PKG_VERSION")),
     };
     let err = Mutex::new(err);
@@ -52,6 +57,7 @@ pub fn merge_hdr(
         let line = match stage {
             Stage::Check => "Checking the bracket".to_string(),
             Stage::Decode(n) => format!("Decoding frame {} of {}", n + 1, inputs.len()),
+            Stage::Align(n) => format!("Aligning frame {} of {}", n + 1, inputs.len()),
             Stage::Measure(_) | Stage::Merge(_) => return,
             Stage::Encode => "Writing the DNG".to_string(),
         };
@@ -73,9 +79,17 @@ pub fn merge_hdr(
         } else {
             ""
         };
+        let aligned = match &frame.alignment {
+            Some(a) if a.warped => format!(
+                ", aligned: moved {:+.2}, {:+.2} px, turned {:+.3}°, residual {:.3} stop",
+                a.shift[0], a.shift[1], a.rotation, a.residual
+            ),
+            Some(a) => format!(", aligned: in place, residual {:.3} stop", a.residual),
+            None => String::new(),
+        };
         writeln!(
             err,
-            "  {name}: {:+.2} EV by EXIF, {how}{reference}",
+            "  {name}: {:+.2} EV by EXIF, {how}{reference}{aligned}",
             frame.nominal_ev
         )?;
     }
@@ -111,6 +125,7 @@ mod tests {
         let args = MergeHdr {
             raws: vec![dir.path().join("missing.CR3")],
             output: Some(output.clone()),
+            no_align: false,
         };
         let mut err = Vec::new();
         let got = merge_hdr(&args, Cancel::NEVER, &mut err).unwrap_err();
