@@ -1764,6 +1764,26 @@
    }
   },
   {
+   "name": "look-color-bw",
+   "look": {
+    "file": "synthetic-color.xmp",
+    "amount": 1
+   },
+   "settings": {
+    "ConvertToGrayscale": "True"
+   }
+  },
+  {
+   "name": "look-mono-color",
+   "look": {
+    "file": "synthetic-mono.xmp",
+    "amount": 1
+   },
+   "settings": {
+    "ConvertToGrayscale": "False"
+   }
+  },
+  {
    "name": "bw-mix-zero",
    "settings": {
     "ConvertToGrayscale": "True",

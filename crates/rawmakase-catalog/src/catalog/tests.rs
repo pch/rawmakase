@@ -534,6 +534,28 @@ fn lightroom_edits_fall_back_to_rawmakase_profiles() -> Result<()> {
     assert_eq!(r.exposure, 0.5);
     assert_eq!(r.profile.as_ref().unwrap().name, open::STANDARD);
     assert!(w.iter().any(|s| s.contains("Adobe Vivid")), "{w:?}");
+    // The look's own `ConvertToGrayscale`, in the settings the catalog stores with it,
+    // sets the Treatment, as in Camera Raw (#666); a look that isn't available
+    // leaves the photo's own flag.
+    let look = |name: &str, flag: &str| {
+        format!(
+            r#"s = {{ ConvertToGrayscale = true, CameraProfile = "Adobe Standard", Look = {{ Name = "{name}", Amount = 1, Parameters = {{ ConvertToGrayscale = {flag}, ProcessVersion = "11.0" }} }} }}"#
+        )
+    };
+    let (r, _) = convert_develop(&look("Adobe Color", "false"), &m, &profiles, None)?;
+    assert_eq!(r.profile.as_ref().unwrap().name, open::COLOR);
+    assert!(!r.effects.monochrome);
+    let (r, _) = convert_develop(&look("Adobe Vivid", "false"), &m, &profiles, None)?;
+    assert!(r.effects.monochrome);
+    // Settings that can't be read leave the photo's flag rather than failing the edit.
+    let (r, _) = convert_develop(
+        &look("Adobe Color", "false, Bad-Key = 1"),
+        &m,
+        &profiles,
+        None,
+    )?;
+    assert_eq!(r.profile.as_ref().unwrap().name, open::COLOR);
+    assert!(r.effects.monochrome);
     Ok(())
 }
 #[test]

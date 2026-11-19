@@ -253,6 +253,44 @@ fn edit_facts_read_recipes_that_name_their_profile() -> Result<()> {
     Ok(())
 }
 
+/// A photo with only a Lightroom edit counts as Black & White as it renders: by its
+/// look's own `ConvertToGrayscale` when the look carries its settings, else by the
+/// edit's (#666).
+#[test]
+fn edit_facts_take_a_lightroom_looks_treatment() -> Result<()> {
+    let (_d, cat, photo) = catalog_with_photo()?;
+    let facts = |text: &str| -> Result<bool> {
+        cat.db_for_tests().execute(
+            "UPDATE photos SET recipe = NULL, lightroom_develop = ?1 WHERE id = ?2",
+            rusqlite::params![text, photo.0],
+        )?;
+        Ok(cat.edit_facts()?[&photo].grayscale)
+    };
+    let look = |photo: &str, parameters: &str| {
+        format!(
+            r#"s = {{ ConvertToGrayscale = {photo}, Look = {{ Name = "Adobe Color", Amount = 1{parameters} }} }}"#
+        )
+    };
+    assert!(!facts(&look(
+        "true",
+        ", Parameters = { ConvertToGrayscale = false }"
+    ))?);
+    assert!(facts(&look(
+        "false",
+        ", Parameters = { ConvertToGrayscale = true }"
+    ))?);
+    assert!(!facts(&look(
+        "true",
+        ", Parameters = { ProcessVersion = \"11.0\" }"
+    ))?);
+    // Without the look's settings, or with ones that can't be read, the edit's flag.
+    assert!(facts(&look("true", ""))?);
+    assert!(facts(&look("true", ", Parameters = 3"))?);
+    assert!(facts("s = { ConvertToGrayscale = true, Look = {  } }")?);
+    assert!(!facts("s = { ConvertToGrayscale = false }")?);
+    Ok(())
+}
+
 /// New Catalog's defaults, as Lightroom Classic 15.6 makes them: six smart
 /// collections in a "Smart Collections" set, with Lightroom's text.
 #[test]

@@ -255,8 +255,8 @@
         0.959
       ],
       "cube-creative-33-bw": [
-        18.08,
-        31.393
+        0.291,
+        0.889
       ],
       "cube-creative-33-display-p3-100": [
         0.308,
@@ -682,6 +682,10 @@
         0.576,
         1.973
       ],
+      "look-color-bw": [
+        0.812,
+        2.982
+      ],
       "look-color-saturation+30": [
         0.77,
         2.987
@@ -697,6 +701,10 @@
       "look-exposure-50": [
         0.288,
         0.846
+      ],
+      "look-mono-color": [
+        1.185,
+        6.129
       ],
       "look-parametric-100": [
         0.278,

@@ -7,6 +7,36 @@ use crate::model::recipe::Recipe;
 use crate::xmp::look::LookAmount;
 use anyhow::{Context, Result, ensure};
 use std::path::PathBuf;
+/// A look's own `ConvertToGrayscale`, as [`crate::xmp::look::GRAYSCALE`] holds it, from
+/// the settings the catalog stores with the look (`Look = { Name = …, Parameters = { … } }`).
+/// `None` when the look carries no settings, or settings that can't be read: the
+/// photo's own flag then decides, as before the look's was read.
+fn look_grayscale(look: &std::collections::BTreeMap<String, String>) -> Option<&'static str> {
+    let parameters = develop_fields(&format!("s = {}", look.get("Parameters")?)).ok()?;
+    Some(crate::xmp::look::grayscale(
+        parameters.get("ConvertToGrayscale").map(String::as_str),
+    ))
+}
+
+/// Whether a Lightroom edit's Treatment is Black & White, from its parsed
+/// [`develop_fields`]: the look's own `ConvertToGrayscale` when a named look carries
+/// its settings (as Camera Raw takes it, #666), else the edit's. Without the photo's
+/// profiles at hand it can't tell whether the look is available, which
+/// [`convert_develop`] also checks.
+pub fn grayscale(fields: &std::collections::BTreeMap<String, String>) -> bool {
+    let look = fields
+        .get("Look")
+        .filter(|v| v.starts_with('{'))
+        .and_then(|v| develop_fields(&format!("s = {v}")).ok())
+        .filter(|look| look.contains_key("Name"));
+    match look.as_ref().and_then(look_grayscale) {
+        Some(flag) => flag == "True",
+        None => fields
+            .get("ConvertToGrayscale")
+            .is_some_and(|v| v.trim() == "true"),
+    }
+}
+
 /// Parse Lightroom's serialized Lua table as data only. No interpreter is used.
 pub fn develop_fields(text: &str) -> Result<std::collections::BTreeMap<String, String>> {
     ensure!(text.len() < 16_000_000, "Develop settings too large");
@@ -117,6 +147,11 @@ pub fn convert_develop(
                     preset
                         .settings
                         .insert("RAWmakaseLookUUID".into(), serde_json::from_str(uuid)?);
+                }
+                if let Some(flag) = look_grayscale(&look) {
+                    preset
+                        .settings
+                        .insert(crate::xmp::look::GRAYSCALE.into(), flag.into());
                 }
                 // An amount Lightroom can't store is reported, and the look renders
                 // at 100%.
@@ -281,6 +316,7 @@ pub fn convert_develop(
         preset.look.clear();
         preset.settings.remove("RAWmakaseLookUUID");
         preset.settings.remove(crate::xmp::look::SETTING);
+        preset.settings.remove(crate::xmp::look::GRAYSCALE);
     }
     // Spots and masks convert on their own and report what they skip.
     let local_settings = std::mem::take(&mut preset.local);

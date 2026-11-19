@@ -146,8 +146,9 @@ impl CaseLook {
     pub fn path(&self) -> PathBuf {
         corpus().join("looks").join(&self.file)
     }
-    /// The look's name and UUID, as a sidecar's `crs:Look` names it.
-    fn identity(&self) -> (String, String) {
+    /// The look's name, UUID and `ConvertToGrayscale`, as a sidecar's `crs:Look`
+    /// carries them.
+    fn identity(&self) -> (String, String, String) {
         let text = std::fs::read_to_string(self.path()).unwrap();
         let attribute = |key: &str| {
             let start = text
@@ -159,6 +160,7 @@ impl CaseLook {
         (
             attribute(r#"<rdf:li xml:lang="x-default">"#),
             attribute(r#"crs:UUID=""#),
+            attribute(r#"crs:ConvertToGrayscale=""#),
         )
     }
 }
@@ -187,9 +189,11 @@ impl Case {
         }
         xml += ">";
         if let Some(look) = &self.look {
-            let (name, uuid) = look.identity();
+            // With the look's own Treatment, which Camera Raw follows over the photo's
+            // (`camera-raw-charts.py` gives it all the look's settings).
+            let (name, uuid, grayscale) = look.identity();
             xml += &format!(
-                r#"<crs:Look><rdf:Description crs:Name="{name}" crs:Amount="{}" crs:UUID="{uuid}"/></crs:Look>"#,
+                r#"<crs:Look><rdf:Description crs:Name="{name}" crs:Amount="{}" crs:UUID="{uuid}"><crs:Parameters><rdf:Description crs:ConvertToGrayscale="{grayscale}"/></crs:Parameters></rdf:Description></crs:Look>"#,
                 look.amount
             );
         }
