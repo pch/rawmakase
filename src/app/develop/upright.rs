@@ -17,7 +17,12 @@ impl Editor {
     /// Analyses the open photo for Upright; the corrections arrive as
     /// [`Event::Upright`]. Does nothing while the photo is still decoding.
     pub(in crate::app) fn start_upright(&mut self) {
-        let Some(im) = self.document.full().cloned() else {
+        // The full-size image only. The half-size draft a photo opens with does not
+        // always give the corrections its full-size image gives, which are the
+        // ones an export of a photo never opened works out; and an analysis
+        // started on the draft was kept when the full-size image arrived. The
+        // full-size image's arrival asks again ([`Self::ensure_analysis`]).
+        let Some(im) = self.document.full().filter(|im| !im.fast).cloned() else {
             return;
         };
         let (generation, _) = self.document.upright.start();

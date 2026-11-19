@@ -78,18 +78,11 @@ impl Editor {
         {
             self.refresh_previews(&[left]);
         }
-        // Moving on cancels the previous photo's prefetch.
-        self.prefetch_cancel
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        self.prefetch_cancel = Default::default();
         let neighbour = photo.and_then(|id| self.neighbour_of(id));
-        let prefetch = photo
-            .and_then(|id| self.prefetch_neighbour(id))
-            .map(|path| crate::app::worker::Prefetch {
-                path,
-                cancel: self.prefetch_cancel.clone(),
-                demosaic: self.session.demosaic,
-            });
+        // Moving on cancels the previous photo's prefetch; this photo's waits
+        // for its first full-size render (`start_neighbour_prefetch`).
+        let ahead = photo.and_then(|id| self.prefetch_neighbour(id));
+        self.neighbour_prefetch.open(ahead, self.session.demosaic);
         // The photo being left is Paste from Previous's source; opening the same photo
         // again (as a new demosaic setting does) leaves Previous as it was.
         let another =
@@ -127,13 +120,23 @@ impl Editor {
             id,
             path,
             cancel,
-            prefetch,
             defaults: self.raw_defaults.clone(),
             demosaic: self.session.demosaic,
         });
         // The photo left may be the reference, or its edit may have changed.
         self.load_reference();
         true
+    }
+    /// Starts developing the open photo's neighbour ahead of time, now that the
+    /// photo's first full-size render is over (shown, or failed): that render's
+    /// noise reduction and the neighbour's decode are the two largest bursts of
+    /// memory of an open, and the second now follows the first. Later renders
+    /// find nothing waiting. (Before's own first render, when Before is shown,
+    /// may still run beside the prefetch.)
+    pub(in crate::app) fn start_neighbour_prefetch(&mut self) {
+        if let Some(job) = self.neighbour_prefetch.take() {
+            self.loader.prefetch(job);
+        }
     }
     /// The photo to decode ahead of time while `id` is shown: the next one in
     /// the filmstrip, or the previous one after stepping back.
@@ -529,6 +532,7 @@ impl Editor {
             let (id, cancel) = self.preview.start(
                 let_finish,
                 crate::app::develop::state::Pending {
+                    full_size: !image.fast,
                     recipe: Some(recipe.clone()),
                     mode: region.map_or(
                         crate::app::develop::state::TextureMode::Whole,

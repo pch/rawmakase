@@ -345,8 +345,6 @@ pub(crate) struct LoadJob {
     pub id: u64,
     pub path: PathBuf,
     pub cancel: Arc<AtomicBool>,
-    /// The photo to decode ahead of time once this one is fully developed.
-    pub prefetch: Option<Prefetch>,
     /// What the photo starts from when it has no edit.
     pub defaults: Arc<crate::raw_defaults::DevelopDefaults>,
     /// The demosaic of the full-size decode and of its decode-cache key.
@@ -359,6 +357,52 @@ pub(crate) struct Prefetch {
     pub path: PathBuf,
     pub cancel: Arc<AtomicBool>,
     pub demosaic: crate::camera_data::Demosaic,
+}
+/// The open photo's neighbour, to develop ahead of time ([`Loader::prefetch`]).
+/// Its inputs are captured as the photo starts opening and held here until the
+/// photo's first full-size render is done; then the job is handed over, once.
+/// Opening another photo, or quitting, cancels it wherever it is by then:
+/// waiting here, in the loader's mailbox, or decoding.
+#[derive(Default)]
+pub(crate) struct NeighbourPrefetch {
+    /// Shared with the job made for the photo now open.
+    cancel: Arc<AtomicBool>,
+    waiting: Option<Prefetch>,
+}
+impl NeighbourPrefetch {
+    /// A photo starts opening: the prefetch made for the last one is cancelled,
+    /// and `neighbour` (this photo's, when it has one) waits for this photo's
+    /// first full-size render, to be decoded with `demosaic`.
+    pub(crate) fn open(
+        &mut self,
+        neighbour: Option<PathBuf>,
+        demosaic: crate::camera_data::Demosaic,
+    ) {
+        self.cancel();
+        self.waiting = neighbour.map(|path| Prefetch {
+            path,
+            cancel: self.cancel.clone(),
+            demosaic,
+        });
+    }
+    /// The job to start now that the open photo's first full-size render is
+    /// done: `None` when it has been taken, was cancelled, or the photo has no
+    /// neighbour.
+    pub(crate) fn take(&mut self) -> Option<Prefetch> {
+        self.waiting.take()
+    }
+    /// Cancels the open photo's prefetch, waiting or handed over.
+    pub(crate) fn cancel(&mut self) {
+        self.cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.cancel = Default::default();
+        self.waiting = None;
+    }
+    /// The neighbour still waiting for the open photo's first full-size render.
+    #[cfg(test)]
+    pub(crate) fn waiting(&self) -> Option<&std::path::Path> {
+        self.waiting.as_ref().map(|job| job.path.as_path())
+    }
 }
 /// What is drawn over (or instead of) the rendered photo.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -420,3 +464,53 @@ pub(crate) use renderer::Renderer;
 #[cfg(test)]
 pub(in crate::app) use renderer::holding;
 pub(in crate::app) use renderer::{RenderBackend, renderer_with_backend};
+
+#[cfg(test)]
+mod neighbour_prefetch_tests {
+    use super::NeighbourPrefetch;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn the_neighbour_is_handed_over_once() {
+        let mut ahead = NeighbourPrefetch::default();
+        assert!(ahead.take().is_none(), "nothing before a photo opens");
+        ahead.open(Some(PathBuf::from("b.arw")), Default::default());
+        assert_eq!(ahead.waiting(), Some(Path::new("b.arw")));
+        let job = ahead.take().expect("the neighbour, at the first render");
+        assert_eq!(job.path, Path::new("b.arw"));
+        assert!(!job.cancel.load(Ordering::Relaxed));
+        assert!(ahead.take().is_none(), "later renders start nothing");
+    }
+
+    /// Stale work: the job of a photo moved past must not decode, whether the
+    /// loader has it by then or not.
+    #[test]
+    fn opening_another_photo_cancels_the_last_one_s_neighbour() {
+        let mut ahead = NeighbourPrefetch::default();
+        ahead.open(Some(PathBuf::from("b.arw")), Default::default());
+        let handed_over = ahead.take().unwrap();
+        ahead.open(Some(PathBuf::from("c.arw")), Default::default());
+        assert!(handed_over.cancel.load(Ordering::Relaxed));
+        // Moved on again before this photo's first render: it never starts.
+        ahead.open(None, Default::default());
+        assert!(ahead.take().is_none());
+        // The job made next has a flag of its own.
+        ahead.open(Some(PathBuf::from("d.arw")), Default::default());
+        let next = ahead.take().unwrap();
+        assert!(!next.cancel.load(Ordering::Relaxed));
+        assert_eq!(next.path, Path::new("d.arw"));
+    }
+
+    #[test]
+    fn cancelling_stops_it_waiting_or_handed_over() {
+        let mut ahead = NeighbourPrefetch::default();
+        ahead.open(Some(PathBuf::from("b.arw")), Default::default());
+        ahead.cancel();
+        assert!(ahead.take().is_none());
+        ahead.open(Some(PathBuf::from("b.arw")), Default::default());
+        let job = ahead.take().unwrap();
+        ahead.cancel();
+        assert!(job.cancel.load(Ordering::Relaxed));
+    }
+}

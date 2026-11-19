@@ -369,6 +369,9 @@ impl Editor {
                         self.preview.crop = Some(request.crop);
                     }
                     if stage != RenderStage::Draft {
+                        if request.full_size {
+                            self.start_neighbour_prefetch();
+                        }
                         self.preview.task.finish(id);
                         // The thumbnail is cached under the current edit: an earlier
                         // render an edit overtook shows, but was not rendered with it.
@@ -408,6 +411,10 @@ impl Editor {
                     error,
                 } if id == self.preview.task.id() => {
                     self.messages.fail_on(Topic::Render, error);
+                    // The render's work is over, as when it is shown.
+                    if self.preview.pending.full_size {
+                        self.start_neighbour_prefetch();
+                    }
                     self.preview.task.finish(id);
                     self.preview.stand_in = None;
                     // A failed render on the GPU retires Before's textures too: render

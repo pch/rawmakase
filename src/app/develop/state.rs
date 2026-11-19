@@ -186,6 +186,8 @@ impl From<egui::TextureHandle> for Picture {
 /// What a render was asked for, which its result is shown with.
 #[derive(Clone)]
 pub(in crate::app) struct Pending {
+    /// The render is of the photo's full-size image, not of its half-size draft.
+    pub(in crate::app) full_size: bool,
     /// What the pixels are rendered with, Visualize Range included, so a picker
     /// never takes a gray preview for the photo.
     pub(in crate::app) recipe: Option<Recipe>,
@@ -197,6 +199,7 @@ pub(in crate::app) struct Pending {
 impl Default for Pending {
     fn default() -> Self {
         Self {
+            full_size: false,
             recipe: None,
             mode: TextureMode::Whole,
             crop: [0., 0., 1., 1.],

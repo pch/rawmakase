@@ -446,9 +446,14 @@ cache (`crates/rawmakase-decode/src/decode_cache.rs`), together with the pixels 
 restored without recomputing it. The loader recovers highlights itself before
 announcing the full image, which the first render would otherwise do. A later open
 of the same photo reads the cache and skips both the half-size and the full decode.
-After a photo opens, the loader develops the next and previous photos of the folder
+After a photo opens, the loader develops its neighbour in the direction of travel
 into the cache on a two-thread pool, leaving the other cores to rendering; opening
-another photo cancels the prefetch. A JPEG, PNG or TIFF neighbour is never cached:
+another photo cancels the prefetch. The prefetch starts once the photo's first
+full-size render is done (the app holds it until then, `worker::NeighbourPrefetch`):
+started as the full-size image arrived, as it was before 2026-11-18, the
+neighbour's decode ran beside that render's noise reduction, the two largest
+bursts of memory of an open at once
+([measurements](records/preview-performance-measurements.md#memory-while-a-photo-opens--2026-11-18)). A JPEG, PNG or TIFF neighbour is never cached:
 the prefetch opens it into memory instead, and the next load takes it if it is that
 file, unchanged in size and modification time, and drops it otherwise.
 

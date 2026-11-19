@@ -749,3 +749,145 @@ fn ai_denoise_model_events_reach_its_own_installer() {
     e.events(&ctx);
     assert_eq!(e.messages.line(), "AI Denoise model removed");
 }
+
+/// An After render's result, of the whole photo.
+fn after_render(id: u64, stage: worker::RenderStage) -> Event {
+    Event::Rendered {
+        id,
+        pane: worker::Pane::After,
+        preview: worker::Preview::Pixels {
+            image: crate::rendered::Rendered {
+                width: 1,
+                height: 1,
+                pixels: vec![[1.; 3]],
+            },
+            display_rgb: vec![255; 3],
+            navigator: None,
+        },
+        histogram: Box::new(crate::rendered::Histogram::EMPTY),
+        thumbnail: None,
+        samples: None,
+        stage,
+        status: String::new(),
+    }
+}
+
+/// An editor with a photo open whose neighbour, the synthetic chart, waits to be
+/// decoded ahead into the cache the second value tells about. Its renderer
+/// renders nothing: only the results a test sends arrive.
+fn editor_with_a_neighbour_waiting(
+    ctx: &egui::Context,
+    cache: &std::path::Path,
+) -> (
+    Editor,
+    Arc<CameraImage>,
+    crate::decode::FullSize,
+    std::sync::mpsc::Sender<()>,
+) {
+    let (mut e, image) = editor_with_blue_photo(
+        ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    let chart = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/corpus/charts/synthetic-d65.dng");
+    let cache = crate::decode_cache::DecodeCache::new(cache.into(), u64::MAX);
+    task::wait_for(e.loader.stop().into(), std::time::Duration::from_secs(5));
+    e.loader = worker::Loader::new(e.tx.clone(), ctx.clone(), cache.clone());
+    task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
+    let (taken, _) = std::sync::mpsc::channel();
+    let (hold, release) = std::sync::mpsc::channel();
+    e.renderer = worker::holding(taken, release);
+    e.view.viewport = Vec2::new(40., 40.);
+    let cached = crate::decode::FullSize::with_cache(&chart, e.session.demosaic, cache);
+    e.neighbour_prefetch.open(Some(chart), e.session.demosaic);
+    (e, image, cached, hold)
+}
+
+/// Whether the neighbour reaches the decode cache within half a minute.
+fn decoded_ahead(cached: &crate::decode::FullSize) -> bool {
+    let started = std::time::Instant::now();
+    while !cached.is_cached() && started.elapsed() < std::time::Duration::from_secs(30) {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    cached.is_cached()
+}
+
+/// The neighbour's decode used to start as the open photo's full-size image
+/// arrived, beside that image's first render and its noise reduction: the two
+/// largest bursts of memory of an open at once (7.5 GB opening a 61-megapixel
+/// RAW). It now waits for that render.
+#[test]
+fn the_neighbour_is_decoded_ahead_after_the_first_full_size_render() {
+    let ctx = egui::Context::default();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut e, image, cached, _hold) = editor_with_a_neighbour_waiting(&ctx, dir.path());
+    // The half-size draft's render is not the one waited for.
+    e.document.set_image(Arc::new(CameraImage {
+        fast: true,
+        ..(*image).clone()
+    }));
+    e.schedule();
+    e.tx.send(after_render(e.preview.task.id(), worker::RenderStage::Fit))
+        .unwrap();
+    e.events(&ctx);
+    assert!(e.neighbour_prefetch.waiting().is_some());
+    // Nor is a reduced render of the full-size image that comes before its
+    // own: the image's noise reduction is still to run.
+    e.document.set_image(image);
+    e.schedule();
+    let full = e.preview.task.id();
+    e.tx.send(after_render(full, worker::RenderStage::Draft))
+        .unwrap();
+    e.events(&ctx);
+    assert!(e.neighbour_prefetch.waiting().is_some());
+    assert!(!cached.is_cached());
+    // The full-size image's own render starts it, once.
+    e.tx.send(after_render(full, worker::RenderStage::Fit))
+        .unwrap();
+    e.events(&ctx);
+    assert!(e.neighbour_prefetch.waiting().is_none());
+    assert!(decoded_ahead(&cached));
+}
+
+/// A first render that fails has ended too: the neighbour is not left waiting
+/// for a render that may never come.
+#[test]
+fn the_neighbour_is_decoded_ahead_when_the_first_full_size_render_fails() {
+    let ctx = egui::Context::default();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut e, _, cached, _hold) = editor_with_a_neighbour_waiting(&ctx, dir.path());
+    e.schedule();
+    e.tx.send(Event::Failed {
+        id: e.preview.task.id(),
+        task: worker::TaskKind::Render(worker::Pane::After),
+        error: "no memory".into(),
+    })
+    .unwrap();
+    e.events(&ctx);
+    assert!(e.neighbour_prefetch.waiting().is_none());
+    assert!(decoded_ahead(&cached));
+}
+
+/// Stale completion: the render of a photo moved past, arriving after the next
+/// photo began opening, starts neither photo's prefetch.
+#[test]
+fn a_render_of_the_photo_left_starts_no_prefetch() {
+    let ctx = egui::Context::default();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut e, _, cached, _hold) = editor_with_a_neighbour_waiting(&ctx, dir.path());
+    e.schedule();
+    let left = e.preview.task.id();
+    let job_of_the_photo_left = e.neighbour_prefetch.waiting().map(|p| p.to_path_buf());
+    // The next photo starts opening, as `load_raw` does it: the last one's
+    // renders no longer count, and its neighbour gives way to this one's.
+    e.preview.clear_document();
+    e.neighbour_prefetch
+        .open(job_of_the_photo_left, e.session.demosaic);
+    e.tx.send(after_render(left, worker::RenderStage::Fit))
+        .unwrap();
+    e.events(&ctx);
+    assert!(e.neighbour_prefetch.waiting().is_some());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(!cached.is_cached());
+}

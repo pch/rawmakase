@@ -466,7 +466,7 @@ impl Raw {
         ensure!(!cancel.is_cancelled(), "Development cancelled");
         Ok(crate::ai::denoise::PackedBayer::pack(w, h, &data, [0, 0]))
     }
-    pub fn develop(self, decode: Decode, cancel: Cancel<'_>) -> Result<CameraImage> {
+    pub fn develop(mut self, decode: Decode, cancel: Cancel<'_>) -> Result<CameraImage> {
         // Small RAWs develop at full size in either mode, as they always have.
         if let Some((width, height, pixels)) = self.own.rgb(self.metadata.wb, cancel)? {
             ensure!(!cancel.is_cancelled(), "Development cancelled");
@@ -485,6 +485,9 @@ impl Raw {
             });
         }
         let cfa = self.own.cfa(cancel)?;
+        // Nothing reads the file again, so its bytes go before the demosaic
+        // allocates its planes, not after: 130 MB of a 61-megapixel ARW.
+        self.own.release_file();
         self.develop_mosaic(cfa, decode == Decode::Half, cancel)?
             .ok_or_else(|| anyhow::anyhow!("Sensor data RAWmakase cannot develop"))
     }

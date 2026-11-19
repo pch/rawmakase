@@ -93,8 +93,9 @@ pub(crate) struct Editor {
     /// The window's main area this frame (grid, photo or setup), which files
     /// dragged over the window are dropped into.
     drop_area: Option<egui::Rect>,
-    /// Cancels the prefetch started for the photo on screen.
-    prefetch_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// The open photo's neighbour, decoded ahead once the photo's first
+    /// full-size render is done.
+    neighbour_prefetch: worker::NeighbourPrefetch,
     /// What the status line and the top bar say.
     messages: crate::app::shell::messages::Messages,
     /// What a running catalog import or open is doing.
@@ -404,7 +405,7 @@ impl Editor {
             autosave: Default::default(),
             waiting: crate::app::catalog::Waiting::restoring(place),
             drop_area: None,
-            prefetch_cancel: Default::default(),
+            neighbour_prefetch: Default::default(),
             messages: crate::app::shell::messages::Messages::starting_with(
                 "Pick a photo in the Library to begin",
             ),
