@@ -187,9 +187,17 @@ airlight's level too: the lift away from the patch is +1.47 stops without it, +1
 a pale patch of 0.2 to 1% at 2 ×, +1.73 at 3.5 ×, +1.82 clipped; a patch of 0.1% changes
 nothing.
 
+A second round brackets the two sizes (the same patch colour at twice the white, on a
+frame of 666 × 1000): squares of 28, 30 and 32 pixels leave the veil alone and one of 34
+takes it over; strips 300 pixels wide do so from 12 pixels of height and not at 10;
+strips 60 wide do not at 12 or 14; two squares of 20 do not, and three squares of 26 do
+where one does not. So the window is 11 pixels per 1000 of the long edge, and what
+counts is how many pixels are left after it, wherever they are: more than 0.073% and at
+most 0.086% of the frame, the majority of the haziest 0.15 to 0.17%.
+
 That is the dark channel prior's airlight with a median: the engine's window (0.5% of
-the long edge each way, 7 pixels of its 512-pixel copy) and each channel's median over
-the haziest 0.1%. Partly clipped lights, on the same files rendered by Camera Raw and
+the long edge each way, 7 pixels of its 512-pixel copy, a little wide: 13.7 per 1000)
+and each channel's median over the haziest 0.1% (a little small). Partly clipped lights, on the same files rendered by Camera Raw and
 by the engine with that rule (camera white balance (2, 1, 1.54); veil R G B):
 
 | Patch (sensor values) | Camera Raw | Engine |
@@ -348,9 +356,15 @@ wrong than a fog of the wrong colour. What is established and waits for the amou
 airlight rule (median of the haziest 0.1%, ranked in the camera's values), the kept
 share from the haze equation, and the ceiling at the airlight's level.
 
-Positive Dehaze with the haziest 0.1% as its airlight is a wash on the training photos
-(+100: 3.18 → 3.01 at the median, 23 photos closer and 18 further, one by 11.7; +50:
-1.37 → 1.43): its strengths were fitted with the 1%.
+Positive Dehaze with the mean of the haziest 0.1% as its airlight is a wash on the
+training photos (+100: 3.18 → 3.01 at the median, 23 photos closer and 18 further, one
+by 11.7; +50: 1.37 → 1.43): its strengths were fitted with the 1%. With the median of
+the 0.1% it is 3.18 → 2.84 (mean 3.30 → 3.23; 24 closer, 14 further) and 1.37 → 1.31 at
++50: 6 closer on the photos whose 1% is a light of another colour (a pier at dusk, a
+sunlit city, a neon sign) and 16.5 further on the portrait by the grey-green wall, whose
+haziest 0.1% is skin. The same photo fails with either sign, so its airlight is the
+thing to get right first: its median turns from the skin's colour to the wall's between
+a share of 0.15% and 0.2%.
 
 ### What is left of Shadows, Highlights and Whites, and what more training photos buy (2026-11-18)
 
