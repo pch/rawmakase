@@ -88,7 +88,7 @@ impl Raw {
             .develop_mosaic(Some(cfa), false, cancel)?
             .ok_or_else(|| anyhow::anyhow!("Not a mosaic RAW"))?;
         let unbalance = wb.map(|w| 1. / w);
-        let mut pixels = image.pixels;
+        let mut pixels = image.pixels.into_vec();
         pixels.par_iter_mut().for_each(|p| {
             for c in 0..3 {
                 p[c] *= unbalance[c];
