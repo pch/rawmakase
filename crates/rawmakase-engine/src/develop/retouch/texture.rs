@@ -52,7 +52,8 @@ const BLOCK: usize = 16;
 /// The fewest pixels a measurement of grain is made from.
 const MIN_SAMPLES: usize = 32;
 
-/// Photo pixels per patch pixel where `patch` lies on the photo `frame` describes.
+/// Photo pixels per patch pixel where a `width` × `height` patch lies over `rect` of
+/// the photo `frame` describes.
 pub(super) fn photo_per_patch(rect: [f32; 4], width: u32, height: u32, frame: &ImageFrame) -> f32 {
     let [w, h] = frame.size();
     ((rect[2] - rect[0]) * w / width as f32).max((rect[3] - rect[1]) * h / height as f32)

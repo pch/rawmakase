@@ -776,9 +776,8 @@ mod tests {
         assert!(error.to_string().contains("go together"), "{error}");
     }
 
-    /// `LUT_3D_OUTPUT_RANGE` says where the table's answers sit, and they are brought
-    /// back to 0–1 so a strength blend means what it says. A table written over 0–1023
-    /// answers in 0–1 like any other.
+    /// `LUT_3D_OUTPUT_RANGE` is refused, naming the keyword, rather than ignored: the
+    /// table's answers would otherwise be read as they are, whatever range it states.
     #[test]
     fn an_output_range_is_refused_by_name() {
         let error = Lut3d::parse("LUT_3D_SIZE 2\nLUT_3D_OUTPUT_RANGE 0 1\n0 0 0\n").unwrap_err();

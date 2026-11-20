@@ -71,7 +71,7 @@ fn background_thread() {
 pub use rawmakase_raw::FileNames;
 /// The make and model the RAW file at `path` writes, before RAWmakase names
 /// its camera (Lightroom's Make and Model file-name tokens): read from its
-/// header, nothing decoded. For files whose EXIF `crate::exif` can't read,
+/// header, nothing decoded. For files whose EXIF `rawmakase_interop::exif` can't read,
 /// such as a CR3.
 pub fn file_camera_names(path: &Path) -> Result<FileNames> {
     if let Some(undecoded) = undecoded(path) {

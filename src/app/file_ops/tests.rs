@@ -875,10 +875,10 @@ fn stop_says_a_batch_of_photos_finishes_when_photos_go_in_batches() {
     }
 }
 
-/// Issue 998 (review): Delete Rejected Photos in a smart collection saves
-/// the open edit before it chooses the photos, as saving can change which
-/// photos the collection shows; it then waits for the members to be worked
-/// out again rather than delete photos the rules no longer match.
+/// Issue 998: Delete Rejected Photos in a smart collection saves the open
+/// edit before it chooses the photos, as saving can change which photos the
+/// collection shows; it then waits for the members to be worked out again
+/// rather than delete photos the rules no longer match.
 #[test]
 fn delete_rejected_in_a_smart_collection_saves_before_it_chooses() -> anyhow::Result<()> {
     use crate::collection_rules::{Combine, Group, Item, Rule, lua::Value};

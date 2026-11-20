@@ -778,9 +778,6 @@ impl Editor {
             library.loupe_overlay(&ui.painter().with_clip_rect(pane), at);
         }
     }
-    /// Lightroom's white balance selector over the photo: an eyedropper cursor
-    /// whose tip is the picked point, and a loupe of the pixels around it with the
-    /// values of the one under the tip.
     /// The shown color (encoded sRGB, 0–1) at `pos`, from the samples renders keep while
     /// an eyedropper is active.
     fn shown_color(&self, pos: Pos2, rect: Rect, region: Option<Rect>) -> Option<[f32; 3]> {
@@ -809,6 +806,9 @@ impl Editor {
                 spread(a).total_cmp(&spread(b))
             })
     }
+    /// Lightroom's white balance selector over the photo: an eyedropper cursor
+    /// whose tip is the picked point, and a loupe of the pixels around it with the
+    /// values of the one under the tip.
     fn white_balance_loupe(
         &self,
         ui: &egui::Ui,

@@ -106,11 +106,12 @@ fn spearman(pairs: &[(f32, f32)]) -> f32 {
     (ab / (aa * bb).sqrt()) as f32
 }
 
-/// The fewest held-out pairs, and the least share of them in colour (chroma above
-/// 10), a colour look must be judged on. The share is small on purpose: in a
-/// portrait against grey walls or at night the face is most of the colour there
-/// is, and a curve alone leaves it the baseline's (at 5%, six of 139 photos fell
-/// back to one; all six are closer to the camera's with their colour look).
+/// The fewest held-out pairs any look is judged on, and, for a colour look, the
+/// least share of them in colour (chroma above 10). The share is small on
+/// purpose: in a portrait against grey walls or at night the face is most of the
+/// colour there is, and a curve alone leaves it the baseline's (at 5%, six of 139
+/// photos fell back to one; all six are closer to the camera's with their colour
+/// look).
 const MIN_PAIRS: usize = 256;
 const MIN_COLOURED: f32 = 0.01;
 

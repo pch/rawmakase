@@ -415,7 +415,7 @@ impl FileOps {
     }
 }
 
-/// The names of `s`'s photos, the first 8 and how many more.
+/// `names`, the first 8 and how many more.
 fn names_line(names: &[String]) -> String {
     let shown: Vec<&str> = names.iter().take(8).map(String::as_str).collect();
     let more = names.len().saturating_sub(shown.len());
@@ -925,8 +925,6 @@ fn shared_line(lines: &mut Vec<String>, s: &file_ops::Summary) {
     }
 }
 
-/// The top bar after a run: "Removed 3 photos from the catalog", with
-/// what was left and why.
 /// How a finished operation is reported: stopped or left unfinished is a
 /// failure, items it left as they were a warning.
 fn outcome_level(outcome: &Outcome) -> Level {
@@ -942,6 +940,8 @@ fn outcome_level(outcome: &Outcome) -> Level {
     }
 }
 
+/// The top bar after a run: "Removed 3 photos from the catalog", with
+/// what was left and why.
 fn summary_of(outcome: &Outcome, verb: &Verb) -> String {
     let count = |f: fn(&ItemResult) -> bool| -> usize {
         outcome.items.iter().filter(|i| f(&i.result)).count()

@@ -37,8 +37,7 @@ use std::path::{Path, PathBuf};
 ///
 /// On Linux: the directories fontconfig's configuration names, the XDG data
 /// directories' `fonts`, Flatpak's `/run/host/fonts`, `~/.fonts` and
-/// `$XDG_DATA_HOME/fonts`. For an app that looks for a particular family
-/// itself (Spotifast's playlist face).
+/// `$XDG_DATA_HOME/fonts`.
 pub fn font_directories() -> Vec<PathBuf> {
     let user = directories::UserDirs::new();
     let mut dirs: Vec<PathBuf> = Vec::new();

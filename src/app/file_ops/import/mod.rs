@@ -97,7 +97,8 @@ pub(super) struct Importing {
     decimal: Decimal,
     /// The attached drives, once listed.
     drives: Option<Vec<Drive>>,
-    /// The source scanned: `settings.source` once chosen.
+    /// The latest scan of `settings.source`: results and thumbnails of any
+    /// other are dropped.
     generation: u64,
     scan: Scan,
     rows: Vec<Row>,
@@ -977,7 +978,7 @@ fn heading(ui: &mut egui::Ui, palette: &crate::app::ui::theme::Palette, text: &s
     );
 }
 
-/// A line of small text in `tone`.
+/// A line of small text in `color`.
 fn note(ui: &mut egui::Ui, text: impl Into<String>, color: egui::Color32) -> egui::Response {
     ui.add(egui::Label::new(egui::RichText::new(text).size(text::LABEL).color(color)).wrap())
 }

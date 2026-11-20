@@ -7,11 +7,6 @@
 //!   subject when it is all black); with a prompt, the box, then a disc of a
 //!   fifth of the photo around each click, added or taken away;
 //! - `flat`: the whole photo; `nothing`: all-zero coverage, unannounced;
-//!
-//! Selected pixels have the value of the first pixel's red (at least 1), so
-//! photos of different levels give different coverage, and so different
-//! rasters in the app's shared store;
-//!
 //!   `absent`: `no_subject`; `unnamed`: a model with an empty name;
 //! - `setup`: `needs_setup` until `mask.setup` has run, which reports half
 //!   way and waits for `finish-setup` in its working folder (or a cancel);
@@ -21,6 +16,10 @@
 //!   once `release` appears there, or `cancelled` when cancelled first; `late`
 //!   the same, but it ignores the cancel;
 //! - `crash`: exits.
+//!
+//! Selected pixels have the value of the first pixel's red (at least 1), so
+//! photos of different levels give different coverage, and so different
+//! rasters in the app's shared store.
 use rawmakase_extension::protocol::message::NeedsSetup;
 use rawmakase_extension::protocol::method::{EmptyMask, MaskGenerated};
 use rawmakase_extension::protocol::viewer::ViewerInput;

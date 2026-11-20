@@ -47,8 +47,8 @@ pub struct RawInfo {
     pub make: String,
     /// RAWmakase's name for the model ("EOS R6 Mark II").
     pub model: String,
-    /// The make and model as the file writes them, trimmed, before any of
-    /// RAWmakase's naming (`names::apply`): what export file names use.
+    /// The make as the file writes it, trimmed, before any of RAWmakase's
+    /// naming (`names::apply`): what export file names use.
     pub file_make: String,
     /// The model, as the file writes it.
     pub file_model: String,
@@ -57,11 +57,11 @@ pub struct RawInfo {
     pub normalized_make: String,
     /// The canonical model name, with [`RawInfo::normalized_make`].
     pub normalized_model: String,
-    /// The stored sensor data's size.
+    /// The stored sensor data's width.
     pub raw_width: u32,
     /// The stored sensor data's height.
     pub raw_height: u32,
-    /// The visible area, `margins` (left, top) into the sensor data.
+    /// The visible area's width.
     pub width: u32,
     /// The visible area's height.
     pub height: u32,
@@ -70,9 +70,9 @@ pub struct RawInfo {
     /// A Fujifilm Super CCD's stored rows, which develop turned by 45° (the
     /// visible area is the stored one); `None` for other sensors.
     pub super_ccd: Option<SuperCcd>,
-    /// The default crop and the camera's aspect-ratio crop, `[left, top,
-    /// width, height]` in sensor coordinates ([`UNSET`] positions when only a
-    /// size is known; all [`UNSET`] and zero sizes when there is none).
+    /// The default crop, `[left, top, width, height]` in sensor coordinates
+    /// ([`UNSET`] positions when only a size is known; all [`UNSET`] and zero
+    /// sizes when there is none).
     pub frame: [u32; 4],
     /// The camera's aspect-ratio crop, as [`RawInfo::frame`] gives the default.
     pub aspect: [u32; 4],

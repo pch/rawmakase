@@ -572,10 +572,10 @@ fn list(t: &TiffFile, ifd: &Ifd, tag: u16) -> Vec<Opcode> {
         .collect()
 }
 
-/// The tile size and every tile's offset and length; strips as tiles.
 /// Each tile's (offset, length) in the file.
 type Tiles = Vec<(u64, u64)>;
 
+/// The tile size and every tile's offset and length; strips as tiles.
 fn layout(
     t: &TiffFile,
     ifd: &Ifd,

@@ -1,6 +1,6 @@
 //! Screen previews: a photo rendered with its edit at the size a view shows
-//! it, for the views that show more than one photo large (Compare). The
-//! grid's 640 px previews stand in until they are ready.
+//! it, for the views that show more than one photo large (Compare and
+//! Survey). The grid's 640 px previews stand in until they are ready.
 //!
 //! Renders run on two threads, newest request first, so both photos of a
 //! comparison come in together; a request no longer shown is skipped. The

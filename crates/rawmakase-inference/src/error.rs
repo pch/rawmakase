@@ -1,8 +1,8 @@
 use std::fmt;
 
-/// Why a selection could not be produced. Every variant is a value the caller
-/// can show or retry on; nothing in this crate panics on a missing runtime, a
-/// damaged model or a bad output.
+/// Why a model could not produce its result (a selection, or AI Denoise's
+/// tiles). Every variant is a value the caller can show or retry on; nothing in
+/// this crate panics on a missing runtime, a damaged model or a bad output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InferenceError {
     /// No usable ONNX Runtime library was found or it was rejected (missing,
@@ -16,9 +16,9 @@ pub enum InferenceError {
     Cancelled,
     /// The runtime failed while loading or running the model.
     Failed(String),
-    /// The model ran but its output is not a valid matte (shape, NaN,
-    /// infinity, values outside the manifest's output range), or the input
-    /// image was malformed.
+    /// The model ran but its output is not valid (a matte's or a denoised
+    /// tile's shape, NaN, infinity, values outside the manifest's output
+    /// range), or the input image was malformed.
     OutputInvalid(String),
 }
 

@@ -34,7 +34,8 @@ pub const VERSIONS_URL: &str = "https://lensfun.github.io/db/versions.json";
 pub const ARCHIVE_URL: &str = crate::lens::lensfun::choice::SOURCE_URL;
 /// The database format this release reads.
 pub const FORMAT: u64 = 2;
-/// Largest archive downloaded, `versions.json` read, and unpacked total.
+/// The largest archive accepted, downloaded or read from a file. The unpacked
+/// total and `versions.json` have limits of their own.
 pub const MAX_ARCHIVE: u64 = 8 << 20;
 const MAX_VERSIONS: u64 = 64 << 10;
 /// About what Lensfun's archive weighs, for messages before downloading.

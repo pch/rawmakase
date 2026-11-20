@@ -123,7 +123,7 @@ impl Installer {
         vec![Stopping::new(self.thread.take())]
     }
     /// Removes the model from disk: the worker lets go of it first, off the UI
-    /// thread, and the files go once it has. Saved masks keep their pixels.
+    /// thread, and the files go once it has.
     pub(in crate::app) fn remove(
         &mut self,
         unload: impl FnOnce() + Send + 'static,

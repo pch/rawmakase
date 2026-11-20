@@ -624,8 +624,6 @@ impl Backend {
     pub(crate) fn has_gpu(&self) -> bool {
         self.gpu.is_some()
     }
-    /// Runs `stage` on the GPU; a failure other than cancellation disables the GPU,
-    /// so a failing device is not retried on every slider movement.
     /// Runs a stage of the resident path (see `quality::render_resident`); a failure
     /// other than cancellation turns that path off, not the GPU.
     pub(crate) fn run_resident<T>(
@@ -647,6 +645,8 @@ impl Backend {
             }
         }
     }
+    /// Runs `stage` on the GPU; a failure other than cancellation disables the GPU,
+    /// so a failing device is not retried on every slider movement.
     pub(crate) fn run<T>(
         &mut self,
         cancel: Cancel<'_>,

@@ -73,7 +73,7 @@ impl Terms {
             Self::Cc0 => "CC0-1.0",
         }
     }
-    /// The dedication's text, where it has one.
+    /// The URL of the dedication's text, where it has one.
     pub fn url(self) -> Option<&'static str> {
         match self {
             Self::PublicDomain => None,

@@ -213,7 +213,7 @@ enum Command {
 fn parse_reference(json: &str) -> Result<rawmakase::half_check::Reference, String> {
     serde_json::from_str(json).map_err(|e| e.to_string())
 }
-/// An `import-profiles --lut-space`.
+/// `rawmakase lensfun`.
 #[derive(Subcommand)]
 enum LensfunCommand {
     /// The version installed, and where it came from.
@@ -256,6 +256,7 @@ enum ExtensionsCommand {
     Check,
 }
 
+/// An `import-profiles --lut-space`.
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 enum LutSpace {
     Srgb,

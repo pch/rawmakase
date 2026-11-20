@@ -724,8 +724,6 @@ impl Editor {
     }
 }
 impl Editor {
-    /// After a finished whole-photo render of the current edit, show it as
-    /// the photo's Library and filmstrip thumbnail.
     /// Whether the viewport shows the catalog photo's edit as the library would.
     pub(in crate::app) fn shows_library_edit(&self) -> bool {
         self.library.is_some()
@@ -736,8 +734,10 @@ impl Editor {
             && !self.view.is(crate::app::develop::state::Tool::Crop)
             && self.presets.preview.is_none()
     }
-    /// A render made with a partial AI Denoise result is not the photo's thumbnail:
-    /// the final result's render will be.
+    /// After a finished whole-photo render of the current edit, shows it as
+    /// the photo's Library and filmstrip thumbnail. A render made with a partial
+    /// AI Denoise result is not the photo's thumbnail: the final result's render
+    /// will be.
     fn refresh_library_thumbnail(
         &mut self,
         ctx: &egui::Context,

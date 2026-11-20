@@ -94,7 +94,9 @@ impl std::fmt::Display for ClientError {
 pub struct RemoteSession {
     endpoint: String,
     options: RemoteOptions,
-    /// Makes this session's request ids everyone else's problem: never.
+    /// A random prefix of this session's request ids, so that they never
+    /// collide with another session's on the same worker (whose cancels are
+    /// registered by id).
     nonce: u64,
     ids: AtomicU64,
 }

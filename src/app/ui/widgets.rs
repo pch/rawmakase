@@ -682,10 +682,10 @@ fn curve_overlay(ui: &egui::Ui, rect: Rect, text: &str) {
     ui.painter()
         .galley_with_override_text_color(pos, galley, palette.tone(Tone::SOFT));
 }
-/// Parametric curve: dragging up or down in the graph changes the region
+/// The parametric curve: dragging up or down in the graph changes the region
 /// under the pointer, and the three handles below move the region splits.
-/// The parametric curve; `targeted` is the region a Targeted Adjustment Tool drag is
-/// moving, which shows as a hovered one does.
+/// `targeted` is the region a Targeted Adjustment Tool drag is moving, which
+/// shows as a hovered one does.
 pub(in crate::app) fn parametric_curve_ui(
     ui: &mut egui::Ui,
     effects: &mut crate::model::effects::Effects,
@@ -1034,7 +1034,6 @@ pub(in crate::app) enum SliderEvent {
     /// Its label clicked: the slider the Basic panel's keys step.
     LabelClicked,
 }
-/// `display` overrides the shown scale and decimals, e.g. Sharpening's 0–150.
 /// Whether a slider shows a tick at its fill's origin.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Tick {

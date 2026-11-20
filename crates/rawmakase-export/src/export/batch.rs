@@ -612,7 +612,6 @@ fn commit(
     loop {
         // A file under the name in other case is the same name here; an exact-name
         // check alone misses it on a case-sensitive volume.
-        // The exact name first, then the name in other case.
         let found = if exactly(&target) {
             Some(target.clone())
         } else {

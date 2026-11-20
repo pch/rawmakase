@@ -27,7 +27,7 @@ from transformers import UperNetForSemanticSegmentation
 REPOSITORY = "openmmlab/upernet-convnext-base"
 REVISION = "13a9c410ff779f25236a8d24802d2742e4694e9c"
 SKY = 2  # ADE20K's class
-# The classifier's output. rawmakase-inference (`SkySpec::logits` in manifest.rs) exposes this
+# The classifier's output. rawmakase-selection (`SkySpec::logits` in manifest.rs) exposes this
 # internal tensor as a second output when it loads the file, so a re-export must produce a node
 # with this output name, or `SKY` there must be updated with the new name and digest together.
 LOGITS = "/model/decode_head/classifier/Conv_output_0"

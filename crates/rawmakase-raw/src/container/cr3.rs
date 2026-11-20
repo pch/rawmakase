@@ -27,7 +27,7 @@ use rawmakase_cancel::Cancel;
 const CANON_UUID: [u8; 16] = [
     0x85, 0xc0, 0xb6, 0x87, 0x82, 0x0f, 0x11, 0xe0, 0x81, 0x11, 0xf4, 0xce, 0x46, 0x2b, 0x6a, 0x48,
 ];
-/// The most boxes read and the deepest nesting followed.
+/// The most boxes read.
 const MAX_BOXES: usize = 4096;
 /// The children of a `CRAW` sample entry start after its visual sample entry
 /// fields (ISO/IEC 14496-12's 78 bytes) and 4 more bytes.

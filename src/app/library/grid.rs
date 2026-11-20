@@ -66,7 +66,6 @@ impl Library {
             }
         }
     }
-    /// The grid, or the Loupe in its place at the shared `zoom`.
     /// The grid, or the Loupe in its place at the shared `zoom`. `chrome` is
     /// whether the toolbars are drawn: hidden, the view fills the window.
     pub(in crate::app) fn grid(
@@ -444,7 +443,6 @@ impl Library {
     }
 }
 impl Library {
-    /// The selection when `id` is part of it, else `id` alone.
     /// Whether a photo's menu acts on it alone: it isn't one of several
     /// selected, or the menu never takes the selection (`whole_selection`).
     pub(super) fn menu_single(&self, id: PhotoId, whole_selection: bool) -> bool {
@@ -452,6 +450,7 @@ impl Library {
             && self.selection.selected.contains(&id)
             && self.selection.selected.len() > 1)
     }
+    /// The selection when `id` is part of it, else `id` alone.
     fn menu_scope(&self, id: PhotoId) -> Vec<PhotoId> {
         if self.selection.selected.contains(&id) {
             self.selected_ids()

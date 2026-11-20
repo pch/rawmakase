@@ -78,14 +78,14 @@ impl CatalogSession {
             self.backfill.capture = Some(Reader::start(todo, self.wake.clone(), read_capture));
         }
     }
-    /// Drops the readers under way, whose results could otherwise land on
-    /// photos given the ids of photos removed meanwhile. The next starts read
-    /// what is still missing.
     /// Stops the background reads before a change that may give removed
     /// photos' ids to new ones; the next starts read what is still missing.
     pub(crate) fn stop_background_reads(&mut self) {
         self.stop_backfill();
     }
+    /// Drops the readers under way, whose results could otherwise land on
+    /// photos given the ids of photos removed meanwhile. The next starts read
+    /// what is still missing.
     pub(super) fn stop_backfill(&mut self) {
         let checksums = std::mem::take(&mut self.backfill.checksums).stopped();
         self.backfill = Backfill {

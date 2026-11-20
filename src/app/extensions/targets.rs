@@ -101,7 +101,8 @@ pub(crate) struct Finished {
     order: Vec<i64>,
     /// Refused before the worker started.
     refused: Vec<Refused>,
-    /// The photos the worker had, by their index in `ids`.
+    /// The ids of the photos the worker had, in the order its outcomes'
+    /// indices refer to.
     ids: Vec<i64>,
     /// None when the worker panicked or the catalog didn't open: then
     /// nothing was written.

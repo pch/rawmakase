@@ -33,8 +33,8 @@ pub const ENTRIES: usize = 2;
 /// Ceiling on what the kept analyses may hold together; the oldest goes first.
 pub const MAX_CACHED_BYTES: usize = 512 << 20;
 
-/// What a worker actually runs. `Model` is the real one over the local ONNX
-/// sessions; the tests stand in a fake, which is why these three calls are the
+/// What a worker actually runs. [`Model`] is the real one over the local ONNX
+/// sessions; the tests stand in a fake, which is why these four calls are the
 /// whole surface.
 pub trait Engine: Send {
     /// Runs the models on `photo`, or answers from the analysis it kept.

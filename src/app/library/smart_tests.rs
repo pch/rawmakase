@@ -276,7 +276,7 @@ fn the_editor_draws_every_field_and_a_nested_group() -> Result<()> {
     Ok(())
 }
 
-/// Review, round 1: a date or period typed that doesn't read isn't saved.
+/// A date or period typed that doesn't read isn't saved.
 #[test]
 fn the_editor_refuses_values_that_dont_read() -> Result<()> {
     let (_d, mut library, _) = library_with(&[])?;

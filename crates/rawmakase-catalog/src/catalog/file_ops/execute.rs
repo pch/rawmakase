@@ -1072,8 +1072,6 @@ impl Run<'_> {
         Ok(None)
     }
 
-    /// After step `error` failed: puts the members already `changed` back
-    /// where they were, the decision journalled first.
     /// Puts back the item whose rename of a file (`failed`, from and to)
     /// failed. A placeholder that rename may have left (ntfs-3g,
     /// [`Disk::settle_rename`]) is removed first; while it can't be, or the
@@ -1100,6 +1098,8 @@ impl Run<'_> {
         })
     }
 
+    /// After step `error` failed: puts the members already `changed` back
+    /// where they were, the decision journalled first.
     fn put_back(
         &self,
         catalog: &mut Catalog,
@@ -1323,8 +1323,9 @@ pub(super) fn complete(
         Subject::Photos(pre) => pre,
         Subject::Folder(_) => return folder::complete(w, computer, disk, item),
         Subject::Tree(_) => return super::tree::complete(w, computer, disk, item),
-        // Completed only by `tree_trash`, from its receipt read before the
-        // transaction.
+        // Completed only by their own modules: a folder's Trash by
+        // `tree_trash`, from its receipt read before the transaction, and an
+        // import by `import`.
         Subject::TrashTree(_) | Subject::Import(_) => {
             return journal::set_state(
                 w,

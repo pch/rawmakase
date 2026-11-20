@@ -7,7 +7,9 @@ pub struct Sensor {
     pub width: u32,
     /// Rows.
     pub height: u32,
-    /// 1 for a mosaic, 3 for luma and chroma converted to RGB.
+    /// 1 for a mosaic (or a monochrome DNG), 3 for a linear raw DNG's RGB, 4
+    /// for a small RAW's luma and chroma converted to RGB (and an empty
+    /// fourth).
     pub channels: u32,
     /// The samples, row by row, `channels` per pixel.
     pub data: SensorData,

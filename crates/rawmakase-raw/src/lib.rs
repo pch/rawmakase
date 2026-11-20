@@ -129,7 +129,7 @@ pub struct X3fMetadata {
 /// empty or `None`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct X3fProperties {
-    /// CAMMANUF and CAMMODEL, as the file writes them.
+    /// CAMMANUF, as the file writes it.
     pub make: String,
     /// CAMMODEL.
     pub model: String,

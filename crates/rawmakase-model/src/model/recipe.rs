@@ -737,8 +737,6 @@ impl Recipe {
     pub fn add_retouch(&mut self, op: crate::model::retouch::RetouchOp) {
         self.retouch.push(op);
     }
-    /// Color noise reduction at its defaults: Lightroom's Amount 25 for raw files
-    /// (Detail and Smoothness 50).
     /// AI Denoise's switch, as Lightroom's Denoise switch edits: switched on, manual
     /// Luminance and Color noise reduction go to 0 (Camera Raw 18.7 writes them so; the
     /// AI result has no noise left for them); switched off, Color's defaults come back
@@ -756,6 +754,8 @@ impl Recipe {
             self.set_color_noise_defaults();
         }
     }
+    /// Color noise reduction at its defaults: Lightroom's Amount 25 for raw files
+    /// (Detail and Smoothness 50).
     pub fn set_color_noise_defaults(&mut self) {
         let d = crate::model::effects::Effects::default();
         self.noise_chroma = 0.25;

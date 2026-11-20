@@ -1859,8 +1859,6 @@ impl Editor {
         }
     }
 
-    /// The items a Library summary (sidecars that could not be read) lists
-    /// on hover, while `message` is that summary.
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         egui::Panel::bottom("status")
             .exact_size(STATUS_HEIGHT)
@@ -2168,9 +2166,6 @@ impl Editor {
     }
 }
 
-/// What dropping files onto the window does, shown while they are dragged
-/// over it: the main `area` becomes the drop zone, drawn over whatever it
-/// showed; the side panels stay as they are.
 /// egui-winit reads Cmd+C, Cmd+V and Cmd+X with any other modifier as the
 /// clipboard's Copy, Paste and Cut and drops the key, so Shift+Cmd+C (Copy
 /// Settings), Shift+Cmd+V (Paste Settings), Option+Cmd+V (Paste from Previous)
@@ -2219,6 +2214,9 @@ fn clipboard_shortcut_keys_on(
     }
     input.events = events;
 }
+/// What dropping files onto the window does, shown while they are dragged
+/// over it: the main `area` becomes the drop zone, drawn over whatever it
+/// showed; the side panels stay as they are.
 fn drop_overlay(ctx: &egui::Context, area: egui::Rect, catalog: Option<&str>) {
     let palette = theme::palette(ctx);
     let painter = ctx

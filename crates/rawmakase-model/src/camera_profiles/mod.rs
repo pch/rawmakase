@@ -64,9 +64,6 @@ pub struct CameraProfile {
     #[serde(default, skip_serializing_if = "DynamicRange::is_standard")]
     dynamic_range: DynamicRange,
 }
-/// The DNG `DefaultBlackRender` tag: whether the raw converter subtracts its
-/// default black (the exposure ramp at Shadows 5) under this profile. Adobe's
-/// camera-matching profiles say `None`, which keeps the camera's lifted shadows.
 /// A profile made for another camera than the photo's. Expected in a shared
 /// library, so callers listing profiles skip it rather than report it.
 #[derive(Debug)]
@@ -187,6 +184,9 @@ impl std::fmt::Display for MissingBase {
 }
 impl std::error::Error for MissingBase {}
 
+/// The DNG `DefaultBlackRender` tag: whether the raw converter subtracts its
+/// default black (the exposure ramp at Shadows 5) under this profile. Adobe's
+/// camera-matching profiles say `None`, which keeps the camera's lifted shadows.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum BlackRender {
     #[default]

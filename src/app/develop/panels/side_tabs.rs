@@ -122,8 +122,6 @@ impl Editor {
     pub(in crate::app) fn develop_adjustments_shown(&self) -> bool {
         self.panel_shown(WorkspacePanel::Adjustments) || has_drawer(self.view.tool())
     }
-    /// Whether the tab panel shows its tab: not folded, and with room beside
-    /// the photo as last laid out, or asked for in a narrow window.
     /// Whether Develop's tab panel shows, peeking into a narrow window too, for
     /// the keyboard shortcut pins.
     // The pins don't run on Windows (`shell::workspace`).
@@ -131,6 +129,8 @@ impl Editor {
     pub(in crate::app) fn develop_tabs_shown(&self) -> bool {
         self.develop_tabs_open()
     }
+    /// Whether the tab panel shows its tab: not folded, and with room beside
+    /// the photo as last laid out, or asked for in a narrow window.
     fn develop_tabs_open(&self) -> bool {
         let (room, peek) = self.context.data(|d| {
             (

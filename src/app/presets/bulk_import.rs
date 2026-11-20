@@ -43,7 +43,7 @@ impl ImportKind {
             (Self::Presets, false) => "presets",
         }
     }
-    /// Label for the multi-file chooser's filter.
+    /// The multi-file chooser's filter: its label and the extensions it lists.
     pub(in crate::app) fn filter(self) -> (&'static str, &'static [&'static str]) {
         match self {
             Self::CameraProfiles => ("Camera profiles and LUTs", &["dcp", "xmp", "cube", "png"]),

@@ -341,7 +341,8 @@ mod tests {
     fn dequantises_to_the_middle_of_the_step() {
         assert_eq!(dequantise(0, 3), 0);
         assert_eq!(dequantise(5, 0), 5);
-        // 2|q| + 1 = 5, << 1 = 10, odd magnitude one lower: 9.
+        // q = 2: 2|q| + 1 = 5, << 1 = 10; q = 1: 3 << 1 = 6, odd magnitude
+        // one lower: 5.
         assert_eq!(dequantise(2, 2), 10);
         assert_eq!(dequantise(1, 2), 5);
         assert_eq!(dequantise(-3, 1), -6);

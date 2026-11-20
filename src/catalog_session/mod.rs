@@ -14,11 +14,11 @@ use crate::catalog::{
     Catalog, CatalogLocation, Collection, CollectionId, Folder, FolderId, Photo, PhotoId, RootId,
 };
 use anyhow::Result;
+/// A file's photo info as the catalog reads it for photos added from
+/// folders; export names read a photo's without a catalog the same way.
 pub(crate) use backfill::{
     capture_time as file_capture_time, read_info as file_photo_info, read_sequence as file_sequence,
 };
-/// A file's photo info as the catalog reads it for photos added from
-/// folders; export names read a photo's without a catalog the same way.
 pub(crate) use import_stacks::{BurstRead, BurstsRead};
 
 /// What photos added from folders get where their files have none: the

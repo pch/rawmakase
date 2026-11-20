@@ -956,12 +956,12 @@ impl Library {
         self.compare.restored = true;
         self.scroll_to_active = true;
     }
-    /// Whether Read Metadata from Files finished since the last call, for
-    /// the top bar to show its outcome.
     /// Read Metadata from Files is still applying what it read.
     pub(in crate::app) fn rereading(&self) -> bool {
         self.reread.is_some()
     }
+    /// Whether Read Metadata from Files finished since the last call, for
+    /// the top bar to show its outcome.
     pub(in crate::app) fn take_reread_finished(&mut self) -> bool {
         std::mem::take(&mut self.reread_finished)
     }
@@ -1569,7 +1569,6 @@ impl Library {
             listed: removed.listed,
         })
     }
-    /// Selects `id`, leaving filters that would hide it so it stays in view.
     /// Selects photo `id`, showing it: its stack expanded, and the filters
     /// and folder that hide it cleared.
     pub(in crate::app) fn show(&mut self, id: PhotoId) {

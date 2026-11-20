@@ -860,7 +860,7 @@ mod tests {
         .unwrap();
         let destination = temp.path().join("library");
         let paths = vec![empty.clone(), good];
-        // All or nothing, as before.
+        // Importing them together is all or nothing.
         assert!(import_into(&paths, &destination).is_err());
         let done = import_each_into(&paths, &destination);
         assert_eq!(done.imported, [destination.join("good.lcp")]);

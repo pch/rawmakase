@@ -252,8 +252,8 @@ pub(in crate::app) struct PreviewState {
     /// Small copy of the last whole-photo render for the minimap.
     pub(in crate::app) navigator: Option<Picture>,
     pub(in crate::app) histogram: crate::rendered::Histogram,
-    /// The shown pixels of `texture` and `region` while the white balance selector
-    /// is active, for its loupe.
+    /// The shown pixels of `texture` and `region` while an eyedropper's loupe or
+    /// the readout reads them.
     pub(in crate::app) samples: Option<image::RgbImage>,
     pub(in crate::app) region_samples: Option<image::RgbImage>,
     /// Whether renders keep their samples: while a loupe or the readout reads them.

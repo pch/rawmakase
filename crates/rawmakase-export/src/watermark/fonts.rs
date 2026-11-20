@@ -5,7 +5,8 @@ use skrifa::{FontRef, MetadataProvider, string::StringId};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
-/// Resolves the default watermark from the fonts installed on this computer.
+/// The family name of the default watermark font, resolved from the fonts
+/// installed on this computer.
 pub const SYSTEM: &str = "System";
 const SYSTEM_FACES: [(&str, f32); 4] = [
     ("Regular", 400.),

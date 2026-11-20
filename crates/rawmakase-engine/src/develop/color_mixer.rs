@@ -283,12 +283,12 @@ impl ColorMixer {
         })
     }
 
-    /// `rgb` is linear display RGB (sRGB primaries); above white in an HDR master.
     /// An HDR master's value factors applied apart ([`Lookup::Hdr`]): the changes'
     /// grid's, then the gray source's; `None` for every other render. For the GPU port.
     pub(crate) fn hdr_fading(&self) -> Option<&[HdrFactors; 2]> {
         self.hdr.as_ref()
     }
+    /// `rgb` is linear display RGB (sRGB primaries); above white in an HDR master.
     pub(crate) fn apply(&self, rgb: [f32; 3]) -> [f32; 3] {
         self.apply_at(rgb, None)
     }

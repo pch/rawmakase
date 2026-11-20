@@ -26,7 +26,7 @@
 //! the host, which keeps their lease until the program answers
 //! (docs/extensions/protocol.md#leases).
 //!
-//! [`Guard`]: crate::app::develop::tools::subject_mask
+//! [`Guard`]: crate::app::develop::tools::subject_mask::Guard
 use super::{Extension, Host, Pending};
 use crate::app::develop::tools::subject_mask::{
     Done, Failure, Feature, Generated, keep, render_input,

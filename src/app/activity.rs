@@ -11,8 +11,8 @@ pub(in crate::app) enum Activity {
     /// preparing or writing photos' edits: moving to another photo or catalog waits
     /// for it. It ends when its worker reports back, cancelled or not.
     Syncing(std::sync::Arc<crate::app::library::sync::BatchProgress>),
-    /// A file operation (Remove from Catalog, and later moving and trashing
-    /// photos) is planned, confirmed or running: from just after the open
+    /// A file operation (Remove from Catalog, moving, renaming or trashing,
+    /// Import Photos) is planned, confirmed or running: from just after the open
     /// edit was saved until its outcome is applied, nothing else writes the
     /// photos' rows (see `file_ops`).
     ChangingFiles,

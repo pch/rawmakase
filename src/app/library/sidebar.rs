@@ -846,8 +846,6 @@ impl Library {
                 .collect()
         })
     }
-    /// Shows a folder saved with `source_key` again, as folders are shown,
-    /// and selects `photo` if it is in it.
     /// The folders `folders` cover now, if any of them is still in the
     /// catalog; what was shown stays shown while none is.
     pub(super) fn current_scope(&self, folders: &FolderSelection) -> Option<HashSet<FolderId>> {
@@ -861,6 +859,8 @@ impl Library {
         }
         named.then_some(ids)
     }
+    /// Shows the folder or collection saved with [`Self::source_key`] again,
+    /// as they are shown when chosen, and selects `photo` if it is in it.
     pub(in crate::app) fn restore_source(&mut self, key: &str, photo: Option<PhotoId>) {
         if let Some(id) = key
             .strip_prefix("collection:")
@@ -946,8 +946,6 @@ impl Library {
         }
     }
 }
-/// A full-width "+ label" button under a panel's list: outlined, so it reads
-/// as an action rather than another row.
 /// A section's note that it is empty, inset as its rows' names are.
 fn empty_note(ui: &mut egui::Ui, text: &str) {
     let palette = theme::palette(ui.ctx());
@@ -961,6 +959,8 @@ fn empty_note(ui: &mut egui::Ui, text: &str) {
         );
     });
 }
+/// A full-width "+ label" button under a panel's list: outlined, so it reads
+/// as an action rather than another row.
 fn add_row(ui: &mut egui::Ui, label: &str) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     let (rect, response) =

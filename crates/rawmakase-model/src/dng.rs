@@ -981,7 +981,7 @@ mod tests {
         let lens = after.lens.as_ref().unwrap();
         assert!(lens.vignetting.is_none() && lens.distortion.is_some());
         assert!(!lens.vignetting_measured);
-        // OpcodeList2's is read as before, and one in each list about one centre
+        // OpcodeList2's is read too, and one in each list about one centre
         // multiply, as applying both does.
         let second = dng_with(4032, 3024, &[(51009, lists(&[(3, centred.clone())]))]);
         assert!((vignetting(&second).eval(1.) - 1.4).abs() < 1e-3);

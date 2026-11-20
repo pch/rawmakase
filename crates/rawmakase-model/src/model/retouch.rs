@@ -389,7 +389,7 @@ mod tests {
                 ([0.5, 0.6], [0.5, 0.7]),
             ]
         );
-        // One path is joined throughout, as before.
+        // A path without stroke starts is joined throughout.
         assert_eq!(segments(&dabs[..2], &[]).len(), 1);
         let mut op = RetouchOp {
             mode: RetouchMode::Generate,

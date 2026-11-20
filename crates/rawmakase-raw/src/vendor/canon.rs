@@ -53,7 +53,6 @@ const MAX_CUSTOM_FUNCTIONS: usize = 16384;
 const MAX_LENS: usize = 256;
 const MAX_WB_INFO: usize = 96;
 
-/// Reads the maker note directory `note` of the TIFF `t`.
 /// The Picture Style of the maker notes' Processing record (0x00A0, its 11th value).
 pub(crate) fn picture_style(t: &TiffFile, note: &Ifd) -> Option<String> {
     let v = *t.ints_upto(note, 0x00a0, 11)?.get(10)?;
@@ -72,6 +71,7 @@ pub(crate) fn picture_style(t: &TiffFile, note: &Ifd) -> Option<String> {
     })
 }
 
+/// Reads the maker note directory `note` of the TIFF `t`.
 pub(crate) fn read(t: &TiffFile, note: &Ifd) -> Notes {
     let mut n = Notes {
         model_id: t.int(note, 0x0010).unwrap_or(0),

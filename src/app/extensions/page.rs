@@ -1290,10 +1290,9 @@ impl Editor {
         }
     }
 
-    /// A panel of the extension's page: opened once its extension runs, then
-    /// drawn from what its program last sent.
-    /// Extension `id`'s panel `panel`, opened when it isn't, its actions
-    /// sent: on its page, and in a generator tool's drawer.
+    /// Extension `id`'s panel `panel`, on its page or in a generator tool's
+    /// drawer: opened when it isn't, drawn from what its program last sent,
+    /// and its actions sent.
     pub(in crate::app) fn extension_panel_ui(
         &mut self,
         ui: &mut egui::Ui,

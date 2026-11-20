@@ -190,7 +190,6 @@ impl Editor {
             }
         }
 
-        // Drawing.
         let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
         let tool = &self.view.red_eye;
         for (i, op) in self.document.edit.recipe().red_eye.iter().enumerate() {
@@ -308,9 +307,8 @@ impl Editor {
             .panels
             .set(Panel::RedEye, PanelState::On);
     }
-    /// The Red Eye tool's keys: Delete removes the selected correction.
-    /// Delete removes the selected correction; `[` and `]` resize the circle a click
-    /// corrects within, as they size the Remove brush.
+    /// The Red Eye tool's keys: Delete removes the selected correction; `[` and `]`
+    /// resize the circle a click corrects within, as they size the Remove brush.
     pub(in crate::app) fn red_eye_keys(&mut self, ctx: &egui::Context) {
         use crate::app::shell::commands::registry::bindings as b;
         let keys = crate::app::shell::keymap::FrameKeys::of(ctx);

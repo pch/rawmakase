@@ -285,8 +285,8 @@ enum Step {
 /// latest request first, then the photos asked for ahead in the order asked.
 /// At [`Pace::Background`] one render runs at a time on two background
 /// threads; at [`Pace::Full`] up to [`FULL_RENDERS`] side by side on every
-/// core but one. The
-/// cache is read and written by the worker and its renders under one lock.
+/// core but one. The cache is read and written by the worker and its renders
+/// under one lock.
 /// Closing the queue cancels the renders under way; the worker ends once
 /// they have stopped.
 pub(in crate::app::library) fn spawn_edited(

@@ -8,8 +8,8 @@
 //! being added too ([`CheckedNew`]), an opaque copy for virtual copies
 //! ([`copy_edit`]), a checked identity refresh for a file found moved
 //! ([`refresh_identity`]), removal with a virtual copy ([`delete_edits`]),
-//! and the catalog upgrade's migration of every stored edit
-//! ([`migrate_edits`]).
+//! and the catalog upgrade's migration of every stored edit and History
+//! ([`migrate_edits`], [`migrate_histories`]).
 use super::db::{Reads, Write, sql};
 use super::format_upgrade::{BATCH, Rewrite, Upgrade};
 use super::value::row;

@@ -3219,7 +3219,6 @@ pub(in crate::app) fn app_version() -> semver::Version {
     semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("the package version is semver")
 }
 
-/// The source a loaded extension shows on its page.
 /// Whether `e` is one of the official extensions RAWmakase lists, installed
 /// from the repository listed for it ([`rawmakase_extensions::github::official`]).
 pub(in crate::app) fn official(e: &Extension) -> bool {
@@ -3231,6 +3230,7 @@ pub(in crate::app) fn official(e: &Extension) -> bool {
         )
 }
 
+/// The source a loaded extension shows on its page.
 pub(in crate::app) fn source_label(e: &Extension) -> &'static str {
     match e.origin {
         Origin::Bundled => "Bundled",

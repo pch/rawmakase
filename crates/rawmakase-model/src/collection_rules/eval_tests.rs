@@ -584,7 +584,7 @@ fn lightroom_default_smart_collections_are_supported() {
     }
 }
 
-/// Documented choices the review asked to see tested: a date after today is
+/// Documented choices for what wasn't measured: a date after today is
 /// in the last of any period, several words in endsWith must each end a word,
 /// and Copy Name is the copy name as stored, a promoted master's included.
 #[test]
