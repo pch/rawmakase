@@ -219,6 +219,37 @@ pub(super) fn reduce(pixels: &[Rgb], width: u32, height: u32) -> (u32, u32, Vec<
     (w, h, out)
 }
 
+/// `pixels` of size `from` at size `to`, each pixel the one its centre falls in: a
+/// render a pixel or two off its stages' size, from its whole-pixel crop, is the same
+/// picture, and is brought to their size before it is reduced in their boxes.
+/// Reduced first, the boxes drop its last rows and the rest is stretched over them:
+/// a 16:9 frame came out 0.7% taller, a pixel off at its foot, and a look that
+/// matched the camera's was refused for it. `None` when the sizes differ by more
+/// than two proxy pixels: another picture.
+pub(super) fn to_size(
+    pixels: &[Rgb],
+    from: [u32; 2],
+    to: [u32; 2],
+) -> Option<std::borrow::Cow<'_, [Rgb]>> {
+    if from == to {
+        return Some(pixels.into());
+    }
+    if (0..2).any(|c| from[c].abs_diff(to[c]) > 2 * RENDER_FACTOR) {
+        return None;
+    }
+    let at = |i: u32, from: u32, to: u32| {
+        ((u64::from(i) * 2 + 1) * u64::from(from) / (2 * u64::from(to))) as u32
+    };
+    Some(
+        (0..to[1])
+            .flat_map(|y| (0..to[0]).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                pixels[(at(y, from[1], to[1]) * from[0] + at(x, from[0], to[0])) as usize]
+            })
+            .collect(),
+    )
+}
+
 /// The proxy of the camera input stage: valid pixels, and those a sample of which
 /// touched a pixel the sensor clipped (`clipped`: the stage of the clip indicator,
 /// above 0 there).
@@ -353,6 +384,25 @@ fn sample(
         }
     }
     Sampled { pro, clipped }
+}
+
+/// The preview on a `width` × `height` grid of any size, where `alignment`, found at
+/// the proxy's size, puts it: NaN outside it.
+pub(super) fn sample_aligned(
+    p: &Preview,
+    [width, height]: [u32; 2],
+    alignment: &Alignment,
+) -> Vec<Rgb> {
+    let per_proxy = width.max(height) as f32 / PROXY_EDGE as f32;
+    sample(
+        p,
+        &Integral::new(p),
+        [width, height],
+        alignment.scale,
+        alignment.radial,
+        alignment.shift.map(|v| v * per_proxy),
+    )
+    .pro
 }
 
 /// Log luminance less its 5 × 5 mean: the detail two renders of one scene share
@@ -643,6 +693,40 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicBool;
 
+    /// A shift found at the proxy's size lands in the same place of a larger grid.
+    #[test]
+    fn an_alignment_carries_to_a_larger_grid() {
+        let (w, h) = (960u32, 640u32);
+        let pro: Vec<Rgb> = (0..w * h)
+            .map(|i| [(i % w) as f32 / w as f32, (i / w) as f32 / h as f32, 0.5])
+            .collect();
+        let p = Preview {
+            width: w,
+            height: h,
+            clipped: vec![false; pro.len()],
+            pro,
+            space: "srgb",
+        };
+        let alignment = Alignment {
+            scale: 1.,
+            shift: [2., -1.],
+            ..Default::default()
+        };
+        let (gw, gh) = (480u32, 320u32);
+        let out = sample_aligned(&p, [gw, gh], &alignment);
+        // 480 is 2.5 proxy pixels each: 5 and -2.5 here, 10 and -5 in the preview.
+        let at = out[(100 * gw + 200) as usize];
+        assert!(
+            (at[0] - (200.5 * 2. - 10.) / w as f32).abs() < 2. / w as f32,
+            "{at:?}"
+        );
+        assert!(
+            (at[1] - (100.5 * 2. + 5.) / h as f32).abs() < 2. / h as f32,
+            "{at:?}"
+        );
+        assert!(out[0][0].is_nan(), "outside the JPEG");
+    }
+
     fn preview(width: u32, height: u32, f: impl Fn(u32, u32) -> f32) -> Preview {
         Preview {
             width,
@@ -822,6 +906,36 @@ mod tests {
         let s = sample(&p, &integral, [24, 16], 1., [0., 0.], [0., 0.]);
         let u = usable(&proxy, &s);
         assert!(u[8 * 24 + 11] && u[8 * 24 + 12]);
+    }
+
+    /// A render a row short of its stages: sized before the boxes, its foot lands
+    /// where theirs does, to a quarter of a proxy pixel (reduced first and stretched,
+    /// it is three quarters off).
+    #[test]
+    fn a_render_a_row_short_is_sized_before_it_is_reduced() {
+        let (w, full, short) = (768u32, 432u32, 431u32);
+        // One picture at both sizes: a ramp down the frame.
+        let picture = |h: u32| -> Vec<Rgb> {
+            (0..w * h)
+                .map(|i| [((i / w) as f32 + 0.5) / h as f32; 3])
+                .collect()
+        };
+        let (pw, rows, stages) = reduce(&picture(full), w, full);
+        let cut = picture(short);
+        let sized = to_size(&cut, [w, short], [w, full]).expect("a row short");
+        let (_, _, render) = reduce(&sized, w, full);
+        for y in [0, rows / 2, rows - 1] {
+            let i = (y * pw) as usize;
+            let off = (render[i][0] - stages[i][0]).abs() * rows as f32;
+            assert!(off < 0.25, "row {y}: {off} proxy pixels off");
+        }
+        // The same size is left as it is, and another picture's is no size of this one.
+        assert!(matches!(
+            to_size(&sized, [w, full], [w, full]),
+            Some(std::borrow::Cow::Borrowed(_))
+        ));
+        let other = picture(400);
+        assert!(to_size(&other, [w, 400], [w, full]).is_none());
     }
 
     #[test]

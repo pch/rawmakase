@@ -14,8 +14,9 @@
 //!   reconstruction), and the look over it.
 //!
 //! A look is used only when its full render beats the baseline on the held-out
-//! tiles ([`gate`]): a colour look, else one of the curve alone, else none. Fitting
-//! is deterministic; nothing here reads or writes the catalog or a cache.
+//! tiles ([`gate`]): a colour look, else one of the curve alone, else none. The
+//! look that is used is then fitted again to every pair, the held-out ones too.
+//! Fitting is deterministic; nothing here reads or writes the catalog or a cache.
 use rawmakase_cancel::Cancel;
 pub mod cache;
 mod gate;
@@ -41,7 +42,7 @@ type Rgb = [f32; 3];
 
 /// The fit's version: part of a fit cache's key, raised whenever what a fit makes
 /// of a photo changes.
-pub const FIT_VERSION: u32 = 6;
+pub const FIT_VERSION: u32 = 8;
 /// The proxy's long edge, and how much larger its renders are.
 const PROXY_EDGE: u32 = 192;
 const RENDER_FACTOR: u32 = 4;
@@ -154,35 +155,26 @@ fn pairing_recipe(m: &Metadata, profile: Option<CameraProfile>) -> Recipe {
     r
 }
 
-/// The render of `r` at the proxy's size, as linear sRGB.
+/// The render of `r` at the proxy's size, as linear sRGB: made at the stages' size
+/// (`stages`; a pixel or two off it, from the render's whole-pixel crop, is the
+/// same picture, see [`pairs::to_size`]) and reduced in the same boxes.
 fn full_render(
     im: &rawmakase_model::camera_data::CameraImage,
     r: &Recipe,
-    size: [u32; 2],
+    stages: [u32; 2],
     cancel: Cancel<'_>,
 ) -> Result<Vec<Rgb>, Refusal> {
     let valid = r.checked().map_err(|e| refuse(format!("{e:#}")))?;
     let out = develop::render(im, &valid, PROXY_EDGE * RENDER_FACTOR, cancel)
         .map_err(|e| refuse(format!("{e:#}")))?;
     let linear: Vec<Rgb> = out.pixels.iter().map(|p| p.map(srgb_decode)).collect();
-    let (w, h, reduced) = pairs::reduce(&linear, out.width, out.height);
-    if [w, h] == size {
-        return Ok(reduced);
-    }
-    // A pixel or two of rounding, from the render's whole-pixel crop: the same picture.
-    if w.abs_diff(size[0]) > 2 || h.abs_diff(size[1]) > 2 {
-        return Err(refuse(format!(
-            "The render is {w} × {h}, its stages {} × {}",
-            size[0], size[1]
-        )));
-    }
-    let at = |i: u32, from: u32, to: u32| {
-        ((u64::from(i) * 2 + 1) * u64::from(from) / (2 * u64::from(to))) as u32
-    };
-    Ok((0..size[1])
-        .flat_map(|y| (0..size[0]).map(move |x| (x, y)))
-        .map(|(x, y)| reduced[(at(y, h, size[1]) * w + at(x, w, size[0])) as usize])
-        .collect())
+    let sized = pairs::to_size(&linear, [out.width, out.height], stages).ok_or_else(|| {
+        refuse(format!(
+            "The render is {} × {}, its stages {} × {}",
+            out.width, out.height, stages[0], stages[1]
+        ))
+    })?;
+    Ok(pairs::reduce(&sized, stages[0], stages[1]).2)
 }
 
 /// `im` with each pixel 1 where the sensor reached 0.99 of its white in any channel
@@ -378,6 +370,69 @@ pub fn preview_srgb(path: &Path) -> anyhow::Result<CameraPreview> {
     Ok(CameraPreview { image, look })
 }
 
+/// A fitted look beside what it was fitted to, for `rawmakase fit-look --dump`: the
+/// renders through the fit's own recipe, and the camera's JPEG lined up on them.
+/// Encoded sRGB, except `scene`.
+pub struct Comparison {
+    pub width: u32,
+    pub height: u32,
+    pub fitted: Vec<Rgb>,
+    /// The render the look replaces: RAWmakase Standard, else no profile.
+    pub baseline: Vec<Rgb>,
+    /// NaN outside the JPEG.
+    pub jpeg: Vec<Rgb>,
+    /// What the look's table receives: the scene tone stage's linear ProPhoto RGB.
+    pub scene: Vec<Rgb>,
+}
+
+/// The [`Comparison`] of the photo at `path` and its fit, at `edge` pixels on the long
+/// edge or the JPEG's, if that is smaller.
+pub fn compare(path: &Path, fitted: &Fitted, edge: u32) -> anyhow::Result<Comparison> {
+    let cancel = Cancel::NEVER;
+    let mut raw = crate::photo::open(path)?;
+    let m = raw.metadata.clone();
+    let preview = pairs::preview(path, &mut raw).map_err(|e| anyhow::anyhow!(e.reason))?;
+    let edge = edge.min(preview.width.max(preview.height));
+    let im = raw.develop(Decode::Half, cancel)?;
+    let render = |profile: Option<CameraProfile>| {
+        let recipe = pairing_recipe(&m, profile);
+        develop::render(&im, &recipe.checked()?, edge, cancel)
+    };
+    let look = render(Some(fitted.profile.clone()))?;
+    let baseline = render(fitted::standard_base(&m))?;
+    let (width, height) = (look.width, look.height);
+    let mut base = fitted.profile.clone();
+    base.enhanced = None;
+    let scene = develop::quality::render_stage_sized(
+        &im,
+        &pairing_recipe(&m, Some(base)),
+        develop::quality::Stage::SceneOutput,
+        edge,
+        cancel,
+    )?;
+    anyhow::ensure!(
+        [baseline.width, baseline.height] == [width, height]
+            && [scene.width, scene.height] == [width, height],
+        "The renders differ in size"
+    );
+    let (preview, _) = pairs::to_aspect(preview, width, height);
+    let sampled = pairs::sample_aligned(&preview, [width, height], &fitted.report.alignment);
+    let jpeg = sampled
+        .iter()
+        .map(|p| mul(PRO_TO_RGB, *p).map(|v| srgb_encode(v.clamp(0., 1.))))
+        .zip(&sampled)
+        .map(|(e, p)| if p[0].is_nan() { [f32::NAN; 3] } else { e })
+        .collect();
+    Ok(Comparison {
+        width,
+        height,
+        fitted: look.pixels,
+        baseline: baseline.pixels,
+        jpeg,
+        scene: scene.pixels,
+    })
+}
+
 /// Fits a camera look to the photo at `path`, or says why it can't.
 pub fn fit(path: &Path, inputs: &FitInputs, cancel: Cancel<'_>) -> Result<Fitted, Refusal> {
     let start = std::time::Instant::now();
@@ -493,13 +548,14 @@ fn fit_pairs(
     // Renders judge a look at the proxy's size: a small copy serves, at a fraction of
     // the half-size photo's cost.
     let small = develop::preview(im, PROXY_EDGE * RENDER_FACTOR * 2);
-    let baseline = full_render(&small, &pairing_recipe(m, known.clone()), [w, h], cancel)?;
+    let stages = [camera.width, camera.height];
+    let baseline = full_render(&small, &pairing_recipe(m, known.clone()), stages, cancel)?;
     report.baseline = gate::score(&baseline, &target_srgb, &testing, w, h);
     if fitted_matrix {
         let base_only = full_render(
             &small,
             &pairing_recipe(m, Some(base.clone())),
-            [w, h],
+            stages,
             cancel,
         )?;
         let matrix_de00 = known.as_ref().map_or(0., |k| {
@@ -517,23 +573,27 @@ fn fit_pairs(
     } else {
         &[Kind::Colour, Kind::ToneOnly]
     };
+    // The look of `kind` over the base that takes `scene` to `target`.
+    let look_of = |kind: Kind, scene: &[Rgb], target: &[Rgb]| {
+        let mut look = match kind {
+            Kind::Colour => solve::colour_look(&base, scene, target),
+            Kind::ToneOnly => solve::tone_look(&base, scene, target),
+            Kind::Monochrome => solve::monochrome_look(scene, target),
+        };
+        look.camera_look = m.camera_look.clone();
+        fitted::with_look(&base, &look).map_err(|e| refuse(format!("{e:#}")))
+    };
     let mut chosen = None;
     stopped(cancel)?;
     // The tone-only look is the fallback: only a refused colour look needs it fitted
     // and rendered.
     for &kind in kinds {
         stopped(cancel)?;
-        let mut look = match kind {
-            Kind::Colour => solve::colour_look(&base, &fit_scene, &fit_target),
-            Kind::ToneOnly => solve::tone_look(&base, &fit_scene, &fit_target),
-            Kind::Monochrome => solve::monochrome_look(&fit_scene, &fit_target),
-        };
-        look.camera_look = m.camera_look.clone();
-        let profile = fitted::with_look(&base, &look).map_err(|e| refuse(format!("{e:#}")))?;
+        let profile = look_of(kind, &fit_scene, &fit_target)?;
         let render = full_render(
             &small,
             &pairing_recipe(m, Some(profile.clone())),
-            [w, h],
+            stages,
             cancel,
         )?;
         let scores = gate::score(&render, &target_srgb, &testing, w, h);
@@ -560,7 +620,15 @@ fn fit_pairs(
         });
         if accepted {
             report.kind = Some(kind);
-            chosen = Some(profile);
+            // The held-out third has judged the look; the one used learns from it
+            // too. A small face may lie whole in a held-out tile, and its colours
+            // would otherwise be guessed from the rest of the photo's.
+            stopped(cancel)?;
+            chosen = Some(look_of(
+                kind,
+                &pick(&scene, &usable),
+                &pick(&target, &usable),
+            )?);
             break;
         }
     }

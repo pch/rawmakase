@@ -107,9 +107,13 @@ fn spearman(pairs: &[(f32, f32)]) -> f32 {
 }
 
 /// The fewest held-out pairs any look is judged on, and, for a colour look, the
-/// least share of them in colour (chroma above 10).
+/// least share of them in colour (chroma above 10). The share is small on
+/// purpose: in a portrait against grey walls or at night the face is most of the
+/// colour there is, and a curve alone leaves it the baseline's (at 5%, six of 139
+/// photos fell back to one; all six are closer to the camera's with their colour
+/// look).
 const MIN_PAIRS: usize = 256;
-const MIN_COLOURED: f32 = 0.05;
+const MIN_COLOURED: f32 = 0.01;
 
 /// The share of `target`'s masked pixels in colour.
 pub(super) fn coloured(target: &[Rgb], mask: &[bool]) -> f32 {
@@ -126,7 +130,7 @@ pub(super) fn coloured(target: &[Rgb], mask: &[bool]) -> f32 {
 
 /// Why a colour look `fit` fails against `baseline`, if it does: its held-out
 /// error must be below 0.7 of the baseline's with an RMS of at most 0.1, no cell
-/// more than 2 ΔE00 worse, on at least 256 pairs of which 5% are in colour.
+/// more than 2 ΔE00 worse, on at least 256 pairs of which 1% are in colour.
 pub(super) fn colour_refusal(fit: &Scores, baseline: &Scores, coloured: f32) -> Option<String> {
     if fit.pairs < MIN_PAIRS {
         return Some(format!("Only {} held-out pairs", fit.pairs));
@@ -202,8 +206,13 @@ mod tests {
         assert!(good.de00 < baseline.de00 && good.spearman > 0.99);
         assert_eq!(colour_refusal(&good, &baseline, 0.5), None);
         assert!(
-            colour_refusal(&good, &baseline, 0.01).is_some(),
+            colour_refusal(&good, &baseline, 0.005).is_some(),
             "too little colour"
+        );
+        assert_eq!(
+            colour_refusal(&good, &baseline, 0.02),
+            None,
+            "a face in a grey room"
         );
         assert!(
             colour_refusal(&baseline, &baseline, 0.5).is_some(),
