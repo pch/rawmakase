@@ -136,11 +136,105 @@ the photo per stop), but that orders the slopes only weakly (rank correlation 0.
 and no curve: 0.246 stop held out at Shadows +100, and 0.158 with a remapping per
 photo. The curve of a level is needed.
 
+**The default black comes before the local gain (later the same day).** With every
+build tried, Shadows +100 left the darkest tones too bright, and with one sign: on the
+stress families the change Shadows +100 makes is +3.1 L\* too large where Camera Raw's
+render is under L\* 10 and +2.2 at 10 to 20 (main; the one curve +2.7 and +2.3; the
+refitted network +3.6 and +2.9). On 137 training photos at the scene stage the default
+renders agree in the deep tones (−0.0001, scene-linear) and at Shadows +100 main is
++0.0023 to +0.0032 above Camera Raw, on nine photos in ten. The error grows with how
+far the photo's darkest level is lifted:
+
+| Main's darkest level after the lift | Photos | Deep tones too bright |
+| --- | --- | --- |
+| under 0.004 | 34 | 0.14 stop |
+| 0.004 to 0.008 | 39 | 0.34 |
+| 0.008 to 0.016 | 37 | 0.84 |
+| over 0.016 | 8 | 1.59 |
+
+Camera Raw's darkest level after the lift is 0.34 to 0.50 of main's in every row. The
+stage applies the local gain and then the default black, with the black's key moved by
+Shadows' median gain over the map. Three readings were tried:
+
+- *The key moved by the darkest levels' gain* (as negative Shadows has it): little
+  (the stress families' dark band, mean |L\* bias| 4.08 → 3.88).
+- *The black table continued past its last key* (2^−7), where Shadows +100 puts most
+  photos: it removes a quarter of the dark tones' error on training photos (0.351 →
+  0.268 stop at its best setting), but it is a patch: at default, on the 15 photos
+  whose dark level is over that key, Camera Raw's subtraction does stay near 0.005 and
+  the engine matches it within 0.01 stop.
+- *The black taken before the gain*: the result is the default render times the gain,
+  so the gain scales what the black removes. In the stage's order that is its result
+  less `gain·gone(x) − gone(gain·x)`, with `gone(v)` what the photo's own default black
+  removes at `v`, and the key left unmoved by Shadows (`RAWMAKASE_BLACK_FIRST`, a test
+  switch; nothing fitted; the default render cannot change).
+
+On 24 training photos at Shadows +100, scene stage, with the refitted network's curves:
+
+| | After the gain (as built) | Before the gain |
+| --- | --- | --- |
+| Deep tones too bright, by the four rows above | +0.15, +0.33, +0.44, +0.99 | −0.03, −0.11, 0.00, +0.14 |
+| Error where the default is under 0.02 | 0.382 stop | 0.185 |
+| Error of all pixels over 0.003 | 0.114 | 0.101 |
+| Darkest level against Camera Raw's | 1.79 times | 1.06 times |
+
+With the one curve the same switch gives 0.351 → 0.258 in the dark tones. It suits the
+network's curves because their targets are ratios of Camera Raw's renders, which are
+gains of values the black has already been taken from. Final renders, photos nothing
+was fitted on (mean |L\* bias| of the band L\* 25 and under, Shadows +100 and +50):
+
+| | main | refitted network | + black first | one curve | + black first |
+| --- | --- | --- | --- | --- | --- |
+| Stress families, +100 | 3.11 | 4.17 | 2.06 | 4.08 | 2.65 |
+| Main families, +100 | 3.91 | 4.30 | 2.46 | 3.00 | 2.14 |
+| Stress families, +50 | 1.13 | 1.44 | 0.85 | 1.46 | 0.96 |
+| Main families, +50 | 1.47 | 1.66 | 1.04 | 1.06 | 0.78 |
+
+The median ΔE00 of a photo at Shadows +100, main → the one curve with the black first:
+2.49 → 1.98 on the stress families (13 photos closer, 9 further) and 2.43 → 2.12 on the
+three main families (17 and 10); with the network's curves 2.35 and 2.20, with a worse
+mean (2.82 → 2.92 and 2.52 → 2.89). Shadows −100 does not gain from it: 0.77 → 0.92
+with the network's curves on the main families and 1.00 with the mirrored one curve,
+though its dark band's bias falls (0.65 → 0.52). With an oracle curve per photo the two
+orders fit the deep tones alike when the gain-first form gets a free black constant per
+photo (0.147 and 0.145 stop on 126 photos, main 0.432), so the renders do not prove the
+order; the black-first form needs no constant.
+
+**More on the curves (later the same day).**
+
+- A photo's best shift of the one Shadows curve is a property of the photo: its values
+  at +100 and at −100 correlate 0.94 (their difference has a spread of 0.11 stop, each
+  of them 0.32). A ridge on the histogram predicts little of it (held out 0.125 →
+  0.116 stop); texture at three scales, chroma, the share and layout of the dark, ISO
+  (r 0.13) explain 3 to 6% of its variance, and trees on all of those a third.
+- The key is the whole frame's mean: relative to a Gaussian mean over 50, 25, 12 and 6%
+  of the long edge the one curve leaves 0.127, 0.188, 0.281 and 0.365.
+- On the three main validation families the one curve beats the network at positive
+  Shadows (+100: 2.43 → 2.18 against 2.31, +50: 1.55 → 1.48 against 1.61) and loses at
+  −100 (1.01 against 0.86; main 0.77).
+- Highlights as one shape between two keys (median, mean or a quartile to the 90th, 99th
+  or 99.9th percentile, the top or the white; the gain times 1 or times the keys'
+  distance): 0.25 to 0.42 stop in the highlights, no better than one key.
+- Highlights after the default white curve (the default render times a gain of its own
+  base) is worse than before it: 0.132 against 0.094 with an oracle curve, further on 43
+  of 62 photos. The white curve does not relax under Highlights −100 either: faint fine
+  detail in the highlights keeps 0.99 of its scene contrast (quartiles 0.88 and 1.21),
+  which is the default curve's slope where the pixels end (0.95; the same method on the
+  default render reads 1.06 times the curve's slope); main keeps 0.79.
+- With the scene input clamped at the file's white level (the other thread's switch),
+  the oracle floor in the highlights of the photos the clamp changes goes from 0.14–0.16
+  to 0.09–0.10 stop.
+- A full-size crop of a blown building on a stress photo at Highlights −100 (range from
+  the 5th to the 95th percentile, L\*): main 34.2, the new base 40.7, Camera Raw 43.3;
+  fine detail (standard deviation) 0.49, 0.59, 0.67.
+
 **Open.** What sets a photo's key and scale for Shadows beyond the mean; the form of
 the Highlights curve (the network stays the best predictor there); the rule fitted as
 a correction of the one Shadows curve, not from nothing, since it does not carry to
-photos it has not seen; Clarity and the pair model on the new base; the gate, the GPU
-tests and the stage probes, none of which ran.
+photos it has not seen; the black-first order as the stage's own (masks, the GPU, and
+the key-moving code and the masks' black rows it would replace), and negative Shadows
+under it; Clarity and the pair model on the new base; the gate, the GPU tests and the
+stage probes, none of which ran.
 
 ### Negative Highlights in blown skies: an untrained top, and a shoulder on every pixel (2026-11-20)
 
