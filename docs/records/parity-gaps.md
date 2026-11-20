@@ -136,7 +136,36 @@ the photo per stop), but that orders the slopes only weakly (rank correlation 0.
 and no curve: 0.246 stop held out at Shadows +100, and 0.158 with a remapping per
 photo. The curve of a level is needed.
 
-**The default black comes before the local gain (later the same day).** With every
+**Correction (2026-11-20, evening): the black-first reading below is withdrawn.** It
+was built as a change of the stage and reviewed (a same-provider substitute review,
+since no other provider had quota), and a measurement then settled it. On the one
+controlled pair there is, the synthetic dark scene with small bright gaps, main reads
+0.588, 0.758 and 0.552 EV of lift at Exposure −2, 0 and +2 against Camera Raw's 0.600,
+0.785 and 0.572, within 0.03 EV, and the black-first build reads 0.48, 0.51 and 0.51.
+Camera Raw's own two renders of that scene (0.52 EV without its default black, 0.79
+with it) are a gain of 0.52 EV followed by the same black: that gives 0.78. So Camera
+Raw applies the gain and then the black, as the stage does, and on that scene the
+rule's output is the true gain. The paragraph's claim that Camera Raw's result is its
+default render times the gain is wrong, and so was a reading of this pair as "the
+curve reads the level the black leaves" (the arithmetic gives 0.95, not 0.79).
+
+What stands is the measurement: on photos the stage's deep tones are too bright at
+Shadows +100, by the amounts in the table below, and a build that multiplies the
+default render by the rule's gain removes most of that. The reason is in the rule's
+targets, not in the stage's order. Its photo targets are ratios of Camera Raw's
+renders (the render at the slider over the default render), and both have the default
+black in them, so in deep tones a target is larger than the gain that produced it
+(for a tone 2.6 times the black's removal up, 0.79 EV where the gain is 0.52); its
+mosaic targets were rendered without the default black and are true gains. The stage
+applies a photo's inflated gain to the scene value and then takes the black again. The
+fix that follows is the one the second ensemble already uses for the white curve: a
+target is the gain that gives Camera Raw's result through the stage's own curves, the
+default black included. Not done yet. The numbers below are kept as measured; read
+"black first" in them as "the rule's gain taken as a ratio of renders", which is right
+for photo-like scenes and wrong by 0.28 EV on the probe.
+
+**The default black comes before the local gain (later the same day; withdrawn, see
+the correction above).** With every
 build tried, Shadows +100 left the darkest tones too bright, and with one sign: on the
 stress families the change Shadows +100 makes is +3.1 L\* too large where Camera Raw's
 render is under L\* 10 and +2.2 at 10 to 20 (main; the one curve +2.7 and +2.3; the
@@ -231,9 +260,9 @@ order; the black-first form needs no constant.
 **Open.** What sets a photo's key and scale for Shadows beyond the mean; the form of
 the Highlights curve (the network stays the best predictor there); the rule fitted as
 a correction of the one Shadows curve, not from nothing, since it does not carry to
-photos it has not seen; the black-first order as the stage's own (masks, the GPU, and
-the key-moving code and the masks' black rows it would replace), and negative Shadows
-under it; Clarity and the pair model on the new base; the gate, the GPU tests and the
+photos it has not seen; the rule's photo targets as the gains that give Camera Raw's
+result through the stage's own default black, and what the black's key should do under
+Shadows once they are; Clarity and the pair model on the new base; the gate, the GPU tests and the
 stage probes, none of which ran.
 
 ### Negative Highlights in blown skies: an untrained top, and a shoulder on every pixel (2026-11-20)
