@@ -287,8 +287,7 @@ impl Editor {
             "Rename To",
             |ui| match crate::app::export::naming::menu::combo(
                 ui,
-                "export-naming",
-                220.,
+                egui::ComboBox::from_id_salt("export-naming").width(220.),
                 naming,
                 custom.as_deref(),
                 &self.exports.saved,

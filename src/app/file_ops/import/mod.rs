@@ -25,7 +25,8 @@ use crate::app::Editor;
 use crate::app::export::naming::editor::{NameEditor, Outcome as EditorOutcome};
 use crate::app::export::naming::menu::{self, Choice as NamingChoice};
 use crate::app::export::naming::presets::{Library, Preset};
-use crate::app::ui::design::{self, Tone, button, inset, radius, space, text};
+use crate::app::ui::design::{self, Tone, button, inset, radius, size, space, text};
+use crate::app::ui::icons::{self, Icon};
 use crate::app::ui::widgets::{self, plural, pretty_path};
 use crate::catalog::file_ops::{
     self, DateFolders, Duplicate, ExtensionCase, ImportMetadata, ImportOutcome, ImportPlan,
@@ -968,14 +969,38 @@ struct Shown {
     cancel: bool,
 }
 
-/// A section's heading.
-fn heading(ui: &mut egui::Ui, palette: &crate::app::ui::theme::Palette, text: &str) {
+/// The settings column's width.
+const SETTINGS_WIDTH: f32 = 300.;
+/// The height of the dialog's controls: drop-downs, fields and buttons, so a
+/// row of them lines up.
+const FIELD: f32 = widgets::DROPDOWN_HEIGHT;
+/// The width of a Choose… button beside a field.
+const CHOOSE_WIDTH: f32 = 84.;
+/// The height of Where They Go, under the photos.
+const PREVIEW_HEIGHT: f32 = 150.;
+
+/// A section's caption in the settings column, as the sidebars' captions are.
+fn caption(ui: &mut egui::Ui, palette: &crate::app::ui::theme::Palette, text: &str) {
     ui.label(
-        egui::RichText::new(text)
-            .size(text::LABEL)
-            .strong()
-            .color(palette.tone(Tone::SOFT)),
+        egui::RichText::new(text.to_uppercase())
+            .size(text::SMALL)
+            .color(palette.tone(Tone::MUTED)),
     );
+}
+
+/// The space and hairline between two sections of the settings column.
+fn section_gap(ui: &mut egui::Ui, palette: &crate::app::ui::theme::Palette) {
+    ui.add_space(space::L);
+    let (rect, _) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), space::HAIR),
+        egui::Sense::hover(),
+    );
+    ui.painter().hline(
+        rect.x_range(),
+        rect.center().y,
+        egui::Stroke::new(1., palette.tone(Tone::RAISED)),
+    );
+    ui.add_space(space::L);
 }
 
 /// A line of small text in `color`.
@@ -983,43 +1008,153 @@ fn note(ui: &mut egui::Ui, text: impl Into<String>, color: egui::Color32) -> egu
     ui.add(egui::Label::new(egui::RichText::new(text).size(text::LABEL).color(color)).wrap())
 }
 
-/// The dialog's contents.
+/// A label above a control as wide as the column, as Develop stacks its
+/// drop-downs: every label and control starts at the column's left edge.
+fn field<R>(
+    ui: &mut egui::Ui,
+    palette: &crate::app::ui::theme::Palette,
+    label: &str,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    ui.add_space(space::S);
+    ui.label(
+        egui::RichText::new(label)
+            .size(text::SMALL)
+            .color(palette.tone(Tone::SECONDARY)),
+    );
+    ui.add_space(space::XXS);
+    // In a scope: a drop-down restyles the ui it is drawn in, which would
+    // otherwise restyle everything after it in the column.
+    ui.scope(add).inner
+}
+
+/// A one-line text field as wide as the space left and as tall as a
+/// drop-down.
+fn text_field(ui: &mut egui::Ui, value: &mut String, hint: &str) -> egui::Response {
+    ui.add(
+        egui::TextEdit::singleline(value)
+            .hint_text(hint)
+            .desired_width(ui.available_width())
+            .min_size(Vec2::new(0., FIELD))
+            .vertical_align(egui::Align::Center)
+            .margin(design::margin(space::M, space::XS)),
+    )
+}
+
+/// A button as tall as a drop-down.
+fn field_button(ui: &mut egui::Ui, text: &str, width: f32) -> egui::Response {
+    ui.add(egui::Button::new(text).min_size(Vec2::new(width, FIELD)))
+}
+
+/// A read-only box showing `text` (a path), cut short with an ellipsis when
+/// it doesn't fit, with the whole of it on hover.
+fn path_box(
+    ui: &mut egui::Ui,
+    palette: &crate::app::ui::theme::Palette,
+    text: &str,
+    placeholder: bool,
+    width: f32,
+) {
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, FIELD), egui::Sense::hover());
+    ui.painter().rect(
+        rect,
+        radius::CONTROL,
+        palette.tone(Tone::FIELD),
+        egui::Stroke::new(1., palette.tone(Tone::RAISED)),
+        egui::StrokeKind::Inside,
+    );
+    let color = palette.tone(if placeholder { Tone::FAINT } else { Tone::TEXT });
+    let mut job = egui::text::LayoutJob::single_section(
+        text.to_owned(),
+        egui::TextFormat::simple(egui::FontId::proportional(text::BODY), color),
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width() - 2. * space::M);
+    let galley = ui.painter().layout_job(job);
+    let at = egui::pos2(
+        rect.left() + space::M,
+        rect.center().y - galley.size().y / 2.,
+    );
+    ui.painter().galley(at, galley, color);
+    if !placeholder {
+        response.on_hover_text(text);
+    }
+}
+
+/// The dialog's contents: the source and its photos on the left, in a well,
+/// with where they go under them; the settings in a column on the right; the
+/// totals and buttons along the bottom.
 fn draw(
     ui: &mut egui::Ui,
     d: &mut Importing,
     palette: &crate::app::ui::theme::Palette,
     shown: &mut Shown,
 ) {
-    ui.set_width(1000.);
+    let screen = ui.ctx().content_rect();
+    let width = (screen.width() - 2. * space::HUGE - 2. * inset::DIALOG).clamp(760., 1120.);
+    let body = (screen.height() - 2. * space::HUGE - 200.).clamp(380., 640.);
+    ui.set_width(width);
     ui.label(
         egui::RichText::new("Import Photos")
             .size(text::TITLE)
             .color(palette.tone(Tone::STRONG)),
     );
-    ui.add_space(space::L);
-    // The photos on the left, Lightroom's panels on the right.
+    ui.add_space(space::XL);
+    let photos_width = width - SETTINGS_WIDTH - space::XXL;
     ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
-            ui.set_width(560.);
-            source_section(ui, d, palette, shown);
-            ui.add_space(space::M);
-            photos_section(ui, d, palette);
-            ui.add_space(space::M);
-            preview_section(ui, d, palette, shown);
-        });
-        // A gap, not a separator: a vertical one takes all the height a
-        // modal offers, and the modal grows with it.
-        ui.add_space(space::XL);
-        ui.vertical(|ui| {
-            ui.set_width(410.);
-            egui::ScrollArea::vertical()
-                .id_salt("import-settings")
-                .max_height(520.)
-                .show(ui, |ui| settings_section(ui, d, palette, shown));
-        });
+        ui.allocate_ui_with_layout(
+            Vec2::new(photos_width, body),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.set_width(photos_width);
+                ui.set_height(body);
+                source_section(ui, d, palette, shown);
+                ui.add_space(space::M);
+                let well = ui.available_height() - PREVIEW_HEIGHT - space::L;
+                photos_section(ui, d, palette, shown, well);
+                ui.add_space(space::L);
+                ui.allocate_ui_with_layout(
+                    Vec2::new(photos_width, ui.available_height()),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| preview_section(ui, d, palette, shown),
+                );
+            },
+        );
+        ui.add_space(space::XXL);
+        ui.allocate_ui_with_layout(
+            Vec2::new(SETTINGS_WIDTH, body),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.set_width(SETTINGS_WIDTH);
+                ui.set_height(body);
+                egui::ScrollArea::vertical()
+                    .id_salt("import-settings")
+                    .max_height(body)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        // Clear of the scroll bar, which floats over the column.
+                        ui.set_width(SETTINGS_WIDTH - space::L);
+                        settings_section(ui, d, palette, shown);
+                    });
+            },
+        );
     });
+    ui.add_space(space::XL);
+    let (rule, _) = ui.allocate_exact_size(Vec2::new(width, space::HAIR), egui::Sense::hover());
+    ui.painter().hline(
+        rule.x_range(),
+        rule.center().y,
+        egui::Stroke::new(1., palette.tone(Tone::RAISED)),
+    );
     ui.add_space(space::L);
     footer(ui, d, palette, shown);
+}
+
+/// What the source menu shows for `source`: the card's or drive's name when
+/// it is one, else the folder.
+fn source_label(d: &Importing, source: &Path) -> String {
+    (d.drives.iter().flatten())
+        .find(|drive| drive.card.as_deref().unwrap_or(&drive.mount) == source)
+        .map_or_else(|| pretty_path(source), |drive| drive.name.clone())
 }
 
 fn source_section(
@@ -1028,194 +1163,273 @@ fn source_section(
     palette: &crate::app::ui::theme::Palette,
     shown: &mut Shown,
 ) {
-    heading(ui, palette, "From");
-    ui.horizontal(|ui| {
-        let current = d
-            .settings
-            .source
-            .as_deref()
-            .map_or_else(|| "Choose a source".to_string(), pretty_path);
-        egui::ComboBox::from_id_salt("import-source")
-            .width(420.)
-            .selected_text(current)
-            .show_ui(ui, |ui| {
-                match &d.drives {
-                    None => {
-                        ui.label("Looking for cards and drives…");
-                    }
-                    Some(drives) if drives.is_empty() => {
-                        ui.label("No card or drive attached");
-                    }
-                    Some(drives) => {
-                        for drive in drives {
-                            let folder = drive.card.clone().unwrap_or(drive.mount.clone());
-                            let on = d.settings.source.as_ref() == Some(&folder);
-                            if ui.selectable_label(on, &drive.name).clicked() {
-                                shown.source = Some(folder);
+    field(ui, palette, "From", |ui| {
+        ui.horizontal(|ui| {
+            let current = d.settings.source.as_deref().map(|s| source_label(d, s));
+            let menu_width = ui.available_width() - CHOOSE_WIDTH - ui.spacing().item_spacing.x;
+            // In a scope, so Choose… beside it keeps a button's look, as
+            // Destination's does.
+            ui.scope(|ui| {
+                widgets::dropdown(ui, "import-source")
+                    .width(menu_width)
+                    .selected_text(current.unwrap_or_else(|| "Choose a card or folder".into()))
+                    .show_ui(ui, |ui| {
+                        match &d.drives {
+                            None => {
+                                ui.label("Looking for cards and drives…");
+                            }
+                            Some(drives) if drives.is_empty() => {
+                                ui.label("No card or drive attached");
+                            }
+                            Some(drives) => {
+                                for drive in drives {
+                                    let folder = drive.card.clone().unwrap_or(drive.mount.clone());
+                                    let on = d.settings.source.as_ref() == Some(&folder);
+                                    if ui.selectable_label(on, &drive.name).clicked() {
+                                        shown.source = Some(folder);
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-                ui.separator();
-                if ui.selectable_label(false, "Other Folder…").clicked() {
-                    shown.choose_source = true;
-                }
+                        ui.separator();
+                        if ui.selectable_label(false, "Other Folder…").clicked() {
+                            shown.choose_source = true;
+                        }
+                    });
             });
-        if ui.button("Choose…").clicked() {
-            shown.choose_source = true;
-        }
+            if field_button(ui, "Choose…", CHOOSE_WIDTH).clicked() {
+                shown.choose_source = true;
+            }
+        });
+    });
+    ui.add_space(space::S);
+    // The source's options on the left, the photos' count and Check All on
+    // the right, over the well they apply to.
+    ui.horizontal(|ui| {
         if ui
             .checkbox(&mut d.settings.subfolders, "Include Subfolders")
             .changed()
         {
             shown.subfolders_changed = true;
         }
+        if !matches!(d.scan, Scan::Done) || d.rows.is_empty() {
+            return;
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.small_button("Uncheck All").clicked() {
+                d.rows.iter_mut().for_each(|r| r.checked = false);
+            }
+            if ui.small_button("Check All").clicked() {
+                d.rows.iter_mut().for_each(|r| r.checked = true);
+            }
+            let (count, bytes) = d.checked();
+            let mut line = format!(
+                "{count} of {} checked",
+                plural(d.rows.len(), "photo", "photos")
+            );
+            // Nothing checked has no size; the formatter would round it up.
+            if count > 0 {
+                line.push_str(&format!(" · {}", super::size(bytes)));
+            }
+            note(ui, line, palette.tone(Tone::LABEL));
+        });
     });
 }
 
-fn photos_section(ui: &mut egui::Ui, d: &mut Importing, palette: &crate::app::ui::theme::Palette) {
-    match &d.scan {
-        Scan::None => {
-            note(
-                ui,
-                "Choose a card or folder to import from.",
-                palette.tone(Tone::MUTED),
-            );
-            return;
-        }
-        Scan::Reading { progress, .. } => {
-            let (read, found) = (
-                progress.read.load(Ordering::Relaxed),
-                progress.found.load(Ordering::Relaxed),
-            );
-            let text = if found == 0 {
-                "Looking for photos…".to_string()
-            } else {
-                format!("Reading {} of {found} photos…", (read + 1).min(found))
-            };
-            note(ui, text, palette.tone(Tone::MUTED));
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(100));
-            return;
-        }
-        Scan::Failed(why) => {
-            note(ui, why.clone(), palette.warning());
-            return;
-        }
-        Scan::Done => {}
-    }
-    let (count, bytes) = d.checked();
-    ui.horizontal(|ui| {
-        note(
-            ui,
-            format!(
-                "{} of {} checked · {}",
-                count,
-                plural(d.rows.len(), "photo", "photos"),
-                super::size(bytes)
-            ),
-            palette.tone(Tone::LABEL),
-        );
-        if ui.small_button("Check All").clicked() {
-            d.rows.iter_mut().for_each(|r| r.checked = true);
-        }
-        if ui.small_button("Uncheck All").clicked() {
-            d.rows.iter_mut().for_each(|r| r.checked = false);
-        }
-    });
-    if d.rows.is_empty() {
-        note(ui, "No photos here.", palette.tone(Tone::MUTED));
-    }
-    egui::ScrollArea::vertical()
-        .id_salt("import-grid")
-        .max_height(250.)
+/// The photos found, as thumbnails in a recessed well `height` tall, or what
+/// the well is waiting for.
+fn photos_section(
+    ui: &mut egui::Ui,
+    d: &mut Importing,
+    palette: &crate::app::ui::theme::Palette,
+    shown: &mut Shown,
+    height: f32,
+) {
+    egui::Frame::new()
+        .fill(palette.tone(Tone::WELL))
+        .corner_radius(radius::CARD)
+        .inner_margin(design::margin_same(space::M))
         .show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                let skip = d.settings.skip_duplicates;
-                for row in &mut d.rows {
-                    cell(ui, palette, row, skip);
+            let inner = Vec2::new(ui.available_width(), height - 2. * space::M);
+            ui.set_min_size(inner);
+            ui.set_max_size(inner);
+            let message = match &d.scan {
+                Scan::None => Some((
+                    "Choose a card or folder to import from.".to_string(),
+                    palette.tone(Tone::MUTED),
+                )),
+                Scan::Reading { progress, .. } => {
+                    let (read, found) = (
+                        progress.read.load(Ordering::Relaxed),
+                        progress.found.load(Ordering::Relaxed),
+                    );
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(100));
+                    Some((
+                        if found == 0 {
+                            "Looking for photos…".to_string()
+                        } else {
+                            format!("Reading {} of {found} photos…", (read + 1).min(found))
+                        },
+                        palette.tone(Tone::MUTED),
+                    ))
                 }
-            });
-            for (path, why) in &d.unreadable {
-                let name = path.file_name().unwrap_or_default().to_string_lossy();
-                note(ui, format!("{name}: {why}"), palette.warning());
+                Scan::Failed(why) => Some((why.clone(), palette.warning())),
+                Scan::Done if d.rows.is_empty() && d.unreadable.is_empty() => {
+                    Some(("No photos here.".to_string(), palette.tone(Tone::MUTED)))
+                }
+                Scan::Done => None,
+            };
+            if let Some((text, color)) = message {
+                // An empty well says what it waits for, in its middle.
+                ui.vertical_centered(|ui| {
+                    ui.add_space((inner.y / 2. - space::XXXL).max(0.));
+                    let (rect, _) =
+                        ui.allocate_exact_size(Vec2::splat(space::XXL), egui::Sense::hover());
+                    icons::paint_at(
+                        ui.painter(),
+                        Icon::FolderPlus,
+                        rect.center(),
+                        space::XXL,
+                        palette.tone(Tone::FAINT),
+                    );
+                    ui.add_space(space::M);
+                    note(ui, text, color);
+                    if matches!(d.scan, Scan::None) {
+                        ui.add_space(space::M);
+                        if field_button(ui, "Choose Folder…", 0.).clicked() {
+                            shown.choose_source = true;
+                        }
+                    }
+                });
+                return;
             }
+            egui::ScrollArea::vertical()
+                .id_salt("import-grid")
+                .max_height(inner.y)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(space::L, space::L);
+                    ui.horizontal_wrapped(|ui| {
+                        let skip = d.settings.skip_duplicates;
+                        for row in &mut d.rows {
+                            cell(ui, palette, row, skip);
+                        }
+                    });
+                    for (path, why) in &d.unreadable {
+                        let name = path.file_name().unwrap_or_default().to_string_lossy();
+                        note(ui, format!("{name}: {why}"), palette.warning());
+                    }
+                });
         });
 }
 
 /// A photo's thumbnail and checkbox, with what marks it: a suspected
 /// duplicate is greyed out, with no checkbox, while `skip_duplicates`, as in
-/// Lightroom.
+/// Lightroom. Every cell is the same size, so the grid's rows line up: the
+/// name is cut short rather than wrapped, and a second line says what marks
+/// the photo.
 fn cell(
     ui: &mut egui::Ui,
     palette: &crate::app::ui::theme::Palette,
     row: &mut Row,
     skip_duplicates: bool,
 ) {
-    const EDGE: f32 = 104.;
-    ui.allocate_ui(Vec2::new(EDGE, EDGE + 52.), |ui| {
-        ui.set_width(EDGE);
-        ui.vertical(|ui| {
-            let (rect, response) = ui.allocate_exact_size(Vec2::splat(EDGE), egui::Sense::click());
-            ui.painter()
-                .rect_filled(rect, radius::CONTROL, palette.tone(Tone::WELL));
-            let importable = row.importable(skip_duplicates);
-            let dimmed = !importable || !row.checked;
-            if let Some(texture) = &row.thumbnail {
-                let size = texture.size_vec2();
-                let scale = (EDGE / size.x.max(size.y).max(1.)).min(1.);
-                let image = egui::Rect::from_center_size(rect.center(), size * scale);
-                let tint = if dimmed {
-                    egui::Color32::from_white_alpha(70)
-                } else {
-                    egui::Color32::WHITE
-                };
-                ui.painter().image(
-                    texture.id(),
-                    image,
-                    egui::Rect::from_min_max(egui::pos2(0., 0.), egui::pos2(1., 1.)),
-                    tint,
-                );
-            }
-            if response.clicked() && importable {
-                row.checked = !row.checked;
-            }
-            let name = (row.source.file.path.file_name())
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            if importable {
-                ui.checkbox(
-                    &mut row.checked,
-                    egui::RichText::new(name).size(text::SMALL),
-                );
-            } else {
-                note(ui, name, palette.tone(Tone::DISABLED));
-                let why = match row.duplicate {
-                    Some(Duplicate::InImport) => "Suspected duplicate (twice here)",
-                    _ => "Suspected duplicate",
-                };
-                note(ui, why, palette.tone(Tone::MUTED));
-            }
-            if row.source.captured.is_none() {
-                note(ui, "Dated by its file", palette.tone(Tone::MUTED)).on_hover_text(
-                    "It has no capture time: its file's modification date files and names it",
-                );
-            }
-        });
-    });
-}
-
-/// A row label of the settings, of one width.
-fn row_label(ui: &mut egui::Ui, palette: &crate::app::ui::theme::Palette, text: &str) {
-    ui.add_sized(
-        Vec2::new(100., 20.),
-        egui::Label::new(egui::RichText::new(text).color(palette.tone(Tone::LABEL))),
+    const EDGE: f32 = 112.;
+    let caption = size::ROW * 2.;
+    let (cell, _) = ui.allocate_exact_size(
+        Vec2::new(EDGE, EDGE + space::XS + caption),
+        egui::Sense::hover(),
     );
+    let thumb = egui::Rect::from_min_size(cell.min, Vec2::splat(EDGE));
+    let response = ui.interact(
+        thumb,
+        ui.id().with(&row.source.file.path),
+        egui::Sense::click(),
+    );
+    let importable = row.importable(skip_duplicates);
+    let dimmed = !importable || !row.checked;
+    ui.painter()
+        .rect_filled(thumb, radius::CONTROL, palette.tone(Tone::DEEP));
+    if let Some(texture) = &row.thumbnail {
+        let size = texture.size_vec2();
+        let scale = (EDGE / size.x.max(size.y).max(1.)).min(1.);
+        let image = egui::Rect::from_center_size(thumb.center(), size * scale);
+        let tint = if dimmed {
+            egui::Color32::from_white_alpha(70)
+        } else {
+            egui::Color32::WHITE
+        };
+        ui.painter().image(
+            texture.id(),
+            image,
+            egui::Rect::from_min_max(egui::pos2(0., 0.), egui::pos2(1., 1.)),
+            tint,
+        );
+    }
+    if importable && response.hovered() {
+        ui.painter().rect_stroke(
+            thumb,
+            radius::CONTROL,
+            egui::Stroke::new(1., palette.tone(Tone::OUTLINE_STRONG)),
+            egui::StrokeKind::Inside,
+        );
+    }
+    if response.clicked() && importable {
+        row.checked = !row.checked;
+    }
+    let name = (row.source.file.path.file_name())
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let below = egui::Rect::from_min_size(
+        egui::pos2(cell.left(), thumb.bottom() + space::XS),
+        Vec2::new(EDGE, caption),
+    );
+    // Drawn inside the cell, which already holds its room in the grid.
+    let mut ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(below)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    ui.spacing_mut().item_spacing = Vec2::new(space::XS, 0.);
+    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+    let text = |t: &str, tone: Tone| {
+        egui::RichText::new(t)
+            .size(text::SMALL)
+            .color(palette.tone(tone))
+    };
+    let mark = if !importable {
+        Some(match row.duplicate {
+            Some(Duplicate::InImport) => "Suspected duplicate (twice here)",
+            _ => "Suspected duplicate",
+        })
+    } else if row.source.captured.is_none() {
+        Some("Dated by its file")
+    } else {
+        None
+    };
+    ui.allocate_ui(Vec2::new(EDGE, size::ROW), |ui| {
+        if importable {
+            ui.checkbox(&mut row.checked, text(&name, Tone::SOFT))
+                .on_hover_text(&name);
+        } else {
+            ui.label(text(&name, Tone::DISABLED)).on_hover_text(&name);
+        }
+    });
+    if let Some(mark) = mark {
+        let label = ui.label(text(mark, Tone::FAINT));
+        if row.source.captured.is_none() && importable {
+            label.on_hover_text(
+                "It has no capture time: its file's modification date files and names it",
+            );
+        }
+    }
 }
 
-/// File Handling, File Renaming, Apply During Import and Destination, as
-/// Lightroom's Import has them.
+/// Destination, File Handling, File Renaming and Apply During Import, as
+/// Lightroom's Import has them, with Destination first: nothing imports
+/// until it is chosen.
 fn settings_section(
     ui: &mut egui::Ui,
     d: &mut Importing,
@@ -1223,162 +1437,39 @@ fn settings_section(
     shown: &mut Shown,
 ) {
     let before = (d.settings.clone(), d.choices.clone());
-    let label = |ui: &mut egui::Ui, text: &str| row_label(ui, palette, text);
-    heading(ui, palette, "File Handling");
-    ui.horizontal(|ui| {
-        label(ui, "");
-        ui.checkbox(
-            &mut d.settings.skip_duplicates,
-            "Don't Import Suspected Duplicates",
-        )
-        .on_hover_text(
-            "Photos already in the catalog (by their original name, capture time and size) \
-             are greyed out and not imported",
-        );
-    });
-    ui.add_space(space::S);
-    heading(ui, palette, "File Renaming");
-    ui.horizontal(|ui| {
-        label(ui, "");
-        ui.checkbox(&mut d.settings.rename, "Rename Files");
-    });
-    ui.add_enabled_ui(d.settings.rename, |ui| {
+    let full = ui.available_width();
+    caption(ui, palette, "Destination");
+    field(ui, palette, "To", |ui| {
         ui.horizontal(|ui| {
-            label(ui, "Template");
-            let s = &mut d.settings.naming;
-            match menu::combo(
-                ui,
-                "import-naming",
-                240.,
-                s.naming,
-                s.tokens.as_deref(),
-                &d.saved,
-                true,
-            ) {
-                Some(NamingChoice::Preset(naming)) => s.choose_naming(naming),
-                Some(NamingChoice::Tokens(tokens)) => s.choose_tokens(&tokens),
-                Some(NamingChoice::Edit) => shown.edit = true,
-                None => {}
+            let (to, placeholder) = match d.settings.destination.as_deref() {
+                Some(path) => (pretty_path(path), false),
+                None => ("No folder chosen".to_string(), true),
+            };
+            let width = full - CHOOSE_WIDTH - ui.spacing().item_spacing.x;
+            path_box(ui, palette, &to, placeholder, width);
+            if field_button(ui, "Choose…", CHOOSE_WIDTH).clicked() {
+                shown.choose_destination = true;
             }
         });
-        let template = d.settings.naming.name_template();
-        ui.horizontal(|ui| {
-            label(ui, "Custom Text");
-            ui.add_enabled(
-                template.uses_text(),
-                egui::TextEdit::singleline(&mut d.settings.naming.custom_text).desired_width(240.),
-            );
-        });
-        ui.horizontal(|ui| {
-            label(ui, "Shoot Name");
-            ui.add_enabled(
-                template.uses_shoot(),
-                egui::TextEdit::singleline(&mut d.settings.shoot_name).desired_width(240.),
-            );
-        });
-        ui.horizontal(|ui| {
-            label(ui, "Start Number");
-            ui.add_enabled(
-                template.uses_sequence(),
-                egui::DragValue::new(&mut d.settings.naming.start_number).range(0..=999_999),
-            );
-        });
-        ui.horizontal(|ui| {
-            label(ui, "Extensions");
-            let shown_case = |c: ExtensionCase| match c {
-                ExtensionCase::Lowercase => "Lowercase",
-                ExtensionCase::Uppercase => "Uppercase",
-                ExtensionCase::LeaveAsIs => "Leave as-is",
-            };
-            egui::ComboBox::from_id_salt("import-extensions")
-                .width(160.)
-                .selected_text(shown_case(d.settings.extensions))
-                .show_ui(ui, |ui| {
-                    for c in [
-                        ExtensionCase::Lowercase,
-                        ExtensionCase::Uppercase,
-                        ExtensionCase::LeaveAsIs,
-                    ] {
-                        ui.selectable_value(&mut d.settings.extensions, c, shown_case(c));
-                    }
-                });
-        });
-        if let Some((sample, _)) = d.rename_sample() {
-            ui.horizontal(|ui| {
-                label(ui, "Sample");
-                note(ui, sample, palette.tone(Tone::SECONDARY));
-            });
-        }
     });
-    ui.add_space(space::S);
-    heading(ui, palette, "Apply During Import");
-    ui.horizontal(|ui| {
-        label(ui, "Creator");
-        ui.add(egui::TextEdit::singleline(&mut d.settings.creator).desired_width(240.));
-    });
-    ui.horizontal(|ui| {
-        label(ui, "Copyright");
-        ui.add(egui::TextEdit::singleline(&mut d.settings.copyright).desired_width(240.));
-    });
-    ui.horizontal(|ui| {
-        label(ui, "Keywords");
-        ui.add(
-            egui::TextEdit::singleline(&mut d.settings.keywords)
-                .hint_text("Comma-separated")
-                .desired_width(280.),
-        );
-    });
-    if let Err(e) = crate::app::library::parse_keywords(&d.settings.keywords) {
-        ui.horizontal(|ui| {
-            label(ui, "");
-            note(ui, format!("{e:#}"), palette.warning());
-        });
+    ui.add_space(space::M);
+    ui.checkbox(&mut d.settings.into_subfolder, "Into Subfolder");
+    if d.settings.into_subfolder {
+        ui.add_space(space::XS);
+        text_field(ui, &mut d.settings.subfolder, "Subfolder name");
     }
-    note(
-        ui,
-        "A Creator or Copyright typed here replaces the camera's and the sidecar's; \
-         keywords are added to the photos' own.",
-        palette.tone(Tone::MUTED),
-    );
-    ui.add_space(space::S);
-    heading(ui, palette, "Destination");
-    ui.horizontal(|ui| {
-        label(ui, "To");
-        let to = d
-            .settings
-            .destination
-            .as_deref()
-            .map_or_else(|| "Choose a folder".to_string(), pretty_path);
-        ui.add(
-            egui::Label::new(egui::RichText::new(to).color(palette.tone(Tone::TEXT))).truncate(),
-        );
-        if ui.button("Choose…").clicked() {
-            shown.choose_destination = true;
-        }
-    });
-    ui.horizontal(|ui| {
-        label(ui, "");
-        ui.checkbox(&mut d.settings.into_subfolder, "Into Subfolder");
-        ui.add_enabled(
-            d.settings.into_subfolder,
-            egui::TextEdit::singleline(&mut d.settings.subfolder)
-                .hint_text("Enter name")
-                .desired_width(170.),
-        );
-    });
-    ui.horizontal(|ui| {
-        label(ui, "Organize");
-        let shown_organize = |o: &Organize| match o {
-            Organize::ByOriginalFolders => "By original folders",
-            Organize::ByDate(_) => "By date",
-            Organize::IntoOneFolder => "Into one folder",
-        };
-        let date = match &d.settings.organize {
-            Organize::ByDate(format) => *format,
-            _ => DateFolders::YearThenDate,
-        };
-        egui::ComboBox::from_id_salt("import-organize")
-            .width(180.)
+    let shown_organize = |o: &Organize| match o {
+        Organize::ByOriginalFolders => "By original folders",
+        Organize::ByDate(_) => "By date",
+        Organize::IntoOneFolder => "Into one folder",
+    };
+    let date = match &d.settings.organize {
+        Organize::ByDate(format) => *format,
+        _ => DateFolders::YearThenDate,
+    };
+    field(ui, palette, "Organize", |ui| {
+        widgets::dropdown(ui, "import-organize")
+            .width(full)
             .selected_text(shown_organize(&d.settings.organize))
             .show_ui(ui, |ui| {
                 for o in [
@@ -1396,10 +1487,9 @@ fn settings_section(
     });
     if let Organize::ByDate(format) = &mut d.settings.organize {
         let today = today();
-        ui.horizontal(|ui| {
-            label(ui, "Date Format");
-            egui::ComboBox::from_id_salt("import-date-format")
-                .width(220.)
+        field(ui, palette, "Date Format", |ui| {
+            widgets::dropdown(ui, "import-date-format")
+                .width(full)
                 .selected_text(format.label(&today))
                 .show_ui(ui, |ui| {
                     for (i, group) in DateFolders::GROUPS.iter().enumerate() {
@@ -1413,6 +1503,129 @@ fn settings_section(
                 });
         });
     }
+
+    section_gap(ui, palette);
+    caption(ui, palette, "File Handling");
+    ui.add_space(space::S);
+    ui.checkbox(
+        &mut d.settings.skip_duplicates,
+        "Don't Import Suspected Duplicates",
+    )
+    .on_hover_text(
+        "Photos already in the catalog (by their original name, capture time and size) \
+         are greyed out and not imported",
+    );
+
+    section_gap(ui, palette);
+    caption(ui, palette, "File Renaming");
+    ui.add_space(space::S);
+    ui.checkbox(&mut d.settings.rename, "Rename Files");
+    if d.settings.rename {
+        field(ui, palette, "Template", |ui| {
+            let s = &mut d.settings.naming;
+            let combo = widgets::dropdown(ui, "import-naming").width(full);
+            match menu::combo(ui, combo, s.naming, s.tokens.as_deref(), &d.saved, true) {
+                Some(NamingChoice::Preset(naming)) => s.choose_naming(naming),
+                Some(NamingChoice::Tokens(tokens)) => s.choose_tokens(&tokens),
+                Some(NamingChoice::Edit) => shown.edit = true,
+                None => {}
+            }
+        });
+        let template = d.settings.naming.name_template();
+        if template.uses_text() {
+            field(ui, palette, "Custom Text", |ui| {
+                text_field(ui, &mut d.settings.naming.custom_text, "")
+            });
+        }
+        if template.uses_shoot() {
+            field(ui, palette, "Shoot Name", |ui| {
+                text_field(ui, &mut d.settings.shoot_name, "")
+            });
+        }
+        // Start Number and Extensions share a row: both are short.
+        let half = (full - ui.spacing().item_spacing.x) / 2.;
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(
+                Vec2::new(half, FIELD * 2.),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.set_width(half);
+                    field(ui, palette, "Start Number", |ui| {
+                        ui.add_enabled_ui(template.uses_sequence(), |ui| {
+                            ui.add_sized(
+                                Vec2::new(half, FIELD),
+                                egui::DragValue::new(&mut d.settings.naming.start_number)
+                                    .range(0..=999_999),
+                            )
+                        })
+                    });
+                },
+            );
+            ui.allocate_ui_with_layout(
+                Vec2::new(half, FIELD * 2.),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.set_width(half);
+                    field(ui, palette, "Extensions", |ui| {
+                        let shown_case = |c: ExtensionCase| match c {
+                            ExtensionCase::Lowercase => "Lowercase",
+                            ExtensionCase::Uppercase => "Uppercase",
+                            ExtensionCase::LeaveAsIs => "Leave as-is",
+                        };
+                        widgets::dropdown(ui, "import-extensions")
+                            .width(half)
+                            .selected_text(shown_case(d.settings.extensions))
+                            .show_ui(ui, |ui| {
+                                for c in [
+                                    ExtensionCase::Lowercase,
+                                    ExtensionCase::Uppercase,
+                                    ExtensionCase::LeaveAsIs,
+                                ] {
+                                    ui.selectable_value(
+                                        &mut d.settings.extensions,
+                                        c,
+                                        shown_case(c),
+                                    );
+                                }
+                            });
+                    });
+                },
+            );
+        });
+        if let Some((sample, _)) = d.rename_sample() {
+            ui.add_space(space::S);
+            note(ui, format!("Sample: {sample}"), palette.tone(Tone::MUTED));
+        }
+    }
+
+    section_gap(ui, palette);
+    caption(ui, palette, "Apply During Import");
+    field(ui, palette, "Creator", |ui| {
+        text_field(ui, &mut d.settings.creator, "")
+    });
+    field(ui, palette, "Copyright", |ui| {
+        text_field(ui, &mut d.settings.copyright, "")
+    });
+    field(ui, palette, "Keywords", |ui| {
+        text_field(ui, &mut d.settings.keywords, "Comma-separated")
+    });
+    if let Err(e) = crate::app::library::parse_keywords(&d.settings.keywords) {
+        ui.add_space(space::XS);
+        note(ui, format!("{e:#}"), palette.warning());
+    }
+    ui.add_space(space::S);
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(
+                "A Creator or Copyright typed here replaces the camera's and the sidecar's; \
+                 keywords are added to the photos' own.",
+            )
+            .size(text::SMALL)
+            .color(palette.tone(Tone::FAINT)),
+        )
+        .wrap(),
+    );
+    ui.add_space(space::M);
     if (d.settings.clone(), d.choices.clone()) != before {
         shown.changed_choice = true;
     }
@@ -1437,7 +1650,17 @@ fn preview_section(
     palette: &crate::app::ui::theme::Palette,
     shown: &mut Shown,
 ) {
-    if d.settings.destination.is_none() || !matches!(d.scan, Scan::Done) {
+    caption(ui, palette, "Where They Go");
+    ui.add_space(space::XS);
+    if !matches!(d.scan, Scan::Done) || d.rows.is_empty() {
+        return;
+    }
+    if d.settings.destination.is_none() {
+        note(
+            ui,
+            "Choose a destination to see where each photo goes.",
+            palette.tone(Tone::MUTED),
+        );
         return;
     }
     let skip = d.settings.skip_duplicates;
@@ -1534,7 +1757,8 @@ fn preview_section(
     };
     egui::ScrollArea::vertical()
         .id_salt("import-preview")
-        .max_height(200.)
+        .max_height((ui.available_height() - FIELD).max(0.))
+        .auto_shrink([false, true])
         .show(ui, |ui| {
             for photo in &plan.photos {
                 let name = photo
@@ -1566,14 +1790,17 @@ fn preview_section(
     }
 }
 
+/// The totals and what an import does on the left; Cancel and Import on the
+/// right, as Export has them.
 fn footer(
     ui: &mut egui::Ui,
     d: &mut Importing,
     palette: &crate::app::ui::theme::Palette,
     shown: &mut Shown,
 ) {
+    let can_import = d.runnable().is_some();
     let plan = d.current().and_then(|p| p.plan.as_ref().ok());
-    if let Some(plan) = plan {
+    let totals = plan.map(|plan| {
         let photos = plan
             .photos
             .iter()
@@ -1585,31 +1812,47 @@ fn footer(
             super::size(plan.bytes),
             super::size(plan.available)
         );
-        if plan.refused.is_none() && plan.bytes > plan.available {
+        let short = plan.refused.is_none() && plan.bytes > plan.available;
+        if short {
             line.push_str(" · not enough space");
         }
-        note(ui, line, palette.tone(Tone::LABEL));
-    }
-    note(
-        ui,
-        "The photos are copied and checked; the originals stay where they are. While they \
-         are imported, other file operations and moving between photos wait.",
-        palette.tone(Tone::MUTED),
-    );
-    ui.add_space(space::M);
-    let can_import = d.runnable().is_some();
+        (line, short)
+    });
     ui.horizontal(|ui| {
-        ui.spacing_mut().button_padding = button::DIALOG;
-        if ui.button("Cancel").clicked() {
-            shown.cancel = true;
-        }
-        if ui
-            .add_enabled_ui(can_import, |ui| widgets::primary_button(ui, "Import"))
-            .inner
-            .clicked()
-        {
-            shown.import = true;
-        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().button_padding = button::DIALOG;
+            if ui
+                .add_enabled_ui(can_import, |ui| widgets::primary_button(ui, "Import"))
+                .inner
+                .clicked()
+            {
+                shown.import = true;
+            }
+            if ui
+                .add(egui::Button::new("Cancel").min_size(Vec2::new(CHOOSE_WIDTH, 30.)))
+                .clicked()
+            {
+                shown.cancel = true;
+            }
+            ui.add_space(space::L);
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                if let Some((line, short)) = totals {
+                    let color = if short {
+                        palette.warning()
+                    } else {
+                        palette.tone(Tone::TEXT)
+                    };
+                    note(ui, line, color);
+                }
+                note(
+                    ui,
+                    "The photos are copied and checked; the originals stay where they are. \
+                     While they are imported, other file operations and moving between \
+                     photos wait.",
+                    palette.tone(Tone::FAINT),
+                );
+            });
+        });
     });
 }
 
@@ -1753,5 +1996,30 @@ impl Editor {
     /// Import, as its button asks for it.
     pub(in crate::app) fn press_import(&mut self) {
         self.run_import();
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    /// A drop-down restyles the `ui` it is drawn in (its height, padding and
+    /// widget looks); a field keeps that to its own control, so the
+    /// checkboxes and text fields after it in the column keep the default
+    /// look.
+    #[test]
+    fn a_fields_drop_down_leaves_the_column_style_alone() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let palette = crate::app::ui::theme::palette(ui.ctx());
+            let before = ui.style().clone();
+            field(ui, &palette, "Organize", |ui| {
+                widgets::dropdown(ui, "test-drop-down")
+                    .selected_text("By date")
+                    .show_ui(ui, |_| {});
+            });
+            assert_eq!(*ui.style(), before);
+        });
+        output.textures_delta.clear();
     }
 }

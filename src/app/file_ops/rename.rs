@@ -810,8 +810,7 @@ impl Editor {
                         let s = &mut r.settings;
                         let choice = menu::combo(
                             ui,
-                            "rename-naming",
-                            260.,
+                            egui::ComboBox::from_id_salt("rename-naming").width(260.),
                             s.naming,
                             s.tokens.as_deref(),
                             &r.saved,

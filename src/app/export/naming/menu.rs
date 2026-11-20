@@ -15,13 +15,13 @@ pub(in crate::app) enum Choice {
     Edit,
 }
 
-/// The menu, `width` wide, for `naming`, or for `custom` (Lightroom's form)
+/// The menu in `combo`, for `naming`, or for `custom` (Lightroom's form)
 /// when a template names files in its place: what was picked, if anything.
-/// Import Photos' (`import`) offers Lightroom's Shoot Name templates too.
+/// The caller gives the combo box its id, width and look. Import Photos'
+/// (`import`) offers Lightroom's Shoot Name templates too.
 pub(in crate::app) fn combo(
     ui: &mut egui::Ui,
-    id_salt: &str,
-    width: f32,
+    combo: egui::ComboBox,
     naming: Naming,
     custom: Option<&str>,
     library: &Library,
@@ -29,30 +29,17 @@ pub(in crate::app) fn combo(
 ) -> Option<Choice> {
     let current = Preset::of(naming, custom, library);
     let mut picked = None;
-    egui::ComboBox::from_id_salt(id_salt)
-        .width(width)
-        .selected_text(current.label())
-        .show_ui(ui, |ui| {
-            for n in Naming::ALL {
-                if ui
-                    .selectable_label(current == Preset::Naming(n), n.label())
-                    .clicked()
-                {
-                    picked = Some(Choice::Preset(n));
-                }
+    combo.selected_text(current.label()).show_ui(ui, |ui| {
+        for n in Naming::ALL {
+            if ui
+                .selectable_label(current == Preset::Naming(n), n.label())
+                .clicked()
+            {
+                picked = Some(Choice::Preset(n));
             }
-            if import {
-                for b in &IMPORT_BUILTIN {
-                    if ui
-                        .selectable_label(current == Preset::Builtin(b), b.name)
-                        .clicked()
-                    {
-                        picked = Some(Choice::Tokens(b.tokens.into()));
-                    }
-                }
-            }
-            ui.separator();
-            for b in &BUILTIN {
+        }
+        if import {
+            for b in &IMPORT_BUILTIN {
                 if ui
                     .selectable_label(current == Preset::Builtin(b), b.name)
                     .clicked()
@@ -60,23 +47,33 @@ pub(in crate::app) fn combo(
                     picked = Some(Choice::Tokens(b.tokens.into()));
                 }
             }
-            let saved = library.list();
-            if !saved.is_empty() {
-                ui.separator();
-                for t in saved {
-                    let on = current == Preset::Saved(t.name.clone());
-                    if ui.selectable_label(on, &t.name).clicked() {
-                        picked = Some(Choice::Tokens(t.tokens));
-                    }
+        }
+        ui.separator();
+        for b in &BUILTIN {
+            if ui
+                .selectable_label(current == Preset::Builtin(b), b.name)
+                .clicked()
+            {
+                picked = Some(Choice::Tokens(b.tokens.into()));
+            }
+        }
+        let saved = library.list();
+        if !saved.is_empty() {
+            ui.separator();
+            for t in saved {
+                let on = current == Preset::Saved(t.name.clone());
+                if ui.selectable_label(on, &t.name).clicked() {
+                    picked = Some(Choice::Tokens(t.tokens));
                 }
             }
-            if current == Preset::Custom {
-                let _ = ui.selectable_label(true, "Custom Settings");
-            }
-            ui.separator();
-            if ui.selectable_label(false, "Edit…").clicked() {
-                picked = Some(Choice::Edit);
-            }
-        });
+        }
+        if current == Preset::Custom {
+            let _ = ui.selectable_label(true, "Custom Settings");
+        }
+        ui.separator();
+        if ui.selectable_label(false, "Edit…").clicked() {
+            picked = Some(Choice::Edit);
+        }
+    });
     picked
 }
