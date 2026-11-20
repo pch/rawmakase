@@ -1,6 +1,6 @@
 # Remaining Lightroom parity gaps
 
-Status: Record (2026-10-05, last updated 2026-11-19); tone research updated 2026-10-16 for the [scene tone stage](../scene-tone-stage.md); lens, profile and catalog notes updated 2026-10-03. RAWmakase renders close to Lightroom but not identically. Each item below says what differs and, where measured, by how much. Errors are encoded-sRGB mean absolute error (0–1) against Camera Raw 18.6 or Lightroom Classic 15.5 exports, scored with `scripts/lightroom-scorecard.py`; most of the entries below are mean ΔE00 against Camera Raw 18.7 renders of the synthetic charts. For scale: Lightroom X100F references averaged 0.0090, Sony A7 II Camera Raw references 0.0065. The scene tone stage changed the default render and every tone control, so figures measured before it (dated 2026-10-05 and earlier) may have moved. Details: [tone controls](../tone-controls.md), [color mixer and grading](../color-mixer.md), [lens corrections](../lens-corrections.md), [transform](../transform.md).
+Status: Record (2026-10-05, last updated 2026-11-20); tone research updated 2026-10-16 for the [scene tone stage](../scene-tone-stage.md); lens, profile and catalog notes updated 2026-10-03. RAWmakase renders close to Lightroom but not identically. Each item below says what differs and, where measured, by how much. Errors are encoded-sRGB mean absolute error (0–1) against Camera Raw 18.6 or Lightroom Classic 15.5 exports, scored with `scripts/lightroom-scorecard.py`; most of the entries below are mean ΔE00 against Camera Raw 18.7 renders of the synthetic charts. For scale: Lightroom X100F references averaged 0.0090, Sony A7 II Camera Raw references 0.0065. The scene tone stage changed the default render and every tone control, so figures measured before it (dated 2026-10-05 and earlier) may have moved. Details: [tone controls](../tone-controls.md), [color mixer and grading](../color-mixer.md), [lens corrections](../lens-corrections.md), [transform](../transform.md).
 
 ## Measured and matched (for reference)
 
@@ -15,6 +15,124 @@ These controls were fitted to Camera Raw renders and match within the default-re
 - **Curve Refine Saturation** renders as Camera Raw 18.7 does on the chart ([tone controls](../tone-controls.md#refine-saturation)): the `curve-*-refine-saturation-*` cases sit at mean ΔE00 1.1–1.5, against 1.4 for the same S curve at 100. Values above 100 render as 100, as in Camera Raw. It imports, is written back, and has a Refine › Saturation slider (0–100) under the RGB point curve.
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the colour curves was not checked; here they set the RGB curve only.
 - **Auto** tone is fitted to Lightroom Classic's own Auto values, from 452 Auto Settings steps on 439 catalog photos with every fifth photo held out; each slider is a linear fit of one or two display-encoded percentiles of luminance, of the brightest channel or of chroma, and the held-out error is a median 1 step on Contrast and 0.21 EV on Exposure. Lightroom changed Auto in mid-2019 and the catalog's history shows both versions, so the slopes are fitted on every photo and the levels, Contrast, Vibrance and Saturation on the current Auto alone. The WB menu's Auto white balance is fitted to Lightroom's Auto values (a median of 2.7 mired off on 133 photos); see [tone controls](../tone-controls.md#auto).
+
+### Negative Highlights in blown skies: an untrained top, and a shoulder on every pixel (2026-11-20)
+
+Camera Raw recovers more of an overexposed sky at Highlights −100 than RAWmakase does.
+This round looked at where that comes from. Camera Raw 18.7; training photos for
+anything fitted; the stress families have validation and holdout references only, so
+their validation photos were looked at and never fitted on, and holdout stayed
+untouched. Nothing in the engine changed.
+
+**Where the error is.** The gate's median over a photo hides it: on validation's 56
+photos Highlights −100 adds 0.42 ΔE00 at the median, but the reference's band of L\*
+90 to 100 is 2.2 L\* too dark (pooled) and 25 photos are over 2 L\* off in the bands 70
+to 100.
+On the five stress photos with a large blown area (at white in every channel in Camera
+Raw's default), the mean L\* of that area at −100, RAWmakase against Camera Raw: a park
+under a blown sky 83.3 / 92.6, palms against the sun 90.7 / 95.5, a paved square 94.9 /
+96.5, a wall and storm clouds level. The data are not the cause: at Exposure −2 the
+same areas carry Camera Raw's contrast within 10%.
+
+**The top of the curve was never trained.** The first ensemble (Shadows +100,
+Highlights −100) takes its targets only where Camera Raw's default is under 0.6 of the
+white; the second (Shadows −100, Highlights +100) goes to 0.98 with clipped results as
+bounds. A pixel at white in the default is in neither. 41 of the 405 training photos
+have over 0.5% of their pixels there; Camera Raw's −100 leaves each such area a flat
+plateau a little over the brightest unclipped pixels, anywhere from L\* 35 to 97. On
+the 14 of them with a DNG, main's plateau is off by 7.4 L\* (RMS over photos, median
+−2.3, six photos over 5 L\*), and the unclipped pixels over 0.8 of the white by 4.8.
+
+**Retraining it.** The second ensemble's method (targets with the white curve undone)
+for Highlights −100, with the blown pixels kept (their scene level the engine's own,
+exact where Camera Raw's result is under the white, a lower bound where it stays
+there) and 1000 more samples per photo from over 0.6 of the white. In-sample the
+plateaus are off by 3.7 L\* and the near-white pixels by 3.3.
+
+- As the whole Highlights −100 curve it fails validation: the top is better (band 90
+  to 100: −2.46 → −1.64 L\*) but the bands 20 to 40 go from −0.03 and −0.31 to −1.22
+  and −1.92 L\*, and the median from 0.71 to 0.86. It over-pulls dark and middle tones
+  on photos it has not seen.
+- Blended in above the first ensemble's range (the first's curve under scene level −2,
+  the retrained one over −1) it holds: median 0.71 → 0.69, highlights ΔE00 (pixels of
+  L\* 90 and over) 1.90 → 1.75 with seven photos closer by 0.3 and two further, band
+  90 to 100 −2.46 → −1.63. The park photo's highlights go from 6.18 to 2.79 and its
+  sky from L\* 83.3 to 88.3. Two gate checks fail: a sunset whose sky keeps a channel
+  at white where Camera Raw's does not, and one photo's worst region.
+- One regression is systematic. With Camera Raw's nearly white results (0.97 to
+  0.995) taken as levels and not as bounds, and the soft shoulder below, two fits that
+  differ only in the networks' seeds agree on validation: highlights ΔE00 1.90 → 1.69
+  and 1.65, seven photos closer by 0.3 and one or none further, the park photo 6.18 →
+  2.68 and 2.77, band 90 to 100 −2.46 → −1.68 and −1.87. Both leave one region of the
+  palms photo's unclipped sky 5 to 6 L\* darker than main's (main is 2 to 3 under
+  Camera Raw there) while its blown part moves by under 1 L\*, and the gate's other
+  failures move between photos with the seed (another photo's region; the line for a
+  pixel at white crossed on a sunset, or on the paved square at −50). A photo with a fifth of its frame blown under daylight is a
+  class the 41 photos do not teach.
+
+**The shoulder acts on every pixel.** Inside the blown areas the slope of the result
+on the scene level was measured at three sizes (fine: under 5 px of 2048; cloud: 5 to
+41 px; large: beyond), with Camera Raw's render taken back through the engine's own
+relation between its scene-tone output and its final render:
+
+| Photo | Camera Raw | main |
+| --- | --- | --- |
+| Paved square | 0.94 / 0.83 / 0.42 | 0.58 / 0.60 / 0.45 |
+| Wall | 0.56 / 0.51 / 0.52 | 0.35 / 0.37 / 0.36 |
+| Storm clouds | 0.79 / 0.88 / 0.74 | 0.68 / 0.69 / 0.71 |
+
+Main's three slopes are nearly equal, and in the range of the default white curve's
+own log-log slope at that depth (on the training photos 0.50 to 0.72 half a stop under
+the white, 0.33 to 0.57 a quarter stop under it). The local gain there is nearly constant, so the engine's operator is
+the shoulder alone, applied to each pixel, and it halves all contrast near the white.
+Camera Raw's result sits nearer the white and keeps more contrast. Letting the
+Highlights curve read a smoother level (half the pixel's own level from the map, or a
+bilateral blur of the map at 1 to 8% of the long edge) changes nothing there.
+
+A test build applied the shoulder to the level the pixel is read at and kept the
+pixel's distance from it, in proportion to the slider: with `W` the white curve, `l`
+the pixel after the local gain and `b` its base level after it, the output is
+multiplied by `((W(b)/b) / (W(l)/l))` to the power of the amount. On main's curve the
+slopes become 0.66 / 0.68 / 0.44, 0.50 / 0.62 / 0.47 and 0.83 / 0.86 / 0.74. With the
+blended curve as well, the share of each blown area still at white at −100 comes out
+at 5.9%, 40.7% and 26.6% against Camera Raw's 8.6%, 42.7% and 20.7% (main: 0.1%,
+35.8%, 0.0%); nothing was fitted to those. On the training photos' unclipped top tenth
+it does nothing (the band gains stay 0.76 0.75 0.73 0.71 against Camera Raw's 0.89
+0.83 0.78 0.71): there the base follows the pixel, and that loss is the curve's.
+
+It does not pass as it is:
+
+- The white curve is not the identity under the shoulder, so the same factor darkened
+  dark texture (more pixels at black on four photos). Holding the curve's ratio under
+  middle grey removes that.
+- Camera Raw does not leave pulled whites at white. The 99.9th percentile of the
+  brightest channel, linear, on three of the photos: 0.996 to 0.998 at −25, 0.989 to
+  0.996 at −50, 0.969 to 0.987 at −100 (the palms keep a sun at white until −100,
+  then 0.964). The test build's lifted pixels reach an encoded 0.997 where Camera Raw
+  holds 0.992, on 1 to 2% of the frame; the difference is 0.2 L\* but it crosses the
+  gate's line for a pixel at white.
+- A ceiling at what the photo's top base level renders as removes the contrast again
+  (storm clouds 0.59 / 0.66 / 0.62, under main). A soft limit between the base's
+  rendered level and the white keeps the clipping at main's and fails no pair of the
+  gate's highlights sets, but keeps about half the gain (0.60 / 0.63, 0.42 /
+  0.50, 0.71 / 0.75) and moves validation little: highlights ΔE00 1.90 → 1.83, no
+  photo closer or further by 0.3.
+- With the shoulder on the base, a curve fitted as if each pixel went through the
+  shoulder is 1.6 L\* too bright within half a stop of the white on the training
+  photos. Retrained with targets written for the shoulder on the base it is +0.4
+  (main: −1.7), with the palms region above.
+
+**Voided.** Three test builds of 2026-11-19 (two retrainings and a control) read the
+retrained ensemble through the second ensemble's input statistics instead of their
+own; their numbers (−8.0, −5.9 and +6.5 L\* on the plateaus) are withdrawn. The
+engine's dumped curve against the network's own prediction on one photo showed it
+(−4.2 against −3.3 stops).
+
+**Open.** What Camera Raw's limit near the white is (a fixed ceiling per photo and
+amount, by the numbers above); a top of the curve that holds on photos with large
+blown skies, for which the 102 train-split photos with over 0.5% of the raw file
+clipped that the rule has not seen are being captured; whether the same shoulder
+matters for Whites and positive Highlights.
 
 ### Clarity: a slope around a base, and no closed form for either yet (2026-11-19)
 
