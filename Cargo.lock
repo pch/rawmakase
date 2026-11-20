@@ -1160,7 +1160,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 [[package]]
 name = "ecolor"
 version = "0.36.2"
-source = "git+https://github.com/pch/egui?rev=e1e5285e986fc2db06ee097445c52917634dad41#e1e5285e986fc2db06ee097445c52917634dad41"
+source = "git+https://github.com/pch/egui?rev=84badfa4e89ab811d2d7c5b276fa49002da3976b#84badfa4e89ab811d2d7c5b276fa49002da3976b"
 dependencies = [
  "bytemuck",
  "emath",
@@ -1169,7 +1169,7 @@ dependencies = [
 [[package]]
 name = "eframe"
 version = "0.36.2"
-source = "git+https://github.com/pch/egui?rev=e1e5285e986fc2db06ee097445c52917634dad41#e1e5285e986fc2db06ee097445c52917634dad41"
+source = "git+https://github.com/pch/egui?rev=84badfa4e89ab811d2d7c5b276fa49002da3976b#84badfa4e89ab811d2d7c5b276fa49002da3976b"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -1204,7 +1204,7 @@ dependencies = [
 [[package]]
 name = "egui"
 version = "0.36.2"
-source = "git+https://github.com/pch/egui?rev=e1e5285e986fc2db06ee097445c52917634dad41#e1e5285e986fc2db06ee097445c52917634dad41"
+source = "git+https://github.com/pch/egui?rev=84badfa4e89ab811d2d7c5b276fa49002da3976b#84badfa4e89ab811d2d7c5b276fa49002da3976b"
 dependencies = [
  "accesskit",
  "ahash",
@@ -1223,7 +1223,7 @@ dependencies = [
 [[package]]
 name = "egui-wgpu"
 version = "0.36.2"
-source = "git+https://github.com/pch/egui?rev=e1e5285e986fc2db06ee097445c52917634dad41#e1e5285e986fc2db06ee097445c52917634dad41"
+source = "git+https://github.com/pch/egui?rev=84badfa4e89ab811d2d7c5b276fa49002da3976b#84badfa4e89ab811d2d7c5b276fa49002da3976b"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -1242,7 +1242,7 @@ dependencies = [
 [[package]]
 name = "egui-winit"
 version = "0.36.2"
-source = "git+https://github.com/pch/egui?rev=e1e5285e986fc2db06ee097445c52917634dad41#e1e5285e986fc2db06ee097445c52917634dad41"
+source = "git+https://github.com/pch/egui?rev=84badfa4e89ab811d2d7c5b276fa49002da3976b#84badfa4e89ab811d2d7c5b276fa49002da3976b"
 dependencies = [
  "arboard",
  "bytemuck",
@@ -1261,7 +1261,7 @@ dependencies = [
 [[package]]
 name = "egui_extras"
 version = "0.36.2"
-source = "git+https://github.com/pch/egui?rev=e1e5285e986fc2db06ee097445c52917634dad41#e1e5285e986fc2db06ee097445c52917634dad41"
+source = "git+https://github.com/pch/egui?rev=84badfa4e89ab811d2d7c5b276fa49002da3976b#84badfa4e89ab811d2d7c5b276fa49002da3976b"
 dependencies = [
  "ahash",
  "egui",
@@ -1275,7 +1275,7 @@ dependencies = [
 [[package]]
 name = "egui_glow"
 version = "0.36.2"
-source = "git+https://github.com/pch/egui?rev=e1e5285e986fc2db06ee097445c52917634dad41#e1e5285e986fc2db06ee097445c52917634dad41"
+source = "git+https://github.com/pch/egui?rev=84badfa4e89ab811d2d7c5b276fa49002da3976b#84badfa4e89ab811d2d7c5b276fa49002da3976b"
 dependencies = [
  "bytemuck",
  "egui",
@@ -1294,7 +1294,7 @@ checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
 [[package]]
 name = "emath"
 version = "0.36.2"
-source = "git+https://github.com/pch/egui?rev=e1e5285e986fc2db06ee097445c52917634dad41#e1e5285e986fc2db06ee097445c52917634dad41"
+source = "git+https://github.com/pch/egui?rev=84badfa4e89ab811d2d7c5b276fa49002da3976b#84badfa4e89ab811d2d7c5b276fa49002da3976b"
 dependencies = [
  "bytemuck",
 ]
@@ -1349,7 +1349,7 @@ dependencies = [
 [[package]]
 name = "epaint"
 version = "0.36.2"
-source = "git+https://github.com/pch/egui?rev=e1e5285e986fc2db06ee097445c52917634dad41#e1e5285e986fc2db06ee097445c52917634dad41"
+source = "git+https://github.com/pch/egui?rev=84badfa4e89ab811d2d7c5b276fa49002da3976b#84badfa4e89ab811d2d7c5b276fa49002da3976b"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -1374,7 +1374,7 @@ dependencies = [
 [[package]]
 name = "epaint_default_fonts"
 version = "0.36.2"
-source = "git+https://github.com/pch/egui?rev=e1e5285e986fc2db06ee097445c52917634dad41#e1e5285e986fc2db06ee097445c52917634dad41"
+source = "git+https://github.com/pch/egui?rev=84badfa4e89ab811d2d7c5b276fa49002da3976b#84badfa4e89ab811d2d7c5b276fa49002da3976b"
 
 [[package]]
 name = "equivalent"

@@ -267,10 +267,25 @@ pub struct Gpu {
     pub backend: &'static str,
     pub device_type: &'static str,
     pub driver: Field,
+    /// The window surface's format, as [`surface`] names it.
+    pub surface: &'static str,
+}
+
+/// The window surface's format and colour space, for a report: whether the
+/// window presents through a 16-bit float surface tells apart the HDR path
+/// from the plain one (#1126).
+pub fn surface(format: wgpu::TextureFormat, color_space: wgpu::SurfaceColorSpace) -> &'static str {
+    match (format, color_space) {
+        (wgpu::TextureFormat::Rgba16Float, wgpu::SurfaceColorSpace::ExtendedSrgbLinear) => {
+            "16-bit float, linear extended sRGB"
+        }
+        (wgpu::TextureFormat::Rgba16Float, _) => "16-bit float",
+        _ => "8-bit",
+    }
 }
 
 impl Gpu {
-    pub fn from_adapter(adapter: &wgpu::AdapterInfo) -> Self {
+    pub fn from_adapter(adapter: &wgpu::AdapterInfo, surface: &'static str) -> Self {
         let vendor = match adapter.vendor {
             0x1002 => "AMD",
             0x10de => "NVIDIA",
@@ -311,6 +326,7 @@ impl Gpu {
                 wgpu::DeviceType::Other => "other",
             },
             driver: Field::untrusted(&driver, UNTRUSTED_MAX),
+            surface,
         }
     }
 }
@@ -390,6 +406,7 @@ pub fn report(build: &Build, system: &System, window: Option<&Window>) -> String
                     ("GPU backend", gpu.backend.to_string()),
                     ("GPU type", gpu.device_type.to_string()),
                     ("GPU driver", gpu.driver.to_string()),
+                    ("GPU surface", gpu.surface.to_string()),
                 ]),
                 None => lines.push(("GPU", "none (drawn without a GPU)".into())),
             }
@@ -698,7 +715,7 @@ mod tests {
 
     fn window() -> Window {
         Window {
-            gpu: Some(Gpu::from_adapter(&adapter())),
+            gpu: Some(Gpu::from_adapter(&adapter(), "8-bit")),
             scale: 1.5,
             monitor: Monitor::System(SystemProfile::Found),
             catalog: Some((1234, 1)),
@@ -728,6 +745,7 @@ GPU vendor: AMD (0x1002)
 GPU backend: Vulkan
 GPU type: integrated
 GPU driver: radv, Mesa 25.2.4-arch1.1
+GPU surface: 8-bit
 Display scale: 1.50
 Monitor profile: System, display profile found
 Catalog: 1234 photos, 1 folder
@@ -815,7 +833,7 @@ Background task: none
         adapter.name = "GPU\nOS: forged".into();
         adapter.driver_info = "x".repeat(4000);
         let window = Window {
-            gpu: Some(Gpu::from_adapter(&adapter)),
+            gpu: Some(Gpu::from_adapter(&adapter, "8-bit")),
             ..window()
         };
         let text = report(&build(), &system(), Some(&window));
@@ -867,7 +885,7 @@ Background task: none
         // Through the adapter.
         let mut adapter = adapter();
         adapter.driver_info = "Mesa /home/alice/Private Photos/driver.so".into();
-        let driver = Gpu::from_adapter(&adapter).driver.to_string();
+        let driver = Gpu::from_adapter(&adapter, "8-bit").driver.to_string();
         assert!(!driver.contains("Photos"), "{driver}");
     }
 
@@ -916,14 +934,28 @@ Background task: none
 
     #[test]
     fn names_known_gpu_vendors_and_keeps_others_as_ids() {
-        assert_eq!(Gpu::from_adapter(&adapter()).vendor, "AMD (0x1002)");
+        assert_eq!(
+            Gpu::from_adapter(&adapter(), "8-bit").vendor,
+            "AMD (0x1002)"
+        );
         let mut other = adapter();
         other.vendor = 0xabcd;
         other.driver = String::new();
         other.driver_info = String::new();
-        let gpu = Gpu::from_adapter(&other);
+        let gpu = Gpu::from_adapter(&other, "8-bit");
         assert_eq!(gpu.vendor, "0xabcd");
         assert_eq!(gpu.driver, Field::Unavailable("empty"));
+    }
+
+    #[test]
+    fn names_the_window_surface_the_hdr_path_presents_through() {
+        use wgpu::{SurfaceColorSpace as Space, TextureFormat as Format};
+        assert_eq!(
+            surface(Format::Rgba16Float, Space::ExtendedSrgbLinear),
+            "16-bit float, linear extended sRGB"
+        );
+        assert_eq!(surface(Format::Rgba16Float, Space::Auto), "16-bit float");
+        assert_eq!(surface(Format::Bgra8Unorm, Space::Auto), "8-bit");
     }
 
     #[test]

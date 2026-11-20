@@ -2,7 +2,7 @@
 //! display again only then rather than on a timer.
 //!
 //! Each read lists the display paths and asks the driver about the window's
-//! display. Doing that every few seconds is the suspected cause of a
+//! display. Doing that every few seconds was first suspected in a
 //! whole-screen flicker on an NVIDIA GeForce under Windows 10 (#1126).
 //!
 //! A thread of its own watches for:

@@ -57,11 +57,11 @@ enum Note {
 }
 
 impl ReportIssue {
-    pub(in crate::app) fn new(adapter: Option<&wgpu::AdapterInfo>) -> Self {
+    pub(in crate::app) fn new(gpu: Option<diagnostics::Gpu>) -> Self {
         Self {
             dialog: None,
             build: Build::current(),
-            gpu: adapter.map(diagnostics::Gpu::from_adapter),
+            gpu,
             system: None,
             task: Default::default(),
             probe: Arc::new(System::probe),
@@ -141,7 +141,15 @@ impl Editor {
     /// file, folder, catalog or profile.
     fn report_window(&self) -> diagnostics::Window {
         diagnostics::Window {
-            gpu: self.report_issue.gpu.clone(),
+            // The surface as it presents now: a linear float surface switches to
+            // its 8-bit format while the display shows no HDR.
+            gpu: self.report_issue.gpu.clone().map(|mut gpu| {
+                if let Some(state) = &self.render_state {
+                    let (format, color_space) = state.surface_format();
+                    gpu.surface = diagnostics::surface(format, color_space);
+                }
+                gpu
+            }),
             scale: self.context.pixels_per_point(),
             monitor: crate::app::preferences::monitor::report_mode(
                 &self.view.monitor,
@@ -836,6 +844,7 @@ mod tests {
             backend: "Vulkan",
             device_type: "integrated",
             driver: Field::Value("Test driver".into()),
+            surface: "16-bit float, linear extended sRGB",
         });
         e.report_issue.probe = Arc::new(|| System {
             kernel: Some(Field::Value("6.0".into())),

@@ -285,11 +285,17 @@ impl Editor {
             &session,
             session_file.is_some().then_some(ctx),
         );
-        let adapter = match &backend {
-            worker::RenderBackend::Gpu(Some(render_state)) => Some(render_state.adapter.get_info()),
+        let gpu = match &backend {
+            worker::RenderBackend::Gpu(Some(render_state)) => {
+                let (format, color_space) = render_state.surface_format();
+                Some(crate::diagnostics::Gpu::from_adapter(
+                    &render_state.adapter.get_info(),
+                    crate::diagnostics::surface(format, color_space),
+                ))
+            }
             _ => None,
         };
-        let report_issue = crate::app::shell::report_issue::ReportIssue::new(adapter.as_ref());
+        let report_issue = crate::app::shell::report_issue::ReportIssue::new(gpu);
         let last = session.last_path.clone().filter(|p| p.exists());
         // A first launch opens the default catalog. A catalog used before that
         // is missing now (an unplugged drive) is not replaced by it.
@@ -652,7 +658,10 @@ impl eframe::App for Editor {
         // repaints the window there, and the watcher wakes it for those changes,
         // unless it can't watch them.
         let polled = !display_changes_announced;
-        let windows_float = cfg!(windows) && self.view.hdr_display.float_surface;
+        let windows_float = cfg!(windows)
+            && self.render_state.as_ref().is_some_and(|s| {
+                s.target_color_space == wgpu::SurfaceColorSpace::ExtendedSrgbLinear
+            });
         if (self.view.hdr_shown && polled)
             || (windows_float && polled)
             || (cfg!(target_os = "linux") && self.hdr_awaits_display())
@@ -965,7 +974,9 @@ fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
     // On Windows the same, where a display can show HDR when the window opens, its
     // switch on or not: the surface is scRGB (linear extended sRGB, 1.0 at 80 cd/m²
     // with HDR on), and egui-wgpu's last pass puts SDR white where Windows shows it
-    // (`HeadroomReader`). A PC with no HDR display keeps the 8-bit surface.
+    // (`HeadroomReader`). While the window's display has HDR off, the surface
+    // presents through its 8-bit format instead, and switches back when HDR is
+    // turned on. A PC with no HDR display keeps the 8-bit surface.
     #[cfg(windows)]
     {
         options.surface_format_selector = Some(std::sync::Arc::new(|formats| {
