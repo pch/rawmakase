@@ -16,6 +16,131 @@ These controls were fitted to Camera Raw renders and match within the default-re
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the colour curves was not checked; here they set the RGB curve only.
 - **Auto** tone is fitted to Lightroom Classic's own Auto values, from 452 Auto Settings steps on 439 catalog photos with every fifth photo held out; each slider is a linear fit of one or two display-encoded percentiles of luminance, of the brightest channel or of chroma, and the held-out error is a median 1 step on Contrast and 0.21 EV on Exposure. Lightroom changed Auto in mid-2019 and the catalog's history shows both versions, so the slopes are fitted on every photo and the levels, Contrast, Vibrance and Saturation on the current Auto alone. The WB menu's Auto white balance is fitted to Lightroom's Auto values (a median of 2.7 mired off on 133 photos); see [tone controls](../tone-controls.md#auto).
 
+### The base level: a local Laplacian filter, and what the curves are once it is right (2026-11-20)
+
+A second thread looked at Shadows and Highlights from the start, on renders already on
+disk: Camera Raw 18.7's scene-stage renders of 243 training photos at 1000 px, the
+engine's taps of 145 of them, and the stress families' frozen references. No Camera
+Raw render was made. Nothing is merged; the engine change is a local commit on
+`t3/tone-engine-lightroom-parity`.
+
+**What the base level gets wrong.** For each coefficient of a Laplacian pyramid of
+log luminance, the share of the large-scale curve's compression it receives (0: the
+detail keeps its contrast; 1: it follows the curve), Camera Raw's own default render as
+the input and main as the control:
+
+| Shadows +100, in the shadows | Faint detail, 1 px | Faint, 8 px | Over 2 stops, 1 px |
+| --- | --- | --- | --- |
+| Camera Raw | 0.11 | 0.35 | 0.72 |
+| main | 0.56 | 0.59 | 0.77 |
+
+Camera Raw's share grows with a difference's size at every scale and only mildly with
+scale. Main's is 0.54 to 0.77 for everything: its guided filter's weight is set by a
+window of 6% of the frame, and a photo's shadows have over half a stop of variance in
+nearly every such window, so the base follows fine detail and noise as it follows
+edges. At Highlights −100 Camera Raw expands faint detail in the highlights (−0.45 at
+1 px, against its own default render) where main compresses it (0.58).
+
+**A local Laplacian filter has Camera Raw's pattern.** With the best curve for each
+photo (an oracle, so the curve's own error is out), the error left by the spatial
+operator alone, in stops of log luminance, median over photos, in each control's own
+tones:
+
+| | Photos | Guided base (main) | Local Laplacian base |
+| --- | --- | --- | --- |
+| Shadows +100 | 29 | 0.141 | 0.085 |
+| Shadows −100 | 29 | 0.137 | 0.086 |
+| Highlights −100 | 30 | 0.119 | 0.095 |
+| Highlights +100 | 30 | 0.117 | 0.100 |
+
+The filter is Paris, Hasinoff and Kautz's (2011) in Aubry's sampled form (2014), on
+log2 luminance: about a reference level `g`, a sample `i` becomes `w·g + (1 − w)·i`
+with `w` a Gaussian of `i − g`, 1.5 stops wide. Its response to the gain curve
+`G(l) = l` is one base level per pixel, and a curve read at that level does as well as
+the full filter, so the engine's structure stays: curves of a base level, on the CPU,
+the GPU and in masks. Widths of 1.25 to 1.5 stops are level; 2 and over are clearly
+worse. A pixel finer than the 512 px map reads `w(d)·B + (1 − w(d))·l` with `d` its
+distance from the map's own level there; a 250 px map on 1000 px renders costs 0.004
+stop. No explicit filter tried does as well (guided with ε 2 or 8, a radius of 1%,
+bilateral grids of 0.8 to 3.2% and 1 to 3 stops). With the curve fitted on the centre
+of the frame alone (18 photos), the centre goes from 0.092 to 0.061 and the corners
+from 0.122 to 0.083, and the guided base's over-lift of vignetted corners (+0.034 stop)
+goes to +0.002: Camera Raw does not lift a smooth falloff as it lifts a dark object.
+
+On the three training photos with blown areas that were looked at, an oracle curve on
+the guided base leaves 0.31, 0.26 and 0.41 stop in the highlights at Highlights −100,
+and on the filter's base 0.08, 0.15 and 0.12. One of them holds a large blown shirt and
+small bright spots between leaves: any curve of the guided base leaves the shirt too
+bright and the spots too dark at once. The size dependence recorded on 2026-10-22 is
+this. The white curve stays on every pixel, after the gain: an oracle curve that holds
+the shoulder itself is worse (0.096 against 0.125 in the highlights on those photos).
+
+**In the engine.** `local_tone::laplacian_base` on the map, read by
+`LocalToneMap::base` and the shader; a Python copy agrees with it to the last digit.
+The rule's two ensembles were refitted through it with the repository's script.
+
+- Training photos, rendered (both builds fitted on them): Highlights −100 in the
+  highlights 0.147 → 0.102 (9 photos closer, none further of 12), Shadows +100 in the
+  shadows 0.210 → 0.158 (14 and 2 of 19); the error of structure under 32 px 0.085 →
+  0.058 and 0.123 → 0.093.
+- Held out by photo, the rule's curve error does not move: Shadows +100 0.172 to 0.212
+  over four folds against 0.164 to 0.202 through the guided base, Highlights −100
+  0.132 to 0.171 against 0.134 to 0.151. The curve's own prediction is the larger
+  error, and a better base does not help a wrong curve.
+- Stress families, final renders against the frozen references (24 photos, median
+  ΔE00 of a photo): Highlights −100 1.19 → 1.12, Highlights +100 1.67 → 1.57, Shadows
+  −100 0.93 → 0.96, Shadows +100 2.49 → 2.48 with the mean worse (2.82 → 3.13; 8
+  closer, 12 further), Shadows +50 1.42 → 1.71. The park's blown sky goes from 9.3 to
+  5.8 L\* too dark and the palms' from 4.8 to 8.1: the level of a blown sky still
+  swings with the fit.
+
+**Shadows is one curve, mirrored by the slider's sign.** Through the filter's base, a
+photo's own best curve leaves 0.058 stop at Shadows +100 (240 photos; 0.088 through the
+guided base). One curve for all photos, read relative to the log of the photo's mean
+luminance, leaves 0.125 held out by photo (relative to the median 0.239, to the 90th
+percentile 0.161, to the level itself 0.349; power means of 0.75 to 1.5 and the mean of
+the scene input do the same as the mean). On 135 of those photos main, whose rule was
+fitted on them, leaves 0.144, and the one curve 0.129 (63 photos closer, 56 further).
+Its gain at 0 to 5 stops under the mean:
+
+| | 0 | −1 | −2 | −3 | −4 | −5 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Shadows +100 | +0.14 | +0.63 | +1.27 | +1.88 | +2.42 | +3.23 |
+| Shadows −100 | −0.15 | −0.61 | −1.27 | −1.93 | −2.55 | −3.46 |
+
+About 0.62 stop per stop of depth, the same field for both signs. In the engine
+(`RAWMAKASE_UNIVERSAL`, a test hook) on the stress families: Shadows +100 2.49 → 2.05
+(mean 2.82 → 2.68; 12 photos closer, 9 further), +50 1.42 → 1.40, −100 0.93 → 0.89;
+the band of L\* 25 and under is level at the median (3.70 → 3.52) and worse on average
+(4.79 → 5.07). On 48 training photos, in the rule's own training set, 0.149 → 0.136 at
+the median and 0.157 → 0.173 on average. So a curve with nothing fitted per photo is
+level with the network, better at the median and worse in the tail. A shift of the key
+per photo takes the 0.125 to 0.086, a scale to 0.083, both to 0.073. Neither follows
+the camera's baseline exposure (r 0.10) or the camera (the shift's spread within a
+camera is the whole spread); both follow the top's distance over the mean weakly
+(r 0.36 to 0.39).
+
+**Highlights is not one curve of one key.** From the engine's scene input (135 photos,
+62 with over 4% of the frame in the highlights), a photo's own curve leaves 0.094 in
+the highlights (0.119 through the guided base). One curve relative to the median leaves
+0.224, to the log of the mean 0.348, to the 90th percentile 0.392, to the top 0.414,
+to the level itself 0.351. A knee and a slope per photo leave 0.171, and the knee
+predicted from ten statistics, held out, 0.206. The photos' own curves run −0.75 to
+−0.95 stop per stop above a knee about 1.5 stops over the median on wide-range photos
+(an output slope of 0.05 to 0.25); at the same share of the photo above a level,
+denser levels keep more slope (0.20, 0.45 and 0.73 at 1 to 3, 3 to 10 and 10 to 30% of
+the photo per stop), but that orders the slopes only weakly (rank correlation 0.2).
+
+**Ruled out.** A local Laplacian filter with one remapping of `i − g` for every photo
+and no curve: 0.246 stop held out at Shadows +100, and 0.158 with a remapping per
+photo. The curve of a level is needed.
+
+**Open.** What sets a photo's key and scale for Shadows beyond the mean; the form of
+the Highlights curve (the network stays the best predictor there); the rule fitted as
+a correction of the one Shadows curve, not from nothing, since it does not carry to
+photos it has not seen; Clarity and the pair model on the new base; the gate, the GPU
+tests and the stage probes, none of which ran.
+
 ### Negative Highlights in blown skies: an untrained top, and a shoulder on every pixel (2026-11-20)
 
 Camera Raw recovers more of an overexposed sky at Highlights −100 than RAWmakase does.
