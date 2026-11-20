@@ -67,6 +67,8 @@ pub(crate) enum AutoKind {
 pub(crate) enum Event {
     /// A file dialog or background work of Preferences > Extensions.
     Extensions(Box<crate::app::extensions::Done>),
+    /// Merge to HDR's merge, or its import, reported back.
+    MergeHdr(Box<crate::app::merge_hdr::Done>),
     /// A verified camera profile was installed into the library, or why not.
     ProfileDownloaded {
         id: u64,

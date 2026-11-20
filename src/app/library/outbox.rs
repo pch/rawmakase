@@ -36,6 +36,8 @@ pub(in crate::app) enum Request {
     Export(CatalogExportRequest),
     /// Read Metadata from Files for these photos, once confirmed.
     Read(Vec<PhotoId>),
+    /// Merge to HDR… of these photos, a bracket, once its window says how.
+    MergeHdr(Vec<PhotoId>),
     /// A file operation (Delete, the thumbnail menu), for the editor to plan and
     /// confirm.
     File(FileRequest),
@@ -56,6 +58,7 @@ impl Request {
             ) if !listed(id) => return None,
             Self::Find(id) if !listed(id) => return None,
             Self::Read(ids) => Self::Read(keep(ids)?),
+            Self::MergeHdr(ids) => Self::MergeHdr(keep(ids)?),
             Self::Export(CatalogExportRequest {
                 name,
                 scope: crate::catalog::ExportScope::Photos(ids),

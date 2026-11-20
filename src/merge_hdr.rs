@@ -220,6 +220,103 @@ fn preview(
         .map(|()| (jpeg, rendered.width, rendered.height)))
 }
 
+/// The active photo as it develops: its edit resolved from `record` (its
+/// catalog edit, or none) with `raw_defaults`, its camera, and what resolving
+/// it warned of.
+pub struct ActiveEdit {
+    pub recipe: Recipe,
+    pub metadata: Metadata,
+    pub warnings: Vec<String>,
+}
+
+impl ActiveEdit {
+    /// The active photo at `path` with edit `record`.
+    pub fn resolve(
+        record: &EditRecord,
+        path: &Path,
+        raw_defaults: &DevelopDefaults,
+        cancel: Cancel<'_>,
+    ) -> Result<Self> {
+        let metadata = crate::photo::header_metadata(path)
+            .or_else(|_| crate::photo::open(path).map(|raw| raw.metadata))?;
+        let profiles = crate::camera_look::with_default(
+            path,
+            &metadata,
+            crate::camera_profiles::installed(&metadata).0,
+            cancel,
+        );
+        let resolved = crate::edits::resolve(record, path, &metadata, &profiles, raw_defaults)?;
+        Ok(Self {
+            recipe: resolved.recipe,
+            metadata,
+            warnings: resolved.warnings,
+        })
+    }
+
+    pub fn active(&self) -> Active<'_> {
+        Active {
+            recipe: &self.recipe,
+            metadata: &self.metadata,
+        }
+    }
+}
+
+/// Adds `published` to `catalog`, with its starting edit as its catalog edit,
+/// in one transaction; `defaults` are what a new photo starts with. False when
+/// the catalog had it already, and keeps its edit there. The errors say where
+/// the DNG was saved.
+pub fn import(
+    catalog: &mut crate::catalog::Catalog,
+    published: &Published,
+    defaults: &crate::catalog::NewPhotoDefaults,
+) -> Result<bool> {
+    let path = &published.path;
+    let saved = || {
+        format!(
+            "The merge was saved at {}, but couldn't be added to the catalog",
+            path.display()
+        )
+    };
+    let added = catalog
+        .import_files_with(
+            crate::storage::parent_dir(path),
+            std::slice::from_ref(path),
+            &[(path.clone(), published.recipe.clone())],
+            defaults,
+            || true,
+        )
+        .with_context(saved)?
+        .context("the import was withdrawn")
+        .with_context(saved)?;
+    if let Some((_, why)) = added.refused.first() {
+        use crate::catalog::FileRefusal;
+        return Err(anyhow::anyhow!(match why {
+            FileRefusal::NotFound => "it is no longer there",
+            FileRefusal::NotAPhoto => "the catalog doesn't read it as a photo",
+            FileRefusal::OutsideFolder => "it isn't in its folder",
+            FileRefusal::LinkedElsewhere =>
+                "its folder in the catalog is linked to another place on this computer",
+            FileRefusal::Ambiguous => "more than one folder of the catalog is where it is",
+        })
+        .context(saved()));
+    }
+    Ok(!added.added.is_empty())
+}
+
+/// What a merge is doing at `stage`, of a bracket of `frames`; `None` for
+/// the stages too short to say.
+pub fn stage_text(stage: rawmakase_hdr_merge::Stage, frames: usize) -> Option<String> {
+    use rawmakase_hdr_merge::Stage;
+    Some(match stage {
+        Stage::Check => "Checking the bracket".to_string(),
+        Stage::Decode(n) => format!("Decoding frame {} of {frames}", n + 1),
+        Stage::Align(n) => format!("Aligning frame {} of {frames}", n + 1),
+        Stage::Deghost(n) => format!("Deghosting frame {} of {frames}", n + 1),
+        Stage::Measure(_) | Stage::Merge(_) => return None,
+        Stage::Encode => "Writing the DNG".to_string(),
+    })
+}
+
 fn file_name(path: &Path) -> String {
     path.file_name()
         .unwrap_or_default()

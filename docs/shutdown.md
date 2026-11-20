@@ -91,6 +91,8 @@ that drops it.
 | Update checker | `app/shell/updates.rs` | Up to an hour between checks; a check or download of up to 15 min | Its request sender dropped, between requests | No: a download has no cancel |
 | Installation probe | `diagnostics.rs` | `updates::installation()`, which can run the package manager | None; the system probe stops waiting for it after 10 s and reports it unavailable | No |
 | GVFS bridge reaper (Linux) | `platform/network.rs` | The bridge process, which outlives the app | None | Never |
+| Merge to HDR | `app/merge_hdr/mod.rs` (the work is `rawmakase_hdr_merge::merge` and `merge_hdr::publish`) | One merge: reading its photos (possibly on a network share), decoding each full size, aligning, deghosting and merging them (seconds to minutes, 1.5–3.2 GB for three 24 MP frames), then writing the DNG beside the active photo through a staging file | Its cancel flag: Cancel in the top bar, Cancel it and close, quitting's step 2.1 and step 3. Taken between frames, within each pass over the pixels and while the DNG is written; a merge cancelled before its file is renamed into place publishes nothing and removes the staging file | Yes, under the deadline: a stalled read can't be interrupted. The close guard waits for it, with Cancel it and close. A DNG published just as it was cancelled stays where it was saved, unadded, and the message says where; its import (below) is a one-shot job |
+| Merge to HDR import | `app/merge_hdr/mod.rs` (the work is `merge_hdr::import`, `Catalog::import_files_with`) | Adding the one DNG with its starting edit: opening the catalog, the file's metadata and sidecar, one SQLite write transaction | None: it is short | No: a one-shot job, detached, as a source's report is. It holds the folder-change activity until it reports back, on every path, a panic included; a result for a merge no longer running, or another catalog, is dropped |
 | Extension source report | `app/extensions/sources.rs` (`Editor::add_reported`; the work is `Catalog::import_files`) | Adding up to 200 files a photo source reported, possibly on a network share: opening the catalog, each file's metadata and sidecar, then one SQLite write transaction, as Add Folder's | Its write gate, closed when the report's scope ends, its program cancels it or its session ends (disabled, uninstalled, crashed, quitting's step 2.1). Looked at before the catalog is opened, and taken once the files are read, right before the transaction: a closed gate writes nothing; once the write has begun it completes or fails as a whole and stands | No: a one-shot job, detached, as Add Folder is. It holds the catalog's folder-change activity until it reports back, on every path, a panic included; the Library then reads the catalog again in place and the program is answered |
 | Extension program | `app/extensions/mod.rs` (the process is `crates/rawmakase-extensions/src/process.rs`) | A program of the user's: anything, for as long as it likes. The app never waits for it except through the stopper below; its requests have deadlines (30 s, 5 s for `hello`), checked on the UI thread each frame, after which they are cancelled and failed 2 s later | `quitting`, then its channel's sending side closed | Through its stopper |
 | Extension reader | `rawmakase-extensions` `session.rs` | A blocking read of the program's channel; **a send on the owner's queue, bounded at 64**, which it never blocks on: an operation that doesn't fit is refused `channel_full`, anything else dropped and counted | The program's end of the channel closing, when it exits or is ended | No: it ends on EOF once its process unit is gone. Nothing joins it in `Drop` |
@@ -137,20 +139,20 @@ macOS run their panel on the main thread, so they are never joined from it.
 ## The exit sequence
 
 1. Close guard, on a window close: refuse while an export, a batch edit, a
-   folder change or a command output job runs, and save the edit after the
+   folder change, a merge to HDR or a command output job runs, and save the edit after the
    autosave in flight, on the autosave thread. A save the catalog does not answer
    within the deadline keeps the window open, saying so, with Close without saving.
    A close refused only to let work finish is asked for again once it has.
 2. `on_exit`, on every path, with one deadline for all of it:
    1. Cancel: the load, render, reference and prefetch tasks, the running export
-      batch, the command output jobs, the library's renders and every request
+      batch, the merge to HDR, the command output jobs, the library's renders and every request
       in flight to an extension's program (each is sent `cancel` and settled
       as cancelled at once, so a proposal it sends later is refused, and a
       proposal's worker still running writes nothing it hadn't written).
    2. Close: drop the update request sender, the control request receiver and the
       library's channels. The extension host admits no request and reads
       nothing from its programs from now on.
-   3. Stop: the `Latest` workers, the export queue, the command output jobs, the
+   3. Stop: the `Latest` workers, the export queue, the merge to HDR, the command output jobs, the
       library's previews, selection, AI Denoise (its stop flag and the running
       run's cancel), the model installs, Lensfun, the control socket and the
       extensions' programs, MIDI's and AI masks' among them. Each program is sent `quitting`, its channel's
@@ -190,8 +192,8 @@ macOS run their panel on the main thread, so they are never joined from it.
 
 ## Quit on macOS
 
-The close guard refuses to close while an export, a batch edit, a folder change
-or a command output job runs, and asks before closing when the edit cannot be
+The close guard refuses to close while an export, a batch edit, a folder change,
+a merge to HDR or a command output job runs, and asks before closing when the edit cannot be
 saved. winit's app menu binds Quit to
 `terminate:`, which skips it, so at launch the app points that item at the key
 window's `performClose:` instead (`platform/quit.rs`): Cmd-Q and the menu's Quit

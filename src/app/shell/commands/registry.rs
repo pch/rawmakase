@@ -145,6 +145,7 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     command("stack:unstack", "Unstack"),
     command("stack:toggle", "Collapse / expand the stack"),
     command("stack:to_top", "Move to the top of the stack"),
+    command("merge_hdr", "Merge the selected photos to HDR"),
     fixed("select_all", "Select all"),
     command("select_none", "Select none"),
     command("deselect_active", "Deselect the active photo"),
@@ -550,6 +551,8 @@ pub(in crate::app) mod bindings {
         LOUPE_FROM_DEVELOP = b("loupe", Develop, &[d(&[Key::E], NONE)]);
         VIRTUAL_COPY = b("virtual_copy", Everywhere, &[d(&[Key::Quote], CMD).once_per_press()]);
         IMPORT_PHOTOS = b("import_photos", Everywhere, &[d(&[Key::I], CMD_SHIFT).once_per_press()]);
+        // Lightroom's Ctrl+H is Hide on a Mac: no key by default.
+        MERGE_HDR = b("merge_hdr", Everywhere, &[]);
         CHROME = b("chrome", Everywhere, &[d(&[Key::F], NONE).once_per_press()]).once();
         DEVELOP = b("develop", Everywhere, &[d(&[Key::D], NONE)]);
 
@@ -855,11 +858,12 @@ pub(in crate::app) mod bindings {
     ];
 
     /// The bindings with no key by default: Masking's at-once close, as
-    /// Escape steps back, and the commands only automation ran before the
-    /// key map.
+    /// Escape steps back, Merge to HDR (Lightroom's Ctrl+H hides the app on a
+    /// Mac), and the commands only automation ran before the key map.
     #[cfg(test)]
     pub(in crate::app) fn keyless(binding: &Binding) -> bool {
         std::ptr::eq(binding, &CLOSE_MASKING)
+            || std::ptr::eq(binding, &MERGE_HDR)
             || METADATA
                 .iter()
                 .any(|b| std::ptr::eq(*b, binding) && b.defaults.is_empty())

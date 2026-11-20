@@ -349,6 +349,12 @@ impl Library {
                 };
                 self.ask(super::outbox::Request::Read(ids));
             }
+            PhotoAction::MergeHdr => {
+                if whole_selection && self.selection.selected.contains(&photo.id) {
+                    let ids = self.selected_ids();
+                    self.ask(super::outbox::Request::MergeHdr(ids));
+                }
+            }
             PhotoAction::MoveToFolder => {
                 let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
                     self.selected_ids()

@@ -75,6 +75,7 @@ impl Editor {
         self.reference.cancel_load();
         self.neighbour_prefetch.cancel();
         self.automation.cancel_outputs();
+        self.merge_hdr.cancel();
         self.extensions.cancel_requests();
     }
     /// Drops the channel ends workers wait on, so none waits for the interface.

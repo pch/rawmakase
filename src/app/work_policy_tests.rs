@@ -171,6 +171,7 @@ fn quitting_stops_the_workers_in_order() {
             HdrHistogram,
             CurveHistogram,
             Export,
+            MergeHdr,
             PreviewBuilds,
             EditableBuilds,
             StandIns,

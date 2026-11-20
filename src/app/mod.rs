@@ -134,6 +134,8 @@ pub(crate) struct Editor {
     folder_sync: crate::app::catalog::folder_sync::FolderSync,
     /// The file operation under way, from its plan to its outcome.
     file_ops: file_ops::FileOps,
+    /// Merge to HDR's window, its merge and the DNG on its way into the catalog.
+    merge_hdr: merge_hdr::MergeHdr,
     /// The RAW the Loupe last started loading, so one that fails is not
     /// loaded again every frame.
     loupe_tried: Option<PhotoId>,
@@ -434,6 +436,7 @@ impl Editor {
             ),
             folder_sync: Default::default(),
             file_ops: Default::default(),
+            merge_hdr: Default::default(),
             loupe_tried: None,
             raw_defaults: std::sync::Arc::new(crate::raw_defaults::DevelopDefaults::load(
                 session.raw_defaults.clone(),
@@ -1044,6 +1047,7 @@ mod export;
 mod extensions;
 mod file_ops;
 pub(crate) mod library;
+mod merge_hdr;
 pub(crate) mod preferences;
 mod presets;
 mod shell;

@@ -62,7 +62,7 @@ impl Menu {
         // map's items get theirs from `set_key_equivalents`.
         type Entry = (Action, &'static str);
         // A menu's entries, or a submenu's when it has a title, as Photo's
-        // Stacking.
+        // Stacking; a menu named again is the one made before.
         let definitions: &[(&str, Option<&str>, &[Entry])] = &[
             (
                 "File",
@@ -88,6 +88,7 @@ impl Menu {
                     (Action::SelectAll, "Select All"),
                 ],
             ),
+            ("Photo", Some("Photo Merge"), &[(Action::MergeHdr, "HDR…")]),
             (
                 "Photo",
                 Some("Stacking"),
@@ -159,7 +160,10 @@ impl Menu {
                 }
                 app.setWindowsMenu(Some(&window));
             }
-            let top = submenu(&bar, title, mtm);
+            let top = bar
+                .itemWithTitle(&NSString::from_str(title))
+                .and_then(|item| item.submenu())
+                .unwrap_or_else(|| submenu(&bar, title, mtm));
             top.setAutoenablesItems(false);
             let sub = match nested {
                 Some(nested) => {

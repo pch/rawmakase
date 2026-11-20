@@ -2,6 +2,7 @@ use crate::app::Editor;
 use crate::app::Module;
 use crate::app::develop::state::Tool;
 use crate::app::develop::workflow::Flushed;
+use crate::app::merge_hdr::MERGE_HDR;
 use crate::app::shell::commands::registry::bindings;
 use crate::app::shell::dialogs::{CatalogDialog, FolderAction};
 use crate::app::shell::keymap::FrameKeys;
@@ -30,6 +31,7 @@ impl Editor {
             || self.keyword_dialog_open()
             || self.smart_editor_open()
             || self.collection_dialog_open()
+            || self.merge_hdr.dialog_open()
     }
     /// Carries out what the Library asked for this frame, in the order it asked
     /// (`library::outbox`). A request that opens a window (Remove Copy, Remove Folder,
@@ -46,6 +48,7 @@ impl Editor {
                 Request::Copy(CopyAction::Remove(_))
                     | Request::Removal(_)
                     | Request::Read(_)
+                    | Request::MergeHdr(_)
                     | Request::File(_)
             );
             if dialog && self.workspace_modal() {
@@ -74,6 +77,7 @@ impl Editor {
                 }
                 Request::Export(request) => self.export_as_catalog(request),
                 Request::Read(ids) => self.modal = Some(crate::app::Modal::ReadMetadata(ids)),
+                Request::MergeHdr(ids) => self.open_merge_hdr(ids),
                 Request::File(FileRequest::Remove(ids)) => self.request_photo_removal(ids),
                 Request::File(FileRequest::Delete(ids)) => self.request_photo_delete(ids, false),
                 Request::File(FileRequest::Trash(ids)) => self.request_photo_trash(ids),
@@ -424,6 +428,8 @@ impl Editor {
             title_bar_pad(ui);
         }
         self.library_requests(&ctx);
+        // A merged DNG waiting for the catalog, retried until nothing holds it.
+        self.add_merged();
         self.poll_folder_sync();
         self.poll_file_recovery();
         if let Some(library) = &mut self.library
@@ -439,6 +445,7 @@ impl Editor {
         self.folder_sync_window(&ctx);
         self.discard_for_find_window(&ctx);
         self.read_metadata_window(&ctx);
+        self.merge_hdr_window(&ctx);
         self.file_op_window(&ctx);
         // Opened from the sidebar in either module, with or without photos.
         if let Some(asked) = self
@@ -612,6 +619,13 @@ impl Editor {
             // Lightroom's Import Photos and Video, in Library and Develop.
             if self.keys(ctx).take(&bindings::IMPORT_PHOTOS).is_some() && self.library.is_some() {
                 self.request_import();
+            }
+            // Photo › Photo Merge › HDR…, in Library and Develop.
+            if self.keys(ctx).take(&bindings::MERGE_HDR).is_some()
+                && let Some(ids) = self.library.as_ref().map(|l| l.selected_ids())
+                && ids.len() > 1
+            {
+                self.open_merge_hdr(ids);
             }
             // Lightroom's Create Virtual Copy, in Library and Develop.
             // Only the first key-down: a held key must not make copy after copy.
@@ -1006,6 +1020,7 @@ impl Editor {
                     self.editable_build_progress(ui);
                     self.folder_sync_progress(ui);
                     self.file_op_progress(ui);
+                    self.merge_hdr_progress(ui);
                     self.messages.work_ui(ui);
                     self.messages.line_ui(ui, ui.cursor().left() > start);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -2108,7 +2123,7 @@ impl Editor {
                 // What only runs without its own way to stop it: closing anyway
                 // must stay possible should it stall on a network share.
                 let anyway = match waits_for.as_deref() {
-                    Some(OUTPUT) => Some("Cancel it and close"),
+                    Some(OUTPUT | MERGE_HDR) => Some("Cancel it and close"),
                     Some(FOLDER_CHANGE | FILE_CHANGE) => Some("Close anyway"),
                     _ => None,
                 };
@@ -2116,6 +2131,7 @@ impl Editor {
                     && ui.button(label).clicked()
                 {
                     self.automation.cancel_outputs();
+                    self.cancel_merge_hdr();
                     self.close_anyway = true;
                     self.close_confirm = false;
                     self.close_after_work = false;
