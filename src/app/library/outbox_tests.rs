@@ -185,3 +185,34 @@ fn find_on_disk_while_a_file_dialog_is_open_says_why() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+/// Develop's filmstrip, like Lightroom's, offers Photo Merge for one of several
+/// selected photos and merges them all, though its other entries act on the
+/// photo alone. It was only ever offered in the Library's grid.
+#[test]
+fn the_filmstrip_merges_the_selection_its_photo_is_in() -> anyhow::Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF"])?;
+    let ctx = e.context.clone();
+    let library = e.library.as_mut().unwrap();
+    library.make_active(ids[0]);
+    library.select_range_to(ids[1]);
+    // As the filmstrip does outside the grid: its menus act on the photo alone.
+    let whole_selection = false;
+    use crate::app::library::cell::MenuTarget;
+    assert_eq!(
+        library.menu_target(ids[1], whole_selection),
+        MenuTarget::PhotoInSelection
+    );
+    assert!(MenuTarget::PhotoInSelection.merges() && MenuTarget::PhotoInSelection.single());
+    assert!(!library.menu_target(ids[2], whole_selection).merges());
+    let photo = library.photo(ids[1]).unwrap().clone();
+    library.photo_action(&ctx, &photo, PhotoAction::MergeHdr, whole_selection);
+    carry_out(&mut e);
+    assert_eq!(
+        e.merge_hdr.dialog_photos(),
+        Some(&ids[..2]),
+        "{}",
+        e.messages.line()
+    );
+    Ok(())
+}

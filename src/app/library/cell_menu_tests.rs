@@ -1,5 +1,5 @@
 //! The photo menu's layout: every shortcut fits beside its label (#979).
-use super::{MenuCollections, Presence, photo_menu};
+use super::{MenuCollections, MenuTarget, Presence, photo_menu};
 use crate::app::library::Module;
 use crate::catalog::Photo;
 use eframe::egui::{self, Pos2, Rect, Vec2};
@@ -34,7 +34,7 @@ fn open_menu(cell: Rect, remove_from: Option<&'static str>) -> Vec<Texts> {
                         available: true,
                         copy: false,
                     },
-                    true,
+                    MenuTarget::Photo,
                     Module::Library,
                     true,
                     MenuCollections {

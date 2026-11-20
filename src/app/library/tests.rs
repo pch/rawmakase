@@ -222,24 +222,24 @@ fn find_on_disk_is_offered_for_one_offline_photo() -> Result<()> {
         library.session.photos()[1].id,
     );
     // Offline and alone: offered; online: not.
-    assert!(library.menu_single(a, true));
+    assert!(library.menu_target(a, true).single());
     assert!(cell::find_on_disk_enabled(
         false,
-        library.menu_single(a, true)
+        library.menu_target(a, true).single()
     ));
     assert!(!cell::find_on_disk_enabled(
         true,
-        library.menu_single(a, true)
+        library.menu_target(a, true).single()
     ));
     // One of several selected: the menu acts on them all, so not offered.
     library.selection.selected.extend([a, b]);
-    assert!(!library.menu_single(a, true));
+    assert!(!library.menu_target(a, true).single());
     assert!(!cell::find_on_disk_enabled(
         false,
-        library.menu_single(a, true)
+        library.menu_target(a, true).single()
     ));
     // A strip cell whose menu acts on its photo alone.
-    assert!(library.menu_single(a, false));
+    assert!(library.menu_target(a, false).single());
     // The offline reason says what to do.
     assert!(Refusal::Offline.detail().contains("Find on Disk"));
     Ok(())
@@ -587,7 +587,7 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
                     quick: false,
                     style: cell::Style::Compact,
                     details: String::new(),
-                    single: true,
+                    target: cell::MenuTarget::Photo,
                     stacks: true,
                     collections: Default::default(),
                     in_collections: Vec::new(),

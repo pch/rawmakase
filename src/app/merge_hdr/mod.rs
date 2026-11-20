@@ -142,6 +142,11 @@ impl MergeHdr {
     pub(in crate::app) fn dialog_open(&self) -> bool {
         self.dialog.is_some()
     }
+    /// The photos the open window would merge.
+    #[cfg(test)]
+    pub(in crate::app) fn dialog_photos(&self) -> Option<&[PhotoId]> {
+        self.dialog.as_ref().map(|d| d.photos.as_slice())
+    }
     /// A merge is under way, or its DNG waits to be added: closing waits for
     /// it. Once its import has begun, the folder change it holds is what
     /// closing waits for.

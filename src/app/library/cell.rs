@@ -56,8 +56,8 @@ pub(super) struct Shown {
     pub style: Style,
     /// File details for an expanded cell, e.g. "6000 × 4000 · 29/06/2016".
     pub details: String,
-    /// Its menu acts on this photo alone, not a selection of several.
-    pub single: bool,
+    /// What its menu acts on.
+    pub target: MenuTarget,
     /// The source shows stacks (see `Filters::shows_stacks`).
     pub stacks: bool,
     /// The Collections panel's tree, for Add to Collection.
@@ -83,7 +83,7 @@ pub(super) fn photo_cell(
         quick,
         style,
         details,
-        single,
+        target,
         stacks,
         collections,
         in_collections,
@@ -292,7 +292,7 @@ pub(super) fn photo_cell(
             available,
             copy: copy == Some(CopyState::UpToDate),
         },
-        single,
+        target,
         super::Module::Library,
         stacks,
         MenuCollections {
@@ -648,6 +648,28 @@ fn stacking_menu(
     }
     choice
 }
+/// What a photo's menu acts on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum MenuTarget {
+    /// The photo alone.
+    Photo,
+    /// The photo alone, though it is one of several selected: as in
+    /// Lightroom's Develop filmstrip, Photo Merge still takes them all.
+    PhotoInSelection,
+    /// Every selected photo, the photo one of them.
+    Selection,
+}
+impl MenuTarget {
+    /// Whether its entries act on the photo alone.
+    pub(in crate::app) fn single(self) -> bool {
+        self != Self::Selection
+    }
+    /// Whether Photo Merge is offered: a bracket is more than one photo,
+    /// the selection's.
+    pub(in crate::app) fn merges(self) -> bool {
+        self != Self::Photo
+    }
+}
 /// Whether Find on Disk… is offered: for one photo, offline.
 pub(in crate::app) fn find_on_disk_enabled(available: bool, single: bool) -> bool {
     !available && single
@@ -720,14 +742,14 @@ pub(in crate::app) struct Presence {
 /// not `available` without a `copy`, with the reason in place of its shortcut.
 /// In Develop's filmstrip it starts with Set as Reference Photo, as in
 /// Lightroom. Find on Disk… is offered for a photo not `available` when the
-/// menu acts on it alone (`single`). Stacking is offered where the source
+/// menu acts on it alone (`target`). Stacking is offered where the source
 /// shows stacks (`stacks`), or for a photo in none. Photo Merge › HDR… takes
 /// a selection, never a photo alone.
 pub(in crate::app) fn photo_menu(
     response: &egui::Response,
     photo: &Photo,
     presence: Presence,
-    single: bool,
+    target: MenuTarget,
     module: super::Module,
     stacks: bool,
     collections: MenuCollections<'_>,
@@ -790,7 +812,7 @@ pub(in crate::app) fn photo_menu(
             ui,
             "Find on Disk…",
             "",
-            find_on_disk_enabled(available, single),
+            find_on_disk_enabled(available, target.single()),
             false,
         ) {
             action = Some(PhotoAction::FindOnDisk);
@@ -825,10 +847,8 @@ pub(in crate::app) fn photo_menu(
             }
         }
         menu_separator(ui);
-        // As Lightroom's Photo Merge: a bracket is more than one photo, the
-        // menu of a selection.
         submenu_style(ui);
-        ui.add_enabled_ui(!single, |ui| {
+        ui.add_enabled_ui(target.merges(), |ui| {
             ui.menu_button("Photo Merge", |ui| {
                 crate::app::ui::widgets::menu_width(ui, 120.);
                 ui.spacing_mut().item_spacing.y = 0.;
