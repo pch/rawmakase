@@ -73,7 +73,8 @@ and on the filter's base 0.08, 0.15 and 0.12. One of them holds a large blown sh
 small bright spots between leaves: any curve of the guided base leaves the shirt too
 bright and the spots too dark at once. The size dependence recorded on 2026-10-22 is
 this. The white curve stays on every pixel, after the gain: an oracle curve that holds
-the shoulder itself is worse (0.096 against 0.125 in the highlights on those photos).
+the shoulder itself is worse (0.115 against 0.096 in the highlights, the median of 17
+photos with highlights, both through the full filter).
 
 **In the engine.** `local_tone::laplacian_base` on the map, read by
 `LocalToneMap::base` and the shader; a Python copy agrees with it to the last digit.
