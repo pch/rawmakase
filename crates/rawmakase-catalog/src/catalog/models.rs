@@ -54,6 +54,11 @@ pub struct Collection {
     pub name: String,
     pub parent: Option<super::CollectionId>,
     pub kind: CollectionKind,
+    /// Photos can be added to it and taken out of it by hand: a plain
+    /// collection, the Quick Collection included, but not a saved print,
+    /// book, slideshow or web creation, which [`CollectionKind::Collection`]
+    /// also covers.
+    pub takes_photos: bool,
 }
 /// The name Lightroom gives its Quick Collection.
 pub const QUICK_COLLECTION: &str = "quick collection";

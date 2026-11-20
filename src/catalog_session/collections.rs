@@ -99,6 +99,7 @@ impl CatalogSession {
             name: name.trim().to_string(),
             parent,
             kind,
+            takes_photos: kind == CollectionKind::Collection,
         });
         Ok(id)
     }
@@ -193,6 +194,7 @@ impl CatalogSession {
             name: name.trim().to_string(),
             parent: None,
             kind: CollectionKind::Collection,
+            takes_photos: true,
         });
         self.collection_photos.insert(id, members);
         self.follow_members(quick, &cleared);

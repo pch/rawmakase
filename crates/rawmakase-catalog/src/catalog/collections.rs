@@ -124,6 +124,7 @@ impl RemovedCollections {
                 name: r.name.clone(),
                 parent: r.parent,
                 kind: CollectionKind::from_lightroom(&r.kind, &r.name),
+                takes_photos: r.kind == COLLECTION_KIND,
             })
             .collect()
     }
@@ -164,6 +165,7 @@ impl Catalog {
             .map(|r| Collection {
                 id: r.id,
                 kind: CollectionKind::from_lightroom(&r.kind, &r.name),
+                takes_photos: r.kind == COLLECTION_KIND,
                 name: r.name,
                 parent: r.parent,
             })
