@@ -191,6 +191,13 @@ is the white).
   flat bright area ends just over the rest's brightest tones and takes those down with
   it (the ground's 99th percentile 0.067 against 0.19). Main gives 0.32 to 0.34 and
   0.53 to 0.62 with no difference between the states.
+- *How much texture.* The same unclipped band of 40% with smooth texture of 0, 0.25,
+  0.5, 1, 2 and 4%: 0.045, 0.084, 0.113, 0.193, 0.322, 0.442, and the ground's 99th
+  percentile 0.038 to 0.170 with it. White noise of 1% a pixel: 0.660. A smooth
+  gradient of 10 or 40% across the band and nothing else: 0.039 and 0.076, as flat.
+  The pull falls steadily as the fine detail grows, noise included, and gradients do
+  not count. The rule's texture inputs are measured on the 512 px map, where a pixel's
+  noise is averaged away and 4% of smooth texture is under 0.02 stop.
 
 This is the plateau "a little over the brightest unclipped pixels" of the training
 photos, and it explains the stress skies: a clipped sky reached by a ramp of unclipped
@@ -206,9 +213,10 @@ against 0.65): the rule's texture inputs do not separate 4% texture from none. O
 stress photos the palms' blown area lands on Camera Raw (95.4 against 95.5) and the
 park's sky gets worse again (78.3; main 83.3; Camera Raw 92.6). Not a candidate.
 
-**Open.** A rule input that says whether the tones at a level are flat, and whether
-tones lead up to them, tested on these probes before any photo; how far the size
-effect is the same thing; what Camera Raw's limit near the white is (a fixed ceiling
+**Open.** A measure of fine detail by level, taken finer than the map and on a scale
+that separates none from a little, as an input of the rule, with whether tones lead up
+to a level; tested on these probes before any photo; how far the size effect is the
+same thing; what Camera Raw's limit near the white is (a fixed ceiling
 per photo and amount, by the numbers above); whether the same shoulder matters for
 Whites and positive Highlights.
 
