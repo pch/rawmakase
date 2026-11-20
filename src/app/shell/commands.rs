@@ -1298,9 +1298,6 @@ impl Editor {
     }
 }
 
-/// The photos a name stands for: the filename or the path, in any case, with or
-/// without the extension; else the ones whose name contains it. A master wins
-/// over its virtual copies, which share its filename.
 /// Whether `photos` lists `p`: its file name holds `query` (in lower case)
 /// and its capture time begins with `captured`, a day, month or year
 /// (`2026-09-25`). A photo with no capture time matches no date.
@@ -1309,6 +1306,9 @@ fn lists_photo(p: &Photo, query: &str, captured: Option<&str>) -> bool {
         && captured.is_none_or(|day| p.captured.starts_with(day))
 }
 
+/// The photos a name stands for: the filename or the path, in any case, with or
+/// without the extension; else the ones whose name contains it. A master wins
+/// over its virtual copies, which share its filename.
 fn find_photos<'a>(photos: &'a [Photo], name: &str) -> Vec<&'a Photo> {
     let wanted = name.trim().to_lowercase();
     let by_path = wanted.contains(['/', '\\']);

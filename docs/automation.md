@@ -284,7 +284,8 @@ different command ends that group. Auto tone and white-balance commands return
 Common error codes include `invalid_request`, `unsupported_protocol`,
 `unauthorized`, `adapter_disabled`, `busy`, `stale_target`, `target_required`, `no_document`,
 `not_ready`, `unsupported_parameter`, `not_editable`, `protected`, `save_failed`,
-`already_exists`, `not_found`, `no_catalog` and `unknown_job`. `open` returns `not_editable` for a photo whose
+`already_exists`, `not_found`, `no_catalog`, `not_applied` (the catalog refused
+the change, with its reason) and `unknown_job`. `open` returns `not_editable` for a photo whose
 file is offline, or a JPEG, PNG or TIFF Develop can't edit (a CMYK JPEG, say);
 any other JPEG, PNG or TIFF opens as a RAW does. On a JPEG, PNG or TIFF,
 `temperature` and `tint` move its relative Temp and Tint (−100 to 100).

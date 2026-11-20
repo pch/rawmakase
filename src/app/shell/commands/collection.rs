@@ -46,12 +46,13 @@ impl Editor {
         }
         // The catalog refuses a name in use too; this says so with a code a
         // client can act on, so that it can use the one already there.
+        // Lightroom's own (the Quick Collection, unsaved creations) aren't
+        // listed, so the catalog's refusal names them instead.
         let trimmed = name.trim();
-        if let Some(c) = library
-            .session
-            .collections()
-            .iter()
-            .find(|c| c.parent == parent && c.name == trimmed)
+        if let Some(c) =
+            library.session.collections().iter().find(|c| {
+                c.parent == parent && c.name == trimmed && c.kind != CollectionKind::System
+            })
         {
             return Err(Error::new(
                 "already_exists",
@@ -119,7 +120,14 @@ impl Editor {
         };
         let mut seen = HashSet::new();
         let photos: Vec<PhotoId> = photos.into_iter().filter(|p| seen.insert(*p)).collect();
-        if let Some(missing) = photos.iter().find(|p| library.photo(**p).is_none()) {
+        // One set, not a search of the catalog per id: a request may name
+        // thousands.
+        let catalog: HashSet<PhotoId> = if photos.is_empty() {
+            HashSet::new()
+        } else {
+            library.session.photos().iter().map(|p| p.id).collect()
+        };
+        if let Some(missing) = photos.iter().find(|p| !catalog.contains(p)) {
             return Err(Error::new(
                 "not_found",
                 format!("No catalog photo has ID {}", missing.0),

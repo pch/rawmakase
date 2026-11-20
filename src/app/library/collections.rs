@@ -190,6 +190,9 @@ impl super::Library {
         out
     }
     fn list_nodes(&self, nodes: &[CollectionNode], out: &mut Vec<ListedCollection>) {
+        // Counts kept while smart collections are worked out again, after a
+        // change they may see, are the panel's but not yet true.
+        let current = self.smart_current();
         for node in nodes {
             let takes_photos =
                 self.session.collections().iter().any(|c| {
@@ -198,6 +201,7 @@ impl super::Library {
             let (kind, photos, smart) = match node.smart {
                 _ if node.set => ("set", Some(self.source_members(node.id).len()), None),
                 None => ("collection", Some(node.count), None),
+                Some(_) if !current => ("smart", None, Some("pending")),
                 Some(SmartCount::Photos(n)) => ("smart", Some(n), Some("ready")),
                 Some(SmartCount::Pending) => ("smart", None, Some("pending")),
                 Some(SmartCount::Unknown) => ("smart", None, Some("unsupported")),

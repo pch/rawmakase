@@ -161,6 +161,12 @@ fn a_set_of_collections_is_made_and_filled_by_command_with_undo() {
 #[test]
 fn collection_commands_refuse_what_the_panel_cant_do() {
     let (_dir, data, mut e, ids) = editor();
+    e.library
+        .as_mut()
+        .unwrap()
+        .session
+        .ensure_quick_collection()
+        .unwrap();
     let set = ask(
         &mut e,
         data.path(),
@@ -210,6 +216,12 @@ fn collection_commands_refuse_what_the_panel_cant_do() {
         ),
         (
             json!({"cmd":"create_collection","name":"  "}),
+            "not_applied",
+        ),
+        // The Quick Collection's name, which the catalog keeps for it, even
+        // where its row is there but not listed.
+        (
+            json!({"cmd":"create_collection","name":"quick collection"}),
             "not_applied",
         ),
     ] {
