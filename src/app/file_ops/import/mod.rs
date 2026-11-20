@@ -1023,7 +1023,9 @@ fn field<R>(
             .color(palette.tone(Tone::SECONDARY)),
     );
     ui.add_space(space::XXS);
-    add(ui)
+    // In a scope: a drop-down restyles the ui it is drawn in, which would
+    // otherwise restyle everything after it in the column.
+    ui.scope(add).inner
 }
 
 /// A one-line text field as wide as the space left and as tall as a
@@ -1990,5 +1992,30 @@ impl Editor {
     /// Import, as its button asks for it.
     pub(in crate::app) fn press_import(&mut self) {
         self.run_import();
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    /// A drop-down restyles the `ui` it is drawn in (its height, padding and
+    /// widget looks); a field keeps that to its own control, so the
+    /// checkboxes and text fields after it in the column keep the default
+    /// look.
+    #[test]
+    fn a_fields_drop_down_leaves_the_column_style_alone() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let palette = crate::app::ui::theme::palette(ui.ctx());
+            let before = ui.style().clone();
+            field(ui, &palette, "Organize", |ui| {
+                widgets::dropdown(ui, "test-drop-down")
+                    .selected_text("By date")
+                    .show_ui(ui, |_| {});
+            });
+            assert_eq!(*ui.style(), before);
+        });
+        output.textures_delta.clear();
     }
 }
