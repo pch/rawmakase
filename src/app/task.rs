@@ -20,13 +20,24 @@ pub(in crate::app) fn spawn(
     work: impl FnOnce(&Sender<Event>) + Send + 'static,
     failed: impl FnOnce(&Sender<Event>, String) + Send + 'static,
 ) {
+    spawn_joinable(events, ctx, work, failed);
+}
+
+/// [`spawn`], keeping the thread's handle for a worker the exit sequence
+/// waits for (`Stopping`).
+pub(in crate::app) fn spawn_joinable(
+    events: Sender<Event>,
+    ctx: egui::Context,
+    work: impl FnOnce(&Sender<Event>) + Send + 'static,
+    failed: impl FnOnce(&Sender<Event>, String) + Send + 'static,
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         if let Err(panic) = panic::catch_unwind(AssertUnwindSafe(|| work(&events))) {
             let message = format!("Stopped unexpectedly: {}", panic_message(&*panic));
             failed(&events, message);
         }
         ctx.request_repaint();
-    });
+    })
 }
 
 #[derive(Default)]

@@ -16,6 +16,8 @@ pub(crate) enum Action {
     Copy,
     Paste,
     SelectAll,
+    /// Photo › Photo Merge › HDR…
+    MergeHdr,
     /// Photo › Stacking › Auto-Stack by Capture Time…
     AutoStack,
     Library,
@@ -43,7 +45,7 @@ pub(crate) struct KeyEquivalent {
 
 impl Action {
     /// Every item, in the menus' order.
-    pub(crate) const ALL: [Self; 22] = [
+    pub(crate) const ALL: [Self; 23] = [
         Self::Preferences,
         Self::NewCatalog,
         Self::OpenCatalog,
@@ -57,6 +59,7 @@ impl Action {
         Self::Copy,
         Self::Paste,
         Self::SelectAll,
+        Self::MergeHdr,
         Self::AutoStack,
         Self::Library,
         Self::Develop,
@@ -125,6 +128,7 @@ impl Action {
                 | Self::NewCatalog
                 | Self::OpenCatalog
                 | Self::AddFolder
+                | Self::MergeHdr
                 | Self::AutoStack
                 | Self::Fullscreen
                 | Self::ReportIssue

@@ -14,8 +14,9 @@ lives in `crates/rawmakase-hdr-merge` and arrives in stages, one pull request ea
 - Deghost: what moved between the frames.
 - The starting edit, the DNG's XMP and preview, and adding it to a catalog,
   stacked with its sources, from the command line.
+- Photo Merge › HDR… in the app (below).
 
-The app's dialog and job follow, then the maker note in DNGPrivateData.
+The maker note in DNGPrivateData and a control request follow.
 
 
 ## The bracket
@@ -259,6 +260,39 @@ Create Stack wasn't measured for where the merge goes in the stack. When the
 DNG is saved but can't be added, the error says where it was saved.
 Ctrl-C stops the merge without writing anything; a second Ctrl-C ends the
 process at once.
+
+## In the app
+
+Photo › Photo Merge › HDR… (the macOS menu), the thumbnail and filmstrip
+menu's Photo Merge › HDR…, or the `merge_hdr` command, which has no key by
+default (Lightroom's Ctrl+H hides the app on a Mac), take the selected photos.
+Their window lists each photo's exposure and says when the catalog already
+tells they aren't a bracket: fewer than 2 or more than 9 photos, a file chosen
+twice (a photo and its virtual copy), more than one camera, or two exposures
+less than 0.3 stop apart. The merge checks the files themselves too. As in
+Lightroom, Auto Align starts on, Deghost at None and Create Stack off; Open
+after Merge starts on.
+
+Merge saves the open edit, then captures what the merge reads: the photos'
+files, the active photo's edit as the catalog has it (it names the merge and
+gives it its starting edit), the options, Preferences > Performance's
+demosaic and the raw defaults. The merge runs on a thread of its own and holds
+nothing of the catalog; its stage and Cancel show in the top bar. Once the DNG
+is published beside the active photo, it is added to the catalog as a photo
+source's files are: under the catalog's folder-change activity, retried each
+frame while other work holds it, on a worker of its own with its starting edit
+in the same transaction. The Library then reads the catalog again in place;
+with Create Stack the merge goes on top of the photos of its bracket still in
+its folder (`StackChange::Join`, one command Undo takes back), and it is
+selected, or opened in Develop.
+
+A cancel stops the merge within a pass over the pixels and publishes nothing.
+A merge that fails says why (a folder it couldn't save in, a photo that
+changed meanwhile, a frame Auto Align couldn't align); one saved but not added
+(another catalog opened meanwhile, the catalog refusing the file) says where it
+was saved. Closing waits for a merge, with Cancel it and close; quitting
+cancels it and waits for its thread under the exit's deadline. The
+deghosting mask isn't shown in the window yet.
 
 ## The merged DNG
 

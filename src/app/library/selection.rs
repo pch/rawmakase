@@ -87,7 +87,7 @@ impl Library {
     }
     /// The selected photos in display order; the active one alone if somehow
     /// nothing else is selected.
-    pub(super) fn selected_ids(&self) -> Vec<PhotoId> {
+    pub(in crate::app) fn selected_ids(&self) -> Vec<PhotoId> {
         let ids: Vec<PhotoId> = self
             .visible
             .iter()

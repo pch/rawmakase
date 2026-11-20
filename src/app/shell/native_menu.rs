@@ -135,6 +135,14 @@ impl Editor {
             Action::Export => workspace && selected,
             Action::Develop => workspace && selected,
             Action::SelectAll => workspace,
+            // As the thumbnail menu's: a selection, never a photo alone.
+            Action::MergeHdr => {
+                workspace
+                    && self
+                        .library
+                        .as_ref()
+                        .is_some_and(|l| l.selected_ids().len() > 1)
+            }
             // As the thumbnail menu's: in the Library, where stacks show.
             Action::AutoStack => {
                 workspace
@@ -229,6 +237,11 @@ impl Editor {
                     if let Some(library) = &mut self.library {
                         library.show_grid();
                     }
+                }
+            }
+            Action::MergeHdr => {
+                if let Some(ids) = self.library.as_ref().map(|l| l.selected_ids()) {
+                    self.open_merge_hdr(ids);
                 }
             }
             Action::AutoStack => {
@@ -713,6 +726,7 @@ mod tests {
             Action::Copy,
             Action::Paste,
             Action::SelectAll,
+            Action::MergeHdr,
             Action::AutoStack,
             Action::Preferences,
             Action::Library,

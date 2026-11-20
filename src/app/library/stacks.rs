@@ -338,6 +338,30 @@ impl Library {
         });
         Ok(())
     }
+    /// Stacks Merge to HDR's `photo` on top of those of its `sources` still in
+    /// its folder, as one command Undo takes back (`StackChange::Join`);
+    /// false, changing nothing, when none is.
+    pub(in crate::app) fn stack_merge(
+        &mut self,
+        photo: PhotoId,
+        sources: Vec<PhotoId>,
+    ) -> Result<bool> {
+        let Some(folder) = self.photo(photo).map(|p| p.folder) else {
+            anyhow::bail!("the merge isn't in the catalog");
+        };
+        let with: Vec<PhotoId> = sources
+            .into_iter()
+            .filter(|id| *id != photo && self.photo(*id).is_some_and(|p| p.folder == folder))
+            .collect();
+        if with.is_empty() {
+            return Ok(false);
+        }
+        self.record_stacks(
+            "Stacked the merge with its photos".into(),
+            StackChange::Join { photo, with },
+        )?;
+        Ok(true)
+    }
     /// Puts stacks back as `state` has them, for Undo and Redo.
     pub(in crate::app) fn restore_stacks(&mut self, state: &StackState) -> Result<()> {
         let committed = self

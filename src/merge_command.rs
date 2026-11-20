@@ -103,22 +103,8 @@ pub fn merge_hdr(
         (Some(c), Some(active)) => crate::catalog_command::photo_edit(c, *active)?,
         _ => crate::edits::EditRecord::default(),
     };
-    let active_path = &args.raws[0];
-    let active_metadata = crate::photo::header_metadata(active_path)
-        .or_else(|_| crate::photo::open(active_path).map(|raw| raw.metadata))?;
-    let profiles = crate::camera_look::with_default(
-        active_path,
-        &active_metadata,
-        crate::camera_profiles::installed(&active_metadata).0,
-        cancel,
-    );
-    let active = crate::edits::resolve(
-        &record,
-        active_path,
-        &active_metadata,
-        &profiles,
-        &raw_defaults,
-    )?;
+    let active =
+        crate::merge_hdr::ActiveEdit::resolve(&record, &args.raws[0], &raw_defaults, cancel)?;
     for warning in &active.warnings {
         writeln!(err, "{warning}")?;
     }
@@ -133,13 +119,8 @@ pub fn merge_hdr(
         if done > 0. {
             return;
         }
-        let line = match stage {
-            Stage::Check => "Checking the bracket".to_string(),
-            Stage::Decode(n) => format!("Decoding frame {} of {}", n + 1, inputs.len()),
-            Stage::Align(n) => format!("Aligning frame {} of {}", n + 1, inputs.len()),
-            Stage::Deghost(n) => format!("Deghosting frame {} of {}", n + 1, inputs.len()),
-            Stage::Measure(_) | Stage::Merge(_) => return,
-            Stage::Encode => "Writing the DNG".to_string(),
+        let Some(line) = crate::merge_hdr::stage_text(stage, inputs.len()) else {
+            return;
         };
         if let Ok(mut err) = err.lock() {
             let _ = writeln!(err, "{line}");
@@ -192,10 +173,7 @@ pub fn merge_hdr(
     };
     let published = crate::merge_hdr::publish(
         &merged,
-        crate::merge_hdr::Active {
-            recipe: &active.recipe,
-            metadata: &active_metadata,
-        },
+        active.active(),
         &raw_defaults,
         &destination,
         &options.software,
@@ -221,43 +199,14 @@ fn add(
     stack: Option<&[PhotoId]>,
 ) -> Result<Vec<String>> {
     let path = &published.path;
-    let saved = || {
-        format!(
-            "The merge was saved at {}, but couldn't be added to the catalog",
-            path.display()
-        )
-    };
-    let folder = crate::storage::parent_dir(path);
     let defaults = crate::catalog::NewPhotoDefaults::new(
         crate::catalog::MetadataDefaults::load(),
         crate::photo::camera_exif,
         crate::photo::raw_xmp,
     );
-    let added = catalog
-        .import_files_with(
-            folder,
-            std::slice::from_ref(path),
-            &[(path.clone(), published.recipe.clone())],
-            &defaults,
-            || true,
-        )
-        .with_context(saved)?
-        .context("the import was withdrawn")
-        .with_context(saved)?;
-    if let Some((_, why)) = added.refused.first() {
-        use crate::catalog::FileRefusal;
-        return Err(anyhow::anyhow!(match why {
-            FileRefusal::NotFound => "it is no longer there",
-            FileRefusal::NotAPhoto => "the catalog doesn't read it as a photo",
-            FileRefusal::OutsideFolder => "it isn't in its folder",
-            FileRefusal::LinkedElsewhere =>
-                "its folder in the catalog is linked to another place on this computer",
-            FileRefusal::Ambiguous => "more than one folder of the catalog is where it is",
-        })
-        .context(saved()));
-    }
+    let added = crate::merge_hdr::import(catalog, published, &defaults)?;
     let mut notes = Vec::new();
-    if added.added.is_empty() {
+    if !added {
         notes.push(format!(
             "{} was already in the catalog, which keeps its edit there",
             path.display()

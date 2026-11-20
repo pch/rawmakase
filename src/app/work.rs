@@ -28,6 +28,7 @@ pub(in crate::app) enum Kind {
     Batch,
     FolderChange,
     FileChange,
+    MergeHdr,
     PreviewBuilds,
     EditableBuilds,
     StandIns,
@@ -198,6 +199,19 @@ const WORK: &[Row] = &[
         slows_previews: false,
         pauses_checksums: false,
         stop: None,
+    },
+    // Its progress and Cancel in the bar, from Merge until its DNG waits to
+    // be added; once the import has begun, the folder change it holds is
+    // what closing waits for. Quitting cancels it, and a cancel publishes
+    // nothing.
+    Row {
+        kind: Kind::MergeHdr,
+        running: Some(|e| e.merge_hdr.running()),
+        closing: Some(Label::Fixed(crate::app::merge_hdr::MERGE_HDR)),
+        status: None,
+        slows_previews: true,
+        pauses_checksums: true,
+        stop: Some(|e, _| e.merge_hdr.stop()),
     },
     // Its progress in the bar; a finished build's report is not running.
     Row {

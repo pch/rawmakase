@@ -549,6 +549,8 @@ pub(in crate::app) enum PhotoAction {
     DiscardEditablePreviews,
     /// Develop's Set as Reference Photo.
     SetReference,
+    /// Photo Merge › HDR…: the photos, a bracket, into one HDR DNG.
+    MergeHdr,
     /// A Photo › Stacking command.
     Stack(super::StackAction),
     /// The stack badge was clicked: that stack collapses or expands.
@@ -702,7 +704,8 @@ pub(in crate::app) struct Presence {
 /// In Develop's filmstrip it starts with Set as Reference Photo, as in
 /// Lightroom. Find on Disk… is offered for a photo not `available` when the
 /// menu acts on it alone (`single`). Stacking is offered where the source
-/// shows stacks (`stacks`), or for a photo in none.
+/// shows stacks (`stacks`), or for a photo in none. Photo Merge › HDR… takes
+/// a selection, never a photo alone.
 pub(in crate::app) fn photo_menu(
     response: &egui::Response,
     photo: &Photo,
@@ -803,6 +806,20 @@ pub(in crate::app) fn photo_menu(
                 ui.close();
             }
         }
+        menu_separator(ui);
+        // As Lightroom's Photo Merge: a bracket is more than one photo, the
+        // menu of a selection.
+        submenu_style(ui);
+        ui.add_enabled_ui(!single, |ui| {
+            ui.menu_button("Photo Merge", |ui| {
+                crate::app::ui::widgets::menu_width(ui, 120.);
+                ui.spacing_mut().item_spacing.y = 0.;
+                if menu_item(ui, "HDR…", "", true, false) {
+                    action = Some(PhotoAction::MergeHdr);
+                    ui.close();
+                }
+            })
+        });
         menu_separator(ui);
         submenu_style(ui);
         ui.add_enabled_ui(stacks, |ui| {
