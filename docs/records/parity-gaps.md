@@ -10,7 +10,7 @@ These controls were fitted to Camera Raw renders and match within the default-re
 
 - **Scene tone stage**: Exposure, the default white and black point, Whites, Blacks, Shadows, Highlights, Clarity, Texture and Dehaze render on scene values before the profile, fitted on linear-profile Camera Raw 18.7 renders ([scene tone stage](../scene-tone-stage.md), [tone controls](../tone-controls.md#whites-and-blacks)). Shadows and Highlights follow the measured [global rule](../scene-tone-stage.md#the-global-rule): a curve per photo from the histogram of its base levels, which the earlier percentile-keyed tables could not express (positive Shadows and negative Highlights since 2026-10-28, negative Shadows and positive Highlights since 2026-11-17, [below](#negative-shadows-and-positive-highlights-by-the-global-rule-2026-11-17)). Dehaze (a curve per amount, no spatial part) and positive Whites (+100 especially) stay fitted and still differ. Shadows and Highlights on the synthetic chart's flat patches are a degenerate case for Camera Raw (a flat maximum) and are not a measure of either engine.
 - **Contrast** follows Camera Raw's curve, after the profile and so after Whites and Blacks, at a pivot predicted from the photo ([tone controls](../tone-controls.md#contrast)); the prediction is within about 0.03 of the pivot that fits each photo best, and its extra error over the default render on photos is 0.003–0.007.
-- **Clarity** of both signs follows a model fitted to Camera Raw's scene-value renders of synthetic scenes ([tone controls](../tone-controls.md#clarity)); on photos it leaves most of Camera Raw's field, whose structure is measured [below](#clarity-a-slope-around-a-base-and-no-closed-form-for-either-yet-2026-11-19). **Texture** follows a model fitted to Camera Raw on synthetic charts ([tone controls](../tone-controls.md#texture)): on the corpus chart its ΔE00 to Camera Raw drops from 2.0–2.2 to 1.5–1.6 at ±100.
+- **Clarity** of both signs follows a model fitted to Camera Raw's scene-value renders of synthetic scenes ([tone controls](../tone-controls.md#clarity)); on photos it leaves most of Camera Raw's field, whose structure is measured [below](#clarity-a-slope-around-a-base-and-no-closed-form-for-either-yet-2026-11-19); most of what is left is a tone curve per photo ([2026-11-20](#clarity-on-photos-a-curve-per-photo-that-no-histogram-sets-2026-11-20)). **Texture** follows a model fitted to Camera Raw on synthetic charts ([tone controls](../tone-controls.md#texture)): on the corpus chart its ΔE00 to Camera Raw drops from 2.0–2.2 to 1.5–1.6 at ±100.
 - **Parametric tone curve** renders as Camera Raw 18.7 does on the chart ([tone controls](../tone-controls.md#parametric-curve)): the 24 `parametric-*` cases sit at mean ΔE00 0.8–3.0, down from 0.95–7.9, and the looks carrying one at 0.9–1.6, down from 1.7–4.9. With out-of-gamut colors clipped per channel as Camera Raw does ([out-of-gamut colors](../color-pipeline.md#out-of-gamut-colors)), the cases sit at 0.48–1.15. A look's own parametric curve is a second curve after the user's, as in Camera Raw (`look-parametric-darks+30`: 0.93, was 1.41); at Amount 200 Camera Raw's look curve does about 1.6 times its effect at 100, where RAWmakase doubles it. **Point curves** match on ramps, but saturated colors under an S master curve still differ (ramp MAE 0.0024, peak 0.11).
 - **Curve Refine Saturation** renders as Camera Raw 18.7 does on the chart ([tone controls](../tone-controls.md#refine-saturation)): the `curve-*-refine-saturation-*` cases sit at mean ΔE00 1.1–1.5, against 1.4 for the same S curve at 100. Values above 100 render as 100, as in Camera Raw. It imports, is written back, and has a Refine › Saturation slider (0–100) under the RGB point curve.
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the colour curves was not checked; here they set the RGB curve only.
@@ -219,6 +219,94 @@ to a level; tested on these probes before any photo; how far the size effect is 
 same thing; what Camera Raw's limit near the white is (a fixed ceiling
 per photo and amount, by the numbers above); whether the same shoulder matters for
 Whites and positive Highlights.
+
+### Clarity on photos: a curve per photo that no histogram sets (2026-11-20)
+
+A second round on Clarity +100, on photos instead of probes. Camera Raw's Clarity +100
+render through a linear profile was added for 222 more training photos (322 in all; 278
+line up with the engine's measurement map and are the set below). Scores are the median
+over a photo's map cells of |ΔL*| between Camera Raw's default with a predicted log2
+change and Camera Raw's Clarity render; fits are cross-validated in four folds by
+photo. Nothing was fitted on validation and holdout was not touched. The engine's
+Clarity scores 2.13 (median photo; mean 2.36, 90th percentile 3.67) and doing nothing
+2.87.
+
+**Most of the gap is a tone curve of the base level that differs by photo.** Adding to
+the engine's field the mean of what it leaves at each base level (an oracle, per photo)
+gives 1.29, with 237 photos closer by 0.2 and none further. That curve alone, without
+the engine's field, gives 1.58. In the darkest levels of daylight photos the engine's
+field sits 1 to 2 EV under Camera Raw's, and its brightening peaks one to two stops
+above where Camera Raw's does, which is on the bulk of the histogram.
+
+**The curve is not a rule of the histogram.** Mosaics of flat, faintly textured patches
+that carry a training photo's histogram of base levels (28 photos, two mosaics each, as
+the Shadows/Highlights rule's `photo` family) get a steep, nearly linear change by
+level, 0.33 to 0.5 EV per EV, that follows the engine's curve on the photo and not
+Camera Raw's. The same levels get far less as coherent regions of a photo than as
+scattered patches. Mosaics therefore cannot train a Clarity rule, and the engine's
+detail weights, fitted on synthetic scenes, carry the mosaics' behaviour onto photos.
+On the size series of 2026-11-19 the change by level of a daylight photo is the same
+from full size to an eighth of it, so the reach scales with the frame; only the darkest
+levels of noisy photos change with size.
+
+**Three things it is not.** Clarity is a luminance gain: the three channels' gains equal
+the luminance gain within 0.012, 0.005 and 0.04 EV RMS (R, G, B; field 0.49 EV), and what
+the engine leaves has no tie to colour. The rectification a pixel-level slope would add
+per cell, computed from the engine's full-size default (log2 E[Y^p] − p log2 E[Y]),
+correlates 0.16 with what the engine leaves and adds nothing (15 photos). A bound on
+the engine's brightening makes it worse (2.14 to 2.22).
+
+**Camera Raw's response to detail turns back, but its strength differs by photo.**
+Camera Raw's and the engine's change against a cell's detail (level minus a Gaussian
+blur of 8 map pixels), relative to cells without detail, lower half of the levels,
+median photo:
+
+| Detail (EV) | −3.5 | −2.5 | −1.75 | −1.25 | −0.8 | −0.45 | +0.45 | +0.8 | +1.25 | +1.75 | +2.5 | +3.5 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Camera Raw | +0.01 | −0.27 | −0.38 | −0.46 | −0.43 | −0.31 | +0.33 | +0.46 | +0.53 | +0.48 | +0.35 | +0.01 |
+| Engine | −1.10 | −1.45 | −1.26 | −1.06 | −0.77 | −0.47 | +0.32 | +0.49 | +0.69 | +0.81 | +0.95 | +0.88 |
+
+The same holds at 2 and 32 map pixels; in the upper half of the levels Camera Raw's
+brightening peaks at +0.14 EV. The engine's linear response is what darkens a whole
+dark object (a giraffe against the sky, hair, a stand of trees) where Camera Raw keeps
+its mean. But the engine's own form refitted on the photos with a response that turns
+back (d · exp(−(d/c)²/2), c 1 or 1.4 EV, also with separate weights for positive and
+negative detail, least squares and a robust fit) scores 2.13 to 2.25: as many photos
+further as closer. Per photo the response's slope for small detail runs from 0.23 to 1.2
+(10th to 90th percentile; the engine's 0.37 to 1.39, correlation 0.63), and common
+weights do not carry that. The extra slope under the map, read off 59 photos, is 0.75 to
+0.98 below and 0.4 to 0.45 above whichever reference of the photo is tried (linear mean,
+mean log, median, top, or the absolute level); none of them makes the photos' curves
+collapse.
+
+**Two changes that help.** Bounding the engine's darkening (−c · tanh(−gain / c), no
+fitted weights) gives 2.01 at c = 1 EV (55 photos closer by 0.2, 5 further, worst +0.41)
+and 1.99 at 0.7 EV (69 and 11); in the cells Camera Raw renders under L* 25 the mean
+error falls from 2.24 to 2.00. On top of that, boosted regression trees from the
+Shadows/Highlights rule's 28 descriptors of a base level to what the bounded field
+leaves there (100 trees of depth 4):
+
+| Share of the trees' curve | Median | Mean | 90th percentile | Closer / further by 0.2 | by 0.5 | Worst |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 1.66 | 1.83 | 2.69 | 170 / 36 | 107 / 16 | +2.20 |
+| 0.75 | 1.68 | 1.83 | 2.81 | 171 / 18 | 105 / 8 | +0.99 |
+| 0.5 | 1.71 | 1.91 | 2.85 | 164 / 12 | 79 / 2 | +0.53 |
+
+(closer and further than the bounded field alone). The whole curve is right in shape and
+off by 0.2 to 0.3 EV on the bright bulk of the photos that get worse, which costs 2 to
+3 L* there; half of it keeps most of the gain. More photos did not lower the share that
+gets worse (108, 223 and 278 photos: 16 to 17% by 0.2 with the whole curve). The
+Shadows/Highlights rule's network on the same inputs, without mosaics, extrapolates
+(55 L* on a photo of the Moon on black) and trees cannot. With the engine's own curve or
+the mean detail by level as further inputs the result is the same. By band of Camera
+Raw's L*, bounded field plus half the curve against the engine (mean |ΔL*|, median
+photo, and photos closer / further by 0.3): 0 to 25: 2.24 → 1.79 (165 / 10); 25 to 50:
+3.28 → 2.96 (158 / 17); 50 to 75: 4.31 → 3.87 (135 / 33); 75 to 100: 3.62 → 3.43
+(72 / 45). The photos that get worse look like the engine's render with more lift in
+dark areas; the curve is smooth in the base level and adds no local structure.
+
+The bound and half the trees' curve are the candidate. It has not been rendered by the
+engine or gated yet: these numbers are map-level simulations on training photos.
 
 ### Clarity: a slope around a base, and no closed form for either yet (2026-11-19)
 
