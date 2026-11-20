@@ -686,6 +686,37 @@ the photo's measured top by 0.47 stop, and the first ensemble's Shadows +100 the
 lifts that window 0.14 stop less: the first and second ensembles were fitted on maps
 that kept the data above the white level.
 
+**Smooth synthetic scenes go the other way.** The app's own colour tests, which the
+build had not been run through until then, failed on two synthetic cases at Highlights
+−100. On a smooth scene with nothing clipped (the stage probe `scene1`) the third
+ensemble pulled the bright tones, 0.4 to 0.86 of white at default, less where Camera
+Raw pulls them more: 23 of 384 blocks moved and four came closer, and the largest
+block error went from 0.055 to 0.067, past the probe's limit. On the synthetic chart,
+whose brightest patches are clipped and flat, the three brightest greys and the three
+brightest steps of the lightness sweep came out 0.8 to 2.1 L\* lighter (the grey at +3
+EV 90.8 against 89.0, with Camera Raw at 68.6): Camera Raw pulls the chart's flat
+bright patches some 20 L\* further than the stage does either way, and the case moved
+from 10.85 to 10.87 ΔE00 at the mean. Both are the regime of the probes above: smooth
+content of that size is flat to Camera Raw, the mosaics taught that to the first
+ensemble, and the third was fitted on photos and noisy skies alone.
+
+**Only where the photo has clipped cells.** Held out and kept per photo, the join's
+gain depends on what the photo has clipped. With no clipped cell (194 photos, 63 with
+pixels near white) the first ensemble is off by 5.7 L\* near white (median −2.6), the
+third by 5.4 (−0.5) and the join by 5.5 (−2.2). With clipped cells on up to 0.1% of
+the map: 8.1, 6.8 and 7.1; 0.1 to 0.5%: 9.0, 7.9 and 8.1 (blown 14.9, 11.2 and 12.0);
+0.5 to 2%: 6.6, 5.8 and 5.9 (10.5, 7.1 and 7.9); 2 to 10%: 4.8, 3.7 and 3.6 (11.2,
+6.3 and 6.2); over 10%: 5.5, 3.5 and 2.6 (7.9, 6.2 and 4.6). The build now gives a
+photo the third ensemble's share by a weight that rises smoothly from none with no
+clipped cell to all at 0.02% of the map's cells: over all 468 photos the join is then
+off by 5.95 near white against 5.86, and by the same as before in blown areas (8.76)
+and on the photos with a large bright area (2.75 and 3.00). The probe scene renders as
+it did, the chart's case as above (its snapshot renewed, no Camera Raw reference or
+accepted distance changed), and the gate's sets as before: the highlights sets 91
+pass and none fails, with five photos closer at −50 where six were and two at −25
+where five were; the pairs sets one failing pair against the same build without the
+third ensemble.
+
 **Open.** The statistic behind the size effects; whether to keep the data above the
 white level for rendering while the rule reads the photo as Camera Raw does, and
 refitting the first and second ensembles on maps read as Camera Raw reads them; the
@@ -693,7 +724,9 @@ blend's error on bright levels at Shadows −100 with Highlights −100; the pal
 and small lights in dark scenes, which no fit so far gets right; the detail inside
 blown areas (the shoulder); the engine's other paths (previews, the GPU, masks) and
 the gate's other sets; whether the same shoulder matters for Whites and positive
-Highlights.
+Highlights; and what tells Camera Raw's flat regime from a photo, which the third
+ensemble has no input for (it leaves photos with nothing clipped to the first, at the
+cost of the bias the first has near white on them).
 
 ### Clarity on photos: a curve per photo that no histogram sets (2026-11-20)
 
