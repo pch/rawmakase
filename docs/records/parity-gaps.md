@@ -164,6 +164,45 @@ default black included. Not done yet. The numbers below are kept as measured; re
 "black first" in them as "the rule's gain taken as a ratio of renders", which is right
 for photo-like scenes and wrong by 0.28 EV on the probe.
 
+**The rule refitted with targets through the black (2026-11-20, night).** Both
+ensembles were refitted with each photo's renders taken back through the stage's own
+curve before the gain is read: the default black at the photo's dark key for the default
+render and, for a Shadows render, at the key the stage moves it to (the median scene
+gain over the map for positive Shadows, the gain on the darkest 0.1% for negative).
+Mosaics, rendered without the default black, are as before. The engine's code is main's;
+only the two data files differ (a local branch, fitted by a scratch driver; the
+repository's script is not changed yet). A first try with the key left unmoved under
+Shadows failed the probe at Exposure −2 (0.90 EV against Camera Raw's 0.60, main 0.59)
+and made negative Shadows worse, so the key moves as it does on main.
+
+| | main | Refitted |
+| --- | --- | --- |
+| Shadows +100, 24 training photos, scene stage: error of the tones under 0.02 at default | 0.332 stop | 0.236 |
+| Its bias at scene levels of 0.001 to 0.002, to 0.004, to 0.008 and to 0.016 | +0.59, +0.32, +0.20, +0.11 | +0.03, −0.11, −0.02, −0.02 |
+| Shadows −100, the same error | 0.343 | 0.296 |
+| Highlights −100, error of all pixels over 0.003 | 0.128 | 0.110 |
+| Shadows +100, final renders, the band under L\* 25, mean \|L\* bias\|: stress families (24 photos), main families (29) | 3.11, 3.91 | 2.26, 2.32 |
+| The band's mean ΔE00 there | 4.79, 5.48 | 4.40 (9 photos closer by 0.3, 4 further), 4.71 (14, 4) |
+| Shadows +100, median ΔE00 of a photo (mean) | 2.49 (2.82), 2.43 (2.52) | 2.34 (2.92), 2.33 (2.67) |
+| Shadows +50, the band's bias | 1.13, 1.47 | 0.96, 1.05 |
+| Shadows −100, median ΔE00 of a photo | 0.93, 0.77 | 0.92, 0.90 |
+| Highlights +100 | 1.67, 1.30 | 1.59, 1.18 |
+| Highlights −100 | 1.19, 1.22 | 1.23, 1.25 |
+| Shadows +100 with Highlights −100 | 2.68, 2.07 | 2.68, 1.92 |
+
+The photos of the last eight rows are ones nothing was fitted on. The deep tones' bias
+at Shadows +100 goes on training photos and falls by a quarter to two fifths on the
+others; the mean ΔE00 of a photo at Shadows +100 is a little worse and Shadows −100 on
+the main families too. The synthetic targets move, since the photo targets go through
+the shared network: the dark scene with gaps reads 0.707, 0.935 and 0.667 EV (0.10 to
+0.15 too much, inside the test's 0.25), the chart is further at Highlights +100 (mean
+ΔE00 6.99 → 7.48) and +60 (4.91 → 5.22) and Shadows −100 (4.95 → 5.08), and seven scene
+probe cases are further than their baselines. Held out by photo, the curve's error is
+0.16 to 0.17 at Shadows +100 (0.16 to 0.20 before), 0.17 to 0.19 at −100 (0.20 to 0.24)
+and 0.12 to 0.14 at Highlights −100 (0.13 to 0.15), each against its own targets. Not
+merged: it needs the script changed and the files regenerated from it, the pair model
+refitted, the gate, and a decision on the synthetic cases.
+
 **The default black comes before the local gain (later the same day; withdrawn, see
 the correction above).** With every
 build tried, Shadows +100 left the darkest tones too bright, and with one sign: on the
