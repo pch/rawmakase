@@ -64,10 +64,10 @@ impl HdrDisplay {
     /// The display as the window sees it now.
     pub(in crate::app) fn of(frame: &eframe::Frame, reader: &mut HeadroomReader) -> Self {
         let state = frame.wgpu_render_state();
-        let float_surface =
+        let extended =
             state.is_some_and(|s| extended_surface(s.target_format, s.target_color_space));
-        let sdr_float_surface = !float_surface
-            && state.is_some_and(|s| s.target_format == wgpu::TextureFormat::Rgba16Float);
+        let sdr_float_surface =
+            !extended && state.is_some_and(|s| s.target_format == wgpu::TextureFormat::Rgba16Float);
         #[cfg(target_os = "macos")]
         let (headroom, potential) = {
             let _ = reader;
@@ -100,6 +100,10 @@ impl HdrDisplay {
             let _ = reader;
             (1., 1.)
         };
+        // Read after the Windows read above, which may have switched a linear
+        // float surface to its 8-bit format.
+        let float_surface = extended
+            && state.is_some_and(|s| s.surface_format().0 == wgpu::TextureFormat::Rgba16Float);
         Self {
             headroom,
             potential,
@@ -163,9 +167,9 @@ impl HeadroomReader {
     /// ([`Reading::outdated_by`]). A display that can show HDR is also asked
     /// again when the window gains the focus, as Chromium does: those settings
     /// are changed in another window, and Windows documents no notification of
-    /// them. An SDR display isn't, since asking it is the suspected cause of a
-    /// flicker on focus (#1126). Each read presents SDR white where Windows
-    /// shows it (`WindowsHdr::scrgb_white`).
+    /// them. An SDR display isn't, since nothing about it can change there. Each
+    /// read presents SDR white where Windows shows it
+    /// (`WindowsHdr::scrgb_white`), and the 8-bit surface while HDR is off.
     ///
     /// [`Reading::outdated_by`]: crate::platform::display::Reading::outdated_by
     fn read(&mut self, frame: &eframe::Frame) -> Option<crate::platform::display::WindowsHdr> {
@@ -185,8 +189,15 @@ impl HeadroomReader {
                 hdr
             }
         };
-        // scRGB's 1.0 is 80 cd/m² with HDR on, darker than SDR white.
+        // scRGB's 1.0 is 80 cd/m² with HDR on, darker than SDR white. While HDR is
+        // off the window presents through the surface's 8-bit format, as before 0.5:
+        // with a float surface on an SDR desktop, a GeForce under Windows 10
+        // flickered the whole screen (#1126). The frame being drawn presents so.
         if let Some(state) = frame.wgpu_render_state() {
+            state.present_sdr.store(
+                !hdr.is_some_and(|h| h.on),
+                std::sync::atomic::Ordering::Relaxed,
+            );
             let output = eframe::egui_wgpu::LinearOutput {
                 white: hdr.map_or(1., |h| h.scrgb_white()),
                 black: 0.,

@@ -163,7 +163,7 @@ impl WindowsHdr {
     /// (`None` when it couldn't be asked) and `sdr_white_nits`, and from DXGI's
     /// `output`. `output`, which creates a DXGI factory and reads every adapter's
     /// outputs, is asked only for a display that may show HDR. Doing that every
-    /// few seconds on an SDR display is the suspected cause of a whole-screen
+    /// few seconds on an SDR display was first suspected in a whole-screen
     /// flicker on an NVIDIA GeForce under Windows 10 (#1126); the window now
     /// reads this only when Windows announces a change (`changes`).
     fn from_parts(
@@ -1275,7 +1275,7 @@ mod windows_hdr_tests {
     use super::{OutputColor, WindowsHdr};
 
     /// A display Windows says can't show HDR is never asked about through DXGI,
-    /// which the window would otherwise do every few seconds (#1126).
+    /// which creates a factory and reads every adapter's outputs.
     #[test]
     fn an_sdr_display_is_not_asked_about_through_dxgi() {
         let sdr = WindowsHdr::from_parts(Some(false), 80., || {

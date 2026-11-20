@@ -101,7 +101,14 @@ On Windows the surface is 16-bit float when a display can show HDR as the window
 opens, its HDR switch on or not (`DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2`'s
 `highDynamicRangeSupported`, or before Windows 11 24H2 `advancedColorSupported`); a
 PC with no such display keeps the 8-bit surface, and one connected later says HDR
-shows after RAWmakase restarts. The float surface is scRGB (wgpu's
+shows after RAWmakase restarts. While the window's display has HDR off, the float
+surface presents through its 8-bit format (egui-wgpu's `present_sdr`, set from each
+read of the display, below): egui still renders to its float intermediate texture, and
+the last pass copies it to the 8-bit surface as it is. When Windows reports HDR on,
+the next frame reconfigures the surface to scRGB again, with no restart. From 0.5 to
+0.7 the surface stayed scRGB with HDR off. On a GeForce under Windows 10 with HDR off,
+0.5.0 to 0.7.0 flickered the whole screen while 0.4.12's 8-bit surface didn't (#1126).
+An scRGB surface on an SDR desktop was the one change to how the window presents. The float surface is scRGB (wgpu's
 `ExtendedSrgbLinear`, DXGI's `RGB_FULL_G10_NONE_P709`), decoded to linear by the same
 last pass as on Wayland. With HDR on, scRGB's 1.0 is 80 cd/m², not the user's SDR
 white, so the last pass multiplies by the SDR content brightness over 80 cd/m²
@@ -123,10 +130,11 @@ brightness. The window reads its display again only after one of those, when it
 reaches another display, or at its first frame, and the watcher wakes it to do so. A
 display that can show HDR is also read again when the window gains the focus, as
 Chromium does, since Windows documents no notification of the HDR switch or the SDR
-content brightness and both are changed in another window. Reading on a timer instead
-(every two seconds whenever the window redrew) flickered the whole screen on an NVIDIA
-GeForce under Windows 10 (#1126); it is what the window falls back to when a key can't
-be watched, and while its last read of the display failed. DXGI is asked only about a display whose
+content brightness and both are changed in another window. 0.5 and 0.6.0 read on a
+timer instead (every two seconds whenever the window redrew). That was first suspected
+for #1126's flicker, but reading only on changes didn't stop it. The timer is what the
+window falls back to when a key can't be watched, and while its last read of the
+display failed. DXGI is asked only about a display whose
 advanced color info says it can show HDR (or when that info can't be read).
 Measured in a virtual machine whose display shows no HDR: the interface on the scRGB
 surface matches the 8-bit surface to two code values, and with SDR white and the
