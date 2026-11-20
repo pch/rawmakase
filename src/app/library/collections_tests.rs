@@ -550,6 +550,93 @@ fn go_to_collection_lists_the_photos_collections_and_shows_one() -> Result<()> {
     Ok(())
 }
 
+/// Remove from Collection (#1199): offered in a collection and the Quick
+/// Collection, not in a smart collection, a set or All Photographs; it takes
+/// the selection out of the collection shown only, a virtual copy alone,
+/// as one step Undo puts back.
+#[test]
+fn remove_from_collection_takes_the_selection_out_of_the_collection_shown() -> Result<()> {
+    use super::cell::PhotoAction;
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF"])?;
+    let ids = sorted(ids);
+    let copy = library(&mut e).create_virtual_copy(ids[0])?.value;
+    let l = library(&mut e);
+    let mut inside = ids.clone();
+    inside.push(copy);
+    let inside = sorted(inside);
+    let picks = l.create_collection(false, "Picks", None, &inside, false)?;
+    let others = l.create_collection(false, "Others", None, &ids[..2], false)?;
+    let trips = l.create_collection(true, "Trips", None, &[], false)?;
+    assert_eq!(l.collection_removal(), None, "All Photographs");
+    l.select_collection(trips);
+    assert_eq!(l.collection_removal(), None, "a collection set");
+    l.new_smart_collection();
+    let mut dialog = l.smart_editor.take().unwrap();
+    dialog.name = "Smart".into();
+    l.save_smart_editor(&dialog)?;
+    let smart = l
+        .session
+        .collections()
+        .iter()
+        .find(|c| c.name == "Smart")
+        .map(|c| c.id)
+        .unwrap();
+    l.select_collection(smart);
+    assert_eq!(l.collection_removal(), None, "a smart collection");
+    l.toggle_quick(&ids[..1])?;
+    l.show_quick()?;
+    assert_eq!(l.collection_removal(), Some("Remove from Quick Collection"));
+    l.select_collection(picks);
+    assert_eq!(l.collection_removal(), Some("Remove from Collection"));
+    e.sync_undo();
+
+    // The copy and the second photo, chosen from the copy's menu.
+    let l = library(&mut e);
+    l.select(Some(copy));
+    l.selection.selected.insert(ids[1]);
+    let photo = l.photo(copy).unwrap().clone();
+    l.photo_action(&l_ctx(), &photo, PhotoAction::RemoveFromCollection, true);
+    e.sync_undo();
+    assert_eq!(members(&mut e, picks), [ids[0], ids[2]]);
+    assert_eq!(sorted(library(&mut e).shown()), [ids[0], ids[2]]);
+    // Still in the catalog, the other collection and the Quick Collection.
+    assert_eq!(library(&mut e).session.photos().len(), 4);
+    assert_eq!(members(&mut e, others), ids[..2]);
+    assert!(library(&mut e).in_quick(ids[0]));
+    assert!(library(&mut e).next_request().is_none());
+    e.undo();
+    assert_eq!(members(&mut e, picks), inside);
+    e.redo();
+    assert_eq!(members(&mut e, picks), [ids[0], ids[2]]);
+    Ok(())
+}
+
+/// A saved print imported from Lightroom shows its photos but takes none
+/// out by hand: Remove from Collection isn't offered, and Delete only says
+/// why, removing nothing and asking nothing.
+#[test]
+fn a_saved_print_offers_no_remove_from_collection() -> Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
+    let l = library(&mut e);
+    let print = CollectionId(l.session.catalog().db_for_tests().query_row(
+        "INSERT INTO collections(name, parent, kind) VALUES ('Print', NULL, 'com.adobe.ag.print') RETURNING id",
+        [],
+        |r| r.get::<_, i64>(0),
+    )?);
+    l.session.catalog().db_for_tests().execute(
+        "INSERT INTO collection_photos(collection, photo) VALUES (?1, ?2)",
+        rusqlite::params![print.0, ids[0].0],
+    )?;
+    l.session.reload()?;
+    l.select_collection(print);
+    assert_eq!(l.shown(), ids);
+    assert_eq!(l.collection_removal(), None);
+    l.delete_key(ids.clone());
+    assert_eq!(members(&mut e, print), ids);
+    assert!(library(&mut e).next_request().is_none());
+    Ok(())
+}
+
 fn l_ctx() -> egui::Context {
     egui::Context::default()
 }

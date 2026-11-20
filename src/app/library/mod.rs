@@ -986,33 +986,22 @@ impl Library {
         }
         None
     }
-    /// Delete and Backspace (with Option too): in a collection (the Quick
-    /// Collection too), takes `ids` out of it, as one undoable step, as
-    /// Lightroom does; in a collection set, nothing; elsewhere, asks to
-    /// remove them from the catalog.
+    /// Delete and Backspace: in a collection (the Quick Collection too),
+    /// takes `ids` out of it, as one undoable step, as Lightroom does; in a
+    /// collection set, a smart collection or a saved print, book, slideshow
+    /// or web creation, nothing but a warning; elsewhere, asks to remove them
+    /// from the catalog.
     pub(in crate::app) fn delete_key(&mut self, ids: Vec<PhotoId>) {
         if ids.is_empty() {
             return;
         }
-        if self.showing_quick() {
-            let Some(quick) = self.quick() else {
-                return;
-            };
-            let summary = format!(
-                "Removed from Quick Collection · {}",
-                plural(ids.len(), "photo", "photos")
-            );
-            if let Err(e) = self.record_collection(quick, Vec::new(), ids, summary) {
-                self.messages
-                    .fail(format!("Quick Collection not changed: {e}"));
-            }
+        if self.collection_removal().is_some() {
+            self.remove_from_collection(ids);
         } else if let Some(id) = self.filters.collection {
             if self.is_set(id) {
                 self.messages
                     .warn("Select a collection to take photos out of it");
-                return;
-            }
-            if self
+            } else if self
                 .session
                 .collections()
                 .iter()
@@ -1020,23 +1009,65 @@ impl Library {
             {
                 self.messages
                     .warn("A smart collection's photos are the ones its rules match");
-                return;
+            } else {
+                self.messages.warn(
+                    "Photos can’t be taken out of a saved print, book, slideshow or web gallery",
+                );
             }
+        } else {
+            self.ask(outbox::Request::File(FileRequest::Delete(ids)));
+        }
+    }
+    /// The thumbnail menu's label for taking photos out of the source shown:
+    /// Remove from Quick Collection or Remove from Collection, as Lightroom
+    /// Classic names them. `None` where no photo can be taken out by hand:
+    /// a folder, All Photographs, a collection set, a smart collection, or a
+    /// saved print, book, slideshow or web creation imported from Lightroom.
+    pub(in crate::app) fn collection_removal(&self) -> Option<&'static str> {
+        if self.showing_quick() {
+            return Some("Remove from Quick Collection");
+        }
+        let id = self.filters.collection?;
+        self.session
+            .collections()
+            .iter()
+            .any(|c| {
+                c.id == id && c.kind == crate::catalog::CollectionKind::Collection && c.takes_photos
+            })
+            .then_some("Remove from Collection")
+    }
+    /// Remove from Collection, or Delete in a collection: takes `ids` out of
+    /// the collection shown, as one undoable step. The photos stay in the
+    /// catalog and in their other collections; a virtual copy comes out
+    /// alone, its master and other copies staying in. Does nothing where
+    /// [`Self::collection_removal`] offers nothing.
+    pub(in crate::app) fn remove_from_collection(&mut self, ids: Vec<PhotoId>) {
+        let Some(id) = self.filters.collection else {
+            return;
+        };
+        if ids.is_empty() || self.collection_removal().is_none() {
+            return;
+        }
+        let (name, failed) = if self.showing_quick() {
+            (
+                "Quick Collection".to_string(),
+                "Quick Collection not changed",
+            )
+        } else {
             let name = self
                 .session
                 .collections()
                 .iter()
                 .find(|c| c.id == id)
                 .map_or_else(String::new, |c| c.name.clone());
-            let summary = format!(
-                "Removed from “{name}” · {}",
-                plural(ids.len(), "photo", "photos")
-            );
-            if let Err(e) = self.record_collection(id, Vec::new(), ids, summary) {
-                self.messages.fail(format!("Collection not changed: {e}"));
-            }
-        } else {
-            self.ask(outbox::Request::File(FileRequest::Delete(ids)));
+            (format!("“{name}”"), "Collection not changed")
+        };
+        let summary = format!(
+            "Removed from {name} · {}",
+            plural(ids.len(), "photo", "photos")
+        );
+        if let Err(e) = self.record_collection(id, Vec::new(), ids, summary) {
+            self.messages.fail(format!("{failed}: {e}"));
         }
     }
     /// The delete command a key ran, for `ids`. By default Delete and

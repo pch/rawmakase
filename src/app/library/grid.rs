@@ -130,6 +130,7 @@ impl Library {
         }
         // For each cell's Add to Collection.
         let collection_tree = self.collection_tree();
+        let remove_from = self.collection_removal();
         // Custom Order: photos dropped on a cell go before or after it.
         let reorders = self.reorders_by_drag();
         let mut reorder: Option<(Vec<PhotoId>, usize)> = None;
@@ -186,6 +187,7 @@ impl Library {
                                         stacks: self.filters.shows_stacks(),
                                         collections: collection_tree.clone(),
                                         in_collections: self.photo_collections(p.id),
+                                        remove_from,
                                     };
                                     let (response, edit) =
                                         photo_cell(ui, &p, self.texture(&p), shown, width);
@@ -358,6 +360,14 @@ impl Library {
                 ));
             }
             PhotoAction::GoToCollection(id) => self.select_collection(id),
+            PhotoAction::RemoveFromCollection => {
+                let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
+                    self.selected_ids()
+                } else {
+                    vec![photo.id]
+                };
+                self.remove_from_collection(ids);
+            }
             PhotoAction::AddToCollection(id) => {
                 let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
                     self.selected_ids()

@@ -64,6 +64,8 @@ pub(super) struct Shown {
     pub collections: std::sync::Arc<Vec<super::collections::CollectionNode>>,
     /// The collections the photo is in, for its badge and Go to Collection.
     pub in_collections: Vec<(crate::catalog::CollectionId, String)>,
+    /// The source's Remove from Collection entry, if it takes photos out.
+    pub remove_from: Option<&'static str>,
 }
 pub(super) fn photo_cell(
     ui: &mut egui::Ui,
@@ -85,6 +87,7 @@ pub(super) fn photo_cell(
         stacks,
         collections,
         in_collections,
+        remove_from,
     } = shown;
     let stack = photo.stack.filter(|_| stacks);
     use crate::app::library::photo_metadata::label_color;
@@ -295,6 +298,7 @@ pub(super) fn photo_cell(
         MenuCollections {
             tree: &collections,
             photo: &in_collections,
+            remove_from,
         },
     );
     let action = action
@@ -557,7 +561,16 @@ pub(in crate::app) enum PhotoAction {
     AddToCollection(crate::catalog::CollectionId),
     /// Go to Collection, or the collection badge: show this collection.
     GoToCollection(crate::catalog::CollectionId),
+    /// Remove from Collection: the photos come out of the collection shown.
+    RemoveFromCollection,
 }
+/// Remove from Collection's shortcut: Delete, which does the same in a
+/// collection.
+const REMOVE_FROM_COLLECTION_SHORTCUT: &str = if cfg!(target_os = "macos") {
+    "⌫"
+} else {
+    "Backspace"
+};
 /// Remove from Catalog's shortcut, as Lightroom shows it.
 const REMOVE_SHORTCUT: &str = if cfg!(target_os = "macos") {
     "⌥⌫"
@@ -671,6 +684,10 @@ pub(in crate::app) struct MenuCollections<'a> {
     pub tree: &'a [super::collections::CollectionNode],
     /// The photo's collections, for Go to Collection.
     pub photo: &'a [(crate::catalog::CollectionId, String)],
+    /// The label of Remove from Collection, offered only when the source
+    /// shown is a collection photos can be taken out of: see
+    /// [`super::Library::collection_removal`].
+    pub remove_from: Option<&'static str>,
 }
 /// Go to Collection's list: the photo's collections, by name.
 fn go_to_menu(
@@ -715,6 +732,7 @@ pub(in crate::app) fn photo_menu(
     let MenuCollections {
         tree: collections,
         photo: in_collections,
+        remove_from,
     } = collections;
     use crate::app::library::photo_metadata::{Edit, LABELS};
     use crate::app::ui::widgets::{menu_item, menu_separator, submenu_style};
@@ -834,6 +852,12 @@ pub(in crate::app) fn photo_menu(
                 }
             })
         });
+        if let Some(label) = remove_from
+            && menu_item(ui, label, REMOVE_FROM_COLLECTION_SHORTCUT, true, false)
+        {
+            action = Some(PhotoAction::RemoveFromCollection);
+            ui.close();
+        }
         menu_separator(ui);
         if menu_item(ui, "Read Metadata from Files…", "", true, false) {
             action = Some(PhotoAction::ReadMetadata);

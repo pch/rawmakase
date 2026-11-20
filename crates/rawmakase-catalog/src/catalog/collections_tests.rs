@@ -312,6 +312,14 @@ fn only_plain_collections_take_photos() -> Result<()> {
     let (_dir, mut c, ids) = catalog()?;
     let set = c.create_collection(CollectionKind::Set, "Set", None)?;
     assert!(c.change_collection(set, &ids, &[]).is_err());
+    let plain = c.create_collection(CollectionKind::Collection, "Plain", None)?;
+    let takes = |c: &Catalog, id| {
+        c.collections()
+            .unwrap()
+            .iter()
+            .any(|x| x.id == id && x.takes_photos)
+    };
+    assert!(takes(&c, plain) && !takes(&c, set));
     for kind in [
         "com.adobe.ag.library.smart_collection",
         "com.adobe.ag.print",
@@ -323,6 +331,7 @@ fn only_plain_collections_take_photos() -> Result<()> {
             [kind],
         )?;
         let other = CollectionId(900);
+        assert!(!takes(&c, other), "{kind}");
         assert!(c.change_collection(other, &ids, &[]).is_err(), "{kind}");
         assert!(c.change_collection(other, &[], &ids).is_err(), "{kind}");
         assert!(c.set_target_collection(Some(other)).is_err(), "{kind}");

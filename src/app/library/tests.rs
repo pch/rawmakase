@@ -591,6 +591,7 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
                     stacks: true,
                     collections: Default::default(),
                     in_collections: Vec::new(),
+                    remove_from: None,
                 };
                 photo_cell(ui, &photo, Some(&texture), shown, width);
             });

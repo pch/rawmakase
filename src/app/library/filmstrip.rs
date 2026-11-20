@@ -413,6 +413,7 @@ impl Library {
             cell::MenuCollections {
                 tree: &collections,
                 photo: &self.photo_collections(photo.id),
+                remove_from: self.collection_removal(),
             },
         )
         .or(badge_clicked.then_some(cell::PhotoAction::StackBadge));
@@ -429,6 +430,7 @@ impl Library {
                     | cell::PhotoAction::StackBadge
                     | cell::PhotoAction::GoToCollection(_)
                     | cell::PhotoAction::AddToCollection(_)
+                    | cell::PhotoAction::RemoveFromCollection
             );
             let develop = self.photo_action(ui.ctx(), photo, menu, whole_selection);
             return (develop.map(Pick::Develop), edited);
