@@ -128,11 +128,50 @@ own; their numbers (−8.0, −5.9 and +6.5 L\* on the plateaus) are withdrawn. 
 engine's dumped curve against the network's own prediction on one photo showed it
 (−4.2 against −3.3 stops).
 
-**Open.** What Camera Raw's limit near the white is (a fixed ceiling per photo and
-amount, by the numbers above); a top of the curve that holds on photos with large
-blown skies, for which the 102 train-split photos with over 0.5% of the raw file
-clipped that the rule has not seen are being captured; whether the same shoulder
-matters for Whites and positive Highlights.
+**More photos do not settle the top.** The 102 train-split photos with over 0.5% of
+the raw file clipped that the rule had not seen were rendered (92 usable) and the top
+refitted on 467 photos, 197 of them with blown pixels. Validation's highlights ΔE00
+goes 1.90 → 1.56 with seven photos closer and one further, but that one is the park
+photo: 6.18 → 7.82, its sky at L\* 80.9 where the earlier fits had 88 and main has
+83.3. The palms region stays 5 L\* darker than main's. What a photo gets at its top
+swings by several L\* with the training set, not only with the fit.
+
+**The top as a slope.** Over base levels above −1, Camera Raw's result on a training
+photo is close to a line through its result just under −1. Its slope (1 would be a
+gain that stops growing) has a median of 0.83 over 204 photos, quartiles 0.65 and
+0.97; 0.97 on photos without blown pixels, 0.70 on those with many. Main's curve
+over the same levels has 0.69 on 61 photos, 0.24 lower photo by photo at the median,
+correlation 0.47: main keeps pulling harder the brighter it gets. Three test builds
+on main's curve, no network at the top:
+
+- The gain held from −1 up with one slope (0.85, the best single slope on the
+  training photos) puts the daylight stress skies on Camera Raw (park 93.2 against
+  92.6, palms 96.3 / 95.5, paved square 96.8 / 96.5) and overshoots the rest: the
+  wall 99.0 / 97.0 with 80% of the area at white against 43%, and the training
+  photos' plateaus by 10 L\* at the median (dark scenes with small lights, where
+  Camera Raw's slope is far lower).
+- The slope is not predicted by the photo's histogram: from the top, the mean, the
+  gain just under −1 and the share of the frame above it, leave-one-out, R² is 0.33
+  and what is left of the result over the top is 0.257 stop against 0.263 with one
+  slope and 0.178 with the photo's own.
+- Main's curve tilted by its mean shortfall (0.22 stop less pull per stop above −1)
+  takes the park to 88.1, the palms to 94.0 and the paved square to 96.9, with no
+  region of the palms worse, and overshoots the storm clouds and the wall (62% and
+  59% of the area at white against 21% and 43%); on the training photos the plateaus
+  are off by 6.7 L\* (main 7.4) and the unclipped near-white pixels by 6.8 (main
+  4.8).
+
+Nor does the pull depend on how far a pixel sits above its surroundings: fitted over
+210 photos together, the gain's slope on the base level less a Gaussian mean of the
+map (8 to 128 map pixels) and its slope on that mean are the same (−0.38 and −0.42
+at 8 px, −0.37 and −0.35 at 128), and what is left does not move (0.27 stop; 0.20
+with a slope per photo).
+
+**Open.** What sets the slope of a photo's top, to be asked of Camera Raw directly
+with probes (a bright area of varied size and level in one photo), since neither the
+histogram nor the surroundings answer it; what Camera Raw's limit near the white is
+(a fixed ceiling per photo and amount, by the numbers above); whether the same
+shoulder matters for Whites and positive Highlights.
 
 ### Clarity: a slope around a base, and no closed form for either yet (2026-11-19)
 
