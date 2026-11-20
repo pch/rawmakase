@@ -213,12 +213,101 @@ against 0.65): the rule's texture inputs do not separate 4% texture from none. O
 stress photos the palms' blown area lands on Camera Raw (95.4 against 95.5) and the
 park's sky gets worse again (78.3; main 83.3; Camera Raw 92.6). Not a candidate.
 
-**Open.** A measure of fine detail by level, taken finer than the map and on a scale
-that separates none from a little, as an input of the rule, with whether tones lead up
-to a level; tested on these probes before any photo; how far the size effect is the
-same thing; what Camera Raw's limit near the white is (a fixed ceiling
-per photo and amount, by the numbers above); whether the same shoulder matters for
-Whites and positive Highlights.
+**Flat is one number for the photo, and the probes' size matters.** More probes on the
+same band (40% of a 1000 px daylight scene at 1.57 times the white), Highlights −100:
+
+- *Not spatial.* With the band's left half flat and its right half noisy, both halves
+  end at the same value (0.41 and 0.42; all flat 0.045, all noisy 0.66). A quarter
+  noisy gives 0.13, three quarters 0.62, a flat half beside 4% texture 0.20. The band
+  is uniform inside, and a gradient across it comes out at half its size. The pull is
+  one curve for the photo, set by how much of a level is flat.
+- *How little detail is enough.* Noise of 0.025, 0.05, 0.1, 0.25 and 1% a pixel: 0.067,
+  0.118, 0.385, 0.633, 0.660. On one channel alone it counts the same. A NoiseProfile
+  in the file changes nothing, nor does blurring the rest of the scene or adding noise
+  to it.
+- *Size.* The same noise counts for less in a larger file: 0.1% at 500, 1000, 2000 and
+  4000 px gives 0.65, 0.39, 0.14 and 0.09. Smooth texture goes the other way: 0.25%
+  of it gives 0.084 at 1000 px whatever its scale (blobs of 2 to 32 px) and 0.67 at
+  2000 and 4000 px, and the same 1000 px scene with every pixel doubled gives 0.67.
+  The statistic behind this was not found. What follows for training: scenes of
+  1000 px with smooth texture only (the rule's mosaics, the 150 scenes above) sit
+  between flat and textured for Camera Raw as no photo does. A scene needs noise of
+  about a percent a pixel to be read as a photo is.
+
+**Camera Raw keeps nothing above the white level.** A scene whose samples run to 1.64
+times the file's WhiteLevel, with a noisy ramp from 0.6 to 1.55 times the white:
+Camera Raw is flat from the white on at Exposure −2 (0.155, 0.182, 0.209, 0.239, 0.270,
+then 0.275 to the end, with no texture left), at default and at Highlights −100.
+RAWmakase's decoders scale by the white level and keep what lies above it: its
+Exposure −2 rises to 0.523 with the texture. 17 of 228 training photos hold more than
+0.1% of their samples over the white level (up to 2.1 times it; three with 4.5 to
+5.8% of the frame), and those are most of the photos with a large clipped area. A
+stress photo from a Canon EOS Kiss M shows it in a photo: its samples run to 1.39
+times the white level, Camera Raw's flat area at −100 (5.4% of the frame) is where all
+three channels reach the white level (6.0%), and only 1.1% of the frame is at the
+sensor's saturation. With every channel held at its white before the highlight
+reconstruction (a test switch), the probe's Exposure −2 equals Camera Raw's. On the
+gate's highlights sets the clamp alone fails no pair (91 pass, 35 inconclusive) and
+moves little: three photos closer by 0.2 to 0.3, the band 90 to 100 unchanged.
+
+**What a plateau is in a photo.** On four stress photos the area blown at default and
+flat at −100 holds 90 to 97% of the cells whose four raw samples are all at the top,
+and 97.5% or more of it has a clipped sample. The park photo's sky has one channel
+clipped on 9% of the frame and all three nowhere: it is no plateau, and Camera Raw
+leaves it bright. A test build measures this for the rule from the photo at full
+size, per cell of the map: the share of pixels with any channel at the white level,
+with all three there, and the share that is exactly flat. On the palms photo it
+agrees with the raw file's own counts (0.243 against 0.247 and 0.129 against 0.130).
+
+**The top retrained with plateau inputs.** The training set: 468 photos, their maps
+made again with the clamp, and 180 scenes built as photos are (noise of 1.5% a pixel
+on all but the plateaus; ramps into the clip, plateaus, textured bands, plateau and
+texture side by side), without the mosaics. The inputs added: the plateau share and
+the clipped share near a level, above it and over the frame; the upper percentiles of
+the textured cells (each counted by its share that is not plateau) and their mass
+around the level. Errors were taken as rendered L\* per photo (the engine's white
+curve on level plus predicted gain, against Camera Raw's result), four folds held out:
+
+- The top is poorly predicted per photo whatever the inputs. Near white (over 0.6 of
+  the white at default, not blown) the bias is 5.8 to 6.4 L\* RMS over photos: 7 to 8
+  where under 1% of the frame is bright (small lights in dark scenes), 3.3 to 4.9
+  between 1 and 15%. Within a photo the samples scatter by 4.7 L\*.
+- Main's own rule on the 215 photos it never saw: 4.7 to 6.4 near white, and 11 to 14
+  in blown areas where under 15% of the frame is bright (medians to −6.8), against 5
+  to 10 for a retrained top. A retrained top is better in blown areas; near white the
+  per-photo error stays.
+- The held-out error does not follow the bright area's fine detail, plateau share or
+  clipped share (correlations up to 0.29).
+- Two training photos with a large plateau go opposite ways, as the probes say they
+  should: a white dress under a blown sky with bright leaves around it, where Camera
+  Raw keeps the sky near white, and a valley under a blank sky over dark rock, where
+  it takes the sky to dark grey. Held out, a top without the textured cells'
+  percentiles has the first 22 L\* too dark and the second 27 too bright; with them
+  the first is within 2 and the second 20 too dark.
+- The hand-over from the first ensemble matters as much as the fit. The level that
+  renders 0.6 of the white at default, where the first ensemble's training ends, is
+  −0.74 to −0.39 stops on the training photos; the hand-over at −2 to −1 gave the
+  retrained curve half a stop of the first ensemble's own range on a bright photo.
+  That was the palms' regression in every fit above.
+
+With the hand-over at −1 to −0.4 and the clamp, the stress photos' blown areas (mean
+L\*, main / test build / Camera Raw): park 83.3 / 89.2 / 92.6, palms 90.7 / 92.7 /
+95.5, paved square 94.9 / 96.1 / 96.5, storm clouds 96.6 / 96.4 / 96.5, wall 96.8 /
+97.3 / 97.0, and the palms' worst region is 1.1 L\* darker than main's (6.6 before).
+Other seeds of the networks give 88.8, 90.6, 96.0, 96.8, 97.5 and 2.2. On the gate's
+highlights sets at −100: highlights ΔE00 1.90 → 1.58, nine photos closer by 0.3 and
+one further, the band 90 to 100 from −2.46 to −1.56 L\* (80 to 90: +0.43 → +0.82), the
+park 6.18 → 2.13, the palms 3.07 → 1.94. One pair fails: a sunset where Camera Raw
+keeps the red channel at white on 12.9% of the frame and the test build ends at 0.978
+there. At −50 the same curve at half strength is mixed (highlights 1.05 → 0.91, seven
+closer and six further). Nothing in the engine changed.
+
+**Open.** The statistic behind the size effects; whether to keep the data above the
+white level for rendering while the rule reads the photo as Camera Raw does; Camera
+Raw's amounts between 0 and −100 near the white, which are not half of −100's (its
+plateaus stay near the white at −25 and −50); small lights in dark scenes; the
+engine's other paths (previews, the GPU, masks) and the gate's other sets; whether
+the same shoulder matters for Whites and positive Highlights.
 
 ### Clarity on photos: a curve per photo that no histogram sets (2026-11-20)
 
