@@ -246,6 +246,15 @@ pub enum StackChange {
     MoveToTop(PhotoId),
     /// Moves the photo one place up (-1) or down (1) in its stack.
     Move(PhotoId, isize),
+    /// Merge to HDR's Create Stack: `photo` (the merge) on top of a stack
+    /// with `with` (its sources, the active photo first). When one of
+    /// `with` is in a stack already, `photo` goes on top of the first such
+    /// stack, which keeps its other photos and its collapsed state, and those
+    /// of `with` in no stack join it after them; those in another stack stay
+    /// there. Otherwise `photo` and `with` become a new collapsed stack.
+    /// Photos of `with` not in `photo`'s folder or no longer in the catalog
+    /// are left out, and with none left nothing changes.
+    Join { photo: PhotoId, with: Vec<PhotoId> },
     /// Puts back the stacks of the state's photos as it has them, for Undo
     /// and Redo: those photos leave the stacks they are in now. A photo
     /// removed since is left out, and a stack whose photos are no longer in
@@ -259,6 +268,7 @@ impl StackChange {
             Self::Group(photos) | Self::Unstack(photos) | Self::Remove(photos) => photos.clone(),
             Self::Groups(stacks) => stacks.concat(),
             Self::MoveToTop(photo) | Self::Move(photo, _) => vec![*photo],
+            Self::Join { photo, with } => std::iter::once(*photo).chain(with.clone()).collect(),
             Self::Restore(state) => state.photos.clone(),
         }
     }
@@ -336,6 +346,7 @@ fn apply(w: &mut Write<'_>, change: &StackChange) -> Result<()> {
             }
             place(w, group.id, &photos)?;
         }
+        StackChange::Join { photo, with } => join(w, *photo, with)?,
         StackChange::Restore(state) => {
             // The stacks they are in now, with photos `state` may not name.
             let mut now = Vec::new();
@@ -360,6 +371,45 @@ fn apply(w: &mut Write<'_>, change: &StackChange) -> Result<()> {
         }
     }
     drop_empty(w)
+}
+
+/// [`StackChange::Join`].
+fn join(w: &mut Write<'_>, photo: PhotoId, with: &[PhotoId]) -> Result<()> {
+    let folder_of = |w: &Write<'_>, id: &PhotoId| -> Result<Option<FolderId>> {
+        w.read_optional(sql!("SELECT folder FROM photos WHERE id=?"), &[id])
+    };
+    let Some(folder) = folder_of(w, &photo)? else {
+        anyhow::bail!("Unknown photo");
+    };
+    let mut sources: Vec<PhotoId> = Vec::new();
+    for p in with {
+        if *p != photo && !sources.contains(p) && folder_of(w, p)? == Some(folder) {
+            sources.push(*p);
+        }
+    }
+    let mut stacked = Vec::new();
+    for p in &sources {
+        stacked.push(group_of(w, *p)?);
+    }
+    let unstacked = sources
+        .iter()
+        .zip(&stacked)
+        .filter(|(_, group)| group.is_none())
+        .map(|(p, _)| *p);
+    match stacked.iter().flatten().next() {
+        Some(group) => {
+            let mut photos = vec![photo];
+            photos.extend(group.photos.iter().filter(|p| **p != photo));
+            photos.extend(unstacked);
+            place(w, group.id, &photos)?;
+        }
+        None if !sources.is_empty() => {
+            let photos: Vec<PhotoId> = std::iter::once(photo).chain(unstacked).collect();
+            create(w, &photos, true)?;
+        }
+        None => {}
+    }
+    Ok(())
 }
 
 impl Catalog {

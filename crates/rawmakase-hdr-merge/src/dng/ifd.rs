@@ -96,7 +96,7 @@ impl Value {
 }
 
 /// A directory's entries by tag: written in ascending order, as TIFF requires.
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub(super) struct Ifd(pub BTreeMap<u16, Value>);
 
 impl Ifd {
@@ -106,8 +106,10 @@ impl Ifd {
 }
 
 /// The file being built: the header, then blocks and directories as they are
-/// added.
+/// added; or, from [`Tiff::after`], what follows a file's first part.
 pub(super) struct Tiff {
+    /// Where `buf` starts in the file.
+    base: usize,
     buf: Vec<u8>,
 }
 
@@ -115,21 +117,33 @@ impl Tiff {
     pub(super) fn new() -> Self {
         // IFD0's offset is set by `finish`.
         Self {
+            base: 0,
             buf: b"II*\0\0\0\0\0".to_vec(),
         }
     }
+    /// The blocks and directories that follow `len` bytes of a file.
+    pub(super) fn after(len: usize) -> Self {
+        Self {
+            base: len,
+            buf: Vec::new(),
+        }
+    }
+    /// The file's length so far.
+    fn len(&self) -> Result<u32, Error> {
+        u32::try_from(self.base + self.buf.len()).map_err(|_| Error::TooLarge)
+    }
     /// The offset the next block starts at, on a word boundary.
     fn align(&mut self) -> Result<u32, Error> {
-        if self.buf.len() % 2 == 1 {
+        if (self.base + self.buf.len()) % 2 == 1 {
             self.buf.push(0);
         }
-        u32::try_from(self.buf.len()).map_err(|_| Error::TooLarge)
+        self.len()
     }
     /// Adds `bytes` and returns their offset.
     pub(super) fn block(&mut self, bytes: &[u8]) -> Result<u32, Error> {
         let at = self.align()?;
         self.buf.extend_from_slice(bytes);
-        u32::try_from(self.buf.len()).map_err(|_| Error::TooLarge)?;
+        self.len()?;
         Ok(at)
     }
     /// Adds a directory (its long values first) and returns its offset; its
@@ -156,12 +170,12 @@ impl Tiff {
             self.buf.extend(field);
         }
         self.buf.extend(0u32.to_le_bytes());
-        u32::try_from(self.buf.len()).map_err(|_| Error::TooLarge)?;
+        self.len()?;
         Ok(at)
     }
-    /// The file, IFD0 at `first`.
-    pub(super) fn finish(mut self, first: u32) -> Vec<u8> {
-        self.buf[4..8].copy_from_slice(&first.to_le_bytes());
+    /// The bytes, the header's offset of IFD0 left 0 for the file's writer
+    /// to set.
+    pub(super) fn into_bytes(self) -> Vec<u8> {
         self.buf
     }
 }

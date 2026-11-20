@@ -3116,3 +3116,76 @@ fn written_settings_carry_the_rendered_process_version() {
         assert!(!text.contains(r#"ProcessVersion="11.0""#), "{text}");
     }
 }
+
+/// A merged DNG's packet holds what Lightroom Classic 15.6's merges hold: the
+/// starting settings still to apply, IsMergedHDR, the reference frame as the
+/// preserved name and the DNG as the raw's; and it reads back as the same
+/// settings.
+#[test]
+fn a_merged_dngs_packet_is_its_starting_settings() -> Result<()> {
+    let m = Metadata {
+        make: "Test".into(),
+        model: "Camera".into(),
+        width: 6000,
+        height: 4000,
+        cam_xyz: [[0.8, -0.2, -0.1], [-0.3, 1.1, 0.2], [-0.05, 0.15, 0.6]],
+        ..Default::default()
+    };
+    let r = Recipe {
+        temperature: 4000.,
+        tint: 10.,
+        lens_profile: true,
+        crop: [0.01, 0.02, 0.99, 0.98],
+        ..Default::default()
+    };
+    let merged = write::MergedDng {
+        creator_tool: "RAWmakase 0.0.0".into(),
+        name: "IMG_9814-HDR.dng".into(),
+        reference: "IMG_9815.CR3".into(),
+        captured: Some("2023:09:13 07:07:46".into()),
+        now: "2026-11-19T10:15:00Z".into(),
+    };
+    let packet = write::merged_dng_packet(&r, &m, &merged);
+    for attribute in [
+        r#"aux:IsMergedHDR="True""#,
+        r#"xmpMM:PreservedFileName="IMG_9815.CR3""#,
+        r#"crs:RawFileName="IMG_9814-HDR.dng""#,
+        r#"crs:AlreadyApplied="False""#,
+        r#"crs:HDREditMode="0""#,
+        r#"crs:LensProfileEnable="1""#,
+        r#"crs:CropLeft="0.010000""#,
+        r#"crs:HasCrop="True""#,
+        r#"dc:format="image/dng""#,
+        r#"xmp:CreateDate="2023-09-13T07:07:46""#,
+    ] {
+        assert!(packet.contains(attribute), "{attribute} in {packet}");
+    }
+    assert!(!packet.contains("HDRMaxValue"), "{packet}");
+    let back = parse(Path::new("merged.xmp"), &packet)?.apply(&Recipe::default(), &m, &[], None)?;
+    assert_eq!((back.temperature, back.tint), (4000., 10.));
+    assert!(back.lens_profile);
+    assert!(!back.hdr.enabled);
+    assert!(
+        back.crop
+            .iter()
+            .zip(r.crop)
+            .all(|(a, b)| (a - b).abs() < 1e-5),
+        "{:?}",
+        back.crop
+    );
+    // An export's packet is unchanged: its settings are applied, its RAW
+    // the preserved name.
+    let export = write::packet(
+        &r,
+        &m,
+        &write::Photo {
+            raw_name: "IMG_9814.CR3".into(),
+            settings: true,
+            ..Default::default()
+        },
+    );
+    assert!(export.contains(r#"crs:AlreadyApplied="True""#));
+    assert!(export.contains(r#"xmpMM:PreservedFileName="IMG_9814.CR3""#));
+    assert!(!export.contains("IsMergedHDR"));
+    Ok(())
+}

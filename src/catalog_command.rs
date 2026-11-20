@@ -65,3 +65,40 @@ pub fn open_catalog(path: &Path, err: &mut dyn Write) -> Result<crate::catalog::
     catalog.remove_earlier_backups();
     Ok(catalog)
 }
+
+/// The photo of catalog `c` whose file is `input` (a master, not a virtual
+/// copy); an error when there is none, or when two of its folders are found at
+/// the same place.
+pub fn photo_at(c: &crate::catalog::Catalog, input: &Path) -> Result<crate::catalog::PhotoId> {
+    let input = input.canonicalize()?;
+    let found: Vec<_> = c
+        .photos()?
+        .into_iter()
+        .filter(|p| p.master.is_none() && p.path.canonicalize().is_ok_and(|p| p == input))
+        .map(|p| p.id)
+        .collect();
+    match found[..] {
+        [photo] => Ok(photo),
+        [] => anyhow::bail!("{} is not in the catalog", input.display()),
+        _ => anyhow::bail!(
+            "{} is {} photos in the catalog: two of its folders are found at the same place",
+            input.display(),
+            found.len()
+        ),
+    }
+}
+
+/// The edit photo `photo` of catalog `c` develops with, its spots and masks
+/// read with it; masks made from a selection are read from the catalog, as in
+/// the app.
+pub fn photo_edit(
+    c: &crate::catalog::Catalog,
+    photo: crate::catalog::PhotoId,
+) -> Result<crate::edits::EditRecord> {
+    crate::storage::mask_assets::add_loader(c.mask_asset_loader());
+    // One consistent read: the recipe with the spots and masks saved with it.
+    c.photo_records(&[photo])?
+        .pop()
+        .map(|record| record.edit)
+        .ok_or_else(|| anyhow::anyhow!("The photo is not in the catalog"))
+}

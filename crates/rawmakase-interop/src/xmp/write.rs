@@ -673,6 +673,43 @@ pub fn keyword_lists(keywords: &[KeywordPath]) -> (Vec<String>, Vec<String>) {
 
 /// The XMP packet for an exported photo.
 pub fn packet(r: &Recipe, m: &Metadata, photo: &Photo) -> String {
+    packet_for(r, m, photo, None)
+}
+
+/// What a DNG Merge to HDR wrote says of itself in its XMP.
+#[derive(Clone, Debug, Default)]
+pub struct MergedDng {
+    /// As [`Photo::creator_tool`].
+    pub creator_tool: String,
+    /// The DNG's file name (`crs:RawFileName`).
+    pub name: String,
+    /// The reference frame's file name, which Lightroom's merges keep as
+    /// `xmpMM:PreservedFileName`.
+    pub reference: String,
+    /// As [`Photo::captured`]: the DNG's EXIF's.
+    pub captured: Option<String>,
+    /// As [`Photo::now`].
+    pub now: String,
+}
+
+/// The XMP packet a DNG Merge to HDR wrote holds, as Lightroom Classic's
+/// merges hold one: `r`, its starting settings, still to be applied
+/// (`crs:AlreadyApplied` False), and `aux:IsMergedHDR`. `m` is the DNG's.
+pub fn merged_dng_packet(r: &Recipe, m: &Metadata, merged: &MergedDng) -> String {
+    let photo = Photo {
+        creator_tool: merged.creator_tool.clone(),
+        raw_name: merged.name.clone(),
+        captured: merged.captured.clone(),
+        now: merged.now.clone(),
+        settings: true,
+        format: "image/dng".into(),
+        ..Default::default()
+    };
+    packet_for(r, m, &photo, Some(merged))
+}
+
+/// [`packet`], or with `merged` [`merged_dng_packet`].
+fn packet_for(r: &Recipe, m: &Metadata, photo: &Photo, merged: Option<&MergedDng>) -> String {
     let mut attributes: Vec<(String, String)> = Vec::new();
     if !photo.creator_tool.is_empty() {
         attributes.push(("xmp:CreatorTool".into(), photo.creator_tool.clone()));
@@ -696,8 +733,12 @@ pub fn packet(r: &Recipe, m: &Metadata, photo: &Photo) -> String {
     if photo.lens && !m.lens_model.is_empty() {
         attributes.push(("aux:Lens".into(), m.lens_model.clone()));
     }
-    if !photo.raw_name.is_empty() {
-        attributes.push(("xmpMM:PreservedFileName".into(), photo.raw_name.clone()));
+    if merged.is_some() {
+        attributes.push(("aux:IsMergedHDR".into(), "True".into()));
+    }
+    let preserved = merged.map_or(&photo.raw_name, |m| &m.reference);
+    if !preserved.is_empty() {
+        attributes.push(("xmpMM:PreservedFileName".into(), preserved.clone()));
     }
     attributes.push(("dc:format".into(), photo.format.clone()));
     if photo.settings {
@@ -722,7 +763,13 @@ pub fn packet(r: &Recipe, m: &Metadata, photo: &Photo) -> String {
                 .into_iter()
                 .map(|(k, v)| (super::qualified(&k), v)),
         );
-        attributes.push(("crs:AlreadyApplied".into(), "True".into()));
+        // Lightroom's merges say HDR is off even where Camera Raw would leave
+        // the default out, so that no default of the reader's turns it on.
+        if merged.is_some() && r.hdr.is_default() {
+            attributes.push(("crs:HDREditMode".into(), "0".into()));
+        }
+        let applied = if merged.is_some() { "False" } else { "True" };
+        attributes.push(("crs:AlreadyApplied".into(), applied.into()));
     }
     let mut out = format!(
         "  <rdf:Description rdf:about=\"\"\n    \

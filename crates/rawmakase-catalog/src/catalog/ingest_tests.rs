@@ -349,3 +349,73 @@ fn a_report_withdrawn_while_its_files_are_read_writes_nothing() -> Result<()> {
     assert!(again.is_none());
     Ok(())
 }
+
+#[test]
+fn a_starting_edit_comes_with_the_file_it_names() -> Result<()> {
+    let (_dir, folder, mut cat) = watched()?;
+    let (a, b) = (folder.join("a.dng"), folder.join("2026-11-14/b.dng"));
+    let starting = Recipe {
+        exposure: 0.5,
+        crop: [0.01, 0.02, 0.98, 0.99],
+        ..Default::default()
+    };
+    // Named as reported, through a path that resolves to the file.
+    let named = folder.join("2026-11-14/../a.dng");
+    let added = cat
+        .import_files_with(
+            &folder,
+            &[a, b.clone()],
+            &[(named, starting.clone())],
+            &defaults(),
+            || true,
+        )?
+        .expect("not withdrawn");
+    assert_eq!(added.added.len(), 2);
+    let photos = cat.photos()?;
+    let find = |name: &str| photos.iter().find(|p| p.filename == name).unwrap();
+    let (pa, pb) = (find("a.dng"), find("b.dng"));
+    assert_eq!(cat.load_edit(pa.id, &pa.path)?.unwrap().recipe, starting);
+    assert!(cat.load_edit(pb.id, &pb.path)?.is_none());
+
+    // A file the catalog has keeps its edit.
+    let other = Recipe {
+        exposure: -1.,
+        ..Default::default()
+    };
+    cat.import_files_with(
+        &folder,
+        &[b],
+        &[(pb.path.clone(), other)],
+        &defaults(),
+        || true,
+    )?;
+    assert!(cat.load_edit(pb.id, &pb.path)?.is_none());
+    Ok(())
+}
+
+#[test]
+fn a_starting_edit_that_cant_be_stored_adds_nothing() -> Result<()> {
+    let (_dir, folder, mut cat) = watched()?;
+    let a = folder.join("a.dng");
+    let invalid = Recipe {
+        crop: [0.5, 0.5, 0.5, 0.5],
+        ..Default::default()
+    };
+    let error = cat
+        .import_files_with(
+            &folder,
+            std::slice::from_ref(&a),
+            &[(a.clone(), invalid)],
+            &defaults(),
+            || true,
+        )
+        .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("a.dng can't get its starting edit"),
+        "{error:#}"
+    );
+    assert!(cat.photos()?.is_empty());
+    assert!(cat.roots()?.is_empty());
+    assert!(cat.previous_import()?.is_empty());
+    Ok(())
+}

@@ -4,7 +4,8 @@
 use rawmakase_cancel::Cancel;
 use rawmakase_hdr_merge::bracket::Refusal;
 use rawmakase_hdr_merge::{
-    Deghost, Destination, Error, FrameInput, MergeOptions, Merged, Stage, WHITE, merge, write_dng,
+    Deghost, Destination, Error, Extras, FrameInput, MergeOptions, Merged, Stage, WHITE, merge,
+    write_dng,
 };
 use rawmakase_model::camera_data::{Decode, Demosaic};
 use std::path::{Path, PathBuf};
@@ -308,7 +309,13 @@ fn written() -> &'static (tempfile::TempDir, Merged, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let paths = bracket(dir.path());
         let merged = merged(&paths);
-        let path = write_dng(&merged, &Destination::beside(&paths[0]), Cancel::NEVER).unwrap();
+        let path = write_dng(
+            &merged,
+            &Extras::default(),
+            &Destination::beside(&paths[0]),
+            Cancel::NEVER,
+        )
+        .unwrap();
         (dir, merged, path)
     })
 }
@@ -397,7 +404,13 @@ fn a_handheld_bracket_is_aligned() {
         );
         assert!((a.rotation - degrees).abs() < 0.05, "{a:?} for {degrees}°");
     }
-    let path = write_dng(&merged, &Destination::beside(&paths[1]), Cancel::NEVER).unwrap();
+    let path = write_dng(
+        &merged,
+        &Extras::default(),
+        &Destination::beside(&paths[1]),
+        Cancel::NEVER,
+    )
+    .unwrap();
     let (pixels, _) = developed(&path);
     let scene = scene();
     let wrong = wrong_blocks(&pixels, &scene);
@@ -423,6 +436,7 @@ fn a_handheld_bracket_is_aligned() {
     let path = dir.path().join("unaligned.dng");
     write_dng(
         &unaligned,
+        &Extras::default(),
         &Destination::Exactly(path.clone()),
         Cancel::NEVER,
     )
@@ -494,7 +508,13 @@ fn what_moved_comes_from_the_reference() {
         )
         .unwrap();
         let path = dir.path().join(name);
-        write_dng(&merged, &Destination::Exactly(path.clone()), Cancel::NEVER).unwrap();
+        write_dng(
+            &merged,
+            &Extras::default(),
+            &Destination::Exactly(path.clone()),
+            Cancel::NEVER,
+        )
+        .unwrap();
         (merged, developed(&path).0)
     };
     let (merged, ghosted) = merge_with(Deghost::None, "none.dng");
@@ -801,7 +821,12 @@ fn cancelling_at_any_stage_leaves_nothing() {
     let merged = merge(&inputs, &options(), &|_, _| {}, Cancel::NEVER).unwrap();
     let set = AtomicBool::new(true);
     assert_eq!(
-        write_dng(&merged, &Destination::beside(&paths[0]), Cancel::new(&set)),
+        write_dng(
+            &merged,
+            &Extras::default(),
+            &Destination::beside(&paths[0]),
+            Cancel::new(&set)
+        ),
         Err(Error::Cancelled)
     );
     assert_eq!(files(), before);
@@ -810,7 +835,12 @@ fn cancelling_at_any_stage_leaves_nothing() {
     bytes.push(0);
     std::fs::write(&paths[1], bytes).unwrap();
     assert_eq!(
-        write_dng(&merged, &Destination::beside(&paths[0]), Cancel::NEVER),
+        write_dng(
+            &merged,
+            &Extras::default(),
+            &Destination::beside(&paths[0]),
+            Cancel::NEVER
+        ),
         Err(Error::SourceChanged("IMG_1.dng".into()))
     );
     assert_eq!(files(), before);
@@ -826,12 +856,20 @@ fn names_that_are_taken_are_not_replaced() {
     let taken = dir.path().join("IMG_2-HDR.dng");
     std::fs::write(&taken, b"mine").unwrap();
     let beside = Destination::beside(&paths[0]);
-    let path = write_dng(&merged, &beside, Cancel::NEVER).unwrap();
+    let path = write_dng(&merged, &Extras::default(), &beside, Cancel::NEVER).unwrap();
     assert_eq!(path, dir.path().join("IMG_2-HDR-2.dng"));
     assert_eq!(std::fs::read(&taken).unwrap(), b"mine");
-    assert_eq!(std::fs::read(&path).unwrap(), merged.dng);
     assert_eq!(
-        write_dng(&merged, &Destination::Exactly(taken.clone()), Cancel::NEVER),
+        std::fs::read(&path).unwrap(),
+        merged.dng.with(&Extras::default()).unwrap().to_vec()
+    );
+    assert_eq!(
+        write_dng(
+            &merged,
+            &Extras::default(),
+            &Destination::Exactly(taken.clone()),
+            Cancel::NEVER
+        ),
         Err(Error::Exists(taken.clone()))
     );
     assert_eq!(std::fs::read(&taken).unwrap(), b"mine");

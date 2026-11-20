@@ -2,7 +2,9 @@
 //! app's decoder (`rawmakase_decode::photo::open`) with the samples and facts
 //! it was written with.
 use rawmakase_cancel::Cancel;
-use rawmakase_hdr_merge::{Calibration, DngFacts, Error, LinearImage, MakerNote, encode};
+use rawmakase_hdr_merge::{
+    Calibration, DngFacts, Error, Extras, LinearImage, MakerNote, Preview, encode, encoded,
+};
 use rawmakase_interop::exif::{CameraExif, Field, tag};
 use rawmakase_model::camera_data::Decode;
 use std::sync::atomic::AtomicBool;
@@ -208,6 +210,62 @@ fn coverage_and_maker_note_are_optional() {
     assert!(raw.metadata.coverage.is_none());
     // Unknown, as for a file without the note.
     assert_eq!(raw.metadata.fuji_dynamic_range, 65535);
+}
+
+/// The tag-700 XMP of the little-endian TIFF `bytes`' IFD0.
+fn ifd0_xmp(bytes: &[u8]) -> Option<&[u8]> {
+    let u16_at = |at: usize| u16::from_le_bytes([bytes[at], bytes[at + 1]]);
+    let u32_at = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+    let ifd = u32_at(4);
+    (0..usize::from(u16_at(ifd))).find_map(|i| {
+        let entry = ifd + 2 + i * 12;
+        (u16_at(entry) == 700).then(|| &bytes[u32_at(entry + 8)..][..u32_at(entry + 4)])
+    })
+}
+
+/// The XMP goes in IFD0 and the preview in a SubIFD beside the mask, where
+/// readers find them; the image is the same with them or without.
+#[test]
+fn the_xmp_and_preview_are_added_to_the_same_image() {
+    let pixels = pixels();
+    let coverage = coverage();
+    let image = LinearImage {
+        width: W,
+        height: H,
+        pixels: &pixels,
+        coverage: Some(&coverage),
+    };
+    let dng = encoded(&image, &facts(), Cancel::NEVER).unwrap();
+    // Any bytes do: the reader hands the preview back as stored.
+    let jpeg = [&[0xff, 0xd8, 0xff, 0xdb][..], &[7; 333], &[0xff, 0xd9]].concat();
+    let xmp = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">merged</x:xmpmeta>"#;
+    let extras = Extras {
+        xmp: Some(xmp),
+        preview: Some(Preview {
+            jpeg: &jpeg,
+            width: 300,
+            height: 150,
+            application: ("RAWmakase", "0.0.0"),
+            rendered: "2026-11-19T10:15:00Z",
+        }),
+    };
+    let with = dng.with(&extras).unwrap().to_vec();
+    let without = dng.with(&Extras::default()).unwrap().to_vec();
+    assert_eq!(without, encode(&image, &facts(), Cancel::NEVER).unwrap());
+    assert_eq!(ifd0_xmp(&with), Some(xmp.as_bytes()));
+    assert_eq!(ifd0_xmp(&without), None);
+    let file = tempfile::Builder::new().suffix(".dng").tempfile().unwrap();
+    std::fs::write(file.path(), &with).unwrap();
+    let mut raw = rawmakase_decode::photo::open(file.path()).unwrap();
+    assert_eq!(raw.thumbnail().unwrap(), jpeg);
+    assert!(raw.metadata.coverage.is_some());
+    let developed = raw.develop(Decode::Half, Cancel::NEVER).unwrap();
+    std::fs::write(file.path(), &without).unwrap();
+    let plain = rawmakase_decode::photo::open(file.path())
+        .unwrap()
+        .develop(Decode::Half, Cancel::NEVER)
+        .unwrap();
+    assert!(developed.pixels.iter().eq(plain.pixels.iter()));
 }
 
 /// A set flag stops encoding; inputs that break the contract are refused.

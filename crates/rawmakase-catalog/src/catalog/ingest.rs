@@ -4,7 +4,8 @@ use super::db::{Reads, Write, is_storage_error, sql};
 use super::locations::{FolderLocation, join, logical_from_os, resolve_in};
 use super::value::row;
 use super::{Catalog, FolderId, PhotoId, RootId};
-use anyhow::{Result, ensure};
+use crate::model::recipe::Recipe;
+use anyhow::{Context, Result, ensure};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -322,6 +323,21 @@ impl Catalog {
         defaults: &super::NewPhotoDefaults,
         begin: impl FnOnce() -> bool,
     ) -> Result<Option<FilesAdded>> {
+        self.import_files_with(folder, files, &[], defaults, begin)
+    }
+    /// [`Self::import_files`], each file of `starting` that it adds getting
+    /// that recipe as its catalog edit, in the same transaction: Merge to
+    /// HDR's starting edit. A file the catalog has already keeps its edit. A
+    /// starting edit that can't be stored fails the import, with nothing
+    /// written.
+    pub fn import_files_with(
+        &mut self,
+        folder: &Path,
+        files: &[PathBuf],
+        starting: &[(PathBuf, Recipe)],
+        defaults: &super::NewPhotoDefaults,
+        begin: impl FnOnce() -> bool,
+    ) -> Result<Option<FilesAdded>> {
         let folder = folder.canonicalize()?;
         let mut result = FilesAdded::default();
         // Each file as reported, and the file it is.
@@ -420,10 +436,16 @@ impl Catalog {
                 file.display()
             );
         }
-        let Some(Inserted { added, report, .. }) = self.insert(
+        // Each starting edit by the file it resolves to.
+        let starting: HashMap<PathBuf, &Recipe> = starting
+            .iter()
+            .filter_map(|(file, recipe)| Some((file.canonicalize().ok()?, recipe)))
+            .collect();
+        let Some(Inserted { added, report, .. }) = self.insert_with(
             &folder,
             to_add,
             &placed.places,
+            &starting,
             defaults,
             ImportKind::Add,
             begin,
@@ -484,6 +506,29 @@ impl Catalog {
         kind: ImportKind,
         begin: impl FnOnce() -> bool,
     ) -> Result<Option<Inserted>> {
+        self.insert_with(
+            chosen,
+            files,
+            places,
+            &HashMap::new(),
+            defaults,
+            kind,
+            begin,
+        )
+    }
+    /// [`Self::insert`], the files of `starting` getting its recipe as their
+    /// edit ([`Self::import_files_with`]).
+    #[allow(clippy::too_many_arguments)]
+    fn insert_with(
+        &mut self,
+        chosen: &Path,
+        files: Vec<PathBuf>,
+        places: &HashMap<PathBuf, Place>,
+        starting: &HashMap<PathBuf, &Recipe>,
+        defaults: &super::NewPhotoDefaults,
+        kind: ImportKind,
+        begin: impl FnOnce() -> bool,
+    ) -> Result<Option<Inserted>> {
         // Photos already in the catalog are left before their files are read.
         let files: Vec<(PathBuf, &Place)> = self.db.snapshot(|s| {
             let mut new = Vec::new();
@@ -502,7 +547,22 @@ impl Catalog {
         })?;
         // Everything each photo brings is read before the transaction, so
         // that it is written with the photo or not at all.
-        let photos = self.read_new_photos(files, defaults);
+        let mut photos = self.read_new_photos(files, defaults);
+        for photo in &mut photos {
+            if let Some(recipe) = starting.get(&photo.file) {
+                let identity = crate::storage::Identity::read(&photo.file)?;
+                let checked = self
+                    .check_new_edit(&identity, recipe, &Default::default())
+                    .with_context(|| {
+                        format!("{} can't get its starting edit", photo.file.display())
+                    })?;
+                photo.edit = Some(NewEdit {
+                    bitmaps: Vec::new(),
+                    checked,
+                    required: true,
+                });
+            }
+        }
         if !begin() {
             return Ok(None);
         }
@@ -700,14 +760,18 @@ impl Catalog {
     }
     /// The edit a photo got outside any catalog, in its photo.rawmakase.json
     /// sidecar, checked for the catalog. The sidecar stays on disk.
-    fn check_legacy_edit(&self, legacy: Option<Legacy>) -> Result<Option<LegacyEdit>> {
+    fn check_legacy_edit(&self, legacy: Option<Legacy>) -> Result<Option<NewEdit>> {
         let Some((sidecar, bitmaps)) = legacy else {
             return Ok(None);
         };
         // The identity the sidecar was checked against as it was read, beside
         // its photo: a RAW replaced since then doesn't get this edit.
         let checked = self.check_new_edit(&sidecar.source, &sidecar.recipe, &sidecar.export)?;
-        Ok(Some(LegacyEdit { bitmaps, checked }))
+        Ok(Some(NewEdit {
+            bitmaps,
+            checked,
+            required: false,
+        }))
     }
 }
 
@@ -956,7 +1020,7 @@ pub(in crate::catalog) struct NewPhoto<P> {
     pub(in crate::catalog) place: P,
     /// What it is as it enters the catalog (see [`ImportFacts`]).
     pub(in crate::catalog) facts: ImportFacts,
-    edit: Option<LegacyEdit>,
+    edit: Option<NewEdit>,
     metadata: Option<crate::xmp::descriptive::Read>,
     /// Its sidecars that could not be read, or were ignored.
     report: super::SidecarReport,
@@ -1054,7 +1118,8 @@ impl PhotoWriter {
         photo.facts.insert(w, id)?;
         if let Some(edit) = photo.edit {
             // An edit an older release saved that can't be kept stays
-            // unused on disk.
+            // unused on disk; a starting edit fails the import.
+            let required = edit.required;
             let written = w.savepoint(|w| {
                 for (hash, data) in &edit.bitmaps {
                     super::edits::insert_bitmap(w, hash, data)?;
@@ -1063,7 +1128,12 @@ impl PhotoWriter {
                 super::edit_rows::write_edit(w, &change, &self.edited_at)?;
                 Ok(change)
             });
-            self.edits.extend(refused(written)?.ok());
+            let written = refused(written)?;
+            if required {
+                self.edits.push(written?);
+            } else {
+                self.edits.extend(written.ok());
+            }
         }
         let mut report = photo.report;
         let mut readable = report.unreadable.is_empty();
@@ -1084,11 +1154,14 @@ impl PhotoWriter {
     }
 }
 
-/// An edit saved beside a photo by a release before the catalog, with the
-/// bitmaps (hash, compressed) its spots and masks refer to.
-struct LegacyEdit {
+/// The edit a new photo comes with: one saved beside it by a release before
+/// the catalog, with the bitmaps (hash, compressed) its spots and masks refer
+/// to, or the starting edit its importer gives ([`Catalog::import_files_with`]),
+/// which is `required`.
+struct NewEdit {
     bitmaps: Vec<(String, Vec<u8>)>,
     checked: super::edit_rows::CheckedNew,
+    required: bool,
 }
 
 /// This computer's locations, for matching folders found on disk.

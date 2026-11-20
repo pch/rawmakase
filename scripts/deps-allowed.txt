@@ -10,4 +10,6 @@ app -> updates
 catalog_session -> platform
 diagnostics -> platform
 diagnostics -> updates
+merge_command -> catalog_command
+merge_command -> merge_hdr
 render_command -> catalog_command
