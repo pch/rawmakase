@@ -182,7 +182,7 @@ impl Library {
                                         } else {
                                             String::new()
                                         },
-                                        single: self.menu_single(p.id, true),
+                                        target: self.menu_target(p.id, true),
                                         stacks: self.filters.shows_stacks(),
                                         collections: collection_tree.clone(),
                                         in_collections: self.photo_collections(p.id),
@@ -348,8 +348,9 @@ impl Library {
                 };
                 self.ask(super::outbox::Request::Read(ids));
             }
+            // The selection's, wherever the menu is: see `MenuTarget`.
             PhotoAction::MergeHdr => {
-                if whole_selection && self.selection.selected.contains(&photo.id) {
+                if self.menu_target(photo.id, whole_selection).merges() {
                     let ids = self.selected_ids();
                     self.ask(super::outbox::Request::MergeHdr(ids));
                 }
@@ -443,12 +444,17 @@ impl Library {
     }
 }
 impl Library {
-    /// Whether a photo's menu acts on it alone: it isn't one of several
-    /// selected, or the menu never takes the selection (`whole_selection`).
-    pub(super) fn menu_single(&self, id: PhotoId, whole_selection: bool) -> bool {
-        !(whole_selection
-            && self.selection.selected.contains(&id)
-            && self.selection.selected.len() > 1)
+    /// What a photo's menu acts on: the selection when it is one of several
+    /// selected and the menu takes the selection (`whole_selection`), else
+    /// the photo alone.
+    pub(super) fn menu_target(&self, id: PhotoId, whole_selection: bool) -> cell::MenuTarget {
+        let in_selection =
+            self.selection.selected.contains(&id) && self.selection.selected.len() > 1;
+        match (in_selection, whole_selection) {
+            (false, _) => cell::MenuTarget::Photo,
+            (true, false) => cell::MenuTarget::PhotoInSelection,
+            (true, true) => cell::MenuTarget::Selection,
+        }
     }
     /// The selection when `id` is part of it, else `id` alone.
     fn menu_scope(&self, id: PhotoId) -> Vec<PhotoId> {

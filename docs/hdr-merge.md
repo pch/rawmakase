@@ -264,7 +264,9 @@ process at once.
 ## In the app
 
 Photo › Photo Merge › HDR… (the macOS menu), the thumbnail and filmstrip
-menu's Photo Merge › HDR…, or the `merge_hdr` command, which has no key by
+menu's Photo Merge › HDR… on one of the selected photos (in Develop's
+filmstrip too, whose other entries act on the photo alone), or the
+`merge_hdr` command, which has no key by
 default (Lightroom's Ctrl+H hides the app on a Mac), take the selected photos.
 Their window lists each photo's exposure and says when the catalog already
 tells they aren't a bracket: fewer than 2 or more than 9 photos, a file chosen

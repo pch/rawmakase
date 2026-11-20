@@ -394,7 +394,7 @@ impl Library {
             self.drag_source(ui, &response, photo);
         }
         let available = self.is_available(&photo.path);
-        let single = self.menu_single(photo.id, whole_selection);
+        let target = self.menu_target(photo.id, whole_selection);
         let stacks = self.filters.shows_stacks();
         let presence = cell::Presence {
             available,
@@ -407,7 +407,7 @@ impl Library {
             &response,
             photo,
             presence,
-            single,
+            target,
             module,
             stacks,
             cell::MenuCollections {
