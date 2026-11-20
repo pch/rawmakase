@@ -167,11 +167,50 @@ map (8 to 128 map pixels) and its slope on that mean are the same (−0.38 and �
 at 8 px, −0.37 and −0.35 at 128), and what is left does not move (0.27 stop; 0.20
 with a slope per photo).
 
-**Open.** What sets the slope of a photo's top, to be asked of Camera Raw directly
-with probes (a bright area of varied size and level in one photo), since neither the
-histogram nor the surroundings answer it; what Camera Raw's limit near the white is
-(a fixed ceiling per photo and amount, by the numbers above); whether the same
-shoulder matters for Whites and positive Highlights.
+**Probes: a bright area in a photo.** Two training photos' default renders were
+written as linear files with a bright area added, and rendered by Camera Raw at
+default and at −100 and by main (about 280 scenes; luminance of the area at −100, 1
+is the white).
+
+- *Its share of the frame.* A textured band across the top or a centred square, 0.7
+  to 3.6 times the white, with two stops of sensor headroom. Up to 20% of the frame
+  the area ends at the same low value whatever its level (band of 5%: 0.28 to 0.21;
+  square of 1%: 0.30 falling to 0.14 as it gets brighter), just over the brightest
+  tones of the rest. At 40% it keeps about half its level in stops (0.26 rising to
+  0.61). Main is 0.3 stop too bright over these scenes, the opposite of its error on
+  the stress skies.
+- *A sky that runs into the sensor's white* (a ramp with cloud texture over 25 or 45%
+  of the frame, headroom 0.65 stop). The blown part ends 1.03 to 1.26 times the tones
+  just under it, so its level depends on what leads up to it: 0.48 to 0.80 where most
+  of the sky is unclipped, 0.06 to 0.30 where nearly all of it is clipped. Main gives
+  0.41 to 0.69 in every case (0.93 stop RMS against Camera Raw).
+- *Flat or textured.* A band of 20 or 40% at 1.5 times the white in four states, on a
+  daylight photo: a clipped plateau 0.085 and 0.045; unclipped and flat at the same
+  level 0.085 and 0.045; unclipped with 4% texture 0.22 and 0.44; textured just under
+  the clip 0.29 and 0.54. It is flatness, not clipping, that Camera Raw answers to: a
+  flat bright area ends just over the rest's brightest tones and takes those down with
+  it (the ground's 99th percentile 0.067 against 0.19). Main gives 0.32 to 0.34 and
+  0.53 to 0.62 with no difference between the states.
+
+This is the plateau "a little over the brightest unclipped pixels" of the training
+photos, and it explains the stress skies: a clipped sky reached by a ramp of unclipped
+tones stays bright, one that meets dark ground is taken down to it. A curve per photo
+on a base level cannot tell the two apart unless the rule knows which levels are flat.
+
+**The probes as training photos.** 150 such scenes on ten photos (ramps into the
+clip, flat and textured bands, three shares and three headrooms) were added to the 467
+photos and the top refitted. On scenes over a photo it had not seen the fit follows
+the clipped skies (0.26 against Camera Raw's 0.30 where main has 0.68; 0.38 stop RMS
+over the set against main's 0.93) but crushes textured bands with the flat ones (0.39
+against 0.65): the rule's texture inputs do not separate 4% texture from none. On the
+stress photos the palms' blown area lands on Camera Raw (95.4 against 95.5) and the
+park's sky gets worse again (78.3; main 83.3; Camera Raw 92.6). Not a candidate.
+
+**Open.** A rule input that says whether the tones at a level are flat, and whether
+tones lead up to them, tested on these probes before any photo; how far the size
+effect is the same thing; what Camera Raw's limit near the white is (a fixed ceiling
+per photo and amount, by the numbers above); whether the same shoulder matters for
+Whites and positive Highlights.
 
 ### Clarity: a slope around a base, and no closed form for either yet (2026-11-19)
 
