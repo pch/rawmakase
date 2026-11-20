@@ -898,4 +898,5 @@ mod editor_tests;
 
 pub(in crate::app) mod bulk_import;
 pub(in crate::app) mod lut_import;
+pub(in crate::app) mod profile_manager;
 pub(in crate::app) mod user_presets;

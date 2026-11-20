@@ -9,6 +9,7 @@ use crate::app::develop::profile_download::Offer;
 use crate::app::develop::state::{Tool, ViewState};
 use crate::app::develop::step_name::StepName;
 use crate::app::presets::bulk_import::ImportKind;
+use crate::app::presets::profile_manager::MenuChoices;
 use crate::app::ui::design::{Tone, size, space};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::{
@@ -31,6 +32,8 @@ pub(in crate::app::develop::panels::inspector) struct View<'a> {
     pub profiles: &'a [Arc<CameraProfile>],
     pub profile_errors: &'a [String],
     pub profile_groups: &'a Groups,
+    /// The Profile menu's hidden groups and favourites.
+    pub menu_choices: &'a MenuChoices,
     /// Adobe's installed profiles for this camera, offered for import.
     pub adobe: &'a [PathBuf],
     /// Whether the catalogue has community profiles for this camera.
@@ -64,6 +67,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
         profiles,
         profile_errors,
         profile_groups,
+        menu_choices,
         adobe,
         community_profiles,
         community_offer,
@@ -154,7 +158,13 @@ pub(in crate::app::develop::panels::inspector) fn show(
                     if !rendered {
                         ui.selectable_value(&mut r.profile, None, matrix);
                     }
-                    profile_menu::items(ui, &mut r.profile, profiles, profile_groups);
+                    profile_menu::items(
+                        ui,
+                        &mut r.profile,
+                        profiles,
+                        profile_groups,
+                        menu_choices,
+                    );
                     if rendered {
                         return;
                     }
@@ -202,6 +212,14 @@ pub(in crate::app::develop::panels::inspector) fn show(
                         .clicked()
                     {
                         actions.push(Action::ImportLuts);
+                        ui.close();
+                    }
+                    if ui
+                        .button("Manage Profiles…")
+                        .on_hover_text("Rename, regroup or remove imported profiles and LUTs, hide groups from this menu and choose favourites")
+                        .clicked()
+                    {
+                        actions.push(Action::ManageProfiles);
                         ui.close();
                     }
                     ui.separator();

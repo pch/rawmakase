@@ -406,6 +406,8 @@ pub(super) struct Names {
     taken: HashMap<String, Vec<Option<(String, PathBuf)>>>,
     /// The library's file names, lowercased, as file systems may ignore case.
     files: Vec<String>,
+    /// The looks the library held before this import: name, UUID and file.
+    library: Vec<(String, String, PathBuf)>,
 }
 /// Where a cube's look goes.
 pub(super) enum Placement {
@@ -426,6 +428,12 @@ impl Names {
             .or_default()
             .push(Some((uuid.into(), file.into())));
     }
+    /// `name` taken by the look `uuid` in `file`, which the library held before this
+    /// import, under a name it may have been given since.
+    pub(super) fn library_look(&mut self, name: &str, uuid: &str, file: &Path) {
+        self.look(name, uuid, file);
+        self.library.push((name.into(), uuid.into(), file.into()));
+    }
     /// A file name the library holds.
     pub(super) fn file(&mut self, file: &str) {
         self.files.push(file.to_lowercase());
@@ -433,21 +441,33 @@ impl Names {
     /// The name a cube from `stem` in `group` lists under: its stem, or when a
     /// different profile has that name, "stem (group)", then "stem (group 2)" and so
     /// on. A name of the stem's already holding this cube's look, whichever folder
-    /// named it, means it is imported already.
+    /// named it, means it is imported already, as does a look of the library's with
+    /// this cube's table under any other name: one renamed in the library since.
     pub(super) fn place(&self, stem: &str, group: &str, uuid: &str) -> Result<Placement> {
         let family = format!("{stem} (");
+        fn holding<'a>(
+            (name, looks): (&'a String, &'a Vec<Option<(String, PathBuf)>>),
+            uuid: &str,
+        ) -> Option<(&'a String, &'a PathBuf)> {
+            let (_, file) = looks
+                .iter()
+                .flatten()
+                .find(|(id, _)| id.eq_ignore_ascii_case(uuid))?;
+            Some((name, file))
+        }
         let imported = self
             .taken
             .iter()
             .filter(|(name, _)| *name == stem || name.starts_with(&family))
-            .filter_map(|(name, looks)| {
-                let (_, file) = looks
+            .filter_map(|entry| holding(entry, uuid))
+            .min()
+            .or_else(|| {
+                self.library
                     .iter()
-                    .flatten()
-                    .find(|(id, _)| id.eq_ignore_ascii_case(uuid))?;
-                Some((name, file))
-            })
-            .min();
+                    .filter(|(_, id, _)| id.eq_ignore_ascii_case(uuid))
+                    .map(|(name, _, file)| (name, file))
+                    .min()
+            });
         if let Some((name, file)) = imported {
             return Ok(Placement::Already(name.clone(), file.clone()));
         }

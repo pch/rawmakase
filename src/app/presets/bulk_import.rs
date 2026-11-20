@@ -298,6 +298,11 @@ impl ImportProgress {
             ctx: Some(ctx),
         }
     }
+    /// An import's progress, for tests that need one under way.
+    #[cfg(test)]
+    pub(in crate::app) fn for_test(ctx: egui::Context) -> Self {
+        Self::new(ctx)
+    }
     fn set(&self, text: String) {
         *self
             .text
@@ -699,6 +704,12 @@ impl Editor {
         // A profile download publishes into the same library: profiles, looks and
         // presets (which bring their looks) wait for it, said so rather than
         // dropped silently. Lens profiles don't touch it.
+        if !matches!(kind, ImportKind::LensProfiles) && self.managing_profiles() {
+            self.messages.warn(
+                "Not imported: Manage Profiles is changing the profile library. Import again when it finishes.",
+            );
+            return;
+        }
         if !matches!(kind, ImportKind::LensProfiles)
             && let Some(name) = self.profile_download.downloading()
         {

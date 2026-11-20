@@ -25,6 +25,7 @@ impl Editor {
             || self.report_issue.is_open()
             || self.curve_save_open()
             || self.lut_import_open()
+            || self.profile_manager_open()
             || self.folder_sync.is_reviewing()
             || self.file_ops.dialog_open()
             || self.auto_stack_open()
@@ -465,6 +466,8 @@ impl Editor {
         self.folder_question_window(&ctx);
         // Above Preferences too, which opens it.
         self.lut_import_window(&ctx);
+        // Above Preferences too, which opens it.
+        self.profile_manager_window(&ctx);
         self.export_windows(&ctx);
         self.batch_window(&ctx);
         let dialog = modal || self.view.shortcuts || self.report_issue.is_open();

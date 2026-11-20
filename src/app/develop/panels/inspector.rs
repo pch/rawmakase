@@ -631,6 +631,7 @@ impl Editor {
         let profiles = self.document.profiles.clone();
         let profile_errors = self.document.profile_errors.clone();
         let profile_groups = self.document.profile_groups.clone();
+        let menu_choices = self.profile_menu.clone();
         // The Tone Curve's histogram is of what the curves take in, rendered only
         // while its section is open; until it is, Develop's own.
         let output_histogram = self.preview.histogram.bins;
@@ -662,6 +663,7 @@ impl Editor {
             profiles: &profiles,
             profile_errors: &profile_errors,
             profile_groups: &profile_groups,
+            menu_choices: &menu_choices,
             adobe: &adobe,
             community_profiles,
             community_offer: community_offer.as_ref(),
@@ -755,6 +757,7 @@ impl Editor {
             import_folder,
             import_luts,
             import_adobe,
+            manage_profiles,
         } = requests;
         if let Some(kind) = auto_request {
             self.start_auto(kind);
@@ -834,7 +837,15 @@ impl Editor {
         if import_luts {
             self.open_lut_import();
         }
-        if import_adobe && let Some(m) = self.document.metadata.clone() {
+        if manage_profiles {
+            self.open_profile_manager(&ui.ctx().clone());
+        }
+        // Manage Profiles may be changing the library the profiles are copied into.
+        if import_adobe && self.managing_profiles() {
+            self.messages.warn(
+                "Not imported: Manage Profiles is changing the profile library. Import again when it finishes.",
+            );
+        } else if import_adobe && let Some(m) = self.document.metadata.clone() {
             let result = crate::camera_profiles::import_readable(adobe);
             if let Some(key) = adobe_key {
                 // Imported or unreadable, none of them is worth offering again.
