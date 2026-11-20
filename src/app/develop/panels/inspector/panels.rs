@@ -51,6 +51,7 @@ pub(super) enum Action {
     ImportFolder(ImportKind),
     ImportLuts,
     ImportAdobe,
+    ManageProfiles,
 }
 
 /// The actions of one frame's panels, one of each kind (the last asked), which
@@ -75,6 +76,7 @@ pub(super) struct Requests {
     pub import_folder: Option<ImportKind>,
     pub import_luts: bool,
     pub import_adobe: bool,
+    pub manage_profiles: bool,
 }
 
 impl Requests {
@@ -100,6 +102,7 @@ impl Requests {
                 Action::ImportFolder(kind) => self.import_folder = Some(kind),
                 Action::ImportLuts => self.import_luts = true,
                 Action::ImportAdobe => self.import_adobe = true,
+                Action::ManageProfiles => self.manage_profiles = true,
             }
         }
     }

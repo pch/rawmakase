@@ -70,6 +70,12 @@ pub(crate) struct Editor {
     curves: crate::app::develop::panels::curve_menu::CurveMenu,
     /// The Import LUTs window's colour space, while it is open.
     lut_import: Option<crate::camera_profiles::LutSpace>,
+    /// Manage Profiles, while it is open.
+    profile_manager: Option<crate::app::presets::profile_manager::ProfileManager>,
+    /// The Manage Profiles change running on the library, if any.
+    profile_jobs: crate::app::presets::profile_manager::Jobs,
+    /// The Profile menu's hidden groups and favourites.
+    profile_menu: crate::app::presets::profile_manager::MenuChoices,
     /// Reopening it maximized, until the window manager has done so.
     restoring_maximized: crate::app::shell::workspace::RestoreMaximized,
     /// The panels each module shows (Tab, Shift+Tab, F6–F8).
@@ -391,6 +397,12 @@ impl Editor {
             previous_settings: None,
             curves: Default::default(),
             lut_import: None,
+            profile_manager: None,
+            profile_jobs: Default::default(),
+            profile_menu: crate::app::presets::profile_manager::MenuChoices {
+                hidden_groups: session.hidden_profile_groups.clone(),
+                favorites: session.favorite_profiles.clone(),
+            },
             restoring_maximized: if session.maximized {
                 crate::app::shell::workspace::RestoreMaximized::Pending
             } else {
@@ -493,6 +505,8 @@ impl Editor {
                 theme_chosen: self.themes.chosen().is_some(),
                 no_lensfun_suggestions: !self.lensfun.suggest,
                 dismissed_community_profiles: self.profile_download.dismissed().clone(),
+                hidden_profile_groups: self.profile_menu.hidden_groups.clone(),
+                favorite_profiles: self.profile_menu.favorites.clone(),
                 crop_guides: self.view.crop_guides.to_session(),
                 crop_aspect: crate::app::develop::panels::inspector::aspect_key(
                     self.view.chosen_aspect,

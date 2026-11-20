@@ -187,6 +187,8 @@ pub(crate) enum Event {
     /// Files and folders chosen to import profiles or presets from.
     Import(crate::app::presets::bulk_import::ImportKind, Vec<PathBuf>),
     Imported(Box<crate::app::presets::bulk_import::Summary>),
+    /// A Manage Profiles change, or listing, finished.
+    ProfilesManaged(Box<crate::app::presets::profile_manager::Managed>),
     /// A Sync Settings finished.
     Synced(Box<crate::app::library::sync::SyncResult>),
     Profiles {

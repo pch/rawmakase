@@ -398,6 +398,14 @@ impl Editor {
             ));
             return;
         }
+        // Nor while Manage Profiles changes it.
+        if self.managing_profiles() {
+            self.messages.warn(format!(
+                "{} was not downloaded: wait for Manage Profiles to finish",
+                entry.profile.name
+            ));
+            return;
+        }
         let Some(metadata) = self.document.metadata.clone().filter(|m| entry.fits(m)) else {
             return;
         };

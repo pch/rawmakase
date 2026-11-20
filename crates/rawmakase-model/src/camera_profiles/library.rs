@@ -422,7 +422,7 @@ pub(super) fn look_base<'a>(
     }
     .map(|b| &**b)
 }
-fn collect(dir: &Path, depth: usize, files: &mut Vec<std::path::PathBuf>) {
+pub(super) fn collect(dir: &Path, depth: usize, files: &mut Vec<std::path::PathBuf>) {
     if depth > 8 {
         return;
     }
@@ -695,7 +695,7 @@ pub(super) fn import_into(
                 && let Ok(text) = std::fs::read_to_string(&p)
                 && let Ok((name, uuid)) = LookFile::identity(&text)
             {
-                names.look(&name, &uuid, &p);
+                names.library_look(&name, &uuid, &p);
             }
         }
     }
@@ -821,7 +821,7 @@ pub fn adobe_installed(m: &Metadata) -> Vec<std::path::PathBuf> {
         .collect()
 }
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     fn installed_in(
         dirs: &[PathBuf],
@@ -832,7 +832,7 @@ mod tests {
         (listed.profiles, listed.errors)
     }
     /// A minimal DCP: the camera it is for, its name and an identity forward matrix.
-    fn dcp(camera: &str, name: &str) -> Vec<u8> {
+    pub(in super::super) fn dcp(camera: &str, name: &str) -> Vec<u8> {
         dcp_with(camera, name, [])
     }
     /// [`dcp`] with more tags after its own, in ascending order.
