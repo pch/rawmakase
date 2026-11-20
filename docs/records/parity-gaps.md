@@ -10,7 +10,7 @@ These controls were fitted to Camera Raw renders and match within the default-re
 
 - **Scene tone stage**: Exposure, the default white and black point, Whites, Blacks, Shadows, Highlights, Clarity, Texture and Dehaze render on scene values before the profile, fitted on linear-profile Camera Raw 18.7 renders ([scene tone stage](../scene-tone-stage.md), [tone controls](../tone-controls.md#whites-and-blacks)). Shadows and Highlights follow the measured [global rule](../scene-tone-stage.md#the-global-rule): a curve per photo from the histogram of its base levels, which the earlier percentile-keyed tables could not express (positive Shadows and negative Highlights since 2026-10-28, negative Shadows and positive Highlights since 2026-11-17, [below](#negative-shadows-and-positive-highlights-by-the-global-rule-2026-11-17)). Dehaze (a curve per amount, no spatial part) and positive Whites (+100 especially) stay fitted and still differ. Shadows and Highlights on the synthetic chart's flat patches are a degenerate case for Camera Raw (a flat maximum) and are not a measure of either engine.
 - **Contrast** follows Camera Raw's curve, after the profile and so after Whites and Blacks, at a pivot predicted from the photo ([tone controls](../tone-controls.md#contrast)); the prediction is within about 0.03 of the pivot that fits each photo best, and its extra error over the default render on photos is 0.003–0.007.
-- **Clarity** of both signs follows a model fitted to Camera Raw's scene-value renders of synthetic scenes ([tone controls](../tone-controls.md#clarity)); on photos it leaves most of Camera Raw's field, whose structure is measured [below](#clarity-a-slope-around-a-base-and-no-closed-form-for-either-yet-2026-11-19); most of what is left is a tone curve per photo ([2026-11-20](#clarity-on-photos-a-curve-per-photo-that-no-histogram-sets-2026-11-20)). **Texture** follows a model fitted to Camera Raw on synthetic charts ([tone controls](../tone-controls.md#texture)): on the corpus chart its ΔE00 to Camera Raw drops from 2.0–2.2 to 1.5–1.6 at ±100.
+- **Clarity** of both signs follows a model fitted to Camera Raw's scene-value renders of synthetic scenes ([tone controls](../tone-controls.md#clarity)); on photos it leaves most of Camera Raw's field, whose structure is measured [below](#clarity-a-slope-around-a-base-and-no-closed-form-for-either-yet-2026-11-19); most of what is left is a tone curve per photo, and a candidate that predicted it was built and not kept ([2026-11-20](#clarity-on-photos-a-curve-per-photo-that-no-histogram-sets-2026-11-20)). **Texture** follows a model fitted to Camera Raw on synthetic charts ([tone controls](../tone-controls.md#texture)): on the corpus chart its ΔE00 to Camera Raw drops from 2.0–2.2 to 1.5–1.6 at ±100.
 - **Parametric tone curve** renders as Camera Raw 18.7 does on the chart ([tone controls](../tone-controls.md#parametric-curve)): the 24 `parametric-*` cases sit at mean ΔE00 0.8–3.0, down from 0.95–7.9, and the looks carrying one at 0.9–1.6, down from 1.7–4.9. With out-of-gamut colors clipped per channel as Camera Raw does ([out-of-gamut colors](../color-pipeline.md#out-of-gamut-colors)), the cases sit at 0.48–1.15. A look's own parametric curve is a second curve after the user's, as in Camera Raw (`look-parametric-darks+30`: 0.93, was 1.41); at Amount 200 Camera Raw's look curve does about 1.6 times its effect at 100, where RAWmakase doubles it. **Point curves** match on ramps, but saturated colors under an S master curve still differ (ramp MAE 0.0024, peak 0.11).
 - **Curve Refine Saturation** renders as Camera Raw 18.7 does on the chart ([tone controls](../tone-controls.md#refine-saturation)): the `curve-*-refine-saturation-*` cases sit at mean ΔE00 1.1–1.5, against 1.4 for the same S curve at 100. Values above 100 render as 100, as in Camera Raw. It imports, is written back, and has a Refine › Saturation slider (0–100) under the RGB point curve.
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the colour curves was not checked; here they set the RGB curve only.
@@ -520,8 +520,48 @@ photo, and photos closer / further by 0.3): 0 to 25: 2.24 → 1.79 (165 / 10); 2
 (72 / 45). The photos that get worse look like the engine's render with more lift in
 dark areas; the curve is smooth in the base level and adds no local structure.
 
-The bound and half the trees' curve are the candidate. It has not been rendered by the
-engine or gated yet: these numbers are map-level simulations on training photos.
+The bound and half the trees' curve were the candidate; the numbers above are map-level
+simulations on training photos.
+
+**Outcome: built, tried on validation, and not kept.** The candidate was implemented in
+the engine (the bound in `clarity.rs`, 100 trees of depth 4 evaluated with the global
+rule's statistics, an HDR master left as it was) and the result does not justify it.
+
+- On flat synthetic frames the photo-fitted parts are wrong: with them a flat frame
+  changed, the dark ground beside bright rails got brighter where Camera Raw makes it
+  darker, and the chart's Clarity +100 moved from 3.98 to 4.06–4.09 mean ΔE00 from
+  Camera Raw. They had to be switched off by the share of flat cells in the map (under
+  0.08 for 99% of 470 training photos, 0.47 for the chart, over 0.9 for flat frames,
+  rails and ramps). That is a detector of synthetic frames, not a model of what Camera
+  Raw does.
+- On the 127 training photos that could be rendered again the build scored 2.15 → 1.75
+  (in-sample for the trees).
+- On validation, the dataset gate's first six sets (26 photos with Clarity cases, the
+  full render's median ΔE00 against Camera Raw; the run was stopped there):
+
+  | | main | candidate | Mean | Closer / further by 0.2 | by 0.5 |
+  | --- | --- | --- | --- | --- | --- |
+  | Clarity +100 | 2.47 | 2.21 | 2.50 → 2.30 | 11 / 3 | 5 / 2 |
+  | Clarity +50 | 1.47 | 1.45 | 1.71 → 1.61 | 7 / 3 | 1 / 0 |
+  | Clarity +25 | 0.96 | 1.00 | 1.34 → 1.28 | 2 / 0 | 0 / 0 |
+  | Dehaze +40 with Clarity +40 | 2.28 | 2.22 | 2.60 → 2.54 | 4 / 0 | 0 / 0 |
+
+  A tenth off the median at +100, nothing at +50 and +25, and three photos 0.45 to 0.64
+  further. On those three Camera Raw darkens a whole area (the sky behind trees, a night
+  street) and the candidate lifts the dark levels instead: a curve of the base level
+  moves every area at one level together and cannot follow that.
+- The cross-validated gain on training photos (2.13 → 1.74 at the map level) was mostly
+  the shadow band and the average lift of dark levels; little of it is left in the full
+  render, where the median error is set by the mid-tones.
+
+What this leaves: the oracle shows the missing part is a curve per photo, but it is not
+predictable from the level's descriptors well enough to matter (half the predicted
+curve was the most that did not make a tenth of the photos worse), and what Camera Raw
+does on the photos that got worse is regional, not a function of level. A next attempt
+should not be another curve of the base level or another refit of the present form. The
+open questions are what sets the strength of the response per photo (0.23 to 1.2 for
+small detail), and why coherent regions respond so much less than scattered patches of
+the same levels.
 
 ### Clarity: a slope around a base, and no closed form for either yet (2026-11-19)
 
