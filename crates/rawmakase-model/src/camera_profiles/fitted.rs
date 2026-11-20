@@ -136,6 +136,13 @@ pub fn table_output(p: &CameraProfile, pro: [f32; 3]) -> [f32; 3] {
     }
 }
 
+/// A fitted profile's look table: hue shift in degrees, saturation and value scales,
+/// `TABLE_DIMS` nodes with value outermost, then hue, then saturation.
+pub fn look_table(p: &CameraProfile) -> Option<&[[f32; 3]]> {
+    let table = p.enhanced.as_ref()?.table.as_ref()?;
+    Some(&table.data)
+}
+
 /// The fitted base of a camera without a colour matrix: `forward` takes
 /// white-balanced camera RGB to XYZ D50 (camera neutral [1, 1, 1] to D50 white, as a
 /// DNG ForwardMatrix does), and the colour matrix is derived from it so that the
