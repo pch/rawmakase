@@ -1167,32 +1167,36 @@ fn source_section(
         ui.horizontal(|ui| {
             let current = d.settings.source.as_deref().map(|s| source_label(d, s));
             let menu_width = ui.available_width() - CHOOSE_WIDTH - ui.spacing().item_spacing.x;
-            widgets::dropdown(ui, "import-source")
-                .width(menu_width)
-                .selected_text(current.unwrap_or_else(|| "Choose a card or folder".into()))
-                .show_ui(ui, |ui| {
-                    match &d.drives {
-                        None => {
-                            ui.label("Looking for cards and drives…");
-                        }
-                        Some(drives) if drives.is_empty() => {
-                            ui.label("No card or drive attached");
-                        }
-                        Some(drives) => {
-                            for drive in drives {
-                                let folder = drive.card.clone().unwrap_or(drive.mount.clone());
-                                let on = d.settings.source.as_ref() == Some(&folder);
-                                if ui.selectable_label(on, &drive.name).clicked() {
-                                    shown.source = Some(folder);
+            // In a scope, so Choose… beside it keeps a button's look, as
+            // Destination's does.
+            ui.scope(|ui| {
+                widgets::dropdown(ui, "import-source")
+                    .width(menu_width)
+                    .selected_text(current.unwrap_or_else(|| "Choose a card or folder".into()))
+                    .show_ui(ui, |ui| {
+                        match &d.drives {
+                            None => {
+                                ui.label("Looking for cards and drives…");
+                            }
+                            Some(drives) if drives.is_empty() => {
+                                ui.label("No card or drive attached");
+                            }
+                            Some(drives) => {
+                                for drive in drives {
+                                    let folder = drive.card.clone().unwrap_or(drive.mount.clone());
+                                    let on = d.settings.source.as_ref() == Some(&folder);
+                                    if ui.selectable_label(on, &drive.name).clicked() {
+                                        shown.source = Some(folder);
+                                    }
                                 }
                             }
                         }
-                    }
-                    ui.separator();
-                    if ui.selectable_label(false, "Other Folder…").clicked() {
-                        shown.choose_source = true;
-                    }
-                });
+                        ui.separator();
+                        if ui.selectable_label(false, "Other Folder…").clicked() {
+                            shown.choose_source = true;
+                        }
+                    });
+            });
             if field_button(ui, "Choose…", CHOOSE_WIDTH).clicked() {
                 shown.choose_source = true;
             }
