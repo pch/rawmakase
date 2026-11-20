@@ -551,12 +551,110 @@ keeps the red channel at white on 12.9% of the frame and the test build ends at 
 there. At −50 the same curve at half strength is mixed (highlights 1.05 → 0.91, seven
 closer and six further). Nothing in the engine changed.
 
+**The slider is close to linear at the top.** Bright bands at Highlights 0, −25, −50,
+−75 and −100, gains read through the engine's white curve of the file: a flat band
+takes 0.20, 0.50 and 0.75 of −100's gain, a noisy band 0.24, 0.48 and 0.73, bands of
+both 0.19 to 0.21, 0.42 to 0.45 and 0.67 to 0.75. That a small blown spot falls much
+further between −50 and −100 than before −50 is the shoulder's doing, not the
+slider's.
+
+**Mixing the two curves.** On the training photos, the retrained top's held-out
+predictions joined to the shipped first ensemble's curve above the hand-over (bias of
+the render per photo in L\*, RMS over photos; near white and in blown areas): the
+first ensemble 6.8 and 12.0, the retrained top 5.9 and 8.8. Their errors are partly
+independent. Taking the top only where it pulls less left 6.6 and 10.3 with a bright
+median bias of 1.3 to 2.0, and on the gate failed a photo of small lights twice (a
+window at 49.7 against main's 46.1 and Camera Raw's 40.0); capping it where a level's
+pixels are partly clipped left 6.4 and 9.9. A share of the way from the first to the
+top: 0.4 leaves 6.0 and 9.6, 0.5 5.9 and 9.2, 0.6 5.9 and 9.0, 0.7 5.8 and 8.8, and on
+the 24 photos with 15% of the frame and more bright 2.6 and 2.7, 2.6 and 3.2, 2.9 and
+3.9, 3.4 and 4.8 against the first's 5.6 and 5.8 and the top's 5.3 and 7.5. Once
+mixed, the hand-over level matters little (near white 5.7 to 6.3 from −2..−1 to
+0..0.5). A share of 0.6 from −1 to −0.4 on the gate's highlights sets: 90 pass, the
+sunset fails again.
+
+**The flags can come from the measurement copy.** A cell of the 512 px copy counted
+as plateau or clipped when 90% of its pixels are, with no test for flatness: the mix
+at 0.6 leaves 5.8 and 8.7, as the shares measured at full size do (5.9 and 9.0). The
+engine therefore reads them off the copy it already has.
+
+**The engine build (not merged).** Per cell of the measurement copy, whether a channel
+is at 0.98 of its white and whether all three are; a third ensemble of eight networks
+with the 13 inputs above, fitted by the repository's script on 468 photos and 170
+synthetic skies; the curve moved a share of the way to it, rising from none at −1
+stop to 0.6 at −0.4; a rendered file keeps the first ensemble's curve. The
+cross-validation with the engine's own arithmetic (a fold's fit is one network, never
+saw the photo nor a sky built on it; the first ensemble is the shipped one): first
+6.8 and 11.9, third 5.8 and 8.6, joined at 0.6 5.9 and 8.8; on the 28 photos with 15%
+of the frame and more bright 5.5 and 5.6, 3.4 and 5.6, and 2.8 and 3.0. Over all the
+photos the join is no better than the third alone; it is on the photos with a large
+bright area. Stress photos' blown areas (mean L\*, main / build / Camera Raw): park
+83.3 / 86.3 / 92.6, paved square 94.9 / 95.5 / 96.5, wall 96.8 / 97.3 / 97.0, storm
+clouds 96.6 / 96.5 / 96.5, palms 90.7 / 90.4 / 95.5; small lights 74.3 / 74.8 / 83.7
+and 55.8 / 54.2 / 49.5; the sky through branches 87.1 / 90.1 / 71.1. The gate's
+highlights sets: 91 pass, none fails, 35 have too few photos. At −100 the highlights
+go 1.90 → 1.62 ΔE00 with seven photos closer by 0.3 and none further (park 6.18 →
+4.04, palms 3.07 → 3.32), the band 90 to 100 from −2.46 to −1.95 L\*, 80 to 90 from
++0.43 to +0.74; at −50 1.05 → 0.91 with six closer and three further; at −25 no
+change at the median. This fit gains nothing on the palms, where the test builds
+before it gained 0.5 to 2 L\*: the networks' seeds move that photo by 2.
+
+**With Shadows: the blend read the wrong extreme.** The gate's pairs sets (33 photos,
+84 pairs of a setting and a stratum) with that build, against the same build without
+the third ensemble: five fail. At Shadows −100 with Highlights −100 three skies come
+out 3 to 4 L\* lighter in a window where Camera Raw is darker, and a dark photo clips
+half a point more to black; at one mixed setting the palms keep 0.7 point less at
+white, and at Shadows +100 with Highlights −100 the bright photos' median is 0.1
+worse. The blend takes each curve toward its gain at the 99th percentile of the
+levels, and the third ensemble moves that gain by 0.29 to 0.32 stop on the three sky
+photos (0.07 to 0.18 at the failing windows' own levels): the blend's uniform part
+carried a share of it to every level, which is all that moved the dark photo, whose
+window is four stops down. Refitting the fractions on the new curve does not help. On
+213 training photos' renders of the pairs, same pixels, the error of the gain over
+0.6 of white (stops, mean of per-photo RMS; Shadows −100 with Highlights −100, then
+Shadows +100 with Highlights −100): the old curve 0.226 and 0.191; the new curve
+through the shipped fractions 0.217 and 0.173; fractions refitted, photo held out,
+0.218 and 0.172; the old blend with the top's change added at the pixel's level 0.211
+and 0.171; the same with the change blended as the curve is 0.213 and 0.174. The last
+is what the build now does: the blend reads Highlights −100's extreme and reach from
+the first ensemble's curve, which its fractions were fitted on, and blends the joined
+curve. The failing windows (ΔE00, without the third ensemble / before / now): 3.83 /
+6.69 / 5.07, 4.23 / 6.47 / 4.98, 22.29 / 24.43 / 23.67, and the dark photo as without
+it. The pairs sets now: 48 pass, one fails (the palms at Shadows +60, Highlights −60,
+Whites +30, Blacks −30: 18.4% of the frame at white against 19.2% and Camera Raw's
+22.5%), 35 have too few photos. The highlights of five of the 33 photos come closer
+at the pairs with negative Highlights (one blown window 16.4 → 10.4 and 19.5 → 13.2
+ΔE00).
+
+**What the pairs show of the blend itself.** One of those skies, with Highlights −100
+alone: main 74.4, the build 77.5, Camera Raw 77.7. With Shadows −100 added Camera Raw
+takes it to 69.7; main renders 74.2 and the build 76.0. The blend leaves a bright sky
+4.5 L\* too light there whatever the single curve does, and main's too-dark single
+curve hid part of it. On the training photos the shipped blend's bias in the top stop
+at Shadows −100 with Highlights −100 is 0.03 to 0.04 stop at the median, and 41% of
+the photos are off by over 0.15.
+
+**The decoder change alone on the pairs.** Against main: 47 pass, two fail, 35 have
+too few photos. Closer with it: one photo at every pair (median ΔE00 2.77 → 2.10 and
+3.47 → 2.77), another at Shadows +100 with Highlights +100 (5.75 → 3.16, clipping
+7.1% → 3.8%), two more by 0.1 to 0.4. The two that fail: that second photo at
+Shadows +100 with Highlights −100, where a window of foliage with blown specks is 3.7
+L\* darker (61.2 against main's 64.9 and Camera Raw's 66.5) while its median, its
+shadows and its other windows improve and the specks lose main's magenta; and a night
+photo whose deep shadows move 0.2 L\*, which takes 0.9% of the frame across the
+gate's black threshold. On the first, holding the samples at the white level lowers
+the photo's measured top by 0.47 stop, and the first ensemble's Shadows +100 then
+lifts that window 0.14 stop less: the first and second ensembles were fitted on maps
+that kept the data above the white level.
+
 **Open.** The statistic behind the size effects; whether to keep the data above the
-white level for rendering while the rule reads the photo as Camera Raw does; Camera
-Raw's amounts between 0 and −100 near the white, which are not half of −100's (its
-plateaus stay near the white at −25 and −50); small lights in dark scenes; the
-engine's other paths (previews, the GPU, masks) and the gate's other sets; whether
-the same shoulder matters for Whites and positive Highlights.
+white level for rendering while the rule reads the photo as Camera Raw does, and
+refitting the first and second ensembles on maps read as Camera Raw reads them; the
+blend's error on bright levels at Shadows −100 with Highlights −100; the palms' sky
+and small lights in dark scenes, which no fit so far gets right; the detail inside
+blown areas (the shoulder); the engine's other paths (previews, the GPU, masks) and
+the gate's other sets; whether the same shoulder matters for Whites and positive
+Highlights.
 
 ### Clarity on photos: a curve per photo that no histogram sets (2026-11-20)
 
