@@ -717,6 +717,33 @@ pass and none fails, with five photos closer at −50 where six were and two at 
 where five were; the pairs sets one failing pair against the same build without the
 third ensemble.
 
+**The decoder change alone on every validation set.** 83 sets, 1944 pairs of a setting
+and a stratum against main: 1236 pass, 11 fail, 697 have too few photos. No set of
+Highlights alone fails. What fails is on photos whose measured top the change lowers,
+through the controls that read it:
+
+- A sunset at Shadows +100, in two sets: median ΔE00 6.4 → 8.1 and 6.6 → 8.4, the
+  worst window 2.2 worse. The same photo is closer at other settings (highlights at
+  one mixed setting 5.6 → 2.4, at Exposure +1 3.0 → 0.5).
+- The photo with blown specks in foliage: Shadows +100 in three sets (a window 2.0 to
+  2.1 worse while its median goes 1.26 → 1.06 and its shadows 5.4 → 4.0), with
+  Highlights −100 as above, and Dehaze −100 and −50, where one window is 7.1 and 2.3
+  worse (the regional 90th percentile 13.0 → 17.4 and 5.3 → 6.4).
+- Pixels counted at white or black on four photos: the palms at Exposure −1, where
+  Camera Raw has 15.7% of the frame at white, main 15.5% and the change 2.8% (the sky
+  renders at L\* 99.5 against main's 99.7 and Camera Raw's 100.0, either side of the
+  gate's line); the night photo above; and two photos at Vibrance −100 and −50, 0.8
+  and 0.9 point.
+
+So the clamp is no change to ship as it stands: the first two ensembles, Dehaze and
+the rest read a photo's top from maps that kept the data above the white level, and
+lowering it by up to half a stop moves them all on the photos that have such data.
+Two ways are left. One is to keep the decoders as they are and give the clamped
+reading to the third ensemble alone (its statistics from the measurement copy with
+each channel held at its white), which also keeps the highlight data the clamp throws
+away. The other is to refit the first two ensembles and the blend on maps read as
+Camera Raw reads them. Neither is done.
+
 **Open.** The statistic behind the size effects; whether to keep the data above the
 white level for rendering while the rule reads the photo as Camera Raw does, and
 refitting the first and second ensembles on maps read as Camera Raw reads them; the
