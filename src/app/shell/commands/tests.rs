@@ -1096,3 +1096,24 @@ fn an_edit_during_a_turn_is_named_after_the_turn_ends() {
     let names: Vec<&str> = steps[..applied].iter().map(|s| s.name.as_str()).collect();
     assert_eq!(names, ["Exposure", "Contrast"]);
 }
+
+/// `photos` finds a day, a month or a year by the capture time the catalog
+/// holds, as an agent finds a trip's days (issue 1207).
+#[test]
+fn photos_are_found_by_capture_date() {
+    let photo = |filename: &str, captured: &str| Photo {
+        filename: filename.into(),
+        captured: captured.into(),
+        ..Default::default()
+    };
+    let nara = photo("DSCF0042.RAF", "2026-09-25T10:42:07");
+    let undated = photo("scan.tif", "");
+    assert!(lists_photo(&nara, "", Some("2026-09-25")));
+    assert!(lists_photo(&nara, "", Some("2026-09")));
+    assert!(lists_photo(&nara, "", Some("2026")));
+    assert!(lists_photo(&nara, "dscf", Some("2026-09-25")));
+    assert!(!lists_photo(&nara, "", Some("2026-09-24")));
+    assert!(!lists_photo(&nara, "img", Some("2026-09-25")));
+    assert!(!lists_photo(&undated, "", Some("2026")));
+    assert!(lists_photo(&undated, "", None));
+}

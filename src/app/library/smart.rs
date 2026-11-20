@@ -141,16 +141,21 @@ impl Library {
             self.filter();
         }
     }
+    /// Whether the smart collections' counts are for the catalog as it is
+    /// now, this revision and day, not ones kept while they are worked out
+    /// again.
+    pub(super) fn smart_current(&self) -> bool {
+        self.smart.taken
+            == Some((
+                self.session.query_revision(),
+                crate::platform::clock::clock().today,
+            ))
+    }
     /// Whether the smart collection shown has its members for this revision
     /// and day; true when no smart collection is shown, by itself or in the
     /// set shown.
     pub(in crate::app) fn source_settled(&self) -> bool {
-        !self.shows_smart()
-            || self.smart.taken
-                == Some((
-                    self.session.query_revision(),
-                    crate::platform::clock::clock().today,
-                ))
+        !self.shows_smart() || self.smart_current()
     }
     /// What the grid says of the smart collection shown, if anything.
     pub(in crate::app) fn smart_note(&self) -> Option<SmartNote> {

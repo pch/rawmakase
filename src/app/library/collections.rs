@@ -153,6 +153,73 @@ fn nodes(
     out
 }
 
+/// A collection or set as the control protocol lists it
+/// ([`super::Library::listed_collections`]).
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub(in crate::app) struct ListedCollection {
+    pub id: CollectionId,
+    pub name: String,
+    /// `set`, `collection` or `smart`.
+    pub kind: &'static str,
+    /// The set it is in; `None` at the top.
+    pub parent_id: Option<CollectionId>,
+    /// How many photos it shows: a set every photo of the collections in
+    /// it, each once. `None` for a smart collection whose photos aren't
+    /// known yet, or can't be.
+    pub photos: Option<usize>,
+    /// Whether photos can be added to it and taken out of it.
+    pub takes_photos: bool,
+    /// For a smart collection: `ready`, `pending` while its photos are
+    /// worked out, or `unsupported` when its rules can't be evaluated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub smart: Option<&'static str>,
+}
+
+impl super::Library {
+    /// The collections and sets as the panel shows them, in its order, each
+    /// set before what is in it.
+    pub(in crate::app) fn listed_collections(&self) -> Vec<ListedCollection> {
+        let nodes = tree(
+            self.session.collections(),
+            self.session.collection_photos(),
+            self.smart_counts(),
+            self.target(),
+        );
+        let mut out = Vec::new();
+        self.list_nodes(&nodes, &mut out);
+        out
+    }
+    fn list_nodes(&self, nodes: &[CollectionNode], out: &mut Vec<ListedCollection>) {
+        // Counts kept while smart collections are worked out again, after a
+        // change they may see, are the panel's but not yet true.
+        let current = self.smart_current();
+        for node in nodes {
+            let takes_photos =
+                self.session.collections().iter().any(|c| {
+                    c.id == node.id && c.kind == CollectionKind::Collection && c.takes_photos
+                });
+            let (kind, photos, smart) = match node.smart {
+                _ if node.set => ("set", Some(self.source_members(node.id).len()), None),
+                None => ("collection", Some(node.count), None),
+                Some(_) if !current => ("smart", None, Some("pending")),
+                Some(SmartCount::Photos(n)) => ("smart", Some(n), Some("ready")),
+                Some(SmartCount::Pending) => ("smart", None, Some("pending")),
+                Some(SmartCount::Unknown) => ("smart", None, Some("unsupported")),
+            };
+            out.push(ListedCollection {
+                id: node.id,
+                name: node.name.clone(),
+                kind,
+                parent_id: node.parent,
+                photos,
+                takes_photos,
+                smart,
+            });
+            self.list_nodes(&node.children, out);
+        }
+    }
+}
+
 /// The key that marks a set as collapsed in the Library's expanded set.
 fn collapsed_key(id: CollectionId) -> String {
     format!("collection-set-collapsed:{id}")

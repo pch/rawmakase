@@ -80,6 +80,19 @@ pub(in crate::app) enum Outcome {
     Search {
         query: String,
     },
+    Collections {
+        collections: Vec<crate::app::library::ListedCollection>,
+    },
+    CreatedCollection {
+        created: crate::app::library::ListedCollection,
+    },
+    /// Photos added to a collection or taken out: how many were, beside
+    /// those already in it or not in it.
+    ChangedCollection {
+        collection: crate::app::library::ListedCollection,
+        added: usize,
+        removed: usize,
+    },
     Presets {
         presets: Vec<super::preset::PresetSummary>,
     },
@@ -112,6 +125,9 @@ pub(in crate::app) struct PhotoSummary {
     pub rating: i32,
     pub flag: i32,
     pub label: String,
+    /// The capture time the catalog holds, `2026-09-25T10:42:07`; empty when
+    /// there is none.
+    pub captured: String,
 }
 impl From<&crate::catalog::Photo> for PhotoIdentity {
     fn from(p: &crate::catalog::Photo) -> Self {
@@ -129,6 +145,7 @@ impl From<&crate::catalog::Photo> for PhotoSummary {
             rating: p.rating,
             flag: p.flag,
             label: p.label.clone(),
+            captured: p.captured.clone(),
         }
     }
 }

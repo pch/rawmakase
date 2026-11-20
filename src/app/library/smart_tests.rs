@@ -344,3 +344,33 @@ fn a_restored_smart_collection_keeps_its_rules_after_a_reload() -> Result<()> {
     assert_eq!(library.smart_counts()[&smart[0]], SmartCount::Photos(1));
     Ok(())
 }
+
+/// The control protocol's `collections` lists a smart collection as pending
+/// while it is worked out again after a change it may see, not with the
+/// count kept from before as if it were current (issue 1207).
+#[test]
+fn a_listed_smart_count_is_pending_until_worked_out_again() -> Result<()> {
+    let (_d, mut library, smart) =
+        library_with(&[("Picks", Ok(rule("pick", "==", Value::Number(1.))))])?;
+    settle(&mut library);
+    let listed = |library: &Library| {
+        let entry = library
+            .listed_collections()
+            .into_iter()
+            .find(|c| c.id == smart[0])
+            .unwrap();
+        (entry.photos, entry.smart)
+    };
+    assert_eq!(listed(&library), (Some(0), Some("ready")));
+    let photos: Vec<PhotoId> = library.session.photos().iter().map(|p| p.id).collect();
+    library.create_collection(false, "Static", None, &photos[..1], false)?;
+    assert_eq!(listed(&library), (None, Some("pending")));
+    let started = std::time::Instant::now();
+    while !library.smart_current() {
+        library.poll_smart();
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(listed(&library), (Some(0), Some("ready")));
+    Ok(())
+}
