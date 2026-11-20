@@ -1,4 +1,5 @@
-//! Additional photographic controls used by imported XMP recipes.
+//! Rendering a recipe's [`Effects`]: the post-crop vignette, grain, manual lens
+//! Vignetting and Defringe.
 use crate::model::effects::{Effects, VignetteStyle};
 use crate::model::recipe::Recipe;
 use crate::rendered::Rendered;

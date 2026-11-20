@@ -53,9 +53,9 @@ const BLACK_REMOVED: f32 = 0.25;
 const DEFAULT_BLACK_KEYS: [f32; 15] = [
     -14., -13.5, -13., -12.5, -12., -11.5, -11., -10.5, -10., -9.5, -9., -8.5, -8., -7.5, -7.,
 ];
-/// The masks' slider positions in `masks.bin`; 0 is the identity.
 /// The toe's output above which, without a black point, the white curves resolve it.
 const LINEAR_TOE: f32 = 1. / 512.;
+/// The masks' slider positions in `masks.bin`; 0 is the identity.
 pub(crate) const MASK_VALUES: [f32; 8] = [-1., -0.75, -0.5, -0.25, 0.25, 0.5, 0.75, 1.];
 
 /// log2 sensor whites of `white3.bin` and the stops below them.

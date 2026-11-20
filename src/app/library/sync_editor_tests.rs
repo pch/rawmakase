@@ -76,8 +76,6 @@ fn library_sync_shortcut_syncs_from_the_active_photo() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// From the Library, the photo open in Develop can be a Sync's target: it opens
-/// again with what the Sync saved, so its stale edit is not saved over it.
 /// From the Library, the photo open in Develop can be a target: while an Auto
 /// estimate is still to land on it, it would be saved over what the Sync wrote, so
 /// Sync waits.
@@ -103,6 +101,8 @@ fn library_sync_waits_for_auto_on_the_open_photo() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// From the Library, the photo open in Develop can be a Sync's target: it opens
+/// again with what the Sync saved, so its stale edit is not saved over it.
 #[test]
 fn a_synced_photo_open_in_develop_opens_again() -> anyhow::Result<()> {
     let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
@@ -311,9 +311,9 @@ fn smart_collection_rule_edits_undo_and_redo() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Review, round 1: the smart collection editor is drawn wherever it is
-/// opened, an empty catalog's Library and Develop included, so the keys it
-/// holds always have a window to go to (Escape closes it).
+/// The smart collection editor is drawn wherever it is opened, an empty
+/// catalog's Library and Develop included, so the keys it holds always have
+/// a window to go to (Escape closes it).
 #[test]
 fn the_smart_collection_editor_shows_in_an_empty_library_and_in_develop() -> anyhow::Result<()> {
     for module in [Module::Library, Module::Develop] {
@@ -348,8 +348,8 @@ fn the_smart_collection_editor_shows_in_an_empty_library_and_in_develop() -> any
     Ok(())
 }
 
-/// Review, round 1: the first rules saved for a smart collection an older
-/// release imported without rules are undone back to none.
+/// The first rules saved for a smart collection an older release imported
+/// without rules are undone back to none.
 #[test]
 fn undoing_the_first_rules_of_a_smart_collection_leaves_it_without() -> anyhow::Result<()> {
     use crate::collection_rules::{Combine, Group, Item, Rule, lua::Value};

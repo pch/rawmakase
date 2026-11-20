@@ -225,8 +225,6 @@ fn pump_for(e: &mut Editor, time: Duration) {
     }
 }
 
-/// The program start's number while MIDI runs, and whether `device` is
-/// connected in `epoch` in it.
 /// Enables MIDI in `data`'s `extensions.json`: it starts off
 /// ([`midi_is_off_unless_devices_were_set_up`]).
 fn enable_midi(data: &Path) {
@@ -234,9 +232,11 @@ fn enable_midi(data: &Path) {
     Store::new(data).set_enabled(MIDI, true, &[MIDI]).unwrap();
 }
 
+/// The program start's number while MIDI runs.
 fn session(e: &Editor) -> Option<u64> {
     e.extensions.get(MIDI)?.run.as_ref().map(|r| r.number)
 }
+/// Whether `device` is connected in `epoch` in the current program start.
 fn connected(e: &Editor, device: &str, epoch: u64) -> bool {
     e.extensions
         .get(MIDI)

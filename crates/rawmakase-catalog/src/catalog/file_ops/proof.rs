@@ -34,7 +34,8 @@ pub(in crate::catalog) enum Proof {
     /// By file id, on a volume that keeps them.
     #[default]
     Ids,
-    /// By exact name, size and SHA-256, on FAT and exFAT.
+    /// By exact name, size and SHA-256, on FAT, exFAT and SMB shares
+    /// ([`of`]).
     Names,
 }
 
@@ -51,7 +52,7 @@ pub(in crate::catalog) struct Proofs {
     #[serde(default)]
     pub copies: Proof,
     /// Its copies are made at their final names: their volume has no
-    /// exclusive rename (macOS's exFAT).
+    /// exclusive rename (macOS's exFAT, an SMB share).
     #[serde(default)]
     pub direct: bool,
     /// When it was planned, in seconds since 1970: an empty file left where

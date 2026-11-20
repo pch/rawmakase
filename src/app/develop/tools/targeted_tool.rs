@@ -161,7 +161,7 @@ impl Editor {
             target_icon(ui.painter(), at, 9., Color32::WHITE);
         }
     }
-    /// Starts a drag at (`u`, `v`) of the shown photo, sampling the color there.
+    /// Starts a drag at `at` (0–1) of the shown photo, sampling the color there.
     fn start_targeted_drag(&mut self, target: Target, at: [f32; 2]) {
         self.view.targeted = Some(TargetDrag {
             target,

@@ -1120,8 +1120,9 @@ mod tests {
     /// renders, above
     /// white too, and half a frame's mask changes only its half; its Contrast and Color
     /// leave light above white alone, its Whites lifts light above white too, and
-    /// Sharpness and Noise leave tone alone. Blacks, Hue, Saturation and Highlights
-    /// refuse the master by name, and the GPU leaves a masked master to the CPU.
+    /// Sharpness and Noise leave tone alone; negative Saturation renders too. Blacks,
+    /// Hue, Highlights and Saturation above +50 refuse the master by name, and the GPU
+    /// leaves a masked master to the CPU.
     #[test]
     fn a_mask_renders_in_the_master_with_the_global_sliders_it_shares() -> Result<()> {
         use crate::develop::pipeline::pixel_params::supported_hdr;

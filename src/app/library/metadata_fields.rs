@@ -214,13 +214,13 @@ impl Library {
         self.fields.reload();
         Ok(())
     }
-    /// Reads the values shown when the photos shown changed or were edited,
-    /// first saving what was typed for the ones before.
     /// Whether a metadata field holds typing not saved yet, for photos shown.
     pub(super) fn has_unsaved_fields(&self) -> bool {
         let f = &self.fields;
         !f.targets.is_empty() && !f.saved && (f.drafts != f.untouched() || f.edited.any())
     }
+    /// Reads the values shown when the photos shown changed or were edited,
+    /// first saving what was typed for the ones before.
     pub(super) fn sync_fields(&mut self) {
         let targets = self.field_targets();
         if targets == self.fields.targets && !self.fields.stale {

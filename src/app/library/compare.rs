@@ -53,8 +53,6 @@ impl Library {
     pub(crate) fn compare_open(&self) -> bool {
         self.compare.open
     }
-    /// C: the active photo as the select, beside the next photo selected
-    /// with it, or else the next one shown.
     /// Compare's select and candidate, and which is active, for the keyboard
     /// shortcut pins.
     // The pins don't run on Windows (`shell::workspace`).
@@ -66,6 +64,8 @@ impl Library {
             self.compare.active.name(),
         )
     }
+    /// C: the active photo as the select, beside the next photo selected
+    /// with it, or else the next one shown.
     pub(crate) fn open_compare(&mut self) {
         let Some(select) = self
             .selection

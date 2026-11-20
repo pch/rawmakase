@@ -1,6 +1,6 @@
 //! The zoom of the photo views, shared by Develop and the Library's Loupe, and
 //! the slider that sets it, in place of Lightroom's Navigator (its minimap is
-//! `magnifier`'s). One `Zoom` is the view's zoom wherever the photo is shown, so
+//! `minimap`'s). One `Zoom` is the view's zoom wherever the photo is shown, so
 //! Develop, the Loupe and its JPEG/TIFF/PNG view all keep the same level and
 //! place.
 use crate::app::ui::design::{Tone, radius, text};

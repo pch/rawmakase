@@ -49,7 +49,7 @@ fn plain() -> Recipe {
     }
 }
 
-/// A brushed area around pixel (`x`, `y`) of `im`, `r` pixels wide, made by `mode`.
+/// A Heal brushed area around pixel (`x`, `y`) of `im`, with a radius of `r` pixels.
 fn brush(im: &CameraImage, x: f32, y: f32, r: f32) -> RetouchOp {
     let (w, h) = (im.width as f32, im.height as f32);
     let at = |dx: f32| [(x + dx + 0.5) / w, (y + 0.5) / h];

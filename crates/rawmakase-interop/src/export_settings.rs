@@ -114,7 +114,7 @@ impl Format {
         self.raster().mime_type()
     }
     /// The format `path`'s extension names, in any case: .jpg, .jpeg, .tif,
-    /// .tiff or .png.
+    /// .tiff, .png or .jxl.
     pub fn from_path(path: &Path) -> Option<Format> {
         let raster = RasterFormat::of(path)?;
         Self::ALL.into_iter().find(|f| f.raster() == raster)
@@ -167,7 +167,7 @@ impl Format {
         Ok(())
     }
     /// Every extension an export can have, as a sentence lists them:
-    /// ".jpg, .jpeg, .tif, .tiff or .png".
+    /// ".jpg, .jpeg, .tif, .tiff, .png or .jxl".
     pub fn extensions_listed() -> String {
         let extensions: Vec<String> = Self::ALL
             .into_iter()

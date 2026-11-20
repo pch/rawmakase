@@ -582,8 +582,8 @@ mod tests {
             output.textures_delta.clear();
             (enabled, held.contains(&c), taken.is_some())
         };
-        // The defaults: Cmd+Shift+E is the item's key on main, and AppKit
-        // runs Export… with it while typing, as a click does.
+        // The defaults: Cmd+Shift+E is the item's key, and AppKit runs
+        // Export… with it while typing, as a click does.
         typing();
         assert_eq!(press(&editor, "Cmd+Shift+E"), (true, true, false));
         // A key the user gave it waits while typing, as its bindings do, and

@@ -258,7 +258,7 @@ impl Catalog {
         Ok((added.added, added.report))
     }
     /// Adds a folder's new photos with the metadata of their XMP sidecars and
-    /// of the XMP inside JPEGs and TIFFs, then the default Creator and
+    /// of the XMP inside their files, then the default Creator and
     /// Copyright where neither the file nor its sidecar has one. Photos
     /// already in the catalog are left alone; Read Metadata from Files reads
     /// theirs.
@@ -959,7 +959,7 @@ pub(in crate::catalog) fn folder_id(
     Ok(id)
 }
 
-/// The photo files below `folder`: RAWs, JPEGs, PNGs and TIFFs, not hidden
+/// The photo files below `folder` ([`crate::storage::is_photo`]), not hidden
 /// and not through a symbolic link.
 pub(in crate::catalog) fn walk(folder: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
@@ -1363,12 +1363,6 @@ impl Matcher {
     }
 }
 
-/// Removes catalog folders `folders` in `w`'s transaction, with their
-/// photos and those photos' virtual copies (wherever they are), edits and
-/// metadata; their roots stay, even with no folder left. Nothing on disk
-/// is touched. Returns the photos removed, sorted. Ungated: its callers
-/// decide that the rows may go (Remove Folder from Catalog, or a folder
-/// proven in the Trash).
 /// [`Catalog::remove_folders`] in `w`'s transaction.
 pub(in crate::catalog) fn remove_folders(
     w: &mut Write<'_>,
@@ -1391,6 +1385,12 @@ pub(in crate::catalog) fn remove_folders(
     }
     Ok(photos)
 }
+/// Removes catalog folders `folders` in `w`'s transaction, with their
+/// photos and those photos' virtual copies (wherever they are), edits and
+/// metadata; their roots stay, even with no folder left. Nothing on disk
+/// is touched. Returns the photos removed, sorted. Ungated: its callers
+/// decide that the rows may go (Remove Folder from Catalog, or a folder
+/// proven in the Trash).
 pub(in crate::catalog) fn remove_folder_rows(
     w: &mut Write<'_>,
     folders: &[FolderId],

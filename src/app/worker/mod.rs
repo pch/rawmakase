@@ -121,7 +121,6 @@ pub(crate) enum Event {
     /// Export as Catalog finished: what it wrote, nothing when the user
     /// chose no file, or why it failed.
     CatalogExported(Box<Result<Option<crate::app::catalog::export_catalog::Exported>, String>>),
-    /// A file operation was planned (see `app::file_ops`).
     /// What export file names need from the photos' files, for the read
     /// `request` (see `app::export::naming::read`).
     NamesRead {
@@ -138,7 +137,8 @@ pub(crate) enum Event {
     ),
     /// A plan of the rename dialog's names (see `app::file_ops::rename`).
     RenamePlanned(Box<crate::app::file_ops::RenamePlanned>),
-    /// The plan, and Delete's Move to Trash beside it.
+    /// A file operation was planned (see `app::file_ops`): the plan, and
+    /// Delete's Move to Trash beside it.
     FileOpPlanned(
         Box<
             Result<

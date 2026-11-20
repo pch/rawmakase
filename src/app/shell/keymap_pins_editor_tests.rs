@@ -125,7 +125,7 @@ fn photos_with(changes: &[(usize, &str)]) -> String {
 }
 
 /// The guards every shortcut but a few keeps: nothing behind a window or while a
-/// field is typed in, as today.
+/// field is typed in.
 fn assert_inert_behind_a_window_and_while_typing(key: Key, m: Modifiers, what: &str) {
     for place in [
         Place::GridModal,
@@ -1551,8 +1551,8 @@ fn extra_modifiers_no_longer_run_a_command() {
         (Compare, Key::ArrowDown, SHIFT, "compared"),
         (Survey, Key::ArrowLeft, SHIFT, "active"),
         (Survey, Key::ArrowUp, SHIFT, "active"),
-        // Not on the plan's list: Option+Shift+Y, Delete with Shift in a tool,
-        // and Undo and Redo with Alt.
+        // Option+Shift+Y, Delete with Shift in a tool, and Undo and Redo with
+        // Alt.
         (Develop, Key::Y, alt_shift, "compare"),
         (Remove, Key::Delete, SHIFT, "recipe"),
         (RedEye, Key::Backspace, SHIFT, "recipe"),

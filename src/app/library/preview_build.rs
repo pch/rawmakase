@@ -948,8 +948,6 @@ impl Editor {
         ));
     }
 
-    /// A photo leaving the catalog takes its requests along, so a later photo
-    /// given its id starts without any.
     /// Photos whose file was found moved: their queued builds of the old
     /// file are dropped, and their requests follow the file.
     pub(in crate::app) fn move_preview_intents(
@@ -969,6 +967,8 @@ impl Editor {
         }
         builder.maintain(Op::MoveIntent(catalog.clone(), moved.to_vec()));
     }
+    /// A photo leaving the catalog takes its requests along, so a later photo
+    /// given its id starts without any.
     pub(in crate::app) fn forget_preview_intent(&mut self, id: PhotoId) {
         let Some(library) = &self.library else {
             return;

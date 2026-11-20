@@ -1,5 +1,5 @@
 //! Lightroom's Profile Amount (a look's `Amount`, 0–200%), which looks that support it
-//! render at (see `CameraProfile::look_amount`).
+//! render at (see `CameraProfile::at_amount`).
 use anyhow::{Context, Result, ensure};
 
 /// The setting a parsed preset carries a look's Amount in, beside its UUID.

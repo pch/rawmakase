@@ -971,7 +971,6 @@ impl<'a> Files<'a> {
             .is_some_and(|v| v.renames_spelling)
     }
 
-    /// Folder `to`, checked to take files.
     /// The folder at logical path `logical` of `root`, checked to take
     /// files: a catalog folder, or a directory of the root the catalog has
     /// no folder for, which it gains as the photos arrive.

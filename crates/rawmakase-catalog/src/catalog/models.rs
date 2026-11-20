@@ -69,7 +69,7 @@ pub enum CollectionKind {
     Set,
     /// A collection, or a saved print, book, slideshow or web creation.
     Collection,
-    /// A smart collection, whose rules are not evaluated yet.
+    /// A smart collection: its photos are the ones its rules match.
     Smart,
     /// Lightroom's own: the Quick Collection and unsaved creations.
     System,

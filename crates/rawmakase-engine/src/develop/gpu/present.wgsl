@@ -70,7 +70,7 @@ fn sharpen(@builtin(global_invocation_id) id: vec3<u32>) {
     pixels[3u * i + 2u] = result.b;
 }
 
-// `effects::hash`: integer hash to [-1, 1].
+// `grain::hash`: integer hash to [-1, 1].
 fn hash(x: i32, y: i32, seed: u32) -> f32 {
     var v = (bitcast<u32>(x) * 0x9e3779b9u) ^ (bitcast<u32>(y) * 0x85ebca6bu) ^ seed;
     v ^= v >> 16u;

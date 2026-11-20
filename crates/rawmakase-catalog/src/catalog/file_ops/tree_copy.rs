@@ -259,9 +259,9 @@ fn apple_double(
 }
 
 /// Plans copying folder `source` into folder `dir` of volume `volume` on
-/// `disk`, whose names compare by `rules`: refused unless both volumes'
-/// file ids are proven, every name below it can be copied, and `dir`'s
-/// volume has room for it.
+/// `disk`, whose names compare by `rules`: refused unless both volumes
+/// can prove which file a name is ([`proof::of`]), every name below it can
+/// be copied, and `dir`'s volume has room for it.
 pub(super) fn plan(
     disk: &dyn Disk,
     source: &Path,

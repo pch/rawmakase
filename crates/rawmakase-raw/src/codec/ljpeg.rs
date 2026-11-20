@@ -277,7 +277,6 @@ struct Slot<'a> {
     j: usize,
 }
 
-/// Decodes the stream.
 fn decode_with(
     h: &Header,
     data: &[u8],

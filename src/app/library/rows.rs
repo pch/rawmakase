@@ -5,7 +5,6 @@ use crate::app::ui::design::{self, Tone, size, space, text};
 use crate::app::ui::theme;
 use eframe::egui::{self, Color32};
 
-/// The height of a row.
 pub(super) const ROW: f32 = size::ROW;
 /// The caption's right edge, from the row's left.
 const CAPTION_RIGHT: f32 = 84.;

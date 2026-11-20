@@ -33,7 +33,7 @@ impl Opened {
 }
 
 /// Opens `path` as a RAW when its extension is a RAW's, otherwise as a
-/// JPEG, PNG or TIFF. A rendered file opens as the scene its default rendering is of
+/// rendered file ([`raster`]). A rendered file opens as the scene its default rendering is of
 /// (`develop::rendered`), which Develop renders as a raw scene.
 pub fn open_source(path: &Path, cancel: Cancel<'_>) -> Result<Opened> {
     match source(path) {
@@ -49,7 +49,7 @@ pub fn open_source(path: &Path, cancel: Cancel<'_>) -> Result<Opened> {
 }
 
 /// What [`open_source`] opens `path` as, told from its name alone: a RAW, or
-/// a rendered JPEG, PNG or TIFF.
+/// a rendered file.
 pub fn source(path: &Path) -> Source {
     if rawmakase_model::storage::is_raw(path) {
         Source::Raw

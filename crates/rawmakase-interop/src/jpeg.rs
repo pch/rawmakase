@@ -71,7 +71,7 @@ impl<R: Read + Seek> Segments<R> {
             length,
         }))
     }
-    /// The reader, at the data of the segment `next` returned last.
+    /// The reader, at the data of the segment [`Segments::next_segment`] returned last.
     pub fn reader(&mut self) -> &mut R {
         &mut self.reader
     }

@@ -40,8 +40,8 @@ pub(in crate::app::library) type Worker<J, R> = (J, Receiver<R>, JoinHandle<()>)
 
 /// The thumbnail workers, which end once their requests or their results
 /// are dropped: a few side by side (see [`thumbnail_threads`]), so one slow
-/// file or disk doesn't hold up the rest. They run at normal priority, as the
-/// one worker did, so the grid fills before edited previews are rendered.
+/// file or disk doesn't hold up the rest. They run at normal priority, so the
+/// grid fills before edited previews are rendered.
 pub(in crate::app::library) fn spawn(
     cache_path: PathBuf,
     ctx: egui::Context,
@@ -68,9 +68,9 @@ pub(super) fn spawn_with(
             Ok(cache) => (Some(cache), None),
             Err(error) => (None, Some(error.to_string())),
         };
-        // A connection each. The first is opened here, as the one worker's
-        // was, and makes the database; the others on their first request, so
-        // a worker that is never asked opens nothing and ends at once.
+        // A connection each. The first is opened here and makes the
+        // database; the others on their first request, so a worker that is
+        // never asked opens nothing and ends at once.
         let first = open();
         let rx = Mutex::new(rx);
         let work = |opened: Option<(Option<PreviewCache>, Option<String>)>| {

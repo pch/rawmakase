@@ -338,7 +338,6 @@ impl RetouchCache {
         self.image = None;
         self.change = None;
     }
-    /// What the last change replaced, and where the images differ.
     /// Whether `image` is what the last change replaced; then the current image
     /// differs from it only in the returned rectangles.
     pub(crate) fn changed_from(&self, image: &Arc<CameraImage>) -> Option<&[PixelRect]> {

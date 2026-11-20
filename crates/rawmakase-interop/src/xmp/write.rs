@@ -87,7 +87,6 @@ fn number(value: f32, decimals: usize, signed: bool) -> String {
 
 pub(super) struct Settings(pub(super) Vec<(String, String)>);
 impl Settings {
-    /// `value` in recipe units, written as `value / scale`.
     /// `slider` at `value` (in recipe units) in Lightroom's units, with `decimals`
     /// decimals and, when `signed`, a `+` on positive values.
     fn put(&mut self, slider: crs::Slider, value: f32, decimals: usize, signed: bool) {

@@ -54,7 +54,7 @@ const NIGHT: (f32, f32) = (0.08, 0.14);
 
 /// Which edge modes [`blend`] ran for a photo, and how long they took with their
 /// weighing and mixing: the time the sky's edge costs beyond the model's answer
-/// snapped as main snaps it.
+/// [`snapped`] to the photo's edges.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct Modes {
     pub sparse: bool,

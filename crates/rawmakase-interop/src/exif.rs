@@ -362,8 +362,8 @@ pub fn read_for_names(path: &Path) -> Option<CameraExif> {
     directories(path, |tag| MAIN.contains(&tag) || tag == SOFTWARE)
 }
 
-/// The EXIF Make and Model of a JPEG, TIFF, PNG or TIFF-based RAW, trimmed, each
-/// empty when missing; `None` when the file has no EXIF at all.
+/// The EXIF Make and Model of any file [`photo_info`] reads, trimmed, each empty
+/// when missing; `None` when the file has no EXIF at all.
 pub fn camera_names(path: &Path) -> Option<(String, String)> {
     Some(directories(path, |tag| tag == MAKE || tag == MODEL)?.camera_names())
 }

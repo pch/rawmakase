@@ -49,7 +49,6 @@ impl Library {
     pub(super) fn surveyed(&self) -> Vec<PhotoId> {
         self.selected_ids()
     }
-    /// Left/Up and Right/Down: the photo before or after becomes active.
     /// The photos surveyed that are shown: all of them, or the `MOST` up to
     /// and including the active photo.
     pub(super) fn shown_surveyed(&self) -> Vec<PhotoId> {
@@ -62,6 +61,7 @@ impl Library {
         let start = (at + 1).saturating_sub(MOST);
         ids.into_iter().skip(start).take(MOST).collect()
     }
+    /// Left/Up and Right/Down: the photo before or after becomes active.
     pub(super) fn step_surveyed(&mut self, by: isize) {
         let ids = self.surveyed();
         let Some(at) = self

@@ -4,7 +4,6 @@ use crate::catalog::ListedKeyword;
 use crate::metadata::keyword_key;
 use std::collections::HashMap;
 
-/// The most suggestions shown at once.
 pub(super) const MAX_SUGGESTIONS: usize = 10;
 
 /// A keyword offered for the name being typed.

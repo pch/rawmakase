@@ -14,12 +14,12 @@ const ASPECT_INFO: u16 = 0x9a;
 const COLOR_DATA: u16 = 0x4001;
 const LIGHTING_OPT: u16 = 0x4018;
 
-/// Where a ColorData version keeps the as-shot, daylight and shade levels
-/// (red, green, green, blue each), in 16-bit words.
 /// The ColorData values read: up to version 32's SpecularWhiteLevel, the
 /// furthest (811).
 const COLOR_DATA_USED: usize = 812;
 
+/// Where a ColorData version keeps the as-shot, daylight and shade levels
+/// (red, green, green, blue each), in 16-bit words.
 fn color_data_layout(version: u32) -> Option<(usize, usize, usize)> {
     match version {
         16..=19 => Some((71, 136, 141)),

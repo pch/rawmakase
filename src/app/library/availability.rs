@@ -57,7 +57,6 @@ impl Availability {
         self.forget_count();
         true
     }
-    /// Whether a check is still running.
     pub(super) fn checking(&self) -> bool {
         self.checking.is_some()
     }

@@ -732,9 +732,6 @@ impl PreviewCache {
             .optional()?
             .is_some())
     }
-    /// Forgets the requests for these catalog photos: of `kind`, or of every
-    /// kind when the photos left the catalog, so a later photo that reuses an
-    /// id starts without any.
     /// Points `photo`'s requests at its file's new path, after the file was
     /// found moved, so its previews are built from there.
     pub fn move_intent(
@@ -749,6 +746,9 @@ impl PreviewCache {
         )?;
         Ok(())
     }
+    /// Forgets the requests for these catalog photos: of `kind`, or of every
+    /// kind when the photos left the catalog, so a later photo that reuses an
+    /// id starts without any.
     pub fn forget_intent(
         &mut self,
         catalog: &CatalogLocation,

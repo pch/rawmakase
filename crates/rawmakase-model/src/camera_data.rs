@@ -369,7 +369,7 @@ impl HighlightTonePriority {
 /// (LibRaw's AHD and Markesteijn, saved as `"Libraw"`) reads as it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Demosaic {
-    /// RAWmakase's own demosaic of the unpacked sensor data (`crate::demosaic`).
+    /// RAWmakase's own demosaic of the unpacked sensor data (`rawmakase_decode`'s `demosaic`).
     #[default]
     #[serde(alias = "Libraw")]
     Rawmakase,
@@ -395,13 +395,13 @@ impl crate::metadata::PhotoInfo {
     pub fn from_metadata(m: &Metadata) -> Self {
         let positive = |v: f32| (v > 0.).then_some(v as f64);
         let text = |t: &str| (!t.trim().is_empty()).then(|| t.trim().to_string());
-        // LibRaw's flip 5 and 6 are quarter turns.
         // The camera's default crop is the frame shown, when it has one.
         let (w, h) = if m.crop_width > 0 && m.crop_height > 0 {
             (m.crop_width, m.crop_height)
         } else {
             (m.width, m.height)
         };
+        // LibRaw's flip 5 and 6 are quarter turns.
         let (w, h) = if matches!(m.flip, 5 | 6) {
             (h, w)
         } else {

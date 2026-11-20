@@ -40,7 +40,6 @@ def main():
 
     try:
         while True:
-            # wait for first message
             while (m := mi.get_message()) is None:
                 time.sleep(0.002)
             gesture, last = [m[0]], time.time()

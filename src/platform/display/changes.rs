@@ -273,12 +273,12 @@ impl Drop for Watcher {
     }
 }
 
-/// A top-level window that is never shown, for the `WM_DISPLAYCHANGE` Windows
-/// sends every top-level window (a message-only window gets no broadcasts).
 /// What the hidden window calls on `WM_DISPLAYCHANGE`, sized so that the
 /// window's user data can point at it.
 struct Callback(Arc<dyn Fn() + Send + Sync>);
 
+/// A top-level window that is never shown, for the `WM_DISPLAYCHANGE` Windows
+/// sends every top-level window (a message-only window gets no broadcasts).
 fn hidden_window(changed: *const Callback) -> HWND {
     let class: Vec<u16> = "RAWmakase display changes"
         .encode_utf16()

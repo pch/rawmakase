@@ -69,7 +69,6 @@ fn an_update_publishes_a_new_version_beside_the_old() -> Result<()> {
         ["1793180205", "1800000000", "installed.json"]
     );
     assert_eq!(installed::load(dir.path())?.db.timestamp, NEW);
-    // Old enough, it goes.
     // Out of use long enough (the manifest naming another version that old), it goes.
     for name in ["1793180205", MANIFEST] {
         set_time(

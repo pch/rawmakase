@@ -25,16 +25,17 @@ use crate::info::Presets;
 use crate::io::Order;
 use rawmakase_tiff::kind;
 
-/// The CameraSettings, ImageProcessing and (older notes') RawInfo
+/// The Equipment, CameraSettings, ImageProcessing and (older notes') RawInfo
 /// directories.
 const EQUIPMENT: u16 = 0x2010;
 const CAMERA_SETTINGS: u16 = 0x2020;
 const IMAGE_PROCESSING: u16 = 0x2040;
 const RAW_INFO: u16 = 0x3000;
-/// The main directory's thumbnail; CameraSettings' preview start and length.
+/// The main directory's thumbnail.
 const THUMBNAIL: u16 = 0x0100;
 /// Equipment's lens name.
 const LENS_MODEL: u16 = 0x0203;
+/// CameraSettings' preview start and length.
 const PREVIEW: [u16; 2] = [0x0101, 0x0102];
 /// ImageProcessing's and RawInfo's white balance as shot, and the presets
 /// RAWmakase has always read as fine weather, D65 and shade: ImageProcessing's

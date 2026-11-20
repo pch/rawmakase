@@ -622,9 +622,7 @@ def summarise(scores):
 # than 3 L* off (rule 2). Colour families always take the regression rule, with
 # per-photo limits of their own: half the 90th percentile of the family's
 # per-photo ΔE00 in `main`'s baseline, between 1.0 and 2.0 (the tone limits).
-# The colour families' limits: half the 90th percentile of the
-# family's per-photo ΔE00 in `main`'s baseline, between 1.0 and 2.0 (the tone
-# rule's range). Derived with `color-limits` from main 418d0ca7's validation
+# Derived with `color-limits` from main 418d0ca7's validation
 # scores (Camera Raw 18.7, all three sources); frozen, change only with a reason.
 COLOR_LIMITS = {'color-wb': 1.9, 'color-vibrance': 2.0, 'color-mixer-skin': 1.4, 'color-mixer-sky': 2.0,
                 'color-mixer-foliage': 2.0, 'color-grading': 1.7}

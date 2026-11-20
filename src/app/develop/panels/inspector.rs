@@ -337,9 +337,6 @@ impl Editor {
                 .on_hover_text(hover);
         });
     }
-    /// The open tool's drawer, in place of Develop's adjustments: Crop's
-    /// settings, or Remove's, Red Eye's or Masking's. Its tools are on the
-    /// rail.
     /// The open tool's drawer title: the app's name for its own tools, and
     /// a generator's own name for its tool. None without a drawer.
     pub(in crate::app) fn drawer_caption(&self) -> Option<String> {
@@ -352,6 +349,9 @@ impl Editor {
             .find(|(t, ..)| *t == tool)
             .map(|(.., name)| (*name).to_string())
     }
+    /// The open tool's drawer, in place of Develop's adjustments: Crop's
+    /// settings, or Remove's, Red Eye's or Masking's. Its tools are on the
+    /// rail.
     pub(in crate::app) fn tool_drawer(&mut self, ui: &mut egui::Ui) {
         let Some(name) = self.drawer_caption() else {
             return;
@@ -1170,8 +1170,8 @@ fn eyedropper_icon(painter: &egui::Painter, c: Pos2, strong: bool) {
     let color = theme::palette(painter.ctx()).tone(if strong { Tone::STRONG } else { Tone::LABEL });
     icons::paint_at(painter, Icon::Eyedropper, c, 14., color);
 }
-/// The line that opens the Remove and Masking drawers: both tools are new.
-/// What the experimental label's tooltip says about a tool.
+/// What the experimental label's tooltip says in the Remove and Masking drawers:
+/// both tools are new.
 const UNMEASURED: &str = "Not yet measured against Lightroom. Spots and masks are saved apart \
      from the rest of the edit, so older RAWmakase releases open the photo without them.";
 const RED_EYE_NOTE: &str = "Fitted to Camera Raw on synthetic eyes. Corrections are saved apart \
@@ -1399,7 +1399,8 @@ fn spread(
 mod histogram_tests {
     use super::*;
 
-    /// The SDR histogram's bars are as before: 256 across, each its bin's count.
+    /// The SDR histogram's bars are 256 across the histogram, each its bin's count
+    /// smoothed with its neighbours'; the two at each end don't set the scale.
     #[test]
     fn sdr_bars_span_the_histogram() {
         let mut bins = [[0u32; 256]; 3];

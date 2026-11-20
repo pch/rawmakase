@@ -1,5 +1,5 @@
 //! Colour management of what RAWmakase shows and exports, in pure Rust: the
-//! sRGB profile exports embed, and the transform from 8-bit sRGB to a
+//! ICC profiles exports embed, and the transform from 8-bit sRGB to a
 //! monitor's ICC profile (relative colorimetric with black-point
 //! compensation).
 //!

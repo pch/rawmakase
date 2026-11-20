@@ -515,10 +515,9 @@ impl Editor {
         badge(ui, panes.after.clip, "After");
         Some(rect)
     }
-    /// Draws the render of the side beside the edit, the whole photo at `rect` and a
-    /// 100% region over it, or a spinner while it has none.
     /// Draws the side beside the edit, Before or the reference photo, at `rect` in
-    /// `pane`: its SDR rendition, and its HDR master over it when that is due.
+    /// `pane`: the whole photo and a 100% region over it, or a spinner while it has
+    /// neither. Each is its SDR rendition, with its HDR master over it when that is due.
     pub(in crate::app) fn paint_second_side(
         &mut self,
         ui: &egui::Ui,

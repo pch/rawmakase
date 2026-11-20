@@ -67,7 +67,7 @@ def white_xyz(mired, tint):
     return np.array([x / y, 1, (1 - x - y) / y])
 
 
-def gains(white):  # white_balance::camera_white_balance, log2
+def gains(white):  # log2, Bradford-adapted as the module docstring describes
     cone = BRADFORD @ white
     d50 = BRADFORD @ D50
     adapted = np.linalg.solve(BRADFORD, d50 * d50 / cone)

@@ -106,8 +106,8 @@ fn spearman(pairs: &[(f32, f32)]) -> f32 {
     (ab / (aa * bb).sqrt()) as f32
 }
 
-/// The fewest held-out pairs, and the least share of them in colour (chroma above
-/// 10), a colour look must be judged on.
+/// The fewest held-out pairs any look is judged on, and, for a colour look, the
+/// least share of them in colour (chroma above 10).
 const MIN_PAIRS: usize = 256;
 const MIN_COLOURED: f32 = 0.05;
 

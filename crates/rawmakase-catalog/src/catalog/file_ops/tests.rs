@@ -212,11 +212,9 @@ impl Fx {
         let plan = self.plan(op);
         execute::execute_with(&mut self.cat, plan.confirm(), trash, Cancel::NEVER, disk).unwrap()
     }
-    /// Recovers on `disk`.
     pub(super) fn recover(&mut self, disk: &dyn Disk) -> Recovery {
         self.recover_with(disk, &NoTrash)
     }
-    /// Recovers on `disk`, with `trash`.
     pub(super) fn recover_with(&mut self, disk: &dyn Disk, trash: &dyn Trash) -> Recovery {
         let _lock = lock::acquire(&self.cat).unwrap();
         recover::run(&mut self.cat, disk, trash).unwrap()

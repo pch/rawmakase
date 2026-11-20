@@ -53,10 +53,10 @@ mod models;
 mod naming;
 mod recipe_assets;
 mod rule_inputs;
+mod sequences;
 #[cfg(any(test, feature = "test-support"))]
 pub mod upgrade_fixtures;
 // XMP metadata sidecars; `legacy_sidecar` is the old `*.rawmakase.json` edits.
-mod sequences;
 mod sidecar;
 mod snapshots;
 mod stacks;

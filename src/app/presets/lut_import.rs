@@ -14,7 +14,6 @@ impl Editor {
     pub(in crate::app) fn open_lut_import(&mut self) {
         self.lut_import = Some(LutSpace::Srgb);
     }
-    /// Whether the Import LUTs window is open.
     pub(in crate::app) fn lut_import_open(&self) -> bool {
         self.lut_import.is_some()
     }

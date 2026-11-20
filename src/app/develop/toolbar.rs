@@ -373,8 +373,6 @@ impl Editor {
     }
 }
 
-/// The toolbar's Photo button, a toolbar button like the rest with a chevron
-/// for its menu.
 /// The frame of a photo view's toolbar, Develop's and the Library Loupe's: on the
 /// photo's backdrop with no rule, the canvas's own margin spacing it from the
 /// photo.

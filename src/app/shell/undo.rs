@@ -543,9 +543,6 @@ impl Editor {
             }
         }
     }
-    /// Writes a Library command with `write` and returns to where it was
-    /// made: `place` in the Library, or `develop`, the photo open in Develop.
-    /// False when nothing could be written.
     /// [`Self::apply`] for a [`Command::CollectionTree`], which keeps what
     /// Undo deletes for Redo, and the other way round.
     fn apply_tree(&mut self, change: &mut CollectionTreeCommand, direction: Direction) -> bool {
@@ -559,6 +556,9 @@ impl Editor {
             library.apply_tree(tree, direction == Direction::Undo)
         })
     }
+    /// Writes a Library command with `write` and returns to where it was
+    /// made: `place` in the Library, or `develop`, the photo open in Develop.
+    /// False when nothing could be written.
     fn apply_library(
         &mut self,
         verb: &str,

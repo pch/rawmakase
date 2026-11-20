@@ -223,10 +223,10 @@ fn a100(t: &TiffFile) -> Result<RawInfo> {
     Ok(info)
 }
 
-/// The strips or tiles of the raw image, and the tile size.
 /// Each strip's or tile's (offset, length) in the file.
 type Chunks = Vec<(u64, u64)>;
 
+/// The tile size, and the strips or tiles of the raw image.
 fn chunks(t: &TiffFile, ifd: &Ifd, width: u32, height: u32) -> Result<([u32; 2], Chunks)> {
     let (offsets, counts, tile) = match (t.int(ifd, 322), t.int(ifd, 323)) {
         (Some(tw), Some(th)) => {

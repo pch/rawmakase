@@ -1,7 +1,7 @@
 //! Export: developing photos with the renderer (crates/rawmakase-engine), from
-//! their full-size decode (crates/rawmakase-decode), and writing JPEG and 16-bit
-//! TIFF files with their metadata and text or image watermarks. It builds without
-//! the desktop app.
+//! their full-size decode (crates/rawmakase-decode), and writing JPEG, TIFF, PNG
+//! and JPEG XL files with their metadata and text or image watermarks. It builds
+//! without the desktop app.
 #[cfg(test)]
 use rawmakase_catalog::catalog;
 use rawmakase_decode::ai::denoise as ai_denoise;

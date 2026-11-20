@@ -34,7 +34,6 @@ pub(crate) fn zeroed(n: usize) -> Result<Vec<u16>> {
     Ok(v)
 }
 
-/// Byte order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Order {
     Little,

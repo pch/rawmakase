@@ -482,8 +482,8 @@ mod tests {
         let read = Group::from_json(&later).unwrap();
         assert_eq!(read.to_json(), later);
     }
-    /// Review, round 1: a named key that looks like a position stays a
-    /// named key through the JSON form.
+    /// A named key that looks like a position stays a named key through the
+    /// JSON form.
     #[test]
     fn positional_and_bracketed_keys_survive_json() {
         for future in [

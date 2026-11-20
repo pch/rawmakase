@@ -46,7 +46,6 @@ const XTRANS: [[u8; 6]; 6] = [
 /// 4` of position `p`) that are coded; the others are interpolated.
 const CODED: [[u8; 2]; 6] = [[10, 15], [15, 10], [14, 10], [15, 11], [11, 15], [10, 14]];
 
-/// The stream's header.
 #[derive(Clone, Copy, Debug)]
 struct Header {
     lossless: bool,

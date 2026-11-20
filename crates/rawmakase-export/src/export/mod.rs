@@ -185,8 +185,8 @@ pub fn export_image(
     write(path, source, image, m, options, embed, replace)
 }
 
-/// Exports `pixels` to `path`: [`export_image`] of an SDR render, an HDR TIFF of an
-/// HDR master.
+/// Exports `pixels` to `path`: [`export_image`] of an SDR render, [`stage_pixels`] of
+/// an HDR master or a gain map.
 pub fn export_pixels(
     path: &Path,
     source: &Path,
@@ -293,7 +293,8 @@ pub fn stage(
     stage_image(path, &ExportImage::srgb(image.clone()), m, options, embed)
 }
 
-/// [`stage_image`] or, for an HDR master, [`stage_hdr`].
+/// [`stage_image`], or for an HDR master [`stage_hdr`] and for a gain map
+/// [`stage_gain_map`].
 pub fn stage_pixels(
     path: &Path,
     pixels: &Pixels,

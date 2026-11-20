@@ -496,7 +496,6 @@ impl Editor {
             self.mask_click(pos, rect, to_image(pos), near_pin(pos), shape.as_ref(), ui);
         }
 
-        // Drawing.
         let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
         if let Some(s) = &shape {
             draw_shape(&painter, s, space, &to_screen);

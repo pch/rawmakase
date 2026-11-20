@@ -3188,10 +3188,10 @@ mod tests {
         }
     }
 
-    /// ImageIO's own samples of the fixtures' maps (`CGImageSourceCopyAuxiliaryDataInfoAtIndex`,
-    /// macOS 27.2), 8-bit grey of 32 × 24: their sum, and the sample at some (x, y).
     /// A map's sample at (x, y), as an 8-bit code.
     type MapSample = (u32, u32, u8);
+    /// ImageIO's own samples of the fixtures' maps (`CGImageSourceCopyAuxiliaryDataInfoAtIndex`,
+    /// macOS 27.2), 8-bit grey of 32 × 24: their sum, and the sample at some (x, y).
     const IMAGEIO_MAPS: [(&str, u32, [MapSample; 8]); 2] = [
         (
             "iso-gain-map.heic",

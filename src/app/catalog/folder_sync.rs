@@ -926,9 +926,6 @@ impl Editor {
             },
         );
     }
-    /// Applying finished: forgets removed photos, moves preview requests
-    /// with moved ones, and shows the catalog again, the open photo
-    /// following its file.
     /// Forgets photos a synchronization removed: their previews requested,
     /// their undo, and the reference if it was one of them.
     fn forget_removed(&mut self, removed: &[PhotoId]) {
@@ -940,6 +937,9 @@ impl Editor {
             self.clear_reference();
         }
     }
+    /// Applying finished: forgets removed photos, moves preview requests
+    /// with moved ones, and shows the catalog again, the open photo
+    /// following its file.
     pub(in crate::app) fn folder_synced(&mut self, result: Result<Box<Synced>, String>) {
         let synced = match result {
             Ok(synced) => synced,
@@ -2567,8 +2567,6 @@ mod tests {
         Ok(())
     }
 
-    /// Renders the review of a scenario with every kind of change to
-    /// `target/folder-sync-review.png`, for looking at the design.
     /// Moves `name` out of the trip folder to a directory outside every
     /// root, as another volume would: new time. Returns its new path.
     fn move_out(trip: &std::path::Path, name: &str) -> anyhow::Result<PathBuf> {

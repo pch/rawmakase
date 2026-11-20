@@ -28,7 +28,7 @@ const FILTER: u16 = 0xfa15;
 const DATA: u16 = 0xfd04;
 /// The bytes before a strip's rows.
 const STRIP_HEADER: u32 = 64;
-/// WhiteBalance, and the Daylight and Shade levels.
+/// WhiteBalance, and the Auto, Daylight and Shade levels.
 const WHITE_BALANCE: u16 = 0xfa0d;
 const AUTO: u16 = 0xfa25;
 const DAYLIGHT: u16 = 0xfa29;

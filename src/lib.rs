@@ -22,7 +22,6 @@
 //! The repository's `docs/code-map.md` maps implementation files and runtime flows,
 //! and `docs/architecture.md` records ownership rules. This library exists for the
 //! RAWmakase binary, its examples and its tests; it is not a stable public API.
-// The values a photo's edit is made of, built on their own (crates/rawmakase-model).
 // The catalog (crates/rawmakase-catalog).
 pub use rawmakase_catalog::catalog;
 // Rendering (crates/rawmakase-engine).
@@ -45,6 +44,7 @@ pub(crate) use rawmakase_denoise::model_install;
 pub use rawmakase_interop::{
     edits, exif, export_settings, jpeg, keyword_sets, lr_develop, presets, raw_defaults, xmp,
 };
+// The values a photo's edit is made of, built on their own (crates/rawmakase-model).
 pub(crate) use rawmakase_model::time;
 pub use rawmakase_model::{
     camera_data, camera_profiles, cameras, collection_rules, color, dng, ids, lens, metadata,

@@ -1047,7 +1047,7 @@ fn folders(dirs: &[&Option<PathBuf>], subfolder: &str) -> Option<String> {
 fn looks_in(lines: Vec<String>) -> Option<String> {
     (!lines.is_empty()).then(|| format!("Looks in\n{}", lines.join("\n")))
 }
-/// The button that opens the default catalog, made on first use.
+/// The label of the button that opens the default catalog, made on first use.
 fn default_catalog_label(path: &std::path::Path) -> &'static str {
     if path.exists() {
         "Open the Photos catalog"

@@ -179,7 +179,6 @@ impl Editor {
                 }
             });
         }
-        // Pointer input.
         if response.drag_started()
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
         {
@@ -273,7 +272,6 @@ impl Editor {
             }
         }
 
-        // Drawing.
         let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
         let tool = &self.view.retouch;
         for (i, op) in self.document.edit.recipe().retouch.iter().enumerate() {

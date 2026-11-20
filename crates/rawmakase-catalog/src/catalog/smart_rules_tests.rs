@@ -209,7 +209,7 @@ fn export_as_catalog_prunes_synonyms_with_their_keywords() -> Result<()> {
 }
 
 /// A recipe with a camera profile is stored with the profile as a
-/// reference: Cropped and Treatment still read it (review, round 1).
+/// reference: Cropped and Treatment still read it.
 #[test]
 fn edit_facts_read_recipes_that_name_their_profile() -> Result<()> {
     let (_d, mut cat, photo) = catalog_with_photo()?;

@@ -1,4 +1,3 @@
-//! The operation lock.
 use super::tests::{Faulty, NoTrash, fixture};
 use super::*;
 use crate::catalog::Catalog;
