@@ -390,6 +390,31 @@ impl Library {
         self.record_collection(id, add, Vec::new(), summary)
     }
 
+    /// Takes `photos` out of collection `id`, whichever collection is
+    /// shown, as one undoable step: Remove from Collection for a collection
+    /// not shown, as a control command asks. Photos not in it are left alone.
+    pub(in crate::app) fn take_out_of_collection(
+        &mut self,
+        id: CollectionId,
+        photos: Vec<PhotoId>,
+    ) -> Result<()> {
+        let members = self.session.collection_photos().get(&id);
+        let remove: Vec<PhotoId> = photos
+            .into_iter()
+            .filter(|p| members.is_some_and(|m| m.contains(p)))
+            .collect();
+        let name = self.collection_name(id);
+        if remove.is_empty() {
+            self.messages.note(format!("Not in “{name}”"));
+            return Ok(());
+        }
+        let summary = format!(
+            "Removed from “{name}” · {}",
+            plural(remove.len(), "photo", "photos")
+        );
+        self.record_collection(id, Vec::new(), remove, summary)
+    }
+
     /// Undoes (`undo`) or redoes a [`TreeChange`], keeping in it what the
     /// other direction needs.
     pub(in crate::app) fn apply_tree(&mut self, change: &mut TreeChange, undo: bool) -> Result<()> {

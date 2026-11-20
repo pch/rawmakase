@@ -70,6 +70,7 @@ impl Place {
 pub(in crate::app) use cell::copy_suffix;
 pub(crate) use collection_edit::CollectionTreeCommand;
 pub(in crate::app) use collection_edit::NewCollection;
+pub(in crate::app) use collections::ListedCollection;
 pub(crate) use descriptive::DescriptiveCommand;
 pub(in crate::app) use descriptive::parse_keywords;
 pub(crate) use filmstrip::{DraggedPhoto, Module, Pick};

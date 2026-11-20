@@ -459,6 +459,8 @@ impl Editor {
 }
 
 #[cfg(test)]
+mod collection_tests;
+#[cfg(test)]
 mod mcp_tests;
 #[cfg(test)]
 mod tests;

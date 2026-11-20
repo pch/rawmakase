@@ -1,7 +1,10 @@
 //! MCP is a protocol adapter: all editing stays in the running Editor.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use rawmakase_ctl::{Connection, default_data_dir};
-use rawmakase_protocol::{Request, request::Until};
+use rawmakase_protocol::{
+    Request,
+    request::{CollectionKind, Until},
+};
 use rmcp::{
     RoleServer, ServerHandler, ServiceExt,
     handler::server::wrapper::Parameters,
@@ -57,9 +60,37 @@ struct McpTarget {
 struct PhotoQuery {
     /// Filename substring; omit to list the catalog.
     query: Option<String>,
+    /// Only photos captured on this day, month or year: 2026-09-25, 2026-09 or 2026.
+    captured: Option<String>,
     offset: Option<usize>,
     /// At most 500 photos; defaults to 100.
     limit: Option<usize>,
+}
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct NewCollectionSet {
+    /// Name, unused among the collections and sets beside it.
+    name: String,
+    /// Collection set to make it in, by id from list_collections; omit for the top level.
+    parent_id: Option<i64>,
+}
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct NewCollection {
+    /// Name, unused among the collections and sets beside it.
+    name: String,
+    /// Collection set to make it in, by id from list_collections; omit for the top level.
+    parent_id: Option<i64>,
+    /// Catalog photo ids from find_photos to put in it; omit for an empty collection.
+    photo_ids: Option<Vec<i64>>,
+}
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct CollectionPhotos {
+    /// Collection id from list_collections.
+    collection_id: i64,
+    /// Catalog photo ids from find_photos; at least one.
+    photo_ids: Vec<i64>,
 }
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -306,7 +337,7 @@ impl Server {
         self.send(Request::Capabilities, None).await
     }
     #[tool(
-        description = "Find catalog photos by filename and return IDs for open_photo.",
+        description = "Find catalog photos by filename and/or capture date, and return their IDs (for open_photo and the collection tools) and capture times.",
         annotations(read_only_hint = true)
     )]
     async fn find_photos(&self, Parameters(p): Parameters<PhotoQuery>) -> CallToolResult {
@@ -314,6 +345,67 @@ impl Server {
             query: Some(p.query.unwrap_or_default()),
             offset: Some(p.offset.unwrap_or(0) as u64),
             limit: Some(p.limit.unwrap_or(100) as u64),
+            captured: p.captured,
+        };
+        self.send(request, None).await
+    }
+    #[tool(
+        description = "List the catalog's collection sets, collections and smart collections, as the Collections panel shows them: id, name, kind (set, collection or smart), parent_id, photo count and whether photos can be added (takes_photos). A set counts every photo in it once; a smart collection's count is null while it is worked out (smart: pending) or when its rules can't be evaluated (smart: unsupported).",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_collections(&self) -> CallToolResult {
+        self.send(Request::Collections, None).await
+    }
+    #[tool(
+        description = "Create a collection set, at the top level or inside another set, as one undoable step. Returns it with its id. A name already used beside it fails with already_exists, naming that set's id."
+    )]
+    async fn create_collection_set(
+        &self,
+        Parameters(p): Parameters<NewCollectionSet>,
+    ) -> CallToolResult {
+        let request = Request::CreateCollection {
+            kind: CollectionKind::Set,
+            name: p.name,
+            parent_id: p.parent_id,
+            photo_ids: Vec::new(),
+        };
+        self.send(request, None).await
+    }
+    #[tool(
+        description = "Create a collection, at the top level or inside a collection set, optionally with photos in it, as one undoable step (like Create Collection with Include selected photos). Files on disk are not touched. Returns it with its id and photo count. A name already used beside it fails with already_exists, naming that collection's id."
+    )]
+    async fn create_collection(&self, Parameters(p): Parameters<NewCollection>) -> CallToolResult {
+        let request = Request::CreateCollection {
+            kind: CollectionKind::Collection,
+            name: p.name,
+            parent_id: p.parent_id,
+            photo_ids: p.photo_ids.unwrap_or_default(),
+        };
+        self.send(request, None).await
+    }
+    #[tool(
+        description = "Add catalog photos to a collection, after its last photo, as one undoable step. Photos already in it are left as they are; files on disk are not touched. Returns the collection and how many were added."
+    )]
+    async fn add_to_collection(
+        &self,
+        Parameters(p): Parameters<CollectionPhotos>,
+    ) -> CallToolResult {
+        let request = Request::AddToCollection {
+            collection_id: p.collection_id,
+            photo_ids: p.photo_ids,
+        };
+        self.send(request, None).await
+    }
+    #[tool(
+        description = "Take photos out of a collection as one undoable step. They stay in the catalog, in other collections and on disk. Returns the collection and how many were removed."
+    )]
+    async fn remove_from_collection(
+        &self,
+        Parameters(p): Parameters<CollectionPhotos>,
+    ) -> CallToolResult {
+        let request = Request::RemoveFromCollection {
+            collection_id: p.collection_id,
+            photo_ids: p.photo_ids,
         };
         self.send(request, None).await
     }

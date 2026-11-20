@@ -67,6 +67,60 @@ pub enum Request {
             skip_serializing_if = "Option::is_none"
         )]
         limit: Option<u64>,
+        /// Only photos captured on this day, month or year: `2026-09-25`,
+        /// `2026-09` or `2026`, by the capture time the catalog holds. Every
+        /// photo when left out; any other text is refused.
+        #[serde(
+            default,
+            deserialize_with = "captured",
+            skip_serializing_if = "Option::is_none"
+        )]
+        captured: Option<String>,
+    },
+    /// The collection sets, collections and smart collections, as the
+    /// Collections panel shows them.
+    Collections,
+    /// Makes a collection or a collection set named `name`, at the top or in
+    /// set `parent_id`; a collection may be made with `photo_ids` in it.
+    CreateCollection {
+        /// A collection (the default) or a collection set.
+        #[serde(default, deserialize_with = "collection_kind")]
+        kind: CollectionKind,
+        /// The name, unused among the collections and sets beside it.
+        #[serde(deserialize_with = "name")]
+        name: String,
+        /// The set it goes in, by its id from `collections`; the top when left out.
+        #[serde(
+            default,
+            deserialize_with = "parent_id",
+            skip_serializing_if = "Option::is_none"
+        )]
+        parent_id: Option<i64>,
+        /// Catalog photos to put in a new collection; a set takes none.
+        #[serde(
+            default,
+            deserialize_with = "photo_ids",
+            skip_serializing_if = "Vec::is_empty"
+        )]
+        photo_ids: Vec<i64>,
+    },
+    /// Adds catalog photos to a collection, after its last photo.
+    AddToCollection {
+        /// The collection's id, from `collections`.
+        #[serde(deserialize_with = "collection_id")]
+        collection_id: i64,
+        /// The photos, by catalog id; at least one.
+        #[serde(deserialize_with = "some_photo_ids")]
+        photo_ids: Vec<i64>,
+    },
+    /// Takes photos out of a collection; they stay in the catalog and on disk.
+    RemoveFromCollection {
+        /// The collection's id, from `collections`.
+        #[serde(deserialize_with = "collection_id")]
+        collection_id: i64,
+        /// The photos, by catalog id; at least one.
+        #[serde(deserialize_with = "some_photo_ids")]
+        photo_ids: Vec<i64>,
     },
     /// The develop presets, of one group or all.
     Presets {
@@ -296,6 +350,17 @@ pub enum ColorSpace {
     Prophoto,
 }
 
+/// What a `create_collection` command makes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectionKind {
+    /// A collection, which holds photos.
+    #[default]
+    Collection,
+    /// A collection set, which holds collections and other sets.
+    Set,
+}
+
 /// The previews a `build_previews` command builds.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -414,6 +479,58 @@ fn job_id<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
 }
 fn photo_id<'de, D: Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
     integer(d, "photo_id", 1, i64::MAX)
+}
+fn collection_id<'de, D: Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
+    integer(d, "collection_id", 1, i64::MAX)
+}
+fn parent_id<'de, D: Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
+    integer(d, "parent_id", 1, i64::MAX).map(Some)
+}
+fn name<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    string(d, "name")
+}
+fn collection_kind<'de, D: Deserializer<'de>>(d: D) -> Result<CollectionKind, D::Error> {
+    or(d, "kind must be collection or set")
+}
+fn photo_ids<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<i64>, D::Error> {
+    let ids: Vec<i64> = or(d, "photo_ids must be an array of catalog photo ids")?;
+    if ids.iter().any(|id| *id < 1) {
+        return Err(D::Error::custom("photo_ids must be catalog photo ids"));
+    }
+    Ok(ids)
+}
+fn some_photo_ids<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<i64>, D::Error> {
+    let ids = photo_ids(d)?;
+    if ids.is_empty() {
+        return Err(D::Error::custom("photo_ids must name at least one photo"));
+    }
+    Ok(ids)
+}
+/// A capture day, month or year, `YYYY[-MM[-DD]]`, as the catalog's capture
+/// times begin.
+fn captured<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    let text: String = or(d, "captured must be a date: YYYY-MM-DD, YYYY-MM or YYYY")?;
+    let digits =
+        |part: &str, len: usize| part.len() == len && part.bytes().all(|b| b.is_ascii_digit());
+    let parts: Vec<&str> = text.split('-').collect();
+    let valid = match parts[..] {
+        [year] => digits(year, 4),
+        [year, month] => digits(year, 4) && digits(month, 2) && ("01"..="12").contains(&month),
+        [year, month, day] => {
+            digits(year, 4)
+                && digits(month, 2)
+                && ("01"..="12").contains(&month)
+                && digits(day, 2)
+                && ("01"..="31").contains(&day)
+        }
+        _ => false,
+    };
+    if !valid {
+        return Err(D::Error::custom(
+            "captured must be a date: YYYY-MM-DD, YYYY-MM or YYYY",
+        ));
+    }
+    Ok(Some(text))
 }
 fn timeout_ms<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
     integer(d, "timeout_ms", 1, MAX_WAIT_MS as i64).map(|n| Some(n as u64))
@@ -582,7 +699,8 @@ mod tests {
             Request::Photos {
                 query: None,
                 offset: None,
-                limit: None
+                limit: None,
+                captured: None,
             }
         );
         assert_eq!(
@@ -590,7 +708,8 @@ mod tests {
             Request::Photos {
                 query: None,
                 offset: None,
-                limit: None
+                limit: None,
+                captured: None,
             }
         );
         assert_eq!(
@@ -738,5 +857,88 @@ mod tests {
             }
         );
         assert!(parse(json!({"cmd":"build_previews","kind":"huge"})).is_err());
+    }
+
+    /// Collections are named by their ids and photos by theirs; a capture
+    /// date must be a whole day, month or year.
+    #[test]
+    fn collection_requests_and_capture_dates_parse_strictly() {
+        assert_eq!(
+            parse(json!({"cmd":"collections"})).unwrap(),
+            Request::Collections
+        );
+        assert_eq!(
+            parse(json!({"cmd":"create_collection","name":"Kansai trip","kind":"set"})).unwrap(),
+            Request::CreateCollection {
+                kind: CollectionKind::Set,
+                name: "Kansai trip".into(),
+                parent_id: None,
+                photo_ids: Vec::new(),
+            }
+        );
+        assert_eq!(
+            parse(
+                json!({"cmd":"create_collection","name":"09-25","parent_id":4,"photo_ids":[1,2]})
+            )
+            .unwrap(),
+            Request::CreateCollection {
+                kind: CollectionKind::Collection,
+                name: "09-25".into(),
+                parent_id: Some(4),
+                photo_ids: vec![1, 2],
+            }
+        );
+        assert_eq!(
+            parse(json!({"cmd":"remove_from_collection","collection_id":3,"photo_ids":[9]}))
+                .unwrap(),
+            Request::RemoveFromCollection {
+                collection_id: 3,
+                photo_ids: vec![9],
+            }
+        );
+        for (value, message) in [
+            (json!({"cmd":"create_collection"}), "missing field `name`"),
+            (
+                json!({"cmd":"create_collection","name":"a","kind":"smart"}),
+                "kind must be collection or set",
+            ),
+            (
+                json!({"cmd":"create_collection","name":"a","parent_id":"4"}),
+                "parent_id must be an integer",
+            ),
+            (
+                json!({"cmd":"add_to_collection","collection_id":3,"photo_ids":[]}),
+                "at least one photo",
+            ),
+            (
+                json!({"cmd":"add_to_collection","collection_id":3,"photo_ids":[0]}),
+                "catalog photo ids",
+            ),
+            (
+                json!({"cmd":"add_to_collection","photo_ids":[1]}),
+                "missing field `collection_id`",
+            ),
+            (
+                json!({"cmd":"photos","captured":"25/09/2026"}),
+                "YYYY-MM-DD",
+            ),
+            (json!({"cmd":"photos","captured":"2026-13"}), "YYYY-MM-DD"),
+            (json!({"cmd":"photos","captured":"2026-09-5"}), "YYYY-MM-DD"),
+            (json!({"cmd":"photos","captured":20260925}), "YYYY-MM-DD"),
+        ] {
+            let error = parse(value.clone()).unwrap_err();
+            assert!(error.contains(message), "{value}: {error}");
+        }
+        for date in ["2026", "2026-09", "2026-09-25"] {
+            assert_eq!(
+                parse(json!({"cmd":"photos","captured":date})).unwrap(),
+                Request::Photos {
+                    query: None,
+                    offset: None,
+                    limit: None,
+                    captured: Some(date.into()),
+                }
+            );
+        }
     }
 }

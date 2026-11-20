@@ -125,7 +125,11 @@ there is no separate MCP authentication flow. MCP opens no network listener.
 | --- | --- |
 | `get_capabilities` | Lists parameter names, displayed units/ranges, supported actions and curve limits |
 | `get_state` | Reads current photo, generation/revision, values, curves, masks, loading and saving state |
-| `find_photos` | Searches catalog filenames with pagination |
+| `find_photos` | Searches catalog filenames and capture dates (`captured`: `2026-09-25`, `2026-09` or `2026`) with pagination |
+| `list_collections` | Lists collection sets, collections and smart collections with ids, parents and photo counts |
+| `create_collection_set` | Makes a collection set, at the top or in another set, and returns its id |
+| `create_collection` | Makes a collection, at the top or in a set, optionally with `photo_ids` in it, and returns its id |
+| `add_to_collection`, `remove_from_collection` | Puts photos in a collection or takes them out; files on disk are not touched |
 | `open_photo` | Opens a catalog ID and waits up to 30 seconds for decoding |
 | `set_parameter` | Sets exposure, contrast, highlights, shadows, whites, blacks, temperature, tint, texture, clarity, dehaze, vibrance, saturation, straighten or a color-mixer channel |
 | `set_tone_curve` | Sets RGB, red, green or blue point curves; one channel per undo step |
@@ -188,6 +192,22 @@ Auto tools start background work. Poll `get_state` until `auto_running` is false
 then inspect the resulting values, the state’s `message`, and a preview; starting an operation does not
 prove that its background calculation succeeded. Black-and-white conversions
 may also report `treatment_pending`. Read fresh guards after background work.
+
+### Organising collections
+
+Ask your agent:
+
+> Make a collection set for the Kansai trip, with one collection per day.
+
+The agent can call `create_collection_set`, then for each day `find_photos`
+with that day's `captured` date and `create_collection` with the set's id as
+`parent_id` and the photos' ids, and finally `list_collections` to check the
+counts. Each call is one undoable step, as the Library's Create Collection is.
+A name already used in the same place fails with `already_exists`, naming the
+one there. The collection tools need no target guards. Photo ids sent in one
+call are bounded by the request limit of 64 KiB, several thousand ids; send
+more in further `add_to_collection` calls. Smart collections, renaming, moving
+and deleting stay in the Library.
 
 ## Completion and limits
 

@@ -1,5 +1,6 @@
 //! Application operations shared by UI, MIDI and the authenticated local API.
 //! Adapters translate input; only the Editor executes commands and owns history.
+mod collection;
 mod output;
 mod parameter;
 mod preset;
@@ -131,8 +132,26 @@ pub(in crate::app) enum Operation {
     Capabilities,
     Photos {
         query: String,
+        /// Only photos whose capture time begins with this: a day, month or year.
+        captured: Option<String>,
         offset: usize,
         limit: usize,
+    },
+    /// The collections and sets, as the Collections panel shows them.
+    Collections,
+    /// Create Collection… (`set` false, with `photos` as Include selected
+    /// photos puts them in) or Create Collection Set….
+    CreateCollection {
+        set: bool,
+        name: String,
+        parent: Option<crate::catalog::CollectionId>,
+        photos: Vec<PhotoId>,
+    },
+    /// Adds `photos` to `collection` (`add`) or takes them out of it.
+    ChangeCollection {
+        collection: crate::catalog::CollectionId,
+        photos: Vec<PhotoId>,
+        add: bool,
     },
     /// The develop presets, of one group or all.
     Presets {
@@ -574,6 +593,10 @@ impl Editor {
                         "state",
                         "capabilities",
                         "photos",
+                        "collections",
+                        "create_collection",
+                        "add_to_collection",
+                        "remove_from_collection",
                         "presets",
                         "preset",
                         "curve",
@@ -606,6 +629,7 @@ impl Editor {
 
             Operation::Photos {
                 query,
+                captured,
                 offset,
                 limit,
             } => {
@@ -618,7 +642,7 @@ impl Editor {
                     .session
                     .photos()
                     .iter()
-                    .filter(|p| query.is_empty() || p.filename.to_lowercase().contains(&query))
+                    .filter(|p| lists_photo(p, &query, captured.as_deref()))
                     .collect();
                 let photos = all
                     .iter()
@@ -632,6 +656,26 @@ impl Editor {
                     photos,
                 });
             }
+            Operation::Collections => {
+                let library = self
+                    .library
+                    .as_ref()
+                    .ok_or_else(|| Error::new("no_catalog", "No catalog is open"))?;
+                return Ok(Outcome::Collections {
+                    collections: library.listed_collections(),
+                });
+            }
+            Operation::CreateCollection {
+                set,
+                name,
+                parent,
+                photos,
+            } => return self.command_create_collection(set, &name, parent, photos),
+            Operation::ChangeCollection {
+                collection,
+                photos,
+                add,
+            } => return self.command_change_collection(collection, photos, add),
             Operation::BuildPreviews(kind) => {
                 if self.activity.is_busy() || self.command_modal() {
                     return Err(Error::new(
@@ -869,6 +913,9 @@ impl Editor {
             Operation::State
             | Operation::Capabilities
             | Operation::Photos { .. }
+            | Operation::Collections
+            | Operation::CreateCollection { .. }
+            | Operation::ChangeCollection { .. }
             | Operation::Presets { .. }
             | Operation::Job(_)
             | Operation::Extension(_)
@@ -1254,6 +1301,14 @@ impl Editor {
 /// The photos a name stands for: the filename or the path, in any case, with or
 /// without the extension; else the ones whose name contains it. A master wins
 /// over its virtual copies, which share its filename.
+/// Whether `photos` lists `p`: its file name holds `query` (in lower case)
+/// and its capture time begins with `captured`, a day, month or year
+/// (`2026-09-25`). A photo with no capture time matches no date.
+fn lists_photo(p: &Photo, query: &str, captured: Option<&str>) -> bool {
+    (query.is_empty() || p.filename.to_lowercase().contains(query))
+        && captured.is_none_or(|day| p.captured.starts_with(day))
+}
+
 fn find_photos<'a>(photos: &'a [Photo], name: &str) -> Vec<&'a Photo> {
     let wanted = name.trim().to_lowercase();
     let by_path = wanted.contains(['/', '\\']);

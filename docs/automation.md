@@ -34,6 +34,36 @@ The optional standalone client, `rawmakase-ctl`, has the same arguments without
 `control`; build it from this repository with
 `cargo install --locked --path tools/rawmakase-ctl`.
 
+Collections and collection sets can be listed, made and filled without the
+Library's dialogs. Each change is one undoable step, as the Collections panel
+makes it, and files on disk are never touched:
+
+```sh
+rawmakase control photos --captured 2026-09-25
+rawmakase control collections
+rawmakase control create-collection --set "Kansai trip"
+rawmakase control create-collection "09-25 Nara" --parent 12 101 102 103
+rawmakase control add-to-collection 13 104 105
+rawmakase control remove-from-collection 13 101
+```
+
+`photos --captured` takes a day, month or year (`2026-09-25`, `2026-09`,
+`2026`) and matches the capture time the catalog holds; each photo's
+`captured` is listed beside its id. `collections` lists the sets, collections
+and smart collections as the Collections panel shows them (the Quick
+Collection and Lightroom's unsaved creations aren't listed), each set before
+what is in it, with `id`, `name`, `kind` (`set`, `collection` or `smart`),
+`parent_id`, `photos` and `takes_photos`. A set's `photos` counts every photo
+in it once. A smart collection's `photos` is `null` while its photos are
+worked out (`smart: "pending"`) or when its rules can't be evaluated
+(`smart: "unsupported"`). A collection is made with the photos given, as
+Create Collection's Include selected photos does; a set takes none. A name
+already used in the same place is refused with `already_exists`, whose
+message names the id of the one there. Adding a photo already in the
+collection, or taking out one not in it, leaves it as it is; the reply counts
+the photos `added` or `removed`. Smart collections are made and edited in the
+Library; renaming, moving and deleting collections stay there too.
+
 `open` waits for decoding by default. `--no-wait` returns when opening starts;
 `--timeout` sets the wait limit. `photo next`, `photo prev` and `develop` initiate
 navigation; inspect `loaded` before editing. `photos` returns IDs, filenames,
@@ -209,7 +239,10 @@ use target guards for a sequence that must refer to the same edit.
 | --- | --- | --- |
 | `state` | — | State snapshot |
 | `capabilities` | — | Protocol, actions, parameters, ranges and scope support |
-| `photos` | optional `query`, `offset`, `limit` (maximum 500) | Catalog entries and total |
+| `photos` | optional `query`, `offset`, `limit` (maximum 500), `captured` (`YYYY-MM-DD`, `YYYY-MM` or `YYYY`) | Catalog entries, each with its `captured` time, and total |
+| `collections` | — | `collections`: sets, collections and smart collections, each set before its contents |
+| `create_collection` | `name`; optional `kind`: `collection` (the default) or `set`, `parent_id` (a set's id), `photo_ids` (a collection's photos) | `created`: the new collection or set, as `collections` lists it |
+| `add_to_collection`, `remove_from_collection` | `collection_id`, `photo_ids` (at least one) | `collection` as `collections` lists it, and the photos `added` and `removed` |
 | `presets` | optional `group` | Develop presets: `id`, `name`, `group`, `builtin`, `issue` |
 | `preset` | `id`, or `name` with optional `group`; optional `target` | `applied` preset and skipped settings |
 | `set` | `param`, finite `value`, optional `target` | Post-edit state |
@@ -251,7 +284,7 @@ different command ends that group. Auto tone and white-balance commands return
 Common error codes include `invalid_request`, `unsupported_protocol`,
 `unauthorized`, `adapter_disabled`, `busy`, `stale_target`, `target_required`, `no_document`,
 `not_ready`, `unsupported_parameter`, `not_editable`, `protected`, `save_failed`,
-`already_exists` and `unknown_job`. `open` returns `not_editable` for a photo whose
+`already_exists`, `not_found`, `no_catalog` and `unknown_job`. `open` returns `not_editable` for a photo whose
 file is offline, or a JPEG, PNG or TIFF Develop can't edit (a CMYK JPEG, say);
 any other JPEG, PNG or TIFF opens as a RAW does. On a JPEG, PNG or TIFF,
 `temperature` and `tint` move its relative Temp and Tint (−100 to 100).

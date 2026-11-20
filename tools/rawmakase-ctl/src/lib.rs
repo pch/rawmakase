@@ -9,7 +9,7 @@
 // and clients build on.
 #![warn(missing_docs)]
 use clap::{Parser, Subcommand};
-use rawmakase_protocol::request::{MAX_TICKS, Module, Press};
+use rawmakase_protocol::request::{CollectionKind, MAX_TICKS, Module, Press};
 use rawmakase_protocol::{Endpoint, PROTOCOL, Request, Target};
 use serde_json::{Value, json};
 use std::{
@@ -72,6 +72,39 @@ enum Command {
         offset: usize,
         #[arg(long, default_value_t = 100)]
         limit: usize,
+        /// Only photos captured on this day, month or year: 2026-09-25,
+        /// 2026-09 or 2026
+        #[arg(long, value_name = "DATE")]
+        captured: Option<String>,
+    },
+    /// List collection sets, collections and smart collections with their
+    /// ids, parents and photo counts
+    Collections,
+    /// Make a collection, with the photos given in it, or with --set a
+    /// collection set; one undoable step. Prints the new collection and its id.
+    CreateCollection {
+        name: String,
+        /// Catalog photo ids to put in the collection, as `photos` lists them
+        #[arg(conflicts_with = "set")]
+        photo_ids: Vec<i64>,
+        /// The collection set to make it in, by id; the top level otherwise
+        #[arg(long, value_name = "SET_ID")]
+        parent: Option<i64>,
+        /// Make a collection set, which holds collections, not photos
+        #[arg(long)]
+        set: bool,
+    },
+    /// Add catalog photos to a collection; files on disk are not touched
+    AddToCollection {
+        collection_id: i64,
+        #[arg(required = true)]
+        photo_ids: Vec<i64>,
+    },
+    /// Take photos out of a collection; they stay in the catalog and on disk
+    RemoveFromCollection {
+        collection_id: i64,
+        #[arg(required = true)]
+        photo_ids: Vec<i64>,
     },
     /// List develop presets with their ids, groups and fit for the open photo
     Presets {
@@ -390,10 +423,42 @@ fn commands(command: &Command) -> Result<Vec<Request>, String> {
             query,
             offset,
             limit,
+            captured,
         } => vec![Request::Photos {
             query: Some(query.clone()),
             offset: Some(*offset as u64),
             limit: Some(*limit as u64),
+            captured: captured.clone(),
+        }],
+        Command::Collections => vec![Request::Collections],
+        Command::CreateCollection {
+            name,
+            photo_ids,
+            parent,
+            set,
+        } => vec![Request::CreateCollection {
+            kind: if *set {
+                CollectionKind::Set
+            } else {
+                CollectionKind::Collection
+            },
+            name: name.clone(),
+            parent_id: *parent,
+            photo_ids: photo_ids.clone(),
+        }],
+        Command::AddToCollection {
+            collection_id,
+            photo_ids,
+        } => vec![Request::AddToCollection {
+            collection_id: *collection_id,
+            photo_ids: photo_ids.clone(),
+        }],
+        Command::RemoveFromCollection {
+            collection_id,
+            photo_ids,
+        } => vec![Request::RemoveFromCollection {
+            collection_id: *collection_id,
+            photo_ids: photo_ids.clone(),
         }],
         Command::Presets { group } => vec![Request::Presets {
             group: group.clone(),
@@ -625,6 +690,10 @@ pub fn run(cli: Cli) -> Result<(), String> {
     match &cli.command {
         Command::Capabilities
         | Command::Photos { .. }
+        | Command::Collections
+        | Command::CreateCollection { .. }
+        | Command::AddToCollection { .. }
+        | Command::RemoveFromCollection { .. }
         | Command::Presets { .. }
         | Command::Preset { .. }
         | Command::Job { .. }
@@ -696,6 +765,7 @@ mod tests {
             (vec!["rawmakase-ctl", "job", "1"], "job"),
             (vec!["rawmakase-ctl", "presets"], "presets"),
             (vec!["rawmakase-ctl", "build-previews"], "build_previews"),
+            (vec!["rawmakase-ctl", "collections"], "collections"),
             (
                 vec!["rawmakase-ctl", "build-previews", "--kind", "one-to-one"],
                 "build_previews",
@@ -792,6 +862,45 @@ mod tests {
         );
         let bad = Cli::try_parse_from(["rawmakase-ctl", "open", "--id", "x"]).unwrap();
         assert!(requests(&bad.command).is_err());
+    }
+
+    #[test]
+    fn collection_commands_become_requests() {
+        let parse = |args: &[&str]| {
+            let mut all = vec!["rawmakase-ctl"];
+            all.extend_from_slice(args);
+            requests(&Cli::try_parse_from(all).unwrap().command).unwrap()
+        };
+        assert_eq!(
+            parse(&["photos", "--captured", "2026-09-25"]),
+            [
+                json!({"cmd": "photos", "query": "", "offset": 0, "limit": 100, "captured": "2026-09-25"})
+            ]
+        );
+        assert_eq!(
+            parse(&["create-collection", "--set", "Kansai trip"]),
+            [json!({"cmd": "create_collection", "kind": "set", "name": "Kansai trip"})]
+        );
+        assert_eq!(
+            parse(&["create-collection", "09-25", "--parent", "4", "7", "8"]),
+            [
+                json!({"cmd": "create_collection", "kind": "collection", "name": "09-25",
+                    "parent_id": 4, "photo_ids": [7, 8]})
+            ]
+        );
+        assert_eq!(
+            parse(&["add-to-collection", "5", "7", "8"]),
+            [json!({"cmd": "add_to_collection", "collection_id": 5, "photo_ids": [7, 8]})]
+        );
+        assert_eq!(
+            parse(&["remove-from-collection", "5", "8"]),
+            [json!({"cmd": "remove_from_collection", "collection_id": 5, "photo_ids": [8]})]
+        );
+        // A set takes no photos, and a change names at least one.
+        assert!(
+            Cli::try_parse_from(["rawmakase-ctl", "create-collection", "--set", "a", "7"]).is_err()
+        );
+        assert!(Cli::try_parse_from(["rawmakase-ctl", "add-to-collection", "5"]).is_err());
     }
 
     #[test]

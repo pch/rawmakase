@@ -4,7 +4,7 @@ use super::{Input, Msg, Sender, parse_action, resolve};
 use crate::app::shell::commands::{
     self, Command, Error, Operation, Param, PhotoTarget, PresetTarget, Target, Until,
 };
-use crate::catalog::PhotoId;
+use crate::catalog::{CollectionId, PhotoId};
 use eframe::egui;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -105,12 +105,42 @@ fn messages(request: &Value) -> commands::Result<Vec<Msg>> {
             query,
             offset,
             limit,
+            captured,
         } => Operation::Photos {
             query: query.unwrap_or_default(),
+            captured,
             offset: offset.unwrap_or(0).min(usize::MAX as u64) as usize,
             limit: limit
                 .unwrap_or(wire::DEFAULT_PHOTOS)
                 .clamp(1, wire::MAX_PHOTOS) as usize,
+        },
+        Request::Collections => Operation::Collections,
+        Request::CreateCollection {
+            kind,
+            name,
+            parent_id,
+            photo_ids,
+        } => Operation::CreateCollection {
+            set: kind == wire::CollectionKind::Set,
+            name,
+            parent: parent_id.map(CollectionId),
+            photos: photo_ids.into_iter().map(PhotoId).collect(),
+        },
+        Request::AddToCollection {
+            collection_id,
+            photo_ids,
+        } => Operation::ChangeCollection {
+            collection: CollectionId(collection_id),
+            photos: photo_ids.into_iter().map(PhotoId).collect(),
+            add: true,
+        },
+        Request::RemoveFromCollection {
+            collection_id,
+            photo_ids,
+        } => Operation::ChangeCollection {
+            collection: CollectionId(collection_id),
+            photos: photo_ids.into_iter().map(PhotoId).collect(),
+            add: false,
         },
         Request::Presets { group } => Operation::Presets { group },
         Request::Preset { id, name, group } => Operation::Preset(match (id, name) {
