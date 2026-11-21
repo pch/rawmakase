@@ -535,6 +535,45 @@ fn the_queue_runs_one_batch_at_a_time_and_a_waiting_one_can_be_removed() -> Resu
 }
 
 #[test]
+fn a_batch_that_panics_outside_its_photos_fails_and_the_queue_runs_the_next() -> Result<()> {
+    let f = fixture(&["a.dng"])?;
+    let photos = f.batch_photos()?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    // The status callback panics once on the queue's thread, where the batch
+    // reports its start: outside the panic catch each photo has of its own.
+    let submitter = std::thread::current().id();
+    let panicked = Arc::new(AtomicBool::new(false));
+    let queue = crate::export::queue::Queue::new(
+        move |ticket, outcomes| {
+            let _ = tx.send((ticket, outcomes));
+        },
+        move || {
+            if std::thread::current().id() != submitter && !panicked.swap(true, Ordering::Relaxed) {
+                panic!("status callback");
+            }
+        },
+    );
+    let batch = |name: &str| f.batch(photos.clone(), settings(&f.out().join(name)));
+    let first = queue.submit(batch("first"));
+    let second = queue.submit(batch("second"));
+    let wait = std::time::Duration::from_secs(120);
+    let (ticket, outcomes) = rx.recv_timeout(wait)?;
+    assert_eq!(ticket, first);
+    assert!(
+        matches!(&outcomes[..], [Outcome::Failed(_)]),
+        "{outcomes:?}"
+    );
+    let (ticket, outcomes) = rx.recv_timeout(wait)?;
+    assert_eq!(ticket, second);
+    assert!(
+        matches!(&outcomes[..], [Outcome::Exported { .. }]),
+        "{outcomes:?}"
+    );
+    assert!(!queue.busy());
+    Ok(())
+}
+
+#[test]
 fn closing_the_queue_stops_its_thread_and_starts_no_waiting_batch() -> Result<()> {
     let f = fixture(&["a.dng", "b.dng"])?;
     let photos = f.batch_photos()?;
