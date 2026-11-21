@@ -62,16 +62,23 @@ impl Queue {
         let worker = shared.clone();
         let thread = std::thread::spawn(move || {
             while let Some((ticket, batch, cancel)) = worker.next() {
-                (worker.changed)();
                 // Each photo's panic is caught by the batch, which keeps the others'
-                // outcomes.
-                let outcomes = batch::run(&batch, Cancel::new(&cancel), |progress| {
-                    if let Ok(mut state) = worker.state.lock()
-                        && let Some(running) = &mut state.running
-                    {
-                        running.progress = progress;
-                    }
+                // outcomes. A panic outside them (here, the status callback) fails the
+                // whole batch, so the queue still clears it and runs the next one.
+                let outcomes = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     (worker.changed)();
+                    batch::run(&batch, Cancel::new(&cancel), |progress| {
+                        if let Ok(mut state) = worker.state.lock()
+                            && let Some(running) = &mut state.running
+                        {
+                            running.progress = progress;
+                        }
+                        (worker.changed)();
+                    })
+                }))
+                .unwrap_or_else(|_| {
+                    let failed = Outcome::Failed("the export failed unexpectedly".into());
+                    vec![failed; batch.photos.len()]
                 });
                 if let Ok(mut state) = worker.state.lock() {
                     state.running = None;
