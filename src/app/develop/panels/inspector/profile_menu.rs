@@ -1,15 +1,18 @@
-//! The Profile menu's profiles: those the listing puts at the top level, in name
-//! order, then a submenu for each group of looks, as Lightroom's profile browser
-//! groups them. Where each profile goes is the listing's answer
-//! ([`Groups::entry`]); this only lays the answers out.
+//! The Profile menu's profiles: the favourites first, then those the listing puts
+//! at the top level, in name order, then a submenu for each group of looks that
+//! Manage Profiles doesn't hide, as Lightroom's profile browser groups them. Where
+//! each profile goes is the listing's answer ([`Groups::entry`]); this only lays
+//! the answers out.
+use crate::app::presets::profile_manager::MenuChoices;
 use crate::camera_profiles::{CameraProfile, Groups, MenuEntry};
 use eframe::egui;
 use std::sync::Arc;
 
-/// The menu's layout: the top level's profiles, then each group with its sections
-/// (the one without a heading first) and their profiles.
+/// The menu's layout: the favourites, the top level's profiles, then each group
+/// shown with its sections (the one without a heading first) and their profiles.
 #[derive(Debug, PartialEq)]
 struct Layout<'a> {
+    favorites: Vec<(String, &'a Arc<CameraProfile>)>,
     top: Vec<(String, &'a Arc<CameraProfile>)>,
     groups: Vec<Group<'a>>,
 }
@@ -17,8 +20,15 @@ type Section<'a> = (Option<String>, Vec<(String, &'a Arc<CameraProfile>)>);
 type Group<'a> = (String, Vec<Section<'a>>);
 
 /// Groups and sections sort by name, ignoring case; profiles keep the listing's
-/// order, which is by name.
-fn layout<'a>(profiles: &'a [Arc<CameraProfile>], groups: &Groups) -> Layout<'a> {
+/// order, which is by name. A favourite is listed first and in its place too, as
+/// Lightroom's Favorites group does; a favourite in a hidden group is still listed
+/// first.
+fn layout<'a>(
+    profiles: &'a [Arc<CameraProfile>],
+    groups: &Groups,
+    choices: &MenuChoices,
+) -> Layout<'a> {
+    let mut favorites = Vec::new();
     let mut top = Vec::new();
     let mut grouped: Vec<Group<'a>> = Vec::new();
     for profile in profiles {
@@ -27,6 +37,16 @@ fn layout<'a>(profiles: &'a [Arc<CameraProfile>], groups: &Groups) -> Layout<'a>
             section,
             title,
         } = groups.entry(profile);
+        let uuid = profile.enhanced.as_ref().map(|look| look.uuid.as_str());
+        if choices.favorite(&profile.name, uuid) {
+            favorites.push((title.clone(), profile));
+        }
+        if group
+            .as_ref()
+            .is_some_and(|g| choices.hidden_groups.contains(g))
+        {
+            continue;
+        }
         let Some(group) = group else {
             top.push((title, profile));
             continue;
@@ -50,6 +70,7 @@ fn layout<'a>(profiles: &'a [Arc<CameraProfile>], groups: &Groups) -> Layout<'a>
         sections.sort_by_key(|(name, _)| name.as_deref().map(key));
     }
     Layout {
+        favorites,
         top,
         groups: grouped,
     }
@@ -62,8 +83,20 @@ pub(super) fn items(
     selected: &mut Option<Arc<CameraProfile>>,
     profiles: &[Arc<CameraProfile>],
     groups: &Groups,
+    choices: &MenuChoices,
 ) {
-    let Layout { top, groups } = layout(profiles, groups);
+    let Layout {
+        favorites,
+        top,
+        groups,
+    } = layout(profiles, groups, choices);
+    if !favorites.is_empty() {
+        ui.label(egui::RichText::new("Favorites").small().weak());
+        for (title, profile) in favorites {
+            choice(ui, selected, profile, title);
+        }
+        ui.separator();
+    }
     for (title, profile) in top {
         choice(ui, selected, profile, title);
     }
@@ -156,7 +189,8 @@ mod tests {
     #[test]
     fn looks_go_in_a_submenu_per_group_and_the_rest_stay_on_top() {
         let listed = library();
-        let layout = layout(&listed.profiles, &listed.groups);
+        let layout = layout(&listed.profiles, &listed.groups, &MenuChoices::default());
+        assert!(layout.favorites.is_empty());
         assert_eq!(
             names(&layout.top),
             [
@@ -181,6 +215,47 @@ mod tests {
                 ("Pack B", vec!["Cool", "Portra", "Warm"]),
             ]
         );
+    }
+
+    /// A hidden group leaves the menu with its looks, and favourites come first,
+    /// from the top level and from groups, hidden ones included.
+    #[test]
+    fn hidden_groups_leave_the_menu_and_favourites_come_first() {
+        let listed = library();
+        let key = |name: &str| {
+            let p = listed.profiles.iter().find(|p| p.name == name).unwrap();
+            crate::camera_profiles::manage::key(
+                &p.name,
+                p.enhanced.as_ref().map(|look| look.uuid.as_str()),
+            )
+        };
+        let choices = MenuChoices {
+            hidden_groups: ["Pack B".to_string()].into(),
+            favorites: [
+                key("Warm"),
+                key("Fade"),
+                key(crate::camera_profiles::open::STANDARD),
+            ]
+            .into(),
+        };
+        let layout = layout(&listed.profiles, &listed.groups, &choices);
+        assert_eq!(
+            names(&layout.favorites),
+            ["Fade", crate::camera_profiles::open::STANDARD, "Warm"]
+        );
+        assert_eq!(
+            names(&layout.top),
+            [
+                crate::camera_profiles::open::COLOR,
+                crate::camera_profiles::open::STANDARD
+            ]
+        );
+        let groups: Vec<_> = layout
+            .groups
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
+        assert_eq!(groups, ["Film", "pack a"]);
     }
 
     /// The labels painted on screen, with where they are.
@@ -220,7 +295,13 @@ mod tests {
                         .width(200.)
                         .selected_text("Profile")
                         .show_ui(ui, |ui| {
-                            items(ui, selected, &listed.profiles, &listed.groups)
+                            items(
+                                ui,
+                                selected,
+                                &listed.profiles,
+                                &listed.groups,
+                                &MenuChoices::default(),
+                            )
                         });
                 },
             );

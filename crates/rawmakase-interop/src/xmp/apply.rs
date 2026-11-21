@@ -337,23 +337,29 @@ impl Preset {
     }
     /// The imported enhanced look this preset names (Lightroom writes Adobe Color and
     /// the other Adobe looks as a `Look` over Adobe Standard). Where `resolve_profile`
-    /// falls back, Adobe Color falls back to RAWmakase Color too.
+    /// falls back, Adobe Color falls back to RAWmakase Color too. A look renamed in
+    /// the library since is found by the UUID the preset carries.
     fn resolve_look(
         &self,
         m: &Metadata,
         profiles: &[Arc<CameraProfile>],
     ) -> Option<Arc<CameraProfile>> {
-        profiles
-            .iter()
-            .find(|p| {
-                p.name == self.look
-                    && p.ensure_camera(m).is_ok()
-                    && p.enhanced.as_ref().is_some_and(|look| {
-                        self.settings
-                            .get("RAWmakaseLookUUID")
-                            .is_none_or(|uuid| look.uuid.eq_ignore_ascii_case(uuid))
-                    })
+        let uuid = self.look_uuid();
+        let looks = || {
+            profiles
+                .iter()
+                .filter(|p| p.ensure_camera(m).is_ok())
+                .filter_map(|p| Some((p, p.enhanced.as_ref()?)))
+        };
+        looks()
+            .find(|(p, look)| {
+                p.name == self.look && uuid.is_none_or(|uuid| look.uuid.eq_ignore_ascii_case(uuid))
             })
+            .or_else(|| {
+                let uuid = uuid?;
+                looks().find(|(_, look)| look.uuid.eq_ignore_ascii_case(uuid))
+            })
+            .map(|(p, _)| p)
             .cloned()
             .or_else(|| {
                 (self.falls_back() && self.look == "Adobe Color")
@@ -389,6 +395,13 @@ impl Preset {
         }
         Ok(Some(p))
     }
+    /// The UUID of the look this preset names, when it carries one.
+    fn look_uuid(&self) -> Option<&str> {
+        self.settings
+            .get("RAWmakaseLookUUID")
+            .map(String::as_str)
+            .filter(|uuid| !uuid.is_empty())
+    }
     /// Whether this preset's look, if it names one, can be rendered here.
     pub fn look_available(&self, m: &Metadata, profiles: &[Arc<CameraProfile>]) -> bool {
         self.look.is_empty() || self.resolve_look(m, profiles).is_some()
@@ -411,7 +424,14 @@ impl Preset {
         } else {
             (self.look.as_str(), self.resolve_look(m, profiles)?)
         };
-        (used.name != name).then(|| (name.to_string(), used.name.clone()))
+        // The very look, renamed in the library since, stands in for nothing.
+        let same_look = !self.look.is_empty()
+            && self.look_uuid().is_some_and(|uuid| {
+                used.enhanced
+                    .as_ref()
+                    .is_some_and(|look| look.uuid.eq_ignore_ascii_case(uuid))
+            });
+        (used.name != name && !same_look).then(|| (name.to_string(), used.name.clone()))
     }
     fn apply_profile(
         &self,

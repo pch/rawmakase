@@ -925,6 +925,52 @@ fn profile_amount_applies_to_looks_that_have_one() -> Result<()> {
     assert!(preset("Test Creative", "2.5").is_err());
     Ok(())
 }
+/// A look renamed in the profile library (Manage Profiles) is still found by the
+/// presets and sidecars that name it by its old name, through the UUID they carry,
+/// and is not reported as standing in for another. Without a UUID, or with another
+/// look's, the old name finds nothing.
+#[test]
+fn a_renamed_look_is_found_by_its_uuid() -> Result<()> {
+    use crate::camera_profiles::{CameraProfile, open};
+    let m = Metadata {
+        make: "Test".into(),
+        model: "Camera".into(),
+        cam_xyz: [[0.8, -0.2, -0.1], [-0.3, 1.1, 0.2], [-0.05, 0.15, 0.6]],
+        ..Default::default()
+    };
+    let mut renamed = CameraProfile::creative_for_test(&m);
+    renamed.name = "Renamed Creative".into();
+    // Its own UUID: the creative test look shares RAWmakase Color's.
+    let uuid = "00112233445566778899AABBCCDDEEFF".to_string();
+    renamed.enhanced.as_mut().unwrap().uuid = uuid.clone();
+    let profiles: Vec<_> = [open::standard(&m), open::color(&m), Some(renamed)]
+        .into_iter()
+        .flatten()
+        .map(std::sync::Arc::new)
+        .collect();
+    let base = Recipe::with_profiles(&m, &profiles);
+    let preset = |uuid: &str| {
+        parse(
+            Path::new("photo.xmp"),
+            &xml(
+                r#"c:Exposure2012="0""#,
+                &format!(
+                    r#"<c:Look r:parseType="Resource"><c:Name>Test Creative</c:Name><c:Amount>0.5</c:Amount>{uuid}</c:Look>"#
+                ),
+            ),
+        )
+    };
+    let p = preset(&format!("<c:UUID>{uuid}</c:UUID>"))?;
+    assert!(p.look_available(&m, &profiles));
+    assert!(p.profile_substitute(&m, &profiles).is_none());
+    let r = p.apply(&base, &m, &profiles, None)?;
+    assert_eq!(r.profile.as_ref().unwrap().name, "Renamed Creative");
+    assert_eq!(r.profile_amount, 0.5);
+    for other in ["", "<c:UUID>0123456789ABCDEF0123456789ABCDEF</c:UUID>"] {
+        assert!(!preset(other)?.look_available(&m, &profiles), "{other}");
+    }
+    Ok(())
+}
 /// Camera Raw 18.7 takes the Treatment from the settings a look carries, not from the
 /// photo's `ConvertToGrayscale` (#666): measured on the synthetic chart, a colour look
 /// over a photo set to black & white renders in colour, a black & white look over a

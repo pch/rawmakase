@@ -1072,6 +1072,7 @@ mod hdr_tone_data;
 mod library;
 mod look_settings;
 pub mod look_source;
+pub mod manage;
 pub mod open;
 pub mod overrange;
 mod rgb_table;
