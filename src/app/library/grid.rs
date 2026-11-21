@@ -384,6 +384,14 @@ impl Library {
                     self.messages.fail(format!("Collection not changed: {e:#}"));
                 }
             }
+            PhotoAction::Export { previous } => {
+                let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
+                    self.selected_ids()
+                } else {
+                    vec![photo.id]
+                };
+                self.ask(super::outbox::Request::ExportPhotos(ids, previous));
+            }
             PhotoAction::ExportCatalog => {
                 let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
                     self.selected_ids()

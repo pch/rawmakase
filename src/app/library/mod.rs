@@ -67,7 +67,7 @@ impl Place {
         self.selection.forget_photo(id);
     }
 }
-pub(in crate::app) use cell::copy_suffix;
+pub(in crate::app) use cell::{EXPORT_SHORTCUTS, copy_suffix};
 pub(crate) use collection_edit::CollectionTreeCommand;
 pub(in crate::app) use collection_edit::NewCollection;
 pub(in crate::app) use collections::ListedCollection;

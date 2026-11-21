@@ -171,9 +171,37 @@ impl Editor {
     /// Export…: the dialog for the photos chosen now, starting from the last
     /// export's choices.
     pub(in crate::app) fn open_export_dialog(&mut self) {
-        let Some(scope) = self.export_scope() else {
+        if let Some(scope) = self.export_scope() {
+            self.show_export_dialog(scope);
+        }
+    }
+    /// Export with Previous: the last export's choices, without the dialog.
+    pub(in crate::app) fn export_with_previous(&mut self) {
+        self.export_previous(ExportSettings::load());
+    }
+    /// Export… or Export with Previous from a photo's menu, for the photos it
+    /// acts on (`ids`) rather than the photos [`Self::export_scope`] chooses.
+    pub(in crate::app) fn export_photos(&mut self, ids: Vec<PhotoId>, previous: bool) {
+        let Some(scope) = self.export_scope_of(ids) else {
             return;
         };
+        match previous.then(ExportSettings::load).flatten() {
+            Some(settings) => self.export_scope_with(scope, settings),
+            None => self.show_export_dialog(scope),
+        }
+    }
+    /// Export with Previous with the last export's settings, if any.
+    fn export_previous(&mut self, previous: Option<ExportSettings>) {
+        match previous {
+            Some(settings) => {
+                if let Some(scope) = self.export_scope() {
+                    self.export_scope_with(scope, settings);
+                }
+            }
+            None => self.open_export_dialog(),
+        }
+    }
+    fn show_export_dialog(&mut self, scope: Scope) {
         self.exports.read.cancel();
         self.exports.scope = scope;
         self.exports.draft = ExportSettings::load().unwrap_or_default();
@@ -181,28 +209,29 @@ impl Editor {
         self.exports.saved = crate::app::export::naming::presets::Library::load();
         self.exports.dialog = true;
     }
-    /// Export with Previous: the last export's choices, without the dialog.
-    pub(in crate::app) fn export_with_previous(&mut self) {
-        self.export_previous(ExportSettings::load());
-    }
-    /// Export with Previous with the last export's settings, if any.
-    fn export_previous(&mut self, previous: Option<ExportSettings>) {
-        match previous {
-            Some(settings) => {
-                if let Some(scope) = self.export_scope() {
-                    self.exports.read.cancel();
-                    self.exports.scope = scope;
-                    // Names that need the files wait for them, in a small
-                    // window that can cancel.
-                    if self.names_wait(&settings.name_template()) {
-                        self.exports.waiting = Some(settings);
-                    } else {
-                        self.export(settings);
-                    }
-                }
-            }
-            None => self.open_export_dialog(),
+    /// Exports `scope` with `settings`, without the dialog.
+    fn export_scope_with(&mut self, scope: Scope, settings: ExportSettings) {
+        self.exports.read.cancel();
+        self.exports.scope = scope;
+        // Names that need the files wait for them, in a small window that can
+        // cancel.
+        if self.names_wait(&settings.name_template()) {
+            self.exports.waiting = Some(settings);
+        } else {
+            self.export(settings);
         }
+    }
+    /// The photos the Export dialog is open for, if it is.
+    #[cfg(test)]
+    pub(in crate::app) fn export_dialog_photos(&self) -> Option<Vec<PhotoId>> {
+        self.exports.dialog.then(|| {
+            self.exports
+                .scope
+                .photos
+                .iter()
+                .filter_map(|p| p.id)
+                .collect()
+        })
     }
     /// The Export dialog or its existing-file question is showing.
     pub(in crate::app) fn export_modal(&self) -> bool {
@@ -232,6 +261,12 @@ impl Editor {
             },
             None => Vec::new(),
         };
+        self.export_scope_of(ids)
+    }
+    /// [`Self::export_scope`] for these catalog photos; with none, the photo
+    /// open without a catalog, if any.
+    fn export_scope_of(&mut self, ids: Vec<PhotoId>) -> Option<Scope> {
+        let open = self.document.catalog_photo;
         let shown = self.document.path.is_some() && self.document.full().is_some();
         let mut scope = Scope::default();
         match &self.library {

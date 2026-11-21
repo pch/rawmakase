@@ -201,11 +201,7 @@ impl Editor {
                                 ui.close();
                             }
                             menu_separator(ui);
-                            let (export, previous) = if cfg!(target_os = "macos") {
-                                ("⇧⌘E", "⌥⇧⌘E")
-                            } else {
-                                ("Ctrl+Shift+E", "Ctrl+Alt+Shift+E")
-                            };
+                            let (export, previous) = crate::app::library::EXPORT_SHORTCUTS;
                             let photo = self.document.full().is_some();
                             if menu_item(ui, "Export…", export, photo, false) {
                                 self.open_export_dialog();
