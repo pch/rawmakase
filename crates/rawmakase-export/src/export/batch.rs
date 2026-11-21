@@ -19,7 +19,7 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex, PoisonError},
 };
 
 /// One photo of a batch, as it was when Export was pressed.
@@ -377,7 +377,7 @@ pub struct Progress {
 /// photo's outcome. Cancel stops between stages: a cancel observed before a file
 /// is committed discards it; a commit already under way may finish, and that photo
 /// counts as exported.
-pub fn run(batch: &Batch, cancel: Cancel<'_>, progress: impl Fn(Progress)) -> Vec<Outcome> {
+pub fn run(batch: &Batch, cancel: Cancel<'_>, progress: impl Fn(Progress) + Sync) -> Vec<Outcome> {
     let total = batch.photos.len();
     // A preset's image or font, read once: every photo gets the same watermark,
     // however long the batch runs. The Simple Copyright Watermark takes each
@@ -388,42 +388,15 @@ pub fn run(batch: &Batch, cancel: Cancel<'_>, progress: impl Fn(Progress)) -> Ve
         }
         _ => None,
     };
-    let mut reserved = batch.plan.reserved.clone();
-    let mut outcomes = Vec::with_capacity(total);
-    for (done, (photo, planned)) in batch.photos.iter().zip(&batch.plan.entries).enumerate() {
-        if cancel.is_cancelled() {
-            outcomes.push(Outcome::NotStarted);
-            continue;
-        }
-        let report = |fraction| {
-            progress(Progress {
-                done,
-                total,
-                fraction,
-            })
-        };
-        report(0.);
-        let outcome = match planned.write {
-            Write::Skip => Outcome::Skipped("a file with its name already exists".into()),
-            // A panic fails its own photo; the others keep their outcomes.
-            _ => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match &preset {
-                Some(Err(reason)) => Outcome::Failed(reason.clone()),
-                preset => {
-                    let preset = preset.as_ref().and_then(|p| p.as_ref().ok());
-                    export(
-                        batch,
-                        photo,
-                        planned,
-                        preset,
-                        &mut reserved,
-                        cancel,
-                        &report,
-                    )
-                }
-            }))
-            .unwrap_or_else(|_| Outcome::Failed("the export failed unexpectedly".into())),
-        };
-        outcomes.push(outcome);
+    let reserved = Mutex::new(batch.plan.reserved.clone());
+    let tracker = Tracker::new(total, &progress);
+    let mut outcomes = vec![None; total];
+    for (index, outcome) in outcomes.iter_mut().enumerate() {
+        *outcome = Some(if cancel.is_cancelled() {
+            Outcome::NotStarted
+        } else {
+            one(batch, index, preset.as_ref(), &reserved, cancel, &tracker)
+        });
     }
     progress(Progress {
         done: total,
@@ -431,6 +404,84 @@ pub fn run(batch: &Batch, cancel: Cancel<'_>, progress: impl Fn(Progress)) -> Ve
         fraction: 0.,
     });
     outcomes
+        .into_iter()
+        .map(|o| o.unwrap_or(Outcome::NotStarted))
+        .collect()
+}
+
+/// Exports the batch's photo at `index`, as [`run`] does each in turn.
+fn one(
+    batch: &Batch,
+    index: usize,
+    preset: Option<&Result<crate::watermark::Ready, String>>,
+    reserved: &Mutex<Reservations>,
+    cancel: Cancel<'_>,
+    tracker: &Tracker<'_, impl Fn(Progress)>,
+) -> Outcome {
+    let (photo, planned) = (&batch.photos[index], &batch.plan.entries[index]);
+    tracker.start(index);
+    let outcome = match planned.write {
+        Write::Skip => Outcome::Skipped("a file with its name already exists".into()),
+        // A panic fails its own photo; the others keep their outcomes.
+        _ => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match preset {
+            Some(Err(reason)) => Outcome::Failed(reason.clone()),
+            preset => {
+                let preset = preset.and_then(|p| p.as_ref().ok());
+                export(batch, photo, planned, preset, reserved, cancel, &|f| {
+                    tracker.set(index, f)
+                })
+            }
+        }))
+        .unwrap_or_else(|_| Outcome::Failed("the export failed unexpectedly".into())),
+    };
+    tracker.end(index);
+    outcome
+}
+
+/// A batch's [`Progress`] from its photos under way: `done` counts the photos
+/// finished, whatever their outcome, and `fraction` adds up how far each photo
+/// under way is.
+struct Tracker<'a, F> {
+    total: usize,
+    progress: &'a F,
+    /// The photos finished, and how far each one under way is, by index.
+    state: Mutex<(usize, Vec<(usize, f32)>)>,
+}
+impl<'a, F: Fn(Progress)> Tracker<'a, F> {
+    fn new(total: usize, progress: &'a F) -> Self {
+        Self {
+            total,
+            progress,
+            state: Mutex::new((0, Vec::new())),
+        }
+    }
+    fn start(&self, index: usize) {
+        self.update(|(_, under_way)| under_way.push((index, 0.)));
+    }
+    fn set(&self, index: usize, fraction: f32) {
+        self.update(|(_, under_way)| {
+            if let Some(photo) = under_way.iter_mut().find(|(i, _)| *i == index) {
+                photo.1 = fraction;
+            }
+        });
+    }
+    /// Counts the photo at `index` as done, which the next report says.
+    fn end(&self, index: usize) {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.1.retain(|(i, _)| *i != index);
+        state.0 += 1;
+    }
+    /// Changes the state and reports it under the same lock, so a report never
+    /// follows a newer one.
+    fn update(&self, change: impl FnOnce(&mut (usize, Vec<(usize, f32)>))) {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        change(&mut state);
+        (self.progress)(Progress {
+            done: state.0,
+            total: self.total,
+            fraction: state.1.iter().map(|(_, f)| f).sum(),
+        });
+    }
 }
 
 /// Why a photo stopped, kept apart from failures until the end.
@@ -450,7 +501,7 @@ fn export(
     photo: &BatchPhoto,
     planned: &Planned,
     preset: Option<&crate::watermark::Ready>,
-    reserved: &mut Reservations,
+    reserved: &Mutex<Reservations>,
     cancel: Cancel<'_>,
     progress: &impl Fn(f32),
 ) -> Outcome {
@@ -590,7 +641,7 @@ fn commit(
     photo: &BatchPhoto,
     planned: &Planned,
     late: Existing,
-    reserved: &mut Reservations,
+    reserved: &Mutex<Reservations>,
     cancel: Cancel<'_>,
 ) -> Result<(PathBuf, Option<String>), Stop> {
     // The last moment to stop: dropping the staged file leaves nothing behind.
@@ -631,17 +682,22 @@ fn commit(
                 Err(e) => return Err(Stop::Failed(e.error.into())),
             },
         };
-        reserved.found(&appeared);
-        match late {
-            Existing::Unique => target = reserved.unique(&target),
-            Existing::Overwrite => {
+        // Only the reservations are locked, not the file operations.
+        let renamed = {
+            let mut reserved = reserved.lock().unwrap_or_else(PoisonError::into_inner);
+            reserved.found(&appeared);
+            (late == Existing::Unique).then(|| reserved.unique(&target))
+        };
+        match (late, renamed) {
+            (_, Some(renamed)) => target = renamed,
+            (Existing::Overwrite, _) => {
                 overwrite(staged, &appeared, &photo.source)?;
                 return Ok((
                     appeared,
                     Some("replaced a file that appeared during the export".into()),
                 ));
             }
-            Existing::Skip | Existing::Ask => {
+            _ => {
                 return Err(Stop::Skipped(
                     "a file with its name appeared during the export".into(),
                 ));
