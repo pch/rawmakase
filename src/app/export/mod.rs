@@ -762,7 +762,9 @@ impl Editor {
         let (tx, ctx) = (self.tx.clone(), self.context.clone());
         let repaint = self.context.clone();
         self.exports.queue.get_or_insert_with(|| {
+            let logical = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
             Queue::new(
+                batch::Lanes::for_machine(logical, crate::platform::memory::total()),
                 move |ticket, outcomes| {
                     let _ = tx.send(Event::BatchExported { ticket, outcomes });
                     ctx.request_repaint();

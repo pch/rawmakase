@@ -1,8 +1,9 @@
 //! The app's exports, one batch at a time: an Export chosen while another runs
-//! waits its turn rather than running beside it, so however many are queued, one
-//! photo's images are in memory. A waiting batch holds edits, not images, and can
-//! be removed before it starts.
-use super::batch::{self, Batch, Outcome, Progress};
+//! waits its turn rather than running beside it, so however many are queued, only
+//! the running batch's photos have images in memory, within its
+//! [`Lanes`]' budget. A waiting batch holds edits, not images, and can be removed
+//! before it starts.
+use super::batch::{self, Batch, Lanes, Outcome, Progress};
 use rawmakase_cancel::Cancel;
 use std::{
     collections::VecDeque,
@@ -48,9 +49,11 @@ pub struct Status {
 }
 
 impl Queue {
-    /// Starts the queue's thread; `finished` gets each batch's outcomes, in its
-    /// photos' order, and `changed` is called whenever its status changes.
+    /// Starts the queue's thread, which runs each batch on `lanes`; `finished`
+    /// gets each batch's outcomes, in its photos' order, and `changed` is called
+    /// whenever its status changes.
     pub fn new(
+        lanes: Lanes,
         finished: impl Fn(u64, Vec<Outcome>) + Send + 'static,
         changed: impl Fn() + Send + Sync + 'static,
     ) -> Self {
@@ -67,7 +70,7 @@ impl Queue {
                 // whole batch, so the queue still clears it and runs the next one.
                 let outcomes = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     (worker.changed)();
-                    batch::run(&batch, Cancel::new(&cancel), |progress| {
+                    batch::run(&batch, lanes, Cancel::new(&cancel), |progress| {
                         if let Ok(mut state) = worker.state.lock()
                             && let Some(running) = &mut state.running
                         {

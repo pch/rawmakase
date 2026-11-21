@@ -442,7 +442,10 @@ operation step by step; in terms of the crates:
 - **Exporting.** The export job captures each photo's recipe and options, decodes
   with `DecodePolicy::Export`, renders on the CPU, and `rawmakase-export` encodes and
   publishes the file atomically. With AI Denoise on it asks the service for the
-  photo's complete AI source first.
+  photo's complete AI source first. A batch runs several photos at once when the
+  computer has the CPUs for it, each on its own background pool, decoding a photo once its estimated
+  memory fits beside the others' within half the computer's (`batch::Lanes`);
+  outcomes keep the photos' order.
 - **Settings in and out.** XMP and presets enter through `rawmakase-interop`
   (parse, then apply to a recipe, which is validated); exports' XMP and Lightroom
   presets leave through it. A Lightroom catalog is imported by
