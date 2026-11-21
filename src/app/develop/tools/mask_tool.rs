@@ -2,6 +2,7 @@
 //! Subtract and Intersect, brushes and gradients on the photo, range sampling and
 //! each mask's adjustment sliders.
 use crate::app::Editor;
+use crate::app::develop::tools::live_brush::{LiveBrush, StrokeAt};
 use crate::app::develop::tools::overlay;
 use crate::app::develop::tools::retouch_tool::{control_label, hint, indented};
 use crate::app::ui::design::{Tone, space, text};
@@ -19,6 +20,8 @@ use crate::model::masks::{
 use crate::model::params::LocalParameterId;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
+/// Strokes drawn as they were painted kept at once while their render comes.
+const MAX_PAINTED: usize = 4;
 /// What a new mask or component is made of.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::app) enum Kind {
@@ -119,6 +122,11 @@ pub(in crate::app) struct MaskTool {
     /// while they are drawn; each editor frame starts with neither.
     hovered_pin: Option<usize>,
     hovered_row: Option<usize>,
+    /// The brush stroke being painted, drawn over the photo until a render
+    /// shows it.
+    live: Option<LiveBrush>,
+    /// Strokes painted before it whose render hasn't shown yet, oldest first.
+    painted: Vec<LiveBrush>,
 }
 /// A mask's name as it is being typed.
 struct Renaming {
@@ -149,6 +157,8 @@ impl Default for MaskTool {
             renaming: None,
             hovered_pin: None,
             hovered_row: None,
+            live: None,
+            painted: Vec::new(),
         }
     }
 }
@@ -174,11 +184,54 @@ impl MaskTool {
         self.pending = None;
         self.drag = Drag::None;
         self.renaming = None;
+        self.forget_strokes();
         self.leave();
+    }
+    /// Lets go of the strokes drawn as they were painted.
+    pub(in crate::app) fn forget_strokes(&mut self) {
+        self.live = None;
+        self.painted.clear();
+    }
+    /// A render is shown, made with `recipe`: a stroke drawn as it was
+    /// painted goes once its drag has ended and the render has all of it.
+    pub(in crate::app) fn render_shown(&mut self, recipe: &crate::model::recipe::Recipe) {
+        for live in self.live.iter_mut().chain(&mut self.painted) {
+            live.render_shown(stroke_at(recipe, live.at()));
+        }
+        if self.live.as_ref().is_some_and(LiveBrush::done) {
+            self.live = None;
+        }
+        self.painted.retain(|l| !l.done());
+    }
+    /// The strokes drawn as they are painted: the one being painted, and those
+    /// before it whose render hasn't shown, for tests.
+    #[cfg(test)]
+    pub(in crate::app) fn painted(&self) -> usize {
+        self.painted.len()
+    }
+    /// Puts the stroke being painted with those waiting for their render,
+    /// keeping its texture alone; a few at most, the oldest going first.
+    fn put_by(&mut self) {
+        if let Some(mut live) = self.live.take() {
+            live.finish();
+            if live.done() {
+                return;
+            }
+            if self.painted.len() == MAX_PAINTED {
+                self.painted.remove(0);
+            }
+            self.painted.push(live);
+        }
+    }
+    /// Whether a stroke is drawn over the photo as it is painted, for tests.
+    #[cfg(test)]
+    pub(in crate::app) fn live(&self) -> Option<&LiveBrush> {
+        self.live.as_ref()
     }
     /// Ends a drag on the photo where it is: what was painted or moved stays.
     pub(in crate::app) fn end_drag(&mut self) {
         self.drag = Drag::None;
+        self.put_by();
     }
     /// The mask whose overlay shows while the pointer is over its pin or its row in
     /// the mask list, as in Lightroom, whether or not Show Overlay is on.
@@ -497,6 +550,17 @@ impl Editor {
         }
 
         let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+        for (texture, at, tint) in self.live_brush(
+            ui.ctx(),
+            rect.intersect(ui.clip_rect()),
+            &to_image,
+            &to_screen,
+            &radius_on_screen,
+            space,
+        ) {
+            let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
+            painter.image(texture, at, uv, tint);
+        }
         if let Some(s) = &shape {
             draw_shape(&painter, s, space, &to_screen);
         }
@@ -603,6 +667,101 @@ impl Editor {
                 self.add_stroke(vec![at], erase);
             }
             _ => {}
+        }
+    }
+    /// Keeps the stroke being painted, and those painted before it, drawn
+    /// over the photo while their mask's overlay shows, until a render shows
+    /// each; one an Undo, a Delete or another photo took away goes at once, as
+    /// does one drawn for another view. Returns each one's texture, its place
+    /// on the screen and the tint to draw it with, oldest first.
+    fn live_brush(
+        &mut self,
+        ctx: &egui::Context,
+        visible: Rect,
+        to_image: &impl Fn(Pos2) -> [f32; 2],
+        to_screen: &impl Fn([f32; 2]) -> Pos2,
+        radius_on_screen: &impl Fn([f32; 2], f32) -> f32,
+        space: Space,
+    ) -> Vec<(egui::TextureId, Rect, Color32)> {
+        let overlay = self.overlay();
+        let recipe = self.document.edit.recipe();
+        let t = &mut self.view.masking;
+        let painting = match &t.drag {
+            Drag::Stroke { points, stroke } => Some((points.clone(), *stroke)),
+            _ => None,
+        };
+        match painting {
+            Some((points, at)) => {
+                if t.live.as_ref().is_some_and(|l| l.at() != at) {
+                    t.put_by();
+                }
+                match stroke_at(recipe, at).filter(|s| drawn_live(recipe, at, s)) {
+                    Some(s) => {
+                        let live = t.live.get_or_insert_with(|| LiveBrush::new(at, s, space));
+                        live.follow(&points);
+                    }
+                    None => t.live = None,
+                }
+            }
+            None => t.put_by(),
+        }
+        let unchanged =
+            |l: &LiveBrush| stroke_at(recipe, l.at()).is_some_and(|s| *s.points == *l.points());
+        t.painted
+            .retain(|l| unchanged(l) && l.shown(visible, to_image).is_some());
+        let crate::app::worker::Overlay::Mask {
+            index,
+            color,
+            opacity,
+        } = overlay
+        else {
+            return Vec::new();
+        };
+        // The overlay's color, or a gray over what an erasing stroke takes
+        // away, which only the render can show; at the component's opacity.
+        let paint = |l: &LiveBrush| {
+            let (m, c, _) = l.at();
+            let erase = stroke_at(recipe, l.at()).is_some_and(|s| s.erase);
+            let color = if erase {
+                Color32::from_gray(128)
+            } else {
+                Color32::from_rgb(color[0], color[1], color[2])
+            };
+            let opacity = opacity * recipe.masks[m].components[c].opacity;
+            (
+                color,
+                Color32::from_white_alpha((opacity * 255.).round() as u8),
+            )
+        };
+        let mut shown: Vec<_> = t
+            .painted
+            .iter()
+            .filter(|l| l.at().0 == index)
+            .filter_map(|l| {
+                let (texture, at) = l.shown(visible, to_image)?;
+                Some((texture, at, paint(l).1))
+            })
+            .collect();
+        if let Some(live) = t.live.as_mut().filter(|l| l.at().0 == index) {
+            let (color, tint) = paint(live);
+            if let Some((texture, at)) =
+                live.update(ctx, visible, to_image, to_screen, radius_on_screen, color)
+            {
+                shown.push((texture, at, tint));
+            }
+        }
+        shown
+    }
+    /// Paints a stroke along `points` with the current brush and leaves it
+    /// being painted, as a drag would, for shots, which can't drag.
+    #[cfg(test)]
+    pub(in crate::app) fn paint_for_tests(&mut self, points: &[[f32; 2]], erase: bool) {
+        if let Some(stroke) = self.begin_stroke(points[0], erase) {
+            self.extend_stroke(stroke, points.into());
+            self.view.masking.drag = Drag::Stroke {
+                points: points.to_vec(),
+                stroke,
+            };
         }
     }
     /// Starts a stroke of the current brush (or the Erase brush) at `at` in the
@@ -749,6 +908,7 @@ impl Editor {
         self.selection.end_prompting();
         self.view.masking.pending = None;
         self.view.masking.end_drag();
+        self.view.masking.forget_strokes();
         self.view.masking.leave();
         self.view.set_tool(crate::app::develop::state::Tool::None);
     }
@@ -1251,6 +1411,26 @@ const LOCAL_GROUPS: [&[LocalParameterId]; 6] = {
         &[ColorHue, ColorSaturation],
     ]
 };
+/// The brush stroke at `at` in `recipe`'s masks, if it is one.
+fn stroke_at(recipe: &crate::model::recipe::Recipe, (m, c, s): StrokeAt) -> Option<&BrushStroke> {
+    match &recipe.masks.get(m)?.components.get(c)?.shape {
+        MaskShape::Brush { strokes } => strokes.get(s),
+        _ => None,
+    }
+}
+/// Whether the stroke at `at` is drawn as it is painted: its coverage adds to
+/// its mask's as it is, the mask and every one of its components added and
+/// none inverted. Otherwise, as for Auto Mask, whose colors come from the
+/// photo, it shows with its render.
+fn drawn_live(recipe: &crate::model::recipe::Recipe, (m, ..): StrokeAt, s: &BrushStroke) -> bool {
+    let mask = &recipe.masks[m];
+    !s.auto_mask
+        && !mask.invert
+        && mask
+            .components
+            .iter()
+            .all(|c| c.op == MaskOp::Add && !c.invert)
+}
 /// "Mask 2", or the name the user gave it.
 fn mask_name(m: &MaskGroup, i: usize) -> String {
     if m.name.is_empty() {

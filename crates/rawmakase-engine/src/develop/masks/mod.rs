@@ -11,7 +11,7 @@ mod eval;
 pub(crate) mod local;
 mod range;
 
-pub use brush::Space;
+pub use brush::{LiveStroke, Space};
 pub(crate) use eval::{MaskWeights, RasterCache, Selection, Weigher};
 pub(crate) use local::{LocalDelta, LocalMath};
 pub use range::oklab;

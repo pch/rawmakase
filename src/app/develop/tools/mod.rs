@@ -4,6 +4,9 @@ pub(in crate::app) mod brush_scroll;
 pub(in crate::app) mod crop_drag;
 pub(in crate::app) mod crop_tool;
 pub(in crate::app) mod guided_tool;
+pub(in crate::app) mod live_brush;
+#[cfg(test)]
+mod live_brush_tests;
 pub(in crate::app) mod mask_tool;
 pub(in crate::app) mod overlay;
 pub(in crate::app) mod red_eye_tool;
