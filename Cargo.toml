@@ -110,6 +110,8 @@ ureq = { version = "3.4", default-features = false, features = ["rustls"] }
 # Lensfun's database comes as a .tar.bz2 (lensfun_install): both read in pure Rust,
 # no libbz2; tar without extended attributes, nothing is unpacked to disk by it.
 bzip2-rs = "0.1"
+# Export Group in Manage Presets writes a .zip, as Lightroom does.
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 tar = { version = "0.4", default-features = false }
 # Shared egui app foundation (github.com/crmne/fastframe). Not on crates.io
 # yet: pin a tag and update it deliberately.

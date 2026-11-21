@@ -84,11 +84,18 @@ fn preset_chooser(ui: &mut egui::Ui, presets: &mut PresetBrowser) -> Option<usiz
     let palette = theme::palette(ui.ctx());
     crate::app::ui::widgets::search_field(ui, &mut presets.chooser_filter, "Search presets");
     let library = presets.library.clone();
-    let favorites =
-        crate::app::presets::preset_groups(&library, &presets.chooser_filter, |_, p| {
-            presets.favorites.contains(&p.id)
-        });
-    let groups = crate::app::presets::preset_groups(&library, &presets.chooser_filter, |_, _| true);
+    let favorites = crate::app::presets::preset_groups(
+        &library,
+        &presets.chooser_filter,
+        &presets.layout,
+        |_, p| presets.favorites.contains(&p.id) && !presets.layout.hidden.contains(&p.id),
+    );
+    let groups = crate::app::presets::preset_groups(
+        &library,
+        &presets.chooser_filter,
+        &presets.layout,
+        |_, p| !presets.layout.hidden.contains(&p.id),
+    );
     let favorites: Vec<(usize, String)> = favorites.into_iter().flat_map(|g| g.presets).collect();
     let mut clicked = None;
     egui::ScrollArea::vertical()

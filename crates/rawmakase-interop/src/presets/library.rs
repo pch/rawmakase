@@ -92,6 +92,37 @@ pub fn load_favorites() -> BTreeSet<String> {
 pub fn save_favorites(favorites: &BTreeSet<String>) -> Result<()> {
     crate::storage::atomic_json(&favorite_path(), favorites)
 }
+/// How the user arranged the preset list in Manage Presets: the groups' order, by
+/// `PresetLayout::group_key`, and the presets hidden from it, by `Preset::id`.
+/// Groups not in `order` keep their default place after those that are.
+#[derive(Default, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct PresetLayout {
+    pub order: Vec<String>,
+    pub hidden: BTreeSet<String>,
+}
+impl PresetLayout {
+    /// A group's key: built-in and imported groups of the same name stay apart.
+    pub fn group_key(imported: bool, name: &str) -> String {
+        format!("{}:{name}", if imported { "imported" } else { "builtin" })
+    }
+    /// Where the group `key` goes; groups never ordered go after every ordered one.
+    pub fn rank(&self, key: &str) -> usize {
+        self.order
+            .iter()
+            .position(|k| k == key)
+            .unwrap_or(usize::MAX)
+    }
+}
+fn layout_path() -> PathBuf {
+    crate::storage::data_dir().join("preset-layout.json")
+}
+pub fn load_layout() -> PresetLayout {
+    crate::storage::read_json_or_default(&layout_path())
+}
+pub fn save_layout(layout: &PresetLayout) -> Result<()> {
+    crate::storage::atomic_json(&layout_path(), layout)
+}
 pub fn display_name(name: &str) -> String {
     name.replace('⁺', "+")
         .replace('⁻', "-")

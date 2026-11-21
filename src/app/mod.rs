@@ -347,6 +347,7 @@ impl Editor {
             activity: Default::default(),
             presets: PresetBrowser {
                 favorites: crate::presets::load_favorites(),
+                layout: crate::presets::load_layout(),
                 ..Default::default()
             },
             view: ViewState {
@@ -582,6 +583,8 @@ enum Modal {
     CopySettings(crate::app::develop::settings_transfer::CopyDialog),
     /// A preset made here being renamed.
     RenamePreset(crate::app::presets::user_presets::PresetRename),
+    /// Manage Presets: the groups' order, hidden presets, deleting and importing.
+    ManagePresets(crate::app::presets::manager::PresetManager),
     /// The virtual copy waiting for the user to confirm its removal.
     RemoveCopy(PhotoId),
     /// The folder waiting for the user to confirm its removal from the catalog.

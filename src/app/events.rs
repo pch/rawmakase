@@ -235,6 +235,13 @@ impl Editor {
                 }
                 Event::Imported(summary) => self.imported(*summary, ctx),
                 Event::Synced(result) => self.synced(*result),
+                Event::PresetsExported(result) => {
+                    self.activity.finish_dialog();
+                    match result {
+                        Ok(done) => self.messages.done(done),
+                        Err(e) => self.messages.fail(e),
+                    }
+                }
                 Event::PresetSave(p) => {
                     self.activity.finish_dialog();
                     let m = self.document.metadata.clone().unwrap_or_default();

@@ -267,6 +267,8 @@ pub(crate) enum Event {
         error: String,
     },
     PresetSave(PathBuf),
+    /// Export in Manage Presets, done: what to tell the user.
+    PresetsExported(Result<String, String>),
     Header(Box<LoadedHeader>),
     Embedded {
         id: u64,

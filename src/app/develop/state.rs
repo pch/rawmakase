@@ -524,6 +524,8 @@ pub(in crate::app) struct PresetBrowser {
     /// The search in the Library's Saved Preset chooser.
     pub(in crate::app) chooser_filter: String,
     pub(in crate::app) favorites: std::collections::BTreeSet<String>,
+    /// The groups' order and the hidden presets, from Manage Presets.
+    pub(in crate::app) layout: crate::presets::PresetLayout,
     pub(in crate::app) compatible_only: bool,
     pub(in crate::app) favorites_only: bool,
     pub(in crate::app) selected: String,
@@ -531,7 +533,7 @@ pub(in crate::app) struct PresetBrowser {
     pub(in crate::app) hover: Option<(usize, Instant)>,
     /// The list as last shown, kept until what it is built from changes.
     pub(in crate::app) list: Option<crate::app::presets::PresetList>,
-    /// Counts changes to `favorites` and `issues`, which the list depends on.
+    /// Counts changes to `favorites`, `layout` and `issues`, which the list depends on.
     pub(in crate::app) revision: u64,
     /// Numbers library scans, so only the latest one is shown.
     pub(in crate::app) scans: u64,

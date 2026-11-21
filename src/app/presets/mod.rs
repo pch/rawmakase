@@ -1,6 +1,4 @@
 use crate::app::Editor;
-use crate::app::presets::bulk_import::ImportKind;
-use crate::app::shell::dialogs::FileDialog;
 use crate::app::ui::design::{Tone, radius, space, text};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::segmented;
@@ -95,7 +93,7 @@ impl Editor {
         let mut hovered = None;
         let mut user_action = None;
         let user = crate::presets::user::UserPresets::default();
-        let mut import = None;
+        let mut manage = false;
         ui.spacing_mut().item_spacing.y = 0.;
         egui::ScrollArea::vertical()
             .id_salt("preset-list")
@@ -127,28 +125,13 @@ impl Editor {
                         13.,
                         tint,
                     );
-                    let response = response
-                        .on_hover_text("Import Lightroom presets (.xmp)")
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    egui::Popup::menu(&response).show(|ui| {
-                        ui.set_min_width(190.);
-                        if ui
-                            .add(egui::Button::new("Import Presets…").frame(false))
-                            .on_hover_text("Choose one or more .xmp presets")
-                            .clicked()
-                        {
-                            import = Some(FileDialog::ImportXmp);
-                            ui.close();
-                        }
-                        if ui
-                            .add(egui::Button::new("Import Folder…").frame(false))
-                            .on_hover_text("Import every preset in a folder and its subfolders")
-                            .clicked()
-                        {
-                            import = Some(FileDialog::ImportFolder(ImportKind::Presets));
-                            ui.close();
-                        }
-                    });
+                    if response
+                        .on_hover_text("Manage presets: order, hide, delete and import")
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                    {
+                        manage = true;
+                    }
                     crate::app::ui::widgets::search_field(
                         ui,
                         &mut self.presets.filter,
@@ -162,13 +145,21 @@ impl Editor {
                     };
                     // Each filter with how many presets it shows: Compatible,
                     // those that fit this camera's photo.
-                    let total = library.presets.len();
+                    let shown =
+                        |p: &&crate::xmp::Preset| !self.presets.layout.hidden.contains(&p.id);
+                    let total = library.presets.iter().filter(shown).count();
                     let favorites = library
                         .presets
                         .iter()
+                        .filter(shown)
                         .filter(|p| self.presets.favorites.contains(&p.id))
                         .count();
-                    let fit = self.presets.issues.iter().filter(|e| e.is_none()).count();
+                    let fit = library
+                        .presets
+                        .iter()
+                        .zip(&self.presets.issues)
+                        .filter(|(p, e)| e.is_none() && shown(p))
+                        .count();
                     let labels = [
                         format!("All {total}"),
                         format!("Favorites {favorites}"),
@@ -332,8 +323,8 @@ impl Editor {
                     }
                 });
             });
-        if let Some(dialog) = import {
-            self.dialog(dialog, &ui.ctx().clone());
+        if manage {
+            self.modal = Some(crate::app::Modal::ManagePresets(Default::default()));
         }
         if let Some(action) = user_action {
             self.preset_action(action);
@@ -605,9 +596,14 @@ pub(in crate::app) struct PresetList {
     groups: Arc<Vec<PresetGroup>>,
 }
 pub(in crate::app) struct PresetGroup {
-    imported: bool,
+    pub(in crate::app) imported: bool,
     pub(in crate::app) name: String,
     pub(in crate::app) presets: Vec<(usize, String)>,
+}
+impl PresetGroup {
+    pub(in crate::app) fn key(&self) -> String {
+        crate::presets::PresetLayout::group_key(self.imported, &self.name)
+    }
 }
 
 impl PresetList {
@@ -621,11 +617,17 @@ impl PresetList {
             && self.revision == browser.revision
     }
     fn build(browser: &crate::app::develop::state::PresetBrowser) -> Self {
-        let groups = preset_groups(&browser.library, &browser.filter, |i, p| {
-            let issue = browser.issues.get(i).and_then(Option::as_ref);
-            !(browser.compatible_only && issue.is_some())
-                && !(browser.favorites_only && !browser.favorites.contains(&p.id))
-        });
+        let groups = preset_groups(
+            &browser.library,
+            &browser.filter,
+            &browser.layout,
+            |i, p| {
+                let issue = browser.issues.get(i).and_then(Option::as_ref);
+                !browser.layout.hidden.contains(&p.id)
+                    && !(browser.compatible_only && issue.is_some())
+                    && !(browser.favorites_only && !browser.favorites.contains(&p.id))
+            },
+        );
         Self {
             library: browser.library.clone(),
             filter: browser.filter.clone(),
@@ -639,11 +641,12 @@ impl PresetList {
 
 /// The presets of `library` that `keep` keeps and whose group or name contains
 /// `filter`, in their groups: built-in groups first, in Lightroom's order, then
-/// imported groups by name. A built-in and an imported group of the same name stay
-/// apart.
+/// imported groups by name, unless `layout` orders them. A built-in and an imported
+/// group of the same name stay apart.
 pub(in crate::app) fn preset_groups(
     library: &crate::presets::Library,
     filter: &str,
+    layout: &crate::presets::PresetLayout,
     keep: impl Fn(usize, &crate::xmp::Preset) -> bool,
 ) -> Vec<PresetGroup> {
     let query = filter.to_lowercase();
@@ -667,14 +670,17 @@ pub(in crate::app) fn preset_groups(
             .or_default()
             .push((i, crate::presets::display_name(&p.name)));
     }
-    groups
+    let mut groups: Vec<PresetGroup> = groups
         .into_iter()
         .map(|((imported, _, name), presets)| PresetGroup {
             imported,
             name,
             presets,
         })
-        .collect()
+        .collect();
+    // Stable, so groups the layout doesn't name keep their default order.
+    groups.sort_by_key(|g| layout.rank(&g.key()));
+    groups
 }
 
 impl Editor {
@@ -898,4 +904,5 @@ mod editor_tests;
 
 pub(in crate::app) mod bulk_import;
 pub(in crate::app) mod lut_import;
+pub(in crate::app) mod manager;
 pub(in crate::app) mod user_presets;
