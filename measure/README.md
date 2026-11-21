@@ -94,3 +94,55 @@ frozen family's captures 183, 184, 240 and 242.
 - In HDR, Red and Green at amount 1 and 2 end at 16.00 at scene 16 (the no-look
   render reaches 16.04). Blue's curve ends below white (255 → 230), and it renders
   10.71 at amount 1 and 7.25 at amount 2.
+
+## Round 2: the user's settings against the look's channel curves
+
+`look-channels-hdr-2.json` asks where a look's channel curves sit relative to the
+user's own settings. It uses the same ramp probe (`088785…`), settings, capture command
+and reduction as above, in the same format. `tests` is empty, and `p3_clipped` is marked
+as before.
+
+- **Cases** (all on the gray ramp, with `synthetic-channels.xmp` at amount 1 where a
+  look is named):
+  - the look plus the user's red curve (master, green and blue identity; red
+    0,0 / 128,100 / 255,255), in HDR L8 and SDR;
+  - the look plus the user's S master curve (0,0 / 64,48 / 128,128 / 192,208 /
+    255,255; channels identity), in HDR L8 and SDR;
+  - the look plus Contrast2012 +50, in HDR L8;
+  - the controls without a look, in HDR L8: the user's red curve, the user's S curve
+    and Contrast +50.
+- **Checks**: the user-red control is pixel-identical to the frozen family's capture
+  1004 (`R:dark L8`), and the Contrast +50 control to capture 189 (`top16 lin C50 L8`).
+  A repeat of round 1's `ramp channels a1 L8` reproduced its pixels exactly.
+- **The chart**: `tests/corpus/cases.json` gained `look-channels-user-s`,
+  `look-channels-contrast+50`, `look-channels-exposure+1` and `look-curve-user-s` (the
+  S master look plus the user's S master curve), rendered into
+  `tests/corpus/camera-raw/synthetic-d65.json` with `camera-raw-charts.py`.
+
+### Order
+
+Each prediction composes two of the ramp's gray maps per channel (no-look gray →
+setting alone, no-look gray → look alone; the same log-log interpolation as `mapping`
+in the script), in both orders, and compares them with the combined render. Rows that
+P3 clips, rows below scene 0.01 and values at the 16 ceiling are skipped. The errors
+below are |log2| per channel.
+
+| HDR L8 | setting first, then the look's channels | the look's channels first |
+| --- | --- | --- |
+| user red curve (red), below / above white | median 0.0001 / 0.0003, max 0.006 / 0.013 | median 0.136 / 0.167 |
+| user S master, below / above white | median 0.0002 / 0.0001, max 0.0012 / 0.0006 | median 0.083 / 0.145 |
+| Contrast +50, below white | median 0.0002, max 0.0027 | median 0.093 |
+
+- The user's point curves, master and per channel, and Contrast all apply **before**
+  the look's channel curves, in HDR as in SDR (Exposure measured in SDR only). Round 1
+  put the look's master curve before its channel curves. These captures don't place the
+  look's master curve relative to the user's settings: the chart has no case of
+  `synthetic-curve.xmp` alone at amount 1 to compose with `look-curve-user-s`.
+- Contrast +50 lifts blue above the ramp's top (18.8 at scene 16). Above scene 13.7 the
+  look's blue map is clamped at the ramp's end there, so the composed prediction falls
+  short by up to 0.24 stop. Camera Raw goes on along the look's blue curve: 12.63 at
+  scene 16, against 10.71 without Contrast. Below that point, Contrast first matches
+  above white too (median 0.0002).
+- On the chart (SDR, encoded sRGB, the 31 near-neutral patches) the same composition of
+  `curve-s`, `contrast+50` or `exposure+1.00` with `look-channels-100` gives a median
+  error of 4–8 / 65535 with the setting first, against 547–1161 with the look first.
