@@ -889,6 +889,47 @@ under what the ensemble was fitted on (the highlights sets then failed five pair
 Holding the samples before reconstruction needs the unreconstructed image where the
 measurement copy is made, which the pipeline does not carry.
 
+**A smaller share, and where this line ends (2026-11-21).** The sets of several controls
+at once, all six rendered: against that day's main the join at 0.6 passes 129 pairs
+and fails one (50 have too few photos). A photo with a large blown area at Shadows +50
+with Highlights −50: the share of the frame that disagrees with Camera Raw about white
+goes from 1.7% to 3.3%. Camera Raw leaves 1.5% of the frame at white, the first
+ensemble's curve 2.3% and the join 4.0%; the plateau stays at white where Camera Raw
+brings it just under (L\* 95.6 against 94.9, 95.4 before). The same photo at Shadows
+−100 with Highlights −100 comes closer with the join.
+
+The probe's largest block error is linear in the share (0.056 at none, 0.063 at 0.6)
+and passes its limit at 0.5. Held out, shares of 0.4, 0.45, 0.5, 0.6 and 0.7 leave
+6.19, 6.15, 6.12, 6.09 and 6.10 L\* near white and 9.91, 9.75, 9.62, 9.46 and 9.41 in
+blown areas over all photos, and 3.34, 3.18, 3.05, 2.93 and 2.97 near white and 3.00,
+2.86, 2.81, 2.95 and 3.37 in blown areas on the 28 with a large bright area. At 0.45
+the probe passes (0.061, and its mean error 0.0078 against 0.0088 before), and so do
+the engine's tests and the app's colour tests. Against the same main: the highlights
+sets 91 pass and none fails (at −100 the highlights 1.90 → 1.81, seven photos closer
+by 0.3 and none further; the band 90 to 100 from −2.46 to −2.12 L\*, 80 to 90 from
++0.43 to +0.62; the park 6.2 → 4.7, another sky 6.4 → 5.0, the palms 3.1 → 3.2; at
+−50 1.05 → 1.04 and at −25 0.58 → 0.59); the pairs sets 49 pass and none fails (the
+palms' pair 0.46 point more of the frame at white, under its limit of 0.5); the sets
+of several controls 129 pass and the same one fails (1.7% → 2.9%; its limit would
+need a share near 0.2).
+
+As mean L\* of one bright crop a photo (a ninth of the frame, where main is furthest
+from Camera Raw) on seven validation photos at −100, for main, the join at 0.45 and
+Camera Raw: a park's blown sky 62.9, 64.2, 67.1; clouds
+over a valley 69.0, 70.7, 74.6; a blown window in a dark room 27.5, 28.4, 28.8; a
+backlit portrait 59.3, 59.3, 59.5; a sunset 78.0, 77.9, 75.7; the palms 85.1, 84.6,
+89.1; a sky seen through branches 52.0, 52.8, 41.7. Where it helps the join closes a
+third to a half of the distance, and it does not touch the palms or the branches.
+
+Not merged. The curve of a photo's top is predicted per photo and that prediction is
+off by 6 L\* near white on photos held out, with either ensemble and with any mix of
+them (6.8, 6.2, 6.1): another fit of the same kind moves it by tenths. Whether Camera Raw's pull at the top is front-loaded in the slider was
+looked at again for the failing pair and is not the cause (above: −50 takes 0.42 to
+0.50 of −100's gain on bands). What Camera Raw reads that the stage's inputs do not
+carry is the open question, and the two cases the model cannot move, a sky seen
+through branches and the palms, are where to look. Branches (local):
+`t3/highlights-top-ensemble` (0.45), `t3/highlights-top-share06` (0.6).
+
 **Open.** The statistic behind the size effects; whether to keep the data above the
 white level for rendering while the rule reads the photo as Camera Raw does, and
 refitting the first and second ensembles on maps read as Camera Raw reads them; the
