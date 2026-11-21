@@ -214,6 +214,10 @@ rusqlite = { version = "0.43.0", features = ["bundled"] }
 # The sync tests write a compressed catalog edit; the private RAW fixture
 # test reads the ICC profile tag of an exported TIFF.
 flate2.workspace = true
+# `RAWMAKASE_UI_SHOTS=<dir>` renders dialogs to PNGs, so their spacing and
+# alignment can be looked at (`src/app/ui/shots.rs`); wgpu draws them as the
+# app does.
+egui_kittest = { version = "0.36.2", default-features = false, features = ["wgpu"] }
 tiff.workspace = true
 
 # The extension tests' program that sends the app a descriptor, which the
@@ -240,6 +244,7 @@ egui-wgpu = { git = "https://github.com/pch/egui", rev = "84badfa4e89ab811d2d7c5
 egui-winit = { git = "https://github.com/pch/egui", rev = "84badfa4e89ab811d2d7c5b276fa49002da3976b" }
 egui_extras = { git = "https://github.com/pch/egui", rev = "84badfa4e89ab811d2d7c5b276fa49002da3976b" }
 egui_glow = { git = "https://github.com/pch/egui", rev = "84badfa4e89ab811d2d7c5b276fa49002da3976b" }
+egui_kittest = { git = "https://github.com/pch/egui", rev = "84badfa4e89ab811d2d7c5b276fa49002da3976b" }
 emath = { git = "https://github.com/pch/egui", rev = "84badfa4e89ab811d2d7c5b276fa49002da3976b" }
 epaint = { git = "https://github.com/pch/egui", rev = "84badfa4e89ab811d2d7c5b276fa49002da3976b" }
 epaint_default_fonts = { git = "https://github.com/pch/egui", rev = "84badfa4e89ab811d2d7c5b276fa49002da3976b" }

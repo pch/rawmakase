@@ -157,6 +157,39 @@ capabilities before falling back to GitHub connectors or browser automation.
 - Close the loop: state what changed and how it was verified, or why no change
   is warranted.
 
+## Interface changes
+
+- Look at every window, dialog or panel you add or change before handing it
+  over; passing tests say nothing about how it looks. Give it a `shots_` test
+  that draws it with [`shots::shot`](src/app/ui/shots.rs), run
+  `RAWMAKASE_UI_SHOTS=<scratch dir> cargo test -p rawmakase --lib shots_`
+  and open every PNG. Draw each state people meet: empty, typical, long
+  names, a selection, each prompt open, an error, actions disabled. A shot
+  doesn't click or type: its `setup` sets the editor's state directly.
+- Check each image for:
+  - **Alignment.** Controls on one row share a height and a vertical middle;
+    a label sits on its control's middle; left edges line up down the window,
+    and trailing controls line up at the right.
+  - **Spacing.** Gaps come from `design::space`. A label sits nearer its own
+    control than the next one, and related things sit closer than unrelated
+    ones.
+  - **Sizes.** Buttons in a row are one height; text fields are as tall as
+    the buttons and drop-downs beside them.
+  - **Information architecture.** Each control sits beside what it acts on,
+    and a window's own actions sit apart from a field's: a button next to a
+    text field reads as that field's action. One primary action per row.
+    Headings and grouping follow the task. When a disabled control's reason
+    isn't obvious, say it in the window, not only in a hover tip.
+  - **Consistency.** Compare it with an existing dialog of the same kind and
+    with Lightroom's equivalent. Use the shared widgets (`widgets::dropdown`,
+    `widgets::switch`, `primary_button`) rather than plain egui ones.
+- Fix what you find, draw it again and look again. Pin a layout rule that
+  matters (a label on its control's middle) in a test through the AccessKit
+  tree's node bounds, as `import_cube_luts_asks_the_space_before_the_files`
+  does.
+- Show the final images to the user when you hand the change over. They are
+  for looking at, not references: fonts and rasterizers differ by machine.
+
 ## Before every push
 
 Before pushing a pull request branch, run the fast check below and push only
