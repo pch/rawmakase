@@ -7,6 +7,7 @@
 //! results are kept as textures, a few at a time, oldest dropped first.
 use super::previews::EditSource;
 use super::thumbnails;
+use crate::app::preferences::monitor::DisplayProfile;
 use crate::catalog::{Photo, PhotoId};
 use eframe::egui;
 use rawmakase_cancel::Cancel;
@@ -41,6 +42,8 @@ struct Job {
     /// same key, such as one made before a retry.
     ticket: u64,
     edit: Option<EditSource>,
+    /// The monitor profile the preview is converted to.
+    display: DisplayProfile,
 }
 struct Done {
     key: Key,
@@ -93,6 +96,7 @@ pub(super) struct ScreenPreviews {
     to_say: Vec<String>,
     textures: HashMap<Key, egui::TextureHandle>,
     order: VecDeque<Key>,
+    display: DisplayProfile,
 }
 impl ScreenPreviews {
     pub(super) fn new(ctx: &egui::Context) -> Self {
@@ -125,6 +129,7 @@ impl ScreenPreviews {
             to_say: Vec::new(),
             textures: HashMap::new(),
             order: VecDeque::new(),
+            display: DisplayProfile::default(),
         }
     }
     /// `photo` at `edge` pixels with the edit `stamp` identifies (see
@@ -155,6 +160,7 @@ impl ScreenPreviews {
                 key: key.clone(),
                 ticket: self.next_ticket,
                 edit: edit(),
+                display: self.display.clone(),
             });
             self.shared.ready.notify_one();
         }
@@ -239,6 +245,14 @@ impl ScreenPreviews {
         self.failed.clear();
         self.pending.clear();
     }
+    /// Converts to `display` from now on: every preview is made again, and
+    /// the ones on their way, converted for the old one, are dropped.
+    pub(super) fn set_display(&mut self, display: DisplayProfile) {
+        if self.display != display {
+            self.display = display;
+            self.clear();
+        }
+    }
     /// Forgets `id`'s previews, as it was removed.
     pub(super) fn forget(&mut self, id: PhotoId) {
         self.textures.retain(|key, _| key.0 != id);
@@ -297,7 +311,12 @@ fn work(
             }
             queue.jobs.pop().unwrap()
         };
-        let Job { key, ticket, edit } = job;
+        let Job {
+            key,
+            ticket,
+            edit,
+            display,
+        } = job;
         let outcome = if !wanted.lock().unwrap().contains(&key) {
             Outcome::Skipped
         } else {
@@ -319,7 +338,10 @@ fn work(
                 }
             }));
             match rendered {
-                Ok(Ok(image)) => Outcome::Ready(image),
+                Ok(Ok(mut image)) => {
+                    display.convert(&mut image);
+                    Outcome::Ready(image)
+                }
                 Ok(Err(e)) => Outcome::Failed(format!("{e:#}")),
                 Err(_) => Outcome::Failed("The preview could not be rendered".into()),
             }
@@ -464,6 +486,7 @@ mod tests {
             key,
             ticket: 0,
             edit: None,
+            display: DisplayProfile::default(),
         });
         screen.shared.ready.notify_one();
         screen.wait(&ctx);
@@ -486,6 +509,7 @@ mod tests {
             key: key.clone(),
             ticket: 1,
             edit: None,
+            display: DisplayProfile::default(),
         });
         screen.shared.ready.notify_one();
         let started = std::time::Instant::now();
@@ -574,5 +598,54 @@ mod tests {
         let stopping = screen.close();
         let waited = crate::app::task::wait_for(stopping, std::time::Duration::from_secs(20));
         assert_eq!(waited.detached, 0);
+    }
+
+    /// Compare's and Survey's previews are converted to the monitor profile
+    /// each request captured; a switch makes them again, and a render asked
+    /// for before it is dropped.
+    #[test]
+    fn screen_previews_are_converted_and_follow_a_profile_switch() {
+        const RED: [u8; 3] = [200, 40, 30];
+        let ctx = egui::Context::default();
+        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _| {
+            Ok(image::RgbImage::from_pixel(8, 8, image::Rgb(RED)))
+        });
+        let p3 = DisplayProfile::new(Some(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("crates/rawmakase-decode/tests/data/monitor/display-p3-v4.icc"),
+        ));
+        let mut expected = image::RgbImage::from_pixel(1, 1, image::Rgb(RED));
+        p3.convert(&mut expected);
+        let a = photo(PhotoId(1), Path::new("a"));
+        let key = (PhotoId(1), PathBuf::from("a"), EDGE_STEP, 0);
+        screen.wanted.lock().unwrap().insert(key);
+        let first_pixel = |screen: &mut ScreenPreviews| {
+            assert!(!matches!(screen.get(&a, 100, 0, || None), Shown::Failed));
+            screen.wait(&ctx);
+            let Shown::Ready(texture) = screen.get(&a, 100, 0, || None) else {
+                panic!("ready");
+            };
+            let texture = texture.clone();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |_| {});
+            let (_, deltas) = output
+                .textures_delta
+                .set
+                .iter()
+                .find(|(id, _)| **id == texture.id())
+                .unwrap();
+            let egui::ImageData::Color(image) = &deltas.last().unwrap().image;
+            let [r, g, b, _] = image.pixels[0].to_array();
+            output.textures_delta.clear();
+            [r, g, b]
+        };
+        screen.set_display(p3.clone());
+        assert_eq!(first_pixel(&mut screen), expected.get_pixel(0, 0).0);
+        // Asked for with the profile, then switched before it is taken.
+        screen.set_display(DisplayProfile::default());
+        assert!(screen.textures.is_empty());
+        screen.set_display(p3);
+        let _ = screen.get(&a, 100, 0, || None);
+        screen.set_display(DisplayProfile::default());
+        assert_eq!(first_pixel(&mut screen), RED);
     }
 }

@@ -3,6 +3,7 @@
 use super::render::{finished_entry, plain_of, preview_tags, render_edited, render_edited_with_ai};
 use super::source::{EditSource, PreviewAi};
 use super::thumbnails::Worker;
+use crate::app::preferences::monitor::DisplayProfile;
 use crate::catalog::PhotoId;
 use crate::catalog::preview_cache::{PreviewCache, Stamp};
 use eframe::egui;
@@ -37,6 +38,16 @@ pub(in crate::app::library) enum EditJob {
         /// at [`Pace::Full`], after every photo shown, and answered
         /// [`EditResult::Kept`] unless the photo is shown by then.
         ahead: bool,
+        /// What the preview shown is converted to; the cache keeps sRGB.
+        display: DisplayProfile,
+    },
+    /// Show a preview already rendered, e.g. Develop's, converted to
+    /// `display`: answered [`EditResult::Ready`] with `id` and `ticket`.
+    Convert {
+        id: PhotoId,
+        ticket: u64,
+        image: image::RgbImage,
+        display: DisplayProfile,
     },
     /// Keep an already rendered preview, e.g. from Develop, of the file as
     /// `stamp` gives it when it was rendered: not kept once the file differs.
@@ -234,7 +245,7 @@ impl Sent {
             .iter()
             .filter_map(|q| match &q.job {
                 EditJob::Store { tag, .. } => Some(tag.clone()),
-                EditJob::Render { .. } => None,
+                EditJob::Render { .. } | EditJob::Convert { .. } => None,
             })
             .collect()
     }
@@ -272,6 +283,8 @@ fn renders_at(pace: Pace, full_renders: usize) -> usize {
 enum Step {
     /// Keep a preview: of the file, under the edit family and tag.
     Store(PathBuf, String, String, Stamp, image::RgbImage),
+    /// Convert a preview to show to the monitor.
+    Convert(PhotoId, u64, image::RgbImage, DisplayProfile),
     /// Answer without rendering: the photo is out of view, or was asked for
     /// ahead and the pace dropped.
     Skip(PhotoId, u64),
@@ -337,6 +350,10 @@ pub(super) fn spawn_edited_with_ai(
                 Step::Skip(id, ticket) => renders.results.send(EditResult::Skipped(id, ticket)),
                 Step::Store(path, family, tag, stamp, image) => {
                     renders.store(&path, &family, &tag, &stamp, &image)
+                }
+                Step::Convert(id, ticket, mut image, display) => {
+                    display.convert(&mut image);
+                    renders.results.send(EditResult::Ready(id, ticket, image));
                 }
                 Step::Look(index, render) => renders.look(index, render),
                 Step::Render(index) => renders.start(index),
@@ -405,7 +422,7 @@ impl Renders {
     /// Answers the job at `index` from the cache, else renders it when
     /// `render`, else marks it to wait for a render.
     fn look(&self, index: usize, render: bool) {
-        let (id, ticket, path, copy, source, ahead, ai) = {
+        let (id, ticket, path, copy, source, ahead, display, ai) = {
             let state = self.results.shared.lock();
             match &state.jobs[index].job {
                 EditJob::Render {
@@ -415,6 +432,7 @@ impl Renders {
                     copy,
                     source,
                     ahead,
+                    display,
                 } => (
                     *id,
                     *ticket,
@@ -422,9 +440,12 @@ impl Renders {
                     copy.clone(),
                     source.clone(),
                     *ahead,
+                    display.clone(),
                     state.ai.clone(),
                 ),
-                EditJob::Store { .. } => unreachable!("stores are not looked up"),
+                EditJob::Store { .. } | EditJob::Convert { .. } => {
+                    unreachable!("stores and conversions are not looked up")
+                }
             }
         };
         let tags: Vec<(&Path, String)> = std::iter::once(&path)
@@ -450,7 +471,8 @@ impl Renders {
             Some(image) => {
                 state.jobs.remove(index);
                 drop(state);
-                self.results.send(self.answer(id, ticket, ahead, image));
+                self.results
+                    .send(answer(&self.wanted, id, ticket, ahead, &display, image));
             }
             None if render => {
                 drop(state);
@@ -458,11 +480,6 @@ impl Renders {
             }
             None => state.jobs[index].missed = true,
         }
-    }
-    /// A preview for photo `id`: shown, unless it was asked ahead and the
-    /// photo is not shown yet.
-    fn answer(&self, id: PhotoId, ticket: u64, ahead: bool, image: image::RgbImage) -> EditResult {
-        answer(&self.wanted, id, ticket, ahead, image)
     }
     /// Renders the job at `index` on the pool of the pace it starts at. A
     /// photo asked ahead and not shown is not rendered once the pace has
@@ -483,10 +500,11 @@ impl Renders {
             path,
             source,
             ahead,
+            display,
             ..
         } = queued.job
         else {
-            unreachable!("stores are not rendered")
+            unreachable!("stores and conversions are not rendered")
         };
         if ahead && !shown(&self.wanted, id) {
             let answer = if queued.dropped || state.pace == Pace::Background {
@@ -563,7 +581,7 @@ impl Renders {
                 EditResult::Skipped(id, ticket)
             } else {
                 match image {
-                    Some(image) => answer(&wanted, id, ticket, ahead, image),
+                    Some(image) => answer(&wanted, id, ticket, ahead, &display, image),
                     None => EditResult::Failed(id, ticket),
                 }
             });
@@ -574,16 +592,20 @@ impl Renders {
         }
     }
 }
+/// A preview for photo `id`: shown, converted to `display`, unless it was
+/// asked ahead and the photo is not shown yet.
 fn answer(
     wanted: &Wanted,
     id: PhotoId,
     ticket: u64,
     ahead: bool,
-    image: image::RgbImage,
+    display: &DisplayProfile,
+    mut image: image::RgbImage,
 ) -> EditResult {
     if ahead && !shown(wanted, id) {
         EditResult::Kept(id, ticket)
     } else {
+        display.convert(&mut image);
         EditResult::Ready(id, ticket, image)
     }
 }
@@ -620,7 +642,24 @@ fn next_step(shared: &Shared, wanted: &Wanted, full_renders: usize) -> Step {
                 .unwrap_or_else(|e| e.into_inner());
             continue;
         }
-        // Stores first: they are cheap and keep Develop's renders.
+        // Stores and conversions first: they are cheap and keep and show
+        // Develop's renders.
+        if let Some(index) = state
+            .jobs
+            .iter()
+            .position(|q| matches!(q.job, EditJob::Convert { .. }))
+        {
+            let EditJob::Convert {
+                id,
+                ticket,
+                image,
+                display,
+            } = state.jobs.remove(index).job
+            else {
+                unreachable!()
+            };
+            return Step::Convert(id, ticket, image, display);
+        }
         if let Some(index) = state
             .jobs
             .iter()
@@ -646,7 +685,7 @@ fn next_step(shared: &Shared, wanted: &Wanted, full_renders: usize) -> Step {
             EditJob::Render { id, ahead, .. } => {
                 !shown.contains(id) && (!ahead || !full || q.dropped)
             }
-            EditJob::Store { .. } => false,
+            EditJob::Store { .. } | EditJob::Convert { .. } => false,
         }) {
             let EditJob::Render { id, ticket, .. } = state.jobs.remove(index).job else {
                 unreachable!()
@@ -663,7 +702,7 @@ fn next_step(shared: &Shared, wanted: &Wanted, full_renders: usize) -> Step {
         // themselves. A second waits here instead, outside the pool.
         let rendering = |q: &Queued| match &q.job {
             EditJob::Render { path, .. } => state.running.iter().any(|r| &r.path == path),
-            EditJob::Store { .. } => false,
+            EditJob::Store { .. } | EditJob::Convert { .. } => false,
         };
         // Photos shown, the latest first: from the cache whether or not a
         // render could start, rendered when one can.

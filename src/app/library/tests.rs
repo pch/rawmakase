@@ -23,6 +23,7 @@ fn develop_workspace_drains_library_preview_results() -> Result<()> {
         tx.try_send(previews::PreviewResult {
             path,
             image: Some(image::RgbImage::new(16, 16)),
+            display: Default::default(),
             cache_error: None,
             skipped: false,
         })?;
@@ -1933,6 +1934,7 @@ fn a_skipped_thumbnail_is_asked_for_again() -> Result<()> {
     result_tx.try_send(previews::PreviewResult {
         path: path.clone(),
         image: None,
+        display: Default::default(),
         cache_error: None,
         skipped: true,
     })?;
@@ -5607,7 +5609,9 @@ fn edited_previews_are_asked_ahead_only_at_full_pace_in_order_from_the_view() ->
                     assert!(ahead);
                     id
                 }
-                previews::EditJob::Store { .. } => panic!("not a render"),
+                previews::EditJob::Store { .. } | previews::EditJob::Convert { .. } => {
+                    panic!("not a render")
+                }
             })
             .collect::<Vec<_>>()
     };

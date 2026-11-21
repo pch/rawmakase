@@ -6,6 +6,7 @@
 //! and kept, within a budget, until it is shown. An offline photo shows its
 //! cached preview.
 use super::{Action, Library, thumbnails};
+use crate::app::preferences::monitor::DisplayProfile;
 use crate::app::ui::design::{Tone, text};
 use crate::app::ui::theme;
 use crate::app::view::navigator::Zoom;
@@ -25,8 +26,9 @@ const EDGE_STEP: u32 = 512;
 /// Prepared neighbours kept, in bytes; the oldest go first.
 const PREFETCHED_BYTES: usize = 64 << 20;
 
-/// A preview as asked for: photo, file (photo ids can be reused) and edge.
-type Key = (PhotoId, PathBuf, u32);
+/// A preview as asked for: photo, file (photo ids can be reused), edge and
+/// the monitor profile it is converted to.
+type Key = (PhotoId, PathBuf, u32, DisplayProfile);
 
 struct Job {
     ticket: u64,
@@ -38,6 +40,7 @@ struct Job {
     /// For an offline RAW: the identity of its stored Standard preview, read
     /// from the preview cache instead of the file.
     stored: Option<String>,
+    display: DisplayProfile,
     cancel: Arc<AtomicBool>,
 }
 struct Done {
@@ -83,6 +86,8 @@ pub(super) struct Loupe {
     pub state: State,
     /// The photo's failure, until the Library says it in the top bar.
     unreported: Option<String>,
+    /// The monitor profile the preview and the zoomed region are converted to.
+    display: DisplayProfile,
 }
 impl Loupe {
     pub(super) fn new(ctx: &egui::Context) -> Self {
@@ -105,9 +110,13 @@ impl Loupe {
                         Some(identity) => stored(&job.path, identity),
                         None => crate::raster::decode(&job.path),
                     };
-                    image.map(|image| Prepared {
-                        full: image.dimensions(),
-                        image: thumbnails::downscale(&image, job.edge),
+                    image.map(|image| {
+                        let mut shown = thumbnails::downscale(&image, job.edge);
+                        job.display.convert(&mut shown);
+                        Prepared {
+                            full: image.dimensions(),
+                            image: shown,
+                        }
                     })
                 }));
                 match prepared {
@@ -136,6 +145,7 @@ impl Loupe {
             before_click: None,
             state: State::Loading,
             unreported: None,
+            display: DisplayProfile::default(),
         }
     }
     /// A new request: the earlier one's result, and its failure not yet
@@ -147,7 +157,7 @@ impl Loupe {
     /// Asks for `photo` at `edge` pixels, unless that is already on its way;
     /// from its stored preview with that identity when `stored` says so.
     fn request(&mut self, ctx: &egui::Context, photo: &Photo, edge: u32, stored: Option<String>) {
-        let wanted = key(photo, edge);
+        let wanted = key(photo, edge, &self.display);
         let asked = self.requested.as_ref() == Some(&wanted);
         if asked && self.state == State::Ready {
             return;
@@ -183,12 +193,13 @@ impl Loupe {
             path: photo.path.clone(),
             edge,
             stored,
+            display: self.display.clone(),
             cancel: self.cancel.clone(),
         });
     }
     /// Prepares `photo`, the next one along, unless it is ready or on its way.
     fn prepare_ahead(&mut self, photo: &Photo, edge: u32) {
-        let wanted = key(photo, edge);
+        let wanted = key(photo, edge, &self.display);
         if self.ahead_requested.as_ref() == Some(&wanted)
             || self.prefetched.iter().any(|(k, _)| *k == wanted)
         {
@@ -203,6 +214,7 @@ impl Loupe {
             path: photo.path.clone(),
             edge: wanted.2,
             stored: None,
+            display: self.display.clone(),
             cancel: self.ahead_cancel.clone(),
         });
     }
@@ -215,6 +227,15 @@ impl Loupe {
             egui::TextureOptions::LINEAR,
         ));
         self.state = State::Ready;
+    }
+    /// Converts to `display` from now on: what was converted for another
+    /// goes, and the photo shown is asked for again.
+    pub(super) fn set_display(&mut self, display: DisplayProfile) {
+        if self.display != display {
+            self.display = display.clone();
+            self.regions.set_display(display);
+            self.reset();
+        }
     }
     /// Lets go of what the Loupe's own preview holds, unless already idle.
     fn idle(&mut self) {
@@ -290,6 +311,10 @@ impl Loupe {
         }
     }
     #[cfg(test)]
+    pub(super) fn texture(&self) -> Option<&egui::TextureHandle> {
+        self.texture.as_ref()
+    }
+    #[cfg(test)]
     pub(super) fn texture_size(&self) -> Option<[usize; 2]> {
         self.texture.as_ref().map(|t| t.size())
     }
@@ -306,11 +331,12 @@ fn stored(path: &std::path::Path, identity: &str) -> anyhow::Result<image::RgbIm
             .ok_or_else(|| anyhow::anyhow!("No stored preview")),
     }
 }
-fn key(photo: &Photo, edge: u32) -> Key {
+fn key(photo: &Photo, edge: u32, display: &DisplayProfile) -> Key {
     (
         photo.id,
         photo.path.clone(),
         edge.div_ceil(EDGE_STEP).max(1) * EDGE_STEP,
+        display.clone(),
     )
 }
 

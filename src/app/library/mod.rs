@@ -1318,15 +1318,16 @@ impl Library {
     pub(in crate::app) fn edited_ticket(&self, id: PhotoId) -> Option<u64> {
         self.cache.edited_ticket(id)
     }
-    /// A built preview, as the photo's edited thumbnail; the caller has checked
-    /// it is still the photo's latest.
+    /// A built preview, as the photo's edited thumbnail (converted to the
+    /// monitor profile first); the caller has checked it is still the photo's
+    /// latest.
     pub(in crate::app) fn show_built_preview(
         &mut self,
         ctx: &egui::Context,
         id: PhotoId,
         image: &image::RgbImage,
     ) {
-        self.cache.insert_edited(ctx, id, image);
+        self.cache.show_built(ctx, id, image);
     }
     /// What Synchronize Folder covers for the folder selected in the
     /// Folders panel, and its name; none for All Photographs, a collection
@@ -1604,6 +1605,14 @@ impl Library {
             self.filter();
         }
         self.select(Some(id));
+    }
+    /// Converts the Library's previews to the monitor profile `profile` from
+    /// now on (none: sRGB as it is); the workspace sets it every frame.
+    pub(in crate::app) fn set_display(&mut self, profile: Option<std::path::PathBuf>) {
+        let display = crate::app::preferences::monitor::DisplayProfile::new(profile);
+        self.loupe.set_display(display.clone());
+        self.screen.set_display(display.clone());
+        self.cache.set_display(display);
     }
     /// Drain in every workspace so the bounded worker never waits for the grid.
     pub(in crate::app) fn poll_previews(&mut self, ctx: &egui::Context) {
@@ -1996,6 +2005,8 @@ mod volumes;
 pub(crate) use volumes::remember_drives_in;
 mod zoom;
 use thumbnails::thumbnail;
+#[cfg(test)]
+mod monitor_tests;
 #[cfg(test)]
 mod tests;
 

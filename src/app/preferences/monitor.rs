@@ -12,6 +12,7 @@
 //! renderer's output color space or export profiles.
 pub(crate) use crate::platform::display::SystemDisplay;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// The monitor profile the user chose.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -61,6 +62,33 @@ impl MonitorProfile {
     /// compositor; only following the system lets macOS match them.
     pub(crate) fn device_rgb(&self) -> bool {
         *self != Self::System
+    }
+}
+
+/// The resolved profile a preview job converts its encoded sRGB pixels to,
+/// captured once when the job is asked for ([`MonitorProfile::transform`]);
+/// none leaves them as sRGB. Two equal values convert alike, so a result
+/// carries the one it was converted for, and one converted for another is
+/// stale.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub(crate) struct DisplayProfile(Option<Arc<Path>>);
+
+impl DisplayProfile {
+    pub(crate) fn new(path: Option<PathBuf>) -> Self {
+        Self(path.map(Into::into))
+    }
+    /// Whether pixels are converted at all; none are for sRGB, or for a
+    /// display the system matches itself.
+    pub(crate) fn converts(&self) -> bool {
+        self.0.is_some()
+    }
+    /// Converts encoded sRGB pixels in place to the monitor. A profile that
+    /// can't be used leaves them as sRGB, as Develop shows them (its status
+    /// line says why).
+    pub(crate) fn convert(&self, image: &mut image::RgbImage) {
+        if let Some(path) = &self.0 {
+            let _ = crate::color_management::display_transform(path, image);
+        }
     }
 }
 
