@@ -43,7 +43,7 @@ anyhow = "1"
 base64 = "0.23"
 bytemuck = { version = "1.25", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
-fastframe-fonts = { git = "https://github.com/crmne/fastframe", tag = "v0.17.0", version = "0.17.0", default-features = false }
+fastframe-fonts = { git = "https://github.com/crmne/fastframe", tag = "v0.17.1", version = "0.17.1", default-features = false }
 flate2 = "1"
 getrandom = "0.4"
 libc = "0.2"
@@ -113,14 +113,14 @@ bzip2-rs = "0.1"
 tar = { version = "0.4", default-features = false }
 # Shared egui app foundation (github.com/crmne/fastframe). Not on crates.io
 # yet: pin a tag and update it deliberately.
-fastframe-update = { git = "https://github.com/crmne/fastframe", tag = "v0.17.0", version = "0.17.0" }
-fastframe-text = { git = "https://github.com/crmne/fastframe", tag = "v0.17.0", version = "0.17.0", features = ["watch"] }
+fastframe-update = { git = "https://github.com/crmne/fastframe", tag = "v0.17.1", version = "0.17.1" }
+fastframe-text = { git = "https://github.com/crmne/fastframe", tag = "v0.17.1", version = "0.17.1", features = ["watch"] }
 fastframe-fonts.workspace = true
-fastframe-icons = { git = "https://github.com/crmne/fastframe", tag = "v0.17.0", version = "0.17.0" }
+fastframe-icons = { git = "https://github.com/crmne/fastframe", tag = "v0.17.1", version = "0.17.1" }
 # The SVG loader behind the icons, at eframe's egui version.
 egui_extras = { version = "0.36", default-features = false, features = ["svg"] }
-fastframe-titlebar = { git = "https://github.com/crmne/fastframe", tag = "v0.17.0", version = "0.17.0" }
-fastframe-theme = { git = "https://github.com/crmne/fastframe", tag = "v0.17.0", version = "0.17.0" }
+fastframe-titlebar = { git = "https://github.com/crmne/fastframe", tag = "v0.17.1", version = "0.17.1" }
+fastframe-theme = { git = "https://github.com/crmne/fastframe", tag = "v0.17.1", version = "0.17.1" }
 
 # Native quit handling and display color management (src/platform/).
 [target.'cfg(target_os = "macos")'.dependencies]
