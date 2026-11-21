@@ -745,6 +745,13 @@ each channel held at its white), which also keeps the highlight data the clamp t
 away. The other is to refit the first two ensembles and the blend on maps read as
 Camera Raw reads them. Neither is done.
 
+**The third ensemble alone on every validation set.** The build with both changes,
+against the build with the decoder change only: 1246 pass, one fails, 697 have too few
+photos. The one is the palms at Shadows +60, Highlights −60, Whites +30 and Blacks −30
+(above). Against main it is the decoder change's eleven and the palms at two settings
+of Shadows with Highlights. What the top of the Highlights curve does is therefore
+close to free of regressions by the gate's rule; what it stands on is not.
+
 **Open.** The statistic behind the size effects; whether to keep the data above the
 white level for rendering while the rule reads the photo as Camera Raw does, and
 refitting the first and second ensembles on maps read as Camera Raw reads them; the
