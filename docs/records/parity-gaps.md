@@ -16,6 +16,114 @@ These controls were fitted to Camera Raw renders and match within the default-re
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the colour curves was not checked; here they set the RGB curve only.
 - **Auto** tone is fitted to Lightroom Classic's own Auto values, from 452 Auto Settings steps on 439 catalog photos with every fifth photo held out; each slider is a linear fit of one or two display-encoded percentiles of luminance, of the brightest channel or of chroma, and the held-out error is a median 1 step on Contrast and 0.21 EV on Exposure. Lightroom changed Auto in mid-2019 and the catalog's history shows both versions, so the slopes are fitted on every photo and the levels, Contrast, Vibrance and Saturation on the current Auto alone. The WB menu's Auto white balance is fitted to Lightroom's Auto values (a median of 2.7 mired off on 133 photos); see [tone controls](../tone-controls.md#auto).
 
+### Camera Raw questioned on scenes with known input: what Shadows is (2026-11-21)
+
+Until now the rule was learned from photos, whose scene values the engine can only
+estimate, and from flat-patch mosaics. This round asked Camera Raw 18.7 directly: probe
+DNGs written with `probe_dng.py` (DefaultBlackRender None, two stops of headroom) and
+rendered at default, Shadows ±100 and Highlights ±100, about a second a render, so that
+every scene value is known exactly and the gain needs no alignment, no black and no
+white curve undone. Nothing here is merged; the numbers are from scratch scripts.
+
+**A photo's behaviour is in its picture.** Twelve training photos whose Shadows +100
+gain departs most from the one curve of all photos were written out again as probes,
+from their own default render at 1000 px and from the engine's 512-pixel measurement
+map (grey, values above the white kept). The probe keeps the photo's departure in 9 of
+12 from the render and in 9 to 10 of 12 from the map (480: −0.39 → −0.38; 481: +0.39 →
++0.40; 126: +0.14 → +0.12; signed residual in stops, weighted by the lift): not the
+camera, the ISO, the metadata or the raw file's noise. Mirroring, removing colour,
+doubling the size, a blur of two pixels and 1% noise change nothing; shuffling 64 or
+1,024 tiles changes little (132: +0.65 → +0.65 and +0.62). With one exception: on a
+photo whose blown sky is a flat area, 1% noise moves the residual from −0.63 to +0.16.
+The other thread's finding that flat areas do not count holds for Shadows.
+
+**The gain is a function of the tone distribution alone.** On scenes of vertical strips
+(each a level with 4% smooth texture and 1% noise), fifteen arrangements of the same
+shares give the same gain to 0.05 stop (a region four stops down under 20% / 35% / 50% /
+65% / 80% of bright area: 0.84–0.92, 0.88–0.91, 1.11–1.15, 1.36–1.39, 1.70–1.75), and
+the gain is constant over a region. Scaling the whole scene by a stop either way changes
+no pixel's gain (0.00). Moving a band of dark tones changes only pixels at nearby
+levels (the base level); moving mid and bright tones moves every shadow alike.
+
+**Its shape.** Shadows +100 leaves everything above a knee alone, lifts the tones under
+it by about a stop for a stop, so that they land on a plateau half a stop to a stop
+under the knee, and lifts the picture's darkest level only about half the way to the
+knee, with a steep ramp between the darkest level and the plateau. A region four stops
+under a bright rest is lifted 1.81 stops when it is the darkest thing in the frame, and
+1.96, 2.13, 2.38, 2.72, 3.26 and 3.66 when 2% of the frame sits 0.2, 0.5, 1, 2, 4 and 6
+stops deeper; the darkest strip of two is lifted 0.36, 0.99, 1.51, 1.83, 2.25 and 2.77
+at one to six stops (half the gap), and about 3.0 and 3.3 at eight and ten. Away from
+the darkest level Shadows −100 is the mirror in stops (+3.19 and −3.35); at the darkest
+level it is not (+1.81 and −3.12). Read as a single function of knee less level, +100
+and −100 give the same knee for every two-strip scene, to 0.05–0.2 stop. Sensor-like
+read noise on the probe (a black level, 3 DN) leaves these numbers as they are.
+
+**What counts as the darkest level.** By share of the frame, at 1024, 2048 and 4096
+pixels alike: a compact dark square of 0.009% of the frame does nothing, 0.037% half,
+0.146% all; scattered single pixels or 2×2 blocks never count (to 0.6% of the frame); a
+checker of 2-pixel columns reads as its mean in light, one of 16-pixel cells as its dark
+cells. So it is a low percentile, about the 0.05th, of a mildly smoothed picture: near
+what the engine reads (the 0.1th percentile of its map). Giving the network the map's
+minimum and finer low and high percentiles as inputs changes nothing on photos (467
+photos held out: 0.161 → 0.158–0.160).
+
+**An explicit law, so far.** With t the position of a level between the darkest level
+B and the knee k, u = u₀ + (1 − u₀)·c(t) the position it is taken to, u₀·(k − B) the
+smaller of half the range and about 3 stops, c a fixed concave curve and k the log of
+the mean light less 0.8 stop: 0.23 stop RMS on 830 clean strip readings whose gains have
+an RMS of 1.31, and 0.18 on 1,828 with the knee as a mix of the mean light and the upper
+quantiles. The misses that remain have a pattern (a dark majority under a few bright
+areas is lifted more than the form says), so the form is not final. Fitted on strips,
+it does not carry to photos as it is (0.36 stop, 0.2 too much lift).
+
+**Scenes can stand in for photos.** 480 scenes were made from 240 training photos'
+maps, each through a random monotone tone curve and exposure, and rendered by Camera
+Raw. With the first ensemble's method and the photo held out by source: mosaics and
+photos 0.163 stop at Shadows +100 and 0.113 at Highlights −100 (median over 451 photos);
+with the scenes of the other photos added 0.158 and 0.106; photos and scenes without
+mosaics 0.153 and 0.105; mosaics and scenes with no real photo at all 0.160 and 0.113.
+Scenes alone: 0.176, 0.179, 0.160 and 0.150 on the real photos with 44, 90, 180 and 360
+scenes, against 0.156 from the 390 other real photos; on the held-out photos' own
+scenes 0.149, 0.153, 0.137 and 0.122, about a tenth less for each doubling and still
+falling. The same law's form with its twelve numbers refitted on those 480 scenes
+gives 0.143 a scene and, on the 467 real photos with none of them fitted, 0.167 median
+and 0.201 mean; the network with the photo held out gives 0.161 and 0.191. A learner
+given the whole tone distribution (the share of the frame under 73 offsets from the
+level) instead of the 24 inputs: 0.114 on scenes and 0.146 on photos from 360 scenes.
+
+**The colour chart and the mosaics are the flat regime.** Both are flat patches, which
+Camera Raw leaves out of a picture's statistics, and which the engine cannot tell from
+textured areas. The rule refitted on 467 photos with their targets taken through the
+stage's black (below) is closer to Camera Raw on the stress and validation photos at
+every single slider (Shadows +100: mean ΔE00 2.82 → 2.63 on 24 stress photos, 8 closer
+and 4 further; 2.52 → 2.37 on 29 validation photos, 13 and 2; dark-band bias 3.11 →
+2.18 and 3.91 → 2.06 L\*; Highlights −100 median 1.19 → 1.11 and 1.22 → 1.07; the
+one loss is Shadows −100's median on validation, 0.77 → 0.89) and further on the chart
+(Shadows +100 3.63 → 5.81 mean ΔE00, Highlights +100 6.99 → 8.50), with the pair model
+of main or refitted. The 375-photo refit of 2026-11-19 was rejected for being brighter
+at Shadows +100: with the photo targets corrected, more photos help. The earlier fit
+on 213 photos reported below had also treated the 50 photo-histogram mosaics as photos
+(their names begin with `photo-`); with that put right it is no better than main on
+the stress photos (mean 2.82 → 3.16), so those mosaics' true gains pull the rule away
+from photos. Neither refit is proposed: the gain is a fraction of the gap.
+
+**Ruled out for the per-photo factor.** The default black in the ratio of two renders
+(135 photos: the spread of the best key shift 0.331 → 0.328 with the black undone); a
+key weighted by fine detail (371 photos with full-size flatness and range planes: 0.141
+→ 0.140 at best); the size of a photo's dark structures (rank correlations under 0.17).
+
+**Traps.** A ladder of small patches inside a scene does not read the transfer: a
+patch within a stop or two of the region beside it takes that region's gain (the base
+level). Read wide strips in their middle. Probe levels more than ten stops under the
+white sit in the file's last few code values. Photoshop answers slowly while the
+machine is loaded; the render call has to be retried.
+
+**Open.** The knee's and the darkest level's exact statistics and the law's final form;
+the same measurement for Highlights (recorded in the same renders: a small bright area
+far above the rest is pulled all the way down to it, as the other thread saw); why two
+of twelve photos' behaviour is in neither their render nor their map; the law or a
+rule trained on thousands of scenes in the engine, through the local Laplacian base.
+
 ### The base level: a local Laplacian filter, and what the curves are once it is right (2026-11-20)
 
 A second thread looked at Shadows and Highlights from the start, on renders already on
