@@ -1711,7 +1711,7 @@ impl Editor {
             {
                 library.cycle_loupe_info();
             }
-            // Shift+J makes a colour range mask, below.
+            // Shift+J makes a color range mask, below.
             if self.keys(ctx).take(&b::CLIPPING).is_some() {
                 self.view.clipping.toggle_both();
             }
@@ -1777,7 +1777,7 @@ impl Editor {
             if self.view.is(Tool::Guided) {
                 self.guided_keys(ctx);
             }
-            // New masks: K brush, M linear, Shift+M radial, Shift+J colour range.
+            // New masks: K brush, M linear, Shift+M radial, Shift+J color range.
             {
                 use crate::app::develop::tools::mask_tool::Kind;
                 let kind = if self.keys(ctx).take(&b::NEW_BRUSH_MASK).is_some() {
@@ -1980,7 +1980,7 @@ impl Editor {
     }
     fn develop_photo(&mut self, ui: &mut egui::Ui) {
         // The photo's backdrop reaches the panels around it, leaving the
-        // photo a margin of its own colour.
+        // photo a margin of its own color.
         let backdrop = theme::palette(ui.ctx()).photo_backdrop();
         let area = egui::CentralPanel::default()
             .frame(

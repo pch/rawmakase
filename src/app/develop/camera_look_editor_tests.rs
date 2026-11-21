@@ -69,7 +69,7 @@ fn a_fitted_camera_look_is_one_step_and_yields_to_later_choices() {
 }
 
 /// Listing a photo's profiles again after an import keeps the fitted default of a
-/// photo still without colour data, and drops it once an imported profile fits.
+/// photo still without color data, and drops it once an imported profile fits.
 #[test]
 fn an_import_keeps_a_fitted_default_until_a_profile_fits() {
     use crate::camera_profiles::fitted;

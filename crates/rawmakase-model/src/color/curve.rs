@@ -327,12 +327,12 @@ impl<'de> Deserialize<'de> for CurveLut {
     }
 }
 
-/// Luma weights (Rec. 601) with which Refine Saturation measures a colour's lightness,
+/// Luma weights (Rec. 601) with which Refine Saturation measures a color's lightness,
 /// in encoded ProPhoto RGB: fitted to Camera Raw 18.7 on the synthetic chart.
 const REFINE_LUMA: [f32; 3] = [0.299, 0.587, 0.114];
 
 /// Lightroom's Refine Saturation on the master point curve, in encoded ProPhoto RGB:
-/// `input` before the curve, `curved` after it. At 0 the colour keeps its channel
+/// `input` before the curve, `curved` after it. At 0 the color keeps its channel
 /// differences from before the curve and takes its luma from `curved`, scaled down only
 /// as far as it must to stay within 0–1. Other amounts blend linearly, and amounts above
 /// 1 render as 1, as Camera Raw does.

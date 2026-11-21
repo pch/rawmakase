@@ -1,6 +1,6 @@
 //! Opening a photo: the RAW decoder's facts about the file ([`Raw::open_file`]), then what
 //! the file says beyond them and what the user's libraries add: the lens tables
-//! the camera embedded, a DNG's profile, baseline exposure, colour matrix, lens
+//! the camera embedded, a DNG's profile, baseline exposure, color matrix, lens
 //! and default crop, and the imported lens profiles that fit. Everything that
 //! develops, previews or exports a photo opens it here; the Library's
 //! thumbnails, which need only the file's facts and its embedded preview,
@@ -120,8 +120,8 @@ fn with_file_facts(path: &Path, mut raw: Raw) -> Result<Raw> {
         // 0 is the DNG default; the camera table is for other raw formats.
         metadata.baseline_exposure = Some(dng.baseline_exposure.unwrap_or(0.));
         metadata.dng_neutral_calibration = dng.neutral_calibration;
-        // A profile needs a forward matrix; one written as colour matrices alone
-        // still describes the camera's colour, so keep that when it is all there is.
+        // A profile needs a forward matrix; one written as color matrices alone
+        // still describes the camera's color, so keep that when it is all there is.
         let profile = dng
             .profile
             .as_deref()
@@ -148,7 +148,7 @@ fn with_file_facts(path: &Path, mut raw: Raw) -> Result<Raw> {
         );
         metadata.embedded_dcp = dng.profile.filter(|_| fits).map(std::sync::Arc::from);
         // A DNG the decoder found no XYZ-to-camera matrix for, written with
-        // colour matrices but no profile, would render without a profile at
+        // color matrices but no profile, would render without a profile at
         // all. Take the file's D65 matrix then: the same matrix in the same
         // direction, so nothing downstream has to know where it came from. A
         // camera the decoder has a matrix for keeps it.
@@ -190,7 +190,7 @@ fn with_file_facts(path: &Path, mut raw: Raw) -> Result<Raw> {
 }
 
 /// What a DNG's embedded profile tags are to its photo: none, a profile that
-/// parses and fits the camera, one for another camera, colour matrices alone, or
+/// parses and fits the camera, one for another camera, color matrices alone, or
 /// tags that are neither (an error that must not read as no profile). `parsed`
 /// is whether a profile parsed, and then whether it fits the camera.
 fn embedded_profile_status(
@@ -335,8 +335,8 @@ mod tests {
             }
         });
         assert_eq!(unreadable.embedded_profile_status, S::Unreadable);
-        // No colour tags at all (UniqueCameraModel alone): no profile.
-        let colourless = patched("colourless.dng", &|tag, entry| {
+        // No color tags at all (UniqueCameraModel alone): no profile.
+        let colourless = patched("colorless.dng", &|tag, entry| {
             if [50721, 50722, 50938, 50939, 50964, 50965, 50982].contains(&tag) {
                 entry[..2].copy_from_slice(&(tag + 10000).to_le_bytes());
             }

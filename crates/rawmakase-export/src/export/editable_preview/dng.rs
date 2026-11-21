@@ -23,7 +23,7 @@
 //! precision under white. Floating-point samples would be clamped at white by
 //! the reader, so they are not used.
 //!
-//! The standard tags carry what another DNG reader needs: the size, the colour
+//! The standard tags carry what another DNG reader needs: the size, the color
 //! matrix, white balance, orientation, the default crop, the basic EXIF and
 //! Adobe's original-size tags (51089–51091). RAWmakase's own facts are in
 //! DNGPrivateData ([`super::record`]), which
@@ -43,7 +43,7 @@ const TILE: u32 = 512;
 const JPEG: u16 = 7;
 /// PhotometricInterpretation's linear raw.
 const LINEAR_RAW: u16 = 34892;
-/// The XYZ (D65) to linear sRGB matrix, written as the colour matrix for other
+/// The XYZ (D65) to linear sRGB matrix, written as the color matrix for other
 /// readers when the original's decoder had none: such a photo renders from its
 /// fitted Camera Look in RAWmakase, which takes its facts from the record.
 const XYZ_TO_SRGB: [[f32; 3]; 3] = [
@@ -418,7 +418,7 @@ mod tests {
 
     /// The DNG of `codes`, `width × height` pixels of three samples, as the
     /// writer makes it, read back by the DNG reader, and the samples it read:
-    /// with the white balance and colour matrix the identity, the image the
+    /// with the white balance and color matrix the identity, the image the
     /// reader develops is each sample over [`WHITE`].
     fn read_back(codes: &[u16], width: u32, height: u32) -> Vec<u16> {
         let white = f32::from(WHITE);

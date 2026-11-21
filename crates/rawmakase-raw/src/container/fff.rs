@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(s.data.u16s(), [1, 2, 3, 4, 5, 6, 7, 8]);
         // Black as the file says, white as Adobe DNG Converter takes it.
         assert_eq!((s.black, s.white), ([256; 4], 62914));
-        // The body's name, and its colour's from the maker note (none here).
+        // The body's name, and its color's from the maker note (none here).
         assert_eq!(
             (info.make.as_str(), info.model.as_str()),
             ("Hasselblad", "X1D-50c")

@@ -710,7 +710,7 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     mono.effects.monochrome = true;
     mono.effects.gray_mix = [0.3, -0.7, 0.1, 0., -0.2, 0.9, 0., -1.];
     recipes.push(mono.clone());
-    // Colour grading tones the black & white gray (#1187).
+    // Color grading tones the black & white gray (#1187).
     mono.grading = [[0.58, 0.4, 0.2], [0.08, 0.3, -0.3], [0.11, 0.6, 0.5]];
     mono.effects.global_grade = [0.6, 0.25, -0.2];
     recipes.push(mono);
@@ -762,7 +762,7 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     assert!(changed > with.pixels.len() / 50, "{changed} pixels changed");
     let lifted_recipes = [recipes[1].clone(), recipes[toned].clone()];
     // A rendered file (its pseudo-scene, as `photo::open_source` gives it): its 8-bit
-    // levels and colours as its own samples, and the wide samples above, at its
+    // levels and colors as its own samples, and the wide samples above, at its
     // defaults, with Whites and Blacks, and edited as a photo is.
     let srgb: Vec<[u8; 3]> = (0..=255u8)
         .map(|v| [v; 3])
@@ -948,7 +948,7 @@ fn check_presented_previews(w: u32, h: u32, ca_only: bool) -> Result<()> {
                     .collect(),
             }),
             // Off the image centre, as Nikon's and DNG opcodes' centres are. This image's
-            // three-pixel stripes, with colour noise reduction and sharpening, turn the
+            // three-pixel stripes, with color noise reduction and sharpening, turn the
             // GPU's rounding of sample positions (a few ulps, 4e-5 px at x = 144) into
             // up to 7 levels at single pixels for some centres left of the middle (0.46,
             // 0.47), where the samples themselves agree within 2e-5.
@@ -974,7 +974,7 @@ fn check_presented_previews(w: u32, h: u32, ca_only: bool) -> Result<()> {
         pixels: (0..w * h)
             .map(|i| {
                 let (x, y) = ((i % w) as f32, (i / w) as f32);
-                // A finite constant-colour strip exercises one-sided coherence
+                // A finite constant-color strip exercises one-sided coherence
                 // at its boundary, alongside the varied surrounding texture.
                 if (32..68).contains(&(i / w)) {
                     let period = if ca_only && y >= 50. { 3.8 } else { 3.03 };
@@ -1599,7 +1599,7 @@ fn the_device_lets_go_of_a_photo_left_when_the_next_render_uploads_none() -> Res
 
 /// While the Basic sliders move, the Contrast pivot and the Shadows/Highlights map's
 /// base are kept with the photo's measures, the map's grids on the device, and the
-/// develop pass keeps its camera colour: every frame is the one a renderer that
+/// develop pass keeps its camera color: every frame is the one a renderer that
 /// measures and builds everything again presents.
 #[test]
 #[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
@@ -1688,15 +1688,15 @@ fn kept_stages_present_the_frames_of_a_fresh_renderer() -> Result<()> {
         let fresh = frame(&mut PreviewRenderer::with_gpu(), &recipe)?;
         assert!(kept == fresh, "{recipe:?}");
     }
-    // The camera colour was kept and read, not computed per frame.
+    // The camera color was kept and read, not computed per frame.
     let gpu = warm.gpu().unwrap();
     assert!(gpu.kept.iter().any(|k| k.read_once()));
     Ok(())
 }
 
 /// A develop pass recorded but never submitted, a render cancelled on the way, writes
-/// no kept camera colour, even once a pass over other samples is submitted: the next
-/// render of its samples computes the colour again rather than read what is not there.
+/// no kept camera color, even once a pass over other samples is submitted: the next
+/// render of its samples computes the color again rather than read what is not there.
 #[test]
 #[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
 fn an_unsubmitted_pass_leaves_its_kept_colour_unwritten() -> Result<()> {
@@ -1754,7 +1754,7 @@ fn an_unsubmitted_pass_leaves_its_kept_colour_unwritten() -> Result<()> {
     let mut gpu = Processor::new()?;
     let cancel = AtomicBool::new(false);
     let expected = gpu.develop(&fit, &params, Cancel::new(&cancel))?;
-    // The second render of the recipe would keep the colour, but is cancelled after
+    // The second render of the recipe would keep the color, but is cancelled after
     // recording its pass.
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
     gpu.record_develop(Input::Cpu(&fit), &params, &mut encoder);
@@ -2088,7 +2088,7 @@ fn hdr_differences(actual: &[[f32; 3]], expected: &[[f32; 3]]) -> (f32, f32, f32
     )
 }
 
-/// A photo of grays and colours from deep shadow to six stops above graphics white,
+/// A photo of grays and colors from deep shadow to six stops above graphics white,
 /// with a camera-matrix profile (the default tone curve, whose HDR extension is the
 /// measured one), and its samples at full size.
 fn hdr_fixture() -> (
@@ -2110,7 +2110,7 @@ fn hdr_fixture() -> (
     let pixels: Vec<[f32; 3]> = (0..w * h)
         .map(|i| {
             let (x, y) = (i % w, i / w);
-            // log2 scene value from −12 to +6 across, a colour per row.
+            // log2 scene value from −12 to +6 across, a color per row.
             let v = (x as f32 / (w - 1) as f32 * 18. - 12.).exp2();
             let tint =
                 [[1., 1., 1.], [1., 0.6, 0.3], [0.3, 0.7, 1.], [0.9, 1., 0.2]][(y % 4) as usize];
@@ -2253,7 +2253,7 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
     together.contrast = 0.35;
     together.effects.parametric = parametric.effects.parametric;
     (together.black_point, together.white_point, together.midtone) = (0.02, 1., 0.9);
-    // The colour stage: Saturation up and fading to gray, Vibrance, the colour mixer's
+    // The color stage: Saturation up and fading to gray, Vibrance, the color mixer's
     // hue and saturation bands, and black & white.
     let mut bands = base.clone();
     bands.hsl[0] = [0.4, 0.5, 0.];
@@ -2270,8 +2270,8 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
     let mut mono = base.clone();
     mono.effects.monochrome = true;
     mono.effects.gray_mix = [0.3, -0.7, 0.1, 0.2, -0.2, 0.9, 0., -0.4];
-    // Colour grading in its HDR domain: tints and Luminance in every region, under
-    // Blending and Balance, after the colour mixer.
+    // Color grading in its HDR domain: tints and Luminance in every region, under
+    // Blending and Balance, after the color mixer.
     let mut graded = base.clone();
     graded.grading = [[0.58, 0.4, 0.2], [0.08, 0.3, -0.3], [0.11, 0.6, 0.5]];
     graded.effects.global_grade = [0.6, 0.25, -0.2];
@@ -2425,7 +2425,7 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         ),
     ]);
     // Looks with an RGB table of each kind (1D and 3D, each encoding and gamut mode) at
-    // amounts below, at and above its own, on overrange-encoded values after the colour
+    // amounts below, at and above its own, on overrange-encoded values after the color
     // mixer; one with an identity curve, and one with Saturation before it.
     let rgb_looks = profile
         .clone()
@@ -2478,7 +2478,7 @@ fn gpu_develop_matches_cpu_hdr_master() -> Result<()> {
             .copied()
             .fold(0f32, f32::max);
         assert!(top > 2., "recipe {i}: the master reaches {top}");
-        // A neutral colour's hue is undefined: under the colour stage both renders give
+        // A neutral color's hue is undefined: under the color stage both renders give
         // its float noise a hue, each its own, and the grids change value with hue even
         // at no saturation. Its pixels are left out of those recipes' comparison.
         let colour = recipe.saturation != 0.
@@ -2627,7 +2627,7 @@ fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
                     .collect();
                 let top = wanted.iter().flatten().copied().fold(0f32, f32::max);
                 assert!(top > 1.2, "recipe {i}: shown up to {top}");
-                // As in the pixel stage's test: under the colour stage, a neutral colour's
+                // As in the pixel stage's test: under the color stage, a neutral color's
                 // undefined hue is left out.
                 let colour = recipe.saturation != 0.
                     || recipe.vibrance != 0.
@@ -2700,7 +2700,7 @@ fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
 }
 
 /// A 256 × 16 HDR file (PQ) whose light runs from 2^-10 to 2^5 times graphics white
-/// across, a colour per row, paired with its SDR rendition as the decoder pairs them.
+/// across, a color per row, paired with its SDR rendition as the decoder pairs them.
 fn hdr_file_fixture() -> crate::camera_data::CameraImage {
     use crate::camera_data::{CameraImage, HdrLight, Metadata, Source};
     let (w, h) = (256u32, 16u32);

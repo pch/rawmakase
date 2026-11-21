@@ -1,7 +1,7 @@
 //! Nikon's Huffman-coded NEF data (TIFF compression 34713), lossless and
 //! lossy: a bit stream, most significant bit first and continuous across
 //! rows, of one Huffman-coded difference per sample. Each sample is
-//! predicted from the one two columns to its left (same colour); the first
+//! predicted from the one two columns to its left (same color); the first
 //! two of a row from the first two of the row two above, starting from the
 //! linearization table's predictions. Lossy data's values index the table's
 //! curve, and from the table's split row a second Huffman table codes the

@@ -154,7 +154,7 @@ at most 64 MiB. Records:
 - **`root`**: id, the absolute path it had in the source.
 - **`folder`**: id, root, path relative to the root.
 - **`photo`**: id, folder, file name, original path, capture time, rating,
-  flag, colour label, format, orientation; for a virtual copy, its master and
+  flag, color label, format, orientation; for a virtual copy, its master and
   copy name; the file's name at its original import, when known.
 - **`info`**: photo, camera, lens, focal length, aperture, exposure time, ISO,
   dimensions (already turned for orientation), each optional.

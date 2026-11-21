@@ -7,7 +7,7 @@
 //! WIC's reason and says what to install if no HEIC photo opens.
 //!
 //! WIC's frame is converted to 8- or 16-bit RGB, the depth the header says,
-//! and read as it is: in the colour space of the file, which the profile the
+//! and read as it is: in the color space of the file, which the profile the
 //! header gives describes. As for ImageIO, RAWmakase turns the picture by the
 //! header, and crops what WIC did not.
 use super::{HeicFile, Pixels};

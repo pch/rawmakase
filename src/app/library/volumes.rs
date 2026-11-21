@@ -354,7 +354,7 @@ pub(super) fn volume_row(
         (_, Some((free, _))) => format!("{:.0} GB free", gb(free)),
         _ => String::new(),
     };
-    // The free space turns to the warning colour once the drive is over 90% full.
+    // The free space turns to the warning color once the drive is over 90% full.
     let full = attached != Some(false)
         && space.is_some_and(|(free, total)| total > 0 && (free as f64) < total as f64 * 0.1);
     let detail_color = if full {

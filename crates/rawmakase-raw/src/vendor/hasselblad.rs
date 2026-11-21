@@ -1,6 +1,6 @@
 //! Hasselblad's maker note (3FR and FFF): a TIFF directory in the EXIF
 //! MakerNote, offsets from the TIFF header. RAWmakase reads the sensor code
-//! (0x0011) and the sensor coating (0x0016), which name the camera's colour
+//! (0x0011) and the sensor coating (0x0016), which name the camera's color
 //! as RAWmakase has always named it: the sensor's megapixels, the code of
 //! the newer sensors, the coating, a second generation (" II" in the
 //! model), and the file's kind (FFF, Phocus's, or the camera's 3FR):
@@ -58,7 +58,7 @@ impl Notes {
         let code = self.sensor?;
         MEGAPIXELS.iter().find(|(c, _)| *c == code).map(|(_, m)| *m)
     }
-    /// The colour's name for a file of `model` (as RAWmakase names it),
+    /// The color's name for a file of `model` (as RAWmakase names it),
     /// FFF or 3FR, when the sensor and coating are known.
     pub(crate) fn colour_name(&self, model: &str, fff: bool) -> Option<String> {
         let megapixels = self.megapixels()?;

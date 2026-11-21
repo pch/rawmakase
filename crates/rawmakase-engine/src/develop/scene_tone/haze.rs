@@ -2,7 +2,7 @@
 //! to Camera Raw 18.7 on the 22 training photos (docs/scene-tone-stage.md#dehaze).
 //!
 //! The haze is measured once per photo on its measurement copy at Exposure 0
-//! ([`Haze::of`]): the airlight A, the mean colour of the haziest 1% (by the dark
+//! ([`Haze::of`]): the airlight A, the mean color of the haziest 1% (by the dark
 //! channel, the window minimum of the darkest channel), and the guided-filtered dark
 //! channel of the photo relative to A, the haze's density. A pixel at Dehaze `s`
 //! removes `ω(s)` of that density ([`Dehazing::apply`]).
@@ -14,7 +14,7 @@ const RADIUS: f32 = 0.005;
 const EPSILON: f32 = 0.01;
 /// The lowest transmission: densest haze is removed by at most this factor.
 const MIN_TRANSMISSION: f32 = 0.3;
-/// The share of the colour-preserving result no channel falls below.
+/// The share of the color-preserving result no channel falls below.
 const CHANNEL_FLOOR: f32 = 0.5;
 /// Dehaze amounts and the fraction of the haze they remove; linear between them.
 const OMEGA: [(f32, f32); 4] = [(0., 0.), (0.2, 0.3), (0.4, 0.45), (1., 0.9)];
@@ -130,8 +130,8 @@ impl Dehazing {
         // subtract an unchanged bright sky from a now darker one (#600).
         let air = self.air.map(|v| v * tone_gain);
         let j: [f32; 3] = std::array::from_fn(|c| (p[c] - air[c]) / t + air[c]);
-        // No channel falls below half of the pixel's colour scaled by its luminance's
-        // change: weak channels of bright, saturated colours are not driven to black.
+        // No channel falls below half of the pixel's color scaled by its luminance's
+        // change: weak channels of bright, saturated colors are not driven to black.
         let ratio = super::luminance(j).max(0.) / super::luminance(p).max(1e-9);
         std::array::from_fn(|c| j[c].max(CHANNEL_FLOOR * p[c] * ratio))
     }
@@ -199,7 +199,7 @@ mod tests {
         }
     }
 
-    /// A hazy scene: a dark-to-mid gradient of slightly coloured surfaces, seen through
+    /// A hazy scene: a dark-to-mid gradient of slightly colored surfaces, seen through
     /// a veil of bright bluish air that thickens toward the top.
     fn hazy(w: usize, h: usize) -> Vec<[f32; 3]> {
         let air = [0.6, 0.65, 0.75];
@@ -226,7 +226,7 @@ mod tests {
         assert!((omega(1.6) - 0.9).abs() < 1e-6);
     }
 
-    /// The airlight is the colour of the haziest pixels, not of the brightest channel.
+    /// The airlight is the color of the haziest pixels, not of the brightest channel.
     #[test]
     fn the_airlight_comes_from_the_haziest_pixels() {
         let (w, h) = (100, 60);

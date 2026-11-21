@@ -51,7 +51,7 @@ pub enum Variant {
     ArwUncompressed,
     /// Sony ARW, packed 12-bit samples.
     ArwPacked,
-    /// Sony ARW, lossless JPEG tiles of 2 × 2 colour cells.
+    /// Sony ARW, lossless JPEG tiles of 2 × 2 color cells.
     ArwLosslessJpeg,
     /// Sony ARW's small RAWs: lossless JPEG tiles of luma and chroma.
     ArwYcbcr,

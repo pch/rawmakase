@@ -41,7 +41,7 @@ pub(in crate::app) enum Values {
         peak: f32,
     },
 }
-/// How a part of the readout is coloured.
+/// How a part of the readout is colored.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::app) enum Shade {
     /// An SDR value, or a label.
@@ -59,7 +59,7 @@ impl Readout {
             .map(|s| s.into_iter().map(|(t, _)| t).collect())
     }
     /// The line shown under the histogram, as Lightroom's, in parts, each with its
-    /// colour.
+    /// color.
     pub(in crate::app) fn segments(&self) -> Option<Vec<(String, Shade)>> {
         Some(match self.values? {
             Values::Sdr(percent) => vec![(text(percent), Shade::Plain)],
@@ -98,7 +98,7 @@ pub(in crate::app) fn text([r, g, b]: [f32; 3]) -> String {
     format!("R {r:.1}   G {g:.1}   B {b:.1} %")
 }
 
-/// An encoded sRGB colour (0–1) as Melissa RGB percentages: ProPhoto primaries
+/// An encoded sRGB color (0–1) as Melissa RGB percentages: ProPhoto primaries
 /// (adapted to D50) with the sRGB tone curve, Lightroom's readout space.
 pub(in crate::app) fn melissa_percent(srgb: [f32; 3]) -> [f32; 3] {
     let linear = srgb.map(|v| srgb_decode(v.clamp(0., 1.)));
@@ -137,7 +137,7 @@ impl Editor {
     pub(in crate::app) fn wants_samples(&self) -> bool {
         self.view.picks_color() || self.view.readout.hovering
     }
-    /// The processed colour at `pos` on the photo drawn at `rect`, with the 100%
+    /// The processed color at `pos` on the photo drawn at `rect`, with the 100%
     /// region over it at `region`: from the region where it covers `pos`.
     pub(in crate::app) fn shown_pixel(
         &self,

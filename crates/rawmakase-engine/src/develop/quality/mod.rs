@@ -180,7 +180,7 @@ pub(super) mod tests {
         for p in &mut im.pixels[..96 * 10] {
             *p = [0.1, 0.12, 0.05];
         }
-        // A colour matrix, which Auto white balance needs.
+        // A color matrix, which Auto white balance needs.
         im.metadata.cam_xyz = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
         im
     }
@@ -341,7 +341,7 @@ pub(super) mod tests {
                 upright::analysis_image(&apart, &r)
             );
         }
-        // Auto black & white measures the decode's colours row by row.
+        // Auto black & white measures the decode's colors row by row.
         assert_eq!(
             crate::develop::ColorSpread::measure(&one),
             crate::develop::ColorSpread::measure(&apart)

@@ -16,7 +16,7 @@ Sources, per camera, in order:
    for every native RAW of the camera (one non-zero matrix), except for the
    cameras of NO_ROW.
 
-A matrix is unusable when it is diagonal (Adobe keeps such a camera's colour in
+A matrix is unusable when it is diagonal (Adobe keeps such a camera's color in
 its forward matrix), has an entry beyond ±10 (a camera's own values passed
 through unscaled) or is Adobe's placeholder for an unknown camera (D50 XYZ to
 linear sRGB).

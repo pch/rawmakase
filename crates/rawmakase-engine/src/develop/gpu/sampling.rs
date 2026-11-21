@@ -39,7 +39,7 @@ slots! {
     COUNT: 1,
     // `ManualDistortion`: k (0 when off) and the frame's axes.
     MANUAL: 3,
-    // Protect reconstructed X-Trans stripe colour during CA remapping.
+    // Protect reconstructed X-Trans stripe color during CA remapping.
     XTRANS: 1,
     // The transparency mask's width and height (`Metadata::coverage`), 0 without one.
     COVERAGE: 2,

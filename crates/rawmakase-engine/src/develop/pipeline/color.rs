@@ -1,4 +1,4 @@
-//! Colour conversions the pipeline shares: sRGB and Lab, Rec. 2020, hue weights and the profile matrix.
+//! Color conversions the pipeline shares: sRGB and Lab, Rec. 2020, hue weights and the profile matrix.
 use super::*;
 
 pub(crate) fn srgb_to_lab(p: [f32; 3]) -> [f32; 3] {

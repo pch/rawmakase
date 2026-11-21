@@ -24,7 +24,7 @@
 //!   ([`Input::rendition`]): whatever the user changes meanwhile, the inverse
 //!   undoes exactly what the forward did.
 //!
-//! It is lossy on purpose: colours outside sRGB, clipped channels, quantisation
+//! It is lossy on purpose: colors outside sRGB, clipped channels, quantisation
 //! in the shadows and the reduction to at most [`MAX_SIDE`] pixels are not
 //! recovered. The renderer lays the patch with Heal's membrane, which takes the
 //! residual error at the shape's border back to the photo's own values, then
@@ -114,7 +114,7 @@ pub fn region(op: &RetouchOp, frame: &ImageFrame) -> Option<Region> {
     })
 }
 
-/// The colour rendition of one request, captured when it starts.
+/// The color rendition of one request, captured when it starts.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rendition {
     /// White-balanced camera RGB to linear ProPhoto, and back.
@@ -159,7 +159,7 @@ impl Rendition {
         };
         ensure!(
             det.is_finite() && det.abs() > 1e-8,
-            "The photo's colour matrix can't be inverted"
+            "The photo's color matrix can't be inverted"
         );
         ensure!(
             gain.is_finite() && gain > 0. && wb.iter().all(|w: &f32| w.is_finite() && *w > 0.),

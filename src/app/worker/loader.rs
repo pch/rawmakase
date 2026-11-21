@@ -348,7 +348,7 @@ fn opener(
                 errors,
                 groups,
             } = crate::camera_profiles::listed(&metadata);
-            // A photo without colour data starts from its fitted camera look, fitted
+            // A photo without color data starts from its fitted camera look, fitted
             // (or read from the fit cache) before its defaults are installed.
             let profiles = crate::camera_look::with_default(
                 &path,

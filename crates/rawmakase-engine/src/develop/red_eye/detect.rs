@@ -42,7 +42,7 @@ pub struct Pupil {
 pub enum Glow {
     /// Red: scored by the log ratio of red to the larger of green and blue.
     Red,
-    /// Any colour brighter than the eye around it (an animal's eye shine): scored by
+    /// Any color brighter than the eye around it (an animal's eye shine): scored by
     /// the log of the largest channel.
     Bright,
 }

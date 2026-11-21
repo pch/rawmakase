@@ -561,7 +561,7 @@ struct CurveInteraction {
 /// Corner radius of a curve's well.
 const CURVE_RADIUS: f32 = radius::CONTROL;
 /// A curve's well: a dark field with the photo's histogram behind the curve,
-/// grey for RGB and in the channel's colour for R, G and B, a quarter grid and
+/// grey for RGB and in the channel's color for R, G and B, a quarter grid and
 /// the identity diagonal. `channel` 0 is RGB, 1–3 are R, G, B.
 fn curve_backdrop(ui: &egui::Ui, rect: Rect, histogram: &[[u32; 256]; 3], channel: usize) {
     let palette = theme::palette(ui.ctx());
@@ -631,7 +631,7 @@ fn curve_color(palette: &theme::Palette, channel: usize) -> Color32 {
 }
 /// The width of [`curve_channels`]: four 22 pt dots.
 pub(in crate::app) const CURVE_CHANNELS_WIDTH: f32 = 4. * 22.;
-/// The point curve's channel picker: a dot in each channel's colour, RGB's
+/// The point curve's channel picker: a dot in each channel's color, RGB's
 /// white, the selected one ringed. Returns whether the channel changed.
 pub(in crate::app) fn curve_channels(ui: &mut egui::Ui, channel: &mut usize) -> bool {
     let palette = theme::palette(ui.ctx());
@@ -1048,7 +1048,7 @@ struct FillOrigin {
 }
 /// A slider from zero up fills from zero, as Lightroom's Feather, Amount and Opacity
 /// do, so a default in the middle doesn't make it look centred. Any other (one below
-/// zero, a coloured one like Temp, or one with a neutral point like Levels' Midtone
+/// zero, a colored one like Temp, or one with a neutral point like Levels' Midtone
 /// or Scale) fills from its default and marks it.
 fn fill_origin(start: f32, default: f32, coloured: bool) -> FillOrigin {
     if start != 0. || coloured {
@@ -1063,7 +1063,7 @@ fn fill_origin(start: f32, default: f32, coloured: bool) -> FillOrigin {
         }
     }
 }
-/// [`slider`] with its shown scale and a coloured rail; the parameters are
+/// [`slider`] with its shown scale and a colored rail; the parameters are
 /// those of a slider row, and `step` the edit's History name.
 #[expect(clippy::too_many_arguments)]
 pub(in crate::app) fn slider_with(
@@ -1089,7 +1089,7 @@ pub(in crate::app) struct SliderStyle {
     /// Shown scale and decimals, e.g. Sharpening's 0–150; picked from the range
     /// when `None`.
     pub display: Option<(f32, usize)>,
-    /// A coloured rail, from its left end to its right.
+    /// A colored rail, from its left end to its right.
     pub gradient: Option<(Color32, Color32)>,
     /// The rail is even in the value's reciprocal, as Temp moves in mireds.
     pub reciprocal: bool,
@@ -1379,7 +1379,7 @@ pub(in crate::app) fn slider_styled(
                         spacing.button_padding = Vec2::new(space::S, 0.);
                         let visuals = ui.visuals_mut();
                         visuals.text_edit_bg_color = Some(palette.tone(Tone::FIELD));
-                        // No outline: the fill marks the field. The stroke's colour is
+                        // No outline: the fill marks the field. The stroke's color is
                         // also the selected text's, so it stays the theme's.
                         visuals.selection.stroke.width = 0.;
                         visuals.text_cursor.stroke.width = 1.5;
@@ -1478,7 +1478,7 @@ pub(in crate::app) fn slider_styled(
             ui.painter()
                 .rect_filled(rail, radius::SMALL, palette.tone(Tone::OUTLINE_STRONG));
         }
-        // A tick where a centred slider rests, or a coloured one's default (Temp's As
+        // A tick where a centred slider rests, or a colored one's default (Temp's As
         // Shot); a slider from zero up, like Feather, fills from its left end.
         let neutral = to_rail(origin.value, travel);
         if origin.tick == Tick::Shown {
@@ -1817,7 +1817,7 @@ fn segment_track(
         })
         .collect()
 }
-/// A primary button sized to its content, in the accent colour: an optional
+/// A primary button sized to its content, in the accent color: an optional
 /// icon and the label centred together, with the segmented controls' height
 /// and rounding.
 pub(in crate::app) fn action_button(

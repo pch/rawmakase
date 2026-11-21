@@ -104,7 +104,7 @@ reduction on both sides, per photo:
 - **Below white:** the SDR gate (metric policy 2) applies to the SDR rendition.
   RAWmakase's HDR and SDR renders of one edit must agree below 0.5 luminance as
   closely as Camera Raw's do (median ≤ 0.002 stop, p99 ≤ 0.1 stop).
-- **Colour:** mean ΔE_ITP ≤ 5 and p95 ≤ 15 (ITU-R BT.2124 units), reported with the
+- **Color:** mean ΔE_ITP ≤ 5 and p95 ≤ 15 (ITU-R BT.2124 units), reported with the
   luminance metrics. Saturated and gamut-edge patches are reported separately.
 
 ## Codecs
@@ -114,7 +114,7 @@ reduction on both sides, per photo:
 - `jxl-encoder` (pure Rust, VarDCT) is AGPL-3.0 or commercial. It is incompatible
   with RAWmakase's MIT licence and was not used or read.
 - `zune-jpegxl` (MIT/Apache-2.0/Zlib) is a lossless modular encoder that writes a
-  fixed sRGB header. A local spike patched its header to write enumerated colour
+  fixed sRGB header. A local spike patched its header to write enumerated color
   encodings and a `ToneMapping` intensity target. PQ and HLG with P3 and Rec.2100
   primaries, and linear P3, all decode as signalled in libjxl 0.12 (`jxlinfo`,
   `djxl`) and jxl-oxide 0.12, losslessly (exact code values). Pure-Rust PQ/HLG
@@ -251,7 +251,7 @@ HDR within 0.01 stop median above white on six of six photos.
 ### Tone curves
 
 Measured on gray ramps (sensor white +4 stops, a linear and the ACR3 profile curve,
-HDR limits 2, 4 and 8), on the colour patches of [Looks](#looks), and on the twelve
+HDR limits 2, 4 and 8), on the color patches of [Looks](#looks), and on the twelve
 photos of [Validation](#validation), through point curves and parametric settings in
 the sidecar (`ToneCurvePV2012`, `Parametric*`).
 
@@ -276,7 +276,7 @@ the sidecar (`ToneCurvePV2012`, `Parametric*`).
   (an S curve with Lights +50: median 0.002 stop; the other order 0.20). Neither
   depends on the HDR limit (limits 2 and 4 as 8, within 0.05 stop below the limit's
   roll-off).
-- **Colour.** On the colour patches, an S curve's and Highlights +50's effect matches
+- **Color.** On the color patches, an S curve's and Highlights +50's effect matches
   Camera Raw's to a median 0.015 stop or less (p95 0.040) at saturations 0.3 and 0.6,
   ΔE_ITP 1.0 or less. At 0.9 the patches differ by ΔE_ITP 24 without a curve too
   ([Open](#open)).
@@ -325,18 +325,18 @@ twelve photos' brightening-curve captures score identically with and without it.
 A channel's curve is still held at 16.
 
 **Refine Saturation and curves that end left of white (2026-11-12).** Camera Raw 18.7
-rendered gray and colour patches (saturations 0.3, 0.6 and 0.9, 0.125 to 8 times white,
+rendered gray and color patches (saturations 0.3, 0.6 and 0.9, 0.125 to 8 times white,
 a linear profile, HDR limit 8 and SDR) through an S curve and a brightening curve at
 Refine Saturation 0 and 50, and four master curves and a red curve whose last point is
 left of white. Scores are the edit's effect against Camera Raw's (luminance, median /
-p95 stops) and the colour error it adds to the base render's (mean ΔE_ITP), HDR and SDR
+p95 stops) and the color error it adds to the base render's (mean ΔE_ITP), HDR and SDR
 on the patches below 0.9, and HDR above white ([Decisions](#decisions)).
 
 - **Refine Saturation.** SDR's rule on the master's encoded values, without its bound at
   white, scored against the S curve alone: at 0, 0.003 / 0.156 stop and +1.5 ΔE_ITP
   below white and +2.3 above, where the SDR rendition is 0.002 / 0.120 and −0.9; at 50,
   0.001 / 0.072 and +0.6 (+1.3 above) against 0.001 / 0.054 and −0.4. With SDR's bound
-  kept, light above white loses its colour (+20.8 and +53.3). Refused.
+  kept, light above white loses its color (+20.8 and +53.3). Refused.
 - **Curves that end left of white.** Camera Raw's HDR render doesn't hold such a curve's
   value, as SDR does: it continues from the last point along its slope there, below
   white too (a curve through (0, 0) and (200, 200) is the identity), as the master
@@ -357,15 +357,15 @@ white in Camera Raw's SDR base):
 | Setting | Captures | Below white | Above white (allowed) | ΔE_ITP added | |
 | --- | --- | --- | --- | --- | --- |
 | 0% | six photos | 0.001 / 0.001 | 0.001 (0.011) | −0.02 / −0.10 | passes |
-| 0% | patches, limit 8 | 0.002 / 0.001 | 0.001 (0.011) | −0.06 / −1.90 | misses on colour |
+| 0% | patches, limit 8 | 0.002 / 0.001 | 0.001 (0.011) | −0.06 / −1.90 | misses on color |
 | 50% | patches, limit 8 | 0.001 / 0.001 | 0.001 (0.011) | −0.09 / −0.93 | passes |
 
 Without the bound at black too, 0% on the patches adds +0.01; keeping each channel's
 ratio to the luma instead of its difference, in the encoding or in linear light, adds
-+2.5 / +2.2 on the photos. Camera Raw's HDR Refine Saturation changes the patches' colour
++2.5 / +2.2 on the photos. Camera Raw's HDR Refine Saturation changes the patches' color
 about twice as much as its SDR one (ΔE_ITP 6.70 against 3.59 at 0%), and RAWmakase's
 about 1.3 times Camera Raw's in both; at 0% the master's S curve is already nearer
-Camera Raw's colour than the SDR rendition's, so Refine Saturation brings it no nearer.
+Camera Raw's color than the SDR rendition's, so Refine Saturation brings it no nearer.
 The earlier photo figures (0.026 / 0.016, +2.22 / −0.60) scored the edit against the
 photo's base render, so they carried the S curve's own error. Decision: Refine
 Saturation renders in the master from 50% to 100%, on the CPU and the GPU's HDR preview;
@@ -386,7 +386,7 @@ captured curves score better than the emulation in that table:
 "Value at white" is the curve continued from its last point, at white, in the curve's
 encoding. The slope is Camera Raw's: scaling it by 0.97 or 1.03, from the last point or
 above white only, or bending it down above white, puts both curves 0.024–0.070 stop off
-above white. On the synthetic gray and colour patches (HDR limit 8) the rule renders a
+above white. On the synthetic gray and color patches (HDR limit 8) the rule renders a
 curve through (0, 0) and (200, 200) exactly, as the identity Camera Raw renders; (230,
 240) is 0.010 stop off above white (median), (220, 255) 0.029 and (90, 110) (180, 255),
 which reaches 1.50, 0.059. Decision: a curve whose last point is left of white renders
@@ -404,7 +404,7 @@ slope at white, 1 / (midtone (1 − black)); a white point below white leaves a 
 **Curves unlike the family (2026-11-12).** Of the DCPs installed with Camera Raw 18.7,
 two have a curve [`hdr_tone`]'s family refuses: the Fujifilm FinePix HS20EXR's and
 HS30EXR's Adobe Standard (Mahalanobis distance 4.22, the limit 4). Camera Raw rendered
-the HS20EXR's curve on gray and colour patches (HDR limits 8 and 4, and SDR). The fitted
+the HS20EXR's curve on gray and color patches (HDR limits 8 and 4, and SDR). The fitted
 extension renders them 0.013 / 0.095 stop and 2.49 mean ΔE_ITP from Camera Raw below
 0.9, and 0.067 / 0.160 above white (scene 16: 63 against Camera Raw's 49), where the
 SDR render is 0.005 / 0.043 and 1.00. They stay refused.
@@ -449,7 +449,7 @@ above white where its HDR base is:
 "No worse" is taken as within 0.01 stop of SDR's error below white (the same operator
 renders both there; the 0.001–0.003 stop between them is the HDR and SDR default
 renders' own difference) and within 1 ΔE_ITP, about one just-noticeable difference, of
-the colour error SDR's render of the control adds to its default render's. Clarity and
+the color error SDR's render of the control adds to its default render's. Clarity and
 Dehaze ±30 are within both, and their HDR error above white is below SDR's below it.
 The SDR operators' own gap stays (Clarity's median error is above that of leaving it
 out on these photos, 0.146 over the whole frame, in SDR as in HDR).
@@ -521,7 +521,7 @@ photos at Clarity −30, in SDR and as an HDR edit's SDR rendition, are bit-iden
   worse (0.401–0.432 median), a uniform strength of 0.7–0.9 or 1.1–1.25 is worse
   (0.346–0.506), as is a strength falling from the shadows to white (0.447–0.483);
   darkening by luminance instead of by channel comes closest (0.360 / 1.134 below,
-  0.124 / 0.333 above white) but adds more colour error (+24.9 ΔE_ITP against SDR's
+  0.124 / 0.333 above white) but adds more color error (+24.9 ΔE_ITP against SDR's
   +17.2).
 - **Clarity +100, further attempts (2026-11-12).** Binned by the default render's
   level, Camera Raw's HDR Clarity +100 lifts upper midtones more than its SDR one
@@ -549,8 +549,8 @@ added):
 | Dehaze −70 | 0.261 / 0.842 | 0.243 / 0.841 | 0.128 / 0.249 | +13.5 / +12.5 | refused |
 
 Dehaze −50 meets the rule with 0.001 stop to spare on the median below white; −70
-misses it there by 0.008 (its p95, above white and colour pass). Clarity +75 misses
-below white (by 0.03 / 0.04) and in colour (2.1 ΔE_ITP added beyond SDR's, where the rule allows 1), as
+misses it there by 0.008 (its p95, above white and color pass). Clarity +75 misses
+below white (by 0.03 / 0.04) and in color (2.1 ΔE_ITP added beyond SDR's, where the rule allows 1), as
 +100 does: the HDR operator's lift of upper midtones is SDR's.
 
 **Decision, 2026-11-13: Dehaze renders in the HDR master from −50 to +100**; below −50
@@ -560,7 +560,7 @@ Clarity stays within ±50.
 ### Looks
 
 Measured on gray ramps (sensor white +4 and +6 stops, a linear and the ACR3 profile
-curve, HDR limits 2, 4 and 8) and on colour patches (12 hues, saturations 0.3 to 0.9,
+curve, HDR limits 2, 4 and 8) and on color patches (12 hues, saturations 0.3 to 0.9,
 0.25 to 8 times white), through synthetic looks read from the sidecar and Adobe Color.
 
 - **Table.** A look's HSV table applies in HDR as the DNG SDK applies an HDR
@@ -582,8 +582,8 @@ curve, HDR limits 2, 4 and 8) and on colour patches (12 hues, saturations 0.3 to
   encoding's constants were fitted on four of them; the rest hold within the same
   error. Above 16, Camera Raw holds a curve that ends at white near 16, drifting
   by up to 0.25 stop by scene 32; RAWmakase holds it at 16.
-- **Colour.** The curve applies RGBTone fashion on encoded values, as in SDR. On the
-  colour patches the effect of an S curve, a hue-and-saturation table and both
+- **Color.** The curve applies RGBTone fashion on encoded values, as in SDR. On the
+  color patches the effect of an S curve, a hue-and-saturation table and both
   together match Camera Raw's to a median of 0.009 stop (p95 0.095) and a median
   ΔE_ITP of 1.4 or less at every intensity.
 - **Photos.** Adobe Color on the twelve photos, and Adobe Neutral and Adobe Portrait
@@ -596,7 +596,7 @@ curve, HDR limits 2, 4 and 8) and on colour patches (12 hues, saturations 0.3 to
 
 **RGB tables, Profile Amount, B&W and a look's own settings** (2026-11-10). Gray ramps
 (sensor white +4, a linear and the ACR3 profile curve, HDR limit 8, to 48 times white)
-and colour patches through the synthetic looks of `tests/corpus/looks`: RGB tables in
+and color patches through the synthetic looks of `tests/corpus/looks`: RGB tables in
 Adobe RGB (gamma 2.2, 3D and 1D), linear ProPhoto, sRGB (Clip and Extend), at amounts
 0.5 to 2, and `.cube` looks (identity, creative, a 1D curve); Profile Amount 50%, 150%
 and 200%; a B&W look; and looks that carry Contrast and Blacks, Exposure or a
@@ -611,7 +611,7 @@ parametric curve beside the same values set as sliders.
   encoding gives 0.036, adding nothing 1.1). Extend tables render as Clip ones there.
   RAWmakase's renders of all ten RGB looks score 0.0009–0.0023 stop median above
   white (p95 at most 0.046, the Adobe RGB 3D table on the ACR3 curve; the 1D table's
-  0.22 p95 is in the shadows, where its SDR render misses as much). On the colour
+  0.22 p95 is in the shadows, where its SDR render misses as much). On the color
   patches the Adobe RGB and sRGB tables score as the patches do without a look
   (median ΔE_ITP 0.3, the same saturation-0.9 outliers).
 - **A look's curve that is the identity** (every `.cube` look's) applies no curve:
@@ -634,11 +634,11 @@ look's split toning.
 
 **A look's split toning (2026-11-12).** Camera Raw 18.7 rendered the synthetic split
 look (`tests/corpus/looks/synthetic-split.xmp`: shadows 210° at 40, highlights 50° at
-30, balance +20) on gray and colour patches (saturations 0.3, 0.6 and 0.9, 0.125 to 8
+30, balance +20) on gray and color patches (saturations 0.3, 0.6 and 0.9, 0.125 to 8
 times white, a linear profile, HDR limit 8 and SDR). RAWmakase's SDR grading pass for
-it, in colour grading's HDR domain ([Color grading](#color-grading)), renders the
+it, in color grading's HDR domain ([Color grading](#color-grading)), renders the
 effect on luminance as closely in HDR as in SDR (median 0.003 against 0.002 stop, p95
-0.060 against 0.036; above white 0.002), but not its colour: on the patches below
+0.060 against 0.036; above white 0.002), but not its color: on the patches below
 saturation 0.9 it moves the master's mean ΔE_ITP from Camera Raw's from 0.24 to 1.79
 below white and to 2.94 above it, where the SDR rendition's goes from 0.23 to 1.05.
 Camera Raw's HDR split tone is stronger than its SDR one there (its mean change 20.6
@@ -661,17 +661,17 @@ better but for the Highlights tint (0.014 to 0.019 stop). With it, a look's spli
 toning is 0.003 / 0.060 stop below white (SDR 0.002 / 0.036), 0.002 above, and adds
 ΔE_ITP 0.6 below white and 1.2 above (SDR 0.5): within the criterion.
 
-Decision, 2026-11-12: an HDR master's colour grading takes the boost, and a look's
+Decision, 2026-11-12: an HDR master's color grading takes the boost, and a look's
 split toning renders.
 
 **A look's channel curves** (2026-11-21, #949). Camera Raw 18.7 rendered the synthetic
 looks `synthetic-channels`, `-channels-curve` and `-channels-red` (Red lifted in the
 shadows, Green with an S, Blue darkened to end at 230; with the S master curve; a Red
 curve alone) on the linear-profile gray ramp (sensor white +4, HDR limit 8, and SDR)
-and the colour patches, at amounts 1 and 2, and with the user's red curve, S curve and
+and the color patches, at amounts 1 and 2, and with the user's red curve, S curve and
 Contrast +50.
 
-- On the colour patches the channel curves apply strictly per channel (median 0.0002
+- On the color patches the channel curves apply strictly per channel (median 0.0002
   stop, at most 0.0016, below and above white), after the look's master curve (the
   reverse order misses by a median of 0.074 stop below white).
 - They apply after the user's point curves, master and per channel, and Contrast:
@@ -707,7 +707,7 @@ misses as its neutral render's does (+0.108). The Z f's `.cube` peak is one satu
 channel: its luminance peak is within 0.012 stop (2.565 against 2.543), the channel
 3.92 against 3.58.
 
-The remaining colour patches: the `.cube` creative and hue-rotation looks, the tables at
+The remaining color patches: the `.cube` creative and hue-rotation looks, the tables at
 50% and 200% and the 1D table score as the patches do without a look (median ΔE_ITP
 0.2–0.7). Two looks miss on saturation-0.9 patches only, which the tolerances report
 apart: the B&W look (median 0.038 stop, p95 0.49; worst at 0.25 to 0.5 times white,
@@ -784,7 +784,7 @@ median (p95 0.87) against its SDR rendition's 0.221 (p95 1.35); on the red pupil
 mean ΔE_ITP is 32.7 in both. Pet Eye's pupils are black in RAWmakase and 0.0001–0.0005
 of white in Camera Raw (0.00052 in HDR, 0.00045 in SDR at the brightest), which is all
 of the HDR score's 0.56 higher mean ΔE_ITP over every pupil (33.4 against 32.8). The
-SDR operator's own error (its Darken and colour fit) dominates both.
+SDR operator's own error (its Darken and color fit) dominates both.
 
 Decision, 2026-11-12: Red Eye and Pet Eye render in the HDR master, as in SDR. HDR
 files still refuse them, as every retouch.
@@ -793,7 +793,7 @@ files still refuse them, as every retouch.
 
 Measured with Camera Raw 18.7 (Process Version 15.4) on a synthetic 16-bit PQ TIFF in
 BT.2020 primaries, with a CICP-tagged ICC profile (9/16/0/1): 25 greys from 0.01 to
-40.96 in half stops and four colours, as 64-pixel patches on a 0.18 surround,
+40.96 in half stops and four colors, as 64-pixel patches on a 0.18 surround,
 captured as P3 PQ. Settings reach Camera Raw only through Open As: an ordinary open
 of a TIFF skips Camera Raw, and Camera Raw ignores the file's own and a sidecar's
 XMP. Each capture's settings were checked in the XMP Camera Raw wrote. Probe files
@@ -803,7 +803,7 @@ and captures are local.
 | --- | --- |
 | None | The light, ×1.0028 at every level and on every channel (×1.0002 to ×1.0023 on other files) |
 | Limit 2.3 | Each channel clipped at 2^2.3; limit 6 clips only at PQ's 49.26 |
-| Exposure ±1, +2 | Gains of ±1 and +2 stops at every level and colour, below the clip |
+| Exposure ±1, +2 | Gains of ±1 and +2 stops at every level and color, below the clip |
 | Temp +20 (Custom; As Shot ignores it) | A gain per channel at every level: ProPhoto +0.459, +0.379, +0.003 stop |
 | Whites −50 | −0.006 stop at 0.01, −0.25 at 0.9, −0.46 at 10, −0.50 at 41; flat fields agree |
 | Blacks −50 | Crushes below 0.03 (−0.94 stop at 0.04), nothing above 1 |
@@ -855,7 +855,7 @@ deep shadows of positive Contrast are the SDR render's to 0.001 stop).
   itself does (the Sony A7R III's SDR Contrast is 0.17–0.27 stop off at ±100, and its
   HDR inherits it). At −100 Camera Raw's HDR lifts the shadows over its SDR render by
   a median 0.34–0.44 stop, RAWmakase's by 0.40–0.47.
-- **Colour.** On the colour patches Contrast's effect differs from Camera Raw's by a
+- **Color.** On the color patches Contrast's effect differs from Camera Raw's by a
   median of 0.24 stop at a quarter of white in SDR and HDR alike: SDR Contrast's
   pivot on this synthetic image, not the HDR rendering (the pivot fit follows photos,
   not synthetic scenes; see `basic_tone::RENDERED_PIVOT_OFFSET`).
@@ -972,8 +972,8 @@ Looked into on 2026-11-12, to find what keeps it from the rule:
   instead is worse (below-white p95 0.169 to 0.540 against 0.146).
 - **The operator.** At Camera Raw's own best level per photo (18 photos with fitted
   levels), Whites +75 and +100 still fail: below white p95 0.139 against SDR's 0.085
-  at +75, and the colour error it adds 3.8 ΔE_ITP against SDR's 1.1 (+100: 9.3 against
-  1.6). Applied as a gain of luminance rather than RGBTone, the colour gap closes
+  at +75, and the color error it adds 3.8 ΔE_ITP against SDR's 1.1 (+100: 9.3 against
+  1.6). Applied as a gain of luminance rather than RGBTone, the color gap closes
   (+1.7 against +1.1 at +75, at Camera Raw's level) and the error falls (below white
   0.033 / 0.116, above 0.058 / 0.176), but not to SDR's below white (0.039 / 0.085 on
   those twelve photos). With twice the 99th percentile as the level that form gives
@@ -983,10 +983,10 @@ Whites above +50 stays refused: it needs both a level predictor no statistic tri
 gives and a closer operator above white.
 
 **Positive Whites as a gain of luminance, 2026-11-12.** Positive Whites up to +50 renders
-too, and it used RGBTone of the gained curve. Applied instead as a gain of the colour's
+too, and it used RGBTone of the gained curve. Applied instead as a gain of the color's
 luminance over the default curve's toe (RGBTone), on the twelve validation and holdout
 photos against Camera Raw's HDR captures (effect error in stops, median / p95, median over
-the photos, over the whole frame and above white, and the colour error it adds):
+the photos, over the whole frame and above white, and the color error it adds):
 
 | Whites | RGBTone, all | Luminance gain, all | RGBTone, above white | Luminance gain, above white | ΔE_ITP added, RGBTone / luminance |
 | --- | --- | --- | --- | --- | --- |
@@ -1220,9 +1220,9 @@ photo). These pass:
   measured together. The rendition stays the HDR-off render otherwise, its default a
   local tone map short of Camera Raw's; gain-map exports carry it as their base.
 
-### Colour stage
+### Color stage
 
-Measured with Camera Raw 18.7 on synthetic colour patches through `probe_dng.py`
+Measured with Camera Raw 18.7 on synthetic color patches through `probe_dng.py`
 (12 hues, HSV saturations 0.3, 0.6 and 0.9 and a gray, at 0.125 to 8 times white,
 and densely from 0.2 to 3; a linear profile and the ACR3 curve; HDR limit 8 and SDR),
 with each control at its extremes: Saturation and Vibrance ±50 and ±100, every
@@ -1238,32 +1238,32 @@ documents, which the harness doesn't read, so those were captured in HDR only.
 - **Hue and saturation changes don't depend on brightness in HDR.** Saturation +100
   multiplies HSV saturation by 1.73 (saturation 0.3) at 0.125 and 1.74 at 8 times
   white, and value by 1.15 at all of them; its SDR render gives 1.78 and 1.13 at 0.5.
-  The colour mixer's grids were fitted on SDR renders and carry the roll-off in
-  their top values. Looking them up at the colour's value only up to 0.2 and at 0.2
+  The color mixer's grids were fitted on SDR renders and carry the roll-off in
+  their top values. Looking them up at the color's value only up to 0.2 and at 0.2
   above it (`color_mixer::HDR_VALUE`; 0.15–0.3 score alike) halves the error above
-  white: Saturation +100 32–35 → 16–17 median ΔE_ITP, the colour mixer's Saturation
+  white: Saturation +100 32–35 → 16–17 median ΔE_ITP, the color mixer's Saturation
   +100 31–35 → 13–15, Vibrance +100 25 → 8, Saturation −50 6 → 2, Hue ±100 3.5 → 3.4.
   These match the grids' own error at low values (12, 10, 7.7, 1.7 and 2.6), which
   is SDR's.
 - **Vibrance's value change applies below white only:** ×1.06–1.09 at 0.125–0.5,
   ×1.01 from 1 up. It fades from 0.5 to white (`color_mixer::HDR_FADE`; where the
   fade starts and ends changes the error by less than 0.3).
-- **The colour mixer's Luminance is not a gain above white.** Luminance +100 of every
-  band: value ×1.67 at 0.5 and ×1.00 at 1, 2, 4 and 8, but a colour at white turns
+- **The color mixer's Luminance is not a gain above white.** Luminance +100 of every
+  band: value ×1.67 at 0.5 and ×1.00 at 1, 2, 4 and 8, but a color at white turns
   almost gray (saturation ×0.06) and one at twice white loses a little saturation;
   Camera Raw changes the channels below about white and not the ones above. No lookup
-  or fade by the colour's value fitted it: through the ACR3 curve the best left 30–60
+  or fade by the color's value fitted it: through the ACR3 curve the best left 30–60
   median ΔE_ITP between 0.4 and 1.25 times white (the SDR grids' error at 0.2: 12–28).
   A fade by each channel's own level does ([below](#band-luminance)).
 - **Black & White:** the mix's gray with the same lookup, unclipped above white: a
   strong mix 12.7 → 5.5 above white (4.8 at 0.125), a zero mix 3.2 → 0.9.
-- **Calibration renders as in SDR** with no change: its matrix works on scene colour
+- **Calibration renders as in SDR** with no change: its matrix works on scene color
   before Exposure, and Shadows tint fades out below white. Hue +100 of red 1.3,
   saturation −100 0.7, a mix 6.0 above white (SDR 1.0, 0.5, 4.9).
 
 The rendered values match a Python port of the rule to ΔE_ITP 0.8.
 
-**Photos.** Saturation +30 and −40, Vibrance +40, a colour mixer edit (Red Hue +15,
+**Photos.** Saturation +30 and −40, Vibrance +40, a color mixer edit (Red Hue +15,
 Orange Saturation +30, Green Saturation −40, Blue Hue −20 and Saturation +25),
 Calibration (Red Hue +20, Green Saturation −15, Blue Saturation +30) and Black &
 White (the gray ramp's Auto mix), Adobe Standard, HDR limit 4, on the twelve photos
@@ -1275,14 +1275,14 @@ of [Validation](#validation):
 | Saturation +30 (validation) | 5 | 0.068 / 0.138 | +0.110 | 5.3 / 14.8 |
 | Saturation −40 (validation) | 5 | 0.058 / 0.125 | +0.104 | 1.9 / 5.1 |
 | Vibrance +40 (validation) | 5 | 0.064 / 0.121 | +0.107 | 3.8 / 9.3 |
-| Colour mixer (validation) | 5 | 0.061 / 0.151 | +0.107 | 3.0 / 7.1 |
+| Color mixer (validation) | 5 | 0.061 / 0.151 | +0.107 | 3.0 / 7.1 |
 | Calibration (validation) | 5 | 0.060 / 0.121 | +0.108 | 3.3 / 7.7 |
 | Black & White (validation) | 5 | 0.079 / 0.183 | +0.103 | 3.0 / 14.4 |
 | Default (holdout) | 3 | 0.045 / 0.061 | +0.082 | 4.0 / 8.2 |
 | Saturation +30 (holdout) | 3 | 0.041 / 0.051 | +0.065 | 4.6 / 9.6 |
 | Saturation −40 (holdout) | 3 | 0.047 / 0.071 | +0.106 | 2.3 / 4.6 |
 | Vibrance +40 (holdout) | 3 | 0.018 / 0.042 | +0.032 | 5.6 / 11.9 |
-| Colour mixer (holdout) | 3 | 0.032 / 0.043 | +0.035 | 2.4 / 6.7 |
+| Color mixer (holdout) | 3 | 0.032 / 0.043 | +0.035 | 2.4 / 6.7 |
 | Calibration (holdout) | 3 | 0.042 / 0.061 | +0.036 | 4.2 / 9.0 |
 | Black & White (holdout) | 3 | 0.073 / 0.094 | +0.125 | 2.5 / 6.3 |
 
@@ -1298,15 +1298,15 @@ white within 0.03 stop of it).
   The Z50 II's +0.082 becomes +0.106 with Saturation −40 and +0.125 with Black & White,
   while its median above white stays at 0.004–0.006 stop. The peak is the brightest
   reduced pixel.
-- Colour stays within mean 5 and p95 15 except Saturation +30 on the Z 8 (mean 5.3,
+- Color stays within mean 5 and p95 15 except Saturation +30 on the Z 8 (mean 5.3,
   default 2.9) and Vibrance +40 on the Z5 II (5.6, default 4.0). On the Z 8, Saturation
   +30's added error is mostly below white: mean ΔE_ITP below 0.18 luminance 2.5 → 4.4,
   from 0.18 to white 2.9 → 7.6, above white 5.1 → 5.4. Looked up as SDR does (the A/B
   below), the same edit scores 4.87, so most of the added error is in the Saturation
   grid itself rather than in the cap; the cap adds 0.4.
 
-**Decision: Saturation, Vibrance, the colour mixer's Hue and Saturation, Calibration
-and Black & White render in the HDR master;** the colour mixer's Luminance stayed
+**Decision: Saturation, Vibrance, the color mixer's Hue and Saturation, Calibration
+and Black & White render in the HDR master;** the color mixer's Luminance stayed
 refused until 2026-11-11 ([Band Luminance](#band-luminance)).
 
 On the validation photos the Saturation +30 lookup was also compared with the grids
@@ -1318,14 +1318,14 @@ patches above show it at larger slider values.
 **SDR is unchanged.** SDR renders and the GPU look the grids up as before
 (`Lookup::Sdr`); an HDR lookup exists only while a master renders. Rendered by the parent commit and by
 this change, 12 photos of the dataset's render corpus (every 150th, 600 px), each with
-a colour edit (Saturation, Vibrance, the colour mixer's Hue, Saturation and Luminance,
+a color edit (Saturation, Vibrance, the color mixer's Hue, Saturation and Luminance,
 Calibration and Shadows tint) and a Black & White edit, with HDR off and with HDR on
 (its SDR rendition), give 48 of 48 bit-identical renders. The render snapshots and
 the SDR photo gate were not run: they score these same SDR renders.
 
 #### Band Luminance
 
-Fitted on 2026-11-10 to the colour patches above at every band's Luminance ±50 and ±100
+Fitted on 2026-11-10 to the color patches above at every band's Luminance ±50 and ±100
 (through a linear profile, ±100 through the ACR3 curve), starting from Camera Raw's own
 HDR render without the slider so that only the slider's effect is compared, and checked
 on 2026-11-11 on the twelve photos of [Validation](#validation). Camera Raw's HDR
@@ -1334,19 +1334,19 @@ by that channel's level:
 
 - **Per channel.** Each channel takes the value change in full up to 0.6 of white and
   none from white up, linearly between (`color_mixer::HDR_LUMINANCE_FADE`; fades from 0.5
-  to 0.7 score alike). A fade by the colour's value, as Vibrance's, fits no better than
+  to 0.7 score alike). A fade by the color's value, as Vibrance's, fits no better than
   none.
 - **By the scene's level.** Through the ACR3 curve the level that fades a channel is its
   scene value before the curve (as the mixer's other changes change it), not the
-  rendered value: a colour the curve brightens from a scene of 0.4 to 0.8 takes the full
+  rendered value: a color the curve brightens from a scene of 0.4 to 0.8 takes the full
   change. Fading by the rendered value left the ACR3 patches 31 (+100) and 64 (−100)
   median ΔE_ITP below white, by the scene's 20 and 39.
-- **Its lookup.** The change is looked up at the colour's value up to 0.5
+- **Its lookup.** The change is looked up at the color's value up to 0.5
   (`color_mixer::HDR_LUMINANCE_VALUE`; 0.4–0.6 score alike), where the grids still hold
   Camera Raw's SDR response, rather than up to 0.2 as the other changes are; below 0.5
   an HDR master's Luminance is then its SDR rendition's exactly. Above 0.5 the tables'
   hue and saturation changes move back to the 0.2 lookup by white: looked up at 0.5 up
-  to white, they desaturate colours above white more than Camera Raw does (+5 to +30
+  to white, they desaturate colors above white more than Camera Raw does (+5 to +30
   ΔE_ITP above white on the patches).
 
 The rule's Python port on the probe DNGs, median ΔE_ITP against Camera Raw (RAWmakase's
@@ -1415,8 +1415,8 @@ frames; below white as for Highlights above):
 | The mixed edit (±40, renders) | 12 photos | 0.042 / 0.183 | 0.039 / 0.124 | 0.058 / 0.141 |
 
 At +100 the error above white is past SDR's below it (median 0.055 against 0.035, p95
-0.200 against 0.120); beyond ±40 stays refused. On the synthetic colour patches of
-[Colour stage](#colour-stage), over the whole frame, every band at −100 and −50 scores
+0.200 against 0.120); beyond ±40 stays refused. On the synthetic color patches of
+[Color stage](#color-stage), over the whole frame, every band at −100 and −50 scores
 better in HDR than in SDR (median 0.061 / 1.140 against 0.111 / 1.783 at −100); no photo
 is captured there. The ±40 edit that renders is past the rule too; it was rendered
 before the rule and isn't re-scored by it.
@@ -1425,12 +1425,12 @@ Every band at −100 was captured on 2026-11-12 on the twelve photos: below whit
 0.073 / 0.481 against SDR's 0.070 / 0.492, ΔE_ITP added +4.6 against +4.6, but above
 white a median of 0.079 against SDR's 0.070 below it.
 
-Above white the master's darkening was about a tenth too weak on bright colours (Nikon
+Above white the master's darkening was about a tenth too weak on bright colors (Nikon
 Z 8 and Panasonic S1M2ES blocks a stop above white aside, which it over-darkened):
 scaling the effect above white by 1.1 on the reduced blocks passed, while fading it by
-the colour's brightest channel instead of by channel (0.094 / 0.610) or ending the fade
+the color's brightest channel instead of by channel (0.094 / 0.610) or ending the fade
 later (0.081 / 0.397) did not. **Decision, 2026-11-12: negative band Luminance renders
-down to −100**, its change growing up to 1.2 times as the colour's brightest channel goes
+down to −100**, its change growing up to 1.2 times as the color's brightest channel goes
 from 0.5 to white (`color_mixer::HDR_LUMINANCE_DARKEN`; 0.1, 0.2 and 0.3 tried, 0.2 and
 0.3 pass, 0.2 the smaller change), on the CPU and the GPU's HDR preview alike:
 
@@ -1446,15 +1446,15 @@ rendition, bit-identical to `main`'s).
 
 **Positive Luminance up to +100 renders (2026-11-14).** On the six photos at every band
 +100, Camera Raw's HDR effect against the master's, binned by the default render's
-luminance, splits by colour: near-neutral light is within about 0.05 stop at every level,
+luminance, splits by color: near-neutral light is within about 0.05 stop at every level,
 and saturated light is 0.15–0.25 stop short from about 1.5 stops under white to half a
 stop over it (the Z6 III's at half a stop under white: +1.01 against +0.76), where the
 master's channels fade. Camera Raw's own effect there is stronger than its SDR one, and
 the curve is what differs: Camera Raw's patches through a linear profile take the SDR
 grids' change (the master matches them), and those through the ACR3 curve are short as
 the photos are. The master's positive change is therefore made stronger where the
-profile's curve brightens the colour (`color_mixer::hdr_luminance_lift`): by up to half
-again, growing with the colour's scene luminance from 0.35 to 0.6 (the fade's start), in
+profile's curve brightens the color (`color_mixer::hdr_luminance_lift`): by up to half
+again, growing with the color's scene luminance from 0.35 to 0.6 (the fade's start), in
 proportion to how far the curve brightens its luminance, in full from half a stop. The
 fade by channel stays. Effect error median / p95 in stops, below white HDR / SDR, HDR
 above white, ΔE_ITP added HDR / SDR, medians over the photos or patch frames:
@@ -1462,10 +1462,10 @@ above white, ΔE_ITP added HDR / SDR, medians over the photos or patch frames:
 | Edit | Rendering | Below white | Above white (allowed) | ΔE_ITP added | |
 | --- | --- | --- | --- | --- | --- |
 | Every band +100, six photos | faded by channel (before) | 0.031 / 0.119, 0.035 / 0.121 | 0.058 / 0.200 (0.045 / 0.131) | +1.35 / +1.05 | misses |
-| | stronger by the colour's scene luminance alone, 0.3 to 0.6, ×1.5 | 0.031 / 0.114 | 0.043 / 0.127 | +1.39 | passes |
+| | stronger by the color's scene luminance alone, 0.3 to 0.6, ×1.5 | 0.031 / 0.114 | 0.043 / 0.127 | +1.39 | passes |
 | | the same by the curve's brightening, from 0.35 | 0.031 / 0.116 | 0.044 / 0.120 | +1.24 | passes |
 | | by the curve's brightening, ×1.6, or from 0.3 or 0.4 | 0.031 / 0.113–0.117 | 0.047–0.056 / 0.123–0.141 | +1.22 to +1.40 | misses |
-| | one gain of the colour by its luminance or brightest channel, fades ending at 1 to 1.5 | 0.031–0.032 / 0.110–0.119 | 0.051–0.075 / 0.129–0.297 | +1.36 to +1.59 | misses |
+| | one gain of the color by its luminance or brightest channel, fades ending at 1 to 1.5 | 0.031–0.032 / 0.110–0.119 | 0.051–0.075 / 0.129–0.297 | +1.36 to +1.59 | misses |
 | The mixed edit (±40), twelve photos | before | 0.042 / 0.183, 0.039 / 0.132 | 0.054 / 0.110 | +1.81 / +1.32 | |
 | | by the curve's brightening | 0.042 / 0.185 | 0.045 / 0.110 | +1.82 | |
 | Every band +100, linear-profile patches | before, and by the curve's brightening | 0.051 / 0.367, 0.054 / 0.454 | 0.024 / 0.137 | +2.78 / +3.03 | |
@@ -1564,7 +1564,7 @@ no Highlights); the vignette's Highlights stays refused.
 
 ### Point Color
 
-Measured with Camera Raw 18.7 on the Color Grading probe's colour patches (12 hues at
+Measured with Camera Raw 18.7 on the Color Grading probe's color patches (12 hues at
 HSV saturations 0.3 and 0.6, 0.125 to 8 times white, a linear profile), HDR limit 8 and
 SDR, with one swatch sampled at an orange (hue 30°, saturation 0.6, value 0.5):
 Hue, Saturation and Luminance +50 and Luminance −50 at Lightroom's default ranges,
@@ -1578,12 +1578,12 @@ and a swatch sampled at value 2 (which Camera Raw drops, as RAWmakase does).
   ×4.0 and ×2.0.
 - **Selection.** Hue +50 turns the orange by 9.8°–19.9° up to white, 16.4° at twice
   white, 8.2° at four times and 1.8° at eight; with the whole luminance range 17.9°–
-  19.9°, 16.4°, 8.6° and 3.8°. In u these colours lose saturation (an orange at eight
+  19.9°, 16.4°, 8.6° and 3.8°. In u these colors lose saturation (an orange at eight
   times white has 0.12), so the swatch's saturation range selects less of them.
 - **Engine.** `point_colors_hdr` (SDR's swatches on each channel in u, clipped at 1
   and mapped back; a pixel brighter than 16 is scaled to 16 and back) renders the
   effect on luminance within a median 0.001 stop of Camera Raw's for every swatch (p95
-  0.005–0.096), and mean ΔE_ITP 0.39–1.31 over the colour patches, 0.42–2.42 above
+  0.005–0.096), and mean ΔE_ITP 0.39–1.31 over the color patches, 0.42–2.42 above
   white (Luminance +50 the worst; the default render 0.28). RAWmakase's SDR Point
   Color on the same patches is within 0.27–0.51.
 
@@ -1612,24 +1612,24 @@ ProPhoto channels against the same probe's default render.
   to a mean 0.012 stop with b = 15/16 (16 times white at u = 1), and 0.010 with a
   fitted b of 0.945; a fitted power n in x / (1 + (b x)^n)^(1/n) gives 0.009 (n = 0.96).
   RAWmakase uses 15/16. The same rule applied to a shared scale of the pixel (its
-  largest channel or its luminance) leaves 7–10 times the colour error, so the domain
+  largest channel or its luminance) leaves 7–10 times the color error, so the domain
   is per channel, as SDR's grading is.
 - **The limit doesn't move it.** At limits 4 and 8 every gain is the same to 0.01; at
   2.3 they agree up to where the limit rolls off.
 - **Engine.** `ChannelCurves::apply_hdr` renders the probe's effect on luminance to a
   median 0.000–0.008 stop on the grays (worst sample 0.285, Highlights Luminance −50 at
-  16 times white, where Camera Raw's ×0.375 is RAWmakase's ×0.31), and on the colour
-  patches above white to a median 0.000–0.106 stop (p95 ≤ 0.195). Colour above white:
+  16 times white, where Camera Raw's ×0.375 is RAWmakase's ×0.31), and on the color
+  patches above white to a median 0.000–0.106 stop (p95 ≤ 0.195). Color above white:
   mean ΔE_ITP 0.3–3.7 for Shadows, Midtones, Global and Luminance, 3.4–12.2 for the
   Highlights tints (blue under Balance +50 or Blending 100 the worst, 12.1–12.2;
   hue 40 at saturation 100, 8.8); the default render is 0.2. Camera Raw lifts the
-  lowest channel of a saturated colour under a strong tint above white (a cyan at
+  lowest channel of a saturated color under a strong tint above white (a cyan at
   four times white: red 1.60 → 2.10 under a blue Highlights tint, which the
   per-channel rule takes to 1.22). RAWmakase's SDR grading of the same patches is
   within mean ΔE_ITP 0.2–1.8 of Camera Raw's SDR.
 
 Decision, 2026-11-10: Color Grading renders in the HDR master by this rule, after the
-colour mixer as in SDR, and on the GPU's HDR preview. The strong-tint colour error
+color mixer as in SDR, and on the GPU's HDR preview. The strong-tint color error
 above white stays open; Camera Raw captures of photos with grading were paused when
 this was decided, so the photo validation followed.
 
@@ -1649,7 +1649,7 @@ same code as before, and `apply_hdr` is reached only from the HDR master's finis
 
 ### Defringe
 
-Measured with Camera Raw 18.7 on the Color Grading probe's colour patches (12 hues at
+Measured with Camera Raw 18.7 on the Color Grading probe's color patches (12 hues at
 HSV saturations 0.3 and 0.6, 0.125 to 8 times white, a linear profile), Purple Amount
 20 (hues 30–70) and Green Amount 20 (hues 40–60), HDR limit 8 and SDR; saturation kept
 is the patch centre's HSV saturation in linear ProPhoto against the default render's.
@@ -1658,10 +1658,10 @@ is the patch centre's HSV saturation in linear ProPhoto against the default rend
   saturation 0.6 keep ×0.83, ×0.04, ×0.05, ×0.01 at 0.125 to four times white, the same
   to 0.01–0.04 at every level. Green: the 120°–150° patches keep ×0.10–0.17 and
   ×0.03–0.09. SDR keeps more towards its top (Purple ×0.70 and ×0.62, Green ×0.65 and
-  ×0.81 at its brightest patches), where the rendition rolls colours off to white. At
+  ×0.81 at its brightest patches), where the rendition rolls colors off to white. At
   eight times white Camera Raw's renders of these patches change hue (the probe's
   highlight handling) and the selected patches are others; that level is left out.
-- **Engine.** `defringe_hdr` takes a colour with its brightest channel at white when
+- **Engine.** `defringe_hdr` takes a color with its brightest channel at white when
   brighter, applies SDR's operator there and scales it back. Rendered by the build, the
   share kept is the same at every level from white up (Purple ×0.11, ×0.07, ×0.65;
   Green ×0.09, ×0.07, ×0.92) and the hues selected are SDR's. The error against Camera
@@ -1738,7 +1738,7 @@ against its render without Defringe:
 - A weight on the luminance range around each pixel alone removes Camera Raw's and the
   rest alike (with the change at ×0.6, kept ×0.87–0.93 on Camera Raw's blocks and the
   rest 0.008–0.013), as a weaker change does (×0.4: ×0.87, 0.013). A weight on the
-  colour's own Oklab chroma tells them apart (none below 0.015, full from 0.04: ×0.87 on
+  color's own Oklab chroma tells them apart (none below 0.015, full from 0.04: ×0.87 on
   Camera Raw's blocks, 0.006 elsewhere), and the two together more so.
 
 | Master's Defringe (SDR's operator ×1) | Below white | Above white | Kept on Camera Raw's blocks | Change elsewhere |
@@ -1795,7 +1795,7 @@ Tint scale the white balance, its Exposure the scene, its Shadows the local tone
 gain and its Texture the texture image, each weighted by the mask, and the HDR master
 renders those stages as it renders the global sliders. Rendered by RAWmakase, a mask
 over the whole frame gives the global slider's master to 0.2% (Exposure +1, Shadows
-+50, Texture +40, on gray and coloured patches from 0.02 to 3 times white). Range masks
++50, Texture +40, on gray and colored patches from 0.02 to 3 times white). Range masks
 select from the SDR rendition (the edit developed with HDR off), so a Luminance Range
 mask brightens the same patches of a gray ramp in the master as in the SDR rendition.
 
@@ -1808,7 +1808,7 @@ HDR rendering globally, and a mask's Clarity and Dehaze aren't measured. A maske
 the GPU's HDR preview doesn't port masks yet.
 
 **Camera Raw (2026-11-11).** Camera Raw 18.7 rendered the Color Grading probe's patches
-(grays from 2^−8 to 16 times white and colour patches, a linear profile, HDR limit 8
+(grays from 2^−8 to 16 times white and color patches, a linear profile, HDR limit 8
 and SDR) with a radial mask covering the whole frame, each slider alone, and with the
 global slider of the same value. Effects are luminance in stops, medians over the
 patches (and ΔE_ITP means):
@@ -1893,7 +1893,7 @@ above white.
   edits that have it.
 
 **Whites in a mask (2026-11-12).** Camera Raw 18.7's HDR mask Whites on the gray and
-colour patches (a whole-frame mask; −100, −50, +20, +40 and +100, HDR limit 8) is one
+color patches (a whole-frame mask; −100, −50, +20, +40 and +100, HDR limit 8) is one
 shape over brightness times an amplitude: normalised by its effect at 16 times white,
 the five settings' effects agree within 0.015 from 2^−10 to 16 times white (0.54 of it at
 2^−10, 0.93 at half of white, 0.96 at white). The amplitude is 0.870–0.877 of the largest
@@ -1911,7 +1911,7 @@ effect error in stops, ΔE_ITP added over the default render):
 | +100 | 0.008 / 0.042, +0.9 | 0.002 / 0.168, +2.3 | 0.002 / 0.012, +0.4 |
 
 Within the criterion's 0.01 stop below white everywhere and closer than SDR above it.
-At −100 SDR's added ΔE_ITP is negative because white's clip hides the patches' colour
+At −100 SDR's added ΔE_ITP is negative because white's clip hides the patches' color
 error; the master's +0.3 is below a ΔE_ITP of 1. The shape is fitted on these
 patches; Camera Raw captures of photos with a mask's Whites are queued to check it.
 Decision, 2026-11-12: a mask's Whites renders in the HDR master by this rule; Blacks
@@ -1935,7 +1935,7 @@ factor-8 blocks, mean ΔE_ITP):
 | A7R III, Dehaze +30 / −30 | 0.104, 6.0 / 0.235, 12.1 | 0.104, 5.9 / 0.234, 12.0 | 0.096 / 0.733 |
 
 The master is further from Camera Raw than the SDR rendition on every photo and
-setting, by colour where not by luminance, and on the A7R III's small highlights above
+setting, by color where not by luminance, and on the A7R III's small highlights above
 white by up to 0.73 stop.
 
 Scored as the acceptance criterion is applied to the global sliders (the median over
@@ -2012,11 +2012,11 @@ photos (HDR limit 4 and SDR), and Saturation −100 and −25 on the synthetic p
 Saturation −50 are each the same at every level from a sixteenth of white to four
 times it (Oklab hue turn, chroma ratio and luminance change within a degree, 0.01 and
 0.01 stop), as the master's operators are; what differs is the operator. Its negative
-Saturation blends each channel of linear ProPhoto toward the colour's HSL lightness,
+Saturation blends each channel of linear ProPhoto toward the color's HSL lightness,
 (max + min) / 2, by 1 + Saturation: applied to Camera Raw's own default render it gives
 Camera Raw's −50 within 0.001 / 0.088 stop and 1.75 mean ΔE_ITP (SDR's Oklab chroma
 scale 0.043 and 5.91; value kept, HSV saturation scaled, 0.046 and 6.02; toward the
-colour's luminance 0.043 and 5.91). The master renders it (`masks::local::desaturate_hdr`),
+color's luminance 0.043 and 5.91). The master renders it (`masks::local::desaturate_hdr`),
 the SDR rendition keeping SDR's operator. Effect error median / p95 in stops, below
 white HDR / SDR, HDR above white, ΔE_ITP added HDR / SDR, medians over the six photos:
 
@@ -2040,7 +2040,7 @@ white HDR / SDR, HDR above white, ΔE_ITP added HDR / SDR, medians over the six 
 
 On the patches the HSL-lightness rule takes negative Saturation's median below white
 from SDR's 0.021 to 0.003 (−50; −25 0.002 against 0.011, −100 0.006 against 0.042) and
-the colour it adds from −2.38 to −6.22 ΔE_ITP, but its p95 there is past SDR's (0.343
+the color it adds from −2.38 to −6.22 ΔE_ITP, but its p95 there is past SDR's (0.343
 against 0.269 at −50). The tail is in dark, near-neutral patches, where RAWmakase's own
 default render of the patches differs from Camera Raw's (p95 0.346 stop); the rule
 applied to Camera Raw's default render instead stays within 0.088. Camera Raw's mask
@@ -2080,7 +2080,7 @@ error plus 0.01 stop.
 | Mask Hue +30 | SDR's operator | 0.035 / 0.033 | 0.056 (0.043) | +3.42 / +3.04 | misses |
 | Look split toning | the grading boost (#1061) | 0.086 / 0.084 | 0.097 (0.094) | −5.52 / −5.53 | misses by 0.003 |
 
-- **Refine Saturation** adds colour where SDR's removes it, as on the patches. The S
+- **Refine Saturation** adds color where SDR's removes it, as on the patches. The S
   curve itself, at Refine Saturation 100, which renders, is 0.048 stop off above white
   on these photos (0.015 / 0.014 below).
 - **Curves that end left of white.** Continuing from the last point, as the gray ramps
@@ -2090,7 +2090,7 @@ error plus 0.01 stop.
   +0.05). A slope of 0.98 is the best single factor (0.96: 0.050 and 0.035; 0.9: 0.117
   and 0.107), still outside the 0.01 allowance that SDR's exact render leaves.
 - **Mask Saturation.** The power operator, rendered in SDR too, halves the SDR
-  rendition's error on these photos (0.024 to 0.011 stop, colour +6.30 to +0.17 ΔE_ITP);
+  rendition's error on these photos (0.024 to 0.011 stop, color +6.30 to +0.17 ΔE_ITP);
   on the saturation-0.9 patches it made SDR worse (0.089 to 0.148 at +100). Above white
   it is 0.03–0.05 stop too dark on near-neutral light and 0.09–0.13 too bright on
   saturated light, where Camera Raw darkens it by 0.25–0.34 stop. Both renders' rule
@@ -2237,8 +2237,8 @@ median / p95 in stops, below white HDR / SDR, HDR above white, ΔE_ITP added HDR
 - **Whites above +50.** Group 1 found that even Camera Raw's own best level per photo
   leaves the luminance gain past the SDR rendition below white; the two other levels
   tried here are further off than twice the 99th percentile.
-- **Refine Saturation below 50%** misses on colour: at 0% the master's S curve is already
-  nearer Camera Raw's colour, so the change adds where SDR's removes; weaker strengths add
+- **Refine Saturation below 50%** misses on color: at 0% the master's S curve is already
+  nearer Camera Raw's color, so the change adds where SDR's removes; weaker strengths add
   more.
 - **The HS30EXR curve.** The HS20EXR sample on raw.pixls.us isn't CC0; the HS30EXR's and
   the HS33EXR's are (the HS33EXR is a rebranded HS30EXR, rendered with the HS30EXR DCP).
@@ -2376,14 +2376,14 @@ stay refused.
   drag remakes a small scene; only 100% views remake the full one. Scenes and their
   stage caches are kept apart from the SDR rendition's, which renders from the file's
   own pixels, so the two renderings of each frame don't evict each other.
-- **Visualize HDR follows Lightroom's order of colours, not its values** (stage 5,
+- **Visualize HDR follows Lightroom's order of colors, not its values** (stage 5,
   2026-11-12). Adobe's help pages refuse automated fetches; Adobe's HDR blog post
   (2023-10-10) and Greg Benz's Lightroom write-up describe a checkbox under the Basic
-  panel's HDR controls that colours the photo's HDR tones "from cyan to magenta",
+  panel's HDR controls that colors the photo's HDR tones "from cyan to magenta",
   cyan and blue for 1–2 stops above SDR white and purple and magenta for 3–4, SDR
-  areas uncoloured, with the same colours in the histogram. RAWmakase colours each
+  areas uncolored, with the same colors in the histogram. RAWmakase colors each
   whole stop (0–1, 1–2, 2–3, above 3) opaque in that order, by the brightest channel
-  in linear sRGB, as its histogram counts channels; the colour values are its own. It
+  in linear sRGB, as its histogram counts channels; the color values are its own. It
   shows over the photo Develop shows, not beside it, and on any display, as the
   histogram does. The overlay is the master rendered on the CPU at the view's size,
   in slots of the HDR preview's worker, so it costs a CPU master per edit while on,
@@ -2396,12 +2396,12 @@ stay refused.
   [Highlights and Shadows](#highlights-and-shadows)); Point Color on photos and on the GPU's HDR preview
   ([Point Color](#point-color)).
 - Defringe: RAWmakase's SDR selection (by hue and chroma alone) changes smooth and
-  dark colour Camera Raw's leaves alone (1.49 relative error in SDR); the HDR master's
+  dark color Camera Raw's leaves alone (1.49 relative error in SDR); the HDR master's
   model of Camera Raw's ([Defringe](#defringe)) was fitted on the twelve photos it is
   scored on.
 - Channel curves' peak on photos: the Z50 II's brightest block is 0.19 stop high, the
   Z 8's 0.11, where their median and p95 pass ([Tone curves](#tone-curves)).
-- Strong Highlights tints of saturated colours above white, and the Z50 II's peak with
+- Strong Highlights tints of saturated colors above white, and the Z50 II's peak with
   a Global tint ([Color grading](#color-grading)).
 - The vignette's Highlights in HDR, and Highlight Priority −100 in a frame's darkest
   tiles (p95 1.5 stops on the synthetic tiles) ([Vignette and grain](#vignette-and-grain)).
@@ -2417,7 +2417,7 @@ stay refused.
 - Looks that set Clarity above +50 or Highlights stay refused (Adobe Vivid sets Clarity +10; a look's split toning renders since 2026-11-12). A B&W `.cube`
   renders saturation-0.9 red and magenta out of its gamut almost black above white in
   Camera Raw ([Looks](#looks)); RAWmakase renders their gray.
-- Saturated colours: with no look, the colour patches at saturation 0.9 differ from
+- Saturated colors: with no look, the color patches at saturation 0.9 differ from
   Camera Raw by a median ΔE_ITP of 24 at every intensity, below white too, while
   those at 0.3 and 0.6 differ by 0.2; not HDR's.
 - Fixtures: synthetic PQ, HLG and gain-map files from the tools above (libultrahdr's
@@ -2433,7 +2433,7 @@ stay refused.
   starts them as HDR edits; Lightroom's choice is not measured), and HDR toggling
   with unavailable paired profiles.
 - HDR display beyond macOS Develop's views: a GPU
-  HDR path, Windows Advanced Color, Linux. Lightroom's exact Visualize HDR colours
+  HDR path, Windows Advanced Color, Linux. Lightroom's exact Visualize HDR colors
   (not published; the overlay follows their order: [Visualize HDR](../hdr.md#visualize-hdr)).
 
 ## Progress
@@ -2454,8 +2454,8 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   `rawmakase render --hdr`; looks of a table and a curve, Adobe Color among them
   ([Looks](#looks)); Contrast ([Contrast](#contrast)); the master point curve, the
   parametric curve, the channels' curves and Levels ([Tone curves](#tone-curves)); Texture ([Presence](#presence)); Saturation, Vibrance, the
-  colour mixer's Hue and Saturation, Calibration and Black & White
-  ([Colour stage](#colour-stage)); band Luminance from −100 to +100
+  color mixer's Hue and Saturation, Calibration and Black & White
+  ([Color stage](#color-stage)); band Luminance from −100 to +100
   ([Band Luminance](#band-luminance)); Whites up to +50 ([Whites](#whites)); Shadows
   ([Highlights and Shadows](#highlights-and-shadows)); looks with RGB tables, B&W,
   their own settings, any Profile Amount, and fitted Camera Looks ([Looks](#looks));
@@ -2506,10 +2506,10 @@ How #253 meets the plan's completion criteria: [completion](hdr-253-closure.md).
   CC0 Z 8 photo), and zoomed out, in 100% regions, Before Only, Before/After and
   Reference View (#924). The master's preview on the GPU during slider drags (#983),
   for ordinary and HDR profiles and looks (#984), Contrast and the tone curves (#986)
-  the colour stage (#987) and Texture (#988), checked against the CPU master in float
+  the color stage (#987) and Texture (#988), checked against the CPU master in float
   space. HDR files' masters on the GPU too, from their pseudo-scenes. AI Denoise shows in
   the HDR preview, histogram and readout, on the GPU and the CPU. The HDR histogram in stops above white, the HDR readout,
   and what lies beyond the display's headroom marked in the histogram and its
   highlight triangle. Preview for SDR display, a view choice showing the SDR rendition
-  on an HDR display. Visualize HDR, colouring the photo by its stops above white.
+  on an HDR display. Visualize HDR, coloring the photo by its stops above white.
   Open: the rest of the stage (above).

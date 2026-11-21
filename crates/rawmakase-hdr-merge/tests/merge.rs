@@ -24,7 +24,7 @@ const READ: f64 = 3.;
 /// round them.
 const TRUE: [f64; 3] = [1., 4., 16.];
 const RECORDED: [(u32, u32); 3] = [(1, 250), (1, 60), (1, 15)];
-/// The camera's colour of a neutral: camera RGB is not white balanced.
+/// The camera's color of a neutral: camera RGB is not white balanced.
 const NEUTRAL: [f64; 3] = [0.5, 1., 0.6];
 
 /// The scene's light per pixel and channel, in the darkest frame's units (1

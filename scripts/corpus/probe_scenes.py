@@ -3,7 +3,7 @@
 Each scene is a log-luminance field built from layers a photo has at different
 scales: a smooth gradient (sky, light falloff), large and small regions with sharp
 or soft edges (objects, windows, shadows), texture at several frequencies, and a
-little colour. Its key (overall brightness) and range vary from scene to scene, so
+little color. Its key (overall brightness) and range vary from scene to scene, so
 dark and bright photos are both represented. Scenes are deterministic in their
 seed and returned as scene-linear ProPhoto RGB for `probe_dng.write`.
 """
@@ -55,7 +55,7 @@ def scene(seed, width=1536, height=1024):
         L += amount * n / max(n.std(), 1e-6)
     L = np.clip(L, -14, 3)
     Y = 2.0 ** L
-    # Colour: a smooth chroma field.
+    # Color: a smooth chroma field.
     chroma = np.stack([_blur(rng.normal(0, 1, (height, width)), 60) for _ in range(3)], -1)
     chroma /= max(chroma.std(), 1e-6)
     rgb = Y[..., None] * np.exp(rng.uniform(0, 0.15) * chroma)

@@ -41,15 +41,15 @@ Before 2026-10-25 the fill kept the largest ratio of any channel at any radius o
 
 ### Reconstructed X-Trans fine detail
 
-Demosaicing can reconstruct nearly constant chromaticity on stripes whose colour
+Demosaicing can reconstruct nearly constant chromaticity on stripes whose color
 is finer than the CFA resolves ([demosaicing](demosaic.md)). Independently shifting
-red and blue then samples different slat brightnesses and creates colour again,
-even from a uniformly coloured input.
+red and blue then samples different slat brightnesses and creates color again,
+even from a uniformly colored input.
 
 The CPU lens sampler and its GPU counterpart protect that case on X-Trans images.
 They compare source chromaticity at the three channel sample positions with the
 chromaticity introduced by assembling the remapped channels. When the source
-variation is less than 40% of that introduced colour (full protection below 10%),
+variation is less than 40% of that introduced color (full protection below 10%),
 and a seven-pixel horizontal or vertical neighbourhood contains at least two
 significant luminance slope reversals with coherent chromaticity, the sample moves towards the original
 chromaticity at green's position. It keeps the remapped sample's luminance,
@@ -57,10 +57,10 @@ distortion and vignetting. A single monotonic edge does not meet the repeated-de
 condition; existing chromaticity variation also rejects protection. Two reversals cover periods through four pixels at every phase. CPU and GPU choose the window centre with ties-to-even rounding, including at half-size sampling positions. Coherence is
 full below a 2% chromaticity span and fades to zero at 5%; checking the whole
 line prevents chance agreement between two interpolated noise samples from
-suppressing high-ISO colour noise. The repeated luminance must also agree on
+suppressing high-ISO color noise. The repeated luminance must also agree on
 five parallel lines separated by three pixels: the variance of their average,
 after square-root encoding, must exceed 55% of their mean individual variance
-(full protection at 70%). This rejects random luminance noise even after colour
+(full protection at 70%). This rejects random luminance noise even after color
 noise reduction has made its chromaticity smooth. The check uses
 the samples already read for CA plus a small neighbourhood only for candidates. The CPU reuses symmetric line samples and their variances in the one-sided windows, limiting the footprint to nine lines. A full-protection result ends the CPU and GPU search over parallel lines and axes, since further evidence cannot improve it.
 
@@ -82,10 +82,10 @@ distance), and variation between the three source sample positions must be below
 to periodic detail. The original relative source-variation guard still applies.
 Tests also keep an ordinary CA edge beside periodic detail unchanged.
 
-Tests cover constant-colour stripes, unchanged isolated CA edges and resolved
-coloured stripes, and CPU/GPU presented-preview agreement with fine stripes and lens corrections.
+Tests cover constant-color stripes, unchanged isolated CA edges and resolved
+colored stripes, and CPU/GPU presented-preview agreement with fine stripes and lens corrections.
 This is a safeguard for reconstructed detail, not a replacement for the lens's
-CA model. Ambiguous low-contrast real colour within fine repeated detail remains
+CA model. Ambiguous low-contrast real color within fine repeated detail remains
 a limitation.
 
 ### Fujifilm vignetting strength
@@ -252,7 +252,7 @@ The same measurement on rendered sRGB output (Adobe Standard, full size) of 13 p
 | RAWmakase, off | 0.34 | 0.31 | 0.62 |
 | RAWmakase, on | 0.11 | 0.15 | 0.49 |
 
-Output-space figures are only comparable with each other: the colour matrix mixes channels, so they differ from the camera-space ones above.
+Output-space figures are only comparable with each other: the color matrix mixes channels, so they differ from the camera-space ones above.
 
 Camera Raw renders with the setting off also show Sony's lateral CA corrected: Lightroom always applies Sony's stored CA ([above](#sony-built-in-corrections)), as RAWmakase now does.
 
@@ -276,14 +276,14 @@ The radius is measured on the photo frame, the camera's default crop; the gain s
 
 ## Defringe
 
-Lightroom's Defringe (`crs:DefringePurpleAmount`, `…GreenAmount` and their Hue ranges) reduces the chroma of hues inside the Purple and Green ranges. `Effects::defringe_color` does it per pixel in Oklab, after the colour controls:
+Lightroom's Defringe (`crs:DefringePurpleAmount`, `…GreenAmount` and their Hue ranges) reduces the chroma of hues inside the Purple and Green ranges. `Effects::defringe_color` does it per pixel in Oklab, after the color controls:
 
 - The Purple and Green windows are centred at Oklab hue 0.875 and 0.46 (0–1). Each Hue slider's 0–100 spans 0.5 of hue around its centre, and a range's ends are softened over ±0.025.
-- At full weight the share of chroma removed is (1 − 0.45·e^(−C/0.09)) · (1 − e^(−Amount/2.5)), with C the Oklab chroma and Amount 0–20: a stronger fringe colour loses more of its chroma, and Amount 5 already does most of the work.
+- At full weight the share of chroma removed is (1 − 0.45·e^(−C/0.09)) · (1 − e^(−Amount/2.5)), with C the Oklab chroma and Amount 0–20: a stronger fringe color loses more of its chroma, and Amount 5 already does most of the work.
 
 The constants were fitted to Camera Raw 18.6 renders of two A7 II photos (FE 55mm F1.8 ZA at f/1.8 and f/5.3) at Purple 5, 10 and 20, Purple 20 with a 45–55 range, and Green 10 and 20, comparing the chroma kept per hue between each render and the same photo without Defringe. The mean difference from Camera Raw fell from 0.14–0.26 to 0.05–0.11 across those cases. Camera Raw also reduces chroma somewhat more next to strong edges, including hues just outside the range; that spatial part is not reproduced.
 
-The Fringe Color Selector (the eyedropper at the Defringe heading) reads the shown colour, picks the nearer window that holds its hue, sets that range to 20 wide around it and Amount to 5 when it was 0. Reds, yellows, blues and near-greys are refused.
+The Fringe Color Selector (the eyedropper at the Defringe heading) reads the shown color, picks the nearer window that holds its hue, sets that range to 20 wide around it and Amount to 5 when it was 0. Reds, yellows, blues and near-greys are refused.
 
 ## DNG files
 

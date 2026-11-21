@@ -715,9 +715,9 @@ impl Preset {
     }
 
     /// The Treatment. A look that carries its own settings decides it, as in Camera
-    /// Raw 18.7: on the synthetic chart a colour look renders in colour over a photo
+    /// Raw 18.7: on the synthetic chart a color look renders in color over a photo
     /// set to black & white, a black & white look in black & white over a photo set
-    /// to colour, and a look whose settings leave the flag out in colour, whatever
+    /// to color, and a look whose settings leave the flag out in color, whatever
     /// its `SupportsMonochrome` and Amount (#666). Without such a look, or when the
     /// look isn't the profile the settings end up with, the photo's own flag does.
     fn apply_treatment(

@@ -1,6 +1,6 @@
-//! The colour wheels' hues, which the masks' tint shares with the Color Grading panel.
+//! The color wheels' hues, which the masks' tint shares with the Color Grading panel.
 
-/// The fully saturated RGB of a colour wheel's `hue` (0–1, red at 0).
+/// The fully saturated RGB of a color wheel's `hue` (0–1, red at 0).
 pub fn hue_rgb(hue: f32) -> [f32; 3] {
     let h = hue.rem_euclid(1.) * 6.;
     let x = 1. - (h.rem_euclid(2.) - 1.).abs();

@@ -82,7 +82,7 @@ The Control Dial moves at once on the first tick of a turn, then once every
 | Clr/BW | 101 | Black & White on / off |
 | Before After | 102 | `\` |
 | C1 | 49 | Z (zoom) |
-| C3–C6 | 51–54 | colour labels red, yellow, green, blue (6–9) |
+| C3–C6 | 51–54 | color labels red, yellow, green, blue (6–9) |
 
 Not bound: D1 (CC 41), D2 (CC 42), C2, L1–L3, Col, Fn, Tab, Custom Mode, and the
 Texture and Dehaze sliders. [tools/loupedeck/controls.json](../tools/loupedeck/controls.json)

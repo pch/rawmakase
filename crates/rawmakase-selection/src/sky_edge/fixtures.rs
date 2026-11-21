@@ -6,7 +6,7 @@ use crate::auto::{colours, luma};
 use crate::process::{Coverage, Rect, RgbImage, output_size, resample};
 use crate::refine::guided;
 
-/// An edge mode: sky coverage from the photo's colours and the model's answer.
+/// An edge mode: sky coverage from the photo's colors and the model's answer.
 pub(super) type Mode = fn(&[[f32; 3]], &[f32], usize, usize) -> Vec<f32>;
 
 /// Coverage from `mode` for the model's `probability` (`model_width` x `model_height`).
@@ -38,7 +38,7 @@ pub(super) fn run(
 }
 
 /// What a mode is given for the model's `probability` (`model_width` x `model_height`):
-/// the photo's colours and the model's answer at the coverage's size, and that size.
+/// the photo's colors and the model's answer at the coverage's size, and that size.
 pub(super) fn inputs(
     image: &RgbImage,
     probability: &[f32],
@@ -56,7 +56,7 @@ pub(super) fn inputs(
     (colours(image, width, height), soft, width, height)
 }
 
-/// A photo of `w` x `h`: `paint(x, y)` colours each pixel.
+/// A photo of `w` x `h`: `paint(x, y)` colors each pixel.
 pub(super) fn photo(w: usize, h: usize, paint: impl Fn(usize, usize) -> [u8; 3]) -> RgbImage {
     let mut data = Vec::with_capacity(w * h * 3);
     for y in 0..h {
@@ -85,7 +85,7 @@ pub(super) fn at(c: &Coverage, fx: f32, fy: f32) -> u8 {
 
 /// A tree crown and a spire against a sky gradient, and a model answer that, like
 /// UperNet's, calls the whole crown not sky and the spire's thin tip sky. `sky` and
-/// `branch` colour the two; the crown's dark lines are 3 pixels wide every 12, with
+/// `branch` color the two; the crown's dark lines are 3 pixels wide every 12, with
 /// 9 x 9 gaps of sky between them.
 pub(super) fn crown_of(
     w: usize,
@@ -130,7 +130,7 @@ pub(super) fn crown() -> (RgbImage, Vec<f32>) {
 }
 
 /// A lake reflecting the sky, broken up by reflected trees, near the sky and where
-/// the model is `faint`ly unsure: a large sky-coloured area, not gaps in a crown.
+/// the model is `faint`ly unsure: a large sky-colored area, not gaps in a crown.
 pub(super) fn reflection(faint: f32) -> (RgbImage, Vec<f32>) {
     let blob = |x: usize, y: usize| x % 60 < 24 && (220..370).contains(&y) && (y - 220) % 60 < 24;
     let img = photo(800, 600, |x, y| match y {
@@ -185,7 +185,7 @@ pub(super) fn trunk() -> (RgbImage, Vec<f32>) {
 /// A sparse bare canopy over the ground, which the model, like UperNet, calls
 /// foreground as a whole: thin twigs 2 pixels wide in a lattice of cells far larger
 /// than a gap in a dense crown, with finer 1-pixel twigs across them, and the sky
-/// behind them one large connected area. `sky(x, y)` colours the sky.
+/// behind them one large connected area. `sky(x, y)` colors the sky.
 pub(super) fn sparse_canopy(sky: impl Fn(usize, usize) -> [u8; 3]) -> (RgbImage, Vec<f32>) {
     let in_canopy = |x: usize, y: usize| (300..700).contains(&x) && (150..400).contains(&y);
     let twig = |x: usize, y: usize| x % 48 < 2 || y % 40 < 2;
@@ -242,7 +242,7 @@ pub(super) fn tree_twig(x: usize, y: usize) -> bool {
 /// An overcast sky over a building with a bare tree in front ([`tree_twig`]), and a
 /// model answer that calls the tree's crown not sky and fades over `ramp` rows from
 /// sky (0.99) to not sky (0.01): a wide ramp reaching into the building. `wall`
-/// colours the building from row 300 down: its face, its windows or courses.
+/// colors the building from row 300 down: its face, its windows or courses.
 pub(super) fn building(
     wall: impl Fn(usize, usize) -> [u8; 3],
     ramp: std::ops::Range<f32>,
@@ -387,7 +387,7 @@ pub(super) fn reflection_stays_out(mode: Mode, faint: f32) {
     assert!(px(400, 50) > 240);
 }
 
-/// A faint wisp of "sky" the model draws across water, far from the sky: the colours
+/// A faint wisp of "sky" the model draws across water, far from the sky: the colors
 /// are not asked about it, so it stays as little sky as before.
 pub(super) fn a_faint_wisp_on_the_water_away_from_the_sky_stays_out(mode: Mode) {
     let wisp = |x: f32, y: f32| (y - (350. + 20. * (x / 40.).sin())).abs() < 4.;
@@ -555,7 +555,7 @@ pub(super) fn sky_is_where_the_model_says_with_its_edge_on_the_photos(mode: Mode
 }
 
 pub(super) fn water_under_the_sky_is_left_out_when_the_model_leaves_it_out(mode: Mode) {
-    // Sky-coloured water below a band of ground: nothing here looks at where it lies.
+    // Sky-colored water below a band of ground: nothing here looks at where it lies.
     let img = photo(640, 480, |_, y| match y {
         0..=199 => [120, 160, 230],
         200..=279 => [40, 60, 30],

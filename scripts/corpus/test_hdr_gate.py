@@ -27,7 +27,7 @@ class BlocksTest(unittest.TestCase):
     def test_blocks_keep_highlights_and_negatives(self):
         image = np.full((48, 96, 3), 0.2)
         image[:, :2] = 9.0  # the first block column, above white
-        image[:, 2:4, 0] = -0.05  # a P3 negative from a wide-gamut colour
+        image[:, 2:4, 0] = -0.05  # a P3 negative from a wide-gamut color
         reduced = gate.blocks(image)
         self.assertAlmostEqual(float(reduced[0, 0, 1]), 9.0, places=5)
         self.assertLess(float(reduced[0, 1, 0]), 0)

@@ -40,13 +40,13 @@ median exposure; of two as near, the darker.
 
 1. **Decodes** each frame with `Raw::develop_frame`: the mosaic demosaiced as
    development demosaics it, then its white balance divided out again. Nothing
-   is recovered. Each colour's saturation is the highest level its samples pile
+   is recovered. Each color's saturation is the highest level its samples pile
    up on, in bins of 1/4000 of white: a sensor that clips stacks a highlight's
    samples on one level, where noise spreads an unclipped area's, and a lone hot
    pixel above makes no pile. It is never above the white level. A pixel is
    marked clipped when a sample that can change it reaches saturation: 3 pixels
    around on Bayer, 9 on X-Trans (beyond that, only X-Trans's pass over fine
-   stripes averages colour along rows and columns).
+   stripes averages color along rows and columns).
    Small RAWs and linear DNGs are refused. Only two frames are held at a time;
    with Auto Align or Deghost also the reference, decoded first (until its
    turn, or with Deghost to the end), and a frame's warped copy while it is
@@ -90,7 +90,7 @@ Lightroom's BaselineExposure 1.54 for the Canon T8i bracket of
 discuss.pixls.us #39443 (1/20, 1/5 and 0.8 s, IMG_9814 active) is this rule:
 the 850D's baseline of −0.46 plus the two stops from 1/20 to the 1/5 reference.
 
-The DNG takes the reference's camera names, D65 colour matrix, unit calibration
+The DNG takes the reference's camera names, D65 color matrix, unit calibration
 (Adobe's diagonal CameraCalibration, signed "com.adobe", as Camera Raw applies
 it), as-shot white, orientation and default crop; and the darkest frame's EXIF
 and capture time, as Lightroom does. Not yet carried over: the maker note
@@ -110,7 +110,7 @@ detector:
 
 - **What is compared:** the log of each frame's demosaiced green. Green is
   sampled on every row and column of a Bayer sensor; where the demosaic puts a
-  red or blue edge depends on its phase on the colour filter, which a frame
+  red or blue edge depends on its phase on the color filter, which a frame
   moved by an odd number of pixels changes. The exposure between the frames
   is one offset in the log, fitted with the motion from the mean difference
   the coarse search finds.
@@ -307,7 +307,7 @@ deghosting mask isn't shown in the window yet.
 | Tiles | 256 × 256, Deflate, Adobe's floating-point predictor 34894 (FloatingPointX2: each tile row's samples as byte planes, most significant first, each byte the difference from the same byte two pixels before) |
 | Version | DNGVersion and DNGBackwardVersion 1.4.0.0, which defined floating-point samples, the predictor and transparency masks |
 | Levels | Black-subtracted (BlackLevel 0), not white balanced, under one WhiteLevel (at most 65504, the largest half) |
-| Colour | One or two calibrations: CalibrationIlluminant, ColorMatrix, ForwardMatrix, CameraCalibration; AnalogBalance; AsShotNeutral |
+| Color | One or two calibrations: CalibrationIlluminant, ColorMatrix, ForwardMatrix, CameraCalibration; AnalogBalance; AsShotNeutral |
 | Exposure | BaselineExposure, the camera's own included |
 | Frame | Orientation; DefaultCropOrigin and DefaultCropSize (none: the whole image) |
 | Coverage | A transparency mask (NewSubFileType 4, PhotometricInterpretation 4, 8-bit Deflate tiles) in IFD0's SubIFDs, where aligned frames leave the image uncovered |
@@ -328,7 +328,7 @@ find the camera's profiles by its name.
 - **Round trip** (`crates/rawmakase-hdr-merge/tests/round_trip.rs`): a 600 × 300
   synthetic merge, a 24-stop ramp in three tiles across and two down, opens through
   `rawmakase_decode::photo::open` with its samples to half precision, levels, crop,
-  orientation, BaselineExposure, colour matrix, as-shot white, EXIF, maker note
+  orientation, BaselineExposure, color matrix, as-shot white, EXIF, maker note
   (through a Fujifilm DynamicRange tag) and transparency mask.
 - **Adobe's DNG SDK** (`dng_validate` 1.4, built from the SDK's source): the same
   file validates with no warning. The SDK's public 1.4 source does not flatten
@@ -375,9 +375,9 @@ find the camera's profiles by its name.
     illuminants' matrices, RAWmakase only D65's.
   - Adobe's `dng_validate` 1.4 reads it with no warning but the zero entries
     of the camera's own LensSpecification, copied from its EXIF.
-  - RAWmakase names the T8i the EOS 850D, as its colour-matrix and camera
+  - RAWmakase names the T8i the EOS 850D, as its color-matrix and camera
     tables and Adobe's profiles do, so the merge's UniqueCameraModel is
-    "Canon EOS 850D". Before it did, the camera had no colour matrix and the
+    "Canon EOS 850D". Before it did, the camera had no color matrix and the
     merge refused the bracket.
 - **The other `play-raw` brackets** merge: Fujifilm X-T4 (X-Trans, handheld,
   not aligned yet), Nikon D750 (5 frames), Panasonic GX80 and GH3 (ISO only,

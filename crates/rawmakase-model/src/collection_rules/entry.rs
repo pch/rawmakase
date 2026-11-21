@@ -16,7 +16,7 @@ pub struct Entry<'a> {
     pub flag: i32,
     /// 0 for unrated, else 1 to 5.
     pub rating: i32,
-    /// The colour label's name ("Red" … "Purple", or a custom label's);
+    /// The color label's name ("Red" … "Purple", or a custom label's);
     /// empty for none.
     pub label: &'a str,
     pub filename: &'a str,

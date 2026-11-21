@@ -179,7 +179,7 @@ impl Editor {
             hint(ui, why);
         }
         if let Some(consent) = self.ai_remove.consent.clone() {
-            // In the text's own colour, not a hint's: this waits for an answer.
+            // In the text's own color, not a hint's: this waits for an answer.
             indented(ui, |ui| {
                 ui.add(
                     egui::Label::new(

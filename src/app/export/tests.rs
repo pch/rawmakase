@@ -349,7 +349,7 @@ fn return_exports_from_the_dialog() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Export with Previous exports in the saved colour space, and refuses one its
+/// Export with Previous exports in the saved color space, and refuses one its
 /// format can't hold or a later release saved, before anything renders.
 #[test]
 fn export_with_previous_keeps_its_colour_space_or_refuses_it() -> anyhow::Result<()> {

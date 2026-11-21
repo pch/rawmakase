@@ -390,7 +390,7 @@ pub fn encoded(
     })
 }
 
-/// IFD0's camera, colour and EXIF tags, its EXIF and GPS directories added
+/// IFD0's camera, color and EXIF tags, its EXIF and GPS directories added
 /// to `tiff`.
 fn describe(tiff: &mut Tiff, raw: &mut Ifd, facts: &DngFacts) -> Result<(), Error> {
     raw.set(tag::DNG_VERSION, Value::bytes(kind::BYTE, vec![1, 4, 0, 0]));

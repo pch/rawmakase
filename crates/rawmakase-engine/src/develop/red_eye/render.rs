@@ -1,6 +1,6 @@
 //! Rendering one correction on linear camera pixels (white-balanced as shot).
 //!
-//! Inside a soft ellipse every pixel moves towards a dark neutral, whatever its colour,
+//! Inside a soft ellipse every pixel moves towards a dark neutral, whatever its color,
 //! as Camera Raw's does: the pupil's brightness is taken from green and blue alone, so
 //! the red cast leaves no trace, then Darken scales it. Pupil Size scales the ellipse.
 //! The constants are fitted to Camera Raw 18.7 renders of synthetic pupils (see
@@ -30,7 +30,7 @@ pub(crate) struct Model {
     pub(crate) red: f32,
     /// Encoded gain at Darken 0, 0.5 and 1; quadratic between.
     pub(crate) gain: [f32; 3],
-    /// How much of the original colour stays, as a power of its channel ratios.
+    /// How much of the original color stays, as a power of its channel ratios.
     pub(crate) keep: f32,
 }
 pub(crate) const MODEL: Model = Model {
@@ -155,14 +155,14 @@ fn gain(g: [f32; 3], t: f32) -> f32 {
     (a * 2. * (t - 0.5) * (t - 1.) - b * 4. * t * (t - 1.) + c * 2. * t * (t - 0.5)).max(0.)
 }
 /// A red pupil's corrected value: green and blue's brightness, darkened, with a trace
-/// of the original colour.
+/// of the original color.
 fn red_pupil(p: [f32; 3], darken: f32, m: &Model) -> [f32; 3] {
     let encode = |v: f32| v.max(0.).powf(1. / m.gamma);
     let (r, g, b) = (encode(p[0]), encode(p[1]), encode(p[2]));
     let gb = (g + b) / 2.;
     let level = (gb + m.red * (r - gb)).max(0.) * gain(m.gain, darken);
     let level = level.powf(m.gamma);
-    // A trace of the original colour: its log ratios to their mean, scaled by `keep`.
+    // A trace of the original color: its log ratios to their mean, scaled by `keep`.
     let logs = p.map(|v| (v.max(1e-5)).ln());
     let mean = (logs[0] + logs[1] + logs[2]) / 3.;
     logs.map(|l| level * (m.keep * (l - mean)).exp())

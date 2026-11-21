@@ -133,7 +133,7 @@ struct Export {
     target: McpTarget,
     /// Optional maximum edge; omit for full size.
     max_edge: Option<u32>,
-    /// Optional colour space; omit for sRGB. ProPhoto RGB needs a .tif path.
+    /// Optional color space; omit for sRGB. ProPhoto RGB needs a .tif path.
     color_space: Option<McpColorSpace>,
 }
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -706,7 +706,7 @@ mod tests {
         }
     }
 
-    /// export_photo's colour space takes the socket's names and is optional.
+    /// export_photo's color space takes the socket's names and is optional.
     #[test]
     fn export_photo_takes_an_optional_color_space() {
         let read = |value: Value| serde_json::from_value::<Export>(value);

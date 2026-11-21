@@ -48,7 +48,7 @@ pub(crate) struct Notes {
     pub compression: Option<u32>,
     /// The PreviewIFD's JPEG.
     pub previews: Vec<Candidate>,
-    /// Which Coolpix colour data (0x0014) the note has.
+    /// Which Coolpix color data (0x0014) the note has.
     pub coolpix: Coolpix,
     /// The ISO speed the note gives: ISO (0x0002), else ISOInfo's (0x0025).
     pub iso: Option<f32>,
@@ -56,7 +56,7 @@ pub(crate) struct Notes {
     pub color_space: Option<crate::info::PreviewSpace>,
 }
 
-/// A Coolpix's colour data, which also tells how its raw data is stored.
+/// A Coolpix's color data, which also tells how its raw data is stored.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Coolpix {
     #[default]
@@ -233,7 +233,7 @@ fn read_note(note: &TiffFile, headerless: bool, model: &str) -> Notes {
     notes
 }
 
-/// The colour filter a body's files are read with where its CFAPattern says
+/// The color filter a body's files are read with where its CFAPattern says
 /// otherwise: the COOLPIX P6000's NRWs, read red first. Observed
 /// compatibility: LibRaw's reading of the dataset's file, which saved edits
 /// keep; nothing in the file says it, so the rule is the model's (the camera
@@ -301,7 +301,7 @@ fn color_balance_black(
     Some([level(0)?, level(1)?, level(2)?])
 }
 
-/// A Coolpix's colour data (0x0014): ColorBalanceA, big-endian 16-bit red
+/// A Coolpix's color data (0x0014): ColorBalanceA, big-endian 16-bit red
 /// and blue levels over a green of 256, or an NRW's ColorBalanceB or C,
 /// little-endian 32-bit red, green, green, blue, whose red and blue count
 /// twice.

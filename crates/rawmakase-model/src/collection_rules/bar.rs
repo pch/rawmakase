@@ -1,12 +1,12 @@
 //! The Library filter bar's test of an entry. It follows Lightroom's
 //! Attribute filter (any combination of flags, a rating compared with ≥, ≤
-//! or =, any set of colour labels, masters or virtual copies), its Metadata
+//! or =, any set of color labels, masters or virtual copies), its Metadata
 //! filter (any of each column's chosen values, every column chosen in) and the
 //! search.
 use super::{Attribute, Entry};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// The five colour labels, in Lightroom's order.
+/// The five color labels, in Lightroom's order.
 pub const LABELS: [&str; 5] = ["Red", "Yellow", "Green", "Blue", "Purple"];
 
 /// How the filter bar compares a rating with its limit.
@@ -42,13 +42,13 @@ impl RatingOp {
     }
 }
 
-/// A colour label the bar can match.
+/// A color label the bar can match.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Label {
     Color(String),
     /// No label at all.
     None,
-    /// Any label other than the five colours, such as a custom label set's.
+    /// Any label other than the five colors, such as a custom label set's.
     Other,
 }
 impl Label {

@@ -258,7 +258,7 @@ fn a_region_is_the_shape_with_its_margin_within_the_photo() {
 /// for a remover that answers exactly and one that drifts 3% brighter: the
 /// membrane is never worse than the composite, and where the rendition clipped
 /// (the saturated ground lies outside sRGB) it takes the patch back to the
-/// photo's colour, which the composite can't. This is what decided
+/// photo's color, which the composite can't. This is what decided
 /// `GENERATE_BLEND`.
 #[test]
 fn the_membrane_lays_a_patch_better_than_a_composite() {

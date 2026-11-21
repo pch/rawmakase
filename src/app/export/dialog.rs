@@ -676,7 +676,7 @@ fn section(ui: &mut egui::Ui, title: &str) {
     );
 }
 
-/// HDR export: off (SDR, in the colour space above), or the edit's HDR master, as HDR
+/// HDR export: off (SDR, in the color space above), or the edit's HDR master, as HDR
 /// pixels in a gamut and transfer (TIFF, JPEG XL) or as a gain map over the SDR
 /// rendition (JPEG, JPEG XL). Edits with HDR off are refused when exported
 /// (`export::job::prepare`), so the choice is the user's to make per export.

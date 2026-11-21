@@ -208,7 +208,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
                     }
                     if ui
                         .button("Import LUTs…")
-                        .on_hover_text("Import .cube and HaldCLUT .png LUTs as looks, choosing the colour space they expect first")
+                        .on_hover_text("Import .cube and HaldCLUT .png LUTs as looks, choosing the color space they expect first")
                         .clicked()
                     {
                         actions.push(Action::ImportLuts);
@@ -399,7 +399,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
                                     !uncalibrated,
                                     egui::Button::selectable(selected == named.name(), named.name()),
                                 )
-                                .on_disabled_hover_text("This photo has no colour data of its own: its Camera Look (fitted) knows the white as shot, not the light's temperature. As Shot, Auto, the selector and Temp and Tint still work.")
+                                .on_disabled_hover_text("This photo has no color data of its own: its Camera Look (fitted) knows the white as shot, not the light's temperature. As Shot, Auto, the selector and Temp and Tint still work.")
                                 .clicked()
                                 && let Some(m) = metadata
                             {
@@ -515,7 +515,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
 /// (`second`), so a comparison of brightness says when one side is SDR. With HDR
 /// on, Lightroom's Preview for SDR display (`sdr_preview`, a view choice, not
 /// saved) shows the SDR rendition instead, and Visualize HDR (`visualize_hdr`,
-/// likewise) colours the photo by its stops above white.
+/// likewise) colors the photo by its stops above white.
 fn hdr_options(
     ui: &mut egui::Ui,
     r: &mut Recipe,
@@ -538,7 +538,7 @@ fn hdr_options(
             ui,
             visualize_hdr,
             "Visualize HDR",
-            "Colour what lies above SDR white by its stops: cyan up to 1, blue up \
+            "Color what lies above SDR white by its stops: cyan up to 1, blue up \
              to 2, purple up to 3, magenta beyond. The histogram marks its stops \
              the same way. Not saved with the edit.",
         );

@@ -68,7 +68,7 @@ pub(crate) struct Editor {
     previous_settings: Option<crate::app::develop::settings_transfer::Settings>,
     /// The Point Curve menu's saved curves and its Save window.
     curves: crate::app::develop::panels::curve_menu::CurveMenu,
-    /// The Import LUTs window's colour space, while it is open.
+    /// The Import LUTs window's color space, while it is open.
     lut_import: Option<crate::camera_profiles::LutSpace>,
     /// Manage Profiles, while it is open.
     profile_manager: Option<crate::app::presets::profile_manager::ProfileManager>,

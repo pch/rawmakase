@@ -199,7 +199,7 @@ impl CameraExif {
     }
 }
 
-/// What a file's EXIF says of the colour of the images its camera rendered, and of
+/// What a file's EXIF says of the color of the images its camera rendered, and of
 /// the software that wrote it: ColorSpace (1 sRGB, 0xFFFF uncalibrated), the
 /// interoperability index ("R98" sRGB, "R03" Adobe RGB) and IFD0's Software.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

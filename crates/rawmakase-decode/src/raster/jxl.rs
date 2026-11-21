@@ -37,13 +37,13 @@ impl JxlFile {
         self.header.turned
     }
 
-    /// How its HDR samples decode, by its codestream's own colour encoding.
+    /// How its HDR samples decode, by its codestream's own color encoding.
     pub(super) fn hdr_decoding(&self) -> Option<super::HdrDecoding> {
         self.header.decoding
     }
 }
 
-/// How the samples of a codestream whose colour encoding is enum values decode, when
+/// How the samples of a codestream whose color encoding is enum values decode, when
 /// its transfer is PQ or HLG, read from the encoding itself: the profile jxl-oxide
 /// makes of it names CICP primaries by the primaries alone, so Display P3's (D65
 /// white) come out as DCI-P3's (11, with DCI's white). BT.709, BT.2020 and Display P3
@@ -100,7 +100,7 @@ fn decoding(encoding: &jxl_oxide::color::ColourEncoding) -> Option<super::HdrDec
 /// What a JPEG XL file's or codestream's headers say.
 pub(super) struct Header {
     pub(super) hdr: bool,
-    /// How its HDR samples decode, by its colour encoding ([`decoding`]).
+    /// How its HDR samples decode, by its color encoding ([`decoding`]).
     pub(super) decoding: Option<super::HdrDecoding>,
     pub(super) animated: bool,
     /// Its orientation is not the identity.

@@ -484,7 +484,7 @@ pub(crate) struct LibraryLayout {
     pub flags: Vec<i32>,
     pub rating: Option<i32>,
     pub rating_op: String,
-    /// Colour names, "none" for no label and "other" for any other.
+    /// Color names, "none" for no label and "other" for any other.
     pub labels: Vec<String>,
     pub kind: String,
     /// Cmd+L turned the filter bar off.

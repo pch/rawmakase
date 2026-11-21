@@ -70,7 +70,7 @@ pub(crate) enum Selection {
     One(usize),
 }
 /// What a brush raster was made from: its strokes, the frame's proportions and, for
-/// Auto Mask, the image whose colours guided it.
+/// Auto Mask, the image whose colors guided it.
 struct RasterKey {
     strokes: u64,
     space: [u32; 2],
@@ -174,7 +174,7 @@ pub(crate) struct Weigher {
     ranges: bool,
 }
 impl Weigher {
-    /// `image` supplies Auto Mask colours and the image frame.
+    /// `image` supplies Auto Mask colors and the image frame.
     pub(crate) fn new(image: &CameraImage, masks: &[MaskGroup], selection: Selection) -> Self {
         Self::build(image, masks, selection, None)
     }
@@ -282,7 +282,7 @@ impl Weigher {
             ranges,
         }
     }
-    /// Whether the evaluated masks need developed colours.
+    /// Whether the evaluated masks need developed colors.
     pub(crate) fn needs_range(&self) -> bool {
         self.ranges
             && self.groups.iter().any(|g| {
@@ -291,7 +291,7 @@ impl Weigher {
                     .any(|c| matches!(c.shape, Shape::Color(..) | Shape::Luminance(..)))
             })
     }
-    /// Weight of group `g` at image position `p`, with the developed colour's Oklab
+    /// Weight of group `g` at image position `p`, with the developed color's Oklab
     /// for range components.
     fn weight(&self, g: &Group, p: [f32; 2], lab: Option<[f32; 3]>) -> f32 {
         let q = self.space.to(p);

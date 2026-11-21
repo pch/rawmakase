@@ -116,7 +116,7 @@ Each release includes `SHA256SUMS`. After downloading it beside your package, ve
 
 ### From source (Linux and macOS)
 
-You need Rust 1.98 or newer and a C compiler (a few Rust crates, such as the catalog's bundled SQLite, compile C); no RAW or colour-management library is needed.
+You need Rust 1.98 or newer and a C compiler (a few Rust crates, such as the catalog's bundled SQLite, compile C); no RAW or color-management library is needed.
 
 - Arch Linux: `sudo pacman -S rust base-devel`
 - macOS: the Xcode command-line tools (`xcode-select --install`). Use a native rustup toolchain (`aarch64-apple-darwin` on Apple Silicon).
@@ -247,7 +247,7 @@ Tests that need a real file system other than the one the repository is on are i
 | `RAWMAKASE_TEST_MOUNT`, `RAWMAKASE_TEST_MOUNT_NAME` | `-p rawmakase`: `a_drive_mounted_anywhere_is_found` | A drive's mount point and its label |
 | `RAWMAKASE_TEST_VHDS`, `RAWMAKASE_TEST_LETTER` | `-p rawmakase` (Windows only): `two_disks_swapped_at_one_letter_are_two_drives` | Two `.vhdx` files, each a volume holding a folder named as its label, and a drive letter; run as an administrator |
 
-GPU tests are ignored as well; run them with `cargo test -p rawmakase-engine --lib gpu -- --ignored` on a machine with a compute adapter. The GPU parity workflow runs them on a macOS runner for pull requests that touch the renderer, the model's colour, profile, optics or preview-overlay maths, or wgpu, and weekly on main.
+GPU tests are ignored as well; run them with `cargo test -p rawmakase-engine --lib gpu -- --ignored` on a machine with a compute adapter. The GPU parity workflow runs them on a macOS runner for pull requests that touch the renderer, the model's color, profile, optics or preview-overlay maths, or wgpu, and weekly on main.
 
 Application CI runs the checks `make check` runs, on Linux, Windows and macOS, plus a release build, an Arch package build and a `cargo deny` license and advisory audit. Website-only pushes and pull requests run the Hugo build instead; edits to its workflow also run the workflow linter. A stable `vX.Y.Z` tag on `main` matching `Cargo.toml` builds both macOS DMGs, the Linux packages and the Windows installer. Publication waits for Apple notarization and package checks, then refreshes the website's download links. See [packaging/RELEASING.md](packaging/RELEASING.md) for credentials, rehearsal runs, supported systems and the AUR pause.
 

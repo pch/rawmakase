@@ -81,7 +81,7 @@ impl Radial {
     }
 }
 
-/// A gain per colour channel sampled on a grid over part of the image: a DNG GainMap
+/// A gain per color channel sampled on a grid over part of the image: a DNG GainMap
 /// opcode of OpcodeList3, which applies to the demosaiced image (DJI and Hasselblad
 /// drones' and the Sigma fp's lens shading). It covers `area` (top, left, bottom, right
 /// in fractions of the image's height and width; no gain outside it). Points are

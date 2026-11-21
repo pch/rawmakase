@@ -314,7 +314,7 @@ impl AiBase for Refusing {
 mod tests {
     use super::*;
 
-    /// A `width × height` mosaic of `pattern` (the colours of its 2 × 2 period, row by
+    /// A `width × height` mosaic of `pattern` (the colors of its 2 × 2 period, row by
     /// row: 0 red, 1 green, 2 blue) sampling a smooth scene; the value encodes the
     /// position so packing can be checked exactly.
     fn mosaic(width: usize, height: usize) -> Vec<f32> {
@@ -374,7 +374,7 @@ mod tests {
                     }
                 }
             }
-            // The mirrored samples are real ones of the same colour.
+            // The mirrored samples are real ones of the same color.
             assert_eq!(
                 packed.planes[0],
                 data[mirror(-(red[1] as isize), height) * width

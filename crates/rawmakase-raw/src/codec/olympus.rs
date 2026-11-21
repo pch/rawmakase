@@ -2,7 +2,7 @@
 //! after a 7-byte header, one bit stream (most significant bit first) codes
 //! every row's samples in raster order.
 //!
-//! Each sample is a difference from a prediction. Each colour of a row (the
+//! Each sample is a difference from a prediction. Each color of a row (the
 //! even and the odd columns) keeps three running values, all zero at the
 //! start of a row: the last code's magnitude `m`, a bias `b` and a count `r`
 //! of small codes in a row. A code is read as:
@@ -19,7 +19,7 @@
 //!
 //! Then `b` becomes `(3·d + b) >> 5` for `d = b ± m'`, `r` counts up (or
 //! restarts at 0 when `m'` > 16) and `m = m'`. The prediction from the same
-//! colour's neighbours `w` (two to the left), `n` (two up) and `nw`: 0 for
+//! color's neighbours `w` (two to the left), `n` (two up) and `nw`: 0 for
 //! the first two rows and columns' corner, `w` along the first two rows, `n`
 //! down the first two columns; else, when `nw` lies strictly between `w` and
 //! `n`, `w + n − nw` if `w` or `n` differ from `nw` by more than 32 and their
@@ -39,7 +39,7 @@ use rawmakase_cancel::Cancel;
 /// have one more).
 pub(crate) const HEADER: usize = 7;
 
-/// One colour's running values in a row.
+/// One color's running values in a row.
 #[derive(Clone, Copy, Default)]
 struct Carry {
     magnitude: i32,
@@ -100,7 +100,7 @@ pub(crate) fn decode(
     Ok(())
 }
 
-/// The prediction from the same colour's neighbours to the left (`w`),
+/// The prediction from the same color's neighbours to the left (`w`),
 /// above (`n`) and above left (`nw`).
 fn predict(w: i32, n: i32, nw: i32) -> i32 {
     if (w < nw && nw < n) || (n < nw && nw < w) {
@@ -156,13 +156,13 @@ pub(crate) mod tests {
         w.put(0b111, 3);
         w.put(1, 1);
         w.put(0b0010, 4);
-        // Col 2 (colour 0: m = 5, b = (15 + 0) >> 5 = 0, r = 1): width 4
+        // Col 2 (color 0: m = 5, b = (15 + 0) >> 5 = 0, r = 1): width 4
         // (5 >> 6 = 0); high 1 ("01"), 4 bits 0011 → m' = 19; d = 19:
         // pred w = 21 → 21 + 76 + 0 = 97.
         w.put(0b000, 3);
         w.put(0b01, 2);
         w.put(0b0011, 4);
-        // Col 3 (colour 1: m = 2, b = (−9 + 0) >> 5 = −1, r = 1): m' = 0,
+        // Col 3 (color 1: m = 2, b = (−9 + 0) >> 5 = −1, r = 1): m' = 0,
         // low 2, positive → d = −1 + 0 = −1; pred 65527 → 65527 − 4 + 2.
         w.put(0b010, 3);
         w.put(1, 1);

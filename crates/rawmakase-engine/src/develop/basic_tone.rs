@@ -111,7 +111,7 @@ pub(crate) fn contrast_curve(contrast: f32, photo: &PhotoTone) -> Option<ToneLut
 /// Above [`HDR_TOP`] positive Contrast adds a constant and negative Contrast continues
 /// along its slope there, as Camera Raw renders them. Measured on gray ramps
 /// whose Contrast pivots differ, both profile curves and HDR limits 2, 4 and 8 (the
-/// limit does not change it); colours take it RGBTone fashion.
+/// limit does not change it); colors take it RGBTone fashion.
 pub(crate) struct HdrContrast {
     /// Encoded output at encoded inputs evenly spaced from 0 to `encode(HDR_TOP)`.
     table: Vec<f32>,

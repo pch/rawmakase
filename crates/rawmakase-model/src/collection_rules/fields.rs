@@ -1,7 +1,7 @@
 //! What the smart collection editor offers: the fields RAWmakase evaluates,
 //! in Lightroom Classic 15.6's menu sections and names, each with its
 //! operations as Lightroom lists them and the value each takes. Values are
-//! stored as Lightroom stores them (a label colour's number, a shutter
+//! stored as Lightroom stores them (a label color's number, a shutter
 //! speed's APEX value), so a rule made here reads the same in Lightroom.
 //! Fields RAWmakase can't evaluate are not offered.
 use super::lua::Value;

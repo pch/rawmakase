@@ -47,7 +47,7 @@ pub(crate) fn hue_difference(a: [f64; 3], b: [f64; 3]) -> f64 {
     (d + 540.) % 360. - 180.
 }
 
-/// CIEDE2000 colour difference (Sharma, Wu and Dalal 2005).
+/// CIEDE2000 color difference (Sharma, Wu and Dalal 2005).
 pub(crate) fn delta_e2000(lab1: [f64; 3], lab2: [f64; 3]) -> f64 {
     let [l1, a1, b1] = lab1;
     let [l2, a2, b2] = lab2;

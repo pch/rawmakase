@@ -1,15 +1,15 @@
-//! The colour spaces an export can be written in: sRGB, Adobe RGB (1998) and ProPhoto
+//! The color spaces an export can be written in: sRGB, Adobe RGB (1998) and ProPhoto
 //! RGB (ROMM RGB), each with the profile's primaries, white point and transfer curve
 //! (docs/color-pipeline.md#export-color-spaces).
 //!
-//! The renderer works in linear sRGB (D65) up to the end of its colour stage. A space's
+//! The renderer works in linear sRGB (D65) up to the end of its color stage. A space's
 //! [`OutputSpace::from_linear_srgb`] matrix takes those values to its own linear RGB;
 //! ProPhoto's white is D50, so its matrix includes the Bradford D65→D50 adaptation ICC
 //! profiles use for their D50 connection space. Each channel is then clipped to 0–1 and
 //! encoded with [`OutputSpace::encode`]. sRGB keeps exactly the functions it always had.
 use serde::{Deserialize, Serialize};
 
-/// The colour space of an export's pixels, and of the ICC profile it embeds.
+/// The color space of an export's pixels, and of the ICC profile it embeds.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum OutputSpace {
     #[default]
@@ -121,7 +121,7 @@ impl OutputSpace {
         };
         linear.map(|v| self.encode(v.clamp(0., 1.)).clamp(0., 1.))
     }
-    /// An encoded sRGB colour (0–1), such as a watermark's, in this space.
+    /// An encoded sRGB color (0–1), such as a watermark's, in this space.
     pub fn from_srgb(self, encoded: [f32; 3]) -> [f32; 3] {
         match self {
             Self::Srgb => encoded,

@@ -1,6 +1,6 @@
 //! Panasonic and Leica (RW2, RWL and the older RAW): what the tags of the
 //! RW2 header directory mean. Tag names follow ExifTool's PanasonicRaw tag
-//! documentation: 0x02–0x07 the sensor's size and borders, 0x09 the colour
+//! documentation: 0x02–0x07 the sensor's size and borders, 0x09 the color
 //! filter pattern, 0x0A bits per sample, 0x0B compression, 0x0E–0x10 the
 //! linearity limits, 0x11–0x12 red and blue balance, 0x13 and 0x27 the white
 //! balance presets, 0x17 and 0x37 ISO, 0x1C–0x1E black levels, 0x24–0x26
@@ -86,7 +86,7 @@ pub(crate) fn visible_width(raw_width: u32, borders: Option<[u32; 4]>) -> u32 {
     }
 }
 
-/// The colour filter at the stored data's corner (tag 9: 1 RGGB, 2 GRBG, 3
+/// The color filter at the stored data's corner (tag 9: 1 RGGB, 2 GRBG, 3
 /// GBRG, 4 BGGR).
 pub(crate) fn cfa(t: &TiffFile, ifd: &Ifd) -> Cfa {
     let colors = match t.int(ifd, CFA_PATTERN) {

@@ -70,7 +70,7 @@ pub(in crate::app) fn identity(
     record.lightroom().hash(&mut h);
     if record.recipe.is_none() && record.lightroom().is_none() {
         format!("{defaults:?}").hash(&mut h);
-        // Which profile a default picks, and a photo without colour data's fitted
+        // Which profile a default picks, and a photo without color data's fitted
         // look, depend on the profile library.
         library.hash(&mut h);
         rawmakase_export::build_info::SOFTWARE.hash(&mut h);

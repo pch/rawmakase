@@ -25,15 +25,15 @@ neutral sliders and its overlay shown.
   and offers **Click the subject…**.
 - **Sky** is where a scene-parsing model (UperNet with ConvNeXt, trained on ADE20K) says
   the sky is, pixel by pixel, with the edge moved onto the photo's own. Where the
-  same model sees a tree crown, leafy or bare, the photo's colours find the sky between
+  same model sees a tree crown, leafy or bare, the photo's colors find the sky between
   its branches and twigs, and the large sky behind them; where it is sure of a fence,
   railing or bridge truss, they find the small gaps between the struts. Everywhere else
   (buildings, land, open sky and its clouds, and whatever it cannot name) the model's
   answer stands. Over and beside water neither applies, so a lake reflecting
-  the sky or the water between reeds is left out by the model and not by its colours.
+  the sky or the water between reeds is left out by the model and not by its colors.
   Under a night sky neither applies either: the sky is as dark as the trees and water
-  below it, and the colours cannot tell them apart.
-  The colours ease in and out over tens of pixels where the kinds meet, so there is no
+  below it, and the colors cannot tell them apart.
+  The colors ease in and out over tens of pixels where the kinds meet, so there is no
   seam. "No sky found" when less than 1% of the frame is sky.
 - **Background** is the subject inverted as a component, so adding a brush to it still
   adds coverage.
@@ -61,12 +61,12 @@ left, in order, with the finished ones ticked: download the models.
   again. Sky is the slower one: on the 8-core AMD Ryzen 7 5800X3D it was measured on, the
   model and the edge took 4.4 seconds a photo on average over 138 photos (median 4.6 s,
   at most 6.0 s), the photo's render not included; where a tree crown or a lattice calls
-  for the colours' edge, that is about 0.6 s of it.
+  for the colors' edge, that is about 0.6 s of it.
 - **Catalog only.** The result is a raster stored in the catalog, so it needs a catalog
   photo. Every catalog keeps rasters: one of an earlier format is upgraded when it opens
   (see [catalogs](catalogs.md)).
 - **What the models see:** the photo at the camera's default crop with the camera
-  rendering (no tone, colour, profile or geometry edits; spots and red eye included),
+  rendering (no tone, color, profile or geometry edits; spots and red eye included),
   about 1280 pixels on the long side. Sliders and crop edits during
   or after selecting do not matter; changing spots or red eye meanwhile discards the
   result, as does any change to the masks' structure (adding, removing, Undo).
@@ -88,14 +88,14 @@ left, in order, with the finished ones ticked: download the models.
 
 - **Create:** the drawer's Create row, or **K** (Brush), **M** (Linear Gradient),
   **Shift+M** (Radial Gradient), **Shift+J** (Color Range). Gradients are drawn by
-  dragging on the photo; Color Range samples the colour you click; Luminance Range
+  dragging on the photo; Color Range samples the color you click; Luminance Range
   starts at the brightest half and has Range and Falloff sliders (or click a tone).
 - **Mask list:** click to select, double-click to rename, the eye hides a mask's
   effect. The selected mask shows its components with **Add**, **Subtract** and
   **Intersect** menus, **Invert**, **Duplicate** and **Delete**.
 - **Brush:** drag to paint; hold **Option/Alt** (or pick Erase) to erase. Size,
   Feather, Flow and Density per brush, brushes **A** and **B** (**/** switches),
-  **Auto Mask** keeps the brush to colours like the one under its centre, **[ ]**
+  **Auto Mask** keeps the brush to colors like the one under its centre, **[ ]**
   or the mouse wheel over the photo size (with **Option/Alt**, the Erase brush),
   **Shift+[ ]** or Shift-scroll feather.
 - **Gradients:** drag a linear gradient's ends to size and turn it, its middle to
@@ -120,7 +120,7 @@ left, in order, with the finished ones ticked: download the models.
 - For every rendered pixel the weight of each mask is evaluated at its image
   position: gradients analytically, brushes from an image-space raster (at least four
   pixels per brush radius, up to 2048 on the long side, cached by the strokes), and
-  ranges from the pixel's developed colour without local adjustments (Oklab
+  ranges from the pixel's developed color without local adjustments (Oklab
   chromaticity for Color Range, Oklab lightness for Luminance Range).
 - A pixel's adjustment is the sum over its masks of weight × Amount × sliders, run
   through the normal pipeline at the point each global control acts:
@@ -136,7 +136,7 @@ left, in order, with the finished ones ticked: download the models.
     ±50 mired or ±50 tint shift at ±100.
   - Texture and Clarity scale the samples by the local-contrast detail the global
     sliders use.
-  - Hue rotates and Saturation scales Oklab chroma after the colour mixer.
+  - Hue rotates and Saturation scales Oklab chroma after the color mixer.
   - Sharpness adds to the finishing sharpening per pixel (below zero it softens);
     Noise blends in an edge-aware average (positive values only).
 - **GPU:** mask weights (one byte per mask and pixel, up to 16 masks) go to the

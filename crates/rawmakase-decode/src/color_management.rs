@@ -1,4 +1,4 @@
-//! Colour management of what RAWmakase shows and exports, in pure Rust: the
+//! Color management of what RAWmakase shows and exports, in pure Rust: the
 //! ICC profiles exports embed, and the transform from 8-bit sRGB to a
 //! monitor's ICC profile (relative colorimetric with black-point
 //! compensation).
@@ -8,7 +8,7 @@
 //! keeps raised blacks right), and so is a LUT-based one whose lut8/lut16
 //! tables connect through XYZ, such as DisplayCAL's "XYZ LUT + matrix"
 //! profiles, evaluated as Little CMS does (moxcms ignores those tables'
-//! matrix and miscolours them, issue 548); any other LUT-based profile goes
+//! matrix and miscolors them, issue 548); any other LUT-based profile goes
 //! through moxcms's transform from sRGB. Its colorimetric tables fall back to
 //! the perceptual ones when it has none, as ICC asks. Black-point
 //! compensation follows Adobe's published method: XYZ is scaled per channel

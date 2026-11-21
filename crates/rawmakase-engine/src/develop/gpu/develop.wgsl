@@ -13,7 +13,7 @@
 @group(0) @binding(6) var<storage, read> weights: array<u32>;
 // The Shadows/Highlights map's grids (`local_tone::MapGrid`), kept on the device per map.
 @group(0) @binding(7) var<storage, read> grid: array<f32>;
-// The camera colour per sample, kept between renders that change only the stages after
+// The camera color per sample, kept between renders that change only the stages after
 // it: `size.z` 1 reads it, 2 computes and writes it, 0 neither (see `Kept`).
 @group(0) @binding(8) var<storage, read_write> kept: array<f32>;
 
@@ -482,11 +482,11 @@ fn mixer_lookup(base: i32, h: f32, s: f32, v: f32, scalar: bool) -> vec3<f32> {
     }
     return out;
 }
-// color_mixer::tables_in with `Lookup::Hdr`: the changes looked up at the colour's
+// color_mixer::tables_in with `Lookup::Hdr`: the changes looked up at the color's
 // value up to HDR_MIX_VALUE, and the same above it; with `fading` (a grid of Vibrance's
-// value factors, or -1) those factors at the colour's own value, faded out from
+// value factors, or -1) those factors at the color's own value, faded out from
 // HDR_MIX_FADE to white; with `luminance` (band Luminance's changes, or -1) those
-// changes looked up at the colour's value up to HDR_LUMINANCE_VALUE, their value on each
+// changes looked up at the color's value up to HDR_LUMINANCE_VALUE, their value on each
 // ProPhoto channel, faded out by its scene level (`scene`, as the other changes change
 // it) from HDR_LUMINANCE_FADE to white. Linear sRGB primaries in and out.
 fn mixer_hdr(rgb: vec3<f32>, base: i32, fading: i32, luminance: i32, scene: vec3<f32>) -> vec3<f32> {
@@ -526,7 +526,7 @@ fn mixer_hdr(rgb: vec3<f32>, base: i32, fading: i32, luminance: i32, scene: vec3
         // it, none from white up.
         let level = select(out, max(scene, vec3(0.0)) * out / max(q, vec3(1e-9)), q > vec3(1e-9));
         let w = clamp((vec3(1.0) - level) / (1.0 - HDR_LUMINANCE_FADE), vec3(0.0), vec3(1.0));
-        // Darkening grows with the colour's brightest channel towards white.
+        // Darkening grows with the color's brightest channel towards white.
         let top = max(max(level.x, level.y), level.z);
         let t = clamp((top - HDR_LUMINANCE_DARKEN_FROM) / (1.0 - HDR_LUMINANCE_DARKEN_FROM), 0.0, 1.0);
         // Brightening grows with its luminance where the profile's curve brightens it
@@ -540,9 +540,9 @@ fn mixer_hdr(rgb: vec3<f32>, base: i32, fading: i32, luminance: i32, scene: vec3
     }
     return PRO_TO_RGB * out;
 }
-// HdrFinish::finish's colour stage: the colour mixer (with Saturation's fade to the
+// HdrFinish::finish's color stage: the color mixer (with Saturation's fade to the
 // gray source's luminance), the black & white mix's gray (unclipped above white), a
-// look's RGB table, then colour grading.
+// look's RGB table, then color grading.
 // Linear ProPhoto, not negative, in and out.
 fn hdr_colour_stage(pro: vec3<f32>, scene: vec3<f32>) -> vec3<f32> {
     let grid = offset(P_MIXER);
@@ -575,7 +575,7 @@ fn hdr_colour_stage(pro: vec3<f32>, scene: vec3<f32>) -> vec3<f32> {
     if table {
         rgb = rgb_table_hdr(rgb);
     }
-    // Colour grading follows the colour mixer and a look's RGB table, as in SDR.
+    // Color grading follows the color mixer and a look's RGB table, as in SDR.
     if graded {
         rgb = PRO_TO_RGB * grade_hdr(RGB_TO_PRO * rgb);
     }
@@ -645,7 +645,7 @@ fn hdr_finish(pro: vec3<f32>) -> vec3<f32> {
     if p(P_HDR_LOOK) != 0.0 {
         out = look_apply(out);
     }
-    // Contrast and the tone curves follow the profile and its look, and the colour
+    // Contrast and the tone curves follow the profile and its look, and the color
     // stage follows them.
     return hdr_colour_stage(max(hdr_tone_controls(max(out, vec3(0.0))), vec3(0.0)), pro);
 }
@@ -804,7 +804,7 @@ fn scene_global(q: vec3<f32>) -> vec3<f32> {
     let hi = max(max(q.x, q.y), q.z);
     var ya: f32;
     var yb: f32;
-    // Positive Whites in HDR: the toe RGBTone, times the gain of the colour's luminance.
+    // Positive Whites in HDR: the toe RGBTone, times the gain of the color's luminance.
     let lum_gain = V_HDR && whites > 0.0;
     if lum_gain {
         ya = hdr_toe(lo);
@@ -1128,7 +1128,7 @@ fn dehaze_positive(pro: vec3<f32>, s: f32, pos: vec2<f32>, tone_gain: f32) -> ve
     if (V_MASKS && masked) { gain *= exp2(delta[L_EXPOSURE]); }
     let air = vec3(p(P_HAZE_AIR), p(P_HAZE_AIR + 1u), p(P_HAZE_AIR + 2u)) * gain;
     let j = (pro - air) / t + air;
-    // haze.rs: no channel below half the colour scaled by the luminance's change.
+    // haze.rs: no channel below half the color scaled by the luminance's change.
     let lw = vec3(0.2880402, 0.7118741, 0.0000857);
     let ratio = max(dot(j, lw), 0.0) / max(dot(pro, lw), 1e-9);
     return max(j, 0.5 * pro * ratio);
@@ -1145,8 +1145,8 @@ fn level(v: f32) -> f32 {
     let low = x;
     return low / max(low + (1.0 - x), 1e-8);
 }
-// curve::refine_saturation: Refine Saturation below 100 keeps the colour's channel
-// differences from before the point curve, with the curved colour's luma.
+// curve::refine_saturation: Refine Saturation below 100 keeps the color's channel
+// differences from before the point curve, with the curved color's luma.
 fn refine_saturation(input: vec3<f32>, curved: vec3<f32>) -> vec3<f32> {
     let amount = p(P_REFINE_SATURATION);
     if amount >= 1.0 {
@@ -1610,7 +1610,7 @@ fn adjust(lab_in: vec3<f32>) -> vec3<f32> {
     }
     return lab;
 }
-// pixel::toning: a look's RGB table, then colour grading, on linear display RGB.
+// pixel::toning: a look's RGB table, then color grading, on linear display RGB.
 fn toning(rgb_in: vec3<f32>) -> vec3<f32> {
     var rgb = rgb_in;
     if V_COLOR && offset(P_RGB) >= 0 && p(P_RGB + 5u) != 0.0 {

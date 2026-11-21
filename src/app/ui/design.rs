@@ -2,7 +2,7 @@
 //! heights and the greys everything is drawn in. Change a value here and it
 //! changes everywhere; drawing code names a token rather than a number.
 //!
-//! Colours go through [`Tone`]: a step on the default palette's grey ramp,
+//! Colors go through [`Tone`]: a step on the default palette's grey ramp,
 //! which [`theme::Palette::tone`](crate::app::ui::theme::Palette::tone) maps onto the
 //! palette in use. Accent, danger and warning stay the palette's own.
 use eframe::egui;
@@ -127,13 +127,13 @@ pub(in crate::app) const fn margin_same(v: f32) -> egui::Margin {
 }
 
 /// A grey of the interface, named by what it is for. Its level is the grey
-/// in the default palette; other palettes map it between their own colours.
+/// in the default palette; other palettes map it between their own colors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::app) struct Tone(u8);
 
 impl Tone {
     // Surfaces, darkest first.
-    /// Behind everything: the window's clear colour, thumbnail outlines.
+    /// Behind everything: the window's clear color, thumbnail outlines.
     pub(in crate::app) const DEEP: Tone = Tone(15);
     /// Recessed wells: the histogram's and curve's backgrounds.
     pub(in crate::app) const WELL: Tone = Tone(20);

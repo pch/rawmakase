@@ -250,7 +250,7 @@ fn white_balance_darkens_no_raw_channel() {
 
 #[test]
 fn camera_matrix_adapts_the_chosen_white_to_d50_by_bradford() {
-    // A colour lit by the chosen white, white balanced, comes out as its XYZ adapted from
+    // A color lit by the chosen white, white balanced, comes out as its XYZ adapted from
     // that white to D50, as the DNG SDK renders a profile without forward matrices.
     let m = x100f();
     let p = CameraProfile::camera_matrix_default(&m).unwrap();
@@ -621,7 +621,7 @@ fn the_embedded_profile_renders_with_camera_raws_default_tone_curve() {
             [0.9, 0.2, 0.05],
             [1.0, 1.0, 1.0],
         ] {
-            // camera_color, as pixel.rs runs S1: the colour is linear ProPhoto as it is.
+            // camera_color, as pixel.rs runs S1: the color is linear ProPhoto as it is.
             let rgb = p.camera_color(v, p.camera_matrix(6500.), 6500.);
             let pro = mul(RGB_TO_PRO, rgb);
             for c in 0..3 {

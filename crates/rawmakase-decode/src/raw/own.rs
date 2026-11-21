@@ -72,7 +72,7 @@ impl Own {
     pub(super) fn release_file(&mut self) {
         self.bytes = Arc::default();
     }
-    /// The colour space the maker notes, or the file's writer, give the
+    /// The color space the maker notes, or the file's writer, give the
     /// camera's JPEGs.
     pub(super) fn preview_space(&self) -> Option<super::MakerPreviewSpace> {
         self.info.preview_space.map(|s| match s {
@@ -207,7 +207,7 @@ impl Own {
     /// reason otherwise, for the user.
     pub(super) fn bayer_red(&self) -> Result<[usize; 2], &'static str> {
         if self.info.monochrome {
-            return Err("AI Denoise needs a colour sensor; this one is monochrome.");
+            return Err("AI Denoise needs a color sensor; this one is monochrome.");
         }
         let Some(cfa) = &self.info.cfa else {
             return Err(
@@ -336,7 +336,7 @@ fn visible(s: &rawmakase_raw::Sensor, channel: impl Fn(usize, usize) -> usize + 
 /// A Super CCD's stored mosaic `data` (`size` = stored width and height,
 /// filter `cfa`) turned by 45° into the mosaic it develops as: each stored
 /// pixel where `turn` places it, 0 outside the turned area. The turned
-/// pixels form a Bayer mosaic (checked: one colour per position of its 2 × 2
+/// pixels form a Bayer mosaic (checked: one color per position of its 2 × 2
 /// period).
 fn turned(
     turn: rawmakase_raw::SuperCcd,
@@ -364,7 +364,7 @@ fn turned(
     out.try_reserve_exact(tw * th)
         .map_err(|_| anyhow::anyhow!("Super CCD image too large to develop"))?;
     out.resize(tw * th, 0f32);
-    // The colour at each of the turned mosaic's 2 × 2 period's positions.
+    // The color at each of the turned mosaic's 2 × 2 period's positions.
     let mut period = [None; 4];
     for y in 0..h {
         if y % 256 == 0 {
@@ -644,7 +644,7 @@ mod tests {
         use crate::camera_data::{Decode, Demosaic};
         use crate::raw::Raw;
         // An X-Trans period, rows top first (0 red, 1 green, 2 blue); the
-        // XTransLayout record lists it last colour first.
+        // XTransLayout record lists it last color first.
         let period: [u8; 36] = [
             1, 1, 0, 1, 1, 2, //
             1, 1, 2, 1, 1, 0, //

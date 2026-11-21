@@ -5,16 +5,16 @@
 //! - Packed blocks hold ⌊128 / bits⌋ samples of `bits` bits, the block read as
 //!   a little-endian 128-bit number from its lowest bit up.
 //! - Delta blocks (raw format 4 and older) hold 14 samples, the block read
-//!   from its highest bit down. Pixels alternate between two colours. Before
+//!   from its highest bit down. Pixels alternate between two colors. Before
 //!   pixels 2, 5, 8 and 11 a 2-bit scale `s` sets the step `m` (1, 2, 4 or
-//!   16) of the next three. A colour's first pixel is a seed (8 high bits, 4
+//!   16) of the next three. A color's first pixel is a seed (8 high bits, 4
 //!   low bits); a zero high part of a seed before pixel 12 is a pixel of 0
-//!   without low bits, and the colour's next pixel is its seed instead. Every
-//!   later pixel is an 8-bit code `j` against the colour's last value `p`:
+//!   without low bits, and the color's next pixel is its seed instead. Every
+//!   later pixel is an 8-bit code `j` against the color's last value `p`:
 //!   `j = 0` keeps `p`; else `p + (j − 128)·m` when `s < 3` and `p ≥ 128·m`,
 //!   else `j·m + p mod m`.
 //! - Seeded delta blocks (raw format 6) are read from the highest bit down
-//!   too: two seeds of `bits` bits (one per colour), then groups of a 2-bit
+//!   too: two seeds of `bits` bits (one per color), then groups of a 2-bit
 //!   scale and three codes, as in delta blocks with the codes' midpoint `h`
 //!   for 128: 12-bit samples have four groups of 8-bit codes (14 samples),
 //!   14-bit samples three groups of 10-bit codes (11 samples, the last 4 bits
@@ -265,7 +265,7 @@ mod tests {
         f.extend([(2, 2), (128, 8), (128, 8), (128, 8)]);
         let mut out = [0u16; 14];
         delta(&block_down(&f), &mut out);
-        // Worked by hand: colour a at even pixels, b at odd ones.
+        // Worked by hand: color a at even pixels, b at odd ones.
         let want = [
             0x123,
             0x456,
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn a_zero_seed_is_a_dark_pixel_and_defers_the_seed() {
-        // Colour a's first seed is 0: pixel 0 is 0 and pixel 2 is its seed.
+        // Color a's first seed is 0: pixel 0 is 0 and pixel 2 is its seed.
         let f = [(0, 8), (0x45, 8), (0x6, 4), (0, 2), (0x12, 8), (0x3, 4)];
         let mut out = [0u16; 14];
         delta(&block_down(&f), &mut out);

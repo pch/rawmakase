@@ -1,5 +1,5 @@
 //! Sony ARW and SR2 (and the Sony bodies Hasselblad sold under its name): the
-//! raw image directory and how its data is coded, its size, colour filter and
+//! raw image directory and how its data is coded, its size, color filter and
 //! levels; the maker notes are `vendor::sony`'s.
 //!
 //! Sources: TIFF 6 and TIFF/EP (directories, strips, tiles, CFAPattern,
@@ -178,15 +178,15 @@ fn header(
 
 /// The DSLR-A100: no raw directory, but IFD0's SubIFDs tag holds where its
 /// ARW1 data starts, and Minolta's MRW blocks (in SR2Private) its size and
-/// white balance. Its colour filter starts with green, then red.
+/// white balance. Its color filter starts with green, then red.
 fn a100(t: &TiffFile) -> Result<RawInfo> {
     let ifd0 = &t.ifds[0];
     let model = t.text_upto(ifd0, 272, NAME_MAX).unwrap_or_default();
-    // Without a mosaic: the SRF's four-colour sensor, ARQ's pixel-shift
-    // composites of four colours per pixel.
+    // Without a mosaic: the SRF's four-color sensor, ARQ's pixel-shift
+    // composites of four colors per pixel.
     let unsupported = || {
         Error::Unsupported(format!(
-            "Sony RAW without a three-colour mosaic ({}): four colours or composites",
+            "Sony RAW without a three-color mosaic ({}): four colors or composites",
             model.trim()
         ))
     };
@@ -251,7 +251,7 @@ fn chunks(t: &TiffFile, ifd: &Ifd, width: u32, height: u32) -> Result<([u32; 2],
     Ok((tile, chunks))
 }
 
-/// The colour filter from CFAPattern (red, green, blue), red first when the
+/// The color filter from CFAPattern (red, green, blue), red first when the
 /// file has none; the green sharing a row with blue is the second green.
 fn cfa(t: &TiffFile, ifd: &Ifd) -> Cfa {
     let pattern = t
@@ -440,7 +440,7 @@ fn ycbcr_tiles<'a>(
 }
 
 /// Lossless JPEG tiles: each a frame half the tile's width and height whose
-/// four components are the tile's 2 × 2 colour cells (top left, top right,
+/// four components are the tile's 2 × 2 color cells (top left, top right,
 /// bottom left, bottom right).
 fn ljpeg_tiles<'a>(
     plan: &ArwPlan,

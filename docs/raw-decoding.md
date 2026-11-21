@@ -152,7 +152,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `DngLosslessJpeg` | DNG, lossless JPEG tiles or strips; DCT JPEG ones some writers store under the same code | DNG 1.7, ITU T.81 |
 | `DngDeflate` | DNG, Deflate tiles, integer (horizontal differences) or floating point (byte planes; predictors 3, 34894 and 34895 on mosaics and linear raw) | DNG 1.7, Adobe TIFF Technical Note 3 |
 | `DngUncompressedFloat` | DNG, uncompressed 16, 24 or 32-bit floating point | DNG 1.7, IEEE 754 |
-| `DngLossyJpeg` | DNG, lossy JPEG tiles (compression 34892): 8-bit DCT JPEG of linear raw, three components, YCbCr converted to RGB and subsampled chroma upsampled as libjpeg does. Adobe DNG Converter writes tiles at full resolution in one sequential scan (its lossy DNGs before JPEG XL, and still for DNG 1.4 compatibility), with a MapPolynomial per plane in OpcodeList2 to linear; Lightroom Classic's DNGs of JPEGs write one tile, 4:4:4, 4:2:2 or 4:2:0, sequential or (Lightroom Classic 13) progressive, with a LinearizationTable | DNG 1.4, ITU T.81, libjpeg's colour space rules and libjpeg-turbo's upsampling; checked against libjpeg-turbo and the same photos' JPEG XL DNGs |
+| `DngLossyJpeg` | DNG, lossy JPEG tiles (compression 34892): 8-bit DCT JPEG of linear raw, three components, YCbCr converted to RGB and subsampled chroma upsampled as libjpeg does. Adobe DNG Converter writes tiles at full resolution in one sequential scan (its lossy DNGs before JPEG XL, and still for DNG 1.4 compatibility), with a MapPolynomial per plane in OpcodeList2 to linear; Lightroom Classic's DNGs of JPEGs write one tile, 4:4:4, 4:2:2 or 4:2:0, sequential or (Lightroom Classic 13) progressive, with a LinearizationTable | DNG 1.4, ITU T.81, libjpeg's color space rules and libjpeg-turbo's upsampling; checked against libjpeg-turbo and the same photos' JPEG XL DNGs |
 | `DngJpegXl` | DNG, JPEG XL tiles (compression 52546), integer or floating point, lossless or lossy: Lightroom's HDR and panorama merges | DNG 1.7, ISO/IEC 18181, jxl-oxide, checked against libjxl's djxl |
 | `DngVc5` | DNG of VC5-coded tiles (compression 9, GoPro's GPR): opened for its header facts, its sensor data `Unsupported` | DNG 1.7 |
 | `Rw2Delta` | Panasonic RW2/RWL raw formats 3 and 4: delta-coded 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
@@ -164,7 +164,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `ArwCurve` | Sony ARW2: 16-sample blocks of 11-bit codes on the SonyToneCurve | Dietz (IS&T EI 2016), ExifTool's Sony tags, our measurements |
 | `ArwUncompressed` | Sony ARW and SR2, uncompressed 16-bit words | TIFF 6, ExifTool's Sony tags |
 | `ArwPacked` | Sony ARW, packed 12-bit samples (DSLR-A850, A900) | Our measurements |
-| `ArwLosslessJpeg` | Sony ARW, lossless JPEG tiles of 2 × 2 colour cells | ITU T.81, our measurements |
+| `ArwLosslessJpeg` | Sony ARW, lossless JPEG tiles of 2 × 2 color cells | ITU T.81, our measurements |
 | `ArwYcbcr` | Sony ARW small RAWs: lossless JPEG luma and chroma tiles | ITU T.81, T.871, TIFF 6, our measurements |
 | `ArwV6` | Sony ARW "compressed RAW 2": LLVC tiles of wavelet planes, a curve to linear values | SMPTE RDD 34, Adobe DNG Converter, our measurements |
 | `ArwV1` | Sony's first ARW: Huffman-coded columns (DSLR-A100 to A390) | ITU T.81 (difference coding), ExifTool's Minolta tags, our measurements |
@@ -231,7 +231,7 @@ stops down). WhiteLevel defaults to 1.0 for them; a LinearizationTable, which ma
 floats themselves. Adobe's floating-point predictor differences a pixel's bytes
 from the same bytes 1, 2 or 4 pixels before (predictors 3, 34894 FloatingPointX2
 and 34895 FloatingPointX4), whatever the samples a pixel: HDRMerge's mosaics
-(34894) difference bytes two apart, the same colour's in a Bayer row, and linear
+(34894) difference bytes two apart, the same color's in a Bayer row, and linear
 raw's three samples six apart. Blackmagic's
 DCT-coded tiles decode with an exact inverse DCT; they differ from LibRaw's
 (libjpeg-turbo's) by one 12-bit level in under 0.03% of samples.
@@ -257,7 +257,7 @@ sample; a black the same at every position under one white stays the
 sensor's red, green and blue blacks, other levels (Samsung's 2 × 2 patterns,
 whites that differ) are applied to the samples as above, per sample, each
 over its own white less its largest black. Opcodes work on the planes their
-area names. A linear raw DNG's colour is its own: its RGB is whatever its
+area names. A linear raw DNG's color is its own: its RGB is whatever its
 writer made of the sensor's (a phone's processing; Lightroom stores rendered
 images as DNGs under the camera's name), so it takes the file's ColorMatrix,
 never the camera's row. AnalogBalance, gains the writer applied to the
@@ -268,9 +268,9 @@ development reads them, and a white set by temperature is the profile's
 camera neutral times it (XYZ to the samples is AnalogBalance ×
 ColorMatrix). Linear raw of one sample (monochrome sensors and film
 scanners: Leica's Monochroms, Pentax's K-3 Mark III Monochrome, Plustek's
-scans) is a monochrome image: it decodes as a mosaic of one colour would,
+scans) is a monochrome image: it decodes as a mosaic of one color would,
 levels and opcodes as such, and develops as grey, its sample every
-channel's, without white balance. Its colour is neutral whatever the file
+channel's, without white balance. Its color is neutral whatever the file
 or the camera table says (such files have no ColorMatrix, or one of a
 single row): camera RGB is linear sRGB, so the camera matrix maps grey to
 grey, there are no white balance multipliers, and `Metadata::monochrome`
@@ -290,7 +290,7 @@ suffice and then hold larger coefficients (an HDR merge's sun), and a lossy
 tile, coded in XYB, is taken from jxl-oxide as linear sRGB and converted to
 the codestream's declared RGB (BT.2100 in Lightroom's) by matrix here,
 since jxl-oxide's own conversion gamut-maps values above one into 0–1, and
-clips or gamut-maps colours outside sRGB. A tile declared on sRGB's curve
+clips or gamut-maps colors outside sRGB. A tile declared on sRGB's curve
 (a panorama's, whose samples are integers) is then put back on that curve,
 so its samples are those it was made from. Integer samples are the
 codestream's 0–1 times 2^bits − 1. A tile larger than the DNG's tile, or a
@@ -321,11 +321,11 @@ fixed point: on Adobe DNG Converter's and Lightroom Classic's files about 2 to
 3% of samples differ from libjpeg-turbo's by one 8-bit step, and a few by up to
 three after the YCbCr conversion.
 
-DNG colour: a camera Adobe knows has Adobe's matrix (`data/raw-matrices.toml`;
+DNG color: a camera Adobe knows has Adobe's matrix (`data/raw-matrices.toml`;
 Adobe DNG Converter rewrites such DNGs with its own matrices, so its D65
 ColorMatrix for a DNG the camera wrote is the row). Otherwise the file's
 ColorMatrix at D65, as the DNG Specification interpolates two calibrations:
-the D65 one, else by inverse colour temperature between the two (Yuneec's A
+the D65 one, else by inverse color temperature between the two (Yuneec's A
 and D75), else the nearer (D50 of A and D50). LibRaw interpolates the same way
 (its Yuneec CGO3+ matrix is ours to 1e-7).
 
@@ -343,7 +343,7 @@ tag (0x0084: focal range and maximum apertures, `RawInfo::lens_info`).
 
 A DNG whose white balance is AsShotWhiteXY (no AsShotNeutral) has the
 white's camera neutral: AnalogBalance × CameraCalibration × ColorMatrix,
-interpolated at the white's correlated colour temperature (Robertson's
+interpolated at the white's correlated color temperature (Robertson's
 method), times its XYZ; for a camera with an Adobe matrix row, through that
 D65 matrix.
 
@@ -356,7 +356,7 @@ DNG opcodes (`container/dng/opcodes.rs`, the specification's "Opcode List
 Processing"): OpcodeList1's apply to the stored image before the
 LinearizationTable, OpcodeList2's to the active area's linear values (so a
 file with any becomes linear values as above): FixBadPixelsConstant and
-FixBadPixelsList (each bad pixel the mean of its colour's nearest good
+FixBadPixelsList (each bad pixel the mean of its color's nearest good
 neighbours), MapTable, MapPolynomial, GainMap (phones' lens shading, gains up
 to 6 in our files), DeltaPerRow/Column, ScalePerRow/Column and, in
 OpcodeList1, FixVignetteRadial. OpcodeList2's FixVignetteRadial is left to
@@ -486,7 +486,7 @@ and on synthetic NEFs that probe one code word, key or tag at a time):
   levels).
 - Uncompressed data is told apart by its size, whatever the compression tag
   says. Little-endian bodies pack least significant bit first, except a
-  NEFCompression of 9 (Packed 12 bits); Coolpix NRWs (colour data "NRW ")
+  NEFCompression of 9 (Packed 12 bits); Coolpix NRWs (color data "NRW ")
   pack into little-endian 32-bit words and store unpacked samples in the top
   bits of big-endian words, which are shifted to 12 bits unless the camera's
   white level is the words' own; the Coolpix E-series (ColorBalanceA) store
@@ -504,8 +504,8 @@ and on synthetic NEFs that probe one code word, key or tag at a time):
   16163840), a departure from LibRaw accepted at the switch.
 
 Fujifilm (`container::raf`, `vendor::fujifilm`): the camera name is the RAF
-header's, without its "FinePix" series name. The colour filter is X-Trans's
-from the XTransLayout record (last colour first), a Super CCD's fixed
+header's, without its "FinePix" series name. The color filter is X-Trans's
+from the XTransLayout record (last color first), a Super CCD's fixed
 diagonal pattern (FujiLayout below 4, or 0x80 to 0x83), else RGGB moved by the
 raw image directory's phase (0xF009). The default crop is the header's
 recommended crop (records 0x110 and 0x111) starting on the filter's period (a
@@ -551,7 +551,7 @@ LibRaw's (0.761 and 0.857, rounded down to whole levels).
 Olympus and OM Digital (`vendor::olympus`): white balance (red and blue
 over the mean of the two greens' levels, as Adobe DNG Converter reads it),
 presets, black, bit depth, crop, aspect ratio and (for a camera with no
-matrix row, see *Colour matrices*) the colour matrix come from the maker note's
+matrix row, see *Color matrices*) the color matrix come from the maker note's
 ImageProcessing directory (RawInfo on older compacts; the main directory's red and blue
 balance first where it has them). The default crop and the aspect-ratio crop
 (centred in it, at the ratio the note names) start on even rows and columns.
@@ -646,7 +646,7 @@ SensorInfo (0x1031) gives the sensor and the default crop, DecoderTable
 (0x2005) holds, for the 12-bit bodies, two low bits per sample first, then a
 514-byte header and the byte-stuffed coded data: blocks of 64 differences, a
 DC code accumulated from block to block and AC codes of a zero run and a size,
-each sample the previous one of its colour plus its difference (the first two
+each sample the previous one of its color plus its difference (the first two
 of a row from 512). The tables, the layout and the low bits were measured by
 decoding synthetic files with the oracle. The visible area is a
 `compat-observed` row; black is measured as for CR2; white is the bit depth's
@@ -685,7 +685,7 @@ black ones stay pending where Adobe writes calibrated data with a black of
 0). Not applied: the per-row and per-column black offsets the block may
 carry (BlackLevelData, up to a few hundred levels on some backs), which
 `Sensor` cannot express, nor Phase One's sensor calibration (flat fields,
-defects), which Adobe applies. The older backs' colour filter is a
+defects), which Adobe applies. The older backs' color filter is a
 `compat-observed` row (Adobe's CFAPattern agrees). The scrambled RAW 1 and
 RAW 2 formats are `Unsupported`.
 
@@ -715,7 +715,7 @@ whose SubIFD holds 16-bit words or Hasselblad's coding (compression 7):
 lossless JPEG headers for the Huffman table and predictor (8, or 11, which
 adds half the change two rows up), then per pair of columns two difference
 lengths and the two differences read from little-endian 32-bit words, each
-sample its colour's neighbour two columns left plus its difference (0x8000
+sample its color's neighbour two columns left plus its difference (0x8000
 for the first). The coding was written from prior general knowledge of the
 format (no decoder source consulted) and verified by an exact match with
 LibRaw's output on every compressed file of the dataset but one, an H4D-60
@@ -725,7 +725,7 @@ file's BlackLevel and white 96% of its WhiteLevel, as Adobe DNG Converter
 takes them (fitted to RAWmakase's samples on every body measured). The
 camera is the model without what follows a "/", looked up with the sensor's
 megapixels appended for the older bodies' names (`[[name]]` rows); its
-colour is named from the maker note's sensor code (0x0011) and coating
+color is named from the maker note's sensor code (0x0011) and coating
 (0x0016), as RAWmakase has always named it ("50-15-Coated5-3FR"). Visible
 areas are `compat-observed` rows. Multi-shot files are `Unsupported`.
 
@@ -813,7 +813,7 @@ levels' green squared over each. SensorLeftBorder to SensorImageHeight
 EXIF gives none. Kodak's DCR files (the DCS760C and the DCS Pro bodies) are
 the same TIFFs, their strip in Kodak's coding (`codec::kodak`, compression
 65000: each row in blocks of up to 256 samples, a 4-bit length per sample
-then its difference in that many bits, summed per colour; a block of a
+then its difference in that many bits, summed per color; a block of a
 length over 12 stored as plain 12-bit samples) and their ImageExpansionTable
 up to 4096 entries (1024 of 10-bit codes on the 14N, 14nx and SLR/c). White
 is the camera table's (`adobe-dng`: 3500 for the DCS760C, 3700 for the 14N,
@@ -916,7 +916,7 @@ little-endian 3-byte words, earlier bodies plainly. Visible areas, the
 EX2F's white level (2047 of its 11-bit samples: Adobe's 4095 of 12 bits) and,
 for bodies whose CFAPattern is not the
 filter (the NX300 and NX3000 generations, the NX mini; Adobe DNG Converter
-agrees), the colour filter are `compat-observed` rows.
+agrees), the color filter are `compat-observed` rows.
 
 Epson (`vendor::epson`): black, the camera's image size (centred: the
 default crop), the embedded JPEG (whose first byte, 0xEE, is mended to
@@ -934,7 +934,7 @@ bit depth where a body writes two), as are the 14-bit Olympus bodies' black
 SP-510UZ and SP-550UZ, whose red and blue levels are over a green Adobe
 reads about 4% higher. An `adobe-dng` row may give
 decode facts only (black and white levels, the as-shot white balance scale),
-never geometry (visible area, default crop, orientation, colour filter), which
+never geometry (visible area, default crop, orientation, color filter), which
 stays the file's or `compat-observed`; the facts test enforces this.
 
 ## Frames
@@ -959,7 +959,7 @@ frames are Adobe's exactly (1,791 without the rule); where they differ, by a
 few pixels a side (Nikon's median 2, Sony's 8), more on Samsung's NX bodies
 (9). Lightroom edits of the other files land that much off.
 
-## Colour matrices
+## Color matrices
 
 A camera's XYZ (D65) to camera matrix is Adobe's, from `data/raw-matrices.toml`
 (written by `scripts/cameras/raw-matrices.py`, whose docstring has the
@@ -985,9 +985,9 @@ which become the daylight multipliers.
 
 The Leaf Aptus 75, which the converter does not read, has no matrix: its
 MOS ColorMatrix is to Leaf's own working space, before an input profile,
-not a colour space RAWmakase can name. A camera without a matrix has
+not a color space RAWmakase can name. A camera without a matrix has
 neutral daylight multipliers and the identity camera-to-sRGB matrix, as
-LibRaw gives it: the camera's colours pass through unconverted.
+LibRaw gives it: the camera's colors pass through unconverted.
 
 Known: a DNG without a D65 matrix is read with its ColorMatrix1, which for
 GoPro's GPRs (illuminants Standard A and D50) and Leica's Q and SL DNGs is
@@ -998,9 +998,9 @@ Where the matrix came from is kept as a fact of the file, never saved
 (`adobe-dng` or `compat-observed`), the DNG's own ColorMatrix (or one of a
 tungsten calibration alone), the Olympus maker note, a monochrome DNG's
 neutral, or none. `photo::open` adds whether a DNG's embedded profile is
-absent, unreadable, colour matrices alone, for another camera or usable
+absent, unreadable, color matrices alone, for another camera or usable
 (`Metadata::embedded_profile_status`), before it drops the parse error.
-Camera Look (fitted) decides from them which photos have no colour data.
+Camera Look (fitted) decides from them which photos have no color data.
 
 ## Checking decodes
 
@@ -1012,7 +1012,7 @@ purpose. Since LibRaw was removed, the baselines are RAWmakase's own decoders'
 report every difference from them, and a difference is a regression or a
 change made on purpose, recorded as a new baseline in a commit that says why.
 `dataset-half.py` checks the half-size drafts against the full decode reduced
-to their size (colour, detail) and their time over the full develop's, each
+to their size (color, detail) and their time over the full develop's, each
 held to the file's reference, the one piece of LibRaw data kept: LibRaw's
 half-size decode of the same file, recorded once with the last build that
 linked it (`tests/corpus/dataset/pixls-half.json` and the dataset's local
@@ -1037,7 +1037,7 @@ levels observed from LibRaw, `compat-observed` rows). By kind:
 | Full-size develop (`full.*`) | 4,848 | Follow the decode changes below |
 | White and black levels (`sensor.white`, `black`, `black_pattern`) | 2,218 | Adobe's levels |
 | Unpacked samples (`sensor.data_sha256`) | 273 | Adobe's conversion (sRAW, linearisation, lossy and other codecs) |
-| Colour (`cam_xyz`, `matrix`, `daylight_wb`, `wb`, presets) | 881 | Adobe's DNG matrices and the file's white balance |
+| Color (`cam_xyz`, `matrix`, `daylight_wb`, `wb`, presets) | 881 | Adobe's DNG matrices and the file's white balance |
 | Capture facts and names (ISO, lens, model, aperture) | 67 | The file's EXIF or Adobe's names |
 | DNG crops (`header.facts.frame`, `aspect`) | 6 | The DNG's DefaultCrop and DefaultUserCrop |
 

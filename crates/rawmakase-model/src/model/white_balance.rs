@@ -202,7 +202,7 @@ pub(crate) fn map_white(from: [f32; 3], to: [f32; 3]) -> [[f32; 3]; 3] {
 
 /// The DNG SDK's camera to ProPhoto matrix, and camera white, for a camera whose RGB
 /// is linear ProPhoto and has no forward matrix (Lightroom's view of a rendered file's
-/// pseudo-scene), under `white` (XYZ): ProPhoto to camera is the colour matrix after
+/// pseudo-scene), under `white` (XYZ): ProPhoto to camera is the color matrix after
 /// adaptation from D50 to the white, scaled so its largest channel of D50 is 1; the
 /// camera white is the white in camera RGB, its largest channel 1 and none below 0:
 /// Lightroom's renders of the cool magenta corner, where the white's ProPhoto blue is
@@ -269,11 +269,11 @@ pub fn rendered_gains(temperature: f32, tint: f32) -> [f32; 3] {
     crate::color::mul(rendered_white_balance(temperature, tint).matrix, [1.; 3])
 }
 
-/// The rendered file's Temp and Tint that render most neutral the colour `gains`
-/// would (the picked colour is `1 / gains`): least squares on the log2 spread of its
+/// The rendered file's Temp and Tint that render most neutral the color `gains`
+/// would (the picked color is `1 / gains`): least squares on the log2 spread of its
 /// channels after [`rendered_white_balance`]'s matrix, whose cross-channel terms a
 /// comparison of gains would miss, within −100…100: a coarse grid, then a pattern
-/// search to 0.01. A colour no Temp and Tint neutralise (an eyedropper's, say) gives
+/// search to 0.01. A color no Temp and Tint neutralise (an eyedropper's, say) gives
 /// the nearest that do.
 pub fn rendered_controls(gains: [f32; 3]) -> [f32; 2] {
     let sample = gains.map(|g| if g.is_finite() { 1. / g.max(1e-6) } else { 1. });
@@ -351,7 +351,7 @@ mod rendered_tests {
     }
 
     /// Lightroom's scene values (its export through `F⁻¹`) for a file's scene values,
-    /// at Temp and Tint: a colour, which channel gains alone miss (foliage at Temp −75
+    /// at Temp and Tint: a color, which channel gains alone miss (foliage at Temp −75
     /// came out 0.089 red against Lightroom's 0.069), and greys in the cool magenta
     /// corner, whose blue Lightroom takes to 0.
     #[test]
@@ -421,7 +421,7 @@ mod rendered_tests {
         }
     }
 
-    /// A colour some Temp and Tint render neutral (a grey under that white) is picked
+    /// A color some Temp and Tint render neutral (a grey under that white) is picked
     /// neutral: the cross-channel terms of the white balance count, not only its row
     /// sums.
     #[test]

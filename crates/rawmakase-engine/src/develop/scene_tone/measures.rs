@@ -32,7 +32,7 @@ pub(crate) struct Measured {
     pivots: Kept<f32>,
     /// The Shadows/Highlights map's base by the Exposure it was built at.
     maps: Kept<std::sync::Arc<crate::develop::local_tone::MapBase>>,
-    /// The copy's camera colour (white balance, the profile's matrix and HueSatMap,
+    /// The copy's camera color (white balance, the profile's matrix and HueSatMap,
     /// calibration), which the map's base exposes.
     colors: std::sync::OnceLock<std::sync::Arc<Vec<[f32; 3]>>>,
 }
@@ -46,9 +46,9 @@ impl Measured {
             colors: Default::default(),
         }
     }
-    /// The copy's camera colour, made by `make` unless kept. Not initialised in place: a
+    /// The copy's camera color, made by `make` unless kept. Not initialised in place: a
     /// render that waited on it could be the task its parallel work runs; renders
-    /// making it at the same time make the same colours.
+    /// making it at the same time make the same colors.
     pub(crate) fn colors(
         &self,
         make: impl FnOnce() -> Vec<[f32; 3]>,

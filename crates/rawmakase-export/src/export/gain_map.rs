@@ -10,7 +10,7 @@
 //! map's own XMP the values. Both forms carry the same rationals, so a reader that
 //! knows both gets the same light from either; ISO 21496-1 is the one that wins.
 //!
-//! The map is one channel, computed in the base's colour space (sRGB primaries, linear)
+//! The map is one channel, computed in the base's color space (sRGB primaries, linear)
 //! from luminance: log2 of (HDR + offset) / (SDR + offset), with both offsets 1/64,
 //! scaled between its minimum and maximum over the image (gamma 1). The base's headroom
 //! is 0 and the alternate's log2 of the master's peak, so a display with that headroom
@@ -31,7 +31,7 @@ const ITEM: &str = "http://ns.google.com/photos/1.0/container/item/";
 /// Rec. 709 / sRGB luminance weights.
 const LUMINANCE: [f32; 3] = [0.2126, 0.7152, 0.0722];
 
-/// ISO 21496-1 metadata of a single-channel map in the base's colour space.
+/// ISO 21496-1 metadata of a single-channel map in the base's color space.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Metadata {
     /// log2 of the smallest and largest gain the map encodes.
@@ -43,14 +43,14 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    /// The metadata as ISO 21496-1 serialises it: versions, flags (base colour space,
+    /// The metadata as ISO 21496-1 serialises it: versions, flags (base color space,
     /// one channel, a denominator per value), then the headrooms and the channel's
     /// minimum, maximum, gamma and offsets, each a numerator and a denominator.
     pub fn iso_21496(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(61);
         out.extend(0u16.to_be_bytes()); // minimum version
         out.extend(0u16.to_be_bytes()); // writer version
-        out.push(0x40); // use the base colour space
+        out.push(0x40); // use the base color space
         let unsigned = |out: &mut Vec<u8>, v: f32| {
             out.extend((numerator(v.max(0.)) as u32).to_be_bytes());
             out.extend(DENOMINATOR.to_be_bytes());

@@ -103,7 +103,7 @@ pub enum Tick {
     /// By this much, in the setting's own units.
     Linear(f32),
     /// By this many mireds, as the Temp slider moves: evenly in mireds, so a
-    /// tick is a similar change of colour anywhere on the scale; clockwise is
+    /// tick is a similar change of color anywhere on the scale; clockwise is
     /// warmer.
     Mireds(f32),
 }

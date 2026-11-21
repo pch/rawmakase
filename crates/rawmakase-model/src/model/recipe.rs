@@ -355,7 +355,7 @@ impl Recipe {
         r.add_look_settings(&look.settings);
         std::borrow::Cow::Owned(r)
     }
-    /// A look's Exposure, Whites, Vibrance, Saturation, colour mixer, Texture and
+    /// A look's Exposure, Whites, Vibrance, Saturation, color mixer, Texture and
     /// calibration added to the user's, and its vignette in place of the user's, as
     /// Camera Raw 18.7 renders them. Its parametric curve and split toning render as
     /// passes of their own.
@@ -461,7 +461,7 @@ impl Recipe {
         };
         // As in Lightroom: Adobe Color, else Adobe Standard. Without those, a DNG
         // keeps the profile it embeds, and any other file gets RAWmakase Color, or
-        // the Camera Look fitted as the default of a photo without colour data (only
+        // the Camera Look fitted as the default of a photo without color data (only
         // that photo's list has one).
         if let Some(profile) = own
             .or_else(|| find("Adobe Color"))
@@ -1034,7 +1034,7 @@ impl Recipe {
         self.profile_amount = own.profile_amount;
         self.camera_exposure = own.camera_exposure;
     }
-    /// White balance from `gains` that make a picked colour neutral (the eyedropper's,
+    /// White balance from `gains` that make a picked color neutral (the eyedropper's,
     /// Auto's): a RAW's gains, or for a rendered file the nearest Temp and Tint, which
     /// carry its white balance (`white_balance::rendered_white_balance`).
     pub fn pick_white_balance(&mut self, gains: [f32; 3], m: &Metadata) {
@@ -1183,7 +1183,7 @@ mod tests {
         );
     }
 
-    /// Only the Embedded profile itself: one named so with a colour matrix or a look
+    /// Only the Embedded profile itself: one named so with a color matrix or a look
     /// table, or any other profile, keeps the tone curve it was saved with.
     #[test]
     fn other_profiles_keep_their_saved_tone_curve() {

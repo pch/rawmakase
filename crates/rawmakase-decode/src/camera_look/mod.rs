@@ -7,14 +7,14 @@
 //! preview is reduced to the same pixels, aligned, and masked where it can't be
 //! learned from ([`pairs`]). A third of the photo, in whole tiles, is held out.
 //!
-//! - With a usable colour matrix, a look over RAWmakase Standard is fitted from
+//! - With a usable color matrix, a look over RAWmakase Standard is fitted from
 //!   the scene tone stage's output ([`solve`]).
 //! - Without one (or for the no-matrix trial, `FitInputs::drop_matrix`), a forward
 //!   matrix is fitted first, from the camera input stage (before highlight
 //!   reconstruction), and the look over it.
 //!
 //! A look is used only when its full render beats the baseline on the held-out
-//! tiles ([`gate`]): a colour look, else one of the curve alone, else none. The
+//! tiles ([`gate`]): a color look, else one of the curve alone, else none. The
 //! look that is used is then fitted again to every pair, the held-out ones too.
 //! Fitting is deterministic; nothing here reads or writes the catalog or a cache.
 use rawmakase_cancel::Cancel;
@@ -91,18 +91,18 @@ pub struct Report {
     pub alignment: Alignment,
     pub fit_pairs: usize,
     pub holdout_pairs: usize,
-    /// The share of held-out pairs in colour.
+    /// The share of held-out pairs in color.
     pub coloured: f32,
     pub monochrome: bool,
     /// The render the look replaces: RAWmakase Standard, else no profile.
     pub baseline: Scores,
     pub candidates: Vec<Candidate>,
-    /// The fitted colour look and an unconstrained reference fit (the look plus a
+    /// The fitted color look and an unconstrained reference fit (the look plus a
     /// free 3D correction), both applied to the scene tone stage's output directly:
     /// what the look's representation loses.
     pub direct: Option<Direct>,
     /// The no-matrix trial: the fitted matrix base alone, and how far the fitted
-    /// matrix's colour is from the camera's own matrix's on the fitted pixels.
+    /// matrix's color is from the camera's own matrix's on the fitted pixels.
     pub trial: Option<Trial>,
     pub kind: Option<Kind>,
     pub refusal: Option<String>,
@@ -222,7 +222,7 @@ fn stage(
 }
 
 /// `profiles`, the photo's listed profiles, with Camera Look (fitted) added when
-/// it is the photo's default: a photo without colour data
+/// it is the photo's default: a photo without color data
 /// (`fitted::Eligibility::Absent`) whose fit is accepted. From the fit cache when
 /// it holds the file's result, else fitted now and stored (a failure to store is
 /// logged, the fit still used). Any other photo's list is returned as it is, at the
@@ -348,7 +348,7 @@ pub struct CameraPreview {
     pub look: Option<String>,
 }
 
-/// The [`CameraPreview`] of the photo at `path`: converted from the colour space the
+/// The [`CameraPreview`] of the photo at `path`: converted from the color space the
 /// file states; one that states none is taken to be sRGB already.
 pub fn preview_srgb(path: &Path) -> anyhow::Result<CameraPreview> {
     let mut raw = crate::photo::open(path)?;
@@ -585,7 +585,7 @@ fn fit_pairs(
     };
     let mut chosen = None;
     stopped(cancel)?;
-    // The tone-only look is the fallback: only a refused colour look needs it fitted
+    // The tone-only look is the fallback: only a refused color look needs it fitted
     // and rendered.
     for &kind in kinds {
         stopped(cancel)?;
@@ -621,7 +621,7 @@ fn fit_pairs(
         if accepted {
             report.kind = Some(kind);
             // The held-out third has judged the look; the one used learns from it
-            // too. A small face may lie whole in a held-out tile, and its colours
+            // too. A small face may lie whole in a held-out tile, and its colors
             // would otherwise be guessed from the rest of the photo's.
             stopped(cancel)?;
             chosen = Some(look_of(
@@ -643,7 +643,7 @@ fn fit_pairs(
     })
 }
 
-/// The fitted colour look and the unconstrained reference fit, each on the scene
+/// The fitted color look and the unconstrained reference fit, each on the scene
 /// stage's output directly, scored on the held-out pixels.
 fn direct(
     profile: &CameraProfile,
@@ -670,7 +670,7 @@ fn direct(
     }
 }
 
-/// The mean CIEDE2000 between the colours two profiles' matrices give `camera`
+/// The mean CIEDE2000 between the colors two profiles' matrices give `camera`
 /// (white-balanced camera RGB), at D65.
 fn matrix_distance(a: &CameraProfile, b: &CameraProfile, camera: &[Rgb]) -> f32 {
     let (ma, mb) = (a.camera_matrix(6504.), b.camera_matrix(6504.));
@@ -697,7 +697,7 @@ mod tests {
         ))
     }
 
-    /// Only a photo without colour data gets a default fit, through the cache: a
+    /// Only a photo without color data gets a default fit, through the cache: a
     /// photo with a profile is never fitted, and a photo whose fit is refused (no
     /// preview here) is not fitted again.
     #[test]
@@ -710,7 +710,7 @@ mod tests {
             with_default(&named, &m, profiles.clone(), Cancel::new(&cancel)),
             profiles
         );
-        // The chart with its colour tags renamed: no colour data at all.
+        // The chart with its color tags renamed: no color data at all.
         let dir = tempfile::tempdir().unwrap();
         let mut bytes = std::fs::read(&named).unwrap();
         let first = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;

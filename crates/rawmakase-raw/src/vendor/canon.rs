@@ -321,7 +321,7 @@ impl Notes {
 /// small RAWs, which Adobe records as its AnalogBalance (green over each
 /// channel's level); RAWmakase takes it back to the mosaic's camera RGB, red
 /// and blue times their level over green's, so the as-shot white balance and
-/// the colour matrices apply as to the body's mosaic RAWs.
+/// the color matrices apply as to the body's mosaic RAWs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SmallRaw {
     pub older: bool,

@@ -153,7 +153,7 @@ const RECORDED: &[(&str, &str)] = &[
     ),
 ];
 
-/// A synthetic photo with saturated colours and smooth ramps, in a camera whose
+/// A synthetic photo with saturated colors and smooth ramps, in a camera whose
 /// matrix is the identity.
 pub(super) fn synthetic(width: u32, height: u32) -> CameraImage {
     let metadata = Metadata {

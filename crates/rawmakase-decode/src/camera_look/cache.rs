@@ -1,5 +1,5 @@
 //! The fit cache: what fitting a photo's default look gave (the profile, or why
-//! none), so a photo without colour data is fitted once per file and build rather
+//! none), so a photo without color data is fitted once per file and build rather
 //! than on every open, preview and export. Beside the decode cache, in
 //! `camera-look/`; an entry is small (a carried profile, about 100 KB) and only
 //! such photos have one.

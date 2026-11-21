@@ -583,7 +583,7 @@ pub(crate) fn decode(
     let cfa = info
         .cfa
         .as_ref()
-        .ok_or_else(|| corrupt("CR2 without a colour filter"))?;
+        .ok_or_else(|| corrupt("CR2 without a color filter"))?;
     let measured = crate::levels::masked_black(&data, width, area, cfa, None, 2);
     let recorded = plan.levels;
     // The black the maker notes record, as Adobe DNG Converter takes it,

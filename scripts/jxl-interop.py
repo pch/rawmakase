@@ -8,7 +8,7 @@ lossy and lossless), then decodes every file with independent decoders and check
 
 - libjxl's jxlinfo and djxl, jxl-oxide's CLI and, on macOS, ImageIO (a small Swift
   reader, compiled on the first run), each where installed;
-- the header's colour encoding, intensity target, bit depth and boxes;
+- the header's color encoding, intensity target, bit depth and boxes;
 - the light each decoder gives back (PQ's EOTF, HLG's inverse OETF and OOTF on the
   1,000 cd/m² reference display, computed here, not by RAWmakase) against the HDR master
   RAWmakase rendered, converted here to the export's gamut;
@@ -45,7 +45,7 @@ WHITE = 203.0  # graphics white, cd/m² (BT.2408)
 HLG_LW = 1000.0  # HLG's reference display peak, cd/m²
 HLG_GAMMA = 1.2  # BT.2100's system gamma at 1,000 cd/m²
 
-# -- colour -------------------------------------------------------------------------
+# -- color -------------------------------------------------------------------------
 
 PRIMARIES = {
     "rec709": ((0.64, 0.33), (0.30, 0.60), (0.15, 0.06)),
@@ -266,7 +266,7 @@ def boxes(data):
 
 def parse_jhgm(payload):
     """libjxl's gain-map bundle (lib/extras/gain_map.cc): version, ISO 21496-1 metadata,
-    the alternate colour encoding, the alternate ICC, then the map's codestream."""
+    the alternate color encoding, the alternate ICC, then the map's codestream."""
     pos = 0
     version = payload[pos]
     pos += 1
@@ -295,7 +295,7 @@ def parse_iso21496(m):
     """ISO 21496-1's binary metadata (clause 7): versions, flags, headrooms, then for each
     channel the map's minimum and maximum (log2), gamma and the two offsets."""
     min_version, writer_version, flags = struct.unpack(">HHB", m[:5])
-    # Bits beyond multichannel (0x80) and the base's colour space (0x40): RAWmakase's
+    # Bits beyond multichannel (0x80) and the base's color space (0x40): RAWmakase's
     # writer sets none, and their readings differ between readers.
     other_flags = flags & 0x3F
     channels = 3 if flags & 0x80 else 1
@@ -584,10 +584,10 @@ def roll_off(v, peak):
 
 def expected_light(master, gamut, transfer, peak):
     """The light an export of `master` must carry: the master in the export's gamut,
-    negative channels at 0, each rolled off to the limit's peak (a saturated colour can
+    negative channels at 0, each rolled off to the limit's peak (a saturated color can
     gain a channel above it in a narrower gamut), then what the transfer can hold: PQ
     to 10,000 cd/m²; HLG to its reference display's peak and, after the inverse OOTF,
-    to scene light 1 in each channel. That last clip takes saturated colours near the
+    to scene light 1 in each channel. That last clip takes saturated colors near the
     peak, which BT.2100's display can't show at that luminance. Returns the light and
     the share of pixels HLG's scene clip changed."""
     rgb = roll_off(np.maximum(master @ prophoto_to(gamut).T, 0), peak)
@@ -700,7 +700,7 @@ def check_header(path, info, oxide_info, transfer, gamut, lossy, gain_map, targe
     return fails, facts
 
 
-# The CoreGraphics colour space ImageIO must decode each HDR encoding into.
+# The CoreGraphics color space ImageIO must decode each HDR encoding into.
 IMAGEIO_SPACE = {
     ("pq", "rec2020"): "kCGColorSpaceITUR_2100_PQ",
     ("pq", "p3"): "kCGColorSpaceDisplayP3_PQ",
@@ -753,7 +753,7 @@ def check_hdr_export(dec, path, master, meta, transfer, gamut, lossy, anchors):
             r["imageio"] = {k: note.get(k) for k in ("space", "headroom", "bits", "p_ProfileName", "p_Headroom")}
             want_space = IMAGEIO_SPACE[(transfer, gamut)]
             if note.get("space") != want_space:
-                fails.append(f"ImageIO: colour space {note.get('space')}, want {want_space}")
+                fails.append(f"ImageIO: color space {note.get('space')}, want {want_space}")
             # ImageIO gives linear Rec. 2020, 1 = its SDR white; the light must be at
             # graphics white without rescaling. The scale is reported to say so.
             light = signal @ gamut_to("rec2020", gamut).T
@@ -809,7 +809,7 @@ def reduce(a, f=4):
 
 def erode(mask, radius):
     """`mask` where every pixel within `radius` (a square) is in it too: neutral pixels
-    away from colour edges, which a lossy frame's 8×8 blocks mix into them."""
+    away from color edges, which a lossy frame's 8×8 blocks mix into them."""
     out = mask.copy()
     padded = np.pad(mask, radius, constant_values=False)
     h, w = mask.shape
@@ -822,13 +822,13 @@ def erode(mask, radius):
 def judging_scope(name, lossy, transfer, gamut):
     """Why a decoder's light is judged on neutral pixels only, for a decoder behaviour
     that is not the export's (docs/records/hdr-jxl-interop.md#decoders), or None:
-    - ImageIO renders saturated HLG colours its own way, identically for the same signal
+    - ImageIO renders saturated HLG colors its own way, identically for the same signal
       in a PNG or in cjxl's own file (checked for lossless exports);
     - jxl-oxide clips a lossy frame's XYB light in BT.709 primaries, which takes
-      saturated colours of wider gamuts, and gives NaN for some lossy HLG pixels
+      saturated colors of wider gamuts, and gives NaN for some lossy HLG pixels
       (docs/records/hdr-stage1-results.md#codecs)."""
     if name == "ImageIO" and transfer == "hlg":
-        return "ImageIO's own rendering of saturated HLG colours"
+        return "ImageIO's own rendering of saturated HLG colors"
     if name == "jxl-oxide" and lossy and (gamut != "rec709" or transfer == "hlg"):
         return "jxl-oxide's BT.709 clip of lossy XYB light"
     return None
@@ -900,10 +900,10 @@ def check_gain_map(dec, path, sdr_path, master, meta, lossy):
         fails.append("ISO 21496-1 backward direction: the base would be the HDR rendition")
     if iso["trailing_bytes"]:
         fails.append(f"ISO 21496-1 metadata has {iso['trailing_bytes']} trailing bytes")
-    # The reconstruction below works in the base's colour space (sRGB), as the export
-    # documents: the flag set, and no alternate colour encoding or ICC to read.
+    # The reconstruction below works in the base's color space (sRGB), as the export
+    # documents: the flag set, and no alternate color encoding or ICC to read.
     if not iso["use_base_colour_space"] or bundle["colour_encoding"] or bundle["icc"]:
-        fails.append("the map doesn't apply in the base's colour space, or an alternate colour space is given")
+        fails.append("the map doesn't apply in the base's color space, or an alternate color space is given")
     if iso["base_headroom"] != 0 or abs(iso["alternate_headroom"] - math.log2(meta["peak"])) > 1e-3:
         fails.append(f"headrooms {iso['base_headroom']} / {iso['alternate_headroom']}, want 0 / {math.log2(meta['peak'])}")
     map_file = dec.work / "tmp" / "map.jxl"

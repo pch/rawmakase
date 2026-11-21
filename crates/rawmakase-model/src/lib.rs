@@ -1,5 +1,5 @@
 //! What a photo's edit is, as values: the recipe and the settings it is made of,
-//! camera metadata and profiles, lens profiles, colour primitives and output pixel
+//! camera metadata and profiles, lens profiles, color primitives and output pixel
 //! buffers, with the file, storage and calendar helpers they need. It builds without the RAW
 //! decoders, the renderer, wgpu or the desktop app, which the RAWmakase crate adds on top.
 //! The file system calls moving a user's file needs are `rawmakase-fs`'s, so this crate

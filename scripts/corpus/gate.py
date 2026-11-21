@@ -619,7 +619,7 @@ def summarise(scores):
 # default, for any change) holds their median to the same 0.1; `switch` (the
 # scene tone engine's switch, docs/scene-tone-stage.md) asks tone settings far
 # from the default render to improve materially (rule 1) without a band more
-# than 3 L* off (rule 2). Colour families always take the regression rule, with
+# than 3 L* off (rule 2). Color families always take the regression rule, with
 # per-photo limits of their own: half the 90th percentile of the family's
 # per-photo ΔE00 in `main`'s baseline, between 1.0 and 2.0 (the tone limits).
 # Derived with `color-limits` from main 418d0ca7's validation
@@ -629,7 +629,7 @@ COLOR_LIMITS = {'color-wb': 1.9, 'color-vibrance': 2.0, 'color-mixer-skin': 1.4,
 
 
 def color_family(set_name):
-    """The colour family a set belongs to (`color-wb-validation` -> `color-wb`), or None."""
+    """The color family a set belongs to (`color-wb-validation` -> `color-wb`), or None."""
     family = (set_name or '').rsplit('-', 1)[0]
     return family if family in COLOR_LIMITS else None
 

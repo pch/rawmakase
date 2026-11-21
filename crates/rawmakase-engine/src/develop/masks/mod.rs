@@ -18,7 +18,7 @@ pub use range::oklab;
 
 /// Weights (0–1) of mask `index` over a rendered preview, for the mask overlay. `out`
 /// is the render: the whole photo at its own size, or `region` of the full-size
-/// output. Range components read `out`'s colours. `None` when the mask does not exist
+/// output. Range components read `out`'s colors. `None` when the mask does not exist
 /// or has no components.
 pub fn overlay_weights(
     image: &crate::camera_data::CameraImage,
@@ -50,7 +50,7 @@ pub fn overlay_weights(
 pub const SELECTION_INPUT_VERSION: u32 = 1;
 
 /// The settings a selection model sees the photo with: the camera's rendering
-/// without the user's tone, colour, profile or geometry, so one photo gives one input
+/// without the user's tone, color, profile or geometry, so one photo gives one input
 /// however it is edited. Spot removal and red eye stay, since they change the content
 /// to select; lens distortion, crop, rotation and finishing do not, so the result
 /// registers exactly with the image frame.

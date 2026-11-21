@@ -35,7 +35,7 @@ capabilities before falling back to GitHub connectors or browser automation.
 
 ## Comments
 
-- Keep what the code can't say: reasons, contracts, units, colour spaces,
+- Keep what the code can't say: reasons, contracts, units, color spaces,
   `SAFETY` notes and measured Camera Raw facts.
 - Delete comments that only restate a name or a type.
 - Rewrite terse, clause-packed comments as plain, full sentences, but only in

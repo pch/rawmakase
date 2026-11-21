@@ -221,7 +221,7 @@ mod tests {
         }
     }
 
-    /// A colour's brightest and darkest channels go through the curve; the middle one
+    /// A color's brightest and darkest channels go through the curve; the middle one
     /// keeps its encoded place between them, so the hue holds above white.
     #[test]
     fn colours_take_the_curve_rgbtone_fashion() {

@@ -2,9 +2,9 @@
 //! a crown).
 //!
 //! Near the model's boundary each pixel is placed on the line between the local sky
-//! colour and the local foreground colour, and so it stands wherever the colours
+//! color and the local foreground color, and so it stands wherever the colors
 //! disagree with the model over a large area (a wall, a roof, water): only small
-//! departures, the size of a gap or a spire, are taken. A colour far off that line is
+//! departures, the size of a gap or a spire, are taken. A color far off that line is
 //! neither (a white column under a blue sky, a gilt finial or a dark bird against a
 //! grey one over a sunlit wall): it may say there is less sky than the model sees,
 //! never more.
@@ -18,7 +18,7 @@ use super::{
 use crate::refine::smooth;
 use rawmakase_inference::InferenceError;
 
-/// Distance of a colour from the line between the sky's and the ground's (as a share of
+/// Distance of a color from the line between the sky's and the ground's (as a share of
 /// that line's length) over which it goes from lying on the line, a mix of the two, to
 /// lying clearly off it, neither.
 const OFF_LINE: (f32, f32) = (0.15, 0.3);
@@ -30,7 +30,7 @@ pub(crate) fn dense(rgb: &[[f32; 3]], p: &[f32], width: usize, height: usize) ->
 }
 
 /// Sky coverage (0..=1) from the model's answer, `p` (0..=1 at `width` x `height`),
-/// refined with `rgb`, the photo's colours (sRGB / 255) at the same size. `cancel` is
+/// refined with `rgb`, the photo's colors (sRGB / 255) at the same size. `cancel` is
 /// checked between the passes.
 pub(crate) fn dense_with(
     rgb: &[[f32; 3]],
@@ -55,10 +55,10 @@ pub(crate) fn dense_with(
         return Ok(p.iter().map(|p| smooth(*p)).collect());
     }
     let ground = pull_push(rgb, &ground_sure, w, h);
-    // The sky's colour from where it is smooth first; then also from wherever the model
-    // sees sky (sure, or fading) and the colour clearly sides with that sky: streaks of
+    // The sky's color from where it is smooth first; then also from wherever the model
+    // sees sky (sure, or fading) and the color clearly sides with that sky: streaks of
     // cloud or a duller patch are measured against their own sky, not a brighter one
-    // farther off; a spire, a twig or a colour off the line from the ground to that sky
+    // farther off; a spire, a twig or a color off the line from the ground to that sky
     // (a dark bird before a grey sky over a sunlit wall) is not sky-like enough to count.
     let smooth_sky = pull_push(rgb, &sky_sure, w, h);
     let sky_like: Vec<bool> = (0..w * h)
@@ -75,7 +75,7 @@ pub(crate) fn dense_with(
     let unknown: Vec<bool> = (0..w * h)
         .map(|i| !sky_sure[i] && !ground_sure[i])
         .collect();
-    // What the colours say (the line between the local sky and ground colours), and
+    // What the colors say (the line between the local sky and ground colors), and
     // how far they can be trusted to say it.
     let (colour, trust): (Vec<f32>, Vec<f32>) = (0..w * h)
         .map(|i| {
@@ -87,8 +87,8 @@ pub(crate) fn dense_with(
             if length2 <= 0. {
                 return (p[i], 0.);
             }
-            // Where the model sees foreground, the colours must also vary there: a crown
-            // as dark as the night behind it, or water or a wall coloured like the sky,
+            // Where the model sees foreground, the colors must also vary there: a crown
+            // as dark as the night behind it, or water or a wall colored like the sky,
             // does not tell the two apart, and the model's answer stands. On the model's
             // own fading edge it is enough that sky and ground differ.
             let fading = (SURE_GROUND..=SURE_SKY).contains(&p[i]);
@@ -97,7 +97,7 @@ pub(crate) fn dense_with(
             } else {
                 length2.sqrt().min(2. * spread[i])
             };
-            // A colour off the line is not the sky's: it may say there is less sky than
+            // A color off the line is not the sky's: it may say there is less sky than
             // the model sees, never more.
             let along = along(rgb[i], b, f);
             let said = along.min(p[i] + on_line(rgb[i], b, f) * (along - p[i]));
@@ -107,8 +107,8 @@ pub(crate) fn dense_with(
     let mixed: Vec<f32> = (0..w * h)
         .map(|i| p[i] + trust[i] * (colour[i] - p[i]))
         .collect();
-    // Where the colours disagree with the model, judged on the colours alone: an even
-    // area the colours cannot be trusted over is still one area, not its rims.
+    // Where the colors disagree with the model, judged on the colors alone: an even
+    // area the colors cannot be trusted over is still one area, not its rims.
     let add: Vec<bool> = (0..w * h)
         .map(|i| unknown[i] && colour[i] > 0.5 && p[i] <= 0.5)
         .collect();
@@ -120,7 +120,7 @@ pub(crate) fn dense_with(
     let small: Vec<bool> = (0..w * h)
         .map(|i| (add[i] && !large_add[i]) || (remove[i] && !large_remove[i]))
         .collect();
-    // A departure itself, and the few pixels of its soft edge, take the colours' answer.
+    // A departure itself, and the few pixels of its soft edge, take the colors' answer.
     // Around a gap the model put inside the foreground (in a crown, not along an
     // outline), partly-sky twigs take their share too, but that never lowers sky the
     // model found. Nothing near a large departure does, the model's unsure edge there
@@ -134,7 +134,7 @@ pub(crate) fn dense_with(
     let gaps: Vec<bool> = (0..w * h).map(|i| small_add[i] && !outline[i]).collect();
     let (edge, around) = (dilate(&small, w, h, NEAR), dilate(&gaps, w, h, gate));
     let beside_large = dilate(&large, w, h, gate);
-    // The model's unsure edge is the colours' to decide only where it is the edge of the
+    // The model's unsure edge is the colors' to decide only where it is the edge of the
     // sky: a faint wisp it draws on water or a wall, cut off from the sky, is not.
     let edge_of_sky = reached(&questioned_seed(p), &sky_sure, w, h);
     let taken: Vec<bool> = (0..w * h)
@@ -154,7 +154,7 @@ pub(crate) fn dense_with(
 
 /// How near (1) or far off (0) the line from `ground` to `sky` `colour` lies, by its
 /// distance from the stretch between them ramped over [`OFF_LINE`]: 0 when the two are
-/// the same colour.
+/// the same color.
 fn on_line(colour: [f32; 3], sky: [f32; 3], ground: [f32; 3]) -> f32 {
     let length2 = (0..3).map(|k| (sky[k] - ground[k]).powi(2)).sum::<f32>();
     if length2 <= 0. {
@@ -208,7 +208,7 @@ mod tests {
     }
 
     /// The model's own faint answer on water, away from the sky, is no more sky than
-    /// it was before the colours were asked.
+    /// it was before the colors were asked.
     #[test]
     fn a_reflection_the_model_is_a_little_unsure_of_stays_out() {
         fixtures::reflection_stays_out(dense, 0.3);

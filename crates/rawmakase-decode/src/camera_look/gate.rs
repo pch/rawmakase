@@ -106,16 +106,16 @@ fn spearman(pairs: &[(f32, f32)]) -> f32 {
     (ab / (aa * bb).sqrt()) as f32
 }
 
-/// The fewest held-out pairs any look is judged on, and, for a colour look, the
-/// least share of them in colour (chroma above 10). The share is small on
+/// The fewest held-out pairs any look is judged on, and, for a color look, the
+/// least share of them in color (chroma above 10). The share is small on
 /// purpose: in a portrait against grey walls or at night the face is most of the
-/// colour there is, and a curve alone leaves it the baseline's (at 5%, six of 139
-/// photos fell back to one; all six are closer to the camera's with their colour
+/// color there is, and a curve alone leaves it the baseline's (at 5%, six of 139
+/// photos fell back to one; all six are closer to the camera's with their color
 /// look).
 const MIN_PAIRS: usize = 256;
 const MIN_COLOURED: f32 = 0.01;
 
-/// The share of `target`'s masked pixels in colour.
+/// The share of `target`'s masked pixels in color.
 pub(super) fn coloured(target: &[Rgb], mask: &[bool]) -> f32 {
     let (mut n, mut c) = (0usize, 0usize);
     for (t, m) in target.iter().zip(mask) {
@@ -128,16 +128,16 @@ pub(super) fn coloured(target: &[Rgb], mask: &[bool]) -> f32 {
     if n == 0 { 0. } else { c as f32 / n as f32 }
 }
 
-/// Why a colour look `fit` fails against `baseline`, if it does: its held-out
+/// Why a color look `fit` fails against `baseline`, if it does: its held-out
 /// error must be below 0.7 of the baseline's with an RMS of at most 0.1, no cell
-/// more than 2 ΔE00 worse, on at least 256 pairs of which 1% are in colour.
+/// more than 2 ΔE00 worse, on at least 256 pairs of which 1% are in color.
 pub(super) fn colour_refusal(fit: &Scores, baseline: &Scores, coloured: f32) -> Option<String> {
     if fit.pairs < MIN_PAIRS {
         return Some(format!("Only {} held-out pairs", fit.pairs));
     }
     if coloured < MIN_COLOURED {
         return Some(format!(
-            "Only {:.1}% of the pairs are in colour",
+            "Only {:.1}% of the pairs are in color",
             coloured * 100.
         ));
     }
@@ -207,7 +207,7 @@ mod tests {
         assert_eq!(colour_refusal(&good, &baseline, 0.5), None);
         assert!(
             colour_refusal(&good, &baseline, 0.005).is_some(),
-            "too little colour"
+            "too little color"
         );
         assert_eq!(
             colour_refusal(&good, &baseline, 0.02),

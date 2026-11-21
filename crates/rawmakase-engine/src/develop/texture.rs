@@ -7,8 +7,8 @@
 //! (an image twice the size renders the same per pixel). It leaves large flat areas
 //! alone, boosts faint detail most (×1.78 at ±0.1 EV and +100) and strong contrast
 //! hardly at all (×1.05 at ±2 EV), so edges get soft halos fading over about thirty
-//! pixels. Here the detail is a Laplacian pyramid of the log of each colour channel
-//! (Camera Raw's Texture also raises colour contrast at colour edges, up to +19
+//! pixels. Here the detail is a Laplacian pyramid of the log of each color channel
+//! (Camera Raw's Texture also raises color contrast at color edges, up to +19
 //! chroma beside a saturated red, as if each channel had its own): each level is
 //! compressed where it is strong and weighted, and the sum scaled by a strength that
 //! Texture sets. Fitted to the gratings within 0.04 RMS (×gain) and to the edges'

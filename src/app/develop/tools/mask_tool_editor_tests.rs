@@ -668,7 +668,7 @@ fn a_mask_overlay_renders_the_rendition_its_ranges_select_from() {
 }
 
 /// The range pickers sample the rendition a range mask selects from, without the SDR
-/// rendition's sliders: the colour they read is the same with them as without.
+/// rendition's sliders: the color they read is the same with them as without.
 #[test]
 fn the_range_pickers_sample_without_the_sdr_rendition_sliders() {
     let ctx = egui::Context::default();

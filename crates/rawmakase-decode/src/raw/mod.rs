@@ -26,7 +26,7 @@ pub fn version() -> String {
 /// 2: Directional X-Trans blending, stripe chromaticity reconstruction and
 /// matching lens-CA sampling protection (#547).
 /// 3: A DNG's transparency mask renders white (a panorama's empty corners).
-/// 4: Full-size Bayer pixels below black keep their own colour (#802).
+/// 4: Full-size Bayer pixels below black keep their own color (#802).
 pub fn developed() -> String {
     "rawmakase-raw 4".into()
 }
@@ -218,7 +218,7 @@ pub struct Facts {
 pub(crate) struct Cfa {
     pub width: u32,
     pub height: u32,
-    /// The colour pattern as a `PATTERN × PATTERN` tile: 0 red, 1 green, 2 blue.
+    /// The color pattern as a `PATTERN × PATTERN` tile: 0 red, 1 green, 2 blue.
     pub pattern: [u8; crate::demosaic::PATTERN * crate::demosaic::PATTERN],
     /// `width × height` values, (raw − black) / (white − black), not white balanced.
     pub data: Vec<f32>,
@@ -242,7 +242,7 @@ pub(crate) struct Sensor {
     pub black_pattern: (u32, u32, Vec<u32>),
     pub white: u32,
     pub linear_white: [u32; 4],
-    /// The colour of each visible pixel over one period of the mosaic; empty
+    /// The color of each visible pixel over one period of the mosaic; empty
     /// without one.
     pub pattern: Vec<Vec<u8>>,
 }
@@ -400,7 +400,7 @@ impl Raw {
             facts,
         })
     }
-    /// The colour space the camera's maker notes give its JPEGs (Nikon's and
+    /// The color space the camera's maker notes give its JPEGs (Nikon's and
     /// Olympus's ColorSpace), or the file's writer does (Google's HDR+ DNGs,
     /// sRGB), for a preview whose EXIF does not say it.
     pub fn maker_preview_space(&self) -> Option<MakerPreviewSpace> {
@@ -718,7 +718,7 @@ pub fn thumbnail(raw: &mut Raw) -> anyhow::Result<image::RgbImage> {
     let bytes = raw.thumbnail()?;
     preview_image(bytes, raw.metadata.flip)
 }
-/// A camera JPEG's colour space as its maker notes, or the writer of its file,
+/// A camera JPEG's color space as its maker notes, or the writer of its file,
 /// give it ([`rawmakase_raw::PreviewSpace`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MakerPreviewSpace {

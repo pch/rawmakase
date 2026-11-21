@@ -17,7 +17,7 @@ pub(crate) enum ImportKind {
     /// DCPs, look XMPs and LUTs (`.cube` and HaldCLUT `.png`), the LUTs at the sRGB
     /// default.
     CameraProfiles,
-    /// LUTs only, expecting colours in this space (Import LUTs).
+    /// LUTs only, expecting colors in this space (Import LUTs).
     Luts(LutSpace),
     LensProfiles,
     Presets,
@@ -373,7 +373,7 @@ fn profile_library() -> PathBuf {
 }
 
 /// Imports the profiles and LUTs `found` holds for `kind` (camera profiles or LUTs
-/// only) into the profile library `destination`, the LUTs as expecting colours in
+/// only) into the profile library `destination`, the LUTs as expecting colors in
 /// `space`.
 fn import_camera_profiles(
     found: &[Found],
@@ -677,7 +677,7 @@ fn run(kind: ImportKind, picks: &[PathBuf], progress: &ImportProgress) -> Summar
 }
 
 /// The `import-profiles` command: imports `picks` (files and folders) as the app's
-/// Import does, waiting for it, with the LUTs among them expecting colours in
+/// Import does, waiting for it, with the LUTs among them expecting colors in
 /// `space`.
 pub fn import_profiles(picks: &[PathBuf], space: LutSpace) -> Summary {
     let kind = ImportKind::CameraProfiles;

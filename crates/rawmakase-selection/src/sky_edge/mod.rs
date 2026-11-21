@@ -1,11 +1,11 @@
-//! The sky's edge decided by the photo's colours, in modes suited to different kinds
+//! The sky's edge decided by the photo's colors, in modes suited to different kinds
 //! of horizon.
 //!
 //! The sky model works at a quarter of its input and was trained on crowns drawn as
 //! whole polygons, so it calls the sky between branches, struts and around spires "not
 //! sky". Near its answer's boundary each mode places pixels instead on the line between
-//! the local sky colour and the local foreground colour, spread in from where the model
-//! is sure; where those two colours cannot be told apart the model's answer stands.
+//! the local sky color and the local foreground color, spread in from where the model
+//! is sure; where those two colors cannot be told apart the model's answer stands.
 //! [`dense`] takes only small departures from the model, the size of a gap in a truss or
 //! a spire; [`sparse`] also takes a large area laced with twigs and joined to the sky
 //! through them, as the sky behind a bare canopy is.
@@ -35,16 +35,16 @@ const SURE_SKY: f32 = 0.9;
 const SURE_GROUND: f32 = 0.1;
 /// How far from the model's sky (fraction of the long side) its answer is questioned.
 const BAND: f32 = 0.15;
-/// Side of the largest area the colours may decide against the model on their own, as
+/// Side of the largest area the colors may decide against the model on their own, as
 /// a fraction of the long side: about a gap between branches. Also the window of the
 /// local spread.
 const GATE: f32 = 0.015;
-/// Colour spread (sRGB / 255, standard deviation) below which sure sky is smooth.
+/// Color spread (sRGB / 255, standard deviation) below which sure sky is smooth.
 const UNIFORM: f32 = 0.04;
-/// How far along the line from ground to sky a colour the model sees sky in must lie
-/// to count as sky when the sky's own colour is measured.
+/// How far along the line from ground to sky a color the model sees sky in must lie
+/// to count as sky when the sky's own color is measured.
 const SKY_LIKE: f32 = 0.7;
-/// Separation of the colours (sRGB / 255) over which the colours take over from the
+/// Separation of the colors (sRGB / 255) over which the colors take over from the
 /// model, from nothing to entirely.
 const SEPARATION: (f32, f32) = (0.05, 0.15);
 /// How far (pixels) a small departure's soft edge reaches.
@@ -60,7 +60,7 @@ pub(super) fn cancelled(cancel: Cancel<'_>) -> Result<(), InferenceError> {
 }
 
 /// Where `colour` lies on the line from `ground` (0) to `sky` (1), unclamped; 0 when
-/// the two are the same colour.
+/// the two are the same color.
 fn position(colour: [f32; 3], sky: [f32; 3], ground: [f32; 3]) -> f32 {
     let length2 = (0..3).map(|k| (sky[k] - ground[k]).powi(2)).sum::<f32>();
     if length2 <= 0. {
@@ -83,7 +83,7 @@ fn along(colour: [f32; 3], sky: [f32; 3], ground: [f32; 3]) -> f32 {
     position(colour, sky, ground).clamp(0., 1.)
 }
 
-/// Coverage where the colours decided: what is as sure as sure sky is all sky, and as
+/// Coverage where the colors decided: what is as sure as sure sky is all sky, and as
 /// sure as sure ground none, so a darkened sky stays even; in between it stays
 /// proportional, so a twig keeps its share. Where the model's answer stands, it is
 /// narrowed as before ([`smooth`](crate::refine::smooth)), which would force twigs to
@@ -92,7 +92,7 @@ fn settle(v: f32) -> f32 {
     ((v - SURE_GROUND) / (SURE_SKY - SURE_GROUND)).clamp(0., 1.)
 }
 
-/// The standard deviation of the colours in the `(2r+1)²` window around each pixel,
+/// The standard deviation of the colors in the `(2r+1)²` window around each pixel,
 /// the three channels' variances summed.
 fn spread(rgb: &[[f32; 3]], w: usize, h: usize, r: usize) -> Vec<f32> {
     let mut variance = vec![0f32; w * h];
@@ -177,7 +177,7 @@ fn pull_push(values: &[[f32; 3]], known: &[bool], w: usize, h: usize) -> Vec<[f3
     if !known.contains(&true) {
         return values.to_vec();
     }
-    // Each level holds weighted colour sums and their weights.
+    // Each level holds weighted color sums and their weights.
     let first: Vec<([f32; 3], f32)> = values
         .iter()
         .zip(known)

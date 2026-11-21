@@ -86,7 +86,7 @@ pub struct HdrFrame {
 }
 /// The sRGB-to-monitor transform sampled on a lattice of 8-bit values, so the shader
 /// applies it itself. Built once per profile, from the transform the caller supplies
-/// (`color_management::display_transform`), so the engine links no colour management.
+/// (`color_management::display_transform`), so the engine links no color management.
 pub struct MonitorLut {
     size: u32,
     values: Vec<f32>,

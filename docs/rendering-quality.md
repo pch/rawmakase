@@ -1,6 +1,6 @@
 # Rendering engine
 
-RAWmakase renders every edit with one engine, whichever release saved it. Exposure and the Basic panel's tone controls (Whites, Blacks, Highlights, Shadows, Clarity, Texture and Dehaze) render on scene values before the camera profile's look and tone curve, where Camera Raw 18.7 applies them: the [scene tone stage](scene-tone-stage.md). Contrast, the parametric curve, the color mixer, Saturation/Vibrance, color grading, calibration, sharpening, colour noise reduction, grain and manual lens vignetting are responses measured against Camera Raw too: see [tone controls](tone-controls.md), [color mixer and grading](color-mixer.md) and [lens corrections](lens-corrections.md). Earlier engines and the earlier operators of each control are no longer rendered: an edit saved with them renders with the current engine, and the settings that chose them are dropped when it is read ([color pipeline](color-pipeline.md)). Saved recipes are schema/pipeline 11 today (see [imported Lightroom profiles](lightroom-profiles.md) for the embedded profile data). Older binaries reject newer files rather than misreading them.
+RAWmakase renders every edit with one engine, whichever release saved it. Exposure and the Basic panel's tone controls (Whites, Blacks, Highlights, Shadows, Clarity, Texture and Dehaze) render on scene values before the camera profile's look and tone curve, where Camera Raw 18.7 applies them: the [scene tone stage](scene-tone-stage.md). Contrast, the parametric curve, the color mixer, Saturation/Vibrance, color grading, calibration, sharpening, color noise reduction, grain and manual lens vignetting are responses measured against Camera Raw too: see [tone controls](tone-controls.md), [color mixer and grading](color-mixer.md) and [lens corrections](lens-corrections.md). Earlier engines and the earlier operators of each control are no longer rendered: an edit saved with them renders with the current engine, and the settings that chose them are dropped when it is read ([color pipeline](color-pipeline.md)). Saved recipes are schema/pipeline 11 today (see [imported Lightroom profiles](lightroom-profiles.md) for the embedded profile data). Older binaries reject newer files rather than misreading them.
 
 See [preview performance](preview-performance.md) for how previews are rendered today, timing measurements and supported-hardware validation.
 
@@ -10,7 +10,7 @@ Every change renders the real pipeline at viewport size in physical pixels (incl
 
 Sharpening (`develop/sharpening.rs`) is applied before resizing. New edits and Lightroom imports start at Lightroom Classic's raw defaults (Amount 40, Radius 1.0, Detail 25, Masking 0; every raw and DNG import in the catalogue sampled, process versions 2012 to 6) and render with an unsharp mask fitted to Camera Raw 18.7 on a synthetic chart (slanted edges, sine gratings of 0.04 to 0.3 cycles per pixel, texture, noisy flats; 45 renders). It is about 2.4 times the strength of RAWmakase's earlier operator (a luminance-only Gaussian unsharp mask, no longer rendered) on fine detail per Amount, shapes the high-pass as `d / (1 + (|d|/halo)³)` so strong edges get small halos, makes dark halos 0.57 of light ones, scales the strength with Detail (0.3× at 0, 2.1× at 100) and fades out detail below a Masking threshold. The Detail panel's reset gives the Lightroom defaults. Camera Raw's ringing at Detail above 50 and its gentler sharpening of noise in deep shadows are not modelled. Full-resolution region rendering includes the required sharpening halo, and its pixels match the full render. No separate Fit-only sharpening changes the result. Luminance noise reduction is described below.
 
-Color noise reduction (`develop/color_noise.rs`) starts at Lightroom's raw default of 25 (Detail and Smoothness 50) and follows Camera Raw 18.7 as it renders photos, whose noise it knows from the camera's noise profile. The chroma of the camera image, in square-root values (where shot noise is about the same at every brightness), is split into a Laplacian pyramid. At each level the colour noise is measured in the photo itself: the RMS of the level's detail in its smoothest 10% of 8×8 blocks, leaving out blocks near the sensor's clipping and, unless too few others remain (a dark, noisy photo), blocks with black pixels; a coarser level never counts more noise than the finer one, and a level with fewer than 16 such blocks takes 0.6 of the finer level's. Each level's detail is then kept by the sixth power of its size over a threshold, a multiple of that noise set by Amount, Detail and Smoothness, so noise goes and strong colour edges stay sharp. On synthetic RGGB charts with the noise of a Nikon D7100 at ISO 2000 (from issue 465) and 1/16, 1/4 and 4 times it, each carrying its DNG noise profile, Camera Raw keeps the same share of the noise at each scale whatever its level, and at Amount 25 takes out about 95% of it at every scale; it keeps a little more of a clean photo's coarse colour, which the thresholds follow as a power of the finest level's noise. Fitted to those renders (Amount 10–100, Detail and Smoothness 0–100), the share of noise kept at each of four scales differs from Camera Raw's by a mean |log ratio| of 0.13–0.24 over the 80 cases, against 1.4–2.0 for the operator fitted earlier to charts without a noise profile, where Camera Raw assumes little noise (`scripts/corpus/color-noise.py`). On the D7100 photo the noise measured at the finest level is 0.0086, against 0.0083 predicted from the noise profile Adobe's DNG Converter writes for it. It runs once on the camera image before everything else, as spot removal does. The Detail panel's reset gives Lightroom's default. Edits from earlier releases render with it too; the operators they were saved with are not kept.
+Color noise reduction (`develop/color_noise.rs`) starts at Lightroom's raw default of 25 (Detail and Smoothness 50) and follows Camera Raw 18.7 as it renders photos, whose noise it knows from the camera's noise profile. The chroma of the camera image, in square-root values (where shot noise is about the same at every brightness), is split into a Laplacian pyramid. At each level the color noise is measured in the photo itself: the RMS of the level's detail in its smoothest 10% of 8×8 blocks, leaving out blocks near the sensor's clipping and, unless too few others remain (a dark, noisy photo), blocks with black pixels; a coarser level never counts more noise than the finer one, and a level with fewer than 16 such blocks takes 0.6 of the finer level's. Each level's detail is then kept by the sixth power of its size over a threshold, a multiple of that noise set by Amount, Detail and Smoothness, so noise goes and strong color edges stay sharp. On synthetic RGGB charts with the noise of a Nikon D7100 at ISO 2000 (from issue 465) and 1/16, 1/4 and 4 times it, each carrying its DNG noise profile, Camera Raw keeps the same share of the noise at each scale whatever its level, and at Amount 25 takes out about 95% of it at every scale; it keeps a little more of a clean photo's coarse color, which the thresholds follow as a power of the finest level's noise. Fitted to those renders (Amount 10–100, Detail and Smoothness 0–100), the share of noise kept at each of four scales differs from Camera Raw's by a mean |log ratio| of 0.13–0.24 over the 80 cases, against 1.4–2.0 for the operator fitted earlier to charts without a noise profile, where Camera Raw assumes little noise (`scripts/corpus/color-noise.py`). On the D7100 photo the noise measured at the finest level is 0.0086, against 0.0083 predicted from the noise profile Adobe's DNG Converter writes for it. It runs once on the camera image before everything else, as spot removal does. The Detail panel's reset gives Lightroom's default. Edits from earlier releases render with it too; the operators they were saved with are not kept.
 
 Luminance noise reduction (`develop/luminance_noise.rs`) runs on the full camera
 image after Color noise reduction, before retouching, the preview pyramid and tone
@@ -33,7 +33,7 @@ A reduced decode (such as the half-size draft) keeps its photo's
 metadata over fewer pixels (`CameraImage::photo_scale`). Both noise reductions treat
 its pyramid as the photo's from level `−log₂(photo_scale)` on: level 1 for a
 half-size draft, a little under 1 for one of a photo with an odd side
-(`demosaic::half` rounds up), 1.2 for 2560 pixels of a 6000-pixel photo. Colour
+(`demosaic::half` rounds up), 1.2 for 2560 pixels of a 6000-pixel photo. Color
 noise reduction takes the photo's thresholds there (geometrically between two
 levels, the noise exponent linearly), luminance noise reduction its Detail and
 Contrast weights. Between two of the photo's levels a level's settings are
@@ -44,7 +44,7 @@ that starts at the residual, or past it, is left alone. So noise reduction chang
 continuously with the decode's scale. Filtered whole or not at all, the straddling
 level changed it in a step where it reached the residual (offset 1 for a half-size
 decode): 1.3 to 2.1% of what noise reduction changes, 44 and 88 times the median
-step for colour across half-size decodes of photos 1003 to 1043 pixels wide, against
+step for color across half-size decodes of photos 1003 to 1043 pixels wide, against
 at most 1.14 times now. The noise each level is measured with is the decode's own. A
 full decode, whatever its metadata says, filters exactly as before.
 
@@ -53,15 +53,15 @@ demosaiced bilinearly) against the photo denoised and rendered at the reduced si
 as the share of the noise each keeps at 1, 2, 4 and 8 output pixels relative to the
 share the photo keeps: for its half-size decode and for it reduced to 0.43 by area,
 the worst |log ratio| over six settings fell from 1.02 to 0.71 (mean 0.37 to 0.26);
-for colour at its default 25, from 0.47 to 0.13. At 2 output pixels and coarser the
+for color at its default 25, from 0.47 to 0.13. At 2 output pixels and coarser the
 worst fell from 0.63 to 0.43 (mean 0.28 to 0.15), every setting closer than before
-but two reduced to 0.43, a little further than before: colour Amount 10 (0.43
-against 0.40) and colour 25 with Detail and Smoothness 80 (0.25 against 0.20). At 1
+but two reduced to 0.43, a little further than before: color Amount 10 (0.43
+against 0.40) and color 25 with Detail and Smoothness 80 (0.25 against 0.20). At 1
 pixel a reduced decode also holds noise aliased from the photo's finer scales, which
-the photo's finest level took out: at colour Amount 10 a decode keeps about twice
+the photo's finest level took out: at color Amount 10 a decode keeps about twice
 the photo's share there, and with Luminance Detail 20 and Contrast 50, 1.4 times.
 Starting the decode's levels half a level finer instead helped luminance and made
-low colour Amounts worse. Texture keeps its detail within 5% of the photo's (the
+low color Amounts worse. Texture keeps its detail within 5% of the photo's (the
 test allows 10%). The half-size decode of a photo with an odd side denoises within
 0.03% of what noise reduction changes of an even photo's. AI Denoise refuses reduced
 decodes.
@@ -82,8 +82,8 @@ demosaic, which the model never saw unclipped. Highlights are then recovered on 
 image of its own, never with the plain image's recovery, since recovery depends on
 each pixel's values.
 
-Rendering blends the two recovered images by Amount before colour and luminance noise
-reduction, which then apply as without it. Each pixel keeps the AI source's colour, its
+Rendering blends the two recovered images by Amount before color and luminance noise
+reduction, which then apply as without it. Each pixel keeps the AI source's color, its
 channels scaled together, and takes a luminance (the mean of the white-balanced
 channels) blended from the two by a weight; at 100% it is the AI source itself.
 The weight is Camera Raw 18.7's: its Denoise records the blend it applies (`BlendParams`)
@@ -138,24 +138,24 @@ maze or grid at 100%. No tile was non-finite on the CPU or CoreML, which stays w
 Apple Silicon: a 24 MP photo takes about 3.5 s there and 20 s on the CPU. Against Camera Raw 18.7's
 Denoise on five of those CC0 photos at Amount 50 and 100 (100% crops, side by side):
 similar at ISO 12,800–20,000 (Camera Raw keeps slightly more fine texture); behind at
-ISO 32,000 and above, where RawNIND leaves colour blotches in dark areas and Camera Raw
+ISO 32,000 and above, where RawNIND leaves color blotches in dark areas and Camera Raw
 keeps more detail, and on X-Trans, where the RGGB rebuild leaves the result softer and
 mottled beside Camera Raw's own X-Trans model.
 
 Measured again on 2026-11-18 against Camera Raw 18.7's renders of the same five photos
 (Adobe defaults, Denoise off, 50 and 100, full size), with the metrics of
-[#802](https://github.com/pch/rawmakase/issues/802) (colour and luminance noise in flat
-areas, colour blotches in dark areas, gradient energy in textured areas, ΔE00 of 32-pixel
-block means): at Amount 50 Camera Raw keeps about as little colour noise as at 100, while
+[#802](https://github.com/pch/rawmakase/issues/802) (color and luminance noise in flat
+areas, color blotches in dark areas, gradient energy in textured areas, ΔE00 of 32-pixel
+block means): at Amount 50 Camera Raw keeps about as little color noise as at 100, while
 mixing the plain image back channel by channel kept 4–16 times as much (camera values
 are not white balanced, so an equal change of them is not neutral). Keeping the AI
-source's colour cut it from 14.2 to 1.3 (Camera Raw 1.0) on the Canon R10 at ISO 32,000
+source's color cut it from 14.2 to 1.3 (Camera Raw 1.0) on the Canon R10 at ISO 32,000
 and from 15.1 to 2.5 (2.3) on the Nikon Z fc at ISO 204,800, with luminance noise and
-detail unchanged. The dark correction over 16-pixel blocks left colour patches of that
+detail unchanged. The dark correction over 16-pixel blocks left color patches of that
 size in dark areas at ISO 32,000 and above (blotch measure 8.7 and 10.2 at Amount 100,
 Camera Raw 4.6 and 5.1); over 64-pixel blocks they are 4.6 and 5.2, and ΔE00 in dark
 areas fell from 5.8 to 4.4 on the R10 and rose from 11.5 to 13.4 on the Z fc, whose deep
-shadows already differ in colour from Camera Raw's with AI Denoise off.
+shadows already differ in color from Camera Raw's with AI Denoise off.
 
 ## Tone and highlights
 
@@ -199,12 +199,12 @@ Measured on 136 patches (six hue directions at two saturations and six levels of
 sensor's white, all unclipped; four hues at eight levels through every clip, under two
 As Shot neutrals), the rule reproduces Camera Raw within 0.005 RMS of the level per
 channel, the shoulder both renderers apply above white excluded. It replaces the
-neighbourhood-ratio estimate and the connected-area colour map of earlier releases: those
-reconstructed the patch's true colour (a warm patch with green clipped stayed warm,
+neighbourhood-ratio estimate and the connected-area color map of earlier releases: those
+reconstructed the patch's true color (a warm patch with green clipped stayed warm,
 where Camera Raw moves it towards neutral and brighter), which is why clipped skies
-rendered duller and pinker than Camera Raw's. The rule also changes unclipped colours
+rendered duller and pinker than Camera Raw's. The rule also changes unclipped colors
 whose channels approach the white, as Camera Raw does: a saturated red at 0.9 of its
-white loses a third of its chroma. This infers Camera Raw's colour, not missing detail,
+white loses a third of its chroma. This infers Camera Raw's color, not missing detail,
 and is not Adobe's algorithm. Cancellation discards the recovered image.
 
 ## Camera profiles

@@ -48,7 +48,7 @@ def table(dims, f, srgb=True, bounds=(0., 2.)):
     return data
 
 
-# The colour spaces, encodings and gamut modes of a DNG SDK RGB table.
+# The color spaces, encodings and gamut modes of a DNG SDK RGB table.
 SRGB, ADOBE_RGB, PROPHOTO, DISPLAY_P3, REC2020 = 0, 1, 2, 3, 4
 LINEAR, SRGB_GAMMA, GAMMA_1_8, GAMMA_2_2, REC2020_GAMMA = 0, 1, 2, 3, 4
 CLIP, EXTEND = 0, 1
@@ -57,7 +57,7 @@ CLIP, EXTEND = 0, 1
 def rgb_table(divisions, f, primaries=ADOBE_RGB, gamma=GAMMA_2_2, gamut=CLIP, bounds=(0., 2.), flags=None):
     """A DNG SDK 3D RGB table: red outermost, then green, then blue, each sample three
     16-bit values stored as their difference from the identity, then the table's
-    colour space, encoding, gamut mode and Profile Amount bounds."""
+    color space, encoding, gamut mode and Profile Amount bounds."""
     data = struct.pack('<4I', 1, 1, 3, divisions)
     grid = [(i * 0xFFFF + (divisions - 1) // 2) // (divisions - 1) for i in range(divisions)]
     for r in range(divisions):

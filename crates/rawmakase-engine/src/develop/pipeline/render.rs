@@ -24,7 +24,7 @@ pub fn render_with_ai(
 ) -> Result<Rendered> {
     crate::develop::quality::render_with_ai(im, r, ai, max_edge, cancel)
 }
-/// [`render_with_ai`] for an export in `space`, on the CPU: the colour stage ends in
+/// [`render_with_ai`] for an export in `space`, on the CPU: the color stage ends in
 /// `space` and every finishing stage works on its values.
 pub fn render_export(
     im: &CameraImage,

@@ -4,7 +4,7 @@
 //! read row by row, are the table's nodes with the red index changing fastest, then
 //! green, then blue, which is the order a `.cube` keeps its data in, so pixel `i` is
 //! node `r + g·n² + b·n⁴`. The values are the image's encoded values, conventionally
-//! sRGB: RawTherapee applies them unconverted, and it only remembers a colour space
+//! sRGB: RawTherapee applies them unconverted, and it only remembers a color space
 //! that a file name ends with. See <http://www.quelsolaar.com/technology/clut.html>.
 //!
 //! A HaldCLUT read here is an ordinary [`Lut3d`] and is imported exactly as a `.cube`
@@ -174,7 +174,7 @@ pub(super) mod tests {
         Gray16,
         /// The table's red output as the gray, with alpha.
         GrayAlpha8,
-        /// The table's colours through a palette, which holds them only when the
+        /// The table's colors through a palette, which holds them only when the
         /// level is small enough for every node to have its own entry.
         Palette,
     }
@@ -333,7 +333,7 @@ pub(super) mod tests {
         }
     }
 
-    /// A palette image is expanded to its colours.
+    /// A palette image is expanded to its colors.
     #[test]
     fn a_palette_is_expanded() {
         assert_nodes(

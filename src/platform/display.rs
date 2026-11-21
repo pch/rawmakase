@@ -64,7 +64,7 @@ impl Reading {
     }
 }
 
-/// Whether the system announces every change to how its displays show colour
+/// Whether the system announces every change to how its displays show color
 /// (Windows, once `changes::watch` watches them all), so that nothing reads
 /// them on a timer.
 pub(crate) fn changes_announced() -> bool {
@@ -132,7 +132,7 @@ pub(crate) fn system_display(monitor: Monitor) -> SystemDisplay {
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) struct WindowsHdr {
     /// HDR is on (Windows' "Use HDR"): the desktop is composed in scRGB and sent
-    /// to the display as HDR10, so the output's colour space is BT.2100 PQ.
+    /// to the display as HDR10, so the output's color space is BT.2100 PQ.
     pub(crate) on: bool,
     /// HDR could be turned on for the display in Windows' settings.
     pub(crate) supported: bool,
@@ -148,7 +148,7 @@ pub(crate) struct WindowsHdr {
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(not(windows), allow(dead_code))]
 struct OutputColor {
-    /// The output's colour space is BT.2100 PQ: Microsoft's guidance for HDR on.
+    /// The output's color space is BT.2100 PQ: Microsoft's guidance for HDR on.
     hdr: bool,
     /// The display's peak luminance, in cd/m²; 0 when its EDID gives none.
     peak_nits: f32,
@@ -585,7 +585,7 @@ fn prepare_and_remember(root: &objc2::rc::Retained<objc2_quartz_core::CALayer>, 
 /// Applies the last declaration [`Surface::prepare`] made again. Called right
 /// after eframe handles a window event, before control returns to AppKit.
 ///
-/// egui-wgpu reconfigures the surface on every resize with wgpu's `Auto` colour
+/// egui-wgpu reconfigures the surface on every resize with wgpu's `Auto` color
 /// space. For a float surface wgpu resolves that to extended *linear* sRGB and
 /// turns EDR on. The paint callback puts the declaration back only in the next
 /// frame, and during a live resize Core Animation can show the window in
@@ -606,7 +606,7 @@ pub(crate) fn prepare_again() {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Layer {
     /// The pixels are already in the monitor's device RGB (a manual monitor
-    /// transform): no colour space, so nothing converts them twice.
+    /// transform): no color space, so nothing converts them twice.
     pub(crate) device_rgb: bool,
     /// The surface holds 16-bit floats: tagged extended sRGB, whose values above 1
     /// are light above SDR white; egui writes sRGB-encoded values to it either way.
@@ -669,7 +669,7 @@ fn tag_layers(
 ///
 /// Only reading: the compositor's image description of a surface (its preferred one)
 /// or of an output. The window's own surface is tagged by Mesa's Vulkan WSI from the
-/// swapchain's colour space (linear extended sRGB on a float surface). Mesa holds a
+/// swapchain's color space (linear extended sRGB on a float surface). Mesa holds a
 /// `wp_color_management_surface_v1` on the window for the swapchain's whole life, so
 /// asking for a second one here would be a protocol error that ends the connection.
 #[cfg(target_os = "linux")]
@@ -691,11 +691,11 @@ pub(crate) mod wayland {
     /// The luminances of an image description, in cd/m².
     #[derive(Clone, Copy, Debug, Default, PartialEq)]
     pub(crate) struct Description {
-        /// The primary colour volume's minimum: black.
+        /// The primary color volume's minimum: black.
         pub(crate) min: f32,
         /// Reference white: where the output shows SDR white.
         pub(crate) reference: u32,
-        /// The primary colour volume's maximum.
+        /// The primary color volume's maximum.
         pub(crate) max: u32,
         /// The most the display reaches, when the description says.
         pub(crate) target_max: Option<u32>,
@@ -824,7 +824,7 @@ pub(crate) mod wayland {
             let mut state = State::default();
             queue.roundtrip(&mut state).ok()?;
             let manager = state.manager.clone()?;
-            // Feedback, unlike the surface's colour management, may exist more than
+            // Feedback, unlike the surface's color management, may exist more than
             // once per surface: Mesa's own doesn't conflict with it.
             let feedback = manager.get_surface_feedback(&surface, &handle, ());
             feedback.get_preferred(&handle, ());
@@ -1237,7 +1237,7 @@ mod tests {
     }
 
     /// egui-wgpu reconfigures the surface on every resize with wgpu's `Auto`
-    /// colour space, which tags a float surface extended linear sRGB and turns
+    /// color space, which tags a float surface extended linear sRGB and turns
     /// EDR on. Applying the declaration again after the window event has to undo
     /// both before Core Animation shows the window washed out.
     #[test]

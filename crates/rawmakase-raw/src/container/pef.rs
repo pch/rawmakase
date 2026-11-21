@@ -164,7 +164,7 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     Ok(info)
 }
 
-/// The colour filter from EXIF's CFAPattern at the sensor's corner,
+/// The color filter from EXIF's CFAPattern at the sensor's corner,
 /// blue first when the file has none.
 fn cfa(t: &TiffFile) -> Cfa {
     let colors = super::tiff_exif::cfa_pattern(t).unwrap_or(vec![2, 1, 1, 0]);

@@ -3,7 +3,7 @@
 //! into the profile library as an ordinary look XMP, which then lists, renders, travels
 //! in recipes and presets and takes a Profile Amount like any other. How faithfully the
 //! table holds the cube is measured at import ([`Fidelity`]). The import says which
-//! colour space the cube expects ([`LutSpace`]), as Create Profile asks.
+//! color space the cube expects ([`LutSpace`]), as Create Profile asks.
 //!
 //! The look is named after the file: the name is what RAWmakase lists, dedupes and
 //! resolves looks by, so the import owns collisions ([`Names`]) and a cube's `TITLE`,
@@ -22,7 +22,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// The colour space a `.cube` expects its colours in, chosen at import as Camera Raw's
+/// The color space a `.cube` expects its colors in, chosen at import as Camera Raw's
 /// Create Profile asks for it. The cube's values become the table's samples unchanged,
 /// read as values encoded in this space: the space changes only the primaries and the
 /// encoding the table names (Camera Raw 18.7 converts nothing either; see
@@ -62,7 +62,7 @@ impl LutSpace {
         }
     }
     /// The table's primaries, encoding and gamut codes and its amount bounds, as Create
-    /// Profile writes them for this space: colours outside it clipped before the lookup,
+    /// Profile writes them for this space: colors outside it clipped before the lookup,
     /// at amounts 0–2, in every space.
     pub(super) fn tail(self) -> Tail {
         let (primaries, encoding) = match self {
@@ -111,7 +111,7 @@ impl std::fmt::Display for Fidelity {
                 clamped,
             } => {
                 // The mean as well, as a large table resampled is off by most at the
-                // few colours where it clips, and by far less elsewhere.
+                // few colors where it clips, and by far less elsewhere.
                 write!(
                     f,
                     "approximated, sampled error {max_levels:.1} 8-bit levels at most, \
@@ -228,13 +228,13 @@ impl Lut {
     }
 }
 
-/// Reads and converts a `.cube` expecting colours in `space`.
+/// Reads and converts a `.cube` expecting colors in `space`.
 #[cfg(any(test, feature = "test-support"))]
 pub(super) fn convert(bytes: &[u8], space: LutSpace) -> Result<Converted> {
     convert_lut(&read(bytes, Format::Cube)?, space)
 }
 
-/// Converts a LUT expecting colours in `space`, or says why it cannot be imported.
+/// Converts a LUT expecting colors in `space`, or says why it cannot be imported.
 pub(super) fn convert_lut(lut: &Lut, space: LutSpace) -> Result<Converted> {
     let cube = &lut.cube;
     let (table, table_bytes) = RgbTable::from_cube(cube, space)?;
@@ -714,7 +714,7 @@ pub(super) mod tests {
         };
         assert_eq!((resampled, clamped), (Some(65), false));
         assert!(max_levels > 0.01 && max_levels < 40., "{max_levels}");
-        // Off by most at a few colours only: the mean is a small part of the most.
+        // Off by most at a few colors only: the mean is a small part of the most.
         assert!(
             mean_levels > 0. && mean_levels < max_levels / 4.,
             "{mean_levels} of {max_levels}"

@@ -115,7 +115,7 @@ pub struct Record {
     /// Auto CA as measured on the original's full-size decode. Missing: not
     /// measured, so the copy measures its own.
     pub auto_ca: Option<AutoCa>,
-    /// The photo's default Camera Look (fitted), for a camera without colour
+    /// The photo's default Camera Look (fitted), for a camera without color
     /// data, as an XMP sidecar carries it ([`fitted::carried`]). Its fit needs
     /// the original's embedded JPEG, so offline it comes only from here.
     pub default_look: Option<String>,

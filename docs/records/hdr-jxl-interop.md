@@ -39,7 +39,7 @@ Chrome when it finds them. It uses no private data. It runs in three steps:
    fixture or export, a decoder that can't read a file, and any pixel that isn't
    finite all count as failures.
 
-The colour math is the script's own, not RAWmakase's, so it is independent of the
+The color math is the script's own, not RAWmakase's, so it is independent of the
 code under test:
 - PQ's EOTF;
 - HLG's inverse OETF, then the OOTF of the 1,000 cd/m² reference display with system
@@ -76,7 +76,7 @@ converted to the export's gamut, with negative channels at 0 and the limit's rol
 applied. It is then held to what the transfer can carry:
 - PQ: 10,000 cd/m²;
 - HLG: the reference display's 1,000 cd/m², and scene light 1 in each channel after
-  the inverse OOTF. Saturated colours near the peak exceed that, so BT.2100's display
+  the inverse OOTF. Saturated colors near the peak exceed that, so BT.2100's display
   can't show them at that luminance.
 
 The script reports the share of pixels that HLG's limits change. That share is 0–48%
@@ -110,12 +110,12 @@ Header and container checks, with `jxlinfo`:
 - the `Exif` and `xml ` boxes, and `jhgm` for gain maps;
 - the codestream level: a lossless 16-bit frame must declare Level 10 in a `jxll` box.
 
-ImageIO must report the matching colour space, for example `kCGColorSpaceITUR_2100_PQ`
+ImageIO must report the matching color space, for example `kCGColorSpaceITUR_2100_PQ`
 or `kCGColorSpaceDisplayP3_HLG`.
 
 Gain-map checks:
 - The `jhgm` bundle, parsed independently: version 0, the 61-byte ISO 21496-1
-  metadata with no trailing bytes, no alternate colour encoding or ICC, and
+  metadata with no trailing bytes, no alternate color encoding or ICC, and
   `use_base_colour_space` set.
 - The headrooms: base 0, alternate log2 of the limit's peak.
 - Base-only decoding: `djxl` and jxl-oxide must give exactly the SDR export's samples
@@ -128,11 +128,11 @@ Gain-map checks:
 ### Decoder behaviour that isn't the export's
 
 Each of these is judged on neutral pixels only, that is, pixels whose 8-pixel
-neighbourhood is neutral, away from colour edges that lossy blocks mix in. Every
+neighbourhood is neutral, away from color edges that lossy blocks mix in. Every
 pixel's numbers are kept in `results.json`.
 
-- **ImageIO and HLG colour.** Neutral HLG decodes within 0.0001 stop, with graphics
-  white at 1.0. Saturated HLG colours come back differently, up to 0.30 stop (median)
+- **ImageIO and HLG color.** Neutral HLG decodes within 0.0001 stop, with graphics
+  white at 1.0. Saturated HLG colors come back differently, up to 0.30 stop (median)
   on the gamut patches and 0.11 stop on the scene. ImageIO decodes a lossless export
   bit-identically to the same signal in a 16-bit PNG with cICP and in cjxl's own
   lossless file (checked automatically for every lossless HLG export). This is
@@ -140,7 +140,7 @@ pixel's numbers are kept in `results.json`.
   standard to 0.0004 stop.
 - **jxl-oxide and lossy wide-gamut files.** jxl-oxide clips a lossy frame's XYB light
   in BT.709 primaries before converting it to wider ones. Saturated Rec. 2020 and P3
-  colours lose up to 0.35 stop (ΔE_ITP 21–37 on the gamut patches; `djxl` gives 0.6
+  colors lose up to 0.35 stop (ΔE_ITP 21–37 on the gamut patches; `djxl` gives 0.6
   on the same files). Its lossy Rec. 709 and neutral results are within the lossy
   tolerance. This is also recorded in [Codecs](hdr-stage1-results.md#codecs).
 - **ImageIO ignores the intensity target.** It reports a headroom of 4.93 (1,000 /

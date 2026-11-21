@@ -119,7 +119,7 @@ impl Dcp {
             })
             .unwrap_or_default()
     }
-    /// The colour temperature of a CalibrationIlluminant tag, D65 when absent.
+    /// The color temperature of a CalibrationIlluminant tag, D65 when absent.
     fn kelvin(&self, id: u16) -> Result<f32> {
         let v = self.scalar(id, 21.)?;
         Ok(match v as u32 {
@@ -290,8 +290,8 @@ pub(crate) fn parse(b: &[u8]) -> Result<CameraProfile> {
     Ok(p)
 }
 
-/// The colour matrix of a profile at D65, interpolated between its two
-/// calibration illuminants as `CameraProfile` does. A DNG that carries colour
+/// The color matrix of a profile at D65, interpolated between its two
+/// calibration illuminants as `CameraProfile` does. A DNG that carries color
 /// matrices but no forward matrix has no profile `from_bytes` accepts, and this
 /// is what it can still be rendered with. `None` when there is no matrix.
 pub fn d65_color_matrix(b: &[u8]) -> Result<Option<Matrix>> {

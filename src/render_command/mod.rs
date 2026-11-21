@@ -79,7 +79,7 @@ pub struct Render {
     pub exposure: Option<f32>,
     #[arg(long, default_value_t = 0)]
     pub max_edge: u32,
-    /// The output's colour space: srgb, adobe-rgb or prophoto (16-bit TIFF only).
+    /// The output's color space: srgb, adobe-rgb or prophoto (16-bit TIFF only).
     /// An output whose format can't hold it is refused before anything renders.
     #[arg(long, value_parser = parse_color_space, default_value = "srgb", conflicts_with = "tap")]
     pub color_space: OutputSpace,
@@ -157,7 +157,7 @@ pub struct RenderBatch {
     pub input: PathBuf,
     // A JSON list of [`Job`]s.
     pub jobs: PathBuf,
-    /// The colour space of every job without its own: srgb, adobe-rgb or prophoto
+    /// The color space of every job without its own: srgb, adobe-rgb or prophoto
     /// (16-bit TIFF only).
     #[arg(long, value_parser = parse_color_space, default_value = "srgb")]
     pub color_space: OutputSpace,
@@ -178,7 +178,7 @@ struct Job {
     color_space: Option<String>,
 }
 
-/// A colour space by the names `--color-space` and the automation socket use.
+/// A color space by the names `--color-space` and the automation socket use.
 pub fn parse_color_space(name: &str) -> Result<OutputSpace, String> {
     OutputSpace::from_name(name)
         .ok_or_else(|| format!("unknown color space {name:?}; use srgb, adobe-rgb or prophoto"))
@@ -270,7 +270,7 @@ pub fn render(
             Some(catalog) => catalog_edit(catalog, input, console.err)?,
             None => crate::edits::EditRecord::default(),
         };
-        // As the app opens it: a photo without colour data starts from its fitted
+        // As the app opens it: a photo without color data starts from its fitted
         // camera look.
         let profiles = crate::camera_look::with_default(
             input,
@@ -455,7 +455,7 @@ pub fn render(
 
 /// `rawmakase render-batch`: develops `o.input` once and renders each job of
 /// `o.jobs` with its own XMP over the photo's starting settings, at its own size and
-/// colour space. A job whose output exists is skipped; one that fails is reported on
+/// color space. A job whose output exists is skipped; one that fails is reported on
 /// `console.err` and the others still render, so only a list that can't be read, or a
 /// photo that can't be developed, fails the command. `ai_denoise` is made once the
 /// photo is developed, and serves every job, so its model loads once.

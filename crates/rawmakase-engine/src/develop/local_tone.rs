@@ -527,7 +527,7 @@ impl LocalToneMap {
         }
     }
     /// Luminance gain for a pixel of scene luminance `lum` at camera-image sample
-    /// position `x`, `y`. `clarity_lum` is the same pixel before mask colour and
+    /// position `x`, `y`. `clarity_lum` is the same pixel before mask color and
     /// Exposure, matching the measurement copy that supplied Clarity's blur.
     pub(crate) fn gain(&self, x: f32, y: f32, lum: f32, clarity_lum: f32) -> f32 {
         let base = self.base(x, y, lum);

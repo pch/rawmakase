@@ -1,5 +1,5 @@
 //! Develop settings some looks carry beyond their tables and the tone adjustments in
-//! `Enhanced`: Exposure, Saturation, the colour mixer, the parametric curve, split
+//! `Enhanced`: Exposure, Saturation, the color mixer, the parametric curve, split
 //! toning and a post-crop vignette (Lightroom's Vintage 07, Modern 03 and 04), and
 //! Whites, Vibrance, Texture and calibration (third-party looks such as RNI's). They
 //! render with the user's settings without moving the user's sliders (see
@@ -41,7 +41,7 @@ pub struct LookSettings {
     /// Stops.
     pub exposure: f32,
     pub saturation: f32,
-    /// Hue, saturation and luminance per colour band, as `Recipe::hsl`.
+    /// Hue, saturation and luminance per color band, as `Recipe::hsl`.
     pub hsl: [[f32; 3]; 8],
     pub parametric: [f32; 4],
     pub splits: [f32; 3],

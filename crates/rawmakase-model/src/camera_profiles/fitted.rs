@@ -6,7 +6,7 @@
 //!
 //! - With a usable camera matrix the base is RAWmakase Standard.
 //! - Without one the base is "Camera Matrix (fitted)": a fitted forward matrix that
-//!   takes the as-shot neutral to D50, a colour matrix derived from it so that the
+//!   takes the as-shot neutral to D50, a color matrix derived from it so that the
 //!   as-shot neutral reads as D65, and the ACR3 tone curve. Its white balance is
 //!   uncalibrated: temperatures are relative to the as-shot white.
 //!
@@ -21,7 +21,7 @@ use anyhow::{Result, ensure};
 
 /// The fitted look's name.
 pub const LOOK: &str = "Camera Look (fitted)";
-/// The fitted base of a camera without a colour matrix.
+/// The fitted base of a camera without a color matrix.
 pub const MATRIX_BASE: &str = "Camera Matrix (fitted)";
 const COPYRIGHT: &str = "Fitted by RAWmakase to the camera's embedded preview";
 /// The look table's size: hues, saturations, values.
@@ -120,7 +120,7 @@ pub fn with_grey_gains(base: &CameraProfile, gains: [f32; 3]) -> CameraProfile {
     p
 }
 
-/// RAWmakase Standard as a fitted look's base: from the camera's colour matrix
+/// RAWmakase Standard as a fitted look's base: from the camera's color matrix
 /// (the camera table's or the DNG's own ColorMatrix), never from a DNG's embedded
 /// profile; `None` without a usable matrix.
 pub fn standard_base(m: &Metadata) -> Option<CameraProfile> {
@@ -129,7 +129,7 @@ pub fn standard_base(m: &Metadata) -> Option<CameraProfile> {
 
 /// What a fitted profile's look table makes of linear ProPhoto `pro` (clamped to
 /// 0–1 first, as `CameraProfile::finish` does), before the tone curves: what a fit
-/// compares with the colour the curves must receive.
+/// compares with the color the curves must receive.
 pub fn table_output(p: &CameraProfile, pro: [f32; 3]) -> [f32; 3] {
     match &p.enhanced {
         Some(look) => look.apply_table(pro),
@@ -144,9 +144,9 @@ pub fn look_table(p: &CameraProfile) -> Option<&[[f32; 3]]> {
     Some(&table.data)
 }
 
-/// The fitted base of a camera without a colour matrix: `forward` takes
+/// The fitted base of a camera without a color matrix: `forward` takes
 /// white-balanced camera RGB to XYZ D50 (camera neutral [1, 1, 1] to D50 white, as a
-/// DNG ForwardMatrix does), and the colour matrix is derived from it so that the
+/// DNG ForwardMatrix does), and the color matrix is derived from it so that the
 /// photo's as-shot neutral (`1 / Metadata::wb`, after CameraCalibration and
 /// AnalogBalance as every profile takes them) is D65's:
 /// CM = diag(neutral) · (CAT(D65→D50)⁻¹ · FM)⁻¹. The ACR3 tone curve.
@@ -210,12 +210,12 @@ pub fn is_uncalibrated_base(p: &CameraProfile) -> bool {
     }
 }
 
-/// How much colour data a photo has, for whether Camera Look (fitted) becomes its
+/// How much color data a photo has, for whether Camera Look (fitted) becomes its
 /// default. Only `Absent` does; every other photo can still fit one from the
 /// Profile menu.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Eligibility {
-    /// No colour matrix (no camera table row, nothing in the file or its maker
+    /// No color matrix (no camera table row, nothing in the file or its maker
     /// notes), no embedded profile and no imported camera profile for it.
     Absent,
     /// A matrix the camera transform rejects, or an embedded profile that can't be
@@ -224,10 +224,10 @@ pub enum Eligibility {
     /// A matrix of doubtful origin: RAWmakase's earlier decoder's, Olympus maker
     /// notes', or a DNG's tungsten calibration alone.
     Questionable,
-    /// No colour data of its own, but an imported camera profile fits it: the user
+    /// No color data of its own, but an imported camera profile fits it: the user
     /// chose that data.
     Suppressed,
-    /// Colour data RAWmakase uses (and rendered files, monochrome DNGs).
+    /// Color data RAWmakase uses (and rendered files, monochrome DNGs).
     Usable,
 }
 

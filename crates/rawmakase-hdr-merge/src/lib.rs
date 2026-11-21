@@ -267,7 +267,7 @@ pub fn merge(
         if frame.metadata.cam_xyz.iter().flatten().all(|v| *v == 0.) {
             return Err(Refusal::Unreadable(
                 name(path),
-                "RAWmakase has no colour matrix for its camera".into(),
+                "RAWmakase has no color matrix for its camera".into(),
             )
             .into());
         }
@@ -569,7 +569,7 @@ fn shot(path: &Path, m: &Metadata, exif: Option<&CameraExif>) -> Shot {
     }
 }
 
-/// The merged DNG's facts: the camera, colour, white balance and frame of
+/// The merged DNG's facts: the camera, color, white balance and frame of
 /// the reference frame `r`, the EXIF of the darkest frame (`darkest_exif`,
 /// or what its `darkest` metadata says without one), as Lightroom's merges
 /// take them.

@@ -1,4 +1,4 @@
-//! A camera's colour from its XYZ-to-camera matrix: the camera-to-sRGB matrix
+//! A camera's color from its XYZ-to-camera matrix: the camera-to-sRGB matrix
 //! and the daylight multipliers that make sRGB's white neutral, as RAWmakase
 //! has always derived them (double precision, the result rounded to single);
 //! on our files, bit for bit what LibRaw derived (our measurement).
@@ -20,20 +20,20 @@ const RGB_XYZ: [[f32; 3]; 3] = [
     [0.0556434, -0.2040259, 1.0572252],
 ];
 
-/// The camera's colour in `info`: its XYZ matrix from the table of Adobe's,
+/// The camera's color in `info`: its XYZ matrix from the table of Adobe's,
 /// else (a DNG's) the file's; the camera-to-sRGB matrix and the daylight
 /// multipliers from the file's matrix when it has one, else the table's.
 /// Without a matrix the daylight multipliers are neutral (1), so a file
 /// without white balance as shot is never balanced by zeros, and the
 /// camera-to-sRGB matrix is the identity (as LibRaw's), so the camera's
-/// colours pass through rather than to black. A linear raw DNG takes no
+/// colors pass through rather than to black. A linear raw DNG takes no
 /// table matrix: its RGB is whatever its writer made (a phone's processing,
 /// or an image Lightroom stored as a DNG under the camera's name), which
 /// only the file's matrix describes, where the table's is the sensor's.
-/// A monochrome DNG's one sample is every channel's, so its colour is
+/// A monochrome DNG's one sample is every channel's, so its color is
 /// neutral whatever the file or the table says: camera RGB is linear sRGB
 /// (R = G = B is D65's white), with no white balance, as the DNG
-/// Specification gives a single colour plane neither.
+/// Specification gives a single color plane neither.
 pub(crate) fn apply(info: &mut RawInfo) {
     if info.monochrome {
         info.cam_xyz = RGB_XYZ;
@@ -116,7 +116,7 @@ const ISOTEMPERATURE: [[f64; 4]; 31] = [
     [600., 0.33724, 0.36051, -116.45],
 ];
 
-/// The correlated colour temperature of chromaticity `xy` (CIE 1931), by
+/// The correlated color temperature of chromaticity `xy` (CIE 1931), by
 /// Robertson's method; `None` outside the table's 1667 K to infinity.
 pub(crate) fn temperature([x, y]: [f64; 2]) -> Option<f64> {
     let d = -2. * x + 12. * y + 3.;

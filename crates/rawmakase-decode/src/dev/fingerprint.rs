@@ -101,7 +101,7 @@ pub struct SensorData {
     pub black_pattern: Option<BlackPattern>,
     pub white: u32,
     pub linear_white: [u32; 4],
-    /// The visible colour pattern's rows, e.g. `RG/gB` (`g` is the second green),
+    /// The visible color pattern's rows, e.g. `RG/gB` (`g` is the second green),
     /// `GGRGGB/…` for X-Trans; empty without a mosaic.
     pub cfa: String,
     /// SHA-256 of the unpacked raw data in the hashed area.
@@ -266,7 +266,7 @@ mod tests {
         }
         // As the generator (tests/color/dng.rs) writes it: RGGB, black 0, white
         // 65535, no DefaultCrop (65535 marks none), no preview and a camera
-        // Adobe does not know, whose colour is in the embedded profile; the
+        // Adobe does not know, whose color is in the embedded profile; the
         // camera matrix is the file's D65 ColorMatrix.
         let want = serde_json::json!({
             "version": 2,

@@ -158,7 +158,7 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     Ok(info)
 }
 
-/// The colour filter from the raw directory's CFAPattern, at the sensor's
+/// The color filter from the raw directory's CFAPattern, at the sensor's
 /// corner; red first when it has none.
 fn cfa(t: &TiffFile, raw: &Ifd) -> Cfa {
     let colors = t

@@ -152,12 +152,12 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
                 .and_then(|v| <[f64; 3]>::try_from(v).ok())
                 .filter(|l| l.iter().all(|v| v.is_finite() && *v > 0.))
         };
-        // The as-shot setting's levels: green over each colour's.
+        // The as-shot setting's levels: green over each color's.
         let setting = t.int(k, WHITE_BALANCE).filter(|&s| s <= 5).unwrap_or(0);
         if let Some([r, g, b]) = levels(DAYLIGHT + setting as u16) {
             info.cam_mul = [(g / r) as f32, 1., (g / b) as f32, 1.];
         }
-        // The daylight preset: the levels green over each colour's, scaled
+        // The daylight preset: the levels green over each color's, scaled
         // by green, whole.
         if let Some([r, g, b]) = levels(DAYLIGHT) {
             info.presets.daylight = [

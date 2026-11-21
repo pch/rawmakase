@@ -4,8 +4,8 @@
 Each reference must be a Lightroom TIFF/JPEG export with its develop settings embedded
 as XMP (Lightroom's default when metadata is included). The script finds the source
 RAW by crs:RawFileName, renders it with `rawmakase render --xmp`, and reports encoded-sRGB
-MAE and CIE76 colour difference overall, in the centre and in the corners. No
-alignment, exposure or colour fitting is applied.
+MAE and CIE76 color difference overall, in the centre and in the corners. No
+alignment, exposure or color fitting is applied.
 
 Requires numpy, Pillow and exiftool. RAW files are copied into the output directory so
 existing sidecars are never read or written. Profiles that the references need

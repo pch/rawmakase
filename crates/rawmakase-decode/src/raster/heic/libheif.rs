@@ -7,7 +7,7 @@
 //! open file, so the picture decoded is the one the header checks passed. It
 //! is asked to leave the picture uncropped and unturned (RAWmakase applies the
 //! `clap`, `irot` and `imir`), and to convert it to RGB of the header's depth
-//! itself, by the image's own matrix and range; the pixels are in the colour
+//! itself, by the image's own matrix and range; the pixels are in the color
 //! space the header's profile describes. Alpha is dropped. The library is
 //! opened once and kept for the life of the process.
 //!

@@ -85,8 +85,8 @@ pub enum MaskShape {
         angle: f32,
         feather: f32,
     },
-    /// Colours near the sampled ones (Oklab of the developed display colour).
-    /// `amount` (0–1) is Lightroom's Refine: lower selects fewer colours.
+    /// Colors near the sampled ones (Oklab of the developed display color).
+    /// `amount` (0–1) is Lightroom's Refine: lower selects fewer colors.
     ColorRange {
         samples: Vec<[f32; 3]>,
         amount: f32,
@@ -172,7 +172,7 @@ pub struct BrushStroke {
     pub density: f32,
     /// Removes weight instead of adding it (Lightroom's Erase brush).
     pub erase: bool,
-    /// Limits dabs to areas similar to the colour under the brush centre (Auto Mask).
+    /// Limits dabs to areas similar to the color under the brush centre (Auto Mask).
     pub auto_mask: bool,
 }
 /// A mask's adjustment. Sliders are Lightroom's divided by 100, except Exposure (EV),

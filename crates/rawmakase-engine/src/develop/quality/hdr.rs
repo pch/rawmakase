@@ -315,7 +315,7 @@ mod tests {
         .unwrap()
     }
 
-    /// An HDR file's master at its own settings is its light, above white and coloured
+    /// An HDR file's master at its own settings is its light, above white and colored
     /// alike, within the pseudo-scene's precision (0.0001 stop); a negative channel
     /// renders as 0, as an HDR master never renders one. Exposure is a gain; Rotate
     /// turns it as the SDR rendition turns.
@@ -364,7 +364,7 @@ mod tests {
         Ok(())
     }
 
-    /// Saturated light renders as itself too, within the precision of the colour
+    /// Saturated light renders as itself too, within the precision of the color
     /// matrices the master's stages convert through, as a raw's do (f32, and published
     /// pairs inverse to about 1e-5): 1e-5 of the pixel's brightest channel. An edit
     /// without a profile renders as one with the Embedded profile.
@@ -415,7 +415,7 @@ mod tests {
     fn grays(levels: &[f32]) -> CameraImage {
         patches(&levels.iter().map(|v| [*v; 3]).collect::<Vec<_>>())
     }
-    /// The scene colours `colors` (white-balanced camera values), one per 8-pixel
+    /// The scene colors `colors` (white-balanced camera values), one per 8-pixel
     /// column of a strip 8 pixels high.
     fn patches(colors: &[[f32; 3]]) -> CameraImage {
         let (w, h) = (colors.len() as u32 * 8, 8);
@@ -624,7 +624,7 @@ mod tests {
         Ok(())
     }
 
-    /// A look's split toning renders in the master as colour grading does, in its HDR
+    /// A look's split toning renders in the master as color grading does, in its HDR
     /// domain: it tints the master's grays below and above white, and stays finite.
     #[test]
     fn a_looks_split_toning_renders_in_the_master() -> anyhow::Result<()> {
@@ -977,9 +977,9 @@ mod tests {
         Ok(())
     }
 
-    /// The colour stage renders above white as Camera Raw 18.7 renders it in HDR
-    /// (docs/hdr.md#the-colour-stage): Saturation changes a colour's saturation as much
-    /// at 20 times white as at a quarter of it, Vibrance's brightening leaves colours
+    /// The color stage renders above white as Camera Raw 18.7 renders it in HDR
+    /// (docs/hdr.md#the-color-stage): Saturation changes a color's saturation as much
+    /// at 20 times white as at a quarter of it, Vibrance's brightening leaves colors
     /// above white alone, a black & white master is gray and unclipped, and
     /// Calibration and band Luminance render.
     #[test]
@@ -987,7 +987,7 @@ mod tests {
         // An orange that the ACR3 curve renders at about a quarter of white, and with
         // Exposure +5 at about 20 times white.
         let im = patches(&[[0.1, 0.08, 0.07]]);
-        // The patch's colour, HSV saturation and luminance (linear ProPhoto RGB).
+        // The patch's color, HSV saturation and luminance (linear ProPhoto RGB).
         let colour = |out: &crate::rendered::HdrImage| {
             let p = out.pixels[4 * out.width as usize + 4];
             let max = p.into_iter().fold(0f32, f32::max);
@@ -1009,7 +1009,7 @@ mod tests {
         let [(_, s_low, y_low), (base_high, s_high, y_high)] = both(|_| {})?;
         assert!(y_low < 0.5 && y_high > 8., "{y_low} {y_high}");
 
-        // With Contrast, Saturation follows it, as in SDR's colour stage.
+        // With Contrast, Saturation follows it, as in SDR's color stage.
         let [_, (p, _, _)] = both(|r| {
             r.contrast = 0.3;
             r.saturation = 0.3;
@@ -1063,7 +1063,7 @@ mod tests {
         Ok(())
     }
 
-    /// Colour grading renders in the master as Camera Raw 18.7 renders it
+    /// Color grading renders in the master as Camera Raw 18.7 renders it
     /// (docs/hdr.md#color-grading): the SDR curves in a domain that compresses the HDR
     /// range, so Highlights tint and lift most a few stops above white, every region
     /// fades out by 16 times white, and Highlights darkening keeps darkening up to it.
@@ -1380,8 +1380,8 @@ mod tests {
                 );
             }
         }
-        // Negative Saturation renders, toward the colour's HSL lightness
-        // (`masks::local::desaturate_hdr`): the coloured patch loses most of its
+        // Negative Saturation renders, toward the color's HSL lightness
+        // (`masks::local::desaturate_hdr`): the colored patch loses most of its
         // channels' spread, and the gray patches keep their light, above white too.
         let desaturated = render(&everywhere(LocalAdjust {
             saturation: -0.6,
@@ -1523,9 +1523,9 @@ mod tests {
     }
 
     /// Point Color renders in the master as Camera Raw 18.7 renders it
-    /// (docs/hdr.md#point-color): its swatches in colour grading's HDR domain, so a
-    /// Luminance shift lifts a colour at white several times (Camera Raw's ×3.5 at
-    /// Luminance +50) where SDR clips it, another hue keeps its colour, and the GPU
+    /// (docs/hdr.md#point-color): its swatches in color grading's HDR domain, so a
+    /// Luminance shift lifts a color at white several times (Camera Raw's ×3.5 at
+    /// Luminance +50) where SDR clips it, another hue keeps its color, and the GPU
     /// leaves the master to the CPU.
     #[test]
     fn point_color_works_in_the_hdr_domain() -> Result<()> {
@@ -1718,7 +1718,7 @@ mod tests {
         let mut r = hdr_recipe(&im);
         assert!(!supported(&r), "the SDR rendition's port has HDR off");
         assert!(supported_hdr(&r, &im.metadata));
-        // Contrast, the tone curves, the colour stage, colour grading and Texture
+        // Contrast, the tone curves, the color stage, color grading and Texture
         // render on the GPU.
         let on_the_gpu: [fn(&mut Recipe); 9] = [
             |r| r.grading[2] = [0.6, 0.4, 0.2],
@@ -1931,7 +1931,7 @@ mod tests {
         )?;
         assert_ne!(
             whole.pixels, plain.pixels,
-            "Defringe changes the fringe colours"
+            "Defringe changes the fringe colors"
         );
         for region in [[5, 1, 9, 5], [12, 0, 14, 8], [27, 2, 5, 3]] {
             same(

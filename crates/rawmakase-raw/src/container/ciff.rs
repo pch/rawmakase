@@ -378,7 +378,7 @@ pub(crate) fn decode(
     let cfa = info
         .cfa
         .as_ref()
-        .ok_or_else(|| corrupt("CRW without a colour filter"))?;
+        .ok_or_else(|| corrupt("CRW without a color filter"))?;
     let black = crate::levels::masked_black(&data, width, area, cfa, None, 2).unwrap_or([0; 4]);
     Ok(Sensor {
         width: plan.width,

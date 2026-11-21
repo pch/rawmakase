@@ -184,7 +184,7 @@ fn highlights_above_white_are_kept() {
 }
 
 /// To the DNG reader, without the record, the copy is an ordinary linear DNG:
-/// its pixels, size, orientation, camera, white balance and colour matrix are
+/// its pixels, size, orientation, camera, white balance and color matrix are
 /// what its standard tags say, and the record changes nothing it reads.
 #[test]
 fn a_copy_is_an_ordinary_linear_dng_to_the_dng_reader() {

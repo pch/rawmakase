@@ -58,7 +58,7 @@ settings there, interpolated between two levels, and a level that straddles the
 start of the photo's unfiltered residual is filtered in proportion to its part
 before it. The thresholds still follow the noise measured in the decode itself.
 Before 2026-11-07 a half-size draft was filtered as if its pixels were the photo's:
-colour noise reduction gave the photo's second level the thresholds of its finest,
+color noise reduction gave the photo's second level the thresholds of its finest,
 and both filtered one level coarser than the photo's last. A unit test compares the
 share of noise kept at each scale with the photo's denoised and resized ([rendering
 quality](rendering-quality.md#noise-reduction-on-a-reduced-decode)).
@@ -97,7 +97,7 @@ pipeline (`crates/rawmakase-engine/src/develop/stage_cache.rs`), each keyed by t
   matrix, white balance, Temperature and Tint, the profile and its amount, the
   camera's exposure and Camera Calibration (the measures are taken at Exposure 0);
   with them, what renders measure on the same scene values with one more setting:
-  the Contrast pivot by Dehaze, the copy's camera colour, and the
+  the Contrast pivot by Dehaze, the copy's camera color, and the
   Shadows/Highlights map's base (guided filter, keys, regional level, Clarity's
   detail) by Exposure, so the Basic sliders only rebuild the map's curves;
 - the textured image, when Texture is on;
@@ -219,13 +219,13 @@ slider dominated:
 | Per render | Before | After |
 | --- | ---: | ---: |
 | Contrast pivot, measured on the CPU | 88 ms | kept with the measures, by Dehaze |
-| Shadows/Highlights map base on the CPU | 65 ms | kept by Exposure; the copy's camera colour kept |
+| Shadows/Highlights map base on the CPU | 65 ms | kept by Exposure; the copy's camera color kept |
 | Develop inputs created and uploaded (mostly the map's grids) | 25 ms | grids kept on the device |
 | Histogram with global atomics | about 20 ms | counted per workgroup, 64 × 64 tiles |
 
-The develop pass is also compiled for the features a render uses (masks, colour
+The develop pass is also compiled for the features a render uses (masks, color
 stages, the map, Dehaze: about 7,500 instructions became 2,600 without masks and
-colour), and keeps each sample set's camera colour (white balance, the profile's
+color), and keeps each sample set's camera color (white balance, the profile's
 matrix and HueSatMap, calibration), which no Basic slider nor Exposure changes, from
 the second render with the same settings. A hardware test checks that a warm
 renderer presents the frames of a fresh one across these edits.
@@ -300,7 +300,7 @@ by the full-resolution local-tone blurs on the CPU (see the next section).
 
 The render worker used to read every GPU result back with a blocking wait, sharpen
 and apply grain and vignettes on the CPU, convert to 8 bits, apply the monitor
-profile with a new colour transform, draw the clipping overlay and compute the
+profile with a new color transform, draw the clipping overlay and compute the
 histogram; the UI thread then built an egui image, reduced it for the Navigator and
 uploaded it again. The GPU stage now runs on eframe's own wgpu device, and
 `gpu/present.wgsl` finishes the developed pixels on the device into a texture the

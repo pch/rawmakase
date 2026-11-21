@@ -1,4 +1,4 @@
-//! When Windows changes how its displays show colour, so the window reads the
+//! When Windows changes how its displays show color, so the window reads the
 //! display again only then rather than on a timer.
 //!
 //! Each read lists the display paths and asks the driver about the window's
@@ -108,7 +108,7 @@ const KEYS: [KeyToWatch; 3] = [
         paths: &[r"SYSTEM\CurrentControlSet\Control\Class\{4d36e96e-e325-11ce-bfc1-08002be10318}"],
         create: false,
     },
-    // Each display's HDR switch, SDR content brightness and advanced colour.
+    // Each display's HDR switch, SDR content brightness and advanced color.
     KeyToWatch {
         root: HKEY_LOCAL_MACHINE,
         paths: &[

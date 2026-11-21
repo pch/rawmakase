@@ -2,7 +2,7 @@
 
 The camera's own RGB is linear ProPhoto (ROMM, D50), with an embedded profile that
 maps it to XYZ D50 unchanged: As Shot white balance is neutral, so a renderer's
-profile-colour stage passes the scene through, and with a linear ProfileToneCurve
+profile-color stage passes the scene through, and with a linear ProfileToneCurve
 and no look Camera Raw's ProPhoto output reads its scene tone stage directly
 (docs/scene-tone-stage.md#comparison-contract).
 

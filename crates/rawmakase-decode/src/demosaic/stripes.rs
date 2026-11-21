@@ -1,17 +1,17 @@
-//! Colour of stripes too fine for X-Trans's red and blue samples.
+//! Color of stripes too fine for X-Trans's red and blue samples.
 //!
 //! Stripes about 2½ to 3½ pixels apart (a mesh, a grille, louvres seen from afar)
 //! are sampled by X-Trans's red and blue at nearly the same phase of the stripes
-//! over long stretches: red sits mostly at one column of every three. Their colour
+//! over long stretches: red sits mostly at one column of every three. Their color
 //! then cannot be told from their brightness, by any choice of direction, and the
 //! demosaic leaves green and magenta bands along them that drift with the beat
 //! between the stripes and the pattern (X100F DSCF8231's tower). Where luminance
 //! along a row or a column, averaged over the lines beside it, is dominated by
 //! such a period, luminance-normalised R − G and B − G are averaged along that
-//! axis, preserving resolved colour changes along the slats.
+//! axis, preserving resolved color changes along the slats.
 //! Each pixel keeps its luminance. Single edges, text,
 //! noise and coarser detail have little of their luminance in that band and keep
-//! their colour.
+//! their color.
 //!
 //! Where to suppress, and the mean, change slowly, so they are found on a grid of
 //! every [`GRID`]th row and column; the detector still reads every pixel of a
@@ -40,14 +40,14 @@ const NOISE: f32 = 2e-4;
 const SPREAD: usize = 1;
 /// Grid radius along the slats within which a reliable core can cover their edge.
 const COVERAGE_RADIUS: usize = 3;
-/// Grid radius, along the stripes' period, of the stretch whose mean colour
+/// Grid radius, along the stripes' period, of the stretch whose mean color
 /// replaces theirs.
 const AREA: usize = 12;
 /// Least total weight of the points a mean is taken over, so that a mean rests
 /// on at least part of a fully suppressed point.
 const MIN_TOTAL: f32 = 0.25;
 /// Pixels this close to the image's edges, whose demosaic read mirrored samples,
-/// count for nothing in the mean: their colour can be far off on such stripes.
+/// count for nothing in the mean: their color can be far off on such stripes.
 const EDGE: usize = 16;
 /// Rows the detector, the spread and the area reach beyond a band; a multiple of
 /// [`GRID`], so that grid rows are the same image rows in every band.
@@ -57,7 +57,7 @@ const MARGIN: usize = (HALF_TAPS + LINES + GRID * (ACROSS + SPREAD + AREA + COVE
 const BAND: usize = 256;
 const _: () = assert!(BAND.is_multiple_of(GRID));
 
-/// Replaces the colour of stripes in [`FREQUENCIES`] by luminance-pooled chromaticity along their period.
+/// Replaces the color of stripes in [`FREQUENCIES`] by luminance-pooled chromaticity along their period.
 pub(super) fn suppress(image: &mut [[f32; 3]], w: usize, h: usize) {
     if w == 0 || h == 0 {
         return;
@@ -71,7 +71,7 @@ pub(super) fn suppress(image: &mut [[f32; 3]], w: usize, h: usize) {
     }
 }
 
-/// The changed pixels of rows `y0..y1`, as (image index, colour).
+/// The changed pixels of rows `y0..y1`, as (image index, color).
 fn band_changes(
     image: &[[f32; 3]],
     w: usize,
@@ -119,7 +119,7 @@ fn band_changes(
     });
     // Pool channel differences and luminance before division, across blocks as
     // well as within them. Normalising each dark block separately would give its
-    // noisy chromaticity the same vote as a bright block's reliable colour.
+    // noisy chromaticity the same vote as a bright block's reliable color.
     let block = |c: usize, i: usize| {
         let (x0, y0) = (i % w, i / w);
         let mut sum = 0.;
@@ -157,7 +157,7 @@ fn band_changes(
     // edge pixel. A box average dilutes a fully detected slat with its flat
     // neighbours and blends the original alias back into the boundary.
     // Spread coverage only from a nearby reliable core of the same orientation;
-    // retain the original weights for estimating colour and for weak detections.
+    // retain the original weights for estimating color and for weak detections.
     let coverage: Vec<f32> = (0..grid.w * grid.h)
         .map(|g| {
             let (x, y) = (g % grid.w, g / grid.w);
@@ -187,7 +187,7 @@ fn band_changes(
     for y in y0..y1 {
         for x in 0..w {
             // Between the four nearest grid points' blocks, so that the mean and
-            // the weight follow colour that changes within a block's width.
+            // the weight follow color that changes within a block's width.
             let (wt, m) = grid.interpolate(x, y - lo, &coverage, &mean);
             let Some(m) = m.filter(|_| wt > 0.) else {
                 continue;
@@ -205,11 +205,11 @@ fn band_changes(
 }
 
 /// `p` with R − G and B − G of `r` and `b`, keeping its luminance, (R + 2G + B) / 4.
-/// Where that would make a channel negative, the colour is moved towards neutral
+/// Where that would make a channel negative, the color is moved towards neutral
 /// until it is not, rather than clipping the channel, which would add light.
 fn with_colour(p: [f32; 3], r: f32, b: f32) -> [f32; 3] {
     let l = ((p[0] + 2. * p[1] + p[2]) * 0.25).max(0.);
-    // Each channel as luminance plus a share of the colour.
+    // Each channel as luminance plus a share of the color.
     let offsets = [(3. * r - b) * 0.25, -(r + b) * 0.25, (3. * b - r) * 0.25];
     let share = offsets
         .iter()
@@ -505,7 +505,7 @@ mod tests {
                 error = error.max((p[0] - p[2]).abs() / 0.1);
             }
         }
-        assert!(error < 0.03, "flat-luminance border colour: {error}");
+        assert!(error < 0.03, "flat-luminance border color: {error}");
     }
 
     #[test]
@@ -574,7 +574,7 @@ mod tests {
                 let p = out[y * w + x];
                 assert!(
                     (p[0] - 0.06).abs() < 0.005 && (p[2] - 0.14).abs() < 0.005,
-                    "window colour changed at {x},{y}: {p:?}"
+                    "window color changed at {x},{y}: {p:?}"
                 );
             }
         }

@@ -78,7 +78,7 @@ pub(crate) fn key(strokes: &[BrushStroke]) -> u64 {
     }
     h.finish()
 }
-/// Camera colours along the strokes for Auto Mask, sampled from the photo.
+/// Camera colors along the strokes for Auto Mask, sampled from the photo.
 pub(crate) struct Guide<'a> {
     pub(crate) image: &'a CameraImage,
     pub(crate) frame: crate::model::image_frame::ImageFrame,
@@ -160,7 +160,7 @@ pub(crate) fn rasterize(
             .collect();
         let radius = s.radius / step;
         let inner = radius * (1. - s.feather);
-        // Auto Mask colours of the dab centres, averaged over a few percent of the
+        // Auto Mask colors of the dab centres, averaged over a few percent of the
         // brush (in decoded pixels).
         let blur = guide.map_or(1, |g| {
             ((s.radius * g.frame.long_edge() * 0.08) as i64).max(1)
@@ -225,7 +225,7 @@ pub(crate) fn rasterize(
                         blur,
                     );
                     let d: f32 = (0..3).map(|k| (here[k] - colors[dab][k]).powi(2)).sum();
-                    // Similar colours pass; about half a stop of difference in every
+                    // Similar colors pass; about half a stop of difference in every
                     // channel (a clear edge) stops the brush.
                     c *= (-d / 0.08).exp();
                 }

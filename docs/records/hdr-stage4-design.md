@@ -21,7 +21,7 @@ Revision 2's review asked for:
 - **Master identity.** At neutral settings, an HDR file's master is its light
   decoded by an exact transfer and matrix path, within float rounding (since the
   paths were unified: the pseudo-scene inverts exactly from 0.5 up and within
-  0.0001 stop below, and the stages' colour matrices hold a pixel to 1e-5 of its
+  0.0001 stop below, and the stages' color matrices hold a pixel to 1e-5 of its
   brightest channel, with negative channels at 0;
   [below](#the-master-of-an-hdr-file)). That light
   is linear ProPhoto with 1.0 at graphics white (203 cd/m²), signed values kept. It
@@ -35,7 +35,7 @@ Revision 2's review asked for:
     and each transfer clips at its own bounds.
   - PQ clips at 10,000 cd/m².
   - HLG clips each channel at 1 after the inverse OOTF, on 1,000 cd/m², so a
-    saturated colour clips below that peak.
+    saturated color clips below that peak.
   - Round-trip fixtures stay inside all of these bounds, and separate tests show
     the clipping.
 - **One SDR rendition.** The Library preview and neutral Develop with HDR off show
@@ -159,7 +159,7 @@ is named:
 
 - white balance, incremental Temperature and Tint included;
 - the profile, its Amount and its looks;
-- every tone and colour slider;
+- every tone and color slider;
 - sharpening, noise reduction and AI Denoise;
 - Heal, Clone and Red Eye;
 - lens corrections, local edits, Transform and Upright (and, until 2026-11-10, the SDR
@@ -210,7 +210,7 @@ reduction.
 - **Independent decoding.** PQ, HLG and linear TIFFs, and the PQ and HLG JPEG XL and
   AVIF fixtures, are decoded against BT.2100's formulas written out in the test,
   with f64 matrices. The test pixels cover deep shadows, graphics white, highlights
-  near the peak and saturated colours. Tolerance: f32 rounding for float input; half
+  near the peak and saturated colors. Tolerance: f32 rounding for float input; half
   a code value of the signal for 16-bit input.
 - **Signed and non-finite.** A float TIFF with negative channels keeps them; NaN
   and inf become 0.
@@ -218,16 +218,16 @@ reduction.
   image; a peak below 1; a peak beyond the maximum.
 - **Master identity.** At neutral settings the master equals the light, below the
   knee, within f32 rounding, at full size and at an exact 2:1 reduction.
-- **Export round trip.** Colours inside every bound of the domain open again to
+- **Export round trip.** Colors inside every bound of the domain open again to
   the encoded light within the codec's quantisation. That means in the output
   gamut, below the knee in ProPhoto and in the output gamut, under 10,000 cd/m² for
   PQ, and with every HLG channel at most 1 after the inverse OOTF. They are
   exported as PQ, HLG and linear TIFF and as JPEG XL.
-  - Clipping tests show what does not come back: an out-of-gamut colour, light
+  - Clipping tests show what does not come back: an out-of-gamut color, light
     above the knee, PQ above 10,000 cd/m², and Rec. 2020 `[4, 0, 0]` in HLG,
     which reads back near `[3.77, 0, 0]`.
 - **SDR rendition.** Neutral Develop equals the Library preview within 1 level, on
-  CPU and GPU, with HDR-derived ramps and saturated colours.
+  CPU and GPU, with HDR-derived ramps and saturated colors.
 - **Geometry.** All eight EXIF orientations, with crop, straighten, Rotate and Flip,
   line up the master and the SDR rendition. Transform and Upright refuse the master.
 - **The capability check.** Every refused setting refuses the master with its
@@ -265,7 +265,7 @@ decisions this increment made:
    increment; they open as HDR edits since the next ([Decisions](hdr-stage1-results.md#decisions)).
 4. **Refuse what isn't applied exactly.** Each of these is refused by reason, not
    approximated:
-   - a map in the alternate's colour space, with its own ICC or colour encoding;
+   - a map in the alternate's color space, with its own ICC or color encoding;
    - an HDR base;
    - a grey or table-profile base;
    - a turned JPEG XL;

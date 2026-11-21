@@ -17,7 +17,7 @@ pub(crate) enum Source {
     /// Adobe DNG Converter's output for the camera.
     AdobeDng,
     /// RAWmakase's earlier decoder's output on our own files, kept so saved
-    /// edits keep their geometry and scale; a colour matrix only for a camera
+    /// edits keep their geometry and scale; a color matrix only for a camera
     /// Adobe has none for.
     CompatObserved,
     /// Our own measurement of the files: a default crop aligned with the camera's
@@ -85,7 +85,7 @@ pub(crate) struct Camera {
     /// levels are scaled).
     #[serde(default)]
     pub wb_scale: Option<[f64; 2]>,
-    /// The 2 × 2 colour filter at the sensor's corner (0 red, 1 green, 2
+    /// The 2 × 2 color filter at the sensor's corner (0 red, 1 green, 2
     /// blue, row by row), where the file's is not the one RAWmakase has
     /// always read it with.
     #[serde(default)]
@@ -135,7 +135,7 @@ impl Iso {
 }
 
 /// A RAW file with no header (CHDK's), known by its size: the camera, the
-/// stored image and its samples' bits, the visible area and the colour
+/// stored image and its samples' bits, the visible area and the color
 /// filter at the sensor's corner (rows of R, G, B).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -339,7 +339,7 @@ mod tests {
     /// The facts an `adobe-dng` row may give: levels (`white`, `black`, and
     /// how a file's recorded white is taken: `iso`, `white_max`,
     /// `normal_white`) and the as-shot white balance scale (`wb_scale`);
-    /// never geometry (visible area, default crop, orientation, colour
+    /// never geometry (visible area, default crop, orientation, color
     /// filter, aspect crop).
     fn adobe_facts_only(c: &Camera) -> bool {
         let Camera {
@@ -548,9 +548,9 @@ mod tests {
         }
         for m in &matrices.matrix {
             assert!(seen.insert(("matrix", &m.make, &m.model)), "{m:?}");
-            // Colour comes from Adobe DNG Converter; an earlier decoder's
+            // Color comes from Adobe DNG Converter; an earlier decoder's
             // output only where Adobe has nothing, and never a matrix without
-            // colour.
+            // color.
             assert_ne!(m.source, Source::File, "{m:?}");
             assert_ne!(m.source, Source::Measured, "{m:?}");
             assert!(m.xyz.iter().any(|v| *v != 0), "{m:?}");

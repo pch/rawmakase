@@ -4,7 +4,7 @@ use super::*;
 pub(super) struct CurveSet {
     /// Where the stage stops.
     pub(super) output: PixelOutput,
-    /// The colour space the finished pixels are encoded in: sRGB but for an export
+    /// The color space the finished pixels are encoded in: sRGB but for an export
     /// in another space.
     pub(super) space: crate::color::OutputSpace,
     pub(super) exposure_gain: f32,
@@ -44,10 +44,10 @@ pub(super) struct CurveSet {
 /// How an HDR render finishes after the scene tone stage: the profile's tables and
 /// curve, and its look's, unclipped ([`crate::camera_profiles::CameraProfile::finish_hdr`]),
 /// then Contrast ([`crate::develop::basic_tone::HdrContrast`]), the tone curves
-/// ([`HdrCurves`]), the colour mixer, Saturation and Vibrance ([`CurveSet::mixer`]),
-/// colour grading (`ColorGrade::apply_hdr`) and the black & white mix
+/// ([`HdrCurves`]), the color mixer, Saturation and Vibrance ([`CurveSet::mixer`]),
+/// color grading (`ColorGrade::apply_hdr`) and the black & white mix
 /// ([`CurveSet::gray_grid`]) as SDR renders apply them, above white too
-/// (docs/hdr.md#the-colour-stage). The colour stage's other controls are not
+/// (docs/hdr.md#the-color-stage). The color stage's other controls are not
 /// rendered: an HDR edit that uses them does not validate (`model::hdr::check_recipe`).
 pub(super) struct HdrFinish {
     tone: crate::camera_profiles::hdr_tone::HdrTone,
@@ -161,10 +161,10 @@ impl HdrCurves {
     }
 }
 /// A mask's Hue and Saturation `d` on an HDR master's linear display RGB (1 = graphics
-/// white): positive Saturation keeping the colour's value (`local::saturate_hdr`),
-/// negative Saturation toward the colour's HSL lightness (`local::desaturate_hdr`, on
+/// white): positive Saturation keeping the color's value (`local::saturate_hdr`),
+/// negative Saturation toward the color's HSL lightness (`local::desaturate_hdr`, on
 /// the light clipped at 0), then Hue on Oklab of the light clipped at 0. Without them
-/// nothing is clipped, so a colour outside the display gamut keeps its value and hue.
+/// nothing is clipped, so a color outside the display gamut keeps its value and hue.
 fn local_color_hdr(d: &LocalDelta, rgb: [f32; 3]) -> [f32; 3] {
     let saturation = d[slot::SATURATION];
     let rgb = if saturation > 0. {
@@ -192,7 +192,7 @@ fn local_color_hdr(d: &LocalDelta, rgb: [f32; 3]) -> [f32; 3] {
     ))
 }
 /// Point Color on an HDR master's linear display RGB (1 = graphics white). Camera Raw
-/// 18.7 applies its swatches to each channel taken into colour grading's HDR domain
+/// 18.7 applies its swatches to each channel taken into color grading's HDR domain
 /// (`color_grade_curves::to_hdr_domain`, 16 times white at 1) and back, where they
 /// clip at 1 as SDR's clip at white (docs/hdr.md#point-color). A pixel brighter than 16
 /// is taken with its brightest channel at 16 and scaled back.
@@ -214,7 +214,7 @@ fn point_colors_hdr(p: &crate::develop::point_color::PointColors, rgb: [f32; 3])
 /// What the HDR master of `r` renders a neutral of scene value `x` as (linear
 /// ProPhoto entering the scene tone stage, after Exposure), as its luminance: the scene
 /// tone stage's global curves, its toe and its Whites and Blacks, then the profile, its
-/// look, Contrast, the tone curves and the colour stage, without local adjustments (the
+/// look, Contrast, the tone curves and the color stage, without local adjustments (the
 /// curves are the render's own, [`CurveSet::for_image`], so Shadows' black shift is
 /// in them). That is the HDR response Highlight Priority's vignette exposes through
 /// (docs/hdr.md#vignette-and-grain). `None` when `r` renders no master.
@@ -305,7 +305,7 @@ impl HdrFinish {
             None => mul(crate::camera_profiles::PRO_TO_RGB, scene),
         };
         let pro = mul(crate::camera_profiles::RGB_TO_PRO, rgb);
-        // Contrast follows the profile and its look, as in SDR's colour stage, and the
+        // Contrast follows the profile and its look, as in SDR's color stage, and the
         // curves follow Contrast, as SDR's `curve_input` applies them.
         let pro = match &self.contrast {
             Some(contrast) => contrast.apply(pro.map(|v| v.max(0.))),
@@ -320,8 +320,8 @@ impl HdrFinish {
         };
         let pro = self.curves.as_ref().map_or(pro, |c| c.apply(pro));
         let local_color = local.filter(|d| local::uses(d, &[slot::HUE, slot::SATURATION]));
-        // The colour mixer and the black & white mix follow Contrast and the tone
-        // curves, as in SDR's colour stage.
+        // The color mixer and the black & white mix follow Contrast and the tone
+        // curves, as in SDR's color stage.
         if lut.mixer.is_none()
             && lut.point_colors.is_none()
             && lut.rgb_table.is_none()
@@ -347,11 +347,11 @@ impl HdrFinish {
             // A look's RGB table follows the mixer, as in SDR, on overrange-encoded
             // values.
             let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply_hdr(rgb));
-            // Colour grading follows the colour mixer and a look's RGB table, as in SDR.
+            // Color grading follows the color mixer and a look's RGB table, as in SDR.
             lut.grade.as_ref().map_or(rgb, |g| g.apply_hdr(rgb))
         };
         // A mask's Hue and Saturation follow grading, as in SDR, on the unclipped light:
-        // positive Saturation keeping the colour's value (`local::saturate_hdr`) and
+        // positive Saturation keeping the color's value (`local::saturate_hdr`) and
         // negative Saturation toward its HSL lightness (`local::desaturate_hdr`), as
         // Camera Raw 18.7's HDR render of them does at every brightness, and Hue on
         // Oklab (docs/records/hdr-stage1-results.md#masks).
@@ -389,7 +389,7 @@ impl CurveSet {
                 };
                 let size = [small.width, small.height];
                 match &measured {
-                    // The copy's camera colour reads only what the measures read: kept
+                    // The copy's camera color reads only what the measures read: kept
                     // with them, so an Exposure change only exposes it.
                     Some(m) => m.map_base(r.exposure, || {
                         let colors = m.colors(|| {
@@ -961,7 +961,7 @@ pub(super) fn curve_input(
 mod tests {
     use super::*;
 
-    /// A mask's positive Saturation in the master keeps a colour outside the display
+    /// A mask's positive Saturation in the master keeps a color outside the display
     /// gamut as `saturate_hdr` renders it: its value and hue are not clipped away.
     #[test]
     fn hdr_mask_saturation_keeps_wide_gamut_colours() {

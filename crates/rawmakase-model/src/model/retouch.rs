@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RetouchMode {
-    /// Copy the source texture and match its tone and colour to the surroundings.
+    /// Copy the source texture and match its tone and color to the surroundings.
     #[default]
     Heal,
     /// Copy the source pixels as they are.

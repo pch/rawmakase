@@ -358,7 +358,7 @@ mod tests {
             next(Some(ParameterId::Exposure), false, mono),
             Some(ParameterId::Saturation)
         );
-        // From Temp kept from a colour photo, on to the next enabled slider.
+        // From Temp kept from a color photo, on to the next enabled slider.
         assert_eq!(
             next(Some(ParameterId::Temperature), true, mono),
             Some(ParameterId::Exposure)

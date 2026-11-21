@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Measure Camera Raw's Color noise reduction on photos, whose noise it knows.
 
-`charts` writes synthetic RGGB DNGs into DIR: neutral flats at eight levels, colour
+`charts` writes synthetic RGGB DNGs into DIR: neutral flats at eight levels, color
 flats and a red/cyan edge, with shot and read noise of a Nikon D7100 at ISO 2000
 (variance 4.88e-4 x + 5.6e-7 of the white level, measured on the photo of issue 465)
 scaled by 1/16, 1/4, 1 and 4, each carrying its DNG NoiseProfile. Camera Raw reads
 the profile as it knows a camera's; without one it assumes little noise and keeps
-most colour noise (the charts `--no-profile` writes).
+most color noise (the charts `--no-profile` writes).
 
 `reference` has Photoshop 2026 (Camera Raw) render every chart at Color 0, 10, 25, 50
 and 100 (Detail and Smoothness 50), and at 25 and 100 with Detail or Smoothness at
@@ -14,7 +14,7 @@ and 100 (Detail and Smoothness 50), and at 25 and 100 with Detail or Smoothness 
 documents open.
 
 `compare` renders the same settings with --rawmakase (a built `rawmakase` binary) and
-prints, for each case, the share of the colour noise of the neutral flats each keeps
+prints, for each case, the share of the color noise of the neutral flats each keeps
 at four scales (band-pass levels of 1, 2, 4 and 8 pixels), averaged over the flats
 at 200 to 3200 of 16383, and the mean |log| ratio of RAWmakase's share to Camera Raw's.
 The adaptive operator's tables in crates/rawmakase-engine/src/develop/color_noise.rs
@@ -42,7 +42,7 @@ MEASURED = [2, 3, 4, 5, 6]  # the flats at 200 to 3200
 AS_SHOT = np.array([2.30078125, 1.0, 1.62890625])  # camera multipliers
 NOISE = (4.88e-4, 5.6e-7)  # variance S x + O at scale 1
 SCALES = ['0.0625', '0.25', '1', '4']
-# Nikon D7100 colour matrix (XYZ to camera, D65), as dcraw lists it.
+# Nikon D7100 color matrix (XYZ to camera, D65), as dcraw lists it.
 COLOR_MATRIX = [0.8322, -0.3112, -0.1047, -0.6367, 1.4342, 0.2179, -0.0988, 0.1638, 0.6394]
 CASES = ([(a, 50, 50) for a in (0, 10, 25, 50, 100)]
          + [(a, d, s) for a in (25, 100)
@@ -164,7 +164,7 @@ def chroma_bands(image, patch):
 
 
 def kept(render, before):
-    """Log of the share of each band's colour noise kept, averaged over the flats."""
+    """Log of the share of each band's color noise kept, averaged over the flats."""
     a, b = linear_srgb(render), linear_srgb(before)
     return np.mean([np.log(chroma_bands(a, p) / chroma_bands(b, p)) for p in MEASURED], axis=0)
 

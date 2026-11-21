@@ -179,7 +179,7 @@ struct StageRecipes {
     samples: Recipe,
     measures: Recipe,
 }
-/// The recipe as the camera colour (S1: white balance, the profile's matrix and
+/// The recipe as the camera color (S1: white balance, the profile's matrix and
 /// HueSatMap, Camera Calibration) reads it: the measures' fields, which hold them.
 pub(crate) fn color_recipe(r: &Recipe) -> Recipe {
     stage_recipes(r).measures
@@ -332,7 +332,7 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
             },
             ..Default::default()
         },
-        // White balance, the profile's colour and calibration, at the camera's exposure.
+        // White balance, the profile's color and calibration, at the camera's exposure.
         measures: Recipe {
             wb: *wb,
             temperature: *temperature,
@@ -442,7 +442,7 @@ impl SampleKey {
 
 /// Mask weights of a region: where its samples come from, and the shapes of the
 /// masks that render (not their sliders, which apply later). Range components read
-/// the developed colours, so then the rest of the recipe counts too.
+/// the developed colors, so then the rest of the recipe counts too.
 #[derive(PartialEq)]
 pub(crate) struct MaskKey {
     samples: SampleKey,

@@ -40,12 +40,12 @@ const VERSION: i64 = 1;
 //     frame as in Lightroom.
 // 13: a half-size decode sharpens and grains at its photo's scale, which edited
 //     thumbnails rendered from it show differently.
-// 14: a half-size decode reduces luminance and colour noise at its photo's scales.
+// 14: a half-size decode reduces luminance and color noise at its photo's scales.
 // 15: a DNG's OpcodeList3 FixVignetteRadial applies (iPhones' and DJI drones'
 //     vignetting), which saved edits of those DNGs render differently.
-// 16: AI Denoise keeps its own colour below Amount 100 and corrects dark areas over
+// 16: AI Denoise keeps its own color below Amount 100 and corrects dark areas over
 //     larger blocks, which saved edits with AI Denoise render differently.
-// 17: the Canon EOS Rebel T8i is the EOS 850D, whose colour matrix and baseline
+// 17: the Canon EOS Rebel T8i is the EOS 850D, whose color matrix and baseline
 //     exposure its photos had none of before.
 const GENERATION: i64 = 17;
 // 3: a JPEG, PNG or TIFF is converted from its embedded ICC profile.

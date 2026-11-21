@@ -27,7 +27,7 @@ const OUTSIDE: f32 = -3e38;
 pub(crate) struct Variant {
     /// Mask adjustments.
     pub(crate) masks: bool,
-    /// The colour mixer, Point Color, a look's RGB table, colour grading and the colour
+    /// The color mixer, Point Color, a look's RGB table, color grading and the color
     /// controls (`ADJUST`).
     pub(crate) color: bool,
     /// The Shadows/Highlights map.
@@ -99,7 +99,7 @@ pub(super) struct Developer {
     /// 100% does not upload again.
     samples: Vec<Uploaded>,
 }
-/// The camera colour (S1: white balance, the profile's matrix and HueSatMap, Camera
+/// The camera color (S1: white balance, the profile's matrix and HueSatMap, Camera
 /// Calibration) of one set of samples, for the recipe as it reads it
 /// (`PixelParams::color`): no Basic slider, nor Exposure, changes it, so the develop pass
 /// reads it instead of computing it again while they move.
@@ -116,15 +116,15 @@ pub(super) struct Kept {
     /// next pass clears it: a pass recorded earlier was never submitted.
     pending: bool,
 }
-/// What a develop pass does with the kept camera colour of its samples; the value is
+/// What a develop pass does with the kept camera color of its samples; the value is
 /// the shader's `size.z`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Keep {
-    /// Computes the colour.
+    /// Computes the color.
     Run = 0,
-    /// Reads the kept colour.
+    /// Reads the kept color.
     Read = 1,
-    /// Computes the colour and keeps it.
+    /// Computes the color and keeps it.
     Write = 2,
 }
 impl Keep {
@@ -140,7 +140,7 @@ impl Keep {
         }
     }
 }
-/// Sample sets whose camera colour is kept: the Fit and its draft, and a 100% region.
+/// Sample sets whose camera color is kept: the Fit and its draft, and a 100% region.
 const KEPT: usize = 3;
 impl Kept {
     /// Whether a submitted pass wrote it, so later renders read it.
@@ -149,7 +149,7 @@ impl Kept {
         self.written
     }
 }
-/// Marks the kept colour written once the pass that writes it is submitted: the last
+/// Marks the kept color written once the pass that writes it is submitted: the last
 /// recorded, as each develop pass is submitted before the next is recorded.
 pub(super) fn submitted(kept: &mut [Kept]) {
     for k in kept.iter_mut().filter(|k| k.pending) {
@@ -207,7 +207,7 @@ impl Developer {
             samples: Vec::new(),
         }
     }
-    /// Input `slot` (parameters, tables, weights, an empty grid or kept colour), at
+    /// Input `slot` (parameters, tables, weights, an empty grid or kept color), at
     /// least 16 bytes.
     fn input_buffer(&mut self, device: &wgpu::Device, slot: usize) -> wgpu::Buffer {
         self.sized(device, slot, 16)
@@ -223,7 +223,7 @@ impl Developer {
                         "Develop tables",
                         "Mask weights",
                         "No map",
-                        "No kept colour",
+                        "No kept color",
                     ][slot],
                 ),
                 size: size.next_power_of_two(),
@@ -400,7 +400,7 @@ impl Processor {
         for k in &mut self.kept {
             k.pending = false;
         }
-        // 1 reads the kept camera colour, 2 computes and keeps it, 0 computes it.
+        // 1 reads the kept camera color, 2 computes and keeps it, 0 computes it.
         let (mode, color) = match &params.color {
             Some(recipe) if params.weights.is_empty() => {
                 let bytes = n * 12;
@@ -415,7 +415,7 @@ impl Processor {
                 let color = match entry {
                     Some(k) => k.color,
                     None => device.create_buffer(&wgpu::BufferDescriptor {
-                        label: Some("Kept camera colour"),
+                        label: Some("Kept camera color"),
                         size: bytes,
                         usage: wgpu::BufferUsages::STORAGE,
                         mapped_at_creation: false,
@@ -594,7 +594,7 @@ mod tests {
     use crate::develop::pipeline::pixel_params::{PixelParams, slot};
     use std::ops::Range;
 
-    /// A render reads the kept camera colour only after a submitted pass wrote it for
+    /// A render reads the kept camera color only after a submitted pass wrote it for
     /// the same recipe; a pass recorded but never submitted (a cancelled render) leaves
     /// it to be written again.
     #[test]
@@ -607,7 +607,7 @@ mod tests {
         assert_eq!(Keep::step(Some((true, true))), Keep::Read);
     }
 
-    /// Each colour stage on its own compiles the colour code into the pass, a pass
+    /// Each color stage on its own compiles the color code into the pass, a pass
     /// without any leaves it out, and masks bring Dehaze with them.
     #[test]
     fn each_stage_selects_its_variant() {

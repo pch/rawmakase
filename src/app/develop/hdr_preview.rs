@@ -14,7 +14,7 @@
 //! a display change is a view change, never an edit.
 //!
 //! Visualize HDR (Lightroom's) has slots of its own: the same master, rendered
-//! whatever the display, drawn as the colour of the stop above SDR white each pixel
+//! whatever the display, drawn as the color of the stop above SDR white each pixel
 //! reaches ([`overlay`]) and left clear below white.
 use crate::app::worker::Latest;
 use crate::camera_data::CameraImage;
@@ -436,7 +436,7 @@ fn render(job: &Job) -> anyhow::Result<Done> {
     })
 }
 
-/// Visualize HDR's colours for light 0–1, 1–2, 2–3 and 3 or more stops above SDR
+/// Visualize HDR's colors for light 0–1, 1–2, 2–3 and 3 or more stops above SDR
 /// white: cyan, blue, purple and magenta, the order Lightroom's overlay uses (its
 /// values aren't published), sRGB-encoded.
 pub(in crate::app) const STOP_COLORS: [[u8; 3]; 4] = [
@@ -456,7 +456,7 @@ pub(in crate::app) fn stop_color(stops: f32) -> Option<usize> {
 /// Visualize HDR's overlay of HDR master pixels (linear ProPhoto, 1 = graphics
 /// white), RGBA half floats, premultiplied as egui draws them: each pixel whose
 /// brightest channel in the display's primaries (linear sRGB, as the histogram and
-/// readout read them) is above white takes its stop's colour, opaque; the rest are
+/// readout read them) is above white takes its stop's color, opaque; the rest are
 /// clear, so the photo shows through.
 pub(in crate::app) fn overlay(pixels: &[[f32; 3]]) -> Vec<u16> {
     let to_srgb = crate::color::hdr_output::HdrGamut::Rec709.prophoto_to_rgb();
@@ -642,7 +642,7 @@ mod tests {
         assert_eq!(shown.rgba, overlay(&pixels));
         assert!(
             shown.rgba.chunks(4).any(|p| p[3] != 0),
-            "light above white is coloured"
+            "light above white is colored"
         );
         let _ = preview.stop();
     }
@@ -831,7 +831,7 @@ mod tests {
         let _ = preview.stop();
     }
 
-    /// Visualize HDR colours each pixel by the stop above white its brightest
+    /// Visualize HDR colors each pixel by the stop above white its brightest
     /// display channel reaches and leaves light at or below white clear.
     #[test]
     fn the_overlay_colours_light_by_its_stop_above_white() {
@@ -849,7 +849,7 @@ mod tests {
             }
             assert_eq!(got[3], 1.);
         }
-        // A saturated colour counts by its brightest channel in the display's
+        // A saturated color counts by its brightest channel in the display's
         // primaries, not its luminance.
         let to_prophoto =
             crate::color::inverse(crate::color::hdr_output::HdrGamut::Rec709.prophoto_to_rgb());

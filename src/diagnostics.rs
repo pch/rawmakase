@@ -271,7 +271,7 @@ pub struct Gpu {
     pub surface: &'static str,
 }
 
-/// The window surface's format and colour space, for a report: whether the
+/// The window surface's format and color space, for a report: whether the
 /// window presents through a 16-bit float surface tells apart the HDR path
 /// from the plain one (#1126).
 pub fn surface(format: wgpu::TextureFormat, color_space: wgpu::SurfaceColorSpace) -> &'static str {
@@ -345,7 +345,7 @@ pub enum Monitor {
 pub enum SystemProfile {
     /// The system named a display profile, which renders convert to.
     Found,
-    /// The system matches colours itself (macOS, Windows' advanced color).
+    /// The system matches colors itself (macOS, Windows' advanced color).
     Managed,
     /// None was found: shown as sRGB.
     NotFound,

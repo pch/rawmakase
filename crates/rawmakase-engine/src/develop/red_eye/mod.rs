@@ -1,4 +1,4 @@
-//! Lightroom's Red Eye Correction: an ellipse over a pupil whose colour is replaced by
+//! Lightroom's Red Eye Correction: an ellipse over a pupil whose color is replaced by
 //! a dark neutral, with Pupil Size and Darken sliders, or for Pet Eye by black with
 //! an optional catchlight. Corrections are stored as
 //! parameters beside the recipe, like spot removal, and render on the linear camera

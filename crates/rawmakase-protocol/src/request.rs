@@ -159,7 +159,7 @@ pub enum Request {
     },
     /// Sets a tone curve's points.
     Curve {
-        /// Which curve: the composite one or a colour channel's.
+        /// Which curve: the composite one or a color channel's.
         #[serde(deserialize_with = "channel")]
         channel: CurveChannel,
         /// Normalized `[input, output]` pairs; see [`crate::curve`].
@@ -168,7 +168,7 @@ pub enum Request {
     },
     /// Sets a parameter to a value, finite as an `f32`.
     Set {
-        /// A parameter's name, as `capabilities` lists it; a colour band needs its
+        /// A parameter's name, as `capabilities` lists it; a color band needs its
         /// channel (`band3.sat`).
         #[serde(deserialize_with = "param")]
         param: String,
@@ -247,7 +247,7 @@ pub enum Request {
             skip_serializing_if = "Option::is_none"
         )]
         max_edge: Option<u32>,
-        /// The pixels' colour space and the profile embedded; the app refuses one
+        /// The pixels' color space and the profile embedded; the app refuses one
         /// the file's format can't hold (ProPhoto RGB needs TIFF).
         #[serde(
             default,
@@ -337,7 +337,7 @@ pub enum Until {
     },
 }
 
-/// The colour space an `export` writes in.
+/// The color space an `export` writes in.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ColorSpace {

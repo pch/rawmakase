@@ -245,7 +245,7 @@ pub fn render(
 }
 
 /// The DNG's own embedded profile, and nothing from the user's library. A DNG
-/// written with colour matrices alone has no embedded profile, and then the app
+/// written with color matrices alone has no embedded profile, and then the app
 /// falls back to the camera matrix with the DNG tone curve, so the test does too.
 pub fn embedded_profiles(im: &CameraImage) -> Vec<Arc<CameraProfile>> {
     rawmakase::camera_profiles::builtin(&im.metadata)

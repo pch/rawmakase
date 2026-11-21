@@ -36,7 +36,7 @@ tempfile.workspace = true
 tiff.workspace = true
 unicode-normalization.workspace = true
 # JPEG XL exports: lossless modular encoding in pure Rust; RAWmakase writes the
-# image header (colour encoding, tone mapping) and the container itself.
+# image header (color encoding, tone mapping) and the container itself.
 zune-jpegxl = { version = "0.5.2", default-features = false, features = ["std", "threads"] }
 zune-core = { version = "0.5.3", default-features = false, features = ["std"] }
 # Lossy JPEG XL exports: a pure-Rust VarDCT encoder (a port of libjxl-tiny).

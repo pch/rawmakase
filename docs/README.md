@@ -23,7 +23,7 @@ Start with the [code map](code-map.md) to find where a change belongs, the
 | [Adding an adjustment](howto/add-adjustment.md) | Current | A new develop setting, from the model to tests |
 | [Shutdown](shutdown.md) | Current | What each worker blocks on, how it stops, and what quitting waits for |
 | [Dependencies](dependencies.md) | Current | Third-party code, models and data, their licences and how they are linked or downloaded |
-| [Test corpus](../tests/corpus/README.md) | Current | The colour corpus, the private dataset and how to run parity checks |
+| [Test corpus](../tests/corpus/README.md) | Current | The color corpus, the private dataset and how to run parity checks |
 
 ## Features
 

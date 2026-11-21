@@ -286,7 +286,7 @@ pub(crate) fn luma(image: &RgbImage, width: usize, height: usize) -> Vec<f32> {
     resample(&full, image.width, whole, width, height)
 }
 
-/// The photo's colours (sRGB / 255) at `width` x `height`, as [`luma`].
+/// The photo's colors (sRGB / 255) at `width` x `height`, as [`luma`].
 pub(crate) fn colours(image: &RgbImage, width: usize, height: usize) -> Vec<[f32; 3]> {
     let whole = Rect {
         x: 0,
@@ -329,7 +329,7 @@ mod tests {
     use super::*;
     use crate::kinds::Kind;
 
-    /// A photo of `w` x `h`: `paint(x, y)` colours each pixel.
+    /// A photo of `w` x `h`: `paint(x, y)` colors each pixel.
     fn photo(w: usize, h: usize, paint: impl Fn(usize, usize) -> [u8; 3]) -> RgbImage {
         let mut data = Vec::with_capacity(w * h * 3);
         for y in 0..h {
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn water_under_the_sky_is_left_out_when_the_model_leaves_it_out() {
-        // Sky-coloured water below a band of ground: nothing here looks at where it lies.
+        // Sky-colored water below a band of ground: nothing here looks at where it lies.
         let img = photo(640, 480, |_, y| match y {
             0..=199 => [120, 160, 230],
             200..=279 => [40, 60, 30],

@@ -1,7 +1,7 @@
 //! JPEG XL exports (docs/hdr.md#hdr-export), lossless or lossy.
 //!
 //! Lossless exports: `zune-jpegxl` encodes the frame; RAWmakase writes the image
-//! header in its place, because zune's always says sRGB: ours names the colour
+//! header in its place, because zune's always says sRGB: ours names the color
 //! encoding (sRGB, or an HDR export's primaries and PQ or HLG) and, for HDR, the tone
 //! mapping's intensity target. The frame begins at a byte boundary after the header
 //! (ISO/IEC 18181-1, the header ends with ZeroPadToByte), so zune's header is
@@ -9,7 +9,7 @@
 //! checked against zune's own bytes before anything is spliced.
 //!
 //! Lossy exports: `jixel` encodes a VarDCT frame in XYB. XYB holds absolute display
-//! light, so the header's colour encoding only tells a decoder which signal to give
+//! light, so the header's color encoding only tells a decoder which signal to give
 //! back. jixel reads PQ input as that light correctly, but takes HLG input for
 //! normalised scene light (no OOTF, no intensity target), which decodes about two
 //! stops dark. An HLG export is therefore given to jixel as the PQ of its display
@@ -21,7 +21,7 @@
 //! ([`Codestream::level`]).
 use anyhow::{Result, bail, ensure};
 
-/// The colour a JPEG XL export's header names.
+/// The color a JPEG XL export's header names.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Colour {
     /// sRGB: the header's `all_default` encoding.
@@ -108,7 +108,7 @@ pub(super) fn lossy_hdr_codestream(
         intensity_target,
     } = colour
     else {
-        bail!("A lossy HDR JPEG XL needs an HDR colour encoding");
+        bail!("A lossy HDR JPEG XL needs an HDR color encoding");
     };
     ensure!(
         transfer == 16 || transfer == 18,
@@ -245,8 +245,8 @@ pub(super) fn gray_codestream(
 }
 
 /// A `jhgm` box's payload (libjxl's gain-map bundle): version 0, the ISO 21496-1
-/// `metadata` (big-endian u16 length), no alternate colour encoding (a zero length:
-/// the map applies in the base's colour space), no alternate ICC profile (a zero u32
+/// `metadata` (big-endian u16 length), no alternate color encoding (a zero length:
+/// the map applies in the base's color space), no alternate ICC profile (a zero u32
 /// length), then the map's naked `codestream`.
 pub(super) fn gain_map_bundle(metadata: &[u8], codestream: &[u8]) -> Result<Vec<u8>> {
     let len = u16::try_from(metadata.len())?;
@@ -325,7 +325,7 @@ fn header(width: u32, height: u32, bits: u32, colour: Colour, writer: Writer) ->
                 ..
             },
         ) => {
-            w.put(1, 0); // colour encoding not all default
+            w.put(1, 0); // color encoding not all default
             w.put(1, 0); // no ICC
             enumeration(&mut w, 0); // RGB
             enumeration(&mut w, 1); // D65
@@ -478,7 +478,7 @@ mod tests {
     }
 
     /// The header RAWmakase writes in zune's place is read back by jxl-oxide, an
-    /// independent decoder, with its colour encoding and tone mapping; the samples are
+    /// independent decoder, with its color encoding and tone mapping; the samples are
     /// lossless.
     #[test]
     fn an_hdr_codestream_decodes_with_its_colour_encoding() -> Result<()> {
@@ -526,7 +526,7 @@ mod tests {
         let codestream = gray_codestream(16, 9, &samples, None)?;
         let metadata = [7u8; 61];
         let bundle = gain_map_bundle(&metadata, &codestream)?;
-        // libjxl's reader: version, BE16 metadata size, metadata, u8 colour encoding
+        // libjxl's reader: version, BE16 metadata size, metadata, u8 color encoding
         // size (0: none), BE32 ICC size (0), then the codestream to the end.
         assert_eq!(bundle[0], 0);
         assert_eq!(u16::from_be_bytes([bundle[1], bundle[2]]), 61);
@@ -668,7 +668,7 @@ mod tests {
     ///
     /// The light is read as PQ in BT.709 primaries, in which XYB decodes: jxl-oxide
     /// clips that light to the intensity target before converting it to wider
-    /// primaries, so a saturated colour near HLG's peak would read back clipped in
+    /// primaries, so a saturated color near HLG's peak would read back clipped in
     /// Rec. 2020 (libjxl's `djxl` does not clip it).
     #[test]
     fn a_lossy_hlg_codestream_decodes_to_its_hlg_signal() -> Result<()> {
@@ -740,7 +740,7 @@ mod tests {
 
     /// A header jixel writes differently from the one RAWmakase expects (here the
     /// lossless writer's, whose XYB and modular 16-bit buffer flags differ) is refused
-    /// rather than replaced, and one it writes as expected is replaced whole. A colour
+    /// rather than replaced, and one it writes as expected is replaced whole. A color
     /// RAWmakase never encodes lossy as HDR is refused before encoding.
     #[test]
     fn a_lossy_header_that_is_not_jixels_is_refused() -> Result<()> {

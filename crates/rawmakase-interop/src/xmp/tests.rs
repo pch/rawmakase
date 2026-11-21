@@ -972,10 +972,10 @@ fn a_renamed_look_is_found_by_its_uuid() -> Result<()> {
     Ok(())
 }
 /// Camera Raw 18.7 takes the Treatment from the settings a look carries, not from the
-/// photo's `ConvertToGrayscale` (#666): measured on the synthetic chart, a colour look
-/// over a photo set to black & white renders in colour, a black & white look over a
-/// photo set to colour in black & white, and a look whose settings leave the flag out
-/// in colour. A look named without its settings leaves the photo's flag.
+/// photo's `ConvertToGrayscale` (#666): measured on the synthetic chart, a color look
+/// over a photo set to black & white renders in color, a black & white look over a
+/// photo set to color in black & white, and a look whose settings leave the flag out
+/// in color. A look named without its settings leaves the photo's flag.
 #[test]
 fn a_looks_own_grayscale_flag_sets_the_treatment() -> Result<()> {
     use crate::camera_profiles::CameraProfile;
@@ -1429,7 +1429,7 @@ fn auto_grayscale_mix_uses_stored_mixer_or_estimates_it() -> Result<()> {
     assert!(r.effects.monochrome);
     assert_eq!(r.effects.gray_mix[0], -12. * 0.01);
     assert_eq!(r.effects.gray_mix[5], 30. * 0.01);
-    // Off, or on for a colour photo, Auto changes nothing.
+    // Off, or on for a color photo, Auto changes nothing.
     for attrs in [
         r#"c:ConvertToGrayscale="True" c:AutoGrayscaleMix="False""#,
         r#"c:ConvertToGrayscale="False" c:AutoGrayscaleMix="True""#,
@@ -2730,7 +2730,7 @@ fn a_fitted_look_round_trips_whole() -> Result<()> {
     );
     Ok(())
 }
-/// Under a fitted matrix base (a camera without colour data) Temp and Tint are
+/// Under a fitted matrix base (a camera without color data) Temp and Tint are
 /// relative to the white as shot; written to XMP and read back they give the same
 /// multipliers, with a DNG's CameraCalibration in them too.
 #[test]

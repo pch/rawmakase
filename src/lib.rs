@@ -7,7 +7,7 @@
 //! over them, and which edit a photo develops with ([`xmp`], [`presets`],
 //! [`raw_defaults`], [`edits`], crates/rawmakase-interop); the catalog ([`catalog`],
 //! crates/rawmakase-catalog); rendering ([`develop`], crates/rawmakase-engine);
-//! opening and decoding photos with RAWmakase's own RAW decoders and colour
+//! opening and decoding photos with RAWmakase's own RAW decoders and color
 //! management ([`raw`], [`photo`], [`color_management`], crates/rawmakase-decode);
 //! and exports ([`export`], crates/rawmakase-export).
 //!
@@ -28,7 +28,7 @@ pub use rawmakase_catalog::catalog;
 pub use rawmakase_engine::develop;
 // Developing and writing exports, with their watermarks (crates/rawmakase-export).
 pub use rawmakase_export::{export, watermark};
-// RAW decoding, colour management, demosaicing, opening and decoding a photo
+// RAW decoding, color management, demosaicing, opening and decoding a photo
 // (crates/rawmakase-decode), and its development tools. Its `ai::denoise` is
 // reached by its crate path: this crate's own `ai_denoise` is the service.
 pub use rawmakase_decode::ai::cache as ai_cache;

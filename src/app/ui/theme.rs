@@ -1,17 +1,17 @@
-//! Interface colours. RAWmakase's own palette is Lightroom's neutral greys;
+//! Interface colors. RAWmakase's own palette is Lightroom's neutral greys;
 //! fastframe-theme adds palette files, its presets and, on Linux, the
 //! Omarchy desktop's theme, followed live.
 //!
 //! The interface was drawn in greys, so a palette is applied through them:
 //! [`Palette::gray`] maps a level of the default palette onto the one
 //! applied to the egui context ([`palette`]), between the palette's own
-//! colours. The photo's backdrop is the palette's panel colour, so it
+//! colors. The photo's backdrop is the palette's panel color, so it
 //! follows the theme like the rest of the window.
 use crate::app::ui::design::Tone;
 use eframe::egui::{self, Color32, Stroke};
 use std::collections::BTreeSet;
 
-/// fastframe-theme's sixteen interface colours.
+/// fastframe-theme's sixteen interface colors.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::app) struct Palette {
     light: bool,
@@ -33,7 +33,7 @@ pub(in crate::app) struct Palette {
     shadow: Color32,
 }
 
-/// The grey each colour stands for in the default palette, darkest first.
+/// The grey each color stands for in the default palette, darkest first.
 /// Lightroom's panels, controls and text sit at these levels.
 const LEVELS: [u8; 9] = [22, 35, 43, 52, 59, 67, 125, 160, 225];
 
@@ -78,7 +78,7 @@ impl Palette {
         overlay: Color32::from_gray(228),
         shadow: Color32::from_black_alpha(60),
     };
-    /// The palette's colour for each of [`LEVELS`].
+    /// The palette's color for each of [`LEVELS`].
     fn anchors(&self) -> [Color32; 9] {
         [
             self.window,
@@ -127,7 +127,7 @@ impl fastframe_theme::Palette for Palette {
     fn derive(&mut self, given: &BTreeSet<&str>) {
         // A light window under dark text, whatever base the file named.
         self.light = luma(self.window) > luma(self.text);
-        // Menus and pop-ups sit on the panel colour unless a file says.
+        // Menus and pop-ups sit on the panel color unless a file says.
         if !given.contains("overlay") && given.contains("panel") {
             self.overlay = self.panel;
         }
@@ -154,7 +154,7 @@ impl Palette {
     }
 
     /// The default palette's grey `level` in this palette: between the two
-    /// palette colours whose levels surround it, and beyond the darkest and
+    /// palette colors whose levels surround it, and beyond the darkest and
     /// lightest along the same direction. Drawing code names a [`Tone`].
     fn gray(&self, level: u8) -> Color32 {
         if *self == Palette::DEFAULT {
@@ -163,7 +163,7 @@ impl Palette {
         map(self, level)
     }
 
-    /// Behind the photo and the minimap: the palette's panel colour,
+    /// Behind the photo and the minimap: the palette's panel color,
     /// lighter than the side panels around it (Lightroom's grey in the
     /// default palette).
     pub(in crate::app) fn photo_backdrop(&self) -> Color32 {
@@ -187,11 +187,11 @@ impl Palette {
         self.accent
     }
 
-    /// The selection and primary-button colour.
+    /// The selection and primary-button color.
     pub(in crate::app) fn accent(&self) -> Color32 {
         self.accent
     }
-    /// The primary-button colour under the pointer.
+    /// The primary-button color under the pointer.
     pub(in crate::app) fn accent_hover(&self) -> Color32 {
         self.accent_hover
     }
@@ -202,7 +202,7 @@ impl Palette {
         }
         self.on_accent
     }
-    /// Text on the accent colour.
+    /// Text on the accent color.
     pub(in crate::app) fn on_accent(&self) -> Color32 {
         self.on_accent
     }
@@ -217,7 +217,7 @@ impl Palette {
 fn map(palette: &Palette, level: u8) -> Color32 {
     // Dark text on a light window reads fainter than light text on a dark
     // one at the same mix, so on light palettes text levels lean towards
-    // the text colour rather than following the palette's dim and secondary.
+    // the text color rather than following the palette's dim and secondary.
     let (text_from, text_to) = (LEVELS[5], LEVELS[8]);
     if palette.light && (text_from..=text_to).contains(&level) {
         let f = (level - text_from) as f32 / (text_to - text_from) as f32;

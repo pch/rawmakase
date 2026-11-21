@@ -1,5 +1,5 @@
 //! What AVIF ([`super::avif`]) and HEIC ([`super::heic`]) files share as HEIF
-//! images: an item's colour (its ICC profile, or one built from its CICP code
+//! images: an item's color (its ICC profile, or one built from its CICP code
 //! points), its orientation from `irot` and `imir`, and widening decoded samples to
 //! their bytes.
 use image::metadata::Orientation;
@@ -45,7 +45,7 @@ fn icc_cicp(icc: &[u8]) -> Option<(u16, u16, bool)> {
     ))
 }
 
-/// Whether a HEIC of colour `nclx` and ICC profile `icc` is HDR: either says PQ or
+/// Whether a HEIC of color `nclx` and ICC profile `icc` is HDR: either says PQ or
 /// HLG.
 pub(super) fn names_hdr(nclx: Option<Nclx>, icc: Option<&[u8]>) -> bool {
     nclx.is_some_and(Nclx::hdr)
@@ -54,7 +54,7 @@ pub(super) fn names_hdr(nclx: Option<Nclx>, icc: Option<&[u8]>) -> bool {
             .is_some_and(|(_, t, _)| matches!(t, 16 | 18))
 }
 
-/// Why an HDR HEIC of colour `nclx` and ICC profile `icc` can't open as an HDR edit,
+/// Why an HDR HEIC of color `nclx` and ICC profile `icc` can't open as an HDR edit,
 /// if it can't; `None` for an SDR one. Its signal decodes exactly only where the
 /// system decoder gives it back as coded, converted to RGB by a matrix it applies as
 /// a matrix, which its `nclx` names. An ICC profile, when there is one, describes the
@@ -105,7 +105,7 @@ pub(super) fn hdr_refusal(nclx: Option<Nclx>, icc: Option<&[u8]>) -> Option<supe
     }
 }
 
-/// An item's colour: its ICC profile and its `nclx`, either when it has one.
+/// An item's color: its ICC profile and its `nclx`, either when it has one.
 pub(super) fn colour(props: &[&Property]) -> (Option<Vec<u8>>, Option<Nclx>) {
     let icc = props.iter().find_map(|p| match p {
         Property::Colour(Colour::Icc(icc)) => Some(icc.clone()),

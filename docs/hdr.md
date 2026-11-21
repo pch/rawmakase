@@ -72,7 +72,7 @@ color-management protocol, gives it headroom); an SDR display keeps the 8-bit
 surface, and a display that shows HDR only later says HDR shows after RAWmakase
 restarts. Wayland has no gamma-encoded extended sRGB, so the float surface is
 linear extended sRGB (wgpu's `ExtendedSrgbLinear`), which Mesa's Vulkan WSI declares
-to the compositor itself, with no luminances. Mesa holds the surface's colour
+to the compositor itself, with no luminances. Mesa holds the surface's color
 management object for the swapchain's whole life, so RAWmakase can't declare
 anything of its own: a second one is a protocol error that ends the connection.
 egui still renders the same sRGB-encoded values, and the egui fork's last pass
@@ -220,10 +220,10 @@ its own encoding), then Contrast (`basic_tone::HdrContrast`'s table, top and slo
 and the tone curves (`HdrCurves`: Levels, the parametric curve and the master point
 curve on `hdr_look`'s encoding, from the SDR port's own samples of the curves, then
 each channel's curve, held at 16), and
-the colour stage (the colour mixer's grids looked up as `color_mixer::Lookup::Hdr`
+the color stage (the color mixer's grids looked up as `color_mixer::Lookup::Hdr`
 looks them up, with Vibrance's fading value factors, band Luminance per channel by the
 scene's level and Saturation's fade to gray,
-then a look's RGB table on overrange-encoded values (`RgbTable::apply_hdr`) and colour
+then a look's RGB table on overrange-encoded values (`RgbTable::apply_hdr`) and color
 grading in its HDR domain (`grade_hdr`); in black & white the gray, unclipped, comes
 first, and the table and grading tone it, as in SDR). It writes linear ProPhoto unclipped; `present_hdr.wgsl` sharpens it on
 sRGB-curve-encoded values with ProPhoto luminance, applies the limit, and encodes
@@ -234,7 +234,7 @@ are read as the CPU reads them.
 
 It covers what `pixel_params::supported_hdr` accepts: a master that renders
 (Exposure, Whites, Blacks, Shadows, white balance, Contrast, Levels and the tone
-curves, channel curves included, the colour stage, Color Grading, Texture, sharpening and what the SDR port samples), through
+curves, channel curves included, the color stage, Color Grading, Texture, sharpening and what the SDR port samples), through
 any profile and look whose HDR rendering is measured (`CameraProfile::hdr_tone`).
 An HDR file's master renders from the pseudo-scene of its light, as `render_hdr`
 renders it (`PreviewRenderer::render_hdr_file`): Exposure is a gain of the light baked
@@ -247,11 +247,11 @@ whole-photo preview reduces it, a 100% drag's preview from the light at its scal
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
 "GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, looks whose
 curves end at white and below it, positive and negative Contrast, Levels, point and
-parametric curves, channel curves, Saturation, Vibrance, the colour mixer (band Luminance included), colour grading, black & white, looks' RGB tables of every kind and amount, and Texture (neutral
-colours, whose hue is undefined, left out of the colour stage's comparison): the per-pixel stage agrees to 2×10^-4 of the value,
+parametric curves, channel curves, Saturation, Vibrance, the color mixer (band Luminance included), color grading, black & white, looks' RGB tables of every kind and amount, and Texture (neutral
+colors, whose hue is undefined, left out of the color stage's comparison): the per-pixel stage agrees to 2×10^-4 of the value,
 the presented texture to 1.3×10^-3 (half-float steps), at full size and in a
 region, at headrooms 4 and 40, sharpened and not. An HDR file's master (a PQ ramp
-from 2^-10 to 2^5 times white in four colours, at its own settings, Exposure +1, −0.7
+from 2^-10 to 2^5 times white in four colors, at its own settings, Exposure +1, −0.7
 and +0.5, limit 3, Rotate with a crop) agrees to 1.3×10^-3 at full size and in a
 region, and a Fit's mean to 2% of the CPU preview's
 (`presented_hdr_files_match_the_cpu_master`).
@@ -293,14 +293,14 @@ where the display shows it and red beyond its headroom or at the HDR limit.
 
 ### Visualize HDR
 
-**Visualize HDR**, under the Basic panel's HDR switch while HDR is on, colours the
+**Visualize HDR**, under the Basic panel's HDR switch while HDR is on, colors the
 photo Develop shows (the edit, or Before alone; not the side beside it) by the stop
 above SDR white its master reaches, as Lightroom's does: cyan up to one stop, blue up
 to two, purple up to three, magenta beyond. Light at or below white is left clear,
 so the photo shows through. A pixel's stop is that of its brightest channel in linear
-sRGB primaries, the channels the histogram and readout read, so a saturated colour
+sRGB primaries, the channels the histogram and readout read, so a saturated color
 counts by its channel above white. The histogram marks each stop's section with the
-same colour along its foot. Like Preview for SDR display it is a view choice
+same color along its foot. Like Preview for SDR display it is a view choice
 (`ViewState::visualize_hdr`), never saved with the edit.
 
 The overlay describes the edit, not the display, so it shows wherever the master
@@ -323,28 +323,28 @@ HDR reference family):
 | --- | --- |
 | S3 default | Identity from scene 0.5 up (`scene_tone::hdr_whites::IDENTITY_FROM`), with the default black point's toe below, whatever the sensor's white or the photo's maximum. SDR's shoulder to the white point is not applied. |
 | Exposure | A gain before S3, as in SDR. |
-| Whites | A measured gain over scene value (`scene_tone::hdr_whites`), the same at every sensor white and HDR limit. Negative Whites is the same at every photo maximum too. Positive Whites is a gain of the colour's luminance over the default curve (RGBTone), so it keeps colours' saturation as Camera Raw's does; negative Whites is the gained curve RGBTone. Positive Whites follows the photo's level, twice its 99th percentile of luminance with Exposure (`PhotoMeasures::hdr_whites_level`): the darker it is, the further Whites stretches, and from a level of 4 up the gain no longer changes. Rendered up to +50; above it refused, as no level reaches Camera Raw's render: at Camera Raw's own best level per photo, 4 of 12 training photos stay 0.17–0.52 stop off above white at +75 and +100. |
+| Whites | A measured gain over scene value (`scene_tone::hdr_whites`), the same at every sensor white and HDR limit. Negative Whites is the same at every photo maximum too. Positive Whites is a gain of the color's luminance over the default curve (RGBTone), so it keeps colors' saturation as Camera Raw's does; negative Whites is the gained curve RGBTone. Positive Whites follows the photo's level, twice its 99th percentile of luminance with Exposure (`PhotoMeasures::hdr_whites_level`): the darker it is, the further Whites stretches, and from a level of 4 up the gain no longer changes. Rendered up to +50; above it refused, as no level reaches Camera Raw's render: at Camera Raw's own best level per photo, 4 of 12 training photos stay 0.17–0.52 stop off above white at +75 and +100. |
 | Blacks, default black | As in SDR, on values below 1; values above white are left alone. |
 | Profile look table | An HDR profile's 3D table on overrange-encoded values, as the DNG SDK applies it; an ordinary profile's keeps the values above white it scales, its value looked up in the table's own encoding (an sRGB-encoded table's, as camera-matching profiles have, extended above white). An HDR profile's sRGB-encoded table looks up the sRGB encoding of the overrange-encoded value. |
 | Profile tone curve | `camera_profiles::hdr_tone`: an HDR profile's curve by the DNG SDK's overrange rule; an ordinary curve by the measured extension (ACR3's measured HDR curve, and a fitted deviation for other curves); a curve that never brightens as the identity. RGBTone. |
 | Look table | A look's HSV table (Adobe Color's and the other Adobe Raw looks', RAWmakase Color's) after the profile's, on overrange-encoded values, as the DNG SDK applies an HDR profile's, unclipped. |
 | Look curve | `camera_profiles::hdr_look`, after the profile's curve: the look's curve in an encoding that is sRGB's up to graphics white and logarithmic above. A curve that ends at white follows itself up to its largest lift, then runs parallel to the identity at that lift, at most 16 (so a curve that never lifts renders as the identity); one that ends below white continues along its slope there. A look whose curve is the identity (a `.cube` look's) applies none, so its light above 16 is not held there. RGBTone. |
-| Look settings | A look's own sliders and settings (Lightroom's B&W and creative looks carry Contrast, Blacks, Exposure, Saturation, colour mixer and parametric-curve settings) are added to the user's, as in SDR (`Recipe::with_profile_adjustments`), and render as those sliders do; one whose rendering isn't measured refuses the master, naming the look. A B&W look renders the black & white mix. |
+| Look settings | A look's own sliders and settings (Lightroom's B&W and creative looks carry Contrast, Blacks, Exposure, Saturation, color mixer and parametric-curve settings) are added to the user's, as in SDR (`Recipe::with_profile_adjustments`), and render as those sliders do; one whose rendering isn't measured refuses the master, naming the look. A B&W look renders the black & white mix. |
 | Profile Amount | As in SDR, the look's table, RGB table, curve and settings at that amount (`Enhanced::at_amount`), then rendered by the rules here. |
 | Contrast | `develop::basic_tone::HdrContrast`, after the look, from the SDR Contrast curve at the photo's pivot (measured on the SDR rendering), in the look curve's encoding. Positive Contrast follows its curve up to its largest lift, then runs parallel to the identity at that lift; negative Contrast is its curve stretched in stops, its fixed point 1.671 times higher and white at 16. Above 16 positive Contrast adds a constant and negative continues along its slope. RGBTone. |
 | Levels | RAWmakase's own (Camera Raw has none), after Contrast: as a point curve of its shape renders, as in SDR up to white and along its slope at white above it (none when the white point is below white). |
 | Parametric curve | After Levels, RGBTone on the same encoding, its regions and splits laid over black to four stops above white (16); values above 16 are left alone. |
 | Point curve | `color::hdr_curve`, after the parametric curve: the master curve, RGBTone on the look curve's encoding, as in SDR up to white; above it, along the curve's slope at its last point (a natural spline's own derivative there, before clamping), held back above 16 times white toward about 49 times (`hdr_curve::hold`), as Camera Raw holds steep curves. A curve whose last point is left of white continues along that slope from its last point, below white too, where SDR holds its value; it renders when that reaches at most 1.06 at white in the curve's encoding (`hdr_curve::LEFT_END_MEASURED`), and steeper ones are refused. |
-| Refine Saturation | `color::hdr_curve::refine_saturation`, on the master point curve from 50% to 100%: SDR's rule on the same encoded values, the colour keeping its channel differences from before the curve, without SDR's bound at white (with it light above white loses its colour). |
+| Refine Saturation | `color::hdr_curve::refine_saturation`, on the master point curve from 50% to 100%: SDR's rule on the same encoded values, the color keeping its channel differences from before the curve, without SDR's bound at white (with it light above white loses its color). |
 | Channel curves | `color::hdr_curve::channel`, after the master curve: each channel's own curve on that channel of the look curve's encoding of ProPhoto RGB, by the master curve's rule, its output held at 16. An identity curve leaves its channel alone. |
 | Look's channel curves | After the user's channel curves (`tone::LookChannels`, docs/lightroom-profiles.md#channel-curves-in-looks): each of the look's Red, Green and Blue curves on that channel of the same encoding, by the rule of the look's curve above. An identity curve leaves its channel alone. |
-| Saturation, Vibrance, the colour mixer | The SDR grids of `develop::color_mixer`, after Contrast, the tone curves and Levels, as in SDR, on unclipped linear values ([The colour stage](#the-colour-stage)): looked up at the colour's value up to 0.2 and at 0.2 above it; Vibrance's value change fades out from 0.5 to white; band Luminance, from −100 to +100, is looked up up to 0.5 and its value change applied per channel, fading out by the channel's scene level from 0.6 to white; negative Luminance is up to 1.2 times stronger as the colour's brightest channel goes from 0.5 to white, and positive Luminance up to 1.5 times where the profile's curve brightens the colour. |
-| Look's RGB table | After the colour mixer, as in SDR (`RgbTable::apply_hdr`): in the table's primaries, each channel is overrange-encoded (0 to 16 times white onto 0 to 1) before the table's own encoding and decoded after it, and what it encodes beyond 1 skips the table and is added back to its output in that encoding. `.cube` looks, Lightroom's creative looks and fitted Camera Looks' tables alike. |
-| Point Color | SDR's swatches (`develop::point_color`), after the colour mixer, on each channel taken into Color Grading's HDR domain (16 times white at 1) and back, clipping at 16 ([Point Color](#point-color)). |
-| Color Grading | The SDR curves (`develop::color_grade_curves`), after the colour mixer and a look's RGB table, on each channel taken into a domain that is the value itself in the deep shadows and 1 at 16 times white, u = x / (1 + 15x/16), and back ([Color grading](#color-grading)); above white each channel's change strengthened by up to a tenth of its log by three stops above white (`color_grade_curves::hdr_boost`). Above 16 the gain at 16. A look's split toning is a pass of its own, as in SDR. |
-| Black & White | The SDR mix's gray (`develop::black_white`) looked up as the colour mixer's, unclipped above white. |
-| Defringe | After the colour stage, before sharpening: SDR's operator weighted by the luminance range around each pixel and the colour's chroma, and a band of bright, saturated blues losing chroma above white ([Defringe](#defringe)). |
-| Calibration | As in SDR: a matrix on scene colour before Exposure, and Shadows tint, which only reaches values below white. |
+| Saturation, Vibrance, the color mixer | The SDR grids of `develop::color_mixer`, after Contrast, the tone curves and Levels, as in SDR, on unclipped linear values ([The color stage](#the-color-stage)): looked up at the color's value up to 0.2 and at 0.2 above it; Vibrance's value change fades out from 0.5 to white; band Luminance, from −100 to +100, is looked up up to 0.5 and its value change applied per channel, fading out by the channel's scene level from 0.6 to white; negative Luminance is up to 1.2 times stronger as the color's brightest channel goes from 0.5 to white, and positive Luminance up to 1.5 times where the profile's curve brightens the color. |
+| Look's RGB table | After the color mixer, as in SDR (`RgbTable::apply_hdr`): in the table's primaries, each channel is overrange-encoded (0 to 16 times white onto 0 to 1) before the table's own encoding and decoded after it, and what it encodes beyond 1 skips the table and is added back to its output in that encoding. `.cube` looks, Lightroom's creative looks and fitted Camera Looks' tables alike. |
+| Point Color | SDR's swatches (`develop::point_color`), after the color mixer, on each channel taken into Color Grading's HDR domain (16 times white at 1) and back, clipping at 16 ([Point Color](#point-color)). |
+| Color Grading | The SDR curves (`develop::color_grade_curves`), after the color mixer and a look's RGB table, on each channel taken into a domain that is the value itself in the deep shadows and 1 at 16 times white, u = x / (1 + 15x/16), and back ([Color grading](#color-grading)); above white each channel's change strengthened by up to a tenth of its log by three stops above white (`color_grade_curves::hdr_boost`). Above 16 the gain at 16. A look's split toning is a pass of its own, as in SDR. |
+| Black & White | The SDR mix's gray (`develop::black_white`) looked up as the color mixer's, unclipped above white. |
+| Defringe | After the color stage, before sharpening: SDR's operator weighted by the luminance range around each pixel and the color's chroma, and a band of bright, saturated blues losing chroma above white ([Defringe](#defringe)). |
+| Calibration | As in SDR: a matrix on scene color before Exposure, and Shadows tint, which only reaches values below white. |
 | Shadows | The SDR local tone operator (`develop::local_tone`) on scene values, unclipped: its gain at a pixel's base level as in SDR, before S3. |
 | Clarity | −50 to +50: the SDR operator (`develop::clarity`, in the local tone map) on scene values, unclipped, its gain 1.5 times SDR's within 1.6% of the long edge of light above scene level −1 (`local_tone::HDR_CLARITY_NEAR_GAIN`), as Camera Raw's HDR Clarity is stronger beside light above white. Beyond ±50 it is refused (+100 is further from Camera Raw below white than in SDR). |
 | Dehaze | −50 to +100: the SDR operator, with the photo's haze, unclipped, as in SDR. Below −50 it is refused (at −70 and −100 it is further from Camera Raw below white than in SDR). |
@@ -357,42 +357,42 @@ HDR reference family):
 Lens corrections, geometry, noise reduction, AI Denoise, Red Eye, Heal and Clone, and Texture
 work on camera samples before tone and render as in SDR.
 
-### The colour stage
+### The color stage
 
-Camera Raw 18.7's HDR renders of synthetic colour patches (12 hues, saturations 0.3
+Camera Raw 18.7's HDR renders of synthetic color patches (12 hues, saturations 0.3
 to 0.9, 0.125 to 8 times white, a linear and the ACR3 profile curve) show:
 
 - Hue and saturation changes don't depend on brightness. Saturation +100 multiplies
   saturation by 1.73–1.74 from 0.125 to 8 times white, and its value change (×1.15 at
   saturation 0.3) is the same at every brightness. Its SDR render gives 1.78 at 0.5,
-  because SDR rolls off from there; the colour mixer's grids, fitted on SDR renders,
+  because SDR rolls off from there; the color mixer's grids, fitted on SDR renders,
   carry that roll-off at high values. An HDR master therefore looks them up at the
-  colour's value only up to 0.2 (`color_mixer::HDR_VALUE`) and keeps the change found
+  color's value only up to 0.2 (`color_mixer::HDR_VALUE`) and keeps the change found
   there above it.
 - Vibrance's value change applies below white and fades out by white (value ×1.06 at
   0.5, ×1.01 from 1 to 8); its saturation change does not.
-- The colour mixer's Luminance changes each channel below about white and not the ones
+- The color mixer's Luminance changes each channel below about white and not the ones
   above it: Luminance +100 of every band gives value ×1.67 at 0.5 and ×1.00 at 1, 2, 4
-  and 8, where a colour at white turns almost gray. An HDR master looks its change up at
-  the colour's value up to 0.5 (`color_mixer::HDR_LUMINANCE_VALUE`), so below 0.5 it is
+  and 8, where a color at white turns almost gray. An HDR master looks its change up at
+  the color's value up to 0.5 (`color_mixer::HDR_LUMINANCE_VALUE`), so below 0.5 it is
   the SDR rendition's, and applies its value part to each ProPhoto channel by that
   channel's scene level (before the profile's curve, as the mixer's other changes change
   it): in full up to 0.6 (`color_mixer::HDR_LUMINANCE_FADE`), fading out to none at white.
   Its hue and saturation parts move to the other changes' lookup between 0.5 and white.
-  Negative Luminance darkens bright colours just above white more than that: its change
-  grows to 1.2 times as the colour's brightest channel goes from 0.5 to white
+  Negative Luminance darkens bright colors just above white more than that: its change
+  grows to 1.2 times as the color's brightest channel goes from 0.5 to white
   (`color_mixer::HDR_LUMINANCE_DARKEN`), and it renders down to −100. Positive Luminance
-  is stronger where the profile's curve brightens a colour: Camera Raw's HDR effect
+  is stronger where the profile's curve brightens a color: Camera Raw's HDR effect
   through Adobe Standard strengthens toward white where its SDR one rolls off, and
   through a linear profile it is the SDR one. Its change grows to 1.5 times as the
-  colour's scene luminance goes from 0.35 to 0.6, in proportion to how far the curve
-  brightens the colour's luminance, in full from half a stop
+  color's scene luminance goes from 0.35 to 0.6, in proportion to how far the curve
+  brightens the color's luminance, in full from half a stop
   (`color_mixer::hdr_luminance_lift`), and it renders up to +100.
 - Black & White's gray is the mix's, unclipped above white.
-- Calibration renders as in SDR: its matrix works on scene colour, and Shadows tint
+- Calibration renders as in SDR: its matrix works on scene color, and Shadows tint
   fades out below white.
 
-Measurements and validation: [colour stage](records/hdr-stage1-results.md#colour-stage).
+Measurements and validation: [color stage](records/hdr-stage1-results.md#color-stage).
 
 ### Vignette and grain
 
@@ -433,13 +433,13 @@ the CPU master. Measurements:
 Camera Raw 18.7 applies Point Color's swatches to an HDR master in the domain it
 grades in ([Color grading](#color-grading)): each channel taken into u = x / (1 + 15x/16)
 and back, where a swatch's shifts and ranges work as in SDR and channels clip at 1,
-16 times white. On synthetic colour patches from 0.125 to 8 times white:
+16 times white. On synthetic color patches from 0.125 to 8 times white:
 
 - A Luminance shift is SDR's in u, so it lifts light above white far more than SDR,
   which clips there: Luminance +50 brightens an orange ×1.68 at a quarter of white,
   ×3.5 at white and ×6.1 at twice white, and ×3.8 and ×2.1 at four and eight times as
   the clip at 16 holds it.
-- A colour very bright in linear light has little saturation in u, so the swatch's
+- A color very bright in linear light has little saturation in u, so the swatch's
   saturation range stops selecting it: Hue +50 turns an orange 19° at white, 8° at
   four times white and 2–4° at eight.
 
@@ -467,7 +467,7 @@ white:
 
 `ChannelCurves::apply_hdr` renders that rule; on the ramp it gives Camera Raw's effect
 to a median 0.000–0.008 stop under 24 settings. Above 16 a channel keeps its gain at 16.
-Strong blue tints of saturated colours above white differ: Camera Raw lifts the lowest
+Strong blue tints of saturated colors above white differ: Camera Raw lifts the lowest
 channel there, which no per-channel rule does (up to 12 mean ΔE_ITP above white on the
 synthetic patches; RAWmakase's SDR grading of the same patches is within 2). On the
 twelve validation and holdout photos a split tone, a Highlights tint with Highlights
@@ -484,21 +484,21 @@ holdout photos (Purple Amount 8 and Green Amount 4) Camera Raw's HDR Defringe de
 from its SDR one:
 
 - below white it removes less than its SDR render (chroma kept ×0.67–0.74 where SDR
-  keeps ×0.45–0.63 on the blocks it changes), and changes colour along edges, leaving
-  smooth and faint colour alone; SDR's operator, by hue and chroma alone, also changes
+  keeps ×0.45–0.63 on the blocks it changes), and changes color along edges, leaving
+  smooth and faint color alone; SDR's operator, by hue and chroma alone, also changes
   smooth areas and deep shadows Camera Raw leaves;
 - above white it takes a band of bright, saturated blues its SDR render leaves alone:
   the Z 8 photo's sky with its brightest channel 4.5–6.5 times white (Oklab hue
   0.65–0.67, outside RAWmakase's Purple window) keeps ×0.51–0.56 of its chroma, and a
   Sony ARW's blues in the same band ×0.75–0.80; dimmer or paler blues keep it all.
 
-So the master runs SDR's Oklab operator on each pixel (a colour above white taken with
+So the master runs SDR's Oklab operator on each pixel (a color above white taken with
 its brightest channel at white, then scaled back), weighted by the luminance range
-within 4 pixels of the full photo (full from one stop) and by the colour's Oklab chroma
-(none below 0.015, full from 0.04); then a colour in that band of blues (its brightest
+within 4 pixels of the full photo (full from one stop) and by the color's Oklab chroma
+(none below 0.015, full from 0.04); then a color in that band of blues (its brightest
 Display P3 channel 4.5–6.5 times white, saturation above 0.55, Oklab hue 0.63–0.675)
 loses half its chroma at Purple Amount 8, other Amounts by SDR's Amount curve. It runs
-on the CPU after the colour stage and before sharpening, the vignette and grain, as
+on the CPU after the color stage and before sharpening, the vignette and grain, as
 SDR's Defringe precedes them; a region reads the window around it, so it renders as
 that part of the whole. The GPU's HDR preview leaves it to the CPU.
 
@@ -540,10 +540,10 @@ Raw's SDR one ([record](records/hdr-stage1-results.md#masks)):
   by white on the pixel's brightest channel (`masks::local::color_hdr_strength`), as
   Camera Raw's stops tinting there.
 - **Saturation** from 0 to +50, overlapping masks added: Camera Raw's HDR mask
-  Saturation, which keeps a colour's value and hue and raises its HSV saturation as a
+  Saturation, which keeps a color's value and hue and raises its HSV saturation as a
   power of itself, s^(1 − 0.74 k^1.4) at Saturation k, at every brightness
   (`masks::local::saturate_hdr`). Below 0, down to −100, Camera Raw's blends each
-  channel of linear ProPhoto toward the colour's HSL lightness, the mean of its largest
+  channel of linear ProPhoto toward the color's HSL lightness, the mean of its largest
   and smallest channels, by 1 + Saturation, at every brightness
   (`masks::local::desaturate_hdr`). The SDR rendition keeps SDR's Oklab operator.
 - **Sharpness and Noise**: SDR's operators on the master's encoded values, as global
@@ -556,7 +556,7 @@ Raw's SDR one ([record](records/hdr-stage1-results.md#masks)):
 Blacks and Hue in an active mask refuse the master by name ("A mask's
 Blacks …"), and so does Saturation above +50. Camera Raw's HDR mask Blacks
 −50 brightens light above white (+0.39 stop at 16 times) and crushes the shadows harder
-than its SDR one. SDR's mask Saturation brightens saturated colours (×1.11 in value at
+than its SDR one. SDR's mask Saturation brightens saturated colors (×1.11 in value at
 +50, Camera Raw's ×1.004), which white's clip hides in SDR; the master's own operator
 misses above white at +75 and +100 on six photos. Hue is SDR's Oklab
 rotation, further from Camera Raw above white than the SDR rendition is below it. Highlights has no HDR rendering
@@ -636,7 +636,7 @@ pseudo-scene inverts what those stages render a scene as at a new file's setting
 DNG RGBTone fashion: the scene tone stage's HDR white curve at Whites 0, the identity
 from 0.5 up and within 0.0015 stop of it below. At the file's own settings the
 master is its light again, exactly from 0.5 up and within 0.0001 stop below, and
-within 1e-5 of a pixel's brightest channel, the precision of the colour matrices
+within 1e-5 of a pixel's brightest channel, the precision of the color matrices
 the stages convert through, as a raw master's do; negative channels render as 0, as
 no HDR master renders them. An edit without a profile renders with the Embedded
 one. Exposure is a gain of the
@@ -672,7 +672,7 @@ Display P3, the same construction gives those gamuts' own matrices to 2e-4. A PN
 cICP of DCI-P3 PQ and of EBU Tech. 3213 HLG decode to the light encoded, within its
 16-bit steps.
 
-A JPEG XL whose codestream gives its colour as enum values (not an ICC profile)
+A JPEG XL whose codestream gives its color as enum values (not an ICC profile)
 decodes by those: its primaries and white, BT.709, BT.2020 and Display P3 as their
 gamuts, and any others, DCI-P3's and custom chromaticities among them, by the same
 construction. The profile jxl-oxide makes of the encoding isn't used for HDR: its
@@ -681,8 +681,8 @@ would decode 5% too red. Lossless PQ in Display P3 and DCI-P3 and HLG in custom
 chromaticities (EBU Tech. 3213's) decode to the same light as a PNG of their signal
 whose cICP names those primaries, to 1e-4. BT.709's or BT.2020's primaries with another
 white (DCI's, illuminant E) decode with that white too. Until #1048 they opened as
-BT.709 or BT.2020 with D65's white, their colours off by more than 2%; an edit of one
-renders its corrected colours. Only PQ and HLG are read so: jxl-oxide names no linear
+BT.709 or BT.2020 with D65's white, their colors off by more than 2%; an edit of one
+renders its corrected colors. Only PQ and HLG are read so: jxl-oxide names no linear
 encoding by `cicp`, and a linear JPEG XL has always opened as an SDR file.
 
 **Float samples through curves.** An ICC profile's curves describe 0 to 1. Float
@@ -700,13 +700,13 @@ refused.
 
 RAWmakase has no HEVC decoder ([dependencies](dependencies.md)), so an HDR HEIC's
 light decodes exactly only where the system's decoder gives its signal back as coded,
-converted to RGB by the file's matrix and range and nothing else. Its colour is that
+converted to RGB by the file's matrix and range and nothing else. Its color is that
 of its ICC profile when it has one, which then describes the pixels, an `nclx` beside
 it giving only how they convert to RGB (ISO/IEC 23008-12); without a profile, the
 `nclx`'s. So a profile's `cicp` tag names its HDR, an `nclx` beside it gives the
 matrix, and an HDR `nclx` must say the same HDR as the profile.
 
-- **macOS:** ImageIO decodes the file into a colour space of its own, CoreGraphics'
+- **macOS:** ImageIO decodes the file into a color space of its own, CoreGraphics'
   space of its CICP (`kCGColorSpaceITUR_2100_PQ` and the others) or one of its
   profile, and RAWmakase draws it into a bitmap of that same space, which
   CoreGraphics leaves as it is. On `tests/data/formats/hdr-*.heic`
@@ -777,8 +777,8 @@ between its samples' centres, as for JPEG. Refused for Develop, by reason:
   beyond 150 MP (checked before the decoder is asked for it), or that the decoder
   doesn't decode to its header's size in 8-bit grey or RGB;
 - **"version N gain-map"**, **"HDR-base gain-map"** and the other refusals of ISO
-  21496-1 metadata above, and **"alternate-colour gain-map"** for a `tmap` in the
-  alternate's colour space, which its own `colr` describes;
+  21496-1 metadata above, and **"alternate-color gain-map"** for a `tmap` in the
+  alternate's color space, which its own `colr` describes;
 - **"cropped HEIC gain-map"**: an image its `clap` crops, which the map, of the whole
   picture, isn't checked against.
 
@@ -827,7 +827,7 @@ anything but text is refused:
 `GainMapMin` (0 when absent) and `GainMapMax` in stops, `Gamma` (1), `OffsetSDR` and
 `OffsetHDR` (1/64 each), `HDRCapacityMin` (0) and `HDRCapacityMax`, and
 `BaseRenditionIsHDR` ("False"). It applies by the same formula as ISO 21496-1's, at
-full weight, always in the base's colour space: the map's own profile isn't used. The
+full weight, always in the base's color space: the map's own profile isn't used. The
 capacities only weigh the map for a display, so they are checked, not applied.
 
 **The light** is the authored HDR rendition, reconstructed at the map's full weight:
@@ -877,8 +877,8 @@ Refused for Develop, by reason (the Library shows the base):
 - **"HDR-base gain-map":** the base is the HDR rendition, by its flag (ISO's, or
   `hdrgm:BaseRenditionIsHDR="True"`) or because its headroom is at or above the
   alternate's.
-- **"alternate-colour gain-map":** the map applies in the alternate's colour space,
-  which an ICC profile or colour encoding of its own describes.
+- **"alternate-color gain-map":** the map applies in the alternate's color space,
+  which an ICC profile or color encoding of its own describes.
 - **"grey gain-map"** and **"table-profile gain-map":** a grey base, or a base whose
   profile converts through tables, which give the map no linear RGB to apply in.
 - **"turned JPEG XL gain-map":** a JPEG XL whose base or map codestream is turned.
@@ -893,7 +893,7 @@ A JPEG XL whose own samples are HDR opens by them as above, whatever map it carr
 - RAWmakase's own gain-map exports of synthetic ramps reopen with the master's
   luminance: median 0.005 stop for both JPEG and lossless JPEG XL, worst 0.03 and
   0.015. That is the map's 8-bit steps; the single-channel maps carry luminance, and
-  colour is the base's.
+  color is the base's.
 - libultrahdr 2.0.2's own Ultra HDR file (Display P3 base, three-channel map the
   base's size) opens with the light libultrahdr decodes at full headroom, to 0.019
   stop on the checked pixels: median 0.004 and p95 0.014 over the image.
@@ -976,9 +976,9 @@ was 10,000 cd/m² for every PQ export, cjxl's default and PQ's limit; with the
 content's own light, a decoder that tone maps (libjxl, `djxl --display_nits`) maps
 from where the photo's light stops rather than from 10,000. BT.709's primaries are included because
 jxl-oxide clips a lossy file's light to the target in them before converting it to
-wider primaries; a saturated P3 or Rec. 2020 colour can be brighter there than in any
+wider primaries; a saturated P3 or Rec. 2020 color can be brighter there than in any
 of its own channels, and this way jxl-oxide clips no light below 10,000 cd/m² at
-the target (it still clips channels that are negative in BT.709, colours outside it,
+the target (it still clips channels that are negative in BT.709, colors outside it,
 as it did before). The light a lossy file decodes to
 doesn't depend on the target: jixel and libjxl code XYB in absolute luminance (255
 cd/m² is 1). HLG keeps 1,000 cd/m², because libjxl's HLG OOTF takes the target as the
@@ -993,7 +993,7 @@ brightest BT.709 channel 2,421, which the header's half float rounds up to 2,422
 lossy one to it within 0.0035 stop above white at the median (p95 0.035), per pixel.
 An HLG export of the photo reads 1,000 cd/m².
 
-No mastering-display colour volume (SMPTE ST 2086) is written: none of these formats
+No mastering-display color volume (SMPTE ST 2086) is written: none of these formats
 has a field for it (PNG's `mDCv` and AVIF's `mdcv` would, but RAWmakase exports
 neither in HDR), and a photo has no mastering display to describe. MaxFALL is not
 computed, as nothing would hold it.
@@ -1002,12 +1002,12 @@ computed, as nothing would hold it.
 
 A watermark goes into the HDR master before it is encoded
 (`watermark::Ready::apply_hdr`), placed, scaled and turned by the same code as in the
-SDR export, for the master's size, which is the SDR rendition's. Its colours are sRGB
+SDR export, for the master's size, which is the SDR rendition's. Its colors are sRGB
 at graphics white: a white mark is 1.0 in linear light (203 cd/m² in PQ, HLG signal
 0.75), never the peak, so it looks as it does in the SDR export instead of glowing
 over the photo's highlights. It is blended as the sRGB SDR export blends it, in sRGB's
 primaries and encoded values, with the sRGB curve continued above white (and its
-linear segment below 0 for colours outside sRGB): where the master is within sRGB and
+linear segment below 0 for colors outside sRGB): where the master is within sRGB and
 white, a marked pixel is the sRGB export's, and a partly transparent mark or a text's
 antialiased edge weighs the photo as it does there. (Blending in linear light would
 make a 60% white mark over black 0.6 of white instead of the SDR export's 0.32.) Over
@@ -1025,7 +1025,7 @@ headroom.
 A JPEG export with HDR on writes a gain map (`export::gain_map`, ISO 21496-1) instead
 of HDR pixels: the base is the edit's SDR rendition, exactly the SDR JPEG export's
 pixels and metadata, and the gain map turns it into the HDR master on a display with
-headroom. The map is one 8-bit channel the base's size, computed in the base's colour
+headroom. The map is one 8-bit channel the base's size, computed in the base's color
 space (sRGB primaries, linear) from luminance as log2 of (HDR + 1/64) / (SDR + 1/64),
 between its minimum and maximum over the photo, gamma 1. The base's headroom is 0 and
 the alternate's log2 of 2^limit. The SDR rendition's sliders (`crs:SDR*`), which Camera
@@ -1050,8 +1050,8 @@ read when both are there. A JPEG XL gain map has no `hdrgm`.
 A JPEG XL export can carry the same gain map (the Export dialog's "As a gain map over
 the SDR rendition", or `--hdr-export gain-map` to a `.jxl`): the base is the 8-bit
 sRGB SDR JPEG XL, and a `jhgm` box (libjxl's gain-map bundle) holds version 0, the
-ISO 21496-1 metadata, no alternate colour encoding or ICC profile (the map applies in
-the base's colour space), and the map's grayscale codestream. Both are lossy, at the
+ISO 21496-1 metadata, no alternate color encoding or ICC profile (the map applies in
+the base's color space), and the map's grayscale codestream. Both are lossy, at the
 same distance, as a gain-map JPEG's map has its quality, or both lossless. RAWmakase
 writes the bundle itself around jixel's or zune's codestreams. For the Z 8 photo at
 quality 92 the file is 10.3 MB (74 MB lossless), and the lossy map is within 2 of its
@@ -1101,8 +1101,8 @@ them with libjxl 0.12, jxl-oxide 0.12.6, macOS ImageIO and Chrome 156
   stop (p95).
 
 Decoder limits that are not the files':
-- ImageIO renders saturated HLG colours its own way, as it does the same signal from
+- ImageIO renders saturated HLG colors its own way, as it does the same signal from
   libjxl's own file;
 - ImageIO ignores the intensity target;
-- jxl-oxide clips a lossy frame's saturated wide-gamut colours;
+- jxl-oxide clips a lossy frame's saturated wide-gamut colors;
 - Chrome maps HDR images to SDR in canvases.

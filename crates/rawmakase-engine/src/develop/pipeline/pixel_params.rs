@@ -135,7 +135,7 @@ pub(crate) mod slot {
         // curve's extension starts, its value there and slope beyond (its samples are
         // `CHANNELS`').
         HDR_CHANNELS: 12,
-        // An HDR master's colour mixer (`ColorMixer::hdr_fading`): the fading Vibrance
+        // An HDR master's color mixer (`ColorMixer::hdr_fading`): the fading Vibrance
         // value factors of its changes' grid and of its gray source (one float a cell),
         // then band Luminance's whole changes (three floats a cell), or -1 each; its grids are `MIXER`'s and `GRAY_SOURCE`'s, and black
         // & white's `GRAY_GRID`.
@@ -213,8 +213,8 @@ pub(crate) struct PixelParams {
     /// The Shadows/Highlights map's grids, which the shader reads from a buffer of their
     /// own (`LOCAL_A`, `LOCAL_FINE` and `LOCAL_REGION` offsets into it; Clarity's into `tables`).
     pub(crate) grid: Option<crate::develop::local_tone::MapGrid>,
-    /// The recipe as the camera colour reads it (`stage_cache::color_recipe`), when the
-    /// develop pass may keep that colour for its samples and reuse it while the stages
+    /// The recipe as the camera color reads it (`stage_cache::color_recipe`), when the
+    /// develop pass may keep that color for its samples and reuse it while the stages
     /// after it change (see `gpu::develop::Kept`). `None` computes it every time.
     pub(crate) color: Option<Recipe>,
 }
@@ -274,7 +274,7 @@ pub(crate) fn supported(r: &Recipe) -> bool {
 /// `Recipe::resolved_hdr`) of a photo with `metadata`: one whose master renders
 /// (`model::hdr::check_resolved_recipe`): what the SDR port samples (Texture's image among it), an
 /// ordinary profile's tables and HDR tone curve, an HDR profile's overrange-encoded ones, a look's table and curve
-/// (`CameraProfile::finish_hdr`), then Contrast, the tone curves and the colour stage
+/// (`CameraProfile::finish_hdr`), then Contrast, the tone curves and the color stage
 /// (`tone::HdrFinish`). An HDR file's master renders from the pseudo-scene of its
 /// light with its own recipe (`quality::hdr_file_recipe`), as `render_hdr` renders
 /// it; `PreviewRenderer::render_hdr_file` gives the port nothing else of one. Other

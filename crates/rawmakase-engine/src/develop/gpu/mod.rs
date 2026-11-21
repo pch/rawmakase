@@ -28,12 +28,12 @@
 //!
 //! # What runs here
 //!
-//! The per-pixel colour and tone stage (`develop.wgsl`, fed by
+//! The per-pixel color and tone stage (`develop.wgsl`, fed by
 //! `pipeline/pixel_params.rs`) runs on the stage cache's samples for every recipe
 //! resolved with a camera profile; unresolved recipes use the CPU stage. Each pass is
 //! compiled for the features its parameters use (`develop::Variant`); the
 //! Shadows/Highlights map's grids stay on the device per map base, and each sample
-//! set's camera colour per the recipe fields it reads (`develop::Kept`), written once
+//! set's camera color per the recipe fields it reads (`develop::Kept`), written once
 //! a second render with the same settings asks for it and read after its pass is
 //! submitted.
 //!
@@ -61,7 +61,7 @@
 //! For the same recipes, the stages before the per-pixel stage also run on the
 //! device when the photo fits its buffer limits (`resident.rs`): the photo or pyramid
 //! level is kept there, and regions are sampled there through geometry and lens
-//! correction. Colour and luminance noise reduction run on the CPU on the full camera
+//! correction. Color and luminance noise reduction run on the CPU on the full camera
 //! image, before retouching and before the preview pyramid is built
 //! (`develop::recipe::Denoise` captures their settings and execution together; the
 //! retouch cache keys that value and the source image identity), so the GPU samples
@@ -164,7 +164,7 @@ pub struct Processor {
     presenter: Option<present::Presenter>,
     /// The photo and its local-tone and sampling stages on the device.
     resident: Option<resident::Resident>,
-    /// The develop pass's camera colour kept for its samples (see `develop::Kept`), most
+    /// The develop pass's camera color kept for its samples (see `develop::Kept`), most
     /// recently used first.
     kept: Vec<develop::Kept>,
     name: String,

@@ -42,7 +42,7 @@ const COARSEST: usize = 200;
 /// [`CELL`] × [`CELL`], so every part of the frame takes part.
 const MAX_POINTS: usize = 1 << 18;
 const CELL: usize = 16;
-/// A pixel takes part below this fraction of its colours' saturation (as the
+/// A pixel takes part below this fraction of its colors' saturation (as the
 /// exposure ratio's measurement, `ratio`) and this many standard deviations
 /// of its noise above black.
 const BRIGHTEST: f32 = 0.85;
@@ -268,7 +268,7 @@ impl Pyramid {
     }
 
     /// The pyramid of `frame`, whose noise is `noise`: a pixel takes part
-    /// when no colour of it is clipped or above [`BRIGHTEST`] of its
+    /// when no color of it is clipped or above [`BRIGHTEST`] of its
     /// saturation, and its green is [`SIGNAL`] standard deviations above
     /// black.
     pub(crate) fn of_frame(frame: &Frame, noise: Noise) -> Self {
@@ -283,7 +283,7 @@ impl Pyramid {
                 }
                 // Green, which a Bayer sensor samples on every row and
                 // column: where the demosaic puts a red or blue edge depends
-                // on its phase on the colour filter, and a frame moved by an
+                // on its phase on the color filter, and a frame moved by an
                 // odd number of pixels would see its edges moved by that.
                 let y = f64::from(p[1]);
                 let variance = noise.variance(y);

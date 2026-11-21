@@ -42,7 +42,7 @@ fn render_resident(
     if !supported {
         return Ok(None);
     }
-    // Masks whose ranges need developed colours, whose detail changes the samples or
+    // Masks whose ranges need developed colors, whose detail changes the samples or
     // whose finish runs on the CPU take the CPU sampling path.
     if base.masks.iter().filter(|m| m.is_active()).any(|m| {
         let a = &m.adjust;
@@ -78,7 +78,7 @@ fn render_resident(
     let Some(mut params) = params else {
         return Ok(None);
     };
-    // The samples stay on the device, so their camera colour may too.
+    // The samples stay on the device, so their camera color may too.
     params.color = Some(develop::stage_cache::color_recipe(&base));
     let weights = develop::pipeline::mask_weights(
         &toned,

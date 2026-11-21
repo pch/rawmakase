@@ -4,7 +4,7 @@
 //! luminance, the same curve on every photo measured within the ranges
 //! [`crate::model::hdr::SdrRendition::unrendered`] allows; RAWmakase applies that change,
 //! measured as log2 luminance against log2 luminance of the default rendition
-//! ([`super::sdr_rendition_data`]), to its own rendition. Each colour is scaled as a
+//! ([`super::sdr_rendition_data`]), to its own rendition. Each color is scaled as a
 //! whole, so its hue and saturation stay. They never change the HDR master
 //! (docs/records/hdr-stage1-results.md#sdr-rendition).
 use super::sdr_rendition_data::{BRIGHTNESS, CONTRAST, FIRST, HIGHLIGHTS, SHADOWS, STEP, WHITES};
@@ -132,7 +132,7 @@ mod tests {
         assert!((half.apply(gray(y))[0] / y).log2() > 0.4);
         let darker = SdrRenditionTone::new(&sliders(|s| s.brightness = -0.5)).unwrap();
         assert!((darker.apply(gray(y))[0] / y).log2() < -0.4);
-        // Hue and saturation stay: a colour is scaled as a whole.
+        // Hue and saturation stay: a color is scaled as a whole.
         let c = half.apply([0.3, 0.1, 0.05]);
         assert!((c[0] / c[1] - 3.).abs() < 1e-4 && (c[1] / c[2] - 2.).abs() < 1e-4);
         assert_eq!(half.apply([0.; 3]), [0.; 3]);

@@ -1,12 +1,12 @@
 //! Defringe in the HDR master (docs/hdr.md#defringe), as Camera Raw 18.7's HDR
 //! Defringe departs from its SDR one on photos (docs/records/hdr-stage1-results.md#defringe):
-//! below white it changes colour along edges and leaves smooth and faint colour alone,
+//! below white it changes color along edges and leaves smooth and faint color alone,
 //! and above white it takes a band of bright, saturated blues.
 //!
 //! SDR's Oklab operator renders each pixel, weighted by how sharply the master's
-//! luminance changes around it ([`EDGE_RADIUS`], [`EDGE_FULL`]) and by the colour's
+//! luminance changes around it ([`EDGE_RADIUS`], [`EDGE_FULL`]) and by the color's
 //! chroma ([`CHROMA_FROM`], [`CHROMA_FULL`]); then the band of blues loses chroma
-//! ([`blue_band`]). It runs on the CPU, after the colour stage, before sharpening, the
+//! ([`blue_band`]). It runs on the CPU, after the color stage, before sharpening, the
 //! vignette and grain, as SDR's Defringe precedes them.
 use crate::camera_data::CameraImage;
 use crate::develop::effects::EffectsRendering;
@@ -18,7 +18,7 @@ use rayon::prelude::*;
 const EDGE_RADIUS: f32 = 4.;
 /// Luminance range across that window, in stops, at which the change is full.
 const EDGE_FULL: f32 = 1.;
-/// Oklab chroma (of the colour with its brightest channel at most white) below which
+/// Oklab chroma (of the color with its brightest channel at most white) below which
 /// the master's Defringe changes nothing, and from which it changes as SDR's.
 const CHROMA_FROM: f32 = 0.015;
 const CHROMA_FULL: f32 = 0.04;
@@ -86,12 +86,12 @@ fn blue_band_share(amount: f32) -> f32 {
     (0.5 * curve(amount) / curve(0.4)).min(1.)
 }
 
-/// How much a colour (`p3`, linear Display P3, 1 = graphics white; `srgb`, the same in
+/// How much a color (`p3`, linear Display P3, 1 = graphics white; `srgb`, the same in
 /// sRGB primaries) is in the band of blues Camera Raw 18.7's HDR Defringe takes with
 /// Purple Amount 8 (Hue 30–70): Oklab hue 0.63–0.675, its brightest Display P3 channel
 /// 4.5–6.5 times white and its saturation there (1 − min/max) above 0.55, each softened
 /// at its ends. Measured on two photos (the Nikon Z 8's sky and a Sony ARW's); the
-/// twelve photos' other bright blues, dimmer or paler, keep their colour.
+/// twelve photos' other bright blues, dimmer or paler, keep their color.
 fn blue_band(p3: [f32; 3], srgb: [f32; 3]) -> f32 {
     let ramp = |x: f32, a: f32, b: f32| ((x - a) / (b - a)).clamp(0., 1.);
     let within = |x: f32, lo: f32, hi: f32, soft: f32| {
@@ -110,7 +110,7 @@ fn blue_band(p3: [f32; 3], srgb: [f32; 3]) -> f32 {
 }
 
 /// `rgb` (linear sRGB primaries) with its Oklab chroma scaled by `k`, its lightness
-/// and hue kept; a colour above white is scaled to its brightest channel at white
+/// and hue kept; a color above white is scaled to its brightest channel at white
 /// first, as SDR's operator sees it, and back.
 fn scale_chroma(rgb: [f32; 3], k: f32) -> [f32; 3] {
     let top = rgb.into_iter().fold(1f32, f32::max);
@@ -118,8 +118,8 @@ fn scale_chroma(rgb: [f32; 3], k: f32) -> [f32; 3] {
     crate::develop::pipeline::lab_to_srgb([lab[0], lab[1] * k, lab[2] * k]).map(|v| v * top)
 }
 
-/// SDR's operator on a linear display colour (sRGB primaries, 1 = graphics white), and
-/// the colour's Oklab chroma as it sees it: a colour brighter than white is taken with
+/// SDR's operator on a linear display color (sRGB primaries, 1 = graphics white), and
+/// the color's Oklab chroma as it sees it: a color brighter than white is taken with
 /// its brightest channel at white and scaled back.
 fn defringe_rgb(rgb: [f32; 3], r: &Recipe) -> ([f32; 3], f32) {
     let top = rgb.into_iter().fold(1f32, f32::max);
@@ -213,7 +213,7 @@ mod tests {
         r.effects.defringe = [0.8, 0.3];
         let mut pixels = toned.clone();
         apply(&mut pixels, w, &r, 4);
-        assert_ne!(pixels, toned, "the colour render defringes this edge");
+        assert_ne!(pixels, toned, "the color render defringes this edge");
         r.effects.monochrome = true;
         let mut pixels = toned.clone();
         apply(&mut pixels, w, &r, 4);
@@ -240,8 +240,8 @@ mod tests {
         }
     }
 
-    /// A fringe colour beside a sharp change of luminance loses chroma as SDR's
-    /// operator removes it; the same colour away from the edge, and a faint one beside
+    /// A fringe color beside a sharp change of luminance loses chroma as SDR's
+    /// operator removes it; the same color away from the edge, and a faint one beside
     /// it, keep theirs.
     #[test]
     fn only_a_saturated_colour_beside_an_edge_loses_chroma() {
@@ -250,7 +250,7 @@ mod tests {
         let lab = crate::develop::pipeline::srgb_to_lab([0.25, 0.03, 0.3]);
         let hue = lab[2].atan2(lab[1]).rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
         assert!((0.8..0.95).contains(&hue), "a purple fringe: {hue}");
-        // A row of 40: 8 dark, then the colour.
+        // A row of 40: 8 dark, then the color.
         let w = 40usize;
         let row = |c: [f32; 3]| -> Vec<[f32; 3]> {
             (0..w).map(|x| if x < 8 { [0.004; 3] } else { c }).collect()
@@ -280,7 +280,7 @@ mod tests {
 
     /// A smooth bright, saturated blue 4.5–6.5 times white loses half its chroma at
     /// Purple Amount 8, as Camera Raw's HDR Defringe took the Nikon Z 8's sky; the same
-    /// blue at twice white, or without Purple, keeps its colour.
+    /// blue at twice white, or without Purple, keeps its color.
     #[test]
     fn a_band_of_bright_saturated_blues_loses_chroma() {
         let to_p3 = crate::color::hdr_output::HdrGamut::DisplayP3.prophoto_to_rgb();

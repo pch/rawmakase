@@ -125,7 +125,7 @@ const BEZEL: f32 = 11.;
 const HEEL_CORNER: f32 = 12.;
 const BODY: Color32 = Color32::from_rgb(44, 44, 45);
 
-/// A ring between `inner` and `outer` around `centre`, coloured per vertex: `color`
+/// A ring between `inner` and `outer` around `centre`, colored per vertex: `color`
 /// of the angle (0 at the top, clockwise) and of the edge, outer or not.
 fn ring(
     painter: &egui::Painter,

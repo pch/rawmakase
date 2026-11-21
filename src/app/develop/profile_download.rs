@@ -17,7 +17,7 @@
 //! not cancel it. Its completion calls `bulk_import::list_profiles_after_import`,
 //! the refresh a manual camera-profile import runs, without touching a running
 //! import's state or status line, so profiles, raw defaults (with the fitted default
-//! kept for a photo without colour data), preset support, Library previews (keeping
+//! kept for a photo without color data), preset support, Library previews (keeping
 //! only the unchanged open photo's) and the reference refresh exactly as after a
 //! manual import. Only then is the profile applied, and only to the photo it was
 //! asked for, if that photo is still open (same load), its file still has the

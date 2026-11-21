@@ -2,13 +2,13 @@
 //! its AV1 decoded by rav1d ([`super::av1`]) and turned into RGB with the
 //! matrix and range it says.
 //!
-//! The colour comes from the `colr` boxes: an ICC profile, or one built from
+//! The color comes from the `colr` boxes: an ICC profile, or one built from
 //! the CICP code points; an AVIF with neither is taken as sRGB (the AV1
 //! header's own CICP is not consulted, as it is read only when decoding).
 //! The matrix and range come from the `nclx` box, or from the AV1 header
 //! without one. Alpha is dropped. Tiled (`grid`) images are refused.
 //!
-//! What it shares with a HEIC (colour, orientation, CICP) is in [`super::heif`].
+//! What it shares with a HEIC (color, orientation, CICP) is in [`super::heif`].
 use super::heif::{self, Nclx};
 use super::{Unsupported, av1};
 use anyhow::{Result, anyhow, bail};
@@ -403,7 +403,7 @@ mod tests {
     }
 
     /// yuv 0.8.19's own bilinear 4:2:0 above 8 bits tints every other pixel
-    /// of a flat colour on ARM; strips of rows must not show either.
+    /// of a flat color on ARM; strips of rows must not show either.
     #[test]
     fn a_flat_deep_420_colour_is_flat_everywhere() {
         use yuv::{YuvPlanarImage, YuvRange, YuvStandardMatrix};

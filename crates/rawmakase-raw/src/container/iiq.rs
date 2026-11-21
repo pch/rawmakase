@@ -8,7 +8,7 @@
 //! Sources: TIFF 6, ExifTool's PhaseOne tag documentation, and our own
 //! measurements against LibRaw's output and Adobe DNG Converter's on our
 //! files: the visible area is the image area, an odd left or top edge
-//! moved in by one; the colour filter at the sensor's corner is red first
+//! moved in by one; the color filter at the sensor's corner is red first
 //! (`compat-observed` rows give the older backs'); black is BlackLevel (0
 //! without one), white 65535, Adobe DNG Converter's WhiteLevel for every
 //! Phase One file. The black offsets per row and per column the block may

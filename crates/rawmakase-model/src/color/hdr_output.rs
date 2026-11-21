@@ -69,7 +69,7 @@ impl HdrGamut {
             Self::Rec709 => "Rec. 709",
         }
     }
-    /// The gamut's CICP colour primaries (ITU-T H.273).
+    /// The gamut's CICP color primaries (ITU-T H.273).
     pub fn cicp(self) -> u8 {
         match self {
             Self::Rec2020 => 9,
@@ -101,7 +101,7 @@ impl HdrGamut {
     pub fn prophoto_to_rgb(self) -> [[f32; 3]; 3] {
         super::mul_matrix(self.xyz_to_rgb(), PROPHOTO_TO_XYZ_D65)
     }
-    /// The gamut whose CICP colour primaries are `code` (ITU-T H.273), among those
+    /// The gamut whose CICP color primaries are `code` (ITU-T H.273), among those
     /// HDR files are decoded in: BT.709, BT.2020 and Display P3 (SMPTE EG 432-1).
     pub fn from_cicp(code: u8) -> Option<Self> {
         Self::ALL.into_iter().find(|g| g.cicp() == code)
@@ -113,7 +113,7 @@ impl HdrGamut {
     }
 }
 
-/// HDR light in CICP colour primaries (ITU-T H.273) other than an [`HdrGamut`]'s, as
+/// HDR light in CICP color primaries (ITU-T H.273) other than an [`HdrGamut`]'s, as
 /// an HDR file in them decodes (docs/hdr.md#hdr-files): their linear RGB to linear
 /// ProPhoto, and their luminance for HLG's system gamma.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -235,7 +235,7 @@ impl HdrTransfer {
 impl HdrOutput {
     /// Encodes one pixel of an HDR master (linear ProPhoto, 1 = graphics white) whose
     /// channels may reach `peak`: in the gamut, out-of-gamut channels clipped at 0 and
-    /// each held to `peak` by the HDR limit's roll-off (a saturated colour can have a
+    /// each held to `peak` by the HDR limit's roll-off (a saturated color can have a
     /// channel above it here that it had not in ProPhoto), then the transfer: PQ and
     /// HLG to 0–1 signal values, linear unchanged.
     pub fn encode(self, prophoto: [f32; 3], peak: f32) -> [f32; 3] {
@@ -302,7 +302,7 @@ pub fn roll_off(v: f32, peak: f32) -> f32 {
 }
 
 /// An HDR master's pixel (linear ProPhoto, 1 = graphics white) as extended sRGB for a
-/// window whose surface holds it (macOS's extended sRGB colour space): linear sRGB
+/// window whose surface holds it (macOS's extended sRGB color space): linear sRGB
 /// primaries, negative where outside sRGB, each channel's magnitude held to the
 /// display's `headroom` by [`roll_off`], then the sRGB curve, mirrored below 0. A
 /// value that isn't finite shows as 0. Display presentation only: nothing decoded,
