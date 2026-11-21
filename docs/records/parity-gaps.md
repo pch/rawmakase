@@ -730,13 +730,19 @@ through the controls that read it:
   2.1 worse while its median goes 1.26 → 1.06 and its shadows 5.4 → 4.0), with
   Highlights −100 as above, and Dehaze −100 and −50, where one window is 7.1 and 2.3
   worse (the regional 90th percentile 13.0 → 17.4 and 5.3 → 6.4).
-- Pixels counted at white or black on four photos: the palms at Exposure −1, where
-  Camera Raw has 15.7% of the frame at white, main 15.5% and the change 2.8% (the sky
-  renders at L\* 99.5 against main's 99.7 and Camera Raw's 100.0, either side of the
-  gate's line); the night photo above; and two photos at Vibrance −100 and −50, 0.8
-  and 0.9 point.
+- Pixels counted at white on two photos: the palms at Exposure −1, where Camera Raw
+  has 15.7% of the frame at white, main 15.5% and the change 2.8% (the sky renders at
+  L\* 99.5 against main's 99.7 and Camera Raw's 100.0, either side of the gate's
+  line); and a photo at Vibrance −50, 0.9 point.
+- Two of the eleven are not the decoder change's. The baseline is main of 2026-11-18,
+  and the build was made on main of 2026-11-20: a build of that main alone clips the
+  night photo's and another dark photo's deep shadows as the build with the change
+  does (at Shadows −100 with Highlights −100 the night photo has 18.3% of the frame
+  at black against 17.1% two days earlier and Camera Raw's 13.8%; at Vibrance −100 the
+  other has 13.5% against 12.7% and Camera Raw's 9.1%). What on main moved them is not
+  traced. The night photo's failing pair on the pairs sets above is that as well.
 
-So the clamp is no change to ship as it stands: the first two ensembles, Dehaze and
+Nine pairs are the change's own, then. So the clamp is no change to ship as it stands: the first two ensembles, Dehaze and
 the rest read a photo's top from maps that kept the data above the white level, and
 lowering it by up to half a stop moves them all on the photos that have such data.
 Two ways are left. One is to keep the decoders as they are and give the clamped
@@ -751,6 +757,29 @@ photos. The one is the palms at Shadows +60, Highlights −60, Whites +30 and Bl
 (above). Against main it is the decoder change's eleven and the palms at two settings
 of Shadows with Highlights. What the top of the Highlights curve does is therefore
 close to free of regressions by the gate's rule; what it stands on is not.
+
+**The third ensemble on main's decoders.** The same engine change on main without the
+decoder change, and the ensemble fitted again on maps made so (467 photos, 170 skies).
+Held out, the first ensemble is off by 6.8 L\* near white and 12.1 in blown areas,
+the third by 6.2 and 9.9, the join by 6.1 and 9.5, and on the 28 photos with a large
+bright area the join by 2.9 and 3.0 against 5.5 and 5.6: blown areas are worse than
+on maps with the samples held at the white (8.8), which is the photos that have
+samples above it. Against a run of that day's main alone: the highlights sets 91 pass
+and none fails (at −100 the highlights 1.90 → 1.74 ΔE00, eight photos closer by 0.3
+and none further; the band 90 to 100 from −2.46 to −2.03 L\*, 80 to 90 from +0.43 to
++0.67); the pairs sets 48 pass and one fails, the palms at the same mixed setting.
+The app's stage probes fail one case with it: the smooth synthetic scene with
+clipped areas at Highlights −100, whose largest block error is 0.063 against a limit
+of 0.062 (0.056 before; the fit made on the held maps left it at 0.056). There the
+third pulls the top stop 0.07 to 0.16 stop less where Camera Raw pulls it more than
+the first does. An attempt to keep the held reading for the third ensemble alone,
+with every channel of a cell held at its white on the measurement copy, was wrong:
+highlight reconstruction lifts clipped channels toward the others after the samples
+are read, so a reconstructed plateau lies at the largest channel's white in all
+three, and holding each channel at its own white afterwards lowered the plateau far
+under what the ensemble was fitted on (the highlights sets then failed five pairs).
+Holding the samples before reconstruction needs the unreconstructed image where the
+measurement copy is made, which the pipeline does not carry.
 
 **Open.** The statistic behind the size effects; whether to keep the data above the
 white level for rendering while the rule reads the photo as Camera Raw does, and
