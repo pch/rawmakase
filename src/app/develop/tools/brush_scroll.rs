@@ -3,19 +3,14 @@
 //! Shift it changes the feather; with Option/Alt it sizes the mask's Erase brush.
 use crate::app::Editor;
 use crate::app::develop::state::Tool;
+use crate::app::ui::wheel::{self, GESTURE_PAUSE};
 use eframe::egui;
 use std::time::{Duration, Instant};
 
-/// Points of scrolling that count as one wheel notch, one `[` or `]` press.
-const POINTS_PER_LINE: f32 = 40.;
-/// Lines a page of scrolling counts as.
-const LINES_PER_PAGE: f32 = 10.;
 /// How much one notch scales a size, as `[` and `]` do.
 const SIZE_STEP: f32 = 1.15;
 /// How much one notch changes a feather.
 const FEATHER_STEP: f32 = 0.1;
-/// Scrolling with pauses shorter than this is one gesture, one History step.
-const GESTURE_PAUSE: Duration = Duration::from_millis(400);
 
 /// What a scroll changes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,60 +36,29 @@ pub(in crate::app) struct Scroll {
     pub(in crate::app) brush: MaskBrush,
 }
 impl Scroll {
-    /// This frame's wheel events. A sideways scroll counts only with Shift, which macOS
-    /// turns a Shift+wheel into; a plain sideways trackpad swipe changes nothing. While
-    /// a button is held (a stroke, a moved spot or correction) or in a frame that also
-    /// has a click or a key, the wheel is left alone, so it never mixes into another
-    /// gesture or History step. A key a shortcut already took counts too: the frame's
-    /// raw input still has it.
+    /// This frame's wheel events, as [`wheel::read`] reads them. A sideways scroll
+    /// counts only with Shift (see [`wheel::Wheel::lines`]); a plain sideways
+    /// trackpad swipe changes nothing.
     pub(in crate::app) fn read(i: &egui::InputState) -> Vec<Self> {
-        let busy = i.pointer.any_down()
-            || i.raw.events.iter().any(|e| {
-                matches!(
-                    e,
-                    egui::Event::PointerButton { .. } | egui::Event::Key { pressed: true, .. }
-                )
-            });
-        if busy {
-            return Vec::new();
-        }
-        i.events
-            .iter()
-            .filter_map(|event| {
-                let egui::Event::MouseWheel {
-                    unit,
-                    delta,
-                    modifiers,
-                    ..
-                } = event
-                else {
-                    return None;
-                };
-                let amount = if modifiers.shift && delta.y == 0. {
-                    delta.x
-                } else {
-                    delta.y
-                };
-                let lines = match unit {
-                    egui::MouseWheelUnit::Point => amount / POINTS_PER_LINE,
-                    egui::MouseWheelUnit::Line => amount,
-                    egui::MouseWheelUnit::Page => amount * LINES_PER_PAGE,
-                };
-                (lines != 0.).then_some(Scroll {
-                    lines,
-                    adjust: if modifiers.shift {
-                        Adjust::Feather
-                    } else {
-                        Adjust::Size
-                    },
-                    brush: if modifiers.alt {
-                        MaskBrush::Erase
-                    } else {
-                        MaskBrush::Current
-                    },
-                })
-            })
-            .collect()
+        wheel::read(i).into_iter().filter_map(Self::from_wheel).collect()
+    }
+    /// What `wheel` changes, from the modifiers held when it happened; none for a
+    /// scroll that moves nothing along the wheel.
+    pub(in crate::app) fn from_wheel(wheel: wheel::Wheel) -> Option<Self> {
+        let lines = wheel.lines();
+        (lines != 0.).then_some(Scroll {
+            lines,
+            adjust: if wheel.modifiers.shift {
+                Adjust::Feather
+            } else {
+                Adjust::Size
+            },
+            brush: if wheel.modifiers.alt {
+                MaskBrush::Erase
+            } else {
+                MaskBrush::Current
+            },
+        })
     }
     fn scale(self) -> f32 {
         SIZE_STEP.powf(self.lines)

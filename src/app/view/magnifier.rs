@@ -56,9 +56,9 @@ impl Magnifier {
     /// The wheel over the photo this frame steps the level.
     pub(in crate::app) fn read_wheel(&mut self, ui: &egui::Ui) {
         let lines: f32 = ui
-            .input(crate::app::develop::tools::brush_scroll::Scroll::read)
-            .iter()
-            .map(|s| s.lines)
+            .input(crate::app::ui::wheel::read)
+            .into_iter()
+            .map(crate::app::ui::wheel::Wheel::lines)
             .sum();
         if lines != 0. {
             self.scroll(lines);

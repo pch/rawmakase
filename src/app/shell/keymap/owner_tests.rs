@@ -48,9 +48,10 @@ const FIXED: &[(&str, &str, usize)] = &[
     ("ui/widgets.rs", "key_pressed(", 3),
     ("ui/widgets.rs", "count_and_consume_key(", 2),
     ("ui/widgets.rs", "Event::Key {", 1),
-    // Any key stops the grid's glide or cancels a pending wheel or rail click.
+    // Any key stops the grid's glide or cancels a pending wheel or rail click,
+    // and leaves the wheel over the photo and the sliders alone that frame.
     ("library/kinetic.rs", "Event::Key {", 1),
-    ("develop/tools/brush_scroll.rs", "Event::Key {", 1),
+    ("ui/wheel.rs", "Event::Key {", 1),
     ("develop/panels/color_grading.rs", "Event::Key {", 2),
     // The raw-input hook that turns Copy and Paste with Shift or Option back
     // into keys, and the macOS menu handing its keys to a text field: both make
