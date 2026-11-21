@@ -30,6 +30,7 @@ pub(super) struct CurveSet {
     /// The measured parametric curve, when a region is set.
     pub(super) parametric: Option<crate::develop::tone_lut::ToneLut>,
     pub(super) master: CurveLut,
+    /// Each channel's curve: the user's, then in SDR the look's ([`channel_curves`]).
     pub(super) channels: [CurveLut; 3],
     /// What the scene tone stage measured of the photo.
     pub(crate) measures: crate::develop::scene_tone::PhotoMeasures,
@@ -58,7 +59,7 @@ pub(super) struct HdrFinish {
 }
 /// The user's tone curves as they render in HDR (`color::hdr_curve`): Levels, the
 /// parametric curve, the master point curve, then each channel's point curve, as in
-/// SDR.
+/// SDR, and after it the look's channel curve.
 struct HdrCurves {
     /// Black point, white point and midtone, when they are not the default.
     levels: Option<[f32; 3]>,
@@ -69,6 +70,36 @@ struct HdrCurves {
     channels: Option<[Option<crate::color::hdr_curve::HdrPointCurve>; 3]>,
     /// Refine Saturation (0 to 1) on the master curve.
     refine: f32,
+    /// The look's Red, Green and Blue curves (its `channels`, on
+    /// [`crate::camera_profiles::CameraProfile::enhanced`]), after the user's, each
+    /// with its HDR rule when it isn't the identity.
+    look: Option<LookChannels>,
+}
+/// A look's channel curves in HDR: each curve's samples (sRGB-encoded, 0–1), and its
+/// [`crate::camera_profiles::hdr_look::LookTone`] when it isn't the identity.
+struct LookChannels {
+    curves: Box<[CurveLut; 3]>,
+    tones: [Option<crate::camera_profiles::hdr_look::LookTone>; 3],
+}
+impl LookChannels {
+    fn new(r: &Recipe) -> Option<Self> {
+        use crate::camera_profiles::hdr_look::LookTone;
+        let curves = r.profile.as_ref()?.enhanced.as_ref()?.channels()?;
+        Some(Self {
+            tones: curves
+                .each_ref()
+                .map(|c| (!c.is_identity()).then(|| LookTone::of(c))),
+            curves: Box::new(curves.clone()),
+        })
+    }
+    /// Linear ProPhoto RGB (1 = graphics white, not negative) through the curves.
+    fn apply(&self, p: [f32; 3]) -> [f32; 3] {
+        use crate::camera_profiles::hdr_look::{decode, encode};
+        std::array::from_fn(|c| match &self.tones[c] {
+            Some(tone) => decode(tone.evaluate(&self.curves[c], encode(p[c]))),
+            None => p[c],
+        })
+    }
 }
 impl HdrCurves {
     fn new(r: &Recipe) -> Option<Self> {
@@ -85,10 +116,12 @@ impl HdrCurves {
                 .each_ref()
                 .map(|c| (!renders_identity(c)).then(|| HdrPointCurve::new(c)))
         });
+        let look = LookChannels::new(r);
         if levels.is_none()
             && parametric.is_none()
             && renders_identity(&r.curve)
             && channels.is_none()
+            && look.is_none()
         {
             return None;
         }
@@ -98,6 +131,7 @@ impl HdrCurves {
             master: HdrPointCurve::new(&r.curve),
             channels,
             refine: r.curve_saturation,
+            look,
         })
     }
     /// Linear ProPhoto RGB (1 = graphics white, not negative) through the curves.
@@ -116,10 +150,14 @@ impl HdrCurves {
         let p = crate::color::hdr_curve::refine_saturation(p, curved, self.refine);
         // An identity channel curve leaves its channel as the master curve renders it.
         let channels = self.channels.as_ref();
-        std::array::from_fn(|c| match channels.and_then(|curves| curves[c].as_ref()) {
+        let p = std::array::from_fn(|c| match channels.and_then(|curves| curves[c].as_ref()) {
             Some(curve) => channel(curve, p[c]),
             None => decode(p[c]).min(CEILING),
-        })
+        });
+        match &self.look {
+            Some(look) => look.apply(p),
+            None => p,
+        }
     }
 }
 /// A mask's Hue and Saturation `d` on an HDR master's linear display RGB (1 = graphics
@@ -211,6 +249,11 @@ pub(crate) struct HdrFinishGpu<'a> {
     pub(crate) contrast: Option<(&'a [f32], f32, f32)>,
     pub(crate) curves: Option<(bool, [f32; 3], bool)>,
     pub(crate) channels: Option<[Option<[f32; 3]>; 3]>,
+    /// The look's channel curves, after the user's: their samples and HDR rules.
+    pub(crate) look: Option<(
+        &'a [CurveLut; 3],
+        [Option<crate::camera_profiles::hdr_look::LookTone>; 3],
+    )>,
 }
 impl HdrFinish {
     pub(super) fn gpu(&self) -> HdrFinishGpu<'_> {
@@ -225,6 +268,11 @@ impl HdrFinish {
                 .as_ref()
                 .and_then(|c| c.channels.as_ref())
                 .map(|curves| curves.each_ref().map(|c| c.as_ref().map(|c| c.extension()))),
+            look: self
+                .curves
+                .as_ref()
+                .and_then(|c| c.look.as_ref())
+                .map(|l| (l.curves.as_ref(), l.tones)),
         }
     }
 }
@@ -494,6 +542,7 @@ impl CurveSet {
         let photo = crate::develop::basic_tone::PhotoTone {
             contrast_pivot: crate::develop::basic_tone::TYPICAL_PIVOT,
         };
+        let hdr = HdrFinish::new(r);
         Self {
             output: PixelOutput::Display,
             space: crate::color::OutputSpace::Srgb,
@@ -526,15 +575,34 @@ impl CurveSet {
             ),
             parametric: parametric_curve(r),
             master: CurveLut::new(&r.curve),
-            channels: std::array::from_fn(|c| CurveLut::new(&r.effects.channels[c])),
+            channels: channel_curves(r, hdr.is_none()),
             measures: Default::default(),
             scene: crate::develop::scene_tone::SceneTone::new(r, &Default::default(), None),
-            hdr: HdrFinish::new(r),
+            hdr,
             // Only an HDR edit's SDR rendition keeps them (`Recipe::resolved`).
             sdr_rendition: (!r.hdr.enabled)
                 .then(|| crate::develop::sdr_rendition::SdrRenditionTone::new(&r.hdr.sdr))
                 .flatten(),
         }
+    }
+}
+/// Each channel's curve: the user's, then, in SDR (`sdr`), the look's (its
+/// `channels`, on [`crate::camera_profiles::CameraProfile::enhanced`]), which Camera
+/// Raw 18.7 applies after the user's, as one table on sRGB-encoded ProPhoto RGB. An
+/// HDR master keeps the user's alone, which its curves extend above white, and applies
+/// the look's after them by their own rule ([`LookChannels`]).
+fn channel_curves(r: &Recipe, sdr: bool) -> [CurveLut; 3] {
+    let user = std::array::from_fn(|c| CurveLut::new(&r.effects.channels[c]));
+    let look = r
+        .profile
+        .as_ref()
+        .and_then(|p| p.enhanced.as_ref()?.channels())
+        .filter(|_| sdr);
+    match look {
+        Some(look) => std::array::from_fn(|c: usize| {
+            CurveLut::from_fn(|i| look[c].evaluate_as_look(user[c].values()[i]))
+        }),
+        None => user,
     }
 }
 /// The curve after the profile: Contrast. Whites, Blacks and Dehaze are the scene tone

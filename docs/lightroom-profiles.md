@@ -200,7 +200,7 @@ Supported enhanced-profile features:
 - Adobe DNG SDK-format HSV big tables, versions 1/2, decoded from Adobe base85 and zlib, with bounded input/output sizes and validation.
 - Linear and sRGB value indexing, interpolated hue/saturation/value corrections.
 - Adobe RGB tables, 1D and 3D, in sRGB, Adobe RGB, ProPhoto, Display P3 or Rec. 2020 primaries with linear, sRGB, 1.8, 2.2 or Rec. 2020 encoding, described in [RGB tables](#rgb-tables).
-- A profile-specific master tone curve, applied separately from the user's point curve. Identity per-channel profile curves are accepted; nonidentity profile channel curves are reported as unsupported.
+- A profile-specific master tone curve, applied separately from the user's point curve, and Red, Green and Blue curves, described in [Channel curves in looks](#channel-curves-in-looks).
 - Profile-internal Highlights, Shadows, Clarity, Contrast and Blacks adjustments, plus monochrome conversion. These use RAWmakase's existing approximate operators without moving the user's sliders.
 - Profile-internal Exposure, Whites, Vibrance, Saturation, Texture, colour mixer, calibration, parametric curve, split toning and post-crop vignette, described in [Settings inside looks](#settings-inside-looks).
 - The six Adobe Raw looks: Color, Portrait, Neutral, Landscape, Vivid and Monochrome (these have no Amount), the creative looks Artistic 01–08, B&W 01, B&W 03 to 12, Modern 01–10, and Vintage 01–10, and camera-matching XMPs that carry their RGB table (over the camera's imported Camera Standard DCP, or the one they name).
@@ -218,7 +218,7 @@ The rule was measured with Camera Raw 18.7 on the synthetic chart and seven synt
 | Part | Camera Raw's rule | RAWmakase |
 |---|---|---|
 | Look table | Hue shifts and saturation/value scales grow in proportion to the Amount, also above 100%, within the amount bounds a version 2 table stores. A version 1 table stays at 100% at any Amount. | Same; the table is scaled when the recipe is resolved, so the CPU and GPU paths read one table. |
-| Look curve | Up to 100% a blend of no change and the curve; above, the curve is applied a second time at the excess (200% is the curve applied twice). | Same. |
+| Look curve | Up to 100% a blend of no change and the curve; above, the curve is applied a second time at the excess (200% is the curve applied twice). | Same, and the same for the look's channel curves. |
 | Internal settings (Shadows, Highlights, Contrast, Blacks, Clarity) | In proportion up to 100%, half as fast above: +40 Shadows is +60 at 200%, matching Camera Raw's render with user sliders at +60 within ΔE00 0.14. | Same, added to the user's sliders without moving them. |
 | Black & white | A B&W look stays black and white at 0%. | Same. |
 
@@ -351,6 +351,17 @@ RAWmakase reads the first row and accepts the others without applying them, as C
 Six such looks (RNI All Films 5's demo profiles: colour, black and white and infrared, with Whites, Vibrance, sharpening and grain among their settings) were rendered over Adobe Standard on the 12 CC0 photos of [Parity with Camera Raw](#parity-with-camera-raw) at 50, 100 and 200%, against Camera Raw 18.7 at 1024 px: median of per-photo median ΔE00 1.66, 1.54 and 2.04 (216 pairs), where the same photos without a look are at 2.09. Each look's error follows its photo's error without one (a street scene 14–21 with every look, at 16.4 without). The one look with a non-zero new setting, Vibrance −10, is at 1.59 at 100% and 1.81 at 200% with it read, 2.01 and 2.92 without. The looks and references are private.
 
 The half rate above 100% matched best for the colour, exposure and vignette looks (at 200%, colour 1.4 against 2.3 for full rate, vignette 1.5 against 1.8), and was even for split toning; the parametric look was closer at full rate (4.0 against 4.9), but RAWmakase's parametric curve is already 2.8 off at 100%, as it is for the user's own parametric sliders. The remaining error is that of the existing operators: parametric curve (user Lights −50: 3.7), split toning (user shadows 210°: 2.6) and Exposure above +0.5.
+
+## Channel curves in looks
+
+Some third-party looks, such as RNI's Kodak Portra 160 ([#949](https://github.com/pch/rawmakase/issues/949)), carry Red, Green and Blue point curves (`crs:ToneCurvePV2012Red`, `Green` and `Blue`) besides the master one. A channel the look leaves out is the identity, as is a curve from black to white along the diagonal, and a look whose channel curves are all the identity holds none. Measured with Camera Raw 18.7 on three synthetic looks (`synthetic-channels`, with the S master curve as `-curve`, and a Red curve alone as `-red`) on the synthetic chart and on gray and colour ramps in HDR:
+
+- **Each curve applies to its own channel** of sRGB-encoded ProPhoto RGB, as the user's channel curves do, after the look's master curve.
+- **After the user's settings.** Unlike the look's master curve, which applies with the profile, the channel curves follow the user's Exposure, Contrast and point curves, the user's channel curves included. With the user's red curve, applying the user's first matches Camera Raw's chart to 0.001 encoded on the gray ramp; the look's first misses by up to 0.05 (`look-channels-user-red`: mean ΔE00 0.30 against 1.26).
+- **Profile Amount** scales them as the master curve.
+- **In HDR** each follows the HDR rule of a look's curve on its channel ([HDR](hdr.md)): a curve that ends at white holds its channel at 16, one that ends below white goes on along its slope.
+
+RAWmakase renders them so. In SDR the user's and the look's curve of a channel are one table; in HDR the look's apply after the user's curves. Where they fall relative to the colour mixer, Point Color, Color Grading and a black and white mix wasn't measured: RAWmakase applies them before those, as it does the user's channel curves. On the chart the `look-channels-*` cases sit at mean ΔE00 0.25–0.38 for the channel curves alone at 50–200% (the default render is 0.25), 0.51 and 0.84 with the master S curve at 100% and 200% (`amount-curve-200`, the curve alone, is 0.78), and 0.30–0.48 with the user's red or S curve, Contrast +50 or Exposure +1 (0.26–0.39 for those settings without the look). In HDR, on the gray ramp at limit 8, the rule renders Camera Raw's channels within a median 0.001 stop below white and 0.007 above (p95 0.026–0.036), and also after the user's red or S curve or Contrast +50 (median 0.0008 and 0.007, at most 0.06).
 
 Schema/pipeline 5 embeds the resolved camera profile, enhanced color table, sampled curve, identity and copyright in the recipe. Reopening does not require the source XMP or DCP to remain available. Old schema 1–4 recipes migrate and render with the current engine. Older RAWmakase versions reject version 5 instead of silently dropping enhanced-profile data.
 

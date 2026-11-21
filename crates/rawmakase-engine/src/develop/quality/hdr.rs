@@ -919,6 +919,64 @@ mod tests {
         Ok(())
     }
 
+    /// Issue 949: a look's Red, Green and Blue curves render in the master after the
+    /// user's curves, the user's channel curves included, each on its own channel by
+    /// the rule of a look's curve ([`crate::camera_profiles::hdr_look::LookTone`]), as
+    /// Camera Raw 18.7 renders them at HDR limit 8: a curve that ends at white holds
+    /// its channel at 16, one that ends below white goes on along its slope.
+    #[test]
+    fn a_looks_channel_curves_render_after_the_users_curves() -> anyhow::Result<()> {
+        use crate::camera_profiles::hdr_look::{LookTone, decode, encode};
+        use crate::color::curve::{CurveLut, ToneCurve};
+        let im = grays(&[0.02, 0.2, 0.5, 1.2, 4., 30.]);
+        let at = |out: &crate::rendered::HdrImage, i: usize| {
+            out.pixels[4 * out.width as usize + i * 8 + 4]
+        };
+        let points = |p: &[[f32; 2]]| p.iter().map(|p| p.map(|v| v / 255.)).collect::<Vec<_>>();
+        // `tests/corpus/looks/synthetic-channels.xmp`'s curves.
+        let channels = [
+            points(&[[0., 30.], [128., 150.], [255., 255.]]),
+            points(&[[0., 0.], [64., 50.], [192., 210.], [255., 255.]]),
+            points(&[[0., 0.], [128., 110.], [255., 230.]]),
+        ];
+        let base = hdr_recipe(&im).profile.unwrap().as_ref().clone();
+        let plain_look = base.with_test_look(1, |_| 1., &[[0., 0.], [1., 1.]]);
+        let looked = plain_look
+            .clone()
+            .with_test_look_channels(channels.each_ref().map(|c| c.as_slice()));
+        let mut r = hdr_recipe(&im);
+        r.effects.channels[0].points = points(&[[0., 0.], [128., 100.], [255., 255.]]);
+        r.profile = Some(std::sync::Arc::new(plain_look));
+        let plain = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        r.profile = Some(std::sync::Arc::new(looked));
+        let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let curves = channels.each_ref().map(|c| {
+            CurveLut::new(&ToneCurve {
+                points: c.clone(),
+                ..Default::default()
+            })
+        });
+        for i in 0..6 {
+            let (p, q) = (at(&plain, i), at(&out, i));
+            for c in 0..3 {
+                let want = decode(LookTone::of(&curves[c]).evaluate(&curves[c], encode(p[c])));
+                assert!(
+                    (q[c] / want - 1.).abs() < 1e-3,
+                    "{i}, channel {c}: {} against {want}",
+                    q[c]
+                );
+            }
+        }
+        // Red and green end at white and hold at 16; blue ends at 230 and goes on.
+        let top = at(&out, 5);
+        assert!(
+            (top[0] - 16.).abs() < 1e-3 && (top[1] - 16.).abs() < 1e-3,
+            "{top:?}"
+        );
+        assert!(top[2] > at(&out, 4)[2] * 1.5, "{top:?}");
+        Ok(())
+    }
+
     /// The colour stage renders above white as Camera Raw 18.7 renders it in HDR
     /// (docs/hdr.md#the-colour-stage): Saturation changes a colour's saturation as much
     /// at 20 times white as at a quarter of it, Vibrance's brightening leaves colours

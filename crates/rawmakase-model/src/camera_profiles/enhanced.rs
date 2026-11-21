@@ -109,6 +109,12 @@ pub struct Enhanced {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) rgb: Option<RgbLook>,
     pub(super) curve: Box<CurveLut>,
+    /// The look's Red, Green and Blue point curves (`crs:ToneCurvePV2012Red` and the
+    /// others), when one of them isn't the identity ([`Self::channels`]). Omitted
+    /// otherwise, so looks without them serialize as before, and releases that predate
+    /// them refuse a look that has them rather than render it without.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) channels: Option<Box<[CurveLut; 3]>>,
     /// Exposure, Saturation, colour mixer, parametric curve, split toning and
     /// vignette settings the look carries.
     #[serde(default, skip_serializing_if = "LookSettings::is_default")]
@@ -131,6 +137,7 @@ impl Enhanced {
             table: Some(table),
             rgb: None,
             settings: LookSettings::default(),
+            channels: None,
             curve: Box::new(CurveLut::from_fn(|i| {
                 let x = i as f32 / 4096.;
                 x * x * (3. - 2. * x)
@@ -180,10 +187,11 @@ impl Enhanced {
             ),
             "Invalid look amount bounds"
         );
+        let curves =
+            std::iter::once(self.curve.as_ref()).chain(self.channels.iter().flat_map(|c| c.iter()));
         ensure!(
-            self.curve
-                .values()
-                .iter()
+            curves
+                .flat_map(|c| c.values())
                 .all(|v| v.is_finite() && (0. ..=1.).contains(v)),
             "Invalid look curve"
         );
@@ -211,7 +219,19 @@ impl Enhanced {
         } else {
             amount
         };
-        let curve = &self.curve;
+        // A look's curve at the Profile Amount: up to 100% a blend of no change and the
+        // curve; above, the curve applied again at the excess.
+        let scaled = |curve: &CurveLut| {
+            CurveLut::from_fn(|i| {
+                let y = curve.values()[i];
+                if amount > 1. {
+                    y + (curve.evaluate_as_look(y) - y) * (amount - 1.)
+                } else {
+                    let x = i as f32 / 4096.;
+                    x + (y - x) * amount
+                }
+            })
+        };
         Self {
             highlights: self.highlights * adjustment,
             shadows: self.shadows * adjustment,
@@ -221,15 +241,11 @@ impl Enhanced {
             settings: self.settings.scaled(adjustment),
             table,
             rgb,
-            curve: Box::new(CurveLut::from_fn(|i| {
-                let y = curve.values()[i];
-                if amount > 1. {
-                    y + (curve.evaluate_as_look(y) - y) * (amount - 1.)
-                } else {
-                    let x = i as f32 / 4096.;
-                    x + (y - x) * amount
-                }
-            })),
+            curve: Box::new(scaled(&self.curve)),
+            channels: self
+                .channels
+                .as_ref()
+                .map(|c| Box::new(c.each_ref().map(scaled))),
             ..self.clone()
         }
     }
@@ -244,6 +260,14 @@ impl Enhanced {
     }
     pub(super) fn curve(&self) -> &CurveLut {
         &self.curve
+    }
+    /// The look's Red, Green and Blue curves, on sRGB-encoded ProPhoto RGB like
+    /// [`Self::curve`]; `None` when the look has none. Unlike its master curve, which
+    /// applies with the profile, Camera Raw 18.7 applies each one to its own channel
+    /// after the user's Exposure, Contrast and point curves, the user's channel curves
+    /// included, in SDR and in HDR (by the [`super::hdr_look::LookTone`] rule there).
+    pub fn channels(&self) -> Option<&[CurveLut; 3]> {
+        self.channels.as_deref()
     }
     pub(super) fn apply_table(&self, rgb: [f32; 3]) -> [f32; 3] {
         match &self.table {
@@ -592,6 +616,7 @@ impl LookFile {
             _ => anyhow::bail!("Invalid profile amount flag"),
         };
         let mut curve = ToneCurve::default();
+        let mut channels: [Option<ToneCurve>; 3] = Default::default();
         for n in d
             .children()
             .filter(|n| n.is_element() && n.tag_name().namespace() == Some(CRS))
@@ -618,20 +643,17 @@ impl LookFile {
                     ..Default::default()
                 };
                 parsed.validate()?;
-                if key == "ToneCurvePV2012" {
-                    curve = parsed;
-                } else {
-                    ensure!(
-                        [
-                            "ToneCurvePV2012Red",
-                            "ToneCurvePV2012Green",
-                            "ToneCurvePV2012Blue"
-                        ]
-                        .contains(&key)
-                            && parsed.points == [[0., 0.], [1., 1.]],
-                        "Unsupported profile channel curve {key}"
-                    );
-                }
+                let channel = match key {
+                    "ToneCurvePV2012" => {
+                        curve = parsed;
+                        continue;
+                    }
+                    "ToneCurvePV2012Red" => 0,
+                    "ToneCurvePV2012Green" => 1,
+                    "ToneCurvePV2012Blue" => 2,
+                    _ => anyhow::bail!("Unsupported profile curve {key}"),
+                };
+                channels[channel] = Some(parsed);
             } else {
                 ensure!(
                     ["Name", "ShortName", "SortName", "Group", "Description"].contains(&key),
@@ -640,6 +662,9 @@ impl LookFile {
             }
         }
         let lut = CurveLut::new(&curve);
+        // A channel the look leaves out is the identity.
+        let channels = (!channels.iter().flatten().all(ToneCurve::is_identity))
+            .then(|| Box::new(channels.map(|c| CurveLut::new(&c.unwrap_or_default()))));
         let look = Enhanced {
             camera_look: None,
             uuid: attr("UUID").into(),
@@ -654,6 +679,7 @@ impl LookFile {
             table,
             rgb,
             curve: Box::new(lut),
+            channels,
             settings: LookSettings::parse(|key: &str| d.attribute((CRS, key)).unwrap_or(""))?,
         };
         look.validate_contents()?;
@@ -1051,6 +1077,91 @@ pub(super) mod tests {
         let err =
             LookFile::parse(&xml.replace(r#"c:RedHue="+10""#, r#"c:RedHue="+150""#)).unwrap_err();
         assert!(format!("{err:#}").contains("RedHue"), "{err:#}");
+        Ok(())
+    }
+
+    /// A look file's point curves, as Lightroom writes them: the master curve and the
+    /// Red, Green and Blue ones, each a list of `"x, y"` points.
+    fn with_curves(xml: &str, curves: &[(&str, &[&str])]) -> String {
+        let elements: String = curves
+            .iter()
+            .map(|(key, points)| {
+                let items: String = points.iter().map(|p| format!("<r:li>{p}</r:li>")).collect();
+                format!("<c:{key}><r:Seq>{items}</r:Seq></c:{key}>")
+            })
+            .collect();
+        xml.replace("</c:Name>", &format!("</c:Name>{elements}"))
+    }
+
+    /// Issue 949: some of RNI's film looks (Kodak Portra 160) carry Red, Green and
+    /// Blue point curves. They import; a look whose channel curves are all the
+    /// identity, as most looks list them, holds none and serializes as before.
+    #[test]
+    fn looks_with_channel_curves_import() -> Result<()> {
+        const IDENTITY: &[&str] = &["0, 0", "255, 255"];
+        let red: &[&str] = &["0, 30", "128, 150", "255, 255"];
+        let xml = profile_xml(&fixture());
+        let identity = LookFile::parse(&with_curves(
+            &xml,
+            &[
+                ("ToneCurvePV2012", IDENTITY),
+                ("ToneCurvePV2012Red", IDENTITY),
+                ("ToneCurvePV2012Green", IDENTITY),
+                ("ToneCurvePV2012Blue", IDENTITY),
+            ],
+        ))?
+        .look;
+        assert!(identity.channels.is_none());
+        assert!(!serde_json::to_string(&identity)?.contains("channels"));
+
+        let look = LookFile::parse(&with_curves(
+            &xml,
+            &[
+                ("ToneCurvePV2012", IDENTITY),
+                ("ToneCurvePV2012Red", red),
+                ("ToneCurvePV2012Green", IDENTITY),
+                ("ToneCurvePV2012Blue", IDENTITY),
+            ],
+        ))?
+        .look;
+        let channels = look.channels.as_ref().expect("the red curve");
+        assert!(
+            !channels[0].is_identity() && channels[1].is_identity() && channels[2].is_identity()
+        );
+        // Red's black lifts to 30 of 255; the look's master curve is unchanged.
+        assert!((channels[0].values()[0] - 30. / 255.).abs() < 1e-6);
+        assert!(look.curve.is_identity());
+        let copy: Enhanced = serde_json::from_slice(&serde_json::to_vec(&look)?)?;
+        assert_eq!(copy, look);
+
+        // A look that leaves out a channel's curve has the identity there.
+        let partial = LookFile::parse(&with_curves(&xml, &[("ToneCurvePV2012Red", red)]))?.look;
+        assert_eq!(partial.channels, look.channels);
+
+        // Profile Amount scales them as it does the master curve.
+        let mut amounted = look.clone();
+        amounted.amount = Some(AmountRange {
+            table_min: 0.,
+            table_max: 2.,
+        });
+        let half = amounted.at_amount(0.5).channels.unwrap();
+        assert!((half[0].values()[0] - 15. / 255.).abs() < 1e-6);
+        assert!(
+            amounted
+                .at_amount(0.)
+                .channels
+                .unwrap()
+                .iter()
+                .all(CurveLut::is_identity)
+        );
+
+        // Other curves are still refused.
+        let err =
+            LookFile::parse(&with_curves(&xml, &[("ToneCurvePV2012Alpha", red)])).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("ToneCurvePV2012Alpha"),
+            "{err:#}"
+        );
         Ok(())
     }
 }

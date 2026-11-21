@@ -625,6 +625,12 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
         ..Default::default()
     };
     let mut recipes = vec![base(&plain), base(&tables)];
+    // A look's channel curves: red lifted, blue ending below white, green unchanged.
+    recipes.push(base(&tables.clone().with_test_look_channels([
+        &[[0., 0.12], [0.5, 0.59], [1., 1.]],
+        &[[0., 0.], [1., 1.]],
+        &[[0., 0.], [0.5, 0.43], [1., 0.9]],
+    ])));
     // A look's RGB tables: 3D and 1D, clipping and extending the gamut.
     let rgb_tables = tables.clone().with_test_rgb_tables();
     recipes.extend(rgb_tables.iter().map(base));
@@ -2369,6 +2375,46 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
             exposure: 0.6,
             ..with(profile.clone().with_test_hdr_tables().as_hdr_for_test())
         },
+        // A look's channel curves after its curve, each by its own rule: red lifted and
+        // ending at white, green unchanged, blue ending below white.
+        with(
+            profile
+                .clone()
+                .with_test_look(8, |v| 0.9 + 0.25 * v, &[[0., 0.06], [0.5, 0.62], [1., 1.]])
+                .with_test_look_channels([
+                    &[[0., 0.12], [0.5, 0.59], [1., 1.]],
+                    &[[0., 0.], [1., 1.]],
+                    &[[0., 0.], [0.5, 0.43], [1., 0.9]],
+                ]),
+        ),
+        // The same with the user's own curves: on a channel the look changes (red,
+        // after which the look's applies once) and on one it leaves alone (green).
+        {
+            let mut r = with(
+                profile
+                    .clone()
+                    .with_test_look(8, |v| 0.9 + 0.25 * v, &[[0., 0.06], [0.5, 0.62], [1., 1.]])
+                    .with_test_look_channels([
+                        &[[0., 0.12], [0.5, 0.59], [1., 1.]],
+                        &[[0., 0.], [1., 1.]],
+                        &[[0., 0.], [0.5, 0.43], [1., 0.9]],
+                    ]),
+            );
+            r.effects.channels[0].points = vec![[0., 0.], [0.5, 0.63], [1., 1.]];
+            r.effects.channels[1].points = vec![[0., 0.], [0.5, 0.4], [1., 1.]];
+            r
+        },
+        // The same channel curves on a look whose own curve is the identity.
+        with(
+            profile
+                .clone()
+                .with_test_look(1, |_| 1., &[[0., 0.], [1., 1.]])
+                .with_test_look_channels([
+                    &[[0., 0.12], [0.5, 0.59], [1., 1.]],
+                    &[[0., 0.], [1., 1.]],
+                    &[[0., 0.], [0.5, 0.43], [1., 0.9]],
+                ]),
+        ),
         // An HDR profile with a look: the look's table and curve after its own.
         with(
             profile
