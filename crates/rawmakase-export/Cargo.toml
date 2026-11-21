@@ -44,7 +44,7 @@ zune-core = { version = "0.5.3", default-features = false, features = ["std"] }
 # upgrade is reviewed (docs/dependencies.md). Without its default features it
 # leaves out the metric crates and the experimental splines; the SIMD paths are
 # chosen at run time.
-jixel = { version = "=0.5.7", default-features = false, features = ["neon", "sse", "avx"] }
+jixel = { version = "=0.5.10", default-features = false, features = ["neon", "sse", "avx"] }
 # The per-user font and home directories, for the installed fonts text
 # watermarks offer (watermark::font_dirs); the version fastframe-fonts uses.
 directories = "6"
