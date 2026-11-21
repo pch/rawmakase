@@ -401,7 +401,8 @@ impl Raw {
         })
     }
     /// The colour space the camera's maker notes give its JPEGs (Nikon's and
-    /// Olympus's ColorSpace), for a preview whose EXIF does not say it.
+    /// Olympus's ColorSpace), or the file's writer does (Google's HDR+ DNGs,
+    /// sRGB), for a preview whose EXIF does not say it.
     pub fn maker_preview_space(&self) -> Option<MakerPreviewSpace> {
         self.own.preview_space()
     }
@@ -717,7 +718,8 @@ pub fn thumbnail(raw: &mut Raw) -> anyhow::Result<image::RgbImage> {
     let bytes = raw.thumbnail()?;
     preview_image(bytes, raw.metadata.flip)
 }
-/// A camera JPEG's colour space as its maker notes give it.
+/// A camera JPEG's colour space as its maker notes, or the writer of its file,
+/// give it ([`rawmakase_raw::PreviewSpace`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MakerPreviewSpace {
     Srgb,

@@ -70,7 +70,7 @@ fn stated_space(path: &std::path::Path, raw: &crate::raw::Raw, bytes: &[u8]) -> 
             Some((PreviewSpace::AdobeRgb, "adobe-rgb"))
         }
         // Nikon writes no EXIF ColorSpace and Olympus "uncalibrated" for Adobe RGB:
-        // their maker notes say it.
+        // their maker notes say it. Google's HDR+ DNGs state none: theirs is sRGB.
         _ => match raw.maker_preview_space() {
             Some(crate::raw::MakerPreviewSpace::Srgb) => {
                 Some((PreviewSpace::Srgb, "srgb-maker-note"))

@@ -4,9 +4,10 @@ use crate::variant::Variant;
 /// A crop position that is not known.
 pub const UNSET: u32 = 0xffff;
 
-/// The colour space a camera rendered its embedded JPEGs in, as its maker notes
-/// say (Nikon's ColorSpace, Olympus's CameraSettings ColorSpace), where the EXIF
-/// may not.
+/// The colour space a camera rendered its embedded JPEGs in where the EXIF may
+/// not say it: as its maker notes say (Nikon's ColorSpace, Olympus's
+/// CameraSettings ColorSpace), or as its writer always makes them (Google's
+/// HDR+ DNGs, sRGB).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PreviewSpace {
     /// The camera's sRGB setting.
@@ -140,7 +141,8 @@ pub struct RawInfo {
     pub cam_xyz: [[f32; 3]; 3],
     /// Where `cam_xyz` comes from.
     pub matrix_source: MatrixSource,
-    /// The colour space of the camera's JPEGs, when the maker notes say it.
+    /// The colour space of the camera's JPEGs, when the maker notes or the
+    /// file's writer say it.
     pub preview_space: Option<PreviewSpace>,
     /// The look the camera's JPEGs were made with, by the maker's name for it: a
     /// Fujifilm film simulation, Sony Creative Style, Nikon Picture Control or Canon
