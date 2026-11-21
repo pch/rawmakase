@@ -192,6 +192,57 @@ impl UserPresets {
         }
         Ok(path)
     }
+    /// Moves a preset made here or imported to `group`, keeping its name, settings
+    /// and identity; returns its new file, in the group's folder beside the others
+    /// of its kind. A file without a group of its own takes the folder's name.
+    pub fn move_to_group(&self, existing: &Preset, group: &str) -> Result<PathBuf> {
+        ensure!(
+            self.manages(existing),
+            "Only presets made here or imported can be moved"
+        );
+        let group = group.trim();
+        let folder = file_name(group);
+        ensure!(!folder.is_empty(), "A group needs a name");
+        let root = if self.owns(existing) {
+            &self.dir
+        } else {
+            &self.imported
+        };
+        let file = existing
+            .path
+            .file_name()
+            .context("This preset has no file name")?;
+        let path = root.join(&folder).join(file);
+        let text = std::fs::read_to_string(&existing.path)?;
+        // An empty label can't be set; the folder names the group then.
+        let moved = with_label(&text, "Group", group).unwrap_or(text);
+        ensure!(
+            crate::xmp::parse(&path, &moved)
+                .is_ok_and(|p| p.group == group && p.name == existing.name),
+            "{} can't be moved to {group}",
+            existing.name
+        );
+        // As in `rename`: one file whatever the case of its letters.
+        let resolved = |p: &Path| std::fs::canonicalize(p).ok();
+        let same_file = path == existing.path
+            || resolved(&path).is_some_and(|p| Some(p) == resolved(&existing.path));
+        if same_file {
+            write(&existing.path, Replace::Overwrite, &moved)?;
+            std::fs::create_dir_all(crate::storage::parent_dir(&path))?;
+            std::fs::rename(&existing.path, &path)?;
+        } else {
+            write(&path, Replace::NoClobber, &moved).with_context(|| {
+                format!("A preset named {} is already in {group}", existing.name)
+            })?;
+            std::fs::remove_file(&existing.path)?;
+        }
+        // The folder it left, once empty; never the library's own folders.
+        let left = crate::storage::parent_dir(&existing.path);
+        if left != self.dir && left != self.imported && left != crate::storage::parent_dir(&path) {
+            let _ = std::fs::remove_dir(left);
+        }
+        Ok(path)
+    }
     /// Deletes a preset made here or imported.
     pub fn delete(&self, existing: &Preset) -> Result<()> {
         ensure!(
@@ -215,7 +266,7 @@ impl UserPresets {
 
 /// `s` as a file name, with the characters and names Windows, macOS or Linux refuse
 /// in one replaced.
-pub(crate) fn file_name(s: &str) -> String {
+pub fn file_name(s: &str) -> String {
     let name: String = s
         .chars()
         .map(|c| {
@@ -247,7 +298,14 @@ pub(crate) fn file_name(s: &str) -> String {
 /// nothing else changed. A file without a name of its own is named by its file
 /// alone, so it comes back as it was.
 fn with_name(text: &str, name: &str) -> Result<String> {
+    with_label(text, "Name", name)
+}
+
+/// `text` with its `label` (`Name` or `Group`), every language of it, set to
+/// `value`, and nothing else changed; as it was when it has no such label.
+fn with_label(text: &str, label: &str, value: &str) -> Result<String> {
     use crate::xml::ns::{CRS, RDF};
+    let name = value;
     let doc = roxmltree::Document::parse(text).context("This preset's name can't be changed")?;
     // The preset's own description, as `xmp::parse` finds it, not a Look's inside.
     let description = doc
@@ -262,13 +320,13 @@ fn with_name(text: &str, name: &str) -> Result<String> {
     let mut edits = Vec::new();
     if let Some(attribute) = description
         .attributes()
-        .find(|a| a.namespace() == Some(CRS) && a.name() == "Name")
+        .find(|a| a.namespace() == Some(CRS) && a.name() == label)
     {
         edits.push((attribute.range_value(), crate::xml::escape_attribute(name)));
     }
     if let Some(element) = description
         .children()
-        .find(|n| n.has_tag_name((CRS, "Name")))
+        .find(|n| n.has_tag_name((CRS, label)))
     {
         let items: Vec<_> = element
             .descendants()
@@ -365,6 +423,49 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn a_preset_moves_to_another_group_and_its_old_folder_goes() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let user = UserPresets {
+            dir: d.path().join("User Presets"),
+            imported: d.path().join("Imported"),
+            backups: d.path().join("preset-backups"),
+        };
+        let mut groups = GroupSelection::none();
+        groups.set(
+            crate::model::settings_groups::SettingGroup::Exposure,
+            GroupInclusion::Included,
+        );
+        let info = PresetInfo::new("Warm", "Old");
+        user.create(&Recipe::default(), &Metadata::default(), &info, &groups)?;
+        let made = library(&user.dir).presets.remove(0);
+        let path = user.move_to_group(&made, " New: Films ")?;
+        assert_eq!(path, user.dir.join("New- Films").join("Warm.xmp"));
+        let moved = library(&user.dir).presets.remove(0);
+        assert_eq!(
+            (moved.group.as_str(), moved.name.as_str()),
+            ("New: Films", "Warm")
+        );
+        assert_eq!(moved.settings.get("UUID"), made.settings.get("UUID"));
+        assert!(!user.dir.join("Old").exists());
+        // An imported preset without a group of its own takes its new folder's name.
+        let lone = user.imported.join("Pack").join("Lone.xmp");
+        std::fs::create_dir_all(lone.parent().unwrap())?;
+        std::fs::write(
+            &lone,
+            std::fs::read_to_string(&path)?.replace(
+                "<rdf:li xml:lang=\"x-default\">New: Films</rdf:li>",
+                "<rdf:li xml:lang=\"x-default\"/>",
+            ),
+        )?;
+        let imported = crate::xmp::parse(&lone, &std::fs::read_to_string(&lone)?)?;
+        assert_eq!(imported.group, "Pack");
+        user.move_to_group(&imported, "Kept")?;
+        assert!(user.imported.join("Kept").join("Lone.xmp").exists());
+        assert!(user.move_to_group(&imported, "  ").is_err());
+        Ok(())
     }
 
     #[test]

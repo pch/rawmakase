@@ -460,6 +460,7 @@ impl Editor {
         self.report_issue_window(&ctx);
         self.copy_dialog_window(&ctx);
         self.preset_rename_window(&ctx);
+        self.preset_manager_window(&ctx);
         self.curve_save_window(&ctx);
         self.preferences_window(&ctx);
         // Above Preferences, where Change… asks it.

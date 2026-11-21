@@ -209,28 +209,40 @@ impl Editor {
         if choice == RenameChoice::Cancel {
             return;
         }
+        self.rename_preset(&rename.path, &rename.name, ctx);
+    }
+    /// Renames the preset at `path` to `name`, as Rename… does in its menu and in
+    /// Manage Presets: a favorite, a hidden preset and a raw default follow it.
+    pub(in crate::app) fn rename_preset(
+        &mut self,
+        path: &std::path::Path,
+        name: &str,
+        ctx: &egui::Context,
+    ) {
         let library = self.presets.library.clone();
-        let Some(preset) = library.presets.iter().find(|p| p.path == rename.path) else {
+        let Some(preset) = library.presets.iter().find(|p| p.path == path) else {
             return;
         };
-        match UserPresets::default().rename(preset, &rename.name) {
+        match UserPresets::default().rename(preset, name) {
             Ok(path) => {
-                // A favorite follows the preset to its new file.
                 let old = preset.id.clone();
+                let new = path.to_string_lossy().to_string();
                 if self.presets.favorites.remove(&old) {
-                    self.presets
-                        .favorites
-                        .insert(path.to_string_lossy().to_string());
+                    self.presets.favorites.insert(new.clone());
                     self.presets.revision += 1;
                     let _ = crate::presets::save_favorites(&self.presets.favorites);
                 }
-                // So does a raw default.
+                if self.presets.layout.hidden.remove(&old) {
+                    self.presets.layout.hidden.insert(new.clone());
+                    self.presets.revision += 1;
+                    let _ = crate::presets::save_layout(&self.presets.layout);
+                }
                 let mut defaults = self.raw_defaults.settings().clone();
-                defaults.rename_preset(&old, &path.to_string_lossy(), rename.name.trim());
+                defaults.rename_preset(&old, &new, name.trim());
                 match self.set_raw_defaults(defaults) {
                     Ok(()) => self
                         .messages
-                        .done(format!("Preset renamed to {}", rename.name.trim())),
+                        .done(format!("Preset renamed to {}", name.trim())),
                     Err(e) => self
                         .messages
                         .fail(format!("Preset renamed; raw defaults not saved: {e:#}")),
