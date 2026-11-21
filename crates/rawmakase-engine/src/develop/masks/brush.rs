@@ -42,7 +42,7 @@ impl Raster {
     }
 }
 /// Image-space positions scaled to long-edge units, so distances are round.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Space {
     pub(crate) scale: [f32; 2],
 }
@@ -77,6 +77,105 @@ pub(crate) fn key(strokes: &[BrushStroke]) -> u64 {
         (s.erase, s.auto_mask).hash(&mut h);
     }
     h.finish()
+}
+/// The squared distance from `p` to the segment `a`–`b`, and how far along it
+/// (0–1) the nearest point lies.
+fn to_segment(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> (f32, f32) {
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let len2 = dx * dx + dy * dy;
+    let (px, py) = (p[0] - a[0], p[1] - a[1]);
+    let t = if len2 > 0. {
+        ((px * dx + py * dy) / len2).clamp(0., 1.)
+    } else {
+        0.
+    };
+    ((px - t * dx).powi(2) + (py - t * dy).powi(2), t)
+}
+/// Coverage `v` once stroke `s` is laid over it with its brush's coverage `c`
+/// there: painting adds `flow` of what is left, up to `density`; erasing takes
+/// away `flow` of it.
+fn laid(v: f32, c: f32, s: &BrushStroke) -> f32 {
+    if s.erase {
+        v * (1. - s.flow * c)
+    } else {
+        let target = v + s.flow * c * (1. - v);
+        v.max(target.min(s.density))
+    }
+}
+/// One stroke as it is being painted, for a preview drawn at positions the
+/// caller chooses (the screen's pixels) rather than the raster's: the same
+/// path, brush profile and flow and density rule as [`rasterize`], without
+/// Auto Mask, whose colors come from the photo. A caller keeps each position's
+/// nearest squared distance to the path (long-edge units), lowered segment by
+/// segment as points come ([`Self::to_segment`]), and turns it into coverage
+/// with [`Self::coverage`] or [`Self::erased`].
+#[derive(Clone, Debug)]
+pub struct LiveStroke {
+    /// The brush; its points are not kept here.
+    stroke: BrushStroke,
+    space: Space,
+    /// The path in long-edge units.
+    path: Vec<[f32; 2]>,
+}
+impl LiveStroke {
+    /// `stroke` as painted so far; its points are image-space positions.
+    pub fn new(stroke: &BrushStroke, space: Space) -> Self {
+        Self {
+            path: stroke.points.iter().map(|p| space.to(*p)).collect(),
+            stroke: BrushStroke {
+                points: Vec::new().into(),
+                ..stroke.clone()
+            },
+            space,
+        }
+    }
+    /// The brush's radius, in long-edge units.
+    pub fn radius(&self) -> f32 {
+        self.stroke.radius
+    }
+    pub fn erases(&self) -> bool {
+        self.stroke.erase
+    }
+    /// The next point of the path, in image space.
+    pub fn push(&mut self, p: [f32; 2]) {
+        self.path.push(self.space.to(p));
+    }
+    pub fn points(&self) -> usize {
+        self.path.len()
+    }
+    /// The path's segments: the dab alone while it has one point, else one
+    /// between each two.
+    pub fn segments(&self) -> usize {
+        self.path
+            .len()
+            .saturating_sub(1)
+            .max(usize::from(!self.path.is_empty()))
+    }
+    /// Segment `i`'s ends, in long-edge units.
+    pub fn segment(&self, i: usize) -> [[f32; 2]; 2] {
+        let a = self.path[i];
+        [a, *self.path.get(i + 1).unwrap_or(&a)]
+    }
+    /// The squared distance from `q` (long-edge units) to segment `i`.
+    pub fn to_segment(&self, i: usize, q: [f32; 2]) -> f32 {
+        let [a, b] = self.segment(i);
+        to_segment(q, a, b).0
+    }
+    /// The stroke's own coverage at squared distance `d2` from its path, laid
+    /// over none, as [`rasterize`] lays it: what a painting stroke covers.
+    pub fn coverage(&self, d2: f32) -> f32 {
+        laid(0., self.brush(d2), &self.stroke)
+    }
+    /// The share of the coverage under it that an erasing stroke takes away at
+    /// squared distance `d2`, as [`rasterize`] takes it.
+    pub fn erased(&self, d2: f32) -> f32 {
+        1. - laid(1., self.brush(d2), &self.stroke)
+    }
+    /// The brush's coverage at squared distance `d2`, before flow and density.
+    fn brush(&self, d2: f32) -> f32 {
+        let s = &self.stroke;
+        profile(d2.sqrt(), s.radius * (1. - s.feather), s.radius)
+    }
 }
 /// Camera colors along the strokes for Auto Mask, sampled from the photo.
 pub(crate) struct Guide<'a> {
@@ -191,17 +290,9 @@ pub(crate) fn rasterize(
             let sx1 = ((pa[0].max(pb[0]) + reach).ceil() as usize + 1).min(x1);
             let sy0 = ((pa[1].min(pb[1]) - reach).floor().max(y0 as f32)) as usize;
             let sy1 = ((pa[1].max(pb[1]) + reach).ceil() as usize + 1).min(y1);
-            let (dx, dy) = (pb[0] - pa[0], pb[1] - pa[1]);
-            let len2 = dx * dx + dy * dy;
             for y in sy0..sy1 {
                 for x in sx0..sx1 {
-                    let (px, py) = (x as f32 - pa[0], y as f32 - pa[1]);
-                    let t = if len2 > 0. {
-                        ((px * dx + py * dy) / len2).clamp(0., 1.)
-                    } else {
-                        0.
-                    };
-                    let d2 = (px - t * dx).powi(2) + (py - t * dy).powi(2);
+                    let (d2, t) = to_segment([x as f32, y as f32], pa, pb);
                     let cell = &mut nearest[(y - y0) * bw + x - x0];
                     if d2 < cell.0 {
                         *cell = (d2, if t < 0.5 { a } else { b });
@@ -230,12 +321,7 @@ pub(crate) fn rasterize(
                     c *= (-d / 0.08).exp();
                 }
                 let v = &mut data[y * width + x];
-                if s.erase {
-                    *v *= 1. - s.flow * c;
-                } else {
-                    let target = *v + s.flow * c * (1. - *v);
-                    *v = v.max(target.min(s.density));
-                }
+                *v = laid(*v, c, s);
             }
         }
     }
@@ -246,4 +332,92 @@ pub(crate) fn rasterize(
         height,
         data,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stroke(
+        points: &[[f32; 2]],
+        feather: f32,
+        flow: f32,
+        density: f32,
+        erase: bool,
+    ) -> BrushStroke {
+        BrushStroke {
+            points: points.to_vec().into(),
+            radius: 0.05,
+            feather,
+            flow,
+            density,
+            erase,
+            auto_mask: false,
+        }
+    }
+
+    /// The live stroke, sampled at the raster's own pixel centres, is the
+    /// committed stroke's raster: a painted stroke's coverage, and over full
+    /// coverage, what an erasing stroke leaves.
+    #[test]
+    fn a_live_stroke_matches_its_raster() {
+        let space = Space::new(1.5);
+        let paths: [&[[f32; 2]]; 3] = [
+            &[[0.4, 0.5]],
+            &[[0.2, 0.3], [0.5, 0.35], [0.6, 0.7]],
+            &[[0.3, 0.3], [0.3, 0.3], [0.31, 0.32], [0.7, 0.32]],
+        ];
+        for path in paths {
+            for (feather, flow, density) in [(0., 1., 1.), (0.5, 0.6, 0.8), (1., 0.3, 1.)] {
+                for erase in [false, true] {
+                    let s = stroke(path, feather, flow, density, erase);
+                    // Erasing is measured over a stroke that covers all it reaches.
+                    let strokes: Vec<BrushStroke> = if erase {
+                        let mut under = stroke(path, 0., 1., 1., false);
+                        under.radius = 0.2;
+                        vec![under, s.clone()]
+                    } else {
+                        vec![s.clone()]
+                    };
+                    let raster = rasterize(&strokes, space, None);
+                    let mut live = LiveStroke::new(
+                        &BrushStroke {
+                            points: path[..1].to_vec().into(),
+                            ..s
+                        },
+                        space,
+                    );
+                    for p in &path[1..] {
+                        live.push(*p);
+                    }
+                    let mut worst = 0f32;
+                    for y in 0..raster.height {
+                        for x in 0..raster.width {
+                            let q = [
+                                raster.origin[0] + (x as f32 + 0.5) * raster.step,
+                                raster.origin[1] + (y as f32 + 0.5) * raster.step,
+                            ];
+                            let d2 = (0..live.segments())
+                                .map(|i| live.to_segment(i, q))
+                                .fold(f32::INFINITY, f32::min);
+                            let want = raster.data[y * raster.width + x];
+                            let got = if erase {
+                                // The under stroke's coverage is 1 wherever this one reaches.
+                                1. - live.erased(d2)
+                            } else {
+                                live.coverage(d2)
+                            };
+                            if !erase || d2.sqrt() < s.radius {
+                                worst = worst.max((got - want).abs());
+                            }
+                        }
+                    }
+                    assert!(
+                        worst < 1e-4,
+                        "{path:?} {feather} {flow} {density} {erase}: {worst}"
+                    );
+                }
+            }
+        }
+    }
 }

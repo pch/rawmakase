@@ -345,6 +345,9 @@ impl Editor {
                         continue;
                     };
                     self.preview.showing(id);
+                    if let Some(recipe) = &request.recipe {
+                        self.view.masking.render_shown(recipe);
+                    }
                     let region = matches!(
                         request.mode,
                         crate::app::develop::state::TextureMode::Region(_)
