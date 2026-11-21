@@ -197,7 +197,7 @@ impl Editor {
                     form.camera.clone()
                 };
                 let before = form.camera.clone();
-                egui::ComboBox::from_id_salt("raw-default-camera")
+                crate::app::ui::widgets::dropdown(ui, "raw-default-camera")
                     .width(240.)
                     .selected_text(shown)
                     .show_ui(ui, |ui| {
@@ -320,37 +320,39 @@ fn remove_button(ui: &mut egui::Ui, enabled: bool) -> egui::Response {
 }
 /// Adobe Default, Camera Settings, RAWmakase Default or a Develop preset, by group.
 fn choice_combo(ui: &mut egui::Ui, id: &str, choice: &mut DefaultChoice, presets: &[Preset]) {
-    egui::ComboBox::from_id_salt(id)
-        .width(240.)
-        .height(360.)
-        .selected_text(choice_text(choice, presets))
-        .show_ui(ui, |ui| {
-            for fixed in [
-                DefaultChoice::Adobe,
-                DefaultChoice::CameraSettings,
-                DefaultChoice::Rawmakase,
-            ] {
-                let label = fixed.label();
-                ui.selectable_value(choice, fixed, label);
-            }
-            let caption = theme::palette(ui.ctx()).tone(Tone::FAINT);
-            let mut last_group = None;
-            for p in presets {
-                if last_group != Some(&p.group) {
-                    ui.separator();
-                    let title = if p.group.is_empty() {
-                        "User Presets"
-                    } else {
-                        &p.group
-                    };
-                    ui.label(egui::RichText::new(title).size(text::SMALL).color(caption));
-                    last_group = Some(&p.group);
+    crate::app::ui::widgets::keep_style(ui, |ui| {
+        crate::app::ui::widgets::dropdown(ui, id)
+            .width(240.)
+            .height(360.)
+            .selected_text(choice_text(choice, presets))
+            .show_ui(ui, |ui| {
+                for fixed in [
+                    DefaultChoice::Adobe,
+                    DefaultChoice::CameraSettings,
+                    DefaultChoice::Rawmakase,
+                ] {
+                    let label = fixed.label();
+                    ui.selectable_value(choice, fixed, label);
                 }
-                let value = DefaultChoice::preset(p);
-                let label = crate::presets::display_name(&p.name);
-                ui.selectable_value(choice, value, label);
-            }
-        });
+                let caption = theme::palette(ui.ctx()).tone(Tone::FAINT);
+                let mut last_group = None;
+                for p in presets {
+                    if last_group != Some(&p.group) {
+                        ui.separator();
+                        let title = if p.group.is_empty() {
+                            "User Presets"
+                        } else {
+                            &p.group
+                        };
+                        ui.label(egui::RichText::new(title).size(text::SMALL).color(caption));
+                        last_group = Some(&p.group);
+                    }
+                    let value = DefaultChoice::preset(p);
+                    let label = crate::presets::display_name(&p.name);
+                    ui.selectable_value(choice, value, label);
+                }
+            });
+    });
 }
 
 #[cfg(test)]

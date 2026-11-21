@@ -805,12 +805,13 @@ impl Editor {
                             egui::Label::new(egui::RichText::new(text).color(palette.tone(Tone::LABEL))),
                         );
                     };
-                    ui.horizontal(|ui| {
+                    crate::app::ui::widgets::dropdown_row(ui, |ui| {
                         label(ui, "File Naming");
                         let s = &mut r.settings;
+                        let combo = crate::app::ui::widgets::dropdown(ui, "rename-naming").width(260.);
                         let choice = menu::combo(
                             ui,
-                            egui::ComboBox::from_id_salt("rename-naming").width(260.),
+                            combo,
                             s.naming,
                             s.tokens.as_deref(),
                             &r.saved,

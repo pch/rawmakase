@@ -1,0 +1,8 @@
+# Lints that keep the app's widgets consistent. Clippy reads this file for
+# every crate of the workspace.
+
+disallowed-methods = [
+    { path = "egui::ComboBox::from_id_salt", reason = "use `widgets::dropdown`, which draws drop-downs in the panels' style" },
+    { path = "egui::ComboBox::from_label", reason = "use `widgets::dropdown`, which draws drop-downs in the panels' style" },
+    { path = "egui::ComboBox::new", reason = "use `widgets::dropdown`, which draws drop-downs in the panels' style" },
+]

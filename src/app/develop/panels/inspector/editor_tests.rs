@@ -401,3 +401,21 @@ fn the_tone_curve_toolbar_fits_the_narrowest_panel() {
         used.right()
     );
 }
+
+/// The Crop drawer, its aspect and overlay drop-downs beside its buttons, for
+/// `RAWMAKASE_UI_SHOTS` ([`crate::app::ui::shots`]).
+#[test]
+fn shots_of_the_crop_drawer() {
+    crate::app::ui::shots::shot(
+        "crop-drawer",
+        Vec2::new(340., 330.),
+        |e, _| e.view.set_tool(crate::app::develop::state::Tool::Crop),
+        |e, ctx| {
+            crate::app::ui::shots::panel(ctx, 320., |ui| {
+                let frame = e.begin_edit_frame();
+                e.tool_drawer(ui);
+                e.finish_edit_frame(frame, ctx);
+            });
+        },
+    );
+}

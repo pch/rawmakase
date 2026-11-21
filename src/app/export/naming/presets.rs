@@ -194,9 +194,9 @@ impl Presets {
         let writable = library.0.is_ok();
         let mut picked: Option<(Preset, String)> = None;
         let mut action = None;
-        ui.horizontal(|ui| {
+        crate::app::ui::widgets::dropdown_row(ui, |ui| {
             ui.label(egui::RichText::new("Preset:").color(palette.tone(Tone::SECONDARY)));
-            egui::ComboBox::from_id_salt("filename-template-preset")
+            crate::app::ui::widgets::dropdown(ui, "filename-template-preset")
                 .width(300.)
                 .selected_text(shown)
                 .show_ui(ui, |ui| {

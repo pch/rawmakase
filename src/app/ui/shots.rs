@@ -61,3 +61,16 @@ pub(in crate::app) fn shot(
         .save(&file)
         .unwrap_or_else(|e| panic!("{}: {e}", file.display()));
 }
+
+/// Draws `add` on a panel `width` points wide at the shot's top left, for a
+/// shot of something drawn into a [`egui::Ui`] rather than its own window.
+pub(in crate::app) fn panel(ctx: &egui::Context, width: f32, add: impl FnOnce(&mut egui::Ui)) {
+    egui::Area::new(egui::Id::new("shot-panel"))
+        .fixed_pos(egui::Pos2::ZERO)
+        .show(ctx, |ui| {
+            egui::Frame::central_panel(ui.style()).show(ui, |ui| {
+                ui.set_width(width);
+                add(ui);
+            });
+        });
+}

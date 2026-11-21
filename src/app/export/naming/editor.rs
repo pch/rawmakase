@@ -250,7 +250,11 @@ impl NameEditor {
                         let index = chosen[slot].min(defs.len().saturating_sub(1));
                         ui.horizontal(|ui| {
                             ui.add_space(space::XL);
-                            egui::ComboBox::from_id_salt(("filename-token-menu", slot))
+                            crate::app::ui::widgets::keep_style(ui, |ui| {
+                                crate::app::ui::widgets::dropdown(
+                                    ui,
+                                    ("filename-token-menu", slot),
+                                )
                                 .width(260.)
                                 .selected_text(defs.get(index).map_or("", |d| d.label))
                                 .show_ui(ui, |ui| {
@@ -258,6 +262,7 @@ impl NameEditor {
                                         ui.selectable_value(&mut chosen[slot], i, def.label);
                                     }
                                 });
+                            });
                             if ui.button("Insert").clicked()
                                 && let Some(def) = defs.get(chosen[slot].min(defs.len() - 1))
                             {

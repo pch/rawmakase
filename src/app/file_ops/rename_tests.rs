@@ -674,3 +674,37 @@ fn a_plan_from_before_the_read_is_not_taken_again() -> anyhow::Result<()> {
     assert_eq!(at(&e, &d, ids[1]), "ILCE-7RM6-01.RAF");
     Ok(())
 }
+
+/// Rename Photos for several photos, for `RAWMAKASE_UI_SHOTS`
+/// ([`crate::app::ui::shots`]).
+#[test]
+fn shots_of_rename_photos() -> anyhow::Result<()> {
+    let d = tempfile::tempdir()?;
+    let photos = d.path().join("photos");
+    std::fs::create_dir_all(&photos)?;
+    for name in ["DSCF0001.RAF", "DSCF0002.RAF", "DSCF0003.RAF"] {
+        std::fs::write(photos.join(name), format!("fixture {name}"))?;
+    }
+    let path = d.path().join("test.rawmakase");
+    crate::catalog::Catalog::create(&path)?.add_folder(&photos)?;
+    crate::app::ui::shots::shot(
+        "rename-photos",
+        eframe::egui::vec2(900., 640.),
+        move |e, ctx| {
+            let library = crate::app::library::Library::load(&path, ctx.clone()).unwrap();
+            let ids: Vec<_> = library.session.photos().iter().map(|p| p.id).collect();
+            let order = file_ops::rename_order(library.session.catalog(), &ids).unwrap();
+            let location = library.session.catalog().location().clone();
+            e.library = Some(Box::new(library));
+            e.module = Module::Library;
+            e.request_rename(ids);
+            let cancel = e.file_ops.ordering_cancel().expect("reading");
+            e.rename_ordered(location, cancel, Ok(order));
+        },
+        |e, ctx| {
+            e.events(ctx);
+            e.file_op_window(ctx);
+        },
+    );
+    Ok(())
+}

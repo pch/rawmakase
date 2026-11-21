@@ -168,3 +168,23 @@ fn return_confirms_copy_settings_and_escape_cancels_it() {
     let clipboard = editor.clipboard.as_ref().expect("settings copied");
     assert_eq!(clipboard.groups, chosen);
 }
+
+/// New Develop Preset with saved groups to pick from, for
+/// `RAWMAKASE_UI_SHOTS` ([`crate::app::ui::shots`]).
+#[test]
+fn shots_of_new_develop_preset() {
+    crate::app::ui::shots::shot(
+        "new-develop-preset",
+        egui::vec2(900., 900.),
+        |e, _| {
+            let text = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:PresetType="Normal" crs:HasSettings="True" crs:Group="Film" crs:Exposure2012="+0.50"><crs:Name><rdf:Alt><rdf:li xml:lang="x-default">Warm</rdf:li></rdf:Alt></crs:Name></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+            let preset = crate::xmp::parse(std::path::Path::new("Warm.xmp"), text).unwrap();
+            e.presets.library = std::sync::Arc::new(crate::presets::Library {
+                presets: vec![preset],
+                errors: Vec::new(),
+            });
+            e.open_copy_dialog(crate::app::develop::settings_transfer::Transfer::NewPreset);
+        },
+        |e, ctx| e.copy_dialog_window(ctx),
+    );
+}

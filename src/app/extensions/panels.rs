@@ -264,19 +264,26 @@ fn draw_one(
                 .iter()
                 .find(|o| &o.id == value)
                 .map_or(value.as_str(), |o| o.title.as_str());
-            egui::ComboBox::from_id_salt((scope, id.as_str()))
-                .selected_text(shown)
-                .show_ui(ui, |ui| {
-                    for option in options {
-                        if ui
-                            .selectable_label(&option.id == value, &option.title)
-                            .clicked()
-                            && &option.id != value
-                        {
-                            changed(actions, Value::from(option.id.clone()));
-                        }
+            // In a tool's drawer, as tall as its other controls.
+            let combo = match layout {
+                Layout::Page => crate::app::ui::widgets::dropdown(ui, (scope, id.as_str())),
+                Layout::Drawer => crate::app::ui::widgets::dropdown_of_height(
+                    ui,
+                    (scope, id.as_str()),
+                    crate::app::ui::design::size::CONTROL,
+                ),
+            };
+            combo.selected_text(shown).show_ui(ui, |ui| {
+                for option in options {
+                    if ui
+                        .selectable_label(&option.id == value, &option.title)
+                        .clicked()
+                        && &option.id != value
+                    {
+                        changed(actions, Value::from(option.id.clone()));
                     }
-                });
+                }
+            });
         }),
         ControlKind::Segmented { options, value } => row(ui, layout, label, false, |ui| {
             // The app's segmented control, as Mode in a tool's drawer.
@@ -553,5 +560,42 @@ mod tests {
                 },
             ]
         );
+    }
+
+    /// An extension's panel with a drop-down among other controls, as a
+    /// Preferences page and as a tool's drawer, for `RAWMAKASE_UI_SHOTS`
+    /// ([`crate::app::ui::shots`]).
+    #[test]
+    fn shots_of_an_extension_panel() {
+        let controls: Vec<Control> = serde_json::from_value(json!([
+            {"id": "stock", "type": "choice", "label": "Film Stock", "value": "hp5",
+             "options": [{"id": "trix", "title": "Tri-X 400"}, {"id": "hp5", "title": "HP5 Plus"}]},
+            {"id": "amount", "type": "slider", "label": "Amount", "value": 40, "min": 0, "max": 100},
+            {"id": "mode", "type": "segmented", "label": "Mode", "value": "soft",
+             "options": [{"id": "soft", "title": "Soft"}, {"id": "hard", "title": "Hard"}]},
+            {"id": "on", "type": "toggle", "label": "Grain", "value": true},
+            {"id": "note", "type": "text", "label": "Note", "value": "Pushed one stop"},
+            {"id": "apply", "type": "button", "title": "Apply"},
+        ]))
+        .unwrap();
+        for (name, layout, width) in [
+            ("extension-panel-page", Layout::Page, 640.),
+            ("extension-panel-drawer", Layout::Drawer, 300.),
+        ] {
+            let mut view = PanelView {
+                controls: controls.clone(),
+                ..Default::default()
+            };
+            crate::app::ui::shots::shot(
+                name,
+                egui::vec2(width + 20., 200.),
+                |_, _| {},
+                move |_, ctx| {
+                    crate::app::ui::shots::panel(ctx, width, |ui| {
+                        draw(ui, "shot", &mut view, layout);
+                    });
+                },
+            );
+        }
     }
 }
