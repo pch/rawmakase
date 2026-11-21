@@ -412,12 +412,14 @@ pub(in crate::app) enum AmountChange {
     Changed,
 }
 
-/// Lightroom's preset Amount while it shows: after a preset that supports one is
-/// applied, until anything else changes the photo.
+/// Lightroom's preset Amount while it shows: after a preset is applied, until
+/// anything else changes the photo. A preset without an Amount shows it dimmed,
+/// so the list below stays where it was from one preset to the next.
 pub(in crate::app) struct AmountSession {
     name: String,
     amount: f32,
-    scale: crate::presets::amount::PresetAmount,
+    /// `None` for a preset without an Amount.
+    scale: Option<crate::presets::amount::PresetAmount>,
     /// The settings it last set, to notice any other change.
     shown: Recipe,
 }
@@ -480,15 +482,12 @@ impl Editor {
         // The settings before it are kept once, and every Amount is computed
         // from them again, so dragging never drifts.
         let full = self.document.edit.recipe().clone();
-        self.presets.amount =
-            crate::presets::amount::PresetAmount::new(preset, before, full.clone())
-                .ok()
-                .map(|scale| AmountSession {
-                    name: crate::presets::display_name(&preset.name),
-                    amount: 1.,
-                    scale,
-                    shown: full,
-                });
+        self.presets.amount = Some(AmountSession {
+            name: crate::presets::display_name(&preset.name),
+            amount: 1.,
+            scale: crate::presets::amount::PresetAmount::new(preset, before, full.clone()).ok(),
+            shown: full,
+        });
         self.presets.selected = preset.id.clone();
         Ok(AppliedPreset {
             name: crate::presets::display_name(&preset.name),
@@ -511,8 +510,11 @@ impl Editor {
         let (Some(session), Some(m)) = (&mut self.presets.amount, &self.document.metadata) else {
             return AmountChange::Same;
         };
+        let Some(scale) = &session.scale else {
+            return AmountChange::Same;
+        };
+        session.shown = scale.at(amount, m);
         session.amount = amount;
-        session.shown = session.scale.at(amount, m);
         // Upright's analysis may have landed since: the photo's.
         session
             .shown
@@ -563,18 +565,21 @@ impl Editor {
             )
             .truncate(),
         );
+        let adjustable = session.scale.is_some();
         crate::app::ui::widgets::set_edit_context(ui, "Preset");
         ui.push_id("preset-amount", |ui| {
-            crate::app::ui::widgets::slider_with(
-                ui,
-                &mut self.step_name,
-                "Amount",
-                &mut amount,
-                crate::presets::amount::RANGE,
-                1.,
-                Some((100., 0)),
-                None,
-            )
+            ui.add_enabled_ui(adjustable, |ui| {
+                crate::app::ui::widgets::slider_with(
+                    ui,
+                    &mut self.step_name,
+                    "Amount",
+                    &mut amount,
+                    crate::presets::amount::RANGE,
+                    1.,
+                    Some((100., 0)),
+                    None,
+                )
+            })
         });
         crate::app::ui::widgets::set_edit_context(ui, "");
         if amount != session.amount {

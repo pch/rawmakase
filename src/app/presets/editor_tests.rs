@@ -195,9 +195,19 @@ fn preset_amount_scales_the_preset_from_the_settings_before_it() {
     editor.document.edit.setup_mut().vibrance = 0.1;
     editor.finish_edit_frame(frame, &ctx);
     assert!(editor.presets.amount.is_none());
-    // A preset without an Amount shows none.
+    // A preset without an Amount shows it dimmed, so the list stays put.
     editor.apply_preset(1).unwrap();
-    assert!(editor.presets.amount.is_none());
+    assert!(
+        editor
+            .presets
+            .amount
+            .as_ref()
+            .is_some_and(|s| s.scale.is_none())
+    );
+    assert_eq!(
+        editor.set_preset_amount(0.5),
+        crate::app::presets::AmountChange::Same
+    );
     editor.apply_preset(0).unwrap();
     assert!(editor.presets.amount.is_some());
     // A preset with only choices that aren't numbers looks the same at every Amount

@@ -29,7 +29,7 @@ The **+** at the top of the Presets panel opens **Manage Presets**. Its groups a
 
 ## Preset Amount
 
-After a preset that supports it is applied, an **Amount** slider (0–200%, 100% to start) shows at the top of the Presets panel, under the preset's name, as in Lightroom. It scales the preset's changes: 0% is the photo as it was before the preset, 100% the preset as applied, 200% twice its changes. Each drag is one History step ("Preset Amount"). Applying another preset, any other edit, Undo or moving to another photo ends it, and the slider goes.
+After a preset that supports it is applied, an **Amount** slider (0–200%, 100% to start) shows at the top of the Presets panel, under the preset's name, as in Lightroom. It scales the preset's changes: 0% is the photo as it was before the preset, 100% the preset as applied, 200% twice its changes. Each drag is one History step ("Preset Amount"). After a preset without an Amount, its name and a dimmed slider show in the same place, so the list below stays put from one preset to the next. Any other edit, Undo or moving to another photo ends it, and the slider goes.
 
 The settings before the preset and the preset's result are kept once, when it is applied, and every Amount is worked out from those two again, so dragging back and forth never drifts. Nothing about the Amount is saved: the photo keeps the resulting settings, as Lightroom does. Likewise a Lightroom edit or sidecar is read from its settings alone; the preset it came from and its Amount are never applied again.
 
