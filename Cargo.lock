@@ -1118,7 +1118,7 @@ version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab8ecd87370524b461f8557c119c405552c396ed91fc0a8eec68679eab26f94a"
 dependencies = [
- "libloading 0.8.9",
+ "libloading 0.7.4",
 ]
 
 [[package]]
@@ -1441,8 +1441,8 @@ checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
 name = "fastframe-desktop"
-version = "0.17.0"
-source = "git+https://github.com/crmne/fastframe?tag=v0.17.0#3617b1471763e3a36fed15d5da67c95e178173e9"
+version = "0.17.1"
+source = "git+https://github.com/crmne/fastframe?tag=v0.17.1#d5ae46d52f055ec8942765f64be4207c8c7c75bf"
 dependencies = [
  "log",
  "mac-usernotifications",
@@ -1479,6 +1479,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fastframe-icons"
+version = "0.17.1"
+source = "git+https://github.com/crmne/fastframe?tag=v0.17.1#d5ae46d52f055ec8942765f64be4207c8c7c75bf"
+dependencies = [
+ "egui",
+]
+
+[[package]]
 name = "fastframe-text"
 version = "0.17.0"
 source = "git+https://github.com/crmne/fastframe?tag=v0.17.0#3617b1471763e3a36fed15d5da67c95e178173e9"
@@ -1502,14 +1510,14 @@ dependencies = [
 
 [[package]]
 name = "fastframe-titlebar"
-version = "0.17.0"
-source = "git+https://github.com/crmne/fastframe?tag=v0.17.0#3617b1471763e3a36fed15d5da67c95e178173e9"
+version = "0.17.1"
+source = "git+https://github.com/crmne/fastframe?tag=v0.17.1#d5ae46d52f055ec8942765f64be4207c8c7c75bf"
 dependencies = [
  "directories",
  "eframe",
  "egui",
  "fastframe-desktop",
- "fastframe-icons",
+ "fastframe-icons 0.17.1",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
@@ -3903,7 +3911,7 @@ dependencies = [
  "eframe",
  "egui_extras",
  "fastframe-fonts",
- "fastframe-icons",
+ "fastframe-icons 0.17.0",
  "fastframe-text",
  "fastframe-theme",
  "fastframe-titlebar",
