@@ -1,9 +1,9 @@
 //! The sparse mode: the sky behind a bare canopy, between twigs far apart.
 //!
-//! The sky's colour is measured as a local mean and spread, spread in from where the
-//! model is sure, and each pixel is placed on the line between that sky and the colour
+//! The sky's color is measured as a local mean and spread, spread in from where the
+//! model is sure, and each pixel is placed on the line between that sky and the color
 //! of what is clearly not sky right around it: a twig is the foreground of the gaps
-//! beside it, a facade or a roof its own. Where the colours find sky over a large area
+//! beside it, a facade or a roof its own. Where the colors find sky over a large area
 //! the model calls foreground (a wall, water) the model's answer stands, unless that
 //! area is laced with twigs and joined to the sky through them.
 
@@ -16,30 +16,30 @@ use super::{
 use crate::refine::{mean, smooth};
 use rawmakase_inference::InferenceError;
 
-/// Windows (fraction of the long side) over which the sky's colour and its variation
+/// Windows (fraction of the long side) over which the sky's color and its variation
 /// are measured: close by, for its gradient, and broadly, wide enough to hold both the
 /// blue and the clouds of a cloudy sky.
 const SKY_WINDOW: (f32, f32) = (0.08, 0.16);
 /// Least spread (sRGB / 255, per channel) the sky is given: an even sky still varies
 /// this much with noise and gradient.
 const SKY_FLOOR: f32 = 0.03;
-/// Distances from the sky (in its spreads) within which a colour is sky, and beyond
+/// Distances from the sky (in its spreads) within which a color is sky, and beyond
 /// which it is clearly not.
 const CLOSE: (f32, f32) = (3., 6.);
-/// How far from the smooth sky (in its spreads) such a colour may be.
+/// How far from the smooth sky (in its spreads) such a color may be.
 const SKY_LIKE_CLOSE: f32 = 8.5;
 /// Share of a [`GATE`] window around a bright patch that may be darker than the sky
 /// for the patch to count as a puff of cloud floating in it.
 const CLEAR: f32 = 0.02;
-/// How far (sRGB / 255) a cloud's colour may lie off the line from the sky to white.
+/// How far (sRGB / 255) a cloud's color may lie off the line from the sky to white.
 const CLOUD: f32 = 0.08;
 /// Width (fraction of the long side, at least 2 pixels) below which what is clearly
 /// not sky is a thin structure: a twig, a wire, a strut.
 const THIN: f32 = 0.0015;
-/// Share of thin structures around a sky-coloured area (over twice the [`GATE`]) from
+/// Share of thin structures around a sky-colored area (over twice the [`GATE`]) from
 /// which it is a canopy's gaps rather than a wall or water, from not at all to fully.
 const LACED: (f32, f32) = (0.01, 0.03);
-/// Share of a window taken by the colours from which its centre is taken entirely:
+/// Share of a window taken by the colors from which its centre is taken entirely:
 /// how a decision fades out around where it was made.
 const FILL: f32 = 0.02;
 /// Model answers below which it is all but certain of foreground, up to where it
@@ -50,11 +50,11 @@ const DOUBT: (f32, f32) = (0.001, 0.003);
 /// taken even where the model is certain of foreground (the sky between a truss's
 /// struts), and beyond which it needs the model's doubt.
 const SKY_ITSELF: (f32, f32) = (1.5, 2.5);
-/// How many times coarser a grid the sky's colour is measured on over a wide window.
+/// How many times coarser a grid the sky's color is measured on over a wide window.
 const COARSE: usize = 4;
 
-/// What [`sparse_with`] measures before it decides: where the model and the colours are
-/// sure of sky, the sky's colour around each pixel and how far each pixel is from it,
+/// What [`sparse_with`] measures before it decides: where the model and the colors are
+/// sure of sky, the sky's color around each pixel and how far each pixel is from it,
 /// and what is clearly not sky. `None` where there is no sure sky, no known
 /// foreground or nothing clearly not sky, and the model's answer stands.
 fn measure(rgb: &[[f32; 3]], p: &[f32], width: usize, height: usize) -> Option<Measured> {
@@ -85,13 +85,13 @@ fn measure(rgb: &[[f32; 3]], p: &[f32], width: usize, height: usize) -> Option<M
     if !sky_sure.contains(&true) || !far_known.contains(&true) {
         return None;
     }
-    // The sky's colour, from where it is smooth first; then also from wherever the
-    // model sees sky (sure, or fading) and the colour clearly sides with that sky,
+    // The sky's color, from where it is smooth first; then also from wherever the
+    // model sees sky (sure, or fading) and the color clearly sides with that sky,
     // within its variation: streaks of cloud or a duller patch are measured against
     // their own sky; a spire, a twig or a facade brighter than the sky is not. Small
     // patches brighter than the sky where the model mostly sees sky, with nothing
     // darker than the sky around them, are puffs of cloud and part of the sky's
-    // colour; a facade it fades over is large, or cut up by what stands before it.
+    // color; a facade it fades over is large, or cut up by what stands before it.
     let far = pull_push(rgb, &far_known, w, h);
     let (sky0, spread0) = distribution(rgb, &sky_sure, w, h, close);
     let brighter: Vec<bool> = (0..n)
@@ -127,7 +127,7 @@ fn measure(rgb: &[[f32; 3]], p: &[f32], width: usize, height: usize) -> Option<M
             ))
         })
         .collect();
-    // The foreground: what is clearly not sky and not sure sky to the model, its colour
+    // The foreground: what is clearly not sky and not sure sky to the model, its color
     // and variation taken around each pixel and spread in from there.
     let not_sky: Vec<bool> = (0..n)
         .map(|i| near_sky[i] > CLOSE.1 && p[i] <= SURE_SKY)
@@ -157,18 +157,18 @@ struct Measured {
     gate: usize,
     /// [`THIN`] in pixels.
     thin_r: usize,
-    /// The colours' spread over a [`THIN`] window.
+    /// The colors' spread over a [`THIN`] window.
     fine: Vec<f32>,
-    /// The colours' spread over a [`GATE`] window.
+    /// The colors' spread over a [`GATE`] window.
     spread: Vec<f32>,
-    /// Sure sky: the model is sure and the colours are smooth.
+    /// Sure sky: the model is sure and the colors are smooth.
     sky_sure: Vec<bool>,
     /// Where the model's answer is questioned, within [`BAND`] of its sky.
     questioned: Vec<bool>,
-    /// The sky's colour close by, and its spread.
+    /// The sky's color close by, and its spread.
     sky: Vec<[f32; 3]>,
     sky_spread: Vec<[f32; 3]>,
-    /// The sky's colour broadly, and its spread.
+    /// The sky's color broadly, and its spread.
     wide: Vec<[f32; 3]>,
     wide_spread: Vec<[f32; 3]>,
     /// How far each pixel is from the sky, in its spreads.
@@ -197,7 +197,7 @@ pub(crate) fn sparse(rgb: &[[f32; 3]], p: &[f32], width: usize, height: usize) -
 }
 
 /// Sky coverage (0..=1) from the model's answer, `p` (0..=1 at `width` x `height`),
-/// refined with `rgb`, the photo's colours (sRGB / 255) at the same size. `cancel` is
+/// refined with `rgb`, the photo's colors (sRGB / 255) at the same size. `cancel` is
 /// checked between the passes.
 pub(crate) fn sparse_with(
     rgb: &[[f32; 3]],
@@ -230,12 +230,12 @@ pub(crate) fn sparse_with(
     } = m;
     let (ground, ground_spread) = distribution(rgb, &not_sky, w, h, gate);
     cancelled(cancel)?;
-    // Sure sky that is clearly not sky's colour (the even body of a tower the model
+    // Sure sky that is clearly not sky's color (the even body of a tower the model
     // swallowed) is questioned too.
     let unknown: Vec<bool> = (0..n)
         .map(|i| !sky_sure[i] || near_sky[i] > CLOSE.1)
         .collect();
-    // What the colours say (where between the local ground and the sky, and only as
+    // What the colors say (where between the local ground and the sky, and only as
     // much sky as it is close to the line between them), and how far they can be
     // trusted to say it.
     let (colour, trust): (Vec<f32>, Vec<f32>) = (0..n)
@@ -248,7 +248,7 @@ pub(crate) fn sparse_with(
             if length2 <= 0. {
                 return (p[i], 0.);
             }
-            // Where the model sees foreground, the colours must also vary there: a crown
+            // Where the model sees foreground, the colors must also vary there: a crown
             // as dark as the night behind it does not tell the two apart, and the
             // model's answer stands. Where it sees some sky it is enough that the sky
             // differs from the ground or from the pixel itself (a facade's face, which
@@ -266,7 +266,7 @@ pub(crate) fn sparse_with(
                 &wide[i],
                 &wide_spread[i],
             ));
-            // A colour off the sky's own variation is partly sky only as a blend: where
+            // A color off the sky's own variation is partly sky only as a blend: where
             // it stands out from the foreground around it (a twig paler with the sky
             // behind it, not slate between darker courses), or, short of clearly not
             // sky, on an edge rather than inside an even surface (a grey facade).
@@ -275,7 +275,7 @@ pub(crate) fn sparse_with(
             } else {
                 step(0.5 * UNIFORM, UNIFORM, fine[i])
             };
-            // A colour within the sky's own variation is sky, wherever it lies on the line.
+            // A color within the sky's own variation is sky, wherever it lies on the line.
             let within = 1. - step(CLOSE.0, CLOSE.1, near_sky[i]);
             let mix = (t * blend).max(within) * (1. - step(CLOSE.0, CLOSE.1, off));
             (mix, step(SEPARATION.0, SEPARATION.1, apart))
@@ -284,8 +284,8 @@ pub(crate) fn sparse_with(
     let mixed: Vec<f32> = (0..n)
         .map(|i| p[i] + trust[i] * (colour[i] - p[i]))
         .collect();
-    // Where the colours find sky the model calls foreground, judged on the colours
-    // alone: an even area the colours cannot be trusted over is still one area.
+    // Where the colors find sky the model calls foreground, judged on the colors
+    // alone: an even area the colors cannot be trusted over is still one area.
     let add: Vec<bool> = (0..n)
         .map(|i| unknown[i] && colour[i] > 0.5 && p[i] <= 0.5)
         .collect();
@@ -321,7 +321,7 @@ pub(crate) fn sparse_with(
         })
         .collect();
     cancelled(cancel)?;
-    // What the colours take out of the model's sure sky: a small thing (a spire's tip,
+    // What the colors take out of the model's sure sky: a small thing (a spire's tip,
     // a cross), or the top of something whose body the model fades out of. Out of sky
     // the model is sure of, only where it is joined to what the model doubts or calls
     // ground, or is all thinner than [`THIN`] (a wire): not a grey cloud floating in the
@@ -342,10 +342,10 @@ pub(crate) fn sparse_with(
             .collect()
     };
     cancelled(cancel)?;
-    // How much each pixel takes the colours' answer: a smooth field around what was
+    // How much each pixel takes the colors' answer: a smooth field around what was
     // taken, never a square zone. Around taken gaps, twigs take their share too, but a
-    // sky-coloured area that was not taken stays as the model said, and nothing lowers
-    // sky the model found. The model's unsure edge is the colours' wherever it is the
+    // sky-colored area that was not taken stays as the model said, and nothing lowers
+    // sky the model found. The model's unsure edge is the colors' wherever it is the
     // edge of the sky: a faint wisp it draws on water, cut off from the sky, is not.
     // Gaps inside what the model calls foreground, not along its outline.
     let outline = reached(
@@ -374,7 +374,7 @@ pub(crate) fn sparse_with(
                 0.
             };
             let below = 1. - step(0.4, 0.6, p[i]);
-            // A gap's own pixels take the colours' answer also where most of the few
+            // A gap's own pixels take the colors' answer also where most of the few
             // pixels around them were taken: its rim, blended into a strut.
             let gaps = if add[i] {
                 taken_add[i].max(step(0.2, 0.5, near_add[i]))
@@ -421,7 +421,7 @@ fn as_f32(mask: &[bool]) -> Vec<f32> {
     mask.iter().map(|m| f32::from(u8::from(*m))).collect()
 }
 
-/// The colour of the `known` pixels in the `(2r+1)²` window around each pixel, as its
+/// The color of the `known` pixels in the `(2r+1)²` window around each pixel, as its
 /// mean and spread per channel (at least [`SKY_FLOOR`]), spread in from where a window
 /// holds enough of them to everywhere else. A wide window is measured on a grid
 /// [`COARSE`] times coarser and smoothly enlarged: it is as smooth, and far cheaper.
@@ -434,7 +434,7 @@ fn distribution(
 ) -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
     let f = if r >= 8 * COARSE { COARSE } else { 1 };
     let (cw, ch) = (w.div_ceil(f), h.div_ceil(f));
-    // Per cell: how many pixels are known, and the sums of their colours and squares.
+    // Per cell: how many pixels are known, and the sums of their colors and squares.
     let mut count = vec![0f32; cw * ch];
     let mut sums = vec![[0f32; 3]; cw * ch];
     let mut squares = vec![[0f32; 3]; cw * ch];
@@ -564,7 +564,7 @@ mod tests {
     }
 
     /// The model's own faint answer on water, away from the sky, is no more sky than
-    /// it was before the colours were asked.
+    /// it was before the colors were asked.
     #[test]
     fn a_reflection_the_model_is_a_little_unsure_of_stays_out() {
         fixtures::reflection_stays_out(sparse, 0.3);
@@ -800,9 +800,9 @@ mod tests {
         assert!(px(512, 250) > 240);
     }
 
-    /// A tower 40 pixels wide under a thin spire, as even in colour as slate or copper.
+    /// A tower 40 pixels wide under a thin spire, as even in color as slate or copper.
     /// The model calls the spire sky and fades out of the tower down its body: both are
-    /// out all along, with no step where the model's answer gives way to the colours'.
+    /// out all along, with no step where the model's answer gives way to the colors'.
     #[test]
     fn a_tower_the_model_half_covers_has_no_blocks() {
         let in_tower = |x: f32, y: f32| {

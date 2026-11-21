@@ -16,8 +16,8 @@
 #                are scaled by where the maker's rules say they are
 #                (Fujifilm's record 0x8200) and the file does not say by how
 #                much (Adobe DNG Converter's as-shot neutral where it reads the
-#                files, else LibRaw's output), not colour matrices;
-#                and the 2 × 2 colour filter at the sensor's corner (`cfa`, 0
+#                files, else LibRaw's output), not color matrices;
+#                and the 2 × 2 color filter at the sensor's corner (`cfa`, 0
 #                red, 1 green, 2 blue); `aspect_crop = false` where the
 #                camera's aspect crop is not shown. Adobe DNG Converter's
 #                white level rows may also give `white_max` (a cap on the
@@ -42,7 +42,7 @@
 #                    (`visible`, `frame`, `flip`, `cfa`, `aspect_crop`)
 #   compat-observed  the earlier decoder's (LibRaw at 4f014403) output on the test
 #                    dataset's files, kept so saved edits keep their geometry and
-#                    scale (2026-10-17); never a colour matrix
+#                    scale (2026-10-17); never a color matrix
 #   measured         our own measurement: a default crop aligned with the camera's
 #                    embedded JPEGs in its files (2026-10-30)
 
@@ -7896,7 +7896,7 @@ model = "L2D-20c"
 canonical = ["Hasselblad", "L2D-20c-FFF"]
 source = "compat-observed"
 
-# Phase One: the older backs' colour filter at the sensor's corner, which
+# Phase One: the older backs' color filter at the sensor's corner, which
 # their IIQ block does not give (Adobe DNG Converter's CFAPattern agrees),
 # and the H 25's canonical name.
 

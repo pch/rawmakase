@@ -898,7 +898,7 @@ fn delete_rejected_in_a_smart_collection_saves_before_it_chooses() -> anyhow::Re
     let catalog = library.session.catalog_mut_for_tests();
     let smart: i64 = catalog.db_for_tests().query_row(
         "INSERT INTO collections(name, parent, kind)
-         VALUES ('Rejected colour', NULL, 'com.adobe.ag.library.smart_collection') RETURNING id",
+         VALUES ('Rejected color', NULL, 'com.adobe.ag.library.smart_collection') RETURNING id",
         [],
         |r| r.get(0),
     )?;

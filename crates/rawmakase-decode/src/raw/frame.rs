@@ -18,9 +18,9 @@ pub struct Frame {
     /// clipped pixel keeps what the demosaic made of it.
     pub pixels: Vec<[f32; 3]>,
     /// Per pixel, whether a sensor sample the demosaic may have read for it
-    /// reached its colour's [`Self::saturation`].
+    /// reached its color's [`Self::saturation`].
     pub clipped: Vec<bool>,
-    /// Per colour, the level its samples clip at, measured on the frame, at
+    /// Per color, the level its samples clip at, measured on the frame, at
     /// most 1 (the white level). A sensor that saturates below the white level
     /// its file states clips there.
     pub saturation: [f32; 3],
@@ -28,14 +28,14 @@ pub struct Frame {
 }
 
 /// How far, in pixels, a sample can change the demosaic's pixels: three on
-/// Bayer (Hamilton–Adams's second differences, then the colour difference to
+/// Bayer (Hamilton–Adams's second differences, then the color difference to
 /// the green beside them), and the X-Trans demosaic's candidate reach on X-Trans
 /// (its green along a line, then a red or blue as far again). X-Trans's stripe
-/// pass averages colour along rows and columns of fine stripes beyond that.
+/// pass averages color along rows and columns of fine stripes beyond that.
 const BAYER_REACH: usize = 3;
 const XTRANS_REACH: usize = crate::demosaic::XTRANS_REACH;
 
-/// A clipped sample is one within this fraction of its colour's saturation.
+/// A clipped sample is one within this fraction of its color's saturation.
 const CLIP_MARGIN: f32 = 0.005;
 
 /// Saturation is looked for from this level up, in bins this wide: about a
@@ -106,7 +106,7 @@ impl Raw {
     }
 }
 
-/// Each colour's saturation in `cfa`: the highest level its samples pile up
+/// Each color's saturation in `cfa`: the highest level its samples pile up
 /// on (the lower edge of that [`BIN`]), else the white level; never above the
 /// white level. Samples above white count as at white.
 fn saturation(cfa: &Cfa) -> [f32; 3] {
@@ -158,7 +158,7 @@ fn saturation(cfa: &Cfa) -> [f32; 3] {
     })
 }
 
-/// Whether each sample of `cfa` reaches its colour's `saturation`.
+/// Whether each sample of `cfa` reaches its color's `saturation`.
 fn clipped_sites(cfa: &Cfa, saturation: [f32; 3]) -> Vec<bool> {
     let width = cfa.width as usize;
     let floor = saturation.map(|s| s * (1. - CLIP_MARGIN));

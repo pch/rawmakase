@@ -11,7 +11,7 @@
 //!   none.
 //! - Packet headers always take the long form.
 //! - The components are a star-tetrix decorrelation of the quad (the green at the red
-//!   row's site, red, the other green, blue), though the header declares no colour
+//!   row's site, red, the other green, blue), though the header declares no color
 //!   transform and has no parameters for one.
 //! - Coded values are a square-root companding of the raw values, undone by the
 //!   transfer curve rather than by the standard linear output scaling.

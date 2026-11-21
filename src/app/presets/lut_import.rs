@@ -1,4 +1,4 @@
-//! The Import LUTs window: the colour space the LUTs expect, chosen for the
+//! The Import LUTs window: the color space the LUTs expect, chosen for the
 //! batch before the files, as Camera Raw's Create Profile asks for it. It opens at
 //! sRGB every time, so a space chosen for one pack never applies to the next.
 use crate::app::presets::bulk_import::ImportKind;
@@ -42,7 +42,7 @@ impl Editor {
                 ui.add_space(space::S);
                 ui.label(
                     egui::RichText::new(
-                        "A LUT expects colours in one colour space. Most are made for sRGB; \
+                        "A LUT expects colors in one color space. Most are made for sRGB; \
                          choose another only when the LUT's maker says so.",
                     )
                     .size(text::SMALL)

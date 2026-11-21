@@ -58,7 +58,7 @@ impl EditSource {
     }
     /// The recipe the photo at `path` is rendered with: its edit, or the defaults
     /// Develop would open it with (Adobe Default unless given), a fitted camera look
-    /// included for a photo without colour data.
+    /// included for a photo without color data.
     pub(crate) fn recipe(
         edit: Option<&Self>,
         m: &crate::camera_data::Metadata,

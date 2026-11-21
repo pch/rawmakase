@@ -87,7 +87,7 @@ pub enum Meaning {
     /// How much of each pixel a mask covers, one channel, 0 (none) to the
     /// sample's maximum (all).
     Coverage,
-    /// Colour: three channels, or four with alpha.
+    /// Color: three channels, or four with alpha.
     Color {
         /// The primaries.
         primaries: Primaries,
@@ -100,7 +100,7 @@ pub enum Meaning {
     },
 }
 
-/// A colour's primaries.
+/// A color's primaries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Primaries {
@@ -116,7 +116,7 @@ pub enum Primaries {
     Camera,
 }
 
-/// A colour's white point.
+/// A color's white point.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum White {
@@ -128,7 +128,7 @@ pub enum White {
     Camera,
 }
 
-/// How a colour's values encode light.
+/// How a color's values encode light.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Transfer {
@@ -140,15 +140,15 @@ pub enum Transfer {
     Gamma(f32),
 }
 
-/// A colour's alpha channel.
+/// A color's alpha channel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Alpha {
     /// None: three channels.
     None,
-    /// A fourth channel, colour not multiplied by it.
+    /// A fourth channel, color not multiplied by it.
     Straight,
-    /// A fourth channel, colour already multiplied by it.
+    /// A fourth channel, color already multiplied by it.
     Premultiplied,
 }
 

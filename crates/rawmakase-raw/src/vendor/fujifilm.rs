@@ -8,7 +8,7 @@
 //! 0x2FF0 WB_GRGBLevels, 0x9650 RawExposureBias, 0xC000 RAFData; raw image
 //! directory tags 0xF001–0xF003 width, height and bits, 0xF005 the row stride
 //! (32-bit words), 0xF006 the packing, 0xF007–0xF008 the data's offset and
-//! length, 0xF009 the colour filter's phase, 0xF00A black levels, 0xF00C
+//! length, 0xF009 the color filter's phase, 0xF00A black levels, 0xF00C
 //! the standard illuminants' white balance, 0xF00E as-shot white balance;
 //! maker note 0x1403 DevelopmentDynamicRange.
 //!
@@ -116,10 +116,10 @@ pub(crate) fn super_ccd(records: &Records) -> Option<SuperCcd> {
     }
 }
 
-/// The colour filter at the stored data's corner: X-Trans from XTransLayout
-/// (36 colours, 0 red, 1 green, 2 blue, last first), a Super CCD's fixed
+/// The color filter at the stored data's corner: X-Trans from XTransLayout
+/// (36 colors, 0 red, 1 green, 2 blue, last first), a Super CCD's fixed
 /// diagonal patterns, else RGGB moved by the filter's phase (the raw image
-/// directory's 0xF009, our own measurement; FujiLayout's colours are not the
+/// directory's 0xF009, our own measurement; FujiLayout's colors are not the
 /// ones RAWmakase has always read).
 pub(crate) fn cfa(records: &Records, phase: u32) -> Cfa {
     if let Some(x) = records.get(XTRANS_LAYOUT)
@@ -311,7 +311,7 @@ fn raf_data_table(data: &[u8], [green, ..]: [u32; 3]) -> Option<[[u32; 3]; 2]> {
 }
 
 /// The X-A bodies' RAFData list (our own measurements): from byte 512,
-/// little-endian 32-bit (light source, colour temperature, red, green,
+/// little-endian 32-bit (light source, color temperature, red, green,
 /// second green, blue) per preset, the first the camera's automatic levels
 /// (light source and temperature 0), every green the same; red and blue are
 /// on half green's scale. Returns (light source, (green, red, blue)) per
@@ -381,7 +381,7 @@ fn note_short(notes: &[u8], tag: u16) -> Option<u16> {
 }
 
 /// The film simulation of the maker notes: a black and white one is in Saturation
-/// (0x1003), a colour one in FilmMode (0x1401).
+/// (0x1003), a color one in FilmMode (0x1401).
 pub(crate) fn film_simulation(notes: &[u8]) -> Option<String> {
     let mono = note_short(notes, 0x1003).and_then(|v| {
         Some(match v {
@@ -488,7 +488,7 @@ mod tests {
         assert_eq!(names(&cfa(&Records::parse(&d), 1)), "GR/Bg");
         let d = directory(&[(0x130, &[0x80, 0x81, 0x82, 0x83])]);
         assert_eq!(names(&cfa(&Records::parse(&d), 0)), "RB/Gg/BR/gG");
-        // X-Trans: the layout's last colour first.
+        // X-Trans: the layout's last color first.
         let mut x = [1u8; 36];
         x[35] = 0;
         x[34] = 2;

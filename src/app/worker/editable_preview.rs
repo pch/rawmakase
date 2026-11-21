@@ -22,7 +22,7 @@ pub(crate) struct OpenedCopy {
     /// A reduced image ([`CameraImage::fast`]) of a photo of the original's
     /// size, with the original's metadata and its highlights recovered already.
     pub image: CameraImage,
-    /// The photo's fitted Camera Look, for a camera without colour data: its
+    /// The photo's fitted Camera Look, for a camera without color data: its
     /// fit needs the original, so offline it comes only from the copy.
     pub default_look: Option<CameraProfile>,
 }
@@ -68,7 +68,7 @@ impl CopyFiles for Decoder {
     }
     /// The original decoded in full as Develop decodes it (the decode cache's
     /// copy of this version when it has one, never stored from here, as an
-    /// export's), with the default Camera Look a camera without colour data
+    /// export's), with the default Camera Look a camera without color data
     /// starts from, written as its copy.
     fn build(&self, input: &BuildInput<'_>, dest: &Path, cancel: Cancel<'_>) -> anyhow::Result<()> {
         use anyhow::Context as _;

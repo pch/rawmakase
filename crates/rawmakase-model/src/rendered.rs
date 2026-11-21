@@ -66,7 +66,7 @@ impl ClipOverlay {
     pub fn any(self) -> bool {
         self.shadows || self.highlights
     }
-    /// The warning colour shown instead of this rendered pixel, if any.
+    /// The warning color shown instead of this rendered pixel, if any.
     pub fn color(self, pixel: [f32; 3]) -> Option<[u8; 3]> {
         if self.highlights && pixel.iter().any(|v| *v >= HIGHLIGHT_CLIP) {
             Some(Self::HIGHLIGHT_COLOR)

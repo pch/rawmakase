@@ -283,7 +283,7 @@ fn an_hdr_jpeg_xl_carries_the_same_light_as_the_tiff() -> Result<()> {
 /// with HLG's 1,000 cd/m² reference display) and within a few hundredths of a stop of
 /// the TIFF's light, above graphics white too. Compared on the fixture's neutral rows:
 /// its other rows are camera primaries far outside BT.709, whose negative channels
-/// jxl-oxide clips when it converts XYB's light to the file's primaries (colour on a
+/// jxl-oxide clips when it converts XYB's light to the file's primaries (color on a
 /// photo is measured in docs/records/hdr-stage1-results.md).
 #[test]
 fn a_lossy_hdr_jpeg_xl_carries_the_tiffs_light() -> Result<()> {
@@ -473,7 +473,7 @@ fn a_lossless_hdr_jpeg_xl_declares_level_10() -> Result<()> {
     Ok(())
 }
 
-/// An HDR export never uses the SDR colour space: one left from a TIFF export
+/// An HDR export never uses the SDR color space: one left from a TIFF export
 /// (Adobe RGB) doesn't stop an HDR JPEG XL. The target's format is checked against
 /// the transfer before anything renders: linear light into a .jxl is refused.
 #[test]

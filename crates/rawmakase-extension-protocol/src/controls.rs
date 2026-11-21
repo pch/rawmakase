@@ -107,11 +107,11 @@ pub enum ControlKind {
         /// The chosen option's id.
         value: String,
     },
-    /// An sRGB colour, components 0 to 1.
+    /// An sRGB color, components 0 to 1.
     Color {
         /// Red, green, blue and, with `alpha`, alpha.
         value: Vec<f64>,
-        /// Whether the colour has an alpha component.
+        /// Whether the color has an alpha component.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         alpha: bool,
     },
@@ -266,7 +266,7 @@ fn validate_in<'a>(
                 if value.len() != if *alpha { 4 } else { 3 }
                     || value.iter().any(|c| !(0.0..=1.0).contains(c))
                 {
-                    return fail("a colour has three components (four with alpha), 0 to 1");
+                    return fail("a color has three components (four with alpha), 0 to 1");
                 }
             }
             ControlKind::Curve { points } => {

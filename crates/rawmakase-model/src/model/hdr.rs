@@ -159,7 +159,7 @@ impl HdrSettings {
 const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 /// The lowest Refine Saturation (0 to 1) the HDR master renders: SDR's rule without
 /// its bound at white is within the acceptance rule at 50% on the patches and at 0% on
-/// six photos, but at 0% on the patches adds more colour error than SDR's
+/// six photos, but at 0% on the patches adds more color error than SDR's
 /// (docs/records/hdr-stage1-results.md#tone-curves).
 const REFINE_SATURATION_MEASURED: f32 = 0.5;
 /// The largest Clarity, either sign (−1 to 1), the HDR master renders: up to ±50 the
@@ -186,7 +186,7 @@ const DEHAZE_MEASURED: f32 = -0.5;
 /// Levels as a point curve of its shape ([`crate::color::hdr_curve`]), Texture (on the
 /// camera's samples, as in SDR), Clarity from −50 to +50 and Dehaze from −50 to +100
 /// (the SDR operators, unclipped),
-/// Point Color (its swatches in colour grading's HDR domain),
+/// Point Color (its swatches in color grading's HDR domain),
 /// masks whose sliders are Temp, Tint, Exposure, Contrast, Shadows, Texture, Color,
 /// Sharpness and Noise, Saturation within [`masked_saturation_measured`], Clarity and Dehaze within [`masked_clarity_measured`] and
 /// [`masked_dehaze_measured`],
@@ -342,10 +342,10 @@ fn unrendered_mask_slider(a: &crate::model::masks::LocalAdjust) -> Option<&'stat
 }
 
 /// The most Saturation (0 to 1) the masks add to a pixel in the HDR master, which
-/// raises a colour's saturation keeping its value, as Camera Raw's HDR mask Saturation
+/// raises a color's saturation keeping its value, as Camera Raw's HDR mask Saturation
 /// does: at +50 on six photos it is within the acceptance rule; at +75 and +100 on the
 /// same photos it is further from Camera Raw above white than the SDR rendition is below
-/// it. Negative Saturation renders down to −100, toward the colour's HSL lightness, as
+/// it. Negative Saturation renders down to −100, toward the color's HSL lightness, as
 /// Camera Raw's (docs/records/hdr-stage1-results.md#masks).
 const MASK_SATURATION_MEASURED: f32 = 0.5;
 
@@ -645,7 +645,7 @@ mod tests {
                 .contains("Whites above +50")
         );
         r.whites = -0.5;
-        // The colour stage renders in HDR (docs/hdr.md#the-colour-stage).
+        // The color stage renders in HDR (docs/hdr.md#the-color-stage).
         let mut colour = r.clone();
         colour.saturation = 0.3;
         colour.vibrance = -0.2;
@@ -657,7 +657,7 @@ mod tests {
         colour.effects.shadow_tint = 0.1;
         colour.effects.monochrome = true;
         colour.effects.gray_mix = [0.2; 8];
-        // Colour grading renders too (docs/hdr.md#color-grading).
+        // Color grading renders too (docs/hdr.md#color-grading).
         colour.grading = [[0.6, 0.3, 0.1], [0.1, 0.2, -0.2], [0.1, 0.5, 0.3]];
         colour.effects.global_grade = [0.5, 0.2, -0.1];
         colour.effects.balance = 0.3;
@@ -877,7 +877,7 @@ mod tests {
     /// table, B&W, a fitted Camera Look, any Profile Amount, and their own sliders and
     /// settings where the same sliders render. A look's setting whose HDR rendering is
     /// not measured refuses the master by name, saying the look sets it; the edit stays
-    /// valid. Split toning renders, as colour grading does.
+    /// valid. Split toning renders, as color grading does.
     #[test]
     fn looks_render_in_hdr_as_their_parts_do() {
         use crate::camera_profiles::{CameraProfile, open};

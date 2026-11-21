@@ -160,9 +160,9 @@ impl<'a> LensWarp<'a> {
     }
 }
 
-/// CA remapping must not turn reconstructed, constant-colour fine detail back
-/// into coloured stripes. A low source chromaticity variation relative to the
-/// colour introduced by remapping identifies that case. Require repeated fine
+/// CA remapping must not turn reconstructed, constant-color fine detail back
+/// into colored stripes. A low source chromaticity variation relative to the
+/// color introduced by remapping identifies that case. Require repeated fine
 /// luminance extrema as well, so isolated edges retain their CA correction.
 /// `gpu/local.wgsl` mirrors this calculation.
 fn stripe_ca_sample(im: Source, x: f32, y: f32, samples: [[f32; 3]; 3]) -> [f32; 3] {
@@ -208,7 +208,7 @@ fn stripe_ca_sample(im: Source, x: f32, y: f32, samples: [[f32; 3]; 3]) -> [f32;
                 previous = d;
             }
         }
-        // A pair of close interpolation positions can have similar colour by
+        // A pair of close interpolation positions can have similar color by
         // chance in noise. Require coherence over the whole seven-pixel line:
         // full below a 2% chromaticity span, none above 5%.
         let span = (high[0] - low[0]).powi(2) + (high[1] - low[1]).powi(2);
@@ -260,7 +260,7 @@ fn stripe_ca_sample(im: Source, x: f32, y: f32, samples: [[f32; 3]; 3]) -> [f32;
         let mut coherence = agreement(neighbours, variances);
         // At a finite strip's boundary, half of a symmetric neighbourhood can
         // be flat background. Require the same five-line agreement on either
-        // side rather than weakening the noise or source-colour tests.
+        // side rather than weakening the noise or source-color tests.
         for side in [1, -1] {
             if coherence >= 0.7 {
                 break;
@@ -289,7 +289,7 @@ fn stripe_ca_sample(im: Source, x: f32, y: f32, samples: [[f32; 3]; 3]) -> [f32;
     for (dx, dy) in [(1, 0), (0, 1)] {
         let (mut evidence, flat_colour_edge) = periodic(x, y, dx, dy);
         if flat_colour_edge && variation < 1e-6 {
-            // The smooth-colour border beside reconstructed slats can itself
+            // The smooth-color border beside reconstructed slats can itself
             // have too few extrema. Accept immediate parallel support only
             // when its source chromaticity agrees within 0.2%. Source-sample
             // variation must be below 0.1% too: proximity to slats alone must
@@ -407,7 +407,7 @@ mod tests {
         };
         let samples = [[0.15; 3], [0.1; 3], [0.12; 3]];
         let at = |x| stripe_ca_sample((&im).into(), x, 30., samples);
-        // GPU round(30.5) is 30; a 31-centred window includes the coloured
+        // GPU round(30.5) is 30; a 31-centred window includes the colored
         // column at 34 and correctly rejects protection instead.
         assert_ne!(at(30.), at(31.));
         assert_eq!(at(30.5), at(30.));

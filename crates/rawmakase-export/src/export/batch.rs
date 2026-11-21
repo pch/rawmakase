@@ -125,7 +125,7 @@ pub enum Unplanned {
     NoFolder,
     /// Ask what to do: these files exist. Plan again with the answer.
     Conflicts(Vec<PathBuf>),
-    /// The settings can't be exported as they are (the reason): a colour space the
+    /// The settings can't be exported as they are (the reason): a color space the
     /// format can't hold, or one only a later release knows.
     Settings(String),
 }

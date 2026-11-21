@@ -53,7 +53,7 @@ fn sensor_white(im: &CameraImage) -> [f32; 3] {
     im.metadata.wb.map(|v| v.max(0.001))
 }
 
-/// Highlight reconstruction in camera space, before colour conversion. Stops with an
+/// Highlight reconstruction in camera space, before color conversion. Stops with an
 /// error once `cancel` is set, and only then.
 pub fn recover_highlights(im: &CameraImage, cancel: Cancel<'_>) -> Result<CameraImage> {
     check_cancel(cancel)?;

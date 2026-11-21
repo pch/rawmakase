@@ -249,7 +249,7 @@ mod tests {
         );
     }
 
-    /// Canon's regional names are the body they are, so the colour matrix,
+    /// Canon's regional names are the body they are, so the color matrix,
     /// the camera table and Adobe's profiles (all under the body's name) find
     /// them. The model strings are those the cameras' files write.
     #[test]

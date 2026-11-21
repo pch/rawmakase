@@ -588,7 +588,7 @@ pub struct ExportSettings {
     pub format: Format,
     #[serde(skip)]
     pub later_format: LaterFormat,
-    /// The colour space of the pixels and the embedded profile; sRGB in settings
+    /// The color space of the pixels and the embedded profile; sRGB in settings
     /// saved before there was a choice, and standing in for one only a later
     /// release knows (see [`LaterColorSpace`]), which is refused rather than
     /// exported as sRGB.
@@ -686,7 +686,7 @@ impl Default for ExportSettings {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LaterFormat(Option<serde_json::Value>);
 
-/// The saved colour space when only a later release knows it. Kept and saved
+/// The saved color space when only a later release knows it. Kept and saved
 /// back until a space is chosen, as [`LaterFormat`] is, but never exported as
 /// another: [`ExportSettings::output_space`] refuses it.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -791,16 +791,16 @@ impl ExportSettings {
         self.hdr = hdr;
         self.later_hdr = LaterHdr::default();
     }
-    /// The colour space the user picks, which replaces one from a later release.
+    /// The color space the user picks, which replaces one from a later release.
     pub fn choose_color_space(&mut self, space: OutputSpace) {
         self.color_space = space;
         self.later_color_space = LaterColorSpace::default();
     }
-    /// The saved colour space only a later release knows, as saved.
+    /// The saved color space only a later release knows, as saved.
     pub fn later_color_space(&self) -> Option<&serde_json::Value> {
         self.later_color_space.0.as_ref()
     }
-    /// The colour space to export in, checked with the format before anything
+    /// The color space to export in, checked with the format before anything
     /// renders: refused when only a later release knows it, and for ProPhoto RGB in
     /// a format other than TIFF. Every export checks its settings with this.
     pub fn output_space(&self) -> Result<OutputSpace> {
@@ -982,8 +982,8 @@ impl ExportSettings {
         Ok(None)
     }
     /// What every export checks before anything renders: an HDR export's encoding in
-    /// its format, else the SDR colour space in its format ([`Self::output_space`]).
-    /// An HDR export never uses the SDR colour space, so that is not checked then.
+    /// its format, else the SDR color space in its format ([`Self::output_space`]).
+    /// An HDR export never uses the SDR color space, so that is not checked then.
     pub fn check_output(&self) -> Result<()> {
         if self.hdr_output()?.is_none() {
             self.output_space()?;

@@ -3,7 +3,7 @@
 
 `reference` renders photos with look profiles in Camera Raw through Photoshop, over
 Adobe Standard as the gate does, at 1024 px on the long edge (16-bit ProPhoto TIFFs,
-recompressed losslessly): a LUT is per-pixel colour and the gate scores at 1024 anyway.
+recompressed losslessly): a LUT is per-pixel color and the gate scores at 1024 anyway.
 Each look is embedded in the render's sidecar (`crs:Look` with its `Table_` attributes),
 so nothing is installed in Camera Raw. Every render's own sidecar is checked against
 what was asked and the set is frozen in `references.json`, in the layout gate.py's

@@ -19,8 +19,8 @@ pub struct Dng {
     /// the crop Camera Raw starts from, such as the camera's aspect ratio.
     pub user_crop: Option<[f32; 4]>,
     /// The profile tags, rewritten as a standalone DCP: the embedded camera
-    /// profile when they make one, else at least the file's colour matrices.
-    /// `None` when IFD0 has no colour tags (colour or forward matrices, tables).
+    /// profile when they make one, else at least the file's color matrices.
+    /// `None` when IFD0 has no color tags (color or forward matrices, tables).
     pub profile: Option<Vec<u8>>,
     /// Profile tags are there but one could not be read (an offset past the end):
     /// `profile` is then `None`, which must not read as no profile.
@@ -239,12 +239,12 @@ fn constant_diagonal(a: &[f32], b: &[f32], analog: &[f32]) -> Option<[f32; 3]> {
         .then_some(gains)
 }
 
-/// Tags that give a profile colour: colour and forward matrices and tables.
+/// Tags that give a profile color: color and forward matrices and tables.
 const COLOUR_TAGS: &[u16] = &[50721, 50722, 50938, 50939, 50964, 50965, 50982];
 
 /// Rewrites the profile tags as a standalone DCP so the regular parser validates them.
 /// Returns the bytes rather than a profile, since the matrix is readable from
-/// them even when the profile itself is not; `None` without colour tags, an error
+/// them even when the profile itself is not; `None` without color tags, an error
 /// when a tag that is there can't be read.
 fn profile_tags(t: &mut Tiff, ifd0: &BTreeMap<u16, Entry>) -> Result<Option<Vec<u8>>, ()> {
     if !COLOUR_TAGS.iter().any(|tag| ifd0.contains_key(tag)) {

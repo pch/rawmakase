@@ -19,8 +19,8 @@ Keep these concepts separate in the API and UI:
   and an auxiliary HDR gain map.
 - An edit has SDR or HDR intent. Ordinary single-exposure RAWs can be edited in
   HDR; a merged DNG need not have HDR editing enabled.
-- A camera profile describes camera colour and rendering intent. An HDR camera
-  profile is not a PQ/HLG export colour space.
+- A camera profile describes camera color and rendering intent. An HDR camera
+  profile is not a PQ/HLG export color space.
 - A display has a changing gamut and headroom. Those facts change presentation,
   not the saved edit or the brightness of an exported file.
 - An export chooses a container, gamut, transfer function and rendition strategy.
@@ -116,14 +116,14 @@ pipeline. See [Adobe gain maps](https://helpx.adobe.com/camera-raw/desktop/hdr-a
 | model `camera_profiles/dcp.rs:185` | Rejects any tag 52551 | Parse and validate HDR metadata and profile grouping; retain profile intent in saved recipes |
 | model `camera_profiles/mod.rs` | Profile operations assume the existing SDR path | Explicit overrange profile evaluation and reproducible identity |
 | interop `xmp/apply.rs` | Rejects active `HDREditMode`; ignores HDR/SDR values only when HDR is off | Typed HDR settings, preservation and application through the same edit model |
-| decode `raster/jxl.rs`, `avif.rs`, `heic.rs` | Refuses HDR development; previews are SDR; HEIC gain maps are ignored | Preserve HDR source pixels and colour metadata before presentation |
+| decode `raster/jxl.rs`, `avif.rs`, `heic.rs` | Refuses HDR development; previews are SDR; HEIC gain maps are ignored | Preserve HDR source pixels and color metadata before presentation |
 | engine `pipeline/pixel.rs:304` | Final output clamps to sRGB 0–1; earlier operators also assume SDR | Separate scene processing, HDR rendering and destination encoding |
-| model `rendered.rs` | Untagged float triples, SDR histogram, clamped integer conversion | Explicit output colour/range contract and HDR measurements |
+| model `rendered.rs` | Untagged float triples, SDR histogram, clamped integer conversion | Explicit output color/range contract and HDR measurements |
 | engine `gpu/present.rs`, app/platform display | 8-bit presentation and SDR surface handling | HDR photo presentation with SDR UI and correct display transitions |
 | export `export/encode.rs` | JPEG/PNG/TIFF quantize existing SDR output | HDR encoders and metadata from one captured export specification |
 
 Follow [architecture](../architecture.md), [code map](../code-map.md),
-[colour pipeline](../color-pipeline.md), [profiles](../lightroom-profiles.md) and
+[color pipeline](../color-pipeline.md), [profiles](../lightroom-profiles.md) and
 [dependencies](../dependencies.md). Keep facts in model, file translation in
 interop, decoding in decode, rendering in engine and publication in export.
 
@@ -134,7 +134,7 @@ interop, decoding in decode, rendering in engine and publication in export.
 Create a separate local HDR reference family; do not repurpose or re-bless the SDR
 parity corpus. Record source hash, licence, Adobe version, complete settings,
 camera-profile identity, output profile, depth, transfer and reference white.
-Record source/output dimensions, crop, resampling method and resampling colour
+Record source/output dimensions, crop, resampling method and resampling color
 domain. Freeze full-resolution references or reduce them in documented linear
 light, preferably from 32-bit linear output where available. The investigation's
 640-pixel bicubic PQ TIFFs are diagnostic probes, not frozen parity references.
@@ -271,7 +271,7 @@ Add a regression for each kind, including toggling HDR on/off without losing the
 profile, and Copy/Sync attempts that combine incompatible choices.
 
 Keep one shared scene-development pipeline with explicit SDR/HDR rendering policy.
-Audit scene tone, exposure, Auto, point/parametric curves, colour mixer, grading,
+Audit scene tone, exposure, Auto, point/parametric curves, color mixer, grading,
 Point Color, B&W, masks, detail, effects, healing and watermark composition for
 0–1 assumptions. Define each operator's HDR domain and test it. Produce an HDR
 master and derive its SDR rendition; SDR rendition controls must not modify the
@@ -300,7 +300,7 @@ then preserve the authored HDR pixels at neutral settings. Do not extrapolate th
 SDR inverse ACR3 curve or reapply a raw camera's default tone to this source. Share
 adjustment operators where their domains match; use an explicit rendered-HDR
 adapter where they do not. Test default render/reopen identity within the stage-1
-tolerance, including highlights above white and saturated colours. Library direct
+tolerance, including highlights above white and saturated colors. Library direct
 display and neutral Develop must agree for both HDR and the SDR rendition.
 
 Default a newly opened, supported and positively identified PQ/HLG or gain-map
@@ -317,14 +317,14 @@ Use the same source contract for Develop, preview builds and export. Keep unrela
 animation and unsupported-container refusals intact.
 
 Acceptance: reopen independent PQ/HLG/gain-map fixtures with correct brightness,
-colour and orientation; malformed maps fail safely; changing displays cannot
+color and orientation; malformed maps fail safely; changing displays cannot
 change decoded pixels or exported results.
 
 ### 5. Add HDR presentation and editing UI
 
 Port the CPU HDR math to the GPU and compare both in float space. Provide an HDR
 photo surface; keep UI graphics at SDR white. On macOS, use an extended-linear
-colour space, suitable float surface and EDR opt-in, following [Apple's EDR guidance](https://developer.apple.com/documentation/metal/performing-your-own-tone-mapping).
+color space, suitable float surface and EDR opt-in, following [Apple's EDR guidance](https://developer.apple.com/documentation/metal/performing-your-own-tone-mapping).
 On Windows, implement the corresponding Advanced Color/scRGB or HDR10 path with
 correct SDR-white scaling, following [Microsoft's guidance](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range).
 Linux requires an explicit compositor/backend capability path; until verified,
@@ -371,7 +371,7 @@ supported XMP, Lightroom import or presets, and that on-screen preview is SDR.
 - **JPEG XL HLG:** implement the full BT.2100 conversion, including the declared
   reference display/system gamma and inverse OOTF when converting display-linear
   pixels. Merely replacing the PQ transfer with the HLG OETF is insufficient.
-- **JPEG XL gain map:** write the actual `jhgm` bundle, alternate colour encoding,
+- **JPEG XL gain map:** write the actual `jhgm` bundle, alternate color encoding,
   map and ISO metadata. Generate it from the final HDR and authored SDR renditions,
   with matched geometry, resizing and watermarks. Validate both base-only decoding
   and headroom-dependent reconstruction.
@@ -383,7 +383,7 @@ supported XMP, Lightroom import or presets, and that on-screen preview is SDR.
   equivalent tests; they are not required to delay the JXL milestone.
 
 Keep gamut, transfer and container as separate validated choices; expose useful
-presets in the dialog and reject invalid combinations. Embed truthful colour and
+presets in the dialog and reject invalid combinations. Embed truthful color and
 HDR metadata, never fabricated mastering-display values. SDR export from an HDR
 edit uses the authored SDR rendition. Validate files with an independent decoder,
 not only RAWmakase's own reader. Test destination failure, cancellation and atomic
@@ -412,7 +412,7 @@ Before implementation pushes, run `make check`, relevant crate/dependency checks
 SDR rendering regressions, and the separate HDR tests. Run dataset renders and
 Camera Raw parity sequentially, following the corpus README and local handoff.
 Update architecture/code-map/module docs as boundaries change. Cross-provider
-review should cover colour/profile semantics, persistence/cache lifecycle and
+review should cover color/profile semantics, persistence/cache lifecycle and
 codec/display paths before shipping.
 
 #253 is complete only when HDR edits persist, render on supported HDR displays,

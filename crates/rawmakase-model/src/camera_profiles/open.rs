@@ -1,4 +1,4 @@
-//! RAWmakase's own camera profiles, available for every camera with a colour matrix.
+//! RAWmakase's own camera profiles, available for every camera with a color matrix.
 //! They need no imported files, so presets and new photos render the same on every
 //! system. Everything here is our own work, released with the rest of RAWmakase.
 //!
@@ -85,7 +85,7 @@ const COLOR_BANDS: &[Band] = &[
     },
 ];
 /// Highlights lose up to this share of their saturation near white, so bright
-/// colours roll off instead of clipping to a flat hue.
+/// colors roll off instead of clipping to a flat hue.
 const COLOR_HIGHLIGHT_ROLLOFF: f32 = 0.1;
 /// Encoded-sRGB points of the Color look's curve: a mild S around mid grey.
 const COLOR_CURVE: &[[f32; 2]] = &[
@@ -97,7 +97,7 @@ const COLOR_CURVE: &[[f32; 2]] = &[
 ];
 const DIMS: [usize; 3] = [72, 8, 8];
 
-/// RAWmakase Standard for this camera, or None without a usable colour matrix.
+/// RAWmakase Standard for this camera, or None without a usable color matrix.
 pub fn standard(m: &Metadata) -> Option<CameraProfile> {
     matrix_standard(m).or_else(|| {
         // Without a matrix from the decoder, use the D65 matrix the DNG's own
@@ -109,7 +109,7 @@ pub fn standard(m: &Metadata) -> Option<CameraProfile> {
     })
 }
 
-/// RAWmakase Standard from the photo's own colour matrix (`Metadata::cam_xyz`)
+/// RAWmakase Standard from the photo's own color matrix (`Metadata::cam_xyz`)
 /// alone, never from a DNG's embedded profile.
 pub(super) fn matrix_standard(m: &Metadata) -> Option<CameraProfile> {
     let mut p = CameraProfile::camera_matrix_default(m)?;
@@ -118,7 +118,7 @@ pub(super) fn matrix_standard(m: &Metadata) -> Option<CameraProfile> {
     Some(p)
 }
 
-/// RAWmakase Color for this camera, or None without a usable colour matrix.
+/// RAWmakase Color for this camera, or None without a usable color matrix.
 pub fn color(m: &Metadata) -> Option<CameraProfile> {
     let base = standard(m)?;
     let mut p = base.clone();
@@ -292,7 +292,7 @@ mod tests {
     fn color_look_is_gentle() {
         let m = camera();
         let (standard, color) = (super::standard(&m).unwrap(), super::color(&m).unwrap());
-        // Mid-tone colours move, but stay close to Standard.
+        // Mid-tone colors move, but stay close to Standard.
         for rgb in [
             [0.45, 0.2, 0.12],
             [0.1, 0.3, 0.08],

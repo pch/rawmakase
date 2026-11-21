@@ -129,7 +129,7 @@ needs it.
   `ExportSettings::load_from` deserialises the whole file and returns nothing on
   an unknown `Destination` variant, so today's releases would drop every export
   setting. Either a new field, or the `later_*` pattern that already preserves a
-  later release's format, colour space, naming and HDR choices, extended to the
+  later release's format, color space, naming and HDR choices, extended to the
   destination before any release writes one.
 - Credentials live in the OS keychain, never in `export.json`, presets or the
   catalog.

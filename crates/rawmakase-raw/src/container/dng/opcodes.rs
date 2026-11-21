@@ -69,7 +69,7 @@ pub(crate) enum Opcode {
         k: [f64; 5],
         centre: [f64; 2],
     },
-    /// Pixels of value `constant` are bad: interpolated from their colour's
+    /// Pixels of value `constant` are bad: interpolated from their color's
     /// neighbours in the Bayer mosaic of `phase`.
     FixBadPixelsConstant {
         constant: u32,
@@ -680,12 +680,12 @@ impl Mask {
     }
 }
 
-/// Interpolates every bad pixel from its colour's good neighbours in a
+/// Interpolates every bad pixel from its color's good neighbours in a
 /// Bayer mosaic whose top-left pixel is red (`phase` 0), green on a red row
 /// (1), green on a blue row (2) or blue (3): the nearest ring of them that
 /// has any (a green's diagonal neighbours first, then two pixels away
 /// along the row and column and diagonally), else the first good pixel of
-/// the colour along each of the four directions, within 16 two-pixel steps.
+/// the color along each of the four directions, within 16 two-pixel steps.
 fn patch<T: Sample>(
     image: &mut Image<T>,
     bad: &Mask,
@@ -742,7 +742,7 @@ fn patch<T: Sample>(
                 }
             }
             let values = found.unwrap_or_else(|| {
-                // Whole two-pixel steps, so every pixel tried is the colour's.
+                // Whole two-pixel steps, so every pixel tried is the color's.
                 NEAR.iter()
                     .filter_map(|&(dr, dc)| {
                         (1..=16).find_map(|k| good(image, r + dr * k, c + dc * k))
@@ -900,7 +900,7 @@ pub(crate) mod tests {
         assert_eq!(fixed, want);
     }
 
-    /// Far from good neighbours, a bad pixel takes its own colour's nearest
+    /// Far from good neighbours, a bad pixel takes its own color's nearest
     /// good ones, whole Bayer periods away: an 11 × 11 RGGB mosaic (red
     /// 100, green 200, blue 300) whose nine red sites at rows and columns
     /// 2, 4, 6 are bad keeps red 100 at the centre.

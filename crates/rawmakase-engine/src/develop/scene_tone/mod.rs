@@ -278,7 +278,7 @@ mod tests {
         assert_eq!(render(-1., -1., 0., 0.3), render(-1., 3., 0., 0.3));
     }
 
-    /// Positive Whites in HDR gains a colour by its luminance, so a saturated colour
+    /// Positive Whites in HDR gains a color by its luminance, so a saturated color
     /// above the toe keeps its channels' ratios, and a gray gains as the table gives.
     #[test]
     fn hdr_positive_whites_keeps_a_colours_saturation() {

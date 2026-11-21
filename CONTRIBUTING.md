@@ -7,7 +7,7 @@ which holds the same rules in more detail; people can read it too.
 ## Build and run
 
 You need current stable Rust (the minimum is in `Cargo.toml`'s `rust-version`) and a C
-compiler; no RAW or colour-management library is needed. On macOS use a native
+compiler; no RAW or color-management library is needed. On macOS use a native
 rustup toolchain (`aarch64-apple-darwin` on Apple Silicon). See the README's
 [From source](README.md#from-source-linux-and-macos) for each system.
 
@@ -58,7 +58,7 @@ and Ubuntu lanes, among others. Run one crate's tests with
 Tests that need private files (your own RAWs, profiles, Lightroom catalogs) or a
 GPU are ignored by default; the README's [Development](README.md#development)
 section lists them and how to run them. Rendering changes are checked against Camera
-Raw on the colour corpus: read [tests/corpus/README.md](tests/corpus/README.md)
+Raw on the color corpus: read [tests/corpus/README.md](tests/corpus/README.md)
 first.
 
 ## Sending a change

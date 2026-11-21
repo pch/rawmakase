@@ -176,7 +176,7 @@ pub(super) enum Keys {
     Positions(HashMap<PhotoId, usize>),
 }
 
-/// Lightroom's label colour order: red, yellow, green, blue, purple, then
+/// Lightroom's label color order: red, yellow, green, blue, purple, then
 /// other labels, then none.
 fn label_rank(label: &str) -> usize {
     match LABELS.iter().position(|l| *l == label) {

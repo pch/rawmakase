@@ -1,15 +1,15 @@
 //! RAWmakase's own demosaicing of unpacked sensor data.
 //!
 //! Input is the visible-area CFA, black-subtracted, normalized to white and white
-//! balanced, with a 48×48 colour pattern (0 red, 1 green, 2 blue), which covers Bayer
+//! balanced, with a 48×48 color pattern (0 red, 1 green, 2 blue), which covers Bayer
 //! (2 or 16 pixel) and X-Trans (6 pixel) periods. Both Bayer and
 //! X-Trans use the same two passes:
 //!
 //! 1. Green at red/blue sites, interpolated along the direction of least gradient
-//!    (Hamilton–Adams with Laplacian correction on Bayer, where the colour two pixels
+//!    (Hamilton–Adams with Laplacian correction on Bayer, where the color two pixels
 //!    away is the same; gradient-weighted neighbours on X-Trans).
-//! 2. Red and blue everywhere from the colour difference to green (R − G, B − G) of
-//!    the nearest same-colour samples, which keeps edges aligned across channels.
+//! 2. Red and blue everywhere from the color difference to green (R − G, B − G) of
+//!    the nearest same-color samples, which keeps edges aligned across channels.
 use rayon::prelude::*;
 
 mod stripes;
@@ -20,7 +20,7 @@ pub(crate) use xtrans::demosaic as xtrans_demosaic;
 /// stripe pass.
 pub(crate) const XTRANS_REACH: usize = xtrans::CANDIDATE_EDGE;
 
-/// Side of the colour pattern: a common multiple of the 2, 6 and 16 pixel periods.
+/// Side of the color pattern: a common multiple of the 2, 6 and 16 pixel periods.
 pub(crate) const PATTERN: usize = 48;
 
 pub(crate) struct Cfa<'a> {
@@ -28,7 +28,7 @@ pub(crate) struct Cfa<'a> {
     pub width: usize,
     pub height: usize,
     pub pattern: &'a [u8; PATTERN * PATTERN],
-    /// Per colour, the level of a sample at the sensor's white: its white balance.
+    /// Per color, the level of a sample at the sensor's white: its white balance.
     pub white: [f32; 3],
 }
 impl Cfa<'_> {
@@ -36,7 +36,7 @@ impl Cfa<'_> {
     fn color(&self, x: usize, y: usize) -> u8 {
         self.pattern[(y % PATTERN) * PATTERN + x % PATTERN]
     }
-    /// Mirrors coordinates at the borders, which keeps the Bayer colour parity.
+    /// Mirrors coordinates at the borders, which keeps the Bayer color parity.
     #[inline]
     fn reflect(v: isize, n: usize) -> usize {
         let n = n as isize;
@@ -133,11 +133,11 @@ pub(crate) fn demosaic(cfa: &Cfa) -> Vec<[f32; 3]> {
 
 /// Clips a white-balanced pixel below black. Its brightness is that of
 /// clipping each channel at zero, `(R + 2G + B) / 4` of the clipped channels,
-/// as before #802, but its colour is the pixel's own, pulled toward grey just
+/// as before #802, but its color is the pixel's own, pulled toward grey just
 /// far enough that no channel is negative (grey when its luminance is not
 /// above zero). Clipping each channel on its own raises red and blue, which
-/// white balance gives more noise, more than green, and colour noise
-/// reduction kept that as colour: high-ISO deep shadows turned magenta where
+/// white balance gives more noise, more than green, and color noise
+/// reduction kept that as color: high-ISO deep shadows turned magenta where
 /// Camera Raw's are neutral.
 fn clip_at_black(p: &mut [f32; 3]) {
     let lowest = p[0].min(p[1]).min(p[2]);
@@ -211,7 +211,7 @@ fn green_at(cfa: &Cfa, x: usize, y: usize) -> f32 {
 }
 
 /// Green at a red or blue sample `c`, from its neighbours one pixel away (left,
-/// right, up, down) and the same colour two pixels away (in the same order).
+/// right, up, down) and the same color two pixels away (in the same order).
 #[inline]
 fn green_estimate(c: f32, [l, r, u, d]: [f32; 4], [l2, r2, u2, d2]: [f32; 4]) -> f32 {
     let lap_h = 2. * c - l2 - r2;
@@ -231,7 +231,7 @@ fn green_estimate(c: f32, [l, r, u, d]: [f32; 4], [l2, r2, u2, d2]: [f32; 4]) ->
 
 fn colour_difference(cfa: &Cfa, green: &[f32]) -> Vec<[f32; 3]> {
     let (w, h) = (cfa.width, cfa.height);
-    // Away from the borders the nearest same-colour samples are those at radius 1
+    // Away from the borders the nearest same-color samples are those at radius 1
     // (a Bayer block's 3 × 3 neighbourhood holds every site) and need no
     // mirroring, so each of the four sites has a fixed list of them; the borders
     // search as `colour_difference_at` does. Both visit the samples in the same
@@ -270,7 +270,7 @@ fn colour_difference(cfa: &Cfa, green: &[f32]) -> Vec<[f32; 3]> {
 }
 
 /// Where a Bayer site away from the borders takes red or blue from: its own
-/// sample, or its same-colour neighbours at radius 1, as `[dx, dy]` and weight, in
+/// sample, or its same-color neighbours at radius 1, as `[dx, dy]` and weight, in
 /// the order `colour_difference_at` visits them.
 #[derive(Clone, Copy)]
 enum Source {
@@ -281,7 +281,7 @@ enum Source {
     },
 }
 impl Source {
-    /// Colour `c` at the site (`x`, `y`) of the 2 × 2 Bayer block.
+    /// Color `c` at the site (`x`, `y`) of the 2 × 2 Bayer block.
     fn of(cfa: &Cfa, x: usize, y: usize, c: u8) -> Self {
         if cfa.color(x, y) == c {
             return Self::Own;
@@ -290,7 +290,7 @@ impl Source {
         let mut len = 0;
         for dy in -1..=1isize {
             for dx in -1..=1isize {
-                // Two pixels on keeps the site's colour and the index positive.
+                // Two pixels on keeps the site's color and the index positive.
                 let (nx, ny) = (
                     (x as isize + dx + 2) as usize,
                     (y as isize + dy + 2) as usize,
@@ -306,8 +306,8 @@ impl Source {
     }
 }
 
-/// Pixel (`x`, `y`) of [`colour_difference`]: red and blue from the colour
-/// difference to green of the nearest same-colour samples, mirrored at the borders.
+/// Pixel (`x`, `y`) of [`colour_difference`]: red and blue from the color
+/// difference to green of the nearest same-color samples, mirrored at the borders.
 fn colour_difference_at(cfa: &Cfa, green: &[f32], x: usize, y: usize) -> [f32; 3] {
     let (w, h) = (cfa.width, cfa.height);
     let g = |x: isize, y: isize| green[Cfa::reflect(y, h) * w + Cfa::reflect(x, w)];
@@ -320,7 +320,7 @@ fn colour_difference_at(cfa: &Cfa, green: &[f32], x: usize, y: usize) -> [f32; 3
             px[c as usize] = cfa.at(xi, yi);
             continue;
         }
-        // Nearest same-colour samples within radius 1, else 2, weighted by
+        // Nearest same-color samples within radius 1, else 2, weighted by
         // inverse distance, interpolating their difference to green.
         let mut sum = 0.;
         let mut total = 0.;
@@ -472,7 +472,7 @@ mod tests {
             for y in 4..20 {
                 for x in 2..30 {
                     let p = out[y * 32 + x];
-                    // Away from the edge the colour is exact; at the edge no strong colour fringe.
+                    // Away from the edge the color is exact; at the edge no strong color fringe.
                     let spread = p.iter().fold(0f32, |a, b| a.max(*b))
                         - p.iter().fold(1f32, |a, b| a.min(*b));
                     assert!(spread < 0.25, "{x},{y}: {p:?}");
@@ -509,7 +509,7 @@ mod tests {
                     worst = worst.max((p[0] - p[1]).abs()).max((p[2] - p[1]).abs());
                 }
             }
-            assert!(worst < 0.08, "colour cast {worst}");
+            assert!(worst < 0.08, "color cast {worst}");
         }
     }
     /// `scene` sampled over each pixel's area, as a lens would.
@@ -528,7 +528,7 @@ mod tests {
             sum
         }
     }
-    /// The mean false colour of 6 × 6 blocks, where moiré shows as bands: how far
+    /// The mean false color of 6 × 6 blocks, where moiré shows as bands: how far
     /// each block's R − G and B − G are from the scene's.
     fn colour_bands(
         out: &[[f32; 3]],
@@ -554,10 +554,10 @@ mod tests {
     #[test]
     fn coloured_stripes_finer_than_red_and_blue_stay_free_of_bands_on_xtrans() {
         // Warm slats and bluish gaps about three pixels apart, nearly upright, like
-        // the mesh on X100F DSCF8231's tower. Their colour alternates faster than the
+        // the mesh on X100F DSCF8231's tower. Their color alternates faster than the
         // red and blue samples, so only the candidate along the slats gets it right;
         // the others leave green and magenta bands that are smooth across a 3 × 3
-        // window, which the colour variation alone could not tell from real colour.
+        // window, which the color variation alone could not tell from real color.
         let pattern = xtrans_pattern();
         let (w, h) = (192, 192);
         let truth = area_sampled(|x, y| {
@@ -576,9 +576,9 @@ mod tests {
             white: [1.; 3],
         };
         let bands = colour_bands(&demosaic(&cfa), (w, h), &truth);
-        // Measured band error 0.000242; a four-pixel colour reach leaves bands
+        // Measured band error 0.000242; a four-pixel color reach leaves bands
         // above the limit because it falls back across the slats.
-        assert!(bands < 0.0005, "colour bands: mean {bands}");
+        assert!(bands < 0.0005, "color bands: mean {bands}");
     }
     #[test]
     fn faint_coloured_stripes_in_noise_stay_free_of_bands_on_xtrans() {
@@ -618,14 +618,14 @@ mod tests {
         };
         let bands = colour_bands(&demosaic(&cfa), (w, h), &truth);
         // Measured band error 0.001015. Measuring unaveraged lines lets sensor
-        // noise hide the stripes instead of suppressing their false colour.
-        assert!(bands < 0.0015, "colour bands: mean {bands}");
+        // noise hide the stripes instead of suppressing their false color.
+        assert!(bands < 0.0015, "color bands: mean {bands}");
     }
     #[test]
     fn coarser_coloured_detail_keeps_its_colour_on_xtrans() {
         // Red and blue stripes eight pixels apart, which the samples resolve, and a
-        // dark edge with a two-pixel green fringe, like a lens's colour fringe:
-        // neither is taken for stripes too fine for their colour.
+        // dark edge with a two-pixel green fringe, like a lens's color fringe:
+        // neither is taken for stripes too fine for their color.
         let pattern = xtrans_pattern();
         let (w, h) = (192, 192);
         let truth = area_sampled(|x, y| {
@@ -667,13 +667,13 @@ mod tests {
             }
             kept[k] = got / want;
         }
-        assert!(kept.iter().all(|&k| k > 0.8), "colour kept: {kept:?}");
+        assert!(kept.iter().all(|&k| k > 0.8), "color kept: {kept:?}");
     }
     #[test]
     fn colour_changing_along_fine_stripes_is_kept_on_xtrans() {
-        // Neutral stripes about three pixels apart, the period whose colour the
-        // samples cannot tell, on a surface whose colour changes along them every
-        // 24 pixels, which the directional demosaic resolves: only colour across
+        // Neutral stripes about three pixels apart, the period whose color the
+        // samples cannot tell, on a surface whose color changes along them every
+        // 24 pixels, which the directional demosaic resolves: only color across
         // the stripes is replaced by its mean.
         let pattern = xtrans_pattern();
         let (w, h) = (192, 288);
@@ -705,8 +705,8 @@ mod tests {
             t[0] - t[2]
         });
         // Measured retained amplitude 0.746. An unconditional area mean erases
-        // this resolved colour variation along the slats.
-        assert!(got / want > 0.65, "colour kept: {}", got / want);
+        // this resolved color variation along the slats.
+        assert!(got / want > 0.65, "color kept: {}", got / want);
     }
     #[test]
     fn stripes_colour_stays_within_the_colours_it_averages() {
@@ -756,9 +756,9 @@ mod tests {
     }
     #[test]
     fn fine_stripes_keep_constant_chromaticity() {
-        // One uniformly coloured material under alternating light and shade.
+        // One uniformly colored material under alternating light and shade.
         // Constant channel differences give the dark slats a stronger tint than
-        // the bright ones, even when the input has no false colour at all.
+        // the bright ones, even when the input has no false color at all.
         let (w, h) = (192, 192);
         let image: Vec<[f32; 3]> = (0..w * h)
             .map(|i| {
@@ -780,7 +780,7 @@ mod tests {
     }
     #[test]
     fn saturated_fine_stripes_keep_their_brightness_on_xtrans() {
-        // Saturated red stripes about three pixels apart: their colour's mean,
+        // Saturated red stripes about three pixels apart: their color's mean,
         // put on a dark stripe, would need a negative channel, and clipping it
         // added light (5% on average).
         let pattern = xtrans_pattern();
@@ -812,7 +812,7 @@ mod tests {
     fn a_fine_mesh_stays_neutral_on_xtrans() {
         // Slats about 3 pixels apart crossed by rods about 4 pixels apart, like the
         // mesh on X100F DSCF8231's tower, area-sampled as a lens would. With an
-        // isotropic candidate its smooth but wrong colour won the blend: green and
+        // isotropic candidate its smooth but wrong color won the blend: green and
         // magenta bands six pixels or more across.
         let pattern = xtrans_pattern();
         let (w, h) = (192, 192);
@@ -835,8 +835,8 @@ mod tests {
         };
         let mean = colour_bands(&demosaic(&cfa), (w, h), &scene);
         // Measured band error 0.002175. An isotropic candidate can win on
-        // smooth false colour instead of keeping the neutral mesh neutral.
-        assert!(mean < 0.0023, "colour bands: mean {mean}");
+        // smooth false color instead of keeping the neutral mesh neutral.
+        assert!(mean < 0.0023, "color bands: mean {mean}");
     }
     #[test]
     fn extreme_samples_do_not_make_non_finite_pixels() {
@@ -890,8 +890,8 @@ mod tests {
     }
     /// A grey patch at 0.25% of white under noise eight times larger, as in a
     /// Nikon Z fc's shadows at ISO 204,800, white balanced with red ×2 and blue
-    /// ×1.5, so red and blue carry more noise than green. Colour noise reduction
-    /// keeps the patch's mean colour in square-root values (`color_noise` in
+    /// ×1.5, so red and blue carry more noise than green. Color noise reduction
+    /// keeps the patch's mean color in square-root values (`color_noise` in
     /// the engine), so that is what is measured. Clipping each channel at zero
     /// made it 1.48 red and 1.23 blue over green, the magenta deep shadows of
     /// #802, where Camera Raw's are near neutral.

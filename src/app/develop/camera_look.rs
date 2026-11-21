@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 /// `listed`, a photo's profiles listed again (after an import), with the fitted
 /// default it had (`had`, as the loader listed them) while the photo still has no
-/// colour data: listing again never fits, and the defaults stay what they were.
+/// color data: listing again never fits, and the defaults stay what they were.
 pub(in crate::app) fn keep_fitted_default(
     had: &[Arc<CameraProfile>],
     m: &crate::camera_data::Metadata,

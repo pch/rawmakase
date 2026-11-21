@@ -2,8 +2,8 @@
 //! reduced to the same size, and its time,
 //! for `rawmakase half-check` and `scripts/corpus/dataset-half.py`.
 //!
-//! - Colour: the CIEDE2000 difference of blocks of [`BLOCK`] × [`BLOCK`]
-//!   half-size pixels (each block's mean colour, through the photo's camera
+//! - Color: the CIEDE2000 difference of blocks of [`BLOCK`] × [`BLOCK`]
+//!   half-size pixels (each block's mean color, through the photo's camera
 //!   to sRGB matrix to CIELAB): mean and 95th percentile at most
 //!   [`REFERENCE_SLACK`] above the file's reference.
 //! - Detail: the energy of the luminance Laplacian, half-size over the full
@@ -37,13 +37,13 @@ use rawmakase_cancel::Cancel;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-/// Side of the colour check's blocks, in half-size pixels.
+/// Side of the color check's blocks, in half-size pixels.
 pub const BLOCK: usize = 16;
 /// Limits of a file without a reference.
 pub const MAX_MEAN: f64 = 0.3;
 pub const MAX_P95: f64 = 1.;
 pub const DETAIL: std::ops::RangeInclusive<f64> = 0.8..=1.25;
-/// How far the colour differences and the detail ratio's distance from 1 may
+/// How far the color differences and the detail ratio's distance from 1 may
 /// exceed the reference's.
 pub const REFERENCE_SLACK: f64 = 0.1;
 /// How much the half ÷ full time may exceed its reference ratio.
@@ -312,7 +312,7 @@ mod tests {
     }
 
     /// The full decode reduced is its own perfect draft; a uniformly
-    /// brighter draft fails on colour, a flattened one on detail.
+    /// brighter draft fails on color, a flattened one on detail.
     #[test]
     fn a_draft_is_judged_against_the_full_decode_reduced() {
         let full = image(64, 64, |x, y| {
@@ -357,7 +357,7 @@ mod tests {
         })
     }
 
-    /// Colour and detail against the file's reference, plus 0.1; without one,
+    /// Color and detail against the file's reference, plus 0.1; without one,
     /// the absolute limits.
     #[test]
     fn colour_and_detail_are_judged_against_the_reference() {

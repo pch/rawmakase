@@ -1,6 +1,6 @@
 //! Lookup tables from `.cube` files, as Adobe's Cube LUT specification 1.0 writes
-//! them. A 3D cube is a regular grid of colours: `LUT_3D_SIZE` divisions per side, one
-//! output colour per node, read by tetrahedral interpolation — the same interpolation
+//! them. A 3D cube is a regular grid of colors: `LUT_3D_SIZE` divisions per side, one
+//! output color per node, read by tetrahedral interpolation — the same interpolation
 //! `camera_profiles::rgb_table` already uses for Adobe's own 3D RGB tables, and for the
 //! same reason: it is what the DNG SDK does. A 1D cube (`LUT_1D_SIZE` alone) is a curve
 //! per channel.
@@ -9,7 +9,7 @@
 //! and is conventionally authored in a display space, usually gamma-encoded sRGB. RAWmakase
 //! imports one as a look profile's RGB table (`rgb_table::RgbTable::from_cube`), as
 //! Camera Raw's Create Profile does; this module only knows how to read a cube and look
-//! a colour up in it.
+//! a color up in it.
 //!
 //! Data is stored with the red index changing fastest, then green, then blue, as the
 //! specification requires, so node `(r, g, b)` is at `r + g * size + b * size * size`.
@@ -25,14 +25,14 @@ pub(super) struct Lut3d {
     domain_max: [f32; 3],
     /// The 1D table the input goes through first, when the file carries one.
     shaper: Option<Shaper>,
-    /// `size * size * size` output colours, red index fastest.
+    /// `size * size * size` output colors, red index fastest.
     data: Vec<[f32; 3]>,
 }
 
 /// A 1D table a file puts in front of its 3D one: a per-channel curve the input goes
 /// through before the lookup. Resolving calls these "shaper" LUTs, and they are why a
 /// file may carry both sizes. Reading the 3D table and dropping this one renders
-/// plausible, wrong colours rather than failing.
+/// plausible, wrong colors rather than failing.
 #[derive(Clone, Debug, PartialEq)]
 struct Shaper {
     /// Entries per channel.
@@ -44,7 +44,7 @@ struct Shaper {
 }
 
 impl Shaper {
-    /// The colour the curves give for `rgb`, each channel interpolated on its own.
+    /// The color the curves give for `rgb`, each channel interpolated on its own.
     fn apply(&self, rgb: [f32; 3]) -> [f32; 3] {
         let [low, high] = self.input_range;
         std::array::from_fn(|c| {
@@ -111,13 +111,13 @@ const MAX_1D: usize = 65536;
 
 /// The largest side a cube may declare.
 const MAX_SIDE: usize = 256;
-/// The most colours a cube of that size needs, and so the most that may be collected
+/// The most colors a cube of that size needs, and so the most that may be collected
 /// before anything is checked: bounded here so a file claiming a huge size is refused
 /// rather than collected in full.
 const MAX_ENTRIES: usize = MAX_SIDE * MAX_SIDE * MAX_SIDE;
 
 /// A number a cube may hold. `f32::from_str` takes "inf" and "NaN", and
-/// `DOMAIN_MAX inf` would put every colour at one end of the table, so the whole image
+/// `DOMAIN_MAX inf` would put every color at one end of the table, so the whole image
 /// would come out one flat value rather than failing.
 fn finite(value: f32, line: usize) -> Result<f32> {
     ensure!(
@@ -175,7 +175,7 @@ impl Cube {
                     // huge size is refused rather than collected in full.
                     ensure!(
                         data.len() < MAX_ENTRIES,
-                        "the cube has more than {MAX_ENTRIES} colours, which is more \
+                        "the cube has more than {MAX_ENTRIES} colors, which is more \
          than a size of {MAX_SIDE} can need"
                     );
                     data.push(three_f32(rest, at)?);
@@ -211,7 +211,7 @@ impl Cube {
             .ok_or_else(|| anyhow::anyhow!("LUT_3D_SIZE of {size} overflows"))?;
         // A file may carry a 1D table in front of the 3D one, its shaper. Its data
         // comes first, one line per entry, and is kept rather than dropped: dropping it
-        // would render wrong colours that look plausible.
+        // would render wrong colors that look plausible.
         let shaper = match size_1d {
             None => None,
             Some(one) => {
@@ -221,7 +221,7 @@ impl Cube {
                 );
                 ensure!(
                     data.len() == one + expected,
-                    "a cube of size {size} with a {one}-entry shaper needs {} colours, \
+                    "a cube of size {size} with a {one}-entry shaper needs {} colors, \
          but this one has {}",
                     one + expected,
                     data.len()
@@ -242,7 +242,7 @@ impl Cube {
         };
         ensure!(
             data.len() == expected,
-            "a cube of size {size} needs {expected} colours, but this one has {}",
+            "a cube of size {size} needs {expected} colors, but this one has {}",
             data.len()
         );
         Ok(Self::Three(Lut3d {
@@ -344,7 +344,7 @@ impl Lut3d {
         self.size
     }
 
-    /// The cube's domain, which its input colours are read over.
+    /// The cube's domain, which its input colors are read over.
     pub(super) fn domain(&self) -> ([f32; 3], [f32; 3]) {
         (self.domain_min, self.domain_max)
     }
@@ -363,12 +363,12 @@ impl Lut3d {
         self.shaper.as_ref().map(|s| s.table.len())
     }
 
-    /// The colour at a grid node, red index fastest.
+    /// The color at a grid node, red index fastest.
     pub(super) fn node(&self, r: usize, g: usize, b: usize) -> [f32; 3] {
         self.data[r + g * self.size + b * self.size * self.size]
     }
 
-    /// The looked-up colour, without a strength: `rgb` mapped through the domain,
+    /// The looked-up color, without a strength: `rgb` mapped through the domain,
     /// clamped into it, and interpolated tetrahedrally.
     pub(super) fn lookup(&self, rgb: [f32; 3]) -> [f32; 3] {
         let rgb = self.shaper.as_ref().map_or(rgb, |s| s.apply(rgb));
@@ -611,7 +611,7 @@ mod tests {
     }
 
     /// `DOMAIN_MIN`/`DOMAIN_MAX` say what the input range is, so a cube over 0–2 reads
-    /// half its range at 1.0, and colours outside it are held at the ends.
+    /// half its range at 1.0, and colors outside it are held at the ends.
     #[test]
     fn the_domain_is_where_the_input_is_read_over() {
         let size = 5;
@@ -842,7 +842,7 @@ mod real_files {
     fn a_1d_table_in_front_of_the_3d_one_is_applied_as_a_shaper() {
         let size = 3;
         let mut text = format!("LUT_1D_SIZE 2\nLUT_3D_SIZE {size}\n");
-        // A shaper that sends every input to zero, so where the colour ends up cannot
+        // A shaper that sends every input to zero, so where the color ends up cannot
         // depend on what the 3D table would have said.
         text += "0 0 0\n0 0 0\n";
         for _b in 0..size {
@@ -856,7 +856,7 @@ mod real_files {
         let lut = Lut3d::parse(&text).unwrap();
         // The shaper was applied, so even white lands on the 3D table's first node.
         // Dropping it would have sent white to the last, which is the plausible wrong
-        // colour rather than an obvious failure.
+        // color rather than an obvious failure.
         assert_eq!(lut.lookup([1.0, 1.0, 1.0]), [0.0, 0.0, 0.0]);
         assert_eq!(lut.lookup([0.0, 0.0, 0.0]), [0.0, 0.0, 0.0]);
     }

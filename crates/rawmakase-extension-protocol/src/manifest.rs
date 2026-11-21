@@ -256,7 +256,7 @@ pub enum SettingControl {
     Segmented(Vec<String>),
     /// Text.
     Text,
-    /// An sRGB colour, `[r, g, b]`, 0 to 1.
+    /// An sRGB color, `[r, g, b]`, 0 to 1.
     Color,
     /// A file chosen in the system's dialog.
     File,
@@ -1449,7 +1449,7 @@ uploads = true
             ("id = \"people\"", "id = \"sky\""),
             ("id = \"people\"", "id = \"People\""),
             ("name = \"Sky\"", "name = \" \""),
-            ("name = \"Sky\"", "name = \"Sky\"\ncolour = \"blue\""),
+            ("name = \"Sky\"", "name = \"Sky\"\ncolor = \"blue\""),
             ("invert = true", "invert = \"yes\""),
             (
                 "prompt-hint = \"Click the subject on the photo, or drag a box around it\"",

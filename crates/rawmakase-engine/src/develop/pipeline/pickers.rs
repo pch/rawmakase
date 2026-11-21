@@ -1,11 +1,11 @@
-//! The pickers that read a colour from the photo: the fringe color selector and the white-balance neutral.
+//! The pickers that read a color from the photo: the fringe color selector and the white-balance neutral.
 use super::*;
 use crate::develop::effects::EffectsRendering;
 
-/// Lightroom's Fringe Color Selector on the shown colour `rgb` (encoded sRGB): the
+/// Lightroom's Fringe Color Selector on the shown color `rgb` (encoded sRGB): the
 /// Purple or Green range is pointed at it (see [`Effects::pick_fringe_hue`]). The
-/// picked colour is the one the end of the colour stage, after Defringe, renders
-/// closest to the shown colour.
+/// picked color is the one the end of the color stage, after Defringe, renders
+/// closest to the shown color.
 ///
 /// [`Effects::pick_fringe_hue`]: crate::model::effects::Effects::pick_fringe_hue
 pub fn pick_fringe(r: &mut Recipe, rgb: [f32; 3]) -> Option<usize> {
@@ -14,7 +14,7 @@ pub fn pick_fringe(r: &mut Recipe, rgb: [f32; 3]) -> Option<usize> {
     };
     let lab = srgb_to_lab(rgb.map(crate::color::srgb_decode));
     let (shown, chroma) = (hue_of(lab), lab[1].hypot(lab[2]));
-    // The shown colour of one Defringe sees at lightness `l`, hue `h` and chroma `c`.
+    // The shown color of one Defringe sees at lightness `l`, hue `h` and chroma `c`.
     let rendered = |[l, h, c]: [f32; 3]| {
         let angle = h * std::f32::consts::TAU;
         let out = finish_color([l, angle.cos() * c, angle.sin() * c]);

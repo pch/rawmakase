@@ -110,7 +110,7 @@ pub(crate) fn in_jpeg(bytes: &[u8], jpeg: u64, len: u64) -> Option<std::ops::Ran
     None
 }
 
-/// EXIF's CFAPattern of a 2 × 2 filter: its colours (0 red, 1 green, 2
+/// EXIF's CFAPattern of a 2 × 2 filter: its colors (0 red, 1 green, 2
 /// blue). Its dimensions are read in either byte order, as some files write
 /// them in the other.
 pub(crate) fn cfa_pattern(t: &TiffFile) -> Option<Vec<u8>> {

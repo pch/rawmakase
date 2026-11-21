@@ -1807,7 +1807,7 @@ fn card(ui: &mut egui::Ui, palette: &theme::Palette, add: impl FnOnce(&mut egui:
         });
 }
 
-/// The kind's icon in a soft disc of its colour.
+/// The kind's icon in a soft disc of its color.
 fn kind_icon(ui: &mut egui::Ui, palette: &theme::Palette, kind: Kind) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(22., 22.), egui::Sense::hover());
     let tint = kind.tint(palette);

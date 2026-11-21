@@ -65,7 +65,7 @@ pub(crate) fn rendered_fixture(srgb: &[[u8; 3]]) -> CameraImage {
     })
 }
 /// An untouched edit of a rendered file reproduces it (on the CPU): deep shadows, mid
-/// tones, saturated colours and near-white, where highlight recovery and the scene
+/// tones, saturated colors and near-white, where highlight recovery and the scene
 /// tone stage's toe and default black would otherwise act.
 #[test]
 fn a_rendered_file_at_its_defaults_renders_as_it_is() -> anyhow::Result<()> {
@@ -199,7 +199,7 @@ fn white_balance_on_a_rendered_file_follows_lightroom() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Lightroom white-balances a rendered file's colours by a matrix, not channel gains
+/// Lightroom white-balances a rendered file's colors by a matrix, not channel gains
 /// (sky at Temp −35 is 30 levels redder than gains give), and in the cool magenta
 /// corner takes blue to 0. There red is 5 levels high: the matrix leaves ProPhoto blue
 /// below 0 there, which the tone stage carries and Lightroom's apparently does not.
@@ -289,7 +289,7 @@ fn a_rendered_file_at_its_defaults_renders_as_it_is_in_16_bits() -> anyhow::Resu
     let r = Recipe::for_rendered(&im.metadata);
     let out = crate::develop::render(&im, &r.checked()?, 0, Cancel::NEVER)?;
     for (got, want) in out.pixels.iter().zip(&srgb) {
-        // Saturated colours get a wider tolerance than greys: the f32 rounding of the
+        // Saturated colors get a wider tolerance than greys: the f32 rounding of the
         // round trip (about 1e-7 relative in ProPhoto, not the inverse table's error) is
         // amplified by the ProPhoto to sRGB conversion, whose large opposing
         // coefficients and sRGB's steep slope at dark channels turn it into up to ~3
@@ -617,7 +617,7 @@ fn clipped_channels_do_not_make_magenta_highlights() -> Result<()> {
     }
     Ok(())
 }
-/// The photo's maximum is measured with the camera's as-shot colour: a Temperature
+/// The photo's maximum is measured with the camera's as-shot color: a Temperature
 /// change under a profile whose matrices follow the illuminant leaves it in place.
 #[test]
 fn temperature_leaves_the_photos_maximum_in_place() -> anyhow::Result<()> {
@@ -735,7 +735,7 @@ fn the_display_render_replays_the_stages_after_the_scene_stage() {
         assert_eq!(shown, color_stage(profile_stage(scene, &r), &r, &lut, None));
     }
 }
-/// A camera without colour data (no matrix, no profile) renders through no profile:
+/// A camera without color data (no matrix, no profile) renders through no profile:
 /// its camera RGB as sRGB through a luminance shoulder, on the CPU only. Pinned so
 /// a fitted default (Camera Look) can only change it on purpose.
 #[test]
@@ -780,7 +780,7 @@ fn the_camera_input_stage_is_before_highlight_reconstruction() -> anyhow::Result
     let recovered = crate::develop::quality::recovered(&im, Cancel::NEVER)?;
     assert_ne!(
         recovered.pixels[13], im.pixels[13],
-        "the bright colour is reconstructed"
+        "the bright color is reconstructed"
     );
     Ok(())
 }
@@ -1249,8 +1249,8 @@ fn fringe_selector_reaches_the_hue_defringe_tests() {
     }
 }
 
-/// Refine Saturation 0 keeps each colour's channel spread (encoded ProPhoto, before the
-/// point curve) and takes its luma from the curved colour; other amounts blend, and
+/// Refine Saturation 0 keeps each color's channel spread (encoded ProPhoto, before the
+/// point curve) and takes its luma from the curved color; other amounts blend, and
 /// amounts above 1 render as 1 (Camera Raw 18.7 on the synthetic chart).
 #[test]
 fn refine_saturation_zero_keeps_the_colours_saturation_through_the_point_curve() {
@@ -1325,9 +1325,9 @@ fn constrain_crop_renders_no_white() {
     assert!((aspect - 1.5).abs() < 0.06, "{aspect}");
     assert!(constrained.width < free.width && constrained.width > 45);
 }
-/// A look's RGB table goes after the colour controls: a fully desaturated gray still
+/// A look's RGB table goes after the color controls: a fully desaturated gray still
 /// takes the table's tint, and so does a black & white photo's gray, as Camera Raw 18.7
-/// renders a colour look under black and white (#1187).
+/// renders a color look under black and white (#1187).
 #[test]
 fn rgb_tables_follow_the_colour_controls() {
     let m = Metadata {
@@ -1354,7 +1354,7 @@ fn rgb_tables_follow_the_colour_controls() {
     mono.effects.monochrome = true;
     assert!(spread(&mono) > 0.01, "{}", spread(&mono));
 }
-/// Black & white converts to gray before colour grading, so grading tones the gray
+/// Black & white converts to gray before color grading, so grading tones the gray
 /// in SDR and in an HDR master, as Camera Raw 18.7 renders split toning on black and
 /// white (#1187).
 #[test]
@@ -1395,7 +1395,7 @@ fn grading_tones_black_and_white() {
 }
 /// A `.cube` imports as a look whose RGB table is the cube: an identity cube at 100%
 /// renders as the base profile does, within the table's 16-bit rounding, at 0% exactly
-/// as it does, and a cube that changes colour changes it.
+/// as it does, and a cube that changes color changes it.
 #[test]
 fn an_identity_cube_renders_as_its_base_profile() {
     let m = Metadata {
@@ -1561,7 +1561,7 @@ fn visualize_range_leaves_color_range_masks_selecting_the_photo() -> anyhow::Res
     use crate::model::point_color::{PointColor, visualize_range};
     let im = fixture();
     // Without sharpening, which works on luminance across neighbours and so differs
-    // between a gray and the colours it grays.
+    // between a gray and the colors it grays.
     let mut r = Recipe {
         sharpening: 0.,
         ..Default::default()
@@ -2147,7 +2147,7 @@ fn new_edits_render_grain_at_camera_raw_strength() -> anyhow::Result<()> {
     Ok(())
 }
 /// New edits start at Lightroom's Color noise reduction of 25, which takes out a
-/// flat's colour noise as Camera Raw does on photos.
+/// flat's color noise as Camera Raw does on photos.
 #[test]
 fn new_edits_reduce_colour_noise_as_camera_raw() -> anyhow::Result<()> {
     let (width, height) = (160, 120);
@@ -2212,7 +2212,7 @@ fn new_edits_reduce_colour_noise_as_camera_raw() -> anyhow::Result<()> {
     assert!(ratio < 0.15, "{ratio}");
     Ok(())
 }
-/// Issue 465: at ISO 2000 a photo's colour noise, demosaiced, forms blotches several
+/// Issue 465: at ISO 2000 a photo's color noise, demosaiced, forms blotches several
 /// pixels across, which Lightroom's default Color noise reduction takes out. They are
 /// taken out; the noise is measured in the photo, so a photo four times as noisy loses
 /// as much of it.
@@ -2262,7 +2262,7 @@ fn colour_blotches_are_taken_out() -> anyhow::Result<()> {
         scale_clipped: 0,
         hdr: Default::default(),
     };
-    // The colour noise of 8×8 block averages: the blotches, without the finest noise.
+    // The color noise of 8×8 block averages: the blotches, without the finest noise.
     let blotches = |im: &CameraImage, r: &Recipe| -> anyhow::Result<f32> {
         let out = crate::develop::render(im, &r.checked()?, 0, Cancel::NEVER)?;
         let blocks: Vec<[f32; 2]> = (0..(width / 8) * (height / 8))
@@ -2556,7 +2556,7 @@ fn a_lensfun_choice_reaches_the_warp_and_the_gpu() {
 /// A render uses a small part of a worker's stack. Rayon can run another render's
 /// task on a thread that waits inside a render, so renders nest on one stack: with
 /// each render's curve tables on its stack (over 768 KiB for this one), two or three
-/// of them overflowed Rayon's 2 MiB threads in the colour tests. An overflow aborts
+/// of them overflowed Rayon's 2 MiB threads in the color tests. An overflow aborts
 /// the test binary and names this test's thread.
 #[test]
 fn a_render_fits_in_an_eighth_of_a_worker_stack() -> anyhow::Result<()> {

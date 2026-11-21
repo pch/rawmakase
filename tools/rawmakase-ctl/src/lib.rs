@@ -138,7 +138,7 @@ enum Command {
         path: PathBuf,
         #[arg(long)]
         max_edge: Option<u32>,
-        /// The colour space; sRGB when left out. ProPhoto RGB needs a TIFF path.
+        /// The color space; sRGB when left out. ProPhoto RGB needs a TIFF path.
         #[arg(long, value_enum)]
         color_space: Option<ColorSpace>,
         #[arg(long)]
@@ -214,7 +214,7 @@ enum Command {
     Controls,
 }
 
-/// The colour space `export` writes in.
+/// The color space `export` writes in.
 #[derive(Clone, Copy, clap::ValueEnum)]
 enum ColorSpace {
     Srgb,

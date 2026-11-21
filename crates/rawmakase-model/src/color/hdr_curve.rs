@@ -58,7 +58,7 @@ pub const HOLD: f32 = 2.2723;
 /// and (230, 240), which reaches 1.051, within the acceptance rule (median 0.008 stop
 /// above white, allowed 0.011), and one through (0, 0) and (200, 200) as the identity;
 /// one through (128, 140) and (220, 255), which reaches 1.176, misses (0.017), and one
-/// through (90, 110) and (180, 255) misses further on the gray and colour patches
+/// through (90, 110) and (180, 255) misses further on the gray and color patches
 /// (docs/records/hdr-stage1-results.md#tone-curves).
 pub const LEFT_END_MEASURED: f32 = 1.06;
 
@@ -148,11 +148,11 @@ pub fn channel(curve: &HdrPointCurve, e: f32) -> f32 {
 
 /// Refine Saturation on the master point curve in HDR, on [`encode`]d values: `input`
 /// before the curve, `curved` after it. SDR's rule ([`crate::color::curve::refine_saturation`])
-/// without its bound at white, which would take the colour out of light above white:
-/// the colour keeps its channel differences from before the curve, scaled down only as
+/// without its bound at white, which would take the color out of light above white:
+/// the color keeps its channel differences from before the curve, scaled down only as
 /// far as it must to stay above 0. Camera Raw 18.7 renders it so within the acceptance
-/// rule at 50% on gray and colour patches and at 0% on six photos; at 0% on the patches
-/// it adds more colour error than SDR does (docs/records/hdr-stage1-results.md#tone-curves).
+/// rule at 50% on gray and color patches and at 0% on six photos; at 0% on the patches
+/// it adds more color error than SDR does (docs/records/hdr-stage1-results.md#tone-curves).
 pub fn refine_saturation(input: [f32; 3], curved: [f32; 3], amount: f32) -> [f32; 3] {
     crate::color::curve::refine_saturation_unbounded_above(input, curved, amount)
 }
@@ -207,8 +207,8 @@ mod tests {
         decode(HdrPointCurve::new(curve).evaluate(encode(x)))
     }
 
-    /// Refine Saturation in HDR keeps the colour's channel differences from before the
-    /// curve, as in SDR, but not within white: a colour whose curved luma is near or
+    /// Refine Saturation in HDR keeps the color's channel differences from before the
+    /// curve, as in SDR, but not within white: a color whose curved luma is near or
     /// above white keeps them in full, where SDR's would scale them down.
     #[test]
     fn hdr_refine_saturation_is_not_bounded_at_white() {
@@ -223,7 +223,7 @@ mod tests {
         let sdr = crate::color::curve::refine_saturation(input, curved, 0.);
         assert!(sdr[0] - sdr[2] < kept[0] - kept[2]);
         assert_eq!(refine_saturation(input, curved, 1.), curved);
-        // A dark colour is still scaled down to stay above 0.
+        // A dark color is still scaled down to stay above 0.
         let dark = refine_saturation([0.3, 0.05, 0.01], [0.1, 0.02, 0.0], 0.);
         assert!(dark.iter().all(|v| *v >= -1e-6), "{dark:?}");
     }

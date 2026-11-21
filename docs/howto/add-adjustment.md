@@ -147,7 +147,7 @@ Test observable behaviour at each boundary the setting crosses:
 - **Rendering**: what the setting does to pixels (`pipeline/tests.rs`), the GPU
   against the CPU (above), and an export carrying it
   (`crates/rawmakase-export/src/export/tests.rs`).
-- **Colour corpus**: `cargo test --test color` must pass unchanged, or the change of
+- **Color corpus**: `cargo test --test color` must pass unchanged, or the change of
   snapshots must be intended and explained. Never re-bless references to make a
   change pass.
 

@@ -248,7 +248,7 @@ pub(crate) fn decode_into(data: &[u8], cancel: Cancel<'_>, out: &mut Vec<u16>) -
     let mut planes: Vec<Vec<u16>> = Vec::new();
     let mut coefficients: Vec<Vec<[i16; 64]>> = Vec::new();
     let mut restart = 0usize;
-    // The markers libjpeg reads a three-component frame's colour space by.
+    // The markers libjpeg reads a three-component frame's color space by.
     let (mut jfif, mut adobe) = (false, None);
     let mut scans = 0;
     let mut at = 2;

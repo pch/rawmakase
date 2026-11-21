@@ -1,6 +1,6 @@
 //! Exports in Adobe RGB (1998) and ProPhoto RGB through the whole export path: the
 //! pixels, as an ICC-aware reader that is not the encoder (moxcms) reads them back,
-//! the embedded profile, EXIF's colour space, and the refusals before rendering.
+//! the embedded profile, EXIF's color space, and the refusals before rendering.
 use super::srgb_fixtures::{decoded, photo, synthetic, text_watermark};
 use crate::{
     color::OutputSpace,
@@ -89,13 +89,13 @@ fn as_srgb(path: &Path) -> Result<Vec<f64>> {
 }
 
 /// An Adobe RGB or ProPhoto export, read back through its own profile, is the sRGB
-/// export wherever sRGB holds the colour. In 16-bit TIFF, grays within 4 code
-/// values and colours within 6e-5 in linear light: the profiles' s15.16 colorants
+/// export wherever sRGB holds the color. In 16-bit TIFF, grays within 4 code
+/// values and colors within 6e-5 in linear light: the profiles' s15.16 colorants
 /// and white differ from the published chromaticities, which the conversion follows,
 /// by up to 2e-5, which a reader's matrix carries into every channel of a saturated
-/// colour, summed over the three. Encoded, that error is up to 12.92 times larger
+/// color, summed over the three. Encoded, that error is up to 12.92 times larger
 /// in sRGB's linear toe, so a dark channel is compared in linear light. In 8-bit
-/// PNG, grays within 2.5 code values and colours within 0.008 in linear light: a
+/// PNG, grays within 2.5 code values and colors within 0.008 in linear light: a
 /// dark channel beside a bright one is read back as the difference of two Adobe RGB
 /// values, each rounded to 8 bits.
 #[test]
@@ -103,7 +103,7 @@ fn wide_gamut_exports_read_back_through_their_profiles_as_the_srgb_export() -> R
     let dir = tempfile::tempdir()?;
     let source = dir.path().join("source.dng");
     std::fs::write(&source, b"synthetic")?;
-    // Muted colours and a neutral ramp, all inside sRGB.
+    // Muted colors and a neutral ramp, all inside sRGB.
     let mut image = synthetic(96, 64);
     for p in &mut image.pixels {
         let mean = (p[0] + p[1] + p[2]) / 3.;
@@ -265,7 +265,7 @@ fn jpeg_with_exif(block: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Each space's export embeds its profile and EXIF colour space (and Adobe RGB the
+/// Each space's export embeds its profile and EXIF color space (and Adobe RGB the
 /// interoperability index R03) in every format it can be written in, never the
 /// camera's sRGB tags, and keeps the profile with every metadata switch off.
 #[test]
@@ -314,7 +314,7 @@ fn each_space_embeds_its_profile_and_exif_colour_space() -> Result<()> {
 }
 
 /// ProPhoto RGB in a JPEG or PNG, settings or target, is refused before anything
-/// renders, and nothing is written; so is a colour space from a later release.
+/// renders, and nothing is written; so is a color space from a later release.
 #[test]
 fn an_export_that_cant_hold_its_colour_space_is_refused_before_rendering() -> Result<()> {
     let dir = tempfile::tempdir()?;

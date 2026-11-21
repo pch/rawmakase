@@ -1177,7 +1177,7 @@ mod tests {
         v ^= v >> 12;
         (v as f32 / u32::MAX as f32) * 2. - 1.
     }
-    /// A noisy photo, as a camera makes one: an RGGB mosaic of a grey flat, a coloured
+    /// A noisy photo, as a camera makes one: an RGGB mosaic of a grey flat, a colored
     /// flat and fine texture side by side, with shot noise whose spread grows with the
     /// square root of the signal, demosaiced bilinearly; and its half-size decode, each
     /// pixel a 2 × 2 block's red, mean green and blue, as `demosaic::half` makes it.
@@ -1299,7 +1299,7 @@ mod tests {
     }
     /// The share of noise a reduced decode keeps in `small`'s render with `r`, over the
     /// share the photo `full` keeps rendered with `r` and resized to the same size, in
-    /// the grey flat's luminance and red − green, the coloured flat's blue − green and
+    /// the grey flat's luminance and red − green, the colored flat's blue − green and
     /// the texture's luminance, at scales of 1, 2, 4 and 8 output pixels; with the mean
     /// error of the two renders. Each share is of the same image's noise without noise
     /// reduction, which the reduction and the resize already change.
@@ -1329,7 +1329,7 @@ mod tests {
         });
         (kept, mean_error(&got, &expected))
     }
-    /// A reduced decode's luminance and colour noise reduction act on the photo's
+    /// A reduced decode's luminance and color noise reduction act on the photo's
     /// scales: each keeps about the share of the noise at each scale that the photo,
     /// denoised and resized, keeps. A half-size decode (from the mosaic, as
     /// `demosaic::half` makes it) and the photo reduced to 0.43 by area, a scale
@@ -1339,16 +1339,16 @@ mod tests {
         let (w, h) = (1024, 640);
         let (full, half) = noisy_photo(w, h, 0.06);
         let reduced = reduce(&full, 440, 275);
-        // Name, luminance Amount, Detail and Contrast, colour Amount, Detail and
+        // Name, luminance Amount, Detail and Contrast, color Amount, Detail and
         // Smoothness, and for the half-size decode and the reduced one the worst
         // |ln| of the shares kept, measured, and the mean error, measured. Before
         // their bands were the photo's (in their own pixels, five luminance and five
-        // colour levels whatever the scale) the worst |ln| were: 0.02 0.01, 0.56 0.46,
+        // color levels whatever the scale) the worst |ln| were: 0.02 0.01, 0.56 0.46,
         // 0.22 0.21, 1.02 0.58, 0.47 0.32 and 0.35 0.29, and the mean errors 0.0087
         // 0.0025, 0.0082 0.0022, 0.0081 0.0019, 0.0037 0.0023, 0.0034 0.0021 and
         // 0.0037 0.0025. At scales of 2 output pixels and more, every case is closer
-        // than it was but two reduced to 0.43, a little further: colour 10 (0.43
-        // against 0.40) and colour 25 with Detail and Smoothness 80 (0.25 against
+        // than it was but two reduced to 0.43, a little further: color 10 (0.43
+        // against 0.40) and color 25 with Detail and Smoothness 80 (0.25 against
         // 0.20). The reduced decode's coarsest level straddles the photo's last, and
         // is filtered for the 0.78 of it before the photo's residual (whole, those two
         // were 0.42 and 0.17, and luminance 75 0.10). At 1 pixel the decode also holds
@@ -1377,19 +1377,19 @@ mod tests {
                 [0.0081, 0.0019],
             ),
             (
-                "colour 10",
+                "color 10",
                 [0., 0.5, 0., 0.1, 0.5, 0.5],
                 [0.61, 0.71],
                 [0.0049, 0.0025],
             ),
             (
-                "colour 25",
+                "color 25",
                 [0., 0.5, 0., 0.25, 0.5, 0.5],
                 [0.13, 0.15],
                 [0.0034, 0.0020],
             ),
             (
-                "colour 25, Detail 80, Smoothness 80",
+                "color 25, Detail 80, Smoothness 80",
                 [0., 0.5, 0., 0.25, 0.8, 0.8],
                 [0.37, 0.25],
                 [0.0038, 0.0022],
@@ -1444,7 +1444,7 @@ mod tests {
     /// A level only partly within the photo's filtered levels is filtered in
     /// proportion. Measured: the largest step 1.14 times the median, and 0.055% of
     /// what noise reduction changes. Filtered whole or not at all, the step across
-    /// offset 1 was 1.3 to 2.1% of it: 44 and 88 times the median step for colour,
+    /// offset 1 was 1.3 to 2.1% of it: 44 and 88 times the median step for color,
     /// where luminance otherwise does not change at all; snapping the offset to 1
     /// within 0.02 only moved it to the step across 0.98.
     #[test]

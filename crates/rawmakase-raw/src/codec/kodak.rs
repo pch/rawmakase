@@ -3,7 +3,7 @@
 //! a length (0 to 12 bits) per sample, two to a byte (low nibble first),
 //! then each sample's difference in that many bits, read least significant
 //! first from 16-bit big-endian halves of 32-bit groups (JPEG's sign rule),
-//! summed per colour (even and odd columns) from 0. A block whose lengths
+//! summed per color (even and odd columns) from 0. A block whose lengths
 //! do not read (one over 12) is stored plainly instead: groups of eight
 //! 12-bit samples in six 16-bit words, the top four bits of the first six
 //! words holding the first two samples.

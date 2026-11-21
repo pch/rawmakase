@@ -31,7 +31,7 @@ pub const LONG_EDGE: u32 = 2560;
 
 /// Writes the editable preview of `original`, a photo's full-size decode, to
 /// `path`, with the photo's `default_look` when it has one (a fitted Camera
-/// Look, for a camera without colour data).
+/// Look, for a camera without color data).
 ///
 /// Highlights are recovered first unless they are already, as
 /// `rawmakase_decode::decode` gives Develop the image, then it is reduced to

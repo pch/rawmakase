@@ -60,7 +60,7 @@ fn extrema(p: Rgb, f: impl Fn(f32) -> f32) -> Rgb {
         [a; 3]
     }
 }
-/// The colour the look's table must make for the tone curves (the base's, then the
+/// The color the look's table must make for the tone curves (the base's, then the
 /// look's `curve`, on encoded values) to give `target`.
 fn untoned(target: Rgb, curve_inverse: &[f32]) -> Rgb {
     let e = extrema(clamp01(target).map(srgb_encode), |v| at(curve_inverse, v));
@@ -240,7 +240,7 @@ const LIMITS: [f32; 3] = [30., 0.7, 0.7];
 const SMOOTHNESS: f64 = 3.;
 const NO_CHANGE: f64 = 0.05;
 /// The most a sample weighs, and the least lightness (encoded value over 0.5) it is
-/// weighed by, so that a dark photo's colours still count.
+/// weighed by, so that a dark photo's colors still count.
 const WEIGHT_MOST: f64 = 9.;
 const WEIGHT_DARKEST: f32 = 0.2;
 
@@ -249,7 +249,7 @@ const WEIGHT_DARKEST: f32 = 0.2;
 /// part.
 ///
 /// The ties are those of a smooth look over the cylinder of hue, saturation and
-/// value. Neighbouring hues of little saturation are nearly one colour, and are tied
+/// value. Neighbouring hues of little saturation are nearly one color, and are tied
 /// the more firmly: nodes near grey are learned from few pixels, mostly of soft
 /// edges, and a zigzag between them shows as bands around such an edge. Along
 /// saturation and value the ties weaken towards grey, as the cells there shrink.
@@ -307,8 +307,8 @@ impl Nodes {
     /// neighbour and the tie's weight, the cell's face between them over their
     /// distance. No neighbour is the neutral column's no change: saturation and value
     /// end there, no more firmly than they are tied to each other (a value scale held
-    /// at 1 beside grey left a pale colour lighter than the camera made it, and the
-    /// soft edge between two colours, which passes through pale ones, with a ring);
+    /// at 1 beside grey left a pale color lighter than the camera made it, and the
+    /// soft edge between two colors, which passes through pale ones, with a ring);
     /// a hue shift has nothing to meet.
     fn ties(&self, channel: usize, node: usize) -> [(u32, f64); 6] {
         let [_, ns, nv] = self.dims;
@@ -422,7 +422,7 @@ impl Nodes {
 /// nodes around where it enters the table, by the table's own interpolation, for the
 /// hue, saturation and value change that remains between what the current table makes
 /// of it and what the curves need. Neighbouring nodes are tied ([`Nodes`]), so a
-/// colour the photo has little of is still learned, and the nodes around it follow
+/// color the photo has little of is still learned, and the nodes around it follow
 /// instead of staying unchanged beside it: a face among trees is a few hundred
 /// samples, and kernel averages shrunk towards no change left it grey.
 fn refine_table(base: &CameraProfile, look: &mut FittedLook, scene: &[Rgb], target: &[Rgb]) {
@@ -448,7 +448,7 @@ fn refine_table(base: &CameraProfile, look: &mut FittedLook, scene: &[Rgb], targ
         let value = (made[2] > 1e-3 && wanted[2] > 1e-4)
             .then(|| f64::from(srgb_encode(wanted[2]) / srgb_encode(made[2]) - 1.));
         let encoded = srgb_encode(v).clamp(0., 1.);
-        // A change of hue or saturation shows as much as the colour is saturated and
+        // A change of hue or saturation shows as much as the color is saturated and
         // light, one of value as much as it is light.
         let light = f64::from((encoded / 0.5).max(WEIGHT_DARKEST)).powi(2);
         let weights = [
@@ -527,16 +527,16 @@ fn refine_table(base: &CameraProfile, look: &mut FittedLook, scene: &[Rgb], targ
 /// The most a node may differ from its neighbour along hue, saturation and value, for
 /// the hue shift (degrees) and the logarithms of the saturation and value scales: a
 /// bound on what the solve may make of contradictory samples (skin in two lights,
-/// nearly one colour and asked for very different ones), which would bend a gradient
+/// nearly one color and asked for very different ones), which would bend a gradient
 /// into contours. The smoothness of a look is the solve's ties'; these are three times
-/// what kernel averages needed, which held a small face's colours back.
+/// what kernel averages needed, which held a small face's colors back.
 const SLOPES: [[f32; 3]; 3] = [[13.5, 15., 15.], [0.24, 0.36, 0.36], [0.12, 0.36, 0.36]];
 /// The most the value scale of the least saturated nodes may differ from grey's 1 (as a
 /// logarithm): as much as from a neighbouring hue's. Saturation is the least steady
-/// thing about a dark or pale colour, so a value scale that leaves grey steeply turns
+/// thing about a dark or pale color, so a value scale that leaves grey steeply turns
 /// noise and soft edges there into contours (a dark light out of focus, lightened by
 /// 1.4 where its noise read as green and darkened beside it). What a camera does to
-/// pale colours is within it: 5% between coloured stage lights.
+/// pale colors is within it: 5% between colored stage lights.
 const GREY_SLOPE: f32 = 0.12;
 
 /// The closest table, in sweeps along each axis, whose neighbouring nodes respect
@@ -674,8 +674,8 @@ pub(super) fn monochrome_look(scene: &[Rgb], target: &[Rgb]) -> FittedLook {
 const D50: [f64; 3] = [0.9642, 1., 0.8249];
 
 /// A forward matrix from white-balanced camera RGB to XYZ D50, fitted to the
-/// preview's colour. The camera's tone curve changes how bright each colour is, not
-/// its direction, so each fitted colour is asked only to point where the preview's
+/// preview's color. The camera's tone curve changes how bright each color is, not
+/// its direction, so each fitted color is asked only to point where the preview's
 /// does (their cross product, of both at unit length, is least), with a ridge of
 /// 10⁻⁴ of the data's trace, and the matrix must take camera neutral [1, 1, 1] to
 /// D50 white with Y = 1, as a DNG ForwardMatrix does. Refused when a coefficient
@@ -693,7 +693,7 @@ pub(super) fn forward_matrix(camera: &[Rgb], xyz: &[Rgb]) -> Result<Matrix, Stri
         .map(|(c, t)| (unit(*c), unit(*t)))
         .collect();
     if pairs.len() < 64 {
-        return Err("Too few colours to fit a matrix".into());
+        return Err("Too few colors to fit a matrix".into());
     }
     // m, row by row, as x[3r + j]; each sample's (m c) × t is linear in x.
     let mut h = [[0f64; 9]; 9];
@@ -730,7 +730,7 @@ pub(super) fn forward_matrix(camera: &[Rgb], xyz: &[Rgb]) -> Result<Matrix, Stri
         }
         kkt[9 + r][12] = D50[r];
     }
-    let x = gauss_solve(kkt).ok_or("Singular colour data")?;
+    let x = gauss_solve(kkt).ok_or("Singular color data")?;
     let m: [[f64; 3]; 3] = std::array::from_fn(|r| std::array::from_fn(|j| x[3 * r + j]));
     if !m.iter().flatten().all(|v| v.is_finite() && v.abs() < 8.) {
         return Err("The fitted matrix has a coefficient beyond 8".into());
@@ -798,7 +798,7 @@ fn invert(m: [[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
 
 /// The unconstrained reference fit the representation is measured against: the
 /// fitted look's render plus a free correction of its remaining error on a 17³
-/// lattice over the encoded scene colour, by Gaussian kernels one node wide and
+/// lattice over the encoded scene color, by Gaussian kernels one node wide and
 /// shrunk towards no correction. The look's representation (an HSV table and
 /// extrema curves) cannot make what the correction adds.
 pub(super) struct Lattice {
@@ -843,7 +843,7 @@ impl Lattice {
             data,
         }
     }
-    /// The look's render of scene colour `s` with the correction there, trilinearly.
+    /// The look's render of scene color `s` with the correction there, trilinearly.
     pub(super) fn apply(&self, s: Rgb) -> Rgb {
         let n = LATTICE;
         let at = clamp01(s).map(|v| srgb_encode(v) * (n - 1) as f32);
@@ -913,7 +913,7 @@ mod tests {
     fn hues_near_grey_are_drawn_together_unless_plenty_was_learned() {
         let base = base();
         let [nh, ns, _] = TABLE_DIMS;
-        // Pale colours on every other hue node, asked for a hue shift of +6° on one
+        // Pale colors on every other hue node, asked for a hue shift of +6° on one
         // node and -6° on the next: a zigzag.
         let pale = |count: usize| -> (Vec<Rgb>, Vec<Rgb>) {
             let mut look = FittedLook::identity();
@@ -973,7 +973,7 @@ mod tests {
             .sum();
         sum / colours.len() as f32 - 1.
     }
-    /// Colours of every hue and one small saturation, at one value.
+    /// Colors of every hue and one small saturation, at one value.
     fn pale(saturation: f32, value: f32, of_each: usize) -> Vec<Rgb> {
         let nh = TABLE_DIMS[0];
         let third = std::f32::consts::TAU / 3.;
@@ -984,7 +984,7 @@ mod tests {
             })
             .collect()
     }
-    /// What the profile without a look makes of `scene`, each colour scaled by `by`.
+    /// What the profile without a look makes of `scene`, each color scaled by `by`.
     fn scaled(base: &CameraProfile, scene: &[Rgb], by: impl Fn(usize) -> f32) -> Vec<Rgb> {
         let plain = fitted::with_look(base, &FittedLook::identity()).unwrap();
         scene
@@ -1000,14 +1000,14 @@ mod tests {
             .collect()
     }
 
-    /// The soft edge between two coloured lights passes through pale colours, which a
-    /// camera makes a little darker than its greys, as it does the colours beside
+    /// The soft edge between two colored lights passes through pale colors, which a
+    /// camera makes a little darker than its greys, as it does the colors beside
     /// them. With their value held at grey's they came out lighter than those, a ring
     /// around a pink highlight on blue.
     #[test]
     fn pale_colours_are_as_dark_as_the_camera_made_them() {
         let base = base();
-        // A few pixels a node, as a photo has of such colours.
+        // A few pixels a node, as a photo has of such colors.
         let (pale, coloured) = (pale(0.12, 0.3, 2), pale(0.24, 0.3, 2));
         let scene = [pale.clone(), coloured].concat();
         let camera = scaled(&base, &scene, |_| 0.93);
@@ -1019,7 +1019,7 @@ mod tests {
         assert!(left.abs() < 0.015, "{left}");
     }
 
-    /// A dark light out of focus: dark, pale colours whose noise reads as one hue here
+    /// A dark light out of focus: dark, pale colors whose noise reads as one hue here
     /// and another there, asked for very different lightness. The value scale leaves
     /// grey within [`GREY_SLOPE`], or the noise shows as contours.
     #[test]
@@ -1034,7 +1034,7 @@ mod tests {
         let beside_grey = || look.table.iter().skip(1).step_by(ns).map(|e| e[2].ln());
         let most = beside_grey().fold(0f32, |m, v| m.max(v.abs()));
         assert!(most <= GREY_SLOPE + 1e-3, "{most}");
-        // The bound is met: the colours did ask.
+        // The bound is met: the colors did ask.
         assert!(most > 0.9 * GREY_SLOPE, "{most}");
     }
 
@@ -1046,7 +1046,7 @@ mod tests {
         assert!(g[1] / g[0] > 1.019 && g[1] / g[0] < 1.021, "{g:?}");
         assert_eq!(grey_gains(&scene, &scene), None, "none to correct");
         assert_eq!(grey_gains(&scene[..10], &target[..10]), None, "too few");
-        // Colours say nothing about grey.
+        // Colors say nothing about grey.
         let red: Vec<Rgb> = vec![[0.6, 0.2, 0.1]; 200];
         assert_eq!(grey_gains(&red, &target), None);
     }
@@ -1061,7 +1061,7 @@ mod tests {
         })
         .unwrap()
     }
-    /// Colours spread over the gamut, as a scene's would be, in a fixed order.
+    /// Colors spread over the gamut, as a scene's would be, in a fixed order.
     fn scene() -> Vec<Rgb> {
         let mut seed = 12345u32;
         let mut next = || {
@@ -1079,7 +1079,7 @@ mod tests {
             .collect()
     }
 
-    /// Skin in two lights, nearly the same colour and asked for very different ones:
+    /// Skin in two lights, nearly the same color and asked for very different ones:
     /// the table bends only as far as its slopes allow, or a gradient shows contours.
     #[test]
     fn a_table_never_steps_between_neighbouring_nodes() {
@@ -1114,7 +1114,7 @@ mod tests {
         }
     }
 
-    /// A face among trees: a few hundred samples of skin, with nothing of their colour
+    /// A face among trees: a few hundred samples of skin, with nothing of their color
     /// around them, are still taken to the camera's skin.
     #[test]
     fn a_small_patch_of_colour_is_learned_beside_a_large_one() {
@@ -1221,7 +1221,7 @@ mod tests {
             [0.02, -0.15, 0.9549],
         ];
         let camera = scene();
-        // The preview's colour, through a tone curve that changes each colour's
+        // The preview's color, through a tone curve that changes each color's
         // brightness but not its chromaticity.
         let xyz: Vec<Rgb> = camera
             .iter()

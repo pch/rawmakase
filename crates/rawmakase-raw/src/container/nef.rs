@@ -307,12 +307,12 @@ fn strips(t: &TiffFile, ifd: &Ifd) -> Result<Vec<(u64, u64)>> {
         .collect())
 }
 
-/// The 2 × 2 colour filter from CFAPattern (red, green and blue as 0, 1, 2);
+/// The 2 × 2 color filter from CFAPattern (red, green and blue as 0, 1, 2);
 /// the usual red-first Bayer pattern when the file has none.
 fn cfa(t: &TiffFile, ifd: &Ifd) -> Result<Cfa> {
     let pattern = match t.bytes_of(ifd, 33422) {
         Some(p) if p.len() >= 4 && p[..4].iter().all(|&c| c < 3) => p[..4].to_vec(),
-        Some(_) => return Err(Error::Unsupported("NEF with a four-colour CFA".into())),
+        Some(_) => return Err(Error::Unsupported("NEF with a four-color CFA".into())),
         None => vec![0, 1, 1, 2],
     };
     Ok(crate::info::second_green(Cfa {

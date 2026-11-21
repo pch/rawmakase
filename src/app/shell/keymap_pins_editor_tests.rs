@@ -1120,7 +1120,7 @@ fn develop_keys_open_windows_and_tools() {
         assert!(tap(Place::DevelopTyping, key, m).get(field).is_none());
         assert!(tap(Place::DevelopModal, key, m).get(field).is_none());
     }
-    // B&W's targeted tool refuses a colour photo, with a message.
+    // B&W's targeted tool refuses a color photo, with a message.
     let o = tap(Place::Develop, Key::G, cmd_alt_shift());
     assert!(
         o.get("tool").is_none() && o.get("message").is_some(),
@@ -1932,7 +1932,7 @@ fn every_default_shortcut_changes_something_from_its_places_start() {
         (Develop, Key::K, none, "brush mask"),
         (Develop, Key::M, none, "linear mask"),
         (Develop, Key::M, shift, "radial mask"),
-        (Develop, Key::J, shift, "colour range mask"),
+        (Develop, Key::J, shift, "color range mask"),
         // The tools.
         (Crop, Key::X, none, "crop orientation"),
         (Crop, Key::A, none, "aspect lock"),

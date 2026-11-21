@@ -36,7 +36,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
     let mut switch = PanelSwitch::new(r, Panel::ToneCurve);
     if switched_section(ui, step, "Tone Curve", &mut switch.state, |ui, step| {
         // One toolbar: the targeted tool, the curve's kind and, for the point
-        // curve, its channel as coloured dots at the end.
+        // curve, its channel as colored dots at the end.
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = space::S;
             let (button, _) = ui.allocate_exact_size(Vec2::new(22., 22.), Sense::hover());

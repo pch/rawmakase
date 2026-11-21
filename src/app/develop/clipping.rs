@@ -82,7 +82,7 @@ pub(in crate::app) fn clipped_share(counts: [u32; 3], total: u32) -> [bool; 3] {
     let total = total.max(1) as f32;
     counts.map(|n| n as f32 / total > CLIPPED_SHARE)
 }
-/// The triangle's colour: the clipping channels mixed, white when all three
+/// The triangle's color: the clipping channels mixed, white when all three
 /// clip, as Lightroom's; `None` when none clips.
 pub(in crate::app) fn indicator_color(channels: [bool; 3]) -> Option<Color32> {
     let [r, g, b] = channels.map(|on| if on { 235 } else { 60 });

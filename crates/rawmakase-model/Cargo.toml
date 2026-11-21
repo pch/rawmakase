@@ -3,7 +3,7 @@ name = "rawmakase-model"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "What a RAWmakase edit is, as values: recipes, camera and lens profiles, colour and output buffers, without the RAW decoders, the renderer or the GUI"
+description = "What a RAWmakase edit is, as values: recipes, camera and lens profiles, color and output buffers, without the RAW decoders, the renderer or the GUI"
 license.workspace = true
 publish = false
 

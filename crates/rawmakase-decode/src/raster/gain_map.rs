@@ -7,7 +7,7 @@
 //!   Ultra HDR 1.0 adopted): the base's XMP says `hdrgm:Version`, the MPF index finds
 //!   the map, and the map's own XMP holds the metadata.
 //! - **JPEG XL:** a `jhgm` box (libjxl's gain-map bundle) holds the metadata, the
-//!   alternate rendition's colour, and the map's own codestream.
+//!   alternate rendition's color, and the map's own codestream.
 //!
 //! The map is reconstructed at its full weight, as a display with the alternate
 //! rendition's whole headroom would show it. That makes the light the authored HDR
@@ -44,7 +44,7 @@ pub(super) fn damaged() -> Unsupported {
     Unsupported("damaged gain-map".into())
 }
 
-/// One colour channel's gain: log2 of the smallest and largest gain the map
+/// One color channel's gain: log2 of the smallest and largest gain the map
 /// encodes, the map's gamma, and the offsets added to the base and taken from the
 /// alternate, in linear units where 1 is the base's white.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -98,7 +98,7 @@ impl Channel {
 pub(super) struct Metadata {
     /// Each channel's gain; a single-channel map's three are the same.
     channels: [Channel; 3],
-    /// The map applies in the base image's colour space, not the alternate's.
+    /// The map applies in the base image's color space, not the alternate's.
     base_colour_space: bool,
 }
 
@@ -125,14 +125,14 @@ impl Bytes<'_> {
 }
 
 impl Metadata {
-    /// Whether the map applies in the base image's colour space.
+    /// Whether the map applies in the base image's color space.
     pub(super) fn base_colour_space(&self) -> bool {
         self.base_colour_space
     }
 
     /// The metadata ISO 21496-1 serialises, as libultrahdr 2.0 reads it:
     /// - minimum and writer versions (u16 each);
-    /// - flags: multichannel (0x80), base colour space (0x40), common denominator
+    /// - flags: multichannel (0x80), base color space (0x40), common denominator
     ///   (0x08), and the base as the HDR rendition (0x04);
     /// - the base's and the alternate's headroom;
     /// - then for each channel the map's minimum, maximum and gamma and the two
@@ -218,7 +218,7 @@ impl Metadata {
     ///   whatever they are, so they are only checked.
     ///
     /// The five per-channel values are each one value for every channel or three, one
-    /// a channel. The map applies in the base's colour space: hdrgm has no other.
+    /// a channel. The map applies in the base's color space: hdrgm has no other.
     ///
     /// Refused: a version other than 1.0 by its number, an HDR base, and as damaged:
     /// a missing `GainMapMax` or `HDRCapacityMax`, a value that isn't a number, two
@@ -642,10 +642,10 @@ fn jpeg(file: &mut File, len: u64) -> Result<Option<GainMap>, Unsupported> {
             continue;
         };
         let (width, height) = frame.ok_or_else(damaged)?;
-        // A map in the alternate's colour space, which its ICC profile describes. An
+        // A map in the alternate's color space, which its ICC profile describes. An
         // hdrgm map's profile isn't used: it applies in the base's.
         if !metadata.base_colour_space && icc {
-            return Err(Unsupported("alternate-colour gain-map".into()));
+            return Err(Unsupported("alternate-color gain-map".into()));
         }
         return Ok(Some(GainMap {
             metadata,
@@ -710,7 +710,7 @@ fn mpf_images(tiff: &[u8]) -> Result<Vec<(u32, u32)>, Unsupported> {
 }
 
 /// The gain map in a JPEG XL container's `jhgm` box (libjxl's bundle): a version
-/// byte (0), the ISO 21496-1 metadata after its u16 length, the alternate's colour
+/// byte (0), the ISO 21496-1 metadata after its u16 length, the alternate's color
 /// encoding after its u8 length, its ICC profile after a u32 length, and the map's
 /// naked codestream, the rest of the box.
 fn jxl(file: &mut File, len: u64) -> Result<Option<GainMap>, Unsupported> {
@@ -763,7 +763,7 @@ fn jxl(file: &mut File, len: u64) -> Result<Option<GainMap>, Unsupported> {
     }
     at += u64::from(icc);
     if !metadata.base_colour_space && (colour > 0 || icc > 0) {
-        return Err(Unsupported("alternate-colour gain-map".into()));
+        return Err(Unsupported("alternate-color gain-map".into()));
     }
     let codestream = end - at;
     if codestream == 0 || codestream > MAX_MAP {
@@ -836,7 +836,7 @@ impl GainMap {
 }
 
 impl Samples {
-    /// A decoded map's samples as they are: grey, or colour a channel each.
+    /// A decoded map's samples as they are: grey, or color a channel each.
     pub(super) fn from_image(image: image::DynamicImage) -> Self {
         let (width, height) = (image.width(), image.height());
         let (channels, data) = if image.color().has_color() {
@@ -1101,7 +1101,7 @@ mod tests {
     ];
 
     /// libultrahdr's own Ultra HDR JPEG (a Display P3 base, a three-channel map with
-    /// its own ICC profile, in the base's colour space) opens with the light
+    /// its own ICC profile, in the base's color space) opens with the light
     /// libultrahdr decodes at full headroom, to its half floats' and the two JPEG
     /// decoders' rounding. Its quarter-size map spreads over the base: the same
     /// pixels come within the map's interpolation of the full map's light.
@@ -1267,7 +1267,7 @@ mod tests {
         ))
     }
 
-    /// A ramp of grey and colour patches a channel each, with the decoded samples the
+    /// A ramp of grey and color patches a channel each, with the decoded samples the
     /// file holds (the JPEG decoder's, as the reader's).
     fn base_ramp(width: u32, height: u32) -> Vec<u8> {
         (0..width * height)

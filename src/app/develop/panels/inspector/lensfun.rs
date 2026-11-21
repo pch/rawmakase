@@ -431,7 +431,7 @@ pub(super) fn title(ui: &mut egui::Ui, text: &str) {
         .wrap(),
     );
 }
-/// The offer's one action, in the accent colour.
+/// The offer's one action, in the accent color.
 pub(super) fn accent_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     let fill = if ui.is_enabled() {

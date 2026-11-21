@@ -180,7 +180,7 @@ gh release edit vX.Y.Z --notes-file packaging/release-notes/vX.Y.Z.md
 
 ## Dependency maintenance
 
-RAWmakase builds no native library of its own: RAW decoding and colour
+RAWmakase builds no native library of its own: RAW decoding and color
 management are Rust. A change to the RAW decoders is checked with the decode
 fingerprints over the test dataset (`scripts/corpus/dataset-fingerprints.py
 check`; a deliberate change is recorded as a new baseline in a commit that

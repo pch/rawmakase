@@ -64,10 +64,10 @@ pub(crate) struct AiBlend {
 /// How much of the AI source's luminance change an Amount keeps: Camera Raw 18.7's
 /// Denoise records the blend it applies (`BlendParams`) as 0.4375 at 25, 0.70 at 50 and
 /// 1 at 100 (docs/rendering-quality.md#ai-denoise), read here as luminance's, linearly
-/// between them and from 0. Its colour is the AI source's at every Amount: Camera Raw's
-/// renders at 50 keep almost no colour noise, about as little as at 100 (#802).
+/// between them and from 0. Its color is the AI source's at every Amount: Camera Raw's
+/// renders at 50 keep almost no color noise, about as little as at 100 (#802).
 const LUMA_WEIGHTS: [(f32, f32); 4] = [(0., 0.), (0.25, 0.4375), (0.5, 0.7), (1., 1.)];
-/// AI source values (of white) below which a pixel's colour is too uncertain to scale:
+/// AI source values (of white) below which a pixel's color is too uncertain to scale:
 /// there it is blended channel by channel instead.
 const DARKEST: f32 = 1e-4;
 
@@ -83,10 +83,10 @@ fn weight(curve: &[(f32, f32); 4], a: f32) -> f32 {
 
 impl AiBlend {
     /// The AI source with its luminance moved toward the plain recovered image's by
-    /// Amount: each pixel keeps the AI source's colour (its channels are scaled
+    /// Amount: each pixel keeps the AI source's color (its channels are scaled
     /// together) and takes the blended luminance, the mean of the white-balanced
     /// channels. Mixing camera values channel by channel would bring the plain image's
-    /// colour noise back, since an equal change of unbalanced camera values is not
+    /// color noise back, since an equal change of unbalanced camera values is not
     /// neutral. At Amount 1 the AI source itself.
     pub(crate) fn apply(&self, plain: &Arc<CameraImage>) -> Arc<CameraImage> {
         let ai = self.source.image();
@@ -200,7 +200,7 @@ mod tests {
             .zip(&plain.pixels)
             .zip(&ai.image().pixels)
         {
-            // Camera Raw's luminance weight at 50 (0.70), with the AI source's colour.
+            // Camera Raw's luminance weight at 50 (0.70), with the AI source's color.
             let luma = |v: &[f32; 3]| (v[0] + v[1] + v[2]) / 3.;
             let k = (0.7 * luma(a) + 0.3 * luma(p)) / luma(a);
             for c in 0..3 {
@@ -261,8 +261,8 @@ mod tests {
         assert_ne!(on.pixels, today.pixels);
     }
 
-    /// Below Amount 100 the plain image's colour noise does not come back (#802): each
-    /// pixel keeps the AI source's colour and takes the blended luminance, measured on
+    /// Below Amount 100 the plain image's color noise does not come back (#802): each
+    /// pixel keeps the AI source's color and takes the blended luminance, measured on
     /// white-balanced values.
     #[test]
     fn amount_below_100_keeps_the_ai_colour_and_blends_luminance() {
@@ -271,7 +271,7 @@ mod tests {
         let mut ai = image([0.1, 0.2, 0.1]);
         plain.metadata.wb = wb;
         ai.metadata.wb = wb;
-        // The plain pixels carry colour noise around the AI's neutral grey.
+        // The plain pixels carry color noise around the AI's neutral grey.
         for (i, (p, a)) in plain.pixels.iter_mut().zip(&mut ai.pixels).enumerate() {
             let g = 0.1 + (i % 7) as f32 * 0.01;
             *a = [g / wb[0], g / wb[1], g / wb[2]];
@@ -296,7 +296,7 @@ mod tests {
             .zip(&plain.pixels)
             .zip(&source.image().pixels)
         {
-            // The AI's colour: the same balanced value in every channel.
+            // The AI's color: the same balanced value in every channel.
             let balanced: [f32; 3] = std::array::from_fn(|c| b[c] * wb[c]);
             assert!((balanced[0] - balanced[1]).abs() < 1e-6, "{balanced:?}");
             assert!((balanced[2] - balanced[1]).abs() < 1e-6, "{balanced:?}");

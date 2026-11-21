@@ -129,7 +129,7 @@ checks), not for 16-bit integer samples. Lossless JPEG is DNG's own lossless
 coding for them, and RAWmakase's DNG reader decodes it already. JPEG XL tiles
 can replace lossless JPEG's once the encoder is fixed; the reader opens both.
 
-The standard tags carry the pixels, the colour matrix, white balance,
+The standard tags carry the pixels, the color matrix, white balance,
 orientation, EXIF and Adobe's original-size tags (51089–51091). Another DNG
 reader can open the file: LibRaw 0.22 reads a copy's samples exactly, except
 that it places the rows of a copy narrower than one tile (512 px) wrongly.
@@ -160,9 +160,9 @@ struct. It holds:
 - the RAW's own lens corrections, camera white balance presets, camera look,
   baseline exposure, and Fujifilm's dynamic range and exposure shift;
 - the Auto CA measured on the original;
-- for a camera RAWmakase has no colour data for, the default Camera Look fit;
+- for a camera RAWmakase has no color data for, the default Camera Look fit;
 - the original's other facts as its decode had them (the make and model as
-  RAWmakase names them, the colour matrices, white balance, crop and
+  RAWmakase names them, the color matrices, white balance, crop and
   orientation among them). The standard tags carry the same facts for other DNG
   readers, but rounded to rationals, or as another reader names them, so
   RAWmakase opens the copy with the record's.

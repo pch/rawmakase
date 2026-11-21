@@ -55,7 +55,7 @@ pub fn run(
     cancel: Cancel<'_>,
     progress: impl Fn(f32),
 ) -> Result<Option<String>> {
-    // The target's format, not only the settings', must hold the colour space or the
+    // The target's format, not only the settings', must hold the color space or the
     // HDR encoding; checked before anything renders.
     let format = crate::export_settings::Format::from_path(target);
     if let Some(output) = settings.hdr_output()? {
@@ -85,7 +85,7 @@ pub fn run(
 
 /// A photo rendered for export, with what goes in the file beside its pixels.
 pub struct Prepared {
-    /// The pixels, in the colour space or HDR encoding the settings chose.
+    /// The pixels, in the color space or HDR encoding the settings chose.
     pub rendered: super::Pixels,
     pub metadata: crate::camera_data::Metadata,
     pub options: crate::export_settings::ExportOptions,
@@ -95,7 +95,7 @@ pub struct Prepared {
 }
 
 /// Renders `photo` for an export with `settings`, reporting progress up to 0.85.
-/// Stops between stages once `cancel` is set. Settings whose colour space can't be
+/// Stops between stages once `cancel` is set. Settings whose color space can't be
 /// exported (in their format, or from a later release) are refused first. `preset`
 /// is a watermark a batch loaded once for all its photos, laid on in place of
 /// `photo.watermark`.

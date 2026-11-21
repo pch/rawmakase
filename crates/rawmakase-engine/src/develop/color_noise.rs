@@ -1,19 +1,19 @@
 //! Detail > Color noise reduction, following Camera Raw 18.7.
 //!
-//! Camera Raw's colour noise reduction is edge-aware and works at several scales: the
-//! finest detail keeps a share of its colour noise that Detail sets, coarser blotches
-//! are taken out up to a size that grows with Amount and Smoothness, and strong colour
+//! Camera Raw's color noise reduction is edge-aware and works at several scales: the
+//! finest detail keeps a share of its color noise that Detail sets, coarser blotches
+//! are taken out up to a size that grows with Amount and Smoothness, and strong color
 //! edges are kept. Here the chroma of the camera image (in square-root values, where
 //! noise is about the same at every brightness) is split into a Laplacian pyramid;
 //! each level's detail is kept where it stands out from a threshold and reduced where
 //! it doesn't, and the luminance is left alone. It runs once on the camera image,
 //! before everything else, so previews and exports agree.
 //!
-//! Each level's threshold is a multiple of the colour noise measured at that level in
+//! Each level's threshold is a multiple of the color noise measured at that level in
 //! the photo itself, as Camera Raw sets it from the noise profile it knows for the
 //! camera and ISO: on synthetic noisy charts carrying a noise profile, the share of
 //! noise it keeps at each scale is the same from 1/16 to 4 times the noise of a Nikon
-//! D7100 at ISO 2000, and at its default Amount 25 it takes out about 95% of the colour
+//! D7100 at ISO 2000, and at its default Amount 25 it takes out about 95% of the color
 //! noise at every scale. The thresholds were fitted to those renders (Amount 10–100,
 //! Detail and Smoothness 0–100).
 //!
@@ -28,7 +28,7 @@ use rayon::prelude::*;
 /// Pyramid levels with a threshold below the finest.
 const LEVELS: usize = 4;
 /// The thresholds, as multiples of each level's measured noise
-/// (finest first), at the Amounts Camera Raw rendered: fitted to the colour noise it
+/// (finest first), at the Amounts Camera Raw rendered: fitted to the color noise it
 /// keeps at each scale of synthetic noisy charts carrying their noise profile, at
 /// [`REFERENCE_NOISE`].
 const ADAPTIVE_AMOUNTS: [f32; 4] = [0.1, 0.25, 0.5, 1.];
@@ -40,7 +40,7 @@ const ADAPTIVE_THRESHOLDS: [[f32; 4]; LEVELS + 1] = [
     [1.29, 2.74, 3.34, 3.35],
 ];
 /// Detail's factors on each level's threshold, at 0, 25, 50, 75 and 100: higher
-/// Detail keeps more of the finest colour.
+/// Detail keeps more of the finest color.
 const ADAPTIVE_DETAIL: [[f32; 5]; LEVELS + 1] = [
     [1.2, 1.11, 1., 0.58, 0.26],
     [1.13, 1.07, 1., 0.73, 0.54],
@@ -63,10 +63,10 @@ const ADAPTIVE_SMOOTHNESS: [[f32; 5]; LEVELS + 1] = [
 const REFERENCE_NOISE: f32 = 0.0075;
 /// How much faster than the noise each level's threshold grows, as a power of the
 /// finest level's noise over [`REFERENCE_NOISE`]: Camera Raw keeps more of the coarse
-/// colour of clean photos than of noisy ones.
+/// color of clean photos than of noisy ones.
 const NOISE_EXPONENT: [f32; LEVELS + 1] = [0.16, 0.05, 0.1, 0.6, 0.6];
 /// Detail is kept by the sixth power of its size over the threshold, so a strong
-/// colour edge stays as sharp as Camera Raw keeps it while noise well under the
+/// color edge stays as sharp as Camera Raw keeps it while noise well under the
 /// threshold goes.
 const ADAPTIVE_STEEPNESS: i32 = 3;
 
@@ -106,10 +106,10 @@ fn at_level(table: &[f32; LEVELS + 1], level: f32, mix: fn(f32, f32, f32) -> f32
     mix(table[i], table[i + 1], f)
 }
 
-/// The colour noise reduction for a recipe's sliders.
+/// The color noise reduction for a recipe's sliders.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ChromaDenoise {
-    /// Each level's threshold, finest first, as a multiple of the colour noise
+    /// Each level's threshold, finest first, as a multiple of the color noise
     /// measured at the level.
     thresholds: [f32; LEVELS + 1],
 }
@@ -126,7 +126,7 @@ impl ChromaDenoise {
         });
         Some(Self { thresholds })
     }
-    /// `im` with its colour noise reduced; stops with an error when `cancel` is set.
+    /// `im` with its color noise reduced; stops with an error when `cancel` is set.
     pub(crate) fn apply(&self, im: &CameraImage, cancel: Cancel<'_>) -> Result<CameraImage> {
         let offset = super::laplacian::photo_level_offset(im);
         let (luma, chroma) = planes(im);
@@ -191,7 +191,7 @@ impl ChromaDenoise {
             let measurable = measurable.mask();
             // A level too small or too clipped to measure has the finer level's noise, as
             // much smaller as coarser levels usually are. Demosaiced noise is never larger
-            // at a coarser level, so more than the finer level's is colour detail.
+            // at a coarser level, so more than the finer level's is color detail.
             let noise = match noise(&plane, &measurable) {
                 Some(n) if level == 0 => n,
                 Some(n) => n.min(finer_noise),
@@ -256,17 +256,17 @@ fn planes(im: &CameraImage) -> (Vec<f32>, Plane) {
 /// Above this share of the sensor's range a channel may clip, and clipped pixels have
 /// no noise to measure.
 const MEASURABLE_PEAK: f32 = 0.95;
-/// How much smaller a level's colour noise is than the finer level's, on a Bayer
+/// How much smaller a level's color noise is than the finer level's, on a Bayer
 /// photo's demosaiced noise.
 const COARSER_NOISE: f32 = 0.6;
 /// Side of the blocks the noise is measured in, at each level.
 const BLOCK: usize = 8;
-/// Which of the blocks, from the smoothest, give the noise: real colour detail only
+/// Which of the blocks, from the smoothest, give the noise: real color detail only
 /// adds to a block's variation, so the smoothest blocks are the photo's noise alone.
 const BLOCK_PERCENTILE: f32 = 0.1;
 /// The fewest measurable blocks a level's noise is measured from.
 const MIN_BLOCKS: usize = 16;
-/// The colour noise of a level's `detail` (the level less its blur): the RMS of the
+/// The color noise of a level's `detail` (the level less its blur): the RMS of the
 /// detail in its smoothest measurable blocks, those with no black when there are
 /// enough of them; `None` with fewer than [`MIN_BLOCKS`] either way.
 fn noise(detail: &Plane, measurable: &Mask) -> Option<f32> {
@@ -539,7 +539,7 @@ mod tests {
         });
         let d = ChromaDenoise::new(0.25, 0.5, 0.5).unwrap();
         let out = d.apply(&im, Cancel::NEVER).unwrap();
-        // Away from the edge colours are as they were; a strong colour edge stays sharp,
+        // Away from the edge colors are as they were; a strong color edge stays sharp,
         // within a pixel of where it was.
         for (i, (a, b)) in im.pixels.iter().zip(&out.pixels).enumerate() {
             let x = (i % 64) as i32;
@@ -579,7 +579,7 @@ mod tests {
                     .unwrap(),
             ) / before
         };
-        // Camera Raw at the default 25 takes out about 95% of the colour noise.
+        // Camera Raw at the default 25 takes out about 95% of the color noise.
         assert!(at(0.25, 0.5) < 0.1, "{}", at(0.25, 0.5));
         assert!(at(1., 0.5) < at(0.25, 0.5));
         assert!(at(0.25, 1.) > at(0.25, 0.5));

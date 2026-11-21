@@ -1,4 +1,4 @@
-//! Colour difference: CIELAB of linear sRGB, and CIEDE2000 between two colours.
+//! Color difference: CIELAB of linear sRGB, and CIEDE2000 between two colors.
 //! Camera Look's fit and the half-size checks measure with it, and so does
 //! export's render check of editable previews.
 
@@ -18,7 +18,7 @@ pub fn lab([r, g, b]: [f64; 3]) -> [f64; 3] {
     [116. * fy - 16., 500. * (fx - fy), 200. * (fy - fz)]
 }
 
-/// CIEDE2000 colour difference (Sharma, Wu and Dalal 2005).
+/// CIEDE2000 color difference (Sharma, Wu and Dalal 2005).
 pub fn delta_e2000(lab1: [f64; 3], lab2: [f64; 3]) -> f64 {
     let [l1, a1, b1] = lab1;
     let [l2, a2, b2] = lab2;

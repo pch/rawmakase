@@ -15,7 +15,7 @@ gates a change to it must pass. Tracking issue: #374 (from #354).
 | S2 | Exposure and the DNG exposure ramp (black point) | linear Rec.2020 |
 | S3 | **Scene tone**: Highlights, Shadows, Clarity, Dehaze, the white point and Whites, Blacks | linear ProPhoto, unclamped |
 | S4 | Profile LookTable, enhanced look's HSV table, ProfileToneCurve, look curve | as before |
-| S5 | Contrast, Levels, parametric and point curves, colour mixer, Point Color, RGB-table looks, grading, gamut, output | as before |
+| S5 | Contrast, Levels, parametric and point curves, color mixer, Point Color, RGB-table looks, grading, gamut, output | as before |
 
 Each stage boundary has a `PixelOutput` tap, so tests can read a render between
 stages through the same sampling, masks and caches as the display.
@@ -55,7 +55,7 @@ that the control's curve measured on the linear probe predicts it when applied a
 the profile curve. Look order: the same with a DCP LookTable, an XMP HSV look and an
 XMP RGB-table look.
 
-| Control | Stage | vs LookTable / HSV look | vs RGB-table look | Colour handling |
+| Control | Stage | vs LookTable / HSV look | vs RGB-table look | Color handling |
 |---|---|---|---|---|
 | Exposure | S2 (scale), then S3's white point | before | before | RGBTone (white-point rolloff) |
 | White point (default) | S3 | before | before | RGBTone |
@@ -104,15 +104,15 @@ default tone curve, both DNG RGBTone — once, when `photo::open_source` opens t
 resulting pseudo-scene renders through the raw path with the Embedded profile, whose tone
 curve is ACR3. `photo_measures` pins a rendered file's sensor white and maximum to 1, so at
 default settings the render is the file (±1/255; finer in 16 bits). S0 highlight recovery
-is skipped (`quality::samples::recovered`): a rendered file's bright colours are its
+is skipped (`quality::samples::recovered`): a rendered file's bright colors are its
 rendering, not clipping.
 
 Measured against Lightroom Classic 15.6 (Camera Raw 18.7) on synthetic charts and 32
 photos: Exposure, Whites, Blacks and their combinations within about 1–2/255 on greys;
 Contrast with `basic_tone::RENDERED_PIVOT_OFFSET`. White balance is a matrix and a clip
 in S1 (`model::white_balance::rendered_white_balance`, see
-[colour pipeline](color-pipeline.md)). Known gaps: Highlights/Shadows on very dark or
-bright files, Saturation, Vibrance, Clarity, Dehaze, fully saturated colours at large
+[color pipeline](color-pipeline.md)). Known gaps: Highlights/Shadows on very dark or
+bright files, Saturation, Vibrance, Clarity, Dehaze, fully saturated colors at large
 Exposure, and parts of the cool magenta corner of Temp and Tint.
 
 ### Whites and Blacks
@@ -286,7 +286,7 @@ histograms at fixed and random texture, histograms sampled from the training pho
 base levels, small bright and small dark minorities above or below a gap, a few tiny
 bright spots in a dark field, deep ranges, bimodal deep-and-mid histograms, clipped
 top patches, smooth skies of varying texture and extent over textured ground, dark
-regions of varying texture under a fixed sky, coloured patches of equal
+regions of varying texture under a fixed sky, colored patches of equal
 luminance, and clipped squares and patches under a non-neutral white balance, so that
 they reconstruct above the white as a photo's do) and on 283 training photos: the
 221 of all three families' training sets and 62 more CC0 raw.pixls.us photos chosen
@@ -315,7 +315,7 @@ on the train sets against main before the rule, median ΔE00: Shadows +100 2.12 
 better, 0 worse), −50 1.12 → 1.01. The validation gate's figures are in [parity
 gaps](records/parity-gaps.md#per-level-texture-and-the-ensemble-2026-10-28).
 
-Measured and not in the rule: the pull and the lift are colour-blind (at equal
+Measured and not in the rule: the pull and the lift are color-blind (at equal
 luminance Camera Raw pulls neutral, blue, orange, green and cyan patches alike at
 Highlights −100 and keeps their saturation), a sky's pull grows only mildly with its
 cloud texture (0.3 EV from faint to strong, saturating) and strongly with how small
@@ -380,7 +380,7 @@ that failed without it ([the record](records/parity-gaps.md#negative-shadows-and
   the engine renders white, and a quarter stop more, so that the fit's own scatter does
   not leave half of those pixels just under white. The brightest channel decides, not
   luminance: more than half of the pixels Camera Raw newly clips at Highlights +50 are
-  coloured highlights with a luminance under 0.97.
+  colored highlights with a luminance under 0.97.
 - Where the full slider clipped, a photo's render at half the slider gives twice its
   own gain.
 
@@ -787,7 +787,7 @@ amount (cross-validated by photo, per-channel gain in EV): +100 0.54 against 0.6
 the synthetic curves and 0.90 for doing nothing, +40 0.16 (0.18, 0.30), −40 0.14 (0.16,
 0.57), −100 0.34 (0.39, 1.45). **Negative Dehaze** uses these photo-fitted curves. In Camera
 Raw's renders of the train photos it is rather a veil: sized by the photo's median luminance,
-coloured like the airlight, fading toward black, with a contrast change per photo (display
+colored like the airlight, fading toward black, with a contrast change per photo (display
 slope 0.34–1.33) that follows the airlight's brightness. A veil model without that per-photo
 contrast term improved the median but made 11 of 26 photos worse ([parity
 gaps](records/parity-gaps.md), 2026-10-20).
@@ -810,7 +810,7 @@ pixels on the long edge) at Exposure 0:
    when combined with positive Dehaze (#600). The density measurement and
    interpolation stay independent of those tone edits. ω is linear between (0, 0),
    (+20, 0.3), (+40, 0.45) and (+100, 0.9). No channel falls below half of p scaled by
-   the luminance's change, so weak channels of bright saturated colours are not driven
+   the luminance's change, so weak channels of bright saturated colors are not driven
    to black (on the training photos: +100 3.06 → 3.04; a floor of 0.7 costs 3.18, 1.0
    costs 4.53). The transmission floor 0.3 costs nothing there (3.06 at 0.1 to 0.3).
 
@@ -904,8 +904,8 @@ window (edge 1/16 of the valid frame's long edge, half-window steps, including
 the far edges). Corresponding windows are compared individually: a bad region
 elsewhere cannot hide a new defect. Reference-defined highlights (L* ≥ 90) and
 shadows (L* ≤ 10) are also scored separately whenever they contain at least 16
-pixels, even below 1% of the frame. These use unsigned colour distance, so
-light/dark or colour errors cannot cancel. Any non-finite pixel invalidates a
+pixels, even below 1% of the frame. These use unsigned color distance, so
+light/dark or color errors cannot cancel. Any non-finite pixel invalidates a
 photo rather than being silently discarded.
 
 All acceptance modes require three scored photos in **every** brightness

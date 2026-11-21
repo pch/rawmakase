@@ -1,4 +1,4 @@
-//! A render for export together with the colour space its pixels are encoded in
+//! A render for export together with the color space its pixels are encoded in
 //! (docs/color-pipeline.md#export-color-spaces). Only [`crate::develop::render_export`]
 //! makes one in a space other than sRGB, and the buffer never leaves it: its pixels
 //! are read and drawn on in place, and encoded through [`ExportImage::rgb8`] and
@@ -202,7 +202,7 @@ mod tests {
                     "{name} {space:?}: {a:?} {b:?}"
                 );
                 assert!(a[0] < b[0] - 0.005, "{name} {space:?}: {a:?} {b:?}");
-                // The rest of the colour is sRGB's where sRGB holds it.
+                // The rest of the color is sRGB's where sRGB holds it.
                 let s = at(&srgb, left).map(crate::color::srgb_decode);
                 assert!((a[1] - s[1]).abs() < 0.08, "{name} {space:?}: {a:?} {s:?}");
             }
@@ -215,7 +215,7 @@ mod tests {
     /// render.
     #[test]
     fn range_masks_select_the_same_pixels_in_every_space() -> anyhow::Result<()> {
-        // In-gamut colours: a red that the mask picks and a blue it does not.
+        // In-gamut colors: a red that the mask picks and a blue it does not.
         let (w, h) = (32, 16);
         let mut im = greens();
         (im.width, im.height) = (w, h);

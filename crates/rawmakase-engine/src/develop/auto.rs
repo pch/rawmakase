@@ -26,7 +26,7 @@ const ANALYSIS_SOURCE_MAX: u32 = 2048;
 const AUTO_VIBRANCE: f32 = 0.15;
 /// Contrast Lightroom's current Auto gives every photo (+5 to +7).
 const AUTO_CONTRAST: f32 = 0.06;
-/// Below this brightest channel a pixel counts as without colour, as its hue is mostly
+/// Below this brightest channel a pixel counts as without color, as its hue is mostly
 /// noise.
 const CHROMA_FLOOR: f32 = 0.02;
 
@@ -34,7 +34,7 @@ const CHROMA_FLOOR: f32 = 0.02;
 /// Stops with an error once `cancel` is set.
 pub fn auto_white_balance(im: &CameraImage, base: &Recipe, cancel: Cancel<'_>) -> Result<Recipe> {
     check_cancel(cancel)?;
-    // Camera pixels as decoded: highlight recovery invents colour where a channel
+    // Camera pixels as decoded: highlight recovery invents color where a channel
     // clipped, which must not count as a neutral.
     let small = preview(im, analysis_edge(im, base, WHITE_BALANCE_EDGE));
     check_cancel(cancel)?;
@@ -225,7 +225,7 @@ fn gray_world(pixels: &[[f32; 3]]) -> Result<[f32; 3]> {
 
 /// Sorted luminance, brightest-channel and chroma values of a render, in display
 /// encoding. Chroma is the spread of a pixel's channels relative to its brightest one,
-/// 0 for gray and 1 for a fully saturated colour.
+/// 0 for gray and 1 for a fully saturated color.
 struct Measure {
     luma: Vec<f32>,
     peak: Vec<f32>,
@@ -333,7 +333,7 @@ impl AutoTone {
         let whites = 67.5 - 52.2 * m.peak(0.998);
         // About −20, from the darkest 1% in stops: deep shadows are darkened less.
         let blacks = -38. - 1.86 * srgb_decode(m.luma(0.01)).max(1e-4).log2();
-        // +2 for a photo without colour, less the more colourful its duller part is.
+        // +2 for a photo without color, less the more colorful its duller part is.
         let saturation = 2.07 - 10.2 * m.chroma(0.35);
         Self {
             exposure: round(exposure.clamp(-5., 5.), 100.),
@@ -688,7 +688,7 @@ mod tests {
         // cool right half. Recovery raises the clipped pixels' blue from 0.4 to
         // about 0.433; red and green stay at 1, so those pixels remain excluded by
         // the gray-world clipping cutoff. Auto WB must use the decoded samples
-        // rather than recovery-altered colours.
+        // rather than recovery-altered colors.
         let mut im = scene([1.; 3], 0.5);
         let width = im.width as usize;
         for (i, p) in im.pixels.iter_mut().enumerate() {
@@ -719,7 +719,7 @@ mod tests {
     #[test]
     fn white_balance_samples_through_lens_distortion_correction() {
         use crate::optics::{LensCorrection, Radial};
-        // A neutral photo with a coloured strip down each side, which the distortion
+        // A neutral photo with a colored strip down each side, which the distortion
         // correction pulls out of the frame.
         let mut im = scene([1.; 3], 0.5);
         let width = im.width as usize;
@@ -814,7 +814,7 @@ mod tests {
     fn auto_sets_sliders_as_lightrooms_auto_does() {
         // An evenly lit mid-tone photo. Lightroom's Auto pulls Highlights well down,
         // opens Shadows, darkens Blacks, sets Contrast to +6 and adds Vibrance and, for a
-        // photo without colour, Saturation (see docs/tone-controls.md); these are the
+        // photo without color, Saturation (see docs/tone-controls.md); these are the
         // fitted model's values, so a change to it shows here.
         let auto = auto_tone(&scene([1.; 3], 0.5), &Recipe::default(), Cancel::NEVER).unwrap();
         let got = [

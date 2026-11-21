@@ -609,7 +609,7 @@ pub(in crate::app) fn paint_feature_icon(
                 1.,
                 ink.gamma_multiply(0.55),
             );
-            // The subject cut out of it: drawn in the tile's own colour.
+            // The subject cut out of it: drawn in the tile's own color.
             person(egui::Color32::from_gray(38));
         }
     }

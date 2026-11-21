@@ -85,7 +85,7 @@ fn footprint_sample(x: f32, y: f32) -> vec3<f32> {
     }
     return sum;
 }
-// Corrected colour and the decoded position used by local tone maps.
+// Corrected color and the decoded position used by local tone maps.
 struct LensSample {
     color: vec3<f32>,
     position: vec2<f32>,

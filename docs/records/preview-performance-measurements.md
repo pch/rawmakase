@@ -23,7 +23,7 @@ runs). Alive on the way there:
 | What | Size |
 | --- | ---: |
 | The photo's decode and its highlight-recovered copy (they stay) | 1.4 GB |
-| Colour noise reduction of the first full-size render: the chroma, the mask, the level's blur, the coarser levels' result, the output, the luminance | up to 2.6 GB |
+| Color noise reduction of the first full-size render: the chroma, the mask, the level's blur, the coarser levels' result, the output, the luminance | up to 2.6 GB |
 | The neighbour's prefetch, started as the full-size image arrived: its file, mosaic, green plane and output, then its recovered copy | 0.7 to 1.6 GB |
 | The decode cache's list of pixels recovery changed, while the photo is stored | 0.26 GB |
 | Freed blocks the allocator still held (macOS keeps its last 64 large ones) | up to 1.1 GB at the start of the render; 1.6 GB left afterwards |
@@ -41,7 +41,7 @@ previews being decoded for the grid at the same moment. Freed blocks were
 
 Changed for it:
 
-- Colour noise reduction filters in place: 26 bytes a pixel at its peak instead
+- Color noise reduction filters in place: 26 bytes a pixel at its peak instead
   of 44 (1.5 GB instead of 2.6 GB of a 61-megapixel photo), every value as it
   was.
 - A RAW's file is freed before its mosaic is demosaiced.

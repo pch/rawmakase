@@ -19,14 +19,14 @@ pub trait EffectsRendering {
     /// The parametric curve's region (0 Shadows, 1 Darks, 2 Lights, 3 Highlights) an
     /// input `x` falls in, between the split points.
     fn parametric_region(&self, x: f32) -> usize;
-    /// As [`Self::pick_fringe_hue`], for the fringe colour `rgb` (encoded sRGB, as
+    /// As [`Self::pick_fringe_hue`], for the fringe color `rgb` (encoded sRGB, as
     /// shown).
     #[cfg(test)]
     fn pick_fringe(&mut self, rgb: [f32; 3]) -> Option<usize>;
     /// Lightroom's Fringe Color Selector: points the Purple or Green hue range at the
-    /// fringe colour of Oklab `hue` and `chroma`, as Defringe sees it, and turns that
+    /// fringe color of Oklab `hue` and `chroma`, as Defringe sees it, and turns that
     /// Amount on if it is off. Returns which (0 purple, 1 green), or `None` when the
-    /// colour is neither.
+    /// color is neither.
     fn pick_fringe_hue(&mut self, hue: f32, chroma: f32) -> Option<usize>;
     /// Lightroom's Defringe: chroma of hues inside the Purple and Green ranges is
     /// reduced, the more the higher Amount and the chroma (see
@@ -65,7 +65,7 @@ impl EffectsRendering for Effects {
             .enumerate()
             .filter(|(_, at)| (0.15..=0.85).contains(at))
             .min_by(|a, b| (a.1 - 0.5).abs().total_cmp(&(b.1 - 0.5).abs()))?;
-        // A range 20 wide on Lightroom's 0–100 hue sliders around the picked colour.
+        // A range 20 wide on Lightroom's 0–100 hue sliders around the picked color.
         let lo = (at - 0.1).clamp(0., 0.8);
         self.defringe_ranges[i] = [lo, lo + 0.2];
         if self.defringe[i] == 0. {
@@ -95,7 +95,7 @@ const DEFRINGE_CENTERS: [f32; 2] = [0.875, 0.46];
 const DEFRINGE_WINDOW: f32 = 0.5;
 /// Half width of the soft edge of a hue range.
 const DEFRINGE_SOFT: f32 = 0.025;
-/// Share of chroma kept at full strength for a grey-ish colour, falling as chroma
+/// Share of chroma kept at full strength for a grey-ish color, falling as chroma
 /// rises (Oklab chroma scale), and the Amount (0–20) over which strength builds up.
 const DEFRINGE_KEEP: f32 = 0.45;
 const DEFRINGE_CHROMA: f32 = 0.09;
@@ -111,7 +111,7 @@ fn defringe_weight(h: f32, center: f32, [lo, hi]: [f32; 2]) -> f32 {
     step(d - (lo - 0.5) * DEFRINGE_WINDOW) * step((hi - 0.5) * DEFRINGE_WINDOW - d)
 }
 /// Share of chroma removed at full weight for Amount `amount` (0–1): Camera Raw
-/// removes more of a stronger fringe colour.
+/// removes more of a stronger fringe color.
 fn defringe_strength(amount: f32, chroma: f32) -> f32 {
     (1. - DEFRINGE_KEEP * (-chroma / DEFRINGE_CHROMA).exp())
         * (1. - (-amount * 20. / DEFRINGE_RATE).exp())
@@ -352,7 +352,7 @@ mod tests {
         e.defringe[1] = 0.6;
         assert_eq!(e.pick_fringe([0.3, 0.7, 0.3]), Some(1));
         assert_eq!(e.defringe[1], 0.6);
-        // Neither purple nor green, or no colour at all.
+        // Neither purple nor green, or no color at all.
         let before = e.clone();
         assert_eq!(e.pick_fringe([0.8, 0.2, 0.2]), None);
         assert_eq!(e.pick_fringe([0.5, 0.5, 0.5]), None);

@@ -1,6 +1,6 @@
 //! Adobe's RGB tables (the DNG SDK's `dng_rgb_table`), which Lightroom's creative looks
 //! (Artistic, Vintage, most of Modern) and camera-matching XMPs carry beside or instead
-//! of an HSV look table. A table maps colours in its own space (primaries and encoding)
+//! of an HSV look table. A table maps colors in its own space (primaries and encoding)
 //! through a 1D curve per channel or a 3D grid, and a look applies it at an amount:
 //! `r + amount·(table(r) − r)` in table space, as the DNG SDK blends.
 use super::{Matrix, PRO_TO_RGB, RGB_TO_PRO, cube::Cube, cube_look::LutSpace, matmul};
@@ -44,7 +44,7 @@ const REC2020_TO_PRO: Matrix = [
 ];
 const IDENTITY: Matrix = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
 
-/// The primaries a table's colours are in (`dng_rgb_table::primaries`).
+/// The primaries a table's colors are in (`dng_rgb_table::primaries`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Primaries {
     Srgb,
@@ -64,7 +64,7 @@ impl Primaries {
             _ => bail!("Unsupported RGB table primaries {code}"),
         })
     }
-    /// From linear display RGB (sRGB primaries adapted to D50, where the colour
+    /// From linear display RGB (sRGB primaries adapted to D50, where the color
     /// stage works) into these primaries, and back.
     fn matrices(self) -> [Matrix; 2] {
         // Display RGB is sRGB already; the others go through ProPhoto.
@@ -145,7 +145,7 @@ fn rec2020_decode(v: f32) -> f32 {
         ((v + REC2020_ALPHA - 1.) / REC2020_ALPHA).powf(1. / 0.45)
     }
 }
-/// What happens to colours outside the table's space (`dng_rgb_table::gamut`).
+/// What happens to colors outside the table's space (`dng_rgb_table::gamut`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Gamut {
     /// Clipped into it before the table.
@@ -165,7 +165,7 @@ pub enum Dimensions {
 pub struct RgbTable {
     dimensions: Dimensions,
     divisions: usize,
-    /// Output colours, 0–1: per division for a 1D table; red outermost, then green,
+    /// Output colors, 0–1: per division for a 1D table; red outermost, then green,
     /// then blue for a 3D one.
     samples: Vec<[f32; 3]>,
     primaries: Primaries,
@@ -261,7 +261,7 @@ impl RgbTable {
     }
     /// `rgb` (linear display RGB) through the table at `amount`.
     pub fn apply(&self, rgb: [f32; 3], amount: f32) -> [f32; 3] {
-        // At 0 the table is off: colours outside its space are not clipped either.
+        // At 0 the table is off: colors outside its space are not clipped either.
         if amount == 0. {
             return rgb;
         }
@@ -631,7 +631,7 @@ pub(super) mod tests {
         // again, all in gamma 2.2.
         let none = table.apply(gray, 0.);
         assert!(none.iter().zip(gray).all(|(a, b)| (a - b).abs() < 1e-5));
-        // Not even colours outside Adobe RGB, which the table clips.
+        // Not even colors outside Adobe RGB, which the table clips.
         let wide = [1.2, -0.1, 0.05];
         assert_eq!(table.apply(wide, 0.), wide);
         let encoded = 0.2f32.powf(1. / 2.2);
@@ -697,8 +697,8 @@ pub(super) mod tests {
         Ok(())
     }
     /// A table blends in its own encoding: a cube that maps each channel linearly
-    /// gives `decode(f(encode(x)))` on a gray, a different colour in each space's
-    /// encoding. A colour inside Adobe RGB but outside sRGB and Display P3 passes an
+    /// gives `decode(f(encode(x)))` on a gray, a different color in each space's
+    /// encoding. A color inside Adobe RGB but outside sRGB and Display P3 passes an
     /// identity cube unchanged in Adobe RGB, ProPhoto and Rec. 2020, and is clipped into
     /// sRGB or Display P3 in those.
     #[test]

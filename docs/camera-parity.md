@@ -45,7 +45,7 @@ unit_calibration = { preset = "daylight", reference = [1893, 1024, 1697] }
 | Olympus, OM System | `fine-weather` | `WB_RBLevels5300K` |
 
 RAWmakase's RAW decoders (`rawmakase-raw`) read these presets from the file
-(`WhiteBalancePresets`), not multipliers derived from the colour matrix; `cameras::neutral_calibration` applies the row. A
+(`WhiteBalancePresets`), not multipliers derived from the color matrix; `cameras::neutral_calibration` applies the row. A
 missing or invalid preset, or a camera without a row, keeps identity rather than
 borrowing another unit's correction, and there is no make-wide fallback.
 

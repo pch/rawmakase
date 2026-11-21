@@ -52,7 +52,7 @@ fn sniff(head: &[u8]) -> Kind {
 }
 
 /// A file's decoder with what both ways of reading it need first: refused
-/// above 150 MP, its orientation, its colour profile when it has one that can
+/// above 150 MP, its orientation, its color profile when it has one that can
 /// be read, and why Develop must not edit it when it must not.
 struct Prepared {
     decoder: Box<dyn ImageDecoder>,
@@ -380,7 +380,7 @@ struct Decoder {
     heic_hdr: bool,
     /// A HEIC's gain map, or why it is refused.
     heic_map: std::result::Result<Option<heic::Map>, Unsupported>,
-    /// For a JPEG XL, how its HDR samples decode by its own colour encoding
+    /// For a JPEG XL, how its HDR samples decode by its own color encoding
     /// ([`jxl::JxlFile::hdr_decoding`]), before its profile's.
     jxl_hdr: Option<HdrDecoding>,
 }
@@ -591,7 +591,7 @@ fn tiff_icc(path: &Path) -> Option<Vec<u8>> {
 /// crate, which checks each chunk's CRC and drops a damaged ancillary one.
 #[derive(Default)]
 struct PngFacts {
-    /// The colour its cICP chunk gives it, when moxcms makes a full-range profile of it.
+    /// The color its cICP chunk gives it, when moxcms makes a full-range profile of it.
     cicp: Option<ColorProfile>,
     /// Its cICP says narrow range, which neither conversion expands.
     narrow: bool,
@@ -600,7 +600,7 @@ struct PngFacts {
 }
 
 /// [`PngFacts`] of the file at `path`; `None` when it isn't a PNG. A PNG whose
-/// chunks don't read is an error, not a PNG without facts: its colour or animation
+/// chunks don't read is an error, not a PNG without facts: its color or animation
 /// would be lost. It reads within the allocation budget `image` decodes it with.
 fn png_facts(path: &Path) -> Result<Option<PngFacts>> {
     use moxcms::{CicpColorPrimaries, CicpProfile, MatrixCoefficients, TransferCharacteristics};
@@ -730,8 +730,8 @@ pub fn decode(path: &Path) -> Result<RgbImage> {
 /// from its embedded ICC profile to linear ProPhoto (D50) in f32, so wide
 /// gamuts and 16-bit levels survive. A file without a readable profile is taken
 /// to be sRGB. Transparency is dropped, as Lightroom ignores it in Develop.
-/// A colour space other than RGB or grey is refused with [`Unsupported`]: an
-/// edit of wrong colours is worse than none. `cancel` is checked between rows.
+/// A color space other than RGB or grey is refused with [`Unsupported`]: an
+/// edit of wrong colors is worse than none. `cancel` is checked between rows.
 /// The EXIF camera and exposure are kept when the file has them.
 ///
 /// This is the file as decoded, not yet the pseudo-scene Develop renders: open it
@@ -855,7 +855,7 @@ pub fn heif_decoder() -> std::result::Result<(), String> {
 
 /// Whether Develop can convert the pixels of the file at `path`, from its header
 /// and embedded ICC profile alone, without decoding them: [`Unsupported`] for a
-/// colour space [`open`] refuses. A file that can't be read is not refused here;
+/// color space [`open`] refuses. A file that can't be read is not refused here;
 /// opening it says what is wrong.
 pub fn probe(path: &Path) -> std::result::Result<(), Unsupported> {
     match prepare(path) {
@@ -872,7 +872,7 @@ pub fn probe(path: &Path) -> std::result::Result<(), Unsupported> {
     }
 }
 
-/// A file's colour space is one Develop does not handle, e.g. "CMYK images".
+/// A file's color space is one Develop does not handle, e.g. "CMYK images".
 #[derive(Debug)]
 pub struct Unsupported(pub String);
 impl std::fmt::Display for Unsupported {
@@ -882,9 +882,9 @@ impl std::fmt::Display for Unsupported {
 }
 impl std::error::Error for Unsupported {}
 
-/// How pixels of type `color` in `profile` are read: RGB, or grey for a colourless
-/// image. `None` for a grey profile on a colour image, which does not describe
-/// its pixels, so they are taken as sRGB, as [`decode`] does. Any other colour
+/// How pixels of type `color` in `profile` are read: RGB, or grey for a colorless
+/// image. `None` for a grey profile on a color image, which does not describe
+/// its pixels, so they are taken as sRGB, as [`decode`] does. Any other color
 /// space is [`Unsupported`].
 fn layout(
     profile: &ColorProfile,
@@ -1105,7 +1105,7 @@ fn linear_pro_photo() -> ColorProfile {
     linear_pro
 }
 
-/// The colour space an embedded preview is in.
+/// The color space an embedded preview is in.
 pub(crate) enum PreviewSpace<'a> {
     Icc(&'a [u8]),
     Srgb,
@@ -1173,9 +1173,9 @@ enum Signal {
 }
 
 /// The conversion for pixels of type `color` in `profile`; RGB, or grey for a
-/// colourless image. As in [`decode`], a profile that does not describe the
-/// pixels (a grey one on a colour image) or that has no transform is taken to be
-/// sRGB. Any other colour space is [`Unsupported`].
+/// colorless image. As in [`decode`], a profile that does not describe the
+/// pixels (a grey one on a color image) or that has no transform is taken to be
+/// sRGB. Any other color space is [`Unsupported`].
 fn to_linear(profile: &ColorProfile, color: image::ColorType) -> Result<ToLinear> {
     let linear_pro = linear_pro_photo();
     let build = |profile: &ColorProfile, layout| {
@@ -1347,7 +1347,7 @@ mod tests {
             .join("../../tests/data/formats")
             .join(name)
     }
-    /// The colour of the upright image at the centre of each 4×4 corner.
+    /// The color of the upright image at the centre of each 4×4 corner.
     fn corners(image: &image::RgbImage) -> [[u8; 3]; 4] {
         let (w, h) = image.dimensions();
         [(1, 1), (w - 2, 1), (1, h - 2), (w - 2, h - 2)].map(|(x, y)| image.get_pixel(x, y).0)
@@ -1893,7 +1893,7 @@ mod tests {
     #[test]
     fn a_flat_ten_bit_420_avif_is_flat_in_every_column() {
         // yuv 0.8.19's NEON bilinear 4:2:0 above 8 bits weights every other
-        // pixel's chroma 22/16, so on ARM a flat colour came out striped.
+        // pixel's chroma 22/16, so on ARM a flat color came out striped.
         let image = decode(&fixture("ten-bit-420.avif")).unwrap();
         let want = [200, 80, 40];
         for (x, y, p) in image.enumerate_pixels() {
@@ -1967,7 +1967,7 @@ mod tests {
     }
 
     /// BT.2020 constant luminance is not the BT.2020 matrix, and isn't
-    /// converted: the image can't be opened rather than shown in wrong colours.
+    /// converted: the image can't be opened rather than shown in wrong colors.
     #[test]
     fn an_avif_in_constant_luminance_is_not_opened() {
         let dir = tempfile::tempdir().unwrap();
@@ -1983,7 +1983,7 @@ mod tests {
 
     /// YCgCo, ICtCp and other matrices `yuv` has no conversion for, and
     /// reserved codes, are not taken as BT.601: the image can't be opened
-    /// rather than shown in wrong colours.
+    /// rather than shown in wrong colors.
     #[test]
     fn an_avif_in_a_matrix_it_does_not_convert_is_not_opened() {
         let dir = tempfile::tempdir().unwrap();
@@ -2119,13 +2119,13 @@ mod tests {
     /// small ones too, and a float TIFF without a profile open in Develop as HDR:
     /// their light is what was encoded, within 16-bit quantisation (exactly in
     /// float), negative channels kept. Their previews show graphics white (203 nits)
-    /// as white, brighter light rolled off rather than clipped, and a colour the same
+    /// as white, brighter light rolled off rather than clipped, and a color the same
     /// in every encoding: HLG's system gamma works on luminance, not on each channel.
     #[test]
     fn hdr_tiffs_open_as_hdr_and_preview_white_as_white() {
         use rawmakase_model::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
         let dir = tempfile::tempdir().unwrap();
-        // Grey, graphics white and two stops above it, neutral; then a colour.
+        // Grey, graphics white and two stops above it, neutral; then a color.
         let pixels = [[0.18f32; 3], [1.; 3], [4.; 3], [0.3, 0.15, 0.08]];
         let check = |path: &Path, what: &str, sixteen: bool| -> Vec<[u8; 3]> {
             assert!(super::probe(path).is_ok(), "{what}");
@@ -2494,7 +2494,7 @@ mod tests {
         };
         use rawmakase_model::color::{inverse, mul};
         let dir = tempfile::tempdir().unwrap();
-        // Graphics white, 4× it, a dark grey, and a saturated colour beyond the
+        // Graphics white, 4× it, a dark grey, and a saturated color beyond the
         // primaries, in linear ProPhoto.
         let light = [[1f32; 3], [4.; 3], [0.05; 3], [0.6, 0.1, 0.02]];
         for (code, hlg) in [(11u8, false), (22, true)] {
@@ -2517,7 +2517,7 @@ mod tests {
             let opened = super::open(&path, Cancel::NEVER).unwrap();
             let got = opened.hdr().expect("an HDR edit").pixels();
             for (i, want) in light.iter().enumerate() {
-                // The colour's channels outside the primaries are clipped at 0 by
+                // The color's channels outside the primaries are clipped at 0 by
                 // the encoding: compare the rest.
                 let back = mul(
                     primaries.to_pro_photo,
@@ -2537,7 +2537,7 @@ mod tests {
         assert_eq!(super::probe(&path).unwrap_err().0, "HDR");
     }
 
-    /// A JPEG XL whose codestream names its colour by enum values decodes by them,
+    /// A JPEG XL whose codestream names its color by enum values decodes by them,
     /// not by the profile jxl-oxide makes of them, which names Display P3 as DCI-P3:
     /// each fixture (scripts/make-hdr-jxl-fixtures.py) opens with the light of the
     /// same signal in a PNG whose cICP names its primaries. That is Display P3 and
@@ -2584,7 +2584,7 @@ mod tests {
     /// PQ in BT.709's or BT.2020's primaries with another white than D65 (DCI's,
     /// illuminant E), which no CICP code names, decodes by its own white. jxl-oxide's
     /// profile names these by the primaries' code alone, and before #1048 they decoded
-    /// as BT.709's and BT.2020's with D65's white: their colours were off, a saturated
+    /// as BT.709's and BT.2020's with D65's white: their colors were off, a saturated
     /// red's channels here by more than 2%.
     #[test]
     fn an_hdr_jpeg_xl_decodes_with_its_own_white() {
@@ -3299,7 +3299,7 @@ mod tests {
         }
         let bytes = std::fs::read(fixture("iso-gain-map.heic")).unwrap();
         // The `tmap` item's data: its version byte, then ISO 21496-1's minimum
-        // version (0), its writer version (0) and its flags (base colour space).
+        // version (0), its writer version (0) and its flags (base color space).
         // Then the base's headroom, 0/1, and the alternate's, 2/1.
         let tmap = [0, 0, 0, 0, 0, 0x40, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2];
         let at = bytes.windows(tmap.len()).position(|w| w == tmap).unwrap();
@@ -3353,7 +3353,7 @@ mod tests {
             let image = decode(&fixture("half-alpha.heic")).unwrap();
             assert_corners_near([image.get_pixel(8, 6).0; 4], [[128, 0, 0]; 4], 6);
         } else if heic_decodes() {
-            // libheif's alpha is dropped: the colour, as an AVIF's.
+            // libheif's alpha is dropped: the color, as an AVIF's.
             for name in ["transparent.heic", "half-alpha.heic"] {
                 assert_eq!(decode(&fixture(name)).unwrap().dimensions(), (16, 12));
             }
@@ -3470,7 +3470,7 @@ mod tests {
 
     /// The system decoder decodes the file whose header was checked, not
     /// whatever is at its path by then: a file replaced in between is not
-    /// decoded with the first one's crop, orientation and colour.
+    /// decoded with the first one's crop, orientation and color.
     #[test]
     fn a_heic_replaced_after_its_header_was_read_decodes_as_first_read() {
         if !heic_decodes() {

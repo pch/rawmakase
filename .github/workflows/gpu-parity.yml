@@ -10,7 +10,7 @@ on:
     paths:
       # The renderer, CPU and GPU (pipeline, shaders, stages).
       - 'crates/rawmakase-engine/src/develop/**'
-      # The model's colour, profile and optics maths both renderers read, and
+      # The model's color, profile and optics maths both renderers read, and
       # what the GPU repeats in its shaders: the lens tables (optics), the
       # clipping overlay and histogram (rendered.rs), profile adjustments
       # (recipe.rs).

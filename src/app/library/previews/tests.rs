@@ -462,7 +462,7 @@ fn a_raw_renders_its_preview_from_a_finished_result() -> anyhow::Result<()> {
         develop_for_preview(&path, &source, 256, Some(&ai), Cancel::new(&cancel))?;
     assert_eq!(shows, PreviewAi::Finished);
     assert_eq!(plain.dimensions(), denoised.dimensions());
-    // Rendered from the flat result: far from the chart's own colours.
+    // Rendered from the flat result: far from the chart's own colors.
     let difference = plain
         .as_raw()
         .iter()

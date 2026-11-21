@@ -7,7 +7,7 @@
 //! model's answer snapped to the photo's edges as it always was: a facade, a hillside, a
 //! sea horizon, the open sky and its clouds. Water vetoes both modes, with priority: a
 //! crown or reeds at a shore get the model's edge where they meet the water, since a
-//! reflection or the water between reeds has the sky's own colours. Under a night sky
+//! reflection or the water between reeds has the sky's own colors. Under a night sky
 //! ([`NIGHT`]) neither mode runs: the sky is as dark as what stands below it.
 //!
 //! The kinds come on the model's quarter grid. A cell counts for a kind only where the
@@ -49,7 +49,7 @@ const EASE: f32 = 0.006;
 const LEAST: f32 = 0.01;
 /// The median luma (sRGB / 255) of the sky the model is sure of, over which the modes
 /// fade in: a night sky is as dark as the trees, bushes and water below it, and the
-/// colours cannot tell them apart, so the model's answer stands there.
+/// colors cannot tell them apart, so the model's answer stands there.
 const NIGHT: (f32, f32) = (0.08, 0.14);
 
 /// Which edge modes [`blend`] ran for a photo, and how long they took with their
@@ -63,7 +63,7 @@ pub(crate) struct Modes {
 }
 
 /// Sky coverage (0..=1) from the model's answer, `p` (0..=1 at `width` x `height`), with
-/// `rgb` and `luma` the photo's colours (sRGB / 255) and luma at the same size: the
+/// `rgb` and `luma` the photo's colors (sRGB / 255) and luma at the same size: the
 /// model's answer snapped to the photo's edges, with the edge modes blended in by the
 /// kinds of horizon in `kinds` (the same frame on its own grid). `cancel` is checked
 /// before the edge is snapped, before each mode and between their passes, and before the
@@ -558,8 +558,8 @@ mod tests {
 
     /// A pale gold finial with a dark bird perched on it, against a grey sky above a
     /// sunlit orange facade. The model doubts both (0.2) and takes them for a pole, a
-    /// lattice; the facade is built. Neither colour lies between the sky's and the
-    /// facade's: they are no sky the colours could find.
+    /// lattice; the facade is built. Neither color lies between the sky's and the
+    /// facade's: they are no sky the colors could find.
     #[test]
     fn a_pale_finial_and_a_dark_bird_against_a_grey_sky_get_no_sky() {
         let finial = |x: usize, y: usize| {
@@ -619,7 +619,7 @@ mod tests {
 
     /// A white plinth on dark grass behind a mesh fence, under a blue sky, the model
     /// sure neither is sky: the fence makes it a lattice. White lies beyond the sky's
-    /// colour from the grass's, off the line between them: no sky either.
+    /// color from the grass's, off the line between them: no sky either.
     #[test]
     fn a_white_plinth_behind_a_fence_gets_no_sky() {
         let mesh = |x: usize, y: usize| x % 14 < 2 || y % 14 < 2;
@@ -961,7 +961,7 @@ mod tests {
     }
 
     /// [`crown_of`] at night: a sky about as dark as the crown and the bushes and river
-    /// below, which the model sees as trees and water. The colours cannot tell them
+    /// below, which the model sees as trees and water. The colors cannot tell them
     /// apart, so the coverage is the model's answer snapped as main snaps it; the same
     /// photo by day gets the sparse mode.
     #[test]

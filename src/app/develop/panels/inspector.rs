@@ -131,7 +131,7 @@ impl Editor {
         if let Some(h) = &hdr
             && self.view.visualize_hdr
         {
-            // Visualize HDR marks each stop's section in the colour it gives the
+            // Visualize HDR marks each stop's section in the color it gives the
             // photo, as Lightroom's histogram does.
             let mut stop = 0.;
             while stop < h.limit {
@@ -212,7 +212,7 @@ impl Editor {
                 Color32::from_white_alpha(14),
             );
         }
-        // Clipping triangles, as Lightroom's: each lit in the colours of the
+        // Clipping triangles, as Lightroom's: each lit in the colors of the
         // channels clipping at its end; a click toggles its warning, hovering
         // shows it while the pointer stays, and J toggles both.
         for (side, ClipTriangle { corner, dir, hit }) in ClipSide::BOTH.into_iter().zip(triangles) {
@@ -1046,7 +1046,7 @@ fn subheading(ui: &mut egui::Ui, text: &str) -> Rect {
     ui.add_space(space::M);
     rect
 }
-/// Where a tool button, such as a colour selector, sits on a [`subheading`]'s
+/// Where a tool button, such as a color selector, sits on a [`subheading`]'s
 /// `row`: at the far right, clear of the heading's text.
 fn subheading_tool_rect(row: Rect) -> Rect {
     Rect::from_center_size(
@@ -1317,7 +1317,7 @@ fn setting_control(
 }
 
 /// Light above white the display shows: the HDR readout's and the highlight
-/// triangle's colour, as Lightroom's.
+/// triangle's color, as Lightroom's.
 const WITHIN_HEADROOM: Color32 = Color32::from_rgb(235, 160, 40);
 /// Light beyond the display's headroom or at the HDR limit.
 const BEYOND_HEADROOM: Color32 = Color32::from_rgb(230, 56, 48);

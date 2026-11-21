@@ -15,7 +15,7 @@ pub struct NeutralCalibration {
 }
 
 /// What kind of file a photo's pixels come from: a camera RAW, or a
-/// rendered JPEG, PNG or TIFF decoded through its colour profile. A rendered file's
+/// rendered JPEG, PNG or TIFF decoded through its color profile. A rendered file's
 /// develop [`CameraImage`] holds its pseudo-scene: linear ProPhoto values whose
 /// Camera Raw default rendering is the file (see `develop::rendered`), not the
 /// file's own values.
@@ -32,7 +32,7 @@ impl Source {
     }
 }
 
-/// Where a RAW's colour matrix (`Metadata::cam_xyz`) comes from. A fact of the
+/// Where a RAW's color matrix (`Metadata::cam_xyz`) comes from. A fact of the
 /// file and the build's camera table, read again on open and never saved.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum MatrixSource {
@@ -50,7 +50,7 @@ pub enum MatrixSource {
     FileTungstenOnly,
     /// The camera's maker notes (Olympus), with its D65 levels.
     MakerNote,
-    /// A monochrome DNG's neutral colour, by definition.
+    /// A monochrome DNG's neutral color, by definition.
     Neutral,
 }
 
@@ -61,9 +61,9 @@ pub enum EmbeddedProfileStatus {
     /// No embedded profile (every RAW but a DNG, and DNGs without one).
     #[default]
     None,
-    /// Profile tags that do not parse as a camera profile, nor as colour matrices.
+    /// Profile tags that do not parse as a camera profile, nor as color matrices.
     Unreadable,
-    /// Colour matrices without a forward matrix: matrix data, not a profile.
+    /// Color matrices without a forward matrix: matrix data, not a profile.
     MatrixOnly,
     /// A profile made for another camera than the photo's.
     OtherCamera,

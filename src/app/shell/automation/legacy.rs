@@ -93,7 +93,7 @@ fn button(note: u8) -> Option<Action> {
         93 => Action::Key(Key::V, command() | SHIFT),
         95 => Action::Key(Key::Z, command()),
         96 => Action::Key(Key::Z, command() | SHIFT),
-        // C1 toggles zoom; C3-C6 are the colour labels red, yellow, green and blue.
+        // C1 toggles zoom; C3-C6 are the color labels red, yellow, green and blue.
         49 => key(Key::Z),
         51 => key(Key::Num6),
         52 => key(Key::Num7),

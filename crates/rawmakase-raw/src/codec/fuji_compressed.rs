@@ -9,7 +9,7 @@
 //! has, per stripe, one quantiser per group, padded to 16 bytes; then the
 //! stripes. Each stripe is a vertical band of 768 columns coded on its own,
 //! most significant bit first, six rows at a time: the rows' samples are
-//! gathered by colour into lines (per group three red, six green and three
+//! gathered by color into lines (per group three red, six green and three
 //! blue; X-Trans lines hold slots the filter fills by interpolation, which
 //! carry no bits), and the lines are coded in pairs (red and green, green and
 //! blue, alternating), even positions leading odd ones by seven. Each sample
@@ -20,7 +20,7 @@
 //! keep a finer step with their own statistics.
 //!
 //! Sources: the public prose description of Fujifilm's lossless RAF
-//! compression on capnfabs.net (stripes, colour lines, iteration order,
+//! compression on capnfabs.net (stripes, color lines, iteration order,
 //! neighbourhoods, Rice coding with gradient contexts), Fujifilm's
 //! description of its compressed modes, and our own measurements, comparing
 //! the decoded samples with LibRaw's recorded output on our test dataset.
@@ -275,7 +275,7 @@ fn error(bits: &mut Msb, k: u32, quant: Quantiser, limit: u32) -> Result<i32> {
     Ok(if code & 1 == 0 { half } else { -half - 1 })
 }
 
-/// The lines of one colour: the last two of the group before, then the
+/// The lines of one color: the last two of the group before, then the
 /// group's, each with a slot either side of its `size` samples.
 struct Lines {
     rows: Vec<Vec<i32>>,
@@ -334,7 +334,7 @@ fn stripe(s: &Stripe, h: &Header, cancel: Cancel<'_>) -> Result<Vec<u16>> {
         for l in &mut lines {
             l.next_group();
         }
-        // How many lines of each colour the group has started.
+        // How many lines of each color the group has started.
         let mut started = [0usize; 3];
         for pair in 0..6 {
             let colours = if pair % 2 == 0 { [0, 1] } else { [1, 2] };

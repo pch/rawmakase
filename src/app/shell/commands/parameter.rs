@@ -12,7 +12,7 @@ const MIXER_CHANNELS: [&str; 3] = ["Hue", "Saturation", "Luminance"];
 pub(in crate::app) enum Param {
     /// A setting with a descriptor (see `model::params`).
     Setting(ParameterId),
-    /// A Color Mixer colour band (0 Red .. 7 Magenta), on the channel the
+    /// A Color Mixer color band (0 Red .. 7 Magenta), on the channel the
     /// panel's Hue / Sat / Lum selector shows.
     Band(usize),
     /// One channel (0 Hue, 1 Saturation, 2 Luminance) of a Color Mixer band,

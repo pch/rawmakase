@@ -332,7 +332,7 @@ pub(crate) mod tests {
 
     const W: u32 = 480;
     const H: u32 = 320;
-    /// A camera's D65 colour matrix (XYZ to camera).
+    /// A camera's D65 color matrix (XYZ to camera).
     const MATRIX: [f64; 9] = [
         0.7888, -0.1902, -0.1011, -0.8106, 1.643, 0.2099, -0.1688, 0.1961, 0.6278,
     ];

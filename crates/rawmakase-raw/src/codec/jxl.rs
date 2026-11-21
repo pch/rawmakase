@@ -22,10 +22,10 @@ const BYTES_PER_SAMPLE: usize = 64;
 const MIN_BYTES: usize = 16 << 20;
 
 /// Decodes a tile of at most `max` (width, height) pixels of `channels`
-/// colour channels. A lossy tile is coded in XYB; it is converted to the
+/// color channels. A lossy tile is coded in XYB; it is converted to the
 /// codestream's RGB here, by matrix in linear light and then onto its curve
 /// (linear, or sRGB's), so values above 1 (an HDR merge's) keep their scale
-/// and colours outside sRGB theirs: jxl-oxide's own conversion would clip or
+/// and colors outside sRGB theirs: jxl-oxide's own conversion would clip or
 /// gamut-map them into 0–1.
 pub(crate) fn decode(data: &[u8], max: [usize; 2], channels: usize) -> Result<Tile> {
     let limit = max[0]

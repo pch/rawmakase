@@ -104,8 +104,8 @@ pub struct Enhanced {
     /// The HSV look table; camera-matching looks with an RGB table may have none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) table: Option<Table>,
-    /// The RGB table of creative and camera-matching looks, which the colour stage
-    /// applies after the colour mixer (see `develop::pipeline`).
+    /// The RGB table of creative and camera-matching looks, which the color stage
+    /// applies after the color mixer (see `develop::pipeline`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) rgb: Option<RgbLook>,
     pub(super) curve: Box<CurveLut>,
@@ -115,7 +115,7 @@ pub struct Enhanced {
     /// them refuse a look that has them rather than render it without.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) channels: Option<Box<[CurveLut; 3]>>,
-    /// Exposure, Saturation, colour mixer, parametric curve, split toning and
+    /// Exposure, Saturation, color mixer, parametric curve, split toning and
     /// vignette settings the look carries.
     #[serde(default, skip_serializing_if = "LookSettings::is_default")]
     pub settings: LookSettings,

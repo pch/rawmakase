@@ -1,6 +1,6 @@
 //! Olympus and OM Digital Solutions maker notes: white balance as shot and
 //! its presets, black level and bit depth, the default crop and aspect
-//! ratio and the camera's colour matrix, from the ImageProcessing directory
+//! ratio and the camera's color matrix, from the ImageProcessing directory
 //! (0x2040), the older compacts' RawInfo (0x3000) or the main directory of
 //! older notes; the lens's name (Equipment, 0x2010) and the embedded JPEGs
 //! (the main directory's thumbnail, CameraSettings' preview).
@@ -12,7 +12,7 @@
 //!
 //! Sources: ExifTool's Olympus tag documentation (the note's headers, the
 //! ImageProcessing directory's WB_RBLevels 0x0100 (red, blue and the two
-//! greens' levels) and their colour temperature presets 0x0102–0x010D,
+//! greens' levels) and their color temperature presets 0x0102–0x010D,
 //! ColorMatrix 0x0200, BlackLevel2 0x0600, ValidBits 0x0611,
 //! CropLeft/Top/Width/Height 0x0612–0x0615, AspectRatio 0x1112; Equipment's
 //! LensModel 0x0203; CameraSettings' PreviewImageStart and Length; RawInfo
@@ -44,7 +44,7 @@ const PREVIEW: [u16; 2] = [0x0101, 0x0102];
 const WB_LEVELS: u16 = 0x0100;
 const PROCESSING_PRESETS: [u16; 3] = [0x010a, 0x010c, 0x010d];
 const RAW_INFO_PRESETS: [u16; 3] = [0x0122, 0x0131, 0x0120];
-/// The camera's own colour matrix: camera to its output RGB, of white
+/// The camera's own color matrix: camera to its output RGB, of white
 /// balanced data, nine signed 16-bit values (rows summing to about 256).
 const COLOR_MATRIX: u16 = 0x0200;
 /// The levels of the camera's own D65 white balance: ImageProcessing's 6600
@@ -86,11 +86,11 @@ pub(crate) struct Notes {
     pub aspect: Option<[u32; 2]>,
     /// The embedded JPEGs: offset from the TIFF header and length.
     pub previews: Vec<(u64, u64)>,
-    /// The camera's colour matrix, white balanced camera to sRGB, rows
+    /// The camera's color matrix, white balanced camera to sRGB, rows
     /// red, green, blue, as the note writes it (unscaled).
     pub color_matrix: Option<[[f64; 3]; 3]>,
     /// The red, green and blue levels of the camera's own D65 white
-    /// balance, which the colour matrix is of.
+    /// balance, which the color matrix is of.
     pub daylight: Option<[f32; 3]>,
     /// CameraSettings' ColorSpace (0x0507): 0 sRGB, 1 Adobe RGB (2, ProPhoto, is
     /// not a JPEG's).

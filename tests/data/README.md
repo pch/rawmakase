@@ -20,7 +20,7 @@ message). No camera data or photos.
 (top-left, top-right, bottom-left, bottom-right) on grey. Metadata fixtures carry Make
 "Fixture", Model "Synthetic 1", DateTimeOriginal 2024:05:04 10:21:33 and the XMP title
 "Fixture title". Orientation fixtures: AVIF `irot`/`imir`, WebP and JXL EXIF Orientation 6.
-`pq.*` use the PQ transfer (HDR), `animated.*` have two frames, `tiled.avif` is a 2×2 grid of 64×64 cells (MIAF forbids smaller tiles). `cropped.avif` has a clean aperture (`clap`), an essential property RAWmakase does not read. `split-exif.avif` is `metadata.avif` with its Exif item stored in two `iloc` extents. `ten-bit-420.avif` is one flat colour, (200, 80, 40), in 10-bit 4:2:0.
+`pq.*` use the PQ transfer (HDR), `animated.*` have two frames, `tiled.avif` is a 2×2 grid of 64×64 cells (MIAF forbids smaller tiles). `cropped.avif` has a clean aperture (`clap`), an essential property RAWmakase does not read. `split-exif.avif` is `metadata.avif` with its Exif item stored in two `iloc` extents. `ten-bit-420.avif` is one flat color, (200, 80, 40), in 10-bit 4:2:0.
 
 The HEIC fixtures are drawn by `python3 scripts/make-heic-fixtures.py tests/data/formats` (Pillow and
 `pillow-heif`, whose libheif and x265 versions the script prints for the commit message), from the
@@ -38,7 +38,7 @@ The Ultra HDR fixtures are written by libultrahdr's `ultrahdr_app`, from renditi
 `python3 scripts/make-gain-map-fixtures.py tests/data/formats` (the script prints libultrahdr's
 version and the decoded pixels the decoder test checks). `ultrahdr.jpg` and
 `ultrahdr-quarter-map.jpg` are 64×48 ISO 21496-1 gain-map JPEGs: a Display P3 base with a
-three-channel map in the base's colour space, the base's size and a quarter of it (16×12). The
+three-channel map in the base's color space, the base's size and a quarter of it (16×12). The
 HDR rendition is a ramp to 8× SDR white; the SDR one compresses each channel differently, so
 the map's channels differ. Made with libultrahdr 2.0.2.
 
@@ -46,7 +46,7 @@ The HDR HEIC fixtures are written by libheif's `heif-enc` (x265) from a 16-bit P
 `python3 scripts/make-hdr-heic-fixtures.py tests/data/formats`. `hdr-pq.heic`, `hdr-hlg.heic`,
 `hdr-pq-p3.heic` and `hdr-pq-dci.heic` are 64×32: eight flat 16×16 patches of known 10-bit
 signal (the script's `PATCHES`, repeated in the decoder test), deep shadow to highlights and
-saturated colours, in BT.2020 primaries (PQ and HLG), Display P3 (PQ) or SMPTE RP 431-2's
+saturated colors, in BT.2020 primaries (PQ and HLG), Display P3 (PQ) or SMPTE RP 431-2's
 DCI-P3 with its own white (PQ), BT.2020's matrix, full range, 4:2:0.
 `hdr-pq-icc.heic` is the PQ signal with no `nclx`, its transfer named only by the `cicp` tag of a
 minimal ICC v4 profile the script writes (BT.2020 colorants, linear curves), and

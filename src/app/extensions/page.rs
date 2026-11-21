@@ -1519,7 +1519,7 @@ fn flush<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     inner
 }
 
-/// A fact's name in the install sheet, in the form rows' colour.
+/// A fact's name in the install sheet, in the form rows' color.
 fn fact(ui: &mut egui::Ui, name: &str) {
     ui.label(egui::RichText::new(name).color(theme::palette(ui.ctx()).tone(Tone::SECONDARY)));
 }

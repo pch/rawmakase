@@ -31,7 +31,7 @@ enum Command {
     /// Import Lightroom DCP and look XMP profiles and .cube and HaldCLUT .png LUTs
     /// (as looks), or the folders holding them, into RAWmakase's profile library.
     ImportProfiles {
-        /// The colour space the LUTs expect, as Camera Raw's Create Profile
+        /// The color space the LUTs expect, as Camera Raw's Create Profile
         /// asks; keep sRGB unless the LUT's maker says otherwise.
         #[arg(long, value_enum, default_value_t = LutSpace::Srgb)]
         lut_space: LutSpace,
@@ -171,7 +171,7 @@ enum Command {
         floats: Option<PathBuf>,
     },
     /// Print each file's half-size check as a line of JSON: RAWmakase's
-    /// half-size decode against its full decode reduced (colour, detail) and
+    /// half-size decode against its full decode reduced (color, detail) and
     /// its time over the full develop's.
     HalfCheck {
         #[arg(required = true, num_args = 1..)]

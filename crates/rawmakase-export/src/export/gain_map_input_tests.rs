@@ -82,7 +82,7 @@ fn luminance(p: [f32; 3]) -> f32 {
 ///   them.
 ///
 /// RAWmakase's maps are single-channel, so they bring back the master's luminance.
-/// The colour is the base's.
+/// The color is the base's.
 fn round_trip(format: Format, median: f32, worst: f32) -> Result<()> {
     let dir = tempfile::tempdir()?;
     let image = synthetic(96, 48);
@@ -435,8 +435,8 @@ fn a_malformed_gain_map_jpeg_xl_is_refused_and_shows_its_base() -> Result<()> {
         b
     };
     let alternate = {
-        // A colour encoding for the alternate rendition, in a map that says it
-        // applies in the alternate's colour space.
+        // A color encoding for the alternate rendition, in a map that says it
+        // applies in the alternate's color space.
         let mut m = metadata();
         m[4] &= !0x40;
         let mut b = vec![0];
@@ -465,9 +465,9 @@ fn a_malformed_gain_map_jpeg_xl_is_refused_and_shows_its_base() -> Result<()> {
             "damaged gain-map",
         ),
         (
-            "a map in the alternate's colour space",
+            "a map in the alternate's color space",
             alternate,
-            "alternate-colour gain-map",
+            "alternate-color gain-map",
         ),
     ];
     for (what, bundle, reason) in cases {

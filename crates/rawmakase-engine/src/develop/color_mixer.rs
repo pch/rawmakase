@@ -136,7 +136,7 @@ pub(crate) struct HdrFactors {
 pub(crate) enum Lookup<'a> {
     /// At the color's own value, clamped to 1: the grids' measured domain.
     Sdr,
-    /// An HDR master's, as Camera Raw 18.7 renders HDR (docs/hdr.md#the-colour-stage):
+    /// An HDR master's, as Camera Raw 18.7 renders HDR (docs/hdr.md#the-color-stage):
     /// hue, saturation and value changes looked up at the color's value up to
     /// [`HDR_VALUE`], and the same change above it, so a color keeps them at any
     /// brightness. The value factors Vibrance makes (the slice, one log2 factor per
@@ -157,7 +157,7 @@ pub(crate) enum Lookup<'a> {
 pub(crate) const HDR_VALUE: f32 = 0.2;
 /// The value from which an HDR master's Vibrance value factors fade, linearly, to
 /// none at graphics white. Camera Raw's HDR renders apply them in full at 0.5 and not
-/// from white up (Vibrance +100: value ×1.06 at 0.5, ×1.01 at 1 to 8 on colours of
+/// from white up (Vibrance +100: value ×1.06 at 0.5, ×1.01 at 1 to 8 on colors of
 /// saturation 0.3).
 pub(crate) const HDR_FADE: f32 = 0.5;
 /// The value up to which an HDR master looks band Luminance's changes up at the
@@ -169,38 +169,38 @@ pub(crate) const HDR_LUMINANCE_VALUE: f32 = 0.5;
 /// The channel level from which an HDR master's band Luminance fades, linearly, to
 /// none at graphics white. Camera Raw 18.7 changes each channel below about white and
 /// not the ones above it: Luminance +100 of every band scales value by 1.67 at 0.5 and
-/// by 1.00 from 1 to 8, and turns a colour at white almost gray. Fitted with
+/// by 1.00 from 1 to 8, and turns a color at white almost gray. Fitted with
 /// [`HDR_LUMINANCE_VALUE`] on synthetic patches (12 hues, saturations 0.3 to 0.9, 0.2
 /// to 3 times white, ±50 and ±100, a linear and the ACR3 profile curve; fades from 0.5
 /// to 0.7 and lookup values from 0.4 to 0.6 score alike).
 pub(crate) const HDR_LUMINANCE_FADE: f32 = 0.6;
-/// How much stronger negative band Luminance is in an HDR master on a colour whose
+/// How much stronger negative band Luminance is in an HDR master on a color whose
 /// brightest channel's scene level is at white, growing from none at
 /// [`HDR_LUMINANCE_DARKEN_FROM`]. Camera Raw 18.7's HDR Luminance −100 darkens bright
-/// colours just above white more than the SDR grids' change faded by channel gives
+/// colors just above white more than the SDR grids' change faded by channel gives
 /// (docs/records/hdr-stage1-results.md#band-luminance).
 pub(crate) const HDR_LUMINANCE_DARKEN: f32 = 0.2;
 pub(crate) const HDR_LUMINANCE_DARKEN_FROM: f32 = 0.5;
-/// How much stronger positive band Luminance is in an HDR master on a colour whose
+/// How much stronger positive band Luminance is in an HDR master on a color whose
 /// scene luminance has reached [`HDR_LUMINANCE_FADE`], from none at
 /// [`HDR_LUMINANCE_LIFT_FROM`], in proportion to how far the profile's curve brightens
-/// the colour, in full from [`HDR_LUMINANCE_LIFT_CURVE`] stops. Camera Raw 18.7's HDR
-/// Luminance +100 lifts colours a stop or two under white 1.3–1.6 times as much as the
+/// the color, in full from [`HDR_LUMINANCE_LIFT_CURVE`] stops. Camera Raw 18.7's HDR
+/// Luminance +100 lifts colors a stop or two under white 1.3–1.6 times as much as the
 /// SDR grids give on photos through Adobe Standard; through a linear profile, which
 /// leaves the scene as it is, its HDR and SDR changes agree
 /// (docs/records/hdr-stage1-results.md#band-luminance).
 pub(crate) const HDR_LUMINANCE_LIFT: f32 = 0.5;
-/// The colour's scene luminance (linear ProPhoto) from which [`HDR_LUMINANCE_LIFT`]
+/// The color's scene luminance (linear ProPhoto) from which [`HDR_LUMINANCE_LIFT`]
 /// grows.
 pub(crate) const HDR_LUMINANCE_LIFT_FROM: f32 = 0.35;
-/// How far, in stops, the profile's curve brightens a colour's luminance for the full
+/// How far, in stops, the profile's curve brightens a color's luminance for the full
 /// [`HDR_LUMINANCE_LIFT`].
 pub(crate) const HDR_LUMINANCE_LIFT_CURVE: f32 = 0.5;
 /// ProPhoto RGB's luminance weights.
 const PRO_LUMA: [f32; 3] = [0.2880402, 0.7118741, 0.0000857];
 
-/// The share of [`HDR_LUMINANCE_LIFT`] a colour takes: `scene`, its channels' scene
-/// levels, and `rendered`, the same colour after the profile's curve, both linear
+/// The share of [`HDR_LUMINANCE_LIFT`] a color takes: `scene`, its channels' scene
+/// levels, and `rendered`, the same color after the profile's curve, both linear
 /// ProPhoto.
 pub(crate) fn hdr_luminance_lift(scene: [f32; 3], rendered: [f32; 3]) -> f32 {
     let luma = |q: [f32; 3]| q[0] * PRO_LUMA[0] + q[1] * PRO_LUMA[1] + q[2] * PRO_LUMA[2];
@@ -292,7 +292,7 @@ impl ColorMixer {
     pub(crate) fn apply(&self, rgb: [f32; 3]) -> [f32; 3] {
         self.apply_at(rgb, None)
     }
-    /// As [`Self::apply`], in an HDR master whose pixel's scene colour (linear
+    /// As [`Self::apply`], in an HDR master whose pixel's scene color (linear
     /// ProPhoto, before the profile's curve) is `scene`: band Luminance fades by it
     /// ([`Lookup::Hdr`]).
     pub(crate) fn apply_at(&self, rgb: [f32; 3], scene: Option<[f32; 3]>) -> [f32; 3] {
@@ -381,7 +381,7 @@ pub(crate) fn tables_in(delta: &[[f32; 3]], rgb: [f32; 3], lookup: Lookup) -> [f
                 }
             })
         });
-        // Darkening grows with the colour's brightest channel towards white, and
+        // Darkening grows with the color's brightest channel towards white, and
         // brightening with its luminance where the profile's curve brightens it.
         let top = levels.into_iter().fold(0f32, f32::max);
         let luminance = if luminance < 0. {
@@ -605,8 +605,8 @@ mod tests {
         );
     }
     /// In an HDR master band Luminance changes each channel by its scene level, as
-    /// Camera Raw 18.7 renders it (docs/hdr.md#the-colour-stage): fully up to
-    /// [`HDR_LUMINANCE_FADE`], not at all from white up, so a colour whose channels
+    /// Camera Raw 18.7 renders it (docs/hdr.md#the-color-stage): fully up to
+    /// [`HDR_LUMINANCE_FADE`], not at all from white up, so a color whose channels
     /// are all above white keeps its value and one at white turns toward gray.
     #[test]
     fn hdr_band_luminance_fades_out_by_each_channels_level() {
@@ -635,9 +635,9 @@ mod tests {
         let out = pro(mixer.apply(rgb(white)));
         assert!((out[0] - 1.).abs() < 1e-4, "{out:?}");
         assert!(out[1] > 0.45 && out[2] > 0.22, "{out:?}");
-        // The fade reads the scene's level: a colour that a brightening curve took from
+        // The fade reads the scene's level: a color that a brightening curve took from
         // a scene below HDR_LUMINANCE_FADE up to white takes the full change, as the
-        // colour at that scene level would.
+        // color at that scene level would.
         let full = pro(mixer.apply_at(rgb(white), Some(white.map(|v| v * 0.5))));
         let gain = |q: [f32; 3]| q[0] / white[0];
         assert!(
@@ -645,7 +645,7 @@ mod tests {
             "{full:?} {out:?}"
         );
     }
-    /// Positive band Luminance in an HDR master is stronger on a colour the profile's
+    /// Positive band Luminance in an HDR master is stronger on a color the profile's
     /// curve brightens from a scene luminance near [`HDR_LUMINANCE_FADE`], as Camera Raw
     /// 18.7's HDR render of photos through Adobe Standard is; through a linear profile
     /// (scene and rendered alike) it is the SDR grids' change faded by channel, as on
@@ -665,7 +665,7 @@ mod tests {
         let mixer = ColorMixer::new(&r).unwrap();
         let pro = |rgb: [f32; 3]| mul(crate::camera_profiles::RGB_TO_PRO, rgb);
         let rgb = |pro: [f32; 3]| mul(crate::camera_profiles::PRO_TO_RGB, pro);
-        // A warm colour at a scene luminance of about half of white: rendered by a
+        // A warm color at a scene luminance of about half of white: rendered by a
         // linear profile as it is, and by a curve a stop brighter. The curved one's
         // channels gain more (their fade is the same, read from the same scene).
         let scene = [0.55, 0.5, 0.45];
@@ -687,7 +687,7 @@ mod tests {
         );
     }
     /// Below [`HDR_LUMINANCE_VALUE`] and [`HDR_LUMINANCE_FADE`] band Luminance renders
-    /// an HDR master's colour exactly as SDR does, its hue and saturation changes too:
+    /// an HDR master's color exactly as SDR does, its hue and saturation changes too:
     /// Camera Raw's HDR and SDR renders of a Luminance edit agree there (the Nikon Z5 II
     /// photo's, to 0.006 stop median below 0.5).
     #[test]

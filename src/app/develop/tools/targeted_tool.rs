@@ -683,7 +683,7 @@ mod tests {
             );
             output.textures_delta.clear();
         };
-        // The keymap pins cover the other tools' shortcuts and a colour photo.
+        // The keymap pins cover the other tools' shortcuts and a color photo.
         let all = egui::Modifiers::COMMAND | egui::Modifiers::ALT | egui::Modifiers::SHIFT;
         e.document.edit.setup_mut().effects.monochrome = true;
         press(&mut e, egui::Key::G, all);

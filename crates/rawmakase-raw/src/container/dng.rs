@@ -1,6 +1,6 @@
 //! Adobe DNG (DNG Specification 1.7): the raw image directory, its tiles or
 //! strips and their compression, the CFA layout, levels and linearization, the
-//! active area and default crop, the colour tags, and the data opcodes of
+//! active area and default crop, the color tags, and the data opcodes of
 //! OpcodeList1 and 2 (`opcodes`). The raw image is a CFA mosaic of one sample
 //! per pixel, or linear raw (demosaiced camera RGB, as phones' computational
 //! DNGs, Adobe DNG Converter's linear DNGs and Lightroom's HDR and panorama
@@ -241,7 +241,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
             .filter(|m| m.len() == 9 && m.iter().all(|v| v.is_finite()))
     };
     // Or AsShotWhiteXY: the white's camera neutral through the calibrations
-    // at its colour temperature (`as_shot_neutral`).
+    // at its color temperature (`as_shot_neutral`).
     if !t.ifds[0].has(50728)
         && let Some(xy) = t
             .reals(ifd0, 50729, 2)
@@ -459,7 +459,7 @@ fn adobe_record(private: &[u8], name: [u8; 4]) -> Option<&[u8]> {
     None
 }
 
-/// The colour temperature of an Exif LightSource code a calibration names
+/// The color temperature of an Exif LightSource code a calibration names
 /// (Exif 2.3's illuminants: CIE standard illuminants A, B, C, D50–D75 and ISO
 /// studio tungsten at their correlated temperatures, the others at the
 /// middle of their ranges); `None` for unknown and other light.
@@ -488,7 +488,7 @@ fn illuminant_temperature(code: u32) -> Option<f64> {
 
 /// The weight of the first of two calibrations of `illuminants` at a white of
 /// `temperature`, as the DNG Specification's "Mapping Camera Color Space to
-/// CIE XYZ Space" interpolates them: by inverse colour temperature between
+/// CIE XYZ Space" interpolates them: by inverse color temperature between
 /// them, the nearer one's beyond them; the first with an illuminant of
 /// unknown temperature.
 fn calibration_weight(illuminants: [Option<u32>; 2], temperature: f64) -> f64 {
@@ -510,9 +510,9 @@ fn mix(values: &[Option<Vec<f64>>; 2], g: f64) -> Option<Vec<f64>> {
     }
 }
 
-/// Whether the only colour matrix is of a tungsten calibration (Standard
+/// Whether the only color matrix is of a tungsten calibration (Standard
 /// Light A, tungsten, ISO studio tungsten): the D65 matrix is then that one,
-/// its colour hardly a daylight photo's.
+/// its color hardly a daylight photo's.
 fn tungsten_only(matrices: &[Option<Vec<f64>>; 2], illuminants: [Option<u32>; 2]) -> bool {
     let only = match matrices {
         [Some(_), None] => illuminants[0],
@@ -535,7 +535,7 @@ fn d65_matrix(
     }))
 }
 
-/// A DNG's colour calibration: ColorMatrix1 and 2, CameraCalibration1 and 2,
+/// A DNG's color calibration: ColorMatrix1 and 2, CameraCalibration1 and 2,
 /// AnalogBalance and the CalibrationIlluminants.
 struct Calibration {
     matrices: [Option<Vec<f64>>; 2],
@@ -548,7 +548,7 @@ impl Calibration {
     /// The camera neutral of the white of chromaticity `xy` (DNG
     /// Specification, "Mapping Camera Color Space to CIE XYZ Space"):
     /// AnalogBalance × CameraCalibration × ColorMatrix, both interpolated at
-    /// the white's correlated colour temperature, times its XYZ.
+    /// the white's correlated color temperature, times its XYZ.
     fn as_shot_neutral(&self, [x, y]: [f64; 2]) -> Option<[f64; 3]> {
         let g = calibration_weight(self.illuminants, crate::color::temperature([x, y])?);
         let cm = mix(&self.matrices, g)?;
@@ -635,7 +635,7 @@ fn layout(
     Ok(([width, rows], tiles))
 }
 
-/// The colour filter over the raw image from CFARepeatPatternDim, CFAPattern
+/// The color filter over the raw image from CFARepeatPatternDim, CFAPattern
 /// and CFAPlaneColor, from the active area's top-left corner (the visible
 /// area's). The green sharing a row with blue is the second green (3).
 fn cfa(t: &TiffFile, ifd: &Ifd) -> Result<Cfa> {
@@ -657,7 +657,7 @@ fn cfa(t: &TiffFile, ifd: &Ifd) -> Result<Cfa> {
             .get(usize::from(p))
             .ok_or_else(|| corrupt("DNG CFA plane"))?;
         if c > 2 {
-            return Err(Error::Unsupported("DNG with a four-colour CFA".into()));
+            return Err(Error::Unsupported("DNG with a four-color CFA".into()));
         }
         colors.push(c);
     }
@@ -1257,7 +1257,7 @@ fn fp24(b: [u8; 3]) -> f32 {
 /// positions before, and hold the samples' bytes as planes, most significant
 /// first; the result is big-endian samples. The factor is 1 for predictor 3,
 /// 2 for 34894 (FloatingPointX2: HDRMerge's mosaics, whose differences are
-/// two bytes apart, the same colour's in a Bayer row) and 4 for 34895
+/// two bytes apart, the same color's in a Bayer row) and 4 for 34895
 /// (FloatingPointX4).
 fn unpredict_float(
     bytes: &mut [u8],
@@ -1680,7 +1680,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// Google's HDR+ states no colour space for its preview (issue 1211): it
+    /// Google's HDR+ states no color space for its preview (issue 1211): it
     /// is sRGB. Another writer that states none still states none.
     #[test]
     fn an_hdr_plus_preview_is_srgb() {
@@ -2081,7 +2081,7 @@ pub(crate) mod tests {
 
     /// Linear raw of one sample (monochrome sensors, film scanners) opens
     /// without a CFA as a monochrome image of one sample a pixel, its levels
-    /// kept as the sensor's. Its colour is neutral whatever the file or the
+    /// kept as the sensor's. Its color is neutral whatever the file or the
     /// camera table says: camera RGB is linear sRGB (an identity to sRGB,
     /// daylight 1) and it has no white balance as shot.
     #[test]

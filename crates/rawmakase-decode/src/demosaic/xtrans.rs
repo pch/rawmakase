@@ -1,46 +1,46 @@
 //! X-Trans demosaicing by directional candidates.
 //!
 //! X-Trans has no regular two-pixel greens, so one isotropic estimate turns fine
-//! periodic detail (louvres, grilles, meshes) into colour moiré. Instead every
+//! periodic detail (louvres, grilles, meshes) into color moiré. Instead every
 //! direction (horizontal, vertical and both diagonals) gets its own full RGB
 //! candidate:
 //!
 //! 1. Green at red/blue sites by interpolating along the direction between the
-//!    nearest greens, corrected by the same-colour curvature along that line.
+//!    nearest greens, corrected by the same-color curvature along that line.
 //! 2. Red and blue from the difference to that direction's green, as on Bayer.
-//! 3. Per pixel, the candidates are blended by how smooth their colour difference
+//! 3. Per pixel, the candidates are blended by how smooth their color difference
 //!    (R − G, B − G) is around it and how little the luminance changes along their
 //!    direction. A correct direction leaves neutral detail neutral; a wrong one
-//!    leaves a colour pattern, which scores badly. Detail runs along the correct
+//!    leaves a color pattern, which scores badly. Detail runs along the correct
 //!    direction, so luminance changes least along it; this decides where every
-//!    candidate's colour is smooth, as on stripes too fine for the red and blue
+//!    candidate's color is smooth, as on stripes too fine for the red and blue
 //!    samples (X100F DSCF8231's tower).
 //!
 //! The image is processed in row bands with a mirrored margin so every window fits.
-//! Stripes too fine for any direction to get their colour right then lose it
+//! Stripes too fine for any direction to get their color right then lose it
 //! (`super::stripes`).
 use super::Cfa;
 use rayon::prelude::*;
 use std::sync::OnceLock;
 
-/// Rows of output per band: a multiple of the colour pattern's rows, so that every
-/// band away from the image's top and bottom has the same colour layout and they
+/// Rows of output per band: a multiple of the color pattern's rows, so that every
+/// band away from the image's top and bottom has the same color layout and they
 /// share one set of [`Side`] tables.
 const BAND: usize = 3 * super::PATTERN;
 const _: () = assert!(BAND.is_multiple_of(super::PATTERN));
 /// Margin around a band: candidates are valid at [`CANDIDATE_EDGE`], then the
 /// luminance change along a direction and its window take one and
-/// [`LUMINANCE_RADIUS`] more (the colour variation's 3×3 window fits within).
+/// [`LUMINANCE_RADIUS`] more (the color variation's 3×3 window fits within).
 const MARGIN: usize = CANDIDATE_EDGE + 1 + LUMINANCE_RADIUS;
 /// Distance from the band edge at which candidates are valid: the green line search,
-/// then the colour difference line search.
+/// then the color difference line search.
 pub(crate) const CANDIDATE_EDGE: usize = (REACH + COLOUR_REACH) as usize;
 /// How far along a line to look for a green.
 const REACH: isize = 4;
 /// How far along a line to look for a red or blue sample. Along a row or column of
-/// X-Trans the same colour is up to five pixels away; with less, lines between two
+/// X-Trans the same color is up to five pixels away; with less, lines between two
 /// such samples took the isotropic fallback across the detail, which turned stripes
-/// about three pixels apart into colour bands.
+/// about three pixels apart into color bands.
 const COLOUR_REACH: isize = 5;
 /// Radius of the window over which luminance change along a direction is summed.
 const LUMINANCE_RADIUS: usize = 2;
@@ -48,10 +48,10 @@ const LUMINANCE_RADIUS: usize = 2;
 const DIRECTIONS: [(isize, isize); 4] = [(1, 0), (0, 1), (1, 1), (1, -1)];
 /// One candidate per direction. An isotropic candidate (greens from all eight
 /// neighbours, #523) is not among them: on fine two-dimensional detail such as a
-/// mesh its colour is smooth but wrong, so it won the blend and brought the moiré
+/// mesh its color is smooth but wrong, so it won the blend and brought the moiré
 /// back (X100F DSCF8231's tower).
 const CANDIDATES: usize = DIRECTIONS.len();
-/// Floor of the colour variation and luminance change measures, in white-normalised
+/// Floor of the color variation and luminance change measures, in white-normalised
 /// units, so that noise on a flat area does not pick a direction.
 const VARIATION_FLOOR: f32 = 1e-3;
 /// Sharpness of the blend: a candidate twice as rough as the smoothest, or whose
@@ -61,7 +61,7 @@ const BLEND_POWER: i32 = 4;
 /// counts them.
 const CLIPPED: f32 = 0.999;
 /// Radius around clipped samples where the blend leaves out luminance change:
-/// there colour differences are wrong, and the candidate it picked along bright
+/// there color differences are wrong, and the candidate it picked along bright
 /// clipped lines, such as neon tubes, turned them green and jagged.
 const CLIP_RADIUS: usize = 2;
 /// Weight of the Hamilton–Adams-style curvature correction of the directional green.
@@ -137,7 +137,7 @@ impl Band {
             (Some((_, g)), None) | (None, Some((_, g))) => (g, g, g),
             (None, None) => return c,
         };
-        // Same-colour curvature along the line, as the Hamilton–Adams correction.
+        // Same-color curvature along the line, as the Hamilton–Adams correction.
         if let (Some((a, ca)), Some((b, cb))) = (along(&sides[0], own), along(&sides[1], own)) {
             est += CURVATURE * (c - (ca * b + cb * a) / (a + b));
         }
@@ -158,7 +158,7 @@ fn band_candidates(
     let band = Band::new(cfa, y0, rows);
     let (pw, ph) = (band.width, band.height);
     let steps = DIRECTIONS.map(|(dx, dy)| dy * pw as isize + dx).into_iter();
-    // Bands whose margin is all inside the image have the same colour layout.
+    // Bands whose margin is all inside the image have the same color layout.
     let inside = y0 >= MARGIN && rows == BAND && y0 + rows + MARGIN <= cfa.height;
     let own;
     let sides = if inside {
@@ -214,13 +214,13 @@ fn band_candidates(
     }
 }
 
-/// Distances from every pixel along `step` to the nearest sample of each colour
+/// Distances from every pixel along `step` to the nearest sample of each color
 /// within [`COLOUR_REACH`] (0 where there is none), so that the interpolation reads
 /// them instead of searching the line for each pixel.
 #[cfg_attr(test, derive(Debug, PartialEq))]
 struct Side {
     step: isize,
-    /// One plane per colour.
+    /// One plane per color.
     distance: [Vec<u8>; 3],
 }
 
@@ -329,7 +329,7 @@ fn candidate(band: &Band, sides: &[Side; 2]) -> Vec<[f32; 3]> {
                     rgb[i][c as usize] = band.raw[i];
                     continue;
                 }
-                // Along the direction, between the nearest samples of the colour on
+                // Along the direction, between the nearest samples of the color on
                 // both sides, interpolating their difference to green.
                 let line = |side: &Side| {
                     let k = side.distance[c as usize][i];

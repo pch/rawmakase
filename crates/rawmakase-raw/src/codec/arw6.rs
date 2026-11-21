@@ -6,7 +6,7 @@
 //! Sources: SMPTE RDD 34:2015 (Picture_info, transmission units, coefficient
 //! coding, the wavelet; see `llvc`); our own measurements against LibRaw's
 //! output on our files (the tile table, the stream and index layout of a
-//! tile, the transmission units' rows and shift, the colour reconstruction)
+//! tile, the transmission units' rows and shift, the color reconstruction)
 //! and Adobe DNG Converter's output on a synthetic file holding every code
 //! (the curve to linear values).
 use super::llvc::{self, Half, Level, Plane};
@@ -667,7 +667,7 @@ pub(crate) mod tests {
     fn decodes_tiles_of_the_lowest_band() {
         // A 256 × 64 tile: a 16 × 4 lowest band of flat 3 × 3 blocks gives
         // their values at the blocks' centres; the mosaic is that value in
-        // every colour where nothing else is coded.
+        // every color where nothing else is coded.
         let (width, height) = (256, 64);
         let (w3, h3) = (16, 4);
         let ll3 = Plane {

@@ -79,7 +79,7 @@ def load_references(dataset, samples):
 
 def write_references(path, recorded, files):
     """One file per line, sorted by SHA-256: LibRaw's half-size and full develop
-    seconds, their ratio and its half-size colour and detail measures, from one
+    seconds, their ratio and its half-size color and detail measures, from one
     run of the last build that linked LibRaw."""
     path.parent.mkdir(parents=True, exist_ok=True)
     about = ("LibRaw's half-size decodes (rawmakase half-check: time over its full develop time, block "

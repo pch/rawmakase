@@ -398,7 +398,7 @@ fn output_job_publishes_the_captured_revision_and_never_clobbers() -> anyhow::Re
     Ok(())
 }
 
-/// An export the path's format can't hold in its colour space is refused before a job
+/// An export the path's format can't hold in its color space is refused before a job
 /// starts, and nothing is written; ProPhoto RGB as TIFF is exported with its profile.
 #[test]
 fn an_output_in_a_colour_space_its_format_cant_hold_is_refused() -> anyhow::Result<()> {

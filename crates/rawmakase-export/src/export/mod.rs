@@ -1,5 +1,5 @@
 //! Atomic JPEG, 16-bit TIFF, PNG and JPEG XL export with the ICC profile of the pixels'
-//! colour space (sRGB, Adobe RGB (1998) or ProPhoto RGB; HDR edits export as HDR TIFF,
+//! color space (sRGB, Adobe RGB (1998) or ProPhoto RGB; HDR edits export as HDR TIFF,
 //! JPEG XL or a gain-map JPEG), the camera's EXIF and the edit as Camera Raw XMP, as
 //! Lightroom embeds them; and editable previews, the linear DNGs Develop edits an
 //! offline photo from ([`editable_preview`]).
@@ -30,7 +30,7 @@ use std::{
 };
 use tempfile::NamedTempFile;
 
-/// An export's pixels: an SDR render in its colour space, or an HDR master encoded
+/// An export's pixels: an SDR render in its color space, or an HDR master encoded
 /// for its HDR output.
 #[derive(Clone)]
 pub enum Pixels {
@@ -172,7 +172,7 @@ pub fn export_with(
     write(path, source, &image, m, options, embed, replace)
 }
 
-/// Exports `image` to `path` with the profile of its colour space.
+/// Exports `image` to `path` with the profile of its color space.
 pub fn export_image(
     path: &Path,
     source: &Path,
@@ -409,7 +409,7 @@ pub fn stage_hdr(
     })
 }
 
-/// [`stage`] of `image` with its colour space's profile and EXIF colour space; a
+/// [`stage`] of `image` with its color space's profile and EXIF color space; a
 /// format that can't hold the space is refused before anything is written.
 pub fn stage_image(
     path: &Path,

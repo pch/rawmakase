@@ -1,4 +1,4 @@
-//! The per-pixel stages: tone, the colour mixer and colour grading, then the finish into sRGB.
+//! The per-pixel stages: tone, the color mixer and color grading, then the finish into sRGB.
 use super::*;
 use crate::develop::effects::EffectsRendering;
 
@@ -48,7 +48,7 @@ pub(super) fn tone_stage(
     profile_stage(scene_stage(scene, clarity_lum, r, lut, pos, local), r)
 }
 /// S1/S2 output and Clarity's fine luminance on the measurement map's basis.
-/// Mask colour and Exposure change the rendered pixel, but must not become detail
+/// Mask color and Exposure change the rendered pixel, but must not become detail
 /// relative to a blur that was measured before those mask adjustments.
 fn scene_input(
     p: [f32; 3],
@@ -88,7 +88,7 @@ fn scene_input(
     };
     (scene, crate::develop::scene_tone::luminance(clarity_scene))
 }
-/// S1: a camera sample's scene colour: white balance (a mask's too), the profile's
+/// S1: a camera sample's scene color: white balance (a mask's too), the profile's
 /// matrix and HueSatMap, and Camera Calibration. Linear, sRGB primaries.
 pub(super) fn scene_color(
     p: [f32; 3],
@@ -113,7 +113,7 @@ pub(super) fn scene_color(
     );
     lut.calibration.apply(color)
 }
-/// S2: Exposure (a mask's and its colour too), in linear Rec.2020. Returns linear
+/// S2: Exposure (a mask's and its color too), in linear Rec.2020. Returns linear
 /// ProPhoto RGB, unclamped: the scene tone stage's input. The black point is the scene
 /// tone stage's, as Camera Raw's does not follow the camera's baseline exposure.
 pub(super) fn exposure_stage(color: [f32; 3], lut: &CurveSet, local: Option<Local>) -> [f32; 3] {
@@ -286,17 +286,17 @@ pub(super) fn color_stage(
         .selection
         .map_or(out, |w| crate::develop::point_color::visualize(out, w))
 }
-/// What follows the colour mixer on linear display RGB: a look's RGB table, colour
+/// What follows the color mixer on linear display RGB: a look's RGB table, color
 /// grading and an HDR edit's SDR rendition sliders.
 fn toning(rgb: [f32; 3], lut: &CurveSet) -> [f32; 3] {
-    // A look's RGB table: after the colour mixer, before colour grading, as Camera
+    // A look's RGB table: after the color mixer, before color grading, as Camera
     // Raw 18.7 applies it (also after the user's tone curves and Saturation).
     let rgb = lut.rgb_table.as_ref().map_or(rgb, |t| t.apply(rgb));
     let rgb = lut.grade.as_ref().map_or(rgb, |g| g.apply(rgb));
     // The SDR rendition's sliders change the finished rendition's luminance.
     lut.sdr_rendition.as_ref().map_or(rgb, |t| t.apply(rgb))
 }
-/// The Oklab colour controls after the measured mixer: the hue angle round trip and
+/// The Oklab color controls after the measured mixer: the hue angle round trip and
 /// Defringe, with the lightness clipped to 0–1.
 fn adjust_color(mut lab: [f32; 3], r: &Recipe) -> [f32; 3] {
     // HSL, Saturation and Vibrance render in the measured color mixer; Defringe works
@@ -310,9 +310,9 @@ fn adjust_color(mut lab: [f32; 3], r: &Recipe) -> [f32; 3] {
     r.effects.defringe_color(lab, hue)
 }
 /// [`color_stage`]'s end for a black & white render. Camera Raw 18.7 converts the
-/// colour to gray first and then applies a look's RGB table and colour grading to the
-/// gray, so a colour table or grading tones it (#1187;
-/// docs/color-mixer.md#black--white). The colour the gray is mixed from has a
+/// color to gray first and then applies a look's RGB table and color grading to the
+/// gray, so a color table or grading tones it (#1187;
+/// docs/color-mixer.md#black--white). The color the gray is mixed from has a
 /// mask's Hue and Saturation and Defringe, as before.
 fn black_white_stage(
     rgb: [f32; 3],
@@ -342,7 +342,7 @@ fn black_white_stage(
     let out = finish_color_in(lab, lut.space);
     selection.map_or(out, |w| crate::develop::point_color::visualize(out, w))
 }
-/// The colour stage's end, after the colour controls and Defringe: each channel
+/// The color stage's end, after the color controls and Defringe: each channel
 /// clipped into sRGB on its own, as Camera Raw's conversion does
 /// (docs/color-pipeline.md#out-of-gamut-colors). Returns encoded sRGB.
 pub(super) fn finish_color(lab: [f32; 3]) -> [f32; 3] {
@@ -383,7 +383,7 @@ pub(crate) enum PixelOutput {
     /// Linear ProPhoto RGB leaving the scene tone stage, before the profile's look and
     /// tone curve: where Camera Raw's renders of a linear-profile DNG compare.
     SceneOutput,
-    /// The finished colour with the DNG exposure ramp in place of the scene tone stage:
+    /// The finished color with the DNG exposure ramp in place of the scene tone stage:
     /// the render Auto tone's fit measured (docs/tone-controls.md#auto), kept so Auto
     /// gives the same results.
     AutoBasis,

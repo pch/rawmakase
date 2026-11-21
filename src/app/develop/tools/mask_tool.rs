@@ -62,7 +62,7 @@ impl Default for Brush {
     }
 }
 /// Where the next shape goes, and what makes it: a drag for gradients, a click for
-/// colour ranges.
+/// color ranges.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Pending {
     kind: Kind,
@@ -543,7 +543,7 @@ impl Editor {
         // Without a shape to edit or create, clicks and drags pan and zoom as usual.
         pending.is_some() || shape.is_some() || on_handle
     }
-    /// A click on the photo: select a mask by its pin, sample a colour or tone for a
+    /// A click on the photo: select a mask by its pin, sample a color or tone for a
     /// range, or paint a single brush dab.
     fn mask_click(
         &mut self,
@@ -682,7 +682,7 @@ impl Editor {
         }
         None
     }
-    /// Oklab of the photo's developed colour, without masks, at screen position `pos`
+    /// Oklab of the photo's developed color, without masks, at screen position `pos`
     /// over the photo drawn in `rect`: a 3×3 average of a small full-resolution render.
     fn developed_lab(&self, pos: Pos2, rect: Rect) -> Option<[f32; 3]> {
         let im = self.document.full()?;
@@ -796,7 +796,7 @@ impl Editor {
         let what = match pending.map(|p| p.kind) {
             Some(Kind::Linear) => "Drag on the photo to draw the gradient",
             Some(Kind::Radial) => "Drag on the photo from the centre outward",
-            Some(_) => "Click the photo to pick a colour",
+            Some(_) => "Click the photo to pick a color",
             None => "",
         };
         hint(ui, what);
@@ -1075,7 +1075,7 @@ impl Editor {
             );
             indented(ui, |ui| {
                 ui.checkbox(&mut b.auto_mask, "Auto Mask")
-                    .on_hover_text("Keep the brush within areas like the colour under its centre");
+                    .on_hover_text("Keep the brush within areas like the color under its centre");
             });
             hint(
                 ui,
@@ -1284,7 +1284,7 @@ fn anchor(m: &MaskGroup) -> Option<[f32; 2]> {
         _ => None,
     })
 }
-/// `shape` moved by `delta` (image space); colour and tone ranges and bitmaps stay.
+/// `shape` moved by `delta` (image space); color and tone ranges and bitmaps stay.
 fn shifted(shape: &MaskShape, delta: [f32; 2]) -> MaskShape {
     let shift = |p: [f32; 2]| [p[0] + delta[0], p[1] + delta[1]];
     let mut shape = shape.clone();

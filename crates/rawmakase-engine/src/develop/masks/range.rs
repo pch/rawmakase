@@ -1,4 +1,4 @@
-//! Color Range and Luminance Range components: weights from the developed colour of
+//! Color Range and Luminance Range components: weights from the developed color of
 //! each pixel, before local adjustments, as Lightroom's range masks select.
 use crate::color::srgb_decode;
 use crate::rendered::Rendered;
@@ -23,8 +23,8 @@ pub fn oklab(p: [f32; 3]) -> [f32; 3] {
     ]
 }
 /// How close `lab` is to any sample: 1 near a sample, fading to 0. Chromaticity
-/// (Oklab a and b relative to lightness, which stay put when a colour is darker)
-/// counts most and lightness a little, so a colour selects in shadow and light alike.
+/// (Oklab a and b relative to lightness, which stay put when a color is darker)
+/// counts most and lightness a little, so a color selects in shadow and light alike.
 /// `amount` is Lightroom's Refine (0–1): higher selects a wider range.
 pub(crate) fn color_weight(samples: &[[f32; 3]], amount: f32, lab: [f32; 3]) -> f32 {
     let tolerance = 0.04 + amount * 0.3;

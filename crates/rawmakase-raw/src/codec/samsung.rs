@@ -20,11 +20,11 @@
 //! Every 16 samples a prediction mode, and (unless the options fix them)
 //! four code widths, each from a 2-bit code relative to the width two
 //! groups back of the same kind (or a new 4-bit width). A tile's samples
-//! are its columns interleaved by colour; each is the prediction plus a
+//! are its columns interleaved by color; each is the prediction plus a
 //! signed difference `d` times `2m + 1`, plus `m`. Prediction mode 7 (and
-//! the first two rows) predict from the same colour two columns left (the
+//! the first two rows) predict from the same color two columns left (the
 //! initial value at a row's start); the others from the mean of two
-//! samples of the same colour above, at offsets the mode picks. Samples are
+//! samples of the same color above, at offsets the mode picks. Samples are
 //! kept within the bit depth's range.
 //!
 //! Sources: written from prior general knowledge of the codings (no decoder
@@ -188,7 +188,7 @@ pub(crate) fn tiles(
         let mut pmode = 7u32;
         let mut lent = [[if row < 2 { 7i32 } else { 4 }; 2]; 3];
         let r = row as i64;
-        // Where the two colours' rows above start, by column parity.
+        // Where the two colors' rows above start, by column parity.
         let base: [i64; 2] = if row & 1 == 0 {
             [(r - 1) * w + 1, (r - 2) * w]
         } else {

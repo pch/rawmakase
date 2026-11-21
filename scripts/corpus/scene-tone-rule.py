@@ -60,8 +60,8 @@ mid cluster only 0.1 to 0.3), and top patches clipped in every channel, in green
 only or just under white (Highlights pulls them all alike), smooth skies of varying
 cloud texture and extent over textured ground, dark regions of varying texture under a
 fixed sky (Camera Raw lifts a smooth dark region far less than a rough one at the same
-depth, which no histogram can see: hence the per-level texture inputs), coloured
-patches of equal luminance (the pull is colour-blind), and three families under a
+depth, which no histogram can see: hence the per-level texture inputs), colored
+patches of equal luminance (the pull is color-blind), and three families under a
 non-neutral AsShotNeutral so that clipped patches reconstruct above the sensor's
 white, as a photo's do: a square of 0.05 to 12% of the frame either fully clipped or
 just under white (`clipwb`: the square adds only 0.05 EV of deep lift either way, so
@@ -95,7 +95,7 @@ what the render shows. At white, in any channel, it was at least what takes the
 brightest channel to the level the engine renders white, and `CLIP_MARGIN` more: a fit
 lands on either side of a bound, and without the margin half of those pixels stop just
 under white. More than half of the pixels Camera Raw clips at Highlights +50 are
-coloured highlights with a luminance under 0.97, so the brightest channel decides what
+colored highlights with a luminance under 0.97, so the brightest channel decides what
 is clipped, not luminance (share of the pixels at white at +50: Camera Raw 0.57%;
 without the margin 0.35%, with it 0.40%, with the brightest channel deciding 0.49%).
 Camera Raw's gain is linear in the slider before the white curve (half the slider
@@ -421,7 +421,7 @@ CHROMA = {'neutral': (1, 1, 1.), 'blue': (0.55, 0.75, 1.6), 'blue2': (0.3, 0.6, 
 
 
 def chroma_scene(k):
-    """64 patches over 6 stops, each coloured at equal luminance (the pull is colour-blind;
+    """64 patches over 6 stops, each colored at equal luminance (the pull is color-blind;
     the family keeps the fit honest about that)."""
     rng = np.random.default_rng(8000 + k)
     top = rng.uniform(-1.0, -0.3)
@@ -747,7 +747,7 @@ def samples_ext(key, root, images, halves, peaks, rng, n=2500):
     engine's curve undone: near the photo's top the engine shows only a part of a gain.
     Where the full slider's result is clipped, the render shows only a bound on the
     gain. At the black floor it is at most what is seen. At white (in any channel: a
-    coloured highlight clips one channel well before its luminance nears white, and
+    colored highlight clips one channel well before its luminance nears white, and
     its luminance then understates the gain) it is at least what takes the brightest
     channel to the level the engine renders white, and `CLIP_MARGIN` more. Camera Raw's
     gain is linear in the slider before the white curve, so the half-slider render tells

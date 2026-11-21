@@ -58,7 +58,7 @@ pub(super) fn directories(
 ) -> Directories {
     directories_with(m, embed, width, height, color_space(space), interop(space))
 }
-/// The directories of an export whose colour EXIF can't name (an HDR export):
+/// The directories of an export whose color EXIF can't name (an HDR export):
 /// ColorSpace Uncalibrated, no interoperability index; its ICC profile says what the
 /// pixels are.
 pub(super) fn directories_uncalibrated(
@@ -131,7 +131,7 @@ const JPEG_EXIF_MAX: usize = 65_535 - 2 - 6;
 /// The APP1 EXIF payload of a JPEG export. EXIF is one segment in a JPEG, so
 /// camera EXIF too large for it loses its largest values, the EXIF and GPS
 /// directories' before the main directory's, until it fits; the file's own
-/// fields (orientation, resolution, software, pixel size, colour space) stay.
+/// fields (orientation, resolution, software, pixel size, color space) stay.
 /// TIFF and PNG exports keep all of it.
 pub(super) fn jpeg_exif(d: Directories) -> Vec<u8> {
     let Directories {

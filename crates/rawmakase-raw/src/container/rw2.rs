@@ -329,7 +329,7 @@ pub(crate) mod tests {
         (tag, 2, b)
     }
     /// A block of 14 delta-coded samples: seeds `a` and `b` (12 bits, high
-    /// part non-zero) for the two colours, every later code 0 (keep).
+    /// part non-zero) for the two colors, every later code 0 (keep).
     fn flat_block(a: u16, b: u16) -> [u8; 16] {
         let word = (u128::from(a) << 116) | (u128::from(b) << 104);
         word.to_le_bytes()
@@ -409,7 +409,7 @@ pub(crate) mod tests {
 
     #[test]
     fn decodes_delta_blocks_of_rotated_chunks() {
-        // 28 × 2 samples: four blocks, each colour flat.
+        // 28 × 2 samples: four blocks, each color flat.
         let logical: Vec<u8> = [0x123, 0x456, 0x789, 0x9ab]
             .iter()
             .flat_map(|&a| flat_block(a, a + 1))

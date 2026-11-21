@@ -14,7 +14,7 @@ const W: u32 = 600;
 const H: u32 = 300;
 const WHITE: u32 = 32768;
 
-/// A 24-stop ramp across the image, its colour changing down it.
+/// A 24-stop ramp across the image, its color changing down it.
 fn pixels() -> Vec<[f32; 3]> {
     (0..H)
         .flat_map(|y| {
@@ -163,7 +163,7 @@ fn a_merged_dng_opens_with_what_it_was_written_with() {
     for (got, want) in m.wb.iter().zip([2., 1., 1.6]) {
         assert!((got - want).abs() < 1e-5, "{:?}", m.wb);
     }
-    // Linear raw's colour is the file's: its D65 ColorMatrix.
+    // Linear raw's color is the file's: its D65 ColorMatrix.
     for (got, want) in m.cam_xyz.iter().flatten().zip(D65) {
         assert!((f64::from(*got) - want).abs() < 1e-5, "{:?}", m.cam_xyz);
     }

@@ -8,7 +8,7 @@ image is drawn here; nothing comes from a camera or a photo.
 Each file is 64x32: eight flat 16x16 patches of known 10-bit signal (`PATCHES`,
 which the decoder test repeats), BT.2020 primaries and matrix, full range, 4:2:0 as
 phones write. The patches cover deep shadow, graphics white, highlights and
-saturated colours; flat patches keep the codec's error at their centres to a code
+saturated colors; flat patches keep the codec's error at their centres to a code
 value or two. The files are `hdr-pq.heic`, `hdr-hlg.heic`, `hdr-pq-p3.heic`, the
 PQ signal in Display P3 primaries, and `hdr-pq-dci.heic`, in SMPTE RP 431-2's
 DCI-P3 primaries and white (CICP 11). `hdr-pq-icc.heic` is the PQ signal with no

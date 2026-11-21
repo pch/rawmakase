@@ -1,5 +1,5 @@
 //! Opening and decoding photos: RAW files read by RAWmakase's own decoders ([`raw`]),
-//! colour management of what is shown and exported ([`color_management`]) and colour
+//! color management of what is shown and exported ([`color_management`]) and color
 //! difference ([`color_difference`]), RAWmakase's own demosaicing (`demosaic`),
 //! opening a photo ([`photo`]) and its full-size decode through the decode cache
 //! ([`decode`], [`decode_cache`]), and opening a JPEG, PNG, TIFF, WebP, AVIF, HEIF or

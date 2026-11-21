@@ -20,7 +20,7 @@ why = "the Mark III S is a Mark III with other menus; Adobe profiles it as one"
 
 # Camera Raw 18.7 installs no profiles for these G99 twins and lists them, with the
 # G90, G91 and G95, among the bodies it profiles under another camera's name; the
-# G95D's and G97's colour matrices (data/raw-matrices.toml) are the G95's. #664 was a
+# G95D's and G97's color matrices (data/raw-matrices.toml) are the G95's. #664 was a
 # G97 offered no Adobe profiles. The G97 entry was checked against Camera Raw's
 # render of a raw.pixls.us photo (median ΔE00 1.7 with the G99's Adobe Standard,
 # 3.5 with RAWmakase Color); there was no photo from the other three to check.

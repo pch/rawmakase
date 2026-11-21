@@ -2,9 +2,9 @@
 //! system's, so RAWmakase ships none there.
 //!
 //! ImageIO decodes the file's primary image, grid and all. It is drawn into a
-//! bitmap of the colour space the header says (its ICC profile, one built
+//! bitmap of the color space the header says (its ICC profile, one built
 //! from its CICP, or sRGB) at the depth the header says, so the pixels are
-//! what [`HeicFile`]'s colour type and profile promise whatever colour ImageIO
+//! what [`HeicFile`]'s color type and profile promise whatever color ImageIO
 //! itself makes of the file: CoreGraphics converts them when the two differ.
 //! An HDR file whose light decodes ([`HeicFile::hdr_decodes`]) is drawn into the
 //! space ImageIO decoded it into, CoreGraphics' own of its CICP (`ITUR_2100_PQ` and
@@ -16,7 +16,7 @@
 //! only when moxcms, which reads it for the rest of RAWmakase, finds it an RGB
 //! one, and CoreGraphics reads it as RGB too; otherwise the pixels are drawn
 //! as sRGB. That is how RAWmakase takes a profile moxcms can't read; one only
-//! CoreGraphics can't read (none is known) would leave the colours off, as
+//! CoreGraphics can't read (none is known) would leave the colors off, as
 //! RAWmakase still converts from it. An image with alpha comes out
 //! composited over black, as CoreGraphics premultiplies it; photos rarely
 //! have any.
@@ -68,7 +68,7 @@ pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
     autoreleasepool(|_| decode(&file, &bytes))
 }
 
-/// The colour space the header says: CoreGraphics' own for an HDR CICP in
+/// The color space the header says: CoreGraphics' own for an HDR CICP in
 /// BT.2020, else the header's profile, and sRGB for none, or one that moxcms
 /// or CoreGraphics can't read as RGB.
 fn space(file: &HeicFile) -> Option<CFRetained<CGColorSpace>> {
@@ -117,7 +117,7 @@ fn drawn(image: &CGImage) -> Result<bool> {
     const SIDE: usize = 16;
     // SAFETY: a constant CoreGraphics defines.
     let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceSRGB }))
-        .ok_or_else(|| anyhow!("macOS can't make an sRGB colour space"))?;
+        .ok_or_else(|| anyhow!("macOS can't make an sRGB color space"))?;
     let draw = |background: u8| -> Result<Vec<u8>> {
         let mut rgbx = vec![background; SIDE * SIDE * 4];
         // SAFETY: `rgbx` holds SIDE rows of SIDE * 4 bytes, outlives the
@@ -218,11 +218,9 @@ fn decode(file: &HeicFile, bytes: &[u8]) -> Result<Pixels> {
     let space = if file.hdr_decodes() {
         CGImage::color_space(Some(&image))
             .filter(|space| CGColorSpace::model(Some(space)) == CGColorSpaceModel::RGB)
-            .ok_or_else(|| {
-                anyhow!("macOS decoded the HDR HEIF image without an RGB colour space")
-            })?
+            .ok_or_else(|| anyhow!("macOS decoded the HDR HEIF image without an RGB color space"))?
     } else {
-        space(file).ok_or_else(|| anyhow!("macOS can't make an sRGB colour space"))?
+        space(file).ok_or_else(|| anyhow!("macOS can't make an sRGB color space"))?
     };
     // RGB with an unused fourth sample, as CoreGraphics draws no packed RGB:
     // 8-bit, or 16-bit in the Mac's own (little-endian) order.

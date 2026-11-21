@@ -407,8 +407,8 @@ impl GlobalTone {
     }
     fn apply_with_shadow(&self, p: [f32; 3], shadow_delta: f32) -> [f32; 3] {
         let p = match &self.hdr {
-            // Positive Whites in HDR is a gain of the colour's luminance over the default
-            // curve (its toe), RGBTone: Camera Raw 18.7's keeps colours' saturation as it
+            // Positive Whites in HDR is a gain of the color's luminance over the default
+            // curve (its toe), RGBTone: Camera Raw 18.7's keeps colors' saturation as it
             // brightens them, which RGBTone of the whole gained curve doesn't (Whites +50
             // on the twelve validation photos adds 0.45 ΔE_ITP against 2.0;
             // docs/records/hdr-stage1-results.md#whites).

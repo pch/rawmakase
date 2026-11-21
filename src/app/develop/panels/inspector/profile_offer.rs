@@ -204,7 +204,7 @@ fn downloading(ui: &mut egui::Ui, done: u64, total: u64) -> bool {
     .inner
 }
 
-/// The offer's one action, in the accent colour across the card's width.
+/// The offer's one action, in the accent color across the card's width.
 fn primary(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     let fill = if enabled {

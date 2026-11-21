@@ -1,5 +1,5 @@
 //! Pairs of a photo's render and its embedded JPEG: which preview may be used,
-//! its colour, its alignment with the render and the pixels a fit may not learn
+//! its color, its alignment with the render and the pixels a fit may not learn
 //! from.
 use super::{PROXY_EDGE, RENDER_FACTOR, Refusal, Rgb, refuse};
 use crate::raster::PreviewSpace;
@@ -19,7 +19,7 @@ pub(super) struct Preview {
     pub space: &'static str,
 }
 
-/// The colour space an embedded preview's file states for it, and whether it is a DNG
+/// The color space an embedded preview's file states for it, and whether it is a DNG
 /// Adobe software wrote.
 struct Stated {
     adobe_dng: bool,
@@ -89,7 +89,7 @@ fn stated_space(path: &std::path::Path, raw: &crate::raw::Raw, bytes: &[u8]) -> 
 }
 
 /// The embedded preview of the RAW at `path`, upright, as linear ProPhoto RGB in the
-/// colour space its file states, whatever a fit would make of it; `None` when none is
+/// color space its file states, whatever a fit would make of it; `None` when none is
 /// stated, so it can only be taken as it is.
 pub(super) fn preview_pro(
     path: &std::path::Path,
@@ -107,7 +107,7 @@ pub(super) fn preview_pro(
 
 /// The preview of the RAW at `path`, or why it can't be used: not a JPEG (JPEG XL
 /// previews are Lightroom's), too small, written by Adobe software into a DNG (its
-/// preview is Adobe's render), or of a colour space the file does not state.
+/// preview is Adobe's render), or of a color space the file does not state.
 pub(super) fn preview(
     path: &std::path::Path,
     raw: &mut crate::raw::Raw,
@@ -128,7 +128,7 @@ pub(super) fn preview(
     }
     let (space, name) = stated
         .space()
-        .ok_or_else(|| refuse("The preview's colour space is not stated"))?;
+        .ok_or_else(|| refuse("The preview's color space is not stated"))?;
     let image = crate::raw::thumbnail(raw).map_err(|e| refuse(format!("{e:#}")))?;
     let (width, height) = image.dimensions();
     if width.max(height) < 2 * PROXY_EDGE {
@@ -472,7 +472,7 @@ fn correlation(a: &[f32], b: &[f32], width: u32, [x0, y0, x1, y1]: [u32; 4]) -> 
 /// quadrant at `MIN_CORRELATION`, which also ends the search; else the centre at
 /// `MIN_CENTRE` and each quadrant at `MIN_QUADRANT`: a quadrant of sky
 /// or blurred background has little detail to correlate, and a few pixels off in it
-/// matter little to a colour fit, which the held-out tiles judge anyway. A fit that
+/// matter little to a color fit, which the held-out tiles judge anyway. A fit that
 /// also fits the matrix (`strict`) could bend it to wrong pairs: its quadrants must
 /// reach the centre's.
 const MIN_CORRELATION: f32 = 0.85;

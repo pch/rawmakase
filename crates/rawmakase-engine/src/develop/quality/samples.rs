@@ -5,7 +5,7 @@ use rawmakase_cancel::Cancel;
 
 /// The highlight-recovered image, computed once per decoded image. A rendered file's
 /// is the file as it is: recovery rebuilds a camera's clipped channels, and a rendered
-/// file's bright colours are its rendering, not clipping. It holds the file's
+/// file's bright colors are its rendering, not clipping. It holds the file's
 /// buffer with it when the file's pixels are shared ([`Pixels::share`], as
 /// `rawmakase_decode`'s `photo::open_source` opens one), else a copy. A RAW's is a
 /// second buffer here, where `im` is only borrowed; [`with_recovered`] makes it
@@ -181,7 +181,7 @@ pub enum Stage {
     /// Linear ProPhoto RGB leaving it, before the profile's look and tone curve: where
     /// Camera Raw's renders of a linear-profile DNG compare.
     SceneOutput,
-    /// The encoded colour Auto tone measures (`PixelOutput::AutoBasis`).
+    /// The encoded color Auto tone measures (`PixelOutput::AutoBasis`).
     AutoBasis,
 }
 /// The whole photo at full size, as linear ProPhoto RGB at `stage`, through the same

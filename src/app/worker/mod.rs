@@ -475,7 +475,7 @@ pub(crate) enum Overlay {
     None,
     /// Visualize Spots with its threshold (0–1).
     Spots(f32),
-    /// The mask at this index of the recipe's masks, tinted with this colour and
+    /// The mask at this index of the recipe's masks, tinted with this color and
     /// opacity.
     Mask {
         index: usize,

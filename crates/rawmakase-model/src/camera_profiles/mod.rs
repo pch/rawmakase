@@ -593,7 +593,7 @@ impl CameraProfile {
             }),
         )
     }
-    /// The stops [`Self::camera_color`] raises its colour by after the matrix and
+    /// The stops [`Self::camera_color`] raises its color by after the matrix and
     /// tables (the profile's baseline exposure offset).
     pub fn exposure(&self) -> f32 {
         self.exposure
@@ -640,7 +640,7 @@ impl CameraProfile {
 }
 impl CameraProfile {
     /// How this profile's tone curve renders in HDR, or why it cannot yet. A look's
-    /// tables, curve and split toning render in HDR (`super::hdr_look`, and colour
+    /// tables, curve and split toning render in HDR (`super::hdr_look`, and color
     /// grading's HDR domain for its split toning); its sliders are checked as the
     /// user's (`model::hdr::check_recipe`).
     pub fn hdr_tone(&self) -> Result<hdr_tone::HdrTone> {
@@ -872,7 +872,7 @@ impl CameraProfile {
     /// This profile with linearly encoded 3D hue/saturation tables and a 3D look table,
     /// which an HDR profile looks up on overrange-encoded values, for GPU tests. As in
     /// real profiles, the tables change nothing at no saturation, where a near-neutral
-    /// colour's hue is undefined.
+    /// color's hue is undefined.
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_test_hdr_tables(mut self) -> Self {
         let table = |dims: [usize; 3], seed: f32| Table {
@@ -937,7 +937,7 @@ pub const EMBEDDED: &str = "Embedded";
 impl CameraProfile {
     /// Lightroom's "Embedded" profile for rendered files: it renders a rendered file's
     /// pseudo-scene (`develop::rendered`) with Camera Raw's default tone curve; its
-    /// colour is linear ProPhoto as it is (no matrix or tables).
+    /// color is linear ProPhoto as it is (no matrix or tables).
     pub fn embedded(m: &Metadata) -> Self {
         // camera RGB is linear ProPhoto D50, so XYZ_TO_PRO · forward = identity.
         let forward = crate::color::inverse(XYZ_TO_PRO);
@@ -1024,7 +1024,7 @@ impl CameraProfile {
         Some(p)
     }
 }
-/// The colour matrix `cm` (XYZ to camera) inverted and scaled so that white-balanced
+/// The color matrix `cm` (XYZ to camera) inverted and scaled so that white-balanced
 /// camera values of 1 are `white` (XYZ); `None` when `cm` makes `white` no positive
 /// camera neutral.
 fn color_matrix_scaled(cm: Matrix, white: [f32; 3]) -> Option<Matrix> {

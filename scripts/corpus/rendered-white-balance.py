@@ -13,7 +13,7 @@ SDK would: the gains are the file's D50 white Bradford-adapted from the white Te
 Tint name to D50, scaled by that white's largest ProPhoto channel. Each file's gains
 therefore give its white; this prints that white as a DNG reciprocal temperature and
 tint, both tables, and the tables' error against every file's gains. Greys need only
-that; colours and the cool magenta corner need the whole of
+that; colors and the cool magenta corner need the whole of
 white_balance::rendered_white_balance (a matrix with the SDK's limits, and a clip)."""
 import json
 import re

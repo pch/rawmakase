@@ -2,7 +2,7 @@
 //! ([`rawmakase_interop::isobmff`]) here, its pixels decoded by the system's
 //! HEVC decoder: macOS's ImageIO (`imageio`), Windows Imaging Component
 //! (`wic`), and elsewhere, as on Linux, the system's libheif (`libheif`),
-//! opened when first needed. The header here says the size, crop, colour and
+//! opened when first needed. The header here says the size, crop, color and
 //! orientation, and what Develop refuses.
 //!
 //! RAWmakase has no HEVC decoder of its own, as HEVC is patented. Without the
@@ -13,7 +13,7 @@
 //! own HEVC picture. A clean aperture (`clap`) crops the picture, before its
 //! rotation and mirror, the order MIAF requires.
 //!
-//! The colour comes from the `colr` boxes of the image, or of its first tile
+//! The color comes from the `colr` boxes of the image, or of its first tile
 //! when the image has none of that kind (an iPhone's tiles carry the `nclx`):
 //! an ICC profile, or one built from the CICP code points; a HEIC with neither
 //! is taken as sRGB. The system decoder chooses the matrix and range itself.
@@ -75,8 +75,8 @@ pub(super) fn decoder() -> std::result::Result<(), String> {
 }
 
 /// Decoded pixels: `width` × `height` of interleaved RGB, 8-bit samples or
-/// 16-bit ones (native endian), as [`HeicFile`]'s colour type says, in the
-/// colour space its profile says: the whole picture, or (a system decoder
+/// 16-bit ones (native endian), as [`HeicFile`]'s color type says, in the
+/// color space its profile says: the whole picture, or (a system decoder
 /// that crops by the `clap` itself) the clean aperture alone.
 struct Pixels {
     width: u32,
@@ -148,7 +148,7 @@ pub(super) struct Map {
     #[cfg_attr(not(all(unix, not(target_vendor = "apple"))), allow(dead_code))]
     pub(super) id: u32,
     /// Coded as grey (HEVC's monochrome), as Apple's and iPhones' ISO maps are, rather
-    /// than as colour.
+    /// than as color.
     #[cfg_attr(not(all(unix, not(target_vendor = "apple"))), allow(dead_code))]
     pub(super) grey: bool,
     /// The decoded map, where the system decoder leaves it while it decodes the
@@ -167,7 +167,7 @@ pub(super) struct Map {
 /// - "version N gain-map", "HDR-base gain-map" and the other refusals of an ISO
 ///   21496-1 metadata ([`gain_map::Metadata::parse`]), after the `tmap`'s own
 ///   version byte (0);
-/// - "alternate-colour gain-map": a `tmap` in the alternate's colour space, which its
+/// - "alternate-color gain-map": a `tmap` in the alternate's color space, which its
 ///   own `colr` describes;
 /// - "cropped HEIC gain-map": a primary image its `clap` crops, which the map, of the
 ///   whole picture, isn't checked against.
@@ -198,7 +198,7 @@ fn gain_map_of(
                 .iter()
                 .any(|p| matches!(p, Property::Colour(_)));
             if !metadata.base_colour_space() && colour {
-                return Err(Unsupported("alternate-colour gain-map".into()));
+                return Err(Unsupported("alternate-color gain-map".into()));
             }
             (MapKind::Iso(metadata), *map)
         }

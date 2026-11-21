@@ -104,7 +104,7 @@ that drops it.
 | Extension stopper | `rawmakase-extensions` `session.rs` (`Session::stop`) | Waiting for the program to exit by itself, at most `min(1 s, deadline − 200 ms)` of the shared deadline | None: then it ends the process group (`killpg`) or job (`TerminateJobObject`) and returns | Yes, under the deadline; it returns by it. The exit hook then ends every unit not yet confirmed ended (`kill_remaining`, which never blocks) |
 
 The Develop loader, Reference View, Library previews, preview builds, exports and
-Sync also fit the default Camera Look of a photo without colour data, once per file
+Sync also fit the default Camera Look of a photo without color data, once per file
 and build (seconds; a fit cache hit otherwise, and nothing for every other photo).
 The fit takes the job's cancel flag inside its renders and between its stages, so it
 stops as a decode does; a fit stopped that way is neither used nor cached. A job

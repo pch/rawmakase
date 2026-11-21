@@ -110,7 +110,7 @@ pub fn library_dirs() -> Vec<std::path::PathBuf> {
 
 /// What the profile library holds, as one hash: each file's path, size and
 /// modification time. Unedited photos' previews follow the library (which profile
-/// a default picks, and whether a photo without colour data gets a fitted look,
+/// a default picks, and whether a photo without color data gets a fitted look,
 /// depend on it), so importing or removing any profile changes it.
 pub fn fingerprint() -> String {
     fingerprint_of(&library_dirs())
@@ -444,7 +444,7 @@ pub(super) fn collect(dir: &Path, depth: usize, files: &mut Vec<std::path::PathB
 }
 
 /// Explicitly import files into RAWmakase's own library: DCPs and look XMPs are
-/// copied, and a `.cube` or HaldCLUT `.png` becomes a look XMP (see `cube_look`) for colours in `space`,
+/// copied, and a `.cube` or HaldCLUT `.png` becomes a look XMP (see `cube_look`) for colors in `space`,
 /// one for the whole batch (DCPs and XMPs have their own). Validate the complete batch
 /// before writing; never follow or discover Adobe application directories.
 pub fn import_files(paths: &[std::path::PathBuf], space: LutSpace) -> Result<Vec<ImportedProfile>> {
@@ -476,7 +476,7 @@ pub struct CubeImport {
     pub already: bool,
     /// How faithfully the look holds the cube.
     pub fidelity: Fidelity,
-    /// The colour space the cube was imported as expecting.
+    /// The color space the cube was imported as expecting.
     pub space: LutSpace,
 }
 impl CubeImport {
@@ -1576,7 +1576,7 @@ pub(super) mod tests {
         let pack = temp.path().join("Film");
         std::fs::create_dir_all(&pack)?;
         let png = pack.join("Portra.png");
-        // Colours both files store exactly, at 16 bits, so both give one table.
+        // Colors both files store exactly, at 16 bits, so both give one table.
         let warm = |p| warm(p).map(|v| (v * 65535.).round() / 65535.);
         // Level 3: the 9 divisions `write_cube` writes.
         std::fs::write(&png, hald_png(3, warm, Encoding::Rgb16))?;

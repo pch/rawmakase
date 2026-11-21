@@ -788,7 +788,7 @@ impl Editor {
         let (w, h) = samples.dimensions();
         let cx = ((pos.x - shown.left()) / shown.width() * w as f32).floor() as i32;
         let cy = ((pos.y - shown.top()) / shown.height() * h as f32).floor() as i32;
-        // The most colourful of the 3 × 3 pixels: a fringe can be a single pixel wide
+        // The most colorful of the 3 × 3 pixels: a fringe can be a single pixel wide
         // beside neutral ones, which an average would wash out.
         (cy - 1..=cy + 1)
             .flat_map(|y| (cx - 1..=cx + 1).map(move |x| (x, y)))
@@ -1185,7 +1185,7 @@ impl crate::app::Editor {
         let shown = self.hdr_preview.texture(slot, &due.key, &state);
         // While a region renders, the whole photo's overlay of the same edit shows,
         // coarser, rather than none. Not under the region's own: its clear pixels
-        // would show the coarser colours through.
+        // would show the coarser colors through.
         if let Some(under) = &due.under {
             self.hdr_preview.keep(other);
             if shown.is_none()

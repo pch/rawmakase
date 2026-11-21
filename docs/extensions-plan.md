@@ -267,7 +267,7 @@ undo grouping and accessibility. The vocabulary:
 | `toggle` | bool |
 | `choice` | one of a list (drop-down) |
 | `segmented` | one of a short list (buttons) |
-| `color` | sRGB colour, optional alpha |
+| `color` | sRGB color, optional alpha |
 | `curve` | points 0–1, as the Tone Curve's |
 | `number`, `text` | free entry, validated |
 | `file`, `folder` | a path chosen in the system dialog |
@@ -326,7 +326,7 @@ without it, as `rawmakase-protocol` does for control clients today.
   buffer**, in both directions: anonymous mappings (`memfd` on Linux, an
   unlinked `shm_open` object on macOS, an unnamed file mapping on Windows), so no
   named object can be left behind. A message carries the handle and a
-  descriptor: width, height, stride, channels, sample type (f32 or u16), colour
+  descriptor: width, height, stride, channels, sample type (f32 or u16), color
   space, transfer, and the region of the photo it covers. A program that returns
   pixels writes into an output buffer the request supplied, or asks the app for
   one (`allocate`) when the size isn't known in advance.
@@ -361,7 +361,7 @@ the editor's internals:
 - **Reads**, always from a snapshot: the photos of a selection or a search, their
   metadata, edits as settings, the open photo's identity (`photo_id`,
   `generation`, `revision`), folders and collections.
-- **Pixels:** the photo as developed (a region, at a scale, in a stated colour
+- **Pixels:** the photo as developed (a region, at a scale, in a stated color
   space), the camera image before develop, or a stored mask.
 - **Proposals**, which the app checks and applies itself: settings changes to one
   photo or a selection (one History step each, through
@@ -492,13 +492,13 @@ first:
 | `display` | After the whole per-pixel develop stage (tone, curves, mixer, Point Color, grading, local adjustments), before detail, sharpening and finishing | The developed photo, before any output encoding |
 | `finish` | After sharpening and after the built-in vignettes and grain; before resizing for export, the monitor profile, the histogram, the clipping overlay and quantisation | The finished photo at output size |
 
-**One colour contract for every stage.** Kernels always receive and return
+**One color contract for every stage.** Kernels always receive and return
 **linear light in a fixed working space: Rec. 2020 primaries, D65 white, 1.0 =
-diffuse white**, with negative values allowed (out-of-gamut colours) and nothing
+diffuse white**, with negative values allowed (out-of-gamut colors) and nothing
 clipped on the way in. The app converts into it before the first filter of a
 stage and back after the last: from the preview's sRGB working values on the
 GPU, from the export's output space (sRGB, Adobe RGB or ProPhoto) on the CPU.
-So the same numbers mean the same colour in the preview and in every export
+So the same numbers mean the same color in the preview and in every export
 space, and a filter never needs to know which space the export uses. The SDK
 provides the conversions a kernel may want internally (to an encoded or
 perceptual scale and back).
@@ -556,7 +556,7 @@ Two files per filter, written side by side in the author's project:
   can't block. The app runs it with wasmtime, tile by tile across its Rayon pool,
   with a memory limit and an execution limit per tile.
 
-The SDK ships the helpers both need (hashes, noise, luminance, colour
+The SDK ships the helpers both need (hashes, noise, luminance, color
 conversions) in WGSL and in Rust with identical results, so the two versions
 read nearly line for line.
 
@@ -728,13 +728,13 @@ Where the built AI Remove departs from the design above, and why:
 1. **No generic `brush` viewer input.** The Remove tool already paints brushed
    areas; AI Remove is a third Mode of that tool beside Heal and Clone, and the
    painted shape is the request's coverage. D25 stays as it is.
-2. **The app owns colour; the program sees 8-bit sRGB only.** Hosted removers take
+2. **The app owns color; the program sees 8-bit sRGB only.** Hosted removers take
    8-bit display images, so every extension would otherwise reimplement the same
    tone mapping and its inverse. The app renders the region through a fixed
    rendition it captures with the request (the default white balance, the camera
    stage's matrix, the default exposure, Camera Raw's default rendering `F`) and
    inverts the answer itself with the captured values. It is lossy on purpose:
-   colours outside sRGB, clipped channels, shadow quantisation and the reduction
+   colors outside sRGB, clipped channels, shadow quantisation and the reduction
    to at most 2048 pixels are not recovered.
 3. **The patch blends with Heal's membrane**: Heal with the patch as its source,
    which takes the residual error at the shape's border back to the photo's own
@@ -879,7 +879,7 @@ request is refused).
 
 Stay in the core: AI Denoise (its setting is part of the edit, and the result
 depends on the model in ways the recipe doesn't name), the built-in Grain and
-every other Lightroom-compatible setting, watermarks, colour management, decoding
+every other Lightroom-compatible setting, watermarks, color management, decoding
 and export encoding.
 
 ## Phases
@@ -1008,7 +1008,7 @@ own ([Stages](#stages), [Kernels](#kernels)).
   each new contribution table arrives with an `api` version that knows it;
 - proposals and target tokens are already per photo and per catalog, as
   importers and sources need;
-- shared-memory buffers carry a full descriptor (colour space, transfer, region),
+- shared-memory buffers carry a full descriptor (color space, transfer, region),
   not only what masks use, so filters' and patches' pixels fit without a
   protocol change;
 - `Recipe` and the saved format are not touched until filters are built.
@@ -1040,7 +1040,7 @@ boundary, lifecycle cases covered deterministically.
   defaults, a popup or tool taking precedence, a focused control that isn't a
   text field, clipboard shortcuts, and a modifier released within the frame.
 - **Filters:** CPU against GPU, the exact tile and region contract, the
-  approximate Fit contract, determinism across thread counts, the same colours
+  approximate Fit contract, determinism across thread counts, the same colors
   in every export space; recipes without filters render exactly as before on the
   fused passes; missing, disabled, incompatible, HDR and failed cases (a trap, an
   exceeded limit, non-finite output, a failed migration) render and report as

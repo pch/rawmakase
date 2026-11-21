@@ -7,7 +7,7 @@ here; nothing comes from a camera or a photo.
 
 Each file is lossless, 4x1, of 16-bit signal (`PIXELS`, which the decoder test
 repeats in a PNG with the same cICP): graphics white in PQ or HLG, a brighter grey and
-two saturated colours. cjxl turns the PNG's cICP into the codestream's own colour
+two saturated colors. cjxl turns the PNG's cICP into the codestream's own color
 encoding:
 - `hdr-pq-p3.jxl`: PQ in Display P3 (CICP 12), which JPEG XL writes as P3 primaries with
   a D65 white;

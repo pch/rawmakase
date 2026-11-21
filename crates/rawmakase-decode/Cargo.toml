@@ -3,7 +3,7 @@ name = "rawmakase-decode"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "RAWmakase's native boundary: RAW files through RAWmakase's own decoders, colour management, RAWmakase's own demosaicing, opening a photo and its full-size decode with the decode cache"
+description = "RAWmakase's native boundary: RAW files through RAWmakase's own decoders, color management, RAWmakase's own demosaicing, opening a photo and its full-size decode with the decode cache"
 license.workspace = true
 publish = false
 
@@ -33,7 +33,7 @@ rav1d = { version = "1.1.0", default-features = false, features = ["bitdepth_8",
 yuv = "0.8.19"
 # The errno rav1d's C interface returns.
 libc.workspace = true
-# Colour management of JPEG, PNG and TIFF files, in pure Rust; the version `image` uses.
+# Color management of JPEG, PNG and TIFF files, in pure Rust; the version `image` uses.
 moxcms = { version = "0.8.1", features = ["options"] }
 rayon.workspace = true
 # A TIFF's ICC profile, which `image` drops from a small image (`raster::tiff_icc`);

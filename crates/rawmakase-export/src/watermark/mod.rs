@@ -329,7 +329,7 @@ impl Ready {
         })
     }
     /// Lays the mark over `image`'s pixels; false when there was nothing
-    /// to draw (text the font has none of). The mark's colours, its text, shadow
+    /// to draw (text the font has none of). The mark's colors, its text, shadow
     /// and graphic, are sRGB; in another space they are converted to it first, so
     /// a red mark is the same red in every space. A graphic's own profile is
     /// ignored, as it always has been.
@@ -353,7 +353,7 @@ impl Ready {
     /// [`Ready::apply`] lays it over an sRGB SDR rendition: placed and scaled the same
     /// way for the master's size and blended as the sRGB export blends it, in sRGB's
     /// primaries and its encoded values, with the sRGB curve continued above white (and
-    /// its linear segment below 0, for colours outside sRGB). The mark's white is
+    /// its linear segment below 0, for colors outside sRGB). The mark's white is
     /// therefore graphics white, never the peak above it, and where the master is
     /// within sRGB and white the marked pixels are the sRGB export's. Pixels the mark
     /// doesn't cover keep their exact values. False when there was nothing to draw.
@@ -390,7 +390,7 @@ fn composite(pixels: &mut [[f32; 3]], width: u32, height: u32, mark: &Placed) {
     });
 }
 
-/// Calls `blend` with each pixel the mark covers, the mark's colour there and its
+/// Calls `blend` with each pixel the mark covers, the mark's color there and its
 /// alpha; pixels outside the mark or under its fully transparent parts are left alone.
 fn covered(
     pixels: &mut [[f32; 3]],

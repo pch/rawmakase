@@ -348,8 +348,8 @@ pub fn fit_gain(out: &Output, reference: &GainReference<'_>) -> Result<f32, Stri
 
 /// Packed pixels per side of the blocks the dark correction compares means over. At
 /// ISO 32,000 and above the mosaic's mean over smaller blocks is itself noisy, and
-/// scaling each channel by it left colour patches of the blocks' size in dark areas;
-/// over 64 their colour noise matches Camera Raw's Denoise (#802).
+/// scaling each channel by it left color patches of the blocks' size in dark areas;
+/// over 64 their color noise matches Camera Raw's Denoise (#802).
 const DARK_BLOCK: usize = 64;
 /// Block means (the darkest channel's, of sensor white) below which the correction
 /// applies in full, and above which not at all.

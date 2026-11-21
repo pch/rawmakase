@@ -330,7 +330,7 @@ fn a_monochrome_photo_skips_and_keeps_white_balance() {
     assert_eq!(e.view.selected_setting, Some(ParameterId::Exposure));
     tap(&mut e, Key::Comma, Modifiers::NONE);
     assert_eq!(e.view.selected_setting, Some(ParameterId::Saturation));
-    // Back on a colour photo, Tint is there again.
+    // Back on a color photo, Tint is there again.
     open(&mut e, raw());
     tap(&mut e, Key::Period, Modifiers::NONE);
     tap(&mut e, Key::Period, Modifiers::NONE);

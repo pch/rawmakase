@@ -4,7 +4,7 @@ use crate::variant::Variant;
 /// A crop position that is not known.
 pub const UNSET: u32 = 0xffff;
 
-/// The colour space a camera rendered its embedded JPEGs in where the EXIF may
+/// The color space a camera rendered its embedded JPEGs in where the EXIF may
 /// not say it: as its maker notes say (Nikon's ColorSpace, Olympus's
 /// CameraSettings ColorSpace), or as its writer always makes them (Google's
 /// HDR+ DNGs, sRGB).
@@ -16,7 +16,7 @@ pub enum PreviewSpace {
     AdobeRgb,
 }
 
-/// Where the colour matrix in [`RawInfo::cam_xyz`] comes from.
+/// Where the color matrix in [`RawInfo::cam_xyz`] comes from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum MatrixSource {
     /// None: the camera table has no row and the file holds none.
@@ -33,11 +33,11 @@ pub enum MatrixSource {
     FileTungstenOnly,
     /// A matrix the camera's maker notes give (Olympus), with its D65 levels.
     MakerNote,
-    /// A monochrome DNG's neutral colour, by definition.
+    /// A monochrome DNG's neutral color, by definition.
     Neutral,
 }
 
-/// A RAW file's header facts: identity, geometry, levels' sources, colour and
+/// A RAW file's header facts: identity, geometry, levels' sources, color and
 /// exposure. Names, sizes, crops and levels follow the conventions RAWmakase
 /// has always read them with, so saved edits keep their geometry and scale.
 #[derive(Clone, Debug)]
@@ -91,7 +91,7 @@ pub struct RawInfo {
     /// EXIF orientation as a quarter-turn code: 0 none, 3 half turn, 5 a
     /// quarter turn counter-clockwise, 6 clockwise.
     pub flip: i32,
-    /// The colour filter over the visible area; `None` for small RAWs and
+    /// The color filter over the visible area; `None` for small RAWs and
     /// other data that is not a mosaic.
     pub cfa: Option<Cfa>,
     /// The DNG version, 0 for a camera's own format.
@@ -109,7 +109,7 @@ pub struct RawInfo {
     /// otherwise.
     pub analog_balance: [f32; 3],
     /// A monochrome DNG (linear raw of one sample: monochrome sensors, film
-    /// scanners): its one sample is every channel's, and its colour neutral
+    /// scanners): its one sample is every channel's, and its color neutral
     /// (`color::apply`).
     pub monochrome: bool,
     /// Fujifilm's DevelopmentDynamicRange in percent (400 for DR400), 0xffff when
@@ -133,7 +133,7 @@ pub struct RawInfo {
     /// As-shot white balance multipliers (red, green, blue, second green);
     /// zero when the file has none.
     pub cam_mul: [f32; 4],
-    /// Daylight multipliers derived from the colour matrix.
+    /// Daylight multipliers derived from the color matrix.
     pub pre_mul: [f32; 4],
     /// The white balance presets the camera stored.
     pub presets: Presets,
@@ -141,7 +141,7 @@ pub struct RawInfo {
     pub cam_xyz: [[f32; 3]; 3],
     /// Where `cam_xyz` comes from.
     pub matrix_source: MatrixSource,
-    /// The colour space of the camera's JPEGs, when the maker notes or the
+    /// The color space of the camera's JPEGs, when the maker notes or the
     /// file's writer say it.
     pub preview_space: Option<PreviewSpace>,
     /// The look the camera's JPEGs were made with, by the maker's name for it: a
@@ -232,7 +232,7 @@ pub struct Presets {
     pub fine_weather: [f32; 3],
 }
 
-/// A colour filter pattern over the visible area: `colors[r * cols + c]` is
+/// A color filter pattern over the visible area: `colors[r * cols + c]` is
 /// the filter at visible row `r`, column `c` modulo the period (0 red, 1
 /// green, 2 blue, 3 the second green of a Bayer pattern).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -245,7 +245,7 @@ pub struct Cfa {
     pub colors: Vec<u8>,
 }
 
-/// A `RawInfo` of `variant` with nothing else known: no crops, no colour,
+/// A `RawInfo` of `variant` with nothing else known: no crops, no color,
 /// LibRaw's conventions for what is absent.
 pub(crate) fn base(variant: Variant) -> RawInfo {
     RawInfo {

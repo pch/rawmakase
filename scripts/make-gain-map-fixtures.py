@@ -6,7 +6,7 @@ Needs ultrahdr_app (libultrahdr) on PATH; the standard library otherwise. Every
 image is drawn here; nothing comes from a camera or a photo.
 
 Both files are 64x48 with a Display P3 base and a three-channel map in the base's
-colour space: `ultrahdr.jpg` has a map the base's size, `ultrahdr-quarter-map.jpg`
+color space: `ultrahdr.jpg` has a map the base's size, `ultrahdr-quarter-map.jpg`
 one a quarter of it (16x12). The script then decodes `ultrahdr.jpg` with libultrahdr
 at its full headroom as linear half floats and prints the pixels the decoder test
 checks, which go in that test (`raster::tests`).

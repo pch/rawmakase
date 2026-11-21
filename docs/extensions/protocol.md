@@ -138,7 +138,7 @@ and its handle goes with the line. The pixels never travel in JSON.
 | `bytes` | The mapping's length |
 | `width`, `height` | Pixels |
 | `stride` | Bytes from one row's start to the next's |
-| `channels` | 1 to 4, interleaved: 1 for `coverage`, 3 for colour, 4 for colour with alpha |
+| `channels` | 1 to 4, interleaved: 1 for `coverage`, 3 for color, 4 for color with alpha |
 | `sample` | `u8`, `u16` or `f32`; `f32` may hold values below 0 and above 1 |
 | `meaning` | `"coverage"` (how much of each pixel a mask covers, 0 to the sample's maximum), or `{"color":{…}}` with `primaries` (`srgb`, `rec2020`, `pro_photo`, `adobe_rgb`, `camera`), `white` (`d65`, `d50`, `camera`), `transfer` (`linear`, `srgb`, `{"gamma":g}`) and `alpha` (`none`, `straight`, `premultiplied`) |
 | `region` | Where the pixels lie: `space` (`image_frame`, `developed`, `output`, `camera`), `rect` (`[x0, y0, x1, y1]`, normalised to that space), `scale` (buffer pixels per full-resolution pixel), `overlap` (pixels beyond `rect` on each side, for tiles) |

@@ -176,7 +176,7 @@ pub(in crate::app) enum Operation {
     Output {
         path: std::path::PathBuf,
         max_edge: u32,
-        /// The colour space: an export's choice, sRGB for a preview.
+        /// The color space: an export's choice, sRGB for a preview.
         space: crate::color::OutputSpace,
     },
     Job(u64),

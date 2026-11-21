@@ -191,13 +191,13 @@ How it works (`develop::retouch::rendition`, `app::develop::tools::ai_remove`):
   refuse it rather than drop the spot. Generate spots never go to XMP: Lightroom
   can't read them, and RAWmakase writes no spots to XMP.
 
-Known limitations: the round trip is 8-bit, so clipped highlights and colours
+Known limitations: the round trip is 8-bit, so clipped highlights and colors
 outside sRGB inside the painted area are not recovered, and shadows more than three
 stops below mid-grey are still quantised (about 1% on test data); a patch is at
 most 2048 pixels on its long side, and on a large area of a high-resolution photo
 the detail it lacks is borrowed from its surroundings, not generated, so structure
 finer than the patch (lettering, a fence) isn't recreated; grain is matched in
-strength, not in its pattern or colour; Lightroom never sees these spots; the
+strength, not in its pattern or color; Lightroom never sees these spots; the
 photo's region leaves the computer.
 
 ## Not verified against Lightroom
@@ -231,7 +231,7 @@ Shift+R is its Reference View).
   one, and Reset removes them all.
 - **Type** picks Red Eye or Pet Eye for new corrections, and changes the selected one.
   Pet Eye finds a pupil that glows brighter than the iris around it, whatever its
-  colour, and turns it black.
+  color, and turns it black.
 - **Pupil Size** and **Darken** change the selected correction (both 50 by default).
   A pet eye has no Darken (Camera Raw makes it black whatever Darken says) but has
   **Add Catchlight**, on by default at Lightroom's place; drag the small circle to move
@@ -268,7 +268,7 @@ Shift+R is its Reference View).
   change reaches. Inside a soft ellipse every pixel moves towards a dark neutral, as
   Camera Raw's does: the level is the mean of green and blue in `v^(1/2.4)` encoding
   (red counts −0.11), scaled by a gain of 1.28, 0.90 and 0.39 at Darken 0, 50 and 100
-  (quadratic between), keeping 2.2% of the original colour's log ratios, and blended
+  (quadratic between), keeping 2.2% of the original color's log ratios, and blended
   with the falloff in the same encoding. The falloff is full to 0.55 and gone at 1.42
   times the half-way distance, which is 0.585 + 0.975 × Pupil Size times the ellipse.
 - **Pet Eye** blends towards black with the same falloff at 0.953 times the distance.
@@ -279,8 +279,8 @@ Shift+R is its Reference View).
 
 ## Measured against Camera Raw 18.7
 
-Synthetic DNGs (the colour charts' invented camera, with red pupils, irises, grey
-ramps and colour patches) were opened in Camera Raw with `crs:RedEyeInfo` written by
+Synthetic DNGs (the color charts' invented camera, with red pupils, irises, grey
+ramps and color patches) were opened in Camera Raw with `crs:RedEyeInfo` written by
 hand, and rendered to 16-bit sRGB.
 
 - **Format:** XMP holds an `rdf:Seq` with one text item per eye:
@@ -311,7 +311,7 @@ hand, and rendered to 16-bit sRGB.
 - **Falloff:** on grey, the correction is half applied at 0.59 times the ellipse at
   Pupil Size 0, growing by 0.97 per unit of Pupil Size, and fades from 0.69 to 1.46
   times that; RAWmakase's falloff matches within an RMS weight of 0.02–0.03.
-- **Colour:** on 25 in-gamut reds, browns, skin and greys and on grey ramps at five
+- **Color:** on 25 in-gamut reds, browns, skin and greys and on grey ramps at five
   Darken values, RAWmakase's corrected pixels sit a mean ΔE76 of 1.8 from Camera Raw's
   (grey ramps 0.5–1.4, patches 2.6–3.4), after taking out the difference between the
   two renders without the correction. Saturated reds that Camera Raw clips render
@@ -323,7 +323,7 @@ hand, and rendered to 16-bit sRGB.
   ellipse: a red-orange iris around a 20-pixel ellipse changed out to its edge at 78
   pixels, and saturated red patches kept 30–55% of the correction to twice the
   ellipse's size. RAWmakase corrects only within the ellipse, so a reddish iris keeps
-  its colour; on brown irises and skin the two agree (under 7% in Camera Raw).
+  its color; on brown irises and skin the two agree (under 7% in Camera Raw).
 - Lightroom's own detection is not public; RAWmakase's finds a similar ellipse but not
   the same one, and does not try again with a larger area when the first fails.
 - Camera Raw's catchlight sits slightly further from the centre vertically than

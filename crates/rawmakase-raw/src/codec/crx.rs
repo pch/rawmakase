@@ -1,7 +1,7 @@
 //! Canon's CRX coding of CR3 sensor data, from bytes to samples.
 //!
 //! The image header (the CR3 track's `CMP1` box) gives the image and tile
-//! sizes, the bit depth, the number of colour planes (four: the Bayer cell's
+//! sizes, the bit depth, the number of color planes (four: the Bayer cell's
 //! sites), the number of wavelet levels (0 lossless, 3 for C-RAW) and the
 //! size of the tile headers at the start of the coded data. Those headers
 //! are a sequence of markers, big-endian: per tile (`FF01`, or `FF11` in

@@ -1,7 +1,7 @@
 //! RAW files with no header at all (CHDK's from Canon PowerShots, action
 //! cameras', the Pentax Optio S4's): only the file's size says what it is,
 //! so the camera table lists each size with its camera, image size, bit
-//! depth, visible area and colour filter. The samples are packed, most
+//! depth, visible area and color filter. The samples are packed, most
 //! significant bit first, in 16-bit little-endian words or (where the row
 //! says) bytes or 32-bit words, rows padded where it gives their size, in
 //! two fields or shifted down where it says; black is measured on the masked columns unless the row gives it.
@@ -130,7 +130,7 @@ pub(crate) fn decode(
     let cfa = info
         .cfa
         .as_ref()
-        .ok_or_else(|| crate::error::corrupt("no colour filter"))?;
+        .ok_or_else(|| crate::error::corrupt("no color filter"))?;
     let black = match row.black {
         Some(b) => [b; 4],
         None => crate::levels::masked_black(&data, width as usize, area, cfa, row.black_columns, 0)

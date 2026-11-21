@@ -3,14 +3,14 @@
 //! a value that is itself packets nests. Values are text, numbers one to a
 //! line. RAWmakase reads the back type (ShootObj_back_type, naming the
 //! back), the neutral levels (NeutObj_neutrals), the rotation
-//! (ImgProf_rotation_angle), the colour filter (CaptProf_mosaic_pattern),
+//! (ImgProf_rotation_angle), the color filter (CaptProf_mosaic_pattern),
 //! the number of planes, the row order (Rows_data: 1 for the even rows of
 //! the image first, then the odd ones bottom up) and the embedded JPEG
 //! (JPEG_preview_data).
 //!
 //! Sources: ExifTool's Leaf tag documentation (the packet names), and our
 //! own measurements on the test dataset's files (the packet layout, the
-//! filter's colour codes, the levels as the white balance).
+//! filter's color codes, the levels as the white balance).
 use crate::io::{Bytes, Order};
 
 /// The most packets read, and how deep they nest.
@@ -25,7 +25,7 @@ pub(crate) struct Notes {
     pub back_type: Option<u32>,
     pub neutrals: Option<[f64; 4]>,
     pub rotation: Option<u32>,
-    /// The colour of each of the 2 × 2 filter's positions, row by row (0
+    /// The color of each of the 2 × 2 filter's positions, row by row (0
     /// red, 1 green, 2 blue).
     pub cfa: Option<[u8; 4]>,
     pub planes: Option<u32>,
@@ -107,7 +107,7 @@ fn walk(b: &Bytes, mut at: u64, end: u64, depth: u32, count: &mut usize, n: &mut
     }
 }
 
-/// The filter of a mosaic pattern: the colour code of each position, row
+/// The filter of a mosaic pattern: the color code of each position, row
 /// by row (1 red, 0 blue, 2 and 3 the greens); a Bayer pattern only.
 fn filter(codes: &[f64]) -> Option<[u8; 4]> {
     let mut out = [0u8; 4];

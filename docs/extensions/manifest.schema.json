@@ -631,7 +631,7 @@
         },
         {
           "const": "color",
-          "description": "An sRGB colour, `[r, g, b]`, 0 to 1.",
+          "description": "An sRGB color, `[r, g, b]`, 0 to 1.",
           "type": "string"
         },
         {

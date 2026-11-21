@@ -312,7 +312,7 @@ struct Badges {
     selected: bool,
     available: bool,
     copy: Option<CopyState>,
-    /// The colour of the cell's text.
+    /// The color of the cell's text.
     ink: Color32,
 }
 /// A photo's editable preview, as its cell shows it.

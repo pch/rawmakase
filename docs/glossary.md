@@ -97,13 +97,13 @@ names the result's cache entry too.
 ## Profiles and looks
 
 **RAWmakase Standard, RAWmakase Color** ([profiles](lightroom-profiles.md#rawmakase-profiles)).
-RAWmakase's own profiles for every camera with a colour matrix, made from the matrix
+RAWmakase's own profiles for every camera with a color matrix, made from the matrix
 and the DNG default tone curve, with no Adobe data.
 
 **Camera Look (fitted)** (`camera_look`, crates/rawmakase-decode;
 [profiles](lightroom-profiles.md#camera-look-fitted)). A look profile fitted to a
 RAW's embedded JPEG, so a photo can start out looking as the camera rendered it.
-Photos without colour data get one by default.
+Photos without color data get one by default.
 
 ## Previews
 

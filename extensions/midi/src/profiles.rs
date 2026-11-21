@@ -101,7 +101,7 @@ fn loupedeck() -> Mapping {
         (96, "cmd+shift+Z"),
         // C1 toggles zoom, as Z does.
         (49, "Z"),
-        // C3-C6 are the colour labels red, yellow, green and blue.
+        // C3-C6 are the color labels red, yellow, green and blue.
         (51, "6"),
         (52, "7"),
         (53, "8"),

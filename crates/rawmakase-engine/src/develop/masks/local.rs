@@ -9,7 +9,7 @@
 //! - Highlights, Shadows and Dehaze add to the global sliders in the scene tone stage,
 //!   Contrast runs the global curve after the profile, at the pixel's slider values.
 //! - Texture and Clarity scale the local-contrast detail of the camera image.
-//! - Hue and Saturation rotate and scale Oklab chroma after the colour mixer.
+//! - Hue and Saturation rotate and scale Oklab chroma after the color mixer.
 //! - Sharpness and Noise change the finishing sharpening and noise reduction.
 use crate::model::masks::LocalAdjust;
 use crate::{camera_data::Metadata, model::recipe::Recipe};
@@ -183,7 +183,7 @@ pub(crate) fn tone_hdr(
     };
     p.map(|v| srgb_decode(v.max(0.)))
 }
-/// How much of a mask's Color tints a pixel of an HDR master whose exposed scene colour
+/// How much of a mask's Color tints a pixel of an HDR master whose exposed scene color
 /// is `rgb` (linear, 1 = graphics white): all of it up to a quarter of white, fading out
 /// by white on its brightest channel. Camera Raw 18.7's HDR render of a mask's Color
 /// tints less from about half of white and not at all above white, where its SDR
@@ -196,7 +196,7 @@ pub(crate) fn color_hdr_strength(rgb: [f32; 3]) -> f32 {
 /// Where a mask's Color starts and ends fading out in an HDR master.
 const COLOR_FADE: [f32; 2] = [0.25, 1.];
 /// A mask's positive Saturation in the HDR master, on linear ProPhoto RGB `p`: Camera
-/// Raw 18.7's keeps each colour's value (its largest channel) and hue and raises its
+/// Raw 18.7's keeps each color's value (its largest channel) and hue and raises its
 /// HSV saturation as a power of itself, s^(1 − 0.74 k^1.4) at Saturation k, at every
 /// brightness (fitted on the synthetic patches at +50 and +100; on six photos at +50 it
 /// renders within the acceptance rule where SDR's Oklab operator doesn't:
@@ -221,7 +221,7 @@ pub(crate) fn saturate_hdr(d: &LocalDelta, p: [f32; 3]) -> [f32; 3] {
     p.map(|v| max - (max - v) * scale)
 }
 /// A mask's negative Saturation in the HDR master, on linear ProPhoto RGB `p`, not
-/// negative: Camera Raw 18.7's blends each channel toward the colour's HSL lightness,
+/// negative: Camera Raw 18.7's blends each channel toward the color's HSL lightness,
 /// the mean of its largest and smallest channels, by 1 + Saturation, at every
 /// brightness (on the synthetic patches at −50 within 0.001 stop median of Camera
 /// Raw's, and on six photos at −25, −50 and −100 within the acceptance rule where
@@ -258,7 +258,7 @@ pub(crate) fn hue_saturation(d: &LocalDelta, mut lab: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /// The master's mask Saturation keeps a colour's value and hue: its largest
+    /// The master's mask Saturation keeps a color's value and hue: its largest
     /// channel stays, and the others move away from it in proportion. A gray and
     /// negative Saturation are left alone.
     #[test]
@@ -328,7 +328,7 @@ mod tests {
         assert!((luma - 1.).abs() < 1e-4);
     }
     /// A mask's Temp and Tint leave a monochrome photo's grey, which has no
-    /// white balance; a colour photo's they change.
+    /// white balance; a color photo's they change.
     #[test]
     fn local_white_balance_leaves_monochrome_photos_grey() {
         let mut d = [0.; LEN];

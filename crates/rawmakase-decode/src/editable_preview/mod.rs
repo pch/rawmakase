@@ -42,7 +42,7 @@ pub struct EditablePreview {
     /// the original's size, with the original's metadata and its highlights
     /// recovered already.
     pub image: CameraImage,
-    /// The photo's default Camera Look (fitted), for a camera without colour
+    /// The photo's default Camera Look (fitted), for a camera without color
     /// data: its fit needs the original, so offline it comes only from here.
     pub default_look: Option<CameraProfile>,
 }

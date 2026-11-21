@@ -1,6 +1,6 @@
 //! One channel of a Laplacian pyramid: the 5-tap binomial reduce and expand that
 //! Texture and luminance noise reduction share, and the photo's level a reduced
-//! decode's pyramid starts at, which colour noise reduction uses too.
+//! decode's pyramid starts at, which color noise reduction uses too.
 use crate::camera_data::CameraImage;
 use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
