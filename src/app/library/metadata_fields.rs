@@ -452,6 +452,7 @@ impl Library {
                 picked = Some(self.fields.suggestion.unwrap_or(0));
             }
         }
+        const HINT: &str = "Add keywords: Child < Parent, …";
         let response = ui.add_enabled(!targets.is_empty(), |ui: &mut egui::Ui| {
             ui.put(
                 rect,
@@ -459,9 +460,10 @@ impl Library {
                     &palette,
                     egui::TextEdit::singleline(&mut self.fields.keyword_entry).id(field_id),
                 )
-                .hint_text("Add keywords: Child < Parent, …"),
+                .hint_text(HINT),
             )
         });
+        let response = crate::app::ui::widgets::named(response, HINT);
         if response.changed() {
             self.fields.suggestion = None;
         }
@@ -574,24 +576,27 @@ fn text_row(
     );
     caption_at(ui, rect, key);
     let field = field_rect(rect);
-    let response = if multiline {
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field));
-        egui::ScrollArea::vertical()
-            .id_salt(("metadata-field", key))
-            .max_height(field.height())
-            .show(&mut child, |ui| {
-                ui.add_sized(
-                    Vec2::new(field.width(), field.height()),
-                    edit(&palette, text, shared, true),
-                )
-            })
-            .inner
-    } else {
-        ui.put(
-            field,
-            edit(&palette, text, shared, false).vertical_align(egui::Align::Center),
-        )
-    };
+    let response = crate::app::ui::widgets::named(
+        if multiline {
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field));
+            egui::ScrollArea::vertical()
+                .id_salt(("metadata-field", key))
+                .max_height(field.height())
+                .show(&mut child, |ui| {
+                    ui.add_sized(
+                        Vec2::new(field.width(), field.height()),
+                        edit(&palette, text, shared, true),
+                    )
+                })
+                .inner
+        } else {
+            ui.put(
+                field,
+                edit(&palette, text, shared, false).vertical_align(egui::Align::Center),
+            )
+        },
+        key,
+    );
     RowInput {
         left: response.lost_focus(),
         typed: response.changed(),
@@ -645,11 +650,14 @@ fn creator_rows(
         } else {
             ""
         };
-        let response = ui.put(
-            text,
-            panel_edit(&palette, egui::TextEdit::singleline(name))
-                .hint_text(hint)
-                .vertical_align(egui::Align::Center),
+        let response = crate::app::ui::widgets::named(
+            ui.put(
+                text,
+                panel_edit(&palette, egui::TextEdit::singleline(name))
+                    .hint_text(hint)
+                    .vertical_align(egui::Align::Center),
+            ),
+            "Creator",
         );
         commit |= response.lost_focus();
         typed |= response.changed();

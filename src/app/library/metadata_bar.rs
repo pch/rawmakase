@@ -279,9 +279,10 @@ impl Library {
         let focus = self.metadata_bar.focus_find.take() == Some(attribute);
         if counts.values.len() > FIND_FROM {
             let find = self.metadata_bar.find.entry(attribute).or_default();
+            let hint = format!("Find {}", attribute.name().to_lowercase());
             let field = ui.add(
                 egui::TextEdit::singleline(find)
-                    .hint_text(format!("Find {}", attribute.name().to_lowercase()))
+                    .hint_text(&hint)
                     .font(egui::FontId::proportional(text::LABEL))
                     // The width is the text's; the field's margins come on top.
                     .desired_width(width - 2. * space::XS)
@@ -289,6 +290,7 @@ impl Library {
                     .min_size(Vec2::new(0., size::CONTROL))
                     .vertical_align(egui::Align::Center),
             );
+            let field = crate::app::ui::widgets::named(field, &hint);
             if focus {
                 field.request_focus();
             }

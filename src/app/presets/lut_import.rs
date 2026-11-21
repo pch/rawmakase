@@ -33,6 +33,7 @@ impl Editor {
             .backdrop_color(Color32::from_black_alpha(140))
             .frame(modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Import LUTs");
                 ui.set_width(400.);
                 ui.label(
                     egui::RichText::new("Import LUTs")
@@ -55,14 +56,17 @@ impl Editor {
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         ui.label("Color space");
-                        widgets::dropdown(ui, "lut-space")
-                            .width(180.)
-                            .selected_text(space.name())
-                            .show_ui(ui, |ui| {
-                                for option in LutSpace::ALL {
-                                    ui.selectable_value(space, option, option.name());
-                                }
-                            });
+                        crate::app::ui::widgets::named_menu(
+                            widgets::dropdown(ui, "lut-space")
+                                .width(180.)
+                                .selected_text(space.name())
+                                .show_ui(ui, |ui| {
+                                    for option in LutSpace::ALL {
+                                        ui.selectable_value(space, option, option.name());
+                                    }
+                                }),
+                            "Color space",
+                        );
                     },
                 );
                 ui.add_space(space::XL);

@@ -146,7 +146,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
         // Without a profile the matrix path renders through the DNG default look.
         let matrix = "Default (camera matrix)";
         stacked_control(ui, "Profile", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "camera-profile")
+            crate::app::ui::widgets::named_menu(crate::app::ui::widgets::dropdown(ui, "camera-profile")
                 .width(ui.available_width())
                 // Leave room for the import actions as well as the profiles.
                 .height(size::MENU * 12.)
@@ -233,7 +233,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
                         actions.push(Action::FitCameraLook);
                         ui.close();
                     }
-                });
+                }), "Profile");
         });
         if let Some(offer) = community_offer
             && let Some(action) = profile_offer::card(ui, offer)
@@ -358,7 +358,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
                 {
                     view.toggle(Tool::WhiteBalance);
                 }
-                crate::app::ui::widgets::dropdown(ui, "white-balance")
+                crate::app::ui::widgets::named_menu(crate::app::ui::widgets::dropdown(ui, "white-balance")
                     .width(ui.available_width())
                     .selected_text(selected)
                     .show_ui(ui, |ui| {
@@ -414,7 +414,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
                             false,
                             egui::Button::selectable(selected == "Custom", "Custom"),
                         );
-                    });
+                    }), "White balance");
             });
             let selected = &mut view.selected_setting;
             if rendered {

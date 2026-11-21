@@ -716,6 +716,7 @@ impl Editor {
         let response = egui::Modal::new(egui::Id::new("rename-ordering"))
             .frame(widgets::modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Reading when the photos were taken…");
                 ui.set_width(360.);
                 ui.label(
                     egui::RichText::new("Reading when the photos were taken…")
@@ -781,6 +782,7 @@ impl Editor {
         let response = egui::Modal::new(egui::Id::new("rename-photos"))
             .frame(widgets::modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, &title);
                 ui.set_width(if r.one() { 420. } else { 520. });
                 ui.label(egui::RichText::new(&title).size(text::TITLE).color(palette.tone(Tone::STRONG)));
                 ui.add_space(space::L);
@@ -789,6 +791,7 @@ impl Editor {
                         let output = egui::TextEdit::singleline(&mut r.stem)
                             .desired_width(330.)
                             .show(ui);
+                        crate::app::ui::widgets::named(output.response.response.clone(), "File name");
                         if !r.extension.is_empty() {
                             ui.label(
                                 egui::RichText::new(format!(".{}", r.extension))
@@ -812,6 +815,7 @@ impl Editor {
                         let choice = menu::combo(
                             ui,
                             combo,
+                            "File Naming",
                             s.naming,
                             s.tokens.as_deref(),
                             &r.saved,
@@ -828,18 +832,25 @@ impl Editor {
                         .horizontal(|ui| {
                             label(ui, "Custom Text");
                             ui.add_enabled_ui(template.uses_text(), |ui| {
-                                egui::TextEdit::singleline(&mut r.settings.custom_text)
-                                    .desired_width(260.)
-                                    .show(ui)
+                                let output =
+                                    egui::TextEdit::singleline(&mut r.settings.custom_text)
+                                        .desired_width(260.)
+                                        .show(ui);
+                                crate::app::ui::widgets::named(output.response.response.clone(), "Custom Text");
+                                output
                             })
                             .inner
                         })
                         .inner;
                     ui.horizontal(|ui| {
                         label(ui, "Start Number");
-                        ui.add_enabled(
-                            template.uses_sequence(),
-                            egui::DragValue::new(&mut r.settings.start_number).range(0..=999_999),
+                        crate::app::ui::widgets::named(
+                            ui.add_enabled(
+                                template.uses_sequence(),
+                                egui::DragValue::new(&mut r.settings.start_number)
+                                    .range(0..=999_999),
+                            ),
+                            "Start Number",
                         );
                     });
                     ui.horizontal(|ui| {
@@ -1035,8 +1046,10 @@ impl Editor {
             .frame(widgets::modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
                 ui.set_width(420.);
+                let title = format!("Rename Folder “{}”", f.old);
+                crate::app::ui::widgets::name_dialog(ui, &title);
                 ui.label(
-                    egui::RichText::new(format!("Rename Folder “{}”", f.old))
+                    egui::RichText::new(title)
                         .size(text::TITLE)
                         .color(palette.tone(Tone::STRONG)),
                 );
@@ -1044,6 +1057,7 @@ impl Editor {
                 let field = egui::TextEdit::singleline(&mut f.name)
                     .desired_width(f32::INFINITY)
                     .show(ui);
+                crate::app::ui::widgets::named(field.response.response.clone(), "Folder name");
                 if !f.focused {
                     field.response.request_focus();
                     let mut state = field.state.clone();

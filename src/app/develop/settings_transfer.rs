@@ -127,6 +127,7 @@ impl Editor {
             .backdrop_color(Color32::from_black_alpha(140))
             .frame(modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, dialog.purpose.title());
                 ui.set_width(COLUMN * 2. + GAP);
                 ui.label(
                     egui::RichText::new(dialog.purpose.title())
@@ -337,16 +338,19 @@ fn preset_fields(ui: &mut egui::Ui, form: &mut PresetForm, library: &crate::pres
             .collect();
         groups.sort_unstable();
         groups.dedup();
-        crate::app::ui::widgets::dropdown(ui, "preset-group")
-            .selected_text("")
-            .width(24.)
-            .show_ui(ui, |ui| {
-                for group in groups {
-                    if ui.selectable_label(form.group == group, group).clicked() {
-                        form.group = group.to_string();
+        crate::app::ui::widgets::named_menu(
+            crate::app::ui::widgets::dropdown(ui, "preset-group")
+                .selected_text("")
+                .width(24.)
+                .show_ui(ui, |ui| {
+                    for group in groups {
+                        if ui.selectable_label(form.group == group, group).clicked() {
+                            form.group = group.to_string();
+                        }
                     }
-                }
-            });
+                }),
+            "Existing groups",
+        );
     });
 }
 

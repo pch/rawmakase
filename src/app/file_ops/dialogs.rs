@@ -151,13 +151,15 @@ impl Editor {
             .frame(widgets::modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
                 ui.set_width(460.);
+                let title = format!(
+                    "Move {} to Folder",
+                    widgets::plural(c.photos.len(), "Photo", "Photos")
+                );
+                crate::app::ui::widgets::name_dialog(ui, &title);
                 ui.label(
-                    egui::RichText::new(format!(
-                        "Move {} to Folder",
-                        widgets::plural(c.photos.len(), "Photo", "Photos")
-                    ))
-                    .size(text::TITLE)
-                    .color(palette.tone(Tone::STRONG)),
+                    egui::RichText::new(title)
+                        .size(text::TITLE)
+                        .color(palette.tone(Tone::STRONG)),
                 );
                 ui.add_space(space::M);
                 ui.add(
@@ -238,8 +240,10 @@ impl Editor {
             .frame(widgets::modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
                 ui.set_width(420.);
+                let title = format!("New Folder Inside “{}”", n.parent_name);
+                crate::app::ui::widgets::name_dialog(ui, &title);
                 ui.label(
-                    egui::RichText::new(format!("New Folder Inside “{}”", n.parent_name))
+                    egui::RichText::new(title)
                         .size(text::TITLE)
                         .color(palette.tone(Tone::STRONG)),
                 );
@@ -504,6 +508,7 @@ impl Editor {
         let response = egui::Modal::new(egui::Id::new("unfinished-file-operations"))
             .frame(widgets::modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Unfinished file operations");
                 ui.set_width(560.);
                 ui.label(
                     egui::RichText::new("Unfinished file operations")

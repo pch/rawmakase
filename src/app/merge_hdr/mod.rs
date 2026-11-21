@@ -266,6 +266,7 @@ impl Editor {
         let response = egui::Modal::new(egui::Id::new("merge-hdr"))
             .frame(widgets::modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Merge to HDR");
                 ui.set_width(400.);
                 ui.label(
                     egui::RichText::new("Merge to HDR")
@@ -295,19 +296,22 @@ impl Editor {
                 ui.checkbox(&mut dialog.align, "Auto Align");
                 crate::app::ui::widgets::dropdown_row(ui, |ui| {
                     ui.label("Deghost");
-                    crate::app::ui::widgets::dropdown(ui, "merge-hdr-deghost")
-                        .selected_text(deghost_name(dialog.deghost))
-                        .show_ui(ui, |ui| {
-                            for level in
-                                [Deghost::None, Deghost::Low, Deghost::Medium, Deghost::High]
-                            {
-                                ui.selectable_value(
-                                    &mut dialog.deghost,
-                                    level,
-                                    deghost_name(level),
-                                );
-                            }
-                        });
+                    crate::app::ui::widgets::named_menu(
+                        crate::app::ui::widgets::dropdown(ui, "merge-hdr-deghost")
+                            .selected_text(deghost_name(dialog.deghost))
+                            .show_ui(ui, |ui| {
+                                for level in
+                                    [Deghost::None, Deghost::Low, Deghost::Medium, Deghost::High]
+                                {
+                                    ui.selectable_value(
+                                        &mut dialog.deghost,
+                                        level,
+                                        deghost_name(level),
+                                    );
+                                }
+                            }),
+                        "Deghost",
+                    );
                 });
                 ui.checkbox(&mut dialog.stack, "Create Stack");
                 ui.checkbox(&mut dialog.open, "Open after Merge");

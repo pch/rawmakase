@@ -631,26 +631,31 @@ fn hue_saturation_fields(
     let mut degrees = (grade[0] * 360.).round();
     let mut percent = (grade[1] * 100.).round();
     let caption = region.step();
-    let hue = ui
-        .put(
+    let (hue_name, saturation_name) = (format!("{caption} Hue"), format!("{caption} Saturation"));
+    let hue = crate::app::ui::widgets::named(
+        ui.put(
             left,
             egui::DragValue::new(&mut degrees)
                 .range(0. ..=360.)
                 .speed(1.)
                 .max_decimals(0)
                 .prefix("H "),
-        )
-        .on_hover_text(format!("{caption} Hue"));
-    let saturation = ui
-        .put(
+        ),
+        &hue_name,
+    )
+    .on_hover_text(hue_name);
+    let saturation = crate::app::ui::widgets::named(
+        ui.put(
             right,
             egui::DragValue::new(&mut percent)
                 .range(0. ..=100.)
                 .speed(0.5)
                 .max_decimals(0)
                 .prefix("S "),
-        )
-        .on_hover_text(format!("{caption} Saturation"));
+        ),
+        &saturation_name,
+    )
+    .on_hover_text(saturation_name);
     if hue.changed() {
         grade[0] = degrees / 360.;
         step.name(format!("{caption} Hue"), format!("{degrees:.0}"));
@@ -750,15 +755,17 @@ fn luminance_rail(
         }
     }
     let mut percent = (*value * 100.).round();
-    if ui
-        .put(
+    if crate::app::ui::widgets::named(
+        ui.put(
             field,
             egui::DragValue::new(&mut percent)
                 .range(-100. ..=100.)
                 .speed(0.5)
                 .max_decimals(0),
-        )
-        .changed()
+        ),
+        &format!("{} Luminance", region.title()),
+    )
+    .changed()
     {
         *value = percent / 100.;
     }

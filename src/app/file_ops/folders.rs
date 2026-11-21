@@ -254,8 +254,10 @@ impl Editor {
             .frame(widgets::modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
                 ui.set_width(460.);
+                let title = format!("Move Folder “{}”", c.name);
+                crate::app::ui::widgets::name_dialog(ui, &title);
                 ui.label(
-                    egui::RichText::new(format!("Move Folder “{}”", c.name))
+                    egui::RichText::new(title)
                         .size(text::TITLE)
                         .color(palette.tone(Tone::STRONG)),
                 );

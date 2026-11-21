@@ -475,6 +475,7 @@ impl Editor {
                     .inner_margin(crate::app::ui::design::margin_same(inset::DIALOG)),
             )
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Install from GitHub");
                 ui.set_width(440.);
                 ui.label(
                     egui::RichText::new("Install from GitHub")
@@ -638,13 +639,12 @@ impl Editor {
             .show(ctx, |ui| {
                 ui.set_width(480.);
                 let m = offer.manifest();
+                let title = format!("Install {} {}?", m.extension.name, m.extension.version);
+                crate::app::ui::widgets::name_dialog(ui, &title);
                 ui.label(
-                    egui::RichText::new(format!(
-                        "Install {} {}?",
-                        m.extension.name, m.extension.version
-                    ))
-                    .size(text::TITLE)
-                    .color(palette.tone(Tone::STRONG)),
+                    egui::RichText::new(title)
+                        .size(text::TITLE)
+                        .color(palette.tone(Tone::STRONG)),
                 );
                 if let Some(description) = &m.extension.description {
                     ui.add_space(space::S);
@@ -1129,18 +1129,21 @@ impl Editor {
             }
             SettingControl::Choice(options) => {
                 let mut out = None;
-                crate::app::ui::widgets::dropdown(ui, ("extension-setting", id, s.id.as_str()))
-                    .selected_text(value.as_str().unwrap_or(""))
-                    .show_ui(ui, |ui| {
-                        for option in options {
-                            if ui
-                                .selectable_label(value.as_str() == Some(option), option)
-                                .clicked()
-                            {
-                                out = Some(Value::from(option.clone()));
+                crate::app::ui::widgets::named_menu(
+                    crate::app::ui::widgets::dropdown(ui, ("extension-setting", id, s.id.as_str()))
+                        .selected_text(value.as_str().unwrap_or(""))
+                        .show_ui(ui, |ui| {
+                            for option in options {
+                                if ui
+                                    .selectable_label(value.as_str() == Some(option), option)
+                                    .clicked()
+                                {
+                                    out = Some(Value::from(option.clone()));
+                                }
                             }
-                        }
-                    });
+                        }),
+                    s.name.as_deref().unwrap_or(&s.id),
+                );
                 out.filter(|v| v != value)
             }
             SettingControl::Segmented(options) => {

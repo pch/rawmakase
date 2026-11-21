@@ -678,6 +678,7 @@ impl Editor {
             .backdrop_color(Color32::from_black_alpha(140))
             .frame(modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Keyboard Shortcuts");
                 ui.set_width(width);
                 let mut close = false;
                 ui.horizontal(|ui| {

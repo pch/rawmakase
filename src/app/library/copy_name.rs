@@ -89,10 +89,13 @@ impl CopyNames {
             );
             return outcome;
         };
-        let response = ui.put(
-            field,
-            panel_edit(&palette, egui::TextEdit::singleline(text))
-                .vertical_align(egui::Align::Center),
+        let response = crate::app::ui::widgets::named(
+            ui.put(
+                field,
+                panel_edit(&palette, egui::TextEdit::singleline(text))
+                    .vertical_align(egui::Align::Center),
+            ),
+            "Copy Name",
         );
         if response.lost_focus() {
             return Ok(self.commit(session)? || outcome?);

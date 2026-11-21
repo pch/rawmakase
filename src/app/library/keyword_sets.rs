@@ -352,82 +352,88 @@ impl Library {
         let current = self.keyword_sets.set();
         let edited = matches!(self.keyword_sets.shown, Shown::Edited { .. });
         let slots = self.keyword_slots();
-        crate::app::ui::widgets::dropdown(ui, "keyword-set")
-            .width(ui.available_width())
-            .height(size::MENU * 16.)
-            .selected_text(&title)
-            .show_ui(ui, |ui| {
-                if ui
-                    .selectable_label(self.keyword_sets.shown == Shown::Recent, "Recent Keywords")
-                    .clicked()
-                {
-                    self.keyword_sets.shown = Shown::Recent;
-                }
-                ui.separator();
-                if edited {
-                    ui.add_enabled(false, egui::Button::selectable(true, &title));
+        crate::app::ui::widgets::named_menu(
+            crate::app::ui::widgets::dropdown(ui, "keyword-set")
+                .width(ui.available_width())
+                .height(size::MENU * 16.)
+                .selected_text(&title)
+                .show_ui(ui, |ui| {
+                    if ui
+                        .selectable_label(
+                            self.keyword_sets.shown == Shown::Recent,
+                            "Recent Keywords",
+                        )
+                        .clicked()
+                    {
+                        self.keyword_sets.shown = Shown::Recent;
+                    }
                     ui.separator();
-                }
-                for set in &sets {
-                    let on = self.keyword_sets.shown == Shown::Set(set.name.clone());
-                    if ui.selectable_label(on, &set.name).clicked() {
-                        self.keyword_sets.shown = Shown::Set(set.name.clone());
-                    }
-                }
-                ui.separator();
-                if ui.button("New Keyword Set…").clicked() {
-                    self.keyword_sets.dialog = Some(Dialog::New {
-                        name: String::new(),
-                        focused: false,
-                        slots: Box::default(),
-                    });
-                }
-                if ui.button("Save Current Settings as New Preset…").clicked() {
-                    self.keyword_sets.dialog = Some(Dialog::SaveAs {
-                        name: String::new(),
-                        focused: false,
-                    });
-                }
-                if let Some(set) = &current {
-                    let lightroom = "Lightroom's own set: RAWmakase never changes it";
                     if edited {
-                        if ui.button(format!("Update Preset “{}”", set.name)).clicked() {
-                            let typed = slot_texts(&slots);
-                            self.save_keyword_set(&set.name, &typed, true);
-                        }
-                    } else {
-                        let own = set.origin == Origin::Own;
-                        if ui
-                            .add_enabled(
-                                own,
-                                egui::Button::new(format!("Delete preset “{}”…", set.name)),
-                            )
-                            .on_disabled_hover_text(lightroom)
-                            .clicked()
-                        {
-                            self.keyword_sets.dialog = Some(Dialog::Delete(set.name.clone()));
-                        }
-                        if ui
-                            .add_enabled(
-                                own,
-                                egui::Button::new(format!("Rename preset “{}”…", set.name)),
-                            )
-                            .on_disabled_hover_text(lightroom)
-                            .clicked()
-                        {
-                            self.keyword_sets.dialog = Some(Dialog::Rename {
-                                from: set.name.clone(),
-                                name: set.name.clone(),
-                                focused: false,
-                            });
+                        ui.add_enabled(false, egui::Button::selectable(true, &title));
+                        ui.separator();
+                    }
+                    for set in &sets {
+                        let on = self.keyword_sets.shown == Shown::Set(set.name.clone());
+                        if ui.selectable_label(on, &set.name).clicked() {
+                            self.keyword_sets.shown = Shown::Set(set.name.clone());
                         }
                     }
-                }
-                ui.separator();
-                if ui.button("Edit Set…").clicked() {
-                    self.keyword_sets.dialog = Some(Dialog::Edit(slot_texts(&slots)));
-                }
-            });
+                    ui.separator();
+                    if ui.button("New Keyword Set…").clicked() {
+                        self.keyword_sets.dialog = Some(Dialog::New {
+                            name: String::new(),
+                            focused: false,
+                            slots: Box::default(),
+                        });
+                    }
+                    if ui.button("Save Current Settings as New Preset…").clicked() {
+                        self.keyword_sets.dialog = Some(Dialog::SaveAs {
+                            name: String::new(),
+                            focused: false,
+                        });
+                    }
+                    if let Some(set) = &current {
+                        let lightroom = "Lightroom's own set: RAWmakase never changes it";
+                        if edited {
+                            if ui.button(format!("Update Preset “{}”", set.name)).clicked() {
+                                let typed = slot_texts(&slots);
+                                self.save_keyword_set(&set.name, &typed, true);
+                            }
+                        } else {
+                            let own = set.origin == Origin::Own;
+                            if ui
+                                .add_enabled(
+                                    own,
+                                    egui::Button::new(format!("Delete preset “{}”…", set.name)),
+                                )
+                                .on_disabled_hover_text(lightroom)
+                                .clicked()
+                            {
+                                self.keyword_sets.dialog = Some(Dialog::Delete(set.name.clone()));
+                            }
+                            if ui
+                                .add_enabled(
+                                    own,
+                                    egui::Button::new(format!("Rename preset “{}”…", set.name)),
+                                )
+                                .on_disabled_hover_text(lightroom)
+                                .clicked()
+                            {
+                                self.keyword_sets.dialog = Some(Dialog::Rename {
+                                    from: set.name.clone(),
+                                    name: set.name.clone(),
+                                    focused: false,
+                                });
+                            }
+                        }
+                    }
+                    ui.separator();
+                    if ui.button("Edit Set…").clicked() {
+                        self.keyword_sets.dialog = Some(Dialog::Edit(slot_texts(&slots)));
+                    }
+                }),
+            "Keyword Set",
+        );
     }
     /// Saves `slots` as set `name`, replacing RAWmakase's own of that name
     /// when `replace`, and shows it.
@@ -465,6 +471,7 @@ impl Library {
                     Dialog::Edit(_) => ("Edit Keyword Set", "Change"),
                     Dialog::New { .. } => ("New Keyword Set", "Create"),
                 };
+                crate::app::ui::widgets::name_dialog(ui, title);
                 ui.label(
                     egui::RichText::new(title)
                         .size(text::TITLE)

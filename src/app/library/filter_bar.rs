@@ -92,16 +92,16 @@ impl Library {
         self.filter();
     }
     fn search_field(&mut self, ui: &mut egui::Ui, compact: bool) -> bool {
-        let changed = ui
-            .add(
-                egui::TextEdit::singleline(&mut self.filters.query)
-                    .hint_text("Search")
-                    .font(egui::FontId::proportional(text::LABEL))
-                    .desired_width(if compact { 120. } else { 190. })
-                    // As tall as the segmented controls in the bar.
-                    .min_size(Vec2::new(0., COMPACT_SEGMENT_HEIGHT))
-                    .vertical_align(egui::Align::Center),
-            )
+        let field = ui.add(
+            egui::TextEdit::singleline(&mut self.filters.query)
+                .hint_text("Search")
+                .font(egui::FontId::proportional(text::LABEL))
+                .desired_width(if compact { 120. } else { 190. })
+                // As tall as the segmented controls in the bar.
+                .min_size(Vec2::new(0., COMPACT_SEGMENT_HEIGHT))
+                .vertical_align(egui::Align::Center),
+        );
+        let changed = crate::app::ui::widgets::named(field, "Search")
             .on_hover_text("Search filename, keyword, capture date, label, camera or lens")
             .changed();
         self.turn_on(changed)

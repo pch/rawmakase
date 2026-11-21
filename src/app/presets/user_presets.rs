@@ -172,6 +172,7 @@ impl Editor {
             .backdrop_color(Color32::from_black_alpha(140))
             .frame(modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Rename Preset");
                 ui.set_width(380.);
                 ui.label(
                     egui::RichText::new("Rename Preset")

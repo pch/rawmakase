@@ -179,6 +179,7 @@ impl Editor {
                     .inner_margin(design::margin_same(inset::DIALOG)),
             )
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, progress.name());
                 ui.set_width(360.);
                 ui.label(
                     egui::RichText::new(progress.name())

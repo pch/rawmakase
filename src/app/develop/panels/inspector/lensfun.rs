@@ -343,18 +343,21 @@ fn pick(
         return;
     }
     let mut chosen = None;
-    crate::app::ui::widgets::dropdown(ui, id)
-        .width(ui.available_width())
-        .selected_text(label)
-        .height(320.)
-        .show_ui(ui, |ui| {
-            for (i, lens) in lenses.iter().enumerate() {
-                let text = format!("{} · {}", lens.label(), profile_label(lens, lenses));
-                if ui.selectable_label(false, text).clicked() {
-                    chosen = Some(i);
+    crate::app::ui::widgets::named_menu(
+        crate::app::ui::widgets::dropdown(ui, id)
+            .width(ui.available_width())
+            .selected_text(label)
+            .height(320.)
+            .show_ui(ui, |ui| {
+                for (i, lens) in lenses.iter().enumerate() {
+                    let text = format!("{} · {}", lens.label(), profile_label(lens, lenses));
+                    if ui.selectable_label(false, text).clicked() {
+                        chosen = Some(i);
+                    }
                 }
-            }
-        });
+            }),
+        "Lens",
+    );
     if let Some(i) = chosen {
         choose(r, m, db, lenses[i]);
     }

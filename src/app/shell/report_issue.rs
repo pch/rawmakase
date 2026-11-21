@@ -200,6 +200,7 @@ impl Editor {
             .backdrop_color(Color32::from_black_alpha(140))
             .frame(modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Report an Issue");
                 ui.set_width(WIDTH);
                 ui.horizontal(|ui| {
                     // The close button's height, so the title centres on it.

@@ -565,6 +565,7 @@ impl Library {
         let response = egui::Modal::new(egui::Id::new("auto-stack"))
             .frame(widgets::modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Auto-Stack by Capture Time");
                 ui.set_width(380.);
                 ui.label(
                     egui::RichText::new("Auto-Stack by Capture Time")
@@ -583,12 +584,15 @@ impl Library {
                 ui.add_space(space::M);
                 ui.horizontal(|ui| {
                     ui.label("Time Between Stacks");
-                    ui.add(
-                        egui::Slider::new(&mut dialog.seconds, 0.0..=MOST_SECONDS)
-                            .logarithmic(true)
-                            .smallest_positive(1.)
-                            .custom_formatter(|s, _| duration(s))
-                            .custom_parser(parse_duration),
+                    crate::app::ui::widgets::named(
+                        ui.add(
+                            egui::Slider::new(&mut dialog.seconds, 0.0..=MOST_SECONDS)
+                                .logarithmic(true)
+                                .smallest_positive(1.)
+                                .custom_formatter(|s, _| duration(s))
+                                .custom_parser(parse_duration),
+                        ),
+                        "Time Between Stacks",
                     );
                 });
                 ui.add_space(space::S);

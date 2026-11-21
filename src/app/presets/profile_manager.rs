@@ -335,6 +335,7 @@ impl Editor {
             .backdrop_color(Color32::from_black_alpha(140))
             .frame(modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Manage Profiles");
                 window(ui, manager, busy, &choices, &palette, &mut asked);
             });
         if response.should_close() && manager.prompt.is_none() {
@@ -779,16 +780,19 @@ fn prompt_row(
                 // In a scope: the drop-down styles the rest of its row, and
                 // Cancel and Move follow it there.
                 ui.scope(|ui| {
-                    widgets::dropdown(ui, "manage-profiles-groups")
-                        .selected_text("Existing groups")
-                        .width(160.)
-                        .show_ui(ui, |ui| {
-                            for g in &groups {
-                                if ui.selectable_label(*g == group, g).clicked() {
-                                    group.clone_from(g);
+                    crate::app::ui::widgets::named_menu(
+                        widgets::dropdown(ui, "manage-profiles-groups")
+                            .selected_text("Existing groups")
+                            .width(160.)
+                            .show_ui(ui, |ui| {
+                                for g in &groups {
+                                    if ui.selectable_label(*g == group, g).clicked() {
+                                        group.clone_from(g);
+                                    }
                                 }
-                            }
-                        });
+                            }),
+                        "Existing groups",
+                    );
                 });
             });
             if let Some(Prompt::Move { group: kept, .. }) = &mut manager.prompt {

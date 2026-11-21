@@ -203,13 +203,16 @@ impl Library {
             egui::Sense::hover(),
         );
         let mut clicked = None;
-        let filter = ui.put(
-            rect,
-            filled_edit(
-                &palette,
-                egui::TextEdit::singleline(&mut self.keyword_list.filter),
-            )
-            .hint_text("Filter Keywords"),
+        let filter = crate::app::ui::widgets::named(
+            ui.put(
+                rect,
+                filled_edit(
+                    &palette,
+                    egui::TextEdit::singleline(&mut self.keyword_list.filter),
+                )
+                .hint_text("Filter Keywords"),
+            ),
+            "Filter Keywords",
         );
         crate::app::ui::widgets::context_menu(&filter, |ui| {
             keyword_menu(ui, None, &mut clicked);
@@ -451,6 +454,7 @@ impl Library {
                     ListDialog::Rename { .. } => ("Edit Keyword Tag", "Save"),
                     ListDialog::Delete { .. } => ("Delete Keyword", "Delete"),
                 };
+                crate::app::ui::widgets::name_dialog(ui, title);
                 ui.label(
                     egui::RichText::new(title)
                         .size(text::TITLE)

@@ -178,7 +178,13 @@ impl Editor {
         let presets = &presets.presets;
         group(ui, "Raw Defaults");
         form_row(ui, "Master", |ui| {
-            choice_combo(ui, "raw-default-master", &mut settings.master, presets);
+            choice_combo(
+                ui,
+                "raw-default-master",
+                "Master",
+                &mut settings.master,
+                presets,
+            );
         });
         form_row(ui, "", |ui| {
             ui.checkbox(
@@ -197,14 +203,17 @@ impl Editor {
                     form.camera.clone()
                 };
                 let before = form.camera.clone();
-                crate::app::ui::widgets::dropdown(ui, "raw-default-camera")
-                    .width(240.)
-                    .selected_text(shown)
-                    .show_ui(ui, |ui| {
-                        for c in &form.cameras {
-                            ui.selectable_value(&mut form.camera, c.clone(), c);
-                        }
-                    });
+                crate::app::ui::widgets::named_menu(
+                    crate::app::ui::widgets::dropdown(ui, "raw-default-camera")
+                        .width(240.)
+                        .selected_text(shown)
+                        .show_ui(ui, |ui| {
+                            for c in &form.cameras {
+                                ui.selectable_value(&mut form.camera, c.clone(), c);
+                            }
+                        }),
+                    "Camera",
+                );
                 // Picking a camera shows its own choice, to update.
                 if form.camera != before
                     && let Some(own) = settings.camera_choice(&form.camera)
@@ -216,7 +225,13 @@ impl Editor {
         let mut create = false;
         form_row(ui, "Default", |ui| {
             ui.add_enabled_ui(on && !form.camera.is_empty(), |ui| {
-                choice_combo(ui, "raw-default-camera-choice", &mut form.choice, presets);
+                choice_combo(
+                    ui,
+                    "raw-default-camera-choice",
+                    "Default",
+                    &mut form.choice,
+                    presets,
+                );
                 let label = if existing.is_some() {
                     "Update Default"
                 } else {
@@ -319,39 +334,49 @@ fn remove_button(ui: &mut egui::Ui, enabled: bool) -> egui::Response {
     response.on_hover_text("Remove this camera's default")
 }
 /// Adobe Default, Camera Settings, RAWmakase Default or a Develop preset, by group.
-fn choice_combo(ui: &mut egui::Ui, id: &str, choice: &mut DefaultChoice, presets: &[Preset]) {
+/// `name` names it for screen readers.
+fn choice_combo(
+    ui: &mut egui::Ui,
+    id: &str,
+    name: &str,
+    choice: &mut DefaultChoice,
+    presets: &[Preset],
+) {
     crate::app::ui::widgets::keep_style(ui, |ui| {
-        crate::app::ui::widgets::dropdown(ui, id)
-            .width(240.)
-            .height(360.)
-            .selected_text(choice_text(choice, presets))
-            .show_ui(ui, |ui| {
-                for fixed in [
-                    DefaultChoice::Adobe,
-                    DefaultChoice::CameraSettings,
-                    DefaultChoice::Rawmakase,
-                ] {
-                    let label = fixed.label();
-                    ui.selectable_value(choice, fixed, label);
-                }
-                let caption = theme::palette(ui.ctx()).tone(Tone::FAINT);
-                let mut last_group = None;
-                for p in presets {
-                    if last_group != Some(&p.group) {
-                        ui.separator();
-                        let title = if p.group.is_empty() {
-                            "User Presets"
-                        } else {
-                            &p.group
-                        };
-                        ui.label(egui::RichText::new(title).size(text::SMALL).color(caption));
-                        last_group = Some(&p.group);
+        crate::app::ui::widgets::named_menu(
+            crate::app::ui::widgets::dropdown(ui, id)
+                .width(240.)
+                .height(360.)
+                .selected_text(choice_text(choice, presets))
+                .show_ui(ui, |ui| {
+                    for fixed in [
+                        DefaultChoice::Adobe,
+                        DefaultChoice::CameraSettings,
+                        DefaultChoice::Rawmakase,
+                    ] {
+                        let label = fixed.label();
+                        ui.selectable_value(choice, fixed, label);
                     }
-                    let value = DefaultChoice::preset(p);
-                    let label = crate::presets::display_name(&p.name);
-                    ui.selectable_value(choice, value, label);
-                }
-            });
+                    let caption = theme::palette(ui.ctx()).tone(Tone::FAINT);
+                    let mut last_group = None;
+                    for p in presets {
+                        if last_group != Some(&p.group) {
+                            ui.separator();
+                            let title = if p.group.is_empty() {
+                                "User Presets"
+                            } else {
+                                &p.group
+                            };
+                            ui.label(egui::RichText::new(title).size(text::SMALL).color(caption));
+                            last_group = Some(&p.group);
+                        }
+                        let value = DefaultChoice::preset(p);
+                        let label = crate::presets::display_name(&p.name);
+                        ui.selectable_value(choice, value, label);
+                    }
+                }),
+            name,
+        );
     });
 }
 

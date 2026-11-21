@@ -981,16 +981,18 @@ fn point_field(ui: &mut egui::Ui, label: &str, value: Option<&mut f32>) -> bool 
         }
         let size = Vec2::new(40., size::CONTROL);
         match value {
-            Some(value) => ui
-                .add_sized(
+            Some(value) => named(
+                ui.add_sized(
                     size,
                     egui::DragValue::new(value)
                         .range(0. ..=255.)
                         .update_while_editing(false)
                         .speed(1.)
                         .fixed_decimals(0),
-                )
-                .changed(),
+                ),
+                label,
+            )
+            .changed(),
             None => {
                 ui.add_enabled_ui(false, |ui| {
                     ui.add_sized(size, egui::Button::new("–"));
@@ -1085,7 +1087,10 @@ pub(in crate::app) fn slider_with(
 }
 /// How a slider looks and moves beyond its label, range and default.
 #[derive(Clone, Copy, Debug, Default)]
-pub(in crate::app) struct SliderStyle {
+pub(in crate::app) struct SliderStyle<'a> {
+    /// What screen readers call the slider when it shows no label of its own,
+    /// as the upper end of Defringe's hue range under the lower one's label.
+    pub name: Option<&'a str>,
     /// Shown scale and decimals, e.g. Sharpening's 0–150; picked from the range
     /// when `None`.
     pub display: Option<(f32, usize)>,
@@ -1178,6 +1183,7 @@ fn descriptor_slider<Id>(
     selected: bool,
 ) -> SliderEvent {
     let style = SliderStyle {
+        name: None,
         display: Some((d.display.scale, d.display.decimals)),
         gradient,
         reciprocal: matches!(d.tick, params::Tick::Mireds(_)),
@@ -1226,10 +1232,11 @@ pub(in crate::app) fn slider_styled(
     value: &mut f32,
     range: std::ops::RangeInclusive<f32>,
     default: f32,
-    style: SliderStyle,
+    style: SliderStyle<'_>,
 ) -> SliderEvent {
     let palette = theme::palette(ui.ctx());
     let SliderStyle {
+        name,
         display,
         gradient,
         reciprocal,
@@ -1392,15 +1399,18 @@ pub(in crate::app) fn slider_styled(
                             state.expansion = 0.;
                         }
                     }
-                    ui.add(
-                        // An imported value beyond the range shows as it is, rather
-                        // than being clamped by drawing it.
-                        egui::DragValue::new(&mut displayed)
-                            .range(typed_low * scale..=typed_high * scale)
-                            .clamp_existing_to_range(false)
-                            .speed(span * scale / 500.)
-                            .custom_formatter(move |v, _| format_value(v, decimals, signed))
-                            .custom_parser(|s| s.trim().trim_start_matches('+').parse().ok()),
+                    named(
+                        ui.add(
+                            // An imported value beyond the range shows as it is, rather
+                            // than being clamped by drawing it.
+                            egui::DragValue::new(&mut displayed)
+                                .range(typed_low * scale..=typed_high * scale)
+                                .clamp_existing_to_range(false)
+                                .speed(span * scale / 500.)
+                                .custom_formatter(move |v, _| format_value(v, decimals, signed))
+                                .custom_parser(|s| s.trim().trim_start_matches('+').parse().ok()),
+                        ),
+                        name.unwrap_or(label),
                     )
                 },
             )
@@ -2168,6 +2178,37 @@ pub(in crate::app) fn modal_frame(palette: &theme::Palette) -> egui::Frame {
         .stroke(Stroke::new(1., palette.tone(Tone::OUTLINE)))
         .corner_radius(radius::DIALOG)
 }
+/// `response`'s control, called `name` for screen readers: the label shown
+/// beside it, or for an icon its hover text. egui names a text field, a
+/// number or a drop-down only by a label it draws itself, which the panels'
+/// controls don't use.
+pub(in crate::app) fn named(response: egui::Response, name: &str) -> egui::Response {
+    response
+        .ctx
+        .accesskit_node_builder(response.id, |node| node.set_label(name));
+    response
+}
+/// A drop-down's [`egui::ComboBox::show_ui`] result, its button called `name`
+/// for screen readers, as [`named`] calls other controls.
+pub(in crate::app) fn named_menu<R>(
+    menu: egui::InnerResponse<R>,
+    name: &str,
+) -> egui::InnerResponse<R> {
+    let egui::InnerResponse { inner, response } = menu;
+    egui::InnerResponse::new(inner, named(response, name))
+}
+/// Makes the [`egui::Modal`] whose contents `ui` draws a modal dialog called
+/// `title` for screen readers. egui gives a modal's area no role or name; its
+/// contents sit under the node of the area's move response, which egui keys
+/// on the area's layer as `"move"`, so that node is the dialog's.
+pub(in crate::app) fn name_dialog(ui: &egui::Ui, title: &str) {
+    ui.ctx()
+        .accesskit_node_builder(ui.layer_id().id.with("move"), |node| {
+            node.set_role(egui::accesskit::Role::Dialog);
+            node.set_label(title);
+            node.set_modal();
+        });
+}
 /// The button that confirms a modal window ("Done", "Export").
 pub(in crate::app) fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
     let palette = theme::palette(ui.ctx());
@@ -2197,6 +2238,7 @@ pub(in crate::app) fn confirm_modal<T: Copy>(
     let response = egui::Modal::new(egui::Id::new(id))
         .frame(modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
         .show(ctx, |ui| {
+            name_dialog(ui, title);
             ui.set_width(420.);
             ui.label(
                 egui::RichText::new(title)
@@ -2282,6 +2324,7 @@ pub(in crate::app) fn destructive_choice(
     let response = egui::Modal::new(egui::Id::new(id))
         .frame(modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
         .show(ctx, |ui| {
+            name_dialog(ui, title);
             ui.set_width(440.);
             ui.label(
                 egui::RichText::new(title)
@@ -2490,6 +2533,8 @@ mod confirmation_tests {
                         .nodes
                         .iter()
                         .map(|(_, node)| node)
+                        // The text and buttons, not the dialog named after the title.
+                        .filter(|node| node.role() != egui::accesskit::Role::Dialog)
                         .find(|node| node.label() == Some(label) || node.value() == Some(label))
                         .unwrap_or_else(|| panic!("missing {label}"));
                     let b = node.bounds().expect("placed");
@@ -3101,10 +3146,13 @@ pub(in crate::app) fn search_field_with_id(
                     .frame(egui::Frame::new())
                     .font(egui::FontId::proportional(text::LABEL))
                     .desired_width(field.width());
-                ui.add(match id {
-                    Some(id) => field.id(id),
-                    None => field,
-                })
+                named(
+                    ui.add(match id {
+                        Some(id) => field.id(id),
+                        None => field,
+                    }),
+                    hint,
+                )
             },
         )
         .inner;

@@ -1029,15 +1029,18 @@ fn field<R>(
 }
 
 /// A one-line text field as wide as the space left and as tall as a
-/// drop-down.
-fn text_field(ui: &mut egui::Ui, value: &mut String, hint: &str) -> egui::Response {
-    ui.add(
-        egui::TextEdit::singleline(value)
-            .hint_text(hint)
-            .desired_width(ui.available_width())
-            .min_size(Vec2::new(0., FIELD))
-            .vertical_align(egui::Align::Center)
-            .margin(design::margin(space::M, space::XS)),
+/// drop-down, called `name` for screen readers.
+fn text_field(ui: &mut egui::Ui, value: &mut String, name: &str, hint: &str) -> egui::Response {
+    widgets::named(
+        ui.add(
+            egui::TextEdit::singleline(value)
+                .hint_text(hint)
+                .desired_width(ui.available_width())
+                .min_size(Vec2::new(0., FIELD))
+                .vertical_align(egui::Align::Center)
+                .margin(design::margin(space::M, space::XS)),
+        ),
+        name,
     )
 }
 
@@ -1093,6 +1096,7 @@ fn draw(
     let width = (screen.width() - 2. * space::HUGE - 2. * inset::DIALOG).clamp(760., 1120.);
     let body = (screen.height() - 2. * space::HUGE - 200.).clamp(380., 640.);
     ui.set_width(width);
+    crate::app::ui::widgets::name_dialog(ui, "Import Photos");
     ui.label(
         egui::RichText::new("Import Photos")
             .size(text::TITLE)
@@ -1170,32 +1174,36 @@ fn source_section(
             // In a scope, so Choose… beside it keeps a button's look, as
             // Destination's does.
             ui.scope(|ui| {
-                widgets::dropdown(ui, "import-source")
-                    .width(menu_width)
-                    .selected_text(current.unwrap_or_else(|| "Choose a card or folder".into()))
-                    .show_ui(ui, |ui| {
-                        match &d.drives {
-                            None => {
-                                ui.label("Looking for cards and drives…");
-                            }
-                            Some(drives) if drives.is_empty() => {
-                                ui.label("No card or drive attached");
-                            }
-                            Some(drives) => {
-                                for drive in drives {
-                                    let folder = drive.card.clone().unwrap_or(drive.mount.clone());
-                                    let on = d.settings.source.as_ref() == Some(&folder);
-                                    if ui.selectable_label(on, &drive.name).clicked() {
-                                        shown.source = Some(folder);
+                crate::app::ui::widgets::named_menu(
+                    widgets::dropdown(ui, "import-source")
+                        .width(menu_width)
+                        .selected_text(current.unwrap_or_else(|| "Choose a card or folder".into()))
+                        .show_ui(ui, |ui| {
+                            match &d.drives {
+                                None => {
+                                    ui.label("Looking for cards and drives…");
+                                }
+                                Some(drives) if drives.is_empty() => {
+                                    ui.label("No card or drive attached");
+                                }
+                                Some(drives) => {
+                                    for drive in drives {
+                                        let folder =
+                                            drive.card.clone().unwrap_or(drive.mount.clone());
+                                        let on = d.settings.source.as_ref() == Some(&folder);
+                                        if ui.selectable_label(on, &drive.name).clicked() {
+                                            shown.source = Some(folder);
+                                        }
                                     }
                                 }
                             }
-                        }
-                        ui.separator();
-                        if ui.selectable_label(false, "Other Folder…").clicked() {
-                            shown.choose_source = true;
-                        }
-                    });
+                            ui.separator();
+                            if ui.selectable_label(false, "Other Folder…").clicked() {
+                                shown.choose_source = true;
+                            }
+                        }),
+                    "From",
+                );
             });
             if field_button(ui, "Choose…", CHOOSE_WIDTH).clicked() {
                 shown.choose_source = true;
@@ -1456,7 +1464,12 @@ fn settings_section(
     ui.checkbox(&mut d.settings.into_subfolder, "Into Subfolder");
     if d.settings.into_subfolder {
         ui.add_space(space::XS);
-        text_field(ui, &mut d.settings.subfolder, "Subfolder name");
+        text_field(
+            ui,
+            &mut d.settings.subfolder,
+            "Subfolder name",
+            "Subfolder name",
+        );
     }
     let shown_organize = |o: &Organize| match o {
         Organize::ByOriginalFolders => "By original folders",
@@ -1468,39 +1481,45 @@ fn settings_section(
         _ => DateFolders::YearThenDate,
     };
     field(ui, palette, "Organize", |ui| {
-        widgets::dropdown(ui, "import-organize")
-            .width(full)
-            .selected_text(shown_organize(&d.settings.organize))
-            .show_ui(ui, |ui| {
-                for o in [
-                    Organize::ByOriginalFolders,
-                    Organize::ByDate(date),
-                    Organize::IntoOneFolder,
-                ] {
-                    let on =
-                        std::mem::discriminant(&o) == std::mem::discriminant(&d.settings.organize);
-                    if ui.selectable_label(on, shown_organize(&o)).clicked() && !on {
-                        d.settings.organize = o;
+        crate::app::ui::widgets::named_menu(
+            widgets::dropdown(ui, "import-organize")
+                .width(full)
+                .selected_text(shown_organize(&d.settings.organize))
+                .show_ui(ui, |ui| {
+                    for o in [
+                        Organize::ByOriginalFolders,
+                        Organize::ByDate(date),
+                        Organize::IntoOneFolder,
+                    ] {
+                        let on = std::mem::discriminant(&o)
+                            == std::mem::discriminant(&d.settings.organize);
+                        if ui.selectable_label(on, shown_organize(&o)).clicked() && !on {
+                            d.settings.organize = o;
+                        }
                     }
-                }
-            });
+                }),
+            "Organize",
+        );
     });
     if let Organize::ByDate(format) = &mut d.settings.organize {
         let today = today();
         field(ui, palette, "Date Format", |ui| {
-            widgets::dropdown(ui, "import-date-format")
-                .width(full)
-                .selected_text(format.label(&today))
-                .show_ui(ui, |ui| {
-                    for (i, group) in DateFolders::GROUPS.iter().enumerate() {
-                        if i > 0 {
-                            ui.separator();
+            crate::app::ui::widgets::named_menu(
+                widgets::dropdown(ui, "import-date-format")
+                    .width(full)
+                    .selected_text(format.label(&today))
+                    .show_ui(ui, |ui| {
+                        for (i, group) in DateFolders::GROUPS.iter().enumerate() {
+                            if i > 0 {
+                                ui.separator();
+                            }
+                            for &f in *group {
+                                ui.selectable_value(format, f, f.label(&today));
+                            }
                         }
-                        for &f in *group {
-                            ui.selectable_value(format, f, f.label(&today));
-                        }
-                    }
-                });
+                    }),
+                "Date Format",
+            );
         });
     }
 
@@ -1524,7 +1543,15 @@ fn settings_section(
         field(ui, palette, "Template", |ui| {
             let s = &mut d.settings.naming;
             let combo = widgets::dropdown(ui, "import-naming").width(full);
-            match menu::combo(ui, combo, s.naming, s.tokens.as_deref(), &d.saved, true) {
+            match menu::combo(
+                ui,
+                combo,
+                "Template",
+                s.naming,
+                s.tokens.as_deref(),
+                &d.saved,
+                true,
+            ) {
                 Some(NamingChoice::Preset(naming)) => s.choose_naming(naming),
                 Some(NamingChoice::Tokens(tokens)) => s.choose_tokens(&tokens),
                 Some(NamingChoice::Edit) => shown.edit = true,
@@ -1534,12 +1561,12 @@ fn settings_section(
         let template = d.settings.naming.name_template();
         if template.uses_text() {
             field(ui, palette, "Custom Text", |ui| {
-                text_field(ui, &mut d.settings.naming.custom_text, "")
+                text_field(ui, &mut d.settings.naming.custom_text, "Custom Text", "")
             });
         }
         if template.uses_shoot() {
             field(ui, palette, "Shoot Name", |ui| {
-                text_field(ui, &mut d.settings.shoot_name, "")
+                text_field(ui, &mut d.settings.shoot_name, "Shoot Name", "")
             });
         }
         // Start Number and Extensions share a row: both are short.
@@ -1552,10 +1579,13 @@ fn settings_section(
                     ui.set_width(half);
                     field(ui, palette, "Start Number", |ui| {
                         ui.add_enabled_ui(template.uses_sequence(), |ui| {
-                            ui.add_sized(
-                                Vec2::new(half, FIELD),
-                                egui::DragValue::new(&mut d.settings.naming.start_number)
-                                    .range(0..=999_999),
+                            widgets::named(
+                                ui.add_sized(
+                                    Vec2::new(half, FIELD),
+                                    egui::DragValue::new(&mut d.settings.naming.start_number)
+                                        .range(0..=999_999),
+                                ),
+                                "Start Number",
                             )
                         })
                     });
@@ -1572,22 +1602,25 @@ fn settings_section(
                             ExtensionCase::Uppercase => "Uppercase",
                             ExtensionCase::LeaveAsIs => "Leave as-is",
                         };
-                        widgets::dropdown(ui, "import-extensions")
-                            .width(half)
-                            .selected_text(shown_case(d.settings.extensions))
-                            .show_ui(ui, |ui| {
-                                for c in [
-                                    ExtensionCase::Lowercase,
-                                    ExtensionCase::Uppercase,
-                                    ExtensionCase::LeaveAsIs,
-                                ] {
-                                    ui.selectable_value(
-                                        &mut d.settings.extensions,
-                                        c,
-                                        shown_case(c),
-                                    );
-                                }
-                            });
+                        crate::app::ui::widgets::named_menu(
+                            widgets::dropdown(ui, "import-extensions")
+                                .width(half)
+                                .selected_text(shown_case(d.settings.extensions))
+                                .show_ui(ui, |ui| {
+                                    for c in [
+                                        ExtensionCase::Lowercase,
+                                        ExtensionCase::Uppercase,
+                                        ExtensionCase::LeaveAsIs,
+                                    ] {
+                                        ui.selectable_value(
+                                            &mut d.settings.extensions,
+                                            c,
+                                            shown_case(c),
+                                        );
+                                    }
+                                }),
+                            "Extensions",
+                        );
                     });
                 },
             );
@@ -1601,13 +1634,13 @@ fn settings_section(
     section_gap(ui, palette);
     caption(ui, palette, "Apply During Import");
     field(ui, palette, "Creator", |ui| {
-        text_field(ui, &mut d.settings.creator, "")
+        text_field(ui, &mut d.settings.creator, "Creator", "")
     });
     field(ui, palette, "Copyright", |ui| {
-        text_field(ui, &mut d.settings.copyright, "")
+        text_field(ui, &mut d.settings.copyright, "Copyright", "")
     });
     field(ui, palette, "Keywords", |ui| {
-        text_field(ui, &mut d.settings.keywords, "Comma-separated")
+        text_field(ui, &mut d.settings.keywords, "Keywords", "Comma-separated")
     });
     if let Err(e) = crate::app::library::parse_keywords(&d.settings.keywords) {
         ui.add_space(space::XS);

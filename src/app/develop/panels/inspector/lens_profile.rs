@@ -77,83 +77,92 @@ pub(super) fn profile_menus(ui: &mut egui::Ui, r: &mut Recipe, m: Option<&Metada
         };
         let mut picked: Option<Pick> = None;
         control_row(ui, "Make", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "lens-profile-make")
-                .width(ui.available_width())
-                .selected_text(&make)
-                .show_ui(ui, |ui| {
-                    let adobe = menus.makes();
-                    for item in &adobe {
-                        if ui.selectable_label(*item == make, *item).clicked() {
-                            picked = menus.first_of_make(item).map(Pick::Adobe);
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "lens-profile-make")
+                    .width(ui.available_width())
+                    .selected_text(&make)
+                    .show_ui(ui, |ui| {
+                        let adobe = menus.makes();
+                        for item in &adobe {
+                            if ui.selectable_label(*item == make, *item).clicked() {
+                                picked = menus.first_of_make(item).map(Pick::Adobe);
+                            }
                         }
-                    }
-                    let mut seen: Vec<String> = adobe.iter().map(|s| s.to_string()).collect();
-                    for lens in &lensfun {
-                        let item = maker(lens);
-                        if seen.contains(&item) {
-                            continue;
+                        let mut seen: Vec<String> = adobe.iter().map(|s| s.to_string()).collect();
+                        for lens in &lensfun {
+                            let item = maker(lens);
+                            if seen.contains(&item) {
+                                continue;
+                            }
+                            if ui.selectable_label(item == make, &item).clicked() {
+                                picked = Some(Pick::Lensfun(lens));
+                            }
+                            seen.push(item);
                         }
-                        if ui.selectable_label(item == make, &item).clicked() {
-                            picked = Some(Pick::Lensfun(lens));
-                        }
-                        seen.push(item);
-                    }
-                });
+                    }),
+                "Make",
+            );
         });
         control_row(ui, "Model", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "lens-profile-model")
-                .width(ui.available_width())
-                .selected_text(&model_name)
-                .height(320.)
-                .show_ui(ui, |ui| {
-                    let adobe = menus.models(&make);
-                    for item in &adobe {
-                        if ui.selectable_label(*item == model_name, *item).clicked() {
-                            picked = menus.first_of_model(&make, item).map(Pick::Adobe);
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "lens-profile-model")
+                    .width(ui.available_width())
+                    .selected_text(&model_name)
+                    .height(320.)
+                    .show_ui(ui, |ui| {
+                        let adobe = menus.models(&make);
+                        for item in &adobe {
+                            if ui.selectable_label(*item == model_name, *item).clicked() {
+                                picked = menus.first_of_model(&make, item).map(Pick::Adobe);
+                            }
                         }
-                    }
-                    let mut seen: Vec<String> = adobe.iter().map(|s| s.to_string()).collect();
-                    for lens in lensfun.iter().filter(|l| maker(l) == make) {
-                        let item = model(lens);
-                        if seen.contains(&item) {
-                            continue;
+                        let mut seen: Vec<String> = adobe.iter().map(|s| s.to_string()).collect();
+                        for lens in lensfun.iter().filter(|l| maker(l) == make) {
+                            let item = model(lens);
+                            if seen.contains(&item) {
+                                continue;
+                            }
+                            if ui.selectable_label(item == model_name, &item).clicked() {
+                                picked = Some(Pick::Lensfun(lens));
+                            }
+                            seen.push(item);
                         }
-                        if ui.selectable_label(item == model_name, &item).clicked() {
-                            picked = Some(Pick::Lensfun(lens));
-                        }
-                        seen.push(item);
-                    }
-                });
+                    }),
+                "Model",
+            );
         });
         control_row(ui, "Profile", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "lens-profile-name")
-                .width(ui.available_width())
-                .selected_text(&name)
-                .show_ui(ui, |ui| {
-                    for p in menus.profiles(&make, &model_name) {
-                        let current = in_use.as_ref().is_some_and(|u| u.filename == p.filename);
-                        if ui
-                            .selectable_label(current, &p.name)
-                            .on_hover_text(&p.filename)
-                            .clicked()
-                        {
-                            picked = Some(Pick::Adobe(p));
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "lens-profile-name")
+                    .width(ui.available_width())
+                    .selected_text(&name)
+                    .show_ui(ui, |ui| {
+                        for p in menus.profiles(&make, &model_name) {
+                            let current = in_use.as_ref().is_some_and(|u| u.filename == p.filename);
+                            if ui
+                                .selectable_label(current, &p.name)
+                                .on_hover_text(&p.filename)
+                                .clicked()
+                            {
+                                picked = Some(Pick::Adobe(p));
+                            }
                         }
-                    }
-                    for lens in lensfun
-                        .iter()
-                        .filter(|l| maker(l) == make && model(l) == model_name)
-                    {
-                        let current = chosen_lens.is_some_and(|c| std::ptr::eq(c, *lens));
-                        if ui
-                            .selectable_label(current, profile_label(lens, &lensfun))
-                            .on_hover_text("Lensfun community profile, CC BY-SA 3.0")
-                            .clicked()
+                        for lens in lensfun
+                            .iter()
+                            .filter(|l| maker(l) == make && model(l) == model_name)
                         {
-                            picked = Some(Pick::Lensfun(lens));
+                            let current = chosen_lens.is_some_and(|c| std::ptr::eq(c, *lens));
+                            if ui
+                                .selectable_label(current, profile_label(lens, &lensfun))
+                                .on_hover_text("Lensfun community profile, CC BY-SA 3.0")
+                                .clicked()
+                            {
+                                picked = Some(Pick::Lensfun(lens));
+                            }
                         }
-                    }
-                });
+                    }),
+                "Profile",
+            );
         });
         match picked {
             Some(Pick::Adobe(p)) => r.lens_profile_choice.choose(p),
@@ -175,14 +184,17 @@ fn setup_row(
 ) {
     control_row(ui, "Setup", |ui| {
         let mut setup = r.lens_profile_choice.setup;
-        crate::app::ui::widgets::dropdown(ui, "lens-profile-setup")
-            .width(ui.available_width())
-            .selected_text(setup.label())
-            .show_ui(ui, |ui| {
-                for s in LensProfileSetup::ALL {
-                    ui.selectable_value(&mut setup, s, s.label());
-                }
-            });
+        crate::app::ui::widgets::named_menu(
+            crate::app::ui::widgets::dropdown(ui, "lens-profile-setup")
+                .width(ui.available_width())
+                .selected_text(setup.label())
+                .show_ui(ui, |ui| {
+                    for s in LensProfileSetup::ALL {
+                        ui.selectable_value(&mut setup, s, s.label());
+                    }
+                }),
+            "Setup",
+        );
         if setup != r.lens_profile_choice.setup {
             r.lens_profile_choice.set_setup(setup, in_use);
         }
