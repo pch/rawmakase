@@ -607,12 +607,12 @@ impl Library {
                     } => {
                         refusal = name_field(ui, name, focused, &names, &mut done);
                         ui.add_space(space::S);
-                        ui.horizontal(|ui| {
+                        crate::app::ui::widgets::dropdown_row(ui, |ui| {
                             ui.label("Inside a Collection Set");
                             let shown = parent
                                 .and_then(|p| parents.iter().find(|(id, _)| *id == p))
                                 .map_or("None", |(_, label)| label.as_str());
-                            egui::ComboBox::from_id_salt("collection-parent")
+                            crate::app::ui::widgets::dropdown(ui, "collection-parent")
                                 .selected_text(shown)
                                 .show_ui(ui, |ui| {
                                     ui.selectable_value(parent, None, "None");

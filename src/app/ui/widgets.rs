@@ -1924,7 +1924,10 @@ pub(in crate::app) fn segmented<T: PartialEq + Copy>(
 /// The height of a panel drop-down, a little taller than a button.
 pub(in crate::app) const DROPDOWN_HEIGHT: f32 = size::HEADER;
 /// A drop-down in the panels' style: rounded, outlined, a chevron at its end.
-/// It styles the rest of `ui`'s row too, so call it inside the row's closure.
+/// It styles the rest of `ui`'s row too, so call it inside the row's closure,
+/// or in [`keep_style`] when other widgets follow it in that row.
+/// Every drop-down in the app is built here: `clippy.toml` disallows egui's
+/// own [`egui::ComboBox`] constructors.
 pub(in crate::app) fn dropdown(ui: &mut egui::Ui, id_salt: impl egui::AsIdSalt) -> egui::ComboBox {
     let palette = theme::palette(ui.ctx());
     let spacing = ui.spacing_mut();
@@ -1945,7 +1948,12 @@ pub(in crate::app) fn dropdown(ui: &mut egui::Ui, id_salt: impl egui::AsIdSalt) 
         visuals.bg_stroke = Stroke::new(1., palette.tone(outline));
         visuals.expansion = 0.;
     }
-    egui::ComboBox::from_id_salt(id_salt).icon(|ui, rect, visuals, _open| {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the one place that builds an egui combo box, in the panels' style"
+    )]
+    let combo = egui::ComboBox::from_id_salt(id_salt);
+    combo.icon(|ui, rect, visuals, _open| {
         icons::paint_at(
             ui.painter(),
             Icon::ChevronDown,
@@ -1954,6 +1962,49 @@ pub(in crate::app) fn dropdown(ui: &mut egui::Ui, id_salt: impl egui::AsIdSalt) 
             visuals.fg_stroke.color,
         );
     })
+}
+/// A [`dropdown`] `height` points tall, for a panel whose rows keep to a
+/// smaller grid than drop-downs elsewhere (the Crop drawer, a tool drawer).
+pub(in crate::app) fn dropdown_of_height(
+    ui: &mut egui::Ui,
+    id_salt: impl egui::AsIdSalt,
+    height: f32,
+) -> egui::ComboBox {
+    let combo = dropdown(ui, id_salt);
+    let spacing = ui.spacing_mut();
+    spacing.interact_size.y = height;
+    spacing.button_padding.y = space::XXS;
+    combo
+}
+/// A row as tall as a [`dropdown`], laid out left to right, so the labels,
+/// buttons and checkboxes before and after a drop-down sit on its middle.
+/// Only the row's own widgets take the height.
+pub(in crate::app) fn dropdown_row<R>(
+    ui: &mut egui::Ui,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    keep_style(ui, |ui| {
+        ui.spacing_mut().interact_size.y = DROPDOWN_HEIGHT;
+        ui.horizontal(add).inner
+    })
+}
+/// A one-line text field as tall as a [`dropdown`], its text on the middle,
+/// for a field beside one.
+pub(in crate::app) fn dropdown_text_edit(text: &mut dyn egui::TextBuffer) -> egui::TextEdit<'_> {
+    egui::TextEdit::singleline(text)
+        .min_size(Vec2::new(0., DROPDOWN_HEIGHT))
+        .vertical_align(egui::Align::Center)
+        .margin(design::margin(space::M, space::XS))
+}
+/// Runs `add`, which draws a [`dropdown`], then puts back `ui`'s style, so
+/// the widgets after it in the row keep their own look. Unlike
+/// [`egui::Ui::scope`] it draws into `ui` itself, so the drop-down keeps the
+/// id it would have had there.
+pub(in crate::app) fn keep_style<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let style = ui.style().clone();
+    let inner = add(ui);
+    ui.set_style(style);
+    inner
 }
 /// Sets a menu's width: `preferred`, or the width its widest
 /// [`menu_item`] asked for, so that a long label never runs into its
@@ -3107,3 +3158,62 @@ pub(in crate::app) fn search_field_with_id(
 #[cfg(test)]
 #[path = "widgets_editor_tests.rs"]
 mod editor_tests;
+
+#[cfg(test)]
+mod dropdown_layout_tests {
+    use super::*;
+    use egui::accesskit::{Rect, Role};
+
+    /// In a [`dropdown_row`] the label sits on the drop-down's middle and a
+    /// button is as tall as the drop-down; after the row, and after a
+    /// drop-down drawn in [`keep_style`], widgets keep their own height.
+    #[test]
+    fn dropdown_rows_line_up_and_leave_the_style_as_they_found_it() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut choice = 0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _ = ui.button("Reference");
+            dropdown_row(ui, |ui| {
+                ui.label("Deghost");
+                dropdown(ui, "row")
+                    .selected_text("Low")
+                    .show_ui(ui, |ui| ui.selectable_value(&mut choice, 1, "High"));
+                let _ = ui.button("In the row");
+            });
+            let _ = ui.button("After the row");
+            ui.horizontal(|ui| {
+                keep_style(ui, |ui| {
+                    dropdown(ui, "kept")
+                        .selected_text("Medium")
+                        .show_ui(ui, |ui| ui.selectable_value(&mut choice, 2, "High"));
+                });
+                let _ = ui.button("After the drop-down");
+            });
+        });
+        output.textures_delta.clear();
+        let update = output.platform_output.accesskit_update.expect("on");
+        let node = |role: Role, name: &str| {
+            update
+                .nodes
+                .iter()
+                .map(|(_, n)| n)
+                .find(|n| n.role() == role && (n.label() == Some(name) || n.value() == Some(name)))
+                .and_then(|n| n.bounds())
+                .unwrap_or_else(|| panic!("no {name}"))
+        };
+        let middle = |r: Rect| (r.y0 + r.y1) / 2.;
+        let height = |r: Rect| r.y1 - r.y0;
+        let near = |a: f64, b: f64| (a - b).abs() <= 1.;
+        let (label, combo) = (node(Role::Label, "Deghost"), node(Role::ComboBox, "Low"));
+        let plain = height(node(Role::Button, "Reference"));
+        assert!(near(middle(label), middle(combo)), "{label:?} {combo:?}");
+        assert!(near(height(combo), DROPDOWN_HEIGHT.into()), "{combo:?}");
+        let in_row = node(Role::Button, "In the row");
+        assert!(near(height(in_row), height(combo)), "{in_row:?}");
+        for after in ["After the row", "After the drop-down"] {
+            let button = node(Role::Button, after);
+            assert!(near(height(button), plain), "{after}: {button:?}");
+        }
+    }
+}

@@ -144,8 +144,6 @@ impl Editor {
                 egui::ScrollArea::vertical()
                     .auto_shrink(false)
                     .show(&mut content, |ui| {
-                        ui.spacing_mut().item_spacing = Vec2::new(space::M, space::M);
-                        ui.spacing_mut().interact_size.y = size::FIELD;
                         self.export_sections(ui, &source, &at, read.as_ref());
                     });
                 ui.painter().hline(
@@ -225,20 +223,23 @@ impl Editor {
         }
     }
 
-    fn export_sections(
+    /// The dialog's sections, in its scroll area; a shot draws them whole.
+    pub(super) fn export_sections(
         &mut self,
         ui: &mut egui::Ui,
         source: &Path,
         example: &NameContext,
         read: Option<&Status>,
     ) {
+        ui.spacing_mut().item_spacing = Vec2::new(space::M, space::M);
+        ui.spacing_mut().interact_size.y = size::FIELD;
         let palette = theme::palette(ui.ctx());
         let picking = self.exports.picking.load(Ordering::Relaxed);
         let s = &mut self.exports.draft;
         let mut choose = false;
         section(ui, "Export Location");
         form_row(ui, "Export To", |ui| {
-            egui::ComboBox::from_id_salt("export-to")
+            crate::app::ui::widgets::dropdown(ui, "export-to")
                 .width(300.)
                 .selected_text(destination_label(s.destination))
                 .show_ui(ui, |ui| {
@@ -268,7 +269,7 @@ impl Editor {
             );
         });
         form_row(ui, "Existing Files", |ui| {
-            egui::ComboBox::from_id_salt("export-existing")
+            crate::app::ui::widgets::dropdown(ui, "export-existing")
                 .width(300.)
                 .selected_text(existing_label(s.existing))
                 .show_ui(ui, |ui| {
@@ -282,12 +283,11 @@ impl Editor {
         let naming = s.naming();
         let custom = s.custom_tokens().map(str::to_string);
         let mut edit_names = false;
-        form_row(
-            ui,
-            "Rename To",
-            |ui| match crate::app::export::naming::menu::combo(
+        form_row(ui, "Rename To", |ui| {
+            let combo = crate::app::ui::widgets::dropdown(ui, "export-naming").width(220.);
+            match crate::app::export::naming::menu::combo(
                 ui,
-                egui::ComboBox::from_id_salt("export-naming").width(220.),
+                combo,
                 naming,
                 custom.as_deref(),
                 &self.exports.saved,
@@ -297,8 +297,8 @@ impl Editor {
                 Some(Choice::Tokens(tokens)) => s.choose_tokens(&tokens),
                 Some(Choice::Edit) => edit_names = true,
                 None => {}
-            },
-        );
+            }
+        });
         let template = s.name_template();
         form_row(ui, "Custom Text", |ui| {
             ui.add_enabled(
@@ -345,7 +345,7 @@ impl Editor {
         }
         let s = &mut self.exports.draft;
         form_row(ui, "Extensions", |ui| {
-            egui::ComboBox::from_id_salt("export-case")
+            crate::app::ui::widgets::dropdown(ui, "export-case")
                 .width(140.)
                 .selected_text(if s.uppercase {
                     "Uppercase"
@@ -360,7 +360,7 @@ impl Editor {
 
         section(ui, "File Settings");
         form_row(ui, "Image Format", |ui| {
-            egui::ComboBox::from_id_salt("export-format")
+            crate::app::ui::widgets::dropdown(ui, "export-format")
                 .width(140.)
                 .selected_text(s.format.raster().name())
                 .show_ui(ui, |ui| {
@@ -415,7 +415,7 @@ impl Editor {
             } else {
                 s.color_space.label()
             };
-            egui::ComboBox::from_id_salt("export-color-space")
+            crate::app::ui::widgets::dropdown(ui, "export-color-space")
                 .width(220.)
                 .selected_text(shown)
                 .show_ui(ui, |ui| {
@@ -483,7 +483,7 @@ impl Editor {
                 s.watermark_name.clone()
             };
             ui.add_enabled_ui(s.watermark, |ui| {
-                egui::ComboBox::from_id_salt("export-watermark")
+                crate::app::ui::widgets::dropdown(ui, "export-watermark")
                     .width(260.)
                     .selected_text(label)
                     .show_ui(ui, |ui| {
@@ -530,7 +530,7 @@ impl Editor {
         let s = &mut self.exports.draft;
         section(ui, "Metadata");
         form_row(ui, "Include", |ui| {
-            egui::ComboBox::from_id_salt("export-include")
+            crate::app::ui::widgets::dropdown(ui, "export-include")
                 .width(260.)
                 .selected_text(s.include.label())
                 .show_ui(ui, |ui| {
@@ -582,7 +582,7 @@ impl Editor {
         let s = &mut self.exports.draft;
         section(ui, "Post-Processing");
         form_row(ui, "After Export", |ui| {
-            egui::ComboBox::from_id_salt("export-after")
+            crate::app::ui::widgets::dropdown(ui, "export-after")
                 .width(220.)
                 .selected_text(s.after_export.label())
                 .show_ui(ui, |ui| {
@@ -745,7 +745,7 @@ fn hdr_rows(ui: &mut egui::Ui, s: &mut crate::export_settings::ExportSettings) {
         return;
     }
     form_row(ui, "HDR Gamut", |ui| {
-        egui::ComboBox::from_id_salt("export-hdr-gamut")
+        crate::app::ui::widgets::dropdown(ui, "export-hdr-gamut")
             .width(220.)
             .selected_text(output.gamut.label())
             .show_ui(ui, |ui| {
@@ -755,7 +755,7 @@ fn hdr_rows(ui: &mut egui::Ui, s: &mut crate::export_settings::ExportSettings) {
             });
     });
     form_row(ui, "HDR Encoding", |ui| {
-        egui::ComboBox::from_id_salt("export-hdr-transfer")
+        crate::app::ui::widgets::dropdown(ui, "export-hdr-transfer")
             .width(220.)
             .selected_text(output.transfer.label())
             .show_ui(ui, |ui| {

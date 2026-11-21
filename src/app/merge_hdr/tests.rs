@@ -602,3 +602,29 @@ fn the_window_merges_nothing_once_another_catalog_is_open() -> Result<()> {
     assert!(listed(&e, "A-HDR.dng").is_none());
     Ok(())
 }
+
+/// Merge to HDR on a bracket of three, for `RAWMAKASE_UI_SHOTS`
+/// ([`crate::app::ui::shots`]).
+#[test]
+fn shots_of_merge_to_hdr() -> Result<()> {
+    let d = tempfile::tempdir()?;
+    let photos = d.path().join("photos");
+    std::fs::create_dir_all(&photos)?;
+    for name in ["IMG_1.CR3", "IMG_2.CR3", "IMG_3.CR3"] {
+        std::fs::write(photos.join(name), format!("fixture {name}"))?;
+    }
+    let path = d.path().join("test.rawmakase");
+    crate::catalog::Catalog::create(&path)?.add_folder(&photos)?;
+    crate::app::ui::shots::shot(
+        "merge-to-hdr",
+        egui::vec2(800., 640.),
+        move |e, ctx| {
+            let library = crate::app::library::Library::load(&path, ctx.clone()).unwrap();
+            let ids: Vec<_> = library.session.photos().iter().map(|p| p.id).collect();
+            e.library = Some(Box::new(library));
+            e.open_merge_hdr(ids);
+        },
+        |e, ctx| e.merge_hdr_window(ctx),
+    );
+    Ok(())
+}

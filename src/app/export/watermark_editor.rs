@@ -531,7 +531,7 @@ fn controls(ui: &mut egui::Ui, state: &mut WatermarkEditor, ctx: &egui::Context)
             let system = [watermark::fonts::system()];
             let families: &[watermark::fonts::Family] = listed.unwrap_or(&system);
             row(ui, "Font", |ui| {
-                egui::ComboBox::from_id_salt("watermark-font")
+                crate::app::ui::widgets::dropdown_of_height(ui, "watermark-font", ROW)
                     .width(ui.available_width())
                     .selected_text(&w.family)
                     .show_ui(ui, |ui| {
@@ -550,7 +550,7 @@ fn controls(ui: &mut egui::Ui, state: &mut WatermarkEditor, ctx: &egui::Context)
                     .find(|f| f.name == w.family)
                     .map(|f| f.faces.clone())
                     .unwrap_or_default();
-                egui::ComboBox::from_id_salt("watermark-face")
+                crate::app::ui::widgets::dropdown_of_height(ui, "watermark-face", ROW)
                     .width(ui.available_width())
                     .selected_text(&w.face)
                     .show_ui(ui, |ui| {

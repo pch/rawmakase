@@ -1240,3 +1240,69 @@ fn escape_closes_the_presets_question_then_the_editor() -> anyhow::Result<()> {
     assert!(e.exports.dialog);
     Ok(())
 }
+
+/// Export and the windows it opens, for `RAWMAKASE_UI_SHOTS`
+/// ([`crate::app::ui::shots`]): the dialog as it opens, all its sections at
+/// once with a TIFF's HDR rows and a watermark on, the watermark editor's
+/// text options and the Filename Template Editor.
+#[test]
+fn shots_of_export() {
+    fn draft(e: &mut Editor) {
+        e.exports.draft = ExportSettings {
+            destination: Destination::Folder,
+            folder: Some("/Users/someone/Pictures/Exports".into()),
+            format: Format::Tiff,
+            watermark: true,
+            ..Default::default()
+        };
+        e.exports.draft.choose_hdr(Some(Default::default()));
+    }
+    crate::app::ui::shots::shot(
+        "export-dialog",
+        egui::vec2(800., 760.),
+        |e, _| {
+            draft(e);
+            e.exports.dialog = true;
+        },
+        |e, ctx| e.export_windows(ctx),
+    );
+    crate::app::ui::shots::shot(
+        "export-sections",
+        egui::vec2(700., 1190.),
+        |e, _| draft(e),
+        |e, ctx| {
+            crate::app::ui::shots::panel(ctx, 668., |ui| {
+                let fields = Default::default();
+                let at = NameContext {
+                    index: 0,
+                    total: 1,
+                    fields: &fields,
+                };
+                e.export_sections(ui, std::path::Path::new(""), &at, None);
+            });
+        },
+    );
+    crate::app::ui::shots::shot(
+        "export-watermark-editor",
+        egui::vec2(900., 760.),
+        |e, ctx| {
+            draft(e);
+            e.exports.dialog = true;
+            e.exports.watermark_editor = Some(super::watermark_editor::WatermarkEditor::new(
+                Default::default(),
+                ctx,
+            ));
+        },
+        |e, ctx| e.export_windows(ctx),
+    );
+    crate::app::ui::shots::shot(
+        "export-filename-template-editor",
+        egui::vec2(900., 760.),
+        |e, _| {
+            draft(e);
+            e.exports.dialog = true;
+            e.exports.name_editor = Some(name_editor::NameEditor::new(MODEL, Preset::Custom));
+        },
+        |e, ctx| e.export_windows(ctx),
+    );
+}

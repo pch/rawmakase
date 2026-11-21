@@ -609,7 +609,7 @@ impl Editor {
         }
         let mut size = self.preview_builds.standard_size;
         form_row(ui, "Standard Preview Size", |ui| {
-            egui::ComboBox::from_id_salt("standard-preview-size")
+            crate::app::ui::widgets::dropdown(ui, "standard-preview-size")
                 .width(120.)
                 .selected_text(format!("{size} pixels"))
                 .show_ui(ui, |ui| {
@@ -630,7 +630,7 @@ impl Editor {
                     .find(|(d, _)| *d == days)
                     .map_or("", |(_, name)| name)
             };
-            egui::ComboBox::from_id_salt("discard-one-to-one")
+            crate::app::ui::widgets::dropdown(ui, "discard-one-to-one")
                 .width(160.)
                 .selected_text(name(discard))
                 .show_ui(ui, |ui| {
@@ -1089,7 +1089,7 @@ impl Editor {
         let thumbnail_budget = crate::catalog::preview_cache::thumbnail_budget();
         let mut budget = thumbnail_budget;
         form_row(ui, "Size limit", |ui| {
-            egui::ComboBox::from_id_salt("thumbnail-cache-size")
+            crate::app::ui::widgets::dropdown(ui, "thumbnail-cache-size")
                 .width(120.)
                 .selected_text(bytes(budget))
                 .show_ui(ui, |ui| {
@@ -1184,7 +1184,7 @@ impl Editor {
         let selected = self.themes.selected();
         let mut chosen = selected.clone();
         form_row(ui, "Theme", |ui| {
-            egui::ComboBox::from_id_salt("interface-theme")
+            crate::app::ui::widgets::dropdown(ui, "interface-theme")
                 .width(220.)
                 .selected_text(name(&chosen))
                 .show_ui(ui, |ui| {
@@ -1657,6 +1657,123 @@ mod tests {
             });
             assert_eq!(shown, Vec::<String>::new(), "the example's {section:?}");
         }
+    }
+    /// The Preferences pages with drop-downs, for `RAWMAKASE_UI_SHOTS`
+    /// ([`crate::app::ui::shots`]): Catalog's previews, Performance's
+    /// thumbnail cache, Display's theme and Profiles' Raw Defaults with camera
+    /// overrides on and a camera's default.
+    #[test]
+    fn shots_of_preferences() {
+        use crate::raw_defaults::{CameraDefault, DefaultChoice, DevelopDefaults, RawDefaults};
+        for (name, tab) in [
+            ("preferences-catalog", Tab::Catalog),
+            ("preferences-performance", Tab::Performance),
+            ("preferences-display", Tab::Display),
+            ("preferences-profiles", Tab::Profiles),
+        ] {
+            crate::app::ui::shots::shot(
+                name,
+                Vec2::new(1100., 900.),
+                move |e, _| {
+                    if tab == Tab::Profiles {
+                        e.raw_defaults = std::sync::Arc::new(DevelopDefaults::with_presets(
+                            RawDefaults {
+                                camera_overrides: true,
+                                cameras: vec![CameraDefault {
+                                    camera: "Fujifilm X100F".into(),
+                                    choice: DefaultChoice::Rawmakase,
+                                }],
+                                ..Default::default()
+                            },
+                            |_| None,
+                        ));
+                        e.measure_raw_defaults();
+                    }
+                    e.onboarding.visible = false;
+                    e.preferences.open = true;
+                    e.preferences.tab = tab;
+                },
+                |e, ctx| e.preferences_window(ctx),
+            );
+        }
+    }
+
+    /// An extension's settings with a drop-down among a slider and a switch,
+    /// drawn in Preferences, for `RAWMAKASE_UI_SHOTS` ([`crate::app::ui::shots`]).
+    #[test]
+    fn shots_of_an_extensions_settings() {
+        const MANIFEST: &str = r#"
+    [extension]
+    id = "dev.rawmakase.film"
+    name = "Film Look"
+    version = "0.1.0"
+    rawmakase = ">=0.1"
+    api = 1
+    authors = ["RAWmakase"]
+    license = "MIT"
+    description = "Applies a film stock's tone and grain."
+
+    [program]
+    path = "rawmakase-film"
+    start = "on-demand"
+
+    [[setting]]
+    id = "stock"
+    name = "Film Stock"
+    help = "The stock whose tone the look follows."
+    control = { choice = ["Tri-X 400", "HP5 Plus", "Portra 400"] }
+    default = "HP5 Plus"
+
+    [[setting]]
+    id = "strength"
+    name = "Strength"
+    control = { slider = [0, 100] }
+    default = 50
+
+    [[setting]]
+    id = "grain"
+    name = "Grain"
+    control = "toggle"
+    default = true
+    "#;
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("film");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join(rawmakase_extensions::protocol::manifest::FILE),
+            MANIFEST,
+        )
+        .unwrap();
+        let data = dir.path().join("data");
+        rawmakase_extensions::store::Store::new(&data)
+            .add_developer(&folder)
+            .unwrap();
+        let program = dir.path().join("no-such-program");
+        crate::app::ui::shots::shot(
+            "extension-settings",
+            Vec2::new(1100., 800.),
+            move |e, _| {
+                let missing = rawmakase_extensions::session::Launch {
+                    program,
+                    args: Vec::new(),
+                    dir: std::path::PathBuf::new(),
+                    env: Vec::new(),
+                    log: std::path::PathBuf::new(),
+                };
+                e.extensions = crate::app::extensions::Host::start_for_tests(
+                    &data,
+                    missing,
+                    rawmakase_extensions::session::REQUEST_DEADLINE,
+                );
+                e.extension_page.select("dev.rawmakase.film");
+                e.extension_page
+                    .show(crate::app::extensions::Section::Settings);
+                e.onboarding.visible = false;
+                e.preferences.open = true;
+                e.preferences.tab = Tab::Extensions;
+            },
+            |e, ctx| e.preferences_window(ctx),
+        );
     }
 }
 

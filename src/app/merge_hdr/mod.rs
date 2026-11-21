@@ -293,9 +293,9 @@ impl Editor {
                 }
                 ui.add_space(space::M);
                 ui.checkbox(&mut dialog.align, "Auto Align");
-                ui.horizontal(|ui| {
+                crate::app::ui::widgets::dropdown_row(ui, |ui| {
                     ui.label("Deghost");
-                    egui::ComboBox::from_id_salt("merge-hdr-deghost")
+                    crate::app::ui::widgets::dropdown(ui, "merge-hdr-deghost")
                         .selected_text(deghost_name(dialog.deghost))
                         .show_ui(ui, |ui| {
                             for level in

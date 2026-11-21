@@ -141,7 +141,7 @@ impl Library {
                     );
                 });
                 ui.add_enabled_ui(creating, |ui| {
-                    ui.horizontal(|ui| {
+                    widgets::dropdown_row(ui, |ui| {
                         ui.add_enabled(
                             !sets.is_empty(),
                             egui::Checkbox::new(&mut dialog.inside, "Inside a Collection Set"),
@@ -151,7 +151,7 @@ impl Library {
                                 .parent
                                 .and_then(|p| sets.iter().find(|(id, _)| *id == p))
                                 .map_or("Choose a set", |(_, name)| name.as_str());
-                            egui::ComboBox::from_id_salt("smart-editor-set")
+                            widgets::dropdown(ui, "smart-editor-set")
                                 .selected_text(chosen)
                                 .show_ui(ui, |ui| {
                                     for (id, name) in &sets {
@@ -176,7 +176,7 @@ impl Library {
                     );
                     ui.add_space(space::S);
                 }
-                ui.horizontal(|ui| {
+                widgets::dropdown_row(ui, |ui| {
                     ui.label("Match");
                     combine_menu(
                         ui,
@@ -365,13 +365,15 @@ fn combine_menu(ui: &mut egui::Ui, id: egui::Id, combine: &mut Combine, nested: 
         (Combine::Union, true) => "Any",
         (Combine::Exclude, true) => "None",
     };
-    egui::ComboBox::from_id_salt(id)
-        .selected_text(label(*combine))
-        .show_ui(ui, |ui| {
-            for c in [Combine::Intersect, Combine::Union, Combine::Exclude] {
-                ui.selectable_value(combine, c, label(c));
-            }
-        });
+    widgets::keep_style(ui, |ui| {
+        widgets::dropdown(ui, id)
+            .selected_text(label(*combine))
+            .show_ui(ui, |ui| {
+                for c in [Combine::Intersect, Combine::Union, Combine::Exclude] {
+                    ui.selectable_value(combine, c, label(c));
+                }
+            });
+    });
 }
 
 /// The rows of `group`, nested groups indented; `path` is where the group
@@ -388,14 +390,14 @@ fn group_rows(
         path.push(at);
         match item {
             Item::Rule(rule) => {
-                ui.horizontal(|ui| {
+                widgets::dropdown_row(ui, |ui| {
                     ui.add_space(indent(path));
                     rule_row(ui, rule, path, today);
                     buttons(ui, path, alt, change);
                 });
             }
             Item::Group(inner) => {
-                ui.horizontal(|ui| {
+                widgets::dropdown_row(ui, |ui| {
                     ui.add_space(indent(path));
                     combine_menu(
                         ui,
@@ -475,26 +477,28 @@ fn rule_row(ui: &mut egui::Ui, rule: &mut Rule, path: &[usize], today: &str) {
     let id = |part: &str| egui::Id::new(("smart-editor", part, path.to_vec()));
     // The field menu, in Lightroom's sections.
     let mut chosen = None;
-    egui::ComboBox::from_id_salt(id("field"))
-        .selected_text(field.name)
-        .width(170.)
-        .show_ui(ui, |ui| {
-            let mut section = None;
-            for f in FIELDS {
-                if f.section != section {
-                    section = f.section;
-                    if let Some(name) = section {
-                        ui.label(egui::RichText::new(name).small().strong());
+    widgets::keep_style(ui, |ui| {
+        widgets::dropdown(ui, id("field"))
+            .selected_text(field.name)
+            .width(170.)
+            .show_ui(ui, |ui| {
+                let mut section = None;
+                for f in FIELDS {
+                    if f.section != section {
+                        section = f.section;
+                        if let Some(name) = section {
+                            ui.label(egui::RichText::new(name).small().strong());
+                        }
+                    }
+                    if ui
+                        .selectable_label(f.criteria == field.criteria, f.name)
+                        .clicked()
+                    {
+                        chosen = Some(f);
                     }
                 }
-                if ui
-                    .selectable_label(f.criteria == field.criteria, f.name)
-                    .clicked()
-                {
-                    chosen = Some(f);
-                }
-            }
-        });
+            });
+    });
     if let Some(f) = chosen.filter(|f| f.criteria != field.criteria) {
         *rule = f.new_rule(today);
         return;
@@ -503,16 +507,18 @@ fn rule_row(ui: &mut egui::Ui, rule: &mut Rule, path: &[usize], today: &str) {
         return;
     };
     let mut op_chosen = None;
-    egui::ComboBox::from_id_salt(id("op"))
-        .selected_text(operation.label)
-        .width(170.)
-        .show_ui(ui, |ui| {
-            for o in field.operations {
-                if ui.selectable_label(o.op == operation.op, o.label).clicked() {
-                    op_chosen = Some(o);
+    widgets::keep_style(ui, |ui| {
+        widgets::dropdown(ui, id("op"))
+            .selected_text(operation.label)
+            .width(170.)
+            .show_ui(ui, |ui| {
+                for o in field.operations {
+                    if ui.selectable_label(o.op == operation.op, o.label).clicked() {
+                        op_chosen = Some(o);
+                    }
                 }
-            }
-        });
+            });
+    });
     if let Some(o) = op_chosen.filter(|o| o.op != operation.op) {
         fields::set_operation(rule, o, today);
         return;
@@ -554,30 +560,34 @@ fn value_input(ui: &mut egui::Ui, rule: &mut Rule, input: Input, id: &dyn Fn(&st
         Input::Period => {
             number_value(ui, &mut rule.value);
             let units = rule.units.clone().unwrap_or_else(|| "days".into());
-            egui::ComboBox::from_id_salt(id("units"))
-                .selected_text(units.clone())
-                .show_ui(ui, |ui| {
-                    for (unit, label) in PERIOD_UNITS {
-                        if ui.selectable_label(units == unit, label).clicked() {
-                            rule.units = Some(unit.into());
+            widgets::keep_style(ui, |ui| {
+                widgets::dropdown(ui, id("units"))
+                    .selected_text(units.clone())
+                    .show_ui(ui, |ui| {
+                        for (unit, label) in PERIOD_UNITS {
+                            if ui.selectable_label(units == unit, label).clicked() {
+                                rule.units = Some(unit.into());
+                            }
                         }
-                    }
-                });
+                    });
+            });
         }
         Input::Choice(choices) => {
             let current = choices
                 .iter()
                 .find(|(_, c)| rule.value.as_ref() == Some(&c.value()))
                 .map_or("", |(label, _)| *label);
-            egui::ComboBox::from_id_salt(id("choice"))
-                .selected_text(current)
-                .show_ui(ui, |ui| {
-                    for (label, choice) in choices {
-                        if ui.selectable_label(*label == current, *label).clicked() {
-                            rule.value = Some(choice.value());
+            widgets::keep_style(ui, |ui| {
+                widgets::dropdown(ui, id("choice"))
+                    .selected_text(current)
+                    .show_ui(ui, |ui| {
+                        for (label, choice) in choices {
+                            if ui.selectable_label(*label == current, *label).clicked() {
+                                rule.value = Some(choice.value());
+                            }
                         }
-                    }
-                });
+                    });
+            });
         }
         single => single_input(ui, &mut rule.value, single, id("value")),
     }
@@ -601,15 +611,17 @@ fn single_input(ui: &mut egui::Ui, value: &mut Option<Value>, input: Input, id: 
                     "★".repeat(n)
                 }
             };
-            egui::ComboBox::from_id_salt(id)
-                .selected_text(label(stars))
-                .show_ui(ui, |ui| {
-                    for n in 0..=5 {
-                        if ui.selectable_label(n == stars, label(n)).clicked() {
-                            *value = Some(Value::Number(n as f64));
+            widgets::keep_style(ui, |ui| {
+                widgets::dropdown(ui, id)
+                    .selected_text(label(stars))
+                    .show_ui(ui, |ui| {
+                        for n in 0..=5 {
+                            if ui.selectable_label(n == stars, label(n)).clicked() {
+                                *value = Some(Value::Number(n as f64));
+                            }
                         }
-                    }
-                });
+                    });
+            });
         }
         Input::Shutter => converted(ui, value, id, shutter_text, shutter_apex, "sec"),
         Input::Aperture => converted(ui, value, id, aperture_text, aperture_apex, ""),
@@ -623,7 +635,7 @@ fn text_value(ui: &mut egui::Ui, value: &mut Option<Value>, width: f32) {
         _ => String::new(),
     };
     if ui
-        .add(egui::TextEdit::singleline(&mut text).desired_width(width))
+        .add(widgets::dropdown_text_edit(&mut text).desired_width(width))
         .changed()
     {
         *value = Some(Value::Str(text));
@@ -655,7 +667,7 @@ fn converted(
         _ => String::new(),
     };
     let mut draft: String = ui.data(|d| d.get_temp(id)).unwrap_or(stored);
-    let response = ui.add(egui::TextEdit::singleline(&mut draft).desired_width(80.));
+    let response = ui.add(widgets::dropdown_text_edit(&mut draft).desired_width(80.));
     if response.changed()
         && let Some(n) = read(&draft)
     {

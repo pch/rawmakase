@@ -324,10 +324,10 @@ fn section_checkboxes(
 /// from the groups presets already use.
 fn preset_fields(ui: &mut egui::Ui, form: &mut PresetForm, library: &crate::presets::Library) {
     crate::app::ui::widgets::form_row(ui, "Preset Name", |ui| {
-        ui.add(egui::TextEdit::singleline(&mut form.name).desired_width(260.));
+        ui.add(crate::app::ui::widgets::dropdown_text_edit(&mut form.name).desired_width(260.));
     });
     crate::app::ui::widgets::form_row(ui, "Group", |ui| {
-        ui.add(egui::TextEdit::singleline(&mut form.group).desired_width(220.));
+        ui.add(crate::app::ui::widgets::dropdown_text_edit(&mut form.group).desired_width(220.));
         let mut groups: Vec<&str> = library
             .presets
             .iter()
@@ -337,7 +337,7 @@ fn preset_fields(ui: &mut egui::Ui, form: &mut PresetForm, library: &crate::pres
             .collect();
         groups.sort_unstable();
         groups.dedup();
-        egui::ComboBox::from_id_salt("preset-group")
+        crate::app::ui::widgets::dropdown(ui, "preset-group")
             .selected_text("")
             .width(24.)
             .show_ui(ui, |ui| {

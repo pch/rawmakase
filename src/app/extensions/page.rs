@@ -1129,7 +1129,7 @@ impl Editor {
             }
             SettingControl::Choice(options) => {
                 let mut out = None;
-                egui::ComboBox::from_id_salt(("extension-setting", id, s.id.as_str()))
+                crate::app::ui::widgets::dropdown(ui, ("extension-setting", id, s.id.as_str()))
                     .selected_text(value.as_str().unwrap_or(""))
                     .show_ui(ui, |ui| {
                         for option in options {

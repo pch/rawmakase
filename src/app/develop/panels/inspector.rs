@@ -424,19 +424,21 @@ impl Editor {
                 if aspect_lock(ui, locked).clicked() {
                     action = Some(CropAction::ToggleLock);
                 }
-                egui::ComboBox::from_id_salt("crop-aspect")
-                    .width(w)
-                    .selected_text(aspect_name(shown))
-                    .show_ui(ui, |ui| {
-                        for (aspect, name, _) in ASPECTS {
-                            if ui
-                                .selectable_label(self.view.aspect == aspect, name)
-                                .clicked()
-                            {
-                                chosen = Some(aspect);
+                crate::app::ui::widgets::keep_style(ui, |ui| {
+                    crate::app::ui::widgets::dropdown_of_height(ui, "crop-aspect", CROP_CONTROL)
+                        .width(w)
+                        .selected_text(aspect_name(shown))
+                        .show_ui(ui, |ui| {
+                            for (aspect, name, _) in ASPECTS {
+                                if ui
+                                    .selectable_label(self.view.aspect == aspect, name)
+                                    .clicked()
+                                {
+                                    chosen = Some(aspect);
+                                }
                             }
-                        }
-                    });
+                        });
+                });
                 if crop_icon_button(ui, Icon::SwapOrientation, CROP_CONTROL)
                     .on_hover_text("Swap portrait and landscape · X")
                     .clicked()
@@ -499,7 +501,7 @@ impl Editor {
             });
             control_row(ui, "Overlay", |ui| {
                 let show = 72.;
-                egui::ComboBox::from_id_salt("crop-guide")
+                crate::app::ui::widgets::dropdown_of_height(ui, "crop-guide", CROP_CONTROL)
                     .width(ui.available_width() - show - 4.)
                     .selected_text(guides.guide.name())
                     .show_ui(ui, |ui| {
@@ -515,7 +517,7 @@ impl Editor {
                     })
                     .response
                     .on_hover_text("O cycles the overlays, Shift+O turns them");
-                egui::ComboBox::from_id_salt("crop-guide-show")
+                crate::app::ui::widgets::dropdown_of_height(ui, "crop-guide-show", CROP_CONTROL)
                     .width(show)
                     .selected_text(guides.show.name())
                     .show_ui(ui, |ui| {

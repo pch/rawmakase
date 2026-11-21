@@ -374,3 +374,85 @@ fn a_listed_smart_count_is_pending_until_worked_out_again() -> Result<()> {
     assert_eq!(listed(&library), (Some(0), Some("ready")));
     Ok(())
 }
+
+/// The Smart Collection editor and the New Collection window, for
+/// `RAWMAKASE_UI_SHOTS` ([`crate::app::ui::shots`]): rules with a rating, a
+/// period's units, a choice and text, a nested group, and the collection set
+/// chosen in each.
+#[test]
+fn shots_of_smart_collections() -> Result<()> {
+    use crate::collection_rules::fields::{field_of, set_operation};
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    std::fs::write(folder.join("a.RAF"), b"synthetic raw")?;
+    // A catalog for each shot, as each makes the same sets.
+    for name in ["smart.rawmakase", "new.rawmakase"] {
+        Catalog::create(&directory.path().join(name))?.add_folder(&folder)?;
+    }
+    let dir = directory.path().to_path_buf();
+    let open = move |e: &mut crate::app::Editor, ctx: &egui::Context, name: &str| {
+        let mut library = Library::load(&dir.join(name), ctx.clone()).unwrap();
+        let trips = library
+            .create_collection(true, "Trips", None, &[], false)
+            .unwrap();
+        library
+            .create_collection(true, "Japan", Some(trips), &[], false)
+            .unwrap();
+        e.library = Some(Box::new(library));
+        trips
+    };
+    let today = "2026-11-21";
+    let rule = |criteria: &str, op: &str| {
+        let field = field_of(criteria).unwrap();
+        let mut rule = field.new_rule(today);
+        set_operation(&mut rule, field.operation(op).unwrap(), today);
+        Item::Rule(rule)
+    };
+    let rules = Group::new(
+        Combine::Intersect,
+        vec![
+            rule("rating", ">="),
+            rule("captureTime", "inLast"),
+            rule("pick", "=="),
+            rule("filename", "any"),
+            Item::Group(Group::new(
+                Combine::Union,
+                vec![rule("rating", "in"), rule("pick", "!=")],
+            )),
+        ],
+    );
+    {
+        let open = open.clone();
+        crate::app::ui::shots::shot(
+            "smart-collection-editor",
+            egui::vec2(1000., 640.),
+            move |e, ctx| {
+                let trips = open(e, ctx, "smart.rawmakase");
+                let library = e.library.as_mut().unwrap();
+                library.new_smart_collection();
+                let dialog = library.smart_editor.as_mut().unwrap();
+                dialog.name = "Best of Japan".into();
+                dialog.inside = true;
+                dialog.parent = Some(trips);
+                dialog.rules = rules;
+            },
+            |e, ctx| e.library.as_mut().unwrap().smart_editor_window(ctx),
+        );
+    }
+    crate::app::ui::shots::shot(
+        "new-collection",
+        egui::vec2(640., 480.),
+        move |e, ctx| {
+            let trips = open(e, ctx, "new.rawmakase");
+            e.library
+                .as_mut()
+                .unwrap()
+                .ask_create_collection(false, Some(trips));
+        },
+        |e, ctx| {
+            e.library.as_mut().unwrap().collection_dialog_window(ctx);
+        },
+    );
+    Ok(())
+}
