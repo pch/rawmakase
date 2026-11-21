@@ -2177,8 +2177,9 @@ impl Editor {
 /// clipboard's Copy, Paste and Cut and drops the key, so Shift+Cmd+C (Copy
 /// Settings), Shift+Cmd+V (Paste Settings), Option+Cmd+V (Paste from Previous)
 /// and a user's Cmd+Alt+X never reach the shortcuts. Their keys go back in
-/// after the clipboard events, which text fields still take. A Paste with an
-/// empty clipboard is not sent at all.
+/// after the clipboard events, which text fields still take. With no text on
+/// the system clipboard (an image, a file, nothing) there is no Paste: the
+/// key comes through as a key.
 pub(in crate::app) fn clipboard_shortcut_keys(ctx: &egui::Context, input: &mut egui::RawInput) {
     clipboard_shortcut_keys_on(ctx, input, crate::app::shell::keymap::rules::Os::CURRENT);
 }
