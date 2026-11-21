@@ -408,8 +408,13 @@ fn main() -> Result<()> {
     attach_console();
     // Before anything else: this process may be the update helper.
     let launch = rawmakase::updates::intercept();
+    // Pixel work gets every logical CPU, so an export or a render uses the
+    // whole machine (#1229). Peak memory grows little with the thread count:
+    // a 24 MP Bayer export peaked at 1.4 GB on both 8 and 16 threads, and a
+    // 24 MP X-Trans one, whose demosaic bands each hold their own scratch,
+    // at 1.6 GB on 8 threads and 1.8 GB on 16 or 32.
     rayon::ThreadPoolBuilder::new()
-        .num_threads(std::thread::available_parallelism().map_or(4, |n| n.get().min(8)))
+        .num_threads(std::thread::available_parallelism().map_or(4, std::num::NonZero::get))
         .build_global()
         .ok();
     let a = Args::parse_from(&launch.arguments);
