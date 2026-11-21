@@ -2123,7 +2123,8 @@ pub(in crate::app) fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Res
     ui.add(
         egui::Button::new(egui::RichText::new(text).color(palette.on_accent()))
             .fill(palette.accent())
-            .min_size(Vec2::new(84., 30.)),
+            // As tall as the plain buttons beside it, which the row's padding sizes.
+            .min_size(Vec2::new(84., 0.)),
     )
 }
 /// A modal window asking before an action: a title, a line of detail and

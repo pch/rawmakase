@@ -131,3 +131,16 @@ fn import_cube_luts_asks_the_space_before_the_files() {
     let (asked, _) = frame(&mut editor, vec![]);
     assert_eq!(asked, None);
 }
+
+/// The Import LUTs window, for `RAWMAKASE_UI_SHOTS` ([`crate::app::ui::shots`]).
+#[test]
+fn shots_of_import_luts() {
+    crate::app::ui::shots::shot(
+        "import-luts",
+        egui::vec2(640., 360.),
+        |editor, _| editor.open_lut_import(),
+        |editor, ctx| {
+            editor.lut_import_ui(ctx);
+        },
+    );
+}
