@@ -1,5 +1,6 @@
 //! The thumbnail workers: each photo's embedded preview, made by several workers side
 //! by side, with the disk cache.
+use crate::app::preferences::monitor::DisplayProfile;
 use crate::catalog::preview_cache::{PreviewCache, Stamp};
 use eframe::egui;
 use std::{
@@ -12,9 +13,28 @@ use std::{
     thread::JoinHandle,
 };
 
+/// A file's embedded preview, as asked for: converted to `display`, which
+/// the result carries back.
+pub(in crate::app::library) struct ThumbJob {
+    pub path: PathBuf,
+    pub display: DisplayProfile,
+}
+#[cfg(test)]
+impl From<PathBuf> for ThumbJob {
+    /// Shown as sRGB.
+    fn from(path: PathBuf) -> Self {
+        Self {
+            path,
+            display: DisplayProfile::default(),
+        }
+    }
+}
+
 pub(in crate::app::library) struct PreviewResult {
     pub path: PathBuf,
+    /// Converted to [`Self::display`]; the cache keeps it as sRGB.
     pub image: Option<image::RgbImage>,
+    pub display: DisplayProfile,
     pub cache_error: Option<String>,
     /// No longer shown when a worker came to it: not made, and asked for again
     /// once it is shown.
@@ -46,7 +66,7 @@ pub(in crate::app::library) fn spawn(
     cache_path: PathBuf,
     ctx: egui::Context,
     shown: ShownFiles,
-) -> Worker<SyncSender<PathBuf>, PreviewResult> {
+) -> Worker<SyncSender<ThumbJob>, PreviewResult> {
     spawn_with(cache_path, ctx, super::super::thumbnail, shown)
 }
 /// Thumbnails made side by side: enough to keep a disk and a few cores busy,
@@ -59,8 +79,8 @@ pub(super) fn spawn_with(
     ctx: egui::Context,
     thumbnail: fn(&Path) -> anyhow::Result<image::RgbImage>,
     shown: ShownFiles,
-) -> Worker<SyncSender<PathBuf>, PreviewResult> {
-    let (tx, rx) = mpsc::sync_channel::<PathBuf>(24);
+) -> Worker<SyncSender<ThumbJob>, PreviewResult> {
+    let (tx, rx) = mpsc::sync_channel::<ThumbJob>(24);
     let (result_tx, result_rx) = mpsc::sync_channel(24);
     let thread = std::thread::spawn(move || {
         let threads = thumbnail_threads();
@@ -76,7 +96,7 @@ pub(super) fn spawn_with(
         let work = |opened: Option<(Option<PreviewCache>, Option<String>)>| {
             let mut opened = opened;
             loop {
-                let Ok(path) = rx
+                let Ok(ThumbJob { path, display }) = rx
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .recv()
@@ -89,6 +109,7 @@ pub(super) fn spawn_with(
                     let skipped = PreviewResult {
                         path,
                         image: None,
+                        display,
                         cache_error: None,
                         skipped: true,
                     };
@@ -124,14 +145,18 @@ pub(super) fn spawn_with(
                 }));
                 // After a panic the preview is unavailable, and the cache, which it may
                 // have left mid-write, is opened again for the next one.
-                let (image, cache_error) = prepared.unwrap_or_else(|_| {
+                let (mut image, cache_error) = prepared.unwrap_or_else(|_| {
                     opened = Some(open());
                     (None, None)
                 });
+                if let Some(image) = &mut image {
+                    display.convert(image);
+                }
                 if result_tx
                     .send(PreviewResult {
                         path,
                         image,
+                        display,
                         cache_error,
                         skipped: false,
                     })

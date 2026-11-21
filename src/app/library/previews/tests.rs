@@ -121,14 +121,14 @@ fn worker_persists_previews_and_reuses_them_when_original_is_offline() -> anyhow
         egui::Context::default(),
         ShownFiles::default(),
     );
-    tx.try_send(source.clone())?;
+    tx.try_send(source.clone().into())?;
     let result = rx.recv_timeout(Duration::from_secs(10))?;
     assert_eq!(result.image.unwrap().dimensions(), (640, 427));
     assert!(result.cache_error.is_none());
     // Reopen through another worker: a memory-only result cannot pass this.
     std::fs::remove_file(&source)?;
     let (tx, rx, _) = spawn(cache_path, egui::Context::default(), ShownFiles::default());
-    tx.try_send(source.clone())?;
+    tx.try_send(source.clone().into())?;
     let result = rx.recv_timeout(Duration::from_secs(10))?;
     assert_eq!(result.path, source);
     assert!(result.image.is_some());
@@ -153,8 +153,8 @@ fn a_panicking_preview_is_unavailable_and_the_next_one_is_made() -> anyhow::Resu
         thumbnail,
         ShownFiles::default(),
     );
-    tx.try_send(panics.clone())?;
-    tx.try_send(works.clone())?;
+    tx.try_send(panics.clone().into())?;
+    tx.try_send(works.clone().into())?;
     // Made side by side, so in either order.
     let mut results = [
         rx.recv_timeout(Duration::from_secs(10))?,
@@ -196,6 +196,7 @@ fn a_panicking_edited_preview_fails_and_the_next_one_is_rendered() -> anyhow::Re
         copy: None,
         source: source.clone(),
         ahead: false,
+        display: Default::default(),
     };
     tx.send(job(PhotoId(1), &panics))?;
     assert!(matches!(
@@ -236,6 +237,7 @@ fn a_stored_render_of_a_file_replaced_since_is_not_kept() -> anyhow::Result<()> 
         copy: None,
         source: EditSource::saved(Recipe::default()),
         ahead: false,
+        display: Default::default(),
     })?;
     match rx.recv_timeout(Duration::from_secs(10))? {
         EditResult::Skipped(PhotoId(1), 0) => {}
@@ -284,6 +286,7 @@ fn a_render_from_an_editable_preview_is_found_only_under_the_copy() -> anyhow::R
         copy,
         source: source.clone(),
         ahead: false,
+        display: Default::default(),
     };
     // Offline: under the copy, and only when the lookup names it.
     tx.send(render(None))?;
@@ -376,6 +379,7 @@ fn preview_of(
         copy: None,
         source: source.clone(),
         ahead: false,
+        display: Default::default(),
     })?;
     match rx.recv_timeout(Duration::from_secs(10))? {
         EditResult::Ready(PhotoId(1), t, image) if t == ticket => {
@@ -542,7 +546,7 @@ fn cache_failure_does_not_stop_previews_or_completion() -> anyhow::Result<()> {
     );
     let mut progress = Progress::default();
     for path in [source.clone(), directory.path().join("missing.ARW")] {
-        tx.try_send(path)?;
+        tx.try_send(path.into())?;
         progress.queued();
     }
     // Made side by side, so in either order.
@@ -598,6 +602,7 @@ pub(super) fn render_job(id: i64, path: &Path, ahead: bool) -> EditJob {
             ..Default::default()
         }),
         ahead,
+        display: Default::default(),
     }
 }
 
@@ -771,7 +776,7 @@ fn thumbnails_are_made_side_by_side() -> anyhow::Result<()> {
         ShownFiles::default(),
     );
     for name in ["1.png", "2.png"] {
-        tx.try_send(edited_png(directory.path(), name)?)?;
+        tx.try_send(edited_png(directory.path(), name)?.into())?;
     }
     for _ in 0..2 {
         assert!(rx.recv_timeout(Duration::from_secs(30))?.image.is_some());
@@ -808,6 +813,7 @@ fn closing_cancels_the_edited_preview_under_way() -> anyhow::Result<()> {
         copy: None,
         source: EditSource::saved(Recipe::default()),
         ahead: false,
+        display: Default::default(),
     };
     tx.send(job(0))?;
     let started = std::time::Instant::now();
@@ -852,12 +858,12 @@ fn thumbnails_no_longer_shown_are_skipped() -> anyhow::Result<()> {
         wanted.clone(),
     );
     // Nothing said yet: made.
-    tx.try_send(first)?;
+    tx.try_send(first.into())?;
     let made = rx.recv_timeout(Duration::from_secs(30))?;
     assert!(made.image.is_some() && !made.skipped);
     *wanted.lock().unwrap() = Some([shown.clone()].into_iter().collect());
-    tx.try_send(left.clone())?;
-    tx.try_send(shown.clone())?;
+    tx.try_send(left.clone().into())?;
+    tx.try_send(shown.clone().into())?;
     let mut results = [
         rx.recv_timeout(Duration::from_secs(30))?,
         rx.recv_timeout(Duration::from_secs(30))?,
@@ -954,6 +960,7 @@ fn render_for(
         copy: None,
         source: source.clone(),
         ahead: false,
+        display: Default::default(),
     })?;
     match rx.recv_timeout(Duration::from_secs(10))? {
         EditResult::Ready(got, t, _) if got == id && t == ticket => Ok(()),
@@ -1005,5 +1012,127 @@ fn successive_edits_of_a_photo_keep_eight_previews() -> anyhow::Result<()> {
     render_for(&tx, &rx, PhotoId(1), &path, &edits[9], 11)?;
     assert!(kept(&previews, &path, &copy)?);
     assert!(kept(&previews, &path, &edits[9])?);
+    Ok(())
+}
+
+/// Edited previews are converted to the monitor profile the job captured
+/// as they are answered; the cache keeps them as sRGB, so another profile, or
+/// none, is served from it.
+#[test]
+fn edited_previews_are_converted_for_the_monitor_and_cached_as_srgb() -> anyhow::Result<()> {
+    use crate::app::preferences::monitor::DisplayProfile;
+    const RED: [u8; 3] = [200, 40, 30];
+    fn render(_: &Path, _: &EditSource, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+        Ok(image::RgbImage::from_pixel(32, 24, image::Rgb(RED)))
+    }
+    let p3 = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("crates/rawmakase-decode/tests/data/monitor/display-p3-v4.icc");
+    let mut expected = RED.to_vec();
+    crate::color_management::display_transform(&p3, &mut expected)?;
+    let close = |got: &image::RgbImage, want: &[u8]| {
+        got.get_pixel(0, 0)
+            .0
+            .iter()
+            .zip(want)
+            .all(|(a, b)| a.abs_diff(*b) <= 1)
+    };
+    let directory = tempfile::tempdir()?;
+    let wanted = Wanted::default();
+    wanted.lock().unwrap().insert(PhotoId(1));
+    let (tx, rx, _) = spawn_edited_with(
+        directory.path().join("previews.sqlite3"),
+        wanted,
+        egui::Context::default(),
+        render,
+    );
+    let path = edited_png(directory.path(), "1.png")?;
+    let job = |ticket, display: DisplayProfile| match render_job(1, &path, false) {
+        EditJob::Render {
+            id,
+            path,
+            copy,
+            source,
+            ahead,
+            ..
+        } => EditJob::Render {
+            id,
+            ticket,
+            path,
+            copy,
+            source,
+            ahead,
+            display,
+        },
+        _ => unreachable!(),
+    };
+    let ready = |rx: &Receiver<EditResult>| match rx.recv_timeout(Duration::from_secs(30)).unwrap()
+    {
+        EditResult::Ready(_, ticket, image) => (ticket, image),
+        EditResult::CacheError(e) => panic!("{e}"),
+        _ => panic!("not ready"),
+    };
+    // Rendered, then from the cache: converted both times.
+    for ticket in [1, 2] {
+        tx.send(job(ticket, DisplayProfile::new(Some(p3.clone()))))?;
+        let (got, image) = ready(&rx);
+        assert_eq!(got, ticket);
+        assert!(close(&image, &expected), "{:?}", image.get_pixel(0, 0));
+    }
+    // The cache holds sRGB: without a profile it is shown as it is.
+    tx.send(job(3, DisplayProfile::default()))?;
+    let (_, image) = ready(&rx);
+    assert!(close(&image, &RED), "{:?}", image.get_pixel(0, 0));
+    // A preview rendered elsewhere (Develop's) is converted too.
+    tx.send(EditJob::Convert {
+        id: PhotoId(1),
+        ticket: 4,
+        image: image::RgbImage::from_pixel(8, 8, image::Rgb(RED)),
+        display: DisplayProfile::new(Some(p3)),
+    })?;
+    let (got, image) = ready(&rx);
+    assert_eq!(got, 4);
+    assert!(close(&image, &expected));
+    Ok(())
+}
+
+/// The thumbnail workers convert to the profile each request captured and
+/// say which, and keep the embedded preview in the cache as sRGB.
+#[test]
+fn thumbnails_are_converted_for_the_monitor_and_cached_as_srgb() -> anyhow::Result<()> {
+    use crate::app::preferences::monitor::DisplayProfile;
+    const RED: [u8; 3] = [200, 40, 30];
+    fn thumbnail(_: &Path) -> anyhow::Result<image::RgbImage> {
+        Ok(image::RgbImage::from_pixel(32, 24, image::Rgb(RED)))
+    }
+    let p3 = DisplayProfile::new(Some(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("crates/rawmakase-decode/tests/data/monitor/display-p3-v4.icc"),
+    ));
+    let directory = tempfile::tempdir()?;
+    let path = edited_png(directory.path(), "1.png")?;
+    let (tx, rx, _) = spawn_with(
+        directory.path().join("previews.sqlite3"),
+        egui::Context::default(),
+        thumbnail,
+        ShownFiles::default(),
+    );
+    let mut expected = image::RgbImage::from_pixel(1, 1, image::Rgb(RED));
+    p3.convert(&mut expected);
+    let expected = expected.get_pixel(0, 0).0;
+    assert_ne!(expected, RED);
+    for display in [p3.clone(), p3.clone(), DisplayProfile::default()] {
+        tx.try_send(ThumbJob {
+            path: path.clone(),
+            display: display.clone(),
+        })?;
+        let result = rx.recv_timeout(Duration::from_secs(10))?;
+        assert_eq!(result.display, display);
+        let got = result.image.unwrap().get_pixel(0, 0).0;
+        let want = if display.converts() { expected } else { RED };
+        assert!(
+            got.iter().zip(want).all(|(a, b)| a.abs_diff(b) <= 1),
+            "{got:?} is not {want:?}"
+        );
+    }
     Ok(())
 }

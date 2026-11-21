@@ -145,6 +145,22 @@ to 7 from its floating-point one there). Synthetic DisplayCAL-style profiles (XY
 lut16 tables with a matrix or a CLUT, matrix/TRC tags, raised blacks) agree with
 Little CMS's 8-bit result within one code value everywhere. `color_management`'s tests hold the
 committed fixtures (`crates/rawmakase-decode/tests/data/monitor`) to this.
+The Library converts its previews the same way, so a photo looks the same in
+the grid as in Develop: grid and filmstrip thumbnails and edited previews, the
+Loupe's own preview of a JPEG, TIFF or PNG and its zoomed region, Compare's and
+Survey's screen previews, and Develop's render and Build Standard-Sized
+Previews' result shown as the photo's thumbnail.
+The workspace hands the Library the profile Develop's renders use
+(`ViewState::display_profile`) every frame; each preview request captures it
+(`preferences::monitor::DisplayProfile`), the worker converts the sRGB pixels
+after any cache read or write (the preview cache keeps sRGB), and the result
+carries the profile or a ticket that identifies it. A profile change drops the
+textures converted for the old one, asks for the ones shown again and drops
+the results still on their way. Without a profile nothing is converted and
+Develop's thumbnail is shown at once, as before. A profile that can't be used
+leaves the Library's previews as sRGB; Develop's status line says why. The
+Import dialog's thumbnails and the watermark editor's preview are not
+converted yet.
 Choosing this manual override, or sRGB, on macOS leaves the Metal surface
 unmanaged to avoid applying a second conversion; choosing the system profile
 restores system color management. Failure of the manual transform still shows the sRGB bytes with a

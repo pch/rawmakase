@@ -7,6 +7,7 @@
 //! by the worker while 1:1 is on and dropped when the photo changes or the
 //! Loupe goes back to Fit. In flight: one region at a time, the latest asked
 //! for. Retained: one region texture, no larger than the view.
+use crate::app::preferences::monitor::DisplayProfile;
 use crate::app::worker::Latest;
 use crate::catalog::PhotoId;
 use eframe::egui;
@@ -30,6 +31,8 @@ pub(super) struct RegionJob {
     /// Below 1 (zoomed out past 100%), the region is shrunk by it before it
     /// is uploaded, so the texture stays the size of the view.
     scale: f32,
+    /// The monitor profile the region is converted to.
+    display: DisplayProfile,
     cancel: Arc<AtomicBool>,
 }
 /// A rendered part of the photo at 1:1.
@@ -65,6 +68,7 @@ pub(super) struct Regions {
     requested: Option<(PhotoId, [i32; 2], [u32; 2], u32)>,
     cancel: Arc<AtomicBool>,
     pub error: Option<String>,
+    display: DisplayProfile,
 }
 impl Regions {
     pub(super) fn new(ctx: &egui::Context) -> Self {
@@ -105,11 +109,24 @@ impl Regions {
             requested: None,
             cancel: Default::default(),
             error: None,
+            display: DisplayProfile::default(),
         }
     }
     /// Whether a region is held or asked for, with the full decode behind it.
     pub(super) fn holds(&self) -> bool {
         self.region.is_some() || self.requested.is_some()
+    }
+    /// Converts to `display` from now on; a region converted for another
+    /// goes, and one on its way is dropped.
+    pub(super) fn set_display(&mut self, display: DisplayProfile) {
+        if self.display != display {
+            self.display = display;
+            self.cancel.store(true, Ordering::Relaxed);
+            self.ticket += 1;
+            self.requested = None;
+            self.region = None;
+            self.pending = false;
+        }
     }
     /// Drops the region and lets the worker free the full decode.
     pub(super) fn release(&mut self) {
@@ -159,6 +176,7 @@ impl Regions {
             center,
             size,
             scale: scale.min(1.),
+            display: self.display.clone(),
             cancel: self.cancel.clone(),
         }));
     }
@@ -239,12 +257,13 @@ fn region(
         .round()
         .clamp(0., (height - h) as f32) as u32;
     let crop = image::imageops::crop_imm(image, x, y, w, h).to_image();
-    let image = if job.scale < 1. {
+    let mut image = if job.scale < 1. {
         let shrink = |side: u32| ((side as f32 * job.scale).round() as u32).max(1);
         image::imageops::thumbnail(&crop, shrink(w), shrink(h))
     } else {
         crop
     };
+    job.display.convert(&mut image);
     Ok(Region {
         image,
         rect: [
@@ -288,6 +307,7 @@ mod tests {
             center: [0.5, 0.5],
             size: [100, 50],
             scale: 1.,
+            display: DisplayProfile::default(),
             cancel: Default::default(),
         };
         let mut held = None;

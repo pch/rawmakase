@@ -3,8 +3,10 @@
 //! bounded; requests go to the workers in `previews`, and results are
 //! matched to the latest request so a late or stale render never shows.
 use super::previews::{
-    self, EditJob, EditQueue, EditResult, EditSource, Pace, PreviewResult, Progress, Wanted,
+    self, EditJob, EditQueue, EditResult, EditSource, Pace, PreviewResult, Progress, ThumbJob,
+    Wanted,
 };
+use crate::app::preferences::monitor::DisplayProfile;
 use crate::catalog::{Photo, PhotoId};
 use eframe::egui;
 use std::{
@@ -31,7 +33,7 @@ pub(super) struct PreviewTextures {
     pub(super) thumb_order: VecDeque<PathBuf>,
     pub(super) pending: HashSet<PathBuf>,
     pub(super) failed: HashSet<PathBuf>,
-    pub(super) thumb_tx: SyncSender<PathBuf>,
+    pub(super) thumb_tx: SyncSender<ThumbJob>,
     pub(super) thumb_rx: Receiver<PreviewResult>,
     /// Edited previews: rendered from each photo's edit on a second worker.
     pub(super) edit_tx: EditQueue,
@@ -79,6 +81,9 @@ pub(super) struct PreviewTextures {
     shown_photos: HashSet<PhotoId>,
     /// The two workers, to wait for at exit.
     threads: [Option<JoinHandle<()>>; 2],
+    /// The monitor profile every texture here is converted to, which each
+    /// request captures; a result converted for another is dropped.
+    pub(super) display: DisplayProfile,
 }
 impl PreviewTextures {
     /// Starts both preview workers on the shared disk cache.
@@ -121,6 +126,7 @@ impl PreviewTextures {
             shown_files: HashSet::new(),
             shown_photos: HashSet::new(),
             threads: [Some(thumbs), Some(edits)],
+            display: DisplayProfile::default(),
         }
     }
     /// Closes the edited previews' queue, which cancels the renders under way,
@@ -135,6 +141,22 @@ impl PreviewTextures {
             .each_mut()
             .map(|thread| crate::app::task::Stopping::new(thread.take()))
     }
+    /// Converts to `display` from now on: the textures converted for another
+    /// go, and are asked for again when shown. Results on their way were
+    /// converted for the old one and are dropped: thumbnails by the profile
+    /// they carry, edited previews by their tickets, no longer the latest.
+    pub(super) fn set_display(&mut self, display: DisplayProfile) {
+        if self.display == display {
+            return;
+        }
+        self.display = display;
+        self.thumbs.clear();
+        self.thumb_order.clear();
+        self.edited.clear();
+        self.edited_order.clear();
+        self.edited_requested.clear();
+        self.ahead_scan.1 = 0;
+    }
     /// Takes every finished preview. Drain in every workspace so the bounded
     /// worker never waits for the grid.
     pub(super) fn poll(&mut self, ctx: &egui::Context) {
@@ -143,14 +165,18 @@ impl PreviewTextures {
             let PreviewResult {
                 path,
                 image: im,
+                display,
                 skipped,
                 ..
             } = result;
             self.pending.remove(&path);
-            match im {
+            // Converted for a monitor profile no longer used: asked for
+            // again once shown, as one skipped is.
+            let stale = display != self.display;
+            match im.filter(|_| !stale) {
                 Some(im) => self.insert_thumb(ctx, path, &im),
                 // Asked for again once it is shown again.
-                None if skipped => {}
+                None if skipped || stale => {}
                 None => {
                     self.failed.insert(path);
                 }
@@ -259,6 +285,40 @@ impl PreviewTextures {
         self.edited
             .insert(id, texture(ctx, format!("edited-{id}"), im));
     }
+    /// Shows `image`, an sRGB preview of photo `id`'s edit answering its
+    /// request `ticket`: at once without a monitor profile, else once the
+    /// worker has converted it, the one shown until then staying.
+    fn show_edited(
+        &mut self,
+        ctx: &egui::Context,
+        id: PhotoId,
+        ticket: u64,
+        image: &image::RgbImage,
+    ) {
+        if !self.display.converts() {
+            self.insert_edited(ctx, id, image);
+        } else if self
+            .edit_tx
+            .send(EditJob::Convert {
+                id,
+                ticket,
+                image: image.clone(),
+                display: self.display.clone(),
+            })
+            .is_ok()
+        {
+            self.edits_pending += 1;
+        }
+    }
+    /// Shows a preview built for photo `id` (Build Standard-Sized Previews)
+    /// as its edited thumbnail, answering its latest request.
+    pub(super) fn show_built(&mut self, ctx: &egui::Context, id: PhotoId, image: &image::RgbImage) {
+        match self.edited_requested.get(&id).copied() {
+            Some(ticket) => self.show_edited(ctx, id, ticket, image),
+            None if !self.display.converts() => self.insert_edited(ctx, id, image),
+            None => {}
+        }
+    }
     /// The ticket of the photo's latest edited preview request, if any.
     pub(super) fn edited_ticket(&self, id: PhotoId) -> Option<u64> {
         self.edited_requested.get(&id).copied()
@@ -326,7 +386,11 @@ impl PreviewTextures {
         {
             shown.insert(path.to_path_buf());
         }
-        if !self.pending.contains(path) && self.thumb_tx.try_send(path.to_path_buf()).is_ok() {
+        let job = ThumbJob {
+            path: path.to_path_buf(),
+            display: self.display.clone(),
+        };
+        if !self.pending.contains(path) && self.thumb_tx.try_send(job).is_ok() {
             self.pending.insert(path.to_path_buf());
             self.progress.queued();
             ctx.request_repaint();
@@ -355,6 +419,7 @@ impl PreviewTextures {
                     copy: self.copies.get(&photo.id).cloned(),
                     source,
                     ahead: false,
+                    display: self.display.clone(),
                 })
                 .is_ok()
         {
@@ -457,6 +522,7 @@ impl PreviewTextures {
                         copy: self.copies.get(&photo.id).cloned(),
                         source,
                         ahead: true,
+                        display: self.display.clone(),
                     })
                     .is_ok()
             {
@@ -481,7 +547,7 @@ impl PreviewTextures {
     ) {
         let ticket = self.ticket();
         self.edited_requested.insert(id, ticket);
-        self.insert_edited(ctx, id, &image);
+        self.show_edited(ctx, id, ticket, &image);
         if let Some(stamp) = stamp {
             let _ = self.edit_tx.send(EditJob::Store {
                 path,
