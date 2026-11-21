@@ -216,3 +216,60 @@ fn the_filmstrip_merges_the_selection_its_photo_is_in() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+/// Export… in a grid photo's menu opens the Export dialog for the selection
+/// the photo is in, as Ctrl+Shift+E does (#1228).
+#[test]
+fn export_in_the_grid_menu_exports_the_selection() -> anyhow::Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF"])?;
+    let library = e.library.as_mut().unwrap();
+    library.make_active(ids[0]);
+    library.select_range_to(ids[1]);
+    choose(&mut e, ids[1], PhotoAction::Export { previous: false });
+    carry_out(&mut e);
+    assert_eq!(
+        e.export_dialog_photos().as_deref(),
+        Some(&ids[..2]),
+        "{}",
+        e.messages.line()
+    );
+    Ok(())
+}
+
+/// In Develop's filmstrip, Export… acts on the photo right-clicked, like the
+/// menu's other entries, not on the photo open or the selection.
+#[test]
+fn export_in_the_filmstrip_menu_exports_the_photo_alone() -> anyhow::Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF"])?;
+    e.module = crate::app::Module::Develop;
+    let ctx = e.context.clone();
+    let library = e.library.as_mut().unwrap();
+    library.make_active(ids[0]);
+    library.select_range_to(ids[1]);
+    let photo = library.photo(ids[2]).unwrap().clone();
+    library.photo_action(&ctx, &photo, PhotoAction::Export { previous: false }, false);
+    carry_out(&mut e);
+    assert_eq!(
+        e.export_dialog_photos().as_deref(),
+        Some(&ids[2..]),
+        "{}",
+        e.messages.line()
+    );
+    Ok(())
+}
+
+/// Export… from a menu while another window is open waits, as other dialogs do.
+#[test]
+fn export_from_a_menu_is_not_opened_over_another_window() -> anyhow::Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
+    e.view.shortcuts = true;
+    choose(&mut e, ids[0], PhotoAction::Export { previous: false });
+    carry_out(&mut e);
+    assert_eq!(e.export_dialog_photos(), None);
+    assert!(
+        e.messages
+            .line()
+            .contains("Finish what the open window asks")
+    );
+    Ok(())
+}

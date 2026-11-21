@@ -541,6 +541,10 @@ pub(in crate::app) enum PhotoAction {
     Rename,
     /// Move to Folder…: the photo's files to another catalog folder.
     MoveToFolder,
+    /// Export…, or Export with Previous (`previous`): the photos to files.
+    Export {
+        previous: bool,
+    },
     /// Export as Catalog…: the photos into a new catalog of their own.
     ExportCatalog,
     /// Library › Previews: Build Standard-Sized Previews.
@@ -566,6 +570,12 @@ pub(in crate::app) enum PhotoAction {
     /// Remove from Collection: the photos come out of the collection shown.
     RemoveFromCollection,
 }
+/// Export… and Export with Previous's shortcuts, as Develop's menu shows them.
+pub(in crate::app) const EXPORT_SHORTCUTS: (&str, &str) = if cfg!(target_os = "macos") {
+    ("⇧⌘E", "⌥⇧⌘E")
+} else {
+    ("Ctrl+Shift+E", "Ctrl+Alt+Shift+E")
+};
 /// Remove from Collection's shortcut: Delete, which does the same in a
 /// collection.
 const REMOVE_FROM_COLLECTION_SHORTCUT: &str = if cfg!(target_os = "macos") {
@@ -908,10 +918,21 @@ pub(in crate::app) fn photo_menu(
             action = Some(PhotoAction::MoveToFolder);
             ui.close();
         }
+        menu_separator(ui);
+        let (export, previous) = EXPORT_SHORTCUTS;
+        if menu_item(ui, "Export…", export, true, false) {
+            action = Some(PhotoAction::Export { previous: false });
+            ui.close();
+        }
+        if menu_item(ui, "Export with Previous", previous, true, false) {
+            action = Some(PhotoAction::Export { previous: true });
+            ui.close();
+        }
         if menu_item(ui, "Export as Catalog…", "", true, false) {
             action = Some(PhotoAction::ExportCatalog);
             ui.close();
         }
+        menu_separator(ui);
         if menu_item(ui, "Remove from Catalog…", REMOVE_SHORTCUT, true, false) {
             action = Some(PhotoAction::Remove);
             ui.close();

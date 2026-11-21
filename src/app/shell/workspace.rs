@@ -50,6 +50,7 @@ impl Editor {
                     | Request::Removal(_)
                     | Request::Read(_)
                     | Request::MergeHdr(_)
+                    | Request::ExportPhotos(..)
                     | Request::File(_)
             );
             if dialog && self.workspace_modal() {
@@ -78,6 +79,7 @@ impl Editor {
                 }
                 Request::Export(request) => self.export_as_catalog(request),
                 Request::Read(ids) => self.modal = Some(crate::app::Modal::ReadMetadata(ids)),
+                Request::ExportPhotos(ids, previous) => self.export_photos(ids, previous),
                 Request::MergeHdr(ids) => self.open_merge_hdr(ids),
                 Request::File(FileRequest::Remove(ids)) => self.request_photo_removal(ids),
                 Request::File(FileRequest::Delete(ids)) => self.request_photo_delete(ids, false),

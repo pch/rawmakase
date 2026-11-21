@@ -89,6 +89,8 @@ fn shortcuts_never_overlap_their_labels() {
         "Remove from Catalog…",
         "Move to Trash…",
         "Create Virtual Copy",
+        "Export…",
+        "Export with Previous",
     ] {
         let label_rect = find(drawn, label).unwrap_or_else(|| panic!("no {label} in {drawn:?}"));
         for (text, rect) in drawn {
@@ -101,7 +103,7 @@ fn shortcuts_never_overlap_their_labels() {
             }
         }
     }
-    assert_eq!(rows, 3, "every row has its shortcut: {drawn:?}");
+    assert_eq!(rows, 5, "every row has its shortcut: {drawn:?}");
 }
 
 /// Opened near the window's right edge, the menu is placed for its full
@@ -146,4 +148,65 @@ fn remove_from_collection_is_offered_only_when_the_source_takes_photos_out() {
         "the menu showed"
     );
     assert!(find(drawn, "Remove from Collection").is_none());
+}
+
+/// A photo's menu, open, with Export… and Export with Previous (#1228), for
+/// `RAWMAKASE_UI_SHOTS` ([`crate::app::ui::shots`]). The menu opens on a
+/// right-click, which a shot can't make, so it is drawn here.
+#[test]
+fn shots_of_the_photo_menu() {
+    let Some(dir) = std::env::var_os("RAWMAKASE_UI_SHOTS").map(std::path::PathBuf::from) else {
+        return;
+    };
+    let photo = Photo {
+        filename: "a.NEF".into(),
+        path: "/photos/a.NEF".into(),
+        ..Default::default()
+    };
+    let cell = Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(60., 20.));
+    let mut fonts = false;
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(Vec2::new(300., 820.))
+        .with_pixels_per_point(2.)
+        .wgpu()
+        .build_ui(|ui| {
+            if !std::mem::replace(&mut fonts, true) {
+                let text = fastframe_text::detect();
+                crate::app::install_fonts(ui.ctx(), &text);
+                crate::app::ui::icons::install(ui.ctx());
+                crate::app::ui::theme::apply(
+                    ui.ctx(),
+                    crate::app::ui::theme::Palette::DEFAULT,
+                    &text,
+                );
+            }
+            let response = ui.put(cell, egui::Button::new("photo"));
+            photo_menu(
+                &response,
+                &photo,
+                Presence {
+                    available: true,
+                    copy: false,
+                },
+                MenuTarget::Photo,
+                Module::Library,
+                true,
+                MenuCollections::default(),
+            );
+        });
+    harness.run_steps(2);
+    let at = cell.center();
+    harness.event(egui::Event::PointerMoved(at));
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    harness.run_steps(4);
+    let image = harness.render().expect("wgpu could not draw the shot");
+    std::fs::create_dir_all(&dir).expect("the shots folder");
+    image.save(dir.join("photo_menu.png")).expect("the shot");
 }

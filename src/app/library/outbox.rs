@@ -34,6 +34,9 @@ pub(in crate::app) enum Request {
     Removal(FolderRemoval),
     /// Export as Catalog chosen in the Folders panel or a photo's menu.
     Export(CatalogExportRequest),
+    /// Export… (or Export with Previous, when `true`) chosen in a photo's menu,
+    /// for these photos.
+    ExportPhotos(Vec<PhotoId>, bool),
     /// Read Metadata from Files for these photos, once confirmed.
     Read(Vec<PhotoId>),
     /// Merge to HDR… of these photos, a bracket, once its window says how.
@@ -58,6 +61,7 @@ impl Request {
             ) if !listed(id) => return None,
             Self::Find(id) if !listed(id) => return None,
             Self::Read(ids) => Self::Read(keep(ids)?),
+            Self::ExportPhotos(ids, previous) => Self::ExportPhotos(keep(ids)?, previous),
             Self::MergeHdr(ids) => Self::MergeHdr(keep(ids)?),
             Self::Export(CatalogExportRequest {
                 name,
