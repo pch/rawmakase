@@ -72,7 +72,8 @@ impl Own {
     pub(super) fn release_file(&mut self) {
         self.bytes = Arc::default();
     }
-    /// The colour space the maker notes give the camera's JPEGs.
+    /// The colour space the maker notes, or the file's writer, give the
+    /// camera's JPEGs.
     pub(super) fn preview_space(&self) -> Option<super::MakerPreviewSpace> {
         self.info.preview_space.map(|s| match s {
             rawmakase_raw::PreviewSpace::Srgb => super::MakerPreviewSpace::Srgb,

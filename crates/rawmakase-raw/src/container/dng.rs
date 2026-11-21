@@ -318,6 +318,15 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         }
     }
     info.previews = t.previews();
+    // Google's HDR+ (Pixel phones, and Google Camera ports on other phones)
+    // embeds a bare JFIF preview: no EXIF, no ICC profile, no
+    // PreviewColorSpace. Fitted to Pixel 4 XL, 7 Pro and 8 Pro photos as sRGB
+    // and as Display P3, sRGB matched the render better on each.
+    if t.text_upto(ifd0, 305, NAME_MAX)
+        .is_some_and(|s| s.starts_with("HDR+ "))
+    {
+        info.preview_space = Some(crate::PreviewSpace::Srgb);
+    }
     // A preview that is not baseline JPEG: uncompressed, or a lossless
     // JPEG thumbnail with data (Yuneec's; Kandao's have none).
     info.uncompressed_preview = t.has_uncompressed_thumbnail()
@@ -1669,6 +1678,24 @@ pub(crate) mod tests {
         for m in &info.cam_mul[..3] {
             assert!((m - 1.).abs() < 1e-3, "{:?}", info.cam_mul);
         }
+    }
+
+    /// Google's HDR+ states no colour space for its preview (issue 1211): it
+    /// is sRGB. Another writer that states none still states none.
+    #[test]
+    fn an_hdr_plus_preview_is_srgb() {
+        let software = |s: &str| {
+            let mut v = s.as_bytes().to_vec();
+            v.push(0);
+            vec![(305, 2, v.len() as u32, v)]
+        };
+        let space = |entries: &[Entry]| crate::open(&dng(2, 2, entries)).unwrap().preview_space;
+        assert_eq!(
+            space(&software("HDR+ 1.0.479933560zd")),
+            Some(crate::PreviewSpace::Srgb)
+        );
+        assert_eq!(space(&software("S911BXXS3AWF7")), None);
+        assert_eq!(space(&[]), None);
     }
 
     /// Linear raw's AnalogBalance (relative to green) is reported, and the
