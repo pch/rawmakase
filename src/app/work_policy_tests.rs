@@ -170,6 +170,7 @@ fn quitting_stops_the_workers_in_order() {
             HdrPreview,
             HdrHistogram,
             CurveHistogram,
+            PresetThumbnails,
             Export,
             MergeHdr,
             PreviewBuilds,

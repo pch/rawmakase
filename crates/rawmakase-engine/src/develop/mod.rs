@@ -55,6 +55,7 @@ mod scene_tone;
 pub(crate) mod sdr_rendition;
 mod sdr_rendition_data;
 mod stage_cache;
+pub mod thumbnails;
 
 pub use crate::color::{mul, srgb_encode};
 pub use auto::{AutoTone, Measures, auto_tone, auto_tone_basis, auto_white_balance};
