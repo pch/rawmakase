@@ -1,0 +1,48 @@
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+   crs:PresetType="Look"
+   crs:Cluster=""
+   crs:UUID="4189AB25B045AFE51E5220E23EC343DC"
+   crs:SupportsAmount="True"
+   crs:SupportsColor="True"
+   crs:SupportsMonochrome="False"
+   crs:SupportsHighDynamicRange="True"
+   crs:SupportsNormalDynamicRange="True"
+   crs:SupportsSceneReferred="True"
+   crs:SupportsOutputReferred="False"
+   crs:CameraModelRestriction=""
+   crs:Copyright="Synthetic test look, public domain"
+   crs:ContactInfo=""
+   crs:Version="18.7"
+   crs:ProcessVersion="15.4"
+   crs:ConvertToGrayscale="False"
+   crs:LookTable="0024B41B9888284CFAF713EAD61321F3"
+   crs:Table_0024B41B9888284CFAF713EAD61321F3="P1000n]m$uzz]:0puT{+KQDf4FJ*[d6o@b0FO:%3W0">
+   <crs:Name>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">Synthetic Channels Red</rdf:li>
+    </rdf:Alt>
+   </crs:Name>
+   <crs:Group>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">Synthetic</rdf:li>
+    </rdf:Alt>
+   </crs:Group>
+   <crs:ToneCurvePV2012>
+    <rdf:Seq>
+     <rdf:li>0, 0</rdf:li>
+     <rdf:li>255, 255</rdf:li>
+    </rdf:Seq>
+   </crs:ToneCurvePV2012>
+   <crs:ToneCurvePV2012Red>
+    <rdf:Seq>
+     <rdf:li>0, 30</rdf:li>
+     <rdf:li>128, 150</rdf:li>
+     <rdf:li>255, 255</rdf:li>
+    </rdf:Seq>
+   </crs:ToneCurvePV2012Red>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>

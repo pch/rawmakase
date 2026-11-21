@@ -294,21 +294,36 @@ fn look_decode(e: f32) -> f32 {
     }
     return exp2((exp2((e - 1.0) * LOOK_BEND / LOOK_SLOPE) - 1.0) / LOOK_BEND);
 }
-// LookTone::evaluate: the look's curve (`evaluate_as_look`) on an encoded value, and
-// above where it ends, its lift held or its last slope.
-fn look_eval(e: f32) -> f32 {
-    let curve = offset(P_ENH_CURVE);
-    let kind = p(P_HDR_LOOK);
+// LookTone::evaluate: a look curve (`evaluate_as_look`) with samples at `curve` and
+// its rule at `tone` (as `P_HDR_LOOK`) on an encoded value, and above where it ends,
+// its lift held or its last slope.
+fn look_tone(curve: i32, tone: u32, e: f32) -> f32 {
+    let kind = p(tone);
     if kind == 1.0 {
-        if e <= p(P_HDR_LOOK + 1u) {
+        if e <= p(tone + 1u) {
             return lut(curve, 4096u, e);
         }
-        return min(e + p(P_HDR_LOOK + 2u), look_encode(LOOK_PEAK));
+        return min(e + p(tone + 2u), look_encode(LOOK_PEAK));
     }
     if e <= 1.0 {
         return lut(curve, 4096u, e);
     }
-    return lut(curve, 4096u, 1.0) + p(P_HDR_LOOK + 1u) * (e - 1.0);
+    return lut(curve, 4096u, 1.0) + p(tone + 1u) * (e - 1.0);
+}
+fn look_eval(e: f32) -> f32 {
+    return look_tone(offset(P_ENH_CURVE), P_HDR_LOOK, e);
+}
+// tone::LookChannels::apply: the look's channel curves, each on its own channel, after
+// the user's curves.
+fn look_channels(rgb: vec3<f32>) -> vec3<f32> {
+    var out = rgb;
+    for (var c = 0u; c < 3u; c++) {
+        let tone = P_HDR_LOOK_CHANNELS + 3u * c;
+        if p(tone) != 0.0 {
+            out[c] = look_decode(look_tone(offset(P_ENH_CHANNELS + c), tone, look_encode(out[c])));
+        }
+    }
+    return out;
 }
 // LookTone::apply: DNG RGBTone with the look's curve on encoded values.
 fn look_apply(rgb: vec3<f32>) -> vec3<f32> {
@@ -430,7 +445,7 @@ fn hdr_tone_controls(rgb: vec3<f32>) -> vec3<f32> {
         q = refine_saturation_hdr(input, encoded_tone(q, 2u));
         out = vec3(hdr_channel(0u, q.x), hdr_channel(1u, q.y), hdr_channel(2u, q.z));
     }
-    return out;
+    return look_channels(out);
 }
 // color_mixer::lookup_with on a grid of changes (three floats a cell) at HSV `h`, `s`,
 // `v`, or of value factors (`scalar`, one float a cell, in the third component).

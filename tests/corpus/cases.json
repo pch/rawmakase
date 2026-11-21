@@ -2034,6 +2034,150 @@
    }
   },
   {
+   "name": "look-channels-50",
+   "look": {
+    "file": "synthetic-channels.xmp",
+    "amount": 0.5
+   }
+  },
+  {
+   "name": "look-channels-100",
+   "look": {
+    "file": "synthetic-channels.xmp",
+    "amount": 1
+   }
+  },
+  {
+   "name": "look-channels-200",
+   "look": {
+    "file": "synthetic-channels.xmp",
+    "amount": 2
+   }
+  },
+  {
+   "name": "look-channels-curve-100",
+   "look": {
+    "file": "synthetic-channels-curve.xmp",
+    "amount": 1
+   }
+  },
+  {
+   "name": "look-channels-curve-200",
+   "look": {
+    "file": "synthetic-channels-curve.xmp",
+    "amount": 2
+   }
+  },
+  {
+   "name": "look-channels-red-100",
+   "look": {
+    "file": "synthetic-channels-red.xmp",
+    "amount": 1
+   }
+  },
+  {
+   "name": "look-channels-user-red",
+   "look": {
+    "file": "synthetic-channels.xmp",
+    "amount": 1
+   },
+   "curves": {
+    "ToneCurvePV2012": [
+     "0, 0",
+     "255, 255"
+    ],
+    "ToneCurvePV2012Red": [
+     "0, 0",
+     "128, 100",
+     "255, 255"
+    ],
+    "ToneCurvePV2012Green": [
+     "0, 0",
+     "255, 255"
+    ],
+    "ToneCurvePV2012Blue": [
+     "0, 0",
+     "255, 255"
+    ]
+   }
+  },
+  {
+   "name": "look-channels-user-s",
+   "look": {
+    "file": "synthetic-channels.xmp",
+    "amount": 1
+   },
+   "curves": {
+    "ToneCurvePV2012": [
+     "0, 0",
+     "64, 48",
+     "128, 128",
+     "192, 208",
+     "255, 255"
+    ],
+    "ToneCurvePV2012Red": [
+     "0, 0",
+     "255, 255"
+    ],
+    "ToneCurvePV2012Green": [
+     "0, 0",
+     "255, 255"
+    ],
+    "ToneCurvePV2012Blue": [
+     "0, 0",
+     "255, 255"
+    ]
+   }
+  },
+  {
+   "name": "look-channels-contrast+50",
+   "look": {
+    "file": "synthetic-channels.xmp",
+    "amount": 1
+   },
+   "settings": {
+    "Contrast2012": "+50"
+   }
+  },
+  {
+   "name": "look-channels-exposure+1",
+   "look": {
+    "file": "synthetic-channels.xmp",
+    "amount": 1
+   },
+   "settings": {
+    "Exposure2012": "+1.00"
+   }
+  },
+  {
+   "name": "look-curve-user-s",
+   "look": {
+    "file": "synthetic-curve.xmp",
+    "amount": 1
+   },
+   "curves": {
+    "ToneCurvePV2012": [
+     "0, 0",
+     "64, 48",
+     "128, 128",
+     "192, 208",
+     "255, 255"
+    ],
+    "ToneCurvePV2012Red": [
+     "0, 0",
+     "255, 255"
+    ],
+    "ToneCurvePV2012Green": [
+     "0, 0",
+     "255, 255"
+    ],
+    "ToneCurvePV2012Blue": [
+     "0, 0",
+     "255, 255"
+    ]
+   }
+  },
+  {
    "name": "look-exposure-50",
    "look": {
     "file": "synthetic-exposure.xmp",
