@@ -81,10 +81,20 @@ pub(crate) fn drag(ui: &mut eframe::egui::Ui, rect: eframe::egui::Rect) {
         // A quick click may be pressed and released within the same pass.
         if ui.input(|input| input.pointer.primary_pressed())
             && (response.is_pointer_button_down_on() || response.clicked())
+            && owns_click(ui.ctx(), response.id)
         {
             appkit::press(ui.ctx(), ui.input(|input| input.pointer.primary_down()));
         }
     }
+}
+
+/// Whether a click under the pointer is the drag area's own. A button on the
+/// bar senses clicks alone, so egui hands the area its drag: a press on the
+/// button reads as down on the area too, and AppKit would take the second
+/// press of a double click on it for the title bar's.
+#[cfg(any(target_os = "macos", test))]
+fn owns_click(ctx: &eframe::egui::Context, area: eframe::egui::Id) -> bool {
+    ctx.viewport(|viewport| viewport.hits.click.is_none_or(|hit| hit.id == area))
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -396,6 +406,42 @@ mod tests {
         assert_eq!(
             applied(launched(true, false), state(false, false, true)),
             (None, Some(false))
+        );
+    }
+
+    #[test]
+    fn a_button_on_the_bar_keeps_its_clicks_from_the_drag_area() {
+        use eframe::egui::{self, Pos2, Rect, Vec2};
+        let ctx = egui::Context::default();
+        let bar = Rect::from_min_size(Pos2::ZERO, Vec2::new(400., 40.));
+        let owns_at = |at: Pos2| {
+            let mut owns = false;
+            for _ in 0..2 {
+                let input = egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800., 600.))),
+                    events: vec![egui::Event::PointerMoved(at)],
+                    ..Default::default()
+                };
+                let mut output = ctx.run_ui(input, |ui| {
+                    let area = ui.interact(
+                        bar,
+                        ui.id().with("titlebar-drag"),
+                        egui::Sense::click_and_drag(),
+                    );
+                    ui.put(
+                        Rect::from_min_size(Pos2::new(10., 5.), Vec2::new(80., 30.)),
+                        egui::Button::new("Library"),
+                    );
+                    owns = owns_click(ui.ctx(), area.id);
+                });
+                output.textures_delta.clear();
+            }
+            owns
+        };
+        assert!(!owns_at(Pos2::new(40., 20.)), "a press on the button");
+        assert!(
+            owns_at(Pos2::new(300., 20.)),
+            "a press on the bar's empty space"
         );
     }
 }
