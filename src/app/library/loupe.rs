@@ -452,7 +452,7 @@ impl Library {
         &mut self,
         ui: &mut egui::Ui,
         zoom: &mut Zoom,
-        magnifier: Option<&mut crate::app::view::magnifier::Magnifier>,
+        mut magnifier: Option<&mut crate::app::view::magnifier::Magnifier>,
     ) -> Action {
         let palette = theme::palette(ui.ctx());
         self.loupe.poll(ui.ctx());
@@ -600,6 +600,57 @@ impl Library {
             }
             None => fit,
         };
+        // The wheel and a pinch over the photo (see `photo_wheel`), for the next
+        // frame's layout and this frame's region.
+        let size = regions
+            .full
+            .filter(|_| regions.photo == Some(photo.id))
+            .or(self.loupe.full.map(|(w, h)| [w, h]));
+        if let Some(pos) = response
+            .hover_pos()
+            .filter(|_| response.hovered() && zoomable)
+            && let Some(at) = shown.filter(|at| at.contains(pos))
+        {
+            use crate::app::view::{navigator, photo_wheel};
+            let keeper = if magnifier.is_some() && !zoom.on {
+                photo_wheel::Keeper::Magnifier
+            } else {
+                photo_wheel::Keeper::Nobody
+            };
+            let wheel = photo_wheel::read(
+                ui.ctx(),
+                crate::app::ui::wheel::Owner::Photo,
+                keeper,
+                zoom.on,
+                false,
+            );
+            if let Some(magnifier) = magnifier.as_mut() {
+                magnifier.step(wheel.magnifier);
+            }
+            let before = *zoom;
+            let mut zoomed = false;
+            if let (Some(full), Some(fit)) = (size, self.loupe_fit()) {
+                let current = if zoom.on { zoom.level } else { fit };
+                let level = match ui.input(crate::app::ui::wheel::pinch) {
+                    Some(factor) => Some(navigator::pinched(current, fit, factor)),
+                    None => (wheel.zoom != 0).then(|| photo_wheel::stepped(zoom, fit, wheel.zoom)),
+                };
+                if let Some(level) = level {
+                    let size = egui::vec2(full[0] as f32, full[1] as f32);
+                    photo_wheel::zoom_at(zoom, level, pos, at, rect, size, ppp);
+                    zoomed = true;
+                }
+            }
+            // A frame that zooms doesn't pan too, nor does one while the zoomed
+            // photo's pixels load: `at` is still the fitted photo then.
+            if !zoomed && full.is_some() && wheel.pan != Vec2::ZERO && zoom.on {
+                photo_wheel::pan(zoom, wheel.pan, at.size(), rect.size());
+            }
+            if *zoom != before {
+                ui.ctx().request_repaint();
+            }
+        }
+        let regions = &mut self.loupe.regions;
         if zoom.on && zoomable {
             // The image pixels that fill the view at this level.
             let size =
@@ -628,7 +679,6 @@ impl Library {
                 .zip(response.hover_pos())
                 .filter(|(f, p)| f.contains(*p))
         {
-            magnifier.read_wheel(ui);
             let level = magnifier.level();
             let size = regions
                 .full

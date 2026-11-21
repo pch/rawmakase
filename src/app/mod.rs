@@ -78,6 +78,8 @@ pub(crate) struct Editor {
     tabbed: Option<(Module, crate::app::shell::panels::Tabbed)>,
     onboarding: crate::app::catalog::onboarding::Onboarding,
     preferences: preferences::Preferences,
+    /// Preferences > Display > Mouse wheel, published to the frame's widgets.
+    wheel_prefs: crate::app::ui::wheel::Prefs,
     updates: crate::app::shell::updates::Updates,
     /// Report an Issue…: its dialog and the system probe.
     report_issue: crate::app::shell::report_issue::ReportIssue,
@@ -400,6 +402,10 @@ impl Editor {
             tabbed: None,
             onboarding: crate::app::catalog::onboarding::Onboarding::new(show_onboarding),
             preferences: Default::default(),
+            wheel_prefs: crate::app::ui::wheel::Prefs {
+                zoom: session.wheel_zoom,
+                ..Default::default()
+            },
             updates,
             report_issue,
             freed: Default::default(),
@@ -488,6 +494,7 @@ impl Editor {
                 monitor_srgb: self.view.monitor.session_srgb(),
                 panels: self.panels,
                 no_update_checks: !self.updates.automatic,
+                wheel_zoom: self.wheel_prefs.zoom,
                 skipped_version: self.updates.skipped.clone(),
                 theme: self.themes.chosen().flatten(),
                 theme_chosen: self.themes.chosen().is_some(),

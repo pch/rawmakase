@@ -460,6 +460,9 @@ pub(in crate::app) struct ViewState {
     pub(in crate::app) selected_setting: Option<crate::model::params::ParameterId>,
     pub(in crate::app) zoom_key: (bool, f32),
     pub(in crate::app) zoom_anim: Option<(f64, egui::Rect)>,
+    /// When the render a wheel or pinch zoom waits for is asked for, as an input
+    /// time in seconds: once zooming pauses, not at every notch.
+    pub(in crate::app) zoom_render_at: Option<f64>,
     pub(in crate::app) shown_rect: Option<egui::Rect>,
     /// Where a minimap click or drag is moving the view.
     pub(in crate::app) glide: Option<crate::app::view::navigator::Glide>,
@@ -508,6 +511,7 @@ impl Default for ViewState {
             selected_setting: None,
             zoom_key: (false, 1.),
             zoom_anim: None,
+            zoom_render_at: None,
             shown_rect: None,
             glide: None,
         }
@@ -894,6 +898,7 @@ impl ViewState {
     pub(crate) fn clear_document(&mut self) {
         self.zoom.on = false;
         self.zoom_anim = None;
+        self.zoom_render_at = None;
         self.glide = None;
         self.shown_rect = None;
         self.set_tool(Tool::None);

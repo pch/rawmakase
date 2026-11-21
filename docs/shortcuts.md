@@ -58,6 +58,39 @@ command that can run at that moment counts: with a text field holding the keys,
 Crop doesn't, so Preferences keeps Cmd+, even if Crop has it too. When two commands
 share a key there and something else has it below them, none of them runs.
 
+## Mouse wheel and trackpad
+
+The wheel over the photo works as in Lightroom Classic on a Mac, in Develop, in
+Reference View's reference (which zooms and pans alone) and in the Library's
+Loupe:
+
+- Zoomed in, the wheel pans the photo: up and down, sideways with **Shift** or a
+  sideways wheel, and both ways with a trackpad. At Fit it does nothing.
+- A trackpad pinch zooms at the pointer, stopping at 100% on the way and at Fit
+  going out. winit reports a pinch on macOS only.
+- With the Remove, Red Eye or a mask brush open, the wheel sizes the brush, spot
+  or circle (**Shift**: feather; **Alt**: the Erase brush), and with the
+  magnifier shown it changes the magnification.
+- Neither zooms nor pans while Crop is open.
+
+**Preferences > Display > Mouse wheel > Zoom with** (Off by default) makes the
+wheel zoom, one Cmd+= step a notch, keeping the point under the pointer where it
+is:
+
+- **Scroll wheel**: the plain wheel zooms; Shift, a sideways wheel and a
+  trackpad still pan.
+- **Cmd + scroll wheel**: Cmd + wheel zooms and the plain wheel pans.
+
+Either way, Cmd + wheel zooms past a brush or the magnifier, which keep the plain
+wheel. Only a mouse wheel's notches zoom. A trackpad, a Magic Mouse and scrolling
+that keeps going after the fingers lift always pan. On Windows and X11, where
+every scroll arrives as lines, a notch is a whole line: a touchpad, or a
+high-resolution mouse that scrolls in fractions of a notch, pans instead.
+
+A wheel gesture stays with what the pointer was over when it began, the photo or a
+panel, until it pauses for 0.4 s: a scroll of the panel that carries on over the
+photo never pans it.
+
 ## Extensions' commands
 
 An enabled extension's commands are listed under **Extensions** in Preferences

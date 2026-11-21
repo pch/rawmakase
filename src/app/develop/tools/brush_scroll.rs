@@ -4,7 +4,6 @@
 use crate::app::Editor;
 use crate::app::develop::state::Tool;
 use crate::app::ui::wheel::{self, GESTURE_PAUSE};
-use eframe::egui;
 use std::time::{Duration, Instant};
 
 /// How much one notch scales a size, as `[` and `]` do.
@@ -39,8 +38,12 @@ impl Scroll {
     /// This frame's wheel events, as [`wheel::read`] reads them. A sideways scroll
     /// counts only with Shift (see [`wheel::Wheel::lines`]); a plain sideways
     /// trackpad swipe changes nothing.
-    pub(in crate::app) fn read(i: &egui::InputState) -> Vec<Self> {
-        wheel::read(i).into_iter().filter_map(Self::from_wheel).collect()
+    #[cfg(test)]
+    pub(in crate::app) fn read(i: &eframe::egui::InputState) -> Vec<Self> {
+        wheel::read(i)
+            .into_iter()
+            .filter_map(Self::from_wheel)
+            .collect()
     }
     /// What `wheel` changes, from the modifiers held when it happened; none for a
     /// scroll that moves nothing along the wheel.

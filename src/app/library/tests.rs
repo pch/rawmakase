@@ -3208,6 +3208,86 @@ fn loupe_zooms_at_the_navigator_levels_and_prepares_the_next_photo() -> Result<(
     assert!(library.loupe.regions.region.is_none());
     Ok(())
 }
+/// Zoomed in, the wheel pans a JPEG in the Loupe's own view, as Develop's photo,
+/// and stops at its edge.
+#[test]
+fn the_wheel_pans_a_zoomed_jpeg_in_the_loupe() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    image::RgbImage::from_fn(3000, 2000, |x, y| {
+        image::Rgb([(x % 256) as u8, (y % 256) as u8, 90])
+    })
+    .save(folder.join("a.jpg"))?;
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let ctx = egui::Context::default();
+    let mut library = Library::load(&path, ctx.clone())?;
+    library.wait_for_availability();
+    library.select(Some(library.session.photos()[0].id));
+    library.open_loupe();
+    let mut zoom = crate::app::view::navigator::Zoom::default();
+    let mut time = 0.;
+    let mut frame = |library: &mut Library,
+                     zoom: &mut crate::app::view::navigator::Zoom,
+                     events: Vec<egui::Event>| {
+        time += 0.1;
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1200., 800.),
+                )),
+                time: Some(time),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                library.grid(ui, zoom, true, None);
+            },
+        );
+        output.textures_delta.clear();
+    };
+    let wheel = |x: f32, y: f32| egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: Vec2::new(x, y),
+        phase: egui::TouchPhase::Move,
+        modifiers: egui::Modifiers::NONE,
+    };
+    frame(
+        &mut library,
+        &mut zoom,
+        vec![egui::Event::PointerMoved(egui::pos2(600., 400.))],
+    );
+    library.loupe.wait(&ctx);
+    zoom.set(1.);
+    frame(&mut library, &mut zoom, vec![]);
+    library.loupe.regions.wait(&ctx);
+    frame(&mut library, &mut zoom, vec![]);
+    let start = zoom.pan;
+    // A notch down moves 40 points down the 2000 drawn; a sideways one across.
+    frame(&mut library, &mut zoom, vec![wheel(0., -1.)]);
+    assert!(
+        (zoom.pan[1] - start[1] - 0.02).abs() < 1e-4,
+        "{:?}",
+        zoom.pan
+    );
+    frame(&mut library, &mut zoom, vec![wheel(-1., 0.)]);
+    assert!(
+        (zoom.pan[0] - start[0] - 40. / 3000.).abs() < 1e-4,
+        "{:?}",
+        zoom.pan
+    );
+    // Far past the bottom edge, it stops there.
+    for _ in 0..60 {
+        frame(&mut library, &mut zoom, vec![wheel(0., -1.)]);
+    }
+    let bottom = zoom.pan[1];
+    assert!(bottom < 1. && bottom > 0.5);
+    frame(&mut library, &mut zoom, vec![wheel(0., 1.)]);
+    assert!(zoom.pan[1] < bottom);
+    Ok(())
+}
 #[test]
 fn photo_info_of_folder_photos_is_read_once_and_kept() -> Result<()> {
     let directory = tempfile::tempdir()?;

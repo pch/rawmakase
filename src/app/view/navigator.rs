@@ -51,6 +51,26 @@ pub(in crate::app) fn stepped(current: f32, fit: f32, up: bool) -> f32 {
     }
 }
 
+/// The level a trackpad pinch by `factor` reaches from `current`, for a photo
+/// that fits at `fit`; 0 is Fit. It zooms continuously, stops at 100% when it
+/// crosses it, and going out stops at Fit, never below it (a photo smaller than
+/// the view, shown below Fit, stays where it is).
+pub(in crate::app) fn pinched(current: f32, fit: f32, factor: f32) -> f32 {
+    const NEAR: f32 = 1e-3;
+    let next = (current * factor).min(max_level(fit));
+    if (current < 1. - NEAR && next > 1. + NEAR) || (current > 1. + NEAR && next < 1. - NEAR) {
+        return 1.;
+    }
+    if factor < 1. && next <= fit * (1. + NEAR) {
+        return if current < fit * (1. - NEAR) {
+            current
+        } else {
+            0.
+        };
+    }
+    next
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::app) struct Zoom {
     /// Zoomed in rather than fitted.

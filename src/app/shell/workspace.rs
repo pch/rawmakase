@@ -300,6 +300,8 @@ impl Editor {
         // AppKit runs an enabled menu item's key before egui sees it.
         #[cfg(target_os = "macos")]
         keys.set_menu_chords(self.menu_chords(&ctx, self.native_menu));
+        // Before anything drawn reads the wheel.
+        crate::app::ui::wheel::begin_frame(&ctx, self.wheel_prefs);
         // Before any field takes this frame's keys, or gives them up.
         let typing = ctx.text_edit_focused();
         // Already done by `logic` this pass in the app; a pass run without it
