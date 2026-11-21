@@ -125,7 +125,14 @@ fn import_cube_luts_asks_the_space_before_the_files() {
     // Again: sRGB, whatever was chosen before; Cancel asks for nothing.
     editor.open_lut_import();
     let (_, shown) = frame(&mut editor, vec![]);
-    node(&shown, "sRGB");
+    // The label sits on the drop-down's middle.
+    let middle = |label: &str| centre(&node(&shown, label)).y;
+    assert!(
+        (middle("Color space") - middle("sRGB")).abs() < 1.,
+        "label at {}, drop-down at {}",
+        middle("Color space"),
+        middle("sRGB")
+    );
     assert_eq!(click(&mut editor, "Cancel"), None);
     assert_eq!(editor.lut_import, None);
     let (asked, _) = frame(&mut editor, vec![]);

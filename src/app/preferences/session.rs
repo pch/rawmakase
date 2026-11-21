@@ -133,6 +133,21 @@ pub(crate) struct Session {
         skip_serializing_if = "std::collections::BTreeSet::is_empty"
     )]
     pub dismissed_community_profiles: std::collections::BTreeSet<String>,
+    /// The groups Manage Profiles hides from Develop's Profile menu, by name.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::collections::BTreeSet::is_empty"
+    )]
+    pub hidden_profile_groups: std::collections::BTreeSet<String>,
+    /// The profiles the Profile menu lists first, by `camera_profiles::manage::key`:
+    /// a look by its UUID, which a rename keeps, another profile by its name.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::collections::BTreeSet::is_empty"
+    )]
+    pub favorite_profiles: std::collections::BTreeSet<String>,
     /// Preferences > Catalog: the user paused reading checksums.
     #[serde(default, deserialize_with = "lenient")]
     pub pause_checksums: bool,

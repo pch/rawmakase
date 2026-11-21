@@ -817,6 +817,7 @@ impl Editor {
         let presets = self.presets.library.presets.len();
         let mut chosen = None;
         let mut luts = false;
+        let mut manage = false;
         group(ui, "Camera profiles");
         form_row(ui, "Imported", |ui| {
             value(ui, &plural(cameras, "profile", "profiles"));
@@ -832,6 +833,13 @@ impl Editor {
         form_row(ui, "", |ui| {
             if ui.button("Import LUTs…").clicked() {
                 luts = true;
+            }
+            if ui
+                .button("Manage Profiles…")
+                .on_hover_text("Rename, regroup or remove imported profiles and LUTs, hide groups from the Profile menu and choose favorites")
+                .clicked()
+            {
+                manage = true;
             }
         });
         gap(ui);
@@ -870,6 +878,10 @@ impl Editor {
         }
         if luts {
             self.open_lut_import();
+            self.preferences.stale = true;
+        }
+        if manage {
+            self.open_profile_manager(&ctx);
             self.preferences.stale = true;
         }
     }

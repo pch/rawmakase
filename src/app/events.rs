@@ -234,6 +234,7 @@ impl Editor {
                     self.onboarding_scanned(generation, *found)
                 }
                 Event::Imported(summary) => self.imported(*summary, ctx),
+                Event::ProfilesManaged(done) => self.profiles_managed(*done),
                 Event::Synced(result) => self.synced(*result),
                 Event::PresetSave(p) => {
                     self.activity.finish_dialog();

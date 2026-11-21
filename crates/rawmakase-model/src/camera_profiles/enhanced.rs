@@ -485,6 +485,23 @@ impl LookFile {
             d.attribute((CRS, "UUID")).unwrap_or("").into(),
         ))
     }
+    /// What the library manager shows of a look file, without reading its tables.
+    pub(super) fn summary(text: &str) -> Result<LookSummary> {
+        let doc = roxmltree::Document::parse(text)?;
+        let d = look_description(&doc)?;
+        let attr = |name| d.attribute((CRS, name)).unwrap_or("").to_string();
+        Ok(LookSummary {
+            name: look_name(d)?.into(),
+            uuid: attr("UUID"),
+            group: label(d, "Group").unwrap_or("").trim().into(),
+            base: match attr("CameraProfile") {
+                name if name.is_empty() => LookBase::Any,
+                name => LookBase::Named(name),
+            },
+            restriction: attr("CameraModelRestriction"),
+            adobe: super::look_source::is_adobe(&attr("Copyright")),
+        })
+    }
     pub(super) fn parse(text: &str) -> Result<Self> {
         let doc = roxmltree::Document::parse(text)?;
         let d = look_description(&doc)?;
@@ -699,6 +716,86 @@ impl LookFile {
         })
     }
 }
+/// A look file's name, identity and place, as [`LookFile::summary`] reads them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct LookSummary {
+    pub name: String,
+    pub uuid: String,
+    pub group: String,
+    pub base: LookBase,
+    pub restriction: String,
+    /// Its copyright is Adobe's.
+    pub adobe: bool,
+}
+
+/// A look file's `text` with the label `element` (`Name` or `Group`) set to `value`
+/// in every language it has, and nothing else changed. A label the file lacks is
+/// added after the name, in the file's own prefixes; an empty `value` removes the
+/// label, which only a group may lack.
+pub(super) fn with_label(text: &str, element: &str, value: &str) -> Result<String> {
+    let doc = roxmltree::Document::parse(text)?;
+    let d = look_description(&doc)?;
+    let mut edits: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+    match d.children().find(|n| n.has_tag_name((CRS, element))) {
+        Some(found) if value.is_empty() => {
+            ensure!(element != "Name", "A profile needs a name");
+            // With the indentation before it, so no blank line is left behind.
+            let range = found.range();
+            let start = text[..range.start]
+                .rfind(|c: char| !c.is_whitespace())
+                .map_or(range.start, |i| i + 1);
+            edits.push((start..range.end, String::new()));
+        }
+        Some(found) => {
+            let items: Vec<_> = found
+                .descendants()
+                .filter(|n| n.has_tag_name((RDF, "li")))
+                .collect();
+            ensure!(
+                !items.is_empty(),
+                "This profile's {element} can't be changed"
+            );
+            for item in items {
+                let text_node = item
+                    .first_child()
+                    .filter(|t| t.is_text() && item.children().count() == 1)
+                    .with_context(|| format!("This profile's {element} can't be changed"))?;
+                edits.push((text_node.range(), crate::xml::escape_text(value)));
+            }
+        }
+        None if value.is_empty() => {}
+        None => {
+            let name = d
+                .children()
+                .find(|n| n.has_tag_name((CRS, "Name")))
+                .context("Missing profile name")?;
+            let prefix = |uri| {
+                d.lookup_prefix(uri)
+                    .filter(|p| !p.is_empty())
+                    .with_context(|| format!("This profile's {element} can't be added"))
+            };
+            let (crs, rdf, xml) = (prefix(CRS)?, prefix(RDF)?, "xml");
+            let at = name.range().end;
+            edits.push((
+                at..at,
+                format!(
+                    "\n   <{crs}:{element}>\n    <{rdf}:Alt>\n     \
+                     <{rdf}:li {xml}:lang=\"x-default\">{}</{rdf}:li>\n    \
+                     </{rdf}:Alt>\n   </{crs}:{element}>",
+                    crate::xml::escape_text(value)
+                ),
+            ));
+        }
+    }
+    // From the end, so earlier ranges stay where they were.
+    edits.sort_by_key(|(range, _)| std::cmp::Reverse(range.start));
+    let mut out = text.to_string();
+    for (range, value) in edits {
+        out.replace_range(range, &value);
+    }
+    Ok(out)
+}
+
 /// A look file's profile description, which must be a look.
 fn look_description<'a, 'input>(
     doc: &'a roxmltree::Document<'input>,

@@ -4,7 +4,7 @@
 use crate::app::presets::bulk_import::ImportKind;
 use crate::app::shell::dialogs::FileDialog;
 use crate::app::ui::design::{self, Tone, button, inset, space, text};
-use crate::app::ui::widgets::{modal_frame, primary_button};
+use crate::app::ui::widgets::{self, modal_frame, primary_button};
 use crate::app::{Editor, ui::theme};
 use crate::camera_profiles::LutSpace;
 use eframe::egui::{self, Color32};
@@ -49,17 +49,22 @@ impl Editor {
                     .color(palette.tone(Tone::SECONDARY)),
                 );
                 ui.add_space(space::L);
-                ui.horizontal(|ui| {
-                    ui.label("Colour space");
-                    egui::ComboBox::from_id_salt("lut-space")
-                        .width(180.)
-                        .selected_text(space.name())
-                        .show_ui(ui, |ui| {
-                            for option in LutSpace::ALL {
-                                ui.selectable_value(space, option, option.name());
-                            }
-                        });
-                });
+                // One row as tall as the drop-down, so the label sits on its middle.
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), widgets::DROPDOWN_HEIGHT),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.label("Color space");
+                        widgets::dropdown(ui, "lut-space")
+                            .width(180.)
+                            .selected_text(space.name())
+                            .show_ui(ui, |ui| {
+                                for option in LutSpace::ALL {
+                                    ui.selectable_value(space, option, option.name());
+                                }
+                            });
+                    },
+                );
                 ui.add_space(space::XL);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().button_padding = button::DIALOG;
