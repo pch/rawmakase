@@ -25,7 +25,8 @@ use std::path::PathBuf;
 pub(in crate::app) struct PresetManager {
     open: BTreeSet<String>,
     confirm: Option<Removal>,
-    /// The group being renamed in place: its key and the name being typed.
+    /// The group or preset (`preset:` and its id) being renamed in place: its key
+    /// and the name being typed.
     rename: Option<(String, String)>,
 }
 
@@ -52,8 +53,13 @@ enum Change {
     },
     Toggle(String),
     Delete(Removal),
+    /// A group's or preset's name to be typed in place, by its key.
     StartRename(String, String),
     CancelRename,
+    RenamePreset {
+        path: PathBuf,
+        name: String,
+    },
     /// The presets `paths` moved to `group`; `from` is the group renamed, if any.
     MoveTo {
         paths: Vec<PathBuf>,
@@ -132,8 +138,9 @@ impl Editor {
                 ui.add(
                     egui::Label::new(
                         egui::RichText::new(
-                            "Drag groups to set their order in the Presets panel. Hidden \
-                             presets stay on disk; presets made here or imported can be deleted.",
+                            "Drag groups to set their order in the Presets panel, and your \
+                             presets onto your groups to move them. Hidden presets stay on disk. \
+                             Right-click a row or use \u{22ef} to rename, export or delete.",
                         )
                         .size(text::SMALL)
                         .color(palette.tone(Tone::SECONDARY)),
@@ -155,13 +162,18 @@ impl Editor {
                             });
                     });
                 ui.add_space(space::XL);
+                // One height for all four, so they line up.
+                let size = Vec2::new(0., 30.);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().button_padding = button::DIALOG;
-                    if ui.button("Import Presets…").clicked() {
+                    if ui
+                        .add(egui::Button::new("Import Presets…").min_size(size))
+                        .clicked()
+                    {
                         change = Some(Change::Import(FileDialog::ImportXmp));
                     }
                     if ui
-                        .button("Import Folder…")
+                        .add(egui::Button::new("Import Folder…").min_size(size))
                         .on_hover_text("Import every preset in a folder and its subfolders")
                         .clicked()
                     {
@@ -174,7 +186,10 @@ impl Editor {
                             change = Some(Change::Done);
                         }
                         if ui
-                            .add_enabled(!layout.order.is_empty(), egui::Button::new("Reset Order"))
+                            .add_enabled(
+                                !layout.order.is_empty(),
+                                egui::Button::new("Reset Order").min_size(size),
+                            )
                             .on_hover_text("Built-in groups first, then the others by name")
                             .clicked()
                         {
@@ -207,6 +222,11 @@ impl Editor {
             }
             Change::CancelRename => {
                 manager.rename = None;
+                return true;
+            }
+            Change::RenamePreset { path, name } => {
+                manager.rename = None;
+                self.rename_preset(&path, &name, ctx);
                 return true;
             }
             Change::MoveTo { paths, group, from } => {
@@ -427,6 +447,8 @@ fn group_list(
     let palette = theme::palette(ui.ctx());
     let mut change = None;
     let mut drop_line: Option<(Rect, f32)> = None;
+    // Only a press that has moved drags; a click leaves rows as they are.
+    let dragging = ui.input(|i| i.pointer.is_decidedly_dragging());
     let paths_of = |group: &PresetGroup| -> Vec<PathBuf> {
         group
             .presets
@@ -449,23 +471,47 @@ fn group_list(
             .iter()
             .all(|(i, _)| user.manages(&library.presets[*i]));
         let open = manager.open.contains(&key);
+        let renaming = manager.rename.as_ref().is_some_and(|(k, _)| *k == key);
         let drag_id = ui.id().with(("preset-group", &key));
-        // The row stays in place while dragged, marked; the line shows where it goes.
         let (rect, _) =
             ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), Sense::hover());
         let row = ui
-            .interact(rect, drag_id, Sense::drag())
+            .interact(rect, drag_id, Sense::click_and_drag())
             .on_hover_cursor(egui::CursorIcon::Grab);
         row.dnd_set_drag_payload(gi);
-        let dragged = ui.ctx().is_being_dragged(drag_id);
+        let dragged = dragging && ui.ctx().is_being_dragged(drag_id);
         // A preset dragged over one of the user's groups it is not in yet.
         let target = own
             && group.imported
+            && dragging
             && row
                 .dnd_hover_payload::<PresetDrag>()
                 .is_some_and(|d| !group.presets.iter().any(|(i, _)| *i == d.0));
-        let renaming = manager.rename.as_ref().is_some_and(|(k, _)| *k == key);
-        paint_group(ui, rect, group, hidden, open, dragged || target, !renaming);
+        let count = if hidden == 0 {
+            group.presets.len().to_string()
+        } else {
+            format!(
+                "{} of {}",
+                group.presets.len() - hidden,
+                group.presets.len()
+            )
+        };
+        paint_row(
+            ui,
+            ui.painter(),
+            rect,
+            &RowLook {
+                name: (!renaming).then_some(group.name.as_str()),
+                count: Some(&count),
+                open: Some(open),
+                grip: true,
+                dim: all_hidden,
+                marked: dragged || target,
+            },
+        );
+        if dragged {
+            ghost(ui, drag_id, rect, &group.name, Some(&count));
+        }
         if target && let Some(d) = row.dnd_release_payload::<PresetDrag>() {
             change = Some(Change::MoveTo {
                 paths: vec![library.presets[d.0].path.clone()],
@@ -474,61 +520,47 @@ fn group_list(
             });
         }
         // Dropped on this row: before it in its upper half, after it in its lower.
-        if let Some(from) = row.dnd_hover_payload::<usize>() {
+        if dragging && let Some(from) = row.dnd_hover_payload::<usize>() {
             let below = ui
                 .ctx()
                 .pointer_interact_pos()
                 .is_some_and(|p| p.y > rect.center().y);
-            drop_line = Some((rect, if below { rect.bottom() } else { rect.top() }));
-            if row.dnd_release_payload::<usize>().is_some() {
-                change = Some(Change::Move {
-                    from: *from,
-                    to: gi + usize::from(below),
-                });
+            let to = gi + usize::from(below);
+            // Its own place: nothing to show or do.
+            if to != *from && to != *from + 1 {
+                drop_line = Some((rect, if below { rect.bottom() } else { rect.top() }));
+                if row.dnd_release_payload::<usize>().is_some() {
+                    change = Some(Change::Move { from: *from, to });
+                }
             }
         }
-        let name_rect = Rect::from_min_max(
-            Pos2::new(rect.left() + 38., rect.top() + 3.),
-            Pos2::new(rect.right() - 110., rect.bottom() - 3.),
-        );
-        if renaming && let Some((_, typed)) = manager.rename.as_mut() {
-            let field = ui.put(
-                name_rect,
-                egui::TextEdit::singleline(typed).font(egui::FontId::proportional(text::LABEL)),
-            );
-            if !field.has_focus() && !field.lost_focus() {
-                field.request_focus();
-            }
-            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                change = Some(Change::CancelRename);
-            } else if field.lost_focus() {
-                let name = typed.trim().to_string();
-                change = Some(if name.is_empty() || name == group.name {
-                    Change::CancelRename
-                } else {
-                    Change::MoveTo {
+        if renaming {
+            if let Some(done) = rename_field(ui, rect, 40., manager, &group.name) {
+                change = Some(match done {
+                    Some(name) => Change::MoveTo {
                         paths: paths_of(group),
                         group: name,
                         from: Some(key.clone()),
-                    }
+                    },
+                    None => Change::CancelRename,
                 });
             }
+        } else if own && row.double_clicked() {
+            change = Some(Change::StartRename(key.clone(), group.name.clone()));
+        } else if row.clicked() {
+            change = Some(Change::Toggle(key.clone()));
         }
-        let actions = row_actions(
-            ui,
-            rect,
-            ("group", &key),
-            RowButtons {
-                hidden: all_hidden,
-                own,
-                rename: own,
-                export: !group
-                    .presets
-                    .iter()
-                    .any(|(i, _)| library.presets[*i].builtin),
-            },
-        );
-        if let Some(action) = actions {
+        let show = RowButtons {
+            hidden: all_hidden,
+            rename: own.then_some("Rename Group…"),
+            export: (!group
+                .presets
+                .iter()
+                .any(|(i, _)| library.presets[*i].builtin))
+            .then_some("Export Group…"),
+            delete: own,
+        };
+        if let Some(action) = row_actions(ui, rect, &row, ("group", &key), &show) {
             change = Some(match action {
                 RowAction::Hide => Change::Hide {
                     ids,
@@ -546,15 +578,6 @@ fn group_list(
                 },
             });
         }
-        if !renaming {
-            let toggle = Rect::from_min_max(rect.min, Pos2::new(rect.right() - 60., rect.bottom()));
-            let clicks = ui.interact(toggle, ui.id().with(("toggle", &key)), Sense::click());
-            if own && clicks.double_clicked() {
-                change = Some(Change::StartRename(key.clone(), group.name.clone()));
-            } else if clicks.clicked() {
-                change = Some(Change::Toggle(key.clone()));
-            }
-        }
         if !open {
             continue;
         }
@@ -562,50 +585,63 @@ fn group_list(
             let p = &library.presets[*i];
             let is_hidden = layout.hidden.contains(&p.id);
             let own = user.manages(p);
+            let key = format!("preset:{}", p.id);
+            let renaming = manager.rename.as_ref().is_some_and(|(k, _)| *k == key);
             let (rect, _) =
-                ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW - 4.), Sense::hover());
+                ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW - 2.), Sense::hover());
             if !ui.is_rect_visible(rect) {
                 continue;
             }
+            let drag_id = ui.id().with(("preset-drag", &p.id));
+            let sense = if own {
+                Sense::click_and_drag()
+            } else {
+                Sense::click()
+            };
+            let mut row = ui.interact(rect, drag_id, sense);
             if own {
-                let drag_id = ui.id().with(("preset-drag", &p.id));
-                let row = ui
-                    .interact(rect, drag_id, Sense::drag())
+                row = row
                     .on_hover_cursor(egui::CursorIcon::Grab)
                     .on_hover_text("Drag onto one of your groups to move it there");
                 row.dnd_set_drag_payload(PresetDrag(*i));
-                if ui.ctx().is_being_dragged(drag_id) {
-                    ui.painter()
-                        .rect_filled(rect, radius::CONTROL, palette.tone(Tone::RAISED));
-                }
-                grip(
-                    ui.painter(),
-                    Pos2::new(rect.left() + 32., rect.center().y),
-                    &palette,
-                );
             }
-            let galley = egui::WidgetText::from(name.as_str()).into_galley(
+            let dragged = own && dragging && ui.ctx().is_being_dragged(drag_id);
+            paint_row(
                 ui,
-                Some(egui::TextWrapMode::Truncate),
-                (rect.width() - 110.).max(1.),
-                egui::FontId::proportional(text::LABEL),
+                ui.painter(),
+                rect,
+                &RowLook {
+                    name: (!renaming).then_some(name.as_str()),
+                    count: None,
+                    open: None,
+                    grip: own,
+                    dim: is_hidden,
+                    marked: dragged,
+                },
             );
-            ui.painter().galley(
-                Pos2::new(rect.left() + 46., rect.center().y - galley.size().y / 2.),
-                galley,
-                palette.tone(if is_hidden {
-                    Tone::DISABLED
-                } else {
-                    Tone::SOFT
-                }),
-            );
-            let buttons = RowButtons {
+            if dragged {
+                ghost(ui, drag_id, rect, name, None);
+            }
+            if renaming {
+                if let Some(done) = rename_field(ui, rect, 46., manager, name) {
+                    change = Some(match done {
+                        Some(name) => Change::RenamePreset {
+                            path: p.path.clone(),
+                            name,
+                        },
+                        None => Change::CancelRename,
+                    });
+                }
+            } else if own && row.double_clicked() {
+                change = Some(Change::StartRename(key.clone(), name.clone()));
+            }
+            let show = RowButtons {
                 hidden: is_hidden,
-                own,
-                rename: false,
-                export: !p.builtin,
+                rename: own.then_some("Rename…"),
+                export: (!p.builtin).then_some("Export…"),
+                delete: own,
             };
-            match row_actions(ui, rect, ("preset", &p.id), buttons) {
+            match row_actions(ui, rect, &row, ("preset", &p.id), &show) {
                 Some(RowAction::Hide) => {
                     change = Some(Change::Hide {
                         ids: vec![p.id.clone()],
@@ -617,6 +653,9 @@ fn group_list(
                         title: format!("Delete the preset \u{201c}{name}\u{201d}?"),
                         paths: vec![p.path.clone()],
                     }));
+                }
+                Some(RowAction::Rename) => {
+                    change = Some(Change::StartRename(key, name.clone()));
                 }
                 Some(RowAction::Export) => {
                     change = Some(Change::Export {
@@ -630,7 +669,7 @@ fn group_list(
                         zip: false,
                     });
                 }
-                Some(RowAction::Rename) | None => {}
+                None => {}
             }
         }
     }
@@ -642,6 +681,37 @@ fn group_list(
         );
     }
     change
+}
+
+/// The name being typed in place of a row's, from `left`: Some(Some(name)) once
+/// Return or a click elsewhere ends it with a new name, Some(None) for Escape or an
+/// unchanged or empty name, None while typing.
+fn rename_field(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    left: f32,
+    manager: &mut PresetManager,
+    current: &str,
+) -> Option<Option<String>> {
+    let (_, typed) = manager.rename.as_mut()?;
+    let field = ui.put(
+        Rect::from_min_max(
+            Pos2::new(rect.left() + left - 2., rect.top() + 3.),
+            Pos2::new(rect.right() - 110., rect.bottom() - 3.),
+        ),
+        egui::TextEdit::singleline(typed).font(egui::FontId::proportional(text::LABEL)),
+    );
+    if !field.has_focus() && !field.lost_focus() {
+        field.request_focus();
+    }
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        return Some(None);
+    }
+    if !field.lost_focus() {
+        return None;
+    }
+    let name = typed.trim();
+    Some((!name.is_empty() && name != current).then(|| name.to_string()))
 }
 
 /// Two columns of three dots: a row that can be dragged.
@@ -660,68 +730,111 @@ fn grip(painter: &egui::Painter, center: Pos2, palette: &theme::Palette) {
     }
 }
 
-/// A group's row: the grip, its chevron, name (unless it is being typed), and how
-/// many of its presets show. `marked` while it is dragged or a preset is dropped on it.
-fn paint_group(
-    ui: &egui::Ui,
-    rect: Rect,
-    group: &PresetGroup,
-    hidden: usize,
-    open: bool,
+/// What a row shows: a group's chevron (`open`) and count, a preset's name under
+/// it; `name` is None while it is being typed instead.
+struct RowLook<'a> {
+    name: Option<&'a str>,
+    count: Option<&'a str>,
+    open: Option<bool>,
+    grip: bool,
+    dim: bool,
+    /// Dragged, or the group a dragged preset would go to.
     marked: bool,
-    show_name: bool,
-) {
-    let all_hidden = hidden == group.presets.len();
+}
+
+/// Paints a group's or a preset's row with `painter`, in the list or as the
+/// dragged ghost.
+fn paint_row(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, look: &RowLook) {
     let palette = theme::palette(ui.ctx());
-    let painter = ui.painter();
-    if marked {
+    if look.marked {
         painter.rect_filled(rect, radius::CONTROL, palette.tone(Tone::RAISED));
     } else if ui.rect_contains_pointer(rect) {
         painter.rect_filled(rect, radius::CONTROL, palette.tone(Tone::CARD));
     }
     let y = rect.center().y;
-    grip(painter, Pos2::new(rect.left() + 12., y), &palette);
-    icons::paint_at(
-        painter,
-        if open {
-            Icon::ChevronDown
-        } else {
-            Icon::ChevronRight
-        },
-        Pos2::new(rect.left() + 30., y),
-        11.,
-        palette.tone(Tone::MUTED),
-    );
-    let total = group.presets.len();
-    let count = if hidden == 0 {
-        total.to_string()
-    } else {
-        format!("{} of {total}", total - hidden)
-    };
-    if show_name {
-        let galley = egui::WidgetText::from(group.name.as_str()).into_galley(
+    // A preset's grip and name sit under its group's name.
+    let indent = if look.open.is_some() { 0. } else { 22. };
+    if look.grip {
+        grip(painter, Pos2::new(rect.left() + 12. + indent, y), &palette);
+    }
+    if let Some(open) = look.open {
+        icons::paint_at(
+            painter,
+            if open {
+                Icon::ChevronDown
+            } else {
+                Icon::ChevronRight
+            },
+            Pos2::new(rect.left() + 30., y),
+            11.,
+            palette.tone(Tone::MUTED),
+        );
+    }
+    if let Some(name) = look.name {
+        let galley = egui::WidgetText::from(name).into_galley(
             ui,
             Some(egui::TextWrapMode::Truncate),
             (rect.width() - 160.).max(1.),
             egui::FontId::proportional(text::LABEL),
         );
+        let tone = match (look.dim, look.open.is_some()) {
+            (true, _) => Tone::DISABLED,
+            (false, true) => Tone::STRONG,
+            (false, false) => Tone::SOFT,
+        };
         painter.galley(
-            Pos2::new(rect.left() + 40., y - galley.size().y / 2.),
+            Pos2::new(rect.left() + 40. + indent / 3., y - galley.size().y / 2.),
             galley,
-            palette.tone(if all_hidden {
-                Tone::DISABLED
-            } else {
-                Tone::STRONG
-            }),
+            palette.tone(tone),
         );
     }
-    painter.text(
-        Pos2::new(rect.right() - 72., y),
-        egui::Align2::RIGHT_CENTER,
-        count,
-        egui::FontId::proportional(text::SMALL),
-        palette.tone(Tone::FAINT),
+    if let Some(count) = look.count {
+        painter.text(
+            Pos2::new(rect.right() - 72., y),
+            egui::Align2::RIGHT_CENTER,
+            count,
+            egui::FontId::proportional(text::SMALL),
+            palette.tone(Tone::FAINT),
+        );
+    }
+}
+
+/// The dragged row's ghost, following the pointer up and down over the list.
+fn ghost(ui: &egui::Ui, id: egui::Id, rect: Rect, name: &str, count: Option<&str>) {
+    let Some(dy) = ui.input(|i| {
+        i.pointer
+            .interact_pos()
+            .zip(i.pointer.press_origin())
+            .map(|(at, from)| at.y - from.y)
+    }) else {
+        return;
+    };
+    let palette = theme::palette(ui.ctx());
+    let painter = ui
+        .ctx()
+        .layer_painter(egui::LayerId::new(egui::Order::Tooltip, id));
+    let rect = rect.translate(Vec2::new(0., dy));
+    painter.rect(
+        rect,
+        radius::CONTROL,
+        palette.tone(Tone::RAISED),
+        egui::Stroke::new(1., palette.tone(Tone::OUTLINE)),
+        egui::StrokeKind::Inside,
     );
+    paint_row(
+        ui,
+        &painter,
+        rect,
+        &RowLook {
+            name: Some(name),
+            count,
+            open: count.map(|_| false),
+            grip: true,
+            dim: false,
+            marked: true,
+        },
+    );
+    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
 }
 
 enum RowAction {
@@ -731,21 +844,23 @@ enum RowAction {
     Delete,
 }
 
-/// What a row offers: the eye always, the menu's items when they apply.
+/// What a row offers: the eye always, and the menu's items, each named, when they
+/// apply.
 struct RowButtons {
     hidden: bool,
-    own: bool,
-    rename: bool,
-    export: bool,
+    rename: Option<&'static str>,
+    export: Option<&'static str>,
+    delete: bool,
 }
 
-/// The row's eye at its right end, and beside it the menu of what else applies:
-/// rename, export and delete.
+/// The row's eye at its right end, and beside it the menu of what else applies,
+/// which a right-click on the row opens too.
 fn row_actions(
     ui: &mut egui::Ui,
     rect: Rect,
+    row: &egui::Response,
     id: (&str, &String),
-    show: RowButtons,
+    show: &RowButtons,
 ) -> Option<RowAction> {
     let palette = theme::palette(ui.ctx());
     let mut action = None;
@@ -774,37 +889,31 @@ fn row_actions(
     if button(ui, rect.right() - 44., eye, tip).clicked() {
         action = Some(RowAction::Hide);
     }
-    if !(show.rename || show.export || show.own) {
+    if show.rename.is_none() && show.export.is_none() && !show.delete {
         return action;
     }
-    let more = button(ui, rect.right() - 16., Icon::More, "More");
-    egui::Popup::menu(&more).show(|ui| {
+    let items = |ui: &mut egui::Ui, action: &mut Option<RowAction>| {
         ui.set_min_width(170.);
         let mut item = |ui: &mut egui::Ui, label: &str, chosen: RowAction| {
             if ui.add(egui::Button::new(label).frame(false)).clicked() {
-                action = Some(chosen);
+                *action = Some(chosen);
                 ui.close();
             }
         };
-        if show.rename {
-            item(ui, "Rename Group…", RowAction::Rename);
+        if let Some(label) = show.rename {
+            item(ui, label, RowAction::Rename);
         }
-        if show.export {
-            item(
-                ui,
-                if show.rename {
-                    "Export Group…"
-                } else {
-                    "Export…"
-                },
-                RowAction::Export,
-            );
+        if let Some(label) = show.export {
+            item(ui, label, RowAction::Export);
         }
-        if show.own {
+        if show.delete {
             ui.separator();
             item(ui, "Delete…", RowAction::Delete);
         }
-    });
+    };
+    let more = button(ui, rect.right() - 16., Icon::More, "More");
+    egui::Popup::menu(&more).show(|ui| items(ui, &mut action));
+    crate::app::ui::widgets::context_menu(row, |ui| items(ui, &mut action));
     action
 }
 
