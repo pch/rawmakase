@@ -723,8 +723,9 @@ Highlights alone fails. What fails is on photos whose measured top the change lo
 through the controls that read it:
 
 - A sunset at Shadows +100, in two sets: median ΔE00 6.4 → 8.1 and 6.6 → 8.4, the
-  worst window 2.2 worse. The same photo is closer at other settings (highlights at
-  one mixed setting 5.6 → 2.4, at Exposure +1 3.0 → 0.5).
+  worst window 2.2 worse. It is further at every Shadows setting (3.2 → 4.0 at +50,
+  1.0 → 1.6 at −100) and closer at positive Dehaze (4.4 → 3.1 at +100, its highlights
+  5.6 → 2.4) and at Exposure −1 (highlights 3.0 → 0.5).
 - The photo with blown specks in foliage: Shadows +100 in three sets (a window 2.0 to
   2.1 worse while its median goes 1.26 → 1.06 and its shadows 5.4 → 4.0), with
   Highlights −100 as above, and Dehaze −100 and −50, where one window is 7.1 and 2.3
