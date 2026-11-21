@@ -11,6 +11,10 @@ use crate::app::view::navigator;
 use crate::develop::{self, Geometry};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
+/// How long a wheel or pinch zoom pauses before the view renders at its level, in
+/// seconds.
+const ZOOM_RENDER_PAUSE: f64 = 0.15;
+
 impl Editor {
     /// Constrains the crop to [`Self::crop_constraint`]; a Free crop is left as it is.
     pub(in crate::app) fn fit_aspect(&mut self) {
@@ -239,6 +243,117 @@ impl Editor {
         let size = Vec2::new(g.width as f32, g.height as f32);
         self.view.zoom.photo_rect(area, size, ppp)
     }
+    /// The wheel and a pinch over the photo (see `photo_wheel`). The wheel sizes
+    /// the brush, spot or red eye circle before the tool draws it; not over Before,
+    /// which can't be edited, nor while Space holds the Hand tool, which hides the
+    /// brush. Zoom and pan act on the photo under the pointer, Before's mapped onto
+    /// the edit as a click is; the reference takes its own (`reference_pointer`).
+    /// `rect` is where the photo is drawn this frame and `target` where it is
+    /// going, which an ongoing zoom animation leaves behind.
+    #[expect(clippy::too_many_arguments)]
+    fn photo_wheel_ui(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        panes: &before_after::Panes,
+        rect: Rect,
+        target: Rect,
+        geometry: &Option<Geometry>,
+        on_after: impl Fn(Pos2) -> Pos2,
+    ) {
+        use crate::app::view::photo_wheel::{self, Keeper};
+        let Some(pos) = response.hover_pos().filter(|_| response.hovered()) else {
+            return;
+        };
+        let over_reference = self.reference_view()
+            && panes.before.is_some_and(|pane| pane.clip.contains(pos))
+            && !panes.after.clip.contains(pos);
+        if over_reference {
+            return;
+        }
+        let anchor = on_after(pos);
+        if !rect.contains(anchor) {
+            return;
+        }
+        let hand_held = ui.input(|i| i.key_down(egui::Key::Space));
+        let sized = !self.view.compare.shows_before() && !hand_held && self.tool_has_size();
+        let magnifier = self.view.magnifier.on
+            && !self.view.zoom.on
+            && self.view.zoom_anim.is_none()
+            && self.view.compare == before_after::Compare::Off
+            && self.view.is(Tool::None)
+            && !response.dragged();
+        let keeper = if sized {
+            Keeper::Tool
+        } else if magnifier {
+            Keeper::Magnifier
+        } else {
+            Keeper::Nobody
+        };
+        let crop = self.view.is(Tool::Crop);
+        let wheel = photo_wheel::read(
+            ui.ctx(),
+            crate::app::ui::wheel::Owner::Photo,
+            keeper,
+            self.view.zoom.on,
+            crop,
+        );
+        let scrolls: Vec<_> = wheel
+            .tool
+            .iter()
+            .filter_map(|w| crate::app::develop::tools::brush_scroll::Scroll::from_wheel(*w))
+            .collect();
+        for scroll in &scrolls {
+            self.scroll_tool_size(*scroll);
+        }
+        // The panel's Size and Feather were drawn before this; show the new ones.
+        if !scrolls.is_empty() {
+            ui.ctx().request_repaint();
+        }
+        self.view.magnifier.step(wheel.magnifier);
+        let Some(g) = geometry else {
+            return;
+        };
+        let size = Vec2::new(g.width as f32, g.height as f32);
+        let ppp = ui.ctx().pixels_per_point();
+        let zoom_before = self.view.zoom;
+        let level = match ui.input(crate::app::ui::wheel::pinch) {
+            Some(factor) if !crop => self.fit_level().map(|fit| {
+                let current = if self.view.zoom.on {
+                    self.view.zoom.level
+                } else {
+                    fit
+                };
+                crate::app::view::navigator::pinched(current, fit, factor)
+            }),
+            _ => None,
+        }
+        .or_else(|| {
+            (wheel.zoom != 0)
+                .then(|| self.fit_level())
+                .flatten()
+                .map(|fit| photo_wheel::stepped(&self.view.zoom, fit, wheel.zoom))
+        });
+        // A frame that zooms doesn't pan too: the anchor is where the photo is drawn.
+        if let Some(level) = level {
+            let area = panes.after.area;
+            photo_wheel::zoom_at(&mut self.view.zoom, level, anchor, rect, area, size, ppp);
+        } else if wheel.pan != Vec2::ZERO && self.view.zoom.on {
+            let view = panes.after.area.size();
+            photo_wheel::pan(&mut self.view.zoom, wheel.pan, target.size(), view);
+        }
+        if self.view.zoom != zoom_before {
+            // Set at once, with no ease, so the point under the pointer stays there;
+            // the render follows once the zooming pauses.
+            self.view.zoom_key = (self.view.zoom.on, self.view.zoom.level);
+            self.view.zoom_anim = None;
+            if self.view.zoom.on != zoom_before.on || self.view.zoom.level != zoom_before.level {
+                let now = ui.input(|i| i.time);
+                self.view.zoom_render_at = Some(now + ZOOM_RENDER_PAUSE);
+            }
+            ui.ctx().request_repaint();
+        }
+    }
     pub(in crate::app) fn viewport_ui(&mut self, ui: &mut egui::Ui) -> egui::Response {
         let (whole, response) =
             ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
@@ -312,6 +427,17 @@ impl Editor {
                 Rect::from_center_size(area.center(), size * k)
             }
         };
+        // A wheel or pinch zoom renders once it pauses; meanwhile the images
+        // already drawn are scaled.
+        if let Some(at) = self.view.zoom_render_at {
+            if now >= at {
+                self.view.zoom_render_at = None;
+                self.schedule();
+            } else {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_secs_f64(at - now));
+            }
+        }
         let key = (self.view.zoom.on, self.view.zoom.level);
         if key != self.view.zoom_key {
             self.view.zoom_key = key;
@@ -418,25 +544,7 @@ impl Editor {
         };
         // A tool that owns the pointer (spots, brushes, gradients) takes drags and
         // clicks; the hand tool pans only when no tool claims them.
-        // The wheel over the photo sizes the brush, spot or red eye circle, before the
-        // tool draws it; not over Before, which can't be edited.
-        // Not while Space holds the Hand tool, which hides the brush.
-        let hand_held = ui.input(|i| i.key_down(egui::Key::Space));
-        if !self.view.compare.shows_before()
-            && !hand_held
-            && response.hovered()
-            && ui.rect_contains_pointer(rect)
-            && self.tool_has_size()
-        {
-            let scrolls = ui.input(crate::app::develop::tools::brush_scroll::Scroll::read);
-            for scroll in &scrolls {
-                self.scroll_tool_size(*scroll);
-            }
-            // The panel's Size and Feather were drawn before this; show the new ones.
-            if !scrolls.is_empty() {
-                ui.ctx().request_repaint();
-            }
-        }
+        self.photo_wheel_ui(ui, &response, &panes, rect, target, &geometry, on_after);
         // Zoomed in, the minimap shows where, as Lightroom's Navigator does.
         let on_minimap = self.view.zoom.on && self.develop_minimap(ui, panes.after.clip);
         let tool_owns_pointer = self.tool_overlay(ui, &response, rect, area);
@@ -668,7 +776,10 @@ impl Editor {
                 self.view.crop_drag = None;
             }
         }
-        if self.view.zoom.on && self.region() != self.preview.last_region {
+        if self.view.zoom.on
+            && self.view.zoom_render_at.is_none()
+            && self.region() != self.preview.last_region
+        {
             self.schedule_pan();
         }
         response

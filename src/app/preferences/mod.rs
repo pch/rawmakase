@@ -1158,6 +1158,51 @@ impl Editor {
         self.measure_usage();
     }
 
+    /// Display > Mouse wheel: the wheel settings, off by default, saved in the
+    /// session as they change.
+    fn mouse_wheel_group(&mut self, ui: &mut egui::Ui) {
+        use crate::app::ui::wheel::WheelZoom;
+        group(ui, "Mouse wheel");
+        let command = if cfg!(target_os = "macos") {
+            "Cmd + scroll wheel"
+        } else {
+            "Ctrl + scroll wheel"
+        };
+        let label = |zoom| match zoom {
+            WheelZoom::Off => "Off",
+            WheelZoom::Plain => "Scroll wheel",
+            WheelZoom::Command => command,
+        };
+        let mut prefs = self.wheel_prefs;
+        form_row(ui, "Zoom with", |ui| {
+            egui::ComboBox::from_id_salt("wheel-zoom")
+                .width(220.)
+                .selected_text(label(prefs.zoom))
+                .show_ui(ui, |ui| {
+                    for zoom in [WheelZoom::Off, WheelZoom::Plain, WheelZoom::Command] {
+                        ui.selectable_value(&mut prefs.zoom, zoom, label(zoom));
+                    }
+                });
+        });
+        form_row(ui, "Sliders", |ui| {
+            ui.checkbox(
+                &mut prefs.sliders,
+                "Scroll wheel changes the slider under the pointer",
+            );
+        });
+        let note = if cfg!(target_os = "macos") {
+            "Zoomed in, the wheel pans the photo, with Shift sideways, and a pinch zooms it. Only a mouse wheel's notches zoom or move a slider: a trackpad or Magic Mouse pans and scrolls the panels."
+        } else if cfg!(windows) {
+            "Zoomed in, the wheel pans the photo, with Shift sideways. Only a mouse wheel's notches zoom or move a slider: a touchpad pans and scrolls the panels, and so does a high-resolution mouse that scrolls in fractions of a notch."
+        } else {
+            "Zoomed in, the wheel pans the photo, with Shift sideways. Only a mouse wheel's notches zoom or move a slider: a touchpad pans and scrolls the panels, and so does a high-resolution mouse that scrolls in fractions of a notch on X11."
+        };
+        form_row(ui, "", |ui| hint(ui, note));
+        if prefs != self.wheel_prefs {
+            self.wheel_prefs = prefs;
+            let _ = self.save_session();
+        }
+    }
     fn display_page(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         group(ui, "Interface");
@@ -1198,6 +1243,8 @@ impl Editor {
             self.themes.choose(chosen);
             let _ = self.save_session();
         }
+        gap(ui);
+        self.mouse_wheel_group(ui);
         gap(ui);
         group(ui, "Monitor profile");
         use crate::app::preferences::monitor::MonitorProfile;

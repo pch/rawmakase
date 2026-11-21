@@ -366,6 +366,44 @@ impl Editor {
             self.set_reference(dropped.0);
             return true;
         }
+        // The wheel and a pinch over the reference zoom and pan it alone, by where
+        // the pointer is: a wheel has no press to start from.
+        if let Some(pos) = response
+            .hover_pos()
+            .filter(|p| pane.clip.contains(*p) && !panes.after.clip.contains(*p))
+            && let (Some(rect), Some(side)) = (photo, self.reference_side())
+            && rect.contains(pos)
+        {
+            use crate::app::view::{navigator, photo_wheel};
+            let g = Geometry::new(&side.image, &side.recipe, 0);
+            let size = Vec2::new(g.width as f32, g.height as f32);
+            let ppp = ui.ctx().pixels_per_point();
+            let fit = (pane.area.width() * ppp / size.x).min(pane.area.height() * ppp / size.y);
+            let zoom = &mut self.reference.zoom;
+            let before = *zoom;
+            let wheel = photo_wheel::read(
+                ui.ctx(),
+                crate::app::ui::wheel::Owner::Reference,
+                photo_wheel::Keeper::Nobody,
+                zoom.on,
+                false,
+            );
+            let current = if zoom.on { zoom.level } else { fit };
+            let level = match ui.input(crate::app::ui::wheel::pinch) {
+                Some(factor) => Some(navigator::pinched(current, fit, factor)),
+                None => (wheel.zoom != 0).then(|| photo_wheel::stepped(zoom, fit, wheel.zoom)),
+            };
+            // A frame that zooms doesn't pan too.
+            if let Some(level) = level {
+                photo_wheel::zoom_at(zoom, level, pos, rect, pane.area, size, ppp);
+            } else if wheel.pan != Vec2::ZERO && zoom.on {
+                photo_wheel::pan(zoom, wheel.pan, rect.size(), pane.area.size());
+            }
+            if *zoom != before {
+                ui.ctx().request_repaint();
+                self.schedule_before();
+            }
+        }
         let origin = ui.input(|i| i.pointer.press_origin());
         let ours = origin.is_some_and(|p| pane.clip.contains(p) && !panes.after.clip.contains(p));
         if !ours {
@@ -730,6 +768,69 @@ mod tests {
         assert!(editor.preview.before.task.id() > fit);
         assert!(editor.preview.before.zoomed());
         assert!(!editor.view.zoom.on);
+        Ok(())
+    }
+
+    /// The wheel over the reference zooms and pans the reference alone, as its
+    /// click does; the Active side keeps its zoom.
+    #[test]
+    fn the_wheel_over_the_reference_zooms_and_pans_it_alone() -> anyhow::Result<()> {
+        use crate::app::ui::wheel::{NotchRule, Prefs, WheelZoom};
+        let mut fixture = fixture()?;
+        let other = fixture.other;
+        let editor = &mut fixture.editor;
+        editor.set_reference(other);
+        wait_for_reference(editor);
+        editor.view.compare = Compare::Reference(Axis::LeftRight);
+        let ctx = editor.context.clone();
+        let mut prefs = Prefs {
+            zoom: WheelZoom::Plain,
+            sliders: false,
+            rule: NotchRule::LineUnits,
+        };
+        let mut time = 0.;
+        let mut frame = |editor: &mut Editor, prefs: Prefs, events: Vec<egui::Event>| {
+            time += 0.1;
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400., 200.))),
+                    time: Some(time),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    crate::app::ui::wheel::begin_frame(ui.ctx(), prefs);
+                    editor.viewport_ui(ui);
+                },
+            );
+            output.textures_delta.clear();
+        };
+        let wheel = |y| egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: Vec2::new(0., y),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        };
+        // The reference is on the left.
+        frame(
+            editor,
+            prefs,
+            vec![egui::Event::PointerMoved(Pos2::new(100., 100.))],
+        );
+        frame(editor, prefs, vec![wheel(1.)]);
+        assert!(editor.reference.zoom.on);
+        assert!(!editor.view.zoom.on);
+        for _ in 0..6 {
+            frame(editor, prefs, vec![]);
+        }
+        // Zoomed in, the wheel pans it, with wheel zoom off.
+        prefs.zoom = WheelZoom::Off;
+        editor.reference.zoom.set(1.);
+        frame(editor, prefs, vec![]);
+        let (reference, active) = (editor.reference.zoom.pan, editor.view.zoom.pan);
+        frame(editor, prefs, vec![wheel(-1.)]);
+        assert!(editor.reference.zoom.pan[1] > reference[1]);
+        assert_eq!(editor.view.zoom.pan, active);
         Ok(())
     }
 }

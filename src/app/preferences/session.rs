@@ -52,6 +52,9 @@ where
 {
     Ok(T::deserialize(serde_json::Value::deserialize(d)?).unwrap_or_default())
 }
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
+}
 #[derive(Default, Serialize, Deserialize)]
 pub(crate) struct Session {
     #[serde(default, deserialize_with = "lenient")]
@@ -210,6 +213,22 @@ pub(crate) struct Session {
         skip_serializing_if = "Option::is_none"
     )]
     pub one_to_one_discard_days: Option<u32>,
+    /// Preferences > Display > Mouse wheel: whether the wheel over the photo zooms
+    /// it, and with which keys; off by default.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "is_default"
+    )]
+    pub wheel_zoom: crate::app::ui::wheel::WheelZoom,
+    /// Preferences > Display > Mouse wheel: the wheel changes the slider under
+    /// the pointer; off by default.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub wheel_sliders: bool,
     /// Fields this release does not know, written by a later or an earlier one: kept
     /// as they were read and written back, so going back to that release keeps them.
     #[serde(flatten)]
@@ -946,3 +965,33 @@ mod compatibility_tests {
 #[cfg(test)]
 #[path = "session_editor_tests.rs"]
 mod editor_tests;
+
+#[cfg(test)]
+mod wheel_tests {
+    use super::Session;
+    use crate::app::ui::wheel::WheelZoom;
+
+    /// The wheel settings are off in a session written before them, and read back
+    /// as saved; a value a later release adds reads as off.
+    #[test]
+    fn the_wheel_settings_are_off_unless_saved() {
+        let old: Session = serde_json::from_str(r#"{"last_path":null,"monitor":null}"#).unwrap();
+        assert_eq!(old.wheel_zoom, WheelZoom::Off);
+        assert!(!old.wheel_sliders);
+        let saved = serde_json::to_value(&old).unwrap();
+        assert!(saved.get("wheel_zoom").is_none());
+        assert!(saved.get("wheel_sliders").is_none());
+        let session = Session {
+            wheel_zoom: WheelZoom::Command,
+            wheel_sliders: true,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&session).unwrap();
+        assert!(json.contains(r#""wheel_zoom":"command""#), "{json}");
+        let read: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(read.wheel_zoom, WheelZoom::Command);
+        assert!(read.wheel_sliders);
+        let later: Session = serde_json::from_str(r#"{"wheel_zoom":"spin"}"#).unwrap();
+        assert_eq!(later.wheel_zoom, WheelZoom::Off);
+    }
+}

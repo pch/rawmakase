@@ -2,6 +2,7 @@ use crate::app::develop::step_name::StepName;
 use crate::app::ui::design::{self, Tone, button, inset, radius, size, space, text};
 use crate::app::ui::icons::{self, Icon};
 use crate::app::ui::theme;
+use crate::app::ui::wheel;
 use crate::develop::effects::EffectsRendering;
 use crate::model::panels::PanelState;
 use crate::model::params::{self, LocalParameterId, ParameterId, format_value};
@@ -1271,6 +1272,7 @@ pub(in crate::app) fn slider_styled(
         }
     };
     let before = *value;
+    let mut wheeled = None;
     ui.push_id(label, |ui| {
         ui.add_space(SLIDER_GAP);
         let (row, _) =
@@ -1504,6 +1506,11 @@ pub(in crate::app) fn slider_styled(
             // smallest shown step, ten with Shift.
             let unit = snap.unwrap_or(10f32.powi(-(decimals as i32)) / scale);
             *value = crate::model::params::nudged(*value, nudge * unit, start..=end);
+        } else if let Some(steps) = wheel_steps(ui, row) {
+            // The wheel's notches step it as Up and Down do, with the setting on.
+            let unit = snap.unwrap_or(10f32.powi(-(decimals as i32)) / scale);
+            *value = crate::model::params::nudged(*value, steps * unit, start..=end);
+            wheeled = Some(ui.id());
         }
         let x = to_rail(*value, travel);
         if gradient.is_none() {
@@ -1555,13 +1562,17 @@ pub(in crate::app) fn slider_styled(
         };
         let shown = format_value(f64::from(*value * scale), decimals, signed);
         step.name(name, shown);
+        if let Some(id) = wheeled {
+            step.wheel_changed(id);
+        }
     }
     event
 }
 /// Steps the Up and Down keys ask of the slider in `row` this frame: +1 or −1 each,
 /// ×10 with Shift. Only while the slider is enabled, the pointer is over the row and no text field (a
 /// slider's number being typed, a search) has the keyboard, which keeps the keys;
-/// Left and Right stay with photo navigation, and scrolling never moves a slider.
+/// Left and Right stay with photo navigation. The wheel moves a slider only with its
+/// setting on (see [`wheel_steps`]).
 fn hovered_nudge(ui: &egui::Ui, row: Rect) -> Option<f32> {
     if !ui.is_enabled()
         || !ui.rect_contains_pointer(row)
@@ -1581,6 +1592,40 @@ fn hovered_nudge(ui: &egui::Ui, row: Rect) -> Option<f32> {
         nudge
     });
     (nudge != 0.).then_some(nudge)
+}
+/// Steps the mouse wheel asks of the slider in `row` this frame, with Preferences >
+/// Display > Mouse wheel > Sliders on: one per whole notch, as Up and Down, ×10 with
+/// Shift. Only a notched wheel's gesture that began over the row is the slider's
+/// (see [`wheel::claim`]): smooth scrolling scrolls the panel, and so does a scroll
+/// that began elsewhere and passes over it. Once the slider has the gesture, the
+/// panel doesn't scroll under it until it pauses, and the slider stops stepping when
+/// the pointer leaves its row. A disabled slider, a text field with the keyboard and
+/// the wheel's busy rule ([`wheel::busy`]) leave it alone.
+fn wheel_steps(ui: &egui::Ui, row: Rect) -> Option<f32> {
+    let ctx = ui.ctx();
+    if !wheel::prefs(ctx).sliders || !ui.is_enabled() || ctx.text_edit_focused() {
+        return None;
+    }
+    let events = ui.input(wheel::read);
+    if events.is_empty() {
+        return None;
+    }
+    let id = ui.id();
+    let hovered = ui.rect_contains_pointer(row);
+    wheel::claim(ctx, wheel::Owner::Slider(id), |kind| {
+        hovered && kind == wheel::Kind::Notched
+    })?;
+    if !hovered {
+        return None;
+    }
+    let notches = events.iter().map(|w| w.lines()).sum();
+    let size = if events.iter().any(|w| w.modifiers.shift) {
+        10.
+    } else {
+        1.
+    };
+    let steps = wheel::steps(ctx, wheel::Target::Slider(id), notches);
+    (steps != 0).then_some(steps as f32 * size)
 }
 /// Size of a segmented control: the track's height and the label size.
 pub(in crate::app) struct SegmentStyle {

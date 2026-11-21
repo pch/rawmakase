@@ -2,4 +2,5 @@
 pub(in crate::app) mod design;
 pub(in crate::app) mod icons;
 pub(in crate::app) mod theme;
+pub(in crate::app) mod wheel;
 pub(in crate::app) mod widgets;

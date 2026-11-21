@@ -198,7 +198,7 @@ fn the_panel_header_menu_fits_its_item_not_the_header() {
 }
 
 #[test]
-fn up_and_down_nudge_the_hovered_slider_but_never_while_typing_or_scrolling() {
+fn up_and_down_nudge_the_hovered_slider_and_the_wheel_only_with_its_setting() {
     let ctx = egui::Context::default();
     let mut value = 0.;
     let mut text = String::new();
@@ -249,7 +249,8 @@ fn up_and_down_nudge_the_hovered_slider_but_never_while_typing_or_scrolling() {
         3.,
     );
     assert!((value + 0.09).abs() < 1e-6, "{value}");
-    // Scrolling over it never moves it.
+    // Scrolling over it doesn't move it: the wheel moves sliders only with its
+    // setting on, which is off by default (see `wheel_steps`).
     let scroll = egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Line,
         delta: Vec2::new(0., -3.),
@@ -455,4 +456,349 @@ fn a_hovered_knob_at_either_end_stays_on_the_rail() {
             );
         }
     }
+}
+
+/// Two sliders in a panel that scrolls, drawn frame by frame with the wheel
+/// preferences published as the editor publishes them.
+struct WheelPanel {
+    ctx: egui::Context,
+    time: f64,
+    prefs: crate::app::ui::wheel::Prefs,
+    values: [f32; 2],
+    rows: [Rect; 2],
+    offset: f32,
+    step: crate::app::develop::step_name::StepName,
+    enabled: bool,
+    focus: bool,
+}
+impl WheelPanel {
+    fn new() -> Self {
+        let mut panel = Self {
+            ctx: egui::Context::default(),
+            time: 0.,
+            prefs: crate::app::ui::wheel::Prefs {
+                zoom: crate::app::ui::wheel::WheelZoom::Off,
+                sliders: true,
+                rule: crate::app::ui::wheel::NotchRule::LineUnits,
+            },
+            values: [0.; 2],
+            rows: [Rect::NOTHING; 2],
+            offset: 0.,
+            step: Default::default(),
+            enabled: true,
+            focus: false,
+        };
+        panel.frame(vec![]);
+        panel
+    }
+    fn frame(&mut self, events: Vec<egui::Event>) {
+        self.time += 0.05;
+        let Self {
+            ctx,
+            prefs,
+            values,
+            rows,
+            offset,
+            step,
+            enabled,
+            focus,
+            ..
+        } = self;
+        let mut text = String::new();
+        widget_frame(ctx, self.time, events, |ui| {
+            crate::app::ui::wheel::begin_frame(ui.ctx(), *prefs);
+            let out = egui::ScrollArea::vertical()
+                .id_salt("panel")
+                .show(ui, |ui| {
+                    for (i, label) in ["Contrast", "Highlights"].into_iter().enumerate() {
+                        let top = ui.cursor().min;
+                        ui.add_enabled_ui(*enabled, |ui| {
+                            crate::app::ui::widgets::slider(
+                                ui,
+                                step,
+                                label,
+                                &mut values[i],
+                                -1. ..=1.,
+                                0.,
+                            );
+                        });
+                        rows[i] = Rect::from_min_max(
+                            top,
+                            Pos2::new(ui.max_rect().right(), ui.cursor().top()),
+                        );
+                    }
+                    let field = ui.text_edit_singleline(&mut text);
+                    if *focus {
+                        field.request_focus();
+                    }
+                    ui.allocate_space(Vec2::new(100., 2000.));
+                });
+            *offset = out.state.offset.y;
+        });
+    }
+    /// Half a second of frames with no wheel: the gesture ends.
+    fn pause(&mut self) {
+        for _ in 0..10 {
+            self.frame(vec![]);
+        }
+    }
+    fn over(&self, slider: usize) -> egui::Event {
+        let row = self.rows[slider];
+        egui::Event::PointerMoved(Pos2::new(row.center().x, row.top() + 30.))
+    }
+}
+fn notch(unit: egui::MouseWheelUnit, y: f32, modifiers: egui::Modifiers) -> egui::Event {
+    egui::Event::MouseWheel {
+        unit,
+        delta: Vec2::new(0., y),
+        phase: egui::TouchPhase::Move,
+        modifiers,
+    }
+}
+fn line(y: f32) -> egui::Event {
+    notch(egui::MouseWheelUnit::Line, y, egui::Modifiers::NONE)
+}
+
+#[test]
+fn a_notched_wheel_steps_the_slider_under_the_pointer_with_its_setting() {
+    let mut p = WheelPanel::new();
+    p.frame(vec![p.over(0)]);
+    p.frame(vec![line(1.)]);
+    assert!((p.values[0] - 0.01).abs() < 1e-6, "{:?}", p.values);
+    // A macOS wheel's accelerated fractions step once they add up to a notch.
+    p.frame(vec![line(0.4)]);
+    p.frame(vec![line(0.4)]);
+    assert!((p.values[0] - 0.01).abs() < 1e-6, "{:?}", p.values);
+    p.frame(vec![line(0.4)]);
+    assert!((p.values[0] - 0.02).abs() < 1e-6, "{:?}", p.values);
+    // Shift: ten steps a notch, whichever way macOS turns the wheel.
+    p.frame(vec![notch(
+        egui::MouseWheelUnit::Line,
+        -1.,
+        egui::Modifiers::SHIFT,
+    )]);
+    assert!((p.values[0] + 0.08).abs() < 1e-6, "{:?}", p.values);
+    // The panel under it never moved, nor does it while egui's smoothing runs out.
+    p.pause();
+    assert_eq!(p.offset, 0.);
+    assert_eq!(p.values[1], 0.);
+    let value = p.values[0];
+    // On Windows and X11, a touchpad's small fractions of a line never step it
+    // however they add up; a mouse's whole notches do.
+    p.prefs.rule = crate::app::ui::wheel::NotchRule::WholeLines;
+    for _ in 0..8 {
+        p.frame(vec![line(0.25)]);
+    }
+    p.pause();
+    assert_eq!(p.values[0], value);
+    p.frame(vec![line(1.)]);
+    assert!((p.values[0] - value - 0.01).abs() < 1e-6, "{:?}", p.values);
+    // A trackpad scrolls the panel instead, on any platform.
+    p.pause();
+    let value = p.values[0];
+    p.frame(vec![notch(
+        egui::MouseWheelUnit::Point,
+        -60.,
+        egui::Modifiers::NONE,
+    )]);
+    p.pause();
+    assert_eq!(p.values[0], value);
+    assert!(p.offset > 0.);
+}
+
+#[test]
+fn a_slider_keeps_the_gesture_it_began_and_a_panel_scroll_passes_over_sliders() {
+    let mut p = WheelPanel::new();
+    p.frame(vec![p.over(0)]);
+    p.frame(vec![line(-1.)]);
+    assert!((p.values[0] + 0.01).abs() < 1e-6);
+    // The pointer leaves its row mid-gesture: the slider stops, the next slider
+    // takes nothing, and the panel stays put.
+    p.frame(vec![p.over(1), line(-1.)]);
+    for _ in 0..4 {
+        p.frame(vec![line(-1.)]);
+    }
+    p.pause();
+    assert!((p.values[0] + 0.01).abs() < 1e-6, "{:?}", p.values);
+    assert_eq!(p.values[1], 0.);
+    assert_eq!(p.offset, 0.);
+    // A scroll begun over the panel scrolls it, and passing over a slider never
+    // steps it.
+    let below = p.rows[1].bottom() + 100.;
+    p.frame(vec![egui::Event::PointerMoved(Pos2::new(100., below))]);
+    p.frame(vec![line(-1.)]);
+    p.frame(vec![p.over(1), line(-1.)]);
+    p.frame(vec![p.over(1), line(-1.)]);
+    assert!(p.offset > 0.);
+    assert_eq!(p.values[1], 0.);
+}
+
+#[test]
+fn a_disabled_slider_or_a_field_with_the_keyboard_leaves_the_wheel_to_the_panel() {
+    let mut p = WheelPanel::new();
+    p.enabled = false;
+    p.frame(vec![p.over(0)]);
+    p.frame(vec![line(-1.)]);
+    p.pause();
+    assert_eq!(p.values, [0., 0.]);
+    assert!(p.offset > 0.);
+    let mut p = WheelPanel::new();
+    p.focus = true;
+    p.frame(vec![]);
+    p.frame(vec![p.over(0)]);
+    p.frame(vec![line(1.)]);
+    p.pause();
+    assert_eq!(p.values, [0., 0.]);
+}
+
+/// The editor's own frames around a slider: what the wheel does to History.
+struct WheelHistory {
+    editor: Editor,
+    ctx: egui::Context,
+    time: f64,
+    /// Where each slider's row is: Exposure, Contrast, then a view-only one.
+    rows: [Rect; 3],
+    view_only: f32,
+}
+impl WheelHistory {
+    fn new() -> Self {
+        let ctx = egui::Context::default();
+        let editor = Editor::with_context(
+            &ctx,
+            None,
+            crate::app::preferences::session::Session::default(),
+            None,
+        );
+        let mut h = Self {
+            editor,
+            ctx,
+            time: 0.,
+            rows: [Rect::NOTHING; 3],
+            view_only: 0.5,
+        };
+        h.frame(vec![]);
+        h
+    }
+    /// One edit frame; `between` runs after the sliders, before the frame finishes.
+    fn frame_with(&mut self, events: Vec<egui::Event>, between: impl FnOnce(&mut Editor)) {
+        self.time += 0.05;
+        let prefs = crate::app::ui::wheel::Prefs {
+            zoom: crate::app::ui::wheel::WheelZoom::Off,
+            sliders: true,
+            rule: crate::app::ui::wheel::NotchRule::LineUnits,
+        };
+        let frame = self.editor.begin_edit_frame();
+        let Self {
+            editor,
+            ctx,
+            rows,
+            view_only,
+            ..
+        } = self;
+        widget_frame(ctx, self.time, events, |ui| {
+            crate::app::ui::wheel::begin_frame(ui.ctx(), prefs);
+            let step = &mut editor.step_name;
+            let recipe = editor.document.edit.recipe_mut();
+            let mut row = |i: usize, ui: &mut egui::Ui, label, value: &mut f32| {
+                let top = ui.cursor().min;
+                crate::app::ui::widgets::slider(ui, step, label, value, -1. ..=1., 0.);
+                rows[i] =
+                    Rect::from_min_max(top, Pos2::new(ui.max_rect().right(), ui.cursor().top()));
+            };
+            row(0, ui, "Exposure", &mut recipe.exposure);
+            row(1, ui, "Contrast", &mut recipe.contrast);
+            // A brush's Size: a tool setting, no edit.
+            row(2, ui, "Size", view_only);
+        });
+        between(&mut self.editor);
+        self.editor.finish_edit_frame(frame, &self.ctx);
+    }
+    fn frame(&mut self, events: Vec<egui::Event>) {
+        self.frame_with(events, |_| {});
+    }
+    fn over(&self, slider: usize) -> egui::Event {
+        egui::Event::PointerMoved(self.rows[slider].center() + Vec2::new(0., 8.))
+    }
+    /// Lets the wheel's input gesture end (input time) and, with `wall`, the
+    /// History step's pause (the clock) too.
+    fn pause(&mut self, wall: bool) {
+        for _ in 0..10 {
+            self.frame(vec![]);
+        }
+        if wall {
+            std::thread::sleep(std::time::Duration::from_millis(450));
+            self.frame(vec![]);
+        }
+    }
+    fn steps(&self) -> Vec<(String, String)> {
+        let (steps, applied) = self.editor.document.edit.history().steps();
+        steps[..applied]
+            .iter()
+            .map(|s| (s.name.clone(), s.value.clone()))
+            .collect()
+    }
+}
+
+#[test]
+fn wheel_notches_on_a_slider_are_one_history_step_and_another_slider_starts_its_own() {
+    let mut h = WheelHistory::new();
+    h.frame(vec![h.over(0)]);
+    for _ in 0..5 {
+        h.frame(vec![line(1.)]);
+    }
+    assert!(h.editor.document.edit.history().in_gesture());
+    assert!(h.editor.view.wheel.pending());
+    // The input gesture ends, but the History step waits for its own pause: the
+    // next slider's notches within it are a step of their own.
+    h.pause(false);
+    h.frame(vec![h.over(1)]);
+    h.frame(vec![line(-1.)]);
+    h.frame(vec![line(-1.)]);
+    h.pause(true);
+    assert_eq!(
+        h.steps(),
+        [
+            ("Exposure".to_string(), "+5".to_string()),
+            ("Contrast".to_string(), "-2".to_string())
+        ]
+    );
+    assert!(!h.editor.view.wheel.pending());
+}
+
+#[test]
+fn the_wheel_over_a_view_only_slider_records_no_step() {
+    let mut h = WheelHistory::new();
+    h.frame(vec![h.over(2)]);
+    h.frame(vec![line(1.)]);
+    assert!((h.view_only - 0.51).abs() < 1e-6, "{}", h.view_only);
+    assert!(!h.editor.view.wheel.pending());
+    h.pause(true);
+    assert!(h.steps().is_empty());
+}
+
+#[test]
+fn a_rating_after_a_slider_wheel_is_logged_after_its_step() {
+    let mut h = WheelHistory::new();
+    h.frame(vec![h.over(0)]);
+    h.frame(vec![line(1.)]);
+    h.editor.sync_undo();
+    let logged = h.editor.undo_log.len().0;
+    // As a rating or flag key does, before it logs itself.
+    h.editor.finish_wheel_gesture();
+    assert_eq!(h.editor.undo_log.len().0, logged + 1);
+    assert!(!h.editor.view.wheel.pending());
+}
+
+#[test]
+fn a_document_switch_mid_scroll_takes_nothing_to_the_next_photo() {
+    let mut h = WheelHistory::new();
+    h.frame(vec![h.over(0)]);
+    h.frame(vec![line(1.)]);
+    h.frame_with(vec![line(1.)], |e| {
+        e.open_raw(std::path::PathBuf::from("missing-wheel-fixture.ARW"), None);
+    });
+    assert!(!h.editor.view.wheel.pending());
+    assert!(h.editor.step_name.take_wheel().is_none());
+    h.frame(vec![]);
+    assert!(!h.editor.document.edit.history().can_undo());
 }

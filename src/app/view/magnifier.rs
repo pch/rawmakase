@@ -32,48 +32,23 @@ const DIAMETER: f32 = 240.;
 const MARGIN: f32 = 1.6;
 
 /// Whether the magnifier is shown, and at what level.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(in crate::app) struct Magnifier {
     pub(in crate::app) on: bool,
     /// Index into `LEVELS`.
     level: usize,
-    /// Wheel notches scrolled towards the next level.
-    wheel: f32,
-}
-impl Default for Magnifier {
-    fn default() -> Self {
-        Self {
-            on: false,
-            level: 0,
-            wheel: 0.,
-        }
-    }
 }
 impl Magnifier {
     pub(in crate::app) fn level(&self) -> f32 {
         LEVELS[self.level].0
     }
-    /// The wheel over the photo this frame steps the level.
-    pub(in crate::app) fn read_wheel(&mut self, ui: &egui::Ui) {
-        let lines: f32 = ui
-            .input(crate::app::develop::tools::brush_scroll::Scroll::read)
-            .iter()
-            .map(|s| s.lines)
-            .sum();
-        if lines != 0. {
-            self.scroll(lines);
-        }
-    }
-    /// A wheel scroll of `lines` notches: a whole notch either way steps the level.
-    fn scroll(&mut self, lines: f32) {
-        self.wheel += lines;
-        if self.wheel >= 1. {
-            self.level = (self.level + 1).min(LEVELS.len() - 1);
-            self.wheel = 0.;
-        } else if self.wheel <= -1. {
-            self.level = self.level.saturating_sub(1);
-            self.wheel = 0.;
-        }
+    /// Steps the level `levels` up (positive) or down, as whole wheel notches over
+    /// the photo do (see `photo_wheel`), staying within the levels offered.
+    pub(in crate::app) fn step(&mut self, levels: i32) {
+        self.level = self
+            .level
+            .saturating_add_signed(levels as isize)
+            .min(LEVELS.len() - 1);
     }
 }
 
@@ -425,7 +400,6 @@ impl Editor {
         let recipe = self.effective_recipe();
         let g = Geometry::new(&image, &recipe, 0);
         let size = [g.width, g.height];
-        self.view.magnifier.read_wheel(ui);
         let level = self.view.magnifier.level();
         let Some(aim) = Aim::new(pos, rect, size, level, ui.ctx().pixels_per_point()) else {
             return;

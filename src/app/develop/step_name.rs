@@ -8,25 +8,41 @@
 use crate::app::history::Step;
 
 #[derive(Debug, Default)]
-pub(in crate::app) struct StepName(Option<Step>);
+pub(in crate::app) struct StepName {
+    step: Option<Step>,
+    /// The slider the mouse wheel changed this frame, so the edit frame groups
+    /// its notches into one History step (see `WheelGesture`).
+    wheel: Option<eframe::egui::Id>,
+}
 impl StepName {
     /// Names the step being made `name`, showing `value`, in place of any
     /// name given before in this frame.
     pub(in crate::app) fn name(&mut self, name: String, value: String) {
-        self.0 = Some(Step::new(name, value));
+        self.step = Some(Step::new(name, value));
     }
     /// The name given, for History; none is left.
     pub(in crate::app) fn take(&mut self) -> Option<Step> {
-        self.0.take()
+        self.step.take()
     }
-    /// Drops the name given: the edit it named changed nothing, and would
-    /// otherwise name the next one.
+    /// The wheel changed slider `id` this frame.
+    pub(in crate::app) fn wheel_changed(&mut self, id: eframe::egui::Id) {
+        self.wheel = Some(id);
+    }
+    /// The slider the wheel changed this frame; none is left.
+    pub(in crate::app) fn take_wheel(&mut self) -> Option<eframe::egui::Id> {
+        self.wheel.take()
+    }
+    /// Drops the name given, and the wheel's mark: the edit it named changed
+    /// nothing, and would otherwise name the next one.
     pub(in crate::app) fn discard(&mut self) {
-        self.0 = None;
+        self.step = None;
+        self.wheel = None;
     }
     /// The name given so far, and the value it shows.
     #[cfg(test)]
     pub(in crate::app) fn given(&self) -> Option<(String, String)> {
-        self.0.as_ref().map(|s| (s.name.clone(), s.value.clone()))
+        self.step
+            .as_ref()
+            .map(|s| (s.name.clone(), s.value.clone()))
     }
 }

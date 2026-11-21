@@ -3,19 +3,13 @@
 //! Shift it changes the feather; with Option/Alt it sizes the mask's Erase brush.
 use crate::app::Editor;
 use crate::app::develop::state::Tool;
-use eframe::egui;
+use crate::app::ui::wheel::{self, GESTURE_PAUSE};
 use std::time::{Duration, Instant};
 
-/// Points of scrolling that count as one wheel notch, one `[` or `]` press.
-const POINTS_PER_LINE: f32 = 40.;
-/// Lines a page of scrolling counts as.
-const LINES_PER_PAGE: f32 = 10.;
 /// How much one notch scales a size, as `[` and `]` do.
 const SIZE_STEP: f32 = 1.15;
 /// How much one notch changes a feather.
 const FEATHER_STEP: f32 = 0.1;
-/// Scrolling with pauses shorter than this is one gesture, one History step.
-const GESTURE_PAUSE: Duration = Duration::from_millis(400);
 
 /// What a scroll changes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,60 +35,33 @@ pub(in crate::app) struct Scroll {
     pub(in crate::app) brush: MaskBrush,
 }
 impl Scroll {
-    /// This frame's wheel events. A sideways scroll counts only with Shift, which macOS
-    /// turns a Shift+wheel into; a plain sideways trackpad swipe changes nothing. While
-    /// a button is held (a stroke, a moved spot or correction) or in a frame that also
-    /// has a click or a key, the wheel is left alone, so it never mixes into another
-    /// gesture or History step. A key a shortcut already took counts too: the frame's
-    /// raw input still has it.
-    pub(in crate::app) fn read(i: &egui::InputState) -> Vec<Self> {
-        let busy = i.pointer.any_down()
-            || i.raw.events.iter().any(|e| {
-                matches!(
-                    e,
-                    egui::Event::PointerButton { .. } | egui::Event::Key { pressed: true, .. }
-                )
-            });
-        if busy {
-            return Vec::new();
-        }
-        i.events
-            .iter()
-            .filter_map(|event| {
-                let egui::Event::MouseWheel {
-                    unit,
-                    delta,
-                    modifiers,
-                    ..
-                } = event
-                else {
-                    return None;
-                };
-                let amount = if modifiers.shift && delta.y == 0. {
-                    delta.x
-                } else {
-                    delta.y
-                };
-                let lines = match unit {
-                    egui::MouseWheelUnit::Point => amount / POINTS_PER_LINE,
-                    egui::MouseWheelUnit::Line => amount,
-                    egui::MouseWheelUnit::Page => amount * LINES_PER_PAGE,
-                };
-                (lines != 0.).then_some(Scroll {
-                    lines,
-                    adjust: if modifiers.shift {
-                        Adjust::Feather
-                    } else {
-                        Adjust::Size
-                    },
-                    brush: if modifiers.alt {
-                        MaskBrush::Erase
-                    } else {
-                        MaskBrush::Current
-                    },
-                })
-            })
+    /// This frame's wheel events, as [`wheel::read`] reads them. A sideways scroll
+    /// counts only with Shift (see [`wheel::Wheel::lines`]); a plain sideways
+    /// trackpad swipe changes nothing.
+    #[cfg(test)]
+    pub(in crate::app) fn read(i: &eframe::egui::InputState) -> Vec<Self> {
+        wheel::read(i)
+            .into_iter()
+            .filter_map(Self::from_wheel)
             .collect()
+    }
+    /// What `wheel` changes, from the modifiers held when it happened; none for a
+    /// scroll that moves nothing along the wheel.
+    pub(in crate::app) fn from_wheel(wheel: wheel::Wheel) -> Option<Self> {
+        let lines = wheel.lines();
+        (lines != 0.).then_some(Scroll {
+            lines,
+            adjust: if wheel.modifiers.shift {
+                Adjust::Feather
+            } else {
+                Adjust::Size
+            },
+            brush: if wheel.modifiers.alt {
+                MaskBrush::Erase
+            } else {
+                MaskBrush::Current
+            },
+        })
     }
     fn scale(self) -> f32 {
         SIZE_STEP.powf(self.lines)
@@ -111,26 +78,47 @@ pub(in crate::app) enum Edit {
     Changed,
 }
 
-/// When the wheel last changed a size, so a scroll is recorded as one History step.
+/// What a wheel scroll that edits changes: a selected spot's size or feather, or
+/// one slider.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum WheelOwner {
+    Brush,
+    Slider(eframe::egui::Id),
+}
+
+/// When the wheel last changed the edit, and what it changed, so a scroll is
+/// recorded as one History step.
 #[derive(Default)]
 pub(in crate::app) struct WheelGesture {
     last: Option<Instant>,
-    /// Whether the wheel changed a size this frame; another edit ends the gesture.
+    owner: Option<WheelOwner>,
+    /// Whether the wheel changed the edit this frame; another edit ends the gesture.
     this_frame: bool,
+    /// This frame's scroll changes something else than the gesture under way did,
+    /// which ends that one as a step of its own.
+    switched: bool,
 }
 impl WheelGesture {
-    fn scrolled(&mut self) {
+    /// The wheel changed the edit through `owner` this frame.
+    pub(in crate::app) fn scrolled(&mut self, owner: WheelOwner) {
+        if self.last.is_some() && self.owner != Some(owner) {
+            self.switched = true;
+        }
         self.last = Some(Instant::now());
+        self.owner = Some(owner);
         self.this_frame = true;
     }
     /// Called before a frame's edits are recorded. Returns whether a scroll ends here,
-    /// to be recorded as its own step first: it paused, or this frame's edit came
-    /// from something else (a slider, a click, a press that starts a drag).
+    /// to be recorded as its own step first: it paused, this frame's edit came
+    /// from something else (a slider dragged, a click, a press that starts a drag),
+    /// or this frame's scroll changes something else (another slider, the spot after
+    /// a slider). In that last case the new scroll goes on as a gesture of its own.
     pub(in crate::app) fn ends_before(&mut self, edit: Edit) -> bool {
-        let ends =
-            self.last.is_some() && !self.this_frame && (edit == Edit::Changed || !self.active());
-        if ends {
+        let ends = std::mem::take(&mut self.switched)
+            || self.last.is_some() && !self.this_frame && (edit == Edit::Changed || !self.active());
+        if ends && !self.this_frame {
             self.last = None;
+            self.owner = None;
         }
         self.this_frame = false;
         ends
@@ -183,7 +171,7 @@ impl Editor {
             // Only a selected spot's change is an edit, grouped as one History step;
             // the brush for new spots is a tool setting.
             if op.is_some() {
-                self.view.wheel.scrolled();
+                self.view.wheel.scrolled(WheelOwner::Brush);
             }
             match scroll.adjust {
                 Adjust::Size => {
