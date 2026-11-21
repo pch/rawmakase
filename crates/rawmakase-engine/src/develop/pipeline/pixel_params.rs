@@ -43,6 +43,9 @@ pub(crate) mod slot {
         LOOK: 5,
         ENH: 5,
         ENH_CURVE: 1,
+        // An HDR master's look channel curves (`tone::LookChannels`): their samples,
+        // or -1 each.
+        ENH_CHANNELS: 3,
         TONE: 1,
         TONE_COUNT: 1,
         LOCAL: 1,
@@ -114,6 +117,10 @@ pub(crate) mod slot {
         // An HDR master's look curve (`hdr_look::LookTone`): 0 without a look, 1 Lifted
         // (until, lift), 2 Extended (slope, 0).
         HDR_LOOK: 3,
+        // An HDR master's look channel curves, after the user's (`tone::LookChannels`):
+        // per channel as `HDR_LOOK`, all 0 where the curve is the identity; their samples
+        // are `ENH_CHANNELS`'.
+        HDR_LOOK_CHANNELS: 9,
         // An HDR master's Contrast (`basic_tone::HdrContrast`): its table, or -1, the
         // output at its top and the slope beyond.
         HDR_CONTRAST: 3,
@@ -324,6 +331,9 @@ pub(crate) fn pixel_params_hdr(im: Source, r: &Recipe) -> Option<PixelParams> {
         .map(|(table, top, slope)| (table.to_vec(), top, slope));
     let curves = finish.curves;
     let channels = finish.channels;
+    let look = finish
+        .look
+        .map(|(curves, tones)| (Box::new(curves.clone()), tones));
     let fading = lut
         .mixer
         .as_ref()
@@ -388,12 +398,20 @@ pub(crate) fn pixel_params_hdr(im: Source, r: &Recipe) -> Option<PixelParams> {
     };
     p.set(slot::HDR, &[gains, curve]);
     use crate::camera_profiles::hdr_look::LookTone;
-    let look = match profile.hdr_look() {
+    let tone = |t: Option<LookTone>| match t {
         None => [0., 0., 0.],
         Some(LookTone::Lifted { until, lift }) => [1., until, lift],
         Some(LookTone::Extended { slope }) => [2., slope, 0.],
     };
-    p.set(slot::HDR_LOOK, &look);
+    p.set(slot::HDR_LOOK, &tone(profile.hdr_look()));
+    // The look's channel curves follow the user's (`tone::LookChannels`).
+    if let Some((curves, tones)) = look {
+        let samples = curves
+            .each_ref()
+            .map(|c| p.push(c.values().iter().copied()));
+        p.set(slot::ENH_CHANNELS, &samples);
+        p.set(slot::HDR_LOOK_CHANNELS, tones.map(tone).as_flattened());
+    }
     Some(p)
 }
 /// Parameters for `im`'s per-pixel stage with the resolved recipe `r`, or `None` when
@@ -567,6 +585,7 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
         None => -1.,
     };
     p.set(slot::ENH_CURVE, &[curve]);
+    p.set(slot::ENH_CHANNELS, &[-1.; 3]);
     let tone = p.push(t.tone.iter().flatten().copied());
     p.set(slot::TONE, &[tone]);
     p.set(slot::TONE_COUNT, &[t.tone.len() as f32]);
@@ -637,6 +656,7 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     p.set(slot::HDR, &[-1., -1.]);
     p.set(slot::HDR_PROFILE, &[profile.is_hdr() as u8 as f32]);
     p.set(slot::HDR_LOOK, &[0., 0., 0.]);
+    p.set(slot::HDR_LOOK_CHANNELS, &[0.; 9]);
     p.set(slot::HDR_CONTRAST, &[-1., 0., 0.]);
     p.set(slot::HDR_CURVES, &[0.; 6]);
     p.set(slot::HDR_CHANNELS, &[0.; 12]);

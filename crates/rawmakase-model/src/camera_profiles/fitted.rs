@@ -93,6 +93,7 @@ pub fn with_look(base: &CameraProfile, look: &FittedLook) -> Result<CameraProfil
         }),
         rgb: None,
         settings: Default::default(),
+        channels: None,
         curve: Box::new(CurveLut::from_fn(|i| look.curve[i])),
     });
     let uuid = canonical_hash(&p);

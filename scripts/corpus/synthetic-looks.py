@@ -87,7 +87,9 @@ def rgb_table_tail(primaries, gamma, gamut, bounds, flags=None):
     return data
 
 
-def look(name, data, settings=None, curve=None, monochrome=False, rgb=None):
+def look(name, data, settings=None, curve=None, monochrome=False, rgb=None, channels=None):
+    """`channels` gives the look's Red, Green and Blue point curves by name; a channel
+    it leaves out is the identity, and `None` for one leaves its element out."""
     uuid = hashlib.md5(name.encode()).hexdigest().upper()
     tables = {}
     if data:
@@ -114,7 +116,9 @@ def look(name, data, settings=None, curve=None, monochrome=False, rgb=None):
         xml += (f'   <crs:{element}>\n    <rdf:Alt>\n     <rdf:li xml:lang="x-default">{text}</rdf:li>\n'
                 f'    </rdf:Alt>\n   </crs:{element}>\n')
     for channel in ['', 'Red', 'Green', 'Blue']:
-        points = (curve or IDENTITY) if channel == '' else IDENTITY
+        points = (curve or IDENTITY) if channel == '' else (channels or {}).get(channel, IDENTITY)
+        if points is None:
+            continue
         xml += (f'   <crs:ToneCurvePV2012{channel}>\n    <rdf:Seq>\n'
                 + ''.join(f'     <rdf:li>{p}</rdf:li>\n' for p in points)
                 + f'    </rdf:Seq>\n   </crs:ToneCurvePV2012{channel}>\n')
@@ -152,6 +156,11 @@ def half(v):
 
 IDENTITY = ['0, 0', '255, 255']
 S_CURVE = ['0, 0', '64, 44', '128, 132', '192, 214', '255, 255']
+# Channel curves a film look might carry: red lifted in the shadows, green with an S,
+# blue darkened and ending below white.
+CHANNELS = {'Red': ['0, 30', '128, 150', '255, 255'],
+            'Green': ['0, 0', '64, 50', '192, 210', '255, 255'],
+            'Blue': ['0, 0', '128, 110', '255, 230']}
 LOOKS = {
     'synthetic-table.xmp': look('Synthetic Table', table((12, 5, 6), twist)),
     'synthetic-table-v1.xmp': look('Synthetic Table v1', table((12, 5, 6), twist, bounds=None)),
@@ -201,6 +210,11 @@ LOOKS = {
     'synthetic-rgb-code4-half.xmp': look('Synthetic RGB Code 4 Half', None,
                                          rgb=rgb_table_1d(256, half, primaries=SRGB, gamma=REC2020_GAMMA)),
     'synthetic-rgb-flag.xmp': look('Synthetic RGB Flag', None, rgb=rgb_table(17, fade, flags=1)),
+    'synthetic-channels.xmp': look('Synthetic Channels', table((4, 2, 1), identity, srgb=False), channels=CHANNELS),
+    'synthetic-channels-curve.xmp': look('Synthetic Channels Curve', table((4, 2, 1), identity, srgb=False),
+                                         curve=S_CURVE, channels=CHANNELS),
+    'synthetic-channels-red.xmp': look('Synthetic Channels Red', table((4, 2, 1), identity, srgb=False),
+                                       channels={'Red': CHANNELS['Red'], 'Green': None, 'Blue': None}),
     'synthetic-rgb-look.xmp': look('Synthetic RGB Look', table((12, 5, 6), twist), curve=S_CURVE,
                                    rgb=rgb_table(17, fade)),
 }

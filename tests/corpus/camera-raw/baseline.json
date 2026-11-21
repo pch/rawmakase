@@ -698,6 +698,46 @@
         0.3,
         0.883
       ],
+      "look-channels-100": [
+        0.275,
+        1.019
+      ],
+      "look-channels-200": [
+        0.378,
+        1.259
+      ],
+      "look-channels-50": [
+        0.292,
+        0.733
+      ],
+      "look-channels-contrast+50": [
+        0.477,
+        1.429
+      ],
+      "look-channels-curve-100": [
+        0.509,
+        1.99
+      ],
+      "look-channels-curve-200": [
+        0.844,
+        3.584
+      ],
+      "look-channels-exposure+1": [
+        0.334,
+        1.234
+      ],
+      "look-channels-red-100": [
+        0.25,
+        0.766
+      ],
+      "look-channels-user-red": [
+        0.3,
+        0.9
+      ],
+      "look-channels-user-s": [
+        0.459,
+        1.801
+      ],
       "look-color-100": [
         0.813,
         2.973
@@ -717,6 +757,10 @@
       "look-color-saturation+30": [
         0.77,
         2.987
+      ],
+      "look-curve-user-s": [
+        0.813,
+        2.416
       ],
       "look-exposure-100": [
         0.299,

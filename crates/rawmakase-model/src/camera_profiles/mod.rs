@@ -827,6 +827,19 @@ impl CameraProfile {
         self.enhanced = Some(look);
         self
     }
+    /// This profile's look with Red, Green and Blue curves through `points`
+    /// (sRGB-encoded, 0–1), for tests. The profile must have a look.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_test_look_channels(mut self, points: [&[[f32; 2]]; 3]) -> Self {
+        let look = self.enhanced.as_mut().expect("a look");
+        look.channels = Some(Box::new(points.map(|points| {
+            crate::color::curve::CurveLut::new(&crate::color::curve::ToneCurve {
+                points: points.to_vec(),
+                ..Default::default()
+            })
+        })));
+        self
+    }
     /// This profile marked HDR (`ProfileDynamicRange` 1), for tests.
     #[cfg(any(test, feature = "test-support"))]
     pub fn as_hdr_for_test(mut self) -> Self {

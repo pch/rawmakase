@@ -664,6 +664,29 @@ toning is 0.003 / 0.060 stop below white (SDR 0.002 / 0.036), 0.002 above, and a
 Decision, 2026-11-12: an HDR master's colour grading takes the boost, and a look's
 split toning renders.
 
+**A look's channel curves** (2026-11-21, #949). Camera Raw 18.7 rendered the synthetic
+looks `synthetic-channels`, `-channels-curve` and `-channels-red` (Red lifted in the
+shadows, Green with an S, Blue darkened to end at 230; with the S master curve; a Red
+curve alone) on the linear-profile gray ramp (sensor white +4, HDR limit 8, and SDR)
+and the colour patches, at amounts 1 and 2, and with the user's red curve, S curve and
+Contrast +50.
+
+- On the colour patches the channel curves apply strictly per channel (median 0.0002
+  stop, at most 0.0016, below and above white), after the look's master curve (the
+  reverse order misses by a median of 0.074 stop below white).
+- They apply after the user's point curves, master and per channel, and Contrast:
+  composing each setting's own render with the look's map, the setting first gives a
+  median of 0.0001–0.0002 stop (0.074–0.17 the other way). In SDR, Exposure too.
+- Each channel follows the rule of a look's curve ([Looks](#looks) above): Red and
+  Green, which end at white, hold at 16.00; Blue, which ends below it, renders scene 16
+  as 10.71 at amount 1 and 7.25 at 2. RAWmakase's renders of the ramp are within a
+  median 0.0006–0.004 stop below white and 0.006–0.010 above (p95 at most 0.038) at
+  both amounts, with the master curve and the Red curve alone, and a median of
+  0.0008 and 0.007 after the user's red or S curve or Contrast +50, at most 0.06.
+
+The renders' values are kept outside the repository; the chart cases are
+`look-channels-*` in `tests/corpus/cases.json`.
+
 **On photos** (2026-11-11). The six validation photos of [Validation](#validation)
 (Adobe Standard, HDR limit 4) through a `.cube` look (creative), an HSV-table look at
 50%, an Adobe RGB RGB-table look at 150% and the B&W look, against Camera Raw 18.7's
