@@ -2034,6 +2034,74 @@
    }
   },
   {
+   "name": "look-channels-50",
+   "look": {
+    "file": "synthetic-channels.xmp",
+    "amount": 0.5
+   }
+  },
+  {
+   "name": "look-channels-100",
+   "look": {
+    "file": "synthetic-channels.xmp",
+    "amount": 1
+   }
+  },
+  {
+   "name": "look-channels-200",
+   "look": {
+    "file": "synthetic-channels.xmp",
+    "amount": 2
+   }
+  },
+  {
+   "name": "look-channels-curve-100",
+   "look": {
+    "file": "synthetic-channels-curve.xmp",
+    "amount": 1
+   }
+  },
+  {
+   "name": "look-channels-curve-200",
+   "look": {
+    "file": "synthetic-channels-curve.xmp",
+    "amount": 2
+   }
+  },
+  {
+   "name": "look-channels-red-100",
+   "look": {
+    "file": "synthetic-channels-red.xmp",
+    "amount": 1
+   }
+  },
+  {
+   "name": "look-channels-user-red",
+   "look": {
+    "file": "synthetic-channels.xmp",
+    "amount": 1
+   },
+   "curves": {
+    "ToneCurvePV2012": [
+     "0, 0",
+     "255, 255"
+    ],
+    "ToneCurvePV2012Red": [
+     "0, 0",
+     "128, 100",
+     "255, 255"
+    ],
+    "ToneCurvePV2012Green": [
+     "0, 0",
+     "255, 255"
+    ],
+    "ToneCurvePV2012Blue": [
+     "0, 0",
+     "255, 255"
+    ]
+   }
+  },
+  {
    "name": "look-exposure-50",
    "look": {
     "file": "synthetic-exposure.xmp",
