@@ -94,6 +94,7 @@ impl Editor {
             .backdrop_color(Color32::from_black_alpha(140))
             .frame(modal_frame(&palette))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Watermark Editor");
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(WIDTH, HEIGHT), Sense::hover());
                 ui.painter().text(
                     rect.left_top() + Vec2::new(24., 26.),
@@ -149,10 +150,13 @@ impl Editor {
                         delete = true;
                     }
                     ui.label(egui::RichText::new("Name").color(palette.tone(Tone::SECONDARY)));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut state.watermark.name)
-                            .desired_width(200.)
-                            .hint_text("Watermark name"),
+                    crate::app::ui::widgets::named(
+                        ui.add(
+                            egui::TextEdit::singleline(&mut state.watermark.name)
+                                .desired_width(200.)
+                                .hint_text("Watermark name"),
+                        ),
+                        "Name",
                     );
                     let notice = state.notice.text();
                     if !notice.is_empty() {
@@ -436,13 +440,19 @@ fn slider(
 ) {
     row(ui, label, |ui| {
         ui.spacing_mut().slider_width = (ui.available_width() - VALUE - GAP).max(40.);
-        ui.add(egui::Slider::new(value, range.clone()).show_value(false));
-        ui.add_sized(
-            Vec2::new(VALUE, 20.),
-            egui::DragValue::new(value)
-                .range(range)
-                .fixed_decimals(0)
-                .suffix(suffix),
+        crate::app::ui::widgets::named(
+            ui.add(egui::Slider::new(value, range.clone()).show_value(false)),
+            label,
+        );
+        crate::app::ui::widgets::named(
+            ui.add_sized(
+                Vec2::new(VALUE, 20.),
+                egui::DragValue::new(value)
+                    .range(range)
+                    .fixed_decimals(0)
+                    .suffix(suffix),
+            ),
+            label,
         );
     });
 }
@@ -521,9 +531,12 @@ fn controls(ui: &mut egui::Ui, state: &mut WatermarkEditor, ctx: &egui::Context)
         Style::Text => {
             heading(ui, "Text Options");
             row_of(ui, "Text", 52., |ui| {
-                ui.add_sized(
-                    Vec2::new(ui.available_width(), 48.),
-                    egui::TextEdit::multiline(&mut w.text).desired_rows(2),
+                crate::app::ui::widgets::named(
+                    ui.add_sized(
+                        Vec2::new(ui.available_width(), 48.),
+                        egui::TextEdit::multiline(&mut w.text).desired_rows(2),
+                    ),
+                    "Text",
                 );
             });
             // Installed fonts are still being listed at first: the system default until then.
@@ -531,18 +544,21 @@ fn controls(ui: &mut egui::Ui, state: &mut WatermarkEditor, ctx: &egui::Context)
             let system = [watermark::fonts::system()];
             let families: &[watermark::fonts::Family] = listed.unwrap_or(&system);
             row(ui, "Font", |ui| {
-                crate::app::ui::widgets::dropdown_of_height(ui, "watermark-font", ROW)
-                    .width(ui.available_width())
-                    .selected_text(&w.family)
-                    .show_ui(ui, |ui| {
-                        for f in families {
-                            if ui.selectable_label(w.family == f.name, &f.name).clicked() {
-                                w.family = f.name.clone();
-                                w.face =
-                                    f.faces.first().map(|x| x.name.clone()).unwrap_or_default();
+                crate::app::ui::widgets::named_menu(
+                    crate::app::ui::widgets::dropdown_of_height(ui, "watermark-font", ROW)
+                        .width(ui.available_width())
+                        .selected_text(&w.family)
+                        .show_ui(ui, |ui| {
+                            for f in families {
+                                if ui.selectable_label(w.family == f.name, &f.name).clicked() {
+                                    w.family = f.name.clone();
+                                    w.face =
+                                        f.faces.first().map(|x| x.name.clone()).unwrap_or_default();
+                                }
                             }
-                        }
-                    });
+                        }),
+                    "Font",
+                );
             });
             row(ui, "Style", |ui| {
                 let faces = families
@@ -550,14 +566,17 @@ fn controls(ui: &mut egui::Ui, state: &mut WatermarkEditor, ctx: &egui::Context)
                     .find(|f| f.name == w.family)
                     .map(|f| f.faces.clone())
                     .unwrap_or_default();
-                crate::app::ui::widgets::dropdown_of_height(ui, "watermark-face", ROW)
-                    .width(ui.available_width())
-                    .selected_text(&w.face)
-                    .show_ui(ui, |ui| {
-                        for face in &faces {
-                            ui.selectable_value(&mut w.face, face.name.clone(), &face.name);
-                        }
-                    });
+                crate::app::ui::widgets::named_menu(
+                    crate::app::ui::widgets::dropdown_of_height(ui, "watermark-face", ROW)
+                        .width(ui.available_width())
+                        .selected_text(&w.face)
+                        .show_ui(ui, |ui| {
+                            for face in &faces {
+                                ui.selectable_value(&mut w.face, face.name.clone(), &face.name);
+                            }
+                        }),
+                    "Style",
+                );
             });
             row(ui, "Align", |ui| {
                 choices(
@@ -574,7 +593,9 @@ fn controls(ui: &mut egui::Ui, state: &mut WatermarkEditor, ctx: &egui::Context)
                 // The picker in sRGB, as the color is stored and laid over
                 // the photo.
                 let mut srgb = w.color.map(unit_to_u8);
-                if ui.color_edit_button_srgb(&mut srgb).changed() {
+                if crate::app::ui::widgets::named(ui.color_edit_button_srgb(&mut srgb), "Color")
+                    .changed()
+                {
                     w.color = srgb.map(|c| c as f32 / 255.);
                 }
             });
@@ -622,24 +643,39 @@ fn controls(ui: &mut egui::Ui, state: &mut WatermarkEditor, ctx: &egui::Context)
             for v in 0..3 {
                 ui.horizontal(|ui| {
                     for h in 0..3 {
-                        ui.radio_value(&mut w.anchor, Anchor(h, v), "");
+                        let place = match (v, h) {
+                            (1, 1) => "Center".to_string(),
+                            _ => format!(
+                                "{} {}",
+                                ["Top", "Middle", "Bottom"][v as usize],
+                                ["Left", "Center", "Right"][h as usize]
+                            ),
+                        };
+                        crate::app::ui::widgets::named(
+                            ui.radio_value(&mut w.anchor, Anchor(h, v), ""),
+                            &format!("Anchor {place}"),
+                        );
                     }
                 });
             }
         });
     });
     row(ui, "Rotate", |ui| {
-        if ui
-            .add(egui::Button::new("⟲").frame(false))
-            .on_hover_text("Rotate left")
-            .clicked()
+        if crate::app::ui::widgets::named(
+            ui.add(egui::Button::new("⟲").frame(false)),
+            "Rotate left",
+        )
+        .on_hover_text("Rotate left")
+        .clicked()
         {
             w.rotation = (w.rotation + 1) % 4;
         }
-        if ui
-            .add(egui::Button::new("⟳").frame(false))
-            .on_hover_text("Rotate right")
-            .clicked()
+        if crate::app::ui::widgets::named(
+            ui.add(egui::Button::new("⟳").frame(false)),
+            "Rotate right",
+        )
+        .on_hover_text("Rotate right")
+        .clicked()
         {
             w.rotation = (w.rotation + 3) % 4;
         }

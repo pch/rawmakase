@@ -224,7 +224,12 @@ pub(crate) fn controls(ui: &mut egui::Ui, photo: &Photo, labels: &[String]) -> O
                 .collect();
             // Always shown, so a photo's label never changes the row's width.
             ui.add_space(space::XS);
-            ui.menu_image_button(
+            let other = if photo.label.is_empty() {
+                "Other labels".to_string()
+            } else {
+                format!("Label: {}", photo.label)
+            };
+            let menu = ui.menu_image_button(
                 crate::app::ui::icons::Icon::More.image(palette.tone(Tone::SOFT), MENU_ICON),
                 |ui| {
                     for label in custom {
@@ -238,13 +243,8 @@ pub(crate) fn controls(ui: &mut egui::Ui, photo: &Photo, labels: &[String]) -> O
                         ui.close();
                     }
                 },
-            )
-            .response
-            .on_hover_text(if photo.label.is_empty() {
-                "Other labels".to_string()
-            } else {
-                format!("Label: {}", photo.label)
-            });
+            );
+            crate::app::ui::widgets::named(menu.response, &other).on_hover_text(other);
         });
     });
     edit

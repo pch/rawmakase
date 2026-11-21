@@ -105,42 +105,47 @@ pub(in crate::app::develop::panels::inspector) fn show(
             let chosen = ShownCurve::of(r, saved_curves);
             let shown = chosen.name(saved_curves).to_string();
             stacked_control(ui, "Point Curve", |ui| {
-                crate::app::ui::widgets::dropdown(ui, "point-curve")
-                    .width(ui.available_width())
-                    .selected_text(&shown)
-                    .show_ui(ui, |ui| {
-                        use crate::presets::curves::BuiltinCurve;
-                        for curve in BuiltinCurve::ALL {
+                crate::app::ui::widgets::named_menu(
+                    crate::app::ui::widgets::dropdown(ui, "point-curve")
+                        .width(ui.available_width())
+                        .selected_text(&shown)
+                        .show_ui(ui, |ui| {
+                            use crate::presets::curves::BuiltinCurve;
+                            for curve in BuiltinCurve::ALL {
+                                if ui
+                                    .selectable_label(
+                                        chosen == ShownCurve::Builtin(curve),
+                                        curve.name(),
+                                    )
+                                    .clicked()
+                                {
+                                    actions.push(Action::Curve(CurveChoice::Builtin(curve)));
+                                }
+                            }
+                            if !saved_curves.is_empty() {
+                                ui.separator();
+                            }
+                            for (i, saved) in saved_curves.iter().enumerate() {
+                                if ui
+                                    .selectable_label(chosen == ShownCurve::Saved(i), &saved.name)
+                                    .clicked()
+                                {
+                                    actions.push(Action::Curve(CurveChoice::Saved(saved.clone())));
+                                }
+                            }
+                            ui.separator();
                             if ui
-                                .selectable_label(
-                                    chosen == ShownCurve::Builtin(curve),
-                                    curve.name(),
+                                .selectable_label(false, "Save…")
+                                .on_hover_text(
+                                    "Save the RGB, Red, Green and Blue curves under a name",
                                 )
                                 .clicked()
                             {
-                                actions.push(Action::Curve(CurveChoice::Builtin(curve)));
+                                actions.push(Action::Curve(CurveChoice::Save));
                             }
-                        }
-                        if !saved_curves.is_empty() {
-                            ui.separator();
-                        }
-                        for (i, saved) in saved_curves.iter().enumerate() {
-                            if ui
-                                .selectable_label(chosen == ShownCurve::Saved(i), &saved.name)
-                                .clicked()
-                            {
-                                actions.push(Action::Curve(CurveChoice::Saved(saved.clone())));
-                            }
-                        }
-                        ui.separator();
-                        if ui
-                            .selectable_label(false, "Save…")
-                            .on_hover_text("Save the RGB, Red, Green and Blue curves under a name")
-                            .clicked()
-                        {
-                            actions.push(Action::Curve(CurveChoice::Save));
-                        }
-                    });
+                        }),
+                    "Point Curve",
+                );
             });
             // Lightroom's Refine Saturation, under the RGB point curve it acts on;
             // the channel curves keep the same height so nothing below moves.

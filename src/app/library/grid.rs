@@ -32,8 +32,12 @@ impl Library {
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().slider_width = 110.;
-                        ui.add(
-                            egui::Slider::new(&mut self.thumb_size, 110. ..=360.).show_value(false),
+                        crate::app::ui::widgets::named(
+                            ui.add(
+                                egui::Slider::new(&mut self.thumb_size, 110. ..=360.)
+                                    .show_value(false),
+                            ),
+                            "Thumbnails",
                         );
                         ui.label(filter_caption(&palette, "Thumbnails"));
                     });

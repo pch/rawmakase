@@ -248,6 +248,7 @@ impl Editor {
             .backdrop_color(Color32::from_black_alpha(140))
             .frame(modal_frame(&palette))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Preferences");
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(WIDTH, HEIGHT), Sense::hover());
                 let sidebar = egui::Rect::from_min_size(rect.min, Vec2::new(SIDEBAR, HEIGHT));
                 ui.painter().rect_filled(
@@ -609,14 +610,17 @@ impl Editor {
         }
         let mut size = self.preview_builds.standard_size;
         form_row(ui, "Standard Preview Size", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "standard-preview-size")
-                .width(120.)
-                .selected_text(format!("{size} pixels"))
-                .show_ui(ui, |ui| {
-                    for choice in crate::app::library::preview_build::STANDARD_SIZES {
-                        ui.selectable_value(&mut size, choice, format!("{choice} pixels"));
-                    }
-                });
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "standard-preview-size")
+                    .width(120.)
+                    .selected_text(format!("{size} pixels"))
+                    .show_ui(ui, |ui| {
+                        for choice in crate::app::library::preview_build::STANDARD_SIZES {
+                            ui.selectable_value(&mut size, choice, format!("{choice} pixels"));
+                        }
+                    }),
+                "Standard Preview Size",
+            );
         });
         if size != self.preview_builds.standard_size {
             self.preview_builds.standard_size = size;
@@ -630,14 +634,17 @@ impl Editor {
                     .find(|(d, _)| *d == days)
                     .map_or("", |(_, name)| name)
             };
-            crate::app::ui::widgets::dropdown(ui, "discard-one-to-one")
-                .width(160.)
-                .selected_text(name(discard))
-                .show_ui(ui, |ui| {
-                    for (days, title) in crate::app::library::preview_build::DISCARD_CHOICES {
-                        ui.selectable_value(&mut discard, days, title);
-                    }
-                });
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "discard-one-to-one")
+                    .width(160.)
+                    .selected_text(name(discard))
+                    .show_ui(ui, |ui| {
+                        for (days, title) in crate::app::library::preview_build::DISCARD_CHOICES {
+                            ui.selectable_value(&mut discard, days, title);
+                        }
+                    }),
+                "Discard 1:1 Previews",
+            );
         });
         if discard != self.preview_builds.discard_one_to_one_after {
             self.preview_builds.discard_one_to_one_after = discard;
@@ -697,14 +704,15 @@ impl Editor {
         form_row(ui, "Cache size limit", |ui| {
             // A typed size applies once entered, so a cache write while typing
             // 128 never trims to 1 GiB.
-            field = Some(
+            field = Some(crate::app::ui::widgets::named(
                 ui.add(
                     egui::DragValue::new(&mut cache_size)
                         .range(crate::app::preferences::session::DECODED_CACHE_SIZE_RANGE)
                         .suffix(" GiB")
                         .update_while_editing(false),
                 ),
-            );
+                "Cache size limit",
+            ));
         });
         if u64::from(cache_size) << 30 != self.decode_cache.limit() {
             self.decode_cache.set_limit(u64::from(cache_size) << 30);
@@ -735,7 +743,10 @@ impl Editor {
             ("Copyright", &mut defaults.copyright),
         ] {
             form_row(ui, label, |ui| {
-                let field = ui.add(egui::TextEdit::singleline(text).desired_width(320.));
+                let field = crate::app::ui::widgets::named(
+                    ui.add(egui::TextEdit::singleline(text).desired_width(320.)),
+                    label,
+                );
                 if field.changed() {
                     self.preferences.defaults_dirty = true;
                     self.preferences.defaults_failed = false;
@@ -1089,20 +1100,28 @@ impl Editor {
         let thumbnail_budget = crate::catalog::preview_cache::thumbnail_budget();
         let mut budget = thumbnail_budget;
         form_row(ui, "Size limit", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "thumbnail-cache-size")
-                .width(120.)
-                .selected_text(bytes(budget))
-                .show_ui(ui, |ui| {
-                    // A size saved by another release, not offered here, stays
-                    // until another is chosen.
-                    let offered = session::THUMBNAIL_CACHE_SIZES.map(|mib| u64::from(mib) << 20);
-                    if !offered.contains(&thumbnail_budget) {
-                        ui.selectable_value(&mut budget, thumbnail_budget, bytes(thumbnail_budget));
-                    }
-                    for choice in offered {
-                        ui.selectable_value(&mut budget, choice, bytes(choice));
-                    }
-                });
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "thumbnail-cache-size")
+                    .width(120.)
+                    .selected_text(bytes(budget))
+                    .show_ui(ui, |ui| {
+                        // A size saved by another release, not offered here, stays
+                        // until another is chosen.
+                        let offered =
+                            session::THUMBNAIL_CACHE_SIZES.map(|mib| u64::from(mib) << 20);
+                        if !offered.contains(&thumbnail_budget) {
+                            ui.selectable_value(
+                                &mut budget,
+                                thumbnail_budget,
+                                bytes(thumbnail_budget),
+                            );
+                        }
+                        for choice in offered {
+                            ui.selectable_value(&mut budget, choice, bytes(choice));
+                        }
+                    }),
+                "Thumbnail cache size limit",
+            );
         });
         form_row(ui, "", |ui| {
             hint(
@@ -1184,15 +1203,18 @@ impl Editor {
         let selected = self.themes.selected();
         let mut chosen = selected.clone();
         form_row(ui, "Theme", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "interface-theme")
-                .width(220.)
-                .selected_text(name(&chosen))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut chosen, None, "RAWmakase");
-                    for (file, label) in &choices {
-                        ui.selectable_value(&mut chosen, Some(file.clone()), label);
-                    }
-                });
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "interface-theme")
+                    .width(220.)
+                    .selected_text(name(&chosen))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut chosen, None, "RAWmakase");
+                        for (file, label) in &choices {
+                            ui.selectable_value(&mut chosen, Some(file.clone()), label);
+                        }
+                    }),
+                "Theme",
+            );
         });
         // On its own row: beside the picker it is wider than the page.
         form_row(ui, "", |ui| {

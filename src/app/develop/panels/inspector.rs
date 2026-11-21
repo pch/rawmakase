@@ -10,8 +10,8 @@ use crate::app::ui::design::{Tone, button, inset, radius, size, space, text};
 use crate::app::ui::icons::{self, Icon};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::{
-    LABEL_GAP, SliderEvent, control_left, keyed_setting_slider, label_column, setting_slider,
-    slider_with,
+    LABEL_GAP, SliderEvent, SliderStyle, control_left, keyed_setting_slider, label_column,
+    setting_slider, slider_styled, slider_with,
 };
 use crate::app::{Editor, develop::panels::basic_keys};
 use crate::model::panels::{Panel, PanelState};
@@ -425,7 +425,12 @@ impl Editor {
                     action = Some(CropAction::ToggleLock);
                 }
                 crate::app::ui::widgets::keep_style(ui, |ui| {
-                    crate::app::ui::widgets::dropdown_of_height(ui, "crop-aspect", CROP_CONTROL)
+                    crate::app::ui::widgets::named_menu(
+                        crate::app::ui::widgets::dropdown_of_height(
+                            ui,
+                            "crop-aspect",
+                            CROP_CONTROL,
+                        )
                         .width(w)
                         .selected_text(aspect_name(shown))
                         .show_ui(ui, |ui| {
@@ -437,11 +442,17 @@ impl Editor {
                                     chosen = Some(aspect);
                                 }
                             }
-                        });
+                        }),
+                        "Aspect",
+                    );
                 });
-                if crop_icon_button(ui, Icon::SwapOrientation, CROP_CONTROL)
-                    .on_hover_text("Swap portrait and landscape · X")
-                    .clicked()
+                if crop_icon_button(
+                    ui,
+                    Icon::SwapOrientation,
+                    CROP_CONTROL,
+                    "Swap portrait and landscape · X",
+                )
+                .clicked()
                 {
                     action = Some(CropAction::Swap);
                 }
@@ -494,41 +505,51 @@ impl Editor {
                         mirror(r, Mirror::Vertical)
                     }),
                 ] {
-                    if crop_icon_button(ui, icon, w).on_hover_text(tip).clicked() {
+                    if crop_icon_button(ui, icon, w, tip).clicked() {
                         apply(r);
                     }
                 }
             });
             control_row(ui, "Overlay", |ui| {
                 let show = 72.;
-                crate::app::ui::widgets::dropdown_of_height(ui, "crop-guide", CROP_CONTROL)
-                    .width(ui.available_width() - show - 4.)
-                    .selected_text(guides.guide.name())
-                    .show_ui(ui, |ui| {
-                        for guide in Guide::ALL {
-                            if ui
-                                .selectable_label(guides.guide == guide, guide.name())
-                                .clicked()
-                            {
-                                guides.guide = guide;
-                                guides.orientation = 0;
+                crate::app::ui::widgets::named_menu(
+                    crate::app::ui::widgets::dropdown_of_height(ui, "crop-guide", CROP_CONTROL)
+                        .width(ui.available_width() - show - 4.)
+                        .selected_text(guides.guide.name())
+                        .show_ui(ui, |ui| {
+                            for guide in Guide::ALL {
+                                if ui
+                                    .selectable_label(guides.guide == guide, guide.name())
+                                    .clicked()
+                                {
+                                    guides.guide = guide;
+                                    guides.orientation = 0;
+                                }
                             }
-                        }
-                    })
-                    .response
-                    .on_hover_text("O cycles the overlays, Shift+O turns them");
-                crate::app::ui::widgets::dropdown_of_height(ui, "crop-guide-show", CROP_CONTROL)
+                        }),
+                    "Overlay",
+                )
+                .response
+                .on_hover_text("O cycles the overlays, Shift+O turns them");
+                crate::app::ui::widgets::named_menu(
+                    crate::app::ui::widgets::dropdown_of_height(
+                        ui,
+                        "crop-guide-show",
+                        CROP_CONTROL,
+                    )
                     .width(show)
                     .selected_text(guides.show.name())
                     .show_ui(ui, |ui| {
                         for when in GuideShow::ALL {
                             ui.selectable_value(&mut guides.show, when, when.name());
                         }
-                    })
-                    .response
-                    .on_hover_text(
-                        "When the overlay shows: always, with the pointer over the photo, or never",
-                    );
+                    }),
+                    "Show overlay",
+                )
+                .response
+                .on_hover_text(
+                    "When the overlay shows: always, with the pointer over the photo, or never",
+                );
             });
             ui.add_space(space::S);
             ui.horizontal(|ui| {
@@ -1152,17 +1173,21 @@ pub(in crate::app) fn defringe_sliders(
                 None,
                 Some((colors[0], colors[1])),
             );
+            let upper = format!("{name} Hue upper end");
             let high = ui
                 .push_id("hi", |ui| {
-                    slider_with(
+                    slider_styled(
                         ui,
                         step,
                         "",
                         hi,
                         (*lo + 0.1).min(1.)..=1.,
                         defaults[1],
-                        None,
-                        Some((colors[0], colors[1])),
+                        SliderStyle {
+                            name: Some(&upper),
+                            gradient: Some((colors[0], colors[1])),
+                            ..SliderStyle::default()
+                        },
                     )
                 })
                 .inner;
@@ -1242,12 +1267,15 @@ fn aspect_lock(ui: &mut egui::Ui, locked: bool) -> egui::Response {
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     response.on_hover_text(hint)
 }
-/// A Crop drawer button showing `icon`, `width` wide.
-fn crop_icon_button(ui: &mut egui::Ui, icon: Icon, width: f32) -> egui::Response {
+/// A Crop drawer button showing `icon`, `width` wide, named for screen readers
+/// by its hover text `hover`.
+fn crop_icon_button(ui: &mut egui::Ui, icon: Icon, width: f32, hover: &str) -> egui::Response {
     let response = ui.add_sized([width, CROP_CONTROL], egui::Button::new(""));
     let ink = ui.style().interact(&response).fg_stroke.color;
     icons::paint_at(ui.painter(), icon, response.rect.center(), 14., ink);
-    response
+    let enabled = ui.is_enabled();
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, hover));
+    response.on_hover_text(hover)
 }
 /// A tool drawer's contents, at the adjustments sections' margins.
 fn drawer_frame() -> egui::Frame {

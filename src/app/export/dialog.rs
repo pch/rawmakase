@@ -86,14 +86,16 @@ impl Editor {
             .frame(modal_frame(&palette))
             .show(ctx, |ui| {
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(WIDTH, HEIGHT), Sense::hover());
+                let title = if count == 1 {
+                    "Export One File".to_string()
+                } else {
+                    format!("Export {count} Files")
+                };
+                crate::app::ui::widgets::name_dialog(ui, &title);
                 ui.painter().text(
                     rect.left_top() + Vec2::new(24., 26.),
                     egui::Align2::LEFT_CENTER,
-                    if count == 1 {
-                        "Export One File".to_string()
-                    } else {
-                        format!("Export {count} Files")
-                    },
+                    title,
                     egui::FontId::proportional(text::TITLE),
                     palette.tone(Tone::STRONG),
                 );
@@ -239,14 +241,17 @@ impl Editor {
         let mut choose = false;
         section(ui, "Export Location");
         form_row(ui, "Export To", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "export-to")
-                .width(300.)
-                .selected_text(destination_label(s.destination))
-                .show_ui(ui, |ui| {
-                    for d in Destination::ALL {
-                        ui.selectable_value(&mut s.destination, d, destination_label(d));
-                    }
-                });
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "export-to")
+                    .width(300.)
+                    .selected_text(destination_label(s.destination))
+                    .show_ui(ui, |ui| {
+                        for d in Destination::ALL {
+                            ui.selectable_value(&mut s.destination, d, destination_label(d));
+                        }
+                    }),
+                "Export To",
+            );
         });
         let folder = s.base_folder(source);
         form_row(ui, "Folder", |ui| {
@@ -263,20 +268,26 @@ impl Editor {
         });
         form_row(ui, "", |ui| {
             ui.checkbox(&mut s.subfolder, "Put in Subfolder:");
-            ui.add_enabled(
-                s.subfolder,
-                egui::TextEdit::singleline(&mut s.subfolder_name).desired_width(240.),
+            crate::app::ui::widgets::named(
+                ui.add_enabled(
+                    s.subfolder,
+                    egui::TextEdit::singleline(&mut s.subfolder_name).desired_width(240.),
+                ),
+                "Subfolder",
             );
         });
         form_row(ui, "Existing Files", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "export-existing")
-                .width(300.)
-                .selected_text(existing_label(s.existing))
-                .show_ui(ui, |ui| {
-                    for e in Existing::ALL {
-                        ui.selectable_value(&mut s.existing, e, existing_label(e));
-                    }
-                });
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "export-existing")
+                    .width(300.)
+                    .selected_text(existing_label(s.existing))
+                    .show_ui(ui, |ui| {
+                        for e in Existing::ALL {
+                            ui.selectable_value(&mut s.existing, e, existing_label(e));
+                        }
+                    }),
+                "Existing Files",
+            );
         });
 
         section(ui, "File Naming");
@@ -288,6 +299,7 @@ impl Editor {
             match crate::app::export::naming::menu::combo(
                 ui,
                 combo,
+                "Rename To",
                 naming,
                 custom.as_deref(),
                 &self.exports.saved,
@@ -301,15 +313,21 @@ impl Editor {
         });
         let template = s.name_template();
         form_row(ui, "Custom Text", |ui| {
-            ui.add_enabled(
-                template.uses_text(),
-                egui::TextEdit::singleline(&mut s.custom_text).desired_width(220.),
+            crate::app::ui::widgets::named(
+                ui.add_enabled(
+                    template.uses_text(),
+                    egui::TextEdit::singleline(&mut s.custom_text).desired_width(220.),
+                ),
+                "Custom Text",
             );
         });
         form_row(ui, "Start Number", |ui| {
-            ui.add_enabled(
-                template.uses_sequence(),
-                egui::DragValue::new(&mut s.start_number).range(0..=999_999),
+            crate::app::ui::widgets::named(
+                ui.add_enabled(
+                    template.uses_sequence(),
+                    egui::DragValue::new(&mut s.start_number).range(0..=999_999),
+                ),
+                "Start Number",
             );
         });
         form_row(ui, "Example", |ui| {
@@ -345,40 +363,49 @@ impl Editor {
         }
         let s = &mut self.exports.draft;
         form_row(ui, "Extensions", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "export-case")
-                .width(140.)
-                .selected_text(if s.uppercase {
-                    "Uppercase"
-                } else {
-                    "Lowercase"
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut s.uppercase, false, "Lowercase");
-                    ui.selectable_value(&mut s.uppercase, true, "Uppercase");
-                });
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "export-case")
+                    .width(140.)
+                    .selected_text(if s.uppercase {
+                        "Uppercase"
+                    } else {
+                        "Lowercase"
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut s.uppercase, false, "Lowercase");
+                        ui.selectable_value(&mut s.uppercase, true, "Uppercase");
+                    }),
+                "Extensions",
+            );
         });
 
         section(ui, "File Settings");
         form_row(ui, "Image Format", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "export-format")
-                .width(140.)
-                .selected_text(s.format.raster().name())
-                .show_ui(ui, |ui| {
-                    for format in Format::ALL {
-                        if ui
-                            .selectable_label(s.format == format, format.raster().name())
-                            .clicked()
-                        {
-                            s.choose_format(format);
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "export-format")
+                    .width(140.)
+                    .selected_text(s.format.raster().name())
+                    .show_ui(ui, |ui| {
+                        for format in Format::ALL {
+                            if ui
+                                .selectable_label(s.format == format, format.raster().name())
+                                .clicked()
+                            {
+                                s.choose_format(format);
+                            }
                         }
-                    }
-                });
+                    }),
+                "Image Format",
+            );
         });
         // One row for either format, so nothing below moves.
         match s.format {
             Format::Jpeg => form_row(ui, "Quality", |ui| {
                 ui.spacing_mut().slider_width = 220.;
-                ui.add(egui::Slider::new(&mut s.quality, 1..=100));
+                crate::app::ui::widgets::named(
+                    ui.add(egui::Slider::new(&mut s.quality, 1..=100)),
+                    "Quality",
+                );
             }),
             Format::Tiff => form_row(ui, "Bit Depth", |ui| {
                 let linear = s
@@ -397,7 +424,10 @@ impl Editor {
             // Lossy at the quality, as JPEG is, or lossless; 8 bits/component, 16 for HDR.
             Format::Jxl => form_row(ui, "Quality", |ui| {
                 ui.spacing_mut().slider_width = 160.;
-                ui.add_enabled(s.jxl_lossy, egui::Slider::new(&mut s.quality, 1..=100));
+                crate::app::ui::widgets::named(
+                    ui.add_enabled(s.jxl_lossy, egui::Slider::new(&mut s.quality, 1..=100)),
+                    "Quality",
+                );
                 let mut lossless = !s.jxl_lossy;
                 if ui
                     .checkbox(&mut lossless, "Lossless")
@@ -415,28 +445,31 @@ impl Editor {
             } else {
                 s.color_space.label()
             };
-            crate::app::ui::widgets::dropdown(ui, "export-color-space")
-                .width(220.)
-                .selected_text(shown)
-                .show_ui(ui, |ui| {
-                    for space in OutputSpace::ALL {
-                        let supported = s.format.supports(space);
-                        let item = ui
-                            .add_enabled(
-                                supported.is_ok(),
-                                egui::Button::selectable(
-                                    !later && s.color_space == space,
-                                    space.label(),
-                                ),
-                            )
-                            .on_disabled_hover_text(
-                                supported.err().map(|e| e.to_string()).unwrap_or_default(),
-                            );
-                        if item.clicked() {
-                            s.choose_color_space(space);
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "export-color-space")
+                    .width(220.)
+                    .selected_text(shown)
+                    .show_ui(ui, |ui| {
+                        for space in OutputSpace::ALL {
+                            let supported = s.format.supports(space);
+                            let item = ui
+                                .add_enabled(
+                                    supported.is_ok(),
+                                    egui::Button::selectable(
+                                        !later && s.color_space == space,
+                                        space.label(),
+                                    ),
+                                )
+                                .on_disabled_hover_text(
+                                    supported.err().map(|e| e.to_string()).unwrap_or_default(),
+                                );
+                            if item.clicked() {
+                                s.choose_color_space(space);
+                            }
                         }
-                    }
-                });
+                    }),
+                "Color Space",
+            );
         });
         if s.format.holds_hdr() {
             hdr_rows(ui, s);
@@ -456,18 +489,24 @@ impl Editor {
         section(ui, "Image Sizing");
         form_row(ui, "", |ui| {
             ui.checkbox(&mut s.resize, "Resize to Fit: Long Edge");
-            ui.add_enabled(
-                s.resize,
-                egui::DragValue::new(&mut s.long_edge)
-                    .range(100..=30_000)
-                    .suffix(" px"),
+            crate::app::ui::widgets::named(
+                ui.add_enabled(
+                    s.resize,
+                    egui::DragValue::new(&mut s.long_edge)
+                        .range(100..=30_000)
+                        .suffix(" px"),
+                ),
+                "Long Edge",
             );
         });
         form_row(ui, "Resolution", |ui| {
-            ui.add(
-                egui::DragValue::new(&mut s.ppi)
-                    .range(1..=10_000)
-                    .suffix(" pixels per inch"),
+            crate::app::ui::widgets::named(
+                ui.add(
+                    egui::DragValue::new(&mut s.ppi)
+                        .range(1..=10_000)
+                        .suffix(" pixels per inch"),
+                ),
+                "Resolution",
             );
         });
 
@@ -483,29 +522,32 @@ impl Editor {
                 s.watermark_name.clone()
             };
             ui.add_enabled_ui(s.watermark, |ui| {
-                crate::app::ui::widgets::dropdown(ui, "export-watermark")
-                    .width(260.)
-                    .selected_text(label)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut s.watermark_name,
-                            simple.to_string(),
-                            SIMPLE_COPYRIGHT_LABEL,
-                        );
-                        for w in &presets {
-                            ui.selectable_value(&mut s.watermark_name, w.name.clone(), &w.name);
-                        }
-                        ui.separator();
-                        if ui.selectable_label(false, "Edit Watermarks…").clicked() {
-                            edit = Some(
-                                presets
-                                    .iter()
-                                    .find(|w| w.name == s.watermark_name)
-                                    .cloned()
-                                    .unwrap_or_default(),
+                crate::app::ui::widgets::named_menu(
+                    crate::app::ui::widgets::dropdown(ui, "export-watermark")
+                        .width(260.)
+                        .selected_text(label)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut s.watermark_name,
+                                simple.to_string(),
+                                SIMPLE_COPYRIGHT_LABEL,
                             );
-                        }
-                    });
+                            for w in &presets {
+                                ui.selectable_value(&mut s.watermark_name, w.name.clone(), &w.name);
+                            }
+                            ui.separator();
+                            if ui.selectable_label(false, "Edit Watermarks…").clicked() {
+                                edit = Some(
+                                    presets
+                                        .iter()
+                                        .find(|w| w.name == s.watermark_name)
+                                        .cloned()
+                                        .unwrap_or_default(),
+                                );
+                            }
+                        }),
+                    "Watermark",
+                );
             });
             // A preset whose image went missing is flagged here, and the
             // export would stop before rendering.
@@ -530,17 +572,20 @@ impl Editor {
         let s = &mut self.exports.draft;
         section(ui, "Metadata");
         form_row(ui, "Include", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "export-include")
-                .width(260.)
-                .selected_text(s.include.label())
-                .show_ui(ui, |ui| {
-                    for include in Include::ALL {
-                        if include == Include::Custom {
-                            ui.separator();
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "export-include")
+                    .width(260.)
+                    .selected_text(s.include.label())
+                    .show_ui(ui, |ui| {
+                        for include in Include::ALL {
+                            if include == Include::Custom {
+                                ui.separator();
+                            }
+                            ui.selectable_value(&mut s.include, include, include.label());
                         }
-                        ui.selectable_value(&mut s.include, include, include.label());
-                    }
-                });
+                    }),
+                "Include",
+            );
         });
         // Four rows in every mode, so nothing below moves.
         if s.include == Include::Custom {
@@ -582,14 +627,17 @@ impl Editor {
         let s = &mut self.exports.draft;
         section(ui, "Post-Processing");
         form_row(ui, "After Export", |ui| {
-            crate::app::ui::widgets::dropdown(ui, "export-after")
-                .width(220.)
-                .selected_text(s.after_export.label())
-                .show_ui(ui, |ui| {
-                    for after in AfterExport::ALL {
-                        ui.selectable_value(&mut s.after_export, after, after.label());
-                    }
-                });
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "export-after")
+                    .width(220.)
+                    .selected_text(s.after_export.label())
+                    .show_ui(ui, |ui| {
+                        for after in AfterExport::ALL {
+                            ui.selectable_value(&mut s.after_export, after, after.label());
+                        }
+                    }),
+                "After Export",
+            );
         });
         ui.add_space(space::M);
         if choose {
@@ -745,24 +793,30 @@ fn hdr_rows(ui: &mut egui::Ui, s: &mut crate::export_settings::ExportSettings) {
         return;
     }
     form_row(ui, "HDR Gamut", |ui| {
-        crate::app::ui::widgets::dropdown(ui, "export-hdr-gamut")
-            .width(220.)
-            .selected_text(output.gamut.label())
-            .show_ui(ui, |ui| {
-                for gamut in HdrGamut::ALL {
-                    ui.selectable_value(&mut output.gamut, gamut, gamut.label());
-                }
-            });
+        crate::app::ui::widgets::named_menu(
+            crate::app::ui::widgets::dropdown(ui, "export-hdr-gamut")
+                .width(220.)
+                .selected_text(output.gamut.label())
+                .show_ui(ui, |ui| {
+                    for gamut in HdrGamut::ALL {
+                        ui.selectable_value(&mut output.gamut, gamut, gamut.label());
+                    }
+                }),
+            "HDR Gamut",
+        );
     });
     form_row(ui, "HDR Encoding", |ui| {
-        crate::app::ui::widgets::dropdown(ui, "export-hdr-transfer")
-            .width(220.)
-            .selected_text(output.transfer.label())
-            .show_ui(ui, |ui| {
-                for transfer in HdrTransfer::ALL {
-                    ui.selectable_value(&mut output.transfer, transfer, transfer.label());
-                }
-            });
+        crate::app::ui::widgets::named_menu(
+            crate::app::ui::widgets::dropdown(ui, "export-hdr-transfer")
+                .width(220.)
+                .selected_text(output.transfer.label())
+                .show_ui(ui, |ui| {
+                    for transfer in HdrTransfer::ALL {
+                        ui.selectable_value(&mut output.transfer, transfer, transfer.label());
+                    }
+                }),
+            "HDR Encoding",
+        );
     });
     if s.hdr != Some(output) {
         s.choose_hdr(Some(output));

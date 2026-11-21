@@ -196,70 +196,74 @@ impl Presets {
         let mut action = None;
         crate::app::ui::widgets::dropdown_row(ui, |ui| {
             ui.label(egui::RichText::new("Preset:").color(palette.tone(Tone::SECONDARY)));
-            crate::app::ui::widgets::dropdown(ui, "filename-template-preset")
-                .width(300.)
-                .selected_text(shown)
-                .show_ui(ui, |ui| {
-                    for n in Naming::ALL {
-                        let on = self.preset == Preset::Naming(n);
-                        if ui.selectable_label(on, n.label()).clicked() {
-                            picked = Some((Preset::Naming(n), n.tokens().into()));
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "filename-template-preset")
+                    .width(300.)
+                    .selected_text(shown)
+                    .show_ui(ui, |ui| {
+                        for n in Naming::ALL {
+                            let on = self.preset == Preset::Naming(n);
+                            if ui.selectable_label(on, n.label()).clicked() {
+                                picked = Some((Preset::Naming(n), n.tokens().into()));
+                            }
                         }
-                    }
-                    ui.separator();
-                    for b in &BUILTIN {
-                        let on = self.preset == Preset::Builtin(b);
-                        if ui.selectable_label(on, b.name).clicked() {
-                            picked = Some((Preset::Builtin(b), b.tokens.into()));
-                        }
-                    }
-                    if !saved.is_empty() {
                         ui.separator();
-                        for t in &saved {
-                            let on = self.preset == Preset::Saved(t.name.clone());
-                            if ui.selectable_label(on, &t.name).clicked() {
-                                picked = Some((Preset::Saved(t.name.clone()), t.tokens.clone()));
+                        for b in &BUILTIN {
+                            let on = self.preset == Preset::Builtin(b);
+                            if ui.selectable_label(on, b.name).clicked() {
+                                picked = Some((Preset::Builtin(b), b.tokens.into()));
                             }
                         }
-                    }
-                    ui.separator();
-                    let save = ui.add_enabled(
-                        writable && tokens.is_some(),
-                        egui::Button::selectable(false, "Save Current Settings as New Preset…"),
-                    );
-                    if save.clicked() {
-                        action = Some(Action::New);
-                    }
-                    if let Preset::Saved(name) = &self.preset {
-                        if edited {
-                            let label = format!("Update Preset “{name}”");
-                            if ui
-                                .add_enabled(
-                                    writable && tokens.is_some(),
-                                    egui::Button::selectable(false, label),
-                                )
-                                .clicked()
-                            {
-                                action = Some(Action::Update);
-                            }
-                        } else {
-                            let rename = format!("Rename preset “{name}”…");
-                            if ui
-                                .add_enabled(writable, egui::Button::selectable(false, rename))
-                                .clicked()
-                            {
-                                action = Some(Action::Rename);
-                            }
-                            let delete = format!("Delete preset “{name}”…");
-                            if ui
-                                .add_enabled(writable, egui::Button::selectable(false, delete))
-                                .clicked()
-                            {
-                                action = Some(Action::Delete);
+                        if !saved.is_empty() {
+                            ui.separator();
+                            for t in &saved {
+                                let on = self.preset == Preset::Saved(t.name.clone());
+                                if ui.selectable_label(on, &t.name).clicked() {
+                                    picked =
+                                        Some((Preset::Saved(t.name.clone()), t.tokens.clone()));
+                                }
                             }
                         }
-                    }
-                });
+                        ui.separator();
+                        let save = ui.add_enabled(
+                            writable && tokens.is_some(),
+                            egui::Button::selectable(false, "Save Current Settings as New Preset…"),
+                        );
+                        if save.clicked() {
+                            action = Some(Action::New);
+                        }
+                        if let Preset::Saved(name) = &self.preset {
+                            if edited {
+                                let label = format!("Update Preset “{name}”");
+                                if ui
+                                    .add_enabled(
+                                        writable && tokens.is_some(),
+                                        egui::Button::selectable(false, label),
+                                    )
+                                    .clicked()
+                                {
+                                    action = Some(Action::Update);
+                                }
+                            } else {
+                                let rename = format!("Rename preset “{name}”…");
+                                if ui
+                                    .add_enabled(writable, egui::Button::selectable(false, rename))
+                                    .clicked()
+                                {
+                                    action = Some(Action::Rename);
+                                }
+                                let delete = format!("Delete preset “{name}”…");
+                                if ui
+                                    .add_enabled(writable, egui::Button::selectable(false, delete))
+                                    .clicked()
+                                {
+                                    action = Some(Action::Delete);
+                                }
+                            }
+                        }
+                    }),
+                "Preset",
+            );
         });
         if let Err(why) = &library.0 {
             ui.label(
@@ -327,6 +331,7 @@ impl Presets {
                         (format!("Delete the preset named “{name}”?"), "Delete")
                     }
                 };
+                crate::app::ui::widgets::name_dialog(ui, &title);
                 ui.label(
                     egui::RichText::new(title)
                         .size(text::LARGE)

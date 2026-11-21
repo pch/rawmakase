@@ -167,6 +167,7 @@ impl NameEditor {
             .backdrop_color(Color32::from_black_alpha(100))
             .frame(modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, "Filename Template Editor");
                 ui.set_width(560.);
                 ui.spacing_mut().item_spacing = Vec2::new(space::M, space::M);
                 ui.label(
@@ -193,13 +194,16 @@ impl NameEditor {
                     let job = layout(buf.as_str(), wrap, &palette);
                     ui.fonts_mut(|f| f.layout_job(job))
                 };
-                ui.add(
-                    egui::TextEdit::multiline(&mut editor.text)
-                        .id(text_id())
-                        .desired_rows(3)
-                        .desired_width(f32::INFINITY)
-                        .return_key(None)
-                        .layouter(&mut layouter),
+                crate::app::ui::widgets::named(
+                    ui.add(
+                        egui::TextEdit::multiline(&mut editor.text)
+                            .id(text_id())
+                            .desired_rows(3)
+                            .desired_width(f32::INFINITY)
+                            .return_key(None)
+                            .layouter(&mut layouter),
+                    ),
+                    "Template",
                 );
                 // What is wrong, or what to know.
                 match TokenTemplate::from_display(&editor.text) {
@@ -251,17 +255,20 @@ impl NameEditor {
                         ui.horizontal(|ui| {
                             ui.add_space(space::XL);
                             crate::app::ui::widgets::keep_style(ui, |ui| {
-                                crate::app::ui::widgets::dropdown(
-                                    ui,
-                                    ("filename-token-menu", slot),
-                                )
-                                .width(260.)
-                                .selected_text(defs.get(index).map_or("", |d| d.label))
-                                .show_ui(ui, |ui| {
-                                    for (i, def) in defs.iter().enumerate() {
-                                        ui.selectable_value(&mut chosen[slot], i, def.label);
-                                    }
-                                });
+                                crate::app::ui::widgets::named_menu(
+                                    crate::app::ui::widgets::dropdown(
+                                        ui,
+                                        ("filename-token-menu", slot),
+                                    )
+                                    .width(260.)
+                                    .selected_text(defs.get(index).map_or("", |d| d.label))
+                                    .show_ui(ui, |ui| {
+                                        for (i, def) in defs.iter().enumerate() {
+                                            ui.selectable_value(&mut chosen[slot], i, def.label);
+                                        }
+                                    }),
+                                    group,
+                                );
                             });
                             if ui.button("Insert").clicked()
                                 && let Some(def) = defs.get(chosen[slot].min(defs.len() - 1))

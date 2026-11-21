@@ -587,6 +587,7 @@ impl Library {
                     CollectionDialog::Rename { .. } => "Rename".into(),
                     CollectionDialog::Delete { id } => self.delete_title(*id),
                 };
+                crate::app::ui::widgets::name_dialog(ui, &title);
                 ui.label(
                     egui::RichText::new(title)
                         .size(text::TITLE)
@@ -612,14 +613,17 @@ impl Library {
                             let shown = parent
                                 .and_then(|p| parents.iter().find(|(id, _)| *id == p))
                                 .map_or("None", |(_, label)| label.as_str());
-                            crate::app::ui::widgets::dropdown(ui, "collection-parent")
-                                .selected_text(shown)
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(parent, None, "None");
-                                    for (id, label) in &parents {
-                                        ui.selectable_value(parent, Some(*id), label);
-                                    }
-                                });
+                            crate::app::ui::widgets::named_menu(
+                                crate::app::ui::widgets::dropdown(ui, "collection-parent")
+                                    .selected_text(shown)
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(parent, None, "None");
+                                        for (id, label) in &parents {
+                                            ui.selectable_value(parent, Some(*id), label);
+                                        }
+                                    }),
+                                "Inside a Collection Set",
+                            );
                         });
                         if !*set && !photos.is_empty() {
                             ui.add_space(space::S);
@@ -825,10 +829,13 @@ fn name_field(
     taken: &[String],
     done: &mut bool,
 ) -> Option<String> {
-    let field = ui.add(
-        egui::TextEdit::singleline(name)
-            .hint_text("Name")
-            .desired_width(f32::INFINITY),
+    let field = crate::app::ui::widgets::named(
+        ui.add(
+            egui::TextEdit::singleline(name)
+                .hint_text("Name")
+                .desired_width(f32::INFINITY),
+        ),
+        "Name",
     );
     if !*focused {
         field.request_focus();

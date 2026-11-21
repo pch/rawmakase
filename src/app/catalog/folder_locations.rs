@@ -124,7 +124,10 @@ impl Editor {
         }
         let mut renamed = false;
         form_row(ui, "This computer", |ui| {
-            let field = ui.add(egui::TextEdit::singleline(&mut view.computer).desired_width(220.));
+            let field = crate::app::ui::widgets::named(
+                ui.add(egui::TextEdit::singleline(&mut view.computer).desired_width(220.)),
+                "This computer",
+            );
             view.computer_dirty |= field.changed();
             renamed = field.lost_focus();
         });

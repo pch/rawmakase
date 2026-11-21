@@ -173,7 +173,10 @@ fn the_basic_panel_offers_relative_white_balance_for_a_jpeg() {
     let labels: Vec<String> = menu
         .nodes
         .iter()
-        .filter_map(|(_, n)| n.label().or(n.value()).map(String::from))
+        // A drop-down shows the choice it holds beside its name.
+        .flat_map(|(_, n)| [n.label(), n.value()])
+        .flatten()
+        .map(String::from)
         .collect();
     let count = |labels: &[String], label: &str| labels.iter().filter(|l| *l == label).count();
     // Open: the menu lists the profile beside the box showing it.
@@ -206,7 +209,10 @@ fn the_basic_panel_offers_relative_white_balance_for_a_jpeg() {
     let labels: Vec<String> = menu
         .nodes
         .iter()
-        .filter_map(|(_, n)| n.label().or(n.value()).map(String::from))
+        // A drop-down shows the choice it holds beside its name.
+        .flat_map(|(_, n)| [n.label(), n.value()])
+        .flatten()
+        .map(String::from)
         .collect();
     // The box shows As Shot, and the menu offers it with Auto and Custom.
     assert_eq!(count(&labels, "As Shot"), 2, "{labels:?}");

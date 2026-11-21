@@ -119,6 +119,14 @@ impl Library {
         let response = egui::Modal::new(egui::Id::new("smart-collection-editor"))
             .frame(widgets::modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(
+                    ui,
+                    if dialog.editing.is_some() {
+                        "Edit Smart Collection"
+                    } else {
+                        "Create Smart Collection"
+                    },
+                );
                 ui.set_width(640.);
                 ui.label(
                     egui::RichText::new(if dialog.editing.is_some() {
@@ -135,9 +143,12 @@ impl Library {
                 let creating = dialog.editing.is_none();
                 ui.horizontal(|ui| {
                     ui.label("Name:");
-                    ui.add_enabled(
-                        creating,
-                        egui::TextEdit::singleline(&mut dialog.name).desired_width(300.),
+                    crate::app::ui::widgets::named(
+                        ui.add_enabled(
+                            creating,
+                            egui::TextEdit::singleline(&mut dialog.name).desired_width(300.),
+                        ),
+                        "Name",
                     );
                 });
                 ui.add_enabled_ui(creating, |ui| {
@@ -151,13 +162,20 @@ impl Library {
                                 .parent
                                 .and_then(|p| sets.iter().find(|(id, _)| *id == p))
                                 .map_or("Choose a set", |(_, name)| name.as_str());
-                            widgets::dropdown(ui, "smart-editor-set")
-                                .selected_text(chosen)
-                                .show_ui(ui, |ui| {
-                                    for (id, name) in &sets {
-                                        ui.selectable_value(&mut dialog.parent, Some(*id), name);
-                                    }
-                                });
+                            crate::app::ui::widgets::named_menu(
+                                widgets::dropdown(ui, "smart-editor-set")
+                                    .selected_text(chosen)
+                                    .show_ui(ui, |ui| {
+                                        for (id, name) in &sets {
+                                            ui.selectable_value(
+                                                &mut dialog.parent,
+                                                Some(*id),
+                                                name,
+                                            );
+                                        }
+                                    }),
+                                "Inside a Collection Set",
+                            );
                         }
                     })
                 });
@@ -366,13 +384,16 @@ fn combine_menu(ui: &mut egui::Ui, id: egui::Id, combine: &mut Combine, nested: 
         (Combine::Exclude, true) => "None",
     };
     widgets::keep_style(ui, |ui| {
-        widgets::dropdown(ui, id)
-            .selected_text(label(*combine))
-            .show_ui(ui, |ui| {
-                for c in [Combine::Intersect, Combine::Union, Combine::Exclude] {
-                    ui.selectable_value(combine, c, label(c));
-                }
-            });
+        crate::app::ui::widgets::named_menu(
+            widgets::dropdown(ui, id)
+                .selected_text(label(*combine))
+                .show_ui(ui, |ui| {
+                    for c in [Combine::Intersect, Combine::Union, Combine::Exclude] {
+                        ui.selectable_value(combine, c, label(c));
+                    }
+                }),
+            "Match",
+        );
     });
 }
 
@@ -478,26 +499,29 @@ fn rule_row(ui: &mut egui::Ui, rule: &mut Rule, path: &[usize], today: &str) {
     // The field menu, in Lightroom's sections.
     let mut chosen = None;
     widgets::keep_style(ui, |ui| {
-        widgets::dropdown(ui, id("field"))
-            .selected_text(field.name)
-            .width(170.)
-            .show_ui(ui, |ui| {
-                let mut section = None;
-                for f in FIELDS {
-                    if f.section != section {
-                        section = f.section;
-                        if let Some(name) = section {
-                            ui.label(egui::RichText::new(name).small().strong());
+        crate::app::ui::widgets::named_menu(
+            widgets::dropdown(ui, id("field"))
+                .selected_text(field.name)
+                .width(170.)
+                .show_ui(ui, |ui| {
+                    let mut section = None;
+                    for f in FIELDS {
+                        if f.section != section {
+                            section = f.section;
+                            if let Some(name) = section {
+                                ui.label(egui::RichText::new(name).small().strong());
+                            }
+                        }
+                        if ui
+                            .selectable_label(f.criteria == field.criteria, f.name)
+                            .clicked()
+                        {
+                            chosen = Some(f);
                         }
                     }
-                    if ui
-                        .selectable_label(f.criteria == field.criteria, f.name)
-                        .clicked()
-                    {
-                        chosen = Some(f);
-                    }
-                }
-            });
+                }),
+            "Field",
+        );
     });
     if let Some(f) = chosen.filter(|f| f.criteria != field.criteria) {
         *rule = f.new_rule(today);
@@ -508,16 +532,19 @@ fn rule_row(ui: &mut egui::Ui, rule: &mut Rule, path: &[usize], today: &str) {
     };
     let mut op_chosen = None;
     widgets::keep_style(ui, |ui| {
-        widgets::dropdown(ui, id("op"))
-            .selected_text(operation.label)
-            .width(170.)
-            .show_ui(ui, |ui| {
-                for o in field.operations {
-                    if ui.selectable_label(o.op == operation.op, o.label).clicked() {
-                        op_chosen = Some(o);
+        crate::app::ui::widgets::named_menu(
+            widgets::dropdown(ui, id("op"))
+                .selected_text(operation.label)
+                .width(170.)
+                .show_ui(ui, |ui| {
+                    for o in field.operations {
+                        if ui.selectable_label(o.op == operation.op, o.label).clicked() {
+                            op_chosen = Some(o);
+                        }
                     }
-                }
-            });
+                }),
+            "Condition",
+        );
     });
     if let Some(o) = op_chosen.filter(|o| o.op != operation.op) {
         fields::set_operation(rule, o, today);
@@ -561,15 +588,18 @@ fn value_input(ui: &mut egui::Ui, rule: &mut Rule, input: Input, id: &dyn Fn(&st
             number_value(ui, &mut rule.value);
             let units = rule.units.clone().unwrap_or_else(|| "days".into());
             widgets::keep_style(ui, |ui| {
-                widgets::dropdown(ui, id("units"))
-                    .selected_text(units.clone())
-                    .show_ui(ui, |ui| {
-                        for (unit, label) in PERIOD_UNITS {
-                            if ui.selectable_label(units == unit, label).clicked() {
-                                rule.units = Some(unit.into());
+                crate::app::ui::widgets::named_menu(
+                    widgets::dropdown(ui, id("units"))
+                        .selected_text(units.clone())
+                        .show_ui(ui, |ui| {
+                            for (unit, label) in PERIOD_UNITS {
+                                if ui.selectable_label(units == unit, label).clicked() {
+                                    rule.units = Some(unit.into());
+                                }
                             }
-                        }
-                    });
+                        }),
+                    "Units",
+                );
             });
         }
         Input::Choice(choices) => {
@@ -578,15 +608,18 @@ fn value_input(ui: &mut egui::Ui, rule: &mut Rule, input: Input, id: &dyn Fn(&st
                 .find(|(_, c)| rule.value.as_ref() == Some(&c.value()))
                 .map_or("", |(label, _)| *label);
             widgets::keep_style(ui, |ui| {
-                widgets::dropdown(ui, id("choice"))
-                    .selected_text(current)
-                    .show_ui(ui, |ui| {
-                        for (label, choice) in choices {
-                            if ui.selectable_label(*label == current, *label).clicked() {
-                                rule.value = Some(choice.value());
+                crate::app::ui::widgets::named_menu(
+                    widgets::dropdown(ui, id("choice"))
+                        .selected_text(current)
+                        .show_ui(ui, |ui| {
+                            for (label, choice) in choices {
+                                if ui.selectable_label(*label == current, *label).clicked() {
+                                    rule.value = Some(choice.value());
+                                }
                             }
-                        }
-                    });
+                        }),
+                    "Value",
+                );
             });
         }
         single => single_input(ui, &mut rule.value, single, id("value")),
@@ -612,15 +645,18 @@ fn single_input(ui: &mut egui::Ui, value: &mut Option<Value>, input: Input, id: 
                 }
             };
             widgets::keep_style(ui, |ui| {
-                widgets::dropdown(ui, id)
-                    .selected_text(label(stars))
-                    .show_ui(ui, |ui| {
-                        for n in 0..=5 {
-                            if ui.selectable_label(n == stars, label(n)).clicked() {
-                                *value = Some(Value::Number(n as f64));
+                crate::app::ui::widgets::named_menu(
+                    widgets::dropdown(ui, id)
+                        .selected_text(label(stars))
+                        .show_ui(ui, |ui| {
+                            for n in 0..=5 {
+                                if ui.selectable_label(n == stars, label(n)).clicked() {
+                                    *value = Some(Value::Number(n as f64));
+                                }
                             }
-                        }
-                    });
+                        }),
+                    "Value",
+                );
             });
         }
         Input::Shutter => converted(ui, value, id, shutter_text, shutter_apex, "sec"),
@@ -634,9 +670,11 @@ fn text_value(ui: &mut egui::Ui, value: &mut Option<Value>, width: f32) {
         Some(Value::Str(s)) => s.clone(),
         _ => String::new(),
     };
-    if ui
-        .add(widgets::dropdown_text_edit(&mut text).desired_width(width))
-        .changed()
+    if crate::app::ui::widgets::named(
+        ui.add(widgets::dropdown_text_edit(&mut text).desired_width(width)),
+        "Value",
+    )
+    .changed()
     {
         *value = Some(Value::Str(text));
     }
@@ -647,7 +685,9 @@ fn number_value(ui: &mut egui::Ui, value: &mut Option<Value>) {
         Some(Value::Number(n)) => *n,
         _ => 0.,
     };
-    if ui.add(egui::DragValue::new(&mut n).speed(1.)).changed() {
+    if crate::app::ui::widgets::named(ui.add(egui::DragValue::new(&mut n).speed(1.)), "Value")
+        .changed()
+    {
         *value = Some(Value::Number(n));
     }
 }
@@ -667,7 +707,10 @@ fn converted(
         _ => String::new(),
     };
     let mut draft: String = ui.data(|d| d.get_temp(id)).unwrap_or(stored);
-    let response = ui.add(widgets::dropdown_text_edit(&mut draft).desired_width(80.));
+    let response = crate::app::ui::widgets::named(
+        ui.add(widgets::dropdown_text_edit(&mut draft).desired_width(80.)),
+        "Value",
+    );
     if response.changed()
         && let Some(n) = read(&draft)
     {

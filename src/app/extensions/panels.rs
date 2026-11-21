@@ -273,17 +273,20 @@ fn draw_one(
                     crate::app::ui::design::size::CONTROL,
                 ),
             };
-            combo.selected_text(shown).show_ui(ui, |ui| {
-                for option in options {
-                    if ui
-                        .selectable_label(&option.id == value, &option.title)
-                        .clicked()
-                        && &option.id != value
-                    {
-                        changed(actions, Value::from(option.id.clone()));
+            crate::app::ui::widgets::named_menu(
+                combo.selected_text(shown).show_ui(ui, |ui| {
+                    for option in options {
+                        if ui
+                            .selectable_label(&option.id == value, &option.title)
+                            .clicked()
+                            && &option.id != value
+                        {
+                            changed(actions, Value::from(option.id.clone()));
+                        }
                     }
-                }
-            });
+                }),
+                label,
+            );
         }),
         ControlKind::Segmented { options, value } => row(ui, layout, label, false, |ui| {
             // The app's segmented control, as Mode in a tool's drawer.

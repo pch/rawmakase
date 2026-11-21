@@ -209,6 +209,22 @@ impl Editor {
         self.exports.saved = crate::app::export::naming::presets::Library::load();
         self.exports.dialog = true;
     }
+    /// Opens the Watermark Editor over the Export dialog, as its button does.
+    #[cfg(test)]
+    pub(in crate::app) fn open_watermark_editor(&mut self, ctx: &egui::Context) {
+        self.exports.watermark_editor = Some(watermark_editor::WatermarkEditor::new(
+            Default::default(),
+            ctx,
+        ));
+    }
+    /// Opens the Filename Template Editor over the Export dialog on `tokens`.
+    #[cfg(test)]
+    pub(in crate::app) fn open_name_editor(&mut self, tokens: &str) {
+        self.exports.name_editor = Some(NameEditor::new(
+            tokens,
+            crate::app::export::naming::presets::Preset::Custom,
+        ));
+    }
     /// Exports `scope` with `settings`, without the dialog.
     fn export_scope_with(&mut self, scope: Scope, settings: ExportSettings) {
         self.exports.read.cancel();
@@ -521,6 +537,7 @@ impl Editor {
                     .inner_margin(design::margin_same(inset::DIALOG)),
             )
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, &line);
                 ui.set_width(360.);
                 ui.label(
                     egui::RichText::new(line)

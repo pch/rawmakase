@@ -77,6 +77,16 @@ pub(in crate::app) fn editor_with_blue_photo(
 ) -> (Editor, Arc<CameraImage>) {
     let mut editor = Editor::with_context(ctx, None, session, None);
     editor.module = Module::Develop;
+    let image = blue_image();
+    editor.document.metadata = Some(image.metadata.clone());
+    if decoded {
+        editor.document.set_image(image.clone());
+    }
+    (editor, image)
+}
+
+/// The small photo of colors spread along blue that [`editor_with_blue_photo`] opens.
+pub(in crate::app) fn blue_image() -> Arc<CameraImage> {
     let (width, height) = (32u32, 24u32);
     let metadata = Metadata {
         width,
@@ -87,8 +97,7 @@ pub(in crate::app) fn editor_with_blue_photo(
         cam_xyz: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
         ..Default::default()
     };
-    editor.document.metadata = Some(metadata.clone());
-    let image = Arc::new(CameraImage {
+    Arc::new(CameraImage {
         recovered: Default::default(),
         width,
         height,
@@ -103,11 +112,7 @@ pub(in crate::app) fn editor_with_blue_photo(
         scale_factor: 1.,
         scale_clipped: 0,
         hdr: Default::default(),
-    });
-    if decoded {
-        editor.document.set_image(image.clone());
-    }
-    (editor, image)
+    })
 }
 
 /// Runs `action` in an edit frame, as the panels and shortcuts do.

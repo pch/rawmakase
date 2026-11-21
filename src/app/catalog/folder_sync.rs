@@ -660,6 +660,7 @@ impl Editor {
             .backdrop_color(egui::Color32::from_black_alpha(140))
             .frame(crate::app::ui::widgets::modal_frame(&palette))
             .show(ctx, |ui| {
+                crate::app::ui::widgets::name_dialog(ui, &review.title());
                 ui.set_width(WIDTH);
                 ui.spacing_mut().item_spacing = egui::vec2(space::M, space::M);
                 // Header: what was looked at, and what was found.
