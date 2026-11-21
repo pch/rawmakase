@@ -1184,12 +1184,18 @@ impl Editor {
                     }
                 });
         });
+        form_row(ui, "Sliders", |ui| {
+            ui.checkbox(
+                &mut prefs.sliders,
+                "Scroll wheel changes the slider under the pointer",
+            );
+        });
         let note = if cfg!(target_os = "macos") {
-            "Zoomed in, the wheel pans the photo, with Shift sideways, and a pinch zooms it. Only a mouse wheel's notches zoom: a trackpad or Magic Mouse pans."
+            "Zoomed in, the wheel pans the photo, with Shift sideways, and a pinch zooms it. Only a mouse wheel's notches zoom or move a slider: a trackpad or Magic Mouse pans and scrolls the panels."
         } else if cfg!(windows) {
-            "Zoomed in, the wheel pans the photo, with Shift sideways. Only a mouse wheel's notches zoom: a touchpad pans, and so does a high-resolution mouse that scrolls in fractions of a notch."
+            "Zoomed in, the wheel pans the photo, with Shift sideways. Only a mouse wheel's notches zoom or move a slider: a touchpad pans and scrolls the panels, and so does a high-resolution mouse that scrolls in fractions of a notch."
         } else {
-            "Zoomed in, the wheel pans the photo, with Shift sideways. Only a mouse wheel's notches zoom: a touchpad pans, and so does a high-resolution mouse that scrolls in fractions of a notch on X11."
+            "Zoomed in, the wheel pans the photo, with Shift sideways. Only a mouse wheel's notches zoom or move a slider: a touchpad pans and scrolls the panels, and so does a high-resolution mouse that scrolls in fractions of a notch on X11."
         };
         form_row(ui, "", |ui| hint(ui, note));
         if prefs != self.wheel_prefs {

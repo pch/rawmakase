@@ -82,14 +82,22 @@ is:
 - **Cmd + scroll wheel**: Cmd + wheel zooms and the plain wheel pans.
 
 Either way, Cmd + wheel zooms past a brush or the magnifier, which keep the plain
-wheel. Only a mouse wheel's notches zoom. A trackpad, a Magic Mouse and scrolling
+wheel. Only a mouse wheel's notches zoom or move a slider. A trackpad, a Magic Mouse and scrolling
 that keeps going after the fingers lift always pan. On Windows and X11, where
 every scroll arrives as lines, a notch is a whole line: a touchpad, or a
 high-resolution mouse that scrolls in fractions of a notch, pans instead.
 
-A wheel gesture stays with what the pointer was over when it began, the photo or a
-panel, until it pauses for 0.4 s: a scroll of the panel that carries on over the
-photo never pans it.
+**Preferences > Display > Mouse wheel > Sliders** (off by default) makes a wheel
+notch over a slider (its name, track or number) move it as Up and Down do: one
+step a notch, ten with Shift. The notches over one slider until it pauses are one
+History step. A view-only slider, such as a brush's Size, moves but records no
+step. Smooth scrolling scrolls the panel as before, and so does the wheel over a
+disabled slider or while a text field has the keyboard.
+
+A wheel gesture stays with what the pointer was over when it began (the photo, a
+slider or a panel) until it pauses for 0.4 s. A scroll of the panel that carries on
+over a slider or the photo never moves them, and the panel stays put while a
+slider has the wheel, even once the pointer leaves it.
 
 ## Extensions' commands
 

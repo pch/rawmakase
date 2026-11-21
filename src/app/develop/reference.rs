@@ -785,6 +785,7 @@ mod tests {
         let ctx = editor.context.clone();
         let mut prefs = Prefs {
             zoom: WheelZoom::Plain,
+            sliders: false,
             rule: NotchRule::LineUnits,
         };
         let mut time = 0.;

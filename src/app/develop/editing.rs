@@ -83,9 +83,22 @@ impl Editor {
         }
     }
     pub(in crate::app) fn finish_edit_frame(&mut self, frame: EditFrame, ctx: &egui::Context) {
+        // Taken before a document switch returns, so neither reaches the next one.
+        let wheel = self.step_name.take_wheel();
         let step = self.step_name.take();
         if frame.generation != self.document.load_id() {
+            // A scroll of the photo left behind is no gesture of the next one's.
+            self.view.wheel = Default::default();
             return;
+        }
+        // The wheel changing a slider's setting is a gesture like a drag, one step
+        // once it pauses; a view-only slider (a brush's size) records none.
+        if let Some(id) = wheel
+            && *self.document.edit.recipe() != *frame.edit.before()
+        {
+            self.view
+                .wheel
+                .scrolled(crate::app::develop::tools::brush_scroll::WheelOwner::Slider(id));
         }
         // Something other than the wheel changing the edit ends a scroll first, as its
         // own step, before this frame's step name is given.
@@ -145,7 +158,8 @@ impl Editor {
         if *self.document.edit.recipe() == *frame.edit.before() {
             self.finish_pending_treatment();
         }
-        // A wheel scroll sizing a spot is a gesture like a drag: one step once it pauses.
+        // A wheel scroll sizing a spot or moving a slider is a gesture like a drag:
+        // one step once it pauses.
         if let Some(left) = self.view.wheel.remaining() {
             ctx.request_repaint_after(left);
         }

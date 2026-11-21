@@ -156,6 +156,8 @@ pub(in crate::app) enum Owner {
     Photo,
     /// Reference View's reference photo.
     Reference,
+    /// One slider, by its id.
+    Slider(egui::Id),
 }
 
 /// What whole notches step: each keeps the fraction of a notch scrolled towards
@@ -165,6 +167,7 @@ pub(in crate::app) enum Target {
     Zoom,
     ReferenceZoom,
     Magnifier,
+    Slider(egui::Id),
 }
 
 /// The wheel preferences, published for the frame by the editor, so widgets drawn
@@ -172,12 +175,16 @@ pub(in crate::app) enum Target {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::app) struct Prefs {
     pub(in crate::app) zoom: WheelZoom,
+    /// Preferences > Display > Mouse wheel: the wheel changes the slider under the
+    /// pointer.
+    pub(in crate::app) sliders: bool,
     pub(in crate::app) rule: NotchRule,
 }
 impl Default for Prefs {
     fn default() -> Self {
         Self {
             zoom: WheelZoom::Off,
+            sliders: false,
             rule: NotchRule::current(),
         }
     }

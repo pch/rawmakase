@@ -55,7 +55,11 @@ impl Frames {
         let mut frames = Self {
             ctx,
             editor,
-            prefs: Prefs { zoom, rule },
+            prefs: Prefs {
+                zoom,
+                sliders: false,
+                rule,
+            },
             time: 0.,
         };
         frames.frame(vec![egui::Event::PointerMoved(Pos2::new(100., 100.))]);
@@ -390,6 +394,7 @@ fn a_wheel_gesture_stays_with_what_it_started_over() {
     let mut editor = editor(&ctx);
     let prefs = Prefs {
         zoom: WheelZoom::Off,
+        sliders: false,
         rule: NotchRule::LineUnits,
     };
     let panel = std::cell::Cell::new(0.);

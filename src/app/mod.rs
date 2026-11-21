@@ -404,6 +404,7 @@ impl Editor {
             preferences: Default::default(),
             wheel_prefs: crate::app::ui::wheel::Prefs {
                 zoom: session.wheel_zoom,
+                sliders: session.wheel_sliders,
                 ..Default::default()
             },
             updates,
@@ -495,6 +496,7 @@ impl Editor {
                 panels: self.panels,
                 no_update_checks: !self.updates.automatic,
                 wheel_zoom: self.wheel_prefs.zoom,
+                wheel_sliders: self.wheel_prefs.sliders,
                 skipped_version: self.updates.skipped.clone(),
                 theme: self.themes.chosen().flatten(),
                 theme_chosen: self.themes.chosen().is_some(),

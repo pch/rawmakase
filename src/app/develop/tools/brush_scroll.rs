@@ -78,26 +78,47 @@ pub(in crate::app) enum Edit {
     Changed,
 }
 
-/// When the wheel last changed a size, so a scroll is recorded as one History step.
+/// What a wheel scroll that edits changes: a selected spot's size or feather, or
+/// one slider.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum WheelOwner {
+    Brush,
+    Slider(eframe::egui::Id),
+}
+
+/// When the wheel last changed the edit, and what it changed, so a scroll is
+/// recorded as one History step.
 #[derive(Default)]
 pub(in crate::app) struct WheelGesture {
     last: Option<Instant>,
-    /// Whether the wheel changed a size this frame; another edit ends the gesture.
+    owner: Option<WheelOwner>,
+    /// Whether the wheel changed the edit this frame; another edit ends the gesture.
     this_frame: bool,
+    /// This frame's scroll changes something else than the gesture under way did,
+    /// which ends that one as a step of its own.
+    switched: bool,
 }
 impl WheelGesture {
-    fn scrolled(&mut self) {
+    /// The wheel changed the edit through `owner` this frame.
+    pub(in crate::app) fn scrolled(&mut self, owner: WheelOwner) {
+        if self.last.is_some() && self.owner != Some(owner) {
+            self.switched = true;
+        }
         self.last = Some(Instant::now());
+        self.owner = Some(owner);
         self.this_frame = true;
     }
     /// Called before a frame's edits are recorded. Returns whether a scroll ends here,
-    /// to be recorded as its own step first: it paused, or this frame's edit came
-    /// from something else (a slider, a click, a press that starts a drag).
+    /// to be recorded as its own step first: it paused, this frame's edit came
+    /// from something else (a slider dragged, a click, a press that starts a drag),
+    /// or this frame's scroll changes something else (another slider, the spot after
+    /// a slider). In that last case the new scroll goes on as a gesture of its own.
     pub(in crate::app) fn ends_before(&mut self, edit: Edit) -> bool {
-        let ends =
-            self.last.is_some() && !self.this_frame && (edit == Edit::Changed || !self.active());
-        if ends {
+        let ends = std::mem::take(&mut self.switched)
+            || self.last.is_some() && !self.this_frame && (edit == Edit::Changed || !self.active());
+        if ends && !self.this_frame {
             self.last = None;
+            self.owner = None;
         }
         self.this_frame = false;
         ends
@@ -150,7 +171,7 @@ impl Editor {
             // Only a selected spot's change is an edit, grouped as one History step;
             // the brush for new spots is a tool setting.
             if op.is_some() {
-                self.view.wheel.scrolled();
+                self.view.wheel.scrolled(WheelOwner::Brush);
             }
             match scroll.adjust {
                 Adjust::Size => {
