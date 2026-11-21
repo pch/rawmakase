@@ -234,23 +234,29 @@ winresource = "0.1"
 [lints]
 workspace = true
 
-# crmne's egui and winit forks, which fastframe's apps build against: fixes
-# waiting for upstream releases (fastframe's getting started guide, "egui and
-# winit forks"), among them file drops on Wayland. Move egui and winit
-# together, to the revisions that guide lists.
+# The egui and winit forks: fixes waiting for upstream releases, among them
+# file drops on Wayland. egui is the branch rawmakase/apps-0.36.2-06da5ee2 of
+# pch/egui: crmne's apps-0.36.2 patch stack, which fastframe's apps build
+# against (fastframe's getting started guide, "egui and winit forks"), with
+# RAWmakase's patches on top (the surface's format, the linear float surface,
+# the Windows clipboard chords and Paste as a key). winit is crmne/winit's
+# apps-0.30, the branch the egui stack is built against: here one commit past
+# the revision the egui branch pins in its own Cargo.toml, for the fix to the
+# macOS accent picker that revision turned on (crmne/zapfast#1046). Move the
+# two together.
 [patch.crates-io]
-ecolor = { git = "https://github.com/pch/egui", rev = "af05d2203c6549286e74a09ccaabc27ae2411891" }
-eframe = { git = "https://github.com/pch/egui", rev = "af05d2203c6549286e74a09ccaabc27ae2411891" }
-egui = { git = "https://github.com/pch/egui", rev = "af05d2203c6549286e74a09ccaabc27ae2411891" }
-egui-wgpu = { git = "https://github.com/pch/egui", rev = "af05d2203c6549286e74a09ccaabc27ae2411891" }
-egui-winit = { git = "https://github.com/pch/egui", rev = "af05d2203c6549286e74a09ccaabc27ae2411891" }
-egui_extras = { git = "https://github.com/pch/egui", rev = "af05d2203c6549286e74a09ccaabc27ae2411891" }
-egui_glow = { git = "https://github.com/pch/egui", rev = "af05d2203c6549286e74a09ccaabc27ae2411891" }
-egui_kittest = { git = "https://github.com/pch/egui", rev = "af05d2203c6549286e74a09ccaabc27ae2411891" }
-emath = { git = "https://github.com/pch/egui", rev = "af05d2203c6549286e74a09ccaabc27ae2411891" }
-epaint = { git = "https://github.com/pch/egui", rev = "af05d2203c6549286e74a09ccaabc27ae2411891" }
-epaint_default_fonts = { git = "https://github.com/pch/egui", rev = "af05d2203c6549286e74a09ccaabc27ae2411891" }
-winit = { git = "https://github.com/crmne/winit", rev = "ed7caa9023f10b397f5b6ec8284a840cbd8a6f65" }
+ecolor = { git = "https://github.com/pch/egui", rev = "9271ddc91953e8973df929f3708d90efb85debee" }
+eframe = { git = "https://github.com/pch/egui", rev = "9271ddc91953e8973df929f3708d90efb85debee" }
+egui = { git = "https://github.com/pch/egui", rev = "9271ddc91953e8973df929f3708d90efb85debee" }
+egui-wgpu = { git = "https://github.com/pch/egui", rev = "9271ddc91953e8973df929f3708d90efb85debee" }
+egui-winit = { git = "https://github.com/pch/egui", rev = "9271ddc91953e8973df929f3708d90efb85debee" }
+egui_extras = { git = "https://github.com/pch/egui", rev = "9271ddc91953e8973df929f3708d90efb85debee" }
+egui_glow = { git = "https://github.com/pch/egui", rev = "9271ddc91953e8973df929f3708d90efb85debee" }
+egui_kittest = { git = "https://github.com/pch/egui", rev = "9271ddc91953e8973df929f3708d90efb85debee" }
+emath = { git = "https://github.com/pch/egui", rev = "9271ddc91953e8973df929f3708d90efb85debee" }
+epaint = { git = "https://github.com/pch/egui", rev = "9271ddc91953e8973df929f3708d90efb85debee" }
+epaint_default_fonts = { git = "https://github.com/pch/egui", rev = "9271ddc91953e8973df929f3708d90efb85debee" }
+winit = { git = "https://github.com/crmne/winit", rev = "dc09323e032a405a8a165aeda9ceb48b3251cebd" }
 
 [profile.release]
 lto = "thin"
