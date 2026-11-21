@@ -2166,7 +2166,12 @@ impl Editor {
     pub(in crate::app) fn pending_work(&mut self, ctx: &egui::Context) {
         // After this pass's edits, which `background` ran before.
         self.save_when_due(ctx);
-        if ctx.input(|i| i.viewport().close_requested()) {
+        let closing = ctx.input(|i| i.viewport().close_requested());
+        // Ask before quitting, when chosen: before the guard below saves anything.
+        if closing && self.confirm_quit && !self.quit_confirmed && !self.close_anyway {
+            refuse_close(ctx);
+            self.quit_asked = true;
+        } else if closing {
             let until = Instant::now() + crate::app::shell::exit::DEADLINE;
             let anyway = std::mem::take(&mut self.close_anyway);
             // A file operation stops after the photo under way; closing
@@ -2188,6 +2193,23 @@ impl Editor {
                 self.close_confirm = true;
                 // Work still running, or a save still in flight, closes once done.
                 self.close_after_work = flushed != Some(Flushed::Failed);
+            }
+        }
+        if self.quit_asked
+            && let Some(quit) = crate::app::ui::widgets::confirm_modal(
+                ctx,
+                "confirm-quit",
+                "Quit RAWmakase?",
+                "Edits are saved before it closes.",
+                true,
+                &[("Cancel", false), ("Quit", true)],
+                false,
+            )
+        {
+            self.quit_asked = false;
+            if quit {
+                self.quit_confirmed = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
         if self.close_after_work && self.closing_waits_for().is_none() && !self.autosave.busy() {

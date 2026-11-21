@@ -528,6 +528,14 @@ impl Editor {
             value(ui, &crate::raw::version());
         });
         form_row(ui, "Updates", |ui| self.automatic_updates_checkbox(ui));
+        form_row(ui, "Quitting", |ui| {
+            if ui
+                .checkbox(&mut self.confirm_quit, "Ask before quitting")
+                .changed()
+            {
+                let _ = self.save_session();
+            }
+        });
         for (name, credit) in third_party_models() {
             form_row(ui, name, |ui| {
                 ui.add(egui::Label::new(egui::RichText::new(credit).size(text::SMALL)).wrap());
