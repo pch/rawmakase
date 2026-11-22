@@ -58,8 +58,10 @@ impl ExportOptions {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum Destination {
-    #[default]
     SameFolder,
+    /// The default: an export never lands among the originals, where a name can
+    /// match another photo's file, unless chosen.
+    #[default]
     Desktop,
     Pictures,
     Folder,
@@ -643,7 +645,7 @@ pub struct ExportSettings {
 impl Default for ExportSettings {
     fn default() -> Self {
         Self {
-            destination: Destination::SameFolder,
+            destination: Destination::default(),
             folder: None,
             subfolder: false,
             subfolder_name: "Exported".into(),
@@ -1119,9 +1121,19 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn a_first_export_goes_to_the_desktop_and_a_saved_choice_stays() {
+        assert_eq!(ExportSettings::default().destination, Destination::Desktop);
+        let saved = r#"{"destination":"SameFolder"}"#;
+        let read: ExportSettings = serde_json::from_str(saved).unwrap();
+        assert_eq!(read.destination, Destination::SameFolder);
+    }
+    #[test]
     fn target_follows_destination_subfolder_and_naming() {
         let source = Path::new("/photos/2026/DSC0001.ARW");
-        let mut s = ExportSettings::default();
+        let mut s = ExportSettings {
+            destination: Destination::SameFolder,
+            ..Default::default()
+        };
         assert_eq!(
             s.target(source),
             Some(PathBuf::from("/photos/2026/DSC0001.jpg"))
