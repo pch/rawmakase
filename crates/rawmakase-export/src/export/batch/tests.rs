@@ -230,8 +230,15 @@ impl Fixture {
         }
     }
 }
+/// One photo at a time, as the tests that stop part-way through the first photo
+/// expect.
+const ONE: Lanes = Lanes {
+    photos: 1,
+    threads: 2,
+    memory: u64::MAX,
+};
 fn run_all(batch: &Batch) -> Vec<Outcome> {
-    run(batch, Cancel::NEVER, |_| {})
+    run(batch, ONE, Cancel::NEVER, |_| {})
 }
 fn exported(outcome: &Outcome) -> &Path {
     match outcome {
@@ -424,7 +431,7 @@ fn cancel_before_a_commit_leaves_nothing_and_after_it_counts_as_exported() -> Re
         let out = f.out().join(format!("{at}"));
         let batch = f.batch(photos.clone(), settings(&out));
         let cancel = AtomicBool::new(false);
-        let outcomes = run(&batch, Cancel::new(&cancel), |p| {
+        let outcomes = run(&batch, ONE, Cancel::new(&cancel), |p| {
             if p.done == 0 && p.fraction >= at {
                 cancel.store(true, Ordering::Relaxed);
             }
@@ -500,6 +507,7 @@ fn the_queue_runs_one_batch_at_a_time_and_a_waiting_one_can_be_removed() -> Resu
     let changes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let changed = changes.clone();
     let queue = crate::export::queue::Queue::new(
+        ONE,
         move |ticket, outcomes| {
             finished.lock().unwrap().push((ticket, outcomes));
             let _ = tx.send(ticket);
@@ -539,11 +547,12 @@ fn a_batch_that_panics_outside_its_photos_fails_and_the_queue_runs_the_next() ->
     let f = fixture(&["a.dng"])?;
     let photos = f.batch_photos()?;
     let (tx, rx) = std::sync::mpsc::channel();
-    // The status callback panics once on the queue's thread, where the batch
-    // reports its start: outside the panic catch each photo has of its own.
+    // The status callback panics once on the queue's thread, as the batch
+    // starts: outside the panic catch each photo has of its own.
     let submitter = std::thread::current().id();
     let panicked = Arc::new(AtomicBool::new(false));
     let queue = crate::export::queue::Queue::new(
+        ONE,
         move |ticket, outcomes| {
             let _ = tx.send((ticket, outcomes));
         },
@@ -577,7 +586,7 @@ fn a_batch_that_panics_outside_its_photos_fails_and_the_queue_runs_the_next() ->
 fn closing_the_queue_stops_its_thread_and_starts_no_waiting_batch() -> Result<()> {
     let f = fixture(&["a.dng", "b.dng"])?;
     let photos = f.batch_photos()?;
-    let mut queue = crate::export::queue::Queue::new(|_, _| {}, || {});
+    let mut queue = crate::export::queue::Queue::new(ONE, |_, _| {}, || {});
     let batch = |name: &str| f.batch(photos.clone(), settings(&f.out().join(name)));
     queue.submit(batch("running"));
     queue.submit(batch("waiting"));
@@ -910,7 +919,7 @@ fn hdr_jpeg_xl_exports_cancel_fail_and_publish_as_sdr_ones_do() -> Result<()> {
             let out = f.out().join(format!("{name}-{at}"));
             let batch = f.batch(photos.clone(), jxl(&out, output));
             let cancel = AtomicBool::new(false);
-            let outcomes = run(&batch, Cancel::new(&cancel), |p| {
+            let outcomes = run(&batch, ONE, Cancel::new(&cancel), |p| {
                 if p.done == 0 && p.fraction >= at {
                     cancel.store(true, Ordering::Relaxed);
                 }
@@ -982,5 +991,332 @@ fn hdr_jpeg_xl_exports_cancel_fail_and_publish_as_sdr_ones_do() -> Result<()> {
         "{outcomes:?}"
     );
     assert_eq!(std::fs::read(&blocked)?, b"a file");
+    Ok(())
+}
+
+/// AI Denoise that holds each photo until released, counting how many it holds
+/// at once, and panics for the photo named `panics_on`: a way to keep photos of
+/// a batch under way.
+#[derive(Default)]
+struct Holding {
+    /// Photos held now, the most held at once, and whether they're released.
+    state: Mutex<(usize, usize, bool)>,
+    changed: std::sync::Condvar,
+    panics_on: Option<&'static str>,
+    /// The only photo held, when set; the others pass straight through.
+    holds: Option<&'static str>,
+}
+impl crate::ai_denoise::AiBase for Holding {
+    fn get(
+        &self,
+        path: &Path,
+        _: &crate::storage::Identity,
+        plain: &Arc<crate::camera_data::CameraImage>,
+        cancel: Cancel<'_>,
+    ) -> Result<Arc<crate::camera_data::CameraImage>> {
+        let named = |name: Option<&str>| {
+            name.is_some_and(|name| path.file_name().is_some_and(|n| n == name))
+        };
+        if named(self.panics_on) {
+            panic!("AI Denoise of {}", path.display());
+        }
+        let mut image = (**plain).clone();
+        image.recovered = Default::default();
+        if self.holds.is_some() && !named(self.holds) {
+            return Ok(Arc::new(image));
+        }
+        let mut state = self.state.lock().unwrap();
+        state.0 += 1;
+        state.1 = state.1.max(state.0);
+        self.changed.notify_all();
+        while !state.2 && !cancel.is_cancelled() {
+            state = self
+                .changed
+                .wait_timeout(state, std::time::Duration::from_millis(10))
+                .unwrap()
+                .0;
+        }
+        state.0 -= 1;
+        Ok(Arc::new(image))
+    }
+}
+impl Holding {
+    /// Waits until `n` photos are held. Should they never be, it releases those
+    /// held before failing, so the batch ends rather than the test hanging.
+    fn wait_for(&self, n: usize) {
+        let start = std::time::Instant::now();
+        let mut state = self.state.lock().unwrap();
+        while state.0 < n {
+            if start.elapsed().as_secs() >= 120 {
+                state.2 = true;
+                self.changed.notify_all();
+                panic!("{} held, not {n}", state.0);
+            }
+            state = self
+                .changed
+                .wait_timeout(state, std::time::Duration::from_millis(10))
+                .unwrap()
+                .0;
+        }
+    }
+    fn release(&self) {
+        self.state.lock().unwrap().2 = true;
+        self.changed.notify_all();
+    }
+    fn most(&self) -> usize {
+        self.state.lock().unwrap().1
+    }
+}
+impl Fixture {
+    /// A batch of every photo with AI Denoise on, answered by `ai`.
+    fn held(&self, ai: &Arc<Holding>, out: &Path) -> Result<Batch> {
+        let photos = self
+            .batch_photos()?
+            .into_iter()
+            .map(|mut p| {
+                let mut recipe = crate::model::recipe::Recipe::default();
+                recipe.ai_denoise.enabled = true;
+                p.edit = Edit::Shown {
+                    recipe: Box::new(recipe),
+                    unsaved: false,
+                    file: None,
+                };
+                p
+            })
+            .collect();
+        Ok(Batch {
+            ai: crate::ai_denoise::AiService(ai.clone()),
+            ..self.batch(photos, settings(out))
+        })
+    }
+}
+fn lanes(photos: usize) -> Lanes {
+    Lanes {
+        photos,
+        threads: 2,
+        memory: u64::MAX,
+    }
+}
+
+#[test]
+fn photos_run_side_by_side_up_to_the_lanes_and_keep_their_order() -> Result<()> {
+    let f = fixture(&["a.dng", "b.dng", "c.dng", "d.dng", "e.dng"])?;
+    let ai = Arc::new(Holding::default());
+    let batch = f.held(&ai, &f.out().join("lanes"))?;
+    let outcomes = std::thread::scope(|s| {
+        let running = s.spawn(|| run(&batch, lanes(2), Cancel::NEVER, |_| {}));
+        ai.wait_for(2);
+        // A third would be held by now if the lanes let it start.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert_eq!(ai.most(), 2);
+        ai.release();
+        running.join().unwrap()
+    });
+    let paths: Vec<_> = outcomes.iter().map(|o| exported(o).to_path_buf()).collect();
+    assert_eq!(
+        paths,
+        batch
+            .plan
+            .entries
+            .iter()
+            .map(|p| p.target.clone())
+            .collect::<Vec<_>>()
+    );
+    // The same files as one photo at a time.
+    let one = Batch {
+        plan: plan(&batch.photos, &settings(&f.out().join("one")), None).unwrap(),
+        settings: settings(&f.out().join("one")),
+        ..batch.clone()
+    };
+    let one = run(&one, ONE, Cancel::NEVER, |_| {});
+    for (a, b) in outcomes.iter().zip(&one) {
+        assert_eq!(pixels(exported(a)), pixels(exported(b)));
+    }
+    Ok(())
+}
+
+#[test]
+fn cancel_stops_the_photos_under_way_and_starts_no_other() -> Result<()> {
+    let f = fixture(&["a.dng", "b.dng", "c.dng", "d.dng"])?;
+    let ai = Arc::new(Holding::default());
+    let out = f.out().join("cancel");
+    let batch = f.held(&ai, &out)?;
+    let cancel = AtomicBool::new(false);
+    let outcomes = std::thread::scope(|s| {
+        let running = s.spawn(|| run(&batch, lanes(2), Cancel::new(&cancel), |_| {}));
+        ai.wait_for(2);
+        cancel.store(true, Ordering::Relaxed);
+        running.join().unwrap()
+    });
+    assert_eq!(
+        outcomes,
+        [
+            Outcome::Cancelled,
+            Outcome::Cancelled,
+            Outcome::NotStarted,
+            Outcome::NotStarted
+        ]
+    );
+    assert_eq!(ai.most(), 2);
+    // No export and no temporary file.
+    assert!(listing(&out).is_empty(), "{:?}", listing(&out));
+    Ok(())
+}
+
+#[test]
+fn photos_finishing_out_of_order_keep_their_places_and_a_panic_fails_its_own() -> Result<()> {
+    let f = fixture(&["a.dng", "b.dng", "c.dng", "d.dng", "e.dng"])?;
+    // The first photo is held while the other lane exports the rest, one of
+    // which panics.
+    let ai = Arc::new(Holding {
+        holds: Some("a.dng"),
+        panics_on: Some("c.dng"),
+        ..Default::default()
+    });
+    let batch = f.held(&ai, &f.out().join("order"))?;
+    let reports = Mutex::new(Vec::new());
+    let outcomes = std::thread::scope(|s| {
+        let running = s.spawn(|| {
+            run(&batch, lanes(2), Cancel::NEVER, |p| {
+                reports.lock().unwrap().push(p.done)
+            })
+        });
+        ai.wait_for(1);
+        // Every other photo is done while the first is still held.
+        let start = std::time::Instant::now();
+        let mut others_done = false;
+        while !others_done && start.elapsed().as_secs() < 120 {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            others_done = reports.lock().unwrap().last() == Some(&4);
+        }
+        // Released before any assertion, so a failure can't leave it waiting.
+        ai.release();
+        let outcomes = running.join().unwrap();
+        assert!(others_done, "the other photos did not finish first");
+        outcomes
+    });
+    for (i, outcome) in outcomes.iter().enumerate() {
+        match i {
+            2 => assert!(matches!(outcome, Outcome::Failed(_)), "{outcome:?}"),
+            _ => assert_eq!(exported(outcome), batch.plan.entries[i].target, "{i}"),
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn photos_over_the_memory_budget_run_one_at_a_time() -> Result<()> {
+    let f = fixture(&["a.dng", "b.dng", "c.dng"])?;
+    let ai = Arc::new(Holding::default());
+    let batch = f.held(&ai, &f.out().join("budget"))?;
+    let tight = Lanes {
+        memory: 1,
+        ..lanes(3)
+    };
+    let outcomes = std::thread::scope(|s| {
+        let running = s.spawn(|| run(&batch, tight, Cancel::NEVER, |_| {}));
+        ai.wait_for(1);
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        ai.release();
+        running.join().unwrap()
+    });
+    assert_eq!(ai.most(), 1);
+    assert!(
+        outcomes
+            .iter()
+            .all(|o| matches!(o, Outcome::Exported { .. })),
+        "{outcomes:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn cancel_stops_a_photo_waiting_for_memory() -> Result<()> {
+    let f = fixture(&["a.dng", "b.dng", "c.dng"])?;
+    let ai = Arc::new(Holding::default());
+    let out = f.out().join("waiting");
+    let batch = f.held(&ai, &out)?;
+    let tight = Lanes {
+        memory: 1,
+        ..lanes(2)
+    };
+    let cancel = AtomicBool::new(false);
+    let outcomes = std::thread::scope(|s| {
+        let running = s.spawn(|| run(&batch, tight, Cancel::new(&cancel), |_| {}));
+        ai.wait_for(1);
+        // The other lane's photo is waiting for the first one's memory.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        cancel.store(true, Ordering::Relaxed);
+        running.join().unwrap()
+    });
+    assert_eq!(
+        outcomes,
+        [Outcome::Cancelled, Outcome::Cancelled, Outcome::NotStarted]
+    );
+    assert_eq!(ai.most(), 1);
+    assert!(listing(&out).is_empty(), "{:?}", listing(&out));
+    Ok(())
+}
+
+#[test]
+fn progress_with_photos_side_by_side_never_goes_back() -> Result<()> {
+    let f = fixture(&["a.dng", "b.dng", "c.dng", "d.dng", "e.dng"])?;
+    let batch = f.batch(f.batch_photos()?, settings(&f.out().join("progress")));
+    let reports = Mutex::new(Vec::new());
+    run(&batch, lanes(3), Cancel::NEVER, |p| {
+        reports.lock().unwrap().push(p)
+    });
+    let reports = reports.into_inner().unwrap();
+    let at: Vec<f32> = reports.iter().map(|p| p.done as f32 + p.fraction).collect();
+    assert!(at.windows(2).all(|w| w[1] >= w[0] - 1e-6), "{at:?}");
+    assert!(
+        reports
+            .iter()
+            .all(|p| p.done as f32 + p.fraction <= 5. + 1e-6)
+    );
+    assert_eq!(reports.last().map(|p| p.done), Some(5));
+    Ok(())
+}
+
+#[test]
+fn files_appearing_under_photos_side_by_side_get_them_distinct_names() -> Result<()> {
+    let f = fixture(&["a.dng", "b.dng"])?;
+    let ai = Arc::new(Holding::default());
+    let out = f.out().join("late");
+    let batch = f.held(&ai, &out)?;
+    let batch = Batch {
+        plan: Plan {
+            late: Existing::Unique,
+            ..batch.plan.clone()
+        },
+        ..batch
+    };
+    let outcomes = std::thread::scope(|s| {
+        let running = s.spawn(|| run(&batch, lanes(2), Cancel::NEVER, |_| {}));
+        ai.wait_for(2);
+        // Both planned names, and the first unique ones, are taken meanwhile.
+        std::fs::create_dir_all(&out).unwrap();
+        for name in ["a.tif", "b.tif", "a-2.tif", "b-2.tif"] {
+            std::fs::write(out.join(name), b"not ours").unwrap();
+        }
+        ai.release();
+        running.join().unwrap()
+    });
+    let names: Vec<_> = outcomes
+        .iter()
+        .map(|o| {
+            exported(o)
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        })
+        .collect();
+    assert_ne!(names[0], names[1]);
+    assert_eq!(listing(&out).len(), 6, "{:?}", listing(&out));
+    // Nothing of theirs was replaced.
+    for name in ["a.tif", "b.tif", "a-2.tif", "b-2.tif"] {
+        assert_eq!(std::fs::read(out.join(name))?, b"not ours");
+    }
     Ok(())
 }

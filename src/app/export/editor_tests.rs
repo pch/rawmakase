@@ -184,6 +184,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
                 cache: editor.decode_cache.clone(),
                 ai: rawmakase_decode::ai::denoise::AiService::refusing("no AI Denoise in tests"),
             },
+            batch::Lanes::for_machine(2, None),
             Cancel::NEVER,
             |_| {},
         );

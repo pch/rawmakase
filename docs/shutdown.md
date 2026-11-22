@@ -44,6 +44,10 @@ Workers that read or decode photos behind the user's back start from
 `raw::spawn_background` or `raw::background_pool` (`crates/rawmakase-decode`):
 their threads run at a lower scheduling priority (Linux and Windows), and parallel
 work they start runs on a pool of two background threads, never the shared pool.
+Exports run each photo on a pool of the batch's own at the same priority, several
+photos at once on a computer with enough logical CPUs. A photo starts decoding
+once its estimated memory fits beside the others' within half the computer's
+(`export::batch::Lanes`); a JPEG, PNG or TIFF is read whole before that.
 The Library's edited previews use a wider pool while the Library is in front
 with nothing else rendering (up to four renders on every core but one, one per
 4 GB of memory; see
@@ -61,7 +65,7 @@ that drops it.
 | Preview renderer | `app/worker/renderer.rs` | A job; CPU and GPU renders, up to 10 s per GPU submission; the egui renderer lock, briefly | `Latest` stopped; the After and Before render `Task`s | Yes, before the painter and device are dropped |
 | Reference View loader | `app/worker/reference.rs` | A job; file I/O and decodes | `Latest` stopped; the reference `Task` | Yes |
 | Autosave | `app/develop/autosave.rs` | The job channel; one SQLite commit | Its job sender dropped | Yes, after the save at exit and dropping the job sender, which lets a save in flight finish |
-| Export queue | `export/queue.rs` | A batch: decodes, renders and file writes | `closed`, between batches; the running batch's cancel, between photos and stages | Yes, after cancelling the running batch |
+| Export queue | `export/queue.rs` | A batch: decodes, renders and file writes, on lanes the queue's thread joins (several photos at once on a computer with nine or more logical CPUs, each lane on its own background pool); a lane waits for memory for its next photo at most 50 ms past a cancel | `closed`, between batches; the running batch's cancel, between photos and stages | Yes, after cancelling the running batch |
 | Preview builds | `app/library/preview_build.rs` | A queue of photos: decodes, renders and one SQLite write each; while nothing waits, giving back the space discarded previews left, in writes of about 25 ms at most, each followed by a pause as long. At exit it closes its cache connection without folding the WAL into the file (`PreviewCache::close_at_exit`), which as the last connection took up to 1.65 s on a busy Windows runner; the next connection reads the WAL | `closed`, between photos and between those writes; the running build's cancel, inside the decode and render | Yes, after cancelling |
 | Editable preview builds | `app/library/editable_previews.rs` | A queue of photos: one identity read and one build of a copy each (a full-size decode and a DNG write), on two background threads; no catalog connection (the interface records each result) | `closed`, between photos; the running build's cancel, inside the build (between stages, within highlight recovery and per tile) | Yes, after cancelling: what it wrote is dropped, and the original is still there to build from again |
 | Command output jobs | `app/shell/commands/output.rs` | One export or preview job | Each job's cancel, between stages | Yes, after cancelling; the close guard waits for them |

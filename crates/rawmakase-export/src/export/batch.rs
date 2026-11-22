@@ -4,7 +4,8 @@
 //! A batch is taken when Export is pressed: every photo's edit and metadata as the
 //! catalog has them then ([`BatchPhoto`]), and no image. [`plan`] decides where
 //! each file goes before anything renders; [`run`] then works out, renders and
-//! writes one photo at a time, so a batch of any size holds one photo's images.
+//! writes the photos, a few at once on a computer with the CPUs for it
+//! ([`Lanes`]), so a batch of any size holds only those photos' images.
 use super::{Replace, assemble::Values, job};
 use crate::export_settings::{Existing, ExportSettings, NameFields};
 use crate::{
@@ -19,7 +20,10 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc, Mutex, PoisonError,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 /// One photo of a batch, as it was when Export was pressed.
@@ -373,11 +377,24 @@ pub struct Progress {
     pub fraction: f32,
 }
 
-/// Exports `batch` one photo at a time, reporting progress, and returns each
-/// photo's outcome. Cancel stops between stages: a cancel observed before a file
-/// is committed discards it; a commit already under way may finish, and that photo
-/// counts as exported.
-pub fn run(batch: &Batch, cancel: Cancel<'_>, progress: impl Fn(Progress)) -> Vec<Outcome> {
+/// Exports `batch` on `lanes`, reporting progress, and returns each photo's
+/// outcome, in the photos' order. Each lane exports one photo at a time, taking
+/// the next photo not started, on its own pool of threads at background
+/// priority; a batch of fewer photos than lanes shares out the idle lanes'
+/// threads. A [`Gate`] admits each photo's memory before its decode; a JPEG,
+/// PNG or TIFF is read whole before that, so up to one such image per lane is
+/// not counted. Cancel stops between
+/// stages: a cancel observed before a file is committed discards it; a commit
+/// already under way may finish, and that photo counts as exported.
+///
+/// Call it from a thread outside Rayon's pools. A Rayon thread waiting for its
+/// lane's photo would take other jobs meanwhile.
+pub fn run(
+    batch: &Batch,
+    lanes: Lanes,
+    cancel: Cancel<'_>,
+    progress: impl Fn(Progress) + Sync,
+) -> Vec<Outcome> {
     let total = batch.photos.len();
     // A preset's image or font, read once: every photo gets the same watermark,
     // however long the batch runs. The Simple Copyright Watermark takes each
@@ -388,49 +405,138 @@ pub fn run(batch: &Batch, cancel: Cancel<'_>, progress: impl Fn(Progress)) -> Ve
         }
         _ => None,
     };
-    let mut reserved = batch.plan.reserved.clone();
-    let mut outcomes = Vec::with_capacity(total);
-    for (done, (photo, planned)) in batch.photos.iter().zip(&batch.plan.entries).enumerate() {
-        if cancel.is_cancelled() {
-            outcomes.push(Outcome::NotStarted);
-            continue;
-        }
-        let report = |fraction| {
-            progress(Progress {
-                done,
-                total,
-                fraction,
-            })
-        };
-        report(0.);
-        let outcome = match planned.write {
-            Write::Skip => Outcome::Skipped("a file with its name already exists".into()),
-            // A panic fails its own photo; the others keep their outcomes.
-            _ => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match &preset {
-                Some(Err(reason)) => Outcome::Failed(reason.clone()),
-                preset => {
-                    let preset = preset.as_ref().and_then(|p| p.as_ref().ok());
-                    export(
-                        batch,
-                        photo,
-                        planned,
-                        preset,
-                        &mut reserved,
-                        cancel,
-                        &report,
-                    )
+    let shared = Shared {
+        batch,
+        preset: preset.as_ref(),
+        reserved: Mutex::new(batch.plan.reserved.clone()),
+        gate: Gate::new(lanes.memory),
+        cancel,
+    };
+    let tracker = Tracker::new(total, &progress);
+    let next = AtomicUsize::new(0);
+    let outcomes = Mutex::new(vec![None; total]);
+    let under_way = lanes.photos.min(total);
+    let threads = lanes.threads_for(under_way);
+    let lane = || {
+        // If the pool can't be built, the lane's photos run on the shared pool,
+        // as exports did before they had pools of their own.
+        let pool = crate::raw::background_pool(threads, "export").ok();
+        loop {
+            let index = next.fetch_add(1, Ordering::Relaxed);
+            if index >= total {
+                break;
+            }
+            let outcome = if cancel.is_cancelled() {
+                Outcome::NotStarted
+            } else {
+                let photo = || one(&shared, index, &tracker);
+                match &pool {
+                    Some(pool) => pool.install(photo),
+                    None => photo(),
                 }
-            }))
-            .unwrap_or_else(|_| Outcome::Failed("the export failed unexpectedly".into())),
-        };
-        outcomes.push(outcome);
-    }
+            };
+            outcomes.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(outcome);
+        }
+    };
+    std::thread::scope(|scope| {
+        let lane = &lane;
+        // A lane that can't be started leaves the others the photos.
+        for _ in 1..under_way {
+            let _ = std::thread::Builder::new()
+                .name("export-lane".into())
+                .spawn_scoped(scope, lane);
+        }
+        lane();
+    });
     progress(Progress {
         done: total,
         total,
         fraction: 0.,
     });
     outcomes
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner)
+        .into_iter()
+        .map(|o| o.unwrap_or(Outcome::NotStarted))
+        .collect()
+}
+
+/// What every photo of a running batch shares.
+struct Shared<'a> {
+    batch: &'a Batch,
+    preset: Option<&'a Result<crate::watermark::Ready, String>>,
+    /// The names taken, for a name chosen while the batch runs.
+    reserved: Mutex<Reservations>,
+    gate: Gate,
+    cancel: Cancel<'a>,
+}
+
+/// Exports the batch's photo at `index`.
+fn one(shared: &Shared<'_>, index: usize, tracker: &Tracker<'_, impl Fn(Progress)>) -> Outcome {
+    let batch = shared.batch;
+    let (photo, planned) = (&batch.photos[index], &batch.plan.entries[index]);
+    tracker.start(index);
+    let outcome = match planned.write {
+        Write::Skip => Outcome::Skipped("a file with its name already exists".into()),
+        // A panic fails its own photo; the others keep their outcomes.
+        _ => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match shared.preset {
+            Some(Err(reason)) => Outcome::Failed(reason.clone()),
+            preset => {
+                let preset = preset.and_then(|p| p.as_ref().ok());
+                export(shared, photo, planned, preset, &|f| tracker.set(index, f))
+            }
+        }))
+        .unwrap_or_else(|_| Outcome::Failed("the export failed unexpectedly".into())),
+    };
+    tracker.end(index);
+    outcome
+}
+
+/// A batch's [`Progress`] from its photos under way: `done` counts the photos
+/// finished, whatever their outcome, and `fraction` adds up how far each photo
+/// under way is.
+struct Tracker<'a, F> {
+    total: usize,
+    progress: &'a F,
+    /// The photos finished, and how far each one under way is, by index.
+    state: Mutex<(usize, Vec<(usize, f32)>)>,
+}
+impl<'a, F: Fn(Progress)> Tracker<'a, F> {
+    fn new(total: usize, progress: &'a F) -> Self {
+        Self {
+            total,
+            progress,
+            state: Mutex::new((0, Vec::new())),
+        }
+    }
+    fn start(&self, index: usize) {
+        self.update(|(_, under_way)| under_way.push((index, 0.)));
+    }
+    fn set(&self, index: usize, fraction: f32) {
+        self.update(|(_, under_way)| {
+            if let Some(photo) = under_way.iter_mut().find(|(i, _)| *i == index) {
+                photo.1 = fraction;
+            }
+        });
+    }
+    /// Counts the photo at `index` as done.
+    fn end(&self, index: usize) {
+        self.update(|(done, under_way)| {
+            under_way.retain(|(i, _)| *i != index);
+            *done += 1;
+        });
+    }
+    /// Changes the state and reports it under the same lock, so a report never
+    /// follows a newer one.
+    fn update(&self, change: impl FnOnce(&mut (usize, Vec<(usize, f32)>))) {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        change(&mut state);
+        (self.progress)(Progress {
+            done: state.0,
+            total: self.total,
+            fraction: state.1.iter().map(|(_, f)| f).sum(),
+        });
+    }
 }
 
 /// Why a photo stopped, kept apart from failures until the end.
@@ -446,16 +552,16 @@ impl From<anyhow::Error> for Stop {
 }
 
 fn export(
-    batch: &Batch,
+    shared: &Shared<'_>,
     photo: &BatchPhoto,
     planned: &Planned,
     preset: Option<&crate::watermark::Ready>,
-    reserved: &mut Reservations,
-    cancel: Cancel<'_>,
     progress: &impl Fn(f32),
 ) -> Outcome {
+    let (batch, cancel) = (shared.batch, shared.cancel);
     let result = (|| -> Result<(PathBuf, Vec<String>), Stop> {
-        let (prepared, mut notes) = render(batch, photo, preset, cancel, progress)?;
+        // The photo's memory stays counted until its file is in place.
+        let (prepared, mut notes, _admitted) = render(shared, photo, preset, progress)?;
         notes.extend(planned.notes.iter().cloned());
         if let Some(parent) = planned.target.parent() {
             std::fs::create_dir_all(parent).map_err(anyhow::Error::from)?;
@@ -473,7 +579,7 @@ fn export(
             photo,
             planned,
             batch.plan.late,
-            reserved,
+            &shared.reserved,
             cancel,
         )?;
         notes.extend(note);
@@ -490,14 +596,15 @@ fn export(
     }
 }
 
-/// `photo` rendered with its edit, and what the export has to say about it.
-fn render(
-    batch: &Batch,
+/// `photo` rendered with its edit, what the export has to say about it, and its
+/// place in the memory budget, taken before it is decoded.
+fn render<'a>(
+    shared: &'a Shared<'_>,
     photo: &BatchPhoto,
     preset: Option<&crate::watermark::Ready>,
-    cancel: Cancel<'_>,
     progress: &impl Fn(f32),
-) -> Result<(job::Prepared, Vec<String>)> {
+) -> Result<(job::Prepared, Vec<String>, Admitted<'a>)> {
+    let (batch, cancel) = (shared.batch, shared.cancel);
     // The file as it is before it is decoded: AI Denoise's result must be of the same.
     let file = crate::storage::Identity::read(&photo.source).ok();
     let opened = crate::photo::open_source(&photo.source, cancel)
@@ -549,6 +656,9 @@ fn render(
         }
     };
     ensure!(!cancel.is_cancelled(), "Cancelled");
+    let Some(admitted) = shared.gate.admit(memory(&opened), cancel) else {
+        bail!("Cancelled");
+    };
     let image = Arc::new(match opened {
         Opened::Raw(raw) => {
             job::decode_full(raw, &photo.source, batch.demosaic, &batch.cache, cancel)?
@@ -580,7 +690,19 @@ fn render(
         &|p| progress(p * 0.9),
     )?;
     notes.extend(prepared.notice.clone());
-    Ok((prepared, notes))
+    Ok((prepared, notes, admitted))
+}
+
+/// The memory an export of `opened` is counted as taking.
+fn memory(opened: &Opened) -> u64 {
+    let (width, height) = match opened {
+        Opened::Raw(raw) => {
+            let m = &raw.metadata;
+            (m.width.max(m.raw_width), m.height.max(m.raw_height))
+        }
+        Opened::Rendered(image) => (image.width, image.height),
+    };
+    u64::from(width) * u64::from(height) * lanes::BYTES_PER_PIXEL
 }
 
 /// Puts a staged export in place, as `planned` says, unless Cancel came first.
@@ -590,7 +712,7 @@ fn commit(
     photo: &BatchPhoto,
     planned: &Planned,
     late: Existing,
-    reserved: &mut Reservations,
+    reserved: &Mutex<Reservations>,
     cancel: Cancel<'_>,
 ) -> Result<(PathBuf, Option<String>), Stop> {
     // The last moment to stop: dropping the staged file leaves nothing behind.
@@ -631,17 +753,22 @@ fn commit(
                 Err(e) => return Err(Stop::Failed(e.error.into())),
             },
         };
-        reserved.found(&appeared);
-        match late {
-            Existing::Unique => target = reserved.unique(&target),
-            Existing::Overwrite => {
+        // Only the reservations are locked, not the file operations.
+        let renamed = {
+            let mut reserved = reserved.lock().unwrap_or_else(PoisonError::into_inner);
+            reserved.found(&appeared);
+            (late == Existing::Unique).then(|| reserved.unique(&target))
+        };
+        match (late, renamed) {
+            (_, Some(renamed)) => target = renamed,
+            (Existing::Overwrite, _) => {
                 overwrite(staged, &appeared, &photo.source)?;
                 return Ok((
                     appeared,
                     Some("replaced a file that appeared during the export".into()),
                 ));
             }
-            Existing::Skip | Existing::Ask => {
+            _ => {
                 return Err(Stop::Skipped(
                     "a file with its name appeared during the export".into(),
                 ));
@@ -682,6 +809,10 @@ fn overwrite(staged: tempfile::NamedTempFile, target: &Path, source: &Path) -> R
     }
     crate::storage::persist(staged, target, Replace::Overwrite)
 }
+
+mod lanes;
+pub use lanes::Lanes;
+use lanes::{Admitted, Gate};
 
 #[cfg(test)]
 mod tests;
