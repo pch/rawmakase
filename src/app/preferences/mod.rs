@@ -1233,6 +1233,31 @@ impl Editor {
             let _ = self.save_session();
         }
         gap(ui);
+        // Lightroom's Interface › Background: the color behind the photo in
+        // Develop and the Loupe, also chosen with a right click there.
+        group(ui, "Background");
+        let mut backdrop = self.view.backdrop;
+        form_row(ui, "Fill Color", |ui| {
+            crate::app::ui::widgets::named_menu(
+                crate::app::ui::widgets::dropdown(ui, "backdrop-fill")
+                    .width(220.)
+                    .selected_text(backdrop.label())
+                    .show_ui(ui, |ui| {
+                        for choice in crate::app::view::backdrop::Backdrop::ALL {
+                            ui.selectable_value(&mut backdrop, choice, choice.label());
+                        }
+                    }),
+                "Fill Color",
+            );
+        });
+        form_row(ui, "", |ui| {
+            hint(
+                ui,
+                "Behind the photo in Develop and the Loupe. Default follows the theme. Right-click around the photo to change it there.",
+            );
+        });
+        self.set_backdrop(backdrop);
+        gap(ui);
         group(ui, "Monitor profile");
         use crate::app::preferences::monitor::MonitorProfile;
         let monitor = self.view.monitor.clone();

@@ -238,7 +238,7 @@ fn the_loupe_and_its_zoomed_region_are_converted() -> Result<()> {
                 ..Default::default()
             },
             |ui| {
-                library.grid(ui, &mut zoom, true, None);
+                library.grid(ui, &mut zoom, true, None, Default::default());
             },
         )
         .textures_delta

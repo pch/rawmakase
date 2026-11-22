@@ -2828,6 +2828,71 @@ fn a_filmstrip_click_does_what_the_view_shown_does() -> Result<()> {
     ));
     Ok(())
 }
+/// A right click in the Loupe opens the backdrop's menu, and the shade chosen
+/// goes to the editor to keep; the click doesn't zoom.
+#[test]
+fn the_loupe_reports_the_backdrop_chosen_from_its_menu() -> Result<()> {
+    use crate::app::view::backdrop::Backdrop;
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    std::fs::write(folder.join("c.jpg"), b"not a jpeg")?;
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    ctx.all_styles_mut(|s| s.animation_time = 0.);
+    let mut library = Library::load(&path, ctx.clone())?;
+    library.wait_for_availability();
+    library.select(Some(library.session.photos()[0].id));
+    library.open_loupe();
+    let mut zoom = crate::app::view::navigator::Zoom::default();
+    let mut frame = |events: Vec<egui::Event>| {
+        let mut action = Action::None;
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800., 600.),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ui| action = library.grid(ui, &mut zoom, false, None, Backdrop::Default),
+        );
+        output.textures_delta.clear();
+        (
+            action,
+            output
+                .platform_output
+                .accesskit_update
+                .expect("accessibility is on"),
+        )
+    };
+    let click = |at: egui::Pos2, button: egui::PointerButton, pressed: bool| {
+        vec![
+            egui::Event::PointerMoved(at),
+            egui::Event::PointerButton {
+                pos: at,
+                button,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ]
+    };
+    let at = egui::pos2(400., 300.);
+    frame(vec![]);
+    frame(click(at, egui::PointerButton::Secondary, true));
+    frame(click(at, egui::PointerButton::Secondary, false));
+    let (_, tree) = frame(vec![]);
+    let black = crate::app::testing::labelled(&tree, "Black").expect("the backdrop's menu");
+    let black = crate::app::testing::centre(black);
+    frame(click(black, egui::PointerButton::Primary, true));
+    let (action, _) = frame(click(black, egui::PointerButton::Primary, false));
+    assert_eq!(action, Action::Backdrop(Backdrop::Black));
+    assert!(!zoom.on);
+    Ok(())
+}
 /// A result on its way when the Loupe is reset is the forgotten photo's:
 /// its failure is neither shown nor said about whatever is shown next.
 #[test]
@@ -2851,7 +2916,7 @@ fn loupe_reset_drops_a_failure_on_its_way() -> Result<()> {
         ..Default::default()
     };
     let mut output = ctx.run_ui(input, |ui| {
-        library.grid(ui, &mut Default::default(), true, None);
+        library.grid(ui, &mut Default::default(), true, None, Default::default());
     });
     output.textures_delta.clear();
     // Its failure comes in, not yet taken, as the Loupe is reset.
@@ -2905,7 +2970,7 @@ fn loupe_says_no_failure_over_a_photo_prepared_ahead() -> Result<()> {
             ..Default::default()
         };
         let mut output = ctx.run_ui(input, |ui| {
-            library.grid(ui, &mut Default::default(), true, None);
+            library.grid(ui, &mut Default::default(), true, None, Default::default());
         });
         output.textures_delta.clear();
     };
@@ -2950,7 +3015,7 @@ fn loupe_shows_a_jpeg_at_the_size_of_the_view() -> Result<()> {
         ..Default::default()
     };
     let mut output = ctx.run_ui(input(), |ui| {
-        library.grid(ui, &mut Default::default(), true, None);
+        library.grid(ui, &mut Default::default(), true, None, Default::default());
     });
     output.textures_delta.clear();
     library.loupe.wait(&ctx);
@@ -2960,7 +3025,7 @@ fn loupe_shows_a_jpeg_at_the_size_of_the_view() -> Result<()> {
     // The next photo replaces it; a damaged file says why.
     library.step(selection::Step::By(1), false);
     let mut output = ctx.run_ui(input(), |ui| {
-        library.grid(ui, &mut Default::default(), true, None);
+        library.grid(ui, &mut Default::default(), true, None, Default::default());
     });
     output.textures_delta.clear();
     library.loupe.wait(&ctx);
@@ -2969,13 +3034,13 @@ fn loupe_shows_a_jpeg_at_the_size_of_the_view() -> Result<()> {
     // said over the photo stepped to.
     library.step(selection::Step::By(-1), false);
     let mut output = ctx.run_ui(input(), |ui| {
-        library.grid(ui, &mut Default::default(), true, None);
+        library.grid(ui, &mut Default::default(), true, None, Default::default());
     });
     output.textures_delta.clear();
     library.loupe.wait(&ctx);
     assert_eq!(library.loupe.state, loupe::State::Ready);
     let mut output = ctx.run_ui(input(), |ui| {
-        library.grid(ui, &mut Default::default(), true, None);
+        library.grid(ui, &mut Default::default(), true, None, Default::default());
     });
     output.textures_delta.clear();
     assert!(!library.messages.has_entry_with("Preview unavailable"));
@@ -2983,13 +3048,13 @@ fn loupe_shows_a_jpeg_at_the_size_of_the_view() -> Result<()> {
     // not over the photo, however many frames show it.
     library.step(selection::Step::By(1), false);
     let mut output = ctx.run_ui(input(), |ui| {
-        library.grid(ui, &mut Default::default(), true, None);
+        library.grid(ui, &mut Default::default(), true, None, Default::default());
     });
     output.textures_delta.clear();
     library.loupe.wait(&ctx);
     for _ in 0..3 {
         let mut output = ctx.run_ui(input(), |ui| {
-            library.grid(ui, &mut Default::default(), true, None);
+            library.grid(ui, &mut Default::default(), true, None, Default::default());
         });
         output.textures_delta.clear();
     }
@@ -3058,7 +3123,13 @@ fn the_loupes_own_view_magnifies_from_the_full_resolution_file() -> Result<()> {
                 ..Default::default()
             },
             |ui| {
-                library.grid(ui, &mut zoom, true, lens.then_some(&mut magnifier));
+                library.grid(
+                    ui,
+                    &mut zoom,
+                    true,
+                    lens.then_some(&mut magnifier),
+                    Default::default(),
+                );
             },
         )
         .textures_delta
@@ -3117,7 +3188,13 @@ fn moving_on_with_the_magnifier_lets_the_last_photos_decode_go() -> Result<()> {
                 ..Default::default()
             },
             |ui| {
-                library.grid(ui, &mut zoom, true, Some(&mut magnifier));
+                library.grid(
+                    ui,
+                    &mut zoom,
+                    true,
+                    Some(&mut magnifier),
+                    Default::default(),
+                );
             },
         )
         .textures_delta
@@ -3170,7 +3247,7 @@ fn loupe_zooms_at_the_navigator_levels_and_prepares_the_next_photo() -> Result<(
                 // The filmstrip below, as the workspace draws it.
                 let active = library.selected();
                 library.filmstrip_panel(ui, active, Module::Library);
-                library.grid(ui, zoom, true, None);
+                library.grid(ui, zoom, true, None, Default::default());
             },
         );
         output.textures_delta.clear();
@@ -5758,7 +5835,7 @@ fn a_page_is_the_rows_wholly_in_view() -> Result<()> {
         };
         let mut output = ctx.run_ui(input, |ui| {
             library.selection_keys(ui.ctx());
-            library.grid(ui, &mut Default::default(), false, None);
+            library.grid(ui, &mut Default::default(), false, None, Default::default());
         });
         output.textures_delta.clear();
     };

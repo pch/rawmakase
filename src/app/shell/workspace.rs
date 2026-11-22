@@ -1128,10 +1128,7 @@ impl Editor {
             self.schedule();
         }
         // On the photo's backdrop with Develop's margin, under the toolbar.
-        let outer = ui.available_rect_before_wrap();
-        ui.painter()
-            .rect_filled(outer, 0., theme::palette(ui.ctx()).photo_backdrop());
-        let area = outer.shrink(PHOTO_MARGIN);
+        let area = self.backdrop_stage(ui, ui.available_rect_before_wrap());
         let before = self.view.zoom.on;
         let response = ui
             .scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
@@ -1264,6 +1261,7 @@ impl Editor {
                     self.catalog_dialog(CatalogDialog::Folder(FolderAction::Add), ctx)
                 }
                 crate::app::library::Action::ImportPhotos => self.request_import(),
+                crate::app::library::Action::Backdrop(backdrop) => self.set_backdrop(backdrop),
                 crate::app::library::Action::None => {}
             }
         }
@@ -1410,7 +1408,13 @@ impl Editor {
         match &mut self.library {
             Some(l) if !l.session.photos().is_empty() => {
                 let magnifier = magnify.then_some(&mut self.view.magnifier);
-                let action = l.grid(ui, &mut self.view.zoom, chrome, magnifier);
+                let action = l.grid(
+                    ui,
+                    &mut self.view.zoom,
+                    chrome,
+                    magnifier,
+                    self.view.backdrop,
+                );
                 if let Some(id) = l.loupe_develops() {
                     self.loupe_viewport(ui, id);
                 } else if loupe && self.view.zoom.on {
@@ -1990,15 +1994,15 @@ impl Editor {
     fn develop_photo(&mut self, ui: &mut egui::Ui) {
         // The photo's backdrop reaches the panels around it, leaving the
         // photo a margin of its own color.
-        let backdrop = theme::palette(ui.ctx()).photo_backdrop();
         let area = egui::CentralPanel::default()
-            .frame(
-                egui::Frame::new()
-                    .fill(backdrop)
-                    .inner_margin(design::margin_same(PHOTO_MARGIN)),
-            )
+            .frame(egui::Frame::new())
             .show(ui, |ui| {
-                let response = self.viewport_ui(ui);
+                let area = self.backdrop_stage(ui, ui.max_rect());
+                let response = ui
+                    .scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
+                        self.viewport_ui(ui)
+                    })
+                    .inner;
                 if self.document.opened_from_copy() {
                     crate::app::develop::viewport::editable_preview_badge(ui, response.rect);
                 }

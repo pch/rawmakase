@@ -15,8 +15,8 @@ impl Editor {
         // The buttons follow the shared log, which also holds Library changes.
         self.sync_undo();
         let (can_undo, can_redo) = (self.can_undo(), self.can_redo());
-        // Under the photo, as the Library's view bar is, on its backdrop with
-        // no rule: the canvas's own margin spaces them from the photo.
+        // Under the photo, as the Library's view bar is, with no rule. The
+        // frame's own room above the buttons adds to the photo's margin.
         egui::Panel::bottom("toolbar")
             .frame(photo_toolbar_frame(&palette))
             .show_separator_line(false)
@@ -369,16 +369,17 @@ impl Editor {
     }
 }
 
-/// The frame of a photo view's toolbar, Develop's and the Library Loupe's: on the
-/// photo's backdrop with no rule, the canvas's own margin spacing it from the
-/// photo.
+/// The frame of a photo view's toolbar, Develop's and the Library Loupe's, on
+/// the theme's photo backdrop with no rule. It keeps the theme's color under
+/// any backdrop the photo has, so its buttons get as much room above them as
+/// below, clear of the backdrop's edge.
 pub(in crate::app) fn photo_toolbar_frame(palette: &theme::Palette) -> egui::Frame {
     egui::Frame::new()
         .fill(palette.photo_backdrop())
         .inner_margin(egui::Margin {
             left: crate::app::shell::workspace::PHOTO_MARGIN as i8,
             right: crate::app::shell::workspace::PHOTO_MARGIN as i8,
-            top: 0,
+            top: space::L as i8,
             bottom: space::L as i8,
         })
 }
