@@ -286,6 +286,40 @@ fn shift_cmd_c_and_v_reach_develop_though_winit_reads_them_as_the_clipboard() {
         copied,
         "Shift+Cmd+V pastes"
     );
+    // With no text on the system clipboard egui-winit sends the key itself.
+    editor.document.edit.setup_mut().exposure = copied + 1.5;
+    frame(
+        &mut editor,
+        egui::Event::Key {
+            key: egui::Key::V,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: shift,
+        },
+        shift,
+    );
+    assert_eq!(
+        editor.document.edit.recipe().exposure,
+        copied,
+        "Shift+Cmd+V pastes with an image or nothing on the clipboard"
+    );
+    // Plain Cmd+V arrives as a key then too. It stays the text fields': it
+    // neither pastes the settings nor is V's Black & White.
+    editor.document.edit.setup_mut().exposure = copied + 1.5;
+    frame(
+        &mut editor,
+        egui::Event::Key {
+            key: egui::Key::V,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        },
+        egui::Modifiers::COMMAND,
+    );
+    assert_eq!(editor.document.edit.recipe().exposure, copied + 1.5);
+    assert!(!editor.document.edit.recipe().effects.monochrome);
     // Not V: no Black & White, even with nothing copied to paste.
     editor.clipboard = None;
     frame(&mut editor, egui::Event::Paste("text".into()), shift);
