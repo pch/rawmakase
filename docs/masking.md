@@ -102,7 +102,11 @@ left, in order, with the finished ones ticked: download the models.
   move it; drag a radial gradient's centre to move it and its edge handles to size
   and turn it. Its Feather slider sets the soft edge.
 - **O** toggles the selected mask's red overlay, which is on by default. Painting
-  and erasing keep the choice made with **O** or **Show Overlay**.
+  and erasing keep the choice made with **O** or **Show Overlay**. Moving one of the
+  mask's sliders (or Reset Sliders) hides the overlay, as in Lightroom, so the change
+  shows; **O** brings it back, as does selecting or making another mask, and
+  hovering the mask's pin or row still shows it. An overlay turned off with **O**
+  stays off.
 - Sliders follow Lightroom's order: Amount; Temp, Tint; Exposure, Contrast,
   Highlights, Shadows, Whites, Blacks; Texture, Clarity, Dehaze; Hue, Saturation;
   Sharpness, Noise; Color (hue and saturation). History names them like

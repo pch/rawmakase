@@ -141,6 +141,68 @@ pub(in crate::app) fn drag_sides(start: [f32; 4], handle: Option<Handle>, d: Vec
     c
 }
 
+/// The crop `start` locked to `ratio` ([`crate::app::Editor::crop_constraint`]) and
+/// resized by dragging `handle` by `d`, as Lightroom does: the opposite corner, or the
+/// opposite side, stays where it is. A side sets its own dimension and the other follows
+/// about its middle; a corner takes the size nearest the pointer, measured on the photo as
+/// shown, whose width over height is `photo_aspect`. The crop stops at the photo's edge and
+/// at its smallest size, and one with no locked size that fits is left as it is.
+pub(in crate::app) fn resize_locked(
+    start: [f32; 4],
+    handle: Handle,
+    d: Vec2,
+    ratio: f32,
+    photo_aspect: f32,
+) -> [f32; 4] {
+    // A crop read from Lightroom can reach past 0–1 (`xmp/crop.rs`); it resizes from the
+    // part inside the photo.
+    let inside = start.map(|v| v.clamp(0., 1.));
+    // Along each axis, the fixed point the crop grows from and the room it has there: the
+    // opposite side, or the middle when the handle moves neither side of that axis.
+    let axis = |side: i8, min: f32, max: f32| match side {
+        -1 => (max, max),
+        1 => (min, 1. - min),
+        _ => {
+            let mid = (min + max) / 2.;
+            (mid, 2. * mid.min(1. - mid))
+        }
+    };
+    let (ax, room_w) = axis(handle.x, inside[0], inside[2]);
+    let (ay, room_h) = axis(handle.y, inside[1], inside[3]);
+    let want_w = inside[2] - inside[0] + f32::from(handle.x) * d.x;
+    let want_h = inside[3] - inside[1] + f32::from(handle.y) * d.y;
+    // The height; the width is `ratio` times it.
+    let t = match (handle.x, handle.y) {
+        (_, 0) => want_w / ratio,
+        (0, _) => want_h,
+        _ => {
+            // The size along the locked diagonal nearest the pointer, in units of the
+            // photo's height so both directions count alike on screen.
+            let (dx, dy) = (ratio * photo_aspect, 1.);
+            (want_w * photo_aspect * dx + want_h * dy) / (dx * dx + dy * dy)
+        }
+    };
+    let smallest = 0.01_f32.max(0.01 / ratio) + 1e-5;
+    let largest = room_h.min(room_w / ratio);
+    // NaN (a degenerate photo or ratio) counts as no room too.
+    if smallest
+        .partial_cmp(&largest)
+        .is_none_or(std::cmp::Ordering::is_gt)
+    {
+        return start;
+    }
+    let h = t.clamp(smallest, largest);
+    let w = ratio * h;
+    let span = |side: i8, from: f32, size: f32| match side {
+        -1 => ((from - size).max(0.), from),
+        1 => (from, (from + size).min(1.)),
+        _ => ((from - size / 2.).max(0.), (from + size / 2.).min(1.)),
+    };
+    let (left, right) = span(handle.x, ax, w);
+    let (top, bottom) = span(handle.y, ay, h);
+    [left, top, right, bottom]
+}
+
 /// The crop `start` resized about its centre, as Alt-dragging `handle` by `d` does: the
 /// handle's sides move by `d` and the opposite ones by as much the other way. The centre
 /// never moves, so the crop stops where its nearest side meets the photo's edge, and
@@ -279,6 +341,44 @@ mod tests {
                 assert_near(c[3] - c[1], h_, &format!("{h:?} {out} height"));
             }
         }
+    }
+
+    #[test]
+    fn a_locked_crop_resizes_from_the_opposite_corner_or_side() {
+        // A square crop on a square photo, the top-left corner pulled in mostly across:
+        // the bottom-right corner stays, and the size is the one nearest the pointer.
+        let start = [0.2, 0.2, 0.8, 0.8];
+        let c = resize_locked(start, Handle { x: -1, y: -1 }, Vec2::new(0.2, 0.), 1., 1.);
+        assert_near(c[2], 0.8, "right");
+        assert_near(c[3], 0.8, "bottom");
+        assert_near(c[2] - c[0], 0.5, "width");
+        assert_near(c[3] - c[1], 0.5, "height");
+        // The right side out: the left stays, the height grows about its middle.
+        let c = resize_locked(start, Handle { x: 1, y: 0 }, Vec2::new(0.1, 0.), 1., 1.);
+        assert_eq!(c[0], 0.2);
+        assert_near(c[2], 0.9, "right");
+        assert_near(c[1], 0.15, "top");
+        assert_near(c[3], 0.85, "bottom");
+        // Out past the photo: the dimension with the least room stops both.
+        let c = resize_locked(start, Handle { x: 1, y: 1 }, Vec2::new(0.5, 0.5), 1., 1.);
+        assert_eq!(c, [0.2, 0.2, 1., 1.]);
+        // In past the opposite corner: the smallest crop there, still valid.
+        let c = resize_locked(start, Handle { x: 1, y: 1 }, Vec2::new(-0.9, -0.9), 1., 1.);
+        assert_eq!([c[0], c[1]], [0.2, 0.2]);
+        assert!(c[2] - c[0] >= 0.01 && c[3] - c[1] >= 0.01, "{c:?}");
+    }
+
+    #[test]
+    fn a_locked_crop_past_the_photo_resizes_back_inside() {
+        let c = resize_locked(
+            [-0.03, 0.1, 1.03, 0.9],
+            Handle { x: -1, y: 0 },
+            Vec2::new(0.1, 0.),
+            1.,
+            1.,
+        );
+        assert!(c.iter().all(|v| (0. ..=1.).contains(v)), "{c:?}");
+        assert_near((c[2] - c[0]) / (c[3] - c[1]), 1., "ratio");
     }
 
     #[test]
