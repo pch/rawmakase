@@ -21,7 +21,7 @@ use std::{
     ffi::OsString,
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex, PoisonError,
+        Arc, Mutex, OnceLock, PoisonError,
         atomic::{AtomicUsize, Ordering},
     },
 };
@@ -109,6 +109,9 @@ pub struct Planned {
     pub write: Write,
     /// What its name has to say, such as a missing capture date.
     pub notes: Vec<String>,
+    /// The name its settings give, before any "-2": what a name found taken while
+    /// the batch runs is numbered from, so it becomes "a-3", not "a-2-2".
+    base: PathBuf,
 }
 
 /// Where every photo of a batch goes, decided before anything renders.
@@ -287,12 +290,14 @@ pub fn plan(
         .into_iter()
         .zip(notes)
         .map(|(target, notes)| {
+            let base = target.clone();
             if reserved.in_batch(&target) {
                 let target = reserved.unique(&target);
                 return Planned {
                     target,
                     write: Write::Create,
                     notes,
+                    base,
                 };
             }
             if !reserved.on_disk(&target) {
@@ -301,6 +306,7 @@ pub fn plan(
                     target,
                     write: Write::Create,
                     notes,
+                    base,
                 };
             }
             match choice {
@@ -313,17 +319,20 @@ pub fn plan(
                         target,
                         write: Write::Overwrite,
                         notes,
+                        base,
                     }
                 }
                 Existing::Unique => Planned {
                     target: reserved.unique(&target),
                     write: Write::Create,
                     notes,
+                    base,
                 },
                 Existing::Skip | Existing::Ask => Planned {
                     target,
                     write: Write::Skip,
                     notes,
+                    base,
                 },
             }
         })
@@ -409,6 +418,7 @@ pub fn run(
         batch,
         preset: preset.as_ref(),
         reserved: Mutex::new(batch.plan.reserved.clone()),
+        sources: Originals::new(&batch.photos),
         gate: Gate::new(lanes.memory),
         cancel,
     };
@@ -467,6 +477,9 @@ struct Shared<'a> {
     preset: Option<&'a Result<crate::watermark::Ready, String>>,
     /// The names taken, for a name chosen while the batch runs.
     reserved: Mutex<Reservations>,
+    /// The batch's originals, resolved when the first file is replaced: no
+    /// export replaces one.
+    sources: Originals<'a>,
     gate: Gate,
     cancel: Cancel<'a>,
 }
@@ -576,7 +589,7 @@ fn export(
         progress(0.95);
         let (path, note) = commit(
             staged.file,
-            photo,
+            &shared.sources,
             planned,
             batch.plan.late,
             &shared.reserved,
@@ -706,10 +719,11 @@ fn memory(opened: &Opened) -> u64 {
 }
 
 /// Puts a staged export in place, as `planned` says, unless Cancel came first.
-/// A file that appeared at a name planned as new gets the batch's answer.
+/// A file that appeared at a name planned as new gets the batch's answer. None of
+/// `sources` is ever replaced.
 fn commit(
     mut staged: tempfile::NamedTempFile,
-    photo: &BatchPhoto,
+    sources: &Originals<'_>,
     planned: &Planned,
     late: Existing,
     reserved: &Mutex<Reservations>,
@@ -728,7 +742,7 @@ fn commit(
         } else {
             spelled_otherwise(&target).unwrap_or(target)
         };
-        overwrite(staged, &target, &photo.source)?;
+        overwrite(staged, &target, sources)?;
         return Ok((target, None));
     }
     loop {
@@ -757,12 +771,12 @@ fn commit(
         let renamed = {
             let mut reserved = reserved.lock().unwrap_or_else(PoisonError::into_inner);
             reserved.found(&appeared);
-            (late == Existing::Unique).then(|| reserved.unique(&target))
+            (late == Existing::Unique).then(|| reserved.unique(&planned.base))
         };
         match (late, renamed) {
             (_, Some(renamed)) => target = renamed,
             (Existing::Overwrite, _) => {
-                overwrite(staged, &appeared, &photo.source)?;
+                overwrite(staged, &appeared, sources)?;
                 return Ok((
                     appeared,
                     Some("replaced a file that appeared during the export".into()),
@@ -802,10 +816,42 @@ fn spelled_otherwise(path: &Path) -> Option<PathBuf> {
         .map(|other| dir.join(other))
 }
 
-/// Replaces the file at `target` with `staged`, never the photo's own file.
-fn overwrite(staged: tempfile::NamedTempFile, target: &Path, source: &Path) -> Result<()> {
-    if target.exists() && std::fs::canonicalize(target)? == std::fs::canonicalize(source)? {
-        bail!("Cannot overwrite source");
+/// The files a batch exports from, which it never replaces: a photo's own, and
+/// another's, whose name a template can give a photo (a JPEG exported earlier
+/// with the same template, say). Resolved once, as the first file is replaced.
+struct Originals<'a> {
+    photos: &'a [BatchPhoto],
+    resolved: OnceLock<HashSet<PathBuf>>,
+}
+impl<'a> Originals<'a> {
+    fn new(photos: &'a [BatchPhoto]) -> Self {
+        Self {
+            photos,
+            resolved: OnceLock::new(),
+        }
+    }
+    /// Whether `file`, which exists, is one of them.
+    fn contains(&self, file: &Path) -> Result<bool> {
+        let file = std::fs::canonicalize(file)?;
+        let resolved = self.resolved.get_or_init(|| {
+            // A source that can't be found isn't a file that could be replaced.
+            self.photos
+                .iter()
+                .filter_map(|p| std::fs::canonicalize(&p.source).ok())
+                .collect()
+        });
+        Ok(resolved.contains(&file))
+    }
+}
+
+/// Replaces the file at `target` with `staged`, never one of `sources`.
+fn overwrite(
+    staged: tempfile::NamedTempFile,
+    target: &Path,
+    sources: &Originals<'_>,
+) -> Result<()> {
+    if target.exists() && sources.contains(target)? {
+        bail!("Cannot overwrite source {}", target.display());
     }
     crate::storage::persist(staged, target, Replace::Overwrite)
 }

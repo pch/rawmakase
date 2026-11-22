@@ -793,6 +793,89 @@ fn exporting_a_jpeg_never_replaces_it() -> Result<()> {
     Ok(())
 }
 
+/// A template can give a photo another photo's file name: here a JPEG exported
+/// earlier with the same template, chosen again beside the photo it came from.
+/// Overwrite must not replace that other photo's original.
+#[test]
+fn exporting_never_replaces_another_photos_original() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let (png, jpeg) = (
+        dir.path().join("DSC01.png"),
+        dir.path().join("2026-04-24 18.43.24.jpg"),
+    );
+    let image = image::RgbImage::from_fn(32, 24, |x, y| {
+        image::Rgb([(x * 8) as u8, (y * 10) as u8, 128])
+    });
+    image.save(&png)?;
+    image.save(&jpeg)?;
+    let original = std::fs::read(&jpeg)?;
+    let mut photos = vec![photo(&png), photo(&jpeg)];
+    for p in &mut photos {
+        p.naming.captured = Some("2026-04-24T18:43:24.000".into());
+    }
+    let mut settings = ExportSettings {
+        destination: Destination::SameFolder,
+        format: Format::Jpeg,
+        existing: Existing::Overwrite,
+        ..Default::default()
+    };
+    settings.choose_tokens(crate::export_settings::BUILTIN[0].tokens);
+    let batch = Batch {
+        plan: plan(&photos, &settings, None).unwrap(),
+        photos: photos.clone(),
+        settings,
+        defaults: Arc::new(DevelopDefaults::with_presets(Default::default(), |_| None)),
+        watermark: None,
+        demosaic: Default::default(),
+        cache: Default::default(),
+        ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
+    };
+    assert_eq!(batch.plan.entries[0].target, jpeg);
+    let outcomes = run_all(&batch);
+    match &outcomes[0] {
+        Outcome::Failed(reason) => assert!(reason.contains("Cannot overwrite source"), "{reason}"),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        exported(&outcomes[1]),
+        dir.path().join("2026-04-24 18.43.24-2.jpg")
+    );
+    assert_eq!(std::fs::read(&jpeg)?, original);
+    Ok(())
+}
+
+/// Names found taken while the batch runs are numbered on from the photo's own
+/// name, as names taken when it was planned are.
+#[test]
+fn a_name_taken_twice_during_the_export_gets_the_next_number() -> Result<()> {
+    let f = fixture(&["a.dng"])?;
+    let photos = f.batch_photos()?;
+    let mut settings = settings(&f.out().join("twice"));
+    settings.existing = Existing::Unique;
+    let out = f.out().join("twice");
+    let batch = Batch {
+        plan: plan(&photos, &settings, None).unwrap(),
+        ..f.batch(photos.clone(), settings.clone())
+    };
+    std::fs::create_dir_all(&out)?;
+    std::fs::write(out.join("a.tif"), b"late")?;
+    std::fs::write(out.join("a-2.tif"), b"late")?;
+    let outcome = run_all(&batch).remove(0);
+    assert_eq!(exported(&outcome), out.join("a-3.tif"));
+
+    // Planned as a-4, beside a, a-2 and a-3: a-4 and a-5 then appear.
+    let batch = Batch {
+        plan: plan(&photos, &settings, None).unwrap(),
+        ..f.batch(photos, settings)
+    };
+    assert_eq!(batch.plan.entries[0].target, out.join("a-4.tif"));
+    std::fs::write(out.join("a-4.tif"), b"late")?;
+    std::fs::write(out.join("a-5.tif"), b"late")?;
+    let outcome = run_all(&batch).remove(0);
+    assert_eq!(exported(&outcome), out.join("a-6.tif"));
+    Ok(())
+}
+
 /// A template from the Filename Template Editor names each photo from the
 /// fields taken when Export was chosen, and says what each name lacks.
 #[test]
@@ -1312,7 +1395,7 @@ fn files_appearing_under_photos_side_by_side_get_them_distinct_names() -> Result
                 .to_string()
         })
         .collect();
-    assert_ne!(names[0], names[1]);
+    assert_eq!(names, ["a-3.tif", "b-3.tif"]);
     assert_eq!(listing(&out).len(), 6, "{:?}", listing(&out));
     // Nothing of theirs was replaced.
     for name in ["a.tif", "b.tif", "a-2.tif", "b-2.tif"] {
