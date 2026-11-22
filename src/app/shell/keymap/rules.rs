@@ -98,6 +98,22 @@ pub(in crate::app) static FIXED_KEYS: &[FixedKey] = &[
         // `count_and_consume_key` matches logically: extra Shift and Alt pass.
         ignores: Mods::SHIFT.with(Mods::ALT),
     },
+    // Lightroom's Space, which it doesn't let a shortcut take either: the
+    // views read it in place (`FrameKeys::is_space`).
+    FixedKey {
+        title: "Opening the Loupe",
+        context: Context::Grid,
+        keys: &[Key::Space],
+        mods: &[Mods::NONE],
+        ignores: Mods::NONE,
+    },
+    FixedKey {
+        title: "Toggling the zoom",
+        context: Context::LoupeZoom,
+        keys: &[Key::Space],
+        mods: &[Mods::NONE],
+        ignores: Mods::NONE,
+    },
     FixedKey {
         title: "Panning while a tool is open",
         context: Context::Develop,

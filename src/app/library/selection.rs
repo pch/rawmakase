@@ -317,7 +317,9 @@ impl Library {
         for press in presses {
             // Shift extends the selection.
             let shift = press.modifiers.shift;
-            if keys.is(press, &b::GRID_LOUPE) {
+            // Space opens the Loupe too, as in Lightroom; it is read in place
+            // (`rules::FIXED_KEYS`), so no command takes it here.
+            if keys.is(press, &b::GRID_LOUPE) || keys.is_space(press) {
                 self.open_loupe()
             } else if keys.is(press, &b::GRID_COMPARE) {
                 self.open_compare()

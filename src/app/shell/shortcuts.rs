@@ -167,7 +167,7 @@ static LIBRARY: [Row; 19] = [
 ];
 static LOUPE: [Row; 7] = [
     row(
-        &[Keys(&b::GRID_LOUPE), Text("double-click")],
+        &[Keys(&b::GRID_LOUPE), Text("Space"), Text("double-click")],
         "Open the Loupe",
     ),
     row(
@@ -178,7 +178,10 @@ static LOUPE: [Row; 7] = [
         ],
         "Back to the grid",
     ),
-    row(&[Keys(&b::ZOOM), Text("click")], "Fit or the last zoom"),
+    row(
+        &[Keys(&b::ZOOM), Text("Space"), Text("click")],
+        "Fit or the last zoom",
+    ),
     row(&[Keys(&b::ZOOM_IN), Keys(&b::ZOOM_OUT)], "Zoom in / out"),
     row(&[Keys(&b::ZOOM_100), Keys(&b::ZOOM_FIT)], "100% / Fit"),
     row(&[Text("drag")], "Pan"),
@@ -372,7 +375,7 @@ static DEVELOP: [Row; 55] = [
     ),
     row(&[Keys(&b::REMOVE_HIDE_PINS)], "Hide spot pins"),
     row(&[Keys(&b::REMOVE_VISUALIZE)], "Visualize spots"),
-    row(&[Text("Space")], "Pan while a tool is open"),
+    row(&[Text("Hold Space")], "Pan while a tool is open"),
     row(&[Keys(&b::BEFORE_ONLY)], "Before alone"),
     row(
         &[Keys(&b::CAMERA_THUMBNAIL)],
@@ -398,7 +401,7 @@ static DEVELOP: [Row; 55] = [
         "Photo info overlay: Info 1, Info 2, off",
     ),
     row(&[Keys(&b::CLIPPING)], "Show shadow and highlight clipping"),
-    row(&[Keys(&b::ZOOM)], "Toggle zoom / fit"),
+    row(&[Keys(&b::ZOOM), Text("Space")], "Toggle zoom / fit"),
     row(
         &[
             Keys(&b::ZOOM_IN),
@@ -1263,7 +1266,7 @@ mod tests {
     #[test]
     fn one_letter_names_a_key_not_a_word() {
         let z = found("z");
-        assert!(has(&z, "Z", "Toggle zoom / fit"));
+        assert!(has(&z, "Z / Space", "Toggle zoom / fit"));
         // "Zoom in / out" is Cmd+= / Cmd+-, no Z key.
         assert!(!has(&z, "Cmd+= / Cmd+-", "Zoom in / out"));
     }

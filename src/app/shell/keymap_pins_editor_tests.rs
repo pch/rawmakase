@@ -882,6 +882,73 @@ fn the_loupe_and_develop_share_the_zoom_keys() {
     assert!(tap(Place::Grid, Key::Z, NONE).nothing(), "not in the grid");
 }
 
+/// Lightroom's Space: the grid's Space opens the Loupe, and the Loupe's and
+/// Develop's toggles the zoom as Z does, unless a tool is open, where holding
+/// it pans instead.
+#[test]
+fn space_opens_the_loupe_from_the_grid_and_toggles_the_zoom() {
+    assert!(tap(Place::Grid, Key::Space, NONE).is("view", "loupe"));
+    for m in [SHIFT, ALT, cmd()] {
+        assert!(
+            tap(Place::Grid, Key::Space, m).get("view").is_none(),
+            "{m:?}"
+        );
+    }
+    for place in [Place::Loupe, Place::Develop] {
+        let o = tap(place, Key::Space, NONE);
+        assert!(
+            o.get("zoom").is_some_and(|z| z.starts_with("on")),
+            "{place:?} {o:?}"
+        );
+        let mut f = Fixture::new(place);
+        f.tap(Key::Space, NONE);
+        let o = tap_in(&mut f, Key::Space, NONE);
+        assert!(
+            o.get("zoom").is_some_and(|z| z.starts_with("off")),
+            "{place:?} {o:?}"
+        );
+        // Once per press: a held Space must not flicker the zoom.
+        assert!(
+            repeat(place, Key::Space, NONE).get("zoom").is_none(),
+            "{place:?}"
+        );
+        assert!(
+            tap(place, Key::Space, SHIFT).get("zoom").is_none(),
+            "{place:?}"
+        );
+    }
+    // A tool keeps Space for its hand.
+    for place in [
+        Place::Crop,
+        Place::Remove,
+        Place::RedEye,
+        Place::Mask,
+        Place::Guided,
+    ] {
+        assert!(
+            tap(place, Key::Space, NONE).get("zoom").is_none(),
+            "{place:?}"
+        );
+    }
+    // A focused button keeps Space, and nothing behind a window or while typing.
+    assert!(
+        tap(Place::GridButton, Key::Space, NONE)
+            .get("view")
+            .is_none()
+    );
+    assert!(
+        tap(Place::DevelopButton, Key::Space, NONE)
+            .get("zoom")
+            .is_none()
+    );
+    assert!(
+        tap(Place::LoupePopup, Key::Space, NONE)
+            .get("zoom")
+            .is_none()
+    );
+    assert_inert_behind_a_window_and_while_typing(Key::Space, NONE, "Space");
+}
+
 #[test]
 fn compare_keys_step_the_candidate_and_swap() {
     for (key, field, value) in [

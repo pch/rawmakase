@@ -23,7 +23,7 @@ use eframe::egui::{self, Key, Pos2, Rect, Sense, Stroke, Vec2};
 /// What the page keeps between frames.
 #[derive(Default)]
 pub(in crate::app) struct Page {
-    query: String,
+    pub(super) query: String,
     conflicts_only: bool,
     capture: Option<Capture>,
     /// Where the cap waiting for a key was last drawn: a press anywhere else
@@ -211,10 +211,12 @@ fn rows(map: &Effective, clashes: &[Clash]) -> Vec<Row> {
     }
     for fixed in FIXED_KEYS {
         out.push(Row {
-            group: if fixed.keys.contains(&Key::Space) {
-                "Develop tools"
-            } else {
-                "Develop"
+            group: match fixed.context {
+                Context::Grid => "Library grid",
+                Context::LoupeZoom => "Loupe",
+                // Space's hand, beside the tools it pans for.
+                _ if fixed.keys.contains(&Key::Space) => "Develop tools",
+                _ => "Develop",
             },
             title: fixed.title,
             id: None,

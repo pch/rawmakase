@@ -106,11 +106,27 @@ fn a_fixed_key_keeps_its_chord_where_it_works() {
         refused("clipping", "Shift+Down", Os::Other),
         Some(Refusal::Taken("Nudging the hovered slider"))
     );
-    // Everywhere includes Develop.
+    // Everywhere includes the grid and Develop.
     assert_eq!(
         refused("chrome", "Space", Os::Other),
+        Some(Refusal::Taken("Opening the Loupe"))
+    );
+    assert_eq!(
+        refused("chrome", "Shift+Space", Os::Other),
         Some(Refusal::Taken("Panning while a tool is open"))
     );
+    // Space opens the Loupe from the grid, and toggles the zoom in the Loupe.
+    assert_eq!(
+        refused("grid:cell_style", "Space", Os::Other),
+        Some(Refusal::Taken("Opening the Loupe"))
+    );
+    assert_eq!(refused("grid:cell_style", "Shift+Space", Os::Other), None);
+    assert_eq!(
+        refused("info", "Space", Os::Other),
+        Some(Refusal::Taken("Toggling the zoom"))
+    );
+    // Compare and Survey leave it free.
+    assert_eq!(refused("compare_view:swap", "Space", Os::Other), None);
     // The grid has no hovered slider.
     assert_eq!(refused("grid:cell_style", "Up", Os::Other), None);
     assert_eq!(refused("crop", "Cmd+Up", Os::Other), None);

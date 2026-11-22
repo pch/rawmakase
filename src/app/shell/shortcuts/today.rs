@@ -37,9 +37,9 @@ pub(super) const LIBRARY: [Shortcut; 19] = [
     ("Alt+0 / Alt+Shift+0", "Next or previous Keyword Set"),
 ];
 pub(super) const LOUPE: [Shortcut; 7] = [
-    ("E / Return / double-click", "Open the Loupe"),
+    ("E / Return / Space / double-click", "Open the Loupe"),
     ("G / Esc / double-click", "Back to the grid"),
-    ("Z / click", "Fit or the last zoom"),
+    ("Z / Space / click", "Fit or the last zoom"),
     ("Cmd+= / Cmd+-", "Zoom in / out"),
     ("Cmd+0 / Cmd+1", "100% / Fit"),
     ("drag", "Pan"),
@@ -126,7 +126,7 @@ pub(super) const DEVELOP: [Shortcut; 55] = [
     ("/", "New source for the selected spot"),
     ("H", "Hide spot pins"),
     ("A", "Visualize spots"),
-    ("Space", "Pan while a tool is open"),
+    ("Hold Space", "Pan while a tool is open"),
     ("\\", "Before alone"),
     ("Shift+\\", "Camera thumbnail (the embedded JPEG)"),
     ("Y", "Before and after, left and right"),
@@ -140,7 +140,7 @@ pub(super) const DEVELOP: [Shortcut; 55] = [
     ("Shift+R", "Reference View"),
     ("I", "Photo info overlay: Info 1, Info 2, off"),
     ("J", "Show shadow and highlight clipping"),
-    ("Z", "Toggle zoom / fit"),
+    ("Z / Space", "Toggle zoom / fit"),
     (
         "Cmd+= / Cmd+- / Cmd+0 / Cmd+1",
         "Zoom in / out / 100% / Fit",
