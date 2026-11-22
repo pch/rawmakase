@@ -645,19 +645,24 @@ impl Editor {
                 drag.follow_alt(alt, c, moved);
                 let drag = *drag;
                 let d = (moved - drag.from) / rect.size();
-                match drag.handle.filter(|_| drag.about_centre) {
-                    Some(handle) => {
-                        let ratio = self.crop_constraint();
+                let ratio = self.crop_constraint();
+                let photo_aspect = rect.width() / rect.height();
+                match (drag.handle, ratio) {
+                    (Some(handle), _) if drag.about_centre => {
                         let crop = crop_drag::resize_about_centre(
                             drag.start,
                             handle,
                             d,
                             ratio,
-                            rect.width() / rect.height(),
+                            photo_aspect,
                         );
                         self.document.edit.recipe_mut().crop = crop;
                     }
-                    None => {
+                    (Some(handle), Some(ratio)) => {
+                        self.document.edit.recipe_mut().crop =
+                            crop_drag::resize_locked(drag.start, handle, d, ratio, photo_aspect);
+                    }
+                    _ => {
                         self.document.edit.recipe_mut().crop =
                             crop_drag::drag_sides(drag.start, drag.handle, d);
                         self.fit_aspect();

@@ -112,6 +112,9 @@ pub(in crate::app) struct MaskTool {
     pub(in crate::app) component: Option<usize>,
     /// Show the selected mask as a red overlay (O).
     pub(in crate::app) overlay: bool,
+    /// Whether moving a slider hid the overlay, rather than O or Show Overlay: it
+    /// shows again for the next mask selected or made.
+    hidden_by_adjusting: bool,
     pub(in crate::app) brushes: [Brush; 3],
     /// A, B, or 2 for the erase brush.
     pub(in crate::app) brush: usize,
@@ -150,6 +153,7 @@ impl Default for MaskTool {
             selected: None,
             component: None,
             overlay: true,
+            hidden_by_adjusting: false,
             brushes: [Brush::default(); 3],
             brush: 0,
             pending: None,
@@ -248,8 +252,13 @@ impl MaskTool {
         self.select(Some(mask), Some(component));
         self.pending = None;
         self.overlay = true;
+        self.hidden_by_adjusting = false;
     }
     fn select(&mut self, mask: Option<usize>, component: Option<usize>) {
+        if mask != self.selected && self.hidden_by_adjusting {
+            self.overlay = true;
+            self.hidden_by_adjusting = false;
+        }
         self.selected = mask;
         self.component = component;
         self.renaming = None;
@@ -371,6 +380,7 @@ impl Editor {
         }
         if keys.take(&b::MASK_OVERLAY).is_some() {
             t.overlay ^= true;
+            t.hidden_by_adjusting = false;
         }
         if keys.take(&b::MASK_SWITCH_BRUSH).is_some() {
             t.brush = if t.brush == 0 { 1 } else { 0 };
@@ -961,8 +971,13 @@ impl Editor {
         };
         hint(ui, what);
         indented(ui, |ui| {
-            ui.checkbox(&mut self.view.masking.overlay, "Show Overlay")
-                .on_hover_text("O: the selected mask in red");
+            if ui
+                .checkbox(&mut self.view.masking.overlay, "Show Overlay")
+                .on_hover_text("O: the selected mask in red")
+                .changed()
+            {
+                self.view.masking.hidden_by_adjusting = false;
+            }
         });
     }
     fn mask_list(&mut self, ui: &mut egui::Ui) {
@@ -1369,6 +1384,7 @@ impl Editor {
         let Some(mask) = &mut self.document.edit.recipe_mut().masks.get_mut(m) else {
             return;
         };
+        let before = (mask.amount, mask.adjust);
         set_edit_context(ui, &format!("{}:", mask_name(mask, m)));
         slider_with(
             ui,
@@ -1397,6 +1413,14 @@ impl Editor {
                 *a = LocalAdjust::default();
             }
         });
+        // As in Lightroom, adjusting the mask hides its red overlay, which would
+        // otherwise cover what the sliders do. O or Show Overlay brings it back, as
+        // does selecting or making another mask; hovering the mask's row or pin
+        // still shows it. An overlay already turned off stays the user's choice.
+        if (mask.amount, mask.adjust) != before && self.view.masking.overlay {
+            self.view.masking.overlay = false;
+            self.view.masking.hidden_by_adjusting = true;
+        }
     }
 }
 /// A mask's adjustment sliders, in Lightroom's groups.
@@ -1806,6 +1830,98 @@ mod tests {
         let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
         e.finish_edit_frame(edit, &ctx);
         assert_eq!(e.overlay(), crate::app::worker::Overlay::None);
+    }
+    /// Moving a mask's slider hides its red overlay, as Lightroom does, so what the
+    /// slider does shows; O, Show Overlay or hovering the mask brings it back.
+    #[test]
+    fn moving_a_masks_slider_hides_its_overlay() {
+        let mut e = editor(&["Radial"]);
+        e.context.enable_accesskit();
+        e.view.masking.select(Some(0), Some(0));
+        assert!(e.view.masking.overlay);
+        let tree = |e: &mut Editor, events| {
+            let ctx = e.context.clone();
+            let edit = e.begin_develop_frame();
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400., 900.))),
+                    events,
+                    ..Default::default()
+                },
+                |ui| e.mask_panel(ui),
+            );
+            output.textures_delta.clear();
+            e.finish_edit_frame(edit, &ctx);
+            output
+                .platform_output
+                .accesskit_update
+                .expect("accessibility is on")
+        };
+        let t = tree(&mut e, vec![]);
+        assert!(matches!(
+            e.overlay(),
+            crate::app::worker::Overlay::Mask { index: 0, .. }
+        ));
+        // The value field ends the label's line; the rail runs below it.
+        let field = crate::app::testing::labelled(&t, "Exposure")
+            .and_then(|n| n.bounds())
+            .expect("the Exposure slider");
+        let at = Pos2::new(field.x0 as f32 - 120., field.y1 as f32 + 6.);
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        tree(
+            &mut e,
+            vec![egui::Event::PointerMoved(at), button(at, true)],
+        );
+        let to = at + Vec2::new(40., 0.);
+        tree(&mut e, vec![egui::Event::PointerMoved(to)]);
+        assert!(
+            e.document.edit.recipe().masks[0].adjust.exposure > 0.,
+            "the slider moved"
+        );
+        assert_eq!(
+            e.overlay(),
+            crate::app::worker::Overlay::None,
+            "hidden while dragging"
+        );
+        tree(&mut e, vec![button(to, false)]);
+        assert_eq!(e.overlay(), crate::app::worker::Overlay::None, "and after");
+        // The next mask made shows its own overlay.
+        let ctx = e.context.clone();
+        crate::app::testing::in_edit_frame(&ctx, &mut e, |e| e.create_mask(Kind::Brush, None));
+        assert_eq!(e.view.masking.selected, Some(1));
+        assert!(matches!(
+            e.overlay(),
+            crate::app::worker::Overlay::Mask { index: 1, .. }
+        ));
+        // Hidden again by a slider, O shows it.
+        e.view.masking.select(Some(0), Some(0));
+        let t = tree(&mut e, vec![]);
+        let field = crate::app::testing::labelled(&t, "Exposure")
+            .and_then(|n| n.bounds())
+            .expect("the Exposure slider");
+        let at = Pos2::new(field.x0 as f32 - 60., field.y1 as f32 + 6.);
+        tree(
+            &mut e,
+            vec![egui::Event::PointerMoved(at), button(at, true)],
+        );
+        tree(
+            &mut e,
+            vec![egui::Event::PointerMoved(at + Vec2::new(20., 0.))],
+        );
+        tree(&mut e, vec![button(at + Vec2::new(20., 0.), false)]);
+        assert!(!e.view.masking.overlay);
+        frame(&mut e, vec![key(egui::Key::O)]);
+        assert!(e.view.masking.overlay);
+        // An overlay turned off with O stays off for the next mask.
+        frame(&mut e, vec![key(egui::Key::O)]);
+        let ctx = e.context.clone();
+        crate::app::testing::in_edit_frame(&ctx, &mut e, |e| e.create_mask(Kind::Brush, None));
+        assert!(!e.view.masking.overlay);
     }
     fn names(e: &Editor) -> Vec<&str> {
         let masks = &e.document.edit.recipe().masks;

@@ -986,3 +986,55 @@ fn a_quick_drag_takes_the_handle_it_was_pressed_on() {
     assert_near(c[0], 0.2, "left stays");
     assert!(c[2] < 0.75, "the right side moved in: {c:?}");
 }
+
+/// A locked crop's corner resizes it from the opposite corner, which stays where it is,
+/// as in Lightroom. Fitting the dragged crop to its aspect about its centre moved the
+/// opposite corner too, so the whole crop seemed to slide.
+#[test]
+fn a_locked_corner_drag_keeps_the_opposite_corner() {
+    let ctx = egui::Context::default();
+    for (x, y) in [(-1, -1), (1, -1), (1, 1), (-1, 1)] {
+        let mut editor = editor_with_crop(&ctx, "original", [0.2, 0.2, 0.8, 0.8]);
+        assert_near(
+            editor.crop_constraint().expect("locked"),
+            1.,
+            "1:1 in 0–1 terms",
+        );
+        // Inwards, mostly across: the crop shrinks towards the opposite corner.
+        let by = egui::vec2(-f32::from(x) * 0.2, -f32::from(y) * 0.05);
+        drag_crop(&ctx, &mut editor, (x, y), &[(by, PLAIN)]);
+        let c = editor.document.edit.recipe().crop;
+        let what = format!("corner {x}, {y}: {c:?}");
+        let opposite = (
+            if x < 0 { c[2] } else { c[0] },
+            if y < 0 { c[3] } else { c[1] },
+        );
+        let expected = (if x < 0 { 0.8 } else { 0.2 }, if y < 0 { 0.8 } else { 0.2 });
+        assert_near(opposite.0, expected.0, &what);
+        assert_near(opposite.1, expected.1, &what);
+        assert_near((c[2] - c[0]) / (c[3] - c[1]), 1., &what);
+        assert!(c[2] - c[0] < 0.55, "{what}: shrank");
+    }
+}
+
+/// A locked crop grows from a side dragged outwards, the other dimension growing about
+/// its middle, until it meets the photo's edge. The fit used to shrink it straight back.
+#[test]
+fn a_locked_side_dragged_out_grows_the_crop() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_with_crop(&ctx, "original", [0.3, 0.3, 0.7, 0.7]);
+    drag_crop(&ctx, &mut editor, (1, 0), &[(egui::vec2(0.1, 0.), PLAIN)]);
+    let c = editor.document.edit.recipe().crop;
+    assert_near(c[0], 0.3, "left stays");
+    assert_near(c[2], 0.8, "right follows the pointer");
+    assert_near(c[1], 0.25, "top");
+    assert_near(c[3], 0.75, "bottom");
+    // Far past the photo: the height stops it at the top and bottom edges.
+    drag_crop(&ctx, &mut editor, (1, 0), &[(egui::vec2(0.9, 0.), PLAIN)]);
+    let c = editor.document.edit.recipe().crop;
+    assert_near(c[0], 0.3, "left still stays");
+    assert_near(c[2] - c[0], c[3] - c[1], "ratio");
+    assert!(c.iter().all(|v| (0. ..=1.).contains(v)), "{c:?}");
+    assert_near(c[2], 1., "right at the edge");
+    editor.document.edit.recipe().validate().unwrap();
+}
