@@ -1,6 +1,6 @@
 # Remaining Lightroom parity gaps
 
-Status: Record (2026-10-05, last updated 2026-11-20); tone research updated 2026-10-16 for the [scene tone stage](../scene-tone-stage.md); lens, profile and catalog notes updated 2026-10-03. RAWmakase renders close to Lightroom but not identically. Each item below says what differs and, where measured, by how much. Errors are encoded-sRGB mean absolute error (0–1) against Camera Raw 18.6 or Lightroom Classic 15.5 exports, scored with `scripts/lightroom-scorecard.py`; most of the entries below are mean ΔE00 against Camera Raw 18.7 renders of the synthetic charts. For scale: Lightroom X100F references averaged 0.0090, Sony A7 II Camera Raw references 0.0065. The scene tone stage changed the default render and every tone control, so figures measured before it (dated 2026-10-05 and earlier) may have moved. Details: [tone controls](../tone-controls.md), [color mixer and grading](../color-mixer.md), [lens corrections](../lens-corrections.md), [transform](../transform.md).
+Status: Record (2026-10-05, last updated 2026-11-22); tone research updated 2026-10-16 for the [scene tone stage](../scene-tone-stage.md); lens, profile and catalog notes updated 2026-10-03. RAWmakase renders close to Lightroom but not identically. Each item below says what differs and, where measured, by how much. Errors are encoded-sRGB mean absolute error (0–1) against Camera Raw 18.6 or Lightroom Classic 15.5 exports, scored with `scripts/lightroom-scorecard.py`; most of the entries below are mean ΔE00 against Camera Raw 18.7 renders of the synthetic charts. For scale: Lightroom X100F references averaged 0.0090, Sony A7 II Camera Raw references 0.0065. The scene tone stage changed the default render and every tone control, so figures measured before it (dated 2026-10-05 and earlier) may have moved. Details: [tone controls](../tone-controls.md), [color mixer and grading](../color-mixer.md), [lens corrections](../lens-corrections.md), [transform](../transform.md).
 
 ## Measured and matched (for reference)
 
@@ -15,6 +15,112 @@ These controls were fitted to Camera Raw renders and match within the default-re
 - **Curve Refine Saturation** renders as Camera Raw 18.7 does on the chart ([tone controls](../tone-controls.md#refine-saturation)): the `curve-*-refine-saturation-*` cases sit at mean ΔE00 1.1–1.5, against 1.4 for the same S curve at 100. Values above 100 render as 100, as in Camera Raw. It imports, is written back, and has a Refine › Saturation slider (0–100) under the RGB point curve.
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the color curves was not checked; here they set the RGB curve only.
 - **Auto** tone is fitted to Lightroom Classic's own Auto values, from 452 Auto Settings steps on 439 catalog photos with every fifth photo held out; each slider is a linear fit of one or two display-encoded percentiles of luminance, of the brightest channel or of chroma, and the held-out error is a median 1 step on Contrast and 0.21 EV on Exposure. Lightroom changed Auto in mid-2019 and the catalog's history shows both versions, so the slopes are fitted on every photo and the levels, Contrast, Vibrance and Saturation on the current Auto alone. The WB menu's Auto white balance is fitted to Lightroom's Auto values (a median of 2.7 mired off on 133 photos); see [tone controls](../tone-controls.md#auto).
+
+### The best curve for each photo, and a one-pixel offset in the photo comparison (2026-11-22)
+
+Nothing here is merged. The build is the local Laplacian base ([below](#the-base-level-a-local-laplacian-filter-and-what-the-curves-are-once-it-is-right-2026-11-20))
+with the rule refitted through it on 467 photos, their targets taken through the
+stage's black; "the Laplacian build" below.
+
+**The photo comparison was off by a pixel.** The stress and validation references
+are 2048-pixel reductions (6000×4000 → 2048×1365). Reduced again to the 1024 pixels
+the scores are taken at, a 3:2 reference has 682 rows (682.5 rounds down) and the
+engine's own render, reduced from full size, has 683: the same frame, a row apart.
+The comparison (the scratch scorer here and `photo_metrics` in `scripts/corpus/gate.py`)
+crops both to the common size, which shifts the far edge by a pixel. 108 of 142
+compared frames differ so. With the render resampled onto the reference's grid
+instead, the default render's median ΔE00 on the 41 affected photos with a default
+reference falls from 1.23 to 0.85 (mean over photos) and its pixel-wise L\* RMS from
+2.66 to 1.10; on the 24 stress photos the default's median goes 0.91 → 0.73. Every
+recorded photo score of a 3:2 file carries about 0.2–0.4 ΔE00 of this, alike for
+every build. The gate is unchanged; the numbers below are on the reference's grid.
+
+**The Laplacian build against main, on the reference's grid** (median over photos of
+the photo's median ΔE00; then the mean ΔE00 in the band the slider works on):
+
+| | main | Laplacian build |
+| --- | --- | --- |
+| Shadows +100, 24 stress photos | 2.14; 3.57 | 1.71; 3.03 |
+| Shadows +100, 29 validation photos | 2.02; 4.02 | 1.72; 3.19 |
+| Highlights −100, 24 stress photos | 0.84; 2.04 | 0.87; 1.77 |
+| Highlights −100, 32 validation photos | 0.99; 1.71 | 1.00; 1.64 |
+
+The dark band's L\* bias at Shadows +100 goes 2.89 → 2.14 and 3.62 → 2.15. The mean
+over photos does not improve (2.33 → 2.33 and 2.02 → 2.13): a few photos get much
+worse, each a photo whose curve the network predicts badly (the worst, a dark frame
+with a sparse tail eleven stops down, gets twice the lift). Over 271 photo and
+setting pairs the build is closer than main on 99 and further on 65. Against the same
+refit on main's guided base the medians are better and the means worse. Not proposed.
+
+**The best curve for each photo.** With renders in the loop: a free correction at ten
+knots along the base level is added to the build's own curve for one photo, and fitted
+by damped least squares to the pixel-wise L\* difference from Camera Raw on a
+512-pixel copy (three rounds).
+
+| Pixel-wise L\* RMS, mean / median over photos | as built | best curve | default render alone |
+| --- | --- | --- | --- |
+| Highlights −100, 56 photos | 2.29 / 1.55 | 1.27 / 0.82 | |
+| Shadows +100, 53 photos | 2.72 / 1.95 | 1.50 / 1.15 | 1.04 / 0.70 |
+
+What the best curve leaves follows the default render's own difference (correlation
+0.96 at Shadows +100; 0.59 as built). So of the 1.68 over the default at Shadows +100
+the curve is 1.22, and 0.46 is the operator and the fit's own limits. The largest
+gains are photos with a far-extrapolated top or bottom: Highlights −100 5.53 → 0.62,
+4.91 → 0.89, 4.63 → 0.84, 4.05 → 0.92 (the network's curve reaches −2.6 to −5 stops at
+the top knot there); Shadows +100 10.02 → 1.27 (5.3 stops of lift at the bottom, 1.2
+too many), 7.87 → 0.88, 6.33 → 0.96.
+
+**The corrections share no direction.** Over the photos the median correction is
+within 0.05 stop of zero from five stops under the key to the top, with quartiles of
+±0.1–0.2 stop near the key and ±0.2–0.6 at the ends; under six stops below the key
+the median is −0.2 to −0.6 on a handful of photos. In the top two stops of Highlights
+−100 the median is −0.1 stop and the quartiles −0.6 and +0.1; the network's curve and
+the best curve differ by 0.57 stop RMS over the top six knots, and one line for every
+photo (0.90 stop a stop from 0.2 stop over the key) is worse than the network (0.66).
+The rule is unbiased; what is missing is each photo's own curve.
+
+**Tried on single photos, and not general.**
+
+- *The pixel's own level toward the top.* On two sky photos at Highlights −100 the
+  sky's contrast (the spread of L\* over pixels of L\* 85 and more at default) is 3.68
+  and 4.15 in Camera Raw and 2.45 and 2.43 in the build: Camera Raw pulls the blue sky
+  more than the white clouds, which the base level (1.5 stops wide) treats as detail.
+  Reading the curve at the pixel's own level from about 1.2–1.7 stops under the white,
+  together with a fitted curve, gives 3.56 and 4.07. Over the 56 photos, fitted the
+  same way, it adds nothing (1.27 → 1.29 mean; closer on 8, further on 16), and with
+  a fixed start and the network's curve it is level or worse (band mean 2.08 → 2.35
+  on stress, 2.14 → 2.20 on validation). A share of the pixel's level over the whole
+  frame is worse (closer on 1–2 photos, further on 14–21).
+- *A weaker lift in the deepest shadows* (halved from four stops under the key) and *a
+  stronger pull toward the top* (×1.2): each fitted one photo and neither carries
+  (dark-band bias 2.24 → 2.51; bright-band bias 1.51 → 2.45, further on 11 of 24).
+- *The white curve on the base level* (the pixel keeping its distance): no change in
+  either sky. *The pull times the pixel's distance from its base*: more contrast, and
+  the sky's level rises with it. *Clarity with Highlights*: not it.
+- *The default exposure*: the default renders' level differs by 0.00 stop on three
+  own photos and +0.004 (median) on the 24 stress photos.
+
+**The explicit law in the engine.** The law of the 2026-11-21 section, refitted on
+the 480 scenes through the Laplacian base (0.113 stop a scene), in place of the
+network's Shadows +100 curve in the build: worse on photos (stress mean ΔE00 2.76 →
+3.23, further on 14 of 24; validation 2.57 → 2.68, further on 15 of 29; cropped
+comparison).
+
+**Other operators' forms on the floor test** (the best own curve per scene, 120 clean
+scenes, median RMS in stops, Shadows +100 / Highlights −100; own implementations of
+published methods): the pixel's level 0.113 / 0.076; main's guided base 0.085 / 0.063;
+the local Laplacian base 0.069 / 0.054; an exposure-independent guided filter base
+0.087–0.111 / 0.063–0.075 by setting; a guided tonal mask times a curve of the pixel's
+level 0.102 / 0.075; a local Laplacian filter with one free remap of pixel less
+reference per scene and no curve 0.19 / 0.114. None is under the local Laplacian base.
+These tests leave out pixels within a tenth of the white, so they say nothing of the
+top.
+
+**Open.** A better prediction of each photo's curve: more scenes rendered by Camera
+Raw (the 2026-11-21 section's learning curve was still falling at 360), and the top
+and bottom ends where the curve is extrapolated. The 0.46 the best curve leaves at
+Shadows +100. Whether the gate should resample instead of crop: it would move every
+recorded photo baseline.
 
 ### Camera Raw questioned on scenes with known input: what Shadows is (2026-11-21)
 
