@@ -37,8 +37,10 @@ shown under the row:
   these shortcuts, the filters, dismissing the messages): it needs Cmd, or an F
   key;
 - a key a control keeps where the command works: Up or Down in Develop, alone or
-  with Shift or Alt, which nudge the slider under the pointer, and Space with any
-  modifier, which pans while a tool is open;
+  with Shift or Alt, which nudge the slider under the pointer; Space, which opens
+  the Loupe from the grid and toggles the zoom in the Loupe and Develop, as in
+  Lightroom; and in Develop Space with any modifier, which pans while it is held
+  with a tool open;
 - on Windows, the keys Windows turns into Cut, Copy or Paste before RAWmakase sees
   them (see [Windows](#windows)).
 

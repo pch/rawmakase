@@ -1682,8 +1682,8 @@ mod tests {
     }
     /// The Preferences pages with drop-downs, for `RAWMAKASE_UI_SHOTS`
     /// ([`crate::app::ui::shots`]): Catalog's previews, Performance's
-    /// thumbnail cache, Display's theme and Profiles' Raw Defaults with camera
-    /// overrides on and a camera's default.
+    /// thumbnail cache, Display's theme, Profiles' Raw Defaults with camera
+    /// overrides on and a camera's default, and Shortcuts searched for Space.
     #[test]
     fn shots_of_preferences() {
         use crate::raw_defaults::{CameraDefault, DefaultChoice, DevelopDefaults, RawDefaults};
@@ -1692,6 +1692,8 @@ mod tests {
             ("preferences-performance", Tab::Performance),
             ("preferences-display", Tab::Display),
             ("preferences-profiles", Tab::Profiles),
+            // Searched for Space, whose fixed rows sit in three groups.
+            ("preferences-shortcuts-space", Tab::Shortcuts),
         ] {
             crate::app::ui::shots::shot(
                 name,
@@ -1714,6 +1716,9 @@ mod tests {
                     e.onboarding.visible = false;
                     e.preferences.open = true;
                     e.preferences.tab = tab;
+                    if tab == Tab::Shortcuts {
+                        e.preferences.shortcuts.query = "space".into();
+                    }
                 },
                 |e, ctx| e.preferences_window(ctx),
             );

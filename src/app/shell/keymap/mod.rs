@@ -785,6 +785,15 @@ impl<'a> FrameKeys<'a> {
             .filter(|p| !state.presses.contains(p) && !menu(p))
             .collect()
     }
+    /// Whether `press` is a tap of Space alone for the views that read it in
+    /// place ([`rules::FIXED_KEYS`]): its first press, not a repeat, and not
+    /// while a control holds the focus, which Space presses.
+    pub(in crate::app) fn is_space(&self, press: &Press) -> bool {
+        press.key == Key::Space
+            && !press.repeat
+            && Mods::of(press.modifiers) == Mods::NONE
+            && !self.ctx.memory(|m| m.focused().is_some())
+    }
     /// Takes `press`, one of [`Self::presses`], for a command.
     pub(in crate::app) fn take_press(&self, press: &Press) {
         let mut taken = self.taken();

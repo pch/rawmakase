@@ -1576,7 +1576,7 @@ impl Editor {
                 self.step_zoom(1)
             } else if keys.is(&press, &bindings::ZOOM_OUT) {
                 self.step_zoom(-1)
-            } else if keys.is(&press, &bindings::ZOOM) {
+            } else if keys.is(&press, &bindings::ZOOM) || self.space_zooms(&keys, &press) {
                 // Once per press: a held Z must not flicker the zoom.
                 self.view.zoom.on = !self.view.zoom.on
             } else if keys.is(&press, &bindings::MAGNIFIER) {
@@ -1586,6 +1586,12 @@ impl Editor {
             }
             keys.take_press(&press);
         }
+    }
+    /// Whether `press` is a tap of Space that toggles the zoom, as Z does: in
+    /// the Library's Loupe, and in Develop while no tool is open. An open tool
+    /// keeps Space, which pans while it is held.
+    fn space_zooms(&self, keys: &FrameKeys, press: &crate::app::shell::keymap::Press) -> bool {
+        keys.is_space(press) && (self.module == Module::Library || self.view.is(Tool::None))
     }
     pub(in crate::app) fn develop_shortcuts(&mut self, ctx: &egui::Context) {
         self.view.masking.expire_rename(ctx.cumulative_pass_nr());
