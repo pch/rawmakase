@@ -35,8 +35,8 @@ pub(in crate::app) mod inset {
     /// A side panel section's contents from the panel's edges, and its
     /// header's title and chevron, so they line up.
     pub(in crate::app) const SECTION_CONTENT: f32 = space::M;
-    /// [`SECTION_CONTENT`] in Develop's adjustments and the Library's right
-    /// panel, wider: it keeps controls at the right edge, such as the curve's
+    /// [`SECTION_CONTENT`] in Develop's adjustments, its Presets and History
+    /// panel and the Library's right panel, wider: it keeps controls at the right edge, such as the curve's
     /// white point, clear of the scroll bar that floats over them. The histogram's graph lines up with it.
     pub(in crate::app) const ADJUSTMENT_CONTENT: f32 = space::XL;
     /// The catalog sidebar's rows from its [`PANEL`] margin, inside its scroll

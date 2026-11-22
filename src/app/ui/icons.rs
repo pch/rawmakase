@@ -30,6 +30,7 @@ fastframe_icons::icons! {
         Keyboard => "keyboard",
         Bug => "bug",
         GridView => "layout-grid",
+        ListView => "list",
         LoupeView => "square",
         SurveyView => "layout-dashboard",
         Presets => "layers",

@@ -293,7 +293,8 @@ metadata field being typed, and the session file ([shutdown](shutdown.md#where-t
   its own (a catalog location, the catalog session's structural generation).
 - **Latest-only workers** (`app::worker::Latest`): the Develop loader, its full-size
   stage and prefetch, the renderer (with lanes for the edit and Before), Reference
-  View, stand-ins, the Loupe and its zoom. A single-slot mailbox replaces pending
+  View, stand-ins, the Loupe and its zoom, the Tone Curve's histogram and the Presets
+  panel's tiles. A single-slot mailbox replaces pending
   work with the newest request; a panicking job does not end the thread.
 - **Owned services with their own queue**: autosave (its own thread and catalog
   connection), AI Denoise (`ai_denoise::Service`: one queue and one worker for

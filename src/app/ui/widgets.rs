@@ -301,6 +301,7 @@ fn section_header(
     // Contents, and the header's title and chevron over them, from the panel's
     // edges.
     let content_inset = if group == Some(SectionGroup::DevelopRight.key())
+        || group == Some(SectionGroup::DevelopLeft.key())
         || group == Some(SectionGroup::LibraryRight.key())
     {
         inset::ADJUSTMENT_CONTENT

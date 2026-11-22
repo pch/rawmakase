@@ -1,5 +1,5 @@
 use crate::app::Editor;
-use crate::app::ui::design::{Tone, radius, space, text};
+use crate::app::ui::design::{self, Tone, inset, radius, space, text};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::segmented;
 use crate::app::worker::Event;
@@ -94,6 +94,7 @@ impl Editor {
         let mut user_action = None;
         let user = crate::presets::user::UserPresets::default();
         let mut manage = false;
+        let mut view_chosen = None;
         ui.spacing_mut().item_spacing.y = 0.;
         egui::ScrollArea::vertical()
             .id_salt("preset-list")
@@ -132,154 +133,327 @@ impl Editor {
                     {
                         manage = true;
                     }
-                    crate::app::ui::widgets::search_field(
-                        ui,
-                        &mut self.presets.filter,
-                        "Search presets",
-                    );
-                    let mut show = match (self.presets.favorites_only, self.presets.compatible_only)
-                    {
-                        (true, _) => 1,
-                        (false, true) => 2,
-                        _ => 0,
-                    };
-                    // Each filter with how many presets it shows: Compatible,
-                    // those that fit this camera's photo.
-                    let shown =
-                        |p: &&crate::xmp::Preset| !self.presets.layout.hidden.contains(&p.id);
-                    let total = library.presets.iter().filter(shown).count();
-                    let favorites = library
-                        .presets
-                        .iter()
-                        .filter(shown)
-                        .filter(|p| self.presets.favorites.contains(&p.id))
-                        .count();
-                    let fit = library
-                        .presets
-                        .iter()
-                        .zip(&self.presets.issues)
-                        .filter(|(p, e)| e.is_none() && shown(p))
-                        .count();
-                    let labels = [
-                        format!("All {total}"),
-                        format!("Favorites {favorites}"),
-                        // Nothing to fit without a photo.
-                        if self.document.metadata.is_some() {
-                            format!("Compatible {fit}")
+                    // Grid or List, left of the manage icon and apart from it.
+                    for (k, view, icon, tip) in [
+                        (
+                            1.,
+                            PresetView::List,
+                            crate::app::ui::icons::Icon::ListView,
+                            "List",
+                        ),
+                        (
+                            2.,
+                            PresetView::Grid,
+                            crate::app::ui::icons::Icon::GridView,
+                            "Grid",
+                        ),
+                    ] {
+                        let rect = add.translate(Vec2::new(-(k * 24. + space::M), 0.));
+                        let response =
+                            ui.interact(rect, ui.id().with(("preset-view", tip)), Sense::click());
+                        let on = self.presets.view == view;
+                        if on || response.hovered() {
+                            ui.painter().rect_filled(
+                                rect,
+                                radius::CONTROL,
+                                palette.tone(Tone::RAISED),
+                            );
+                        }
+                        let tint = palette.tone(if on || response.hovered() {
+                            Tone::STRONG
                         } else {
-                            "Compatible".into()
-                        },
-                    ];
-                    let w = ui.available_width();
-                    if segmented(
-                        ui,
-                        &mut show,
-                        &[(0, &labels[0]), (1, &labels[1]), (2, &labels[2])],
-                        w,
-                    ) {
-                        self.presets.favorites_only = show == 1;
-                        self.presets.compatible_only = show == 2;
+                            Tone::SECONDARY
+                        });
+                        crate::app::ui::icons::paint_at(
+                            ui.painter(),
+                            icon,
+                            rect.center(),
+                            14.,
+                            tint,
+                        );
+                        let response = crate::app::ui::widgets::named(response, tip)
+                            .on_hover_text(match view {
+                                PresetView::Grid => "Show presets as thumbnails of this photo",
+                                PresetView::List => "Show presets as a list",
+                            })
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if response.clicked() && !on {
+                            view_chosen = Some(view);
+                        }
                     }
-                    self.preset_amount_ui(ui);
-                    if !library.errors.is_empty() {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{} unreadable files",
-                                library.errors.len()
-                            ))
-                            .size(text::MICRO)
-                            .color(ui.visuals().warn_fg_color),
-                        )
-                        .on_hover_text(library.errors.join("\n"));
-                    }
-                    let groups = self.preset_list();
-                    if groups.is_empty() && !library.presets.is_empty() {
-                        let empty = EmptyList::of(&self.presets, favorites);
-                        if empty_state(ui, &empty) {
-                            match empty.action {
-                                EmptyAction::ClearSearch => self.presets.filter.clear(),
-                                EmptyAction::ShowAll => {
-                                    self.presets.favorites_only = false;
-                                    self.presets.compatible_only = false;
+                    // The rest at Develop's adjustments' margins, clear of the
+                    // scroll bar that floats over the panel's right edge.
+                    egui::Frame::new()
+                        .inner_margin(design::margin(inset::ADJUSTMENT_CONTENT, 0.))
+                        .show(ui, |ui| {
+                            crate::app::ui::widgets::search_field(
+                                ui,
+                                &mut self.presets.filter,
+                                "Search presets",
+                            );
+                            let mut show =
+                                match (self.presets.favorites_only, self.presets.compatible_only) {
+                                    (true, _) => 1,
+                                    (false, true) => 2,
+                                    _ => 0,
+                                };
+                            // Each filter with how many presets it shows: Compatible,
+                            // those that fit this camera's photo.
+                            let shown = |p: &&crate::xmp::Preset| {
+                                !self.presets.layout.hidden.contains(&p.id)
+                            };
+                            let total = library.presets.iter().filter(shown).count();
+                            let favorites = library
+                                .presets
+                                .iter()
+                                .filter(shown)
+                                .filter(|p| self.presets.favorites.contains(&p.id))
+                                .count();
+                            let fit = library
+                                .presets
+                                .iter()
+                                .zip(&self.presets.issues)
+                                .filter(|(p, e)| e.is_none() && shown(p))
+                                .count();
+                            let labels = [
+                                format!("All {total}"),
+                                format!("Favorites {favorites}"),
+                                // Nothing to fit without a photo.
+                                if self.document.metadata.is_some() {
+                                    format!("Compatible {fit}")
+                                } else {
+                                    "Compatible".into()
+                                },
+                            ];
+                            let w = ui.available_width();
+                            if segmented(
+                                ui,
+                                &mut show,
+                                &[(0, &labels[0]), (1, &labels[1]), (2, &labels[2])],
+                                w,
+                            ) {
+                                self.presets.favorites_only = show == 1;
+                                self.presets.compatible_only = show == 2;
+                            }
+                            self.preset_amount_ui(ui);
+                            if !library.errors.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{} unreadable files",
+                                        library.errors.len()
+                                    ))
+                                    .size(text::MICRO)
+                                    .color(ui.visuals().warn_fg_color),
+                                )
+                                .on_hover_text(library.errors.join("\n"));
+                            }
+                            let groups = self.preset_list();
+                            if groups.is_empty() && !library.presets.is_empty() {
+                                let empty = EmptyList::of(&self.presets, favorites);
+                                if empty_state(ui, &empty) {
+                                    match empty.action {
+                                        EmptyAction::ClearSearch => self.presets.filter.clear(),
+                                        EmptyAction::ShowAll => {
+                                            self.presets.favorites_only = false;
+                                            self.presets.compatible_only = false;
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    }
-                    ui.spacing_mut().item_spacing.y = 0.;
-                    let force_open = !self.presets.filter.is_empty() || self.presets.favorites_only;
-                    for PresetGroup {
-                        imported,
-                        name: group,
-                        presets,
-                    } in groups.iter()
-                    {
-                        let id = ui.make_persistent_id(("preset-group", imported, group));
-                        let open = force_open
-                            || ui.ctx().data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
-                        if list_row(ui, group, Some(presets.len()), 0, Some(open), false, true)
-                            .clicked()
-                            && !force_open
-                        {
-                            ui.ctx().data_mut(|d| d.insert_temp(id, !open));
-                        }
-                        if !open {
-                            continue;
-                        }
-                        for (i, name) in presets {
-                            let i = *i;
-                            let p = &library.presets[i];
-                            let issue = self.presets.issues.get(i).and_then(Option::as_ref);
-                            // Incompatible presets are grayed out but still apply
-                            // everything they can, as in Lightroom.
-                            let enabled = self.document.full().is_some();
-                            let favorite = self.presets.favorites.contains(&p.id);
-                            let response = list_row(
-                                ui,
-                                name,
-                                None,
-                                1,
-                                None,
-                                self.presets.selected == p.id,
-                                enabled && issue.is_none(),
-                            );
-                            // Off screen in the scrolled list: nothing more to draw.
-                            if !ui.is_rect_visible(response.rect) {
-                                continue;
-                            }
-                            // Favorite star on the right, shown on hover or when set.
-                            let star = egui::Rect::from_center_size(
-                                egui::pos2(response.rect.right() - 12., response.rect.center().y),
-                                Vec2::splat(16.),
-                            );
-                            let star_response =
-                                ui.interact(star, ui.id().with(("favorite", i)), Sense::click());
-                            if favorite || response.hovered() || star_response.hovered() {
-                                ui.painter().text(
-                                    star.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    "★",
-                                    egui::FontId::proportional(text::LABEL),
-                                    palette.tone(if star_response.hovered() {
-                                        Tone::STRONG
-                                    } else if favorite {
-                                        Tone::SOFT
-                                    } else {
-                                        Tone::DISABLED
-                                    }),
+                            ui.spacing_mut().item_spacing.y = 0.;
+                            let force_open =
+                                !self.presets.filter.is_empty() || self.presets.favorites_only;
+                            let grid = self.presets.view == PresetView::Grid;
+                            let layout = TileLayout::of(ui);
+                            let now = ui.input(|i| i.time);
+                            let inputs = grid
+                                .then(|| {
+                                    thumbnail_inputs(
+                                        &self.document,
+                                        &self.presets.library,
+                                        self.view.display_profile(),
+                                    )
+                                })
+                                .flatten();
+                            if grid {
+                                self.preset_thumbnails.begin(
+                                    ui.ctx(),
+                                    now,
+                                    layout.edge,
+                                    inputs.as_ref(),
                                 );
                             }
-                            if star_response
-                                .on_hover_text(if favorite {
-                                    "Remove from favorites"
-                                } else {
-                                    "Add to favorites"
-                                })
-                                .clicked()
+                            // Tiles this far above or below the scrolled view are rendered
+                            // too, so a short scroll finds them there.
+                            let ahead = ui
+                                .clip_rect()
+                                .expand2(Vec2::new(0., layout.side + layout.gap));
+                            let mut toggled = None;
+                            for PresetGroup {
+                                imported,
+                                name: group,
+                                presets,
+                            } in groups.iter()
                             {
-                                if favorite {
-                                    self.presets.favorites.remove(&p.id);
-                                } else {
-                                    self.presets.favorites.insert(p.id.clone());
+                                let id = group_open_id(*imported, group);
+                                let open = force_open
+                                    || ui.ctx().data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+                                let row = list_row(
+                                    ui,
+                                    group,
+                                    Some(presets.len()),
+                                    0,
+                                    Some(open),
+                                    false,
+                                    true,
+                                );
+                                if crate::app::ui::widgets::named(row, group).clicked()
+                                    && !force_open
+                                {
+                                    ui.ctx().data_mut(|d| d.insert_temp(id, !open));
+                                }
+                                if !open {
+                                    continue;
+                                }
+                                // Incompatible presets are grayed out but still apply
+                                // everything they can, as in Lightroom.
+                                let enabled = self.document.full().is_some();
+                                let item = |ui: &mut egui::Ui,
+                                            response: egui::Response,
+                                            star: egui::Rect,
+                                            i: usize,
+                                            failed: Option<&str>|
+                                 -> Item {
+                                    let p = &library.presets[i];
+                                    preset_item(
+                                        ui,
+                                        response,
+                                        star,
+                                        PresetFacts {
+                                            p,
+                                            i,
+                                            issue: self
+                                                .presets
+                                                .issues
+                                                .get(i)
+                                                .and_then(Option::as_ref),
+                                            substitute: self
+                                                .presets
+                                                .substitutes
+                                                .get(i)
+                                                .and_then(Option::as_ref),
+                                            favorite: self.presets.favorites.contains(&p.id),
+                                            enabled,
+                                            user: &user,
+                                            tile: grid,
+                                            failed,
+                                        },
+                                    )
+                                };
+                                let mut outcome = |out: Item, i: usize| {
+                                    if out.clicked {
+                                        clicked = Some(i);
+                                    }
+                                    if out.hovered {
+                                        hovered = Some(i);
+                                    }
+                                    if out.toggled {
+                                        toggled = Some(i);
+                                    }
+                                    if out.action.is_some() {
+                                        user_action = out.action;
+                                    }
+                                };
+                                if !grid {
+                                    for (i, name) in presets {
+                                        let i = *i;
+                                        let p = &library.presets[i];
+                                        let issue =
+                                            self.presets.issues.get(i).and_then(Option::as_ref);
+                                        let response = list_row(
+                                            ui,
+                                            name,
+                                            None,
+                                            1,
+                                            None,
+                                            self.presets.selected == p.id,
+                                            enabled && issue.is_none(),
+                                        );
+                                        // Off screen in the scrolled list: nothing more to draw.
+                                        if !ui.is_rect_visible(response.rect) {
+                                            continue;
+                                        }
+                                        // Favorite star on the right, shown on hover or when set.
+                                        let star = egui::Rect::from_center_size(
+                                            egui::pos2(
+                                                response.rect.right() - 12.,
+                                                response.rect.center().y,
+                                            ),
+                                            Vec2::splat(16.),
+                                        );
+                                        outcome(item(ui, response, star, i, None), i);
+                                    }
+                                    continue;
+                                }
+                                ui.add_space(layout.gap);
+                                for pair in presets.chunks(2) {
+                                    let (row, _) = ui.allocate_exact_size(
+                                        Vec2::new(ui.available_width(), layout.side),
+                                        Sense::hover(),
+                                    );
+                                    for (k, (i, name)) in pair.iter().enumerate() {
+                                        let i = *i;
+                                        let p = &library.presets[i];
+                                        let rect = layout.tile(row, k);
+                                        if ahead.intersects(rect) {
+                                            self.preset_thumbnails.want(i, &p.id);
+                                        }
+                                        let response = ui.interact(
+                                            rect,
+                                            ui.id().with(("preset-tile", i)),
+                                            Sense::click(),
+                                        );
+                                        let response =
+                                            crate::app::ui::widgets::named(response, name);
+                                        if !ui.is_rect_visible(rect) {
+                                            continue;
+                                        }
+                                        let issue =
+                                            self.presets.issues.get(i).and_then(Option::as_ref);
+                                        let shown = self.preset_thumbnails.tile(&p.id);
+                                        let failed = match shown {
+                                            thumbnails::Tile::Failed(why) => Some(why.to_owned()),
+                                            _ => None,
+                                        };
+                                        paint_tile(
+                                            ui,
+                                            rect,
+                                            &shown,
+                                            TileLook {
+                                                name,
+                                                enabled: enabled && issue.is_none(),
+                                                selected: self.presets.selected == p.id,
+                                                hovered: enabled && response.hovered(),
+                                            },
+                                        );
+                                        let star = egui::Rect::from_center_size(
+                                            egui::pos2(rect.right() - 12., rect.top() + 12.),
+                                            Vec2::splat(18.),
+                                        );
+                                        outcome(item(ui, response, star, i, failed.as_deref()), i);
+                                    }
+                                    ui.add_space(layout.gap);
+                                }
+                            }
+                            if grid {
+                                let idle = !self.preview.task.is_running();
+                                self.preset_thumbnails
+                                    .end(ui.ctx(), now, idle, inputs.as_ref());
+                            }
+                            if let Some(i) = toggled {
+                                let id = library.presets[i].id.clone();
+                                if !self.presets.favorites.remove(&id) {
+                                    self.presets.favorites.insert(id);
                                 }
                                 self.presets.revision += 1;
                                 if let Err(e) =
@@ -287,44 +461,18 @@ impl Editor {
                                 {
                                     self.messages.fail(e.to_string());
                                 }
-                                continue;
                             }
-                            // Control-click opens the menu on macOS, as a right-click does.
-                            if enabled
-                                && response.clicked()
-                                && !crate::app::ui::widgets::context_clicked(&response)
-                            {
-                                clicked = Some(i);
-                            }
-                            // Presets made here can be changed, as Lightroom's own;
-                            // imported ones renamed or deleted, and any preset file
-                            // shown where it is.
-                            if !p.builtin {
-                                crate::app::ui::widgets::context_menu(&response, |ui| {
-                                    if let Some(action) =
-                                        crate::app::presets::user_presets::preset_menu(
-                                            ui, &user, p, i,
-                                        )
-                                    {
-                                        user_action = Some(action);
-                                    }
-                                });
-                            }
-                            if response.hovered() && enabled {
-                                hovered = Some(i);
-                            }
-                            // Built only while it shows.
-                            let substitute =
-                                self.presets.substitutes.get(i).and_then(Option::as_ref);
-                            response.on_hover_ui(|ui| {
-                                ui.label(preset_detail(p, issue, substitute));
-                            });
-                        }
-                    }
+                        });
                 });
             });
         if manage {
             self.modal = Some(crate::app::Modal::ManagePresets(Default::default()));
+        }
+        if let Some(view) = view_chosen {
+            self.presets.view = view;
+            if let Err(e) = self.save_session() {
+                self.messages.fail(format!("Preset view not saved: {e:#}"));
+            }
         }
         if let Some(action) = user_action {
             self.preset_action(action);
@@ -701,29 +849,279 @@ impl Editor {
     }
 }
 
-/// A preset's tooltip: its name, then whether it fits this photo and how.
+/// Where whether a group of the panel is open is kept, in the context's
+/// temporary data.
+pub(in crate::app) fn group_open_id(imported: bool, group: &str) -> egui::Id {
+    egui::Id::new(("preset-group-open", imported, group))
+}
+
+/// How the Presets panel shows its presets: as tiles of the open photo with each
+/// applied, or as a list of names.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::app) enum PresetView {
+    #[default]
+    Grid,
+    List,
+}
+
+/// The grid's two columns: square tiles `side` points across with `gap` between
+/// them, rendered `edge` pixels square at the display's scale.
+struct TileLayout {
+    side: f32,
+    gap: f32,
+    edge: u32,
+}
+impl TileLayout {
+    fn of(ui: &egui::Ui) -> Self {
+        let gap = space::XS;
+        let side = ((ui.available_width() - gap) / 2.).floor().max(1.);
+        Self {
+            side,
+            gap,
+            edge: (side * ui.ctx().pixels_per_point()).round().max(1.) as u32,
+        }
+    }
+    /// The `k`th tile (0 or 1) of `row`.
+    fn tile(&self, row: egui::Rect, k: usize) -> egui::Rect {
+        egui::Rect::from_min_size(
+            row.min + Vec2::new(k as f32 * (self.side + self.gap), 0.),
+            Vec2::splat(self.side),
+        )
+    }
+}
+
+/// What the tiles are rendered from: the decoded photo and its edit, `None`
+/// while no photo is decoded.
+pub(in crate::app) fn thumbnail_inputs<'a>(
+    document: &'a crate::app::develop::state::Document,
+    library: &'a Arc<crate::presets::Library>,
+    monitor: Option<std::path::PathBuf>,
+) -> Option<thumbnails::Inputs<'a>> {
+    Some(thumbnails::Inputs {
+        image: document.full()?,
+        recipe: document.edit.recipe(),
+        metadata: document.metadata.as_ref()?,
+        profiles: &document.profiles,
+        monitor,
+        library,
+        photo: (document.path.clone(), document.catalog_photo),
+    })
+}
+
+/// What is known of a preset for its row or tile.
+struct PresetFacts<'a> {
+    p: &'a crate::xmp::Preset,
+    i: usize,
+    issue: Option<&'a String>,
+    substitute: Option<&'a (String, String)>,
+    favorite: bool,
+    /// A photo is decoded to apply it to.
+    enabled: bool,
+    user: &'a crate::presets::user::UserPresets,
+    /// Drawn as a tile, whose star sits on the photo.
+    tile: bool,
+    /// Why its tile could not be rendered.
+    failed: Option<&'a str>,
+}
+
+/// What a preset's row or tile was asked this frame.
+#[derive(Default)]
+struct Item {
+    clicked: bool,
+    hovered: bool,
+    /// Its favorite star was clicked.
+    toggled: bool,
+    action: Option<crate::app::presets::user_presets::PresetAction>,
+}
+
+/// A preset's row or tile: its favorite star at `star`, shown on hover or when
+/// set, the click that applies it, its menu, and its tooltip.
+fn preset_item(
+    ui: &mut egui::Ui,
+    response: egui::Response,
+    star: egui::Rect,
+    f: PresetFacts,
+) -> Item {
+    let palette = theme::palette(ui.ctx());
+    let mut out = Item::default();
+    let star_response = ui.interact(star, ui.id().with(("favorite", f.i)), Sense::click());
+    if f.favorite || response.hovered() || star_response.hovered() {
+        if f.tile {
+            // A backdrop, so the star reads over any photo.
+            ui.painter()
+                .circle_filled(star.center(), 9., egui::Color32::from_black_alpha(140));
+        }
+        ui.painter().text(
+            star.center(),
+            egui::Align2::CENTER_CENTER,
+            "★",
+            egui::FontId::proportional(text::LABEL),
+            palette.tone(if star_response.hovered() {
+                Tone::STRONG
+            } else if f.favorite {
+                Tone::SOFT
+            } else if f.tile {
+                Tone::MUTED
+            } else {
+                Tone::DISABLED
+            }),
+        );
+    }
+    let star_response = crate::app::ui::widgets::named(star_response, favorite_text(f.favorite));
+    if star_response
+        .on_hover_text(favorite_text(f.favorite))
+        .clicked()
+    {
+        out.toggled = true;
+        return out;
+    }
+    // Control-click opens the menu on macOS, as a right-click does.
+    if f.enabled && response.clicked() && !crate::app::ui::widgets::context_clicked(&response) {
+        out.clicked = true;
+    }
+    // Presets made here can be changed, as Lightroom's own; imported ones renamed
+    // or deleted, and any preset file shown where it is.
+    if !f.p.builtin {
+        crate::app::ui::widgets::context_menu(&response, |ui| {
+            if let Some(action) =
+                crate::app::presets::user_presets::preset_menu(ui, f.user, f.p, f.i)
+            {
+                out.action = Some(action);
+            }
+        });
+    }
+    if response.hovered() && f.enabled {
+        out.hovered = true;
+    }
+    // Built only while it shows.
+    response.on_hover_ui(|ui| {
+        let mut detail = preset_detail(f.p, f.issue, f.substitute);
+        if let Some(why) = f.failed {
+            detail.push_str(&format!("\nThumbnail not rendered: {why}"));
+        }
+        ui.label(detail);
+    });
+    out
+}
+
+fn favorite_text(favorite: bool) -> &'static str {
+    if favorite {
+        "Remove from favorites"
+    } else {
+        "Add to favorites"
+    }
+}
+
+/// How a tile is drawn besides its picture.
+struct TileLook<'a> {
+    name: &'a str,
+    /// Applies in full to a decoded photo; otherwise dimmed, as the list grays it.
+    enabled: bool,
+    selected: bool,
+    hovered: bool,
+}
+
+/// Height of the strip a tile's name sits on.
+const NAME_STRIP: f32 = 20.;
+
+/// A preset's tile: the photo with it applied, cut square from the middle, or a
+/// placeholder until it lands (with a warning mark when it failed), the name on a
+/// strip over its bottom, dimmed when it doesn't apply in full, and outlined when
+/// selected or hovered.
+fn paint_tile(ui: &egui::Ui, rect: egui::Rect, shown: &thumbnails::Tile, look: TileLook) {
+    use egui::{Color32, CornerRadius, Stroke, StrokeKind};
+    let palette = theme::palette(ui.ctx());
+    let painter = ui.painter_at(rect);
+    let corners = CornerRadius::same(radius::CONTROL as u8);
+    match shown {
+        thumbnails::Tile::Picture(texture) => {
+            egui::Image::new((texture.id(), rect.size()))
+                .corner_radius(corners)
+                .paint_at(ui, rect);
+        }
+        thumbnails::Tile::Missing | thumbnails::Tile::Failed(_) => {
+            painter.rect_filled(rect, corners, palette.tone(Tone::CARD));
+        }
+    }
+    let strip = egui::Rect::from_min_max(
+        egui::pos2(rect.left(), rect.bottom() - NAME_STRIP),
+        rect.max,
+    );
+    if let thumbnails::Tile::Failed(_) = shown {
+        crate::app::ui::icons::paint_at(
+            &painter,
+            crate::app::ui::icons::Icon::Failed,
+            egui::pos2(rect.center().x, (rect.top() + strip.top()) / 2.),
+            18.,
+            palette.warning(),
+        );
+    }
+    if !look.enabled {
+        painter.rect_filled(rect, corners, Color32::from_black_alpha(120));
+    }
+    painter.rect_filled(
+        strip,
+        CornerRadius {
+            sw: corners.sw,
+            se: corners.se,
+            ..Default::default()
+        },
+        Color32::from_black_alpha(150),
+    );
+    let galley = egui::WidgetText::from(look.name).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Truncate),
+        (strip.width() - 2. * space::S).max(1.),
+        egui::FontId::proportional(text::SMALL),
+    );
+    painter.galley(
+        egui::pos2(
+            strip.left() + space::S,
+            strip.center().y - galley.size().y / 2.,
+        ),
+        galley,
+        palette.tone(match (look.enabled, look.hovered || look.selected) {
+            (false, _) => Tone::DISABLED,
+            (true, true) => Tone::STRONG,
+            (true, false) => Tone::SOFT,
+        }),
+    );
+    if look.selected {
+        painter.rect_stroke(
+            rect,
+            corners,
+            Stroke::new(2., palette.tone(Tone::STRONG)),
+            StrokeKind::Inside,
+        );
+    } else if look.hovered {
+        painter.rect_stroke(
+            rect,
+            corners,
+            Stroke::new(1., palette.tone(Tone::SOFT)),
+            StrokeKind::Inside,
+        );
+    }
+}
+
+/// A preset's tooltip: its name, whether it fits this photo, its notes and
+/// the profile it renders with in place of a missing one.
 fn preset_detail(
     p: &crate::xmp::Preset,
     issue: Option<&String>,
     substitute: Option<&(String, String)>,
 ) -> String {
-    let detail = match issue {
-        Some(issue) => format!(
-            "{}\nNot fully compatible: {issue}\nClick to apply the supported settings",
-            p.name
-        ),
-        None => format!(
-            "{}\nClick to apply · hover to preview\n{}",
-            p.name,
-            p.notes.join("\n")
-        ),
-    };
-    match substitute {
-        Some((asked, used)) => format!(
-            "{detail}\nMade for {asked}; renders with {used} because {asked} isn't imported for this camera"
-        ),
-        None => detail,
+    let mut lines = vec![p.name.clone()];
+    if let Some(issue) = issue {
+        lines.push(format!("Not fully compatible: {issue}"));
+        lines.push("Only the supported settings apply".into());
     }
+    lines.extend(p.notes.iter().filter(|n| !n.is_empty()).cloned());
+    if let Some((asked, used)) = substitute {
+        lines.push(format!(
+            "Made for {asked}; renders with {used} because {asked} isn't imported for this camera"
+        ));
+    }
+    lines.join("\n")
 }
 
 /// Why the preset list shows nothing, and the one step that brings presets
@@ -879,6 +1277,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_preset_tooltip_says_only_what_the_row_does_not() {
+        let mut p = crate::xmp::Preset {
+            id: "warm".into(),
+            name: "Warm".into(),
+            group: "Color".into(),
+            path: Default::default(),
+            settings: Default::default(),
+            curves: Default::default(),
+            look: String::new(),
+            blockers: Vec::new(),
+            notes: Vec::new(),
+            photo_settings: false,
+            local: Default::default(),
+            builtin: false,
+        };
+        assert_eq!(preset_detail(&p, None, None), "Warm");
+        p.notes = vec!["Uses its own curve".into()];
+        let issue = "The profile Velvia is for another camera".to_string();
+        let substitute = ("Velvia".to_string(), "Camera Look".to_string());
+        assert_eq!(
+            preset_detail(&p, Some(&issue), Some(&substitute)),
+            "Warm\n\
+             Not fully compatible: The profile Velvia is for another camera\n\
+             Only the supported settings apply\n\
+             Uses its own curve\n\
+             Made for Velvia; renders with Camera Look because Velvia isn't imported for this camera"
+        );
+    }
+
+    #[test]
     fn an_empty_preset_list_says_why_and_offers_the_way_back() {
         let mut browser = crate::app::develop::state::PresetBrowser {
             favorites_only: true,
@@ -906,9 +1334,12 @@ mod tests {
 
 #[cfg(test)]
 mod editor_tests;
+#[cfg(test)]
+mod thumbnails_editor_tests;
 
 pub(in crate::app) mod bulk_import;
 pub(in crate::app) mod lut_import;
 pub(in crate::app) mod manager;
 pub(in crate::app) mod profile_manager;
+pub(in crate::app) mod thumbnails;
 pub(in crate::app) mod user_presets;

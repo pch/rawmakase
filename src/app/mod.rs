@@ -59,6 +59,8 @@ pub(crate) struct Editor {
     hdr_histogram: crate::app::develop::hdr_histogram::HdrHistograms,
     /// The Tone Curve panel's histogram of what the curves take in, and its worker.
     curve_histogram: crate::app::develop::curve_histogram::CurveHistograms,
+    /// The Presets panel's tiles in Grid view, and their worker.
+    preset_thumbnails: crate::app::presets::thumbnails::Thumbnails,
     /// The window's wgpu state this frame, for the HDR preview's texture.
     render_state: Option<eframe::egui_wgpu::RenderState>,
     /// Reads the window's display's HDR headroom.
@@ -354,6 +356,11 @@ impl Editor {
             presets: PresetBrowser {
                 favorites: crate::presets::load_favorites(),
                 layout: crate::presets::load_layout(),
+                view: if session.preset_list {
+                    crate::app::presets::PresetView::List
+                } else {
+                    crate::app::presets::PresetView::Grid
+                },
                 ..Default::default()
             },
             view: ViewState {
@@ -392,6 +399,7 @@ impl Editor {
             curve_histogram: crate::app::develop::curve_histogram::CurveHistograms::new(
                 ctx.clone(),
             ),
+            preset_thumbnails: crate::app::presets::thumbnails::Thumbnails::new(ctx.clone()),
             render_state: None,
             headroom: Default::default(),
             clipboard: None,
@@ -508,6 +516,7 @@ impl Editor {
                 dismissed_community_profiles: self.profile_download.dismissed().clone(),
                 hidden_profile_groups: self.profile_menu.hidden_groups.clone(),
                 favorite_profiles: self.profile_menu.favorites.clone(),
+                preset_list: self.presets.view == crate::app::presets::PresetView::List,
                 crop_guides: self.view.crop_guides.to_session(),
                 crop_aspect: crate::app::develop::panels::inspector::aspect_key(
                     self.view.chosen_aspect,
@@ -658,6 +667,8 @@ impl eframe::App for Editor {
         self.hdr_preview.sweep(self.render_state.as_ref());
         // The Tone Curve's histogram, when no panel showed it.
         self.curve_histogram.sweep();
+        // The Presets panel's tiles, when no grid showed them.
+        self.preset_thumbnails.sweep();
         self.follow_hdr_display();
         if self.view.monitor.follows_system() {
             if self.view.system_display.update(frame) {

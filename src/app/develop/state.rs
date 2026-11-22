@@ -542,6 +542,8 @@ pub(in crate::app) struct PresetBrowser {
     pub(in crate::app) scanned: bool,
     /// The Amount of the preset just applied, while nothing else has changed.
     pub(in crate::app) amount: Option<crate::app::presets::AmountSession>,
+    /// Grid or List, as last chosen.
+    pub(in crate::app) view: crate::app::presets::PresetView,
 }
 
 impl PresetBrowser {

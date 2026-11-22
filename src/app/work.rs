@@ -24,6 +24,7 @@ pub(in crate::app) enum Kind {
     HdrPreview,
     HdrHistogram,
     CurveHistogram,
+    PresetThumbnails,
     Export,
     Batch,
     FolderChange,
@@ -159,6 +160,16 @@ const WORK: &[Row] = &[
         slows_previews: false,
         pauses_checksums: false,
         stop: Some(|e, _| vec![e.curve_histogram.stop()]),
+    },
+    // The Presets panel's tiles, on a worker of their own; they show as they land.
+    Row {
+        kind: Kind::PresetThumbnails,
+        running: None,
+        closing: None,
+        status: None,
+        slows_previews: false,
+        pauses_checksums: false,
+        stop: Some(|e, _| vec![e.preset_thumbnails.stop()]),
     },
     // Its progress in the bar. Queued exports count, not only the one running.
     Row {
