@@ -214,10 +214,12 @@ impl Editor {
                 self.messages.warn(e.to_string());
             }
             Some(true) => {
+                self.take_send_to_drafts(true);
                 self.exports.dialog = false;
                 self.export(self.exports.draft.clone());
             }
             Some(false) => {
+                self.take_send_to_drafts(false);
                 self.exports.dialog = false;
                 self.exports.read.cancel();
             }
@@ -639,6 +641,7 @@ impl Editor {
                 form_row(ui, "", |_| {});
             }
         }
+        let destinations = self.extensions.export_destinations();
         let s = &mut self.exports.draft;
         section(ui, "Post-Processing");
         form_row(ui, "After Export", |ui| {
@@ -654,9 +657,80 @@ impl Editor {
                 "After Export",
             );
         });
+        // Only with an extension's export destination to offer, or one chosen.
+        if !destinations.is_empty() || s.send_to.is_some() {
+            send_to_row(ui, &mut s.send_to, &destinations);
+        }
+        let chosen = s.send_to.as_ref().and_then(|key| {
+            destinations
+                .into_iter()
+                .find(|d| d.key == *key && d.unavailable.is_none())
+        });
+        if let Some(destination) = chosen {
+            self.send_to_options(ui, &destination);
+        }
         ui.add_space(space::M);
         if choose {
             self.choose_export_folder(ui.ctx());
+        }
+    }
+
+    /// The chosen export destination's options, under Send To, drawn as its
+    /// extension's settings are; a value changed is kept in the draft by
+    /// destination, and left out once it is the option's default again.
+    pub(super) fn send_to_options(
+        &mut self,
+        ui: &mut egui::Ui,
+        destination: &crate::app::extensions::Destination,
+    ) {
+        let key = &destination.key;
+        let values = crate::app::extensions::option_values(
+            &destination.options,
+            self.exports.draft.send_to_options.get(key),
+        );
+        for option in &destination.options {
+            if !crate::app::extensions::setting_shown(&destination.options, &values, option) {
+                continue;
+            }
+            let value = values.get(&option.id).cloned().unwrap_or_default();
+            let label = option.name.clone().unwrap_or_else(|| option.id.clone());
+            let mut set = None;
+            form_row(ui, &label, |ui| {
+                set = self.setting_control(ui, key, option, &value);
+            });
+            if let Some(help) = &option.help {
+                form_row(ui, "", |ui| crate::app::extensions::setting_help(ui, help));
+            }
+            if let Some(value) = set {
+                self.extension_page.forget_draft(key, &option.id);
+                choose_option(&mut self.exports.draft, key, option, value);
+            }
+        }
+    }
+
+    /// The text being typed into the chosen destination's options, taken
+    /// into the draft before it exports, as a field losing focus would; or
+    /// dropped when the dialog is cancelled.
+    fn take_send_to_drafts(&mut self, keep: bool) {
+        let Some(key) = self.exports.draft.send_to.clone() else {
+            return;
+        };
+        let drafts = self.extension_page.take_drafts(&key);
+        if !keep {
+            return;
+        }
+        let Some(destination) = self
+            .extensions
+            .export_destinations()
+            .into_iter()
+            .find(|d| d.key == key)
+        else {
+            return;
+        };
+        for (id, text) in drafts {
+            if let Some(option) = destination.options.iter().find(|o| o.id == id) {
+                choose_option(&mut self.exports.draft, &key, option, text.into());
+            }
         }
     }
 
@@ -724,6 +798,77 @@ impl Editor {
 }
 
 /// A Lightroom section band.
+/// Send To: Nowhere, or an export destination of an enabled extension. One
+/// that can't take the files now is listed, disabled, with why; chosen, it
+/// is named with why beside it, and the export runs without it.
+pub(super) fn send_to_row(
+    ui: &mut egui::Ui,
+    send_to: &mut Option<String>,
+    destinations: &[crate::app::extensions::Destination],
+) {
+    const NOWHERE: &str = "Nowhere";
+    let chosen = send_to
+        .as_ref()
+        .map(|key| destinations.iter().find(|d| d.key == *key).ok_or(key));
+    let (shown, why) = match chosen {
+        None => (NOWHERE.to_string(), None),
+        Some(Ok(d)) => (d.name.clone(), d.unavailable.clone()),
+        Some(Err(key)) => (
+            key.clone(),
+            Some("its extension isn't installed or is disabled".to_string()),
+        ),
+    };
+    form_row(ui, "Send To", |ui| {
+        crate::app::ui::widgets::named_menu(
+            crate::app::ui::widgets::dropdown(ui, "export-send-to")
+                .width(220.)
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(send_to, None, NOWHERE);
+                    for d in destinations {
+                        let item = ui
+                            .add_enabled(
+                                d.unavailable.is_none(),
+                                egui::Button::selectable(send_to.as_ref() == Some(&d.key), &d.name),
+                            )
+                            .on_disabled_hover_text(d.unavailable.clone().unwrap_or_default());
+                        if item.clicked() {
+                            *send_to = Some(d.key.clone());
+                        }
+                    }
+                }),
+            "Send To",
+        );
+        if let Some(why) = why {
+            ui.label(
+                egui::RichText::new(format!("Not sent: {why}"))
+                    .size(text::SMALL)
+                    .color(theme::palette(ui.ctx()).tone(Tone::SECONDARY)),
+            );
+        }
+    });
+}
+
+/// Keeps `value` as option `option`'s of destination `key` in `settings`,
+/// or forgets it when it is the default, so the settings hold only what was
+/// changed.
+pub(super) fn choose_option(
+    settings: &mut crate::export_settings::ExportSettings,
+    key: &str,
+    option: &rawmakase_extensions::protocol::manifest::Setting,
+    value: serde_json::Value,
+) {
+    let chosen = settings.send_to_options.entry(key.to_string()).or_default();
+    if value == option.default {
+        chosen.remove(&option.id);
+    } else {
+        chosen.insert(option.id.clone(), value);
+    }
+    if chosen.is_empty() {
+        settings.send_to_options.remove(key);
+    }
+}
+
 fn section(ui: &mut egui::Ui, title: &str) {
     let palette = theme::palette(ui.ctx());
     ui.add_space(space::S);

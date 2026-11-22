@@ -44,7 +44,7 @@ program exits.
   `invalid_request` (the app never sends one: it fails such a request itself),
   a malformed request is answered `invalid_request`, an oversized line is
   skipped, and the session goes on.
-- **API 2** and **API 3** take the [handles](#handles) the app passes with its requests,
+- **API 2** and later take the [handles](#handles) the app passes with its requests,
   and the program's reader gives up the recovery above: a framing fault ends
   the program, which logs why. The app is the only sender of handles and
   serialises every line itself, so a fault means corruption, not input to
@@ -69,6 +69,10 @@ program exits.
 - **API 3** is API 2, and adds [photo sources](#sourcereport-request): the
   events `source-started` and `source-stopped`, and `source.report`. A
   manifest declaring a `[[source]]` declares `api = 3`.
+- **API 4** is API 3 with [`export.deliver`](#exportdeliver-request), which
+  the app sends only to a program serving it; the SDK refuses one serving an
+  earlier `api` with `invalid_request`. A manifest declaring an
+  `[[export-destination]]` declares `api = 4`.
 
 The app's side keeps the recovery rules in every mode: a program's malformed
 line never ends a session.
@@ -455,6 +459,70 @@ program answers. The app copies the result out, inverts the rendition it capture
 for the request, and keeps it as the spot's patch only if what the region was made
 from still holds; it never sends the same request again by itself, since each may
 be a paid call.
+
+### `export.deliver` (request)
+
+Sends an export's files to an [export destination](manifest.md#export-destination)
+once the export has written them all (`api = 4`):
+
+```json
+{"destination":"web","folder":"/Users/jane/Pictures/Wedding","label":"Wedding",
+ "options":{"title":"Ola & Tomek","layout":"Grid","columns":3},
+ "files":[{"path":"/Users/jane/Pictures/Wedding/IMG_0001.jpg","name":"IMG_0001.jpg",
+           "width":2048,"height":1365,"captured":"2026-05-04T10:21:33",
+           "label":"yellow","rating":4,"flag":"pick"}]}
+```
+
+- `files` are the files the export wrote, in its order, 1 to 1000
+  (`MAX_DELIVERED_FILES`); photos it didn't export aren't there. Each `path`
+  is absolute, in `folder` or below it, and `name` is its file name. `width`
+  and `height` are the file's pixels; `captured` is when the photo was taken by
+  the camera's clock, without a time zone, and is left out when the catalog
+  doesn't know it. `label`, `rating` and `flag` are the photo's in the
+  catalog when it was exported (a virtual copy's own): `label` is `red`,
+  `yellow`, `green`, `blue` or `purple`, as the key map's `toggle_label:`
+  actions name them (`LABELS`), left out without one or with a label of
+  another name; `rating` is 0 (no stars) to 5; `flag` is `pick` or `reject`
+  (`FLAGS`), left out when neither. A photo exported from outside the catalog
+  has none of the three. A file is written whole and in place when the request is
+  sent; the app doesn't touch it afterwards, and nor should the program, which
+  writes what it makes (a gallery's pages) beside it or elsewhere.
+- `folder` is the deepest folder holding every file: the export's folder, or
+  its subfolder, unless the photos were exported beside their originals in
+  several folders. `label` is that folder's name, for a gallery's title, one
+  line of at most 1024 bytes.
+- `options` holds every [option](manifest.md#export-destination) the
+  destination declares, by id: what the user chose for this export in the
+  Export dialog, or the option's default, each of its control's type (a
+  string for `text`, `choice` and `segmented`, a boolean for `toggle`, a
+  number for `number`). The SDK reads them with `option_str`, `option_bool`
+  and `option_f64`.
+
+The SDK refuses a request that doesn't pass those checks with
+`invalid_request` before the handler runs, and one sent to a program serving an
+`api` below 4. Reply:
+
+```json
+{"sent":12,"message":"Published Wedding","location":"https://jane.example/wedding"}
+```
+
+`sent` is how many files it sent. `message`, optional, says what it did, and
+`location`, optional, is where the user sees the result: a path or a URL. Each
+is one line of at most 1024 bytes; the SDK checks its handler's answer, and the
+app refuses one that doesn't fit. The top bar says what the export did, then
+what was sent ("Exported 12 of 12 · Sent 12 to Web Gallery"), with the message
+and the location when the line is opened; or why not ("Exported 12 of 12 · Web
+Gallery failed: offline"). The exported files stay either way. Errors:
+`needs_setup` when the user has to set something up first (an account),
+`unavailable` when the service can't be reached, each with a message the top
+bar shows as it is. While it runs, the status line says "Sending to Web
+Gallery…"; the app doesn't show a delivery's `progress` yet.
+
+The app sends one request per export, from its UI thread, and gives it 15
+minutes. Stop on the extension's page in Preferences > Extensions cancels it,
+as it does a command, and so do disabling the extension and quitting; the
+program answers `cancelled` soon after. The app never sends a delivery again by
+itself.
 
 ### Events
 

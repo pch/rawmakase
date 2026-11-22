@@ -17,10 +17,11 @@
 use crate::host::{Host, Shared};
 use crate::shm::{Handle, Incoming, Mapping, Plain, Receive};
 use crate::{
-    Command, ControlAdapter, MaskAsk, MaskGenerator, Panel, RetouchAsk, RetouchGenerator, Source,
+    Command, ControlAdapter, ExportDestination, MaskAsk, MaskGenerator, Panel, RetouchAsk,
+    RetouchGenerator, Source,
 };
 use rawmakase_extension_protocol::framing::{FrameError, LineReader};
-use rawmakase_extension_protocol::manifest::{API, RETOUCH_GENERATOR_API};
+use rawmakase_extension_protocol::manifest::{API, EXPORT_DESTINATION_API, RETOUCH_GENERATOR_API};
 use rawmakase_extension_protocol::message::Handles;
 use rawmakase_extension_protocol::method::{
     AppEvent, AppRequest, CommandRun, Controls, HelloReply, MaskGenerate,
@@ -46,6 +47,7 @@ pub struct Extension {
     /// The scope each source runs in now, by source id.
     scopes: BTreeMap<String, u64>,
     retouch_generators: BTreeMap<String, Box<dyn RetouchGenerator>>,
+    export_destinations: BTreeMap<String, Box<dyn ExportDestination>>,
     on_event: Option<EventHandler>,
 }
 
@@ -58,7 +60,7 @@ pub struct ServeOptions {
     ///
     /// API 1 takes no handles: a message declaring some is answered
     /// `invalid_request`, a malformed request too, an oversized line is
-    /// skipped, and reading goes on. API 2 and 3 take the handles the app
+    /// skipped, and reading goes on. API 2 and later take the handles the app
     /// passes with its requests, and a framing fault ends serving: the program exits
     /// under [`Extension::run`], and [`Extension::serve_with_options`] returns
     /// an error.
@@ -234,6 +236,16 @@ impl Extension {
     ) -> Self {
         self.retouch_generators
             .insert(id.into(), Box::new(generator));
+        self
+    }
+    /// Implements the `[[export-destination]]` with this id.
+    pub fn export_destination(
+        mut self,
+        id: &str,
+        destination: impl ExportDestination + 'static,
+    ) -> Self {
+        self.export_destinations
+            .insert(id.into(), Box::new(destination));
         self
     }
     /// Called with every event from the app, after the extension's own state
@@ -458,6 +470,10 @@ impl Extension {
             .retouch_generators
             .keys()
             .map(|id| format!("retouch-generator/{id}"));
+        let destinations = self
+            .export_destinations
+            .keys()
+            .map(|id| format!("export-destination/{id}"));
         let reply = HelloReply {
             protocol: PROTOCOL,
             implements: commands
@@ -466,6 +482,7 @@ impl Extension {
                 .chain(generators)
                 .chain(sources)
                 .chain(retouch)
+                .chain(destinations)
                 .collect(),
         };
         serde_json::to_value(reply).expect("a reply is JSON")
@@ -609,6 +626,24 @@ impl Extension {
                 // Unmapped, and then closed, before the reply.
                 drop((image, coverage, result, handles));
                 answer.map(|done| serde_json::to_value(done).expect("a result is JSON"))
+            }
+            AppRequest::ExportDeliver(deliver) => {
+                if api < EXPORT_DESTINATION_API {
+                    return Err(RemoteError::new(
+                        ErrorCode::InvalidRequest,
+                        format!(
+                            "export.deliver needs api {EXPORT_DESTINATION_API}, and this program serves {api}"
+                        ),
+                    ));
+                }
+                deliver.validate()?;
+                let Some(destination) = self.export_destinations.get_mut(&deliver.destination)
+                else {
+                    return Err(unknown("export destination", &deliver.destination));
+                };
+                let delivered = destination.deliver(cx, deliver)?;
+                delivered.validate()?;
+                Ok(serde_json::to_value(delivered).expect("a result is JSON"))
             }
         }
     }

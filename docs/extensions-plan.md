@@ -12,7 +12,8 @@ and externally launched ones; and moved MCP and MIDI out as bundled
 extensions. Phase 3 built viewer input and mask generators and moved AI masks
 out. The `source` contract is built too ([decisions](#source-decisions)),
 proved by a test-only extension; no watched-folder or tethering extension
-exists yet. This page is the
+exists yet. So is `export-destination`
+([decisions](#export-destination-decisions)), proved by a test-only extension. This page is the
 design we agreed on before implementation; once a part is built, its reference
 moves to `docs/extensions/` and this page records only what is still open.
 
@@ -431,7 +432,7 @@ What each contribution is, which side owns what, and the invariants it keeps.
 | `retouch-generator` | program | Returns RGB pixels for a painted area of a region (object removal); built with `api = 3` | The region and its rendition, storing the patch as an asset, its place among retouches, rendering it ([Retouch patches](#retouch-patches)) |
 | `importer` | program | Reads another application's catalog, once, into an import plan | Validating and committing the plan in one transaction; preserving the source's unsupported data |
 | `source` | program | Watches for arriving files (a watched folder, a tethered camera) and reports each complete one | Adding them to the catalog, duplicates, conflicts, never moving or deleting originals |
-| `export-destination` | program | Receives each published file and sends it somewhere (upload, gallery, printer) | Rendering, encoding and atomic publication; "exported" and "uploaded" reported separately |
+| `export-destination` | program | Receives an export's published files and sends them somewhere (upload, gallery, printer); built with `api = 4` | Rendering, encoding and atomic publication; "exported" and "sent" reported separately ([Export destinations](extensions/overview.md#export-destinations)) |
 | `control-adapter` | program | Translates a device or a protocol into commands (MIDI, MCP) | Commands, gesture grouping and History, exactly as automation does today |
 | `presets`, `luts`, `profiles`, `keymap` | files | — | Discovery, validation and use, as for the user's own |
 
@@ -975,6 +976,25 @@ controls of its own (an extension's commands and panels serve those); and a
 report blocks opening another photo in Develop while it is added, as Add
 Folder does.
 
+### Export destination decisions
+
+Defaults taken for `[[export-destination]]`, built with the test-only
+`dev.rawmakase.destinations` (`extensions/example/destinations`) proving the
+contract here; galleries and uploads are left to others
+([Export destinations](extensions/overview.md#export-destinations)).
+
+| | Decision |
+| --- | --- |
+| D35 | `[[export-destination]]` is read from `api = 4` (API 4 is API 3 plus export destinations), has an `id` and a `name`, and needs a program, which may start on demand or with the app |
+| D36 | One `export.deliver` per export, sent once the batch has published every file it could, never one per file: a gallery needs the whole set. It names the files exported, in order, with their size, capture time and catalog label, rating and flag, their deepest common folder and that folder's name as a label; at most 1000 files |
+| D37 | The export settings keep the choice as `send_to` (`<extension>/<destination>`), left out when none, so older releases read the settings; a destination that is gone or disabled is shown with why and the export runs without it |
+| D38 | The top bar says what was exported first, then, in a second line once the program answers, what was sent or why not; the destination's message and location go in that line's detail |
+| D39 | A delivery has 15 minutes; Stop on the extension's page, disabling it and quitting cancel it. The app never sends one again by itself |
+| D40 | A destination declares per-export options as `[[export-destination.option]]`, in a `[[setting]]`'s shape limited to `text`, `toggle`, `number`, `choice` and `segmented`; the Export dialog draws them under Send To with the settings' widgets, the export settings keep the values changed from the defaults by destination (`send_to_options`), and `export.deliver` carries every option's value |
+
+Not part of the contract yet: showing a delivery's `progress`, and opening its
+`location` from the top bar.
+
 ### Designed, not scheduled
 
 The rest of this plan is designed so that the phases above leave room for it,
@@ -988,7 +1008,6 @@ test extension in the SDK proves it here as well.
 | Brush input | Phase 3 | A tool beyond the Remove tool's own brush (AI Remove paints with it) |
 | `importer` | Phase 2 | One-time Capture One and Lightroom CC imports; then moving the Lightroom importer out, after Lightroom edits are converted at import |
 | Filters | Phase 2 | Film grain, custom filters |
-| `export-destination` | Phase 2 | Uploads, galleries |
 | `publish-service` | `export-destination`, photo UUIDs | Publishing as Lightroom's publish services do: what was sent, and what changed since |
 | The official catalogue | Third-party extensions to list | — |
 | `derive` | Phase 3 | AI upscaling |

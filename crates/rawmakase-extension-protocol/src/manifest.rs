@@ -16,7 +16,7 @@ pub const FILE: &str = "rawmakase-extension.toml";
 /// The manifest format this version reads, the `api` key. A manifest with a
 /// later one was written for a later RAWmakase, which knows tables this one
 /// doesn't.
-pub const API: u32 = 3;
+pub const API: u32 = 4;
 
 /// The first `api` that reads `[[mask-generator]]`.
 pub const MASK_GENERATOR_API: u32 = 2;
@@ -26,6 +26,9 @@ pub const SOURCE_API: u32 = 3;
 /// The first `api` that reads `[[retouch-generator]]` and the `secret`
 /// setting control. Its framing and handle rules are API 2's.
 pub const RETOUCH_GENERATOR_API: u32 = 3;
+/// The first `api` that reads `[[export-destination]]`. Its framing and
+/// handle rules are API 2's.
+pub const EXPORT_DESTINATION_API: u32 = 4;
 
 /// The bundled extension that may claim the provenance Select Subject and
 /// Select Sky saved before extensions existed.
@@ -82,6 +85,14 @@ pub struct Manifest {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub retouch_generators: Vec<RetouchGenerator>,
+    /// Destinations an export's files are sent to (a web gallery, an
+    /// upload), from `api = 4`.
+    #[serde(
+        default,
+        rename = "export-destination",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub export_destinations: Vec<ExportDestination>,
 }
 
 /// The `[extension]` table.
@@ -557,6 +568,26 @@ impl Source {
     }
 }
 
+/// An `[[export-destination]]`: once an export has written its files, the
+/// app sends them to the program (`export.deliver`), which sends them on: an
+/// upload, a web gallery, a printer. The Export dialog offers it under Send
+/// To.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExportDestination {
+    /// Unique among the extension's export destinations.
+    #[schemars(regex(pattern = r"^[a-z0-9][a-z0-9-]*$"))]
+    pub id: String,
+    /// The name Send To lists and the status line says, for example
+    /// `Web Gallery`.
+    pub name: String,
+    /// What the user chooses for each export, drawn under Send To in the
+    /// Export dialog and sent with the files: a `[[setting]]`'s shape, with
+    /// the controls `text`, `toggle`, `number`, `choice` and `segmented`.
+    #[serde(default, rename = "option", skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<Setting>,
+}
+
 /// Why a manifest was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Invalid(pub String);
@@ -592,12 +623,17 @@ impl Manifest {
             .retouch_generators
             .iter()
             .map(|g| format!("retouch-generator/{}", g.id));
+        let destinations = self
+            .export_destinations
+            .iter()
+            .map(|d| format!("export-destination/{}", d.id));
         commands
             .chain(panels)
             .chain(adapters)
             .chain(generators)
             .chain(sources)
             .chain(retouch)
+            .chain(destinations)
             .collect()
     }
 
@@ -610,6 +646,7 @@ impl Manifest {
                 || !self.mask_generators.is_empty()
                 || !self.sources.is_empty()
                 || !self.retouch_generators.is_empty()
+                || !self.export_destinations.is_empty()
                 || self
                     .control_adapters
                     .iter()
@@ -667,6 +704,10 @@ impl Manifest {
                 "retouch-generator",
                 self.retouch_generators.iter().map(|g| &g.id).collect(),
             ),
+            (
+                "export-destination",
+                self.export_destinations.iter().map(|d| &d.id).collect(),
+            ),
         ];
         for (table, ids) in tables {
             let mut seen = std::collections::BTreeSet::new();
@@ -681,66 +722,7 @@ impl Manifest {
                 }
             }
         }
-        for setting in &self.settings {
-            let id = &setting.id;
-            match &setting.control {
-                SettingControl::Slider([min, max]) | SettingControl::Number([min, max])
-                    if !(min.is_finite() && max.is_finite() && min < max) =>
-                {
-                    return fail(format!("setting {id}: its range is empty"));
-                }
-                SettingControl::Choice(options) | SettingControl::Segmented(options)
-                    if options.is_empty() =>
-                {
-                    return fail(format!("setting {id}: it has no options"));
-                }
-                SettingControl::Secret if e.api < RETOUCH_GENERATOR_API => {
-                    return fail(format!(
-                        "setting {id}: control \"secret\" needs extension.api = {RETOUCH_GENERATOR_API} or later"
-                    ));
-                }
-                SettingControl::Secret if setting.default != Value::String(String::new()) => {
-                    return fail(format!("setting {id}: a secret's default is \"\""));
-                }
-                _ => {}
-            }
-            if !setting.control.accepts(&setting.default) {
-                return fail(format!(
-                    "setting {id}: its default {} doesn't fit its control",
-                    setting.default
-                ));
-            }
-            if setting.step.is_some_and(|s| !(s.is_finite() && s > 0.0)) {
-                return fail(format!("setting {id}: its step is not positive"));
-            }
-            if let Some(when) = &setting.visible_when {
-                let other = self
-                    .settings
-                    .iter()
-                    .find(|s| s.id == when.setting && s.id != *id);
-                match other {
-                    None => {
-                        return fail(format!(
-                            "setting {id}: visible-when names no other setting {:?}",
-                            when.setting
-                        ));
-                    }
-                    Some(other) if other.control == SettingControl::Secret => {
-                        return fail(format!(
-                            "setting {id}: visible-when can't read secret {:?}",
-                            when.setting
-                        ));
-                    }
-                    Some(other) if !other.control.accepts(&when.equals) => {
-                        return fail(format!(
-                            "setting {id}: {} doesn't fit setting {:?}",
-                            when.equals, when.setting
-                        ));
-                    }
-                    Some(_) => {}
-                }
-            }
-        }
+        check_settings("", "setting", &self.settings, e.api)?;
         for command in &self.commands {
             if command.title.trim().is_empty() {
                 return fail(format!("command {}: its title is empty", command.id));
@@ -756,14 +738,73 @@ impl Manifest {
             || !self.control_adapters.is_empty()
             || !self.mask_generators.is_empty()
             || !self.sources.is_empty()
-            || !self.retouch_generators.is_empty();
+            || !self.retouch_generators.is_empty()
+            || !self.export_destinations.is_empty();
         if needs_program && self.program.is_none() {
             return fail(
-                "commands, panels, control adapters, mask and retouch generators and sources need a [program] to run them"
+                "commands, panels, control adapters, mask and retouch generators, sources and export destinations need a [program] to run them"
                     .into(),
             );
         }
-        self.validate_sources()
+        self.validate_sources()?;
+        self.validate_export_destinations()
+    }
+
+    /// The `[[export-destination]]` rules: the `api` that reads them and a
+    /// name to show. Its program may start on demand, with the app or both.
+    fn validate_export_destinations(&self) -> Result<(), Invalid> {
+        if self.export_destinations.is_empty() {
+            return Ok(());
+        }
+        let api = self.extension.api;
+        if api < EXPORT_DESTINATION_API {
+            return Err(Invalid(format!(
+                "[[export-destination]] needs extension.api = {EXPORT_DESTINATION_API} or later (this one says {api})"
+            )));
+        }
+        for destination in &self.export_destinations {
+            let fail = |why: String| {
+                Err(Invalid(format!(
+                    "export-destination {}: {why}",
+                    destination.id
+                )))
+            };
+            let name = &destination.name;
+            if name.trim().is_empty() || name.chars().any(char::is_control) {
+                return fail("its name is empty or not one line".into());
+            }
+            let mut seen = std::collections::BTreeSet::new();
+            for option in &destination.options {
+                let id = &option.id;
+                if !is_local_id(id) {
+                    return fail(format!(
+                        "option id {id:?} must be lowercase letters, digits and hyphens"
+                    ));
+                }
+                if !seen.insert(id) {
+                    return fail(format!("option id {id:?} is used twice"));
+                }
+                if !matches!(
+                    option.control,
+                    SettingControl::Text
+                        | SettingControl::Toggle
+                        | SettingControl::Number(_)
+                        | SettingControl::Choice(_)
+                        | SettingControl::Segmented(_)
+                ) {
+                    return fail(format!(
+                        "option {id}: an option's control is text, toggle, number, choice or segmented"
+                    ));
+                }
+            }
+            check_settings(
+                &format!("export-destination {}: ", destination.id),
+                "option",
+                &destination.options,
+                api,
+            )?;
+        }
+        Ok(())
     }
 
     /// The `[[source]]` rules: the `api` that reads them, and a program that
@@ -914,6 +955,74 @@ impl Manifest {
         }
         Ok(())
     }
+}
+
+/// The checks of `[[setting]]`s, and of an export destination's options,
+/// which take their shape: ranges, options, defaults that fit their controls,
+/// steps and `visible-when`. Errors start with `prefix`, then `noun` and the
+/// id.
+fn check_settings(prefix: &str, noun: &str, settings: &[Setting], api: u32) -> Result<(), Invalid> {
+    let fail = |why: String| Err(Invalid(why));
+    for setting in settings {
+        let id = &setting.id;
+        match &setting.control {
+            SettingControl::Slider([min, max]) | SettingControl::Number([min, max])
+                if !(min.is_finite() && max.is_finite() && min < max) =>
+            {
+                return fail(format!("{prefix}{noun} {id}: its range is empty"));
+            }
+            SettingControl::Choice(options) | SettingControl::Segmented(options)
+                if options.is_empty() =>
+            {
+                return fail(format!("{prefix}{noun} {id}: it has no options"));
+            }
+            SettingControl::Secret if api < RETOUCH_GENERATOR_API => {
+                return fail(format!(
+                    "{prefix}{noun} {id}: control \"secret\" needs extension.api = {RETOUCH_GENERATOR_API} or later"
+                ));
+            }
+            SettingControl::Secret if setting.default != Value::String(String::new()) => {
+                return fail(format!("{prefix}{noun} {id}: a secret's default is \"\""));
+            }
+            _ => {}
+        }
+        if !setting.control.accepts(&setting.default) {
+            return fail(format!(
+                "{prefix}{noun} {id}: its default {} doesn't fit its control",
+                setting.default
+            ));
+        }
+        if setting.step.is_some_and(|s| !(s.is_finite() && s > 0.0)) {
+            return fail(format!("{prefix}{noun} {id}: its step is not positive"));
+        }
+        if let Some(when) = &setting.visible_when {
+            let other = settings
+                .iter()
+                .find(|s| s.id == when.setting && s.id != *id);
+            match other {
+                None => {
+                    return fail(format!(
+                        "{prefix}{noun} {id}: visible-when names no other {noun} {:?}",
+                        when.setting
+                    ));
+                }
+                Some(other) if other.control == SettingControl::Secret => {
+                    return fail(format!(
+                        "{prefix}{noun} {id}: visible-when can't read secret {:?}",
+                        when.setting
+                    ));
+                }
+                Some(other) if !other.control.accepts(&when.equals) => {
+                    return fail(format!(
+                        "{prefix}{noun} {id}: {} doesn't fit {noun} {:?}",
+                        when.equals, when.setting
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `dev.jane.analog`: two or more parts of lowercase letters, digits and
@@ -1106,7 +1215,7 @@ launch = "external"
             ("id = \"dev.jane.analog\"", "id = \"Dev.Jane.Analog\""),
             ("version = \"1.2.0\"", "version = \"1.2\""),
             ("rawmakase = \">=0.6, <0.7\"", "rawmakase = \"sometime\""),
-            ("api = 1", "api = 4"),
+            ("api = 1", "api = 5"),
             ("api = 1", "api = 0"),
             ("path = \"bin/analog\"", "path = \"../analog\""),
             ("path = \"bin/analog\"", "path = \"/usr/bin/analog\""),
@@ -1526,6 +1635,152 @@ id = "folder"
         }
     }
 
+    const DESTINATIONS: &str = r#"
+[extension]
+id = "dev.jane.gallery"
+name = "Gallery"
+version = "1.0.0"
+rawmakase = ">=0.6"
+api = 4
+
+[program]
+path = "bin/gallery"
+start = "on-demand"
+
+[[export-destination]]
+id = "web"
+name = "Web Gallery"
+
+[[export-destination.option]]
+id = "title"
+name = "Title"
+help = "Empty: the folder's name"
+control = "text"
+default = ""
+
+[[export-destination.option]]
+id = "layout"
+name = "Layout"
+control = { segmented = ["Grid", "Rows"] }
+default = "Grid"
+
+[[export-destination.option]]
+id = "columns"
+name = "Columns"
+control = { number = [1, 6] }
+default = 3
+visible-when = { setting = "layout", equals = "Grid" }
+
+[[export-destination]]
+id = "print"
+name = "Print Lab"
+"#;
+
+    fn destinations(replace: &str, by: &str) -> Result<Manifest, Invalid> {
+        assert!(DESTINATIONS.contains(replace), "{replace}");
+        Manifest::parse(&DESTINATIONS.replacen(replace, by, 1))
+    }
+
+    #[test]
+    fn export_destinations_read_and_round_trip() {
+        let manifest = Manifest::parse(DESTINATIONS).unwrap();
+        let [web, print] = &manifest.export_destinations[..] else {
+            panic!("two destinations");
+        };
+        assert_eq!(
+            (web.name.as_str(), print.id.as_str()),
+            ("Web Gallery", "print")
+        );
+        let ids: Vec<&str> = web.options.iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(ids, ["title", "layout", "columns"]);
+        assert!(print.options.is_empty());
+        assert_eq!(
+            manifest.contributions(),
+            ["export-destination/web", "export-destination/print"]
+        );
+        assert!(manifest.runs_in_app());
+        let written = toml::to_string(&manifest).unwrap();
+        assert_eq!(Manifest::parse(&written).unwrap(), manifest);
+        // A program that starts with the app serves one too.
+        assert!(destinations("start = \"on-demand\"", "start = \"with-app\"").is_ok());
+    }
+
+    #[test]
+    fn export_destinations_need_api_4_a_program_and_a_name() {
+        let error = destinations("api = 4", "api = 3").unwrap_err();
+        assert!(error.0.contains("api = 4"), "{error}");
+        let without_program = DESTINATIONS.replace(
+            "[program]\npath = \"bin/gallery\"\nstart = \"on-demand\"",
+            "",
+        );
+        assert!(Manifest::parse(&without_program).is_err());
+        for (replace, by) in [
+            ("id = \"print\"", "id = \"web\""),
+            ("id = \"print\"", "id = \"Print\""),
+            ("name = \"Print Lab\"", "name = \" \""),
+            ("name = \"Print Lab\"", "name = \"Print\\nLab\""),
+            ("name = \"Print Lab\"\n", ""),
+            ("id = \"print\"", "id = \"print\"\nurl = \"https://x\""),
+        ] {
+            assert!(destinations(replace, by).is_err(), "{by}");
+        }
+    }
+
+    #[test]
+    fn export_destination_options_are_checked_as_settings_are() {
+        for (replace, by, why) in [
+            ("id = \"layout\"", "id = \"title\"", "used twice"),
+            ("id = \"layout\"", "id = \"Layout\"", "lowercase"),
+            (
+                "control = \"text\"",
+                "control = \"secret\"",
+                "an option's control",
+            ),
+            (
+                "control = \"text\"",
+                "control = \"folder\"",
+                "an option's control",
+            ),
+            (
+                "control = \"text\"",
+                "control = \"color\"",
+                "an option's control",
+            ),
+            (
+                "control = \"text\"",
+                "control = \"angle\"",
+                "an option's control",
+            ),
+            (
+                "control = { number = [1, 6] }",
+                "control = { slider = [1, 6] }",
+                "an option's control",
+            ),
+            ("default = \"Grid\"", "default = \"Masonry\"", "doesn't fit"),
+            (
+                "control = { number = [1, 6] }",
+                "control = { number = [6, 1] }",
+                "range",
+            ),
+            ("equals = \"Grid\"", "equals = \"Wall\"", "doesn't fit"),
+            (
+                "setting = \"layout\"",
+                "setting = \"theme\"",
+                "names no other option",
+            ),
+            (
+                "name = \"Title\"",
+                "name = \"Title\"\nwidth = 3",
+                "unknown field",
+            ),
+        ] {
+            let error = destinations(replace, by).unwrap_err();
+            assert!(error.0.contains(why), "{by}: {error}");
+        }
+        let error = destinations("id = \"layout\"", "id = \"Layout\"").unwrap_err();
+        assert!(error.0.starts_with("export-destination web: "), "{error}");
+    }
+
     #[test]
     fn every_place_the_design_names_is_accepted() {
         for place in [
@@ -1588,6 +1843,7 @@ id = "folder"
         assert!(schema["properties"]["mask-generator"].is_object());
         assert!(schema["properties"]["source"].is_object());
         assert!(schema["properties"]["retouch-generator"].is_object());
+        assert!(schema["properties"]["export-destination"].is_object());
         assert!(schema["properties"].get("filter").is_none());
     }
 }

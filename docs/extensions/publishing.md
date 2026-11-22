@@ -22,10 +22,12 @@ extension's menu, that reads the selection and says how many photos it holds,
 with a test against the SDK's mock host. The `control-adapter` template starts
 a device thread that reports a connection and turns Exposure. `--rawmakase`
 sets the supported range (the current minor version by default). There is no
-mask generator or source template yet: start from `command`, set `api = 2`
-(a mask generator) or `api = 3` and `start = "with-app"` (a source), and
-follow the examples in `extensions/example/src/masks.rs` and
-`extensions/example/src/sources.rs`. The other templates the design names
+mask generator, source or export destination template yet: start from
+`command`, set `api = 2` (a mask generator), `api = 3` and
+`start = "with-app"` (a source) or `api = 4` (an export destination), and
+follow the examples in `extensions/example/src/masks.rs`,
+`extensions/example/src/sources.rs` and
+`extensions/example/src/destinations.rs`. The other templates the design names
 (filter, importer) come with their contributions.
 
 ## Build and try

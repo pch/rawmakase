@@ -1,5 +1,6 @@
 //! The run loop against the mock host: the handshake, requests both ways,
-//! cancellation, panels, adapters, mask generators and sources.
+//! cancellation, panels, adapters, mask generators, sources and export
+//! destinations.
 use rawmakase_extension::mock::{MockHost, Recorded};
 use rawmakase_extension::protocol::buffer::{
     Access, Alpha, Buffer, Meaning, Primaries, Region, Sample, Space, Transfer, White,
@@ -7,9 +8,9 @@ use rawmakase_extension::protocol::buffer::{
 use rawmakase_extension::protocol::controls::{Control, ControlKind};
 use rawmakase_extension::protocol::message::NeedsSetup;
 use rawmakase_extension::protocol::method::{
-    AppEvent, AppRequest, CommandRun, DeviceState, Empty, EmptyMask, Hello, MaskGenerate,
-    MaskGenerated, Operation, RetouchGenerate, RetouchGenerated, SettingChanged, SettingsChange,
-    SourceReport, SourceStarted, SourceStopped,
+    AppEvent, AppRequest, CommandRun, Delivered, DeviceState, Empty, EmptyMask, ExportDeliver,
+    ExportedFile, Hello, MaskGenerate, MaskGenerated, Operation, RetouchGenerate, RetouchGenerated,
+    SettingChanged, SettingsChange, SourceReport, SourceStarted, SourceStopped,
 };
 use rawmakase_extension::protocol::viewer::{Bounds, Click, MAX_CLICKS, ViewerInput};
 use rawmakase_extension::{
@@ -964,5 +965,106 @@ fn a_program_serving_api_2_refuses_a_retouch_request() {
     let error = host.wait(id).unwrap_err();
     assert_eq!(error.code, ErrorCode::InvalidRequest);
     assert!(error.message.contains("api 3"), "{error}");
+    host.finish().unwrap();
+}
+
+/// A delivery of two files in `/out`, as the app sends one.
+fn delivery() -> ExportDeliver {
+    let folder = std::path::PathBuf::from(if cfg!(windows) { "C:\\out" } else { "/out" });
+    let file = |name: &str| ExportedFile {
+        path: folder.join(name),
+        name: name.into(),
+        width: Some(300),
+        height: Some(200),
+        captured: None,
+        label: Some("yellow".into()),
+        rating: Some(5),
+        flag: Some("pick".into()),
+    };
+    ExportDeliver {
+        destination: "web".into(),
+        label: "out".into(),
+        files: vec![file("a.jpg"), file("b.jpg")],
+        folder,
+        options: json!({"heading": "Wedding"}).as_object().unwrap().clone(),
+    }
+}
+
+#[test]
+fn an_export_destination_gets_checked_deliveries_and_its_answer_is_checked() {
+    let (seen, received) = mpsc::channel();
+    let host = MockHost::start_with_options(
+        Extension::new().export_destination("web", move |cx: &Context, deliver: ExportDeliver| {
+            cx.progress(Some(0.5), Some("Uploading"));
+            let names: Vec<String> = deliver
+                .files
+                .iter()
+                .map(|f| format!("{} {}", f.name, f.label.as_deref().unwrap_or("-")))
+                .collect();
+            seen.send(names).unwrap();
+            Ok(Delivered {
+                sent: deliver.files.len() as u32,
+                message: Some(format!(
+                    "Published {} as {}",
+                    deliver.label,
+                    deliver.option_str("heading").unwrap_or("untitled")
+                )),
+                // A newline makes the answer invalid; `bad` asks for it.
+                location: Some(if deliver.label == "bad" {
+                    "https://x\ny".into()
+                } else {
+                    "https://example.com/out".into()
+                }),
+            })
+        }),
+        ServeOptions { api: 4 },
+        |_, _| Ok(Value::Null),
+    );
+    assert_eq!(host.hello().unwrap().implements, ["export-destination/web"]);
+    let answer = host.request(AppRequest::ExportDeliver(delivery())).unwrap();
+    let delivered: Delivered = serde_json::from_value(answer).unwrap();
+    assert_eq!(delivered.sent, 2);
+    assert_eq!(
+        delivered.message.as_deref(),
+        Some("Published out as Wedding")
+    );
+    assert_eq!(received.recv().unwrap(), ["a.jpg yellow", "b.jpg yellow"]);
+    // Off the contract, the handler is never called.
+    let mut other = delivery();
+    other.destination = "print".into();
+    let mut outside = delivery();
+    outside.files[1].path = "/elsewhere/b.jpg".into();
+    let mut orange = delivery();
+    orange.files[0].label = Some("orange".into());
+    for request in [other, outside, orange] {
+        let error = host
+            .request(AppRequest::ExportDeliver(request))
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidRequest);
+    }
+    assert!(received.try_recv().is_err());
+    // An answer off the contract goes to the app as an error.
+    let mut bad = delivery();
+    bad.label = "bad".into();
+    let error = host.request(AppRequest::ExportDeliver(bad)).unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    host.finish().unwrap();
+}
+
+#[test]
+fn a_program_serving_api_3_refuses_a_delivery() {
+    let host = MockHost::start_with_options(
+        Extension::new().export_destination("web", |_: &Context, _: ExportDeliver| {
+            Ok(Delivered::default())
+        }),
+        ServeOptions { api: 3 },
+        |_, _| Ok(Value::Null),
+    );
+    host.hello().unwrap();
+    let error = host
+        .request(AppRequest::ExportDeliver(delivery()))
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    assert!(error.message.contains("api 4"), "{error}");
     host.finish().unwrap();
 }

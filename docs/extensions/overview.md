@@ -6,14 +6,15 @@ packages, installation, `extensions.json`, the extension protocol, the SDK and
 programs, and has Preferences > Extensions, their commands, settings and
 panels, reads and proposals with target tokens, control adapters, the app's
 own and externally launched ones, mask generators (`api = 2`), and photo
-sources, retouch generators and secret settings (`api = 3`); experimental AI
-Remove uses the last two. MCP, MIDI and AI Masks are bundled extensions; AI
+sources, retouch generators and secret settings (`api = 3`), and export
+destinations (`api = 4`); experimental AI Remove uses retouch generators and
+secret settings. MCP, MIDI and AI Masks are bundled extensions; AI
 Remove is listed for installing but not bundled.
 
 An **extension** adds to RAWmakase without changing it: commands, settings,
 panels of controls the app draws, control adapters (a MIDI device, an MCP
-server), mask generators and photo sources (a watched folder, a tethered
-camera). It is a package with one manifest, `rawmakase-extension.toml`
+server), mask generators, photo sources (a watched folder, a tethered
+camera) and export destinations (a web gallery, an upload). It is a package with one manifest, `rawmakase-extension.toml`
 ([reference](manifest.md)), and usually a **program**: one native executable
 that runs as its own process and talks to the app over the
 [extension protocol](protocol.md). Extensions are written in Rust with the SDK,
@@ -129,6 +130,38 @@ stays when the extension is gone.
   finishes, the Library shows what it added, and the program, if still
   there, is answered with it. Disabling the extension, uninstalling it and
   quitting end its scopes as its program stops.
+
+## Export destinations
+
+An `[[export-destination]]` ([manifest](manifest.md#export-destination))
+sends an export's files on once they are written: a web gallery, an upload, a
+printer. The export stays the app's: it renders, encodes and writes every
+file in place as it always does, and only then sends the files it wrote to
+the program ([`export.deliver`](protocol.md#exportdeliver-request)), which
+works on them while the app goes on.
+
+- **Send To.** The Export dialog's Post-Processing has a **Send To** menu
+  once an enabled extension offers a destination: **Nowhere**, the default,
+  or a destination by its name. One whose extension can't run now is listed
+  disabled with why. The choice is saved with the export settings as
+  `"send_to": "<extension>/<destination>"`, so Export with Previous sends
+  there too; a destination whose extension is gone or disabled is shown with
+  why, and the export runs without it.
+- **Options.** A destination's options (a gallery's title, its layout) are
+  drawn under Send To once it is chosen, as its extension's settings are
+  drawn on its page, and go with the files. The export settings keep what
+  was changed from each option's default, for each destination, as
+  `"send_to_options": {"<extension>/<destination>": {"<option>": value}}`;
+  a value the destination's options no longer take is its default again.
+- **What is said.** The top bar says what the export did, as without a
+  destination, and the status line says what is being sent. Once the program
+  answers, the top bar says both: "Exported 12 of 12 · Sent 12 to Web
+  Gallery", its message and where to see the result when opened; or
+  "Exported 12 of 12 · Web Gallery failed: …". A destination that couldn't be
+  reached at all is said the same way ("· Not sent: …"). The files exported
+  stay either way.
+- **Stopping.** A delivery may take minutes; the app gives it 15. Stop on the
+  extension's page cancels it, as disabling the extension and quitting do.
 
 ## Externally launched adapters
 
@@ -252,7 +285,7 @@ the reason. A row opens the
 extension's own page in place of the table ("Preferences / Extensions /
 MIDI"); the back button, the Extensions crumb or Escape return to the table.
 The page has the extension's description and status, its switch, **Update to
-…**, **Stop** (while a command runs) and **Retry** (when Failed) over tabs,
+…**, **Stop** (while a command or a delivery runs) and **Retry** (when Failed) over tabs,
 each shown only when the extension has something for it: **Settings** (its
 settings, panels and photo sources; for MCP, local access, which its clients
 need, each turned on or off for the open

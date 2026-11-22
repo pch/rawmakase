@@ -69,6 +69,11 @@
 //! quitting cancels the read and fails the command; its read's report then
 //! finds nothing and is dropped.
 //!
+//! An `[[export-destination]]` gets an export's files once the export has
+//! written them, as one `export.deliver` request (see `destinations.rs`),
+//! with a deadline of minutes; Stop on the extension's page cancels it, as it
+//! does a command.
+//!
 //! Every persisted change (enable, disable, a setting, an uninstall) goes
 //! through [`rawmakase_extensions::state::State::update`] first; when that
 //! fails the session's state stays as it was and the failure is reported.
@@ -79,6 +84,7 @@
 //! ([`Host::stop`]), and the exit hook ends every unit left
 //! ([`Host::kill_remaining`]).
 pub(in crate::app) mod command_input;
+mod destinations;
 mod devices;
 mod editor;
 pub(in crate::app) mod mask_generator;
@@ -96,6 +102,7 @@ mod targets;
 mod tests;
 pub(in crate::app) mod viewer_input;
 
+pub(in crate::app) use destinations::{Destination, option_values};
 pub(in crate::app) use devices::Devices;
 pub(in crate::app) use editor::Told;
 pub(crate) use editor::{Done, PathTarget};
@@ -103,6 +110,7 @@ pub(crate) use editor::{Done, PathTarget};
 pub(in crate::app) use page::AVAILABLE;
 pub(in crate::app) use page::Page;
 pub(in crate::app) use page::Section;
+pub(in crate::app) use page::{setting_help, setting_shown};
 pub(crate) use sources::ReportDone;
 
 use crate::app::shell::commands::registry::{self, Dynamic};
@@ -110,8 +118,9 @@ use rawmakase_extensions::protocol::manifest::{
     Input, Launch as AdapterLaunch, SettingControl, Start,
 };
 use rawmakase_extensions::protocol::method::{
-    AppEvent, AppRequest, CommandRun, Hello, Level, PanelChanged, PanelClicked, PanelOpen,
-    ProgramEvent, ProgramRequest, SettingChanged, Snapshot, SourceStarted, SourceStopped,
+    AppEvent, AppRequest, CommandRun, Delivered, Hello, Level, PanelChanged, PanelClicked,
+    PanelOpen, ProgramEvent, ProgramRequest, SettingChanged, Snapshot, SourceStarted,
+    SourceStopped,
 };
 use rawmakase_extensions::protocol::viewer::ViewerInput;
 use rawmakase_extensions::protocol::{ErrorCode, PROTOCOL, RemoteError, controls::Control};
@@ -212,6 +221,12 @@ enum Pending {
     /// `retouch.generate`, named by the host's ticket, as `Mask` is.
     Retouch {
         ticket: u64,
+    },
+    /// `export.deliver` to the export destination named `name`, for an
+    /// export whose report said `exported`.
+    Delivery {
+        name: String,
+        exported: String,
     },
 }
 
@@ -546,6 +561,14 @@ pub(in crate::app) enum Outcome {
         ticket: u64,
         result: Result<Value, RemoteError>,
         buffers: Option<Returned>,
+    },
+    /// An `export.deliver` request's one outcome: the destination's answer,
+    /// checked, or why it failed (`exited`, `disabled`, `cancelled`,
+    /// `deadline`). `exported` is what the export's own report said.
+    Delivered {
+        name: String,
+        exported: String,
+        result: Result<Delivered, RemoteError>,
     },
 }
 
@@ -1565,6 +1588,11 @@ impl Host {
                     result: Err(error("setup")),
                 })
             }
+            Pending::Delivery { name, exported } => Some(Outcome::Delivered {
+                name,
+                exported,
+                result: Err(error("delivery")),
+            }),
             Pending::Hello | Pending::Panel { .. } => None,
         }
     }
@@ -1791,6 +1819,7 @@ impl Host {
                 Pending::Mask { .. } => mask_generator::GENERATE_DEADLINE,
                 Pending::Retouch { .. } => retouch_generator::GENERATE_DEADLINE,
                 Pending::MaskSetup { .. } => mask_generator::SETUP_DEADLINE,
+                Pending::Delivery { .. } => destinations::DELIVER_DEADLINE,
                 _ => self.request_deadline,
             };
         let request = match buffers {
@@ -1952,9 +1981,9 @@ impl Host {
         Ok(outcomes)
     }
 
-    /// Stops extension `id`'s commands in flight: each is cancelled at the
-    /// program and settled as cancelled now, so a proposal it sends later is
-    /// refused.
+    /// Stops extension `id`'s commands and deliveries in flight: each is
+    /// cancelled at the program and settled as cancelled now, so a proposal
+    /// it sends later is refused.
     pub(in crate::app) fn cancel_commands(&mut self, id: &str) -> Vec<Outcome> {
         let Some(index) = self.index(id) else {
             return Vec::new();
@@ -1967,40 +1996,55 @@ impl Host {
         let mut ids: Vec<u64> = run
             .requests
             .iter()
-            .filter(|(_, p)| matches!(p, Pending::Command { .. }))
+            .filter(|(_, p)| matches!(p, Pending::Command { .. } | Pending::Delivery { .. }))
             .map(|(id, _)| *id)
             .collect();
         ids.sort_unstable();
         for op in ids {
             run.session.cancel(op);
-            if let Some(Pending::Command { command, by }) = run.requests.remove(&op) {
-                outcomes.push(Outcome::Command {
+            match run.requests.remove(&op) {
+                Some(Pending::Command { command, by }) => outcomes.push(Outcome::Command {
                     extension: e.manifest.extension.id.clone(),
                     title: command_title(&e.manifest, &command),
                     by,
                     result: Err(RemoteError::new(ErrorCode::Cancelled, "stopped")),
-                });
+                }),
+                Some(Pending::Delivery { name, exported }) => outcomes.push(Outcome::Delivered {
+                    name,
+                    exported,
+                    result: Err(RemoteError::new(ErrorCode::Cancelled, "stopped")),
+                }),
+                _ => {}
             }
         }
         Self::sweep(e);
         let Some(run) = &mut e.run else {
             return outcomes;
         };
-        let (commands, rest): (Vec<Queued>, Vec<Queued>) = run
-            .take_queued()
-            .into_iter()
-            .partition(|q| matches!(q.pending, Pending::Command { .. }));
+        let (commands, rest): (Vec<Queued>, Vec<Queued>) =
+            run.take_queued().into_iter().partition(|q| {
+                matches!(
+                    q.pending,
+                    Pending::Command { .. } | Pending::Delivery { .. }
+                )
+            });
         if let Handshake::Waiting(queued) = &mut run.handshake {
             *queued = rest;
         }
         for queued in commands {
-            if let Pending::Command { command, by } = queued.pending {
-                outcomes.push(Outcome::Command {
+            match queued.pending {
+                Pending::Command { command, by } => outcomes.push(Outcome::Command {
                     extension: e.manifest.extension.id.clone(),
                     title: command_title(&e.manifest, &command),
                     by,
                     result: Err(RemoteError::new(ErrorCode::Cancelled, "stopped")),
-                });
+                }),
+                Pending::Delivery { name, exported } => outcomes.push(Outcome::Delivered {
+                    name,
+                    exported,
+                    result: Err(RemoteError::new(ErrorCode::Cancelled, "stopped")),
+                }),
+                _ => {}
             }
         }
         outcomes
@@ -2021,13 +2065,14 @@ impl Host {
             .ok_or_else(|| format!("No extension {id}"))?
             .can_run()
     }
-    /// Whether extension `id` has a command in flight.
+    /// Whether extension `id` has a command or a delivery in flight.
     pub(in crate::app) fn command_running(&self, id: &str) -> bool {
         let Some(e) = self.get(id) else { return false };
         !e.reading.is_empty()
-            || e.run
-                .as_ref()
-                .is_some_and(|r| r.pending().any(|p| matches!(p, Pending::Command { .. })))
+            || e.run.as_ref().is_some_and(|r| {
+                r.pending()
+                    .any(|p| matches!(p, Pending::Command { .. } | Pending::Delivery { .. }))
+            })
     }
 
     /// The commands of extension `id` sent and not answered, or waiting for
@@ -2673,6 +2718,27 @@ impl Host {
                     buffers,
                 });
             }
+            Pending::Delivery { name, exported } => {
+                let result = result.and_then(|answer| {
+                    let delivered: Delivered = serde_json::from_value(answer).map_err(|err| {
+                        RemoteError::new(ErrorCode::InvalidRequest, err.to_string())
+                    })?;
+                    delivered.validate()?;
+                    Ok(delivered)
+                });
+                match &result {
+                    Ok(_) => e.crashes = 0,
+                    Err(err) if err.code != ErrorCode::Cancelled => {
+                        e.error(format!("{name}: {err}"));
+                    }
+                    Err(_) => {}
+                }
+                outcomes.push(Outcome::Delivered {
+                    name,
+                    exported,
+                    result,
+                });
+            }
             Pending::MaskSetup { generator } => {
                 match &result {
                     Err(err) if err.code != ErrorCode::Cancelled => {
@@ -2764,7 +2830,10 @@ impl Host {
                 by,
                 result: Err(RemoteError::new(ErrorCode::Exited, why)),
             }),
-            Pending::Mask { .. } | Pending::MaskSetup { .. } | Pending::Retouch { .. } => {
+            Pending::Mask { .. }
+            | Pending::MaskSetup { .. }
+            | Pending::Retouch { .. }
+            | Pending::Delivery { .. } => {
                 outcomes.extend(Self::stopped(e, pending, &ErrorCode::Exited));
             }
             Pending::Panel { panel } => {
@@ -3095,18 +3164,19 @@ impl Host {
         for e in &self.extensions {
             let running = e.run.as_ref().and_then(|run| {
                 run.pending().find_map(|p| match p {
-                    Pending::Command { command, .. } => Some(command),
+                    Pending::Command { command, .. } => Some(command_title(&e.manifest, command)),
+                    Pending::Delivery { name, .. } => Some(format!("Sending to {name}")),
                     _ => None,
                 })
             });
             if let Some(text) = e.status.as_ref().filter(|_| e.run.is_some()) {
                 out.push(format!("{}: {text}", e.name()));
-            } else if let Some(command) = running.or(e.reading.first().map(|r| &r.command)) {
-                out.push(format!(
-                    "{}: {}…",
-                    e.name(),
-                    command_title(&e.manifest, command)
-                ));
+            } else if let Some(doing) = running.or(e
+                .reading
+                .first()
+                .map(|r| command_title(&e.manifest, &r.command)))
+            {
+                out.push(format!("{}: {doing}…", e.name()));
             }
         }
         out
@@ -3199,6 +3269,7 @@ fn placeholder(id: &str, name: &str) -> Manifest {
         mask_generators: Vec::new(),
         sources: Vec::new(),
         retouch_generators: Vec::new(),
+        export_destinations: Vec::new(),
     }
 }
 

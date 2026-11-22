@@ -116,6 +116,33 @@
       ],
       "type": "object"
     },
+    "ExportDestination": {
+      "additionalProperties": false,
+      "description": "An `[[export-destination]]`: once an export has written its files, the\napp sends them to the program (`export.deliver`), which sends them on: an\nupload, a web gallery, a printer. The Export dialog offers it under Send\nTo.",
+      "properties": {
+        "id": {
+          "description": "Unique among the extension's export destinations.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name Send To lists and the status line says, for example\n`Web Gallery`.",
+          "type": "string"
+        },
+        "option": {
+          "description": "What the user chooses for each export, drawn under Send To in the\nExport dialog and sent with the files: a `[[setting]]`'s shape, with\nthe controls `text`, `toggle`, `number`, `choice` and `segmented`.",
+          "items": {
+            "$ref": "#/$defs/Setting"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
     "Extension": {
       "additionalProperties": false,
       "description": "The `[extension]` table.",
@@ -731,6 +758,13 @@
       "description": "Adapters translating a device or a protocol into commands.",
       "items": {
         "$ref": "#/$defs/ControlAdapter"
+      },
+      "type": "array"
+    },
+    "export-destination": {
+      "description": "Destinations an export's files are sent to (a web gallery, an\nupload), from `api = 4`.",
+      "items": {
+        "$ref": "#/$defs/ExportDestination"
       },
       "type": "array"
     },

@@ -3,7 +3,8 @@
 //! `mask.generate` and `mask.setup` serve `[[mask-generator]]`, which manifests
 //! declare from `api = 2`; `source-started`, `source-stopped` and
 //! `source.report` serve `[[source]]`, and `retouch.generate` serves
-//! `[[retouch-generator]]`, from `api = 3`.
+//! `[[retouch-generator]]`, from `api = 3`; `export.deliver` serves
+//! `[[export-destination]]`, from `api = 4`.
 //!
 //! [`AppRequest`] and [`AppEvent`] go from the app to the program,
 //! [`ProgramRequest`] and [`ProgramEvent`] the other way. Each reads from a
@@ -56,6 +57,11 @@ pub enum AppRequest {
     /// program serving `api = 3` or later.
     #[serde(rename = "retouch.generate")]
     RetouchGenerate(RetouchGenerate),
+    /// Sends an export's files on (an upload, a web gallery), once the
+    /// export has written them. Answered with [`Delivered`]. Sent only to a
+    /// program serving `api = 4` or later.
+    #[serde(rename = "export.deliver")]
+    ExportDeliver(ExportDeliver),
 }
 
 /// Requests a program sends the app.
@@ -174,6 +180,7 @@ impl AppRequest {
         "mask.generate",
         "mask.setup",
         "retouch.generate",
+        "export.deliver",
     ];
 }
 impl ProgramRequest {
@@ -986,6 +993,172 @@ pub enum FileRefusal {
     Ambiguous,
 }
 
+/// The most files one [`ExportDeliver`] names, so the request stays well
+/// inside a protocol line.
+pub const MAX_DELIVERED_FILES: usize = 1000;
+
+/// The longest [`ExportDeliver::label`], [`Delivered::message`] and
+/// [`Delivered::location`], in bytes.
+pub const MAX_DELIVERY_TEXT: usize = 1024;
+
+/// `export.deliver`'s parameters: an export's files, written and in place.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportDeliver {
+    /// The export destination's id within its extension.
+    pub destination: String,
+    /// The deepest folder that holds every file, absolute: the export's
+    /// folder (its subfolder, when it has one), unless the photos were
+    /// exported beside their originals in several folders.
+    pub folder: PathBuf,
+    /// A short name for the batch, such as a gallery's title: the folder's
+    /// name.
+    pub label: String,
+    /// The files, in the order they were exported: 1 to
+    /// [`MAX_DELIVERED_FILES`].
+    pub files: Vec<ExportedFile>,
+    /// The destination's options as the user chose them for this export, by
+    /// id: every option its manifest declares, a default where nothing was
+    /// chosen, each of its control's type.
+    #[serde(default)]
+    pub options: Map<String, Value>,
+}
+
+/// One file an export wrote.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportedFile {
+    /// The file, absolute, in [`ExportDeliver::folder`] or below it.
+    pub path: PathBuf,
+    /// Its file name, the last part of `path`.
+    pub name: String,
+    /// Its width in pixels, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    /// Its height in pixels, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    /// When the photo was taken, as the camera's clock said, without a time
+    /// zone: `YYYY-MM-DDTHH:MM:SS`. None when the catalog doesn't know.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub captured: Option<String>,
+    /// The photo's color label in the catalog, one of [`LABELS`]; none
+    /// without one, or with a label of another name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// The photo's star rating in the catalog, 0 (none) to 5. None for a
+    /// photo outside the catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<u8>,
+    /// The photo's flag in the catalog, one of [`FLAGS`]; none when it is
+    /// neither picked nor rejected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flag: Option<String>,
+}
+
+/// The color labels an [`ExportedFile`] names, as the key map's
+/// `toggle_label:<name>` actions name them.
+pub const LABELS: [&str; 5] = ["red", "yellow", "green", "blue", "purple"];
+
+/// The flags an [`ExportedFile`] names.
+pub const FLAGS: [&str; 2] = ["pick", "reject"];
+
+impl ExportDeliver {
+    /// Option `id`'s text: a `text`, `choice` or `segmented` option.
+    pub fn option_str(&self, id: &str) -> Option<&str> {
+        self.options.get(id)?.as_str()
+    }
+    /// Option `id`'s state: a `toggle` option.
+    pub fn option_bool(&self, id: &str) -> Option<bool> {
+        self.options.get(id)?.as_bool()
+    }
+    /// Option `id`'s number: a `number` option.
+    pub fn option_f64(&self, id: &str) -> Option<f64> {
+        self.options.get(id)?.as_f64()
+    }
+
+    /// Checks the shape a destination relies on: one to
+    /// [`MAX_DELIVERED_FILES`] files, every path absolute and in the folder,
+    /// each name its path's file name, each label in [`LABELS`], flag in
+    /// [`FLAGS`] and rating 0 to 5, and a label of one line within
+    /// [`MAX_DELIVERY_TEXT`] bytes.
+    pub fn validate(&self) -> Result<(), RemoteError> {
+        let fail = |why: String| Err(RemoteError::new(ErrorCode::InvalidRequest, why));
+        if self.files.is_empty() || self.files.len() > MAX_DELIVERED_FILES {
+            return fail(format!(
+                "a delivery names {} files, not 1 to {MAX_DELIVERED_FILES}",
+                self.files.len()
+            ));
+        }
+        if !self.folder.is_absolute() {
+            return fail(format!("{} is not an absolute path", self.folder.display()));
+        }
+        if !one_line(&self.label) {
+            return fail(format!(
+                "the label must be one line of at most {MAX_DELIVERY_TEXT} bytes"
+            ));
+        }
+        for file in &self.files {
+            if !file.path.is_absolute() || !file.path.starts_with(&self.folder) {
+                return fail(format!(
+                    "{} is not an absolute path in {}",
+                    file.path.display(),
+                    self.folder.display()
+                ));
+            }
+            if file.label.as_deref().is_some_and(|l| !LABELS.contains(&l))
+                || file.flag.as_deref().is_some_and(|f| !FLAGS.contains(&f))
+                || file.rating.is_some_and(|r| r > 5)
+            {
+                return fail(format!(
+                    "{}: its label, rating or flag isn't one a delivery names",
+                    file.name
+                ));
+            }
+            if file.path.file_name() != Some(std::ffi::OsStr::new(&file.name)) {
+                return fail(format!(
+                    "{} is not the file name of {}",
+                    file.name,
+                    file.path.display()
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// What a program answers `export.deliver` with, once the files are sent.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Delivered {
+    /// How many of the files it sent.
+    pub sent: u32,
+    /// What it did, in the user's words, for the status line: one line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// Where the result is, for the user to open: a path or a URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+}
+
+impl Delivered {
+    /// Checks that the message and the location are one line each, within
+    /// [`MAX_DELIVERY_TEXT`] bytes.
+    pub fn validate(&self) -> Result<(), RemoteError> {
+        for (name, value) in [("message", &self.message), ("location", &self.location)] {
+            if value.as_deref().is_some_and(|v| !one_line(v)) {
+                return Err(RemoteError::new(
+                    ErrorCode::InvalidRequest,
+                    format!("the {name} must be one line of at most {MAX_DELIVERY_TEXT} bytes"),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Whether `text` is one line of at most [`MAX_DELIVERY_TEXT`] bytes.
+fn one_line(text: &str) -> bool {
+    text.len() <= MAX_DELIVERY_TEXT && !text.chars().any(char::is_control)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1385,5 +1558,71 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(reported.refused[0].reason, FileRefusal::NotAPhoto);
+    }
+
+    #[test]
+    fn a_delivery_reads_and_is_checked() {
+        let root = if cfg!(windows) { "C:\\out" } else { "/out" };
+        let file = std::path::Path::new(root).join("a.jpg");
+        let AppRequest::ExportDeliver(deliver) = AppRequest::parse(
+            "export.deliver",
+            json!({
+                "destination": "web", "folder": root, "label": "out",
+                "options": {"title": "Wedding", "captions": true, "columns": 3},
+                "files": [{"path": file, "name": "a.jpg", "width": 2048,
+                           "height": 1365, "captured": "2026-05-04T10:21:33",
+                           "label": "yellow", "rating": 4, "flag": "pick"}],
+            }),
+        )
+        .unwrap() else {
+            panic!("a delivery");
+        };
+        assert_eq!(deliver.files[0].width, Some(2048));
+        assert_eq!(deliver.option_str("title"), Some("Wedding"));
+        assert_eq!(deliver.option_bool("captions"), Some(true));
+        assert_eq!(deliver.option_f64("columns"), Some(3.));
+        assert_eq!(deliver.option_str("columns"), None);
+        assert_eq!(deliver.option_str("layout"), None);
+        deliver.validate().unwrap();
+        let (name, params) = AppRequest::ExportDeliver(deliver.clone()).into_parts();
+        assert_eq!(name, "export.deliver");
+        assert_eq!(params["files"][0]["captured"], "2026-05-04T10:21:33");
+        let broken = |change: &dyn Fn(&mut ExportDeliver)| {
+            let mut deliver = deliver.clone();
+            change(&mut deliver);
+            assert_eq!(
+                deliver.validate().unwrap_err().code,
+                ErrorCode::InvalidRequest
+            );
+        };
+        broken(&|d| d.files.clear());
+        broken(&|d| d.files = vec![d.files[0].clone(); MAX_DELIVERED_FILES + 1]);
+        broken(&|d| d.folder = "out".into());
+        broken(&|d| d.files[0].path = "a.jpg".into());
+        broken(&|d| d.files[0].path = std::path::Path::new(root).with_file_name("b.jpg"));
+        broken(&|d| d.files[0].name = "b.jpg".into());
+        broken(&|d| d.label = "two\nlines".into());
+        broken(&|d| d.files[0].label = Some("Yellow".into()));
+        broken(&|d| d.files[0].flag = Some("unflagged".into()));
+        broken(&|d| d.files[0].rating = Some(6));
+        assert_eq!(deliver.files[0].label.as_deref(), Some("yellow"));
+        assert_eq!(
+            (deliver.files[0].rating, deliver.files[0].flag.as_deref()),
+            (Some(4), Some("pick"))
+        );
+        let delivered: Delivered = serde_json::from_value(json!({"sent": 1})).unwrap();
+        assert_eq!(
+            delivered,
+            Delivered {
+                sent: 1,
+                ..Default::default()
+            }
+        );
+        delivered.validate().unwrap();
+        let long = Delivered {
+            location: Some("x".repeat(MAX_DELIVERY_TEXT + 1)),
+            ..delivered
+        };
+        assert!(long.validate().is_err());
     }
 }

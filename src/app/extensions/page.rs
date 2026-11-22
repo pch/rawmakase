@@ -104,7 +104,9 @@ pub(in crate::app) struct Page {
     /// Load from Folder… and the folder watch are offered.
     developer: bool,
     watched: Option<Instant>,
-    /// Text settings being typed, by extension and setting.
+    /// Text settings being typed, by extension and setting; and the Export
+    /// dialog's destination options, by `<extension>/<destination>` and
+    /// option.
     drafts: HashMap<(String, String), String>,
     /// Number and Angle settings being dragged, by extension and setting
     /// ([`number_control`]).
@@ -192,6 +194,24 @@ impl Page {
     pub(in crate::app) fn back(&mut self) {
         self.open = None;
     }
+    /// Takes the text being typed into `owner`'s fields: an export
+    /// destination's options (`<extension>/<destination>`), by option.
+    pub(in crate::app) fn take_drafts(&mut self, owner: &str) -> Vec<(String, String)> {
+        let keys: Vec<_> = self
+            .drafts
+            .keys()
+            .filter(|(o, _)| o == owner)
+            .cloned()
+            .collect();
+        keys.into_iter()
+            .filter_map(|key| self.drafts.remove(&key).map(|text| (key.1, text)))
+            .collect()
+    }
+    /// Forgets the text typed into `owner`'s field `id`, once its value is
+    /// kept.
+    pub(in crate::app) fn forget_draft(&mut self, owner: &str, id: &str) {
+        self.drafts.remove(&(owner.to_string(), id.to_string()));
+    }
     /// The extension whose own page shows, if one does.
     pub(in crate::app) fn opened(&self) -> Option<&str> {
         self.open.as_deref()
@@ -240,6 +260,8 @@ impl Editor {
             .extension_page
             .drafts
             .iter()
+            // An export destination's options are the Export dialog's.
+            .filter(|((owner, _), _)| !owner.contains('/'))
             .map(|(key, text)| (key.clone(), text.clone()))
             .collect();
         for ((extension, setting), text) in drafts {
@@ -1088,7 +1110,7 @@ impl Editor {
 
     /// A setting's control, drawn from its `[[setting]]`; the new value once
     /// committed.
-    fn setting_control(
+    pub(in crate::app) fn setting_control(
         &mut self,
         ui: &mut egui::Ui,
         id: &str,
@@ -1816,7 +1838,7 @@ fn section_tabs(ui: &mut egui::Ui, sections: &[Section], current: Section) -> Op
 /// A setting's help line, its `https://` links opening in the browser, so an
 /// extension can point to how to set it up: written `[text](https://…)` they
 /// show their text, written bare their address.
-fn setting_help(ui: &mut egui::Ui, text: &str) {
+pub(in crate::app) fn setting_help(ui: &mut egui::Ui, text: &str) {
     let parts = help_parts(text);
     if let [(text, None)] = parts[..] {
         return hint(ui, text);
@@ -1900,7 +1922,11 @@ fn help_parts(text: &str) -> Vec<(&str, Option<&str>)> {
 
 /// Whether setting `s` shows: always, or while the setting its
 /// `visible-when` names has that value (its default while unset).
-fn setting_shown(all: &[Setting], values: &serde_json::Map<String, Value>, s: &Setting) -> bool {
+pub(in crate::app) fn setting_shown(
+    all: &[Setting],
+    values: &serde_json::Map<String, Value>,
+    s: &Setting,
+) -> bool {
     let Some(when) = &s.visible_when else {
         return true;
     };

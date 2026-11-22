@@ -42,6 +42,9 @@ pub struct BatchPhoto {
     /// sequence numbers: a photo left out keeps its number. `None` numbers it by
     /// its place in the batch.
     pub place: Option<(usize, usize)>,
+    /// Its flag in the catalog: 1 picked, -1 rejected, 0 neither; `None`
+    /// for a photo outside the catalog, whose rating and label are none too.
+    pub flag: Option<i32>,
 }
 
 /// The edit a photo is exported with.
@@ -73,6 +76,7 @@ impl BatchPhoto {
             name,
             naming,
             place: None,
+            flag: Some(record.flag),
             edit: Edit::Catalog(record.edit),
             values: Values {
                 descriptive: record.descriptive,
@@ -347,10 +351,12 @@ pub fn plan(
 /// What happened to one photo.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Outcome {
-    /// Written to `path`, with what the export has to say besides.
+    /// Written to `path`, with what the export has to say besides, and the
+    /// file's width and height in pixels.
     Exported {
         path: PathBuf,
         notes: Vec<String>,
+        size: (u32, u32),
     },
     Skipped(String),
     Failed(String),
@@ -564,6 +570,9 @@ impl From<anyhow::Error> for Stop {
     }
 }
 
+/// A photo's file once written: where, its notes and its width and height.
+type Written = (PathBuf, Vec<String>, (u32, u32));
+
 fn export(
     shared: &Shared<'_>,
     photo: &BatchPhoto,
@@ -572,9 +581,10 @@ fn export(
     progress: &impl Fn(f32),
 ) -> Outcome {
     let (batch, cancel) = (shared.batch, shared.cancel);
-    let result = (|| -> Result<(PathBuf, Vec<String>), Stop> {
+    let result = (|| -> Result<Written, Stop> {
         // The photo's memory stays counted until its file is in place.
         let (prepared, mut notes, _admitted) = render(shared, photo, preset, progress)?;
+        let size = (prepared.rendered.width(), prepared.rendered.height());
         notes.extend(planned.notes.iter().cloned());
         if let Some(parent) = planned.target.parent() {
             std::fs::create_dir_all(parent).map_err(anyhow::Error::from)?;
@@ -598,10 +608,10 @@ fn export(
         )?;
         notes.extend(note);
         progress(1.);
-        Ok((path, notes))
+        Ok((path, notes, size))
     })();
     match result {
-        Ok((path, notes)) => Outcome::Exported { path, notes },
+        Ok((path, notes, size)) => Outcome::Exported { path, notes, size },
         Err(Stop::Skipped(reason)) => Outcome::Skipped(reason),
         // Whatever stopped it, a cancel seen is a cancel, not a failure.
         Err(_) if cancel.is_cancelled() => Outcome::Cancelled,

@@ -16,6 +16,7 @@ fn photo(source: &Path) -> BatchPhoto {
         values: Default::default(),
         naming: Default::default(),
         place: None,
+        flag: Some(0),
     }
 }
 /// Export settings into `folder`, as small TIFFs.
@@ -317,6 +318,12 @@ fn every_photo_is_exported_with_its_own_edit_or_said_why_not() -> Result<()> {
         outcomes[4]
     );
     assert_eq!(listing(&f.out()), ["a.tif", "b.tif", "c.tif"]);
+    // Each written file's size, its long edge as the settings resize it.
+    let Outcome::Exported { path, size, .. } = &outcomes[0] else {
+        panic!("exported");
+    };
+    assert_eq!(size.0.max(size.1), 96);
+    assert_eq!(*size, image::image_dimensions(path)?);
     Ok(())
 }
 
@@ -1418,7 +1425,7 @@ fn a_size_limit_fits_each_jpeg_or_notes_why_not() -> Result<()> {
         s.limit_size = true;
         s.size_limit = size_limit;
         let outcomes = run_all(&f.batch(photos.clone(), s));
-        let Outcome::Exported { path, notes } = &outcomes[0] else {
+        let Outcome::Exported { path, notes, .. } = &outcomes[0] else {
             panic!("{name}: not exported: {outcomes:?}");
         };
         let size = std::fs::metadata(path)?.len();

@@ -2,7 +2,9 @@
 //! rendering, file writing) in `crate::export`. Every export, of one photo or the
 //! whole selection, goes through the app's one export queue and runs while you keep
 //! editing; the top bar shows its progress, and what could not be exported stays
-//! there until it is dismissed.
+//! there until it is dismissed. Once a batch is written, Send To sends its
+//! files to an extension's export destination (`export.deliver`), and the
+//! top bar says how that went after what was exported.
 mod dialog;
 mod watermark_editor;
 
@@ -13,6 +15,7 @@ use crate::app::ui::design::{self, Tone, inset, radius, space, text};
 use crate::app::Module;
 use crate::catalog::PhotoId;
 
+use crate::app::shell::messages::Level;
 use crate::app::ui::theme;
 use crate::app::ui::widgets::plural;
 use crate::app::{Editor, worker::Event};
@@ -24,6 +27,8 @@ use crate::export::{
 };
 use crate::export_settings::{Existing, ExportSettings, NameFields, NameTemplate};
 use eframe::egui::{self, Color32, Sense, Vec2};
+use rawmakase_extensions::protocol::method::{Delivered, ExportDeliver, ExportedFile};
+use rawmakase_extensions::protocol::{ErrorCode, RemoteError};
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -83,6 +88,52 @@ struct Queued {
     after: crate::export_settings::AfterExport,
     /// Edit In's batch: its files go on to the catalog and the editor.
     editing: Option<crate::app::edit_in::Sending>,
+    /// The export destination its files are sent to once written, as
+    /// `<extension>/<destination>`.
+    send_to: Option<String>,
+    /// The options chosen for that destination, by option.
+    send_to_options: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+    /// What Send To tells of each photo, as the batch read it.
+    facts: Vec<Facts>,
+}
+
+/// What Send To tells of a photo besides its file: its capture time, as its
+/// name was made from, and its label, rating and flag in the catalog, each
+/// as a delivery names it.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Facts {
+    captured: Option<String>,
+    label: Option<String>,
+    rating: Option<u8>,
+    flag: Option<String>,
+}
+impl Facts {
+    /// A batch photo's: none of the catalog's for one outside it.
+    fn of(photo: &BatchPhoto) -> Self {
+        use rawmakase_extensions::protocol::method::{FLAGS, LABELS};
+        let captured = photo.naming.captured.as_deref().and_then(capture_time);
+        let Some(flag) = photo.flag else {
+            return Self {
+                captured,
+                ..Self::default()
+            };
+        };
+        let label = LABELS
+            .iter()
+            .find(|l| l.eq_ignore_ascii_case(&photo.values.label))
+            .map(|l| l.to_string());
+        let flag = match flag {
+            1 => Some(FLAGS[0].to_string()),
+            -1 => Some(FLAGS[1].to_string()),
+            _ => None,
+        };
+        Self {
+            captured,
+            label,
+            rating: u8::try_from(photo.values.rating.clamp(0, 5)).ok(),
+            flag,
+        }
+    }
 }
 
 /// What finished exports could not do, kept until it is dismissed.
@@ -713,6 +764,7 @@ impl Editor {
                         values: Values::default(),
                         naming: chosen.fields.clone(),
                         place: None,
+                        flag: None,
                     },
                 };
                 photo.place = Some((chosen.place, scope.chosen));
@@ -753,7 +805,12 @@ impl Editor {
         editing: Option<crate::app::edit_in::Sending>,
     ) {
         let names = pending.batch.iter().map(|p| p.name.clone()).collect();
+        let facts = pending.batch.iter().map(Facts::of).collect();
         let after = pending.settings.after_export;
+        let send_to = pending.settings.send_to.clone();
+        let send_to_options = send_to
+            .as_ref()
+            .and_then(|key| pending.settings.send_to_options.get(key).cloned());
         let batch = batch::Batch {
             photos: pending.batch,
             plan,
@@ -772,6 +829,9 @@ impl Editor {
                 left_out: pending.left_out,
                 after,
                 editing,
+                send_to,
+                send_to_options,
+                facts,
             },
         );
     }
@@ -883,23 +943,60 @@ impl Editor {
         let single = (summary.total == 1 && summary.noted == 0)
             .then(|| exported.first().cloned())
             .flatten();
-        match single {
+        let said = match single {
             Some(path) => {
                 let name = path.file_name().unwrap_or_default().to_string_lossy();
+                let line = format!("Exported {name}");
                 self.messages
-                    .done_with_detail(format!("Exported {name}"), path.display().to_string());
+                    .done_with_detail(line.clone(), path.display().to_string());
+                line
             }
-            None if !summary.problems.is_empty() => self
-                .messages
-                .fail_with_detail(summary.line(), summary.details()),
-            None if !summary.notes.is_empty() => self
-                .messages
-                .warn_with_detail(summary.line(), summary.details()),
-            None => self.messages.done(summary.line()),
+            None if !summary.problems.is_empty() => {
+                self.messages
+                    .fail_with_detail(summary.line(), summary.details());
+                summary.line()
+            }
+            None if !summary.notes.is_empty() => {
+                self.messages
+                    .warn_with_detail(summary.line(), summary.details());
+                summary.line()
+            }
+            None => {
+                self.messages.done(summary.line());
+                summary.line()
+            }
         };
         // After the summary, so a file manager that can't be opened is said.
         if queued.after == crate::export_settings::AfterExport::Show {
             self.show_exported(&exported);
+        }
+        if let Some(key) = &queued.send_to
+            && let Some(deliver) = delivery(&queued, &outcomes)
+        {
+            let files = deliver.files.len();
+            let chosen = queued.send_to_options.as_ref();
+            match self.extensions.deliver(key, deliver, chosen, said.clone()) {
+                Ok(name) => self.messages.note(format!(
+                    "Sending {} to {name}…",
+                    plural(files, "file", "files")
+                )),
+                Err(why) => self.messages.fail(format!("{said} · Not sent: {why}")),
+            }
+        }
+    }
+
+    /// An export destination's outcome: what was exported, then what was
+    /// sent, in one line.
+    pub(in crate::app) fn delivered(
+        &mut self,
+        name: &str,
+        exported: &str,
+        result: Result<Delivered, RemoteError>,
+    ) {
+        let (level, line, detail) = delivered_line(name, exported, &result);
+        match detail {
+            Some(detail) => self.messages.done_with_detail(line, detail),
+            None => self.messages.say(level, line),
         }
     }
 
@@ -988,7 +1085,7 @@ fn summarize(queued: &Queued, outcomes: &[Outcome]) -> (Summary, Vec<PathBuf>) {
     let mut exported = Vec::new();
     for (name, outcome) in queued.names.iter().zip(outcomes) {
         let problem = match outcome {
-            Outcome::Exported { path, notes } => {
+            Outcome::Exported { path, notes, .. } => {
                 exported.push(path.clone());
                 summary.noted += usize::from(!notes.is_empty());
                 for note in notes {
@@ -1011,6 +1108,103 @@ fn summarize(queued: &Queued, outcomes: &[Outcome]) -> (Summary, Vec<PathBuf>) {
     summary.exported = exported.len();
     summary.total = queued.names.len() + queued.left_out.len();
     (summary, exported)
+}
+
+/// What Send To sends of a finished batch: the files it exported, in order,
+/// with their sizes, capture times, labels, ratings and flags, in the deepest folder holding them
+/// all, labelled by that folder's name. None when nothing was exported. Its
+/// destination and options are filled in by
+/// [`Host::deliver`](crate::app::extensions::Host).
+fn delivery(queued: &Queued, outcomes: &[Outcome]) -> Option<ExportDeliver> {
+    let files: Vec<ExportedFile> = queued
+        .facts
+        .iter()
+        .zip(outcomes)
+        .filter_map(|(facts, outcome)| match outcome {
+            Outcome::Exported { path, size, .. } => Some(ExportedFile {
+                path: path.clone(),
+                name: path.file_name()?.to_string_lossy().into_owned(),
+                width: Some(size.0),
+                height: Some(size.1),
+                captured: facts.captured.clone(),
+                label: facts.label.clone(),
+                rating: facts.rating,
+                flag: facts.flag.clone(),
+            }),
+            _ => None,
+        })
+        .collect();
+    let mut folder = files.first()?.path.parent()?.to_path_buf();
+    for file in &files {
+        while !file.path.starts_with(&folder) && folder.pop() {}
+    }
+    let label = folder.file_name().map_or_else(
+        || folder.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    Some(ExportDeliver {
+        destination: String::new(),
+        options: serde_json::Map::new(),
+        folder,
+        label,
+        files,
+    })
+}
+
+/// A capture time as the catalog keeps it ("2026-05-04 10:21:33.000") or
+/// EXIF writes it ("2026:05:04 10:21:33"), as a delivery sends it:
+/// "2026-05-04T10:21:33". None for anything else.
+fn capture_time(text: &str) -> Option<String> {
+    let bytes = text.as_bytes().get(..19)?;
+    let fits = bytes.iter().enumerate().all(|(i, &c)| match i {
+        4 | 7 => c == b'-' || c == b':',
+        10 => c == b' ' || c == b'T',
+        13 | 16 => c == b':',
+        _ => c.is_ascii_digit(),
+    });
+    fits.then(|| {
+        format!(
+            "{}-{}-{}T{}",
+            &text[..4],
+            &text[5..7],
+            &text[8..10],
+            &text[11..19]
+        )
+    })
+}
+
+/// The top bar's line for a delivery's outcome, after what was exported:
+/// "Exported 12 of 12 · Sent 12 to Web Gallery", the destination's message
+/// and where to see the result when it is opened; or why it wasn't sent.
+fn delivered_line(
+    name: &str,
+    exported: &str,
+    result: &Result<Delivered, RemoteError>,
+) -> (Level, String, Option<String>) {
+    match result {
+        Ok(delivered) => {
+            let detail: Vec<&str> = [&delivered.message, &delivered.location]
+                .into_iter()
+                .flatten()
+                .map(String::as_str)
+                .collect();
+            (
+                Level::Done,
+                format!("{exported} · Sent {} to {name}", delivered.sent),
+                (!detail.is_empty()).then(|| detail.join("\n")),
+            )
+        }
+        Err(e) if e.code == ErrorCode::Cancelled || e.code == ErrorCode::Disabled => (
+            Level::Note,
+            format!("{exported} · Sending to {name} stopped"),
+            None,
+        ),
+        Err(e) => (
+            Level::Failure,
+            format!("{exported} · {name} failed: {}", e.message),
+            None,
+        ),
+    }
 }
 
 /// How many folders `exported` went to.

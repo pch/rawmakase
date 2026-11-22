@@ -41,7 +41,8 @@ pub use shm::mapped_buffers;
 
 use rawmakase_extension_protocol::controls::Control;
 use rawmakase_extension_protocol::method::{
-    CommandRun, MaskGenerate, MaskGenerated, RetouchGenerate, RetouchGenerated, SourceStarted,
+    CommandRun, Delivered, ExportDeliver, MaskGenerate, MaskGenerated, RetouchGenerate,
+    RetouchGenerated, SourceStarted,
 };
 use serde_json::Value;
 
@@ -199,4 +200,31 @@ pub trait Source: Send {
     /// Scope `scope` ended: reports in it are refused. Stops watching,
     /// without waiting on a device.
     fn stop(&mut self, scope: u64);
+}
+
+/// An `[[export-destination]]`'s implementation: it sends an export's files
+/// on (an upload, a web gallery, a printer) once the export has written
+/// them. Export destinations need `api = 4`.
+///
+/// The SDK checks each request ([`ExportDeliver::validate`]) before calling
+/// [`ExportDestination::deliver`], and refuses one that doesn't validate with
+/// [`ErrorCode::InvalidRequest`], as it does a request when serving an `api`
+/// below 4. Its answer is checked too ([`Delivered::validate`]): one that
+/// doesn't validate goes to the app as [`ErrorCode::InvalidRequest`].
+pub trait ExportDestination: Send {
+    /// Sends the files and says how many went, with a line for the status
+    /// line and where the user can see the result. Reports how far it is
+    /// through [`Context::progress`]. One that needs the user to set
+    /// something up first (an account) answers [`ErrorCode::NeedsSetup`],
+    /// one whose service can't be reached [`ErrorCode::Unavailable`]. One
+    /// that sees [`Context::is_cancelled`] returns [`ErrorCode::Cancelled`].
+    fn deliver(&mut self, cx: &Context, deliver: ExportDeliver) -> Result<Delivered, RemoteError>;
+}
+impl<F> ExportDestination for F
+where
+    F: FnMut(&Context, ExportDeliver) -> Result<Delivered, RemoteError> + Send,
+{
+    fn deliver(&mut self, cx: &Context, deliver: ExportDeliver) -> Result<Delivered, RemoteError> {
+        self(cx, deliver)
+    }
 }

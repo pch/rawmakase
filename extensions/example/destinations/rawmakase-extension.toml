@@ -1,0 +1,34 @@
+# A test-only extension of export destinations: the app's tests run it as a
+# third party's program. Its program is the example crate's library
+# (`rawmakase_example::destinations`), never bundled with RAWmakase.
+[extension]
+id = "dev.rawmakase.destinations"
+name = "Example Destinations"
+version = "0.1.0"
+rawmakase = ">=0.1"
+api = 4
+authors = ["RAWmakase"]
+license = "MIT"
+description = "Writes an index of the files an export sends it into the export's folder."
+
+[access]
+files = "any"
+
+[program]
+path = "rawmakase-example-destinations"
+start = "on-demand"
+
+[[export-destination]]
+id = "index"
+name = "Index File"
+
+[[export-destination.option]]
+id = "heading"
+name = "Heading"
+help = "Empty: the folder's name"
+control = "text"
+default = ""
+
+[[export-destination]]
+id = "closed"
+name = "Closed Lab"

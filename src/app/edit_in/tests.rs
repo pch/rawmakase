@@ -223,6 +223,7 @@ fn a_tiff_is_added_stacked_on_its_original_and_opened_then_followed() -> anyhow:
         &[Outcome::Exported {
             path: tiff.clone(),
             notes: Vec::new(),
+            size: (0, 0),
         }],
     );
     assert_eq!(
@@ -323,6 +324,7 @@ fn without_a_catalog_the_tiff_opens_at_once() -> anyhow::Result<()> {
         &[Outcome::Exported {
             path: tiff.clone(),
             notes: Vec::new(),
+            size: (0, 0),
         }],
     );
     assert!(!e.activity.is_busy());
@@ -404,6 +406,7 @@ fn an_added_tiff_shows_its_thumbnail_at_once() -> anyhow::Result<()> {
         &[Outcome::Exported {
             path: tiff.clone(),
             notes: Vec::new(),
+            size: (0, 0),
         }],
     );
     let started = Instant::now();
@@ -871,6 +874,7 @@ fn a_tiff_is_stacked_only_with_the_photo_it_was_made_from() -> anyhow::Result<()
         &[Outcome::Exported {
             path: tiff.clone(),
             notes: Vec::new(),
+            size: (0, 0),
         }],
     );
     settle(&mut e);
@@ -992,6 +996,7 @@ fn the_copy_opens_in_place_of_the_photo_open_and_shows_its_saves() -> anyhow::Re
         &[Outcome::Exported {
             path: tiff.clone(),
             notes: Vec::new(),
+            size: (0, 0),
         }],
     );
     assert!(frames_until(&mut e, |e| e
