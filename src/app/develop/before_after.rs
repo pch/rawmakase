@@ -200,6 +200,10 @@ pub(in crate::app) struct BeforePreview {
     pub(in crate::app) region: Option<Picture>,
     pub(in crate::app) mode: TextureMode,
     pending_mode: TextureMode,
+    /// The size of the (cropped) photo whose pixels the region in `mode`, and in
+    /// `pending_mode`, counts, as [`super::state::PreviewState::region_frame`].
+    frame: [u32; 2],
+    pending_frame: [u32; 2],
     /// The job asked for last, rendered or on its way.
     submitted: Option<BeforeJob>,
 }
@@ -416,6 +420,7 @@ impl Editor {
         let before = &mut self.preview.before;
         let (id, cancel) = before.task.start();
         before.pending_mode = job.region.map_or(TextureMode::Whole, TextureMode::Region);
+        before.pending_frame = [geometry.width, geometry.height];
         before.submitted = Some(job.clone());
         let drawn = self.preview.presented();
         self.renderer.submit(crate::app::worker::RenderJob {
@@ -465,6 +470,7 @@ impl Editor {
             }
         }
         before.mode = before.pending_mode;
+        before.frame = before.pending_frame;
         if stage != crate::app::worker::RenderStage::Draft {
             before.task.finish(task);
         }
@@ -551,7 +557,12 @@ impl Editor {
             let hdr = hdr(texture);
             gpu.region = hdr.is_some();
             for id in std::iter::once(texture.id()).chain(hdr.map(|h| h.id)) {
-                painter.image(id, region_on(rect, g, region), uv, Color32::WHITE);
+                painter.image(
+                    id,
+                    region_on(rect, before.frame, region),
+                    uv,
+                    Color32::WHITE,
+                );
             }
         }
         self.hdr_preview_ui(&painter, rect, g, due, true, gpu);
@@ -577,13 +588,14 @@ impl Editor {
     }
 }
 
-/// Where the 100% region `[x, y, w, h]` of a photo with geometry `g` sits on screen,
-/// with the whole photo at `rect`.
-pub(in crate::app) fn region_on(rect: Rect, g: &Geometry, [x, y, w, h]: [u32; 4]) -> Rect {
+/// Where the 100% region `[x, y, w, h]`, in pixels of a (cropped) photo `frame`
+/// pixels in size, sits on screen, with the whole photo at `rect`.
+pub(in crate::app) fn region_on(rect: Rect, frame: [u32; 2], [x, y, w, h]: [u32; 4]) -> Rect {
+    let [width, height] = frame.map(|side| side.max(1) as f32);
     let at = |px: u32, py: u32| {
         Pos2::new(
-            rect.left() + px as f32 / g.width as f32 * rect.width(),
-            rect.top() + py as f32 / g.height as f32 * rect.height(),
+            rect.left() + px as f32 / width * rect.width(),
+            rect.top() + py as f32 / height * rect.height(),
         )
     };
     Rect::from_min_max(at(x, y), at(x + w, y + h))

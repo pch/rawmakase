@@ -3347,6 +3347,31 @@ fn loupe_shows_the_next_photo_zoomed_at_once() -> Result<()> {
     assert_eq!(drawn.map(|r| r.size()), Some(egui::vec2(3000., 2000.)));
     Ok(())
 }
+/// Zoomed in, an offline RAW, whose Loupe preview is its stored Standard one,
+/// is laid out at the size of the 1:1 preview its regions come from, and not
+/// at all until that is read; a JPEG read whole is laid out at its own size
+/// at once.
+#[test]
+fn an_offline_raw_zooms_at_the_size_of_its_one_to_one_preview() {
+    use loupe::zoomed_size;
+    let standard = Some((2048, 1365));
+    assert_eq!(
+        zoomed_size(Some([6000, 4000]), standard, false),
+        Some([6000, 4000])
+    );
+    assert_eq!(zoomed_size(None, standard, false), None);
+    assert_eq!(
+        zoomed_size(None, Some((3000, 2000)), true),
+        Some([3000, 2000])
+    );
+    // Until then, nothing rather than its Standard preview at Fit, unless it has
+    // no 1:1 preview to read; a JPEG shows at Fit only once its preview is in
+    // and its size still isn't known.
+    assert!(loupe::awaits_size(false, false, false));
+    assert!(!loupe::awaits_size(false, false, true));
+    assert!(loupe::awaits_size(true, true, false));
+    assert!(!loupe::awaits_size(false, true, false));
+}
 #[test]
 fn photo_info_of_folder_photos_is_read_once_and_kept() -> Result<()> {
     let directory = tempfile::tempdir()?;

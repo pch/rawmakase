@@ -499,7 +499,7 @@ fn the_hdr_readout_reads_the_region_where_the_hdr_preview_draws_it() {
     assert_eq!((*slot, key.part()), (Slot::Region, Part::Region(region)));
     assert_eq!(
         *at,
-        crate::app::develop::before_after::region_on(rect, &g, region)
+        crate::app::develop::before_after::region_on(rect, [g.width, g.height], region)
     );
     // In Fit, the whole photo where the photo is.
     e.view.zoom.set(0.);
@@ -668,12 +668,17 @@ fn preview_for_sdr_display_shows_the_sdr_rendition_and_leaves_the_edit() {
 /// A Sony shot at 16:9 embeds a 16:9 JPEG, its aspect-ratio crop of the 3:2
 /// sensor (#1256). Until the first render, that JPEG fills the photo's crop
 /// rather than being stretched over the whole frame and clipped to the crop;
-/// a camera JPEG of the whole frame still sits on the whole frame.
+/// a camera JPEG of the whole frame still sits on the whole frame. So it does
+/// while the RAW decodes, its frame known from the metadata alone.
 #[test]
 fn the_camera_jpeg_sits_on_the_frame_it_shows() {
     // 16:9 of a 3:2 frame: the middle 27/32 of its height.
     let wide = [0., 5. / 64., 1., 59. / 64.];
-    for (jpeg, frame) in [([160, 90], wide), ([150, 100], [0., 0., 1., 1.])] {
+    let cases = [([160, 90], wide), ([150, 100], [0., 0., 1., 1.])];
+    for (decoded, (jpeg, frame)) in [true, false]
+        .into_iter()
+        .flat_map(|d| cases.map(|c| (d, c)))
+    {
         let ctx = egui::Context::default();
         let mut e = Editor::with_context(
             &ctx,
@@ -683,24 +688,29 @@ fn the_camera_jpeg_sits_on_the_frame_it_shows() {
         );
         e.module = Module::Develop;
         let (load, _) = e.document.start_load();
-        e.document.set_image(Arc::new(CameraImage {
-            recovered: Default::default(),
+        let metadata = Metadata {
             width: 600,
             height: 400,
-            pixels: vec![[0.2; 3]; 240_000].into(),
-            metadata: Metadata {
+            wb: [1.; 3],
+            make: "Sony".into(),
+            camera_crop: Some(wide),
+            ..Default::default()
+        };
+        if decoded {
+            e.document.set_image(Arc::new(CameraImage {
+                recovered: Default::default(),
                 width: 600,
                 height: 400,
-                wb: [1.; 3],
-                make: "Sony".into(),
-                camera_crop: Some(wide),
-                ..Default::default()
-            },
-            fast: false,
-            scale_factor: 1.,
-            scale_clipped: 0,
-            hdr: Default::default(),
-        }));
+                pixels: vec![[0.2; 3]; 240_000].into(),
+                metadata,
+                fast: false,
+                scale_factor: 1.,
+                scale_clipped: 0,
+                hdr: Default::default(),
+            }));
+        } else {
+            e.document.metadata = Some(metadata);
+        }
         e.document.edit.setup_mut().crop = wide;
         e.tx.send(crate::app::worker::Event::Embedded {
             id: load,
@@ -738,7 +748,7 @@ fn the_camera_jpeg_sits_on_the_frame_it_shows() {
         );
         assert!(
             (drawn.min - want.min).length() < 0.5 && (drawn.max - want.max).length() < 0.5,
-            "a {jpeg:?} JPEG drawn at {drawn:?}, not {want:?}"
+            "a {jpeg:?} JPEG drawn at {drawn:?}, not {want:?} (decoded: {decoded})"
         );
     }
 }
@@ -821,6 +831,151 @@ fn moving_on_keeps_the_zoom() -> anyhow::Result<()> {
     assert!(e.view.zoom.on);
     assert_eq!(e.view.zoom.level, 1.);
     assert_eq!(e.view.zoom.pan, [0.3, 0.6]);
+    Ok(())
+}
+
+/// The next photo opened zoomed in keeps the slider's fit until its own is
+/// known; a photo closed lets go of it.
+#[test]
+fn the_last_fit_goes_with_the_photo_closed() {
+    let mut view = crate::app::develop::state::ViewState {
+        last_fit: Some(0.25),
+        ..Default::default()
+    };
+    view.next_document(true);
+    assert_eq!(view.last_fit, Some(0.25));
+    view.clear_document();
+    assert_eq!(view.last_fit, None);
+}
+
+/// Crop open in Develop, then zoomed in in the Loupe (the zoom is shared): the
+/// next photo opens zoomed in, with Crop closed, as one cannot crop zoomed in.
+#[test]
+fn the_next_photo_opened_zoomed_in_closes_crop() -> anyhow::Result<()> {
+    use crate::app::develop::state::Tool;
+    let (_dir, _ctx, mut e, [a, b]) = crate::app::testing::two_photo_editor()?;
+    e.module = Module::Develop;
+    e.develop_catalog_photo(a);
+    e.view.set_tool(Tool::Crop);
+    e.view.zoom.set(1.);
+    e.develop_catalog_photo(b);
+    assert_eq!(e.document.catalog_photo, Some(b));
+    assert!(e.view.zoom.on);
+    assert!(!e.view.is(Tool::Crop));
+    // At Fit, Crop stays open from photo to photo.
+    e.view.zoom.set(0.);
+    e.view.set_tool(Tool::Crop);
+    e.develop_catalog_photo(a);
+    assert!(e.view.is(Tool::Crop));
+    Ok(())
+}
+
+/// Zoomed in, a photo that couldn't be opened before its size was read shows
+/// its preview behind the message, at Fit, rather than nothing.
+#[test]
+fn a_photo_that_fails_to_open_zoomed_in_shows_its_preview() -> anyhow::Result<()> {
+    let (_dir, ctx, mut e, [a, b]) = crate::app::testing::two_photo_editor()?;
+    e.module = Module::Develop;
+    e.develop_catalog_photo(a);
+    e.set_zoom(1.);
+    e.develop_catalog_photo(b);
+    e.document.invalidate_load();
+    let preview = egui::ColorImage::new([16, 12], vec![egui::Color32::GRAY; 16 * 12]);
+    crate::app::develop::state::Picture::upload(&mut e.preview.stand_in, &ctx, "stand-in", preview);
+    let preview = e.preview.stand_in.as_ref().map(|p| p.id());
+    assert_eq!(draw_frame(&mut e, preview).texture, None, "still opening");
+    e.document.failed = Some("unreadable".into());
+    let drawn = draw_frame(&mut e, preview).texture.expect("the preview");
+    assert!(
+        drawn.width() <= 1200. && drawn.height() <= 800.,
+        "at Fit: {drawn:?}"
+    );
+    Ok(())
+}
+
+/// Zoomed in, the camera's JPEG, which a photo on a network volume brings before
+/// its size is read, isn't shown at Fit meanwhile: it shows once it can be
+/// placed at the zoom level.
+#[test]
+fn zoomed_in_the_camera_jpeg_waits_for_the_photo_size() -> anyhow::Result<()> {
+    let (_dir, ctx, mut e, [a, b]) = crate::app::testing::two_photo_editor()?;
+    e.module = Module::Develop;
+    e.develop_catalog_photo(a);
+    e.set_zoom(1.);
+    e.develop_catalog_photo(b);
+    let (load, _) = e.document.start_load();
+    e.tx.send(Event::Embedded {
+        id: load,
+        image: image::RgbImage::new(160, 120),
+    })
+    .unwrap();
+    e.events(&ctx);
+    let jpeg = e.preview.texture.as_ref().map(|t| t.id());
+    assert!(jpeg.is_some() && e.preview.embedded);
+    assert_eq!(draw_frame(&mut e, jpeg).texture, None, "the JPEG at Fit");
+    let (metadata, _) = photo_of(1600, 1200, false);
+    e.document.metadata = Some(metadata);
+    let drawn = draw_frame(&mut e, jpeg).texture.expect("the JPEG");
+    assert_eq!(drawn.size(), Vec2::new(1600., 1200.));
+    Ok(())
+}
+
+/// Zoomed in, a 100% region rendered from a RAW's half-size draft stays where
+/// it shows when the full-size image replaces the draft, until a render of
+/// that lands: its pixels are the draft's, not the full-size image's.
+#[test]
+fn a_draft_region_stays_in_place_when_the_full_size_image_arrives() -> anyhow::Result<()> {
+    let (_dir, ctx, mut e, [a, _]) = crate::app::testing::two_photo_editor()?;
+    e.module = Module::Develop;
+    // Only the results sent here arrive: the renderer takes a job and holds it.
+    crate::app::task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
+    let (taken_tx, taken) = std::sync::mpsc::channel();
+    let (_release, release) = std::sync::mpsc::channel();
+    e.renderer = crate::app::worker::holding(taken_tx, release);
+    e.develop_catalog_photo(a);
+    e.document.invalidate_load();
+    let (metadata, draft) = photo_of(1600, 1200, true);
+    e.document.metadata = Some(metadata);
+    e.document.set_image(draft);
+    e.set_zoom(1.);
+    draw_frame(&mut e, None);
+    draw_frame(&mut e, None);
+    let id = e.preview.task.id();
+    assert!(matches!(
+        e.preview.pending.mode,
+        crate::app::develop::state::TextureMode::Region(_)
+    ));
+    while taken.recv_timeout(std::time::Duration::from_secs(5))? != id {}
+    let [w, h] = match e.preview.pending.mode {
+        crate::app::develop::state::TextureMode::Region([_, _, w, h]) => [w, h],
+        _ => unreachable!(),
+    };
+    e.tx.send(Event::Rendered {
+        id,
+        pane: crate::app::worker::Pane::After,
+        preview: crate::app::worker::Preview::Pixels {
+            image: crate::rendered::Rendered {
+                width: w,
+                height: h,
+                pixels: vec![[0.5; 3]; (w * h) as usize],
+            },
+            display_rgb: vec![128; (w * h * 3) as usize],
+            navigator: None,
+        },
+        histogram: Box::new(crate::rendered::Histogram::EMPTY),
+        thumbnail: None,
+        samples: None,
+        stage: crate::app::worker::RenderStage::Fit,
+        status: "draft".into(),
+    })
+    .unwrap();
+    e.events(&ctx);
+    let region = e.preview.region.as_ref().map(|p| p.id());
+    let drafted = draw_frame(&mut e, region).texture.expect("the region");
+    let (_, full) = photo_of(1600, 1200, false);
+    e.document.set_image(full);
+    let replaced = draw_frame(&mut e, region).texture.expect("the region");
+    assert_eq!(replaced, drafted);
     Ok(())
 }
 

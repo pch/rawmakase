@@ -582,6 +582,7 @@ impl Editor {
                         crate::app::develop::state::TextureMode::Whole,
                         crate::app::develop::state::TextureMode::Region,
                     ),
+                    frame: [geometry.width, geometry.height],
                     crop: geometry.crop(),
                     ai: rendered_ai,
                 },

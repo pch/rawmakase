@@ -197,6 +197,9 @@ pub(in crate::app) struct Pending {
     /// never takes a gray preview for the photo.
     pub(in crate::app) recipe: Option<Recipe>,
     pub(in crate::app) mode: TextureMode,
+    /// The size of the (cropped) photo whose pixels a region counts, as
+    /// [`PreviewState::region_frame`].
+    pub(in crate::app) frame: [u32; 2],
     pub(in crate::app) crop: [f32; 4],
     /// The AI Denoise result the render was given.
     pub(in crate::app) ai: RenderedAi,
@@ -207,6 +210,7 @@ impl Default for Pending {
             full_size: false,
             recipe: None,
             mode: TextureMode::Whole,
+            frame: [1, 1],
             crop: [0., 0., 1., 1.],
             ai: RenderedAi::None,
         }
@@ -278,6 +282,11 @@ pub(in crate::app) struct PreviewState {
     /// GPU preview at (`RenderJob::hdr`): when what is due changes, it renders again.
     pub(in crate::app) last_hdr: Option<f32>,
     pub(in crate::app) mode: TextureMode,
+    /// The size of the (cropped) photo whose pixels the region in `mode` counts.
+    /// A region rendered from a RAW's half-size draft counts the draft's, and is
+    /// placed by them after the full-size image replaces the draft, until a
+    /// render of that lands.
+    pub(in crate::app) region_frame: [u32; 2],
     /// The crop `texture` was rendered with, when known: until a render for a new
     /// crop lands, the old one is placed where its crop sits instead of stretched.
     pub(in crate::app) crop: Option<[f32; 4]>,
@@ -312,6 +321,7 @@ impl Default for PreviewState {
             last_region: None,
             last_hdr: None,
             mode: TextureMode::Whole,
+            region_frame: [1, 1],
             crop: None,
             before: Default::default(),
             magnifier: Default::default(),
@@ -897,10 +907,12 @@ impl ViewState {
     /// again (after a Sync's Undo, say) reads the edit it loads, not cropped to
     /// the chosen aspect.
     pub(crate) fn next_document(&mut self, another: bool) {
-        let crop = self.is(Tool::Crop);
-        let zoom = self.zoom;
+        // Zoomed in meanwhile (the Loupe shares the zoom), the Crop tool cannot
+        // stay open, as when Develop shows a photo already open.
+        let crop = self.is(Tool::Crop) && !self.zoom.on;
+        let (zoom, last_fit) = (self.zoom, self.last_fit);
         self.clear_document();
-        self.zoom = zoom;
+        (self.zoom, self.last_fit) = (zoom, last_fit);
         if crop {
             self.set_tool(Tool::Crop);
             self.aspect_read = false;
@@ -909,6 +921,7 @@ impl ViewState {
     }
     pub(crate) fn clear_document(&mut self) {
         self.zoom.on = false;
+        self.last_fit = None;
         self.zoom_anim = None;
         self.glide = None;
         self.shown_rect = None;
