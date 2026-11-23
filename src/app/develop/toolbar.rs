@@ -249,7 +249,9 @@ impl Editor {
                 ZOOM_SLIDER.0,
             )
         };
-        let fit = self.fit_level();
+        // Until the next photo's size is read, the knob stays where it was.
+        let fit = self.fit_level().or(self.view.last_fit);
+        self.view.last_fit = fit;
         let slider = ui.allocate_ui(Vec2::new(width, height), |ui| {
             crate::app::view::navigator::zoom_slider(ui, self.view.zoom, fit, width, height)
         });

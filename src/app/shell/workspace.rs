@@ -1111,12 +1111,10 @@ impl Editor {
             else {
                 return;
             };
-            // Moving on keeps the zoom, so the next photo is compared as it was.
-            let zoom = (self.view.zoom.on, self.view.zoom.level, self.view.zoom.pan);
+            // Moving on keeps the zoom (`ViewState::next_document`).
             if !self.load_raw(path, Some(id)) {
                 return;
             }
-            (self.view.zoom.on, self.view.zoom.level, self.view.zoom.pan) = zoom;
         }
         // Still the previous photo, e.g. it could not be saved: never show it
         // under this one's name.

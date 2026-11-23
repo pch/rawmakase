@@ -332,6 +332,24 @@ fn stored(path: &std::path::Path, identity: &str) -> anyhow::Result<image::RgbIm
             .ok_or_else(|| anyhow::anyhow!("No stored preview")),
     }
 }
+/// The full size a zoomed photo is laid out at: its regions' once one is read,
+/// else the size read with its preview, which places it zoomed at once. An
+/// offline RAW's preview is its stored Standard one, smaller than the 1:1
+/// preview its regions come from, so only the regions' size counts for it.
+pub(super) fn zoomed_size(
+    regions: Option<[u32; 2]>,
+    preview: Option<(u32, u32)>,
+    available: bool,
+) -> Option<[u32; 2]> {
+    regions.or_else(|| preview.filter(|_| available).map(|(w, h)| [w, h]))
+}
+/// Whether a zoomed photo whose size [`zoomed_size`] doesn't know yet waits for
+/// it, drawing nothing, rather than showing at Fit: while its preview is
+/// `loading`, and for an offline RAW (not `available`) until its 1:1 preview
+/// is read, unless reading it `failed`, as when it has none.
+pub(super) fn awaits_size(loading: bool, available: bool, failed: bool) -> bool {
+    loading || !available && !failed
+}
 fn key(photo: &Photo, edge: u32, display: &DisplayProfile) -> Key {
     (
         photo.id,
@@ -604,9 +622,13 @@ impl Library {
             self.loupe.regions.release();
         }
         let regions = &mut self.loupe.regions;
-        let full = regions
-            .full
-            .filter(|_| zoom.on && zoomable && regions.photo == Some(photo.id));
+        let own_region = regions.photo == Some(photo.id);
+        let full = zoomed_size(
+            regions.full.filter(|_| own_region),
+            self.loupe.full,
+            available,
+        )
+        .filter(|_| zoom.on && zoomable);
         let shown = match full {
             Some(full) => {
                 // `level` screen pixels per image pixel.
@@ -631,6 +653,18 @@ impl Library {
                     size,
                 ))
             }
+            // Zoomed in, nothing rather than the photo at Fit until its size is
+            // known.
+            None if zoom.on
+                && zoomable
+                && awaits_size(
+                    self.loupe.state == State::Loading,
+                    available,
+                    own_region && regions.error.is_some(),
+                ) =>
+            {
+                None
+            }
             None => fit,
         };
         if zoom.on && zoomable {
@@ -650,7 +684,7 @@ impl Library {
             crate::app::shell::lights::light(ui.ctx(), inset);
         }
         // The zoomed region over the enlarged Fit preview.
-        if let (Some(at), true) = (shown, full.is_some())
+        if let (Some(at), true) = (shown, full.is_some() && own_region)
             && let Some((region, [x, y, w, h])) = &regions.region
         {
             let place = egui::Rect::from_min_size(

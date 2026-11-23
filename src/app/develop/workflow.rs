@@ -485,9 +485,20 @@ impl Editor {
         let im = self.document.full()?;
         self.region_in(&Geometry::new(im, &self.effective_recipe(), 0))
     }
+    /// The zoom in pixels of the decoded image rather than of the full-size photo
+    /// ([`Self::zoom_geometry`]): a RAW's half-size draft is drawn at twice the
+    /// level, so it fills the view as the full-size image will.
+    pub(in crate::app) fn render_zoom(&self) -> crate::app::view::navigator::Zoom {
+        let mut zoom = self.view.zoom;
+        if let (Some(im), Some(full)) = (self.document.full(), self.zoom_geometry()) {
+            let decoded = Geometry::new(im, &self.effective_recipe(), 0);
+            zoom.level *= full.width as f32 / decoded.width as f32;
+        }
+        zoom
+    }
     /// The 1:1 region of a photo with geometry `g` that the view shows, as `region`.
     pub(in crate::app) fn region_in(&self, g: &Geometry) -> Option<[u32; 4]> {
-        self.view.zoom.render_region(
+        self.render_zoom().render_region(
             self.view.viewport,
             g.width,
             g.height,
@@ -571,6 +582,7 @@ impl Editor {
                         crate::app::develop::state::TextureMode::Whole,
                         crate::app::develop::state::TextureMode::Region,
                     ),
+                    frame: [geometry.width, geometry.height],
                     crop: geometry.crop(),
                     ai: rendered_ai,
                 },
@@ -607,7 +619,7 @@ impl Editor {
     /// The long edge a Fit render of a photo with geometry `g` needs in the view,
     /// and the one to render at the current zoom.
     pub(in crate::app) fn render_edges(&self, g: &Geometry) -> RenderEdges {
-        render_edges(&self.view.zoom, self.view.viewport, g)
+        render_edges(&self.render_zoom(), self.view.viewport, g)
     }
     /// A CPU render: the whole photo, or a 100% region drawn over it.
     pub(in crate::app) fn set_pixels(

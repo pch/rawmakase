@@ -13,13 +13,14 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 /// The crop of the photo the camera's embedded JPEG of `size` shows: the whole
 /// frame, or the camera's aspect-ratio crop when the JPEG is nearer that ratio, as
-/// a Sony shot at 16:9 embeds a 16:9 JPEG of its 3:2 sensor (#1256).
-fn embedded_frame(im: &crate::camera_data::CameraImage, size: Vec2) -> [f32; 4] {
+/// a Sony shot at 16:9 embeds a 16:9 JPEG of its 3:2 sensor (#1256). Read from
+/// the photo's metadata `m`, so the JPEG is placed before anything is decoded.
+fn embedded_frame(m: &crate::camera_data::Metadata, size: Vec2) -> [f32; 4] {
     let whole = [0., 0., 1., 1.];
-    let Some(camera) = im.metadata.camera_crop else {
+    let Some(camera) = m.camera_crop else {
         return whole;
     };
-    let frame = crate::model::image_frame::ImageFrame::new(im);
+    let frame = crate::model::image_frame::ImageFrame::for_metadata(m);
     let camera = frame.rect_from_unrotated(camera);
     let off = |[l, t, r, b]: [f32; 4]| {
         (frame.aspect() * (r - l) / (b - t) / (size.x / size.y))
@@ -104,8 +105,7 @@ impl Editor {
     /// What Develop's minimap shows: the photo, and the part in view, at any
     /// zoom (the 100% region the renderer draws exists only from 100% up).
     pub(in crate::app) fn navigator_view(&self) -> (Option<navigator::Photo>, Option<[f32; 4]>) {
-        let shown = self.document.full().and_then(|im| {
-            let g = Geometry::new(im, &self.effective_recipe(), 0);
+        let shown = self.zoom_geometry().and_then(|g| {
             let size = Vec2::new(g.width as f32, g.height as f32);
             self.view.zoom.shown(self.view.viewport, size)
         });
@@ -174,15 +174,29 @@ impl Editor {
                     .and_then(|id| self.library.as_ref()?.thumbnail(id))?;
                 Some((t.id(), t.size_vec2()))
             });
+        // Zoomed in, the preview is enlarged to the zoom level, as the photo will
+        // show; while the photo's size is still unknown, nothing is drawn rather
+        // than the preview at Fit. A photo that couldn't be opened, with no size
+        // to come, shows it at Fit.
+        let opening = self.document.failed.is_none();
+        let at = match (self.view.zoom.on, self.zoom_geometry()) {
+            (true, Some(g)) => Some(self.photo_rect(area, &g, ui.ctx().pixels_per_point())),
+            (true, None) if opening => None,
+            _ => thumb.map(|(_, size)| {
+                let k = (area.width() / size.x).min(area.height() / size.y);
+                Rect::from_center_size(area.center(), size * k)
+            }),
+        };
         // Lights Out keeps lit where the photo will show: the preview's
         // place, or the whole view until there is a preview to size it.
-        let mut lit = area;
-        if let Some((texture, size)) = thumb {
-            let k = (area.width() / size.x).min(area.height() / size.y);
-            lit = Rect::from_center_size(area.center(), size * k);
-            ui.painter().image(
+        let lit = match (thumb, at) {
+            (Some(_), Some(at)) => at.intersect(area),
+            _ => area,
+        };
+        if let (Some((texture, _)), Some(at)) = (thumb, at) {
+            ui.painter().with_clip_rect(area).image(
                 texture,
-                lit,
+                at,
                 Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.)),
                 Color32::WHITE,
             );
@@ -233,6 +247,24 @@ impl Editor {
         }
         self.schedule();
     }
+    /// The geometry of the open photo at its full size, which zoom levels count
+    /// pixels of: a RAW's half-size draft, shown while the full-size decode runs,
+    /// and the camera's preview before either are placed at the size the
+    /// full-size image has, so a zoomed view keeps its level from photo to photo.
+    /// From the metadata until the full-size image is decoded; None until the
+    /// metadata is read. An editable preview, with nothing larger to come, counts
+    /// its own pixels.
+    pub(in crate::app) fn zoom_geometry(&self) -> Option<Geometry> {
+        let recipe = self.effective_recipe();
+        match (self.document.full(), &self.document.metadata) {
+            (Some(im), Some(m)) if im.fast && !self.document.opened_from_copy() => {
+                Some(Geometry::for_metadata(m, &recipe))
+            }
+            (Some(im), _) => Some(Geometry::new(im, &recipe, 0)),
+            (None, Some(m)) => Some(Geometry::for_metadata(m, &recipe)),
+            (None, None) => None,
+        }
+    }
     /// The level the photo shown fits the view at: Develop's photo, or a JPEG,
     /// TIFF or PNG in the Library's Loupe. None until its size is known.
     pub(in crate::app) fn fit_level(&self) -> Option<f32> {
@@ -244,8 +276,7 @@ impl Editor {
         if raster {
             return self.library.as_ref()?.loupe_fit();
         }
-        let im = self.document.full()?;
-        let g = Geometry::new(im, &self.effective_recipe(), 0);
+        let g = self.zoom_geometry()?;
         Some((self.view.viewport.x / g.width as f32).min(self.view.viewport.y / g.height as f32))
     }
     /// Cmd/Ctrl = and −: zoom in or out by a constant factor, stopping at 100% and
@@ -320,7 +351,10 @@ impl Editor {
             TextureMode::Whole => None,
         };
         // The stored preview outranks the embedded JPEG until the first render.
-        let shown = (!self.preview.standing_in())
+        // Zoomed in, the camera's JPEG, which a photo on a network volume can
+        // bring before its size is read, waits for that rather than show at Fit.
+        let sized = !self.view.zoom.on || self.zoom_geometry().is_some();
+        let shown = (!self.preview.standing_in() && sized)
             .then(|| self.preview.texture.clone().or(region_texture.clone()))
             .flatten();
         let Some(texture) = shown else {
@@ -342,13 +376,14 @@ impl Editor {
             .document
             .full()
             .map(|im| Geometry::new(im, &self.effective_recipe(), 0));
+        let zoomed = self.zoom_geometry();
         self.view.glide_pan(ui.ctx(), self.document.catalog_photo);
         // `rect` is where the whole (cropped) photo sits on screen. The last whole-photo
         // render always fills it, and a 100% region is drawn over its part of it, so
         // zooming and panning scale images that are already there instead of showing
         // a stale region alone until the next render lands.
         let now = ui.input(|i| i.time);
-        let target = match &geometry {
+        let target = match &zoomed {
             Some(g) => self.photo_rect(area, g, ppp),
             None => {
                 let size = texture.size_vec2();
@@ -389,11 +424,13 @@ impl Editor {
         };
         self.view.shown_rect = Some(rect);
         crate::app::shell::lights::light(ui.ctx(), rect.intersect(panes.after.clip));
-        let region_rect = match (self.preview.mode, &geometry) {
-            (TextureMode::Region(region), Some(g)) => {
-                Some(before_after::region_on(rect, g, region))
-            }
-            _ => None,
+        let region_rect = match self.preview.mode {
+            TextureMode::Region(region) => Some(before_after::region_on(
+                rect,
+                self.preview.region_frame,
+                region,
+            )),
+            TextureMode::Whole => None,
         };
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
         let painter = ui.painter().with_clip_rect(panes.after.clip);
@@ -409,15 +446,17 @@ impl Editor {
             gpu_whole = hdr.is_some();
             // Opening or leaving the Crop tool changes the crop before the render for
             // it lands: the old render goes where its crop sits, clipped to the new one.
-            let now = geometry
+            let now = zoomed
                 .as_ref()
                 .map_or(self.effective_recipe().crop, |g| g.crop());
-            let then = match (self.preview.embedded, self.document.full()) {
-                (true, Some(im)) => Some(embedded_frame(im, texture.size_vec2())),
+            let metadata = (self.document.metadata.as_ref())
+                .or_else(|| self.document.full().map(|im| &im.metadata));
+            let then = match (self.preview.embedded, metadata) {
+                (true, Some(m)) => Some(embedded_frame(m, texture.size_vec2())),
                 _ => self.preview.crop,
             };
             let (at, clipped) = match then {
-                Some(then) if then != now && geometry.is_some() => {
+                Some(then) if then != now && zoomed.is_some() => {
                     let size = rect.size() / Vec2::new(now[2] - now[0], now[3] - now[1]);
                     let whole = rect.min - Vec2::new(now[0], now[1]) * size;
                     let at = Rect::from_min_max(
@@ -542,7 +581,7 @@ impl Editor {
             && let Some(pos) = response.interact_pointer_pos().map(on_after)
             && rect.contains(pos)
         {
-            match &geometry {
+            match &zoomed {
                 Some(g) => {
                     let size = Vec2::new(g.width as f32, g.height as f32);
                     self.view.zoom.toggle_at(pos, rect, area, size, ppp);
@@ -1078,7 +1117,7 @@ pub(in crate::app) fn hdr_drawn_at(
     match part {
         crate::app::develop::hdr_preview::Part::Whole(_) => rect,
         crate::app::develop::hdr_preview::Part::Region(region) => {
-            before_after::region_on(rect, g, region)
+            before_after::region_on(rect, [g.width, g.height], region)
         }
     }
 }
