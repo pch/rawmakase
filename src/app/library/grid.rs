@@ -138,6 +138,7 @@ impl Library {
         // Custom Order: photos dropped on a cell go before or after it.
         let reorders = self.reorders_by_drag();
         let mut reorder: Option<(Vec<PhotoId>, usize)> = None;
+        crate::app::shell::lights::light(ui.ctx(), ui.available_rect_before_wrap());
         egui::Frame::new()
             .fill(theme::palette(ui.ctx()).photo_backdrop())
             .inner_margin(design::margin_same(margin))

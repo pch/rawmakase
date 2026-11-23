@@ -719,6 +719,7 @@ impl Fixture {
         put("magnifier", view.magnifier.on.to_string());
         put("compare", format!("{:?}", view.compare));
         put("chrome", format!("{:?}", e.chrome).replace("Chrome ", ""));
+        put("lights", format!("{:?}", e.lights));
         put("panels", panels(&e.panels));
         put("tab panel", e.develop_tabs_shown().to_string());
         put(

@@ -25,6 +25,8 @@ pub(crate) enum Action {
     Sidebar,
     Inspector,
     Filmstrip,
+    /// View › Lights Out, which cycles dim, off and on.
+    LightsOut,
     Fullscreen,
     Shortcuts,
     ReportIssue,
@@ -45,7 +47,7 @@ pub(crate) struct KeyEquivalent {
 
 impl Action {
     /// Every item, in the menus' order.
-    pub(crate) const ALL: [Self; 23] = [
+    pub(crate) const ALL: [Self; 24] = [
         Self::Preferences,
         Self::NewCatalog,
         Self::OpenCatalog,
@@ -66,6 +68,7 @@ impl Action {
         Self::Sidebar,
         Self::Inspector,
         Self::Filmstrip,
+        Self::LightsOut,
         Self::Fullscreen,
         Self::Shortcuts,
         Self::ReportIssue,

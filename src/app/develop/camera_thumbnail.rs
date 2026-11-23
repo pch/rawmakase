@@ -174,8 +174,10 @@ impl Editor {
                 let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
                 let rect = Rect::from_center_size(area.center(), size * k);
                 ui.painter().image(texture.id(), rect, uv, Color32::WHITE);
+                crate::app::shell::lights::light(ui.ctx(), rect);
             }
             state => {
+                crate::app::shell::lights::light(ui.ctx(), area);
                 let message = match state {
                     Some(Err(why)) => format!("No camera thumbnail: {why}"),
                     _ => "Reading the camera thumbnail…".to_owned(),

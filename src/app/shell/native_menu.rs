@@ -22,13 +22,14 @@ pub(in crate::app) fn command_of(action: Action) -> Option<&'static str> {
         Action::Sidebar => "panels:left",
         Action::Inspector => "panels:right",
         Action::Filmstrip => "panels:filmstrip",
+        Action::LightsOut => "lights_out",
         Action::Shortcuts => "shortcuts",
         _ => return None,
     })
 }
 
 /// Every menu item whose key follows the key map.
-pub(in crate::app) const KEYED: [Action; 9] = [
+pub(in crate::app) const KEYED: [Action; 10] = [
     Action::Preferences,
     Action::ImportPhotos,
     Action::Export,
@@ -37,6 +38,7 @@ pub(in crate::app) const KEYED: [Action; 9] = [
     Action::Sidebar,
     Action::Inspector,
     Action::Filmstrip,
+    Action::LightsOut,
     Action::Shortcuts,
 ];
 
@@ -149,7 +151,11 @@ impl Editor {
                     && self.module == Module::Library
                     && self.library.as_ref().is_some_and(|l| l.shows_stacks())
             }
-            Action::Library | Action::Sidebar | Action::Inspector | Action::Filmstrip => workspace,
+            Action::Library
+            | Action::Sidebar
+            | Action::Inspector
+            | Action::Filmstrip
+            | Action::LightsOut => workspace,
         };
         // An item with a key runs its command where AppKit sees the key,
         // before any guard of the command's bindings. An item whose key is
@@ -176,6 +182,7 @@ impl Editor {
             Action::Sidebar => self.panel_shown(WorkspacePanel::Left),
             Action::Inspector => self.panel_shown(WorkspacePanel::Right),
             Action::Filmstrip => self.panel_shown(WorkspacePanel::Filmstrip),
+            Action::LightsOut => self.lights != crate::app::shell::lights::Lights::On,
             Action::Fullscreen => ctx.input(|i| i.viewport().fullscreen.unwrap_or(false)),
             _ => false,
         };
@@ -262,6 +269,7 @@ impl Editor {
                 };
                 self.request_panels(PanelChange::Toggle(panel));
             }
+            Action::LightsOut => self.lights = self.lights.next(),
             Action::Fullscreen => crate::app::shell::workspace::toggle_fullscreen(ctx),
             Action::Shortcuts => self.view.shortcuts = true,
             Action::ReportIssue => self.open_report_issue(),

@@ -83,13 +83,17 @@ pub(super) const STACKS: [Shortcut; 4] = [
     ("S", "Collapse / expand the stack"),
     ("Shift+S", "Move to the top of the stack"),
 ];
-pub(super) const GENERAL: [Shortcut; 14] = [
+pub(super) const GENERAL: [Shortcut; 15] = [
     ("G", "Library"),
     ("D", "Develop"),
     ("Tab", "Hide / show the side panels"),
     ("Shift+Tab", "Hide / show the side panels and filmstrip"),
     ("F", "Hide all but the photo; grid first in the Library"),
-    ("Esc", "Leave the whole-window mode"),
+    (
+        "L",
+        "Lights Out: dim all but the photo, then black, then back",
+    ),
+    ("Esc", "Leave Lights Out, or else the whole-window mode"),
     ("F11", "Full screen"),
     ("Shift+Esc", "Dismiss the messages in the top bar"),
     ("F7 / F8 / F6", "Left panel / right panel / filmstrip"),

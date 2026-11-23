@@ -160,6 +160,7 @@ Useful shortcuts:
 | Shift+R | Reference View: another photo beside the one you edit (drag it from the filmstrip) |
 | Tab / Shift+Tab | Hide or show the side panels / also the filmstrip and status bar |
 | F7 / F8 / F6 | Hide or show the left panel / right panel / filmstrip |
+| L | Lights Out: dim everything but the photo, then black, then back (Escape too) |
 | F11 | Full screen (on a Mac, View › Enter Full Screen) |
 | Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z | Undo / redo |
 | Cmd/Ctrl+Shift+U | Auto tone |
@@ -167,6 +168,8 @@ Useful shortcuts:
 Double-click a slider or a color grading wheel to reset it, type its value for precision, or hover a slider and press Up or Down (Shift for ten steps). As in Lightroom, `.` and `,` select the next or previous Basic slider (or click its name), and `=` and `-` step it by Lightroom's amounts (Shift for more, Option for less), even with the panel folded. On a grading wheel, Shift keeps a drag to hue or saturation and Cmd/Ctrl moves it finely. Drag sideways in the histogram to move Blacks, Shadows, Exposure, Highlights or Whites, whichever region you start in.
 
 Tab hides the side panels to give the photo the window, and Shift+Tab the filmstrip too; pressed again, each brings back the panels it hid. The panel buttons at either end of the top bar hide or show the left panel, the right panel or the filmstrip alone.
+
+L is Lightroom's Lights Out: the first press dims everything but the photo (in the Library's grid, everything but the grid) to 80% black, the second makes it black and the third brings the lights back; Escape brings them back at once, before it leaves F's whole-window mode. Panels, bars and the filmstrip still take clicks under the shade, and messages, menus and dialogs show over it. Lights Out works with F and Tab, and every launch starts with the lights on.
 
 The switch in a panel's header turns the panel off without losing its settings, as in Lightroom; right-click a header for Solo Mode, where opening one panel closes the others on that side.
 

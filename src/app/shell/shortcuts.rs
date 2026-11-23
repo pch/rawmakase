@@ -282,7 +282,7 @@ static STACKS: [Row; 4] = [
         "Move to the top of the stack",
     ),
 ];
-static GENERAL: [Row; 14] = [
+static GENERAL: [Row; 15] = [
     row(&[Keys(&b::LIBRARY)], "Library"),
     row(&[Keys(&b::DEVELOP)], "Develop"),
     row(&[Keys(&b::PANELS_SIDES)], "Hide / show the side panels"),
@@ -294,7 +294,14 @@ static GENERAL: [Row; 14] = [
         &[Keys(&b::CHROME)],
         "Hide all but the photo; grid first in the Library",
     ),
-    row(&[Keys(&b::SHOW_CHROME)], "Leave the whole-window mode"),
+    row(
+        &[Keys(&b::LIGHTS_OUT)],
+        "Lights Out: dim all but the photo, then black, then back",
+    ),
+    row(
+        &[Keys(&b::SHOW_CHROME)],
+        "Leave Lights Out, or else the whole-window mode",
+    ),
     row(&[Keys(&b::FULLSCREEN)], "Full screen"),
     row(
         &[Keys(&b::DISMISS_MESSAGES)],

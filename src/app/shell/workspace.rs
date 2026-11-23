@@ -6,6 +6,7 @@ use crate::app::merge_hdr::MERGE_HDR;
 use crate::app::shell::commands::registry::bindings;
 use crate::app::shell::dialogs::{CatalogDialog, FolderAction};
 use crate::app::shell::keymap::FrameKeys;
+use crate::app::shell::lights::Lights;
 use crate::app::shell::messages::Topic;
 use crate::app::shell::panels::WorkspacePanel;
 use crate::app::ui::design::{self, Tone, inset, space, text};
@@ -357,12 +358,21 @@ impl Editor {
             self.messages.dismiss_key(&ctx);
         }
         if !modal {
-            // Escape leaves the whole-window mode, as it does in Lightroom. It
-            // is taken here, before the Library's views and Develop's tools, so
-            // they keep it while the chrome is up and the photo is the way out
-            // while it is not. A menu open over the view closes first.
-            if self.chrome.hidden(self.module)
-                && !egui::Popup::is_any_open(&ctx)
+            // Escape turns the lights back on, then leaves the whole-window
+            // mode, as it does in Lightroom. It is taken here, before the
+            // Library's views and Develop's tools, so they keep it while the
+            // chrome is up and the photo is the way out while it is not. A menu
+            // open over the view closes first, and a field being typed in lets
+            // go of its own Escape before the lights come on.
+            let menu = egui::Popup::is_any_open(&ctx);
+            if self.lights != Lights::On
+                && !menu
+                && !ctx.text_edit_focused()
+                && FrameKeys::of(&ctx).take(&bindings::SHOW_CHROME).is_some()
+            {
+                self.lights = Lights::On;
+            } else if self.chrome.hidden(self.module)
+                && !menu
                 && FrameKeys::of(&ctx).take(&bindings::SHOW_CHROME).is_some()
             {
                 let shown = self.chrome.show();
@@ -521,6 +531,12 @@ impl Editor {
         });
         // Last, so a message from anything above shows this frame, over it all.
         self.take_library_messages();
+        crate::app::shell::lights::paint(
+            ui,
+            self.lights,
+            self.drop_area,
+            self.messages.line_rect(),
+        );
         self.messages.show(&ctx);
     }
     /// What the Library said since last asked is said by the app.
@@ -1105,6 +1121,7 @@ impl Editor {
         // Still the previous photo, e.g. it could not be saved: never show it
         // under this one's name.
         if self.document.catalog_photo != Some(id) {
+            crate::app::shell::lights::light(ui.ctx(), ui.available_rect_before_wrap());
             ui.centered_and_justified(|ui| {
                 ui.label(
                     egui::RichText::new(self.messages.line())

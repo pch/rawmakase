@@ -103,6 +103,7 @@ impl Menu {
                     (Action::Sidebar, "Show Sidebar"),
                     (Action::Inspector, "Show Inspector"),
                     (Action::Filmstrip, "Show Filmstrip"),
+                    (Action::LightsOut, "Lights Out"),
                     (Action::Fullscreen, "Enter Full Screen"),
                 ],
             ),
