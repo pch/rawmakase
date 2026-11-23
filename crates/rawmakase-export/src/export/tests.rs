@@ -715,8 +715,8 @@ fn export_refuses_to_destroy_a_raw_the_source_or_an_existing_file() -> Result<()
     let m = Metadata::default();
     let options = ExportOptions::default();
     // Each of these is a refusal, so succeeding at all is the failure.
-    let message = |r: anyhow::Result<()>| match r {
-        Ok(()) => panic!("export unexpectedly succeeded"),
+    let message = |r: anyhow::Result<Option<String>>| match r {
+        Ok(_) => panic!("export unexpectedly succeeded"),
         Err(e) => e.to_string(),
     };
 

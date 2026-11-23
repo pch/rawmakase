@@ -21,6 +21,9 @@ pub use tokens::{
 /// copyright, as Lightroom's Simple Copyright Watermark does.
 pub const SIMPLE_COPYRIGHT: &str = "<simple-copyright>";
 
+/// The largest Limit File Size To, in K.
+pub const SIZE_LIMIT_MAX: u32 = 1_000_000;
+
 /// A photo's own export choices, saved with its edit.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -32,6 +35,12 @@ pub struct ExportOptions {
     /// the catalog's records are unchanged; lossless otherwise.
     #[serde(skip)]
     pub jxl_lossy: bool,
+    /// The largest a JPEG export may be, in bytes, metadata included: the Export
+    /// dialog's Limit File Size To ([`ExportSettings::limit_size`]), which picks the
+    /// highest quality that fits in place of `quality`. Never saved with an edit,
+    /// as [`Self::jxl_lossy`] isn't.
+    #[serde(skip)]
+    pub max_bytes: Option<u64>,
 }
 impl Default for ExportOptions {
     fn default() -> Self {
@@ -39,6 +48,7 @@ impl Default for ExportOptions {
             quality: 92,
             max_edge: 0,
             jxl_lossy: false,
+            max_bytes: None,
         }
     }
 }
@@ -51,6 +61,10 @@ impl ExportOptions {
         ensure!(
             self.max_edge <= 30_000,
             "Export edge must not exceed 30000 pixels"
+        );
+        ensure!(
+            self.max_bytes != Some(0),
+            "A file size limit must be above 0 K"
         );
         Ok(())
     }
@@ -617,6 +631,14 @@ pub struct ExportSettings {
     /// lossless, as they exported then (the field's own default, not the struct's).
     #[serde(default)]
     pub jxl_lossy: bool,
+    /// Lightroom's Limit File Size To, for JPEG: the highest quality whose file,
+    /// metadata included, is at most `size_limit` K, in place of `quality`. When even
+    /// the lowest quality is larger, the smallest file is exported, with a note, as
+    /// Lightroom does. Off in settings saved before there was a choice.
+    pub limit_size: bool,
+    /// The limit in K of 1000 bytes, so a file never exceeds a limit an upload form
+    /// states in either kind of kilobyte.
+    pub size_limit: u32,
     pub resize: bool,
     pub long_edge: u32,
     pub ppi: u32,
@@ -665,6 +687,8 @@ impl Default for ExportSettings {
             later_hdr: LaterHdr::default(),
             quality: 92,
             jxl_lossy: true,
+            limit_size: false,
+            size_limit: 500,
             resize: false,
             long_edge: 2048,
             ppi: 240,
@@ -997,6 +1021,8 @@ impl ExportSettings {
             quality: self.quality.clamp(1, 100),
             max_edge: if self.resize { self.long_edge } else { 0 },
             jxl_lossy: self.jxl_lossy,
+            max_bytes: (self.limit_size && self.format == Format::Jpeg)
+                .then(|| u64::from(self.size_limit.clamp(1, SIZE_LIMIT_MAX)) * 1000),
         }
     }
     pub fn mime_type(&self) -> &'static str {
@@ -1419,6 +1445,8 @@ mod tests {
             "color_space",
             "quality",
             "jxl_lossy",
+            "limit_size",
+            "size_limit",
             "resize",
             "long_edge",
             "ppi",

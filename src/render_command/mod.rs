@@ -239,6 +239,7 @@ pub fn render(
             .or(o.quality)
             .unwrap_or(ExportOptions::default().quality),
         jxl_lossy: o.jxl_quality.is_some(),
+        ..Default::default()
     };
     if let Some(encoding) = o.hdr_output() {
         let format = Format::from_path(output).ok_or_else(|| {

@@ -1403,3 +1403,31 @@ fn files_appearing_under_photos_side_by_side_get_them_distinct_names() -> Result
     }
     Ok(())
 }
+
+/// Limit File Size To in a batch: a limit the photo fits exports it within the limit
+/// without a note; one even the lowest quality can't meet exports the smallest file,
+/// with the note the export's summary shows.
+#[test]
+fn a_size_limit_fits_each_jpeg_or_notes_why_not() -> Result<()> {
+    let f = fixture(&["a.dng"])?;
+    let photos = f.batch_photos()?;
+    for (name, size_limit, noted) in [("fits", 1_000, false), ("too-small", 1, true)] {
+        let out = f.out().join(name);
+        let mut s = settings(&out);
+        s.format = Format::Jpeg;
+        s.limit_size = true;
+        s.size_limit = size_limit;
+        let outcomes = run_all(&f.batch(photos.clone(), s));
+        let Outcome::Exported { path, notes } = &outcomes[0] else {
+            panic!("{name}: not exported: {outcomes:?}");
+        };
+        let size = std::fs::metadata(path)?.len();
+        let limit_noted = notes.iter().any(|n| n.contains("lowest quality"));
+        assert_eq!(limit_noted, noted, "{name}: {notes:?}");
+        if !noted {
+            assert!(size <= u64::from(size_limit) * 1000, "{name}: {size}");
+        }
+        image::open(path)?;
+    }
+    Ok(())
+}

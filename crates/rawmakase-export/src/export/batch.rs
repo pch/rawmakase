@@ -587,6 +587,7 @@ fn export(
             &prepared.embed,
         )?;
         progress(0.95);
+        notes.extend(staged.note);
         let (path, note) = commit(
             staged.file,
             &shared.sources,
