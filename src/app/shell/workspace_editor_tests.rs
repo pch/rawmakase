@@ -292,10 +292,11 @@ fn side_panels_stop_where_their_contents_stop() -> anyhow::Result<()> {
     };
     for (module, panel, outward, min) in [
         (Module::Develop, "library-sidebar", 0., LIBRARY_SIDEBAR_MIN),
-        (Module::Develop, "presets", 1200., PRESETS_MIN),
-        (Module::Develop, "adjustments", 1200., ADJUSTMENTS_MIN),
         (Module::Library, "library-sidebar", 0., LIBRARY_SIDEBAR_MIN),
         (Module::Library, "library-info", 1200., LIBRARY_INFO_MIN),
+        // Last: hiding the sidebar for it hides it in the Library too.
+        (Module::Develop, "presets", 1200., PRESETS_MIN),
+        (Module::Develop, "adjustments", 1200., ADJUSTMENTS_MIN),
     ] {
         e.module = module;
         // The window has room for Develop's tab panel without the sidebar.

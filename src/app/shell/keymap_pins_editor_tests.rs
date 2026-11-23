@@ -441,16 +441,47 @@ fn escape_clears_the_sheets_search_before_it_closes_the_sheet() {
 
 #[test]
 fn panel_keys_change_panels_unless_a_control_has_the_focus() {
-    let develop = |d: &str| format!("develop {d} library LRFPA tab Presets");
-    let library = |l: &str| format!("develop LRFPA library {l} tab Presets");
-    for (key, m, in_library, d) in [
-        (Key::Tab, NONE, library("lrFPA"), "lrFpA"),
-        (Key::Tab, SHIFT, library("lrfPA"), "lrfpA"),
-        (Key::F7, NONE, library("lRFPA"), "lRFPA"),
-        (Key::F8, NONE, library("LrFPA"), "LrFPA"),
+    // The left panel (L) and the filmstrip (F) are both modules'; the right
+    // side (R, P, A) is each module's own.
+    let panels = |d: &str, l: &str| format!("develop {d} library {l} tab Presets");
+    for (key, m, in_library, in_develop) in [
+        (
+            Key::Tab,
+            NONE,
+            panels("lRFPA", "lrFPA"),
+            panels("lrFpA", "lRFPA"),
+        ),
+        (
+            Key::Tab,
+            SHIFT,
+            panels("lRfPA", "lrfPA"),
+            panels("lrfpA", "lRfPA"),
+        ),
+        (
+            Key::F7,
+            NONE,
+            panels("lRFPA", "lRFPA"),
+            panels("lRFPA", "lRFPA"),
+        ),
+        (
+            Key::F8,
+            NONE,
+            panels("LRFPA", "LrFPA"),
+            panels("LrFPA", "LRFPA"),
+        ),
         // The Library has no Presets panel: Shift+F8 there hides Develop's.
-        (Key::F8, SHIFT, develop("LRFpA"), "LRFpA"),
-        (Key::F6, NONE, library("LRfPA"), "LRfPA"),
+        (
+            Key::F8,
+            SHIFT,
+            panels("LRFpA", "LRFPA"),
+            panels("LRFpA", "LRFPA"),
+        ),
+        (
+            Key::F6,
+            NONE,
+            panels("LRfPA", "LRfPA"),
+            panels("LRfPA", "LRfPA"),
+        ),
     ] {
         let o = tap(Place::Grid, key, m);
         assert!(
@@ -460,10 +491,10 @@ fn panel_keys_change_panels_unless_a_control_has_the_focus() {
         // In a window too narrow for it, Shift+F8 in Develop shows the tab
         // panel over the photo rather than changing the layout.
         let changes = |o: &Outcome| {
-            if d == "LRFpA" {
+            if key == Key::F8 && m == SHIFT {
                 o.is("tab panel", "true")
             } else {
-                o.is("panels", &develop(d))
+                o.is("panels", &in_develop)
             }
         };
         let o = tap(Place::Develop, key, m);
@@ -1448,7 +1479,7 @@ fn several_presses_in_one_frame() {
     // F7 then Tab: Tab wins.
     let o = taps(Place::Develop, &[(Key::F7, NONE), (Key::Tab, NONE)]);
     assert!(
-        o.is("panels", "develop lrFpA library LRFPA tab Presets"),
+        o.is("panels", "develop lrFpA library lRFPA tab Presets"),
         "{o:?}"
     );
     // F twice: the chrome changes once.
@@ -1698,7 +1729,7 @@ fn kept_aliases_and_variants_still_run_their_command() {
         assert!(tap(Remove, key, NONE).get("recipe").is_some(), "{key:?}");
         assert!(tap(Develop, key, NONE).get("dialog").is_some(), "{key:?}");
     }
-    assert!(tap(Grid, Key::Tab, SHIFT).is("panels", "develop LRFPA library lrfPA tab Presets"));
+    assert!(tap(Grid, Key::Tab, SHIFT).is("panels", "develop lRfPA library lrfPA tab Presets"));
     // Shift goes on to the next photo, extends the Grid's selection and
     // feathers a brush; Shift and Alt pick the Basic slider's step.
     let o = tap(Develop, Key::CloseBracket, SHIFT);

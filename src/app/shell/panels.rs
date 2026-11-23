@@ -1,5 +1,6 @@
 //! Which of a module's panels show, as Lightroom's Tab, Shift+Tab and F6–F8
-//! hide them: each module keeps its own, and the session keeps both across
+//! hide them. The left panel and the filmstrip are the same in both modules;
+//! the right side is each module's own. The session keeps them across
 //! launches. Hiding a panel changes only whether it is drawn, never what it holds.
 use crate::app::Editor;
 use crate::app::Module;
@@ -216,11 +217,36 @@ impl WorkspacePanels {
             Module::Library => self.library,
         }
     }
+    /// Sets `module`'s layout. The left panel and the filmstrip go to both
+    /// modules, so hiding one in the Library hides it in Develop too.
     pub(in crate::app) fn set(&mut self, module: Module, layout: PanelLayout) {
         match module {
             Module::Develop => self.develop = layout,
             Module::Library => self.library = layout,
         }
+        for other in [&mut self.develop, &mut self.library] {
+            other.left = layout.left;
+            other.filmstrip = layout.filmstrip;
+        }
+    }
+    /// The panels with the shared ones made the same in both modules. A
+    /// session saved while each module kept its own shows a shared panel if
+    /// either module showed it, so none hides by surprise.
+    fn shared(mut self) -> Self {
+        let either = |a: Visibility, b: Visibility| {
+            if a == Visibility::Shown || b == Visibility::Shown {
+                Visibility::Shown
+            } else {
+                Visibility::Hidden
+            }
+        };
+        let left = either(self.develop.left, self.library.left);
+        let filmstrip = either(self.develop.filmstrip, self.library.filmstrip);
+        for layout in [&mut self.develop, &mut self.library] {
+            layout.left = left;
+            layout.filmstrip = filmstrip;
+        }
+        self
     }
 }
 
@@ -427,7 +453,9 @@ pub(in crate::app) fn toggle_id(panel: WorkspacePanel) -> egui::Id {
 /// The session's panels, or all shown if what was saved does not read.
 pub(crate) fn lenient<'de, D: Deserializer<'de>>(d: D) -> Result<WorkspacePanels, D::Error> {
     let value = serde_json::Value::deserialize(d)?;
-    Ok(serde_json::from_value(value).unwrap_or_default())
+    Ok(serde_json::from_value::<WorkspacePanels>(value)
+        .unwrap_or_default()
+        .shared())
 }
 
 #[cfg(test)]
@@ -534,6 +562,17 @@ mod tests {
             right.changed(PanelChange::Toggle(WorkspacePanel::Right), Module::Library),
             all
         );
+    }
+
+    #[test]
+    fn a_session_with_each_modules_own_panels_shows_a_shared_one_either_showed() {
+        let panels: WorkspacePanels = lenient(serde_json::json!({
+            "library": {"left": "hidden", "filmstrip": "hidden", "right": "hidden"},
+            "develop": {"left": "shown", "filmstrip": "hidden"},
+        }))
+        .unwrap();
+        assert_eq!(panels.library, layout(SHOWN, HIDDEN, HIDDEN));
+        assert_eq!(panels.develop, layout(SHOWN, SHOWN, HIDDEN));
     }
 
     #[test]

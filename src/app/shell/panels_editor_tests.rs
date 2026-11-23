@@ -3,26 +3,34 @@ use crate::app::testing::*;
 use crate::app::*;
 
 #[test]
-fn each_module_keeps_its_own_panels() -> anyhow::Result<()> {
+fn the_left_panel_and_filmstrip_follow_into_the_other_module() -> anyhow::Result<()> {
     use crate::app::shell::panels::WorkspacePanel;
     let (_d, mut e, _ids) = editor_with_catalog(&["a.RAF"])?;
     panel_frame(&mut e, vec![], FocusedButton::No);
-    panel_frame(
-        &mut e,
-        key_down(egui::Key::F7, egui::Modifiers::NONE),
-        FocusedButton::No,
-    );
+    for key in [egui::Key::F7, egui::Key::F6, egui::Key::F8] {
+        panel_frame(
+            &mut e,
+            key_down(key, egui::Modifiers::NONE),
+            FocusedButton::No,
+        );
+    }
     assert!(!e.panel_shown(WorkspacePanel::Left));
+    assert!(!e.panel_shown(WorkspacePanel::Filmstrip));
+    assert!(!e.panel_shown(WorkspacePanel::Right));
     e.module = Module::Develop;
-    assert!(e.panel_shown(WorkspacePanel::Left));
-    e.module = Module::Library;
-    // The Library draws with its filmstrip hidden.
+    assert!(!e.panel_shown(WorkspacePanel::Left));
+    assert!(!e.panel_shown(WorkspacePanel::Filmstrip));
+    // The right side is each module's own.
+    assert!(e.panel_shown(WorkspacePanel::Right));
+    panel_frame(&mut e, vec![], FocusedButton::No);
     panel_frame(
         &mut e,
         key_down(egui::Key::F6, egui::Modifiers::NONE),
         FocusedButton::No,
     );
-    assert!(!e.panel_shown(WorkspacePanel::Filmstrip));
+    e.module = Module::Library;
+    assert!(e.panel_shown(WorkspacePanel::Filmstrip));
+    assert!(!e.panel_shown(WorkspacePanel::Left));
     panel_frame(&mut e, vec![], FocusedButton::No);
     Ok(())
 }
