@@ -105,8 +105,12 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
         "messages:dismiss_all",
         "Dismiss the messages in the top bar",
     ),
-    command("chrome:show", "Leave the whole-window mode"),
+    command(
+        "chrome:show",
+        "Leave Lights Out, or else the whole-window mode",
+    ),
     command("fullscreen", "Full screen"),
+    command("lights_out", "Cycle Lights Out: dim, off, on"),
     command("virtual_copy", "Create virtual copy"),
     command("import_photos", "Import Photos…"),
     command("preferences", "Preferences"),
@@ -588,6 +592,9 @@ pub(in crate::app) mod bindings {
             .consuming()
             .guarded(PANEL);
         PANELS_FILMSTRIP = b("panels:filmstrip", Everywhere, &[d(&[Key::F6], NONE)])
+            .consuming()
+            .guarded(PANEL);
+        LIGHTS_OUT = b("lights_out", Everywhere, &[d(&[Key::L], NONE).once_per_press()])
             .consuming()
             .guarded(PANEL);
 

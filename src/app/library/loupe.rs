@@ -637,6 +637,10 @@ impl Library {
         let uv = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1., 1.));
         if let (Some(texture), Some(at)) = (&texture, shown) {
             painter.image(texture.id(), at, uv, Color32::WHITE);
+            crate::app::shell::lights::light(ui.ctx(), at.intersect(rect));
+        } else {
+            // No preview yet to size the photo by: the view stays lit.
+            crate::app::shell::lights::light(ui.ctx(), inset);
         }
         // The zoomed region over the enlarged Fit preview.
         if let (Some(at), true) = (shown, full.is_some())

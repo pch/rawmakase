@@ -318,7 +318,8 @@ impl Editor {
             self.messages.warn(format!("Panel layout not saved: {e:#}"));
         }
     }
-    /// Tab, Shift+Tab, F6–F8 and Shift+F8 (Develop's tab panel), unless a field or control has the keyboard
+    /// Tab, Shift+Tab, F6–F8 and Shift+F8 (Develop's tab panel), and L for
+    /// Lights Out, unless a field or control has the keyboard
     /// focus (Tab then moves it on) or a menu is open. Run before any panel is
     /// drawn, so the Tab taken here does not also focus the first slider.
     pub(in crate::app) fn panel_keys(&mut self, ctx: &egui::Context) {
@@ -351,6 +352,9 @@ impl Editor {
         if let Some(change) = change {
             ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
             self.request_panels(change);
+        }
+        if self.keys(ctx).take(&b::LIGHTS_OUT).is_some() {
+            self.lights = self.lights.next();
         }
     }
 }

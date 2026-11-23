@@ -39,6 +39,8 @@ pub(crate) struct Editor {
     /// Whether the module's chrome is hidden, leaving the photo alone (see
     /// `chrome`); not saved, so every launch opens in the normal window.
     chrome: crate::app::shell::chrome::Chrome,
+    /// Lights Out (see `lights`); not saved, as in Lightroom.
+    lights: crate::app::shell::lights::Lights,
     tx: Sender<Event>,
     rx: Receiver<Event>,
     loader: worker::Loader,
@@ -384,6 +386,7 @@ impl Editor {
             library: None,
             module: Module::Develop,
             chrome: Default::default(),
+            lights: Default::default(),
             tx,
             rx,
             loader,

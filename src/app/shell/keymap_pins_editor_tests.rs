@@ -1787,6 +1787,58 @@ fn a_press_that_is_a_basic_key_by_its_place_runs_only_the_letter_it_types() {
 }
 
 #[test]
+fn l_cycles_lights_out_and_escape_turns_the_lights_back_on() {
+    for place in [Place::Grid, Place::Loupe, Place::Develop, Place::Crop] {
+        let mut f = Fixture::new(place);
+        let o = tap_in(&mut f, Key::L, NONE);
+        assert!(o.is("lights", "Dim") && o.taken, "{place:?} {o:?}");
+        assert!(
+            tap_in(&mut f, Key::L, NONE).is("lights", "Off"),
+            "{place:?}"
+        );
+        assert!(tap_in(&mut f, Key::L, NONE).is("lights", "On"), "{place:?}");
+        // Escape turns the lights on before it closes the Loupe or the tool.
+        f.tap(Key::L, NONE);
+        let o = tap_in(&mut f, Key::Escape, NONE);
+        assert!(o.taken && o.is("lights", "On"), "{place:?} {o:?}");
+        assert!(
+            o.get("view").is_none() && o.get("tool").is_none(),
+            "{place:?} {o:?}"
+        );
+    }
+    // With the chrome hidden too: the lights first, then the chrome.
+    let mut f = Fixture::new(Place::Loupe);
+    f.tap(Key::F, NONE);
+    f.tap(Key::L, NONE);
+    let o = tap_in(&mut f, Key::Escape, NONE);
+    assert!(o.is("lights", "On") && o.get("chrome").is_none(), "{o:?}");
+    assert!(tap_in(&mut f, Key::Escape, NONE).get("chrome").is_some());
+    // L alone: Cmd+L is the filters', and a held L changes the lights once.
+    assert!(tap(Place::Grid, Key::L, SHIFT).get("lights").is_none());
+    let o = tap(Place::Grid, Key::L, cmd());
+    assert!(o.get("lights").is_none() && o.is("filters", "off"), "{o:?}");
+    assert!(
+        repeat(Place::Grid, Key::L, NONE).get("lights").is_none(),
+        "held"
+    );
+    assert_inert_behind_a_window_and_while_typing(Key::L, NONE, "L");
+    // As the panel keys, not with a button holding the focus or a menu open.
+    for place in [Place::GridButton, Place::DevelopButton, Place::LoupePopup] {
+        assert!(
+            tap(place, Key::L, NONE).get("lights").is_none(),
+            "{place:?}"
+        );
+    }
+    // Escape in a field is the field's, and a menu closes first.
+    for place in [Place::GridTyping, Place::LoupePopup] {
+        let mut f = Fixture::new(place);
+        f.e.lights = crate::app::shell::lights::Lights::Dim;
+        let o = tap_in(&mut f, Key::Escape, NONE);
+        assert!(o.get("lights").is_none(), "{place:?} {o:?}");
+    }
+}
+
+#[test]
 fn a_refused_delete_leaves_the_next_delete_in_the_frame_to_delete() {
     // Shift+Delete does nothing in Develop; a Delete after it in the same frame
     // still asks to delete the open photo.
@@ -1817,6 +1869,8 @@ fn every_default_shortcut_changes_something_from_its_places_start() {
         (Grid, Key::Quote, cmd, "virtual copy"),
         (Develop, Key::Quote, cmd, "virtual copy in Develop"),
         (Grid, Key::F, none, "hide the chrome"),
+        (Grid, Key::L, none, "Lights Out"),
+        (Develop, Key::L, none, "Lights Out in Develop"),
         (Grid, Key::D, none, "develop the active photo"),
         (Grid, Key::Z, cmd, "undo"),
         (Grid, Key::Z, cmd_shift, "redo"),

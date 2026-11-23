@@ -247,8 +247,9 @@ names where they have one. Fixed commands keep their keys.
 | `panels:presets` | Fold / open Presets and History |
 | `chrome` | Hide all but the photo |
 | `messages:dismiss_all` | Dismiss the messages in the top bar |
-| `chrome:show` | Leave the whole-window mode |
+| `chrome:show` | Leave Lights Out, or else the whole-window mode |
 | `fullscreen` | Full screen |
+| `lights_out` | Cycle Lights Out: dim, off, on |
 | `virtual_copy` | Create virtual copy |
 | `import_photos` | Import Photos… |
 | `preferences` | Preferences |

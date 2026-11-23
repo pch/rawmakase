@@ -291,6 +291,10 @@ impl Messages {
         }
     }
 
+    /// Where the bar's message line was drawn this frame, if a message shows there.
+    pub(in crate::app) fn line_rect(&self) -> Option<Rect> {
+        self.line_rect
+    }
     /// The last thing said, whatever its level: for what reads it back, as the
     /// control socket and a failed save's caller.
     pub(in crate::app) fn line(&self) -> &str {

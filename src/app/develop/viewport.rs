@@ -121,6 +121,7 @@ impl Editor {
             || self.document.catalog_photo.is_some()
             || self.document.path.is_some();
         if !opening {
+            crate::app::shell::lights::light(ui.ctx(), area);
             let empty = self
                 .library
                 .as_ref()
@@ -151,15 +152,20 @@ impl Editor {
                     .and_then(|id| self.library.as_ref()?.thumbnail(id))?;
                 Some((t.id(), t.size_vec2()))
             });
+        // Lights Out keeps lit where the photo will show: the preview's
+        // place, or the whole view until there is a preview to size it.
+        let mut lit = area;
         if let Some((texture, size)) = thumb {
             let k = (area.width() / size.x).min(area.height() / size.y);
+            lit = Rect::from_center_size(area.center(), size * k);
             ui.painter().image(
                 texture,
-                Rect::from_center_size(area.center(), size * k),
+                lit,
                 Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.)),
                 Color32::WHITE,
             );
         }
+        crate::app::shell::lights::light(ui.ctx(), lit);
         let badge = Rect::from_center_size(
             Pos2::new(area.center().x, area.bottom() - 36.),
             Vec2::new(170., 30.),
@@ -288,6 +294,9 @@ impl Editor {
             if self.reference_view() {
                 self.loading_placeholder(ui, panes.after.clip);
                 let reference = self.before_pane_ui(ui, &panes, panes.after.area);
+                if let (Some(before), Some(pane)) = (reference, panes.before) {
+                    crate::app::shell::lights::light(ui.ctx(), before.intersect(pane.clip));
+                }
                 self.reference_pointer(ui, &response, &panes, reference);
             } else {
                 self.loading_placeholder(ui, whole);
@@ -344,6 +353,7 @@ impl Editor {
             None => target,
         };
         self.view.shown_rect = Some(rect);
+        crate::app::shell::lights::light(ui.ctx(), rect.intersect(panes.after.clip));
         let region_rect = match (self.preview.mode, &geometry) {
             (TextureMode::Region(region), Some(g)) => {
                 Some(before_after::region_on(rect, g, region))
@@ -406,6 +416,9 @@ impl Editor {
         // A click or drag on Before acts where the same point is on the edit; the
         // reference photo takes its own (see `reference_pointer`).
         let before_rect = self.before_pane_ui(ui, &panes, rect);
+        if let (Some(before), Some(pane)) = (before_rect, panes.before) {
+            crate::app::shell::lights::light(ui.ctx(), before.intersect(pane.clip));
+        }
         let on_reference = self.reference_pointer(ui, &response, &panes, before_rect);
         let mirrored = before_rect.filter(|_| !self.reference_view());
         let on_after = |pos: Pos2| match (mirrored, panes.before) {
