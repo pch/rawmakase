@@ -183,6 +183,14 @@ pub(crate) struct Session {
         skip_serializing_if = "std::ops::Not::not"
     )]
     pub preset_list: bool,
+    /// The color behind the photo, by name ("white", "gray", "black"); none, or
+    /// a name this version does not know, is the theme's.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub backdrop: Option<String>,
     /// The Crop tool's guide overlay.
     #[serde(default, deserialize_with = "lenient")]
     pub crop_guides: CropGuideLayout,

@@ -78,6 +78,7 @@ impl Library {
         zoom: &mut crate::app::view::navigator::Zoom,
         chrome: bool,
         magnifier: Option<&mut crate::app::view::magnifier::Magnifier>,
+        backdrop: crate::app::view::backdrop::Backdrop,
     ) -> Action {
         self.auto_stack_window(ui.ctx());
         self.keyword_set_window(ui.ctx());
@@ -89,7 +90,7 @@ impl Library {
             return self.survey(ui, chrome);
         }
         if self.loupe.open {
-            return self.loupe(ui, zoom, magnifier);
+            return self.loupe(ui, zoom, magnifier, backdrop);
         }
         let mut action = Action::None;
         if chrome {

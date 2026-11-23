@@ -7,8 +7,9 @@
 //! cached preview.
 use super::{Action, Library, thumbnails};
 use crate::app::preferences::monitor::DisplayProfile;
-use crate::app::ui::design::{Tone, text};
+use crate::app::ui::design::text;
 use crate::app::ui::theme;
+use crate::app::view::backdrop::Backdrop;
 use crate::app::view::navigator::Zoom;
 use crate::app::worker::Latest;
 use crate::catalog::{Photo, PhotoId};
@@ -479,6 +480,7 @@ impl Library {
         ui: &mut egui::Ui,
         zoom: &mut Zoom,
         magnifier: Option<&mut crate::app::view::magnifier::Magnifier>,
+        backdrop: Backdrop,
     ) -> Action {
         let palette = theme::palette(ui.ctx());
         self.loupe.poll(ui.ctx());
@@ -496,7 +498,11 @@ impl Library {
         }
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
-        ui.painter().rect_filled(rect, 0., palette.photo_backdrop());
+        ui.painter().rect_filled(rect, 0., backdrop.fill(&palette));
+        // A right click anywhere chooses the backdrop, on the photo too, as
+        // nothing else takes it there.
+        let action = crate::app::view::backdrop::menu(&response, backdrop)
+            .map_or(Action::None, Action::Backdrop);
         let ppp = ui.ctx().pixels_per_point();
         // The photo fits within the margin, as drawn below.
         self.loupe.view = rect
@@ -567,7 +573,8 @@ impl Library {
         let double = response.double_clicked() || response.triple_clicked();
         // An offline RAW zooms into its stored 1:1 preview.
         let zoomable = available || stored.is_some();
-        if response.clicked() && !double && zoomable && (zoom.on || on_photo) {
+        let context = crate::app::ui::widgets::context_clicked(&response);
+        if response.clicked() && !double && !context && zoomable && (zoom.on || on_photo) {
             if let Some((pos, fit)) = response
                 .interact_pointer_pos()
                 .zip(fit)
@@ -713,10 +720,10 @@ impl Library {
                 egui::Align2::LEFT_BOTTOM,
                 note,
                 egui::FontId::proportional(text::SMALL),
-                palette.tone(Tone::LABEL),
+                backdrop.text(&palette, crate::app::ui::design::Tone::LABEL),
             );
         }
         self.loupe_overlay(ui.painter(), rect);
-        Action::None
+        action
     }
 }

@@ -427,6 +427,9 @@ pub(in crate::app) struct ViewState {
     /// The Guided Upright tool's selection, drag and view options.
     pub(in crate::app) guided: crate::app::develop::tools::guided_tool::GuidedTool,
     pub(in crate::app) monitor: crate::app::preferences::monitor::MonitorProfile,
+    /// The color behind the photo in Develop and the Loupe; saved in the
+    /// session.
+    pub(in crate::app) backdrop: crate::app::view::backdrop::Backdrop,
     /// The display profile the system assigns to the window's display.
     pub(in crate::app) system_display: crate::app::preferences::monitor::SystemProbe,
     /// What the window's display can show of HDR now: a view fact, never part of an
@@ -490,6 +493,7 @@ impl Default for ViewState {
             masking: Default::default(),
             guided: Default::default(),
             monitor: Default::default(),
+            backdrop: Default::default(),
             system_display: Default::default(),
             hdr_display: Default::default(),
             hdr_shown: false,

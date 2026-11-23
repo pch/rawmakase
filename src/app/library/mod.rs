@@ -16,6 +16,8 @@ pub(crate) enum Action {
     AddFolder,
     /// Import Photos…: copies from a card or folder.
     ImportPhotos,
+    /// The backdrop chosen from the Loupe's menu, for the editor to keep.
+    Backdrop(crate::app::view::backdrop::Backdrop),
 }
 impl Action {
     /// Combines the actions of panels drawn in turn: a later panel's action

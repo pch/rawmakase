@@ -156,7 +156,7 @@ impl Editor {
                     "Pick a photo in the Library to edit it"
                 },
                 egui::FontId::proportional(text::TITLE),
-                palette.tone(Tone::FAINT),
+                self.view.backdrop.text(&palette, Tone::FAINT),
             );
             return;
         }
@@ -264,8 +264,21 @@ impl Editor {
     pub(in crate::app) fn viewport_ui(&mut self, ui: &mut egui::Ui) -> egui::Response {
         let (whole, response) =
             ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
-        ui.painter()
-            .rect_filled(whole, 0., theme::palette(ui.ctx()).photo_backdrop());
+        ui.painter().rect_filled(
+            whole,
+            0.,
+            self.view.backdrop.fill(&theme::palette(ui.ctx())),
+        );
+        // As in Lightroom, a right click around the photo chooses the backdrop.
+        // On the photo too while no tool is open: nothing else takes it there,
+        // and the margin alone is a small target.
+        let on_photo = response
+            .interact_pointer_pos()
+            .zip(self.view.shown_rect)
+            .is_some_and(|(pos, photo)| photo.contains(pos));
+        if self.view.is(Tool::None) || !on_photo {
+            self.backdrop_menu(&response);
+        }
         if self.module == Module::Develop
             && self.view.compare == before_after::Compare::CameraThumbnail
         {
@@ -508,6 +521,7 @@ impl Editor {
         if response.clicked()
             && !response.double_clicked()
             && !response.triple_clicked()
+            && !crate::app::ui::widgets::context_clicked(&response)
             && hand
             && !on_reference
             && !on_minimap
