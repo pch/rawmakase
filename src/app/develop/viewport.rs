@@ -11,6 +11,28 @@ use crate::app::view::navigator;
 use crate::develop::{self, Geometry};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
+/// The crop of the photo the camera's embedded JPEG of `size` shows: the whole
+/// frame, or the camera's aspect-ratio crop when the JPEG is nearer that ratio, as
+/// a Sony shot at 16:9 embeds a 16:9 JPEG of its 3:2 sensor (#1256).
+fn embedded_frame(im: &crate::camera_data::CameraImage, size: Vec2) -> [f32; 4] {
+    let whole = [0., 0., 1., 1.];
+    let Some(camera) = im.metadata.camera_crop else {
+        return whole;
+    };
+    let frame = crate::model::image_frame::ImageFrame::new(im);
+    let camera = frame.rect_from_unrotated(camera);
+    let off = |[l, t, r, b]: [f32; 4]| {
+        (frame.aspect() * (r - l) / (b - t) / (size.x / size.y))
+            .ln()
+            .abs()
+    };
+    if off(camera) < off(whole) {
+        camera
+    } else {
+        whole
+    }
+}
+
 impl Editor {
     /// Constrains the crop to [`Self::crop_constraint`]; a Free crop is left as it is.
     pub(in crate::app) fn fit_aspect(&mut self) {
@@ -367,7 +389,11 @@ impl Editor {
             let now = geometry
                 .as_ref()
                 .map_or(self.effective_recipe().crop, |g| g.crop());
-            let (at, clipped) = match self.preview.crop {
+            let then = match (self.preview.embedded, self.document.full()) {
+                (true, Some(im)) => Some(embedded_frame(im, texture.size_vec2())),
+                _ => self.preview.crop,
+            };
+            let (at, clipped) = match then {
                 Some(then) if then != now && geometry.is_some() => {
                     let size = rect.size() / Vec2::new(now[2] - now[0], now[3] - now[1]);
                     let whole = rect.min - Vec2::new(now[0], now[1]) * size;
