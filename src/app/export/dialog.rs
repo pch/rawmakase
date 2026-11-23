@@ -398,15 +398,30 @@ impl Editor {
                 "Image Format",
             );
         });
-        // One row for either format, so nothing below moves.
+        // One row for either format, and a JPEG's size limit under it, as
+        // Lightroom's: the limit picks the quality, so the slider is off with it.
         match s.format {
-            Format::Jpeg => form_row(ui, "Quality", |ui| {
-                ui.spacing_mut().slider_width = 220.;
-                crate::app::ui::widgets::named(
-                    ui.add(egui::Slider::new(&mut s.quality, 1..=100)),
-                    "Quality",
-                );
-            }),
+            Format::Jpeg => {
+                form_row(ui, "Quality", |ui| {
+                    ui.spacing_mut().slider_width = 220.;
+                    crate::app::ui::widgets::named(
+                        ui.add_enabled(!s.limit_size, egui::Slider::new(&mut s.quality, 1..=100)),
+                        "Quality",
+                    );
+                });
+                form_row(ui, "", |ui| {
+                    ui.checkbox(&mut s.limit_size, "Limit File Size To:");
+                    crate::app::ui::widgets::named(
+                        ui.add_enabled(
+                            s.limit_size,
+                            egui::DragValue::new(&mut s.size_limit)
+                                .range(1..=crate::export_settings::SIZE_LIMIT_MAX)
+                                .suffix(" K"),
+                        ),
+                        "File Size Limit",
+                    );
+                });
+            }
             Format::Tiff => form_row(ui, "Bit Depth", |ui| {
                 let linear = s
                     .hdr

@@ -14,6 +14,7 @@ pub mod job;
 mod jxl;
 mod metadata;
 pub mod queue;
+mod size_limit;
 pub use crate::storage::Replace;
 use crate::{
     camera_data::Metadata,
@@ -154,7 +155,7 @@ pub fn export(
     m: &Metadata,
     options: &ExportOptions,
     replace: Replace,
-) -> Result<()> {
+) -> Result<Option<String>> {
     export_with(path, source, image, m, options, &Embed::default(), replace)
 }
 
@@ -167,7 +168,7 @@ pub fn export_with(
     options: &ExportOptions,
     embed: &Embed,
     replace: Replace,
-) -> Result<()> {
+) -> Result<Option<String>> {
     let image = ExportImage::srgb(image.clone());
     write(path, source, &image, m, options, embed, replace)
 }
@@ -181,12 +182,13 @@ pub fn export_image(
     options: &ExportOptions,
     embed: &Embed,
     replace: Replace,
-) -> Result<()> {
+) -> Result<Option<String>> {
     write(path, source, image, m, options, embed, replace)
 }
 
 /// Exports `pixels` to `path`: [`export_image`] of an SDR render, [`stage_pixels`] of
-/// an HDR master or a gain map.
+/// an HDR master or a gain map. Returns what the export has to say about the file
+/// ([`Staged::note`]).
 pub fn export_pixels(
     path: &Path,
     source: &Path,
@@ -195,13 +197,14 @@ pub fn export_pixels(
     options: &ExportOptions,
     embed: &Embed,
     replace: Replace,
-) -> Result<()> {
+) -> Result<Option<String>> {
     match pixels {
         Pixels::Sdr(image) => write(path, source, image, m, options, embed, replace),
         Pixels::Hdr(_) | Pixels::GainMap(_) => {
             check_destination(path, source, replace)?;
             let staged = stage_pixels(path, pixels, m, options, embed)?;
-            crate::storage::persist(staged.file, path, replace)
+            crate::storage::persist(staged.file, path, replace)?;
+            Ok(staged.note)
         }
     }
 }
@@ -226,11 +229,12 @@ fn write(
     options: &ExportOptions,
     embed: &Embed,
     replace: Replace,
-) -> Result<()> {
+) -> Result<Option<String>> {
     check_destination(path, source, replace)?;
     options.validate()?;
     let staged = stage_image(path, image, m, options, embed)?;
-    crate::storage::persist(staged.file, path, replace)
+    crate::storage::persist(staged.file, path, replace)?;
+    Ok(staged.note)
 }
 
 /// An export encoded into a temporary file beside its destination. Should the
@@ -239,6 +243,9 @@ pub struct Staged {
     /// [`crate::storage::persist`] puts it in place; dropping it leaves nothing
     /// behind.
     pub file: NamedTempFile,
+    /// What the export has to say about the file: a JPEG that couldn't be made as
+    /// small as its size limit.
+    pub note: Option<String>,
     /// Known to [`remove_unfinished`] until the export is done with, either way.
     _unfinished: Unfinished,
 }
@@ -336,36 +343,42 @@ pub fn stage_gain_map(
         temp.as_file().sync_all()?;
         return Ok(Staged {
             file: temp,
+            note: None,
             _unfinished: unfinished,
         });
     }
-    let mut map = Vec::new();
-    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut map, options.quality).encode(
-        &image.map,
-        base.width(),
-        base.height(),
-        image::ExtendedColorType::L8,
-    )?;
-    let map = gain_map::map_jpeg(&map, &image.metadata)?;
-    // The base's XMP lists the map, so it is written once the map's size is known.
-    let embed = Embed {
-        xmp: Some(gain_map::primary_xmp(embed.xmp.as_deref(), map.len())?),
-        ..embed.clone()
-    };
     let profile = crate::color_management::output_profile(base.space()).to_vec();
-    let mut primary = Vec::new();
-    encode::jpeg(
-        &mut primary,
-        base,
-        options.quality,
-        profile,
-        directories,
-        &embed,
-    )?;
-    std::io::Write::write_all(&mut temp, &gain_map::assemble(&primary, &map)?)?;
+    // The base's XMP, which lists the map, is set for each quality once the map's
+    // size is known.
+    let mut primary = encode::Jpeg::new(base, profile, directories, None);
+    let mut file = |quality: u8| -> Result<Vec<u8>> {
+        let mut map = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut map, quality).encode(
+            &image.map,
+            base.width(),
+            base.height(),
+            image::ExtendedColorType::L8,
+        )?;
+        let map = gain_map::map_jpeg(&map, &image.metadata)?;
+        primary.set_xmp(Some(gain_map::primary_xmp(
+            embed.xmp.as_deref(),
+            map.len(),
+        )?));
+        gain_map::assemble(&primary.encode(quality)?, &map)
+    };
+    // A size limit counts the whole file, the map included.
+    let (bytes, note) = match options.max_bytes {
+        Some(limit) => {
+            let fitted = size_limit::fit(limit, file)?;
+            (fitted.bytes, fitted.note)
+        }
+        None => (file(options.quality)?, None),
+    };
+    std::io::Write::write_all(&mut temp, &bytes)?;
     temp.as_file().sync_all()?;
     Ok(Staged {
         file: temp,
+        note,
         _unfinished: unfinished,
     })
 }
@@ -405,6 +418,7 @@ pub fn stage_hdr(
     temp.as_file().sync_all()?;
     Ok(Staged {
         file: temp,
+        note: None,
         _unfinished: unfinished,
     })
 }
@@ -430,15 +444,11 @@ pub fn stage_image(
     let unfinished = WRITING.track(temp.path());
     let profile = crate::color_management::output_profile(space).to_vec();
     let directories = metadata::directories(m, embed, image.width(), image.height(), space);
+    let mut note = None;
     match format {
-        Format::Jpeg => encode::jpeg(
-            &mut temp,
-            image,
-            options.quality,
-            profile,
-            directories,
-            embed,
-        )?,
+        Format::Jpeg => {
+            note = encode::jpeg(&mut temp, image, options, profile, directories, embed)?;
+        }
         Format::Tiff => encode::tiff(&mut temp, image, profile, &directories, embed)?,
         Format::Png => encode::png(&mut temp, image, profile, directories, embed)?,
         Format::Jxl => encode::jxl(&mut temp, image, options, directories, embed)?,
@@ -446,6 +456,7 @@ pub fn stage_image(
     temp.as_file().sync_all()?;
     Ok(Staged {
         file: temp,
+        note,
         _unfinished: unfinished,
     })
 }

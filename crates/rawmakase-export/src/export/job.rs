@@ -46,7 +46,7 @@ pub struct Photo {
 /// Exports `photo` to `target`, reporting progress from 0 to 1. Stops between
 /// stages once `cancel` is set. Returns what the export has to say besides
 /// "Exported", such as a Simple Copyright Watermark left out for want of a
-/// copyright.
+/// copyright, or a JPEG larger than its size limit.
 pub fn run(
     photo: Photo,
     settings: &ExportSettings,
@@ -70,7 +70,7 @@ pub fn run(
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    super::export_pixels(
+    let note = super::export_pixels(
         target,
         &photo.source,
         &prepared.rendered,
@@ -80,7 +80,8 @@ pub fn run(
         replace,
     )?;
     progress(1.);
-    Ok(prepared.notice)
+    let notes: Vec<String> = prepared.notice.into_iter().chain(note).collect();
+    Ok((!notes.is_empty()).then(|| notes.join("; ")))
 }
 
 /// A photo rendered for export, with what goes in the file beside its pixels.

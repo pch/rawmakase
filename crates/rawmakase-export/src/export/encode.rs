@@ -21,29 +21,74 @@ use tiff::{
     tags::{ResolutionUnit, Tag},
 };
 
+/// A JPEG export's pixels and metadata, ready to encode at any quality, so a size
+/// limit can try several.
+pub(super) struct Jpeg {
+    rgb: Vec<u8>,
+    width: u32,
+    height: u32,
+    profile: Vec<u8>,
+    exif: Vec<u8>,
+    xmp: Option<String>,
+}
+impl Jpeg {
+    pub(super) fn new(
+        image: &ExportImage,
+        profile: Vec<u8>,
+        directories: Directories,
+        xmp: Option<String>,
+    ) -> Self {
+        Self {
+            rgb: image.rgb8(),
+            width: image.width(),
+            height: image.height(),
+            profile,
+            exif: super::metadata::jpeg_exif(directories),
+            xmp,
+        }
+    }
+    pub(super) fn set_xmp(&mut self, xmp: Option<String>) {
+        self.xmp = xmp;
+    }
+    /// The whole file at `quality` (1–100).
+    pub(super) fn encode(&self, quality: u8) -> Result<Vec<u8>> {
+        let mut jpeg = Vec::new();
+        let mut e = JpegEncoder::new_with_quality(&mut jpeg, quality);
+        e.set_icc_profile(self.profile.clone())?;
+        e.set_exif_metadata(self.exif.clone())?;
+        e.write_image(
+            &self.rgb,
+            self.width,
+            self.height,
+            image::ExtendedColorType::Rgb8,
+        )?;
+        if let Some(xmp) = &self.xmp {
+            jpeg = insert_xmp(jpeg, xmp)?;
+        }
+        Ok(jpeg)
+    }
+}
+
+/// `image` as a JPEG at `options`' quality or, with a size limit, the highest
+/// quality that fits; the note says when nothing does.
 pub(super) fn jpeg(
     out: &mut impl Write,
     image: &ExportImage,
-    quality: u8,
+    options: &ExportOptions,
     profile: Vec<u8>,
     directories: Directories,
     embed: &Embed,
-) -> Result<()> {
-    let mut jpeg = Vec::new();
-    let mut e = JpegEncoder::new_with_quality(&mut jpeg, quality);
-    e.set_icc_profile(profile)?;
-    e.set_exif_metadata(super::metadata::jpeg_exif(directories))?;
-    e.write_image(
-        &image.rgb8(),
-        image.width(),
-        image.height(),
-        image::ExtendedColorType::Rgb8,
-    )?;
-    if let Some(xmp) = &embed.xmp {
-        jpeg = insert_xmp(jpeg, xmp)?;
-    }
-    out.write_all(&jpeg)?;
-    Ok(())
+) -> Result<Option<String>> {
+    let jpeg = Jpeg::new(image, profile, directories, embed.xmp.clone());
+    let (bytes, note) = match options.max_bytes {
+        Some(limit) => {
+            let fitted = super::size_limit::fit(limit, |q| jpeg.encode(q))?;
+            (fitted.bytes, fitted.note)
+        }
+        None => (jpeg.encode(options.quality)?, None),
+    };
+    out.write_all(&bytes)?;
+    Ok(note)
 }
 
 pub(super) fn tiff(

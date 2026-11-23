@@ -1282,6 +1282,33 @@ fn shots_of_export() {
             });
         },
     );
+    // A JPEG's File Settings, the size limit off and on.
+    for (name, limit_size) in [
+        ("export-jpeg-quality", false),
+        ("export-jpeg-size-limit", true),
+    ] {
+        crate::app::ui::shots::shot(
+            name,
+            egui::vec2(700., 1100.),
+            |e, _| {
+                e.exports.draft = ExportSettings {
+                    limit_size,
+                    ..Default::default()
+                };
+            },
+            |e, ctx| {
+                crate::app::ui::shots::panel(ctx, 668., |ui| {
+                    let fields = Default::default();
+                    let at = NameContext {
+                        index: 0,
+                        total: 1,
+                        fields: &fields,
+                    };
+                    e.export_sections(ui, std::path::Path::new(""), &at, None);
+                });
+            },
+        );
+    }
     crate::app::ui::shots::shot(
         "export-watermark-editor",
         egui::vec2(900., 760.),
