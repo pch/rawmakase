@@ -175,6 +175,7 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     ),
     command("before_after:split", "Before and after, split"),
     command("match_exposures", "Match total exposures"),
+    command("auto_sync", "Toggle Auto Sync"),
     command("new_preset", "New Develop Preset"),
     command("targeted:tone_curve", "Targeted adjustment: Tone Curve"),
     command("targeted:hue", "Targeted adjustment: Hue"),
@@ -672,6 +673,7 @@ pub(in crate::app) mod bindings {
         MATCH_EXPOSURES = b("match_exposures", Develop, &[
             d(&[Key::M], CMD_ALT_SHIFT).once_per_press(),
         ]);
+        AUTO_SYNC = b("auto_sync", Develop, &[d(&[Key::A], CMD_ALT_SHIFT).once_per_press()]);
         NEW_PRESET = b("new_preset", Develop, &[d(&[Key::N], CMD_SHIFT)]);
         TARGETED_TONE_CURVE = b("targeted:tone_curve", Develop, &[
             d(&[Key::T], CMD_ALT_SHIFT).once_per_press(),

@@ -103,7 +103,7 @@ pub(super) const GENERAL: [Shortcut; 15] = [
     ("Cmd+,", "Preferences"),
     ("Cmd+/", "These shortcuts"),
 ];
-pub(super) const DEVELOP: [Shortcut; 55] = [
+pub(super) const DEVELOP: [Shortcut; 56] = [
     ("R", "Crop & Straighten"),
     ("Return", "Finish the crop"),
     ("X", "Swap the crop's orientation"),
@@ -157,6 +157,7 @@ pub(super) const DEVELOP: [Shortcut; 55] = [
     ("Cmd+Option+V", "Paste settings from previous photo"),
     ("Cmd+Shift+S", "Sync settings to the selected photos"),
     ("Cmd+Option+Shift+M", "Match total exposures"),
+    ("Cmd+Option+Shift+A", "Turn Auto Sync on / off"),
     ("Cmd+Shift+N", "New Develop Preset"),
     ("Cmd+Shift+R", "Reset all settings"),
     ("Cmd+Shift+U", "Auto tone"),

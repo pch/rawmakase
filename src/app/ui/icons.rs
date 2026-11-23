@@ -61,6 +61,9 @@ fastframe_icons::icons! {
         Eye => lucide "eye",
         Search => lucide "search",
         EyeOff => lucide "eye-off",
+        Copy => lucide "copy",
+        Paste => "clipboard-paste",
+        Sync => lucide "refresh-cw",
         /// In place of something that can't be shown, such as an extension's
         /// broken icon.
         Failed => lucide "circle-alert",

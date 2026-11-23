@@ -520,6 +520,7 @@ impl Editor {
         }
         self.remember_maximized(&ctx);
         self.sync_undo();
+        self.run_auto_sync();
         // The layout is kept once a drag (the thumbnail size) or typing (the search)
         // ends, or when the window closes.
         let closing = ctx.input(|i| i.viewport().close_requested());
@@ -1627,7 +1628,7 @@ impl Editor {
             // Enter is taken last, below.
             self.command_input_escape(ctx);
             use bindings as b;
-            let (copy, paste, previous, treatment, reset, sync, match_exposures);
+            let (copy, paste, previous, treatment, reset, sync, match_exposures, auto_sync);
             let (new_preset, auto, export, transfer);
             let mut targeted = None;
             // Lightroom's Copy After's Settings to Before (←), Copy Before's to
@@ -1675,6 +1676,8 @@ impl Editor {
             previous = self.keys(ctx).take(&b::PASTE_PREVIOUS).is_some();
             // Lightroom's Match Total Exposures.
             match_exposures = self.keys(ctx).take(&b::MATCH_EXPOSURES).is_some();
+            // Lightroom's Auto Sync.
+            auto_sync = self.keys(ctx).take(&b::AUTO_SYNC).is_some();
             // Lightroom's New Develop Preset.
             new_preset = self.keys(ctx).take(&b::NEW_PRESET).is_some();
             // Lightroom's Targeted Adjustment Tools: Cmd+Option+Shift and T (Tone
@@ -1856,6 +1859,9 @@ impl Editor {
             if match_exposures && !self.sync_targets().is_empty() && !self.activity.is_busy() {
                 self.start_sync(crate::app::library::sync::BatchChange::MatchTotalExposures);
             }
+            if auto_sync {
+                self.toggle_auto_sync();
+            }
             if new_preset && !self.activity.is_busy() {
                 self.open_copy_dialog(crate::app::develop::settings_transfer::Transfer::NewPreset);
             }
@@ -1970,11 +1976,32 @@ impl Editor {
     /// The Library's filmstrip, the same panel as in the Library, with the
     /// photo open here highlighted.
     fn filmstrip(&mut self, ui: &mut egui::Ui) {
+        let buttons = crate::app::develop::settings_transfer::TransferButtons {
+            can_copy: !self.activity.is_busy(),
+            can_paste: self.clipboard.is_some(),
+            can_sync: self.sync_target_count() > 0 && !self.activity.is_busy(),
+            auto_sync: self.session.auto_sync,
+            syncing: self.auto_sync_slow(),
+        };
+        // The indicator shows once a batch has run for a while.
+        if self.auto_sync_busy() && !buttons.syncing {
+            ui.ctx()
+                .request_repaint_after(crate::app::develop::auto_sync::SLOW);
+        }
         if let Some(library) = &mut self.library {
             let current = self.document.catalog_photo;
-            let strip = library.filmstrip_panel(ui, current, crate::app::library::Module::Develop);
+            let strip = library.filmstrip_panel(
+                ui,
+                current,
+                crate::app::library::Module::Develop,
+                Some(buttons),
+            );
             if strip.metadata_changed {
                 self.messages.absorb(&mut library.messages);
+            }
+            if let Some(click) = strip.transfer {
+                self.transfer_clicked(click);
+                return;
             }
             // Cmd and Shift select, as in the Library, for Sync; otherwise a click
             // and Open in Develop show the photo.

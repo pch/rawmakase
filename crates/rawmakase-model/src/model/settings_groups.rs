@@ -440,6 +440,24 @@ impl GroupSelection {
     pub fn groups(&self) -> impl Iterator<Item = SettingGroup> + '_ {
         self.0.iter().copied()
     }
+    /// The groups of this selection whose settings `after` changed from `before`, as
+    /// Copy would copy them: what Auto Sync takes from one History step. A group's
+    /// panel switch counts as one of its settings.
+    pub fn changed(&self, before: &Recipe, after: &Recipe) -> Self {
+        Self(
+            self.groups()
+                .filter(|group| {
+                    let mut undone = after.clone();
+                    group.copy(before, &mut undone);
+                    undone != *after
+                })
+                .collect(),
+        )
+    }
+    /// Adds `other`'s groups to this selection.
+    pub fn add(&mut self, other: &Self) {
+        self.0.extend(other.groups());
+    }
 }
 
 /// Whether a group is part of a selection.

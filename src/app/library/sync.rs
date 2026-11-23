@@ -132,6 +132,9 @@ pub(crate) enum BatchChange {
     /// Lightroom's Auto Settings, measured on each photo as Develop's Auto measures
     /// the open one.
     AutoSettings,
+    /// Develop's Auto White Balance, measured on each photo: Auto Sync's for an Auto
+    /// White Balance on the open photo.
+    AutoWhiteBalance,
     /// A Develop preset at 100%, as a click in Develop's Presets panel applies it.
     Preset(Box<BatchPreset>),
     /// Settings an extension proposed, set as the control socket's `set` sets
@@ -161,6 +164,7 @@ impl BatchChange {
             BatchChange::Settings(_) => "Synchronize Settings".into(),
             BatchChange::MatchTotalExposures => "Match Total Exposures".into(),
             BatchChange::AutoSettings => "Auto Settings".into(),
+            BatchChange::AutoWhiteBalance => "Auto White Balance".into(),
             BatchChange::Preset(p) => format!("Apply Preset: {}", p.name),
             BatchChange::Proposed(p) => p.name.clone(),
         }
@@ -169,6 +173,7 @@ impl BatchChange {
     fn step(&self) -> Step {
         match self {
             BatchChange::Preset(p) => Step::new("Preset", &p.name),
+            BatchChange::AutoWhiteBalance => Step::new("White Balance", "Auto"),
             _ => Step::new(self.name(), ""),
         }
     }
@@ -683,9 +688,9 @@ fn prepare(
 ) -> Result<Prepared> {
     // Read first, so a file replaced while its settings are worked out is noticed.
     let identity = crate::storage::Identity::read(&target.path)?;
-    // A proposal sets settings and measures nothing: a RAW's header is all it
-    // reads, unless an Upright or Straighten Auto has to be analysed.
-    let header = (matches!(change, BatchChange::Proposed(_))
+    // A proposal or a Sync sets settings and measures nothing: a RAW's header is
+    // all it reads, unless an Upright or Straighten Auto has to be analysed.
+    let header = (matches!(change, BatchChange::Proposed(_) | BatchChange::Settings(_))
         && crate::storage::is_raw(&target.path))
     .then(|| crate::photo::header_metadata(&target.path).ok())
     .flatten();
@@ -719,7 +724,7 @@ fn prepare(
     // Straighten Auto the saved edit still had to analyse is analysed first, as
     // opening the photo does before its Auto can run. Undo still returns `before`.
     let measures = match change {
-        BatchChange::AutoSettings => true,
+        BatchChange::AutoSettings | BatchChange::AutoWhiteBalance => true,
         BatchChange::Preset(p) => p.preset.measures_photo(),
         _ => false,
     };
@@ -757,6 +762,17 @@ fn prepare(
             recipe: crate::develop::auto_tone(photo.image(decoding, cancel)?, &start, cancel)?,
             notes: Vec::new(),
         },
+        // Develop's Auto White Balance: only its white balance is taken.
+        BatchChange::AutoWhiteBalance => {
+            let auto =
+                crate::develop::auto_white_balance(photo.image(decoding, cancel)?, &start, cancel)?;
+            let mut recipe = start.clone();
+            crate::app::develop::auto::apply_white_balance(&auto, &mut recipe);
+            settings_groups::Transferred {
+                recipe,
+                notes: Vec::new(),
+            }
+        }
         // As a click in Develop applies it; decoded only to measure an Auto in it.
         BatchChange::Preset(p) => {
             let image = if p.preset.measures_photo() {
@@ -1082,7 +1098,14 @@ impl Editor {
     }
     /// The other photos selected with the source photo, which Sync applies to.
     pub(in crate::app) fn sync_targets(&self) -> Vec<SyncTarget> {
-        let (Some(library), Some(source)) = (&self.library, self.sync_ready_source()) else {
+        match self.sync_ready_source() {
+            Some(source) => self.selected_besides(source),
+            None => Vec::new(),
+        }
+    }
+    /// The photos selected besides `source`, in the selection's order.
+    pub(in crate::app) fn selected_besides(&self, source: PhotoId) -> Vec<SyncTarget> {
+        let Some(library) = &self.library else {
             return Vec::new();
         };
         let selected = library.selected_photos();
@@ -1155,7 +1178,7 @@ impl Editor {
     /// batch, so what landed meanwhile would be lost, or saved over what it wrote. Profiles still being imported would resolve
     /// differently photo to photo, and while Read Metadata from Files runs, which
     /// photos have a Lightroom edit can still change.
-    fn batch_ready(&self) -> bool {
+    pub(in crate::app) fn batch_ready(&self) -> bool {
         let Some(library) = &self.library else {
             return false;
         };
@@ -1338,7 +1361,7 @@ impl Editor {
 
 /// What a batch's worker reports: its result, or why it had none (the catalog did
 /// not open, or it panicked), which changed nothing.
-fn finished(
+pub(in crate::app) fn finished(
     outcome: std::thread::Result<Result<SyncResult>>,
     change: &BatchChange,
     catalog: &CatalogLocation,

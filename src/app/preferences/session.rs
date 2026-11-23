@@ -161,6 +161,23 @@ pub(crate) struct Session {
     /// `copy_hdr`.
     #[serde(default, with = "known_groups")]
     pub copy_groups: Option<crate::model::settings_groups::GroupSelection>,
+    /// The groups Synchronize Settings applied last time, which Auto Sync applies;
+    /// None until it has been used. Read leniently, skipping names this release does
+    /// not know.
+    #[serde(
+        default,
+        deserialize_with = "known_groups::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub sync_groups: Option<crate::model::settings_groups::GroupSelection>,
+    /// Develop's Auto Sync: an edit of the open photo goes to the other selected
+    /// photos too.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub auto_sync: bool,
     /// Whether Copy Settings includes AI Denoise, apart from `copy_groups`.
     #[serde(
         default,
@@ -366,6 +383,10 @@ pub(in crate::app) struct SessionState {
     pub(in crate::app) checksums_paused: bool,
     /// The groups Copy Settings and Synchronize start from.
     pub(in crate::app) copy_groups: crate::model::settings_groups::GroupSelection,
+    /// The groups Synchronize applied last time, for Auto Sync and the next
+    /// Synchronize; None until it has been used.
+    pub(in crate::app) sync_groups: Option<crate::model::settings_groups::GroupSelection>,
+    pub(in crate::app) auto_sync: bool,
     pub(in crate::app) first_conversion: crate::app::develop::treatment::FirstConversion,
 }
 
@@ -393,6 +414,8 @@ impl SessionState {
             auto_advance: session.auto_advance,
             checksums_paused: session.pause_checksums,
             copy_groups,
+            sync_groups: session.sync_groups.clone(),
+            auto_sync: session.auto_sync,
             first_conversion: if session.no_auto_black_white_mix {
                 crate::app::develop::treatment::FirstConversion::KeepMix
             } else {
@@ -456,6 +479,8 @@ impl SessionState {
                 pause_checksums: self.checksums_paused,
                 library_layout: self.layout.clone(),
                 copy_groups: Some(self.copy_groups.clone()),
+                sync_groups: self.sync_groups.clone(),
+                auto_sync: self.auto_sync,
                 copy_ai_denoise: Some(
                     self.copy_groups
                         .contains(crate::model::settings_groups::SettingGroup::AiDenoise),

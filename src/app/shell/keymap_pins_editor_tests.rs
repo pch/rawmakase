@@ -2045,6 +2045,7 @@ fn every_default_shortcut_changes_something_from_its_places_start() {
         (Develop, Key::V, cmd_shift, "Paste Settings"),
         (Develop, Key::V, cmd_alt, "Paste from Previous"),
         (Develop, Key::M, cmd_alt_shift, "Match Total Exposures"),
+        (Develop, Key::A, cmd_alt_shift, "Auto Sync"),
         (Develop, Key::N, cmd_shift, "New Develop Preset"),
         (Develop, Key::T, cmd_alt_shift, "targeted Tone Curve"),
         (Develop, Key::H, cmd_alt_shift, "targeted Hue"),

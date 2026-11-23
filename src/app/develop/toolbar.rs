@@ -137,6 +137,19 @@ impl Editor {
                                 );
                                 ui.close();
                             }
+                            let auto_sync = format!(
+                                "{cmd}{shift}{}A",
+                                if cfg!(target_os = "macos") {
+                                    "⌥ "
+                                } else {
+                                    "Alt+"
+                                }
+                            );
+                            if menu_item(ui, "Auto Sync", &auto_sync, true, self.session.auto_sync)
+                            {
+                                self.toggle_auto_sync();
+                                ui.close();
+                            }
                             // Lightroom's Match Total Exposures, for the photos selected
                             // with this one, from their aperture, shutter speed and ISO.
                             let matchable = targets > 0

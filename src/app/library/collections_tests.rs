@@ -714,7 +714,7 @@ fn go_to_collection_from_the_filmstrip_stops_drawing_the_old_list() -> Result<()
             },
             |ui| {
                 let active = l.selected();
-                l.filmstrip_panel(ui, active, super::Module::Library);
+                l.filmstrip_panel(ui, active, super::Module::Library, None);
             },
         );
         output.textures_delta.clear();

@@ -195,6 +195,8 @@ impl Editor {
     /// Saves the edit now, after any background save in flight; false if
     /// it could not be saved.
     pub(in crate::app) fn flush(&mut self) -> bool {
+        // Every step Auto Sync still has for the other photos is written first.
+        self.settle_auto_sync();
         // A Sync may be writing the open photo: nothing is saved over it until it is
         // done (see `autosave`).
         if self.activity.holds_catalog_writes() {

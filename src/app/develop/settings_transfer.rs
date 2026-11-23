@@ -103,11 +103,16 @@ impl Editor {
         self.clipboard = Some(Clipboard { settings, groups });
         self.messages.note("Settings copied");
     }
-    /// Opens Copy Settings, or Synchronize Settings, with the groups chosen last time.
+    /// Opens Copy Settings, or Synchronize Settings, with the groups chosen last time:
+    /// Synchronize with the ones it applied, which Auto Sync applies too.
     pub(in crate::app) fn open_copy_dialog(&mut self, purpose: Transfer) {
+        let groups = match purpose {
+            Transfer::Sync => self.sync_groups(),
+            Transfer::Copy | Transfer::NewPreset => self.session.copy_groups.clone(),
+        };
         self.modal = Some(crate::app::Modal::CopySettings(CopyDialog {
             purpose,
-            groups: self.session.copy_groups.clone(),
+            groups,
             preset: PresetForm::default(),
         }));
     }
@@ -207,6 +212,9 @@ impl Editor {
         }
         if dialog.purpose != Transfer::NewPreset {
             self.session.copy_groups = dialog.groups.clone();
+            if dialog.purpose == Transfer::Sync {
+                self.session.sync_groups = Some(dialog.groups.clone());
+            }
             let _ = self.save_session();
         }
         match dialog.purpose {
@@ -215,6 +223,18 @@ impl Editor {
                 dialog.groups,
             )),
             Transfer::NewPreset => self.create_preset(&dialog.preset, &dialog.groups),
+        }
+    }
+    /// Carries out a click on the filmstrip bar's [`TransferButtons`].
+    pub(in crate::app) fn transfer_clicked(&mut self, click: TransferClick) {
+        match click {
+            TransferClick::Copy => self.open_copy_dialog(Transfer::Copy),
+            TransferClick::Paste => self.paste_settings(),
+            TransferClick::Sync if self.session.auto_sync => self.start_sync(
+                crate::app::library::sync::BatchChange::Settings(self.sync_groups()),
+            ),
+            TransferClick::Sync => self.open_copy_dialog(Transfer::Sync),
+            TransferClick::AutoSync => self.toggle_auto_sync(),
         }
     }
     /// Pastes the copied settings. Spot removal and masks belong to their photo and
@@ -260,6 +280,193 @@ impl Editor {
                 .warn(format!("Settings pasted · {}", out.notes.join(" · ")));
         }
     }
+}
+
+/// Develop's Copy, Paste and Sync buttons at the left of the filmstrip's bar, as
+/// they can be used now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TransferButtons {
+    pub(crate) can_copy: bool,
+    pub(crate) can_paste: bool,
+    /// Other photos are selected with the open one.
+    pub(crate) can_sync: bool,
+    pub(crate) auto_sync: bool,
+    /// Auto Sync has been writing the other photos for a while.
+    pub(crate) syncing: bool,
+}
+/// A click on one of the [`TransferButtons`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TransferClick {
+    Copy,
+    Paste,
+    /// Sync…, or with Auto Sync on, Auto Sync: synchronize now.
+    Sync,
+    /// The switch beside Sync turning Auto Sync on or off.
+    AutoSync,
+}
+/// How the buttons are drawn: with their labels, or as icons when the bar is short
+/// of room.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ButtonSize {
+    Labelled,
+    Icons,
+}
+/// An icon button's width.
+const ICON_BUTTON: f32 = 28.;
+/// The Auto Sync switch's width, and the indicator's beside it.
+const SWITCH: f32 = 26.;
+const INDICATOR: f32 = 16.;
+const SPINNER: f32 = 12.;
+impl TransferButtons {
+    /// The width the row takes at `size`.
+    pub(crate) fn width(self, ui: &egui::Ui, size: ButtonSize) -> f32 {
+        let buttons = match size {
+            ButtonSize::Labelled => {
+                label_width(ui, "Copy…") + label_width(ui, "Paste") + label_width(ui, "Auto Sync")
+            }
+            ButtonSize::Icons => 3. * ICON_BUTTON,
+        };
+        buttons + SWITCH + INDICATOR + 3. * space::XS + space::S
+    }
+    /// Lightroom's Copy…, Paste and Sync… with its Auto Sync switch, on one row,
+    /// with their labels or as icons. Each is named for screen readers by its label.
+    pub(crate) fn show(self, ui: &mut egui::Ui, size: ButtonSize) -> Option<TransferClick> {
+        use crate::app::shell::shortcuts::keys_text;
+        let mut click = None;
+        ui.spacing_mut().item_spacing.x = space::XS;
+        let copy = format!(
+            "Copy the settings you choose · {}",
+            keys_text("Cmd+Shift+C")
+        );
+        if bar_button(ui, "Copy…", "Copy…", size, 5, self.can_copy)
+            .on_hover_text(copy)
+            .clicked()
+        {
+            click = Some(TransferClick::Copy);
+        }
+        let paste = if self.can_paste {
+            format!("Paste the copied settings · {}", keys_text("Cmd+Shift+V"))
+        } else {
+            "Copy settings first, to paste them".into()
+        };
+        if bar_button(ui, "Paste", "Paste", size, 6, self.can_paste)
+            .on_hover_text(paste)
+            .clicked()
+        {
+            click = Some(TransferClick::Paste);
+        }
+        ui.add_space(space::S - space::XS);
+        let (label, name, hover) = if self.auto_sync {
+            (
+                "Auto Sync",
+                // Named for what a click does while Auto Sync is on.
+                "Auto Sync, sync now",
+                "Auto Sync is on: edits go to the selected photos too. Click to sync them now"
+                    .to_string(),
+            )
+        } else {
+            (
+                "Sync…",
+                "Sync…",
+                format!(
+                    "Sync settings to the selected photos · {}",
+                    keys_text("Cmd+Shift+S")
+                ),
+            )
+        };
+        let hover = if self.can_sync {
+            hover
+        } else {
+            "Cmd-click photos in the filmstrip to sync to them".into()
+        };
+        // As wide as its longer label, so the switch stays put when it turns.
+        let width = match size {
+            ButtonSize::Labelled => label_width(ui, "Auto Sync"),
+            ButtonSize::Icons => ICON_BUTTON,
+        };
+        let shown = match size {
+            ButtonSize::Labelled => label,
+            ButtonSize::Icons => "",
+        };
+        if bar_button_sized(ui, shown, name, width, 7, self.can_sync)
+            .on_hover_text(hover)
+            .clicked()
+        {
+            click = Some(TransferClick::Sync);
+        }
+        let switch = crate::app::ui::widgets::switch(ui, self.auto_sync, "Auto Sync");
+        if switch
+            .on_hover_text(format!(
+                "Auto Sync: edits go to the selected photos too · {}",
+                keys_text("Cmd+Option+Shift+A")
+            ))
+            .clicked()
+        {
+            click = Some(TransferClick::AutoSync);
+        }
+        // Held at its width, so nothing after it moves when it shows.
+        let (rect, response) = ui.allocate_exact_size(
+            Vec2::new(INDICATOR, design::size::CONTROL),
+            egui::Sense::hover(),
+        );
+        if self.syncing {
+            egui::Spinner::new().size(SPINNER).paint_at(
+                ui,
+                egui::Rect::from_center_size(rect.center(), Vec2::splat(SPINNER)),
+            );
+            response.on_hover_text("Auto Sync is writing the other photos");
+        }
+        click
+    }
+}
+/// The width of a bar button labelled `label`.
+fn label_width(ui: &egui::Ui, label: &str) -> f32 {
+    let text = ui.painter().layout_no_wrap(
+        label.to_string(),
+        egui::FontId::proportional(text::LABEL),
+        Color32::WHITE,
+    );
+    text.size().x + 2. * space::M
+}
+/// A button of the filmstrip's bar, as the Library's bars draw theirs: as wide as
+/// its label, or as its `icon` alone.
+fn bar_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    name: &str,
+    size: ButtonSize,
+    icon: u8,
+    enabled: bool,
+) -> egui::Response {
+    match size {
+        ButtonSize::Labelled => {
+            let width = label_width(ui, label);
+            bar_button_sized(ui, label, name, width, 0, enabled)
+        }
+        ButtonSize::Icons => bar_button_sized(ui, "", name, ICON_BUTTON, icon, enabled),
+    }
+}
+/// A bar button `width` wide, showing `label`, or `icon` when it has none, and
+/// named `name`.
+fn bar_button_sized(
+    ui: &mut egui::Ui,
+    label: &str,
+    name: &str,
+    width: f32,
+    icon: u8,
+    enabled: bool,
+) -> egui::Response {
+    let icon = if label.is_empty() { icon } else { 0 };
+    let response = crate::app::ui::widgets::toolbar_action_sized(
+        ui,
+        label,
+        Vec2::new(width, design::size::CONTROL),
+        false,
+        enabled,
+        icon,
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
+    response
 }
 
 /// Copy Settings' column width, the space between columns, and how many sections the

@@ -1025,3 +1025,31 @@ fn spot_removal_leaves_ai_remove_spots_on_their_photo() {
     let copied = transfer(from(&source, &m), &to, &spots, target).recipe;
     assert_eq!(copied.retouch, [heal, generated('b')]);
 }
+
+#[test]
+fn changed_names_the_chosen_groups_an_edit_changed() {
+    let before = Recipe::default();
+    let mut after = before.clone();
+    after.exposure = 0.5;
+    after.contrast = 0.1;
+    after.effects.grain = 0.2;
+    let mut chosen = GroupSelection::none();
+    for group in [
+        SettingGroup::Exposure,
+        SettingGroup::Grain,
+        SettingGroup::Shadows,
+    ] {
+        chosen.set(group, GroupInclusion::Included);
+    }
+    let changed = chosen.changed(&before, &after);
+    // Contrast changed but is not chosen; Shadows is chosen but unchanged.
+    assert_eq!(
+        changed.groups().collect::<Vec<_>>(),
+        [SettingGroup::Exposure, SettingGroup::Grain]
+    );
+    assert!(GroupSelection::all().changed(&after, &after).is_empty());
+    let mut more = GroupSelection::none();
+    more.set(SettingGroup::Crop, GroupInclusion::Included);
+    more.add(&changed);
+    assert_eq!(more.groups().count(), 3);
+}

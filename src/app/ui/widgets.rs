@@ -81,6 +81,9 @@ pub(in crate::app) fn toolbar_action_sized(
         2 => Some(Icon::Redo),
         3 => Some(Icon::BeforeAfter),
         4 => Some(Icon::Search),
+        5 => Some(Icon::Copy),
+        6 => Some(Icon::Paste),
+        7 => Some(Icon::Sync),
         _ => None,
     };
     if let Some(glyph) = glyph {
