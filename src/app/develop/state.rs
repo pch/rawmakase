@@ -462,6 +462,9 @@ pub(in crate::app) struct ViewState {
     /// a RAW file (see `basic_keys`); kept across photos and modules.
     pub(in crate::app) selected_setting: Option<crate::model::params::ParameterId>,
     pub(in crate::app) zoom_key: (bool, f32),
+    /// The last level the photo fitted at, which the zoom slider keeps while the
+    /// next photo's size is not yet known.
+    pub(in crate::app) last_fit: Option<f32>,
     pub(in crate::app) zoom_anim: Option<(f64, egui::Rect)>,
     pub(in crate::app) shown_rect: Option<egui::Rect>,
     /// Where a minimap click or drag is moving the view.
@@ -511,6 +514,7 @@ impl Default for ViewState {
             shortcuts: false,
             selected_setting: None,
             zoom_key: (false, 1.),
+            last_fit: None,
             zoom_anim: None,
             shown_rect: None,
             glide: None,
@@ -886,13 +890,17 @@ impl ViewState {
         self.ruler = Default::default();
         self.guided.drag = None;
     }
-    /// Loads a photo in Develop: as `clear_document`, but the Crop tool stays open,
-    /// as Lightroom's does from photo to photo. `another` photo's aspect is read as
-    /// if the tool were opened on it; the same photo loaded again (after a Sync's
-    /// Undo, say) reads the edit it loads, not cropped to the chosen aspect.
+    /// Loads a photo in Develop or the Library's Loupe: as `clear_document`, but
+    /// the zoom and its place and the Crop tool stay, as Lightroom's do from photo
+    /// to photo, so the next photo is compared as this one was. `another` photo's
+    /// aspect is read as if the tool were opened on it; the same photo loaded
+    /// again (after a Sync's Undo, say) reads the edit it loads, not cropped to
+    /// the chosen aspect.
     pub(crate) fn next_document(&mut self, another: bool) {
         let crop = self.is(Tool::Crop);
+        let zoom = self.zoom;
         self.clear_document();
+        self.zoom = zoom;
         if crop {
             self.set_tool(Tool::Crop);
             self.aspect_read = false;

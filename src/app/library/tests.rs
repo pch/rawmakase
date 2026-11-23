@@ -3287,6 +3287,66 @@ fn loupe_zooms_at_the_navigator_levels_and_prepares_the_next_photo() -> Result<(
     assert!(library.loupe.regions.region.is_none());
     Ok(())
 }
+/// Zoomed in, the next photo, prepared ahead, shows at the zoom level at once,
+/// placed by the size read with its preview, not at Fit until its region is read.
+#[test]
+fn loupe_shows_the_next_photo_zoomed_at_once() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    for name in ["a.jpg", "b.jpg"] {
+        image::RgbImage::from_fn(3000, 2000, |x, y| {
+            image::Rgb([(x % 256) as u8, (y % 256) as u8, 90])
+        })
+        .save(folder.join(name))?;
+    }
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let ctx = egui::Context::default();
+    let mut library = Library::load(&path, ctx.clone())?;
+    library.wait_for_availability();
+    library.select(Some(library.session.photos()[0].id));
+    library.open_loupe();
+    let mut zoom = crate::app::view::navigator::Zoom::default();
+    // Where the frame drew the Loupe's own preview.
+    let frame = |library: &mut Library, zoom: &mut crate::app::view::navigator::Zoom| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1200., 800.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                library.grid(ui, zoom, true, None, Default::default());
+            },
+        );
+        output.textures_delta.clear();
+        let texture = library.loupe.texture().map(|t| t.id());
+        output
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Mesh(mesh) if Some(mesh.texture_id) == texture => {
+                    Some(mesh.calc_bounds())
+                }
+                _ => None,
+            })
+    };
+    frame(&mut library, &mut zoom);
+    library.loupe.wait(&ctx);
+    frame(&mut library, &mut zoom);
+    library.loupe.wait_ahead(&ctx);
+    zoom.set(1.);
+    frame(&mut library, &mut zoom);
+    library.loupe.regions.wait(&ctx);
+    library.step(selection::Step::By(1), false);
+    let drawn = frame(&mut library, &mut zoom);
+    assert_eq!(library.loupe.state, loupe::State::Ready);
+    assert_eq!(drawn.map(|r| r.size()), Some(egui::vec2(3000., 2000.)));
+    Ok(())
+}
 #[test]
 fn photo_info_of_folder_photos_is_read_once_and_kept() -> Result<()> {
     let directory = tempfile::tempdir()?;

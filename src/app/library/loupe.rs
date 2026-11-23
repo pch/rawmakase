@@ -604,9 +604,15 @@ impl Library {
             self.loupe.regions.release();
         }
         let regions = &mut self.loupe.regions;
-        let full = regions
+        let own_region = regions.photo == Some(photo.id);
+        // The size read with the photo's preview places it zoomed at once, before
+        // its region is read.
+        let full = self
+            .loupe
             .full
-            .filter(|_| zoom.on && zoomable && regions.photo == Some(photo.id));
+            .map(|(w, h)| [w, h])
+            .or(regions.full.filter(|_| own_region))
+            .filter(|_| zoom.on && zoomable);
         let shown = match full {
             Some(full) => {
                 // `level` screen pixels per image pixel.
@@ -631,6 +637,9 @@ impl Library {
                     size,
                 ))
             }
+            // Zoomed in, nothing rather than the photo at Fit until its size is
+            // known.
+            None if zoom.on && zoomable && self.loupe.state == State::Loading => None,
             None => fit,
         };
         if zoom.on && zoomable {
@@ -650,7 +659,7 @@ impl Library {
             crate::app::shell::lights::light(ui.ctx(), inset);
         }
         // The zoomed region over the enlarged Fit preview.
-        if let (Some(at), true) = (shown, full.is_some())
+        if let (Some(at), true) = (shown, full.is_some() && own_region)
             && let Some((region, [x, y, w, h])) = &regions.region
         {
             let place = egui::Rect::from_min_size(

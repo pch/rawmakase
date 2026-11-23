@@ -356,7 +356,7 @@ impl Editor {
             (side.image, side.recipe, self.reference.zoom)
         } else {
             let image = self.document.full()?.clone();
-            (image, self.before_settings(), self.view.zoom)
+            (image, self.before_settings(), self.render_zoom())
         };
         // Switched-off panels left out, as the edit's.
         let recipe = if recipe.panels.all_on() {
@@ -495,7 +495,7 @@ impl Editor {
                 Vec2::new(b.width as f32, b.height as f32)
             });
             let ppp = ui.ctx().pixels_per_point();
-            self.view.zoom.photo_rect(pane.area, size, ppp)
+            self.render_zoom().photo_rect(pane.area, size, ppp)
         });
         if let Some((g, _)) = &geometry {
             self.paint_second_side(ui, pane, rect, g);

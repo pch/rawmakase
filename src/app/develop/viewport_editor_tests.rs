@@ -742,3 +742,145 @@ fn the_camera_jpeg_sits_on_the_frame_it_shows() {
         );
     }
 }
+
+/// A photo of `width` × `height` pixels, decoded at half size (a RAW's draft)
+/// when `draft`; its metadata gives the full size.
+fn photo_of(width: u32, height: u32, draft: bool) -> (Metadata, Arc<CameraImage>) {
+    let metadata = Metadata {
+        width,
+        height,
+        ..crate::app::testing::blue_image().metadata.clone()
+    };
+    let (w, h) = if draft {
+        (width / 2, height / 2)
+    } else {
+        (width, height)
+    };
+    let image = Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: w,
+        height: h,
+        pixels: vec![[0.1; 3]; (w * h) as usize].into(),
+        metadata: metadata.clone(),
+        fast: draft,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    });
+    (metadata, image)
+}
+
+/// Where a frame drew `texture`, and the zoom slider's knob.
+struct Drawn {
+    texture: Option<Rect>,
+    knob: f32,
+}
+
+fn draw_frame(e: &mut Editor, texture: Option<egui::TextureId>) -> Drawn {
+    let ctx = e.context.clone();
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1200., 800.))),
+            ..Default::default()
+        },
+        |ui| e.draw(ui),
+    );
+    output.textures_delta.clear();
+    let mut drawn = Drawn {
+        texture: None,
+        knob: f32::NAN,
+    };
+    let mut knobs = 0;
+    for clipped in &output.shapes {
+        match &clipped.shape {
+            egui::Shape::Mesh(mesh) if Some(mesh.texture_id) == texture => {
+                drawn.texture = Some(mesh.calc_bounds());
+            }
+            egui::Shape::Circle(c) if c.radius == 6. && c.fill == egui::Color32::WHITE => {
+                drawn.knob = c.center.x;
+                knobs += 1;
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(knobs, 1, "one zoom slider");
+    drawn
+}
+
+/// Moving on to the next photo keeps the zoom and where it looks, in Develop as
+/// in the Loupe and in Lightroom, rather than going back to Fit.
+#[test]
+fn moving_on_keeps_the_zoom() -> anyhow::Result<()> {
+    let (_dir, _ctx, mut e, [a, b]) = crate::app::testing::two_photo_editor()?;
+    e.module = Module::Develop;
+    e.develop_catalog_photo(a);
+    e.set_zoom(1.);
+    e.view.zoom.pan = [0.3, 0.6];
+    e.develop_catalog_photo(b);
+    assert_eq!(e.document.catalog_photo, Some(b));
+    assert!(e.view.zoom.on);
+    assert_eq!(e.view.zoom.level, 1.);
+    assert_eq!(e.view.zoom.pan, [0.3, 0.6]);
+    Ok(())
+}
+
+/// Zoomed in, the next photo shows zoomed from its first frame: its stored
+/// preview while it opens, then a RAW's half-size draft, enlarged to the level
+/// chosen, never at Fit or at twice the scale; and the zoom slider holds still
+/// throughout, 100% counted in the full-size photo's pixels.
+#[test]
+fn the_next_photo_shows_at_the_zoom_from_its_first_frame() -> anyhow::Result<()> {
+    let (_dir, ctx, mut e, [a, b]) = crate::app::testing::two_photo_editor()?;
+    e.module = Module::Develop;
+    // What the loads bring (the fixtures don't decode) is set by hand instead.
+    e.develop_catalog_photo(a);
+    e.document.invalidate_load();
+    let (metadata, image) = photo_of(1600, 1200, false);
+    e.document.metadata = Some(metadata);
+    e.document.set_image(image);
+    e.set_pixels(&ctx, false, [16, 12], &[90; 16 * 12 * 3], None);
+    e.set_zoom(1.);
+    // The second frame's toolbar knows the size of the view the first laid out.
+    draw_frame(&mut e, None);
+    let photo = draw_frame(&mut e, None);
+    assert_eq!(e.view.shown_rect.unwrap().size(), Vec2::new(1600., 1200.));
+    let knob = photo.knob;
+
+    e.develop_catalog_photo(b);
+    e.document.invalidate_load();
+    let stand_in = egui::ColorImage::new([16, 12], vec![egui::Color32::GRAY; 16 * 12]);
+    crate::app::develop::state::Picture::upload(
+        &mut e.preview.stand_in,
+        &ctx,
+        "stand-in",
+        stand_in,
+    );
+    let stand_in = e.preview.stand_in.as_ref().map(|p| p.id());
+    // Its size not yet read: no preview at Fit, and the knob stays.
+    let opening = draw_frame(&mut e, stand_in);
+    assert_eq!(opening.texture, None, "the preview at Fit");
+    assert_eq!(opening.knob, knob);
+    // Its metadata read: the preview at 100% of the full-size photo.
+    let (metadata, full) = photo_of(1600, 1200, false);
+    e.document.metadata = Some(metadata);
+    let read = draw_frame(&mut e, stand_in);
+    assert_eq!(read.texture.unwrap().size(), Vec2::new(1600., 1200.));
+    assert_eq!(read.knob, knob);
+    // The half-size draft, then the full-size image: the same.
+    let (_, draft) = photo_of(1600, 1200, true);
+    e.document.set_image(draft);
+    e.set_pixels(&ctx, false, [16, 12], &[90; 16 * 12 * 3], None);
+    let shown = draw_frame(&mut e, None);
+    assert_eq!(e.view.shown_rect.unwrap().size(), Vec2::new(1600., 1200.));
+    assert_eq!(shown.knob, knob);
+    let viewport = e.view.viewport;
+    assert_eq!(
+        e.fit_level(),
+        Some((viewport.x / 1600.).min(viewport.y / 1200.))
+    );
+    e.document.set_image(full);
+    let full = draw_frame(&mut e, None);
+    assert_eq!(e.view.shown_rect.unwrap().size(), Vec2::new(1600., 1200.));
+    assert_eq!(full.knob, knob);
+    Ok(())
+}
