@@ -287,7 +287,9 @@ impl Editor {
                     );
                     self.preview.embedded = true;
                     self.preview.mode = crate::app::develop::state::TextureMode::Whole;
-                    // Uncropped, so it is placed by the photo's crop once that is known.
+                    // Placed by the photo's crop once that is known: the whole frame
+                    // until then, or the camera's own crop when the JPEG is of that
+                    // (`viewport::embedded_frame`).
                     self.preview.crop = Some([0., 0., 1., 1.]);
                     self.preview.status = "Camera preview • developing RAW…".into();
                 }

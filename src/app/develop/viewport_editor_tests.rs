@@ -664,3 +664,81 @@ fn preview_for_sdr_display_shows_the_sdr_rendition_and_leaves_the_edit() {
     e.view.hdr_display = hdr_editor(&ctx).view.hdr_display;
     assert!(e.hdr_preview_due().is_ok());
 }
+
+/// A Sony shot at 16:9 embeds a 16:9 JPEG, its aspect-ratio crop of the 3:2
+/// sensor (#1256). Until the first render, that JPEG fills the photo's crop
+/// rather than being stretched over the whole frame and clipped to the crop;
+/// a camera JPEG of the whole frame still sits on the whole frame.
+#[test]
+fn the_camera_jpeg_sits_on_the_frame_it_shows() {
+    // 16:9 of a 3:2 frame: the middle 27/32 of its height.
+    let wide = [0., 5. / 64., 1., 59. / 64.];
+    for (jpeg, frame) in [([160, 90], wide), ([150, 100], [0., 0., 1., 1.])] {
+        let ctx = egui::Context::default();
+        let mut e = Editor::with_context(
+            &ctx,
+            None,
+            crate::app::preferences::session::Session::default(),
+            None,
+        );
+        e.module = Module::Develop;
+        let (load, _) = e.document.start_load();
+        e.document.set_image(Arc::new(CameraImage {
+            recovered: Default::default(),
+            width: 600,
+            height: 400,
+            pixels: vec![[0.2; 3]; 240_000].into(),
+            metadata: Metadata {
+                width: 600,
+                height: 400,
+                wb: [1.; 3],
+                make: "Sony".into(),
+                camera_crop: Some(wide),
+                ..Default::default()
+            },
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        }));
+        e.document.edit.setup_mut().crop = wide;
+        e.tx.send(crate::app::worker::Event::Embedded {
+            id: load,
+            image: image::RgbImage::new(jpeg[0], jpeg[1]),
+        })
+        .unwrap();
+        e.events(&ctx);
+        assert!(e.preview.embedded);
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400., 400.))),
+                ..Default::default()
+            },
+            |ui| {
+                e.viewport_ui(ui);
+            },
+        );
+        output.textures_delta.clear();
+        let texture = e.preview.texture.as_ref().unwrap().id();
+        let drawn = output
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::epaint::Shape::Mesh(mesh) if mesh.texture_id == texture => Some(mesh),
+                _ => None,
+            })
+            .expect("the camera JPEG is drawn")
+            .calc_bounds();
+        let crop = e.view.shown_rect.expect("the photo is drawn");
+        let size = crop.size() / Vec2::new(wide[2] - wide[0], wide[3] - wide[1]);
+        let whole = crop.min - Vec2::new(wide[0], wide[1]) * size;
+        let want = Rect::from_min_max(
+            whole + Vec2::new(frame[0], frame[1]) * size,
+            whole + Vec2::new(frame[2], frame[3]) * size,
+        );
+        assert!(
+            (drawn.min - want.min).length() < 0.5 && (drawn.max - want.max).length() < 0.5,
+            "a {jpeg:?} JPEG drawn at {drawn:?}, not {want:?}"
+        );
+    }
+}
