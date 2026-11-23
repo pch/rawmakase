@@ -64,11 +64,13 @@ fn tab_hides_develops_side_panels_and_the_photo_takes_their_room() {
     assert_eq!(e.view.viewport.y, with_panels.y);
     // Tab took no focus to the first control on its way.
     assert!(ctx.memory(|m| m.focused().is_none()));
-    // Kept for the next launch, for Develop only.
+    // Kept for the next launch: the left panel for both modules, the right
+    // for Develop only.
     let saved: crate::app::preferences::session::Session =
         serde_json::from_slice(&std::fs::read(&session).unwrap()).unwrap();
     assert_eq!(saved.panels, e.panels);
-    assert!(saved.panels.library.shown(WorkspacePanel::Left));
+    assert!(!saved.panels.library.shown(WorkspacePanel::Left));
+    assert!(saved.panels.library.shown(WorkspacePanel::Right));
     // Shift+Tab hides the filmstrip and status bar too; again brings back
     // what it hid, the filmstrip, and Tab then the sides.
     panel_frame(
