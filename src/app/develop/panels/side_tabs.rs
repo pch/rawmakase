@@ -131,7 +131,7 @@ impl Editor {
     }
     /// Whether the tab panel shows its tab: not folded, and with room beside
     /// the photo as last laid out, or asked for in a narrow window.
-    fn develop_tabs_open(&self) -> bool {
+    pub(in crate::app) fn develop_tabs_open(&self) -> bool {
         let (room, peek) = self.context.data(|d| {
             (
                 d.get_temp::<bool>(room_id()).unwrap_or(true),

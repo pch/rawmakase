@@ -426,6 +426,94 @@ impl Editor {
         }
     }
 }
+impl Editor {
+    /// Lightroom's edge arrows: at the middle of the photo area's left and right
+    /// edges (`area`), a chevron that hides or shows the panel beside it. On the
+    /// right, Develop's is Presets and History, so the adjustments stay; with the
+    /// whole right side hidden, it shows that again.
+    pub(in crate::app) fn panel_edges(&mut self, ui: &egui::Ui, area: egui::Rect) {
+        use crate::app::ui::icons::Icon;
+        if self.chrome.hidden(self.module) || self.lights != crate::app::shell::lights::Lights::On {
+            return;
+        }
+        let right = if self.module == Module::Develop && self.panel_shown(WorkspacePanel::Right) {
+            WorkspacePanel::Presets
+        } else {
+            WorkspacePanel::Right
+        };
+        let palette = crate::app::ui::theme::palette(ui.ctx());
+        for (panel, left) in [(WorkspacePanel::Left, true), (right, false)] {
+            // Presets and History fold in a narrow window: what shows counts.
+            let shown = if panel == WorkspacePanel::Presets {
+                self.develop_tabs_open()
+            } else {
+                self.panel_shown(panel)
+            };
+            // In the panel, along its inner edge; with no panel there (the left
+            // or right side hidden), at the photo's edge. It takes clicks a
+            // little beyond its drawn shape.
+            let in_panel = shown || panel == WorkspacePanel::Presets;
+            let x = match (left, in_panel) {
+                (true, true) => area.left() - EDGE_WIDTH / 2.,
+                (true, false) => area.left() + EDGE_WIDTH / 2.,
+                (false, true) => area.right() + EDGE_WIDTH / 2.,
+                (false, false) => area.right() - EDGE_WIDTH / 2.,
+            };
+            let rect = egui::Rect::from_center_size(
+                egui::pos2(x, area.center().y),
+                egui::vec2(EDGE_WIDTH, EDGE_HEIGHT),
+            );
+            let response = ui.interact(
+                rect.expand2(egui::vec2(4., 8.)),
+                edge_id(panel),
+                // Drags too, so the panel's resize edge under it is not hovered.
+                egui::Sense::click_and_drag(),
+            );
+            let hovered = response.hovered();
+            if hovered {
+                ui.painter()
+                    .rect_filled(rect, radius::CONTROL, palette.tone(Tone::RAISED));
+            }
+            // Toward the panel to hide it, away from the edge to bring it back.
+            let icon = if left == shown {
+                Icon::ChevronLeft
+            } else {
+                Icon::ChevronRight
+            };
+            let color = palette.tone(if hovered {
+                Tone::STRONG
+            } else {
+                Tone::DISABLED
+            });
+            crate::app::ui::icons::paint_at(ui.painter(), icon, rect.center(), 12., color);
+            let name = match panel {
+                WorkspacePanel::Left => "the left panel · F7",
+                WorkspacePanel::Presets => "Presets and History · Shift+F8",
+                _ => "the right panel · F8",
+            };
+            let verb = if shown { "Hide" } else { "Show" };
+            if response
+                .on_hover_text(format!("{verb} {name}"))
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                if panel == WorkspacePanel::Presets {
+                    // As its rail and Shift+F8: in a narrow window it opens over
+                    // the room it lacks.
+                    self.toggle_develop_tabs();
+                } else {
+                    self.change_panels(PanelChange::Toggle(panel));
+                }
+            }
+        }
+    }
+}
+/// The edge arrow's place, and its fill while hovered.
+const EDGE_WIDTH: f32 = 14.;
+const EDGE_HEIGHT: f32 = 40.;
+pub(in crate::app) fn edge_id(panel: WorkspacePanel) -> egui::Id {
+    egui::Id::new(("panel-edge", panel as u8))
+}
 /// The side panels the user resizes by dragging their inner edge, by id.
 const RESIZABLE: [&str; 4] = ["library-sidebar", "library-info", "presets", "adjustments"];
 /// Shows the resize cursor over a side panel's edge, or while it is dragged.
@@ -434,13 +522,25 @@ const RESIZABLE: [&str; 4] = ["library-sidebar", "library-info", "presets", "adj
 /// cursor, though a drag there still resizes the panel.
 pub(in crate::app) fn keep_resize_cursor(ctx: &egui::Context) {
     let dragged = ctx.dragged_id();
-    let on_edge = RESIZABLE.iter().any(|panel| {
-        ctx.read_response(egui::Id::new(*panel).with("__resize"))
-            .is_some_and(|edge| {
-                edge.dragged()
-                    || (edge.contains_pointer() && dragged.is_none_or(|id| id == edge.id))
-            })
+    // An edge arrow on the panel's edge takes the pointer from it.
+    let on_arrow = [
+        WorkspacePanel::Left,
+        WorkspacePanel::Right,
+        WorkspacePanel::Presets,
+    ]
+    .into_iter()
+    .any(|panel| {
+        ctx.read_response(edge_id(panel))
+            .is_some_and(|arrow| arrow.contains_pointer())
     });
+    let on_edge = !on_arrow
+        && RESIZABLE.iter().any(|panel| {
+            ctx.read_response(egui::Id::new(*panel).with("__resize"))
+                .is_some_and(|edge| {
+                    edge.dragged()
+                        || (edge.contains_pointer() && dragged.is_none_or(|id| id == edge.id))
+                })
+        });
     if on_edge {
         ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
     }

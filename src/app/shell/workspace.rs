@@ -1253,6 +1253,7 @@ impl Editor {
             .show(ui, |ui| action.then(self.library_view(ui, chrome)));
         let area = area.response.rect;
         self.drop_area = Some(area);
+        self.panel_edges(ui, area);
         // A click in the view, drawn after the strip, shows there next frame.
         // A hidden strip has nothing to catch up on.
         if filmstrip && self.library.as_ref().is_some_and(|l| l.filmstrip_behind()) {
@@ -2056,6 +2057,7 @@ impl Editor {
             .response
             .rect;
         self.drop_area = Some(area);
+        self.panel_edges(ui, area);
     }
     pub(in crate::app) fn develop_right_panel(&mut self, ui: &mut egui::Ui) {
         // Dark as the catalog's sidebar, around the lighter photo.

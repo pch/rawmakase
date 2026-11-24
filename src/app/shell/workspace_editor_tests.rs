@@ -226,12 +226,14 @@ fn a_side_panels_edge_shows_the_resize_cursor() -> anyhow::Result<()> {
                 .expect("the panel's edge")
                 .rect;
             // Both halves of its grab area: the panel's and the one over the
-            // grid or the photo, whose cells are drawn later.
+            // grid or the photo, whose cells are drawn later. Below the middle
+            // of the photo's edge, where the edge arrow takes the pointer.
             let half = edge.width() / 2. - 1.;
+            let center = edge.center() + Vec2::new(0., 150.);
             for at in [
-                edge.center(),
-                edge.center() - Vec2::new(half, 0.),
-                edge.center() + Vec2::new(half, 0.),
+                center,
+                center - Vec2::new(half, 0.),
+                center + Vec2::new(half, 0.),
             ] {
                 frame(&mut e, vec![egui::Event::PointerMoved(at)]);
                 let cursor = frame(&mut e, vec![egui::Event::PointerMoved(at)]);
@@ -248,6 +250,57 @@ fn a_side_panels_edge_shows_the_resize_cursor() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+#[test]
+fn an_edge_arrow_hides_and_shows_its_panel() {
+    use crate::app::shell::panels::{WorkspacePanel, edge_id};
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    e.onboarding.visible = false;
+    let frame = |e: &mut Editor, events: Vec<egui::Event>| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1200., 800.))),
+                events,
+                ..Default::default()
+            },
+            |ui| e.draw(ui),
+        );
+        output.textures_delta.clear();
+        output.platform_output.cursor_icon
+    };
+    for _ in 0..3 {
+        frame(&mut e, vec![]);
+    }
+    assert!(e.panel_shown(WorkspacePanel::Left));
+    let at = ctx
+        .read_response(edge_id(WorkspacePanel::Left))
+        .expect("the left panel's arrow")
+        .rect
+        .center();
+    frame(&mut e, vec![egui::Event::PointerMoved(at)]);
+    let cursor = frame(&mut e, vec![egui::Event::PointerMoved(at)]);
+    assert_eq!(
+        cursor,
+        egui::CursorIcon::PointingHand,
+        "not the resize edge"
+    );
+    let click = |pressed| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    frame(&mut e, vec![click(true)]);
+    frame(&mut e, vec![click(false)]);
+    frame(&mut e, vec![]);
+    assert!(!e.panel_shown(WorkspacePanel::Left));
 }
 
 #[test]
