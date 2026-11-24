@@ -131,7 +131,8 @@ the Library, a Copy Name or metadata field still being typed is saved first; if
 it cannot be, the action fails with `save_failed` and the chrome stays.
 
 Dialog actions report that the action was applied, but require user interaction.
-`auto_running` and `treatment_pending` describe asynchronous editor work.
+`auto_running` and `treatment_pending` describe asynchronous editor work;
+`output_waits` says why `preview` and `export` would answer `not_ready`.
 `open_failed` names the photo Develop could not open (a cut-short or
 unreadable file), with the reason in `open_error`, which stays while `message`
 moves on; `open` and MCP `open_photo` stop waiting for it with that error.
@@ -178,6 +179,14 @@ Export dialog settings.
 profile. ProPhoto RGB is written only as 16-bit TIFF: with a `.jpg` or `.png` path
 the request fails with `invalid_request` before a job starts, rather than being
 written in another space or format. A preview is always sRGB.
+
+Both wait for the open photo's edit to be final, as the Export dialog does:
+while a Lightroom edit is still being applied, camera profiles are being
+imported, or Auto, Upright or Auto Straighten is still working on it, they
+fail with `not_ready` and say why; `state.output_waits` gives the same reason
+while it holds, so a client can wait for it to be `null` and ask again. An
+edit that is protected (its History is from a newer RAWmakase, or it couldn't
+be read) fails with `protected` instead, since waiting doesn't clear it.
 
 The client waits for file publication by default. For asynchronous operation:
 

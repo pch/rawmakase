@@ -187,6 +187,9 @@ The agent can:
 6. Call `preview_photo` again. It returns image content directly to the client.
 7. Use `run_action` with `undo` if needed, or `save_photo` to persist the result.
 8. For a finished file, call `export_photo`, then `get_job` until `completed`.
+   While the state's `output_waits` names a reason (a Lightroom edit being
+   applied, Upright analysing), `preview_photo` and `export_photo` answer
+   `not_ready`: poll `get_state` until it is `null`.
 
 Auto tools start background work. Poll `get_state` until `auto_running` is false,
 then inspect the resulting values, the state’s `message`, and a preview; starting an operation does not

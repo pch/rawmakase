@@ -398,6 +398,82 @@ fn output_job_publishes_the_captured_revision_and_never_clobbers() -> anyhow::Re
     Ok(())
 }
 
+/// Output exports the open photo only once its edit is final, as Export does:
+/// a Lightroom edit still being applied (or Auto, Upright, a protected edit)
+/// is refused, and nothing is written.
+#[test]
+fn output_waits_for_the_open_photo_as_export_does() -> anyhow::Result<()> {
+    let (mut e, ctx) = editor();
+    let dir = tempfile::tempdir()?;
+    let source = dir.path().join("synthetic.dng");
+    std::fs::write(&source, b"synthetic")?;
+    e.document.opened_at(source);
+    e.document.pending_lightroom = Some("<x:xmpmeta/>".into());
+    let path = dir.path().join("early.jpg");
+    let error = e
+        .execute_command(
+            Command::new(Operation::Output {
+                path: path.clone(),
+                max_edge: 16,
+                space: crate::color::OutputSpace::Srgb,
+            }),
+            &ctx,
+        )
+        .unwrap_err();
+    assert_eq!(error.code, "not_ready", "{}", error.message);
+    assert!(error.message.contains("Lightroom"), "{}", error.message);
+    assert!(!path.exists());
+    // The state says why, so a client knows what it waits for.
+    let state = json(e.command_state());
+    let why = state["output_waits"].as_str().unwrap_or_default();
+    assert!(why.contains("Lightroom"), "{state}");
+    // A protected edit doesn't clear by waiting: `protected`, with its reason.
+    e.document.pending_lightroom = None;
+    e.document
+        .edit
+        .save_state_mut()
+        .protect("its History is from a newer RAWmakase".into());
+    let error = e
+        .execute_command(
+            Command::new(Operation::Output {
+                path: path.clone(),
+                max_edge: 16,
+                space: crate::color::OutputSpace::Srgb,
+            }),
+            &ctx,
+        )
+        .unwrap_err();
+    assert_eq!(error.code, "protected", "{}", error.message);
+    assert!(error.message.contains("newer"), "{}", error.message);
+    assert!(!path.exists());
+    Ok(())
+}
+
+/// An Upright analysis that failed isn't running: Export says so, rather
+/// than that it is still analysing.
+#[test]
+fn an_upright_analysis_that_isnt_running_is_not_said_to_be() -> anyhow::Result<()> {
+    let (mut e, _ctx) = editor();
+    let dir = tempfile::tempdir()?;
+    let source = dir.path().join("synthetic.dng");
+    std::fs::write(&source, b"synthetic")?;
+    e.document.opened_at(source);
+    e.document.edit.setup_mut().upright.mode = crate::model::transform::UprightMode::Auto;
+    assert!(!e.document.upright.is_running());
+    let why = e.open_photo_unready().unwrap();
+    assert!(!why.contains("still"), "{why}");
+    assert!(why.contains("Upright"), "{why}");
+    // On the half-size draft the analysis hasn't started yet: it does once
+    // the full size is here, so it is still to come.
+    let mut draft = (**e.document.full().unwrap()).clone();
+    draft.fast = true;
+    e.document.set_image(Arc::new(draft));
+    e.document.edit.setup_mut().upright.mode = crate::model::transform::UprightMode::Auto;
+    let why = e.open_photo_unready().unwrap();
+    assert!(why.contains("still"), "{why}");
+    Ok(())
+}
+
 /// An export the path's format can't hold in its color space is refused before a job
 /// starts, and nothing is written; ProPhoto RGB as TIFF is exported with its profile.
 #[test]

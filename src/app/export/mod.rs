@@ -559,7 +559,7 @@ impl Editor {
 
     /// Why the open photo's edit is not final yet, if it is not: what it shows
     /// would not be what is exported.
-    fn open_photo_unready(&self) -> Option<&'static str> {
+    pub(in crate::app) fn open_photo_unready(&self) -> Option<&'static str> {
         let d = &self.document;
         if d.metadata.is_none() || d.full().is_none() {
             Some("it is still loading")
@@ -571,8 +571,15 @@ impl Editor {
             Some("its edit is protected, as the file changed since it was saved")
         } else if self.importing.is_some() {
             Some("camera profiles are still being imported")
-        } else if d.upright.is_running() || d.edit.recipe().upright.needs_analysis() {
+        } else if d.upright.is_running()
+            // On the half-size draft it starts once the full size is here.
+            || (d.edit.recipe().upright.needs_analysis() && d.largest().is_none())
+        {
             Some("Upright is still analysing it")
+        } else if d.edit.recipe().upright.needs_analysis() {
+            // An analysis that failed: the mode has no corrections to export
+            // with until it is chosen again.
+            Some("Upright couldn't analyse it; choose its mode again")
         } else if d.straighten.is_running() || d.edit.recipe().straighten_pending() {
             Some("Auto straighten is still measuring it")
         } else {
