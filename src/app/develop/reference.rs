@@ -71,16 +71,18 @@ pub(in crate::app) struct ReferenceSide {
 }
 
 impl ReferenceView {
-    /// Stops loading the reference photo.
+    /// Stops loading the reference photo. What is being developed and the
+    /// load's ticket go together: a ticket left live with nothing pending
+    /// would keep [`Self::loading`] true for good.
     pub(in crate::app) fn cancel_load(&mut self) {
+        self.pending = None;
         self.load.invalidate();
     }
     /// No reference: the side shows how to set one.
     fn clear(&mut self) {
         self.photo = None;
         self.loaded = None;
-        self.pending = None;
-        self.load.invalidate();
+        self.cancel_load();
         self.error = None;
         self.zoom = Zoom::default();
     }
@@ -145,9 +147,7 @@ impl Editor {
             // Shown live: open, so whatever kept it from loading is past, and a
             // load still running for it can only bring back a stale error.
             self.reference.error = None;
-            if self.reference.pending.take().is_some() {
-                self.reference.load.invalidate();
-            }
+            self.reference.cancel_load();
             return;
         }
         let source = self
@@ -192,7 +192,7 @@ impl Editor {
         if let Some(loaded) = &mut self.reference.loaded {
             loaded.tag.clear();
         }
-        self.reference.pending = None;
+        self.reference.cancel_load();
         self.load_reference();
     }
     /// The reference photo developed, or why not.
@@ -531,6 +531,22 @@ mod tests {
         editor.load_reference();
         wait_for_reference(editor);
         assert_eq!(editor.reference_side().unwrap().recipe.exposure, -1.);
+        Ok(())
+    }
+
+    /// Developing the reference again (camera profiles imported) while its
+    /// load runs, once the reference is the open photo, stops that load: the
+    /// side shows it live, not a spinner that never ends.
+    #[test]
+    fn reloading_a_reference_now_open_ends_its_load() -> anyhow::Result<()> {
+        let mut fixture = fixture()?;
+        let other = fixture.other;
+        let editor = &mut fixture.editor;
+        editor.set_reference(other);
+        assert!(editor.reference.loading());
+        editor.document.reset(Some(other));
+        editor.reload_reference();
+        assert!(!editor.reference.loading(), "still loading");
         Ok(())
     }
 
