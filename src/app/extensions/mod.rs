@@ -292,8 +292,6 @@ struct Running {
     /// The per-request state: see the module's documentation.
     requests: HashMap<u64, Pending>,
     started: Instant,
-    /// Stopped by the host (disabled, idle, quitting): its end is no crash.
-    stopping: bool,
     /// Its proposals being applied.
     deferred: Vec<Deferred>,
     /// The `session` number `hello` sent: its devices' gestures carry it.
@@ -470,7 +468,7 @@ impl Extension {
             })
     }
     fn ready_session(&mut self) -> Option<&mut Running> {
-        self.run.as_mut().filter(|r| r.ready && !r.stopping)
+        self.run.as_mut().filter(|r| r.ready)
     }
 }
 
@@ -845,9 +843,9 @@ impl Host {
     pub(in crate::app) fn device_current(&self, session: u64, device: u64, epoch: u64) -> bool {
         self.extensions.iter().any(|e| {
             e.entry.enabled
-                && e.run.as_ref().is_some_and(|r| {
-                    r.number == session && !r.stopping && r.devices.is_current(device, epoch)
-                })
+                && e.run
+                    .as_ref()
+                    .is_some_and(|r| r.number == session && r.devices.is_current(device, epoch))
         })
     }
 
@@ -1143,7 +1141,7 @@ impl Host {
     /// `value`. Sent even before the program has answered `hello`, which
     /// went out first: it reads the event after the handshake.
     fn secret_event(e: &mut Extension, id: &str, value: &str) {
-        if let Some(run) = e.run.as_mut().filter(|r| !r.stopping) {
+        if let Some(run) = e.run.as_mut() {
             let (name, params) = AppEvent::SettingChanged(SettingChanged {
                 id: id.to_string(),
                 value: Value::String(value.to_string()),
@@ -1471,7 +1469,6 @@ impl Host {
             for pending in pending.collect::<Vec<_>>().into_iter().chain(queued) {
                 outcomes.extend(Self::stopped(e, pending, &code));
             }
-            run.stopping = true;
             drop(run);
         }
         e.status = None;
@@ -1678,7 +1675,6 @@ impl Host {
             queued: Vec::new(),
             requests,
             started: now,
-            stopping: false,
             deferred: Vec::new(),
             number,
             devices,
@@ -2350,8 +2346,7 @@ impl Host {
     /// is a `command.run` still in flight and admitted.
     fn admitted(e: &Extension, op: u64) -> bool {
         e.run.as_ref().is_some_and(|r| {
-            !r.stopping
-                && matches!(r.requests.get(&op), Some(Pending::Command { .. }))
+            matches!(r.requests.get(&op), Some(Pending::Command { .. }))
                 && r.session.is_admitted(op)
         })
     }
@@ -2540,18 +2535,16 @@ impl Host {
                 // send their command to a program started again.
                 Update::Closed => {
                     let Some(run) = e.run.as_ref() else { break };
-                    let crash = (!run.stopping).then(|| {
-                        let how = run
-                            .session
-                            .exit()
-                            .map_or_else(|| "its channel closed".to_string(), |x| x.to_string());
-                        format!("{} ended unexpectedly ({how})", e.name())
-                    });
+                    // A program the host stops is no longer `run`, so this
+                    // end is always unexpected.
+                    let how = run
+                        .session
+                        .exit()
+                        .map_or_else(|| "its channel closed".to_string(), |x| x.to_string());
+                    let why = format!("{} ended unexpectedly ({how})", e.name());
                     let mut stopped = Self::end(e, ErrorCode::Exited);
                     outcomes.append(&mut stopped);
-                    if let Some(why) = crash {
-                        Self::crashed(e, why);
-                    }
+                    Self::crashed(e, why);
                     break;
                 }
                 // The session killed the program and failed what it had
@@ -2738,7 +2731,7 @@ impl Host {
                     .control_adapters
                     .iter()
                     .any(|a| a.id == operate.adapter && a.launch == AdapterLaunch::App);
-                let run = e.run.as_ref().filter(|r| !r.stopping && e.entry.enabled);
+                let run = e.run.as_ref().filter(|_| e.entry.enabled);
                 let Some(run) = run.filter(|_| declared) else {
                     return Answer::Now(Err(RemoteError::new(
                         ErrorCode::Other("adapter_disabled".into()),
@@ -2924,9 +2917,9 @@ impl Host {
     /// session, which still admits requests.
     fn in_scope(e: &Extension, source: &str, scope: u64) -> bool {
         e.entry.enabled
-            && e.run.as_ref().is_some_and(|r| {
-                r.ready && !r.stopping && r.scopes.get(source).is_some_and(|(s, _)| *s == scope)
-            })
+            && e.run
+                .as_ref()
+                .is_some_and(|r| r.ready && r.scopes.get(source).is_some_and(|(s, _)| *s == scope))
     }
 
     /// The report `ticket`'s files were added, or not, with `result`: the
