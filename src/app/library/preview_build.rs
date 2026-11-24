@@ -536,8 +536,12 @@ enum Next {
 
 impl State {
     /// Queues `items`, each in the place of a waiting request for its photo and
-    /// kind; returns how many were added.
+    /// kind; returns how many were added. Nothing to queue starts no build, so
+    /// the last one's failures stay listed until they are dismissed.
     fn enqueue(&mut self, items: Vec<Item>) -> usize {
+        if items.is_empty() {
+            return 0;
+        }
         if !self.progress.running() {
             self.progress = Progress::default();
         }
