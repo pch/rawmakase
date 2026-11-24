@@ -888,7 +888,9 @@ impl Editor {
         };
         match result {
             Ok(_) => {
-                let what = waiting.as_ref().map_or("The model", |(_, what, ..)| what);
+                let what = waiting
+                    .as_ref()
+                    .map_or_else(|| "The model".to_owned(), |(_, what, ..)| what.clone());
                 self.messages.done(format!("{what} installed"));
                 if let Some((request, _, guard, then)) = waiting {
                     self.selection.prompt = None;
@@ -907,6 +909,22 @@ impl Editor {
                         // pass's cleanup: a setup finishing in the pass the
                         // user left Mask in is handled before the cleanup.
                         let on_mask = self.view.tool() == crate::app::develop::state::Tool::Mask;
+                        // A selection started meanwhile (a component's Refine
+                        // or Regenerate, which the setup card leaves shown)
+                        // holds the worker, and a request made now would be
+                        // dropped as a second click: say to ask again instead.
+                        // Aiming waits for no worker, so it begins as asked.
+                        if then == Resume::Select
+                            && request.generator.takes_none()
+                            && self.selection.pending.is_some()
+                        {
+                            self.messages.warn(format!(
+                                "{what} installed; choose Select {} again once the running \
+                                 selection finishes",
+                                request.generator.name()
+                            ));
+                            return;
+                        }
                         match then {
                             Resume::Nothing => {}
                             Resume::Aim if !on_mask => {}
