@@ -265,7 +265,8 @@ CREATE TABLE IF NOT EXISTS meta (
 -- Descriptive metadata set in RAWmakase or imported, per photo: a virtual copy
 -- keeps its own rows, never its master's. A field with no row is the file's
 -- own. Rows go with their photo, also when a release that does not know these
--- tables removes it, so a later photo reusing the id inherits nothing.
+-- tables removes it, so a photo an older release gives the id to inherits
+-- nothing (this release never gives a photo's id out again: `photo_id_high`).
 
 -- Whether a field (title, caption, creator, copyright) is set or cleared.
 CREATE TABLE IF NOT EXISTS photo_fields (

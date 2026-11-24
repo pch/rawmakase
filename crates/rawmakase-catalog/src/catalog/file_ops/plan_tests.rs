@@ -342,7 +342,8 @@ fn a_photo_removed_and_added_again_with_new_edits_is_refused() -> Result<()> {
         to: fx.logical(to),
     });
     // Another connection removes it and adds the same file again, under
-    // the same id (SQLite reuses the largest), with an edit of its own.
+    // the same id (as a release that reuses ids gives it), with an edit of
+    // its own.
     let other = Catalog::open(&fx.catalog)?;
     let row: (i64, String) = other.db_for_tests().query_row(
         "SELECT folder, original_path FROM photos WHERE id=?1",

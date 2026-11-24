@@ -192,9 +192,10 @@ fn keywords_spots_and_masks_and_the_history_change_the_fingerprint() -> Result<(
     Ok(())
 }
 
-/// A photo removed and another taking its id: the id's fingerprint is the
-/// new photo's. (The same content under a reused id is told apart by the
-/// catalog's structural generation, which a removal moves on.)
+/// A photo removed and another taking its id, as a release that reuses ids
+/// gives it: the id's fingerprint is the new photo's. (The same content under
+/// a reused id is told apart by the catalog's structural generation, which a
+/// removal moves on.)
 #[test]
 fn a_reused_id_has_the_new_photos_fingerprint() -> Result<()> {
     let (_dir, mut cat, photos) = catalog(2)?;
@@ -203,8 +204,11 @@ fn a_reused_id_has_the_new_photos_fingerprint() -> Result<()> {
     let first = cat.photo_fingerprint(copy)?.unwrap();
     cat.remove_virtual_copy(copy)?;
     assert_eq!(cat.photo_fingerprint(copy)?, None);
-    let again = cat.create_virtual_copy(b)?;
-    assert_eq!(again, copy, "the id is reused");
-    assert_ne!(cat.photo_fingerprint(again)?.unwrap(), first);
+    cat.db_for_tests().execute(
+        "INSERT INTO photos(id, folder, filename, original_path, master_id, copy_name)
+         SELECT ?1, folder, filename, original_path, id, 'Copy 1' FROM photos WHERE id=?2",
+        [copy.0, b.0],
+    )?;
+    assert_ne!(cat.photo_fingerprint(copy)?.unwrap(), first);
     Ok(())
 }

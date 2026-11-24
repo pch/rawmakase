@@ -51,6 +51,7 @@ pub mod locations;
 mod mask_assets;
 mod models;
 mod naming;
+mod photo_ids;
 mod recipe_assets;
 mod rule_inputs;
 mod sequences;
@@ -378,6 +379,8 @@ mod locations_tests;
 mod mask_assets_tests;
 #[cfg(test)]
 mod open_tests;
+#[cfg(test)]
+mod photo_ids_tests;
 #[cfg(test)]
 mod portability_tests;
 #[cfg(test)]

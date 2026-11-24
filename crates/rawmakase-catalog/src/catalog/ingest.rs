@@ -224,7 +224,7 @@ impl Catalog {
     /// Lightroom's Remove for a folder: `folders` leave the catalog with
     /// their photos (and those photos' virtual copies), edits and metadata,
     /// and a root left without folders goes too. Nothing on disk is touched.
-    /// Returns the photos removed; their ids may be given to new photos.
+    /// Returns the photos removed; their ids are never given to new photos.
     pub fn remove_folders(&mut self, folders: &[FolderId]) -> Result<Vec<PhotoId>> {
         self.db.write(|w| remove_folders(w, folders))
     }
@@ -1104,12 +1104,10 @@ impl PhotoWriter {
             .unwrap_or_default()
             .to_string_lossy()
             .to_ascii_uppercase();
-        let id: PhotoId = w.insert_returning_id(
-            sql!(
-                "INSERT INTO photos(folder,filename,original_path,format) VALUES(?,?,?,?)
-                 RETURNING id"
-            ),
-            &[&folder, &filename, &file.to_string_lossy(), &format],
+        let id = super::photo_ids::allocate(w)?;
+        w.execute(
+            sql!("INSERT INTO photos(id,folder,filename,original_path,format) VALUES(?,?,?,?,?)"),
+            &[&id, &folder, &filename, &file.to_string_lossy(), &format],
         )?;
         w.execute(
             sql!("INSERT INTO photo_imports(photo, batch) VALUES(?, ?)"),
